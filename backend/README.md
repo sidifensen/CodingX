@@ -1,4 +1,4 @@
-﻿# CodingX Backend
+# CodingX Backend
 
 ## Run
 

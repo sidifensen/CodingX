@@ -1,0 +1,8 @@
+.idea/
+*.iml
+
+backend/target/
+backend/.env
+backend/*.log
+
+*.class

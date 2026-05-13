@@ -1,0 +1,76 @@
+spring:
+  config:
+    import: optional:file:.env[.properties],optional:file:backend/.env[.properties]
+  application:
+    name: codingx-backend
+  datasource:
+    driver-class-name: org.postgresql.Driver
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/codingx}
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD:postgres}
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      database: ${REDIS_DATABASE:0}
+      timeout: 10s
+  jackson:
+    time-zone: Asia/Shanghai
+    date-format: yyyy-MM-dd HH:mm:ss
+    serialization:
+      write-dates-as-timestamps: false
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:db/schema.sql
+      data-locations: classpath:db/init.sql
+
+server:
+  port: ${SERVER_PORT:8080}
+
+sa-token:
+  token-name: satoken
+  timeout: 86400
+  active-timeout: -1
+  is-concurrent: true
+  is-share: false
+  is-log: false
+  token-style: uuid
+  auto-renew: true
+  allow-simple-header: true
+  token-sign-key: ${SA_TOKEN_SIGN_KEY:${SATOKEN_SIGN_KEY:replace-me}}
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+    cache-enabled: false
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+  global-config:
+    db-config:
+      id-type: input
+      logic-delete-field: deleted
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+
+app:
+  security:
+    cors:
+      allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173}
+  ai:
+    provider: ${AI_PROVIDER:deepseek}
+    base-url: ${AI_BASE_URL:${DEEPSEEK_BASE_URL:https://api.deepseek.com/v1}}
+    api-key: ${AI_API_KEY:${DEEPSEEK_API_KEY:}}
+    chat-model: ${AI_CHAT_MODEL:${DEEPSEEK_CHAT_MODEL:deepseek-chat}}
+    connect-timeout-ms: ${AI_CONNECT_TIMEOUT_MS:10000}
+    read-timeout-ms: ${AI_READ_TIMEOUT_MS:120000}
+    system-prompt: ${AI_SYSTEM_PROMPT:You are the CodingX assistant. Be concise, practical, and safe.}
+  runtime:
+    mock-step-delay-ms: ${MOCK_STEP_DELAY_MS:300}
+    mock-fail-keyword: ${MOCK_FAIL_KEYWORD:fail}

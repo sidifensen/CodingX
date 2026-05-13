@@ -1,0 +1,15 @@
+﻿# Maven
+/target/
+
+# IDE
+/.idea/
+*.iml
+/.vscode/
+
+# Local config
+.env
+.env.local
+
+# Logs
+/logs/
+*.log

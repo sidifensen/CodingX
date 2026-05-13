@@ -1,5 +1,4 @@
 package com.codingx.backend.artifact.infrastructure.persistence.repository;
-
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.codingx.backend.artifact.domain.model.TaskArtifact;
 import com.codingx.backend.artifact.domain.repository.TaskArtifactRepository;
@@ -9,12 +8,22 @@ import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Repository;
 
+/**
+ * Implements the persistence behavior required by TaskArtifactRepositoryImpl.
+ */
 @Repository
 @RequiredArgsConstructor
 public class TaskArtifactRepositoryImpl implements TaskArtifactRepository {
 
+    /**
+     * taskArtifactMapper value.
+     */
     private final TaskArtifactMapper taskArtifactMapper;
 
+    /**
+     * Persists the state handled by save.
+     * @param taskArtifact input argument.
+     */
     @Override
     public void save(TaskArtifact taskArtifact) {
         TaskArtifactDO dataObject = new TaskArtifactDO();
@@ -28,6 +37,11 @@ public class TaskArtifactRepositoryImpl implements TaskArtifactRepository {
         taskArtifactMapper.insert(dataObject);
     }
 
+    /**
+     * Finds the data required by findByTaskId.
+     * @param taskId input argument.
+     * @return processing result.
+     */
     @Override
     public List<TaskArtifact> findByTaskId(Long taskId) {
         return taskArtifactMapper.selectList(new LambdaQueryWrapper<TaskArtifactDO>()

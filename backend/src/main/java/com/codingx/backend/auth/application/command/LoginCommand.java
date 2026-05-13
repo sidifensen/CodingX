@@ -1,4 +1,10 @@
 package com.codingx.backend.auth.application.command;
 
-public record LoginCommand(String username, String password) {
+/**
+ * Represents the request or response data carried by LoginCommand.
+ */
+public record LoginCommand(
+    String username, // Login username.
+    String password // password value.
+) {
 }

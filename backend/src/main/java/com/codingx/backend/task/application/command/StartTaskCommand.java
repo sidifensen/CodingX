@@ -1,4 +1,10 @@
 package com.codingx.backend.task.application.command;
 
-public record StartTaskCommand(Long taskId, Long operatorId) {
+/**
+ * Represents the request or response data carried by StartTaskCommand.
+ */
+public record StartTaskCommand(
+    Long taskId, // Related task identifier.
+    Long operatorId // operatorId value.
+) {
 }

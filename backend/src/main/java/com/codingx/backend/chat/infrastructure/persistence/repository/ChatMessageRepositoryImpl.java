@@ -1,5 +1,4 @@
 package com.codingx.backend.chat.infrastructure.persistence.repository;
-
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.codingx.backend.chat.domain.model.ChatMessage;
 import com.codingx.backend.chat.domain.model.ChatMessageRole;
@@ -11,12 +10,22 @@ import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Repository;
 
+/**
+ * Implements the persistence behavior required by ChatMessageRepositoryImpl.
+ */
 @Repository
 @RequiredArgsConstructor
 public class ChatMessageRepositoryImpl implements ChatMessageRepository {
 
+    /**
+     * chatMessageMapper value.
+     */
     private final ChatMessageMapper chatMessageMapper;
 
+    /**
+     * Persists the state handled by save.
+     * @param message input argument.
+     */
     @Override
     public void save(ChatMessage message) {
         ChatMessageDO dataObject = toDataObject(message);
@@ -27,6 +36,11 @@ public class ChatMessageRepositoryImpl implements ChatMessageRepository {
         }
     }
 
+    /**
+     * Finds the data required by findByConversationId.
+     * @param conversationId input argument.
+     * @return processing result.
+     */
     @Override
     public List<ChatMessage> findByConversationId(Long conversationId) {
         return chatMessageMapper.selectList(new LambdaQueryWrapper<ChatMessageDO>()
@@ -37,6 +51,11 @@ public class ChatMessageRepositoryImpl implements ChatMessageRepository {
             .toList();
     }
 
+    /**
+     * Executes the logic defined by toDomain.
+     * @param dataObject input argument.
+     * @return processing result.
+     */
     private ChatMessage toDomain(ChatMessageDO dataObject) {
         return ChatMessage.create(
             dataObject.getId(),
@@ -50,6 +69,11 @@ public class ChatMessageRepositoryImpl implements ChatMessageRepository {
         );
     }
 
+    /**
+     * Executes the logic defined by toDataObject.
+     * @param message input argument.
+     * @return processing result.
+     */
     private ChatMessageDO toDataObject(ChatMessage message) {
         ChatMessageDO dataObject = new ChatMessageDO();
         dataObject.setId(message.getId());

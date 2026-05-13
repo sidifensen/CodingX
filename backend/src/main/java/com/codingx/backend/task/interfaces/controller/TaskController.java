@@ -1,5 +1,4 @@
 package com.codingx.backend.task.interfaces.controller;
-
 import cn.dev33.satoken.stp.StpUtil;
 import com.codingx.backend.common.model.ApiResponse;
 import com.codingx.backend.task.application.command.CreateTaskCommand;
@@ -19,14 +18,29 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+/**
+ * Handles HTTP requests for TaskController and delegates work to application services.
+ */
 @RestController
 @RequestMapping("/api/tasks")
 @RequiredArgsConstructor
 public class TaskController {
 
+    /**
+     * TaskCommandApplicationService dependency.
+     */
     private final TaskCommandApplicationService taskCommandApplicationService;
+
+    /**
+     * TaskQueryApplicationService dependency.
+     */
     private final TaskQueryApplicationService taskQueryApplicationService;
 
+    /**
+     * Creates the data required by createTask and returns the result.
+     * @param request input argument.
+     * @return processing result.
+     */
     @PostMapping
     public ApiResponse<TaskResponse> createTask(@Valid @RequestBody CreateTaskRequest request) {
         Long userId = StpUtil.getLoginIdAsLong();
@@ -37,23 +51,42 @@ public class TaskController {
         return ApiResponse.success(toResponse(task));
     }
 
+    /**
+     * Starts the workflow handled by startTask.
+     * @param taskId input argument.
+     * @return processing result.
+     */
     @PostMapping("/{taskId}/start")
     public ApiResponse<Void> startTask(@PathVariable Long taskId) {
         taskCommandApplicationService.startTask(new StartTaskCommand(taskId, StpUtil.getLoginIdAsLong()));
         return ApiResponse.successMessage("task started");
     }
 
+    /**
+     * Returns the collection required by listTasks.
+     * @return processing result.
+     */
     @GetMapping
     public ApiResponse<List<TaskResponse>> listTasks() {
         Long userId = StpUtil.getLoginIdAsLong();
         return ApiResponse.success(taskQueryApplicationService.listTasks(userId).stream().map(this::toResponse).toList());
     }
 
+    /**
+     * Retrieves the result required by getTask.
+     * @param taskId input argument.
+     * @return processing result.
+     */
     @GetMapping("/{taskId}")
     public ApiResponse<TaskResponse> getTask(@PathVariable Long taskId) {
-        return ApiResponse.success(toResponse(taskQueryApplicationService.getTask(taskId)));
+        return ApiResponse.success(toResponse(taskQueryApplicationService.getTask(taskId, StpUtil.getLoginIdAsLong())));
     }
 
+    /**
+     * Executes the logic defined by toResponse.
+     * @param task input argument.
+     * @return processing result.
+     */
     private TaskResponse toResponse(Task task) {
         return new TaskResponse(
             task.getId(),

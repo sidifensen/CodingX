@@ -1,5 +1,4 @@
 package com.codingx.backend.chat.infrastructure.ai;
-
 import cn.hutool.core.util.StrUtil;
 import cn.hutool.json.JSONArray;
 import cn.hutool.json.JSONObject;
@@ -21,6 +20,9 @@ import okio.BufferedSource;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Component;
 
+/**
+ * Integrates the external AI provider used by DeepSeekOkHttpChatClient.
+ */
 @Component
 @Primary
 @RequiredArgsConstructor
@@ -28,9 +30,20 @@ public class DeepSeekOkHttpChatClient implements AiChatClient {
 
     private static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
 
+    /**
+     * okHttpClient value.
+     */
     private final OkHttpClient okHttpClient;
+    /**
+     * AiProperties dependency.
+     */
     private final AiProperties aiProperties;
 
+    /**
+     * Streams the result handled by streamChat.
+     * @param history input argument.
+     * @param handler input argument.
+     */
     @Override
     public void streamChat(List<ChatMessage> history, StreamHandler handler) {
         if (StrUtil.isBlank(aiProperties.getApiKey())) {
@@ -38,19 +51,16 @@ public class DeepSeekOkHttpChatClient implements AiChatClient {
             handler.onComplete();
             return;
         }
-
         JSONObject requestBody = new JSONObject();
         requestBody.set("model", aiProperties.getChatModel());
         requestBody.set("stream", true);
         requestBody.set("messages", buildMessages(history));
-
         Request request = new Request.Builder()
             .url(StrUtil.removeSuffix(aiProperties.getBaseUrl(), "/") + "/chat/completions")
             .header("Authorization", "Bearer " + aiProperties.getApiKey())
             .header("Content-Type", "application/json")
             .post(RequestBody.create(requestBody.toString(), JSON))
             .build();
-
         try (Response response = okHttpClient.newCall(request).execute()) {
             if (!response.isSuccessful()) {
                 String body = response.body() != null ? response.body().string() : "";
@@ -84,6 +94,11 @@ public class DeepSeekOkHttpChatClient implements AiChatClient {
         }
     }
 
+    /**
+     * Executes the logic defined by buildMessages.
+     * @param history input argument.
+     * @return processing result.
+     */
     private JSONArray buildMessages(List<ChatMessage> history) {
         JSONArray messages = new JSONArray();
         messages.add(JSONUtil.createObj().set("role", "system").set("content", aiProperties.getSystemPrompt()));
@@ -93,6 +108,11 @@ public class DeepSeekOkHttpChatClient implements AiChatClient {
         return messages;
     }
 
+    /**
+     * Executes the logic defined by mapRole.
+     * @param role input argument.
+     * @return processing result.
+     */
     private String mapRole(ChatMessageRole role) {
         return switch (role) {
             case USER -> "user";
@@ -101,6 +121,11 @@ public class DeepSeekOkHttpChatClient implements AiChatClient {
         };
     }
 
+    /**
+     * Executes the logic defined by extractDelta.
+     * @param payload input argument.
+     * @return processing result.
+     */
     private String extractDelta(String payload) {
         try {
             JSONObject root = JSONUtil.parseObj(payload);

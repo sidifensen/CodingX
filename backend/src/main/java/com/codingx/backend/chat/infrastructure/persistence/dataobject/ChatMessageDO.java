@@ -1,13 +1,15 @@
 package com.codingx.backend.chat.infrastructure.persistence.dataobject;
-
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import java.time.LocalDateTime;
 import lombok.Data;
 
+/**
+ * Maps the persistence fields used by ChatMessageDO.
+ */
 @Data
-@TableName("cx_chat_message")
+@TableName("chat_message")
 public class ChatMessageDO {
     @TableId("id") private Long id;
     @TableField("conversation_id") private Long conversationId;

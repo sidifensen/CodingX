@@ -1,5 +1,4 @@
 package com.codingx.backend.task.infrastructure.persistence.repository;
-
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.codingx.backend.common.exception.NotFoundException;
 import com.codingx.backend.task.domain.model.RuntimeType;
@@ -13,12 +12,22 @@ import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Repository;
 
+/**
+ * Implements the persistence behavior required by TaskRepositoryImpl.
+ */
 @Repository
 @RequiredArgsConstructor
 public class TaskRepositoryImpl implements TaskRepository {
 
+    /**
+     * taskMapper value.
+     */
     private final TaskMapper taskMapper;
 
+    /**
+     * Persists the state handled by save.
+     * @param task input argument.
+     */
     @Override
     public void save(Task task) {
         TaskDO dataObject = toDataObject(task);
@@ -29,16 +38,31 @@ public class TaskRepositoryImpl implements TaskRepository {
         }
     }
 
+    /**
+     * Finds the data required by findById.
+     * @param taskId input argument.
+     * @return processing result.
+     */
     @Override
     public Optional<Task> findById(Long taskId) {
         return Optional.ofNullable(taskMapper.selectById(taskId)).map(this::toDomain);
     }
 
+    /**
+     * Resolves the required data for requireById or throws when it is missing.
+     * @param taskId input argument.
+     * @return processing result.
+     */
     @Override
     public Task requireById(Long taskId) {
         return findById(taskId).orElseThrow(() -> new NotFoundException("Task not found"));
     }
 
+    /**
+     * Finds the data required by findByCreatedBy.
+     * @param createdBy input argument.
+     * @return processing result.
+     */
     @Override
     public List<Task> findByCreatedBy(Long createdBy) {
         return taskMapper.selectList(new LambdaQueryWrapper<TaskDO>()
@@ -50,6 +74,11 @@ public class TaskRepositoryImpl implements TaskRepository {
             .toList();
     }
 
+    /**
+     * Executes the logic defined by toDomain.
+     * @param dataObject input argument.
+     * @return processing result.
+     */
     private Task toDomain(TaskDO dataObject) {
         Task task = Task.create(
             dataObject.getId(),
@@ -72,6 +101,11 @@ public class TaskRepositoryImpl implements TaskRepository {
         return task;
     }
 
+    /**
+     * Executes the logic defined by toDataObject.
+     * @param task input argument.
+     * @return processing result.
+     */
     private TaskDO toDataObject(Task task) {
         TaskDO dataObject = new TaskDO();
         dataObject.setId(task.getId());

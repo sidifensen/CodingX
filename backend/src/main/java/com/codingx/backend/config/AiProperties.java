@@ -1,8 +1,10 @@
 package com.codingx.backend.config;
-
 import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
+/**
+ * Configures the Spring beans and infrastructure required by AiProperties.
+ */
 @Data
 @ConfigurationProperties(prefix = "app.ai")
 public class AiProperties {

@@ -1,4 +1,9 @@
 package com.codingx.backend.chat.application.command;
 
-public record CreateConversationCommand(String title) {
+/**
+ * Represents the request or response data carried by CreateConversationCommand.
+ */
+public record CreateConversationCommand(
+    String title // Display title.
+) {
 }

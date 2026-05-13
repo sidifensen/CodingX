@@ -1,5 +1,4 @@
 package com.codingx.backend.auth.infrastructure.persistence.repository;
-
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.codingx.backend.auth.domain.model.User;
 import com.codingx.backend.auth.domain.model.UserStatus;
@@ -11,17 +10,33 @@ import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Repository;
 
+/**
+ * Implements the persistence behavior required by UserRepositoryImpl.
+ */
 @Repository
 @RequiredArgsConstructor
 public class UserRepositoryImpl implements UserRepository {
 
+    /**
+     * userMapper value.
+     */
     private final UserMapper userMapper;
 
+    /**
+     * Finds the data required by findById.
+     * @param id input argument.
+     * @return processing result.
+     */
     @Override
     public Optional<User> findById(Long id) {
         return Optional.ofNullable(userMapper.selectById(id)).map(this::toDomain);
     }
 
+    /**
+     * Finds the data required by findByUsername.
+     * @param username input argument.
+     * @return processing result.
+     */
     @Override
     public Optional<User> findByUsername(String username) {
         LambdaQueryWrapper<UserDO> wrapper = new LambdaQueryWrapper<UserDO>()
@@ -31,6 +46,10 @@ public class UserRepositoryImpl implements UserRepository {
         return Optional.ofNullable(userMapper.selectOne(wrapper)).map(this::toDomain);
     }
 
+    /**
+     * Persists the state handled by save.
+     * @param user input argument.
+     */
     @Override
     public void save(User user) {
         UserDO dataObject = toDataObject(user);
@@ -41,6 +60,11 @@ public class UserRepositoryImpl implements UserRepository {
         }
     }
 
+    /**
+     * Executes the logic defined by toDomain.
+     * @param dataObject input argument.
+     * @return processing result.
+     */
     private User toDomain(UserDO dataObject) {
         return User.create(
             dataObject.getId(),
@@ -52,6 +76,11 @@ public class UserRepositoryImpl implements UserRepository {
         );
     }
 
+    /**
+     * Executes the logic defined by toDataObject.
+     * @param user input argument.
+     * @return processing result.
+     */
     private UserDO toDataObject(User user) {
         UserDO dataObject = new UserDO();
         dataObject.setId(user.getId());

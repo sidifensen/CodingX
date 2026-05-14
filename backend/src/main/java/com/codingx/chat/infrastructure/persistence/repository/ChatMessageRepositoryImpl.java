@@ -57,7 +57,7 @@ public class ChatMessageRepositoryImpl implements ChatMessageRepository {
      * @return 输入参数。
      */
     private ChatMessage toDomain(ChatMessageDO dataObject) {
-        return ChatMessage.create(
+        ChatMessage message = ChatMessage.create(
             dataObject.getId(),
             dataObject.getConversationId(),
             ChatMessageRole.valueOf(dataObject.getRole()),
@@ -67,6 +67,15 @@ public class ChatMessageRepositoryImpl implements ChatMessageRepository {
             dataObject.getModel(),
             dataObject.getErrorMessage()
         );
+        message.restoreRuntimeState(
+            dataObject.getRunId(),
+            dataObject.getThinkingContent(),
+            dataObject.getThinkingDuration(),
+            dataObject.getIntentCode(),
+            dataObject.getCreatedAt(),
+            dataObject.getUpdatedAt()
+        );
+        return message;
     }
 
     /**
@@ -78,8 +87,12 @@ public class ChatMessageRepositoryImpl implements ChatMessageRepository {
         ChatMessageDO dataObject = new ChatMessageDO();
         dataObject.setId(message.getId());
         dataObject.setConversationId(message.getConversationId());
+        dataObject.setRunId(message.getRunId());
         dataObject.setRole(message.getRole().name());
         dataObject.setContent(message.getContent());
+        dataObject.setThinkingContent(message.getThinkingContent());
+        dataObject.setThinkingDuration(message.getThinkingDuration());
+        dataObject.setIntentCode(message.getIntentCode());
         dataObject.setStatus(message.getStatus().name());
         dataObject.setProvider(message.getProvider());
         dataObject.setModel(message.getModel());

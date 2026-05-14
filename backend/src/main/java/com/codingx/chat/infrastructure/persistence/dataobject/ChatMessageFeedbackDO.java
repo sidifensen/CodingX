@@ -1,4 +1,5 @@
 package com.codingx.chat.infrastructure.persistence.dataobject;
+
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
@@ -6,17 +7,18 @@ import java.time.LocalDateTime;
 import lombok.Data;
 
 /**
- * 定义 ChatConversationDO 的数据库字段映射。
+ * 定义消息反馈表的数据对象映射。
  */
 @Data
-@TableName("chat_conversation")
-public class ChatConversationDO {
+@TableName("chat_message_feedback")
+public class ChatMessageFeedbackDO {
     @TableId("id") private Long id;
-    @TableField("title") private String title;
-    @TableField("created_by") private Long createdBy;
-    @TableField("status") private String status;
-    @TableField("last_message_at") private LocalDateTime lastMessageAt;
-    @TableField("last_run_id") private Long lastRunId;
+    @TableField("message_id") private Long messageId;
+    @TableField("conversation_id") private Long conversationId;
+    @TableField("user_id") private Long userId;
+    @TableField("vote") private Integer vote;
+    @TableField("reason") private String reason;
+    @TableField("comment") private String comment;
     @TableField("created_at") private LocalDateTime createdAt;
     @TableField("updated_at") private LocalDateTime updatedAt;
     @TableField("deleted") private Integer deleted;

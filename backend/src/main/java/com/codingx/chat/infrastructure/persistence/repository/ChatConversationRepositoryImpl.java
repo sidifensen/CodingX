@@ -78,9 +78,7 @@ public class ChatConversationRepositoryImpl implements ChatConversationRepositor
             dataObject.getCreatedBy(),
             ChatConversationStatus.valueOf(dataObject.getStatus())
         );
-        if (dataObject.getLastMessageAt() != null) {
-            conversation.touch();
-        }
+        conversation.restoreRuntimeState(dataObject.getLastMessageAt(), dataObject.getLastRunId());
         return conversation;
     }
 
@@ -96,6 +94,7 @@ public class ChatConversationRepositoryImpl implements ChatConversationRepositor
         dataObject.setCreatedBy(conversation.getCreatedBy());
         dataObject.setStatus(conversation.getStatus().name());
         dataObject.setLastMessageAt(conversation.getLastMessageAt());
+        dataObject.setLastRunId(conversation.getLastRunId());
         dataObject.setDeleted(0);
         return dataObject;
     }

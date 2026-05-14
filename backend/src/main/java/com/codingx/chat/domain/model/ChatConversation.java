@@ -42,6 +42,11 @@ public class ChatConversation {
     private LocalDateTime lastMessageAt;
 
     /**
+     * 最近一次执行记录标识。
+     */
+    private Long lastRunId;
+
+    /**
      * 创建 create 所需数据并返回结果。
      * @param id 输入参数。
      * @param title 输入参数。
@@ -66,5 +71,15 @@ public class ChatConversation {
      */
     public void touch() {
         this.lastMessageAt = LocalDateTime.now();
+    }
+
+    /**
+     * 恢复持久化层中的运行时扩展字段，避免历史回放时丢失链路信息。
+     * @param lastMessageAt 最近消息时间。
+     * @param lastRunId 最近一次执行记录标识。
+     */
+    public void restoreRuntimeState(LocalDateTime lastMessageAt, Long lastRunId) {
+        this.lastMessageAt = lastMessageAt;
+        this.lastRunId = lastRunId;
     }
 }

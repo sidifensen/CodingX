@@ -33,9 +33,29 @@ public class ChatMessage {
     private ChatMessageRole role;
 
     /**
+     * 所属执行记录标识。
+     */
+    private Long runId;
+
+    /**
      * 主体内容。
      */
     private String content;
+
+    /**
+     * 深度思考内容。
+     */
+    private String thinkingContent;
+
+    /**
+     * 深度思考耗时（秒）。
+     */
+    private Integer thinkingDuration;
+
+    /**
+     * 命中的意图编码。
+     */
+    private String intentCode;
 
     /**
      * 当前状态值。
@@ -120,5 +140,30 @@ public class ChatMessage {
             .createdAt(now)
             .updatedAt(now)
             .build();
+    }
+
+    /**
+     * 恢复持久化后的运行时扩展字段与原始时间，保证消息回放与后续编排可复用。
+     * @param runId 所属执行记录标识。
+     * @param thinkingContent 深度思考内容。
+     * @param thinkingDuration 深度思考耗时（秒）。
+     * @param intentCode 命中的意图编码。
+     * @param createdAt 创建时间。
+     * @param updatedAt 更新时间。
+     */
+    public void restoreRuntimeState(
+        Long runId,
+        String thinkingContent,
+        Integer thinkingDuration,
+        String intentCode,
+        LocalDateTime createdAt,
+        LocalDateTime updatedAt
+    ) {
+        this.runId = runId;
+        this.thinkingContent = thinkingContent;
+        this.thinkingDuration = thinkingDuration;
+        this.intentCode = intentCode;
+        this.createdAt = createdAt;
+        this.updatedAt = updatedAt;
     }
 }

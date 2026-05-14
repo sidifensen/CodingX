@@ -25,7 +25,7 @@ public class SseChatStreamPublisher implements ChatStreamPublisher {
      */
     @Override
     public void publishUserMessage(Long conversationId, String content) {
-        chatSseRegistry.publish(conversationId, "chat-user-message", Map.of("content", content));
+        // 单次 SSE 主入口下用户消息已由前端本地掌握，这里不再回放旧事件。
     }
 
     /**
@@ -35,7 +35,7 @@ public class SseChatStreamPublisher implements ChatStreamPublisher {
      */
     @Override
     public void publishAssistantDelta(Long conversationId, String delta) {
-        chatSseRegistry.publish(conversationId, "chat-assistant-delta", Map.of("delta", delta));
+        chatSseRegistry.publish(conversationId, "message", Map.of("type", "response", "delta", delta));
     }
 
     /**
@@ -45,7 +45,9 @@ public class SseChatStreamPublisher implements ChatStreamPublisher {
      */
     @Override
     public void publishAssistantCompleted(Long conversationId, String content) {
-        chatSseRegistry.publish(conversationId, "chat-assistant-completed", Map.of("content", content));
+        chatSseRegistry.publish(conversationId, "finish", Map.of("conversationId", conversationId, "content", content));
+        chatSseRegistry.publish(conversationId, "done", Map.of("conversationId", conversationId));
+        chatSseRegistry.complete(conversationId);
     }
 
     /**
@@ -55,6 +57,8 @@ public class SseChatStreamPublisher implements ChatStreamPublisher {
      */
     @Override
     public void publishError(Long conversationId, String message) {
-        chatSseRegistry.publish(conversationId, "chat-error", Map.of("message", message));
+        chatSseRegistry.publish(conversationId, "error", Map.of("message", message));
+        chatSseRegistry.publish(conversationId, "done", Map.of("conversationId", conversationId));
+        chatSseRegistry.complete(conversationId);
     }
 }

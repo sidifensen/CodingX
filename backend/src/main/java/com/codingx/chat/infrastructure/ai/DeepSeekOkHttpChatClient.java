@@ -1,15 +1,16 @@
 package com.codingx.chat.infrastructure.ai;
 import cn.hutool.core.util.StrUtil;
-import cn.hutool.json.JSONArray;
-import cn.hutool.json.JSONObject;
-import cn.hutool.json.JSONUtil;
 import com.codingx.chat.domain.model.ChatMessage;
-import com.codingx.chat.domain.model.ChatMessageRole;
-import com.codingx.chat.domain.service.AiChatClient;
 import com.codingx.config.AiProperties;
+import com.codingx.support.ai.AiConversationRequest;
+import com.codingx.support.ai.AiProviderCandidate;
+import com.codingx.support.ai.AiProviderClient;
+import com.codingx.support.ai.AiStreamHandler;
+import com.codingx.support.ai.OpenAiStyleStreamParser;
 import java.io.IOException;
-import java.util.List;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
+import okhttp3.HttpUrl;
 import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
@@ -17,16 +18,16 @@ import okhttp3.RequestBody;
 import okhttp3.Response;
 import okhttp3.ResponseBody;
 import okio.BufferedSource;
-import org.springframework.context.annotation.Primary;
+import cn.hutool.json.JSONObject;
+import cn.hutool.json.JSONUtil;
 import org.springframework.stereotype.Component;
 
 /**
- * 实现 DeepSeekOkHttpChatClient 的外部 AI 能力接入。
+ * 提供 DeepSeek 风格模型的流式 provider 实现。
  */
 @Component
-@Primary
 @RequiredArgsConstructor
-public class DeepSeekOkHttpChatClient implements AiChatClient {
+public class DeepSeekOkHttpChatClient implements AiProviderClient {
 
     private static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
 
@@ -41,107 +42,101 @@ public class DeepSeekOkHttpChatClient implements AiChatClient {
     private final AiProperties aiProperties;
 
     /**
-     * 以流式方式处理 streamChat 的结果。
-     * @param history 输入参数。
-     * @param handler 输入参数。
+     * 解析 OpenAI 风格 SSE 文本的通用解析器。
      */
+    private final OpenAiStyleStreamParser openAiStyleStreamParser;
+
     @Override
-    public void streamChat(List<ChatMessage> history, StreamHandler handler) {
+    public boolean supports(AiConversationRequest request) {
+        return true;
+    }
+
+    @Override
+    public AiProviderCandidate candidate() {
+        return new AiProviderCandidate("deepseek", aiProperties.getChatModel(), 100, true);
+    }
+
+    @Override
+    public void streamChat(AiConversationRequest request, AiStreamHandler handler) {
         if (StrUtil.isBlank(aiProperties.getApiKey())) {
-            handler.onDelta("AI API key is not configured.");
+            handler.onContentDelta("AI API key is not configured.");
             handler.onComplete();
             return;
         }
-        JSONObject requestBody = new JSONObject();
-        requestBody.set("model", aiProperties.getChatModel());
-        requestBody.set("stream", true);
-        requestBody.set("messages", buildMessages(history));
-        Request request = new Request.Builder()
-            .url(StrUtil.removeSuffix(aiProperties.getBaseUrl(), "/") + "/chat/completions")
+        JSONObject requestBody = buildRequestBody(request);
+        Request httpRequest = new Request.Builder()
+            .url(resolveChatCompletionsUrl())
             .header("Authorization", "Bearer " + aiProperties.getApiKey())
             .header("Content-Type", "application/json")
             .post(RequestBody.create(requestBody.toString(), JSON))
             .build();
-        try (Response response = okHttpClient.newCall(request).execute()) {
+        try (Response response = okHttpClient.newCall(httpRequest).execute()) {
             if (!response.isSuccessful()) {
                 String body = response.body() != null ? response.body().string() : "";
-                handler.onError(new IllegalStateException("AI request failed: HTTP " + response.code() + " " + body));
-                return;
+                throw new IllegalStateException("AI request failed: HTTP " + response.code() + " " + body);
             }
             ResponseBody responseBodyValue = response.body();
             if (responseBodyValue == null) {
-                handler.onError(new IllegalStateException("AI response body is empty"));
-                return;
+                throw new IllegalStateException("AI response body is empty");
             }
             BufferedSource source = responseBodyValue.source();
+            StringBuilder rawStream = new StringBuilder();
             while (!source.exhausted()) {
                 String line = source.readUtf8Line();
-                if (StrUtil.isBlank(line) || !line.startsWith("data:")) {
-                    continue;
+                if (line != null) {
+                    rawStream.append(line).append('\n');
                 }
-                String payload = StrUtil.trim(line.substring(5));
-                if ("[DONE]".equals(payload)) {
+            }
+            openAiStyleStreamParser.parse(rawStream.toString(), new OpenAiStyleStreamParser.StreamConsumer() {
+                @Override
+                public void onContentDelta(String delta) {
+                    handler.onContentDelta(delta);
+                }
+
+                @Override
+                public void onDone() {
                     handler.onComplete();
-                    return;
                 }
-                String delta = extractDelta(payload);
-                if (delta != null) {
-                    handler.onDelta(delta);
-                }
-            }
-            handler.onComplete();
+            });
         } catch (IOException exception) {
-            handler.onError(exception);
+            throw new IllegalStateException("AI request failed", exception);
         }
     }
 
     /**
-     * 执行 buildMessages 定义的处理逻辑。
-     * @param history 输入参数。
-     * @return 输入参数。
+     * 组装 provider 需要的统一请求体。
+     * @param request 统一请求对象。
+     * @return JSON 请求体。
      */
-    private JSONArray buildMessages(List<ChatMessage> history) {
-        JSONArray messages = new JSONArray();
-        messages.add(JSONUtil.createObj().set("role", "system").set("content", aiProperties.getSystemPrompt()));
-        for (ChatMessage message : history) {
-            messages.add(JSONUtil.createObj().set("role", mapRole(message.getRole())).set("content", message.getContent()));
-        }
-        return messages;
+    private JSONObject buildRequestBody(AiConversationRequest request) {
+        return JSONUtil.createObj()
+            .set("model", StrUtil.blankToDefault(request.preferredModel(), aiProperties.getChatModel()))
+            .set("stream", request.stream())
+            .set("messages", request.messages().stream()
+                .map(this::toMessagePayload)
+                .collect(Collectors.toList()));
     }
 
     /**
-     * 执行 mapRole 定义的处理逻辑。
-     * @param role 输入参数。
-     * @return 输入参数。
+     * 组装单条消息负载。
+     * @param message 聊天消息。
+     * @return JSON 消息对象。
      */
-    private String mapRole(ChatMessageRole role) {
-        return switch (role) {
-            case USER -> "user";
-            case ASSISTANT -> "assistant";
-            case SYSTEM -> "system";
-        };
+    private Object toMessagePayload(ChatMessage message) {
+        return JSONUtil.createObj()
+            .set("role", message.getRole().name().toLowerCase())
+            .set("content", message.getContent());
     }
 
     /**
-     * 执行 extractDelta 定义的处理逻辑。
-     * @param payload 输入参数。
-     * @return 输入参数。
+     * 解析聊天 completions 的完整 URL，避免调用方重复拼接。
+     * @return completions 接口 URL。
      */
-    private String extractDelta(String payload) {
-        try {
-            JSONObject root = JSONUtil.parseObj(payload);
-            JSONArray choices = root.getJSONArray("choices");
-            if (choices == null || choices.isEmpty()) {
-                return null;
-            }
-            JSONObject choice = choices.getJSONObject(0);
-            JSONObject delta = choice.getJSONObject("delta");
-            if (delta == null) {
-                return null;
-            }
-            return StrUtil.nullToEmpty(delta.getStr("content"));
-        } catch (Exception exception) {
-            return null;
+    private String resolveChatCompletionsUrl() {
+        HttpUrl baseUrl = HttpUrl.parse(StrUtil.removeSuffix(aiProperties.getBaseUrl(), "/"));
+        if (baseUrl == null) {
+            throw new IllegalStateException("Invalid AI base URL");
         }
+        return baseUrl.newBuilder().addPathSegment("chat").addPathSegment("completions").build().toString();
     }
 }

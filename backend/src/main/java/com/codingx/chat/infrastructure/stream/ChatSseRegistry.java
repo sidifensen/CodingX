@@ -25,11 +25,6 @@ public class ChatSseRegistry {
         emitters.computeIfAbsent(conversationId, key -> new CopyOnWriteArrayList<>()).add(emitter);
         emitter.onCompletion(() -> remove(conversationId, emitter));
         emitter.onTimeout(() -> remove(conversationId, emitter));
-        try {
-            emitter.send(SseEmitter.event().name("chat-connected").data(Map.of("conversationId", conversationId)));
-        } catch (IOException exception) {
-            remove(conversationId, emitter);
-        }
         return emitter;
     }
 
@@ -50,6 +45,20 @@ public class ChatSseRegistry {
             } catch (IOException exception) {
                 remove(conversationId, emitter);
             }
+        }
+    }
+
+    /**
+     * 主动完成某个会话的所有 SSE 连接，避免 done 后连接悬挂。
+     * @param conversationId 会话标识。
+     */
+    public void complete(Long conversationId) {
+        List<SseEmitter> current = emitters.remove(conversationId);
+        if (current == null) {
+            return;
+        }
+        for (SseEmitter emitter : current) {
+            emitter.complete();
         }
     }
 

@@ -1,0 +1,105 @@
+package com.codingx.chat.interfaces.controller;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+import cn.dev33.satoken.stp.StpUtil;
+import com.codingx.chat.application.command.CreateConversationCommand;
+import com.codingx.chat.application.command.SendChatMessageCommand;
+import com.codingx.chat.application.service.ChatApplicationService;
+import com.codingx.chat.application.service.ChatConversationApplicationService;
+import com.codingx.chat.domain.model.ChatConversation;
+import com.codingx.chat.domain.model.ChatConversationStatus;
+import com.codingx.chat.infrastructure.stream.ChatSseRegistry;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.MockedStatic;
+import org.mockito.Mockito;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+
+/**
+ * 验证单次 SSE 聊天入口的最小控制器契约。
+ */
+@ExtendWith(MockitoExtension.class)
+class ChatStreamControllerTest {
+
+    /**
+     * 应用服务依赖。
+     */
+    @Mock
+    private ChatApplicationService chatApplicationService;
+
+    /**
+     * 会话应用服务依赖。
+     */
+    @Mock
+    private ChatConversationApplicationService chatConversationApplicationService;
+
+    /**
+     * SSE 注册中心依赖。
+     */
+    @Mock
+    private ChatSseRegistry chatSseRegistry;
+
+    /**
+     * 被测控制器。
+     */
+    @InjectMocks
+    private ChatStreamController chatStreamController;
+
+    /**
+     * 单次 SSE 入口应先注册 emitter，再触发应用服务发送消息。
+     */
+    @Test
+    void streamChatRegistersEmitterAndDispatchesMessage() {
+        SseEmitter emitter = new SseEmitter(0L);
+        whenRegisterReturns(emitter);
+        try (MockedStatic<StpUtil> mocked = Mockito.mockStatic(StpUtil.class)) {
+            mocked.when(StpUtil::getLoginIdAsLong).thenReturn(1001L);
+
+            SseEmitter actual = chatStreamController.streamChat("你好", 1L, true);
+
+            assertEquals(emitter, actual);
+            verify(chatSseRegistry).register(1L);
+            verify(chatSseRegistry).publish(1L, "meta", java.util.Map.of("conversationId", 1L, "deepThinking", true));
+            verify(chatApplicationService).sendMessage(new SendChatMessageCommand(1L, "你好"), 1001L);
+        }
+    }
+
+    /**
+     * 空 conversationId 时应创建新的会话流入口。
+     */
+    @Test
+    void streamChatSupportsNewConversationBootstrap() {
+        SseEmitter emitter = new SseEmitter(0L);
+        whenRegisterReturns(emitter);
+        ChatConversation conversation = ChatConversation.create(2001L, "New Conversation", 1001L, ChatConversationStatus.ACTIVE);
+        when(chatConversationApplicationService.createConversation(any(CreateConversationCommand.class), any(Long.class))).thenReturn(conversation);
+        try (MockedStatic<StpUtil> mocked = Mockito.mockStatic(StpUtil.class)) {
+            mocked.when(StpUtil::getLoginIdAsLong).thenReturn(1001L);
+
+            SseEmitter actual = chatStreamController.streamChat("新的问题", null, null);
+
+            assertNotNull(actual);
+            verify(chatConversationApplicationService).createConversation(new CreateConversationCommand(null), 1001L);
+            verify(chatSseRegistry).register(2001L);
+            verify(chatSseRegistry).publish(2001L, "meta", java.util.Map.of("conversationId", 2001L, "deepThinking", false));
+            verify(chatApplicationService).sendMessage(new SendChatMessageCommand(2001L, "新的问题"), 1001L);
+        }
+    }
+
+    /**
+     * 设置 register 方法的统一返回值。
+     * @param emitter 预期返回的 emitter。
+     */
+    private void whenRegisterReturns(SseEmitter emitter) {
+        doAnswer(invocation -> emitter).when(chatSseRegistry).register(any());
+    }
+}

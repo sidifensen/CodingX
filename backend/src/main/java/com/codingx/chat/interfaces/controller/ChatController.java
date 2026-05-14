@@ -128,7 +128,13 @@ public class ChatController {
      * @return 输入参数。
      */
     private ChatConversationResponse toConversationResponse(ChatConversation conversation) {
-        return new ChatConversationResponse(conversation.getId(), conversation.getTitle(), conversation.getStatus(), conversation.getLastMessageAt());
+        return new ChatConversationResponse(
+            conversation.getId(),
+            conversation.getTitle(),
+            conversation.getStatus(),
+            conversation.getLastMessageAt(),
+            conversation.getLastRunId()
+        );
     }
 
     /**

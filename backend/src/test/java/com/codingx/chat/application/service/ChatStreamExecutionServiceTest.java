@@ -1,12 +1,18 @@
 package com.codingx.chat.application.service;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
+
 import com.codingx.chat.application.command.SendChatMessageCommand;
+import com.codingx.chat.domain.model.ChatExecutionRun;
+import com.codingx.chat.domain.repository.ChatExecutionRunRepository;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -45,6 +51,12 @@ class ChatStreamExecutionServiceTest {
     private ConversationTraceRecordService conversationTraceRecordService;
 
     /**
+     * 执行记录仓储依赖。
+     */
+    @Mock
+    private ChatExecutionRunRepository chatExecutionRunRepository;
+
+    /**
      * 释放测试线程池，避免用例之间残留后台线程。
      */
     @AfterEach
@@ -64,6 +76,7 @@ class ChatStreamExecutionServiceTest {
             chatApplicationService,
             chatRuntimeGuardService,
             conversationTraceRecordService,
+            chatExecutionRunRepository,
             executorService
         );
         org.mockito.Mockito.doAnswer(invocation -> {
@@ -82,5 +95,68 @@ class ChatStreamExecutionServiceTest {
 
         release.countDown();
         verify(chatApplicationService, org.mockito.Mockito.timeout(1000)).sendMessage(new SendChatMessageCommand(1001L, "你好"), 2001L);
+    }
+
+    /**
+     * 派发服务需要把当前登录上下文透传到后台线程。
+     * @throws Exception 等待后台线程执行时抛出。
+     */
+    @Test
+    void dispatchPropagatesLoginContextIntoBackgroundThread() throws Exception {
+        CountDownLatch captured = new CountDownLatch(1);
+        ChatStreamExecutionService service = new ChatStreamExecutionService(
+            chatApplicationService,
+            chatRuntimeGuardService,
+            conversationTraceRecordService,
+            chatExecutionRunRepository,
+            executorService
+        );
+        try (org.mockito.MockedStatic<cn.dev33.satoken.stp.StpUtil> mocked = org.mockito.Mockito.mockStatic(cn.dev33.satoken.stp.StpUtil.class)) {
+            mocked.when(cn.dev33.satoken.stp.StpUtil::getLoginIdAsLong).thenReturn(2001L);
+            org.mockito.Mockito.doAnswer(invocation -> {
+                Long forwardedUserId = invocation.getArgument(1);
+                if (forwardedUserId.equals(2001L)) {
+                    captured.countDown();
+                }
+                return null;
+            }).when(chatApplicationService).sendMessage(new SendChatMessageCommand(1001L, "你好"), 2001L);
+
+            service.dispatch(new SendChatMessageCommand(1001L, "你好"), 2001L);
+        }
+
+        assertTrue(captured.await(1, TimeUnit.SECONDS), "background task should receive forwarded login id");
+    }
+
+    /**
+     * runId 必须透传到后台线程，否则后续步骤、来源与运行记录会挂到错误链路上。
+     * @throws Exception 等待后台线程执行时抛出。
+     */
+    @Test
+    void dispatchPropagatesRunIdIntoBackgroundThread() throws Exception {
+        CountDownLatch captured = new CountDownLatch(1);
+        AtomicReference<Long> savedRunId = new AtomicReference<>();
+        AtomicReference<Long> observedRunId = new AtomicReference<>();
+        ChatStreamExecutionService service = new ChatStreamExecutionService(
+            chatApplicationService,
+            chatRuntimeGuardService,
+            conversationTraceRecordService,
+            chatExecutionRunRepository,
+            executorService
+        );
+        org.mockito.Mockito.doAnswer(invocation -> {
+            ChatExecutionRun run = invocation.getArgument(0);
+            savedRunId.set(run.getId());
+            return null;
+        }).when(chatExecutionRunRepository).save(any(ChatExecutionRun.class));
+        org.mockito.Mockito.doAnswer(invocation -> {
+            observedRunId.set(ChatExecutionContext.currentRunId().orElse(null));
+            captured.countDown();
+            return null;
+        }).when(chatApplicationService).sendMessage(new SendChatMessageCommand(1001L, "你好"), 2001L);
+
+        service.dispatch(new SendChatMessageCommand(1001L, "你好"), 2001L);
+
+        assertTrue(captured.await(1, TimeUnit.SECONDS), "background task should capture run id");
+        assertEquals(savedRunId.get(), observedRunId.get(), "background task should reuse dispatch run id");
     }
 }

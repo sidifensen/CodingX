@@ -5,6 +5,7 @@ import static org.mockito.Mockito.verify;
 
 import com.codingx.chat.domain.model.ChatMessageArtifact;
 import com.codingx.chat.domain.repository.ChatMessageArtifactRepository;
+import com.codingx.chat.domain.service.ChatStreamPublisher;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -21,6 +22,9 @@ class DocumentArtifactServiceTest {
     @Mock
     private ChatMessageArtifactRepository chatMessageArtifactRepository;
 
+    @Mock
+    private ChatStreamPublisher chatStreamPublisher;
+
     @InjectMocks
     private DocumentArtifactService documentArtifactService;
 
@@ -33,6 +37,7 @@ class DocumentArtifactServiceTest {
 
         ArgumentCaptor<ChatMessageArtifact> captor = ArgumentCaptor.forClass(ChatMessageArtifact.class);
         verify(chatMessageArtifactRepository).save(captor.capture());
+        verify(chatStreamPublisher).publishArtifact(org.mockito.ArgumentMatchers.eq(3001L), org.mockito.ArgumentMatchers.any());
         assertEquals("docx", captor.getValue().getArtifactType());
     }
 }

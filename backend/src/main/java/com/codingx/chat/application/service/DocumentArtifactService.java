@@ -4,6 +4,7 @@ import cn.hutool.core.util.IdUtil;
 import com.codingx.chat.domain.model.ChatMessageArtifact;
 import com.codingx.chat.domain.repository.ChatMessageArtifactRepository;
 import java.time.LocalDateTime;
+import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -15,6 +16,7 @@ import org.springframework.stereotype.Service;
 public class DocumentArtifactService {
 
     private final ChatMessageArtifactRepository chatMessageArtifactRepository;
+    private final com.codingx.chat.domain.service.ChatStreamPublisher chatStreamPublisher;
 
     /**
      * 生成 docx 产物记录并持久化。
@@ -24,7 +26,7 @@ public class DocumentArtifactService {
      * @param content 文档内容。
      */
     public void createDocxArtifact(Long runId, Long messageId, Long conversationId, String content) {
-        chatMessageArtifactRepository.save(ChatMessageArtifact.builder()
+        ChatMessageArtifact artifact = ChatMessageArtifact.builder()
             .id(IdUtil.getSnowflakeNextId())
             .runId(runId)
             .messageId(messageId)
@@ -35,6 +37,18 @@ public class DocumentArtifactService {
             .storagePath("artifacts/" + conversationId + "/search-report.docx")
             .contentPreview(content)
             .createdAt(LocalDateTime.now())
-            .build());
+            .build();
+        chatMessageArtifactRepository.save(artifact);
+        chatStreamPublisher.publishArtifact(conversationId, Map.of(
+            "id", artifact.getId(),
+            "runId", artifact.getRunId(),
+            "messageId", artifact.getMessageId(),
+            "conversationId", artifact.getConversationId(),
+            "artifactType", artifact.getArtifactType(),
+            "name", artifact.getName(),
+            "mimeType", artifact.getMimeType(),
+            "storagePath", artifact.getStoragePath(),
+            "preview", artifact.getContentPreview()
+        ));
     }
 }

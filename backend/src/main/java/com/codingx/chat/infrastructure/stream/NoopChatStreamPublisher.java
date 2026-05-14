@@ -26,6 +26,18 @@ public class NoopChatStreamPublisher implements ChatStreamPublisher {
     public void publishAssistantDelta(Long conversationId, String delta) {
     }
 
+    @Override
+    public void publishStep(Long conversationId, Object payload) {
+    }
+
+    @Override
+    public void publishReference(Long conversationId, Object payload) {
+    }
+
+    @Override
+    public void publishArtifact(Long conversationId, Object payload) {
+    }
+
     /**
      * 发布 publishAssistantCompleted 处理的更新内容。
      * @param conversationId 输入参数。

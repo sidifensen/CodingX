@@ -1,10 +1,14 @@
 package com.codingx.chat.application.service;
 
 import com.codingx.chat.application.command.SendChatMessageCommand;
+import com.codingx.chat.domain.model.ChatExecutionRun;
+import com.codingx.chat.domain.repository.ChatExecutionRunRepository;
+import java.time.LocalDateTime;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicReference;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 /**
@@ -16,6 +20,7 @@ public class ChatStreamExecutionService {
     private final ChatApplicationService chatApplicationService;
     private final ChatRuntimeGuardService chatRuntimeGuardService;
     private final ConversationTraceRecordService conversationTraceRecordService;
+    private final ChatExecutionRunRepository chatExecutionRunRepository;
     private final ExecutorService executor;
 
     /**
@@ -23,12 +28,14 @@ public class ChatStreamExecutionService {
      * @param chatApplicationService 聊天应用服务。
      * @param chatRuntimeGuardService 运行保护服务。
      */
+    @Autowired
     public ChatStreamExecutionService(
         ChatApplicationService chatApplicationService,
         ChatRuntimeGuardService chatRuntimeGuardService,
-        ConversationTraceRecordService conversationTraceRecordService
+        ConversationTraceRecordService conversationTraceRecordService,
+        ChatExecutionRunRepository chatExecutionRunRepository
     ) {
-        this(chatApplicationService, chatRuntimeGuardService, conversationTraceRecordService, Executors.newCachedThreadPool());
+        this(chatApplicationService, chatRuntimeGuardService, conversationTraceRecordService, chatExecutionRunRepository, Executors.newCachedThreadPool());
     }
 
     /**
@@ -41,11 +48,13 @@ public class ChatStreamExecutionService {
         ChatApplicationService chatApplicationService,
         ChatRuntimeGuardService chatRuntimeGuardService,
         ConversationTraceRecordService conversationTraceRecordService,
+        ChatExecutionRunRepository chatExecutionRunRepository,
         ExecutorService executor
     ) {
         this.chatApplicationService = chatApplicationService;
         this.chatRuntimeGuardService = chatRuntimeGuardService;
         this.conversationTraceRecordService = conversationTraceRecordService;
+        this.chatExecutionRunRepository = chatExecutionRunRepository;
         this.executor = executor;
     }
 
@@ -55,6 +64,17 @@ public class ChatStreamExecutionService {
      * @param userId 当前用户标识。
      */
     public void dispatch(SendChatMessageCommand command, Long userId) {
+        Long runId = cn.hutool.core.util.IdUtil.getSnowflakeNextId();
+        LocalDateTime now = LocalDateTime.now();
+        chatExecutionRunRepository.save(ChatExecutionRun.builder()
+            .id(runId)
+            .conversationId(command.conversationId())
+            .taskId(runId)
+            .status("RUNNING")
+            .startedAt(now)
+            .createdAt(now)
+            .updatedAt(now)
+            .build());
         conversationTraceRecordService.startTrace("chat-entry", command.conversationId(), userId);
         AtomicReference<Future<?>> futureRef = new AtomicReference<>();
         chatRuntimeGuardService.registerCancellation(command.conversationId(), () -> {
@@ -65,9 +85,11 @@ public class ChatStreamExecutionService {
         });
         Future<?> future = executor.submit(() -> {
             try {
+                ChatExecutionContext.start(runId);
                 chatApplicationService.sendMessage(command, userId);
             } finally {
                 chatRuntimeGuardService.completeConversation(command.conversationId());
+                ChatExecutionContext.clear();
             }
         });
         futureRef.set(future);

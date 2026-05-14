@@ -112,6 +112,16 @@ public class ChatMessage {
     }
 
     /**
+     * 绑定所属执行记录，确保消息与右侧工作区回放共享同一条 run 主链路。
+     * @param runId 执行记录标识。
+     * @return 当前消息对象。
+     */
+    public ChatMessage attachRun(Long runId) {
+        this.runId = runId;
+        return this;
+    }
+
+    /**
      * 创建 create 所需数据并返回结果。
      * @param id 输入参数。
      * @param conversationId 输入参数。

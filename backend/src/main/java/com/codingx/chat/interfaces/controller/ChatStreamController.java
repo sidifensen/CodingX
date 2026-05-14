@@ -51,6 +51,7 @@ public class ChatStreamController {
         @RequestParam(required = false) Long conversationId,
         @RequestParam(required = false) Boolean deepThinking
     ) {
+        StpUtil.checkLogin();
         Long userId = StpUtil.getLoginIdAsLong();
         Long actualConversationId = resolveConversationId(conversationId, userId);
         boolean deepThinkingEnabled = Boolean.TRUE.equals(deepThinking);
@@ -70,6 +71,7 @@ public class ChatStreamController {
      */
     @GetMapping("/conversations/{conversationId}/stream")
     public SseEmitter stream(@PathVariable Long conversationId) {
+        StpUtil.checkLogin();
         return chatSseRegistry.register(conversationId);
     }
 

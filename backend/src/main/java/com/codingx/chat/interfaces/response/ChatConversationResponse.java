@@ -9,6 +9,7 @@ public record ChatConversationResponse(
     Long id, // 主键标识。
     String title, // 展示标题。
     ChatConversationStatus status, // 当前状态值。
-    LocalDateTime lastMessageAt // 最后消息时间。
+    LocalDateTime lastMessageAt, // 最后消息时间。
+    Long lastRunId // 最近一次执行记录标识。
 ) {
 }

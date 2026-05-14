@@ -10,6 +10,8 @@ import com.codingx.chat.domain.model.ChatConversation;
 import com.codingx.chat.domain.model.ChatConversationStatus;
 import com.codingx.chat.domain.model.ChatMessage;
 import com.codingx.chat.domain.repository.ChatConversationRepository;
+import com.codingx.chat.domain.repository.ChatExecutionRunRepository;
+import com.codingx.chat.domain.repository.ChatExecutionStepRepository;
 import com.codingx.chat.domain.repository.ChatMessageRepository;
 import com.codingx.chat.domain.service.AiChatClient;
 import com.codingx.chat.domain.service.ChatStreamPublisher;
@@ -30,6 +32,8 @@ class ChatApplicationSearchFlowTest {
 
     @Mock private ChatConversationRepository chatConversationRepository;
     @Mock private ChatMessageRepository chatMessageRepository;
+    @Mock private ChatExecutionRunRepository chatExecutionRunRepository;
+    @Mock private ChatExecutionStepRepository chatExecutionStepRepository;
     @Mock private AiChatClient aiChatClient;
     @Mock private ChatStreamPublisher chatStreamPublisher;
     @Mock private ChatRuntimeGuardService chatRuntimeGuardService;

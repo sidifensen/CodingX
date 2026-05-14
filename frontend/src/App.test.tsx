@@ -6,6 +6,37 @@ import App from './App';
  */
 describe('App', () => {
   /**
+   * 统一模拟聊天页在壳层测试期间会触发的基础数据请求，避免与认证测试互相污染。
+   */
+  const mockChatWorkspaceFetch = () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url === '/api/chat/conversations') {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            code: 'OK',
+            message: 'success',
+            data: [],
+          }),
+          { status: 200 },
+        );
+      }
+      if (url.startsWith('/api/chat/conversations/') && url.endsWith('/messages')) {
+        return new Response(JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }), { status: 200 });
+      }
+      if (
+        (url.startsWith('/api/chat/conversations/') && url.endsWith('/steps')) ||
+        (url.startsWith('/api/chat/conversations/') && url.endsWith('/references')) ||
+        (url.startsWith('/api/chat/conversations/') && url.endsWith('/artifacts'))
+      ) {
+        return new Response(JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }), { status: 200 });
+      }
+      throw new Error(`Unhandled fetch in App test: ${url}`);
+    });
+  };
+
+  /**
    * 在每个测试前重置浏览器持久化状态与网络模拟，避免测试互相污染。
    */
   beforeEach(() => {
@@ -14,6 +45,7 @@ describe('App', () => {
 
     // 步骤：清理 fetch 模拟，避免上一条用例的响应残留影响当前断言。
     vi.restoreAllMocks();
+    mockChatWorkspaceFetch();
   });
 
   /**
@@ -72,24 +104,39 @@ describe('App', () => {
    * 验证登录成功后会保存登录状态并更新左下角菜单文案。
    */
   it('应在登录成功后持久化登录状态并显示用户名', async () => {
-    // 步骤：模拟登录接口返回成功响应。
-    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
-      new Response(
-        JSON.stringify({
-          success: true,
-          code: 'OK',
-          message: 'success',
-          data: {
-            userId: 1,
-            username: 'demo',
-            displayName: '测试用户',
-            userType: 'USER',
-            token: 'token-123',
-          },
-        }),
-        { status: 200 },
-      ),
-    );
+    // 步骤：按 URL 模拟登录接口与登录后自动触发的会话列表请求。
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === '/api/auth/login') {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            code: 'OK',
+            message: 'success',
+            data: {
+              userId: 1,
+              username: 'demo',
+              displayName: '测试用户',
+              userType: 'USER',
+              token: 'token-123',
+            },
+          }),
+          { status: 200 },
+        );
+      }
+      if (url === '/api/chat/conversations') {
+        return new Response(JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }), { status: 200 });
+      }
+      if (
+        (url.startsWith('/api/chat/conversations/') && url.endsWith('/messages')) ||
+        (url.startsWith('/api/chat/conversations/') && url.endsWith('/steps')) ||
+        (url.startsWith('/api/chat/conversations/') && url.endsWith('/references')) ||
+        (url.startsWith('/api/chat/conversations/') && url.endsWith('/artifacts'))
+      ) {
+        return new Response(JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }), { status: 200 });
+      }
+      throw new Error(`Unhandled fetch in login success test: ${url}`);
+    });
 
     // 步骤：渲染应用并打开登录弹窗。
     render(<App />);
@@ -112,10 +159,11 @@ describe('App', () => {
    * 验证点击退出登录后会清空登录状态并恢复登录入口。
    */
   it('应在退出登录后清空状态并恢复登录入口', async () => {
-    // 步骤：模拟登录成功和退出成功两个接口响应。
-    vi.spyOn(globalThis, 'fetch')
-      .mockResolvedValueOnce(
-        new Response(
+    // 步骤：按 URL 模拟登录、聊天列表加载和退出接口响应。
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === '/api/auth/login') {
+        return new Response(
           JSON.stringify({
             success: true,
             code: 'OK',
@@ -129,13 +177,26 @@ describe('App', () => {
             },
           }),
           { status: 200 },
-        ),
-      )
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ success: true, code: 'OK', message: 'logged out', data: null }), {
+        );
+      }
+      if (url === '/api/auth/logout') {
+        return new Response(JSON.stringify({ success: true, code: 'OK', message: 'logged out', data: null }), {
           status: 200,
-        }),
-      );
+        });
+      }
+      if (url === '/api/chat/conversations') {
+        return new Response(JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }), { status: 200 });
+      }
+      if (
+        (url.startsWith('/api/chat/conversations/') && url.endsWith('/messages')) ||
+        (url.startsWith('/api/chat/conversations/') && url.endsWith('/steps')) ||
+        (url.startsWith('/api/chat/conversations/') && url.endsWith('/references')) ||
+        (url.startsWith('/api/chat/conversations/') && url.endsWith('/artifacts'))
+      ) {
+        return new Response(JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }), { status: 200 });
+      }
+      throw new Error(`Unhandled fetch in logout test: ${url}`);
+    });
 
     // 步骤：渲染应用并完成一次登录。
     render(<App />);

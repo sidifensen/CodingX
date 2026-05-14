@@ -1,25 +1,28 @@
 package com.codingx.chat.application.service;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+
 import com.codingx.chat.application.command.SendChatMessageCommand;
 import com.codingx.chat.domain.model.ChatConversation;
 import com.codingx.chat.domain.model.ChatConversationStatus;
+import com.codingx.chat.domain.model.ChatExecutionRun;
 import com.codingx.chat.domain.model.ChatMessage;
 import com.codingx.chat.domain.model.ChatMessageRole;
 import com.codingx.chat.domain.model.ChatMessageStatus;
 import com.codingx.chat.domain.repository.ChatConversationRepository;
+import com.codingx.chat.domain.repository.ChatExecutionRunRepository;
 import com.codingx.chat.domain.repository.ChatMessageRepository;
 import com.codingx.chat.domain.service.AiChatClient;
 import com.codingx.chat.domain.service.ChatStreamPublisher;
-import com.codingx.chat.infrastructure.runtime.ChatRunControlService;
-import java.util.concurrent.atomic.AtomicInteger;
 import com.codingx.common.exception.ForbiddenException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -44,6 +47,12 @@ class ChatApplicationServiceTest {
      */
     @Mock
     private ChatMessageRepository chatMessageRepository;
+
+    /**
+     * ChatExecutionRunRepository 依赖。
+     */
+    @Mock
+    private ChatExecutionRunRepository chatExecutionRunRepository;
 
     /**
      * AiChatClient 依赖。
@@ -94,11 +103,21 @@ class ChatApplicationServiceTest {
     private ChatApplicationService chatApplicationService;
 
     /**
+     * 为当前测试线程绑定运行时 runId，避免单测绕过异步入口后丢失主链路上下文。
+     * @return 当前测试绑定的 runId。
+     */
+    private Long bindRunContext() {
+        Long runId = 9001001L;
+        ChatExecutionContext.start(runId);
+        return runId;
+    }
+
+    /**
      * 发送 sendMessagePersistsUserAndAssistantMessages 处理的消息或请求。
      */
     @Test
     void sendMessagePersistsUserAndAssistantMessages() {
-
+        Long runId = bindRunContext();
         ChatConversation conversation = ChatConversation.create(1L, "Default", 1002L, ChatConversationStatus.ACTIVE);
         when(chatConversationRepository.requireById(1L)).thenReturn(conversation);
         List<ChatMessage> history = new ArrayList<>();
@@ -114,8 +133,12 @@ class ChatApplicationServiceTest {
             handler.onComplete();
             return null;
         }).when(aiChatClient).streamChat(any(), any());
-        chatApplicationService.sendMessage(new SendChatMessageCommand(1L, "Hi"), 1002L);        ArgumentCaptor<ChatMessage> captor = ArgumentCaptor.forClass(ChatMessage.class);
+        chatApplicationService.sendMessage(new SendChatMessageCommand(1L, "Hi"), 1002L);
+
+        ArgumentCaptor<ChatMessage> captor = ArgumentCaptor.forClass(ChatMessage.class);
+        ArgumentCaptor<ChatExecutionRun> runCaptor = ArgumentCaptor.forClass(ChatExecutionRun.class);
         verify(chatMessageRepository, org.mockito.Mockito.times(2)).save(captor.capture());
+        verify(chatExecutionRunRepository).save(runCaptor.capture());
         verify(chatRuntimeGuardService).ensureAccepted(1L);
         verify(conversationTitleService).generateTitle(org.mockito.ArgumentMatchers.eq(conversation), any());
         verify(conversationSummaryService).refreshSummaryIfNeeded(org.mockito.ArgumentMatchers.eq(conversation), any());
@@ -123,7 +146,12 @@ class ChatApplicationServiceTest {
         assertEquals(ChatMessageRole.ASSISTANT, captor.getAllValues().get(1).getRole());
         assertEquals("Hello world", captor.getAllValues().get(1).getContent());
         assertEquals(ChatMessageStatus.COMPLETED, captor.getAllValues().get(1).getStatus());
+        assertEquals(runId, runCaptor.getValue().getId());
+        assertEquals(captor.getAllValues().get(0).getId(), runCaptor.getValue().getRequestMessageId());
+        assertEquals(captor.getAllValues().get(1).getId(), runCaptor.getValue().getResponseMessageId());
+        assertEquals(runId, conversation.getLastRunId());
         assertEquals("AI搜索重构计划", conversation.getTitle());
+        ChatExecutionContext.clear();
     }
 
     /**
@@ -131,7 +159,7 @@ class ChatApplicationServiceTest {
      */
     @Test
     void sendMessageRejectsNonOwnerConversation() {
-
+        Long runId = bindRunContext();
         ChatConversation conversation = ChatConversation.create(1L, "Default", 1002L, ChatConversationStatus.ACTIVE);
         when(chatConversationRepository.requireById(1L)).thenReturn(conversation);
         ForbiddenException exception = assertThrows(
@@ -140,6 +168,7 @@ class ChatApplicationServiceTest {
 
         );
         assertEquals("You cannot access this conversation", exception.getMessage());
+        ChatExecutionContext.clear();
     }
 
     /**
@@ -147,6 +176,7 @@ class ChatApplicationServiceTest {
      */
     @Test
     void sendMessageStopsWhenRuntimeGuardRejectsConversation() {
+        bindRunContext();
         ChatConversation conversation = ChatConversation.create(1L, "Default", 1002L, ChatConversationStatus.ACTIVE);
         when(chatConversationRepository.requireById(1L)).thenReturn(conversation);
         org.mockito.Mockito.doThrow(new IllegalStateException("Conversation rejected: busy"))
@@ -159,6 +189,7 @@ class ChatApplicationServiceTest {
 
         assertEquals("Conversation rejected: busy", exception.getMessage());
         org.mockito.Mockito.verifyNoInteractions(aiChatClient);
+        ChatExecutionContext.clear();
     }
 
     /**
@@ -166,6 +197,7 @@ class ChatApplicationServiceTest {
      */
     @Test
     void sendMessagePersistsCancelledAssistantMessageWhenRuntimeMarkedCancelled() {
+        bindRunContext();
         ChatConversation conversation = ChatConversation.create(1L, "Default", 1002L, ChatConversationStatus.ACTIVE);
         when(chatConversationRepository.requireById(1L)).thenReturn(conversation);
         when(chatMessageRepository.findByConversationId(1L)).thenReturn(new ArrayList<>());
@@ -186,5 +218,6 @@ class ChatApplicationServiceTest {
         verify(chatMessageRepository, org.mockito.Mockito.times(2)).save(captor.capture());
         assertEquals(ChatMessageStatus.CANCELLED, captor.getAllValues().get(1).getStatus());
         assertEquals("partial", captor.getAllValues().get(1).getContent());
+        ChatExecutionContext.clear();
     }
 }

@@ -20,6 +20,27 @@ public interface ChatStreamPublisher {
     void publishAssistantDelta(Long conversationId, String delta);
 
     /**
+     * 发布执行步骤事件，供前端右栏在流式过程中增量更新。
+     * @param conversationId 会话标识。
+     * @param payload 步骤载荷。
+     */
+    void publishStep(Long conversationId, Object payload);
+
+    /**
+     * 发布参考来源事件，供前端右栏在搜索完成后即时展示。
+     * @param conversationId 会话标识。
+     * @param payload 来源载荷。
+     */
+    void publishReference(Long conversationId, Object payload);
+
+    /**
+     * 发布产物事件，供前端右栏即时展示生成结果。
+     * @param conversationId 会话标识。
+     * @param payload 产物载荷。
+     */
+    void publishArtifact(Long conversationId, Object payload);
+
+    /**
      * 发布 publishAssistantCompleted 处理的更新内容。
      * @param conversationId 输入参数。
      * @param content 输入参数。

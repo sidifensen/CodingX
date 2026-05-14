@@ -38,6 +38,21 @@ public class SseChatStreamPublisher implements ChatStreamPublisher {
         chatSseRegistry.publish(conversationId, "message", Map.of("type", "response", "delta", delta));
     }
 
+    @Override
+    public void publishStep(Long conversationId, Object payload) {
+        chatSseRegistry.publish(conversationId, "step", payload);
+    }
+
+    @Override
+    public void publishReference(Long conversationId, Object payload) {
+        chatSseRegistry.publish(conversationId, "reference", payload);
+    }
+
+    @Override
+    public void publishArtifact(Long conversationId, Object payload) {
+        chatSseRegistry.publish(conversationId, "artifact", payload);
+    }
+
     /**
      * 发布 publishAssistantCompleted 处理的更新内容。
      * @param conversationId 输入参数。

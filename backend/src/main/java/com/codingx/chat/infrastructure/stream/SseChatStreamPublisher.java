@@ -51,6 +51,29 @@ public class SseChatStreamPublisher implements ChatStreamPublisher {
     }
 
     /**
+     * 发布主动取消事件。
+     * @param conversationId 会话标识。
+     */
+    @Override
+    public void publishCancelled(Long conversationId) {
+        chatSseRegistry.publish(conversationId, "cancel", Map.of("conversationId", conversationId));
+        chatSseRegistry.publish(conversationId, "done", Map.of("conversationId", conversationId));
+        chatSseRegistry.complete(conversationId);
+    }
+
+    /**
+     * 发布排队拒绝事件。
+     * @param conversationId 会话标识。
+     * @param reason 拒绝原因。
+     */
+    @Override
+    public void publishRejected(Long conversationId, String reason) {
+        chatSseRegistry.publish(conversationId, "reject", Map.of("conversationId", conversationId, "reason", reason));
+        chatSseRegistry.publish(conversationId, "done", Map.of("conversationId", conversationId));
+        chatSseRegistry.complete(conversationId);
+    }
+
+    /**
      * 发布 publishError 处理的更新内容。
      * @param conversationId 输入参数。
      * @param message 输入参数。

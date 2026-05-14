@@ -11,4 +11,5 @@ public class RuntimeProperties {
 
     private long mockStepDelayMs = 300L;
     private String mockFailKeyword = "fail";
+    private boolean useRedisStateStore = false;
 }

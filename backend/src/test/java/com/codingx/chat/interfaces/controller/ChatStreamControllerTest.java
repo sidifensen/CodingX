@@ -10,8 +10,8 @@ import static org.mockito.Mockito.when;
 import cn.dev33.satoken.stp.StpUtil;
 import com.codingx.chat.application.command.CreateConversationCommand;
 import com.codingx.chat.application.command.SendChatMessageCommand;
-import com.codingx.chat.application.service.ChatApplicationService;
 import com.codingx.chat.application.service.ChatConversationApplicationService;
+import com.codingx.chat.application.service.ChatStreamExecutionService;
 import com.codingx.chat.domain.model.ChatConversation;
 import com.codingx.chat.domain.model.ChatConversationStatus;
 import com.codingx.chat.infrastructure.stream.ChatSseRegistry;
@@ -31,10 +31,10 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 class ChatStreamControllerTest {
 
     /**
-     * 应用服务依赖。
+     * 聊天流派发服务依赖。
      */
     @Mock
-    private ChatApplicationService chatApplicationService;
+    private ChatStreamExecutionService chatStreamExecutionService;
 
     /**
      * 会话应用服务依赖。
@@ -69,7 +69,7 @@ class ChatStreamControllerTest {
             assertEquals(emitter, actual);
             verify(chatSseRegistry).register(1L);
             verify(chatSseRegistry).publish(1L, "meta", java.util.Map.of("conversationId", 1L, "deepThinking", true));
-            verify(chatApplicationService).sendMessage(new SendChatMessageCommand(1L, "你好"), 1001L);
+            verify(chatStreamExecutionService).dispatch(new SendChatMessageCommand(1L, "你好"), 1001L);
         }
     }
 
@@ -91,7 +91,7 @@ class ChatStreamControllerTest {
             verify(chatConversationApplicationService).createConversation(new CreateConversationCommand(null), 1001L);
             verify(chatSseRegistry).register(2001L);
             verify(chatSseRegistry).publish(2001L, "meta", java.util.Map.of("conversationId", 2001L, "deepThinking", false));
-            verify(chatApplicationService).sendMessage(new SendChatMessageCommand(2001L, "新的问题"), 1001L);
+            verify(chatStreamExecutionService).dispatch(new SendChatMessageCommand(2001L, "新的问题"), 1001L);
         }
     }
 

@@ -42,6 +42,11 @@ public class ChatApplicationService {
     private final ChatStreamPublisher chatStreamPublisher;
 
     /**
+     * ChatRuntimeGuardService 依赖。
+     */
+    private final ChatRuntimeGuardService chatRuntimeGuardService;
+
+    /**
      * 发送 sendMessage 处理的消息或请求。
      * @param command 输入参数。
      * @param userId 输入参数。
@@ -54,6 +59,7 @@ public class ChatApplicationService {
         if (!conversation.getCreatedBy().equals(userId)) {
             throw new ForbiddenException("You cannot access this conversation");
         }
+        chatRuntimeGuardService.ensureAccepted(command.conversationId());
         List<ChatMessage> history = new ArrayList<>(chatMessageRepository.findByConversationId(command.conversationId()));
         ChatMessage userMessage = ChatMessage.userMessage(command.conversationId(), command.content());
         chatMessageRepository.save(userMessage);
@@ -64,6 +70,9 @@ public class ChatApplicationService {
         aiChatClient.streamChat(history, new AiChatClient.StreamHandler() {
             @Override
             public void onDelta(String delta) {
+                if (chatRuntimeGuardService.isCancelled(command.conversationId())) {
+                    return;
+                }
                 builder.append(delta);
                 chatStreamPublisher.publishAssistantDelta(command.conversationId(), delta);
             }
@@ -75,6 +84,18 @@ public class ChatApplicationService {
                 streamError[0] = throwable;
             }
         });
+        if (chatRuntimeGuardService.isCancelled(command.conversationId())) {
+            ChatMessage cancelledMessage = ChatMessage.assistantMessage(
+                command.conversationId(),
+                StrUtil.blankToDefault(builder.toString(), ""),
+                ChatMessageStatus.CANCELLED,
+                null,
+                null,
+                null
+            );
+            chatMessageRepository.save(cancelledMessage);
+            return;
+        }
         if (streamError[0] != null) {
 
             ChatMessage failedMessage = ChatMessage.assistantMessage(

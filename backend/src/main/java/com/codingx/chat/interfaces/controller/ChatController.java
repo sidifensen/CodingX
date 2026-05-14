@@ -4,6 +4,7 @@ import com.codingx.chat.application.command.CreateConversationCommand;
 import com.codingx.chat.application.command.SendChatMessageCommand;
 import com.codingx.chat.application.service.ChatApplicationService;
 import com.codingx.chat.application.service.ChatConversationApplicationService;
+import com.codingx.chat.application.service.ChatRuntimeGuardService;
 import com.codingx.chat.domain.model.ChatConversation;
 import com.codingx.chat.domain.model.ChatMessage;
 import com.codingx.chat.interfaces.request.CreateConversationRequest;
@@ -38,6 +39,11 @@ public class ChatController {
      * ChatApplicationService 依赖。
      */
     private final ChatApplicationService chatApplicationService;
+
+    /**
+     * ChatRuntimeGuardService 依赖。
+     */
+    private final ChatRuntimeGuardService chatRuntimeGuardService;
 
     /**
      * 创建 createConversation 所需数据并返回结果。
@@ -84,6 +90,17 @@ public class ChatController {
     public ApiResponse<Void> sendMessage(@PathVariable Long conversationId, @Valid @RequestBody SendChatMessageRequest request) {
         chatApplicationService.sendMessage(new SendChatMessageCommand(conversationId, request.content()), StpUtil.getLoginIdAsLong());
         return ApiResponse.successMessage("message processed");
+    }
+
+    /**
+     * 取消指定会话当前正在进行的聊天任务。
+     * @param conversationId 会话标识。
+     * @return 取消结果。
+     */
+    @PostMapping("/{conversationId}/cancel")
+    public ApiResponse<Void> cancelConversation(@PathVariable Long conversationId) {
+        chatRuntimeGuardService.cancelConversation(conversationId);
+        return ApiResponse.successMessage("cancel requested");
     }
 
     /**

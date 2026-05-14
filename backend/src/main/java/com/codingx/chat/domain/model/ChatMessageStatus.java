@@ -11,6 +11,9 @@ public enum ChatMessageStatus {
     // 已完成状态。
     COMPLETED,
 
+    // 已取消状态。
+    CANCELLED,
+
     // 执行失败。
     FAILED
 }

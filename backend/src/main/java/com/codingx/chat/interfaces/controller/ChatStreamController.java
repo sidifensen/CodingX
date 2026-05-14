@@ -2,8 +2,8 @@ package com.codingx.chat.interfaces.controller;
 import cn.dev33.satoken.stp.StpUtil;
 import com.codingx.chat.application.command.CreateConversationCommand;
 import com.codingx.chat.application.command.SendChatMessageCommand;
-import com.codingx.chat.application.service.ChatApplicationService;
 import com.codingx.chat.application.service.ChatConversationApplicationService;
+import com.codingx.chat.application.service.ChatStreamExecutionService;
 import com.codingx.chat.domain.model.ChatConversation;
 import com.codingx.chat.infrastructure.stream.ChatSseRegistry;
 import java.util.Map;
@@ -31,7 +31,7 @@ public class ChatStreamController {
     /**
      * 聊天应用服务依赖。
      */
-    private final ChatApplicationService chatApplicationService;
+    private final ChatStreamExecutionService chatStreamExecutionService;
 
     /**
      * ChatSseRegistry 依赖。
@@ -59,7 +59,7 @@ public class ChatStreamController {
             "conversationId", actualConversationId,
             "deepThinking", deepThinkingEnabled
         ));
-        chatApplicationService.sendMessage(new SendChatMessageCommand(actualConversationId, question), userId);
+        chatStreamExecutionService.dispatch(new SendChatMessageCommand(actualConversationId, question), userId);
         return emitter;
     }
 

@@ -1,0 +1,35 @@
+package com.codingx.chat.domain.service;
+
+/**
+ * 定义 ChatStreamPublisher 的领域服务契约。
+ */
+public interface ChatStreamPublisher {
+
+    /**
+     * 发布 publishUserMessage 处理的更新内容。
+     * @param conversationId 输入参数。
+     * @param content 输入参数。
+     */
+    void publishUserMessage(Long conversationId, String content);
+
+    /**
+     * 发布 publishAssistantDelta 处理的更新内容。
+     * @param conversationId 输入参数。
+     * @param delta 输入参数。
+     */
+    void publishAssistantDelta(Long conversationId, String delta);
+
+    /**
+     * 发布 publishAssistantCompleted 处理的更新内容。
+     * @param conversationId 输入参数。
+     * @param content 输入参数。
+     */
+    void publishAssistantCompleted(Long conversationId, String content);
+
+    /**
+     * 发布 publishError 处理的更新内容。
+     * @param conversationId 输入参数。
+     * @param message 输入参数。
+     */
+    void publishError(Long conversationId, String message);
+}

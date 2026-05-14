@@ -43,7 +43,10 @@ export default function ProfileMenu({
         className="flex w-full items-center gap-3 text-muted px-4 py-3 hover:bg-surface hover:text-foreground transition-all duration-200 rounded-lg cursor-pointer text-left"
       >
         <User size={20} />
-        <span className="text-sm">个人中心</span>
+        <div className="min-w-0">
+          <div className="text-sm truncate text-foreground">{displayName}</div>
+          <div className="text-xs text-muted">个人中心</div>
+        </div>
       </button>
 
       <AnimatePresence>

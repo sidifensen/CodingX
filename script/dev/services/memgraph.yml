@@ -1,0 +1,39 @@
+name: memgraph
+
+services:
+  memgraph:
+    image: memgraph/memgraph:latest
+    container_name: graphhire-memgraph
+    environment:
+      - MEMGRAPH_AUTH=false
+      - MEMGRAPH_PASSWORD=
+    ports:
+      - "7687:7687"
+      - "7444:7444"
+    volumes:
+      - memgraph_data:/var/lib/memgraph
+    networks:
+      - memgraph-network
+
+  # MG_HOST: Lab服务器连接Memgraph的地址（容器内部网络）
+  # 浏览器客户端连接: 访问 http://localhost:3000 -> New connection -> Memgraph instance
+  # -> Host: host.docker.internal, Port: 7687 (Windows Docker Desktop需要用host.docker.internal)
+  memgraph-lab:
+    image: memgraph/lab:latest
+    container_name: graphhire-memgraph-lab
+    ports:
+      - "3000:3000"
+    environment:
+      MG_HOST: memgraph
+      MG_PORT: 7687
+    depends_on:
+      - memgraph
+    networks:
+      - memgraph-network
+
+volumes:
+  memgraph_data:
+
+networks:
+  memgraph-network:
+    driver: bridge

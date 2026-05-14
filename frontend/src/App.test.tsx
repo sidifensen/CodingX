@@ -71,7 +71,7 @@ describe('App', () => {
   /**
    * 验证登录成功后会保存登录状态并更新左下角菜单文案。
    */
-  it('应在登录成功后持久化登录状态并显示个人中心', async () => {
+  it('应在登录成功后持久化登录状态并显示用户名', async () => {
     // 步骤：模拟登录接口返回成功响应。
     vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
       new Response(
@@ -101,8 +101,8 @@ describe('App', () => {
     fireEvent.change(within(loginDialog).getByLabelText('密码'), { target: { value: '123456' } });
     fireEvent.click(within(loginDialog).getByRole('button', { name: '登录' }));
 
-    // 步骤：断言左下角入口已切换为个人中心，表示登录态生效。
-    expect(await screen.findAllByText('个人中心')).toHaveLength(1);
+    // 步骤：断言左下角入口显示登录用户名，表示登录态生效。
+    expect(await screen.findByRole('button', { name: '测试用户 个人中心' })).toBeInTheDocument();
 
     // 步骤：断言登录状态被写入 localStorage，确保刷新后可恢复。
     expect(window.localStorage.getItem('codingx.auth.session')).toContain('token-123');
@@ -144,10 +144,10 @@ describe('App', () => {
     fireEvent.change(within(loginDialog).getByLabelText('账号'), { target: { value: 'demo' } });
     fireEvent.change(within(loginDialog).getByLabelText('密码'), { target: { value: '123456' } });
     fireEvent.click(within(loginDialog).getByRole('button', { name: '登录' }));
-    await screen.findAllByText('个人中心');
+    await screen.findByRole('button', { name: '测试用户 个人中心' });
 
     // 步骤：打开个人中心弹层并触发退出登录。
-    fireEvent.click(screen.getByRole('button', { name: '个人中心' }));
+    fireEvent.click(screen.getByRole('button', { name: '测试用户 个人中心' }));
     fireEvent.click(screen.getByRole('button', { name: '退出登录' }));
 
     // 步骤：断言登录入口恢复，且 localStorage 中会话已被清空。

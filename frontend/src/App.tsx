@@ -1,53 +1,163 @@
-import {BrowserRouter, Navigate, Route, Routes} from 'react-router-dom';
-import {ThemeProvider} from './components/ThemeProvider';
-import {AppShell} from './components/AppShell';
-import {Automations} from './pages/Automations';
-import {Experts} from './pages/Experts';
-import {Mcp} from './pages/Mcp';
-import {NewTask} from './pages/NewTask';
-import {Skills} from './pages/Skills';
-import {TaskDetail} from './pages/TaskDetail';
-import {Tasks} from './pages/Tasks';
-import {Tools} from './pages/Tools';
+import React, { useState, useEffect } from 'react';
+import { Menu } from 'lucide-react';
+import { AnimatePresence } from 'motion/react';
+
+// 视图组件
+import ChatView from './views/ChatView';
+import AutomationView from './views/AutomationView';
+import SkillsView from './views/SkillsView';
+import ExpertsView from './views/ExpertsView';
+import Sidebar from './components/Sidebar';
+import LoginModal from './components/auth/LoginModal';
+import { useAuth } from './hooks/useAuth';
 
 /**
- * Controls whether the app should create its own browser router.
+ * 定义应用支持的主视图类型。
  */
-type AppProps = {
-  withRouter?: boolean;
-};
+export type ViewType = 'chat' | 'skills' | 'experts' | 'automation';
 
 /**
- * Declares the top-level route tree used by the CodingX shell.
+ * 渲染前端应用壳层，并管理视图、主题、移动端导航与登录弹窗状态。
  */
-function AppRoutes() {
+export default function App() {
+  // 步骤：维护当前激活的主视图。
+  const [activeView, setActiveView] = useState<ViewType>('chat');
+  // 步骤：维护当前深色主题开关状态。
+  const [isDarkMode, setIsDarkMode] = useState(true);
+  // 步骤：维护移动端侧边栏开关状态。
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  // 步骤：维护登录弹窗显示状态。
+  const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
+  // 步骤：在开发环境预填默认账号密码，降低本地联调成本。
+  const isDevelopmentMode = import.meta.env.DEV;
+  const loginDefaultUsername = isDevelopmentMode ? 'admin' : '';
+  const loginDefaultPassword = isDevelopmentMode ? '123456' : '';
+
+  // 步骤：聚合认证相关状态和操作，复用组件化登录流程。
+  const { session, isAuthenticated, isSubmitting, errorMessage, login, logout, clearErrorMessage } = useAuth();
+
+  useEffect(() => {
+    // 步骤：初始化主题样式。
+    if (isDarkMode) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, [isDarkMode]);
+
+  /**
+   * 切换当前主题模式。
+   */
+  const toggleTheme = () => {
+    // 步骤：翻转主题布尔值，触发全局主题切换。
+    setIsDarkMode(!isDarkMode);
+  };
+
+  /**
+   * 打开登录弹窗并重置历史错误。
+   */
+  const openLoginModal = () => {
+    // 步骤：先清空历史认证错误，再打开弹窗。
+    clearErrorMessage();
+    setIsLoginModalOpen(true);
+  };
+
+  /**
+   * 关闭登录弹窗并清理错误提示。
+   */
+  const closeLoginModal = () => {
+    // 步骤：关闭弹窗时同步清理错误，避免下次打开时残留旧提示。
+    setIsLoginModalOpen(false);
+    clearErrorMessage();
+  };
+
+  /**
+   * 提交登录表单并在成功后关闭弹窗。
+   * @param payload 登录账号与密码。
+   */
+  const handleLoginSubmit = async (payload: { username: string; password: string }) => {
+    // 步骤：调用统一登录能力；仅成功时关闭弹窗，失败时保留弹窗供用户修改。
+    try {
+      await login(payload);
+      setIsLoginModalOpen(false);
+    } catch {
+      // 步骤：登录失败时错误文案已由 useAuth 维护，这里无需额外处理。
+    }
+  };
+
   return (
-    <Routes>
-      <Route path="/" element={<AppShell />}>
-        <Route index element={<Navigate to="/tasks" replace />} />
-        <Route path="tasks" element={<Tasks />} />
-        <Route path="tasks/new" element={<NewTask />} />
-        <Route path="task" element={<TaskDetail />} />
-        <Route path="experts" element={<Experts />} />
-        <Route path="skills" element={<Skills />} />
-        <Route path="tools" element={<Tools />} />
-        <Route path="mcp" element={<Mcp />} />
-        <Route path="automations" element={<Automations />} />
-      </Route>
-    </Routes>
-  );
-}
+    <div className="relative h-screen w-full overflow-hidden bg-background text-foreground transition-colors duration-300">
+      {/* 抽屉推动容器 */}
+      <div
+        className={`flex h-full w-full transition-transform duration-400 ease-[cubic-bezier(0.32,0.72,0,1)] ${
+          isMobileMenuOpen ? 'translate-x-72 md:translate-x-0' : 'translate-x-0'
+        }`}
+      >
+        <Sidebar
+          activeView={activeView}
+          setActiveView={setActiveView}
+          isMobileMenuOpen={isMobileMenuOpen}
+          setIsMobileMenuOpen={setIsMobileMenuOpen}
+          isDarkMode={isDarkMode}
+          toggleTheme={toggleTheme}
+          authSession={session}
+          isAuthSubmitting={isSubmitting}
+          onOpenLogin={openLoginModal}
+          onLogout={logout}
+        />
 
-/**
- * Bootstraps the React application and optionally wraps it with BrowserRouter.
- */
-export default function App({withRouter = true}: AppProps) {
-  // Reuse the same route tree in both browser mode and test mode.
-  const content = <AppRoutes />;
+        {/* 主内容区域 */}
+        <main className="flex-1 min-w-[100vw] md:min-w-0 flex flex-col h-full bg-background overflow-hidden relative shadow-[0_0_40px_rgba(0,0,0,0.1)] md:shadow-none transition-transform">
+          {/* 移动端遮罩层 */}
+          <div
+            className={`absolute inset-0 bg-background/5 backdrop-blur-[2px] z-40 md:hidden transition-all duration-400 ${
+              isMobileMenuOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+            }`}
+            onClick={() => setIsMobileMenuOpen(false)}
+          />
 
-  return (
-    <ThemeProvider>
-      {withRouter ? <BrowserRouter>{content}</BrowserRouter> : content}
-    </ThemeProvider>
+          {/* 移动端顶部栏 */}
+          <header className="md:hidden flex items-center justify-between px-4 h-14 border-b border-border bg-background z-30 shrink-0">
+            <button
+              onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+              className="p-1 -ml-1 text-foreground active:scale-90 transition-all rounded"
+            >
+              <Menu size={24} />
+            </button>
+            <span className="font-bold tracking-tight text-foreground text-[17px] absolute left-1/2 -translate-x-1/2">
+              CodingX
+            </span>
+            <div className="w-8 flex justify-end"></div>
+          </header>
+
+          {/* 动态视图内容 */}
+          <div className="flex-1 overflow-hidden relative">
+            <AnimatePresence mode="wait">
+              {activeView === 'chat' && (
+                <ChatView
+                  key="chat"
+                  isAuthenticated={isAuthenticated}
+                  onRequireLogin={openLoginModal}
+                />
+              )}
+              {activeView === 'automation' && <AutomationView key="automation" />}
+              {activeView === 'skills' && <SkillsView key="skills" />}
+              {activeView === 'experts' && <ExpertsView key="experts" />}
+            </AnimatePresence>
+          </div>
+        </main>
+      </div>
+
+      {/* 登录弹窗 */}
+      <LoginModal
+        isOpen={isLoginModalOpen}
+        isSubmitting={isSubmitting}
+        errorMessage={errorMessage}
+        defaultUsername={loginDefaultUsername}
+        defaultPassword={loginDefaultPassword}
+        onClose={closeLoginModal}
+        onSubmit={handleLoginSubmit}
+      />
+    </div>
   );
 }

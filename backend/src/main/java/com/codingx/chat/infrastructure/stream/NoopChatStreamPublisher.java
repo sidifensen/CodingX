@@ -32,7 +32,7 @@ public class NoopChatStreamPublisher implements ChatStreamPublisher {
      * @param content 输入参数。
      */
     @Override
-    public void publishAssistantCompleted(Long conversationId, String content) {
+    public void publishAssistantCompleted(Long conversationId, String content, String title) {
     }
 
     /**

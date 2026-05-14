@@ -4,9 +4,11 @@ import com.codingx.chat.application.command.CreateConversationCommand;
 import com.codingx.chat.application.command.SendChatMessageCommand;
 import com.codingx.chat.application.service.ChatApplicationService;
 import com.codingx.chat.application.service.ChatConversationApplicationService;
+import com.codingx.chat.application.service.ChatReactionService;
 import com.codingx.chat.application.service.ChatRuntimeGuardService;
 import com.codingx.chat.domain.model.ChatConversation;
 import com.codingx.chat.domain.model.ChatMessage;
+import com.codingx.chat.interfaces.request.ChatMessageFeedbackRequest;
 import com.codingx.chat.interfaces.request.CreateConversationRequest;
 import com.codingx.chat.interfaces.request.SendChatMessageRequest;
 import com.codingx.chat.interfaces.response.ChatConversationResponse;
@@ -44,6 +46,11 @@ public class ChatController {
      * ChatRuntimeGuardService 依赖。
      */
     private final ChatRuntimeGuardService chatRuntimeGuardService;
+
+    /**
+     * ChatReactionService 依赖。
+     */
+    private final ChatReactionService chatReactionService;
 
     /**
      * 创建 createConversation 所需数据并返回结果。
@@ -101,6 +108,18 @@ public class ChatController {
     public ApiResponse<Void> cancelConversation(@PathVariable Long conversationId) {
         chatRuntimeGuardService.cancelConversation(conversationId);
         return ApiResponse.successMessage("cancel requested");
+    }
+
+    /**
+     * 提交消息反馈，用于点赞、点踩和原因补充。
+     * @param messageId 消息标识。
+     * @param request 请求载体。
+     * @return 提交结果。
+     */
+    @PostMapping("/messages/{messageId}/feedback")
+    public ApiResponse<Void> submitReaction(@PathVariable Long messageId, @Valid @RequestBody ChatMessageFeedbackRequest request) {
+        chatReactionService.submitReaction(messageId, request.conversationId(), StpUtil.getLoginIdAsLong(), request.vote(), request.reason(), request.comment());
+        return ApiResponse.successMessage("feedback submitted");
     }
 
     /**

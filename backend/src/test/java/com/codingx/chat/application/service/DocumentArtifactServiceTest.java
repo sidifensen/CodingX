@@ -1,0 +1,38 @@
+package com.codingx.chat.application.service;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.Mockito.verify;
+
+import com.codingx.chat.domain.model.ChatMessageArtifact;
+import com.codingx.chat.domain.repository.ChatMessageArtifactRepository;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+
+/**
+ * 验证文档产物服务会生成并持久化最小 docx 产物记录。
+ */
+@ExtendWith(MockitoExtension.class)
+class DocumentArtifactServiceTest {
+
+    @Mock
+    private ChatMessageArtifactRepository chatMessageArtifactRepository;
+
+    @InjectMocks
+    private DocumentArtifactService documentArtifactService;
+
+    /**
+     * 生成文档时应返回 docx 产物并写入仓储。
+     */
+    @Test
+    void createDocxArtifactPersistsArtifactRecord() {
+        documentArtifactService.createDocxArtifact(1001L, 2001L, 3001L, "整理后的报告内容");
+
+        ArgumentCaptor<ChatMessageArtifact> captor = ArgumentCaptor.forClass(ChatMessageArtifact.class);
+        verify(chatMessageArtifactRepository).save(captor.capture());
+        assertEquals("docx", captor.getValue().getArtifactType());
+    }
+}

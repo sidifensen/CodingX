@@ -74,6 +74,17 @@ public class ChatConversation {
     }
 
     /**
+     * 更新会话标题，用于首轮回答完成后的自动命名。
+     * @param title 新标题。
+     */
+    public void rename(String title) {
+        if (StrUtil.isBlank(title)) {
+            return;
+        }
+        this.title = title;
+    }
+
+    /**
      * 恢复持久化层中的运行时扩展字段，避免历史回放时丢失链路信息。
      * @param lastMessageAt 最近消息时间。
      * @param lastRunId 最近一次执行记录标识。

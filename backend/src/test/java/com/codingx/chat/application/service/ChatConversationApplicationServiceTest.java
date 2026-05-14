@@ -99,4 +99,18 @@ class ChatConversationApplicationServiceTest {
         );
         assertEquals("You cannot access this conversation", exception.getMessage());
     }
+
+    /**
+     * 会话标题更新应直接作用到会话对象并持久化保存。
+     */
+    @Test
+    void updateConversationTitlePersistsNewTitle() {
+        ChatConversation conversation = ChatConversation.create(1L, "New Conversation", 1002L, ChatConversationStatus.ACTIVE);
+        when(chatConversationRepository.requireById(1L)).thenReturn(conversation);
+
+        chatConversationApplicationService.updateConversationTitle(1L, "AI搜索重构计划", 1002L);
+
+        assertEquals("AI搜索重构计划", conversation.getTitle());
+        verify(chatConversationRepository).save(conversation);
+    }
 }

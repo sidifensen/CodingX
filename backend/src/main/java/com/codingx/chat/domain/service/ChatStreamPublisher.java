@@ -24,7 +24,7 @@ public interface ChatStreamPublisher {
      * @param conversationId 输入参数。
      * @param content 输入参数。
      */
-    void publishAssistantCompleted(Long conversationId, String content);
+    void publishAssistantCompleted(Long conversationId, String content, String title);
 
     /**
      * 发布主动取消事件。

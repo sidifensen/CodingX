@@ -69,4 +69,19 @@ public class ChatConversationApplicationService {
         }
         return chatMessageRepository.findByConversationId(conversationId);
     }
+
+    /**
+     * 更新指定会话的标题，用于自动生成标题后的持久化。
+     * @param conversationId 会话标识。
+     * @param title 新标题。
+     * @param userId 当前用户标识。
+     */
+    public void updateConversationTitle(Long conversationId, String title, Long userId) {
+        ChatConversation conversation = chatConversationRepository.requireById(conversationId);
+        if (!conversation.getCreatedBy().equals(userId)) {
+            throw new ForbiddenException("You cannot access this conversation");
+        }
+        conversation.rename(title);
+        chatConversationRepository.save(conversation);
+    }
 }

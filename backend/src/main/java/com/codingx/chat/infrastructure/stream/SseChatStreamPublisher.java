@@ -44,8 +44,8 @@ public class SseChatStreamPublisher implements ChatStreamPublisher {
      * @param content 输入参数。
      */
     @Override
-    public void publishAssistantCompleted(Long conversationId, String content) {
-        chatSseRegistry.publish(conversationId, "finish", Map.of("conversationId", conversationId, "content", content));
+    public void publishAssistantCompleted(Long conversationId, String content, String title) {
+        chatSseRegistry.publish(conversationId, "finish", Map.of("conversationId", conversationId, "content", content, "title", title));
         chatSseRegistry.publish(conversationId, "done", Map.of("conversationId", conversationId));
         chatSseRegistry.complete(conversationId);
     }

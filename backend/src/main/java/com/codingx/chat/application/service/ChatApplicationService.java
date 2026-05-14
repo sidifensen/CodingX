@@ -47,6 +47,41 @@ public class ChatApplicationService {
     private final ChatRuntimeGuardService chatRuntimeGuardService;
 
     /**
+     * ConversationTitleService 依赖。
+     */
+    private final ConversationTitleService conversationTitleService;
+
+    /**
+     * ConversationSummaryService 依赖。
+     */
+    private final ConversationSummaryService conversationSummaryService;
+
+    /**
+     * ConversationRewriteService 依赖。
+     */
+    private final ConversationRewriteService conversationRewriteService;
+
+    /**
+     * ConversationIntentService 依赖。
+     */
+    private final ConversationIntentService conversationIntentService;
+
+    /**
+     * WebSearchExecutionService 依赖。
+     */
+    private final WebSearchExecutionService webSearchExecutionService;
+
+    /**
+     * SearchReferenceCollector 依赖。
+     */
+    private final SearchReferenceCollector searchReferenceCollector;
+
+    /**
+     * DocumentArtifactService 依赖。
+     */
+    private final DocumentArtifactService documentArtifactService;
+
+    /**
      * 发送 sendMessage 处理的消息或请求。
      * @param command 输入参数。
      * @param userId 输入参数。
@@ -65,6 +100,35 @@ public class ChatApplicationService {
         chatMessageRepository.save(userMessage);
         chatStreamPublisher.publishUserMessage(command.conversationId(), userMessage.getContent());
         history.add(userMessage);
+        String rewrittenQuestion = conversationRewriteService.rewrite(
+            history.stream().filter(message -> message.getRole() == com.codingx.chat.domain.model.ChatMessageRole.USER)
+                .map(ChatMessage::getContent)
+                .toList(),
+            command.content()
+        );
+        ConversationIntentDecision intentDecision = conversationIntentService.route(rewrittenQuestion);
+        if (intentDecision.action() == ConversationIntentAction.CLARIFY) {
+            ChatMessage assistantMessage = ChatMessage.assistantMessage(
+                command.conversationId(),
+                intentDecision.reply(),
+                ChatMessageStatus.COMPLETED,
+                null,
+                null,
+                null
+            );
+            chatMessageRepository.save(assistantMessage);
+            history.add(assistantMessage);
+            conversation.rename(conversationTitleService.generateTitle(conversation, history));
+            conversation.touch();
+            chatConversationRepository.save(conversation);
+            chatStreamPublisher.publishAssistantCompleted(command.conversationId(), assistantMessage.getContent(), conversation.getTitle());
+            return;
+        }
+        if (intentDecision.action() == ConversationIntentAction.SEARCH) {
+            List<SearchReferenceCandidate> references = webSearchExecutionService.search(rewrittenQuestion);
+            searchReferenceCollector.collect(command.conversationId(), userMessage.getId(), command.conversationId(), references);
+            documentArtifactService.createDocxArtifact(command.conversationId(), userMessage.getId(), command.conversationId(), "搜索结果整理中");
+        }
         StringBuilder builder = new StringBuilder();
         final Throwable[] streamError = new Throwable[1];
         aiChatClient.streamChat(history, new AiChatClient.StreamHandler() {
@@ -121,8 +185,11 @@ public class ChatApplicationService {
 
         );
         chatMessageRepository.save(assistantMessage);
+        history.add(assistantMessage);
+        conversation.rename(conversationTitleService.generateTitle(conversation, history));
+        conversationSummaryService.refreshSummaryIfNeeded(conversation, history);
         conversation.touch();
         chatConversationRepository.save(conversation);
-        chatStreamPublisher.publishAssistantCompleted(command.conversationId(), assistantMessage.getContent());
+        chatStreamPublisher.publishAssistantCompleted(command.conversationId(), assistantMessage.getContent(), conversation.getTitle());
     }
 }

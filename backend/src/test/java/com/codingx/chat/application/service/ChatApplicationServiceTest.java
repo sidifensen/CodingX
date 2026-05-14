@@ -58,6 +58,30 @@ class ChatApplicationServiceTest {
     private ChatStreamPublisher chatStreamPublisher;
 
     /**
+     * ConversationTitleService 依赖。
+     */
+    @Mock
+    private ConversationTitleService conversationTitleService;
+
+    /**
+     * ConversationSummaryService 依赖。
+     */
+    @Mock
+    private ConversationSummaryService conversationSummaryService;
+
+    /**
+     * ConversationRewriteService 依赖。
+     */
+    @Mock
+    private ConversationRewriteService conversationRewriteService;
+
+    /**
+     * ConversationIntentService 依赖。
+     */
+    @Mock
+    private ConversationIntentService conversationIntentService;
+
+    /**
      * ChatRuntimeGuardService 依赖。
      */
     @Mock
@@ -79,6 +103,9 @@ class ChatApplicationServiceTest {
         when(chatConversationRepository.requireById(1L)).thenReturn(conversation);
         List<ChatMessage> history = new ArrayList<>();
         when(chatMessageRepository.findByConversationId(1L)).thenReturn(history);
+        when(conversationTitleService.generateTitle(org.mockito.ArgumentMatchers.eq(conversation), any())).thenReturn("AI搜索重构计划");
+        when(conversationRewriteService.rewrite(any(), any())).thenReturn("Hi");
+        when(conversationIntentService.route("Hi")).thenReturn(new ConversationIntentDecision("chat.normal", ConversationIntentAction.DIRECT, null));
         doAnswer(invocation -> {
 
             AiChatClient.StreamHandler handler = invocation.getArgument(1);
@@ -90,9 +117,13 @@ class ChatApplicationServiceTest {
         chatApplicationService.sendMessage(new SendChatMessageCommand(1L, "Hi"), 1002L);        ArgumentCaptor<ChatMessage> captor = ArgumentCaptor.forClass(ChatMessage.class);
         verify(chatMessageRepository, org.mockito.Mockito.times(2)).save(captor.capture());
         verify(chatRuntimeGuardService).ensureAccepted(1L);
+        verify(conversationTitleService).generateTitle(org.mockito.ArgumentMatchers.eq(conversation), any());
+        verify(conversationSummaryService).refreshSummaryIfNeeded(org.mockito.ArgumentMatchers.eq(conversation), any());
+        verify(chatStreamPublisher).publishAssistantCompleted(1L, "Hello world", "AI搜索重构计划");
         assertEquals(ChatMessageRole.ASSISTANT, captor.getAllValues().get(1).getRole());
         assertEquals("Hello world", captor.getAllValues().get(1).getContent());
         assertEquals(ChatMessageStatus.COMPLETED, captor.getAllValues().get(1).getStatus());
+        assertEquals("AI搜索重构计划", conversation.getTitle());
     }
 
     /**
@@ -138,6 +169,8 @@ class ChatApplicationServiceTest {
         ChatConversation conversation = ChatConversation.create(1L, "Default", 1002L, ChatConversationStatus.ACTIVE);
         when(chatConversationRepository.requireById(1L)).thenReturn(conversation);
         when(chatMessageRepository.findByConversationId(1L)).thenReturn(new ArrayList<>());
+        when(conversationRewriteService.rewrite(any(), any())).thenReturn("Hi");
+        when(conversationIntentService.route("Hi")).thenReturn(new ConversationIntentDecision("chat.normal", ConversationIntentAction.DIRECT, null));
         AtomicInteger cancelChecks = new AtomicInteger();
         when(chatRuntimeGuardService.isCancelled(1L)).thenAnswer(invocation -> cancelChecks.incrementAndGet() > 1);
         doAnswer(invocation -> {

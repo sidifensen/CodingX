@@ -1,0 +1,49 @@
+package com.codingx.chat.application.service;
+
+import com.codingx.chat.domain.model.ChatTraceRun;
+import java.util.UUID;
+
+/**
+ * 维护当前线程上的聊天 Trace 上下文。
+ */
+public final class ConversationTraceContext {
+
+    private static final ThreadLocal<ChatTraceRun> CURRENT = new ThreadLocal<>();
+
+    private ConversationTraceContext() {
+    }
+
+    /**
+     * 创建并绑定当前链路的根 Trace 上下文。
+     * @param traceName 链路名称。
+     * @param conversationId 会话标识。
+     * @param userId 用户标识。
+     * @return 根 Trace 记录。
+     */
+    public static ChatTraceRun start(String traceName, Long conversationId, Long userId) {
+        ChatTraceRun traceRun = ChatTraceRun.builder()
+            .traceId(UUID.randomUUID().toString())
+            .traceName(traceName)
+            .conversationId(conversationId)
+            .userId(userId)
+            .status("RUNNING")
+            .build();
+        CURRENT.set(traceRun);
+        return traceRun;
+    }
+
+    /**
+     * 返回当前线程绑定的根 Trace。
+     * @return 当前 Trace。
+     */
+    public static ChatTraceRun current() {
+        return CURRENT.get();
+    }
+
+    /**
+     * 清理当前线程上的 Trace 上下文。
+     */
+    public static void clear() {
+        CURRENT.remove();
+    }
+}

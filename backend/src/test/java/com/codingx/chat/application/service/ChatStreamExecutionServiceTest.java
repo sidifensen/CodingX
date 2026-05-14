@@ -39,6 +39,12 @@ class ChatStreamExecutionServiceTest {
     private ChatRuntimeGuardService chatRuntimeGuardService;
 
     /**
+     * Trace 记录服务依赖。
+     */
+    @Mock
+    private ConversationTraceRecordService conversationTraceRecordService;
+
+    /**
      * 释放测试线程池，避免用例之间残留后台线程。
      */
     @AfterEach
@@ -54,7 +60,12 @@ class ChatStreamExecutionServiceTest {
     void dispatchReturnsImmediatelyAndRunsSendMessageInBackground() throws Exception {
         CountDownLatch started = new CountDownLatch(1);
         CountDownLatch release = new CountDownLatch(1);
-        ChatStreamExecutionService service = new ChatStreamExecutionService(chatApplicationService, chatRuntimeGuardService, executorService);
+        ChatStreamExecutionService service = new ChatStreamExecutionService(
+            chatApplicationService,
+            chatRuntimeGuardService,
+            conversationTraceRecordService,
+            executorService
+        );
         org.mockito.Mockito.doAnswer(invocation -> {
             started.countDown();
             release.await(3, TimeUnit.SECONDS);
@@ -67,6 +78,7 @@ class ChatStreamExecutionServiceTest {
 
         assertTrue(elapsedMs < 100, "dispatch should return immediately");
         assertTrue(started.await(1, TimeUnit.SECONDS), "background task should start");
+        verify(conversationTraceRecordService).startTrace("chat-entry", 1001L, 2001L);
 
         release.countDown();
         verify(chatApplicationService, org.mockito.Mockito.timeout(1000)).sendMessage(new SendChatMessageCommand(1001L, "你好"), 2001L);

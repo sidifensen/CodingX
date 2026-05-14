@@ -15,6 +15,7 @@ public class ChatStreamExecutionService {
 
     private final ChatApplicationService chatApplicationService;
     private final ChatRuntimeGuardService chatRuntimeGuardService;
+    private final ConversationTraceRecordService conversationTraceRecordService;
     private final ExecutorService executor;
 
     /**
@@ -24,9 +25,10 @@ public class ChatStreamExecutionService {
      */
     public ChatStreamExecutionService(
         ChatApplicationService chatApplicationService,
-        ChatRuntimeGuardService chatRuntimeGuardService
+        ChatRuntimeGuardService chatRuntimeGuardService,
+        ConversationTraceRecordService conversationTraceRecordService
     ) {
-        this(chatApplicationService, chatRuntimeGuardService, Executors.newCachedThreadPool());
+        this(chatApplicationService, chatRuntimeGuardService, conversationTraceRecordService, Executors.newCachedThreadPool());
     }
 
     /**
@@ -38,10 +40,12 @@ public class ChatStreamExecutionService {
     public ChatStreamExecutionService(
         ChatApplicationService chatApplicationService,
         ChatRuntimeGuardService chatRuntimeGuardService,
+        ConversationTraceRecordService conversationTraceRecordService,
         ExecutorService executor
     ) {
         this.chatApplicationService = chatApplicationService;
         this.chatRuntimeGuardService = chatRuntimeGuardService;
+        this.conversationTraceRecordService = conversationTraceRecordService;
         this.executor = executor;
     }
 
@@ -51,6 +55,7 @@ public class ChatStreamExecutionService {
      * @param userId 当前用户标识。
      */
     public void dispatch(SendChatMessageCommand command, Long userId) {
+        conversationTraceRecordService.startTrace("chat-entry", command.conversationId(), userId);
         AtomicReference<Future<?>> futureRef = new AtomicReference<>();
         chatRuntimeGuardService.registerCancellation(command.conversationId(), () -> {
             Future<?> future = futureRef.get();

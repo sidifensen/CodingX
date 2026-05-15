@@ -5,6 +5,7 @@ import com.codingx.chat.domain.model.ChatConversation;
 import com.codingx.chat.domain.model.ChatExecutionStep;
 import com.codingx.chat.domain.model.ChatExecutionRun;
 import com.codingx.chat.domain.model.ChatMessage;
+import com.codingx.chat.domain.model.ChatMessageRole;
 import com.codingx.chat.domain.model.ChatMessageStatus;
 import com.codingx.chat.domain.model.ChatTraceRun;
 import com.codingx.chat.domain.repository.ChatConversationRepository;
@@ -83,6 +84,11 @@ public class ChatApplicationService {
     private final ConversationIntentService conversationIntentService;
 
     /**
+     * Prompt 资产加载器依赖。
+     */
+    private final PromptTemplateLoader promptTemplateLoader;
+
+    /**
      * WebSearchExecutionService 依赖。
      */
     private final WebSearchExecutionService webSearchExecutionService;
@@ -149,6 +155,26 @@ public class ChatApplicationService {
             chatStreamPublisher.publishAssistantCompleted(command.conversationId(), assistantMessage.getContent(), conversation.getTitle());
             return;
         }
+        if (intentDecision.action() == ConversationIntentAction.DIRECT && StrUtil.isNotBlank(intentDecision.reply())) {
+            ChatMessage assistantMessage = ChatMessage.assistantMessage(
+                command.conversationId(),
+                intentDecision.reply(),
+                ChatMessageStatus.COMPLETED,
+                null,
+                null,
+                null
+            ).attachRun(runId);
+            chatMessageRepository.save(assistantMessage);
+            history.add(assistantMessage);
+            conversation.rename(conversationTitleService.generateTitle(conversation, history));
+            conversation.touch();
+            conversation.recordLastRunId(runId);
+            chatConversationRepository.save(conversation);
+            recordExecutionOutcome(conversation, userMessage.getId(), assistantMessage.getId(), intentDecision.intentCode(), false, false, ChatMessageStatus.COMPLETED, null);
+            finishTrace(runId, "SUCCESS", null);
+            chatStreamPublisher.publishAssistantCompleted(command.conversationId(), assistantMessage.getContent(), conversation.getTitle());
+            return;
+        }
         if (intentDecision.action() == ConversationIntentAction.SEARCH) {
             List<SearchReferenceCandidate> references = webSearchExecutionService.search(rewrittenQuestion);
             ChatExecutionStep searchStep = ChatExecutionStep.builder()
@@ -179,8 +205,9 @@ public class ChatApplicationService {
         final Throwable[] streamError = new Throwable[1];
         final String[] selectedProvider = new String[1];
         final String[] selectedModel = new String[1];
+        List<ChatMessage> aiHistory = buildAiHistory(history, intentDecision, command.conversationId());
         try {
-            aiChatClient.streamChat(history, new AiChatClient.StreamHandler() {
+            aiChatClient.streamChat(aiHistory, new AiChatClient.StreamHandler() {
                 @Override
                 public void onMetadata(String provider, String model) {
                     selectedProvider[0] = provider;
@@ -327,5 +354,31 @@ public class ChatApplicationService {
             return;
         }
         conversationTraceRecordService.finishTrace(traceRun.getTraceId(), runId, status, errorMessage);
+    }
+
+    /**
+     * 为系统意图补充专用 system prompt，其余链路沿用原始会话历史。
+     * @param history 原始会话历史。
+     * @param intentDecision 意图决策。
+     * @param conversationId 会话标识。
+     * @return 送入模型层的实际历史。
+     */
+    private List<ChatMessage> buildAiHistory(List<ChatMessage> history, ConversationIntentDecision intentDecision, Long conversationId) {
+        if (intentDecision.intentCode() == null || !intentDecision.intentCode().startsWith("sys-")) {
+            return history;
+        }
+        List<ChatMessage> aiHistory = new ArrayList<>();
+        aiHistory.add(ChatMessage.create(
+            cn.hutool.core.util.IdUtil.getSnowflakeNextId(),
+            conversationId,
+            ChatMessageRole.SYSTEM,
+            promptTemplateLoader.load("answer-chat-system"),
+            ChatMessageStatus.COMPLETED,
+            null,
+            null,
+            null
+        ));
+        aiHistory.addAll(history);
+        return aiHistory;
     }
 }

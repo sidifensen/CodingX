@@ -41,6 +41,7 @@ class ChatApplicationSearchFlowTest {
     @Mock private ConversationSummaryService conversationSummaryService;
     @Mock private ConversationRewriteService conversationRewriteService;
     @Mock private ConversationIntentService conversationIntentService;
+    @Mock private PromptTemplateLoader promptTemplateLoader;
     @Mock private WebSearchExecutionService webSearchExecutionService;
     @Mock private SearchReferenceCollector searchReferenceCollector;
     @Mock private DocumentArtifactService documentArtifactService;

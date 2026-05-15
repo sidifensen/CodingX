@@ -1,7 +1,6 @@
 package com.codingx.chat.application.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.when;
 
 import com.codingx.chat.domain.model.ChatIntentExample;
@@ -16,77 +15,86 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 /**
- * 验证聊天意图服务对三类问题的最小分流。
+ * 验证聊天意图服务会基于候选节点、系统意图和歧义澄清输出正确动作。
  */
 @ExtendWith(MockitoExtension.class)
 class ConversationIntentServiceTest {
 
-    /**
-     * 节点仓储依赖。
-     */
     @Mock
     private ChatIntentNodeRepository chatIntentNodeRepository;
 
-    /**
-     * 示例仓储依赖。
-     */
     @Mock
     private ChatIntentExampleRepository chatIntentExampleRepository;
 
-    /**
-     * 解析器依赖。
-     */
     @Mock
     private ConversationIntentResolver conversationIntentResolver;
 
-    /**
-     * 被测服务。
-     */
+    @Mock
+    private ConversationIntentGuidanceService conversationIntentGuidanceService;
+
     @InjectMocks
     private ConversationIntentService conversationIntentService;
 
     /**
-     * 搜索类问题应进入 SEARCH 分支。
+     * 非系统知识类意图在当前项目中应进入 SEARCH 分支。
      */
     @Test
-    void routeReturnsSearchActionForSearchIntent() {
-        when(chatIntentNodeRepository.findEnabledNodes()).thenReturn(List.of(
-            ChatIntentNode.builder().intentCode("search.web").intentType("search").enabled(1).build()
-        ));
-        when(chatIntentExampleRepository.findByIntentCode("search.web")).thenReturn(List.of());
-        when(conversationIntentResolver.resolveIntent(org.mockito.ArgumentMatchers.eq("请搜索 Spring Boot SSE"), anyList(), anyList())).thenReturn("search.web");
+    void routeReturnsSearchActionForKnowledgeIntent() {
+        ChatIntentNode node = ChatIntentNode.builder().intentCode("biz-oa-intro").parentCode("biz-oa").name("系统介绍").intentType("kb").enabled(1).build();
+        when(chatIntentNodeRepository.findEnabledNodes()).thenReturn(List.of(node));
+        when(chatIntentExampleRepository.findByIntentCode("biz-oa-intro")).thenReturn(List.of());
+        when(conversationIntentResolver.resolveCandidates("请介绍一下 OA 系统", List.of(node), List.of()))
+            .thenReturn(List.of(new ConversationIntentCandidate(node, 0.91D)));
+        when(conversationIntentGuidanceService.buildGuidancePrompt("请介绍一下 OA 系统", List.of(new ConversationIntentCandidate(node, 0.91D)), List.of(node)))
+            .thenReturn(null);
 
-        ConversationIntentDecision decision = conversationIntentService.route("请搜索 Spring Boot SSE");
+        ConversationIntentDecision decision = conversationIntentService.route("请介绍一下 OA 系统");
 
         assertEquals(ConversationIntentAction.SEARCH, decision.action());
-        assertEquals("search.web", decision.intentCode());
+        assertEquals("biz-oa-intro", decision.intentCode());
     }
 
     /**
-     * 模糊问题应直接进入澄清分支。
+     * SYSTEM 意图应进入 DIRECT 分支，而不是走搜索链路。
      */
     @Test
-    void routeReturnsClarifyActionForAmbiguousQuestion() {
-        ConversationIntentDecision decision = conversationIntentService.route("这个要怎么改");
+    void routeReturnsDirectActionForSystemIntent() {
+        ChatIntentNode node = ChatIntentNode.builder().intentCode("sys-about-bot").name("关于助手").intentType("system").enabled(1).build();
+        when(chatIntentNodeRepository.findEnabledNodes()).thenReturn(List.of(node));
+        when(chatIntentExampleRepository.findByIntentCode("sys-about-bot")).thenReturn(List.of());
+        when(conversationIntentResolver.resolveCandidates("你是谁", List.of(node), List.of()))
+            .thenReturn(List.of(new ConversationIntentCandidate(node, 0.95D)));
+        when(conversationIntentGuidanceService.buildGuidancePrompt("你是谁", List.of(new ConversationIntentCandidate(node, 0.95D)), List.of(node)))
+            .thenReturn(null);
+
+        ConversationIntentDecision decision = conversationIntentService.route("你是谁");
+
+        assertEquals(ConversationIntentAction.DIRECT, decision.action());
+        assertEquals("sys-about-bot", decision.intentCode());
+        org.junit.jupiter.api.Assertions.assertTrue(decision.reply().contains("CodingX"));
+    }
+
+    /**
+     * 跨系统同名主题分数接近时，应返回澄清提示。
+     */
+    @Test
+    void routeReturnsClarifyActionWhenGuidancePromptExists() {
+        ChatIntentNode oa = ChatIntentNode.builder().intentCode("biz-oa-intro").parentCode("biz-oa").name("系统介绍").intentType("kb").enabled(1).build();
+        ChatIntentNode ins = ChatIntentNode.builder().intentCode("biz-ins-intro").parentCode("biz-ins").name("系统介绍").intentType("kb").enabled(1).build();
+        List<ConversationIntentCandidate> candidates = List.of(
+            new ConversationIntentCandidate(oa, 0.91D),
+            new ConversationIntentCandidate(ins, 0.88D)
+        );
+        when(chatIntentNodeRepository.findEnabledNodes()).thenReturn(List.of(oa, ins));
+        when(chatIntentExampleRepository.findByIntentCode(org.mockito.ArgumentMatchers.anyString())).thenReturn(List.of());
+        when(conversationIntentResolver.resolveCandidates("系统介绍是什么", List.of(oa, ins), List.of())).thenReturn(candidates);
+        when(conversationIntentGuidanceService.buildGuidancePrompt("系统介绍是什么", candidates, List.of(oa, ins)))
+            .thenReturn("关于系统介绍，候选如下：\n1) OA系统\n2) 保险系统");
+
+        ConversationIntentDecision decision = conversationIntentService.route("系统介绍是什么");
 
         assertEquals(ConversationIntentAction.CLARIFY, decision.action());
         assertEquals("clarify.ambiguity", decision.intentCode());
-    }
-
-    /**
-     * 普通问题应走 DIRECT 分支。
-     */
-    @Test
-    void routeReturnsDirectActionForNormalQuestion() {
-        when(chatIntentNodeRepository.findEnabledNodes()).thenReturn(List.of(
-            ChatIntentNode.builder().intentCode("chat.normal").intentType("chat").enabled(1).build()
-        ));
-        when(chatIntentExampleRepository.findByIntentCode("chat.normal")).thenReturn(List.of());
-        when(conversationIntentResolver.resolveIntent(org.mockito.ArgumentMatchers.eq("帮我总结一下这个项目"), anyList(), anyList())).thenReturn("chat.normal");
-
-        ConversationIntentDecision decision = conversationIntentService.route("帮我总结一下这个项目");
-
-        assertEquals(ConversationIntentAction.DIRECT, decision.action());
-        assertEquals("chat.normal", decision.intentCode());
+        assertEquals("关于系统介绍，候选如下：\n1) OA系统\n2) 保险系统", decision.reply());
     }
 }

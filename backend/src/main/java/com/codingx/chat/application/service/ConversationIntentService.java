@@ -1,5 +1,6 @@
 package com.codingx.chat.application.service;
 
+import cn.hutool.core.util.StrUtil;
 import com.codingx.chat.domain.model.ChatIntentExample;
 import com.codingx.chat.domain.model.ChatIntentNode;
 import com.codingx.chat.domain.repository.ChatIntentExampleRepository;
@@ -16,20 +17,10 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class ConversationIntentService {
 
-    /**
-     * 节点仓储依赖。
-     */
     private final ChatIntentNodeRepository chatIntentNodeRepository;
-
-    /**
-     * 示例仓储依赖。
-     */
     private final ChatIntentExampleRepository chatIntentExampleRepository;
-
-    /**
-     * 意图解析器依赖。
-     */
     private final ConversationIntentResolver conversationIntentResolver;
+    private final ConversationIntentGuidanceService conversationIntentGuidanceService;
 
     /**
      * 对当前问题进行分流，返回后续动作决策。
@@ -37,18 +28,41 @@ public class ConversationIntentService {
      * @return 决策结果。
      */
     public ConversationIntentDecision route(String question) {
-        if (question == null || question.length() < 8) {
-            return new ConversationIntentDecision("clarify.ambiguity", ConversationIntentAction.CLARIFY, "请补充你指的是哪一部分");
+        if (StrUtil.isBlank(question)) {
+            return new ConversationIntentDecision("clarify.ambiguity", ConversationIntentAction.CLARIFY, "请补充你的具体问题");
         }
         List<ChatIntentNode> nodes = chatIntentNodeRepository.findEnabledNodes();
         List<ChatIntentExample> examples = new ArrayList<>();
         for (ChatIntentNode node : nodes) {
             examples.addAll(chatIntentExampleRepository.findByIntentCode(node.getIntentCode()));
         }
-        String intentCode = conversationIntentResolver.resolveIntent(question, nodes, examples);
-        if (intentCode.startsWith("search")) {
-            return new ConversationIntentDecision(intentCode, ConversationIntentAction.SEARCH, null);
+        List<ConversationIntentCandidate> candidates = conversationIntentResolver.resolveCandidates(question, nodes, examples);
+        String guidancePrompt = conversationIntentGuidanceService.buildGuidancePrompt(question, candidates, nodes);
+        if (StrUtil.isNotBlank(guidancePrompt)) {
+            return new ConversationIntentDecision("clarify.ambiguity", ConversationIntentAction.CLARIFY, guidancePrompt);
         }
-        return new ConversationIntentDecision(intentCode, ConversationIntentAction.DIRECT, null);
+        if (candidates.isEmpty()) {
+            return new ConversationIntentDecision("chat.normal", ConversationIntentAction.DIRECT, null);
+        }
+        ChatIntentNode topNode = candidates.getFirst().node();
+        if ("system".equalsIgnoreCase(topNode.getIntentType())) {
+            return new ConversationIntentDecision(topNode.getIntentCode(), ConversationIntentAction.DIRECT, buildSystemReply(topNode.getIntentCode()));
+        }
+        return new ConversationIntentDecision(topNode.getIntentCode(), ConversationIntentAction.SEARCH, null);
+    }
+
+    /**
+     * 为系统意图提供确定性的直答短路，避免这类问题继续走模型自由生成。
+     * @param intentCode 命中的系统意图编码。
+     * @return 直答内容。
+     */
+    private String buildSystemReply(String intentCode) {
+        if ("sys-welcome".equals(intentCode)) {
+            return "你好，我是 CodingX 的知识助手。你可以问我项目结构、系统配置、IT 支持、业务流程或公开技术资料。";
+        }
+        if ("sys-about-bot".equals(intentCode)) {
+            return "我是基于当前接入的大语言模型服务和搜索能力构建的 CodingX 知识助手，底层模型会由平台配置动态切换，我主要负责项目知识、系统说明、IT 支持和公开技术信息整理。";
+        }
+        return "你好，我是 CodingX 的知识助手，很高兴为你提供帮助。";
     }
 }

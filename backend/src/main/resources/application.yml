@@ -58,7 +58,7 @@ app:
     cors:
       allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5002}
   ai:
-    provider: ${AI_PROVIDER:deepseek}
+    provider: ${AI_PROVIDER:bailian}
     base-url: ${AI_BASE_URL:${DEEPSEEK_BASE_URL:https://api.deepseek.com/v1}}
     api-key: ${AI_API_KEY:${DEEPSEEK_API_KEY:}}
     chat-model: ${AI_CHAT_MODEL:${DEEPSEEK_CHAT_MODEL:deepseek-chat}}
@@ -70,6 +70,16 @@ app:
       open-duration-ms: ${AI_OPEN_DURATION_MS:30000}
       first-packet-timeout-ms: ${AI_FIRST_PACKET_TIMEOUT_MS:60000}
     providers:
+      bailian:
+        base-url: ${BAILIAN_BASE_URL:https://dashscope.aliyuncs.com}
+        api-key: ${BAILIAN_API_KEY:}
+        endpoints:
+          chat: /compatible-mode/v1/chat/completions
+      siliconflow:
+        base-url: ${SILICONFLOW_BASE_URL:https://api.siliconflow.cn}
+        api-key: ${SILICONFLOW_API_KEY:}
+        endpoints:
+          chat: /v1/chat/completions
       deepseek:
         base-url: ${AI_BASE_URL:${DEEPSEEK_BASE_URL:https://api.deepseek.com/v1}}
         api-key: ${AI_API_KEY:${DEEPSEEK_API_KEY:}}
@@ -77,13 +87,25 @@ app:
         base-url: stub://local
         api-key: ""
     chat:
-      default-model: ${AI_DEFAULT_MODEL:${AI_CHAT_MODEL:${DEEPSEEK_CHAT_MODEL:deepseek-chat}}}
-      deep-thinking-model: ${AI_DEEP_THINKING_MODEL:${AI_CHAT_MODEL:${DEEPSEEK_CHAT_MODEL:deepseek-chat}}}
+      default-model: ${AI_DEFAULT_MODEL:qwen-plus}
+      deep-thinking-model: ${AI_DEEP_THINKING_MODEL:qwen3-max}
       candidates:
-        - id: ${AI_DEFAULT_MODEL:${AI_CHAT_MODEL:${DEEPSEEK_CHAT_MODEL:deepseek-chat}}}
-          provider: deepseek
-          model: ${AI_CHAT_MODEL:${DEEPSEEK_CHAT_MODEL:deepseek-chat}}
+        - id: qwen-plus
+          provider: bailian
+          model: ${BAILIAN_CHAT_MODEL:qwen-plus-latest}
           priority: 1
+          enabled: true
+          supports-thinking: false
+        - id: qwen3-max
+          provider: bailian
+          model: ${BAILIAN_DEEP_MODEL:qwen3-max}
+          priority: 2
+          enabled: true
+          supports-thinking: true
+        - id: glm-4.7
+          provider: siliconflow
+          model: ${SILICONFLOW_CHAT_MODEL:Pro/zai-org/GLM-4.7}
+          priority: 3
           enabled: true
           supports-thinking: true
         - id: stub-chat

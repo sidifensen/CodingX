@@ -91,6 +91,12 @@ class ChatApplicationServiceTest {
     private ConversationIntentService conversationIntentService;
 
     /**
+     * PromptTemplateLoader 依赖。
+     */
+    @Mock
+    private PromptTemplateLoader promptTemplateLoader;
+
+    /**
      * ChatRuntimeGuardService 依赖。
      */
     @Mock

@@ -1,33 +1,58 @@
 package com.codingx.chat.application.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.when;
 
 import com.codingx.chat.domain.model.ChatIntentExample;
 import com.codingx.chat.domain.model.ChatIntentNode;
 import java.util.List;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 /**
- * 验证意图解析器的最小分流能力。
+ * 验证意图解析器会基于 Prompt 和候选叶子节点解析 LLM 返回结果。
  */
+@ExtendWith(MockitoExtension.class)
 class ConversationIntentResolverTest {
 
+    @Mock
+    private PromptTemplateLoader promptTemplateLoader;
+
+    @Mock
+    private AiPromptExecutionService aiPromptExecutionService;
+
+    @InjectMocks
+    private ConversationIntentResolver conversationIntentResolver;
+
     /**
-     * 包含搜索语义的问题应优先命中 search 意图。
+     * 解析器应只使用叶子候选，并按 LLM 返回分数映射为排序结果。
      */
     @Test
-    void resolveReturnsSearchIntentForSearchLikeQuestion() {
-        ConversationIntentResolver resolver = new ConversationIntentResolver();
+    void resolveCandidatesMapsPromptResponseToSortedCandidates() {
         List<ChatIntentNode> nodes = List.of(
-            ChatIntentNode.builder().intentCode("chat.normal").name("普通闲聊").intentType("chat").enabled(1).sortNo(1).build(),
-            ChatIntentNode.builder().intentCode("search.web").name("联网搜索").intentType("search").enabled(1).sortNo(2).build()
+            ChatIntentNode.builder().intentCode("biz").name("业务系统").intentType("kb").enabled(1).sortNo(1).build(),
+            ChatIntentNode.builder().intentCode("biz-oa").parentCode("biz").name("OA系统").intentType("kb").enabled(1).sortNo(2).build(),
+            ChatIntentNode.builder().intentCode("biz-oa-intro").parentCode("biz-oa").name("系统介绍").intentType("kb").enabled(1).sortNo(3).build(),
+            ChatIntentNode.builder().intentCode("search.web").name("联网搜索").intentType("search").enabled(1).sortNo(4).build()
         );
         List<ChatIntentExample> examples = List.of(
-            ChatIntentExample.builder().intentCode("search.web").exampleText("帮我搜索一下最新资料").sortNo(1).build()
+            ChatIntentExample.builder().intentCode("biz-oa-intro").exampleText("OA系统是做什么的").sortNo(1).build()
         );
+        when(promptTemplateLoader.render(anyString(), org.mockito.ArgumentMatchers.anyMap())).thenReturn("intent prompt");
+        when(aiPromptExecutionService.complete("intent prompt", "请介绍一下 OA 系统")).thenReturn("""
+            [
+              {"id":"biz-oa-intro","score":0.91,"reason":"问题直接询问 OA 系统介绍"},
+              {"id":"search.web","score":0.42,"reason":"可通过搜索补充"}
+            ]
+            """);
 
-        String intentCode = resolver.resolveIntent("请搜索 Spring Boot SSE 最佳实践", nodes, examples);
+        List<ConversationIntentCandidate> candidates = conversationIntentResolver.resolveCandidates("请介绍一下 OA 系统", nodes, examples);
 
-        assertEquals("search.web", intentCode);
+        assertEquals(List.of("biz-oa-intro", "search.web"), candidates.stream().map(candidate -> candidate.node().getIntentCode()).toList());
+        assertEquals(0.91D, candidates.getFirst().score());
     }
 }

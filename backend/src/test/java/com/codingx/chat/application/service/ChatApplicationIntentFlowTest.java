@@ -59,6 +59,9 @@ class ChatApplicationIntentFlowTest {
     @Mock
     private ConversationIntentService conversationIntentService;
 
+    @Mock
+    private PromptTemplateLoader promptTemplateLoader;
+
     @InjectMocks
     private ChatApplicationService chatApplicationService;
 
@@ -82,6 +85,25 @@ class ChatApplicationIntentFlowTest {
         assertEquals(ChatMessageStatus.COMPLETED, captor.getAllValues().get(1).getStatus());
         assertEquals("请补充你指的是哪一部分", captor.getAllValues().get(1).getContent());
         verify(chatStreamPublisher).publishAssistantCompleted(1L, "请补充你指的是哪一部分", "New Conversation");
+        org.mockito.Mockito.verifyNoInteractions(aiChatClient);
+    }
+
+    /**
+     * SYSTEM 意图命中时应直接返回后端构造的文案，不再调用模型。
+     */
+    @Test
+    void sendMessageReturnsSystemReplyWithoutInvokingModel() {
+        ChatConversation conversation = ChatConversation.create(1L, "New Conversation", 1002L, ChatConversationStatus.ACTIVE);
+        when(chatConversationRepository.requireById(1L)).thenReturn(conversation);
+        when(chatMessageRepository.findByConversationId(1L)).thenReturn(new ArrayList<>());
+        when(conversationRewriteService.rewrite(any(), any())).thenReturn("你是谁");
+        when(conversationIntentService.route("你是谁")).thenReturn(
+            new ConversationIntentDecision("sys-about-bot", ConversationIntentAction.DIRECT, "我是 CodingX 的知识助手")
+        );
+
+        chatApplicationService.sendMessage(new SendChatMessageCommand(1L, "你是谁"), 1002L);
+
+        verify(chatStreamPublisher).publishAssistantCompleted(1L, "我是 CodingX 的知识助手", "New Conversation");
         org.mockito.Mockito.verifyNoInteractions(aiChatClient);
     }
 }

@@ -4,6 +4,7 @@ import cn.hutool.core.collection.CollUtil;
 import com.codingx.config.AiProperties;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
@@ -46,7 +47,7 @@ public class AiModelDispatchService {
         AiProviderHealthRegistry healthRegistry,
         AiModelSelector aiModelSelector
     ) {
-        this.providerClients = new ConcurrentHashMap<>();
+        this.providerClients = new LinkedHashMap<>();
         for (AiProviderClient providerClient : CollUtil.emptyIfNull(providerClients)) {
             this.providerClients.put(providerClient.provider(), providerClient);
         }
@@ -68,7 +69,7 @@ public class AiModelDispatchService {
             if (!healthRegistry.allowCall(modelId)) {
                 continue;
             }
-            AiProviderClient providerClient = providerClients.get(target.candidate().getProvider());
+            AiProviderClient providerClient = resolveProviderClient(target.candidate().getProvider());
             if (providerClient == null) {
                 continue;
             }
@@ -147,5 +148,23 @@ public class AiModelDispatchService {
             case NO_CONTENT -> new IllegalStateException(provider + "/" + model + " completed without content");
             case SUCCESS -> null;
         };
+    }
+
+    /**
+     * 解析当前模型应使用的 provider 客户端，优先精确匹配，其次回退到兼容客户端。
+     * @param providerName provider 名称。
+     * @return 命中的 provider 客户端。
+     */
+    private AiProviderClient resolveProviderClient(String providerName) {
+        AiProviderClient exactMatch = providerClients.get(providerName);
+        if (exactMatch != null) {
+            return exactMatch;
+        }
+        for (Map.Entry<String, AiProviderClient> entry : providerClients.entrySet()) {
+            if (providerName != null && providerName.startsWith(entry.getKey())) {
+                return entry.getValue();
+            }
+        }
+        return providerClients.get("openai-compatible");
     }
 }

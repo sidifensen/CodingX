@@ -9,6 +9,8 @@ import {
   Database,
   FileText,
   Globe2,
+  PanelRightClose,
+  PanelRightOpen,
   Paperclip,
   FolderOpen,
   Search,
@@ -21,6 +23,7 @@ import { ChatWorkspaceController } from './chat/types';
  */
 interface ChatViewProps {
   isAuthenticated: boolean;
+  isDesktopSidebarCollapsed?: boolean;
   onRequireLogin: () => void;
   workspace: ChatWorkspaceController;
 }
@@ -28,7 +31,12 @@ interface ChatViewProps {
 /**
  * 渲染接入真实后端数据的聊天三栏工作台。
  */
-export default function ChatView({ isAuthenticated, onRequireLogin, workspace }: ChatViewProps) {
+export default function ChatView({
+  isAuthenticated,
+  isDesktopSidebarCollapsed = false,
+  onRequireLogin,
+  workspace,
+}: ChatViewProps) {
   const {
     activeConversationId,
     messages,
@@ -49,6 +57,8 @@ export default function ChatView({ isAuthenticated, onRequireLogin, workspace }:
     deleteConversation,
   } = workspace;
   const latestMessageAnchorRef = React.useRef<HTMLDivElement | null>(null);
+  // 步骤：在聊天视图内部维护右侧工作区折叠状态，仅影响当前聊天工作台布局。
+  const [isWorkspacePanelCollapsed, setIsWorkspacePanelCollapsed] = React.useState(false);
 
   React.useEffect(() => {
     if (!messages.length) {
@@ -81,6 +91,8 @@ export default function ChatView({ isAuthenticated, onRequireLogin, workspace }:
   const showConversationEmptyState = activeConversationId != null && !messages.length && !isBootstrapping;
   // 步骤：首页只保留欢迎内容和输入框，右侧执行回放仅在真实会话上下文中展示。
   const showWorkspacePanel = !showLandingState;
+  // 步骤：右侧栏保留挂载以支持宽度过渡动画，面板内容在收起后不再渲染。
+  const isWorkspacePanelVisible = showWorkspacePanel && !isWorkspacePanelCollapsed;
 
   return (
     <motion.div
@@ -91,7 +103,24 @@ export default function ChatView({ isAuthenticated, onRequireLogin, workspace }:
     >
       <section className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(71,96,122,0.16),transparent_38%),radial-gradient(circle_at_80%_18%,rgba(188,75,0,0.12),transparent_26%)]" />
-        <div className="relative flex-1 overflow-y-auto px-4 pb-40 pt-6 md:px-8">
+        <div className="absolute left-4 right-4 top-4 z-20 hidden items-center justify-between md:flex">
+          <div className={`${isDesktopSidebarCollapsed ? '' : 'w-10'}`}>
+            {/* 步骤：左上角预留壳层折叠按钮占位，避免与主内容视觉挤压；真实交互由 App 壳层负责。 */}
+          </div>
+          {showWorkspacePanel ? (
+            <button
+              type="button"
+              aria-label={isWorkspacePanelCollapsed ? '展开右侧工作区' : '折叠右侧工作区'}
+              onClick={() => setIsWorkspacePanelCollapsed((current) => !current)}
+              className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-xl border border-border bg-surface/92 text-foreground shadow-[0_14px_30px_rgba(0,0,0,0.18)] backdrop-blur"
+            >
+              {isWorkspacePanelCollapsed ? <PanelRightOpen size={18} /> : <PanelRightClose size={18} />}
+            </button>
+          ) : (
+            <div className="w-10" />
+          )}
+        </div>
+        <div className="relative flex-1 overflow-y-auto px-4 pb-40 pt-6 md:px-8 md:pt-20">
           {showLandingState ? (
             <div className="mx-auto flex max-w-4xl flex-col items-center justify-center px-6 py-16 text-center">
               <h1 className="max-w-3xl text-4xl font-semibold tracking-tight text-foreground md:text-6xl">
@@ -149,7 +178,7 @@ export default function ChatView({ isAuthenticated, onRequireLogin, workspace }:
                       className={`max-w-3xl px-1 py-1 ${
                         isAssistant
                           ? 'text-foreground'
-                          : 'rounded-[28px] bg-foreground px-5 py-4 text-background'
+                          : 'rounded-[28px] bg-foreground px-5 py-3 text-background'
                       }`}
                     >
                       {isAssistant ? (
@@ -184,7 +213,7 @@ export default function ChatView({ isAuthenticated, onRequireLogin, workspace }:
               onSubmit={(event) => void handleSubmit(event)}
               className="rounded-[24px] border border-border bg-surface shadow-[0_20px_64px_rgba(0,0,0,0.12)]"
             >
-              <div className="flex items-center gap-3 px-4 py-3">
+              <div className="flex items-center gap-3 px-4 py-2.5">
                 <button type="button" className="rounded-full border border-border bg-surface-container p-1.5 text-muted">
                   <Paperclip size={17} />
                 </button>
@@ -193,7 +222,7 @@ export default function ChatView({ isAuthenticated, onRequireLogin, workspace }:
                   value={inputValue}
                   onChange={(event) => setInputValue(event.target.value)}
                   placeholder="输入指令以重构组件库或分析代码..."
-                  className="h-9 flex-1 bg-transparent text-[14px] text-foreground outline-none placeholder:text-muted"
+                  className="h-8 flex-1 bg-transparent text-[14px] text-foreground outline-none placeholder:text-muted"
                 />
                 {isStreaming ? (
                   <button
@@ -201,7 +230,7 @@ export default function ChatView({ isAuthenticated, onRequireLogin, workspace }:
                     aria-label="停止生成"
                     onClick={() => void cancelCurrentStream()}
                     disabled={isCancelling}
-                    className="rounded-full bg-red-500 px-3.5 py-1.5 text-sm font-medium text-white transition-opacity disabled:opacity-60"
+                    className="rounded-full bg-red-500 px-3 py-1.5 text-sm font-medium text-white transition-opacity disabled:opacity-60"
                   >
                     <span className="flex items-center gap-2">
                       <CircleStop size={16} />
@@ -212,7 +241,7 @@ export default function ChatView({ isAuthenticated, onRequireLogin, workspace }:
                   <button
                     type="submit"
                     aria-label="发送消息"
-                    className="rounded-full bg-foreground p-2.5 text-background transition-opacity hover:opacity-90 disabled:opacity-60"
+                    className="rounded-full bg-foreground p-2 text-background transition-opacity hover:opacity-90 disabled:opacity-60"
                     disabled={!inputValue.trim()}
                   >
                     <ArrowUp size={17} />
@@ -225,60 +254,71 @@ export default function ChatView({ isAuthenticated, onRequireLogin, workspace }:
       </section>
 
       {showWorkspacePanel ? (
-        <aside className="hidden w-[340px] border-l border-border bg-surface/96 md:flex md:flex-col">
-          <div className="border-b border-border px-5 py-5">
-            <p className="font-mono text-[11px] uppercase tracking-[0.3em] text-muted">Workspace</p>
-            <h3 className="mt-2 text-lg font-semibold text-foreground">执行回放</h3>
-          </div>
-          <div className="flex-1 overflow-y-auto px-4 py-4">
-            <Panel title="执行步骤" icon={CheckCircle2}>
-              {executionSteps.length ? (
-                executionSteps.map((step) => (
-                  <div key={step.id} className="rounded-2xl border border-border bg-surface-container px-4 py-3">
-                    <div className="text-sm font-medium text-foreground">{step.stepTitle}</div>
-                    <div className="mt-2 text-[12px] uppercase tracking-[0.2em] text-muted">{step.stepStatus}</div>
-                    {step.content ? <div className="mt-3 text-sm leading-6 text-muted">{step.content}</div> : null}
-                  </div>
-                ))
-              ) : (
-                <EmptyBlock text="当前会话暂无步骤回放" />
-              )}
-            </Panel>
+        <aside
+          className={`hidden overflow-hidden border-l bg-surface/96 transition-[width,opacity,border-color] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] md:flex md:flex-col ${
+            isWorkspacePanelVisible
+              ? 'w-[340px] border-border opacity-100'
+              : 'w-0 border-transparent opacity-0 pointer-events-none'
+          }`}
+          aria-hidden={!isWorkspacePanelVisible}
+        >
+          {isWorkspacePanelVisible ? (
+            <>
+              <div className="border-b border-border px-5 py-5">
+                <p className="font-mono text-[11px] uppercase tracking-[0.3em] text-muted">Workspace</p>
+                <h3 className="mt-2 text-lg font-semibold text-foreground">执行回放</h3>
+              </div>
+              <div className="flex-1 overflow-y-auto px-4 py-4">
+                <Panel title="执行步骤" icon={CheckCircle2}>
+                  {executionSteps.length ? (
+                    executionSteps.map((step) => (
+                      <div key={step.id} className="rounded-2xl border border-border bg-surface-container px-4 py-3">
+                        <div className="text-sm font-medium text-foreground">{step.stepTitle}</div>
+                        <div className="mt-2 text-[12px] uppercase tracking-[0.2em] text-muted">{step.stepStatus}</div>
+                        {step.content ? <div className="mt-3 text-sm leading-6 text-muted">{step.content}</div> : null}
+                      </div>
+                    ))
+                  ) : (
+                    <EmptyBlock text="当前会话暂无步骤回放" />
+                  )}
+                </Panel>
 
-            <Panel title="参考来源" icon={Globe2}>
-              {references.length ? (
-                references.map((reference) => (
-                  <a
-                    key={reference.id}
-                    href={reference.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="block rounded-2xl border border-border bg-surface-container px-4 py-3 transition-colors hover:border-border-active"
-                  >
-                    <div className="text-sm font-medium text-foreground">{reference.title}</div>
-                    {reference.siteName ? <div className="mt-2 text-[12px] text-muted">{reference.siteName}</div> : null}
-                    {reference.snippet ? <div className="mt-3 text-sm leading-6 text-muted">{reference.snippet}</div> : null}
-                  </a>
-                ))
-              ) : (
-                <EmptyBlock text="当前会话暂无来源回放" />
-              )}
-            </Panel>
+                <Panel title="参考来源" icon={Globe2}>
+                  {references.length ? (
+                    references.map((reference) => (
+                      <a
+                        key={reference.id}
+                        href={reference.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="block rounded-2xl border border-border bg-surface-container px-4 py-3 transition-colors hover:border-border-active"
+                      >
+                        <div className="text-sm font-medium text-foreground">{reference.title}</div>
+                        {reference.siteName ? <div className="mt-2 text-[12px] text-muted">{reference.siteName}</div> : null}
+                        {reference.snippet ? <div className="mt-3 text-sm leading-6 text-muted">{reference.snippet}</div> : null}
+                      </a>
+                    ))
+                  ) : (
+                    <EmptyBlock text="当前会话暂无来源回放" />
+                  )}
+                </Panel>
 
-            <Panel title="生成产物" icon={FileText}>
-              {artifacts.length ? (
-                artifacts.map((artifact) => (
-                  <div key={artifact.id} className="rounded-2xl border border-border bg-surface-container px-4 py-3">
-                    <div className="text-sm font-medium text-foreground">{artifact.name}</div>
-                    <div className="mt-2 text-[12px] uppercase tracking-[0.2em] text-muted">{artifact.artifactType}</div>
-                    {artifact.contentPreview ? <div className="mt-3 text-sm leading-6 text-muted">{artifact.contentPreview}</div> : null}
-                  </div>
-                ))
-              ) : (
-                <EmptyBlock text="当前会话暂无产物回放" />
-              )}
-            </Panel>
-          </div>
+                <Panel title="生成产物" icon={FileText}>
+                  {artifacts.length ? (
+                    artifacts.map((artifact) => (
+                      <div key={artifact.id} className="rounded-2xl border border-border bg-surface-container px-4 py-3">
+                        <div className="text-sm font-medium text-foreground">{artifact.name}</div>
+                        <div className="mt-2 text-[12px] uppercase tracking-[0.2em] text-muted">{artifact.artifactType}</div>
+                        {artifact.contentPreview ? <div className="mt-3 text-sm leading-6 text-muted">{artifact.contentPreview}</div> : null}
+                      </div>
+                    ))
+                  ) : (
+                    <EmptyBlock text="当前会话暂无产物回放" />
+                  )}
+                </Panel>
+              </div>
+            </>
+          ) : null}
         </aside>
       ) : null}
 

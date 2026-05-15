@@ -24,6 +24,7 @@ interface SidebarProps {
   setActiveView: (view: ViewType) => void;
   isMobileMenuOpen: boolean;
   setIsMobileMenuOpen: (isOpen: boolean) => void;
+  isDesktopCollapsed: boolean;
   isDarkMode: boolean;
   toggleTheme: () => void;
   authSession: AuthSession | null;
@@ -46,6 +47,7 @@ export default function Sidebar({
   setActiveView,
   isMobileMenuOpen,
   setIsMobileMenuOpen,
+  isDesktopCollapsed,
   isDarkMode,
   toggleTheme,
   authSession,
@@ -78,7 +80,7 @@ export default function Sidebar({
           else setActiveView(id);
           setIsMobileMenuOpen(false);
         }}
-        className={`flex items-center gap-3 w-full px-4 py-3 transition-all duration-200 active:scale-95 ${
+        className={`flex w-full cursor-pointer items-center gap-3 px-4 py-3 transition-all duration-200 active:scale-95 ${
           isActive && !isNew
             ? 'bg-surface-container-high text-foreground rounded-full border border-border shadow-sm'
             : isNew
@@ -96,68 +98,77 @@ export default function Sidebar({
 
   return (
     <aside
-      className={`absolute left-[-18rem] md:relative md:left-0 flex flex-col h-full pt-6 pb-4 w-72 md:w-64 border-r border-border bg-surface z-50 shrink-0 shadow-2xl md:shadow-none overflow-hidden text-foreground`}
+      className={`absolute left-[-18rem] md:relative md:left-0 flex h-full flex-col overflow-hidden border-r border-border bg-surface pt-6 pb-4 text-foreground shadow-2xl shrink-0 z-50 transition-[width,padding,opacity,border-color] duration-300 md:shadow-none ${
+        isDesktopCollapsed
+          ? 'md:w-0 md:border-r-0 md:px-0 md:pt-0 md:pb-0 md:opacity-0 md:pointer-events-none'
+          : 'w-72 md:w-64'
+      }`}
+      aria-hidden={isDesktopCollapsed}
     >
-      {/* Brand Header */}
-      <div className="px-6 mb-8 flex items-center justify-between">
-        <div className="flex items-center gap-3 mb-1">
-          <div className="w-8 h-8 bg-foreground rounded flex items-center justify-center">
-            <SquareTerminal size={18} className="text-background" />
+      {!isDesktopCollapsed ? (
+        <>
+          {/* Brand Header */}
+          <div className="px-6 mb-8 flex items-center justify-between">
+            <div className="flex items-center gap-3 mb-1">
+              <div className="w-8 h-8 bg-foreground rounded flex items-center justify-center">
+                <SquareTerminal size={18} className="text-background" />
+              </div>
+              <h1 className="text-xl font-bold tracking-tight leading-none text-foreground">CodingX</h1>
+            </div>
+            <Search size={22} className="text-foreground md:hidden" />
           </div>
-          <h1 className="text-xl font-bold tracking-tight leading-none text-foreground">CodingX</h1>
-        </div>
-        <Search size={22} className="text-foreground md:hidden" />
-      </div>
+  
+          {/* Action Button: 新建对话 */}
+          <div className="px-5 mb-6">
+            <button
+              onClick={() => {
+                void onStartNewConversation();
+                setIsMobileMenuOpen(false);
+              }}
+              className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-2xl border border-border bg-background py-3.5 text-[15px] font-bold text-foreground shadow-sm transition-all hover:bg-surface-high active:scale-95"
+            >
+              <PlusCircle size={20} className="text-muted" />
+              新建对话
+            </button>
+          </div>
 
-      {/* Action Button: 新建对话 */}
-      <div className="px-5 mb-6">
-        <button
-          onClick={() => {
-            void onStartNewConversation();
-            setIsMobileMenuOpen(false);
-          }}
-          className="w-full bg-background border border-border text-foreground hover:bg-surface-high py-3.5 rounded-2xl text-[15px] font-bold active:scale-95 transition-all flex items-center justify-center gap-2 shadow-sm"
-        >
-          <PlusCircle size={20} className="text-muted" />
-          新建对话
-        </button>
-      </div>
+          {/* Navigation */}
+          <div className="px-5 mb-2 font-mono text-[10px] text-muted tracking-widest uppercase mt-2">
+            我的空间
+          </div>
+          <nav className="px-3 space-y-1 mb-6">
+            <NavItem id="skills" label="技能与套件" icon={Zap} />
+            <NavItem id="experts" label="专家团队" icon={Brain} />
+            <NavItem id="automation" label="自动化" icon={Bot} />
+          </nav>
 
-      {/* Navigation */}
-      <div className="px-5 mb-2 font-mono text-[10px] text-muted tracking-widest uppercase mt-2">
-        我的空间
-      </div>
-      <nav className="px-3 space-y-1 mb-6">
-        <NavItem id="skills" label="技能与套件" icon={Zap} />
-        <NavItem id="experts" label="专家团队" icon={Brain} />
-        <NavItem id="automation" label="自动化" icon={Bot} />
-      </nav>
+          {/* History / Tasks */}
+          <div className="flex-1 overflow-y-auto pb-4">
+            {authSession ? (
+              <ConversationHistory
+                conversations={conversations}
+                activeConversationId={activeConversationId}
+                onSelectConversation={onSelectConversation}
+                onRenameConversation={onRenameConversation}
+                onDeleteConversation={onDeleteConversation}
+              />
+            ) : null}
+          </div>
 
-      {/* History / Tasks */}
-      <div className="flex-1 overflow-y-auto pb-4">
-        {authSession ? (
-          <ConversationHistory
-            conversations={conversations}
-            activeConversationId={activeConversationId}
-            onSelectConversation={onSelectConversation}
-            onRenameConversation={onRenameConversation}
-            onDeleteConversation={onDeleteConversation}
-          />
-        ) : null}
-      </div>
-
-      {/* Footer actions */}
-      {authSession ? (
-        <ProfileMenu
-          isDarkMode={isDarkMode}
-          isSubmitting={isAuthSubmitting}
-          displayName={authSession.displayName}
-          onToggleTheme={toggleTheme}
-          onLogout={onLogout}
-        />
-      ) : (
-        <LoginEntry onClick={onOpenLogin} />
-      )}
+          {/* Footer actions */}
+          {authSession ? (
+            <ProfileMenu
+              isDarkMode={isDarkMode}
+              isSubmitting={isAuthSubmitting}
+              displayName={authSession.displayName}
+              onToggleTheme={toggleTheme}
+              onLogout={onLogout}
+            />
+          ) : (
+            <LoginEntry onClick={onOpenLogin} />
+          )}
+        </>
+      ) : null}
     </aside>
   );
 }
@@ -248,7 +259,7 @@ function ConversationHistory({
                   <button
                     type="button"
                     onClick={() => void onSelectConversation(conversation.id)}
-                    className={`min-w-0 flex-1 text-left ${
+                    className={`min-w-0 flex-1 cursor-pointer text-left ${
                       isActive ? 'text-foreground' : 'text-muted hover:text-foreground'
                     }`}
                   >
@@ -279,7 +290,7 @@ function ConversationHistory({
                       onClick={() => {
                         setOpenMenuId(isMenuOpen ? null : conversation.id);
                       }}
-                      className={`absolute right-0 rounded-md p-1 text-muted transition-opacity hover:text-foreground ${
+                      className={`absolute right-0 cursor-pointer rounded-md p-1 text-muted transition-opacity hover:text-foreground ${
                         hoveredActionId === conversation.id || isMenuOpen ? 'opacity-100' : 'opacity-0'
                       }`}
                     >
@@ -297,7 +308,7 @@ function ConversationHistory({
                         void onRenameConversation(conversation.id, conversation.title);
                         setOpenMenuId(null);
                       }}
-                      className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm text-foreground transition-colors hover:bg-surface-high"
+                      className="flex w-full cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-left text-sm text-foreground transition-colors hover:bg-surface-high"
                     >
                       <PencilLine size={16} />
                       重命名对话
@@ -309,7 +320,7 @@ function ConversationHistory({
                         void onDeleteConversation(conversation.id);
                         setOpenMenuId(null);
                       }}
-                      className="mt-1 flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm text-[#ff5b57] transition-colors hover:bg-[#ff5b57]/10"
+                      className="mt-1 flex w-full cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-left text-sm text-[#ff5b57] transition-colors hover:bg-[#ff5b57]/10"
                     >
                       <Trash2 size={16} />
                       删除对话

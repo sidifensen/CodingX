@@ -299,6 +299,27 @@ describe('ChatView', () => {
       expect(scrollIntoView.mock.calls.length).toBeGreaterThan(initialCalls);
     });
   });
+
+  /**
+   * 真实会话页应支持通过内容区右上角按钮折叠与展开右侧工作区。
+   */
+  it('应支持折叠和展开右侧工作区面板', async () => {
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace()}
+      />,
+    );
+
+    expect(screen.getByText('执行回放')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '折叠右侧工作区' }));
+    expect(screen.queryByText('执行回放')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '展开右侧工作区' }));
+    expect(screen.getByText('执行回放')).toBeInTheDocument();
+  });
 });
 
 /**

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Menu } from 'lucide-react';
+import { Menu, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { AnimatePresence } from 'motion/react';
 
 // 视图组件
@@ -27,6 +27,8 @@ export default function App() {
   const [isDarkMode, setIsDarkMode] = useState(true);
   // 步骤：维护移动端侧边栏开关状态。
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  // 步骤：维护桌面端左侧边栏折叠状态，保证聊天内容区可获得更大可视宽度。
+  const [isDesktopSidebarCollapsed, setIsDesktopSidebarCollapsed] = useState(false);
   // 步骤：维护登录弹窗显示状态。
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   // 步骤：在开发环境预填默认账号密码，降低本地联调成本。
@@ -123,6 +125,13 @@ export default function App() {
     chatWorkspace.deleteDialog.open(conversationId, conversation?.title ?? '');
   };
 
+  /**
+   * 切换桌面端左侧边栏折叠状态。
+   */
+  const toggleDesktopSidebar = () => {
+    setIsDesktopSidebarCollapsed((current) => !current);
+  };
+
   return (
     <div className="relative h-screen w-full overflow-hidden bg-background text-foreground transition-colors duration-300">
       {/* 抽屉推动容器 */}
@@ -136,6 +145,7 @@ export default function App() {
           setActiveView={setActiveView}
           isMobileMenuOpen={isMobileMenuOpen}
           setIsMobileMenuOpen={setIsMobileMenuOpen}
+          isDesktopCollapsed={isDesktopSidebarCollapsed}
           isDarkMode={isDarkMode}
           toggleTheme={toggleTheme}
           authSession={session}
@@ -176,12 +186,21 @@ export default function App() {
 
           {/* 动态视图内容 */}
           <div className="flex-1 overflow-hidden relative">
+            <button
+              type="button"
+              aria-label={isDesktopSidebarCollapsed ? '展开左侧边栏' : '折叠左侧边栏'}
+              onClick={toggleDesktopSidebar}
+              className="absolute left-4 top-4 z-30 hidden h-10 w-10 cursor-pointer items-center justify-center rounded-xl border border-border bg-surface/92 text-foreground shadow-[0_14px_30px_rgba(0,0,0,0.18)] backdrop-blur md:flex"
+            >
+              {isDesktopSidebarCollapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
+            </button>
             <AnimatePresence mode="wait">
               {activeView === 'chat' && (
                 <ChatView
                   key="chat"
                   isAuthenticated={isAuthenticated}
                   onRequireLogin={openLoginModal}
+                  isDesktopSidebarCollapsed={isDesktopSidebarCollapsed}
                   workspace={chatWorkspace}
                 />
               )}

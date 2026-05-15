@@ -59,17 +59,7 @@ public class OpenAiStyleStreamParser {
      */
     private String extractContentDelta(String payload) {
         try {
-            JSONObject root = JSONUtil.parseObj(payload);
-            JSONArray choices = root.getJSONArray("choices");
-            if (choices == null || choices.isEmpty()) {
-                return null;
-            }
-            JSONObject choice = choices.getJSONObject(0);
-            JSONObject delta = choice.getJSONObject("delta");
-            if (delta == null) {
-                return null;
-            }
-            return StrUtil.nullToEmpty(delta.getStr("content"));
+            return extractChoiceText(firstChoice(payload), "content");
         } catch (Exception exception) {
             return null;
         }
@@ -82,20 +72,54 @@ public class OpenAiStyleStreamParser {
      */
     private String extractThinkingDelta(String payload) {
         try {
-            JSONObject root = JSONUtil.parseObj(payload);
-            JSONArray choices = root.getJSONArray("choices");
-            if (choices == null || choices.isEmpty()) {
-                return null;
-            }
-            JSONObject choice = choices.getJSONObject(0);
-            JSONObject delta = choice.getJSONObject("delta");
-            if (delta == null) {
-                return null;
-            }
-            return StrUtil.nullToEmpty(delta.getStr("reasoning_content"));
+            return extractChoiceText(firstChoice(payload), "reasoning_content");
         } catch (Exception exception) {
             return null;
         }
+    }
+
+    /**
+     * 读取第一个 choice，兼容 OpenAI 兼容接口的标准响应形态。
+     * @param payload JSON 负载。
+     * @return 第一个 choice 对象。
+     */
+    private JSONObject firstChoice(String payload) {
+        JSONObject root = JSONUtil.parseObj(payload);
+        JSONArray choices = root.getJSONArray("choices");
+        if (choices == null || choices.isEmpty()) {
+            return null;
+        }
+        return choices.getJSONObject(0);
+    }
+
+    /**
+     * 按 ragent 的兼容策略从 delta 或 message 两种结构中抽取文本字段。
+     * @param choice 首个 choice 对象。
+     * @param fieldName 字段名。
+     * @return 文本字段值。
+     */
+    private String extractChoiceText(JSONObject choice, String fieldName) {
+        if (choice == null) {
+            return null;
+        }
+        String deltaValue = extractObjectText(choice.getJSONObject("delta"), fieldName);
+        if (deltaValue != null) {
+            return deltaValue;
+        }
+        return extractObjectText(choice.getJSONObject("message"), fieldName);
+    }
+
+    /**
+     * 从指定对象中读取文本字段，保留空字符串语义供上层过滤。
+     * @param source 数据对象。
+     * @param fieldName 字段名。
+     * @return 字段文本或 null。
+     */
+    private String extractObjectText(JSONObject source, String fieldName) {
+        if (source == null || !source.containsKey(fieldName)) {
+            return null;
+        }
+        return StrUtil.nullToEmpty(source.getStr(fieldName));
     }
 
     /**
@@ -112,14 +136,13 @@ public class OpenAiStyleStreamParser {
             consumer.onDone();
             return;
         }
-        String delta = extractContentDelta(payload);
-        if (StrUtil.isNotEmpty(delta)) {
-            consumer.onContentDelta(delta);
-            return;
-        }
         String thinkingDelta = extractThinkingDelta(payload);
         if (StrUtil.isNotEmpty(thinkingDelta)) {
             consumer.onThinkingDelta(thinkingDelta);
+        }
+        String delta = extractContentDelta(payload);
+        if (StrUtil.isNotEmpty(delta)) {
+            consumer.onContentDelta(delta);
         }
     }
 

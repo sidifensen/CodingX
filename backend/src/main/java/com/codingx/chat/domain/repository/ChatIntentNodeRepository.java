@@ -32,4 +32,32 @@ public interface ChatIntentNodeRepository {
      * @return 意图节点；不存在时返回 null。
      */
     ChatIntentNode findByIntentCode(String intentCode);
+
+    /**
+     * 按主键查询未删除节点，供管理端更新和删除保护使用。
+     * @param id 节点主键。
+     * @return 意图节点；不存在或已删除时返回 null。
+     */
+    ChatIntentNode findById(Long id);
+
+    /**
+     * 判断业务编码是否已被其他未删除节点占用。
+     * @param intentCode 意图编码。
+     * @param excludedId 更新当前节点时需要排除的主键；新增时传 null。
+     * @return true 表示存在重复编码。
+     */
+    boolean existsByIntentCode(String intentCode, Long excludedId);
+
+    /**
+     * 判断指定父编码下是否仍存在未删除子节点，避免删除后产生孤儿树。
+     * @param parentCode 父节点业务编码。
+     * @return true 表示存在子节点。
+     */
+    boolean hasChildren(String parentCode);
+
+    /**
+     * 按主键逻辑删除节点，保留历史引用关系。
+     * @param id 节点主键。
+     */
+    void softDeleteById(Long id);
 }

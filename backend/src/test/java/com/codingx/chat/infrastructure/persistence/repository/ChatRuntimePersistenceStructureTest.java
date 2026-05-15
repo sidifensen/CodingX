@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.baomidou.mybatisplus.annotation.TableName;
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.List;
 import org.apache.ibatis.annotations.Mapper;
@@ -24,6 +25,20 @@ class ChatRuntimePersistenceStructureTest {
     void runtimePersistenceSkeletonsExistForAllNewTables() throws Exception {
         for (PersistenceSkeleton skeleton : expectedSkeletons()) {
             assertRepositorySkeleton(skeleton);
+        }
+    }
+
+    /**
+     * 管理端意图树需要在 DO 层暴露 ragent 兼容字段，避免数据库迁移已存在但映射层不可用。
+     * @throws Exception 目标 DO 类或字段缺失时抛出。
+     */
+    @Test
+    void chatIntentNodeDataObjectContainsRagentAdminFields() throws Exception {
+        Class<?> dataObjectClass = Class.forName("com.codingx.chat.infrastructure.persistence.dataobject.ChatIntentNodeDO");
+        List<String> fieldNames = List.of(dataObjectClass.getDeclaredFields()).stream().map(Field::getName).toList();
+
+        for (String expectedField : List.of("kbId", "level", "examples", "collectionName", "topK", "kind", "promptSnippet", "sortOrder")) {
+            assertTrue(fieldNames.contains(expectedField), "Missing ChatIntentNodeDO field: " + expectedField);
         }
     }
 

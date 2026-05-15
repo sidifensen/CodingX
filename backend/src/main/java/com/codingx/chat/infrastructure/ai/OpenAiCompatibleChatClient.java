@@ -130,12 +130,17 @@ public class OpenAiCompatibleChatClient implements AiProviderClient {
      * @return JSON 请求体。
      */
     private JSONObject buildRequestBody(AiConversationRequest request, AiModelTarget target) {
-        return JSONUtil.createObj()
+        JSONObject body = JSONUtil.createObj()
             .set("model", target.candidate().getModel())
             .set("stream", request.stream())
             .set("messages", request.messages().stream()
                 .map(this::toMessagePayload)
                 .collect(Collectors.toList()));
+        if (request.thinkingEnabled()) {
+            // 百炼和兼容 provider 需要显式开关才会在流式响应中返回 reasoning_content。
+            body.set("enable_thinking", true);
+        }
+        return body;
     }
 
     /**

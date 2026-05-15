@@ -331,11 +331,19 @@ CREATE TABLE IF NOT EXISTS chat_intent_node (
     name VARCHAR(255) NOT NULL,
     description TEXT,
     intent_type VARCHAR(32) NOT NULL,
+    kb_id BIGINT,
+    level INTEGER NOT NULL DEFAULT 1,
+    examples TEXT,
+    collection_name VARCHAR(255),
+    top_k INTEGER,
+    kind INTEGER,
     prompt_template TEXT,
     mcp_tool_id VARCHAR(128),
     param_prompt_template TEXT,
+    prompt_snippet TEXT,
     enabled SMALLINT NOT NULL DEFAULT 1,
     sort_no INTEGER NOT NULL DEFAULT 0,
+    sort_order INTEGER NOT NULL DEFAULT 0,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     deleted SMALLINT NOT NULL DEFAULT 0
@@ -347,11 +355,19 @@ COMMENT ON COLUMN chat_intent_node.parent_code IS '父节点标识';
 COMMENT ON COLUMN chat_intent_node.name IS '展示名称';
 COMMENT ON COLUMN chat_intent_node.description IS '语义描述';
 COMMENT ON COLUMN chat_intent_node.intent_type IS '意图类型';
+COMMENT ON COLUMN chat_intent_node.kb_id IS '关联知识库ID';
+COMMENT ON COLUMN chat_intent_node.level IS '树节点层级';
+COMMENT ON COLUMN chat_intent_node.examples IS '示例问题JSON';
+COMMENT ON COLUMN chat_intent_node.collection_name IS '知识库集合名称';
+COMMENT ON COLUMN chat_intent_node.top_k IS '检索返回数量';
+COMMENT ON COLUMN chat_intent_node.kind IS '管理端节点类型';
 COMMENT ON COLUMN chat_intent_node.prompt_template IS '提示词模板';
 COMMENT ON COLUMN chat_intent_node.mcp_tool_id IS 'MCP 工具标识';
 COMMENT ON COLUMN chat_intent_node.param_prompt_template IS 'MCP 参数提取提示词模板';
+COMMENT ON COLUMN chat_intent_node.prompt_snippet IS '提示词摘要';
 COMMENT ON COLUMN chat_intent_node.enabled IS '是否启用 1：启用 0：禁用';
 COMMENT ON COLUMN chat_intent_node.sort_no IS '排序字段';
+COMMENT ON COLUMN chat_intent_node.sort_order IS '管理端排序字段';
 COMMENT ON COLUMN chat_intent_node.created_at IS '创建时间';
 COMMENT ON COLUMN chat_intent_node.updated_at IS '更新时间';
 COMMENT ON COLUMN chat_intent_node.deleted IS '是否删除 0：正常 1：删除';
@@ -521,6 +537,7 @@ CREATE INDEX IF NOT EXISTS idx_chat_message_reference_conversation ON chat_messa
 CREATE INDEX IF NOT EXISTS idx_chat_message_artifact_run ON chat_message_artifact (run_id, created_at ASC);
 CREATE INDEX IF NOT EXISTS idx_chat_message_artifact_conversation ON chat_message_artifact (conversation_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_chat_intent_node_parent ON chat_intent_node (parent_code, sort_no ASC);
+CREATE INDEX IF NOT EXISTS idx_chat_intent_node_kind_sort ON chat_intent_node (kind, sort_order ASC);
 CREATE INDEX IF NOT EXISTS idx_chat_intent_example_code ON chat_intent_example (intent_code, sort_no ASC);
 CREATE INDEX IF NOT EXISTS idx_chat_trace_run_conversation ON chat_trace_run (conversation_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_chat_trace_run_task ON chat_trace_run (task_id);

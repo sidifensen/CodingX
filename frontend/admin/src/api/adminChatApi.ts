@@ -39,11 +39,21 @@ export interface AdminIntentNode {
   name: string;
   description?: string;
   intentType: string;
+  // ragent 风格配置台字段与旧 intentType/sortNo 并存，保证管理端升级时不破坏运行时分流。
+  kbId?: string;
+  level?: number;
+  examples?: string | string[];
+  collectionName?: string;
+  topK?: number;
+  kind?: number;
   promptTemplate?: string;
+  promptSnippet?: string;
   mcpToolId?: string;
   paramPromptTemplate?: string;
   enabled?: number;
   sortNo?: number;
+  sortOrder?: number;
+  children?: AdminIntentNode[];
 }
 
 export interface AdminQueryTermMapping {
@@ -87,10 +97,31 @@ export class AdminChatApi {
     return this.request<AdminIntentNode[]>('/api/admin/chat/intents');
   }
 
+  static async listIntentTree(): Promise<AdminIntentNode[]> {
+    return this.request<AdminIntentNode[]>('/api/admin/chat/intents/tree');
+  }
+
   static async saveIntent(payload: AdminIntentNode): Promise<AdminIntentNode> {
+    return this.createIntent(payload);
+  }
+
+  static async createIntent(payload: AdminIntentNode): Promise<AdminIntentNode> {
     return this.request<AdminIntentNode>('/api/admin/chat/intents', {
       method: 'POST',
       body: JSON.stringify(payload),
+    });
+  }
+
+  static async updateIntent(id: string | number, payload: AdminIntentNode): Promise<AdminIntentNode> {
+    return this.request<AdminIntentNode>(`/api/admin/chat/intents/${encodeURIComponent(String(id))}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  static async deleteIntent(id: string | number): Promise<void> {
+    return this.request<void>(`/api/admin/chat/intents/${encodeURIComponent(String(id))}`, {
+      method: 'DELETE',
     });
   }
 

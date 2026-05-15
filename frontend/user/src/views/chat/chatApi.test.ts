@@ -73,6 +73,42 @@ describe('ChatApi', () => {
   });
 
   /**
+   * 示例问题请求应命中专用接口并返回字符串化后的标识。
+   */
+  it('应加载首页示例问题', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          success: true,
+          code: 'OK',
+          message: 'success',
+          data: [
+            {
+              id: 6001,
+              questionText: '请介绍一下 OA 系统的主要功能',
+              category: '业务系统',
+            },
+          ],
+        }),
+        { status: 200 },
+      ),
+    );
+
+    const result = await ChatApi.listSampleQuestions('token-123');
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      '/api/chat/sample-questions',
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          satoken: 'token-123',
+        }),
+      }),
+    );
+    expect(result[0].id).toBe('6001');
+    expect(result[0].questionText).toBe('请介绍一下 OA 系统的主要功能');
+  });
+
+  /**
    * 会话重命名应通过专用接口提交新标题。
    */
   it('应通过专用接口提交会话重命名', async () => {

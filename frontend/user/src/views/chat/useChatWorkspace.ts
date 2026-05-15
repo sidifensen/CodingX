@@ -10,6 +10,7 @@ import {
   ConversationItem,
   ExecutionStepItem,
   ReferenceItem,
+  SampleQuestionItem,
 } from './types';
 
 /**
@@ -22,6 +23,7 @@ export function useChatWorkspace(isAuthenticated: boolean) {
   const [executionSteps, setExecutionSteps] = useState<ExecutionStepItem[]>([]);
   const [references, setReferences] = useState<ReferenceItem[]>([]);
   const [artifacts, setArtifacts] = useState<ArtifactItem[]>([]);
+  const [sampleQuestions, setSampleQuestions] = useState<SampleQuestionItem[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
   const [streamError, setStreamError] = useState('');
@@ -58,7 +60,11 @@ export function useChatWorkspace(isAuthenticated: boolean) {
     }
     setIsBootstrapping(true);
     try {
-      const nextConversations = await loadConversations(token);
+      const [nextConversations, nextSampleQuestions] = await Promise.all([
+        loadConversations(token),
+        ChatApi.listSampleQuestions(token),
+      ]);
+      setSampleQuestions(nextSampleQuestions);
       if (nextConversations[0]?.id) {
         await selectConversation(nextConversations[0].id, nextConversations);
       } else {
@@ -270,6 +276,7 @@ export function useChatWorkspace(isAuthenticated: boolean) {
     abortControllerRef.current?.abort();
     setConversations([]);
     clearConversationPlayback();
+    setSampleQuestions([]);
     setIsStreaming(false);
     setIsCancelling(false);
     setStreamError('');
@@ -443,6 +450,7 @@ export function useChatWorkspace(isAuthenticated: boolean) {
     executionSteps,
     references,
     artifacts,
+    sampleQuestions,
     isStreaming,
     isCancelling,
     streamError,

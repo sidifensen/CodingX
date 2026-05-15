@@ -98,15 +98,18 @@ export default function Sidebar({
 
   return (
     <aside
-      className={`absolute left-[-18rem] md:relative md:left-0 flex h-full flex-col overflow-hidden border-r border-border bg-surface pt-6 pb-4 text-foreground shadow-2xl shrink-0 z-50 transition-[width,padding,opacity,border-color] duration-300 md:shadow-none ${
+      className={`absolute left-[-18rem] md:relative md:left-0 flex h-full flex-col overflow-hidden border-r border-border bg-surface pt-6 pb-4 text-foreground shadow-2xl shrink-0 z-50 [contain:layout_paint] will-change-[width,opacity] transition-[width,padding,opacity,border-color] duration-300 md:shadow-none ${
         isDesktopCollapsed
           ? 'md:w-0 md:border-r-0 md:px-0 md:pt-0 md:pb-0 md:opacity-0 md:pointer-events-none'
           : 'w-72 md:w-64'
       }`}
       aria-hidden={isDesktopCollapsed}
     >
-      {!isDesktopCollapsed ? (
-        <>
+      <div
+        className={`flex h-full flex-col transition-[opacity,transform] duration-200 ${
+          isDesktopCollapsed ? 'translate-x-4 opacity-0' : 'translate-x-0 opacity-100'
+        }`}
+      >
           {/* Brand Header */}
           <div className="px-6 mb-8 flex items-center justify-between">
             <div className="flex items-center gap-3 mb-1">
@@ -167,8 +170,7 @@ export default function Sidebar({
           ) : (
             <LoginEntry onClick={onOpenLogin} />
           )}
-        </>
-      ) : null}
+      </div>
     </aside>
   );
 }

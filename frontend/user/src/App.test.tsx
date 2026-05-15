@@ -658,12 +658,26 @@ describe('App', () => {
   it('应支持通过内容区按钮折叠和展开左侧边栏', async () => {
     render(<App />);
 
-    expect(screen.getByText('我的空间')).toBeInTheDocument();
+    const sidebarLabel = screen.getByText('我的空间');
+    expect(sidebarLabel).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: '折叠左侧边栏' }));
-    expect(screen.queryByText('我的空间')).not.toBeInTheDocument();
+    expect(sidebarLabel.closest('aside')).toHaveAttribute('aria-hidden', 'true');
 
     fireEvent.click(screen.getByRole('button', { name: '展开左侧边栏' }));
-    expect(screen.getByText('我的空间')).toBeInTheDocument();
+    expect(sidebarLabel.closest('aside')).toHaveAttribute('aria-hidden', 'false');
+  });
+
+  /**
+   * 左侧侧栏折叠时应保留 DOM 挂载，仅切换可见状态，避免卸载重建造成动画卡顿。
+   */
+  it('应在折叠左侧边栏时保留侧栏内容节点', async () => {
+    render(<App />);
+
+    const sidebarLabel = screen.getByText('我的空间');
+    fireEvent.click(screen.getByRole('button', { name: '折叠左侧边栏' }));
+
+    expect(sidebarLabel).toBeInTheDocument();
+    expect(sidebarLabel.closest('aside')).toHaveAttribute('aria-hidden', 'true');
   });
 });

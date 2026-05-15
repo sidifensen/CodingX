@@ -629,6 +629,18 @@ function createWorkspace(overrides?: Partial<ChatWorkspaceController>): ChatWork
         contentPreview: '搜索结果整理中',
       },
     ],
+    sampleQuestions: [
+      {
+        id: '6001',
+        questionText: '请介绍一下 OA 系统的主要功能',
+        category: '业务系统',
+      },
+      {
+        id: '6002',
+        questionText: '公司 VPN 连不上怎么办？',
+        category: 'IT支持',
+      },
+    ],
     isStreaming: false,
     isCancelling: false,
     streamError: '',

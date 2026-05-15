@@ -49,6 +49,7 @@ export default function ChatView({
     executionSteps,
     references,
     artifacts,
+    sampleQuestions,
     isStreaming,
     isCancelling,
     streamError,
@@ -145,14 +146,21 @@ export default function ChatView({
                 你好，我是 CodingX
               </h1>
               <div className="mt-10 grid w-full max-w-3xl gap-4 md:grid-cols-2">
-                {[
-                  { icon: Globe2, title: '网页读取', desc: '解析并总结外部网页内容', iconClassName: 'text-[#8fb3da]' },
-                  { icon: Search, title: '调研分析', desc: '深度搜索并生成研究报告', iconClassName: 'text-[#ff8a24]' },
-                  { icon: Database, title: '数据挖掘', desc: '结构化数据提取与清洗', iconClassName: 'text-[#a78bfa]' },
-                  { icon: FolderOpen, title: '文件管理', desc: '上传并与您的文档进行对话', iconClassName: 'text-[#f4f4f5]' },
-                ].map((item) => (
+                {(sampleQuestions.length
+                  ? sampleQuestions.map((item, index) => ({
+                      icon: [Globe2, Search, Database, FolderOpen][index % 4],
+                      title: item.category || '示例问题',
+                      desc: item.questionText,
+                      iconClassName: ['text-[#8fb3da]', 'text-[#ff8a24]', 'text-[#a78bfa]', 'text-[#f4f4f5]'][index % 4],
+                    }))
+                  : [
+                      { icon: Globe2, title: '网页读取', desc: '解析并总结外部网页内容', iconClassName: 'text-[#8fb3da]' },
+                      { icon: Search, title: '调研分析', desc: '深度搜索并生成研究报告', iconClassName: 'text-[#ff8a24]' },
+                      { icon: Database, title: '数据挖掘', desc: '结构化数据提取与清洗', iconClassName: 'text-[#a78bfa]' },
+                      { icon: FolderOpen, title: '文件管理', desc: '上传并与您的文档进行对话', iconClassName: 'text-[#f4f4f5]' },
+                    ]).map((item) => (
                   <button
-                    key={item.title}
+                    key={`${item.title}-${item.desc}`}
                     type="button"
                     onClick={() => setInputValue(item.desc)}
                     className="rounded-[22px] border border-border bg-surface px-6 py-5 text-left shadow-sm transition-colors hover:border-border-active hover:bg-surface-container"

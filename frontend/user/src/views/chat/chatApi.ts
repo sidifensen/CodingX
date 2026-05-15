@@ -5,6 +5,7 @@ import {
   ConversationItem,
   ExecutionStepItem,
   ReferenceItem,
+  SampleQuestionItem,
 } from './types';
 
 /**
@@ -66,6 +67,19 @@ export class ChatApi {
   static async listArtifacts(token: string, conversationId: string): Promise<ArtifactItem[]> {
     const envelope = await this.request<ArtifactItem[]>(`/api/chat/conversations/${conversationId}/artifacts`, token);
     return envelope.data;
+  }
+
+  /**
+   * 加载首页欢迎区示例问题。
+   * @param token 当前登录令牌。
+   * @returns 示例问题列表。
+   */
+  static async listSampleQuestions(token: string): Promise<SampleQuestionItem[]> {
+    const envelope = await this.request<SampleQuestionItem[]>('/api/chat/sample-questions', token);
+    return envelope.data.map((item) => ({
+      ...item,
+      id: String(item.id),
+    }));
   }
 
   /**

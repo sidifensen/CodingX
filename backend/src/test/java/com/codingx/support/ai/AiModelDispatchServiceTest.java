@@ -1,15 +1,20 @@
 package com.codingx.support.ai;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.codingx.chat.domain.model.ChatMessage;
+import com.codingx.config.AiProperties;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import org.junit.jupiter.api.Test;
 
 /**
- * 验证模型路由服务的候选选择与 fallback 行为。
+ * 验证模型路由服务的候选选择、首包探测与 fallback 行为。
  */
 class AiModelDispatchServiceTest {
 
@@ -20,7 +25,11 @@ class AiModelDispatchServiceTest {
     void streamChatFallsBackToNextAvailableProvider() {
         RecordingProvider failingProvider = RecordingProvider.failing("primary", "deepseek-chat");
         RecordingProvider healthyProvider = RecordingProvider.success("secondary", "qwen-plus", List.of("hello", " world"));
-        AiModelDispatchService service = new AiModelDispatchService(List.of(failingProvider, healthyProvider));
+        AiModelDispatchService service = new AiModelDispatchService(
+            List.of(failingProvider, healthyProvider),
+            new AiProviderHealthRegistry(2, 30_000L),
+            new AiModelSelector(minimalProperties())
+        );
         AiConversationRequest request = AiConversationRequest.builder()
             .messages(List.of(ChatMessage.userMessage(1L, "你好")))
             .preferredModel("deepseek-chat")
@@ -39,11 +48,16 @@ class AiModelDispatchServiceTest {
             public void onComplete() {
                 terminals.add("done");
             }
+
+            @Override
+            public void onMetadata(String provider, String model) {
+                terminals.add(provider + ":" + model);
+            }
         });
 
         assertEquals(List.of("primary", "secondary"), service.getLastAttemptedProviders());
         assertEquals(List.of("hello", " world"), deltas);
-        assertEquals(List.of("done"), terminals);
+        assertEquals(List.of("secondary:qwen-plus", "done"), terminals);
     }
 
     /**
@@ -51,10 +65,14 @@ class AiModelDispatchServiceTest {
      */
     @Test
     void streamChatThrowsWhenAllProvidersFail() {
-        AiModelDispatchService service = new AiModelDispatchService(List.of(
-            RecordingProvider.failing("primary", "deepseek-chat"),
-            RecordingProvider.failing("secondary", "qwen-plus")
-        ));
+        AiModelDispatchService service = new AiModelDispatchService(
+            List.of(
+                RecordingProvider.failing("primary", "deepseek-chat"),
+                RecordingProvider.failing("secondary", "qwen-plus")
+            ),
+            new AiProviderHealthRegistry(2, 30_000L),
+            new AiModelSelector(minimalProperties())
+        );
         AiConversationRequest request = AiConversationRequest.builder()
             .messages(List.of(ChatMessage.userMessage(1L, "你好")))
             .preferredModel("deepseek-chat")
@@ -68,42 +86,256 @@ class AiModelDispatchServiceTest {
     }
 
     /**
+     * 指定 preferredModel 时应优先尝试匹配候选，而不是单纯按 provider 注册顺序。
+     */
+    @Test
+    void streamChatPrefersRequestedModelTarget() {
+        RecordingProvider stubProvider = RecordingProvider.success("stub", "stub-chat", List.of("stub"));
+        RecordingProvider primaryProvider = RecordingProvider.success("deepseek", "deepseek-chat", List.of("real"));
+        AiModelDispatchService service = new AiModelDispatchService(
+            List.of(stubProvider, primaryProvider),
+            new AiProviderHealthRegistry(2, 30_000L),
+            minimalSelectorWithCandidates(minimalPropertiesWithCandidates(
+                candidate("stub-chat", "stub", "stub-chat", 10, false),
+                candidate("deepseek-chat", "deepseek", "deepseek-chat", 100, false)
+            ))
+        );
+
+        List<String> deltas = new ArrayList<>();
+        service.streamChat(AiConversationRequest.builder()
+            .messages(List.of(ChatMessage.userMessage(1L, "你好")))
+            .preferredModel("deepseek-chat")
+            .stream(true)
+            .build(), new AiStreamHandler() {
+            @Override
+            public void onContentDelta(String delta) {
+                deltas.add(delta);
+            }
+        });
+
+        assertEquals(List.of("deepseek"), service.getLastAttemptedProviders());
+        assertEquals(List.of("real"), deltas);
+    }
+
+    /**
+     * 首包前出错时应回退到下一个候选，且不会把失败候选的缓冲内容泄漏给下游。
+     */
+    @Test
+    void streamChatFallsBackWhenFirstProviderFailsBeforeFirstTokenHandshake() {
+        RecordingProvider probeFailingProvider = RecordingProvider.probeFailure("primary", "deepseek-chat");
+        RecordingProvider healthyProvider = RecordingProvider.success("secondary", "qwen-plus", List.of("clean"));
+        AiModelDispatchService service = new AiModelDispatchService(
+            List.of(probeFailingProvider, healthyProvider),
+            new AiProviderHealthRegistry(2, 30_000L),
+            new AiModelSelector(minimalProperties())
+        );
+        List<String> deltas = new ArrayList<>();
+
+        service.streamChat(AiConversationRequest.builder()
+            .messages(List.of(ChatMessage.userMessage(1L, "你好")))
+            .preferredModel("deepseek-chat")
+            .stream(true)
+            .build(), new AiStreamHandler() {
+            @Override
+            public void onContentDelta(String delta) {
+                deltas.add(delta);
+            }
+        });
+
+        assertEquals(List.of("primary", "secondary"), service.getLastAttemptedProviders());
+        assertEquals(List.of("clean"), deltas);
+    }
+
+    /**
+     * 熔断的候选在冷却前不应继续参与调度。
+     */
+    @Test
+    void streamChatSkipsOpenCircuitCandidate() {
+        RecordingProvider failingProvider = RecordingProvider.failing("primary", "deepseek-chat");
+        RecordingProvider healthyProvider = RecordingProvider.success("secondary", "qwen-plus", List.of("fallback"));
+        AiProviderHealthRegistry registry = new AiProviderHealthRegistry(1, 30_000L);
+        AiModelDispatchService service = new AiModelDispatchService(
+            List.of(failingProvider, healthyProvider),
+            registry,
+            new AiModelSelector(minimalProperties())
+        );
+        AiConversationRequest request = AiConversationRequest.builder()
+            .messages(List.of(ChatMessage.userMessage(1L, "你好")))
+            .preferredModel("deepseek-chat")
+            .stream(true)
+            .build();
+
+        service.streamChat(request, new AiStreamHandler() {});
+        assertFalse(registry.allowCall("deepseek-chat"));
+
+        service.streamChat(request, new AiStreamHandler() {});
+
+        assertEquals(List.of("secondary"), service.getLastAttemptedProviders());
+    }
+
+    /**
+     * 深度思考模式下应优先尝试支持 thinking 的候选。
+     */
+    @Test
+    void streamChatUsesThinkingCapableCandidatesWhenThinkingEnabled() {
+        RecordingProvider nonThinkingProvider = RecordingProvider.success("stub", "stub-chat", List.of("stub"));
+        RecordingProvider thinkingProvider = RecordingProvider.success("deepseek", "deepseek-thinking", List.of("thinking"));
+        AiModelDispatchService service = new AiModelDispatchService(
+            List.of(nonThinkingProvider, thinkingProvider),
+            new AiProviderHealthRegistry(2, 30_000L),
+            minimalSelectorWithCandidates(minimalPropertiesWithCandidates(
+                candidate("stub-chat", "stub", "stub-chat", 1, false),
+                candidate("deepseek-thinking", "deepseek", "deepseek-thinking", 2, true)
+            ))
+        );
+
+        List<String> deltas = new ArrayList<>();
+        service.streamChat(AiConversationRequest.builder()
+            .messages(List.of(ChatMessage.userMessage(1L, "你好")))
+            .thinkingEnabled(true)
+            .stream(true)
+            .build(), new AiStreamHandler() {
+            @Override
+            public void onContentDelta(String delta) {
+                deltas.add(delta);
+            }
+        });
+
+        assertEquals(List.of("deepseek"), service.getLastAttemptedProviders());
+        assertEquals(List.of("thinking"), deltas);
+    }
+
+    /**
      * 用于验证路由行为的内存 provider。
      */
     private record RecordingProvider(
         String providerName,
         String modelName,
-        boolean fail,
+        Mode mode,
         List<String> deltas
     ) implements AiProviderClient {
 
         private static RecordingProvider failing(String providerName, String modelName) {
-            return new RecordingProvider(providerName, modelName, true, List.of());
+            return new RecordingProvider(providerName, modelName, Mode.FAIL, List.of());
+        }
+
+        private static RecordingProvider probeFailure(String providerName, String modelName) {
+            return new RecordingProvider(providerName, modelName, Mode.PROBE_FAIL, List.of());
         }
 
         private static RecordingProvider success(String providerName, String modelName, List<String> deltas) {
-            return new RecordingProvider(providerName, modelName, false, deltas);
+            return new RecordingProvider(providerName, modelName, Mode.SUCCESS, deltas);
         }
 
         @Override
-        public boolean supports(AiConversationRequest request) {
-            return true;
+        public String provider() {
+            return providerName;
         }
 
         @Override
-        public AiProviderCandidate candidate() {
-            return new AiProviderCandidate(providerName, modelName, 100, true);
-        }
-
-        @Override
-        public void streamChat(AiConversationRequest request, AiStreamHandler handler) {
-            if (fail) {
+        public AiStreamSession streamChat(AiConversationRequest request, AiModelTarget target, AiStreamHandler handler) {
+            if (mode == Mode.FAIL) {
                 throw new IllegalStateException(providerName + " unavailable");
+            }
+            CompletableFuture<Void> future = new CompletableFuture<>();
+            if (mode == Mode.PROBE_FAIL) {
+                handler.onThinkingDelta("dirty-thinking");
+                handler.onError(new IllegalStateException(providerName + " probe failed"));
+                future.completeExceptionally(new IllegalStateException(providerName + " probe failed"));
+                return new AiStreamSession(() -> {}, future);
             }
             for (String delta : deltas) {
                 handler.onContentDelta(delta);
             }
             handler.onComplete();
+            future.complete(null);
+            return new AiStreamSession(() -> {}, future);
         }
+    }
+
+    /**
+     * 使用最小新配置构造默认模型选择器，避免测试依赖完整 Spring 环境。
+     */
+    private AiModelSelector minimalSelectorWithCandidates(AiProperties properties) {
+        return new AiModelSelector(properties);
+    }
+
+    /**
+     * 创建默认测试配置，其中包含 deepseek 与 stub 两个候选。
+     * @return 测试专用 AI 配置。
+     */
+    private AiProperties minimalProperties() {
+        return minimalPropertiesWithCandidates(
+            candidate("deepseek-chat", "primary", "deepseek-chat", 1, false),
+            candidate("qwen-plus", "secondary", "qwen-plus", 2, true)
+        );
+    }
+
+    /**
+     * 使用指定候选组装测试配置，便于聚焦路由排序行为。
+     * @param candidates 候选模型数组。
+     * @return 测试专用 AI 配置。
+     */
+    private AiProperties minimalPropertiesWithCandidates(AiProperties.ChatCandidate... candidates) {
+        AiProperties properties = new AiProperties();
+        properties.setSelection(new AiProperties.Selection());
+        properties.getSelection().setFailureThreshold(2);
+        properties.getSelection().setOpenDurationMs(30_000L);
+        properties.getSelection().setFirstPacketTimeoutMs(200L);
+        properties.setProviders(new java.util.HashMap<>());
+        properties.getProviders().put("primary", provider("http://127.0.0.1:1", "key"));
+        properties.getProviders().put("secondary", provider("http://127.0.0.1:2", "key"));
+        properties.getProviders().put("deepseek", provider("http://127.0.0.1:3", "key"));
+        properties.getProviders().put("stub", provider("http://127.0.0.1:4", ""));
+        AiProperties.ChatModelGroup group = new AiProperties.ChatModelGroup();
+        group.setDefaultModel(candidates[0].getId());
+        group.setDeepThinkingModel(candidates[candidates.length - 1].getId());
+        List<AiProperties.ChatCandidate> sortedCandidates = new ArrayList<>(List.of(candidates));
+        sortedCandidates.sort(Comparator.comparing(AiProperties.ChatCandidate::getPriority));
+        group.setCandidates(sortedCandidates);
+        properties.setChat(group);
+        return properties;
+    }
+
+    /**
+     * 生成单个测试候选，避免每个测试手写重复样板。
+     * @param id 候选 ID。
+     * @param provider provider 名称。
+     * @param model 模型名称。
+     * @param priority 优先级。
+     * @param supportsThinking 是否支持 thinking。
+     * @return 测试候选。
+     */
+    private AiProperties.ChatCandidate candidate(String id, String provider, String model, int priority, boolean supportsThinking) {
+        AiProperties.ChatCandidate candidate = new AiProperties.ChatCandidate();
+        candidate.setId(id);
+        candidate.setProvider(provider);
+        candidate.setModel(model);
+        candidate.setPriority(priority);
+        candidate.setSupportsThinking(supportsThinking);
+        candidate.setEnabled(true);
+        return candidate;
+    }
+
+    /**
+     * 生成最小 provider 配置，满足选择器构建 `AiModelTarget` 的依赖。
+     * @param url 基础 URL。
+     * @param apiKey API Key。
+     * @return provider 配置。
+     */
+    private AiProperties.Provider provider(String url, String apiKey) {
+        AiProperties.Provider provider = new AiProperties.Provider();
+        provider.setBaseUrl(url);
+        provider.setApiKey(apiKey);
+        return provider;
+    }
+
+    /**
+     * 模拟 provider 行为的三种模式。
+     */
+    private enum Mode {
+        SUCCESS,
+        FAIL,
+        PROBE_FAIL
     }
 }

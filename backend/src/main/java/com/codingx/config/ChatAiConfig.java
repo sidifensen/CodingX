@@ -16,11 +16,12 @@ public class ChatAiConfig {
     /**
      * 根据所有可用 provider 构造统一模型路由服务。
      * @param providerClients AI provider 列表。
+     * @param aiProperties AI 配置。
      * @return 模型路由服务。
      */
     @Bean
-    public AiModelDispatchService aiModelDispatchService(List<AiProviderClient> providerClients) {
-        return new AiModelDispatchService(providerClients);
+    public AiModelDispatchService aiModelDispatchService(List<AiProviderClient> providerClients, AiProperties aiProperties) {
+        return new AiModelDispatchService(providerClients, aiProperties);
     }
 
     /**

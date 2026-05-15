@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.codingx.chat.domain.model.ChatMessage;
 import com.codingx.config.AiProperties;
 import com.codingx.support.ai.AiConversationRequest;
+import com.codingx.support.ai.AiModelTarget;
 import com.codingx.support.ai.AiStreamHandler;
 import com.codingx.support.ai.OpenAiStyleStreamParser;
 import com.sun.net.httpserver.HttpServer;
@@ -70,7 +71,8 @@ class DeepSeekOkHttpChatClientTest {
         List<String> deltas = new CopyOnWriteArrayList<>();
         CountDownLatch firstDeltaLatch = new CountDownLatch(1);
         CountDownLatch doneLatch = new CountDownLatch(1);
-        CompletableFuture<Void> future = CompletableFuture.runAsync(() -> client.streamChat(buildRequest(), new AiStreamHandler() {
+        AiModelTarget target = buildTarget(httpServer.getAddress().getPort());
+        CompletableFuture<Void> future = client.streamChat(buildRequest(), target, new AiStreamHandler() {
             @Override
             public void onContentDelta(String delta) {
                 deltas.add(delta);
@@ -81,7 +83,7 @@ class DeepSeekOkHttpChatClientTest {
             public void onComplete() {
                 doneLatch.countDown();
             }
-        }));
+        }).completion();
 
         assertTrue(firstDeltaLatch.await(200, TimeUnit.MILLISECONDS), "first delta should arrive before upstream completes");
         assertEquals(1L, doneLatch.getCount(), "completion should not happen before the stream finishes");
@@ -127,6 +129,24 @@ class DeepSeekOkHttpChatClientTest {
         aiProperties.setBaseUrl("http://127.0.0.1:" + port);
         aiProperties.setChatModel("test-model");
         return aiProperties;
+    }
+
+    /**
+     * 生成测试使用的模型目标，模拟路由层传给 provider 的真实参数。
+     * @param port 本地测试 HTTP 服务端口。
+     * @return 模型目标。
+     */
+    private AiModelTarget buildTarget(int port) {
+        AiProperties.Provider provider = new AiProperties.Provider();
+        provider.setBaseUrl("http://127.0.0.1:" + port);
+        provider.setApiKey("test-key");
+        AiProperties.ChatCandidate candidate = new AiProperties.ChatCandidate();
+        candidate.setId("test-model");
+        candidate.setProvider("deepseek");
+        candidate.setModel("test-model");
+        candidate.setEnabled(true);
+        candidate.setPriority(1);
+        return new AiModelTarget("test-model", candidate, provider);
     }
 
     /**

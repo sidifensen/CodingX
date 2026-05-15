@@ -65,6 +65,33 @@ app:
     connect-timeout-ms: ${AI_CONNECT_TIMEOUT_MS:10000}
     read-timeout-ms: ${AI_READ_TIMEOUT_MS:120000}
     system-prompt: ${AI_SYSTEM_PROMPT:You are the CodingX assistant. Be concise, practical, and safe.}
+    selection:
+      failure-threshold: ${AI_FAILURE_THRESHOLD:2}
+      open-duration-ms: ${AI_OPEN_DURATION_MS:30000}
+      first-packet-timeout-ms: ${AI_FIRST_PACKET_TIMEOUT_MS:60000}
+    providers:
+      deepseek:
+        base-url: ${AI_BASE_URL:${DEEPSEEK_BASE_URL:https://api.deepseek.com/v1}}
+        api-key: ${AI_API_KEY:${DEEPSEEK_API_KEY:}}
+      stub:
+        base-url: stub://local
+        api-key: ""
+    chat:
+      default-model: ${AI_DEFAULT_MODEL:${AI_CHAT_MODEL:${DEEPSEEK_CHAT_MODEL:deepseek-chat}}}
+      deep-thinking-model: ${AI_DEEP_THINKING_MODEL:${AI_CHAT_MODEL:${DEEPSEEK_CHAT_MODEL:deepseek-chat}}}
+      candidates:
+        - id: ${AI_DEFAULT_MODEL:${AI_CHAT_MODEL:${DEEPSEEK_CHAT_MODEL:deepseek-chat}}}
+          provider: deepseek
+          model: ${AI_CHAT_MODEL:${DEEPSEEK_CHAT_MODEL:deepseek-chat}}
+          priority: 1
+          enabled: true
+          supports-thinking: true
+        - id: stub-chat
+          provider: stub
+          model: stub-chat
+          priority: 999
+          enabled: true
+          supports-thinking: true
   runtime:
     mock-step-delay-ms: ${MOCK_STEP_DELAY_MS:300}
     mock-fail-keyword: ${MOCK_FAIL_KEYWORD:fail}

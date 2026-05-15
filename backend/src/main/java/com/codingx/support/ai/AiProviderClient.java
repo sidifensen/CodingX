@@ -1,27 +1,22 @@
 package com.codingx.support.ai;
 
 /**
- * 定义单个模型 provider 需要实现的最小流式调用契约。
+ * 定义单个 provider 客户端的最小调用契约，路由层按模型目标驱动具体实现。
  */
 public interface AiProviderClient {
 
     /**
-     * 判断当前 provider 是否支持处理该请求。
-     * @param request 统一请求对象。
-     * @return 是否支持。
+     * 返回当前客户端负责的 provider 名称。
+     * @return provider 名称。
      */
-    boolean supports(AiConversationRequest request);
+    String provider();
 
     /**
-     * 返回 provider 的候选元信息。
-     * @return 候选描述。
-     */
-    AiProviderCandidate candidate();
-
-    /**
-     * 以流式方式执行对话请求。
+     * 针对指定模型目标发起流式对话调用。
      * @param request 统一请求对象。
-     * @param handler 流式回调。
+     * @param target 目标模型配置。
+     * @param handler 流式事件处理器。
+     * @return 可取消的流式会话。
      */
-    void streamChat(AiConversationRequest request, AiStreamHandler handler);
+    AiStreamSession streamChat(AiConversationRequest request, AiModelTarget target, AiStreamHandler handler);
 }

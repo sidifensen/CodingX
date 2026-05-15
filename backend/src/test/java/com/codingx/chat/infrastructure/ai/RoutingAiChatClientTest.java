@@ -4,13 +4,19 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import com.codingx.chat.domain.model.ChatMessage;
 import com.codingx.chat.domain.service.AiChatClient;
+import com.codingx.config.AiProperties;
 import com.codingx.support.ai.AiConversationRequest;
 import com.codingx.support.ai.AiModelDispatchService;
-import com.codingx.support.ai.AiProviderCandidate;
+import com.codingx.support.ai.AiModelSelector;
+import com.codingx.support.ai.AiModelTarget;
 import com.codingx.support.ai.AiProviderClient;
+import com.codingx.support.ai.AiProviderHealthRegistry;
+import com.codingx.support.ai.AiStreamSession;
 import com.codingx.support.ai.AiStreamHandler;
+import java.util.HashMap;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -24,7 +30,11 @@ class RoutingAiChatClientTest {
     @Test
     void streamChatBridgesLegacyHandlerToDispatchService() {
         RoutingAiChatClient client = new RoutingAiChatClient(
-            new AiModelDispatchService(List.of(new EchoProvider()))
+            new AiModelDispatchService(
+                List.of(new EchoProvider()),
+                new AiProviderHealthRegistry(2, 30_000L),
+                new AiModelSelector(buildAiProperties())
+            )
         );
         List<String> deltas = new ArrayList<>();
         List<String> terminals = new ArrayList<>();
@@ -39,10 +49,15 @@ class RoutingAiChatClientTest {
             public void onComplete() {
                 terminals.add("done");
             }
+
+            @Override
+            public void onMetadata(String provider, String model) {
+                terminals.add(provider + ":" + model);
+            }
         });
 
         assertEquals(List.of("echo:你好"), deltas);
-        assertEquals(List.of("done"), terminals);
+        assertEquals(List.of("echo:echo-model", "done"), terminals);
     }
 
     /**
@@ -51,19 +66,42 @@ class RoutingAiChatClientTest {
     private static final class EchoProvider implements AiProviderClient {
 
         @Override
-        public boolean supports(AiConversationRequest request) {
-            return true;
+        public String provider() {
+            return "echo";
         }
 
         @Override
-        public AiProviderCandidate candidate() {
-            return new AiProviderCandidate("echo", "echo-model", 100, true);
-        }
-
-        @Override
-        public void streamChat(AiConversationRequest request, AiStreamHandler handler) {
+        public AiStreamSession streamChat(AiConversationRequest request, AiModelTarget target, AiStreamHandler handler) {
             handler.onContentDelta("echo:" + request.messages().getFirst().getContent());
             handler.onComplete();
+            return new AiStreamSession(() -> {}, CompletableFuture.completedFuture(null));
         }
+    }
+
+    /**
+     * 组装最小模型配置，让桥接测试能覆盖 provider/model 元信息透传。
+     * @return 测试配置。
+     */
+    private AiProperties buildAiProperties() {
+        AiProperties properties = new AiProperties();
+        AiProperties.Provider provider = new AiProperties.Provider();
+        provider.setBaseUrl("http://127.0.0.1:1");
+        provider.setApiKey("");
+        HashMap<String, AiProperties.Provider> providers = new HashMap<>();
+        providers.put("echo", provider);
+        properties.setProviders(providers);
+
+        AiProperties.ChatCandidate candidate = new AiProperties.ChatCandidate();
+        candidate.setId("echo-model");
+        candidate.setProvider("echo");
+        candidate.setModel("echo-model");
+        candidate.setPriority(1);
+        candidate.setEnabled(true);
+
+        AiProperties.ChatModelGroup chat = new AiProperties.ChatModelGroup();
+        chat.setDefaultModel("echo-model");
+        chat.setCandidates(List.of(candidate));
+        properties.setChat(chat);
+        return properties;
     }
 }

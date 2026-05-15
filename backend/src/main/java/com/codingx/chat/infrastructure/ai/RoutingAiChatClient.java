@@ -34,6 +34,16 @@ public class RoutingAiChatClient implements AiChatClient {
             .build();
         aiModelDispatchService.streamChat(request, new AiStreamHandler() {
             @Override
+            public void onMetadata(String provider, String model) {
+                handler.onMetadata(provider, model);
+            }
+
+            @Override
+            public void onThinkingDelta(String delta) {
+                handler.onThinkingDelta(delta);
+            }
+
+            @Override
             public void onContentDelta(String delta) {
                 handler.onDelta(delta);
             }

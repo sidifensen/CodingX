@@ -76,6 +76,29 @@ public class OpenAiStyleStreamParser {
     }
 
     /**
+     * 从 OpenAI 风格 JSON 负载中提取 thinking 增量。
+     * @param payload JSON 负载。
+     * @return thinking 增量。
+     */
+    private String extractThinkingDelta(String payload) {
+        try {
+            JSONObject root = JSONUtil.parseObj(payload);
+            JSONArray choices = root.getJSONArray("choices");
+            if (choices == null || choices.isEmpty()) {
+                return null;
+            }
+            JSONObject choice = choices.getJSONObject(0);
+            JSONObject delta = choice.getJSONObject("delta");
+            if (delta == null) {
+                return null;
+            }
+            return StrUtil.nullToEmpty(delta.getStr("reasoning_content"));
+        } catch (Exception exception) {
+            return null;
+        }
+    }
+
+    /**
      * 消费单行 SSE 文本，只处理 data 行，其他控制行与空行直接忽略。
      * @param line 原始单行文本。
      * @param consumer 流式事件消费者。
@@ -92,6 +115,11 @@ public class OpenAiStyleStreamParser {
         String delta = extractContentDelta(payload);
         if (StrUtil.isNotEmpty(delta)) {
             consumer.onContentDelta(delta);
+            return;
+        }
+        String thinkingDelta = extractThinkingDelta(payload);
+        if (StrUtil.isNotEmpty(thinkingDelta)) {
+            consumer.onThinkingDelta(thinkingDelta);
         }
     }
 
@@ -130,6 +158,13 @@ public class OpenAiStyleStreamParser {
          * @param delta 正文增量。
          */
         default void onContentDelta(String delta) {
+        }
+
+        /**
+         * 接收 thinking 增量。
+         * @param delta thinking 增量。
+         */
+        default void onThinkingDelta(String delta) {
         }
 
         /**

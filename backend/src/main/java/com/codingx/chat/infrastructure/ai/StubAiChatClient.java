@@ -1,9 +1,11 @@
 package com.codingx.chat.infrastructure.ai;
 
 import com.codingx.support.ai.AiConversationRequest;
-import com.codingx.support.ai.AiProviderCandidate;
+import com.codingx.support.ai.AiModelTarget;
 import com.codingx.support.ai.AiProviderClient;
+import com.codingx.support.ai.AiStreamSession;
 import com.codingx.support.ai.AiStreamHandler;
+import java.util.concurrent.CompletableFuture;
 import org.springframework.stereotype.Component;
 
 /**
@@ -13,23 +15,18 @@ import org.springframework.stereotype.Component;
 public class StubAiChatClient implements AiProviderClient {
 
     /**
-     * Stub provider 永远可以处理请求，作为保底候选存在。
-     * @param request 统一请求对象。
-     * @return 是否支持。
+     * 返回当前客户端负责的 provider 名称。
+     * @return provider 名称。
      */
     @Override
-    public boolean supports(AiConversationRequest request) {
-        return true;
+    public String provider() {
+        return "stub";
     }
 
     @Override
-    public AiProviderCandidate candidate() {
-        return new AiProviderCandidate("stub", "stub-chat", 10, true);
-    }
-
-    @Override
-    public void streamChat(AiConversationRequest request, AiStreamHandler handler) {
+    public AiStreamSession streamChat(AiConversationRequest request, AiModelTarget target, AiStreamHandler handler) {
         handler.onContentDelta("Stub response");
         handler.onComplete();
+        return new AiStreamSession(() -> {}, CompletableFuture.completedFuture(null));
     }
 }

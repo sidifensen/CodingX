@@ -7,7 +7,7 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 
 /**
- * 验证首包缓冲处理器会在首 token 到达后再顺序释放缓存内容。
+ * 验证首包缓冲处理器会在首 token 到达后再顺序释放缓存事件。
  */
 class FirstTokenBufferingHandlerTest {
 
@@ -17,8 +17,15 @@ class FirstTokenBufferingHandlerTest {
     @Test
     void flushesBufferedDeltasAfterFirstTokenArrives() {
         List<String> deltas = new ArrayList<>();
+        List<String> thinkingDeltas = new ArrayList<>();
         List<String> terminals = new ArrayList<>();
+        FirstTokenAwaiter awaiter = new FirstTokenAwaiter();
         FirstTokenBufferingHandler handler = new FirstTokenBufferingHandler(new AiStreamHandler() {
+            @Override
+            public void onThinkingDelta(String delta) {
+                thinkingDeltas.add(delta);
+            }
+
             @Override
             public void onContentDelta(String delta) {
                 deltas.add(delta);
@@ -28,16 +35,46 @@ class FirstTokenBufferingHandlerTest {
             public void onComplete() {
                 terminals.add("done");
             }
-        });
+        }, awaiter);
 
-        handler.bufferDelta("pre-1");
-        handler.bufferDelta("pre-2");
+        handler.onThinkingDelta("pre-thinking");
+        handler.onContentDelta("pre-1");
+        handler.onContentDelta("pre-2");
         assertEquals(List.of(), deltas);
 
+        handler.commit();
         handler.onContentDelta("first");
         handler.onComplete();
 
+        assertEquals(List.of("pre-thinking"), thinkingDeltas);
         assertEquals(List.of("pre-1", "pre-2", "first"), deltas);
         assertEquals(List.of("done"), terminals);
+    }
+
+    /**
+     * 首包前出错时不应提前把 thinking、内容或错误泄漏给下游。
+     */
+    @Test
+    void buffersEventsBeforeCommitAndDoesNotLeakFailedProbeEvents() {
+        List<String> deltas = new ArrayList<>();
+        List<String> errors = new ArrayList<>();
+        FirstTokenBufferingHandler handler = new FirstTokenBufferingHandler(new AiStreamHandler() {
+            @Override
+            public void onContentDelta(String delta) {
+                deltas.add(delta);
+            }
+
+            @Override
+            public void onError(Throwable throwable) {
+                errors.add(throwable.getMessage());
+            }
+        }, new FirstTokenAwaiter());
+
+        handler.onThinkingDelta("thinking-before-first-token");
+        handler.onContentDelta("buffered-before-commit");
+        handler.onError(new IllegalStateException("probe failed"));
+
+        assertEquals(List.of(), deltas);
+        assertEquals(List.of(), errors);
     }
 }

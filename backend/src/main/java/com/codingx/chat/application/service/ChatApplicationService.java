@@ -177,8 +177,16 @@ public class ChatApplicationService {
         }
         StringBuilder builder = new StringBuilder();
         final Throwable[] streamError = new Throwable[1];
+        final String[] selectedProvider = new String[1];
+        final String[] selectedModel = new String[1];
         try {
             aiChatClient.streamChat(history, new AiChatClient.StreamHandler() {
+                @Override
+                public void onMetadata(String provider, String model) {
+                    selectedProvider[0] = provider;
+                    selectedModel[0] = model;
+                }
+
                 @Override
                 public void onDelta(String delta) {
                     if (chatRuntimeGuardService.isCancelled(command.conversationId())) {
@@ -201,8 +209,8 @@ public class ChatApplicationService {
                     command.conversationId(),
                     StrUtil.blankToDefault(builder.toString(), "已取消"),
                     ChatMessageStatus.CANCELLED,
-                    null,
-                    null,
+                    selectedProvider[0],
+                    selectedModel[0],
                     null
                 ).attachRun(runId);
                 chatMessageRepository.save(cancelledMessage);
@@ -220,8 +228,8 @@ public class ChatApplicationService {
                 command.conversationId(),
                 StrUtil.blankToDefault(builder.toString(), "已取消"),
                 ChatMessageStatus.CANCELLED,
-                null,
-                null,
+                selectedProvider[0],
+                selectedModel[0],
                 null
             ).attachRun(runId);
             chatMessageRepository.save(cancelledMessage);
@@ -238,8 +246,8 @@ public class ChatApplicationService {
                 command.conversationId(),
                 StrUtil.blankToDefault(builder.toString(), "AI response failed"),
                 ChatMessageStatus.FAILED,
-                null,
-                null,
+                selectedProvider[0],
+                selectedModel[0],
                 streamError[0].getMessage()
 
             ).attachRun(runId);
@@ -256,8 +264,8 @@ public class ChatApplicationService {
             command.conversationId(),
             StrUtil.blankToDefault(builder.toString(), ""),
             ChatMessageStatus.COMPLETED,
-            null,
-            null,
+            selectedProvider[0],
+            selectedModel[0],
             null
 
         ).attachRun(runId);

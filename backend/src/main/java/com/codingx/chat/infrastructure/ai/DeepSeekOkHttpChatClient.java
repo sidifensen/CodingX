@@ -3,11 +3,14 @@ import cn.hutool.core.util.StrUtil;
 import com.codingx.chat.domain.model.ChatMessage;
 import com.codingx.config.AiProperties;
 import com.codingx.support.ai.AiConversationRequest;
-import com.codingx.support.ai.AiProviderCandidate;
+import com.codingx.support.ai.AiModelTarget;
 import com.codingx.support.ai.AiProviderClient;
+import com.codingx.support.ai.AiStreamSession;
 import com.codingx.support.ai.AiStreamHandler;
 import com.codingx.support.ai.OpenAiStyleStreamParser;
 import java.io.IOException;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import okhttp3.HttpUrl;
@@ -47,62 +50,77 @@ public class DeepSeekOkHttpChatClient implements AiProviderClient {
     private final OpenAiStyleStreamParser openAiStyleStreamParser;
 
     @Override
-    public boolean supports(AiConversationRequest request) {
-        return true;
+    public String provider() {
+        return "deepseek";
     }
 
     @Override
-    public AiProviderCandidate candidate() {
-        return new AiProviderCandidate("deepseek", aiProperties.getChatModel(), 100, true);
-    }
-
-    @Override
-    public void streamChat(AiConversationRequest request, AiStreamHandler handler) {
-        if (StrUtil.isBlank(aiProperties.getApiKey())) {
+    public AiStreamSession streamChat(AiConversationRequest request, AiModelTarget target, AiStreamHandler handler) {
+        if (StrUtil.isBlank(resolveApiKey(target))) {
             handler.onContentDelta("AI API key is not configured.");
             handler.onComplete();
-            return;
+            return new AiStreamSession(() -> {}, CompletableFuture.completedFuture(null));
         }
         JSONObject requestBody = buildRequestBody(request);
+        AtomicBoolean cancelled = new AtomicBoolean(false);
+        CompletableFuture<Void> completion = new CompletableFuture<>();
         Request httpRequest = new Request.Builder()
-            .url(resolveChatCompletionsUrl())
-            .header("Authorization", "Bearer " + aiProperties.getApiKey())
+            .url(resolveChatCompletionsUrl(target))
+            .header("Authorization", "Bearer " + resolveApiKey(target))
             .header("Content-Type", "application/json")
             .post(RequestBody.create(requestBody.toString(), JSON))
             .build();
-        try (Response response = okHttpClient.newCall(httpRequest).execute()) {
-            if (!response.isSuccessful()) {
-                String body = response.body() != null ? response.body().string() : "";
-                throw new IllegalStateException("AI request failed: HTTP " + response.code() + " " + body);
-            }
-            ResponseBody responseBodyValue = response.body();
-            if (responseBodyValue == null) {
-                throw new IllegalStateException("AI response body is empty");
-            }
-            BufferedSource source = responseBodyValue.source();
-            StringBuilder chunkBuffer = new StringBuilder();
-            OpenAiStyleStreamParser.StreamConsumer streamConsumer = new OpenAiStyleStreamParser.StreamConsumer() {
-                @Override
-                public void onContentDelta(String delta) {
-                    handler.onContentDelta(delta);
+        CompletableFuture.runAsync(() -> {
+            try (Response response = okHttpClient.newCall(httpRequest).execute()) {
+                if (!response.isSuccessful()) {
+                    String body = response.body() != null ? response.body().string() : "";
+                    throw new IllegalStateException("AI request failed: HTTP " + response.code() + " " + body);
                 }
+                ResponseBody responseBodyValue = response.body();
+                if (responseBodyValue == null) {
+                    throw new IllegalStateException("AI response body is empty");
+                }
+                BufferedSource source = responseBodyValue.source();
+                StringBuilder chunkBuffer = new StringBuilder();
+                OpenAiStyleStreamParser.StreamConsumer streamConsumer = new OpenAiStyleStreamParser.StreamConsumer() {
+                    @Override
+                    public void onContentDelta(String delta) {
+                        if (!cancelled.get()) {
+                            handler.onContentDelta(delta);
+                        }
+                    }
 
-                @Override
-                public void onDone() {
-                    handler.onComplete();
+                    @Override
+                    public void onThinkingDelta(String delta) {
+                        if (!cancelled.get()) {
+                            handler.onThinkingDelta(delta);
+                        }
+                    }
+
+                    @Override
+                    public void onDone() {
+                        if (!cancelled.get()) {
+                            handler.onComplete();
+                        }
+                    }
+                };
+                while (!cancelled.get()) {
+                    String line = source.readUtf8Line();
+                    if (line == null) {
+                        break;
+                    }
+                    openAiStyleStreamParser.parseChunk(line + "\n", chunkBuffer, streamConsumer);
                 }
-            };
-            while (true) {
-                String line = source.readUtf8Line();
-                if (line == null) {
-                    break;
+                openAiStyleStreamParser.flush(chunkBuffer, streamConsumer);
+                completion.complete(null);
+            } catch (IOException exception) {
+                if (!cancelled.get()) {
+                    handler.onError(exception);
                 }
-                openAiStyleStreamParser.parseChunk(line + "\n", chunkBuffer, streamConsumer);
+                completion.completeExceptionally(exception);
             }
-            openAiStyleStreamParser.flush(chunkBuffer, streamConsumer);
-        } catch (IOException exception) {
-            throw new IllegalStateException("AI request failed", exception);
-        }
+        });
+        return new AiStreamSession(() -> cancelled.set(true), completion);
     }
 
     /**
@@ -134,11 +152,33 @@ public class DeepSeekOkHttpChatClient implements AiProviderClient {
      * 解析聊天 completions 的完整 URL，避免调用方重复拼接。
      * @return completions 接口 URL。
      */
-    private String resolveChatCompletionsUrl() {
-        HttpUrl baseUrl = HttpUrl.parse(StrUtil.removeSuffix(aiProperties.getBaseUrl(), "/"));
+    private String resolveChatCompletionsUrl(AiModelTarget target) {
+        HttpUrl baseUrl = HttpUrl.parse(StrUtil.removeSuffix(resolveBaseUrl(target), "/"));
         if (baseUrl == null) {
             throw new IllegalStateException("Invalid AI base URL");
         }
         return baseUrl.newBuilder().addPathSegment("chat").addPathSegment("completions").build().toString();
+    }
+
+    /**
+     * 优先从模型目标 provider 配置解析基础地址，缺失时回退旧式全局配置。
+     * @param target 模型目标。
+     * @return 基础地址。
+     */
+    private String resolveBaseUrl(AiModelTarget target) {
+        return target != null && target.provider() != null && StrUtil.isNotBlank(target.provider().getBaseUrl())
+            ? target.provider().getBaseUrl()
+            : aiProperties.getBaseUrl();
+    }
+
+    /**
+     * 优先从模型目标 provider 配置解析 API Key，缺失时回退旧式全局配置。
+     * @param target 模型目标。
+     * @return API Key。
+     */
+    private String resolveApiKey(AiModelTarget target) {
+        return target != null && target.provider() != null && StrUtil.isNotBlank(target.provider().getApiKey())
+            ? target.provider().getApiKey()
+            : aiProperties.getApiKey();
     }
 }

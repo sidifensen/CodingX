@@ -166,6 +166,39 @@ describe('ChatView', () => {
   });
 
   /**
+   * 首页欢迎卡片在后端返回示例问题时必须展示真实 API 数据，避免误回退到静态 fallback。
+   */
+  it('应在新建页展示真实示例问题卡片并标记数据源', async () => {
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          activeConversationId: null,
+          messages: [],
+          executionSteps: [],
+          references: [],
+          artifacts: [],
+          inputValue: '',
+          sampleQuestions: [
+            {
+              id: '9001',
+              questionText: '真实示例：帮我分析本周销售数据',
+              category: '经营分析',
+            },
+          ],
+        })}
+      />,
+    );
+
+    const realQuestion = screen.getByText('真实示例：帮我分析本周销售数据');
+    expect(realQuestion.closest('button')).toHaveAttribute('data-source', 'api');
+    expect(screen.getByText('经营分析')).toBeInTheDocument();
+    expect(screen.queryByText('网页读取')).not.toBeInTheDocument();
+    expect(screen.queryByText('解析并总结外部网页内容')).not.toBeInTheDocument();
+  });
+
+  /**
    * 已选中历史会话但消息为空时，不应回退到新建页空态。
    */
   it('应在选中空会话时展示会话空态而不是新建页', async () => {
@@ -307,6 +340,36 @@ describe('ChatView', () => {
 
     expect(screen.getByText('思考过程')).toBeInTheDocument();
     expect(screen.getByText('先分析问题，再组织答案。')).toBeInTheDocument();
+  });
+
+  /**
+   * 思考区块标题右侧应提供显式箭头控件，避免折叠状态只能依赖浏览器默认标记。
+   */
+  it('应在思考区块标题右侧渲染箭头控件', async () => {
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          messages: [
+            {
+              id: '702',
+              conversationId: '2001',
+              role: 'ASSISTANT',
+              content: '最终回答',
+              thinkingContent: '先分析问题，再组织答案。',
+              status: 'COMPLETED',
+            },
+          ],
+          executionSteps: [],
+          references: [],
+          artifacts: [],
+        })}
+      />,
+    );
+
+    expect(screen.getByTestId('thinking-summary-702')).toBeInTheDocument();
+    expect(screen.getByTestId('thinking-toggle-icon-702')).toBeInTheDocument();
   });
 
   /**

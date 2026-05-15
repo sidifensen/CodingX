@@ -154,16 +154,18 @@ export default function ChatView({
                       title: item.category || '示例问题',
                       desc: item.questionText,
                       iconClassName: ['text-[#8fb3da]', 'text-[#ff8a24]', 'text-[#a78bfa]', 'text-[#f4f4f5]'][index % 4],
+                      dataSource: 'api',
                     }))
                   : [
-                      { icon: Globe2, title: '网页读取', desc: '解析并总结外部网页内容', iconClassName: 'text-[#8fb3da]' },
-                      { icon: Search, title: '调研分析', desc: '深度搜索并生成研究报告', iconClassName: 'text-[#ff8a24]' },
-                      { icon: Database, title: '数据挖掘', desc: '结构化数据提取与清洗', iconClassName: 'text-[#a78bfa]' },
-                      { icon: FolderOpen, title: '文件管理', desc: '上传并与您的文档进行对话', iconClassName: 'text-[#f4f4f5]' },
+                      { icon: Globe2, title: '网页读取', desc: '解析并总结外部网页内容', iconClassName: 'text-[#8fb3da]', dataSource: 'fallback' },
+                      { icon: Search, title: '调研分析', desc: '深度搜索并生成研究报告', iconClassName: 'text-[#ff8a24]', dataSource: 'fallback' },
+                      { icon: Database, title: '数据挖掘', desc: '结构化数据提取与清洗', iconClassName: 'text-[#a78bfa]', dataSource: 'fallback' },
+                      { icon: FolderOpen, title: '文件管理', desc: '上传并与您的文档进行对话', iconClassName: 'text-[#f4f4f5]', dataSource: 'fallback' },
                     ]).map((item) => (
                   <button
                     key={`${item.title}-${item.desc}`}
                     type="button"
+                    data-source={item.dataSource}
                     onClick={() => setInputValue(item.desc)}
                     className="rounded-[22px] border border-border bg-surface px-6 py-5 text-left shadow-sm transition-colors hover:border-border-active hover:bg-surface-container"
                   >
@@ -213,8 +215,20 @@ export default function ChatView({
                       {isAssistant ? (
                         <>
                           {message.thinkingContent ? (
-                            <details className="mb-3 rounded-2xl border border-border bg-surface-container px-4 py-3 text-sm text-muted">
-                              <summary className="cursor-pointer list-none font-medium text-foreground">思考过程</summary>
+                            <details className="group mb-3 rounded-2xl border border-border bg-surface-container px-4 py-3 text-sm text-muted">
+                              <summary
+                                data-testid={`thinking-summary-${message.id}`}
+                                className="flex cursor-pointer list-none items-center gap-3 font-medium text-foreground [&::-webkit-details-marker]:hidden"
+                              >
+                                <span>思考过程</span>
+                                <span
+                                  data-testid={`thinking-toggle-icon-${message.id}`}
+                                  aria-hidden="true"
+                                  className="ml-auto flex h-7 w-7 items-center justify-center rounded-full border border-border bg-surface text-muted transition-colors group-hover:text-foreground"
+                                >
+                                  <ChevronDown size={15} className="transition-transform duration-200 group-open:rotate-180" />
+                                </span>
+                              </summary>
                               <div className="mt-3 whitespace-pre-wrap leading-6">{message.thinkingContent}</div>
                             </details>
                           ) : null}

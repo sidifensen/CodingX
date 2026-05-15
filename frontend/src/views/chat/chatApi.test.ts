@@ -45,37 +45,28 @@ describe('ChatApi', () => {
   });
 
   /**
-   * 反馈请求应命中兼容路径并透传请求体。
+   * 大整数会话标识必须按字符串原样传递，避免前端 Number 精度丢失导致查不到会话。
    */
-  it('应通过兼容路径提交反馈', async () => {
+  it('应原样使用字符串会话标识加载消息', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
       new Response(
         JSON.stringify({
           success: true,
           code: 'OK',
-          message: 'feedback submitted',
-          data: null,
+          message: 'success',
+          data: [],
         }),
         { status: 200 },
       ),
     );
 
-    await ChatApi.submitFeedback('token-123', 101, {
-      conversationId: 2001,
-      vote: 1,
-      reason: 'helpful',
-      comment: 'good',
-    });
+    await ChatApi.listMessages('token-123', '2055114974648864768');
 
     expect(fetchSpy).toHaveBeenCalledWith(
-      '/api/chat/messages/101/feedback',
+      '/api/chat/conversations/2055114974648864768/messages',
       expect.objectContaining({
-        method: 'POST',
-        body: JSON.stringify({
-          conversationId: 2001,
-          vote: 1,
-          reason: 'helpful',
-          comment: 'good',
+        headers: expect.objectContaining({
+          satoken: 'token-123',
         }),
       }),
     );

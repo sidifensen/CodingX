@@ -29,8 +29,8 @@ interface SidebarProps {
   onOpenLogin: () => void;
   onLogout: () => Promise<void>;
   conversations: ConversationItem[];
-  activeConversationId: number | null;
-  onSelectConversation: (conversationId: number) => Promise<void>;
+  activeConversationId: string | null;
+  onSelectConversation: (conversationId: string) => Promise<void>;
   onStartNewConversation: () => Promise<void>;
 }
 
@@ -163,8 +163,8 @@ function ConversationHistory({
   onSelectConversation,
 }: {
   conversations: ConversationItem[];
-  activeConversationId: number | null;
-  onSelectConversation: (conversationId: number) => Promise<void>;
+  activeConversationId: string | null;
+  onSelectConversation: (conversationId: string) => Promise<void>;
 }) {
   const sections = groupConversationsByTime(conversations);
 

@@ -2,20 +2,20 @@
  * 统一定义聊天工作区前端状态模型，保证三栏面板和数据请求共享同一份类型约束。
  */
 export interface ConversationItem {
-  id: number;
+  id: string;
   title: string;
   status: string;
   lastMessageAt?: string;
-  lastRunId?: number;
+  lastRunId?: string;
 }
 
 /**
  * 描述聊天消息回放与流式拼接需要的字段。
  */
 export interface ChatMessageItem {
-  id: number;
-  conversationId: number;
-  runId?: number;
+  id: string;
+  conversationId: string;
+  runId?: string;
   role: 'USER' | 'ASSISTANT' | 'SYSTEM';
   content: string;
   thinkingContent?: string;
@@ -31,8 +31,8 @@ export interface ChatMessageItem {
  * 描述右栏执行步骤项目。
  */
 export interface ExecutionStepItem {
-  id: number;
-  runId: number;
+  id: string;
+  runId: string;
   stepType: string;
   stepTitle: string;
   stepStatus: string;
@@ -44,10 +44,10 @@ export interface ExecutionStepItem {
  * 描述右栏来源项目。
  */
 export interface ReferenceItem {
-  id: number;
-  runId: number;
-  messageId?: number;
-  conversationId: number;
+  id: string;
+  runId: string;
+  messageId?: string;
+  conversationId: string;
   sourceType?: string;
   title: string;
   url?: string;
@@ -60,10 +60,10 @@ export interface ReferenceItem {
  * 描述右栏产物项目。
  */
 export interface ArtifactItem {
-  id: number;
-  runId: number;
-  messageId?: number;
-  conversationId: number;
+  id: string;
+  runId: string;
+  messageId?: string;
+  conversationId: string;
   artifactType: string;
   name: string;
   mimeType?: string;
@@ -75,15 +75,15 @@ export interface ArtifactItem {
  * 记录当前 SSE 会话的流式上下文。
  */
 export interface ActiveStreamState {
-  conversationId: number;
-  activeMessageId: number;
+  conversationId: string;
+  activeMessageId: string;
 }
 
 /**
  * 统一描述后端 `meta` 事件目前会返回的会话上下文。
  */
 export interface StreamMetaPayload {
-  conversationId: number;
+  conversationId: string;
   deepThinking?: boolean;
   taskId?: number;
   traceId?: string;
@@ -94,7 +94,7 @@ export interface StreamMetaPayload {
  */
 export interface ChatWorkspaceController {
   conversations: ConversationItem[];
-  activeConversationId: number | null;
+  activeConversationId: string | null;
   messages: ChatMessageItem[];
   executionSteps: ExecutionStepItem[];
   references: ReferenceItem[];
@@ -107,7 +107,6 @@ export interface ChatWorkspaceController {
   setInputValue: (value: string) => void;
   submitMessage: () => Promise<void>;
   cancelCurrentStream: () => Promise<void>;
-  selectConversation: (conversationId: number, sourceConversations?: ConversationItem[]) => Promise<void>;
-  submitPositiveFeedback: () => Promise<void>;
+  selectConversation: (conversationId: string, sourceConversations?: ConversationItem[]) => Promise<void>;
   startNewConversation: () => Promise<void>;
 }

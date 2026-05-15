@@ -7,11 +7,9 @@ import {
   Database,
   FileText,
   Globe2,
-  MessageSquareHeart,
   Paperclip,
   FolderOpen,
   Search,
-  Sparkles,
   WandSparkles,
 } from 'lucide-react';
 import { ChatWorkspaceController } from './chat/types';
@@ -43,7 +41,6 @@ export default function ChatView({ isAuthenticated, onRequireLogin, workspace }:
     setInputValue,
     submitMessage,
     cancelCurrentStream,
-    submitPositiveFeedback,
   } = workspace;
 
   /**
@@ -203,18 +200,6 @@ export default function ChatView({ isAuthenticated, onRequireLogin, workspace }:
                 )}
               </div>
             </form>
-            {!showLandingState && activeConversationId != null ? (
-              <div className="mt-3 flex justify-end">
-                <button
-                  type="button"
-                  onClick={() => void submitPositiveFeedback()}
-                  className="flex items-center gap-2 rounded-full border border-border bg-surface/80 px-3 py-1.5 text-[12px] text-muted transition-colors hover:border-border-active hover:text-foreground"
-                >
-                  <MessageSquareHeart size={14} />
-                  反馈
-                </button>
-              </div>
-            ) : null}
           </div>
         </div>
       </section>

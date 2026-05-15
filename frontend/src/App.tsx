@@ -92,7 +92,7 @@ export default function App() {
    * 统一处理侧边栏点击真实会话后的主区切换。
    * @param conversationId 被点击的会话标识。
    */
-  const handleConversationSelect = async (conversationId: number) => {
+  const handleConversationSelect = async (conversationId: string) => {
     setActiveView('chat');
     await chatWorkspace.selectConversation(conversationId, chatWorkspace.conversations);
   };

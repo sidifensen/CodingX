@@ -142,7 +142,7 @@ describe('ChatView', () => {
         isAuthenticated={true}
         onRequireLogin={vi.fn()}
         workspace={createWorkspace({
-          activeConversationId: 2002,
+          activeConversationId: '2002',
           messages: [],
           executionSteps: [],
           references: [],
@@ -153,6 +153,7 @@ describe('ChatView', () => {
 
     expect(screen.queryByText('你好，我是 CodingX')).not.toBeInTheDocument();
     expect(screen.getByText('当前会话暂无消息')).toBeInTheDocument();
+    expect(screen.queryByText('反馈')).not.toBeInTheDocument();
   });
 });
 
@@ -163,28 +164,28 @@ function createWorkspace(overrides?: Partial<ChatWorkspaceController>): ChatWork
   return {
     conversations: [
       {
-        id: 2001,
+        id: '2001',
         title: 'Default Demo Conversation',
         status: 'ACTIVE',
         lastMessageAt: '2026-05-15 00:36:58',
-        lastRunId: 5002,
+        lastRunId: '5002',
       },
     ],
-    activeConversationId: 2001,
+    activeConversationId: '2001',
     messages: [
       {
-        id: 101,
-        conversationId: 2001,
-        runId: 5002,
+        id: '101',
+        conversationId: '2001',
+        runId: '5002',
         role: 'USER',
         content: '请搜索 Spring Boot SSE 最佳实践',
         status: 'COMPLETED',
         createdAt: '2026-05-15 00:36:58',
       },
       {
-        id: 102,
-        conversationId: 2001,
-        runId: 5002,
+        id: '102',
+        conversationId: '2001',
+        runId: '5002',
         role: 'ASSISTANT',
         content: '我来为您总结 Spring Boot SSE 最佳实践。',
         status: 'COMPLETED',
@@ -193,8 +194,8 @@ function createWorkspace(overrides?: Partial<ChatWorkspaceController>): ChatWork
     ],
     executionSteps: [
       {
-        id: 1,
-        runId: 5002,
+        id: '1',
+        runId: '5002',
         stepType: 'search',
         stepTitle: '搜索资料',
         stepStatus: 'COMPLETED',
@@ -204,10 +205,10 @@ function createWorkspace(overrides?: Partial<ChatWorkspaceController>): ChatWork
     ],
     references: [
       {
-        id: 11,
-        runId: 5002,
-        messageId: 101,
-        conversationId: 2001,
+        id: '11',
+        runId: '5002',
+        messageId: '101',
+        conversationId: '2001',
         title: 'Spring Boot SSE 最佳实践',
         url: 'https://docs.spring.io',
         siteName: 'Spring',
@@ -216,10 +217,10 @@ function createWorkspace(overrides?: Partial<ChatWorkspaceController>): ChatWork
     ],
     artifacts: [
       {
-        id: 21,
-        runId: 5002,
-        messageId: 101,
-        conversationId: 2001,
+        id: '21',
+        runId: '5002',
+        messageId: '101',
+        conversationId: '2001',
         artifactType: 'docx',
         name: 'search-report.docx',
         storagePath: 'artifacts/2001/search-report.docx',
@@ -235,7 +236,6 @@ function createWorkspace(overrides?: Partial<ChatWorkspaceController>): ChatWork
     submitMessage: vi.fn().mockResolvedValue(undefined),
     cancelCurrentStream: vi.fn().mockResolvedValue(undefined),
     selectConversation: vi.fn().mockResolvedValue(undefined),
-    submitPositiveFeedback: vi.fn().mockResolvedValue(undefined),
     startNewConversation: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   };

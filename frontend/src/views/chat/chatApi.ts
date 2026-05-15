@@ -30,7 +30,7 @@ export class ChatApi {
    * @param conversationId 会话标识。
    * @returns 消息列表。
    */
-  static async listMessages(token: string, conversationId: number): Promise<ChatMessageItem[]> {
+  static async listMessages(token: string, conversationId: string): Promise<ChatMessageItem[]> {
     const envelope = await this.request<ChatMessageItem[]>(`/api/chat/conversations/${conversationId}/messages`, token);
     return envelope.data;
   }
@@ -41,7 +41,7 @@ export class ChatApi {
    * @param conversationId 会话标识。
    * @returns 步骤列表。
    */
-  static async listSteps(token: string, conversationId: number): Promise<ExecutionStepItem[]> {
+  static async listSteps(token: string, conversationId: string): Promise<ExecutionStepItem[]> {
     const envelope = await this.request<ExecutionStepItem[]>(`/api/chat/conversations/${conversationId}/steps`, token);
     return envelope.data;
   }
@@ -52,7 +52,7 @@ export class ChatApi {
    * @param conversationId 会话标识。
    * @returns 来源列表。
    */
-  static async listReferences(token: string, conversationId: number): Promise<ReferenceItem[]> {
+  static async listReferences(token: string, conversationId: string): Promise<ReferenceItem[]> {
     const envelope = await this.request<ReferenceItem[]>(`/api/chat/conversations/${conversationId}/references`, token);
     return envelope.data;
   }
@@ -63,34 +63,12 @@ export class ChatApi {
    * @param conversationId 会话标识。
    * @returns 产物列表。
    */
-  static async listArtifacts(token: string, conversationId: number): Promise<ArtifactItem[]> {
+  static async listArtifacts(token: string, conversationId: string): Promise<ArtifactItem[]> {
     const envelope = await this.request<ArtifactItem[]>(`/api/chat/conversations/${conversationId}/artifacts`, token);
     return envelope.data;
   }
 
-  /**
-   * 通过兼容路径提交消息反馈。
-   * @param token 当前登录令牌。
-   * @param messageId 消息标识。
-   * @param payload 反馈内容。
-   */
-  static async submitFeedback(
-    token: string,
-    messageId: number,
-    payload: { conversationId: number; vote: number; reason?: string; comment?: string },
-  ): Promise<void> {
-    await this.request<void>(`/api/chat/messages/${messageId}/feedback`, token, {
-      method: 'POST',
-      body: JSON.stringify(payload),
-    });
-  }
-
-  /**
-   * 请求取消当前会话的生成任务。
-   * @param token 当前登录令牌。
-   * @param conversationId 会话标识。
-   */
-  static async cancelConversation(token: string, conversationId: number): Promise<void> {
+  static async cancelConversation(token: string, conversationId: string): Promise<void> {
     await this.request<void>(`/api/chat/conversations/${conversationId}/cancel`, token, {
       method: 'POST',
     });

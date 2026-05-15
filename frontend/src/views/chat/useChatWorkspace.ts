@@ -17,7 +17,7 @@ import {
  */
 export function useChatWorkspace(isAuthenticated: boolean) {
   const [conversations, setConversations] = useState<ConversationItem[]>([]);
-  const [activeConversationId, setActiveConversationId] = useState<number | null>(null);
+  const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessageItem[]>([]);
   const [executionSteps, setExecutionSteps] = useState<ExecutionStepItem[]>([]);
   const [references, setReferences] = useState<ReferenceItem[]>([]);
@@ -64,7 +64,7 @@ export function useChatWorkspace(isAuthenticated: boolean) {
    * @param conversationId 会话标识。
    * @param sourceConversations 可选的最新会话列表，避免重复读取旧状态。
    */
-  const selectConversation = async (conversationId: number, sourceConversations?: ConversationItem[]) => {
+  const selectConversation = async (conversationId: string, sourceConversations?: ConversationItem[]) => {
     const token = currentToken();
     if (!token) {
       return;
@@ -104,9 +104,9 @@ export function useChatWorkspace(isAuthenticated: boolean) {
     abortControllerRef.current?.abort();
     abortControllerRef.current = new AbortController();
 
-    const optimisticConversationId = activeConversationId ?? -1;
-    const optimisticMessageId = Date.now();
-    const optimisticAssistantId = optimisticMessageId + 1;
+    const optimisticConversationId = activeConversationId ?? 'pending-conversation';
+    const optimisticMessageId = `optimistic-user-${Date.now()}`;
+    const optimisticAssistantId = `optimistic-assistant-${Date.now()}`;
     streamStateRef.current = {
       conversationId: optimisticConversationId,
       activeMessageId: optimisticAssistantId,
@@ -179,23 +179,6 @@ export function useChatWorkspace(isAuthenticated: boolean) {
   };
 
   /**
-   * 提交当前最后一条助手消息的点赞。
-   */
-  const submitPositiveFeedback = async () => {
-    const token = currentToken();
-    const latestAssistantMessage = [...messages].reverse().find((message) => message.role === 'ASSISTANT');
-    if (!token || !activeConversationId || !latestAssistantMessage) {
-      return;
-    }
-    await ChatApi.submitFeedback(token, latestAssistantMessage.id, {
-      conversationId: activeConversationId,
-      vote: 1,
-      reason: 'helpful',
-      comment: 'frontend feedback',
-    });
-  };
-
-  /**
    * 切换到“新建对话”空态，并确保下一次发送不再复用旧会话标识。
    */
   const startNewConversation = async () => {
@@ -247,7 +230,7 @@ export function useChatWorkspace(isAuthenticated: boolean) {
    * @param response fetch 返回的 SSE 响应。
    * @param optimisticAssistantId 当前流式助手消息标识。
    */
-  const consumeSseStream = async (response: Response, optimisticAssistantId: number) => {
+  const consumeSseStream = async (response: Response, optimisticAssistantId: string) => {
     const reader = response.body?.getReader();
     if (!reader) {
       return;
@@ -275,10 +258,10 @@ export function useChatWorkspace(isAuthenticated: boolean) {
    * @param payload 事件载荷。
    * @param optimisticAssistantId 当前流式助手消息标识。
    */
-  const applySseEvent = (eventName: string, payload: unknown, optimisticAssistantId: number) => {
+  const applySseEvent = (eventName: string, payload: unknown, optimisticAssistantId: string) => {
     if (eventName === 'meta' && isRecord(payload)) {
-      const conversationId = Number(payload.conversationId);
-      if (!Number.isNaN(conversationId)) {
+      const conversationId = String(payload.conversationId ?? '');
+      if (conversationId) {
         streamStateRef.current = {
           conversationId,
           activeMessageId: optimisticAssistantId,
@@ -305,8 +288,8 @@ export function useChatWorkspace(isAuthenticated: boolean) {
 
     if (eventName === 'step' && isRecord(payload)) {
       setExecutionSteps((previousSteps) => upsertById(previousSteps, {
-        id: Number(payload.id),
-        runId: Number(payload.runId),
+        id: String(payload.id ?? ''),
+        runId: String(payload.runId ?? ''),
         stepType: String(payload.stepType ?? ''),
         stepTitle: String(payload.stepTitle ?? ''),
         stepStatus: String(payload.stepStatus ?? ''),
@@ -318,10 +301,10 @@ export function useChatWorkspace(isAuthenticated: boolean) {
 
     if (eventName === 'reference' && isRecord(payload)) {
       setReferences((previousReferences) => upsertById(previousReferences, {
-        id: Number(payload.id),
-        runId: Number(payload.runId),
-        messageId: payload.messageId == null ? undefined : Number(payload.messageId),
-        conversationId: Number(payload.conversationId),
+        id: String(payload.id ?? ''),
+        runId: String(payload.runId ?? ''),
+        messageId: payload.messageId == null ? undefined : String(payload.messageId),
+        conversationId: String(payload.conversationId ?? ''),
         sourceType: typeof payload.sourceType === 'string' ? payload.sourceType : undefined,
         title: String(payload.title ?? ''),
         url: typeof payload.url === 'string' ? payload.url : undefined,
@@ -334,10 +317,10 @@ export function useChatWorkspace(isAuthenticated: boolean) {
 
     if (eventName === 'artifact' && isRecord(payload)) {
       setArtifacts((previousArtifacts) => upsertById(previousArtifacts, {
-        id: Number(payload.id),
-        runId: Number(payload.runId),
-        messageId: payload.messageId == null ? undefined : Number(payload.messageId),
-        conversationId: Number(payload.conversationId),
+        id: String(payload.id ?? ''),
+        runId: String(payload.runId ?? ''),
+        messageId: payload.messageId == null ? undefined : String(payload.messageId),
+        conversationId: String(payload.conversationId ?? ''),
         artifactType: String(payload.artifactType ?? ''),
         name: String(payload.name ?? ''),
         mimeType: typeof payload.mimeType === 'string' ? payload.mimeType : undefined,
@@ -411,7 +394,6 @@ export function useChatWorkspace(isAuthenticated: boolean) {
     submitMessage,
     cancelCurrentStream,
     selectConversation,
-    submitPositiveFeedback,
     startNewConversation,
   } satisfies ChatWorkspaceController;
 
@@ -444,7 +426,7 @@ export function useChatWorkspace(isAuthenticated: boolean) {
  * @param conversationId 当前选中的会话标识。
  * @returns 可直接用于 fetch 的 SSE 地址。
  */
-function buildStreamRequestUrl(question: string, conversationId: number | null) {
+function buildStreamRequestUrl(question: string, conversationId: string | null) {
   const searchParams = new URLSearchParams({
     question,
   });
@@ -469,7 +451,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * @param nextItem 新项目。
  * @returns 合并后的列表。
  */
-function upsertById<T extends { id: number }>(items: T[], nextItem: T): T[] {
+function upsertById<T extends { id: string }>(items: T[], nextItem: T): T[] {
   const existingIndex = items.findIndex((item) => item.id === nextItem.id);
   if (existingIndex === -1) {
     return [...items, nextItem];

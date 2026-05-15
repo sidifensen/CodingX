@@ -441,25 +441,25 @@ describe('App', () => {
             message: 'success',
             data: [
               {
-                id: 2001,
+                id: '2055114974648864768',
                 title: '第一个真实会话',
                 status: 'ACTIVE',
                 lastMessageAt: '2026-05-15 09:36:58',
-                lastRunId: 5001,
+                lastRunId: '5001',
               },
               {
-                id: 2002,
+                id: '2055120756043943936',
                 title: '第二个真实会话',
                 status: 'ACTIVE',
                 lastMessageAt: '2026-05-15 09:56:58',
-                lastRunId: 5002,
+                lastRunId: '5002',
               },
             ],
           }),
           { status: 200 },
         );
       }
-      if (url === '/api/chat/conversations/2001/messages') {
+      if (url === '/api/chat/conversations/2055114974648864768/messages') {
         return new Response(
           JSON.stringify({
             success: true,
@@ -467,9 +467,9 @@ describe('App', () => {
             message: 'success',
             data: [
               {
-                id: 101,
-                conversationId: 2001,
-                runId: 5001,
+                id: '101',
+                conversationId: '2055114974648864768',
+                runId: '5001',
                 role: 'ASSISTANT',
                 content: '这是第一个会话的回答',
                 status: 'COMPLETED',
@@ -480,7 +480,7 @@ describe('App', () => {
           { status: 200 },
         );
       }
-      if (url === '/api/chat/conversations/2002/messages') {
+      if (url === '/api/chat/conversations/2055120756043943936/messages') {
         return new Response(
           JSON.stringify({
             success: true,
@@ -488,9 +488,9 @@ describe('App', () => {
             message: 'success',
             data: [
               {
-                id: 201,
-                conversationId: 2002,
-                runId: 5002,
+                id: '201',
+                conversationId: '2055120756043943936',
+                runId: '5002',
                 role: 'ASSISTANT',
                 content: '这是第二个会话的回答',
                 status: 'COMPLETED',
@@ -502,12 +502,12 @@ describe('App', () => {
         );
       }
       if (
-        url === '/api/chat/conversations/2001/steps' ||
-        url === '/api/chat/conversations/2001/references' ||
-        url === '/api/chat/conversations/2001/artifacts' ||
-        url === '/api/chat/conversations/2002/steps' ||
-        url === '/api/chat/conversations/2002/references' ||
-        url === '/api/chat/conversations/2002/artifacts'
+        url === '/api/chat/conversations/2055114974648864768/steps' ||
+        url === '/api/chat/conversations/2055114974648864768/references' ||
+        url === '/api/chat/conversations/2055114974648864768/artifacts' ||
+        url === '/api/chat/conversations/2055120756043943936/steps' ||
+        url === '/api/chat/conversations/2055120756043943936/references' ||
+        url === '/api/chat/conversations/2055120756043943936/artifacts'
       ) {
         return new Response(JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }), { status: 200 });
       }

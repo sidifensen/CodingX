@@ -332,6 +332,8 @@ CREATE TABLE IF NOT EXISTS chat_intent_node (
     description TEXT,
     intent_type VARCHAR(32) NOT NULL,
     prompt_template TEXT,
+    mcp_tool_id VARCHAR(128),
+    param_prompt_template TEXT,
     enabled SMALLINT NOT NULL DEFAULT 1,
     sort_no INTEGER NOT NULL DEFAULT 0,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -346,6 +348,8 @@ COMMENT ON COLUMN chat_intent_node.name IS '展示名称';
 COMMENT ON COLUMN chat_intent_node.description IS '语义描述';
 COMMENT ON COLUMN chat_intent_node.intent_type IS '意图类型';
 COMMENT ON COLUMN chat_intent_node.prompt_template IS '提示词模板';
+COMMENT ON COLUMN chat_intent_node.mcp_tool_id IS 'MCP 工具标识';
+COMMENT ON COLUMN chat_intent_node.param_prompt_template IS 'MCP 参数提取提示词模板';
 COMMENT ON COLUMN chat_intent_node.enabled IS '是否启用 1：启用 0：禁用';
 COMMENT ON COLUMN chat_intent_node.sort_no IS '排序字段';
 COMMENT ON COLUMN chat_intent_node.created_at IS '创建时间';

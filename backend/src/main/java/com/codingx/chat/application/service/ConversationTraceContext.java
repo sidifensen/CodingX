@@ -1,6 +1,8 @@
 package com.codingx.chat.application.service;
 
 import com.codingx.chat.domain.model.ChatTraceRun;
+import java.util.ArrayDeque;
+import java.util.Deque;
 import java.util.UUID;
 
 /**
@@ -9,6 +11,7 @@ import java.util.UUID;
 public final class ConversationTraceContext {
 
     private static final ThreadLocal<ChatTraceRun> CURRENT = new ThreadLocal<>();
+    private static final ThreadLocal<Deque<String>> NODE_STACK = ThreadLocal.withInitial(ArrayDeque::new);
 
     private ConversationTraceContext() {
     }
@@ -53,5 +56,39 @@ public final class ConversationTraceContext {
      */
     public static void clear() {
         CURRENT.remove();
+        NODE_STACK.remove();
+    }
+
+    /**
+     * 压入当前执行节点标识。
+     * @param nodeId 节点标识。
+     */
+    public static void pushNode(String nodeId) {
+        NODE_STACK.get().push(nodeId);
+    }
+
+    /**
+     * 弹出当前执行节点标识。
+     */
+    public static void popNode() {
+        if (!NODE_STACK.get().isEmpty()) {
+            NODE_STACK.get().pop();
+        }
+    }
+
+    /**
+     * 返回当前父节点标识。
+     * @return 父节点标识。
+     */
+    public static String currentNodeId() {
+        return NODE_STACK.get().peek();
+    }
+
+    /**
+     * 返回当前节点深度。
+     * @return 节点深度。
+     */
+    public static int currentDepth() {
+        return NODE_STACK.get().size();
     }
 }

@@ -25,6 +25,7 @@ public class DocumentArtifactService {
      * @param conversationId 会话标识。
      * @param content 文档内容。
      */
+    @ConversationTraceNode(name = "artifact-generate", type = "ARTIFACT")
     public void createDocxArtifact(Long runId, Long messageId, Long conversationId, String content) {
         ChatMessageArtifact artifact = ChatMessageArtifact.builder()
             .id(IdUtil.getSnowflakeNextId())

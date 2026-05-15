@@ -34,6 +34,7 @@ public class ConversationIntentResolver {
      * @param examples 示例问题。
      * @return 命中的意图编码。
      */
+    @ConversationTraceNode(name = "intent-resolve", type = "INTENT")
     public String resolveIntent(String question, List<ChatIntentNode> nodes, List<ChatIntentExample> examples) {
         return resolveCandidates(question, nodes, examples).stream()
             .findFirst()
@@ -48,6 +49,7 @@ public class ConversationIntentResolver {
      * @param examples 示例问题。
      * @return 按分数降序排序的候选。
      */
+    @ConversationTraceNode(name = "intent-classify", type = "INTENT")
     public List<ConversationIntentCandidate> resolveCandidates(String question, List<ChatIntentNode> nodes, List<ChatIntentExample> examples) {
         if (StrUtil.isBlank(question) || nodes == null || nodes.isEmpty()) {
             return List.of();
@@ -70,6 +72,10 @@ public class ConversationIntentResolver {
             .toList();
         if (leafNodes.isEmpty()) {
             return List.of();
+        }
+        List<ConversationIntentCandidate> heuristicCandidates = heuristicCandidates(question, leafNodes, examplesByCode);
+        if (!heuristicCandidates.isEmpty()) {
+            return heuristicCandidates;
         }
         String prompt = promptTemplateLoader.render("intent-classify", Map.of(
             "intent_list", buildIntentList(leafNodes, nodeByCode, examplesByCode)
@@ -168,5 +174,41 @@ public class ConversationIntentResolver {
             current = StrUtil.isBlank(current.getParentCode()) ? null : nodeByCode.get(current.getParentCode());
         }
         return String.join(" > ", segments);
+    }
+
+    /**
+     * 对 system / mcp 这类强模式意图优先做启发式命中，避免每次都走 LLM 分类。
+     * @param question 用户问题。
+     * @param leafNodes 叶子候选。
+     * @param examplesByCode 示例索引。
+     * @return 命中的启发式候选。
+     */
+    private List<ConversationIntentCandidate> heuristicCandidates(String question, List<ChatIntentNode> leafNodes, Map<String, List<String>> examplesByCode) {
+        String normalizedQuestion = question == null ? "" : question.toLowerCase();
+        List<ConversationIntentCandidate> candidates = new ArrayList<>();
+        for (ChatIntentNode node : leafNodes) {
+            if ("system".equalsIgnoreCase(node.getIntentType())) {
+                if ("sys-welcome".equals(node.getIntentCode()) && normalizedQuestion.matches(".*(你好|hello|hi|在吗).*")) {
+                    candidates.add(new ConversationIntentCandidate(node, 0.95D));
+                }
+                if ("sys-about-bot".equals(node.getIntentCode()) && normalizedQuestion.matches(".*(你是谁|你能帮我做什么|你是什么ai).*")) {
+                    candidates.add(new ConversationIntentCandidate(node, 0.95D));
+                }
+            }
+            if ("mcp".equalsIgnoreCase(node.getIntentType())) {
+                if (normalizedQuestion.contains("销售")) {
+                    candidates.add(new ConversationIntentCandidate(node, 0.96D));
+                    continue;
+                }
+                for (String example : examplesByCode.getOrDefault(node.getIntentCode(), List.of())) {
+                    if (StrUtil.isNotBlank(example) && normalizedQuestion.contains(example.replaceAll("[？?]", "").toLowerCase())) {
+                        candidates.add(new ConversationIntentCandidate(node, 0.92D));
+                        break;
+                    }
+                }
+            }
+        }
+        candidates.sort(Comparator.comparingDouble(ConversationIntentCandidate::score).reversed());
+        return candidates;
     }
 }

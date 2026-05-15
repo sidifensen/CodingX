@@ -2,6 +2,7 @@ package com.codingx.chat.application.service;
 
 import com.codingx.chat.application.command.SendChatMessageCommand;
 import com.codingx.chat.domain.model.ChatExecutionRun;
+import com.codingx.chat.domain.model.ChatTraceRun;
 import com.codingx.chat.domain.repository.ChatExecutionRunRepository;
 import java.time.LocalDateTime;
 import java.util.concurrent.ExecutorService;
@@ -88,6 +89,9 @@ public class ChatStreamExecutionService {
                 ChatExecutionContext.start(runId);
                 ConversationTraceContext.bind(traceRun);
                 chatApplicationService.sendMessage(command, userId);
+            } catch (Throwable throwable) {
+                markRunFailed(runId, command.conversationId(), throwable);
+                throw throwable;
             } finally {
                 chatRuntimeGuardService.completeConversation(command.conversationId());
                 ChatExecutionContext.clear();
@@ -95,5 +99,28 @@ public class ChatStreamExecutionService {
             }
         });
         futureRef.set(future);
+    }
+
+    /**
+     * 当后台主链路在应用服务外层直接失败时，补充执行记录与 Trace 的错误收口。
+     * @param runId 运行标识。
+     * @param conversationId 会话标识。
+     * @param throwable 原始异常。
+     */
+    private void markRunFailed(Long runId, Long conversationId, Throwable throwable) {
+        LocalDateTime now = LocalDateTime.now();
+        chatExecutionRunRepository.save(ChatExecutionRun.builder()
+            .id(runId)
+            .conversationId(conversationId)
+            .taskId(runId)
+            .status("ERROR")
+            .errorMessage(throwable.getMessage())
+            .finishedAt(now)
+            .updatedAt(now)
+            .build());
+        ChatTraceRun traceRun = ConversationTraceContext.current();
+        if (traceRun != null) {
+            conversationTraceRecordService.finishTrace(traceRun.getTraceId(), runId, "ERROR", throwable.getMessage());
+        }
     }
 }

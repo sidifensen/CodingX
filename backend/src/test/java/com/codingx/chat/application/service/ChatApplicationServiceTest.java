@@ -129,7 +129,9 @@ class ChatApplicationServiceTest {
         List<ChatMessage> history = new ArrayList<>();
         when(chatMessageRepository.findByConversationId(1L)).thenReturn(history);
         when(conversationTitleService.generateTitle(org.mockito.ArgumentMatchers.eq(conversation), any())).thenReturn("AI搜索重构计划");
-        when(conversationRewriteService.rewrite(any(), any())).thenReturn("Hi");
+        when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+            new ConversationRewriteResult("Hi", false, List.of("Hi"))
+        );
         when(conversationIntentService.route("Hi")).thenReturn(new ConversationIntentDecision("chat.normal", ConversationIntentAction.DIRECT, null));
         doAnswer(invocation -> {
 
@@ -207,7 +209,9 @@ class ChatApplicationServiceTest {
         ChatConversation conversation = ChatConversation.create(1L, "Default", 1002L, ChatConversationStatus.ACTIVE);
         when(chatConversationRepository.requireById(1L)).thenReturn(conversation);
         when(chatMessageRepository.findByConversationId(1L)).thenReturn(new ArrayList<>());
-        when(conversationRewriteService.rewrite(any(), any())).thenReturn("Hi");
+        when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+            new ConversationRewriteResult("Hi", false, List.of("Hi"))
+        );
         when(conversationIntentService.route("Hi")).thenReturn(new ConversationIntentDecision("chat.normal", ConversationIntentAction.DIRECT, null));
         AtomicInteger cancelChecks = new AtomicInteger();
         when(chatRuntimeGuardService.isCancelled(1L)).thenAnswer(invocation -> cancelChecks.incrementAndGet() > 1);
@@ -236,7 +240,9 @@ class ChatApplicationServiceTest {
         ChatConversation conversation = ChatConversation.create(1L, "Default", 1002L, ChatConversationStatus.ACTIVE);
         when(chatConversationRepository.requireById(1L)).thenReturn(conversation);
         when(chatMessageRepository.findByConversationId(1L)).thenReturn(new ArrayList<>());
-        when(conversationRewriteService.rewrite(any(), any())).thenReturn("Hi");
+        when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+            new ConversationRewriteResult("Hi", false, List.of("Hi"))
+        );
         when(conversationIntentService.route("Hi")).thenReturn(new ConversationIntentDecision("chat.normal", ConversationIntentAction.DIRECT, null));
         when(chatRuntimeGuardService.isCancelled(1L)).thenReturn(true);
         doAnswer(invocation -> {

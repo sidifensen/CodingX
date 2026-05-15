@@ -37,7 +37,7 @@ public class ConversationTraceRecordService {
             .deleted(0)
             .build();
         chatTraceRunRepository.save(traceRun);
-        chatTraceNodeRepository.save(ChatTraceNode.builder()
+        ChatTraceNode rootNode = ChatTraceNode.builder()
             .id(IdUtil.getSnowflakeNextId())
             .traceId(traceRun.getTraceId())
             .nodeId(IdUtil.fastSimpleUUID())
@@ -47,7 +47,9 @@ public class ConversationTraceRecordService {
             .status("RUNNING")
             .startedAt(now)
             .createdAt(now)
-            .build());
+            .build();
+        chatTraceNodeRepository.save(rootNode);
+        ConversationTraceContext.pushNode(rootNode.getNodeId());
         return traceRun;
     }
 
@@ -85,5 +87,55 @@ public class ConversationTraceRecordService {
                 .build());
         }
         ConversationTraceContext.clear();
+    }
+
+    /**
+     * 在当前 trace 下启动一个子节点。
+     * @param nodeName 节点名称。
+     * @param nodeType 节点类型。
+     * @param className 类名。
+     * @param methodName 方法名。
+     * @param startedAt 开始时间。
+     * @return 已持久化的节点。
+     */
+    public ChatTraceNode startNode(String nodeName, String nodeType, String className, String methodName, LocalDateTime startedAt) {
+        ChatTraceRun traceRun = ConversationTraceContext.current();
+        if (traceRun == null) {
+            throw new IllegalStateException("Trace context is not available");
+        }
+        ChatTraceNode traceNode = ChatTraceNode.builder()
+            .id(IdUtil.getSnowflakeNextId())
+            .traceId(traceRun.getTraceId())
+            .nodeId(IdUtil.fastSimpleUUID())
+            .parentNodeId(ConversationTraceContext.currentNodeId())
+            .depth(ConversationTraceContext.currentDepth())
+            .nodeType(nodeType)
+            .nodeName(nodeName)
+            .className(className)
+            .methodName(methodName)
+            .status("RUNNING")
+            .startedAt(startedAt)
+            .createdAt(startedAt)
+            .build();
+        chatTraceNodeRepository.save(traceNode);
+        ConversationTraceContext.pushNode(traceNode.getNodeId());
+        return traceNode;
+    }
+
+    /**
+     * 收口一个 Trace 子节点。
+     * @param traceNode 目标节点。
+     * @param status 状态。
+     * @param errorMessage 错误信息。
+     * @param durationMs 耗时。
+     */
+    public void finishNode(ChatTraceNode traceNode, String status, String errorMessage, long durationMs) {
+        chatTraceNodeRepository.save(traceNode.toBuilder()
+            .status(status)
+            .errorMessage(errorMessage)
+            .durationMs(durationMs)
+            .finishedAt(LocalDateTime.now())
+            .build());
+        ConversationTraceContext.popNode();
     }
 }

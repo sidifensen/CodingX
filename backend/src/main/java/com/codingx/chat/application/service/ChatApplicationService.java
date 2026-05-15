@@ -16,8 +16,10 @@ import com.codingx.chat.domain.service.AiChatClient;
 import com.codingx.chat.domain.service.ChatStreamPublisher;
 import com.codingx.common.exception.ForbiddenException;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -89,6 +91,16 @@ public class ChatApplicationService {
     private final PromptTemplateLoader promptTemplateLoader;
 
     /**
+     * MCP 执行服务依赖。
+     */
+    private final ChatMcpExecutionService chatMcpExecutionService;
+
+    /**
+     * 意图节点仓储依赖。
+     */
+    private final com.codingx.chat.domain.repository.ChatIntentNodeRepository chatIntentNodeRepository;
+
+    /**
      * WebSearchExecutionService 依赖。
      */
     private final WebSearchExecutionService webSearchExecutionService;
@@ -128,12 +140,13 @@ public class ChatApplicationService {
         chatMessageRepository.save(userMessage);
         chatStreamPublisher.publishUserMessage(command.conversationId(), userMessage.getContent());
         history.add(userMessage);
-        String rewrittenQuestion = conversationRewriteService.rewrite(
+        ConversationRewriteResult rewriteResult = conversationRewriteService.rewriteResult(
             history.stream().filter(message -> message.getRole() == com.codingx.chat.domain.model.ChatMessageRole.USER)
                 .map(ChatMessage::getContent)
                 .toList(),
             command.content()
         );
+        String rewrittenQuestion = rewriteResult.rewrite();
         ConversationIntentDecision intentDecision = conversationIntentService.route(rewrittenQuestion);
         if (intentDecision.action() == ConversationIntentAction.CLARIFY) {
             ChatMessage assistantMessage = ChatMessage.assistantMessage(
@@ -175,29 +188,58 @@ public class ChatApplicationService {
             chatStreamPublisher.publishAssistantCompleted(command.conversationId(), assistantMessage.getContent(), conversation.getTitle());
             return;
         }
-        if (intentDecision.action() == ConversationIntentAction.SEARCH) {
-            List<SearchReferenceCandidate> references = webSearchExecutionService.search(rewrittenQuestion);
-            ChatExecutionStep searchStep = ChatExecutionStep.builder()
+        if (intentDecision.action() == ConversationIntentAction.MCP) {
+            com.codingx.chat.domain.model.ChatIntentNode intentNode = chatIntentNodeRepository.findByIntentCode(intentDecision.intentCode());
+            if (intentNode == null || StrUtil.isBlank(intentNode.getMcpToolId())) {
+                throw new IllegalStateException("MCP tool config is missing for intent: " + intentDecision.intentCode());
+            }
+            ChatMcpToolResult toolResult = chatMcpExecutionService.execute(intentNode.getMcpToolId(), rewrittenQuestion);
+            ChatExecutionStep mcpStep = ChatExecutionStep.builder()
                 .id(cn.hutool.core.util.IdUtil.getSnowflakeNextId())
                 .runId(runId)
-                .stepType("search")
-                .stepTitle("搜索资料")
+                .stepType("mcp")
+                .stepTitle("执行 MCP 工具")
                 .stepStatus("COMPLETED")
                 .sequenceNo(1L)
-                .content(rewrittenQuestion)
+                .content(toolResult.content())
                 .createdAt(java.time.LocalDateTime.now())
                 .updatedAt(java.time.LocalDateTime.now())
                 .build();
-            chatExecutionStepRepository.save(searchStep);
+            chatExecutionStepRepository.save(mcpStep);
             chatStreamPublisher.publishStep(command.conversationId(), Map.of(
-                "id", searchStep.getId(),
-                "runId", searchStep.getRunId(),
-                "stepType", searchStep.getStepType(),
-                "stepTitle", searchStep.getStepTitle(),
-                "stepStatus", searchStep.getStepStatus(),
-                "sequenceNo", searchStep.getSequenceNo(),
-                "content", searchStep.getContent()
+                "id", mcpStep.getId(),
+                "runId", mcpStep.getRunId(),
+                "stepType", mcpStep.getStepType(),
+                "stepTitle", mcpStep.getStepTitle(),
+                "stepStatus", mcpStep.getStepStatus(),
+                "sequenceNo", mcpStep.getSequenceNo(),
+                "content", mcpStep.getContent()
             ));
+            ChatMessage assistantMessage = ChatMessage.assistantMessage(
+                command.conversationId(),
+                toolResult.content(),
+                ChatMessageStatus.COMPLETED,
+                null,
+                null,
+                null
+            ).attachRun(runId);
+            chatMessageRepository.save(assistantMessage);
+            history.add(assistantMessage);
+            conversation.rename(conversationTitleService.generateTitle(conversation, history));
+            conversation.touch();
+            conversation.recordLastRunId(runId);
+            chatConversationRepository.save(conversation);
+            recordExecutionOutcome(conversation, userMessage.getId(), assistantMessage.getId(), intentDecision.intentCode(), false, false, ChatMessageStatus.COMPLETED, null);
+            finishTrace(runId, "SUCCESS", null);
+            chatStreamPublisher.publishAssistantCompleted(command.conversationId(), assistantMessage.getContent(), conversation.getTitle());
+            return;
+        }
+        if (intentDecision.action() == ConversationIntentAction.SEARCH) {
+            List<SearchReferenceCandidate> references = executeSearchQuestions(
+                rewriteResult.shouldSplit() ? rewriteResult.subQuestions() : List.of(rewrittenQuestion),
+                runId,
+                command.conversationId()
+            );
             searchReferenceCollector.collect(runId, userMessage.getId(), command.conversationId(), references);
             documentArtifactService.createDocxArtifact(runId, userMessage.getId(), command.conversationId(), "搜索结果整理中");
         }
@@ -380,5 +422,49 @@ public class ChatApplicationService {
         ));
         aiHistory.addAll(history);
         return aiHistory;
+    }
+
+    /**
+     * 按子问题并行执行搜索，并为每个子问题推送独立步骤事件。
+     * @param searchQuestions 搜索问题集合。
+     * @param runId 运行标识。
+     * @param conversationId 会话标识。
+     * @return 合并去重后的来源候选。
+     */
+    private List<SearchReferenceCandidate> executeSearchQuestions(List<String> searchQuestions, Long runId, Long conversationId) {
+        List<CompletableFuture<List<SearchReferenceCandidate>>> futures = new ArrayList<>();
+        int sequenceNo = 1;
+        for (String searchQuestion : searchQuestions) {
+            ChatExecutionStep searchStep = ChatExecutionStep.builder()
+                .id(cn.hutool.core.util.IdUtil.getSnowflakeNextId())
+                .runId(runId)
+                .stepType("search")
+                .stepTitle(searchQuestions.size() > 1 ? "搜索子问题 " + sequenceNo : "搜索资料")
+                .stepStatus("COMPLETED")
+                .sequenceNo((long) sequenceNo++)
+                .content(searchQuestion)
+                .createdAt(java.time.LocalDateTime.now())
+                .updatedAt(java.time.LocalDateTime.now())
+                .build();
+            chatExecutionStepRepository.save(searchStep);
+            chatStreamPublisher.publishStep(conversationId, Map.of(
+                "id", searchStep.getId(),
+                "runId", searchStep.getRunId(),
+                "stepType", searchStep.getStepType(),
+                "stepTitle", searchStep.getStepTitle(),
+                "stepStatus", searchStep.getStepStatus(),
+                "sequenceNo", searchStep.getSequenceNo(),
+                "content", searchStep.getContent()
+            ));
+            futures.add(CompletableFuture.supplyAsync(() -> webSearchExecutionService.search(searchQuestion)));
+        }
+        LinkedHashMap<String, SearchReferenceCandidate> merged = new LinkedHashMap<>();
+        for (CompletableFuture<List<SearchReferenceCandidate>> future : futures) {
+            for (SearchReferenceCandidate candidate : future.join()) {
+                String key = candidate.url() == null ? candidate.title() : candidate.url();
+                merged.putIfAbsent(key, candidate);
+            }
+        }
+        return new ArrayList<>(merged.values());
     }
 }

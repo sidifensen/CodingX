@@ -32,6 +32,9 @@ describe('App', () => {
       ) {
         return new Response(JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }), { status: 200 });
       }
+      if (url === '/api/chat/sample-questions') {
+        return new Response(JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }), { status: 200 });
+      }
       throw new Error(`Unhandled fetch in App test: ${url}`);
     });
   };
@@ -127,6 +130,9 @@ describe('App', () => {
       if (url === '/api/chat/conversations') {
         return new Response(JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }), { status: 200 });
       }
+      if (url === '/api/chat/sample-questions') {
+        return new Response(JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }), { status: 200 });
+      }
       if (
         (url.startsWith('/api/chat/conversations/') && url.endsWith('/messages')) ||
         (url.startsWith('/api/chat/conversations/') && url.endsWith('/steps')) ||
@@ -185,6 +191,9 @@ describe('App', () => {
         });
       }
       if (url === '/api/chat/conversations') {
+        return new Response(JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }), { status: 200 });
+      }
+      if (url === '/api/chat/sample-questions') {
         return new Response(JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }), { status: 200 });
       }
       if (
@@ -251,6 +260,9 @@ describe('App', () => {
           { status: 200 },
         );
       }
+      if (url === '/api/chat/sample-questions') {
+        return new Response(JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }), { status: 200 });
+      }
       if (
         url === '/api/chat/conversations/2001/messages' ||
         url === '/api/chat/conversations/2001/steps' ||
@@ -305,6 +317,9 @@ describe('App', () => {
           }),
           { status: 200 },
         );
+      }
+      if (url === '/api/chat/sample-questions') {
+        return new Response(JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }), { status: 200 });
       }
       if (url === '/api/chat/conversations/2001/messages') {
         messageRequestCount += 1;
@@ -459,6 +474,9 @@ describe('App', () => {
           { status: 200 },
         );
       }
+      if (url === '/api/chat/sample-questions') {
+        return new Response(JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }), { status: 200 });
+      }
       if (url === '/api/chat/conversations/2055114974648864768/messages') {
         return new Response(
           JSON.stringify({
@@ -567,6 +585,9 @@ describe('App', () => {
           { status: 200 },
         );
       }
+      if (url === '/api/chat/sample-questions') {
+        return new Response(JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }), { status: 200 });
+      }
       if (
         url === '/api/chat/conversations/2055114974648864768/messages' ||
         url === '/api/chat/conversations/2055114974648864768/steps' ||
@@ -627,6 +648,9 @@ describe('App', () => {
           }),
           { status: 200 },
         );
+      }
+      if (url === '/api/chat/sample-questions') {
+        return new Response(JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }), { status: 200 });
       }
       if (
         url === '/api/chat/conversations/2055114974648864768/messages' ||

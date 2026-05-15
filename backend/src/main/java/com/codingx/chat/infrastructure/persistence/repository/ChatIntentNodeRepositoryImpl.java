@@ -39,6 +39,15 @@ public class ChatIntentNodeRepositoryImpl implements ChatIntentNodeRepository {
             .toList();
     }
 
+    @Override
+    public ChatIntentNode findByIntentCode(String intentCode) {
+        ChatIntentNodeDO dataObject = chatIntentNodeMapper.selectOne(new LambdaQueryWrapper<ChatIntentNodeDO>()
+            .eq(ChatIntentNodeDO::getIntentCode, intentCode)
+            .eq(ChatIntentNodeDO::getDeleted, 0)
+            .last("limit 1"));
+        return dataObject == null ? null : toDomain(dataObject);
+    }
+
     private ChatIntentNodeDO toDataObject(ChatIntentNode node) {
         ChatIntentNodeDO dataObject = new ChatIntentNodeDO();
         dataObject.setId(node.getId());
@@ -48,6 +57,8 @@ public class ChatIntentNodeRepositoryImpl implements ChatIntentNodeRepository {
         dataObject.setDescription(node.getDescription());
         dataObject.setIntentType(node.getIntentType());
         dataObject.setPromptTemplate(node.getPromptTemplate());
+        dataObject.setMcpToolId(node.getMcpToolId());
+        dataObject.setParamPromptTemplate(node.getParamPromptTemplate());
         dataObject.setEnabled(node.getEnabled());
         dataObject.setSortNo(node.getSortNo());
         dataObject.setCreatedAt(node.getCreatedAt());
@@ -65,6 +76,8 @@ public class ChatIntentNodeRepositoryImpl implements ChatIntentNodeRepository {
             .description(dataObject.getDescription())
             .intentType(dataObject.getIntentType())
             .promptTemplate(dataObject.getPromptTemplate())
+            .mcpToolId(dataObject.getMcpToolId())
+            .paramPromptTemplate(dataObject.getParamPromptTemplate())
             .enabled(dataObject.getEnabled())
             .sortNo(dataObject.getSortNo())
             .createdAt(dataObject.getCreatedAt())

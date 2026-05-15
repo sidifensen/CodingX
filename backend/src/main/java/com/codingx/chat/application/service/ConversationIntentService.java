@@ -48,6 +48,9 @@ public class ConversationIntentService {
         if ("system".equalsIgnoreCase(topNode.getIntentType())) {
             return new ConversationIntentDecision(topNode.getIntentCode(), ConversationIntentAction.DIRECT, buildSystemReply(topNode.getIntentCode()));
         }
+        if ("mcp".equalsIgnoreCase(topNode.getIntentType())) {
+            return new ConversationIntentDecision(topNode.getIntentCode(), ConversationIntentAction.MCP, null);
+        }
         return new ConversationIntentDecision(topNode.getIntentCode(), ConversationIntentAction.SEARCH, null);
     }
 

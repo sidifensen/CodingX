@@ -21,6 +21,9 @@ class ConversationQueryTermMappingServiceTest {
     @Mock
     private ChatQueryTermMappingRepository chatQueryTermMappingRepository;
 
+    @Mock
+    private ConversationQueryTermMappingCacheManager conversationQueryTermMappingCacheManager;
+
     @InjectMocks
     private ConversationQueryTermMappingService conversationQueryTermMappingService;
 
@@ -29,6 +32,10 @@ class ConversationQueryTermMappingServiceTest {
      */
     @Test
     void normalizeAppliesEnabledMappings() {
+        when(conversationQueryTermMappingCacheManager.getMappings(org.mockito.ArgumentMatchers.any())).thenAnswer(invocation -> {
+            java.util.function.Supplier<List<ChatQueryTermMapping>> supplier = invocation.getArgument(0);
+            return supplier.get();
+        });
         when(chatQueryTermMappingRepository.findEnabledMappings()).thenReturn(List.of(
             ChatQueryTermMapping.builder().sourceTerm("oa").targetTerm("OA系统").sortNo(1).enabled(1).build(),
             ChatQueryTermMapping.builder().sourceTerm("rag").targetTerm("检索增强生成").sortNo(2).enabled(1).build()

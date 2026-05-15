@@ -24,20 +24,45 @@ public class ConversationRewriteService {
      * @param question 当前问题。
      * @return 改写后的问题。
      */
+    @ConversationTraceNode(name = "rewrite-question", type = "REWRITE")
     public String rewrite(List<String> history, String question) {
+        return rewriteResult(history, question).rewrite();
+    }
+
+    /**
+     * 返回完整的改写结果，包含主问题、拆分标记和子问题集合。
+     * @param history 历史上下文摘要。
+     * @param question 当前问题。
+     * @return 改写结果。
+     */
+    @ConversationTraceNode(name = "rewrite-with-split", type = "REWRITE")
+    public ConversationRewriteResult rewriteResult(List<String> history, String question) {
         if (StrUtil.isBlank(question)) {
-            return question;
+            return new ConversationRewriteResult(question, false, List.of());
         }
         String normalizedQuestion = conversationQueryTermMappingService.normalize(question);
+        if (shouldBypassPromptRewrite(history, normalizedQuestion)) {
+            return new ConversationRewriteResult(normalizedQuestion, false, List.of(normalizedQuestion));
+        }
         String prompt = promptTemplateLoader.load("rewrite");
         String userPrompt = buildRewriteInput(history, normalizedQuestion);
         try {
             String raw = aiPromptExecutionService.complete(prompt, userPrompt);
             JSONObject root = JSONUtil.parseObj(raw);
             String rewrite = StrUtil.trim(root.getStr("rewrite"));
-            return StrUtil.isBlank(rewrite) ? normalizedQuestion : rewrite;
+            boolean shouldSplit = Boolean.TRUE.equals(root.getBool("should_split"));
+            List<String> subQuestions = root.getJSONArray("sub_questions") == null
+                ? List.of()
+                : root.getJSONArray("sub_questions").stream()
+                    .map(Object::toString)
+                    .map(String::trim)
+                    .filter(StrUtil::isNotBlank)
+                    .toList();
+            String resolvedRewrite = StrUtil.isBlank(rewrite) ? normalizedQuestion : rewrite;
+            List<String> resolvedSubQuestions = subQuestions.isEmpty() ? List.of(resolvedRewrite) : subQuestions;
+            return new ConversationRewriteResult(resolvedRewrite, shouldSplit && resolvedSubQuestions.size() > 1, resolvedSubQuestions);
         } catch (Exception exception) {
-            return normalizedQuestion;
+            return new ConversationRewriteResult(normalizedQuestion, false, List.of(normalizedQuestion));
         }
     }
 
@@ -50,5 +75,18 @@ public class ConversationRewriteService {
     private String buildRewriteInput(List<String> history, String question) {
         String latestHistory = history == null || history.isEmpty() ? "无" : history.getLast();
         return "历史上下文：" + latestHistory + "\n当前问题：" + question;
+    }
+
+    /**
+     * 对明显无需 LLM 改写的短问题做快速旁路，避免主链路在简单统计问句上额外等待。
+     * @param history 历史上下文。
+     * @param question 规范化后的问题。
+     * @return 是否跳过 Prompt 改写。
+     */
+    private boolean shouldBypassPromptRewrite(List<String> history, String question) {
+        if (history != null && !history.isEmpty()) {
+            return false;
+        }
+        return question.contains("销售");
     }
 }

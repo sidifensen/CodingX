@@ -72,6 +72,15 @@ export interface ArtifactItem {
 }
 
 /**
+ * 描述首页欢迎区示例问题。
+ */
+export interface SampleQuestionItem {
+  id: string;
+  questionText: string;
+  category?: string;
+}
+
+/**
  * 记录当前 SSE 会话的流式上下文。
  */
 export interface ActiveStreamState {
@@ -99,6 +108,7 @@ export interface ChatWorkspaceController {
   executionSteps: ExecutionStepItem[];
   references: ReferenceItem[];
   artifacts: ArtifactItem[];
+  sampleQuestions: SampleQuestionItem[];
   isStreaming: boolean;
   isCancelling: boolean;
   streamError: string;

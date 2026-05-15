@@ -6,5 +6,6 @@ package com.codingx.chat.application.service;
 public enum ConversationIntentAction {
     DIRECT,
     SEARCH,
-    CLARIFY
+    CLARIFY,
+    MCP
 }

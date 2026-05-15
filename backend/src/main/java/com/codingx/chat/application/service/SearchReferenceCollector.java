@@ -26,6 +26,7 @@ public class SearchReferenceCollector {
      * @param conversationId 会话标识。
      * @param candidates 搜索候选结果。
      */
+    @ConversationTraceNode(name = "reference-collect", type = "SEARCH")
     public void collect(Long runId, Long messageId, Long conversationId, List<SearchReferenceCandidate> candidates) {
         int rank = 1;
         for (SearchReferenceCandidate candidate : candidates) {

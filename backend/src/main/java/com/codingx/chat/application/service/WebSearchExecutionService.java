@@ -24,6 +24,7 @@ public class WebSearchExecutionService {
      * @param question 搜索问题。
      * @return 来源候选列表。
      */
+    @ConversationTraceNode(name = "web-search", type = "SEARCH")
     public List<SearchReferenceCandidate> search(String question) {
         for (WebSearchProvider provider : providers) {
             List<SearchReferenceCandidate> result = provider.search(question);

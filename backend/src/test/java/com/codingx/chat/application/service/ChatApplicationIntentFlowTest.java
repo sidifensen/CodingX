@@ -73,7 +73,9 @@ class ChatApplicationIntentFlowTest {
         ChatConversation conversation = ChatConversation.create(1L, "New Conversation", 1002L, ChatConversationStatus.ACTIVE);
         when(chatConversationRepository.requireById(1L)).thenReturn(conversation);
         when(chatMessageRepository.findByConversationId(1L)).thenReturn(new ArrayList<>());
-        when(conversationRewriteService.rewrite(any(), any())).thenReturn("这个要怎么改");
+        when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+            new ConversationRewriteResult("这个要怎么改", false, java.util.List.of("这个要怎么改"))
+        );
         when(conversationIntentService.route("这个要怎么改")).thenReturn(
             new ConversationIntentDecision("clarify.ambiguity", ConversationIntentAction.CLARIFY, "请补充你指的是哪一部分")
         );
@@ -96,7 +98,9 @@ class ChatApplicationIntentFlowTest {
         ChatConversation conversation = ChatConversation.create(1L, "New Conversation", 1002L, ChatConversationStatus.ACTIVE);
         when(chatConversationRepository.requireById(1L)).thenReturn(conversation);
         when(chatMessageRepository.findByConversationId(1L)).thenReturn(new ArrayList<>());
-        when(conversationRewriteService.rewrite(any(), any())).thenReturn("你是谁");
+        when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+            new ConversationRewriteResult("你是谁", false, java.util.List.of("你是谁"))
+        );
         when(conversationIntentService.route("你是谁")).thenReturn(
             new ConversationIntentDecision("sys-about-bot", ConversationIntentAction.DIRECT, "我是 CodingX 的知识助手")
         );

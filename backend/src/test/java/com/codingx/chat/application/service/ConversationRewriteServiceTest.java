@@ -50,4 +50,41 @@ class ConversationRewriteServiceTest {
 
         assertEquals("CodingX 聊天架构应该怎么改", rewritten);
     }
+
+    /**
+     * 当模型返回多子问题时，应完整保留拆分结果，供主链路后续并行执行。
+     */
+    @Test
+    void rewriteResultKeepsSplitQuestionsFromPromptResponse() {
+        when(conversationQueryTermMappingService.normalize("帮我分别介绍 OA 系统和保险系统")).thenReturn("帮我分别介绍 OA 系统和保险系统");
+        when(promptTemplateLoader.load("rewrite")).thenReturn("rewrite prompt");
+        when(aiPromptExecutionService.complete(
+            "rewrite prompt",
+            "历史上下文：无\n当前问题：帮我分别介绍 OA 系统和保险系统"
+        )).thenReturn("""
+            {
+              "rewrite":"介绍 OA 系统和保险系统",
+              "should_split":true,
+              "sub_questions":["介绍 OA 系统","介绍 保险系统"]
+            }
+            """);
+
+        ConversationRewriteResult result = conversationRewriteService.rewriteResult(List.of(), "帮我分别介绍 OA 系统和保险系统");
+
+        assertEquals(true, result.shouldSplit());
+        assertEquals(List.of("介绍 OA 系统", "介绍 保险系统"), result.subQuestions());
+    }
+
+    /**
+     * 销售统计类短问题在无上下文时应跳过 LLM 改写，直接保留原问法。
+     */
+    @Test
+    void rewriteResultBypassesPromptForSalesQuestionWithoutHistory() {
+        when(conversationQueryTermMappingService.normalize("销售总额是多少")).thenReturn("销售总额是多少");
+
+        ConversationRewriteResult result = conversationRewriteService.rewriteResult(List.of(), "销售总额是多少");
+
+        assertEquals("销售总额是多少", result.rewrite());
+        assertEquals(List.of("销售总额是多少"), result.subQuestions());
+    }
 }

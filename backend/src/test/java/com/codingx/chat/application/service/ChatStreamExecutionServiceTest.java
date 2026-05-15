@@ -3,7 +3,9 @@ package com.codingx.chat.application.service;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import com.codingx.chat.application.command.SendChatMessageCommand;
 import com.codingx.chat.domain.model.ChatExecutionRun;
@@ -188,5 +190,42 @@ class ChatStreamExecutionServiceTest {
 
         assertTrue(captured.await(1, TimeUnit.SECONDS), "background task should capture trace context");
         assertEquals("trace-1", observedTraceId.get());
+    }
+
+    /**
+     * 当后台执行直接抛错时，执行记录与 Trace 都应收口为 ERROR，避免永久停留 RUNNING。
+     * @throws Exception 等待后台线程执行时抛出。
+     */
+    @Test
+    void dispatchMarksRunFailedWhenApplicationServiceThrows() throws Exception {
+        CountDownLatch captured = new CountDownLatch(1);
+        AtomicReference<Long> runIdRef = new AtomicReference<>();
+        ChatStreamExecutionService service = new ChatStreamExecutionService(
+            chatApplicationService,
+            chatRuntimeGuardService,
+            conversationTraceRecordService,
+            chatExecutionRunRepository,
+            executorService
+        );
+        ChatTraceRun traceRun = ChatTraceRun.builder().traceId("trace-error").traceName("chat-entry").build();
+        when(conversationTraceRecordService.startTrace("chat-entry", 1001L, 2001L)).thenReturn(traceRun);
+        org.mockito.Mockito.doAnswer(invocation -> {
+            ChatExecutionRun run = invocation.getArgument(0);
+            if ("RUNNING".equals(run.getStatus())) {
+                runIdRef.set(run.getId());
+            }
+            if ("ERROR".equals(run.getStatus())) {
+                captured.countDown();
+            }
+            return null;
+        }).when(chatExecutionRunRepository).save(any(ChatExecutionRun.class));
+        org.mockito.Mockito.doThrow(new IllegalStateException("boom"))
+            .when(chatApplicationService).sendMessage(new SendChatMessageCommand(1001L, "你好"), 2001L);
+
+        service.dispatch(new SendChatMessageCommand(1001L, "你好"), 2001L);
+
+        assertTrue(captured.await(1, TimeUnit.SECONDS), "failed run should be updated to ERROR");
+        verify(chatExecutionRunRepository, org.mockito.Mockito.atLeast(2)).save(any(ChatExecutionRun.class));
+        verify(conversationTraceRecordService).finishTrace("trace-error", runIdRef.get(), "ERROR", "boom");
     }
 }

@@ -8,23 +8,17 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 /**
- * 表示意图树中的单个配置节点。
+ * 表示首页欢迎区使用的示例问题记录。
  */
 @Getter
 @Builder(toBuilder = true)
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
-public class ChatIntentNode {
+public class ChatSampleQuestion {
 
     private Long id;
-    private String intentCode;
-    private String parentCode;
-    private String name;
-    private String description;
-    private String intentType;
-    private String promptTemplate;
-    private String mcpToolId;
-    private String paramPromptTemplate;
+    private String questionText;
+    private String category;
     private Integer enabled;
     private Integer sortNo;
     private LocalDateTime createdAt;

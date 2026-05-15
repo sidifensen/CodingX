@@ -15,6 +15,7 @@ import org.springframework.stereotype.Service;
 public class ConversationQueryTermMappingService {
 
     private final ChatQueryTermMappingRepository chatQueryTermMappingRepository;
+    private final ConversationQueryTermMappingCacheManager conversationQueryTermMappingCacheManager;
 
     /**
      * 对输入文本执行术语归一化替换。
@@ -26,7 +27,9 @@ public class ConversationQueryTermMappingService {
             return text;
         }
         String normalized = text;
-        List<ChatQueryTermMapping> mappings = chatQueryTermMappingRepository.findEnabledMappings();
+        List<ChatQueryTermMapping> mappings = conversationQueryTermMappingCacheManager.getMappings(
+            chatQueryTermMappingRepository::findEnabledMappings
+        );
         for (ChatQueryTermMapping mapping : mappings) {
             String source = mapping.getSourceTerm();
             String target = mapping.getTargetTerm();

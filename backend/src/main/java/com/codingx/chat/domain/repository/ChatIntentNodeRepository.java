@@ -19,4 +19,11 @@ public interface ChatIntentNodeRepository {
      * @return 节点集合。
      */
     List<ChatIntentNode> findEnabledNodes();
+
+    /**
+     * 按意图编码查询单个节点。
+     * @param intentCode 意图编码。
+     * @return 意图节点；不存在时返回 null。
+     */
+    ChatIntentNode findByIntentCode(String intentCode);
 }

@@ -57,7 +57,9 @@ class ChatApplicationSearchFlowTest {
         ChatConversation conversation = ChatConversation.create(1L, "New Conversation", 1002L, ChatConversationStatus.ACTIVE);
         when(chatConversationRepository.requireById(1L)).thenReturn(conversation);
         when(chatMessageRepository.findByConversationId(1L)).thenReturn(new ArrayList<>());
-        when(conversationRewriteService.rewrite(any(), any())).thenReturn("请搜索 Spring Boot SSE");
+        when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+            new ConversationRewriteResult("请搜索 Spring Boot SSE", false, List.of("请搜索 Spring Boot SSE"))
+        );
         when(conversationIntentService.route("请搜索 Spring Boot SSE")).thenReturn(
             new ConversationIntentDecision("search.web", ConversationIntentAction.SEARCH, null)
         );
@@ -77,5 +79,40 @@ class ChatApplicationSearchFlowTest {
         verify(webSearchExecutionService).search("请搜索 Spring Boot SSE");
         verify(searchReferenceCollector).collect(any(), any(), any(), any());
         verify(documentArtifactService).createDocxArtifact(any(), any(), any(), any());
+    }
+
+    /**
+     * 改写结果包含多个子问题时，应对每个子问题分别执行搜索。
+     */
+    @Test
+    void sendMessageExecutesSearchForEachSplitQuestion() {
+        ChatConversation conversation = ChatConversation.create(1L, "New Conversation", 1002L, ChatConversationStatus.ACTIVE);
+        when(chatConversationRepository.requireById(1L)).thenReturn(conversation);
+        when(chatMessageRepository.findByConversationId(1L)).thenReturn(new ArrayList<>());
+        when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+            new ConversationRewriteResult("介绍 OA 系统和保险系统", true, List.of("介绍 OA 系统", "介绍 保险系统"))
+        );
+        when(conversationIntentService.route("介绍 OA 系统和保险系统")).thenReturn(
+            new ConversationIntentDecision("biz-oa-intro", ConversationIntentAction.SEARCH, null)
+        );
+        when(webSearchExecutionService.search("介绍 OA 系统")).thenReturn(List.of(
+            new SearchReferenceCandidate("OA系统", "https://example.com/oa", "Example", "oa")
+        ));
+        when(webSearchExecutionService.search("介绍 保险系统")).thenReturn(List.of(
+            new SearchReferenceCandidate("保险系统", "https://example.com/ins", "Example", "ins")
+        ));
+        when(conversationTitleService.generateTitle(any(), any())).thenReturn("双系统介绍");
+        org.mockito.Mockito.doAnswer(invocation -> {
+            AiChatClient.StreamHandler handler = invocation.getArgument(1);
+            handler.onDelta("合并总结");
+            handler.onComplete();
+            return null;
+        }).when(aiChatClient).streamChat(any(), any());
+
+        chatApplicationService.sendMessage(new SendChatMessageCommand(1L, "帮我分别介绍 OA 系统和保险系统"), 1002L);
+
+        verify(webSearchExecutionService).search("介绍 OA 系统");
+        verify(webSearchExecutionService).search("介绍 保险系统");
+        verify(searchReferenceCollector).collect(any(), any(), any(), any());
     }
 }

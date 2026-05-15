@@ -12,4 +12,9 @@ public class RuntimeProperties {
     private long mockStepDelayMs = 300L;
     private String mockFailKeyword = "fail";
     private boolean useRedisStateStore = false;
+    private boolean useRedisQueueGate = false;
+    private int queueMaxConcurrent = 2;
+    private long queueAcquireTimeoutMs = 3000L;
+    private long queuePollIntervalMs = 200L;
+    private long queueLeaseSeconds = 300L;
 }

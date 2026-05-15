@@ -2,15 +2,23 @@ package com.codingx.chat.application.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.mockito.Mockito.when;
 
 import com.codingx.chat.domain.model.ChatIntentNode;
 import java.util.List;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 /**
  * 验证歧义澄清服务会在跨系统同名主题且分数接近时返回澄清提示。
  */
+@ExtendWith(MockitoExtension.class)
 class ConversationIntentGuidanceServiceTest {
+
+    @Mock
+    private AiPromptExecutionService aiPromptExecutionService;
 
     /**
      * 同名主题跨系统命中且分数接近时应生成澄清文案。
@@ -19,15 +27,16 @@ class ConversationIntentGuidanceServiceTest {
     void buildGuidancePromptReturnsPromptForAmbiguousCandidates() throws Exception {
         java.nio.file.Path promptDir = java.nio.file.Files.createTempDirectory("codingx-guidance");
         java.nio.file.Files.writeString(promptDir.resolve("guidance-prompt.st"), "关于{topic_name}，候选如下：\n{options}");
-        ConversationIntentGuidanceService service = new ConversationIntentGuidanceService(new PromptTemplateLoader(promptDir));
+        java.nio.file.Files.writeString(promptDir.resolve("guidance-ambiguity-check.st"), "check");
+        ConversationIntentGuidanceService service = new ConversationIntentGuidanceService(new PromptTemplateLoader(promptDir), aiPromptExecutionService);
         ChatIntentNode oa = ChatIntentNode.builder().intentCode("biz-oa-intro").parentCode("biz-oa").name("系统介绍").intentType("kb").build();
         ChatIntentNode ins = ChatIntentNode.builder().intentCode("biz-ins-intro").parentCode("biz-ins").name("系统介绍").intentType("kb").build();
 
         String prompt = service.buildGuidancePrompt(
             "系统介绍是什么",
             List.of(
-                new ConversationIntentCandidate(oa, 0.91D),
-                new ConversationIntentCandidate(ins, 0.87D)
+                new ConversationIntentCandidate(oa, 0.75D),
+                new ConversationIntentCandidate(ins, 0.67D)
             ),
             List.of(
                 ChatIntentNode.builder().intentCode("biz-oa").parentCode("biz").name("OA系统").intentType("kb").build(),
@@ -46,7 +55,8 @@ class ConversationIntentGuidanceServiceTest {
     void buildGuidancePromptReturnsNullWhenQuestionIsClear() throws Exception {
         java.nio.file.Path promptDir = java.nio.file.Files.createTempDirectory("codingx-guidance");
         java.nio.file.Files.writeString(promptDir.resolve("guidance-prompt.st"), "关于{topic_name}，候选如下：\n{options}");
-        ConversationIntentGuidanceService service = new ConversationIntentGuidanceService(new PromptTemplateLoader(promptDir));
+        java.nio.file.Files.writeString(promptDir.resolve("guidance-ambiguity-check.st"), "check");
+        ConversationIntentGuidanceService service = new ConversationIntentGuidanceService(new PromptTemplateLoader(promptDir), aiPromptExecutionService);
         ChatIntentNode node = ChatIntentNode.builder().intentCode("group-it").parentCode("group").name("IT支持").intentType("kb").build();
 
         String prompt = service.buildGuidancePrompt("VPN 连不上怎么办", List.of(new ConversationIntentCandidate(node, 0.92D)), List.of());

@@ -236,9 +236,6 @@ function ConversationHistory({
                 ref={isMenuOpen ? menuRef : null}
                 onMouseLeave={() => {
                   setHoveredActionId(null);
-                  if (openMenuId !== conversation.id) {
-                    setOpenMenuId((current) => (current === conversation.id ? null : current));
-                  }
                 }}
               >
                 <div
@@ -263,7 +260,6 @@ function ConversationHistory({
                     className="relative flex h-5 min-w-[56px] shrink-0 items-center justify-end whitespace-nowrap"
                     onMouseEnter={() => {
                       setHoveredActionId(conversation.id);
-                      setOpenMenuId(conversation.id);
                     }}
                     onMouseLeave={() => setHoveredActionId(null)}
                     onTouchStart={() => startLongPress(conversation.id)}
@@ -272,7 +268,7 @@ function ConversationHistory({
                   >
                     <span
                       className={`absolute right-0 whitespace-nowrap text-[12px] text-muted transition-opacity ${
-                        hoveredActionId === conversation.id && !isMenuOpen ? 'opacity-0' : 'opacity-100'
+                        hoveredActionId === conversation.id || isMenuOpen ? 'opacity-0' : 'opacity-100'
                       }`}
                     >
                       {conversation.relativeTimeText}

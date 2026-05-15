@@ -10,6 +10,7 @@ import com.codingx.auth.domain.model.UserType;
 import com.codingx.auth.domain.repository.UserRepository;
 import com.codingx.auth.domain.service.AuthSessionGateway;
 import com.codingx.auth.domain.service.PasswordHasher;
+import com.codingx.common.exception.UnauthorizedException;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -69,6 +70,6 @@ class AuthApplicationServiceTest {
         User user = User.create(1002L, "demo", "CodingX Demo", "hash", UserType.USER, UserStatus.ACTIVE);
         when(userRepository.findByUsername("demo")).thenReturn(Optional.of(user));
         when(passwordHasher.matches("wrong", "hash")).thenReturn(false);
-        assertThrows(IllegalArgumentException.class, () -> authApplicationService.login(new LoginCommand("demo", "wrong")));
+        assertThrows(UnauthorizedException.class, () -> authApplicationService.login(new LoginCommand("demo", "wrong")));
     }
 }

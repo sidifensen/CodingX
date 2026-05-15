@@ -1,4 +1,5 @@
-import { ApiResponseEnvelope, LoginFormPayload, LoginResponseData } from '../types/auth';
+import { LoginFormPayload, LoginResponseData } from '../types/auth';
+import { ApiResponseParser } from './apiResponse';
 
 /**
  * 负责封装认证相关接口调用，统一处理请求地址、鉴权头与异常语义。
@@ -20,10 +21,8 @@ export class AuthApi {
     });
 
     // 步骤：解析响应体，统一处理网络层与业务层错误。
-    const envelope = (await response.json()) as ApiResponseEnvelope<LoginResponseData>;
-    if (!response.ok || !envelope.success) {
-      throw new Error(envelope.message || '登录失败，请检查账号或密码');
-    }
+    const envelope = await ApiResponseParser.parseEnvelope<LoginResponseData>(response, '登录失败，请检查账号或密码');
+    ApiResponseParser.assertSuccess(response, envelope, '登录失败，请检查账号或密码');
     return envelope.data;
   }
 
@@ -41,9 +40,7 @@ export class AuthApi {
     });
 
     // 步骤：解析退出响应；若失败抛出异常供上层兜底处理。
-    const envelope = (await response.json()) as ApiResponseEnvelope<null>;
-    if (!response.ok || !envelope.success) {
-      throw new Error(envelope.message || '退出登录失败');
-    }
+    const envelope = await ApiResponseParser.parseEnvelope<null>(response, '退出登录失败');
+    ApiResponseParser.assertSuccess(response, envelope, '退出登录失败');
   }
 }

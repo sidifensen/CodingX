@@ -1,87 +1,175 @@
 package com.codingx.config;
+
 import cn.dev33.satoken.exception.NotLoginException;
+import com.codingx.common.error.ErrorMessageCatalog;
 import com.codingx.common.exception.BusinessException;
 import com.codingx.common.exception.ForbiddenException;
 import com.codingx.common.exception.NotFoundException;
+import com.codingx.common.exception.UnauthorizedException;
 import com.codingx.common.model.ApiResponse;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.BindException;
+import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 /**
- * 负责配置 GlobalExceptionHandler 所需的 Spring Bean 与基础设施。
+ * 负责统一处理后端异常：记录结构化中文日志，并返回可直接给前端展示的中文错误信息。
  */
 @Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
     /**
-     * 执行 handleBusiness 定义的处理逻辑。
-     * @param exception 输入参数。
-     * @return 输入参数。
+     * 处理认证失败异常，统一返回 401。
+     * @param exception 认证异常。
+     * @param request 当前请求。
+     * @return 标准错误响应。
+     */
+    @ExceptionHandler(UnauthorizedException.class)
+    public ResponseEntity<ApiResponse<Void>> handleUnauthorized(UnauthorizedException exception, HttpServletRequest request) {
+        return buildResponse(HttpStatus.UNAUTHORIZED, exception.getCode(), exception.getMessage(), exception, request, false);
+    }
+
+    /**
+     * 处理业务异常，统一返回 400。
+     * @param exception 业务异常。
+     * @param request 当前请求。
+     * @return 标准错误响应。
      */
     @ExceptionHandler(BusinessException.class)
-    public ResponseEntity<ApiResponse<Void>> handleBusiness(BusinessException exception) {
-        return ResponseEntity.badRequest().body(ApiResponse.failure(exception.getCode(), exception.getMessage()));
+    public ResponseEntity<ApiResponse<Void>> handleBusiness(BusinessException exception, HttpServletRequest request) {
+        return buildResponse(HttpStatus.BAD_REQUEST, exception.getCode(), exception.getMessage(), exception, request, false);
     }
 
     /**
-     * 执行 handleNotLogin 定义的处理逻辑。
-     * @param exception 输入参数。
-     * @return 输入参数。
+     * 处理未登录异常。
+     * @param exception 未登录异常。
+     * @param request 当前请求。
+     * @return 标准错误响应。
      */
     @ExceptionHandler(NotLoginException.class)
-    public ResponseEntity<ApiResponse<Void>> handleNotLogin(NotLoginException exception) {
-        return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-            .body(ApiResponse.failure("UNAUTHORIZED", exception.getMessage()));
+    public ResponseEntity<ApiResponse<Void>> handleNotLogin(NotLoginException exception, HttpServletRequest request) {
+        return buildResponse(HttpStatus.UNAUTHORIZED, "UNAUTHORIZED", ErrorMessageCatalog.UNAUTHORIZED, exception, request, false);
     }
 
     /**
-     * 执行 handleForbidden 定义的处理逻辑。
-     * @param exception 输入参数。
-     * @return 输入参数。
+     * 处理无权限异常。
+     * @param exception 无权限异常。
+     * @param request 当前请求。
+     * @return 标准错误响应。
      */
     @ExceptionHandler(ForbiddenException.class)
-    public ResponseEntity<ApiResponse<Void>> handleForbidden(ForbiddenException exception) {
-        return ResponseEntity.status(HttpStatus.FORBIDDEN)
-            .body(ApiResponse.failure(exception.getCode(), exception.getMessage()));
+    public ResponseEntity<ApiResponse<Void>> handleForbidden(ForbiddenException exception, HttpServletRequest request) {
+        String message = sanitizeMessage(exception.getMessage(), ErrorMessageCatalog.FORBIDDEN);
+        return buildResponse(HttpStatus.FORBIDDEN, exception.getCode(), message, exception, request, false);
     }
 
     /**
-     * 执行 handleNotFound 定义的处理逻辑。
-     * @param exception 输入参数。
-     * @return 输入参数。
+     * 处理资源不存在异常。
+     * @param exception 资源不存在异常。
+     * @param request 当前请求。
+     * @return 标准错误响应。
      */
     @ExceptionHandler(NotFoundException.class)
-    public ResponseEntity<ApiResponse<Void>> handleNotFound(NotFoundException exception) {
-        return ResponseEntity.status(HttpStatus.NOT_FOUND)
-            .body(ApiResponse.failure(exception.getCode(), exception.getMessage()));
+    public ResponseEntity<ApiResponse<Void>> handleNotFound(NotFoundException exception, HttpServletRequest request) {
+        return buildResponse(HttpStatus.NOT_FOUND, exception.getCode(), exception.getMessage(), exception, request, false);
     }
 
     /**
-     * 执行 handleValidation 定义的处理逻辑。
-     * @param exception 输入参数。
-     * @return 输入参数。
+     * 处理参数校验异常。
+     * @param exception 参数校验异常。
+     * @param request 当前请求。
+     * @return 标准错误响应。
      */
-    @ExceptionHandler({MethodArgumentNotValidException.class, BindException.class, ConstraintViolationException.class})
-    public ResponseEntity<ApiResponse<Void>> handleValidation(Exception exception) {
-        return ResponseEntity.badRequest().body(ApiResponse.failure("VALIDATION_ERROR", exception.getMessage()));
+    @ExceptionHandler({MethodArgumentNotValidException.class, BindException.class, ConstraintViolationException.class, IllegalArgumentException.class})
+    public ResponseEntity<ApiResponse<Void>> handleValidation(Exception exception, HttpServletRequest request) {
+        String validationMessage = extractValidationMessage(exception);
+        return buildResponse(HttpStatus.BAD_REQUEST, "VALIDATION_ERROR", validationMessage, exception, request, false);
     }
 
     /**
-     * 执行 handleUnknown 定义的处理逻辑。
-     * @param exception 输入参数。
-     * @return 输入参数。
+     * 处理未预期异常。
+     * @param exception 未预期异常。
+     * @param request 当前请求。
+     * @return 标准错误响应。
      */
     @ExceptionHandler(Exception.class)
-    public ResponseEntity<ApiResponse<Void>> handleUnknown(Exception exception) {
-        log.error("Unexpected error", exception);
-        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-            .body(ApiResponse.failure("INTERNAL_ERROR", exception.getMessage()));
+    public ResponseEntity<ApiResponse<Void>> handleUnknown(Exception exception, HttpServletRequest request) {
+        return buildResponse(HttpStatus.INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", ErrorMessageCatalog.INTERNAL_ERROR, exception, request, true);
+    }
+
+    /**
+     * 统一记录日志并构造响应。
+     * @param status 响应状态码。
+     * @param code 业务错误码。
+     * @param message 给前端展示的中文错误信息。
+     * @param exception 原始异常。
+     * @param request 当前请求。
+     * @param includeStack 是否打印堆栈。
+     * @return 标准响应。
+     */
+    private ResponseEntity<ApiResponse<Void>> buildResponse(
+        HttpStatus status,
+        String code,
+        String message,
+        Exception exception,
+        HttpServletRequest request,
+        boolean includeStack
+    ) {
+        String normalizedCode = sanitizeMessage(code, "INTERNAL_ERROR");
+        String normalizedMessage = sanitizeMessage(message, ErrorMessageCatalog.INTERNAL_ERROR);
+        String endpoint = request.getMethod() + " " + request.getRequestURI();
+
+        if (includeStack) {
+            log.error("接口异常 | 状态码={} | 错误码={} | 接口={} | 返回信息={}", status.value(), normalizedCode, endpoint, normalizedMessage, exception);
+        } else {
+            log.warn("接口异常 | 状态码={} | 错误码={} | 接口={} | 返回信息={} | 原始异常={}", status.value(), normalizedCode, endpoint, normalizedMessage, exception.getMessage());
+        }
+
+        return ResponseEntity.status(status).body(ApiResponse.failure(normalizedCode, normalizedMessage));
+    }
+
+    /**
+     * 提取校验异常中的首条可读提示，优先返回业务友好的中文文案。
+     * @param exception 校验异常。
+     * @return 可展示提示文案。
+     */
+    private String extractValidationMessage(Exception exception) {
+        if (exception instanceof MethodArgumentNotValidException methodArgumentNotValidException) {
+            FieldError fieldError = methodArgumentNotValidException.getBindingResult().getFieldError();
+            if (fieldError != null && fieldError.getDefaultMessage() != null) {
+                return fieldError.getDefaultMessage();
+            }
+        }
+        if (exception instanceof BindException bindException) {
+            FieldError fieldError = bindException.getBindingResult().getFieldError();
+            if (fieldError != null && fieldError.getDefaultMessage() != null) {
+                return fieldError.getDefaultMessage();
+            }
+        }
+        if (exception instanceof ConstraintViolationException constraintViolationException
+            && !constraintViolationException.getConstraintViolations().isEmpty()) {
+            return constraintViolationException.getConstraintViolations().iterator().next().getMessage();
+        }
+        return sanitizeMessage(exception.getMessage(), ErrorMessageCatalog.VALIDATION_ERROR);
+    }
+
+    /**
+     * 对字符串进行空值兜底，避免响应体或日志出现空信息。
+     * @param value 原始值。
+     * @param fallback 兜底值。
+     * @return 非空字符串。
+     */
+    private String sanitizeMessage(String value, String fallback) {
+        if (value == null || value.isBlank()) {
+            return fallback;
+        }
+        return value;
     }
 }

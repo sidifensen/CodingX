@@ -1,4 +1,5 @@
 import { ApiResponseEnvelope } from '../../types/auth';
+import { ApiResponseParser } from '../../api/apiResponse';
 import {
   ArtifactItem,
   ChatMessageItem,
@@ -132,10 +133,8 @@ export class ChatApi {
         ...(init?.headers ?? {}),
       },
     });
-    const envelope = (await response.json()) as ApiResponseEnvelope<T>;
-    if (!response.ok || !envelope.success) {
-      throw new Error(envelope.message || '聊天请求失败');
-    }
+    const envelope = await ApiResponseParser.parseEnvelope<T>(response, '聊天请求失败');
+    ApiResponseParser.assertSuccess(response, envelope, '聊天请求失败');
     return envelope;
   }
 }

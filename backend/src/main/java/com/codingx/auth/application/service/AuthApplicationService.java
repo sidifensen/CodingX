@@ -5,6 +5,7 @@ import com.codingx.auth.domain.model.User;
 import com.codingx.auth.domain.repository.UserRepository;
 import com.codingx.auth.domain.service.AuthSessionGateway;
 import com.codingx.auth.domain.service.PasswordHasher;
+import com.codingx.common.error.ErrorMessageCatalog;
 import com.codingx.common.exception.NotFoundException;
 import com.codingx.common.exception.UnauthorizedException;
 import lombok.RequiredArgsConstructor;
@@ -39,13 +40,13 @@ public class AuthApplicationService {
      */
     public LoginResult login(LoginCommand command) {
         if (StrUtil.hasBlank(command.username(), command.password())) {
-            throw new IllegalArgumentException("Username and password are required");
+            throw new IllegalArgumentException(ErrorMessageCatalog.LOGIN_REQUIRED_CREDENTIALS);
         }
         User user = userRepository.findByUsername(command.username())
-            .orElseThrow(() -> new UnauthorizedException("Invalid username or password"));
+            .orElseThrow(() -> new UnauthorizedException(ErrorMessageCatalog.LOGIN_INVALID_CREDENTIALS));
         user.ensureActive();
         if (!passwordHasher.matches(command.password(), user.getPasswordHash())) {
-            throw new IllegalArgumentException("Invalid username or password");
+            throw new UnauthorizedException(ErrorMessageCatalog.LOGIN_INVALID_CREDENTIALS);
         }
         String token = authSessionGateway.login(user);
         return new LoginResult(user.getId(), user.getUsername(), user.getDisplayName(), user.getUserType(), token);
@@ -65,6 +66,6 @@ public class AuthApplicationService {
     public User currentUser() {
         Long userId = authSessionGateway.currentLoginId();
         return userRepository.findById(userId)
-            .orElseThrow(() -> new NotFoundException("Current user not found"));
+            .orElseThrow(() -> new NotFoundException(ErrorMessageCatalog.CURRENT_USER_NOT_FOUND));
     }
 }

@@ -81,20 +81,20 @@ export default function ChatView({ isAuthenticated, onRequireLogin, workspace }:
               </h1>
               <div className="mt-10 grid w-full max-w-3xl gap-4 md:grid-cols-2">
                 {[
-                  { icon: Globe2, title: '网页读取', desc: '解析并总结外部网页内容' },
-                  { icon: Search, title: '调研分析', desc: '深度搜索并生成研究报告' },
-                  { icon: Database, title: '数据挖掘', desc: '结构化数据提取与清洗' },
-                  { icon: FolderOpen, title: '文件管理', desc: '上传并与您的文档进行对话' },
+                  { icon: Globe2, title: '网页读取', desc: '解析并总结外部网页内容', iconClassName: 'text-[#8fb3da]' },
+                  { icon: Search, title: '调研分析', desc: '深度搜索并生成研究报告', iconClassName: 'text-[#ff8a24]' },
+                  { icon: Database, title: '数据挖掘', desc: '结构化数据提取与清洗', iconClassName: 'text-[#a78bfa]' },
+                  { icon: FolderOpen, title: '文件管理', desc: '上传并与您的文档进行对话', iconClassName: 'text-[#f4f4f5]' },
                 ].map((item) => (
                   <button
                     key={item.title}
                     type="button"
                     onClick={() => setInputValue(item.desc)}
-                    className="rounded-3xl border border-border bg-surface px-6 py-6 text-left shadow-sm transition-colors hover:border-border-active hover:bg-surface-container"
+                    className="rounded-[22px] border border-border bg-surface px-6 py-5 text-left shadow-sm transition-colors hover:border-border-active hover:bg-surface-container"
                   >
                     <div className="flex items-center gap-4">
-                      <div className="flex h-12 w-12 items-center justify-center rounded-full bg-surface-container">
-                        <item.icon size={22} className="text-accent-breeze" />
+                      <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[#2b2b31]">
+                        <item.icon size={22} className={item.iconClassName} />
                       </div>
                       <div>
                         <div className="text-2xl font-semibold text-foreground">{item.title}</div>
@@ -162,18 +162,18 @@ export default function ChatView({ isAuthenticated, onRequireLogin, workspace }:
           <div className="mx-auto max-w-4xl">
             <form
               onSubmit={(event) => void handleSubmit(event)}
-              className="rounded-[28px] border border-border bg-surface shadow-[0_24px_80px_rgba(0,0,0,0.12)]"
+              className="rounded-[24px] border border-border bg-surface shadow-[0_20px_64px_rgba(0,0,0,0.12)]"
             >
-              <div className="flex items-center gap-3 px-4 py-4">
-                <button type="button" className="rounded-full border border-border bg-surface-container p-2 text-muted">
-                  <Paperclip size={18} />
+              <div className="flex items-center gap-3 px-4 py-3">
+                <button type="button" className="rounded-full border border-border bg-surface-container p-1.5 text-muted">
+                  <Paperclip size={17} />
                 </button>
                 <input
                   type="text"
                   value={inputValue}
                   onChange={(event) => setInputValue(event.target.value)}
                   placeholder="输入指令以重构组件库或分析代码..."
-                  className="h-11 flex-1 bg-transparent text-[15px] text-foreground outline-none placeholder:text-muted"
+                  className="h-9 flex-1 bg-transparent text-[14px] text-foreground outline-none placeholder:text-muted"
                 />
                 {isStreaming ? (
                   <button
@@ -181,7 +181,7 @@ export default function ChatView({ isAuthenticated, onRequireLogin, workspace }:
                     aria-label="停止生成"
                     onClick={() => void cancelCurrentStream()}
                     disabled={isCancelling}
-                    className="rounded-full bg-red-500 px-4 py-2 text-sm font-medium text-white transition-opacity disabled:opacity-60"
+                    className="rounded-full bg-red-500 px-3.5 py-1.5 text-sm font-medium text-white transition-opacity disabled:opacity-60"
                   >
                     <span className="flex items-center gap-2">
                       <CircleStop size={16} />
@@ -192,10 +192,10 @@ export default function ChatView({ isAuthenticated, onRequireLogin, workspace }:
                   <button
                     type="submit"
                     aria-label="发送消息"
-                    className="rounded-full bg-foreground p-3 text-background transition-opacity hover:opacity-90 disabled:opacity-60"
+                    className="rounded-full bg-foreground p-2.5 text-background transition-opacity hover:opacity-90 disabled:opacity-60"
                     disabled={!inputValue.trim()}
                   >
-                    <ArrowUp size={18} />
+                    <ArrowUp size={17} />
                   </button>
                 )}
               </div>

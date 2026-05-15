@@ -179,7 +179,9 @@ function ConversationHistory({
   onDeleteConversation: (conversationId: string) => Promise<void>;
 }) {
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const [hoveredActionId, setHoveredActionId] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
+  const touchTimerRef = useRef<number | null>(null);
   const items = useMemo(
     () =>
       conversations.map((conversation) => ({
@@ -199,6 +201,27 @@ function ConversationHistory({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  /**
+   * 处理移动端长按菜单触发，避免没有 hover 的设备无法打开会话菜单。
+   * @param conversationId 会话标识。
+   */
+  const startLongPress = (conversationId: string) => {
+    clearLongPress();
+    touchTimerRef.current = window.setTimeout(() => {
+      setOpenMenuId(conversationId);
+    }, 450);
+  };
+
+  /**
+   * 清理移动端长按计时器，避免误触发。
+   */
+  const clearLongPress = () => {
+    if (touchTimerRef.current != null) {
+      window.clearTimeout(touchTimerRef.current);
+      touchTimerRef.current = null;
+    }
+  };
+
   return (
     <>
       {items.length ? (
@@ -207,9 +230,19 @@ function ConversationHistory({
             const isActive = conversation.id === activeConversationId;
             const isMenuOpen = openMenuId === conversation.id;
             return (
-              <div key={conversation.id} className="relative" ref={isMenuOpen ? menuRef : null}>
+              <div
+                key={conversation.id}
+                className="relative"
+                ref={isMenuOpen ? menuRef : null}
+                onMouseLeave={() => {
+                  setHoveredActionId(null);
+                  if (openMenuId !== conversation.id) {
+                    setOpenMenuId((current) => (current === conversation.id ? null : current));
+                  }
+                }}
+              >
                 <div
-                  className={`flex items-start justify-between gap-3 rounded-xl px-3 py-2.5 transition-colors ${
+                  className={`group flex items-center justify-between gap-3 rounded-xl px-3 py-1.5 transition-colors ${
                     isActive
                       ? 'bg-surface-container-high'
                       : 'hover:bg-surface-container'
@@ -224,21 +257,39 @@ function ConversationHistory({
                   >
                     <div className="flex min-w-0 items-center justify-between gap-3">
                       <div className={`truncate text-[14px] ${isActive ? 'font-medium' : ''}`}>{conversation.title}</div>
-                      <div className="shrink-0 text-[12px] text-muted">{conversation.relativeTimeText}</div>
                     </div>
                   </button>
-                  <button
-                    type="button"
-                    aria-label={`打开会话菜单 ${conversation.title}`}
-                    onClick={() => {
-                      setOpenMenuId(isMenuOpen ? null : conversation.id);
+                  <div
+                    className="relative flex h-5 min-w-[52px] shrink-0 items-center justify-end"
+                    onMouseEnter={() => {
+                      setHoveredActionId(conversation.id);
+                      setOpenMenuId(conversation.id);
                     }}
-                    className={`mt-0.5 rounded-md p-1 text-muted transition-colors hover:bg-surface-container-high hover:text-foreground ${
-                      isMenuOpen ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
-                    }`}
+                    onMouseLeave={() => setHoveredActionId(null)}
+                    onTouchStart={() => startLongPress(conversation.id)}
+                    onTouchEnd={clearLongPress}
+                    onTouchCancel={clearLongPress}
                   >
-                    <MoreHorizontal size={16} />
-                  </button>
+                    <span
+                      className={`absolute right-0 text-[12px] text-muted transition-opacity ${
+                        hoveredActionId === conversation.id && !isMenuOpen ? 'opacity-0' : 'opacity-100'
+                      }`}
+                    >
+                      {conversation.relativeTimeText}
+                    </span>
+                    <button
+                      type="button"
+                      aria-label={`打开会话菜单 ${conversation.title}`}
+                      onClick={() => {
+                        setOpenMenuId(isMenuOpen ? null : conversation.id);
+                      }}
+                      className={`absolute right-0 rounded-md p-1 text-muted transition-opacity hover:text-foreground ${
+                        hoveredActionId === conversation.id || isMenuOpen ? 'opacity-100' : 'opacity-0'
+                      }`}
+                    >
+                      <MoreHorizontal size={16} />
+                    </button>
+                  </div>
                 </div>
 
                 {isMenuOpen ? (

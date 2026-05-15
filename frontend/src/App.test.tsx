@@ -642,7 +642,8 @@ describe('App', () => {
     render(<App />);
 
     await screen.findByText('可操作会话');
-    fireEvent.click(screen.getByRole('button', { name: '打开会话菜单 可操作会话' }));
+    const menuButton = screen.getByRole('button', { name: '打开会话菜单 可操作会话' });
+    fireEvent.mouseEnter(menuButton.parentElement as HTMLElement);
 
     expect(await screen.findByRole('button', { name: '重命名对话' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '删除对话' })).toBeInTheDocument();

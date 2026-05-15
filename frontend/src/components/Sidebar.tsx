@@ -260,7 +260,7 @@ function ConversationHistory({
                     </div>
                   </button>
                   <div
-                    className="relative flex h-5 min-w-[52px] shrink-0 items-center justify-end"
+                    className="relative flex h-5 min-w-[56px] shrink-0 items-center justify-end whitespace-nowrap"
                     onMouseEnter={() => {
                       setHoveredActionId(conversation.id);
                       setOpenMenuId(conversation.id);
@@ -271,7 +271,7 @@ function ConversationHistory({
                     onTouchCancel={clearLongPress}
                   >
                     <span
-                      className={`absolute right-0 text-[12px] text-muted transition-opacity ${
+                      className={`absolute right-0 whitespace-nowrap text-[12px] text-muted transition-opacity ${
                         hoveredActionId === conversation.id && !isMenuOpen ? 'opacity-0' : 'opacity-100'
                       }`}
                     >

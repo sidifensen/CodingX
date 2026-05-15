@@ -1,5 +1,6 @@
 package com.codingx.chat.infrastructure.persistence.repository;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.codingx.chat.domain.model.ChatConversation;
 import com.codingx.chat.domain.model.ChatConversationStatus;
 import com.codingx.chat.domain.repository.ChatConversationRepository;
@@ -48,6 +49,20 @@ public class ChatConversationRepositoryImpl implements ChatConversationRepositor
         } else {
             chatConversationMapper.updateById(dataObject);
         }
+    }
+
+    /**
+     * 执行逻辑删除，避免误删历史数据。
+     * @param conversationId 会话标识。
+     */
+    @Override
+    public void deleteById(Long conversationId) {
+        chatConversationMapper.update(
+            null,
+            new LambdaUpdateWrapper<ChatConversationDO>()
+                .eq(ChatConversationDO::getId, conversationId)
+                .set(ChatConversationDO::getDeleted, 1)
+        );
     }
 
     /**

@@ -68,6 +68,30 @@ export class ChatApi {
     return envelope.data;
   }
 
+  /**
+   * 提交会话重命名请求。
+   * @param token 当前登录令牌。
+   * @param conversationId 会话标识。
+   * @param title 新会话标题。
+   */
+  static async renameConversation(token: string, conversationId: string, title: string): Promise<void> {
+    await this.request<void>(`/api/chat/conversations/${conversationId}`, token, {
+      method: 'PATCH',
+      body: JSON.stringify({ title }),
+    });
+  }
+
+  /**
+   * 删除指定会话。
+   * @param token 当前登录令牌。
+   * @param conversationId 会话标识。
+   */
+  static async deleteConversation(token: string, conversationId: string): Promise<void> {
+    await this.request<void>(`/api/chat/conversations/${conversationId}`, token, {
+      method: 'DELETE',
+    });
+  }
+
   static async cancelConversation(token: string, conversationId: string): Promise<void> {
     await this.request<void>(`/api/chat/conversations/${conversationId}/cancel`, token, {
       method: 'POST',

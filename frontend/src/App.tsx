@@ -105,6 +105,23 @@ export default function App() {
     await chatWorkspace.startNewConversation();
   };
 
+  /**
+   * 统一处理会话重命名，保持主会话视图不切换。
+   * @param conversationId 会话标识。
+   * @param title 新标题。
+   */
+  const handleRenameConversation = async (conversationId: string, title: string) => {
+    await chatWorkspace.renameConversation(conversationId, title);
+  };
+
+  /**
+   * 统一处理会话删除。
+   * @param conversationId 会话标识。
+   */
+  const handleDeleteConversation = async (conversationId: string) => {
+    await chatWorkspace.deleteConversation(conversationId);
+  };
+
   return (
     <div className="relative h-screen w-full overflow-hidden bg-background text-foreground transition-colors duration-300">
       {/* 抽屉推动容器 */}
@@ -128,6 +145,8 @@ export default function App() {
           activeConversationId={chatWorkspace.activeConversationId}
           onSelectConversation={handleConversationSelect}
           onStartNewConversation={handleStartNewConversation}
+          onRenameConversation={handleRenameConversation}
+          onDeleteConversation={handleDeleteConversation}
         />
 
         {/* 主内容区域 */}

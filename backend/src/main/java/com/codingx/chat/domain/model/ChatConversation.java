@@ -85,6 +85,13 @@ public class ChatConversation {
     }
 
     /**
+     * 将当前会话标记为已删除，避免历史列表继续展示。
+     */
+    public void markDeleted() {
+        this.status = ChatConversationStatus.ARCHIVED;
+    }
+
+    /**
      * 记录当前会话关联的最新执行记录 ID。
      * @param lastRunId 最新执行记录标识。
      */

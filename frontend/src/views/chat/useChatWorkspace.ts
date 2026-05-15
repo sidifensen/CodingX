@@ -206,6 +206,48 @@ export function useChatWorkspace(isAuthenticated: boolean) {
   };
 
   /**
+   * 重命名指定会话并刷新左侧列表。
+   * @param conversationId 会话标识。
+   * @param title 新标题。
+   */
+  const renameConversation = async (conversationId: string, title: string) => {
+    const token = currentToken();
+    if (!token || !title.trim()) {
+      return;
+    }
+    await ChatApi.renameConversation(token, conversationId, title.trim());
+    const nextConversations = await loadConversations(token);
+    if (activeConversationId === conversationId) {
+      const renamedConversation = nextConversations.find((item) => item.id === conversationId);
+      if (renamedConversation && messages.length) {
+        setMessages((previousMessages) => previousMessages.map((message, index) =>
+          index === previousMessages.length - 1 ? { ...message } : message,
+        ));
+      }
+    }
+  };
+
+  /**
+   * 删除指定会话，并在必要时将主区回退到首页空态。
+   * @param conversationId 会话标识。
+   */
+  const deleteConversation = async (conversationId: string) => {
+    const token = currentToken();
+    if (!token) {
+      return;
+    }
+    await ChatApi.deleteConversation(token, conversationId);
+    const nextConversations = await loadConversations(token);
+    if (activeConversationId === conversationId) {
+      if (nextConversations[0]?.id) {
+        await selectConversation(nextConversations[0].id, nextConversations);
+      } else {
+        clearConversationPlayback();
+      }
+    }
+  };
+
+  /**
    * 读取当前登录态 token。
    * @returns token 或 null。
    */
@@ -395,6 +437,8 @@ export function useChatWorkspace(isAuthenticated: boolean) {
     cancelCurrentStream,
     selectConversation,
     startNewConversation,
+    renameConversation,
+    deleteConversation,
   } satisfies ChatWorkspaceController;
 
   /**

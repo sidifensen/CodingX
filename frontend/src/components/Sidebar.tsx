@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   SquareTerminal,
   Search,
@@ -7,6 +7,8 @@ import {
   Brain,
   Bot,
   MoreHorizontal,
+  PencilLine,
+  Trash2,
 } from 'lucide-react';
 import { ViewType } from '../App';
 import { AuthSession } from '../types/auth';
@@ -32,6 +34,8 @@ interface SidebarProps {
   activeConversationId: string | null;
   onSelectConversation: (conversationId: string) => Promise<void>;
   onStartNewConversation: () => Promise<void>;
+  onRenameConversation: (conversationId: string, title: string) => Promise<void>;
+  onDeleteConversation: (conversationId: string) => Promise<void>;
 }
 
 /**
@@ -52,6 +56,8 @@ export default function Sidebar({
   activeConversationId,
   onSelectConversation,
   onStartNewConversation,
+  onRenameConversation,
+  onDeleteConversation,
 }: SidebarProps) {
   const NavItem = ({
     id,
@@ -134,6 +140,8 @@ export default function Sidebar({
             conversations={conversations}
             activeConversationId={activeConversationId}
             onSelectConversation={onSelectConversation}
+            onRenameConversation={onRenameConversation}
+            onDeleteConversation={onDeleteConversation}
           />
         ) : null}
       </div>
@@ -161,47 +169,114 @@ function ConversationHistory({
   conversations,
   activeConversationId,
   onSelectConversation,
+  onRenameConversation,
+  onDeleteConversation,
 }: {
   conversations: ConversationItem[];
   activeConversationId: string | null;
   onSelectConversation: (conversationId: string) => Promise<void>;
+  onRenameConversation: (conversationId: string, title: string) => Promise<void>;
+  onDeleteConversation: (conversationId: string) => Promise<void>;
 }) {
-  const sections = groupConversationsByTime(conversations);
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  const items = useMemo(
+    () =>
+      conversations.map((conversation) => ({
+        ...conversation,
+        relativeTimeText: formatRelativeTime(conversation.lastMessageAt),
+      })),
+    [conversations],
+  );
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (!menuRef.current?.contains(event.target as Node)) {
+        setOpenMenuId(null);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   return (
     <>
-      {sections.map((section) => (
-        <div key={section.key}>
-          <div className="px-5 mb-2 font-mono text-[11px] text-muted tracking-widest uppercase">
-            {section.label}
-          </div>
-          {section.items.length ? (
-            <nav className="px-3 mb-4 space-y-[2px]">
-              {section.items.map((conversation) => {
-                const isActive = conversation.id === activeConversationId;
-                return (
+      {items.length ? (
+        <nav className="px-3 mb-4 space-y-[6px]">
+          {items.map((conversation) => {
+            const isActive = conversation.id === activeConversationId;
+            const isMenuOpen = openMenuId === conversation.id;
+            return (
+              <div key={conversation.id} className="relative" ref={isMenuOpen ? menuRef : null}>
+                <div
+                  className={`flex items-start justify-between gap-3 rounded-xl px-3 py-2.5 transition-colors ${
+                    isActive
+                      ? 'bg-surface-container-high'
+                      : 'hover:bg-surface-container'
+                  }`}
+                >
                   <button
-                    key={conversation.id}
                     type="button"
                     onClick={() => void onSelectConversation(conversation.id)}
-                    className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl transition-colors group ${
-                      isActive
-                        ? 'text-foreground bg-surface-container-high'
-                        : 'text-muted hover:text-foreground hover:bg-surface-container'
+                    className={`min-w-0 flex-1 text-left ${
+                      isActive ? 'text-foreground' : 'text-muted hover:text-foreground'
                     }`}
                   >
-                    <span className={`text-[14px] truncate pr-2 ${isActive ? 'font-medium' : ''}`}>{conversation.title}</span>
-                    <div className={`flex items-center gap-1 shrink-0 transition-opacity ${isActive ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
-                      <div className="w-1.5 h-1.5 rounded-full bg-primary mr-1"></div>
-                      <MoreHorizontal size={14} className="text-muted hover:text-foreground" />
+                    <div className="min-w-0">
+                      <div className={`truncate text-[14px] ${isActive ? 'font-medium' : ''}`}>{conversation.title}</div>
+                      <div className="mt-1 text-[12px] text-muted">{conversation.relativeTimeText}</div>
                     </div>
                   </button>
-                );
-              })}
-            </nav>
-          ) : null}
-        </div>
-      ))}
+                  <button
+                    type="button"
+                    aria-label={`打开会话菜单 ${conversation.title}`}
+                    onClick={() => {
+                      setOpenMenuId(isMenuOpen ? null : conversation.id);
+                    }}
+                    className="mt-0.5 rounded-md p-1 text-muted transition-colors hover:bg-surface-container-high hover:text-foreground"
+                  >
+                    <MoreHorizontal size={16} />
+                  </button>
+                </div>
+
+                {isMenuOpen ? (
+                  <div className="absolute right-0 top-[calc(100%+6px)] z-20 w-44 rounded-xl border border-border bg-surface-container p-2 shadow-[0_16px_40px_rgba(0,0,0,0.24)]">
+                    <button
+                      type="button"
+                      aria-label="重命名这次对话"
+                      onClick={() => {
+                        const nextTitle = window.prompt('请输入新的会话名称', conversation.title);
+                        if (nextTitle && nextTitle.trim()) {
+                          void onRenameConversation(conversation.id, nextTitle.trim());
+                        }
+                        setOpenMenuId(null);
+                      }}
+                      className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm text-foreground transition-colors hover:bg-surface-high"
+                    >
+                      <PencilLine size={16} />
+                      重命名这次对话
+                    </button>
+                    <button
+                      type="button"
+                      aria-label="删除对话"
+                      onClick={() => {
+                        if (window.confirm('确认删除这次对话吗？')) {
+                          void onDeleteConversation(conversation.id);
+                        }
+                        setOpenMenuId(null);
+                      }}
+                      className="mt-1 flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm text-[#ff5b57] transition-colors hover:bg-[#ff5b57]/10"
+                    >
+                      <Trash2 size={16} />
+                      删除对话
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+            );
+          })}
+        </nav>
+      ) : null}
       {!conversations.length ? (
         <div className="px-5 text-sm text-muted">
           暂无真实会话
@@ -209,39 +284,6 @@ function ConversationHistory({
       ) : null}
     </>
   );
-}
-
-/**
- * 根据最近消息时间把真实会话分组到今天、最近七天和更早。
- * @param conversations 当前用户真实会话列表。
- * @returns Sidebar 所需分组结构。
- */
-function groupConversationsByTime(conversations: ConversationItem[]) {
-  const now = new Date();
-  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const sevenDaysAgo = new Date(startOfToday);
-  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-
-  const sections = [
-    { key: 'today', label: '今天', items: [] as ConversationItem[] },
-    { key: 'recent', label: '最近七天', items: [] as ConversationItem[] },
-    { key: 'older', label: '更早', items: [] as ConversationItem[] },
-  ];
-
-  conversations.forEach((conversation) => {
-    const conversationDate = parseConversationDate(conversation.lastMessageAt);
-    if (conversationDate && conversationDate >= startOfToday) {
-      sections[0].items.push(conversation);
-      return;
-    }
-    if (conversationDate && conversationDate >= sevenDaysAgo) {
-      sections[1].items.push(conversation);
-      return;
-    }
-    sections[2].items.push(conversation);
-  });
-
-  return sections;
 }
 
 /**
@@ -259,4 +301,27 @@ function parseConversationDate(value?: string) {
     return null;
   }
   return nextDate;
+}
+
+/**
+ * 将最后消息时间转换为“几小时前/几天前”的相对时间文案。
+ * @param value 后端返回的最近消息时间。
+ * @returns 适合展示在会话标题下方的相对时间。
+ */
+function formatRelativeTime(value?: string) {
+  const conversationDate = parseConversationDate(value);
+  if (!conversationDate) {
+    return '刚刚';
+  }
+  const diffMs = Date.now() - conversationDate.getTime();
+  const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+  if (diffHours < 1) {
+    const diffMinutes = Math.max(1, Math.floor(diffMs / (1000 * 60)));
+    return `${diffMinutes} 分钟前`;
+  }
+  if (diffHours < 24) {
+    return `${diffHours} 小时前`;
+  }
+  const diffDays = Math.floor(diffHours / 24);
+  return `${diffDays} 天前`;
 }

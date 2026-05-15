@@ -21,6 +21,12 @@ public interface ChatConversationRepository {
     void save(ChatConversation conversation);
 
     /**
+     * 逻辑删除指定会话。
+     * @param conversationId 会话标识。
+     */
+    void deleteById(Long conversationId);
+
+    /**
      * 查询 findByCreatedBy 需要的数据。
      * @param userId 输入参数。
      * @return 输入参数。

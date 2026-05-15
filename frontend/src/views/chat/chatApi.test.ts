@@ -71,4 +71,57 @@ describe('ChatApi', () => {
       }),
     );
   });
+
+  /**
+   * 会话重命名应通过专用接口提交新标题。
+   */
+  it('应通过专用接口提交会话重命名', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          success: true,
+          code: 'OK',
+          message: 'conversation renamed',
+          data: null,
+        }),
+        { status: 200 },
+      ),
+    );
+
+    await ChatApi.renameConversation('token-123', '2055114974648864768', '新的会话标题');
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      '/api/chat/conversations/2055114974648864768',
+      expect.objectContaining({
+        method: 'PATCH',
+        body: JSON.stringify({ title: '新的会话标题' }),
+      }),
+    );
+  });
+
+  /**
+   * 删除会话应通过专用接口触发软删除。
+   */
+  it('应通过专用接口删除会话', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          success: true,
+          code: 'OK',
+          message: 'conversation deleted',
+          data: null,
+        }),
+        { status: 200 },
+      ),
+    );
+
+    await ChatApi.deleteConversation('token-123', '2055114974648864768');
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      '/api/chat/conversations/2055114974648864768',
+      expect.objectContaining({
+        method: 'DELETE',
+      }),
+    );
+  });
 });

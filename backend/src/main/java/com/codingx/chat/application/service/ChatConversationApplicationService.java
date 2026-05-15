@@ -84,4 +84,17 @@ public class ChatConversationApplicationService {
         conversation.rename(title);
         chatConversationRepository.save(conversation);
     }
+
+    /**
+     * 删除指定会话，供前端历史列表菜单触发逻辑删除。
+     * @param conversationId 会话标识。
+     * @param userId 当前用户标识。
+     */
+    public void deleteConversation(Long conversationId, Long userId) {
+        ChatConversation conversation = chatConversationRepository.requireById(conversationId);
+        if (!conversation.getCreatedBy().equals(userId)) {
+            throw new ForbiddenException("You cannot access this conversation");
+        }
+        chatConversationRepository.deleteById(conversationId);
+    }
 }

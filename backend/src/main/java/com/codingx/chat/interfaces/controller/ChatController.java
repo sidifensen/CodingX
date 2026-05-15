@@ -10,6 +10,7 @@ import com.codingx.chat.domain.model.ChatConversation;
 import com.codingx.chat.domain.model.ChatMessage;
 import com.codingx.chat.interfaces.request.ChatMessageFeedbackRequest;
 import com.codingx.chat.interfaces.request.CreateConversationRequest;
+import com.codingx.chat.interfaces.request.RenameConversationRequest;
 import com.codingx.chat.interfaces.request.SendChatMessageRequest;
 import com.codingx.chat.interfaces.response.ChatConversationResponse;
 import com.codingx.chat.interfaces.response.ChatMessageResponse;
@@ -97,6 +98,29 @@ public class ChatController {
     public ApiResponse<Void> sendMessage(@PathVariable Long conversationId, @Valid @RequestBody SendChatMessageRequest request) {
         chatApplicationService.sendMessage(new SendChatMessageCommand(conversationId, request.content()), StpUtil.getLoginIdAsLong());
         return ApiResponse.successMessage("message processed");
+    }
+
+    /**
+     * 重命名指定会话。
+     * @param conversationId 会话标识。
+     * @param request 新标题请求。
+     * @return 操作结果。
+     */
+    @org.springframework.web.bind.annotation.PatchMapping("/{conversationId}")
+    public ApiResponse<Void> renameConversation(@PathVariable Long conversationId, @Valid @RequestBody RenameConversationRequest request) {
+        chatConversationApplicationService.updateConversationTitle(conversationId, request.title(), StpUtil.getLoginIdAsLong());
+        return ApiResponse.successMessage("conversation renamed");
+    }
+
+    /**
+     * 删除指定会话。
+     * @param conversationId 会话标识。
+     * @return 操作结果。
+     */
+    @org.springframework.web.bind.annotation.DeleteMapping("/{conversationId}")
+    public ApiResponse<Void> deleteConversation(@PathVariable Long conversationId) {
+        chatConversationApplicationService.deleteConversation(conversationId, StpUtil.getLoginIdAsLong());
+        return ApiResponse.successMessage("conversation deleted");
     }
 
     /**

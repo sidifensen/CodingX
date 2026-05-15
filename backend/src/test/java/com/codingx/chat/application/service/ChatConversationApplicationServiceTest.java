@@ -113,4 +113,17 @@ class ChatConversationApplicationServiceTest {
         assertEquals("AI搜索重构计划", conversation.getTitle());
         verify(chatConversationRepository).save(conversation);
     }
+
+    /**
+     * 删除会话时应校验归属并转发到仓储层执行逻辑删除。
+     */
+    @Test
+    void deleteConversationDelegatesToRepositoryDelete() {
+        ChatConversation conversation = ChatConversation.create(1L, "待删除会话", 1002L, ChatConversationStatus.ACTIVE);
+        when(chatConversationRepository.requireById(1L)).thenReturn(conversation);
+
+        chatConversationApplicationService.deleteConversation(1L, 1002L);
+
+        verify(chatConversationRepository).deleteById(1L);
+    }
 }

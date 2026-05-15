@@ -109,4 +109,6 @@ export interface ChatWorkspaceController {
   cancelCurrentStream: () => Promise<void>;
   selectConversation: (conversationId: string, sourceConversations?: ConversationItem[]) => Promise<void>;
   startNewConversation: () => Promise<void>;
+  renameConversation: (conversationId: string, title: string) => Promise<void>;
+  deleteConversation: (conversationId: string) => Promise<void>;
 }

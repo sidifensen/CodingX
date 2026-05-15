@@ -370,16 +370,16 @@ describe('App', () => {
         return new Response(
           [
             'event:meta',
-            'data:{"conversationId":2010}',
+            'data:{"conversationId":"2010"}',
             '',
             'event:message',
             'data:{"type":"response","delta":"新的会话回答"}',
             '',
             'event:finish',
-            'data:{"conversationId":2010,"content":"新的会话回答","title":"新的会话标题"}',
+            'data:{"conversationId":"2010","content":"新的会话回答","title":"新的会话标题"}',
             '',
             'event:done',
-            'data:{"conversationId":2010}',
+            'data:{"conversationId":"2010"}',
             '',
           ].join('\n'),
           { status: 200 },
@@ -517,9 +517,134 @@ describe('App', () => {
     render(<App />);
 
     expect(await screen.findByText('这是第一个会话的回答')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /第二个真实会话/ }));
+    fireEvent.click(screen.getAllByRole('button', { name: /第二个真实会话/ })[0]);
 
     expect(await screen.findByText('这是第二个会话的回答')).toBeInTheDocument();
     expect(screen.queryByText('这是第一个会话的回答')).not.toBeInTheDocument();
+  });
+
+  /**
+   * 左侧真实会话列表应显示相对时间，不再显示“今天/最近七天/更早”分组标题。
+   */
+  it('应在侧边栏仅显示会话标题与相对时间', async () => {
+    window.localStorage.setItem(
+      'codingx.auth.session',
+      JSON.stringify({
+        token: 'token-123',
+        userId: 1002,
+        username: 'user',
+        displayName: 'CodingX User',
+        userType: 'USER',
+      }),
+    );
+    const realDateNow = Date.now;
+    vi.spyOn(Date, 'now').mockReturnValue(new Date('2026-05-15T12:00:00').getTime());
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === '/api/chat/conversations') {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            code: 'OK',
+            message: 'success',
+            data: [
+              {
+                id: '2055114974648864768',
+                title: '两个小时前的会话',
+                status: 'ACTIVE',
+                lastMessageAt: '2026-05-15 10:00:00',
+                lastRunId: '5001',
+              },
+              {
+                id: '2055120756043943936',
+                title: '三天前的会话',
+                status: 'ACTIVE',
+                lastMessageAt: '2026-05-12 09:00:00',
+                lastRunId: '5002',
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      if (
+        url === '/api/chat/conversations/2055114974648864768/messages' ||
+        url === '/api/chat/conversations/2055114974648864768/steps' ||
+        url === '/api/chat/conversations/2055114974648864768/references' ||
+        url === '/api/chat/conversations/2055114974648864768/artifacts' ||
+        url === '/api/chat/conversations/2055120756043943936/messages' ||
+        url === '/api/chat/conversations/2055120756043943936/steps' ||
+        url === '/api/chat/conversations/2055120756043943936/references' ||
+        url === '/api/chat/conversations/2055120756043943936/artifacts'
+      ) {
+        return new Response(JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }), { status: 200 });
+      }
+      throw new Error(`Unhandled fetch in relative time test: ${url}`);
+    });
+
+    render(<App />);
+
+    expect(await screen.findByText('两个小时前的会话')).toBeInTheDocument();
+    expect(screen.getByText('2 小时前')).toBeInTheDocument();
+    expect(screen.getByText('3 天前')).toBeInTheDocument();
+    expect(screen.queryByText('今天')).not.toBeInTheDocument();
+    expect(screen.queryByText('最近七天')).not.toBeInTheDocument();
+    expect(screen.queryByText('更早')).not.toBeInTheDocument();
+    Date.now = realDateNow;
+  });
+
+  /**
+   * 点击左侧会话三点按钮后应弹出重命名和删除菜单。
+   */
+  it('应在点击侧边栏会话操作按钮后展示重命名与删除菜单', async () => {
+    window.localStorage.setItem(
+      'codingx.auth.session',
+      JSON.stringify({
+        token: 'token-123',
+        userId: 1002,
+        username: 'user',
+        displayName: 'CodingX User',
+        userType: 'USER',
+      }),
+    );
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === '/api/chat/conversations') {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            code: 'OK',
+            message: 'success',
+            data: [
+              {
+                id: '2055114974648864768',
+                title: '可操作会话',
+                status: 'ACTIVE',
+                lastMessageAt: '2026-05-15 10:00:00',
+                lastRunId: '5001',
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      if (
+        url === '/api/chat/conversations/2055114974648864768/messages' ||
+        url === '/api/chat/conversations/2055114974648864768/steps' ||
+        url === '/api/chat/conversations/2055114974648864768/references' ||
+        url === '/api/chat/conversations/2055114974648864768/artifacts'
+      ) {
+        return new Response(JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }), { status: 200 });
+      }
+      throw new Error(`Unhandled fetch in conversation menu test: ${url}`);
+    });
+
+    render(<App />);
+
+    await screen.findByText('可操作会话');
+    fireEvent.click(screen.getByRole('button', { name: '打开会话菜单 可操作会话' }));
+
+    expect(await screen.findByRole('button', { name: '重命名这次对话' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '删除对话' })).toBeInTheDocument();
   });
 });

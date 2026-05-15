@@ -1,0 +1,5382 @@
+event:meta
+data:{"conversationId":2001,"deepThinking":false}
+
+event:step
+data:{"id":2054969562625474560,"stepType":"search","stepStatus":"COMPLETED","stepTitle":"搜索资料","sequenceNo":1,"content":"结合上下文“请搜索 Spring Boot SSE 最佳实践”，当前问题是：请搜索 Spring Boot SSE 最佳实践","runId":2054969562394787840}
+
+event:reference
+data:{"runId":2054969562394787840,"sourceType":"web","conversationId":2001,"rankNo":1,"messageId":2054969562600308736,"snippet":"SSE 最佳实践摘要","url":"https://docs.spring.io","siteName":"Spring","title":"Spring Boot SSE 最佳实践","id":2054969562650640384}
+
+event:artifact
+data:{"artifactType":"docx","messageId":2054969562600308736,"id":2054969562675806208,"storagePath":"artifacts/2001/search-report.docx","preview":"搜索结果整理中","name":"search-report.docx","conversationId":2001,"mimeType":"application/vnd.openxmlformats-officedocument.wordprocessingml.document","runId":2054969562394787840}
+
+event:message
+data:{"type":"response","delta":"我来"}
+
+event:message
+data:{"type":"response","delta":"为您"}
+
+event:message
+data:{"type":"response","delta":"全面"}
+
+event:message
+data:{"type":"response","delta":"总结"}
+
+event:message
+data:{"type":"response","delta":"**"}
+
+event:message
+data:{"type":"response","delta":"Spring"}
+
+event:message
+data:{"type":"response","delta":" Boot"}
+
+event:message
+data:{"type":"response","delta":" SSE"}
+
+event:message
+data:{"type":"response","delta":"（"}
+
+event:message
+data:{"type":"response","delta":"Server"}
+
+event:message
+data:{"type":"response","delta":"-S"}
+
+event:message
+data:{"type":"response","delta":"ent"}
+
+event:message
+data:{"type":"response","delta":" Events"}
+
+event:message
+data:{"type":"response","delta":"）"}
+
+event:message
+data:{"type":"response","delta":"最佳"}
+
+event:message
+data:{"type":"response","delta":"实践"}
+
+event:message
+data:{"type":"response","delta":"**"}
+
+event:message
+data:{"type":"response","delta":"。\n\n"}
+
+event:message
+data:{"type":"response","delta":"---\n\n"}
+
+event:message
+data:{"type":"response","delta":"##"}
+
+event:message
+data:{"type":"response","delta":" Spring"}
+
+event:message
+data:{"type":"response","delta":" Boot"}
+
+event:message
+data:{"type":"response","delta":" SSE"}
+
+event:message
+data:{"type":"response","delta":" "}
+
+event:message
+data:{"type":"response","delta":"最佳"}
+
+event:message
+data:{"type":"response","delta":"实践"}
+
+event:message
+data:{"type":"response","delta":" "}
+
+event:message
+data:{"type":"response","delta":"完整"}
+
+event:message
+data:{"type":"response","delta":"总结"}
+
+event:message
+data:{"type":"response","delta":"\n\n"}
+
+event:message
+data:{"type":"response","delta":"###"}
+
+event:message
+data:{"type":"response","delta":" "}
+
+event:message
+data:{"type":"response","delta":"1"}
+
+event:message
+data:{"type":"response","delta":"."}
+
+event:message
+data:{"type":"response","delta":" "}
+
+event:message
+data:{"type":"response","delta":"技术"}
+
+event:message
+data:{"type":"response","delta":"概述"}
+
+event:message
+data:{"type":"response","delta":"\n\n"}
+
+event:message
+data:{"type":"response","delta":"SS"}
+
+event:message
+data:{"type":"response","delta":"E"}
+
+event:message
+data:{"type":"response","delta":"（"}
+
+event:message
+data:{"type":"response","delta":"Server"}
+
+event:message
+data:{"type":"response","delta":"-S"}
+
+event:message
+data:{"type":"response","delta":"ent"}
+
+event:message
+data:{"type":"response","delta":" Events"}
+
+event:message
+data:{"type":"response","delta":"）"}
+
+event:message
+data:{"type":"response","delta":"是"}
+
+event:message
+data:{"type":"response","delta":"**"}
+
+event:message
+data:{"type":"response","delta":"基于"}
+
+event:message
+data:{"type":"response","delta":"HTTP"}
+
+event:message
+data:{"type":"response","delta":"的"}
+
+event:message
+data:{"type":"response","delta":"服务器"}
+
+event:message
+data:{"type":"response","delta":"主动"}
+
+event:message
+data:{"type":"response","delta":"推送"}
+
+event:message
+data:{"type":"response","delta":"技术"}
+
+event:message
+data:{"type":"response","delta":"**"}
+
+event:message
+data:{"type":"response","delta":"，"}
+
+event:message
+data:{"type":"response","delta":"允许"}
+
+event:message
+data:{"type":"response","delta":"服务器"}
+
+event:message
+data:{"type":"response","delta":"单向"}
+
+event:message
+data:{"type":"response","delta":"向"}
+
+event:message
+data:{"type":"response","delta":"客户端"}
+
+event:message
+data:{"type":"response","delta":"发送"}
+
+event:message
+data:{"type":"response","delta":"实时"}
+
+event:message
+data:{"type":"response","delta":"数据"}
+
+event:message
+data:{"type":"response","delta":"。"}
+
+event:message
+data:{"type":"response","delta":"相比"}
+
+event:message
+data:{"type":"response","delta":"Web"}
+
+event:message
+data:{"type":"response","delta":"Socket"}
+
+event:message
+data:{"type":"response","delta":"，"}
+
+event:message
+data:{"type":"response","delta":"SS"}
+
+event:message
+data:{"type":"response","delta":"E"}
+
+event:message
+data:{"type":"response","delta":"更"}
+
+event:message
+data:{"type":"response","delta":"轻"}
+
+event:message
+data:{"type":"response","delta":"量"}
+
+event:message
+data:{"type":"response","delta":"、"}
+
+event:message
+data:{"type":"response","delta":"更"}
+
+event:message
+data:{"type":"response","delta":"简单"}
+
+event:message
+data:{"type":"response","delta":"，"}
+
+event:message
+data:{"type":"response","delta":"**"}
+
+event:message
+data:{"type":"response","delta":"适合"}
+
+event:message
+data:{"type":"response","delta":"通知"}
+
+event:message
+data:{"type":"response","delta":"推送"}
+
+event:message
+data:{"type":"response","delta":"、"}
+
+event:message
+data:{"type":"response","delta":"日志"}
+
+event:message
+data:{"type":"response","delta":"流"}
+
+event:message
+data:{"type":"response","delta":"、"}
+
+event:message
+data:{"type":"response","delta":"进度"}
+
+event:message
+data:{"type":"response","delta":"更新"}
+
+event:message
+data:{"type":"response","delta":"等"}
+
+event:message
+data:{"type":"response","delta":"场景"}
+
+event:message
+data:{"type":"response","delta":"**"}
+
+event:message
+data:{"type":"response","delta":"。\n\n"}
+
+event:message
+data:{"type":"response","delta":"---\n\n"}
+
+event:message
+data:{"type":"response","delta":"###"}
+
+event:message
+data:{"type":"response","delta":" "}
+
+event:message
+data:{"type":"response","delta":"2"}
+
+event:message
+data:{"type":"response","delta":"."}
+
+event:message
+data:{"type":"response","delta":" "}
+
+event:message
+data:{"type":"response","delta":"核心"}
+
+event:message
+data:{"type":"response","delta":"实现"}
+
+event:message
+data:{"type":"response","delta":"方式"}
+
+event:message
+data:{"type":"response","delta":"\n\n"}
+
+event:message
+data:{"type":"response","delta":"####"}
+
+event:message
+data:{"type":"response","delta":" "}
+
+event:message
+data:{"type":"response","delta":"2"}
+
+event:message
+data:{"type":"response","delta":"."}
+
+event:message
+data:{"type":"response","delta":"1"}
+
+event:message
+data:{"type":"response","delta":" "}
+
+event:message
+data:{"type":"response","delta":"基础"}
+
+event:message
+data:{"type":"response","delta":"服务"}
+
+event:message
+data:{"type":"response","delta":"端"}
+
+event:message
+data:{"type":"response","delta":"实现"}
+
+event:message
+data:{"type":"response","delta":"（"}
+
+event:message
+data:{"type":"response","delta":"S"}
+
+event:message
+data:{"type":"response","delta":"se"}
+
+event:message
+data:{"type":"response","delta":"Emitter"}
+
+event:message
+data:{"type":"response","delta":"）\n\n"}
+
+event:message
+data:{"type":"response","delta":"```"}
+
+event:message
+data:{"type":"response","delta":"java"}
+
+event:message
+data:{"type":"response","delta":"\n"}
+
+event:message
+data:{"type":"response","delta":"@"}
+
+event:message
+data:{"type":"response","delta":"RestController"}
+
+event:message
+data:{"type":"response","delta":"\n"}
+
+event:message
+data:{"type":"response","delta":"public"}
+
+event:message
+data:{"type":"response","delta":" class"}
+
+event:message
+data:{"type":"response","delta":" SS"}
+
+event:message
+data:{"type":"response","delta":"EC"}
+
+event:message
+data:{"type":"response","delta":"ont"}
+
+event:message
+data:{"type":"response","delta":"roller"}
+
+event:message
+data:{"type":"response","delta":" {\n"}
+
+event:message
+data:{"type":"response","delta":"    \n"}
+
+event:message
+data:{"type":"response","delta":"   "}
+
+event:message
+data:{"type":"response","delta":" @"}
+
+event:message
+data:{"type":"response","delta":"GetMapping"}
+
+event:message
+data:{"type":"response","delta":"(\"/"}
+
+event:message
+data:{"type":"response","delta":"events"}
+
+event:message
+data:{"type":"response","delta":"\")\n"}
+
+event:message
+data:{"type":"response","delta":"   "}
+
+event:message
+data:{"type":"response","delta":" public"}
+
+event:message
+data:{"type":"response","delta":" S"}
+
+event:message
+data:{"type":"response","delta":"se"}
+
+event:message
+data:{"type":"response","delta":"Emitter"}
+
+event:message
+data:{"type":"response","delta":" stream"}
+
+event:message
+data:{"type":"response","delta":"Events"}
+
+event:message
+data:{"type":"response","delta":"()"}
+
+event:message
+data:{"type":"response","delta":" {\n"}
+
+event:message
+data:{"type":"response","delta":"       "}
+
+event:message
+data:{"type":"response","delta":" S"}
+
+event:message
+data:{"type":"response","delta":"se"}
+
+event:message
+data:{"type":"response","delta":"Emitter"}
+
+event:message
+data:{"type":"response","delta":" emitter"}
+
+event:message
+data:{"type":"response","delta":" ="}
+
+event:message
+data:{"type":"response","delta":" new"}
+
+event:message
+data:{"type":"response","delta":" S"}
+
+event:message
+data:{"type":"response","delta":"se"}
+
+event:message
+data:{"type":"response","delta":"Emitter"}
+
+event:message
+data:{"type":"response","delta":"("}
+
+event:message
+data:{"type":"response","delta":"180"}
+
+event:message
+data:{"type":"response","delta":"000"}
+
+event:message
+data:{"type":"response","delta":"0"}
+
+event:message
+data:{"type":"response","delta":"L"}
+
+event:message
+data:{"type":"response","delta":");"}
+
+event:message
+data:{"type":"response","delta":" //"}
+
+event:message
+data:{"type":"response","delta":" "}
+
+event:message
+data:{"type":"response","delta":"30"}
+
+event:message
+data:{"type":"response","delta":"分钟"}
+
+event:message
+data:{"type":"response","delta":"超"}
+
+event:message
+data:{"type":"response","delta":"时"}
+
+event:message
+data:{"type":"response","delta":"\n        \n"}
+
+event:message
+data:{"type":"response","delta":"       "}
+
+event:message
+data:{"type":"response","delta":" Exec"}
+
+event:message
+data:{"type":"response","delta":"utors"}
+
+event:message
+data:{"type":"response","delta":".new"}
+
+event:message
+data:{"type":"response","delta":"Single"}
+
+event:message
+data:{"type":"response","delta":"Thread"}
+
+event:message
+data:{"type":"response","delta":"Executor"}
+
+event:message
+data:{"type":"response","delta":"()."}
+
+event:message
+data:{"type":"response","delta":"execute"}
+
+event:message
+data:{"type":"response","delta":"(()"}
+
+event:message
+data:{"type":"response","delta":" ->"}
+
+event:message
+data:{"type":"response","delta":" {\n"}
+
+event:message
+data:{"type":"response","delta":"           "}
+
+event:message
+data:{"type":"response","delta":" try"}
+
+event:message
+data:{"type":"response","delta":" {\n"}
+
+event:message
+data:{"type":"response","delta":"               "}
+
+event:message
+data:{"type":"response","delta":" for"}
+
+event:message
+data:{"type":"response","delta":" ("}
+
+event:message
+data:{"type":"response","delta":"int"}
+
+event:message
+data:{"type":"response","delta":" i"}
+
+event:message
+data:{"type":"response","delta":" ="}
+
+event:message
+data:{"type":"response","delta":" "}
+
+event:message
+data:{"type":"response","delta":"0"}
+
+event:message
+data:{"type":"response","delta":";"}
+
+event:message
+data:{"type":"response","delta":" i"}
+
+event:message
+data:{"type":"response","delta":" <"}
+
+event:message
+data:{"type":"response","delta":" "}
+
+event:message
+data:{"type":"response","delta":"10"}
+
+event:message
+data:{"type":"response","delta":";"}
+
+event:message
+data:{"type":"response","delta":" i"}
+
+event:message
+data:{"type":"response","delta":"++)"}
+
+event:message
+data:{"type":"response","delta":" {\n"}
+
+event:message
+data:{"type":"response","delta":"                   "}
+
+event:message
+data:{"type":"response","delta":" emitter"}
+
+event:message
+data:{"type":"response","delta":".send"}
+
+event:message
+data:{"type":"response","delta":"(S"}
+
+event:message
+data:{"type":"response","delta":"se"}
+
+event:message
+data:{"type":"response","delta":"Emitter"}
+
+event:message
+data:{"type":"response","delta":".event"}
+
+event:message
+data:{"type":"response","delta":"()\n"}
+
+event:message
+data:{"type":"response","delta":"                       "}
+
+event:message
+data:{"type":"response","delta":" ."}
+
+event:message
+data:{"type":"response","delta":"name"}
+
+event:message
+data:{"type":"response","delta":"(\""}
+
+event:message
+data:{"type":"response","delta":"message"}
+
+event:message
+data:{"type":"response","delta":"\")\n"}
+
+event:message
+data:{"type":"response","delta":"                       "}
+
+event:message
+data:{"type":"response","delta":" ."}
+
+event:message
+data:{"type":"response","delta":"id"}
+
+event:message
+data:{"type":"response","delta":"(String"}
+
+event:message
+data:{"type":"response","delta":".valueOf"}
+
+event:message
+data:{"type":"response","delta":"(i"}
+
+event:message
+data:{"type":"response","delta":"))\n"}
+
+event:message
+data:{"type":"response","delta":"                       "}
+
+event:message
+data:{"type":"response","delta":" ."}
+
+event:message
+data:{"type":"response","delta":"data"}
+
+event:message
+data:{"type":"response","delta":"(\""}
+
+event:message
+data:{"type":"response","delta":"Event"}
+
+event:message
+data:{"type":"response","delta":" \""}
+
+event:message
+data:{"type":"response","delta":" +"}
+
+event:message
+data:{"type":"response","delta":" i"}
+
+event:message
+data:{"type":"response","delta":")\n"}
+
+event:message
+data:{"type":"response","delta":"                       "}
+
+event:message
+data:{"type":"response","delta":" ."}
+
+event:message
+data:{"type":"response","delta":"re"}
+
+event:message
+data:{"type":"response","delta":"connect"}
+
+event:message
+data:{"type":"response","delta":"Time"}
+
+event:message
+data:{"type":"response","delta":"("}
+
+event:message
+data:{"type":"response","delta":"300"}
+
+event:message
+data:{"type":"response","delta":"0"}
+
+event:message
+data:{"type":"response","delta":"));"}
+
+event:message
+data:{"type":"response","delta":" //"}
+
+event:message
+data:{"type":"response","delta":" "}
+
+event:message
+data:{"type":"response","delta":"重"}
+
+event:message
+data:{"type":"response","delta":"连"}
+
+event:message
+data:{"type":"response","delta":"间隔"}
+
+event:message
+data:{"type":"response","delta":"3"}
+
+event:message
+data:{"type":"response","delta":"秒"}
+
+event:message
+data:{"type":"response","delta":"\n"}
+
+event:message
+data:{"type":"response","delta":"                   "}
+
+event:message
+data:{"type":"response","delta":" Thread"}
+
+event:message
+data:{"type":"response","delta":".sleep"}
+
+event:message
+data:{"type":"response","delta":"("}
+
+event:message
+data:{"type":"response","delta":"100"}
+
+event:message
+data:{"type":"response","delta":"0"}
+
+event:message
+data:{"type":"response","delta":");\n"}
+
+event:message
+data:{"type":"response","delta":"               "}
+
+event:message
+data:{"type":"response","delta":" }\n"}
+
+event:message
+data:{"type":"response","delta":"               "}
+
+event:message
+data:{"type":"response","delta":" emitter"}
+
+event:message
+data:{"type":"response","delta":".com"}
+
+event:message
+data:{"type":"response","delta":"plete"}
+
+event:message
+data:{"type":"response","delta":"();\n"}
+
+event:message
+data:{"type":"response","delta":"           "}
+
+event:message
+data:{"type":"response","delta":" }"}
+
+event:message
+data:{"type":"response","delta":" catch"}
+
+event:message
+data:{"type":"response","delta":" ("}
+
+event:message
+data:{"type":"response","delta":"Exception"}
+
+event:message
+data:{"type":"response","delta":" e"}
+
+event:message
+data:{"type":"response","delta":")"}
+
+event:message
+data:{"type":"response","delta":" {\n"}
+
+event:message
+data:{"type":"response","delta":"               "}
+
+event:message
+data:{"type":"response","delta":" emitter"}
+
+event:message
+data:{"type":"response","delta":".com"}
+
+event:message
+data:{"type":"response","delta":"plete"}
+
+event:message
+data:{"type":"response","delta":"With"}
+
+event:message
+data:{"type":"response","delta":"Error"}
+
+event:message
+data:{"type":"response","delta":"(e"}
+
+event:message
+data:{"type":"response","delta":");\n"}
+
+event:message
+data:{"type":"response","delta":"           "}
+
+event:message
+data:{"type":"response","delta":" }\n"}
+
+event:message
+data:{"type":"response","delta":"       "}
+
+event:message
+data:{"type":"response","delta":" });\n"}
+
+event:message
+data:{"type":"response","delta":"        \n"}
+
+event:message
+data:{"type":"response","delta":"       "}
+
+event:message
+data:{"type":"response","delta":" return"}
+
+event:message
+data:{"type":"response","delta":" emitter"}
+
+event:message
+data:{"type":"response","delta":";\n"}
+
+event:message
+data:{"type":"response","delta":"   "}
+
+event:message
+data:{"type":"response","delta":" }\n"}
+
+event:message
+data:{"type":"response","delta":"}\n"}
+
+event:message
+data:{"type":"response","delta":"```\n\n"}
+
+event:message
+data:{"type":"response","delta":"####"}
+
+event:message
+data:{"type":"response","delta":" "}
+
+event:message
+data:{"type":"response","delta":"2"}
+
+event:message
+data:{"type":"response","delta":"."}
+
+event:message
+data:{"type":"response","delta":"2"}
+
+event:message
+data:{"type":"response","delta":" "}
+
+event:message
+data:{"type":"response","delta":"客户端"}
+
+event:message
+data:{"type":"response","delta":"实现"}
+
+event:message
+data:{"type":"response","delta":"（"}
+
+event:message
+data:{"type":"response","delta":"JavaScript"}
+
+event:message
+data:{"type":"response","delta":"）\n\n"}
+
+event:message
+data:{"type":"response","delta":"```"}
+
+event:message
+data:{"type":"response","delta":"javascript"}
+
+event:message
+data:{"type":"response","delta":"\n"}
+
+event:message
+data:{"type":"response","delta":"const"}
+
+event:message
+data:{"type":"response","delta":" event"}
+
+event:message
+data:{"type":"response","delta":"Source"}
+
+event:message
+data:{"type":"response","delta":" ="}
+
+event:message
+data:{"type":"response","delta":" new"}
+
+event:message
+data:{"type":"response","delta":" Event"}
+
+event:message
+data:{"type":"response","delta":"Source"}
+
+event:message
+data:{"type":"response","delta":"('/"}
+
+event:message
+data:{"type":"response","delta":"events"}
+
+event:message
+data:{"type":"response","delta":"');\n\n"}
+
+event:message
+data:{"type":"response","delta":"event"}
+
+event:message
+data:{"type":"response","delta":"Source"}
+
+event:message
+data:{"type":"response","delta":".addEventListener"}
+
+event:message
+data:{"type":"response","delta":"('"}
+
+event:message
+data:{"type":"response","delta":"message"}
+
+event:message
+data:{"type":"response","delta":"',"}
+
+event:message
+data:{"type":"response","delta":" ("}
+
+event:message
+data:{"type":"response","delta":"event"}
+
+event:message
+data:{"type":"response","delta":")"}
+
+event:message
+data:{"type":"response","delta":" =>"}
+
+event:message
+data:{"type":"response","delta":" {\n"}
+
+event:message
+data:{"type":"response","delta":"   "}
+
+event:message
+data:{"type":"response","delta":" console"}
+
+event:message
+data:{"type":"response","delta":".log"}
+
+event:message
+data:{"type":"response","delta":"('"}
+
+event:message
+data:{"type":"response","delta":"收到"}
+
+event:message
+data:{"type":"response","delta":"消息"}
+
+event:message
+data:{"type":"response","delta":":',"}
+
+event:message
+data:{"type":"response","delta":" event"}
+
+event:message
+data:{"type":"response","delta":".data"}
+
+event:message
+data:{"type":"response","delta":");\n"}
+
+event:message
+data:{"type":"response","delta":"   "}
+
+event:message
+data:{"type":"response","delta":" console"}
+
+event:message
+data:{"type":"response","delta":".log"}
+
+event:message
+data:{"type":"response","delta":"('"}
+
+event:message
+data:{"type":"response","delta":"事件"}
+
+event:message
+data:{"type":"response","delta":"ID"}
+
+event:message
+data:{"type":"response","delta":":',"}
+
+event:message
+data:{"type":"response","delta":" event"}
+
+event:message
+data:{"type":"response","delta":".last"}
+
+event:message
+data:{"type":"response","delta":"Event"}
+
+event:message
+data:{"type":"response","delta":"Id"}
+
+event:message
+data:{"type":"response","delta":");\n"}
+
+event:message
+data:{"type":"response","delta":"});\n\n"}
+
+event:message
+data:{"type":"response","delta":"event"}
+
+event:message
+data:{"type":"response","delta":"Source"}
+
+event:message
+data:{"type":"response","delta":".on"}
+
+event:message
+data:{"type":"response","delta":"error"}
+
+event:message
+data:{"type":"response","delta":" ="}
+
+event:message
+data:{"type":"response","delta":" ("}
+
+event:message
+data:{"type":"response","delta":"error"}
+
+event:message
+data:{"type":"response","delta":")"}
+
+event:message
+data:{"type":"response","delta":" =>"}
+
+event:message
+data:{"type":"response","delta":" {\n"}
+
+event:message
+data:{"type":"response","delta":"   "}
+
+event:message
+data:{"type":"response","delta":" console"}
+
+event:message
+data:{"type":"response","delta":".error"}
+
+event:message
+data:{"type":"response","delta":"('"}
+
+event:message
+data:{"type":"response","delta":"连接"}
+
+event:message
+data:{"type":"response","delta":"错误"}
+
+event:message
+data:{"type":"response","delta":"，"}
+
+event:message
+data:{"type":"response","delta":"准备"}
+
+event:message
+data:{"type":"response","delta":"自动"}
+
+event:message
+data:{"type":"response","delta":"重"}
+
+event:message
+data:{"type":"response","delta":"连"}
+
+event:message
+data:{"type":"response","delta":"..."}
+
+event:message
+data:{"type":"response","delta":"');\n"}
+
+event:message
+data:{"type":"response","delta":"   "}
+
+event:message
+data:{"type":"response","delta":" //"}
+
+event:message
+data:{"type":"response","delta":" "}
+
+event:message
+data:{"type":"response","delta":"浏览器"}
+
+event:message
+data:{"type":"response","delta":"会自动"}
+
+event:message
+data:{"type":"response","delta":"重"}
+
+event:message
+data:{"type":"response","delta":"连"}
+
+event:message
+data:{"type":"response","delta":"\n"}
+
+event:message
+data:{"type":"response","delta":"};\n"}
+
+event:message
+data:{"type":"response","delta":"```\n\n"}
+
+event:message
+data:{"type":"response","delta":"---\n\n"}
+
+event:message
+data:{"type":"response","delta":"###"}
+
+event:message
+data:{"type":"response","delta":" "}
+
+event:message
+data:{"type":"response","delta":"3"}
+
+event:message
+data:{"type":"response","delta":"."}
+
+event:message
+data:{"type":"response","delta":" "}
+
+event:message
+data:{"type":"response","delta":"最佳"}
+
+event:message
+data:{"type":"response","delta":"实践"}
+
+event:message
+data:{"type":"response","delta":"详解"}
+
+event:message
+data:{"type":"response","delta":"\n\n"}
+
+event:message
+data:{"type":"response","delta":"####"}
+
+event:message
+data:{"type":"response","delta":" "}
+
+event:message
+data:{"type":"response","delta":"3"}
+
+event:message
+data:{"type":"response","delta":"."}
+
+event:message
+data:{"type":"response","delta":"1"}
+
+event:message
+data:{"type":"response","delta":" "}
+
+event:message
+data:{"type":"response","delta":"连接"}
+
+event:message
+data:{"type":"response","delta":"管理器"}
+
+event:message
+data:{"type":"response","delta":"（"}
+
+event:message
+data:{"type":"response","delta":"核心"}
+
+event:message
+data:{"type":"response","delta":"实践"}
+
+event:message
+data:{"type":"response","delta":"）\n\n"}
+
+event:message
+data:{"type":"response","delta":"```"}
+
+event:message
+data:{"type":"response","delta":"java"}
+
+event:message
+data:{"type":"response","delta":"\n"}
+
+event:message
+data:{"type":"response","delta":"@Component"}
+
+event:message
+data:{"type":"response","delta":"\n"}
+
+event:message
+data:{"type":"response","delta":"public"}
+
+event:message
+data:{"type":"response","delta":" class"}
+
+event:message
+data:{"type":"response","delta":" SSE"}
+
+event:message
+data:{"type":"response","delta":"Connection"}
+
+event:message
+data:{"type":"response","delta":"Manager"}
+
+event:message
+data:{"type":"response","delta":" {\n"}
+
+event:message
+data:{"type":"response","delta":"   "}
+
+event:message
+data:{"type":"response","delta":" private"}
+
+event:message
+data:{"type":"response","delta":" final"}
+
+event:message
+data:{"type":"response","delta":" Concurrent"}
+
+event:message
+data:{"type":"response","delta":"HashMap"}
+
+event:message
+data:{"type":"response","delta":"<String"}
+
+event:message
+data:{"type":"response","delta":","}
+
+event:message
+data:{"type":"response","delta":" S"}
+
+event:message
+data:{"type":"response","delta":"se"}
+
+event:message
+data:{"type":"response","delta":"Emitter"}
+
+event:message
+data:{"type":"response","delta":">"}
+
+event:message
+data:{"type":"response","delta":" em"}
+
+event:message
+data:{"type":"response","delta":"itters"}
+
+event:message
+data:{"type":"response","delta":" ="}
+
+event:message
+data:{"type":"response","delta":" new"}
+
+event:message
+data:{"type":"response","delta":" Concurrent"}
+
+event:message
+data:{"type":"response","delta":"HashMap"}
+
+event:message
+data:{"type":"response","delta":"<>();\n"}
+
+event:message
+data:{"type":"response","delta":"   "}
+
+event:message
+data:{"type":"response","delta":" private"}
+
+event:message
+data:{"type":"response","delta":" final"}
+
+event:message
+data:{"type":"response","delta":" Scheduled"}
+
+event:message
+data:{"type":"response","delta":"Executor"}
+
+event:message
+data:{"type":"response","delta":"Service"}
+
+event:message
+data:{"type":"response","delta":" scheduler"}
+
+event:message
+data:{"type":"response","delta":" ="}
+
+event:message
+data:{"type":"response","delta":" Exec"}
+
+event:message
+data:{"type":"response","delta":"utors"}
+
+event:message
+data:{"type":"response","delta":".new"}
+
+event:message
+data:{"type":"response","delta":"S"}
+
+event:message
+data:{"type":"response","delta":"cheduled"}
+
+event:message
+data:{"type":"response","delta":"Thread"}
+
+event:message
+data:{"type":"response","delta":"Pool"}
+
+event:message
+data:{"type":"response","delta":"("}
+
+event:message
+data:{"type":"response","delta":"2"}
+
+event:message
+data:{"type":"response","delta":");\n"}
+
+event:message
+data:{"type":"response","delta":"    \n"}
+
+event:message
+data:{"type":"response","delta":"   "}
+
+event:message
+data:{"type":"response","delta":" @"}
+
+event:message
+data:{"type":"response","delta":"Post"}
+
+event:message
+data:{"type":"response","delta":"Construct"}
+
+event:message
+data:{"type":"response","delta":"\n"}
+
+event:message
+data:{"type":"response","delta":"   "}
+
+event:message
+data:{"type":"response","delta":" public"}
+
+event:message
+data:{"type":"response","delta":" void"}
+
+event:message
+data:{"type":"response","delta":" start"}
+
+event:message
+data:{"type":"response","delta":"Heart"}
+
+event:message
+data:{"type":"response","delta":"beat"}
+
+event:message
+data:{"type":"response","delta":"()"}
+
+event:message
+data:{"type":"response","delta":" {\n"}
+
+event:message
+data:{"type":"response","delta":"       "}
+
+event:message
+data:{"type":"response","delta":" scheduler"}
+
+event:message
+data:{"type":"response","delta":".s"}
+
+event:message
+data:{"type":"response","delta":"chedule"}
+
+event:message
+data:{"type":"response","delta":"At"}
+
+event:message
+data:{"type":"response","delta":"Fixed"}
+
+event:message
+data:{"type":"response","delta":"Rate"}
+
+event:message
+data:{"type":"response","delta":"(this"}
+
+event:message
+data:{"type":"response","delta":"::"}
+
+event:message
+data:{"type":"response","delta":"send"}
+
+event:message
+data:{"type":"response","delta":"Heart"}
+
+event:message
+data:{"type":"response","delta":"beat"}
+
+event:message
+data:{"type":"response","delta":","}
+
+event:message
+data:{"type":"response","delta":" "}
+
+event:message
+data:{"type":"response","delta":"10"}
+
+event:message
+data:{"type":"response","delta":","}
+
+event:message
+data:{"type":"response","delta":" "}
+
+event:message
+data:{"type":"response","delta":"30"}
+
+event:message
+data:{"type":"response","delta":","}
+
+event:message
+data:{"type":"response","delta":" Time"}
+
+event:message
+data:{"type":"response","delta":"Unit"}
+
+event:message
+data:{"type":"response","delta":".S"}
+
+event:message
+data:{"type":"response","delta":"EC"}
+
+event:message
+data:{"type":"response","delta":"ONDS"}
+
+event:message
+data:{"type":"response","delta":");\n"}
+
+event:message
+data:{"type":"response","delta":"   "}
+
+event:message
+data:{"type":"response","delta":" }\n"}
+
+event:message
+data:{"type":"response","delta":"    \n"}
+
+event:message
+data:{"type":"response","delta":"   "}
+
+event:message
+data:{"type":"response","delta":" public"}
+
+event:message
+data:{"type":"response","delta":" S"}
+
+event:message
+data:{"type":"response","delta":"se"}
+
+event:message
+data:{"type":"response","delta":"Emitter"}
+
+event:message
+data:{"type":"response","delta":" create"}
+
+event:message
+data:{"type":"response","delta":"Connection"}
+
+event:message
+data:{"type":"response","delta":"(String"}
+
+event:message
+data:{"type":"response","delta":" userId"}
+
+event:message
+data:{"type":"response","delta":")"}
+
+event:message
+data:{"type":"response","delta":" {\n"}
+
+event:message
+data:{"type":"response","delta":"       "}
+
+event:message
+data:{"type":"response","delta":" remove"}
+
+event:message
+data:{"type":"response","delta":"Connection"}
+
+event:message
+data:{"type":"response","delta":"(user"}
+
+event:message
+data:{"type":"response","delta":"Id"}
+
+event:message
+data:{"type":"response","delta":");\n"}
+
+event:message
+data:{"type":"response","delta":"        \n"}
+
+event:message
+data:{"type":"response","delta":"       "}
+
+event:message
+data:{"type":"response","delta":" S"}
+
+event:message
+data:{"type":"response","delta":"se"}
+
+event:message
+data:{"type":"response","delta":"Emitter"}
+
+event:message
+data:{"type":"response","delta":" emitter"}
+
+event:message
+data:{"type":"response","delta":" ="}
+
+event:message
+data:{"type":"response","delta":" new"}
+
+event:message
+data:{"type":"response","delta":" S"}
+
+event:message
+data:{"type":"response","delta":"se"}
+
+event:message
+data:{"type":"response","delta":"Emitter"}
+
+event:message
+data:{"type":"response","delta":"("}
+
+event:message
+data:{"type":"response","delta":"180"}
+
+event:message
+data:{"type":"response","delta":"000"}
+
+event:message
+data:{"type":"response","delta":"0"}
+
+event:message
+data:{"type":"response","delta":"L"}
+
+event:message
+data:{"type":"response","delta":");\n"}
+
+event:message
+data:{"type":"response","delta":"        \n"}
+
+event:message
+data:{"type":"response","delta":"       "}
+
+event:message
+data:{"type":"response","delta":" emitter"}
+
+event:message
+data:{"type":"response","delta":".on"}
+
+event:message
+data:{"type":"response","delta":"Completion"}
+
+event:message
+data:{"type":"response","delta":"(()"}
+
+event:message
+data:{"type":"response","delta":" ->"}
+
+event:message
+data:{"type":"response","delta":" remove"}
+
+event:message
+data:{"type":"response","delta":"Connection"}
+
+event:message
+data:{"type":"response","delta":"(user"}
+
+event:message
+data:{"type":"response","delta":"Id"}
+
+event:message
+data:{"type":"response","delta":"));\n"}
+
+event:message
+data:{"type":"response","delta":"       "}
+
+event:message
+data:{"type":"response","delta":" emitter"}
+
+event:message
+data:{"type":"response","delta":".on"}
+
+event:message
+data:{"type":"response","delta":"Timeout"}
+
+event:message
+data:{"type":"response","delta":"(()"}
+
+event:message
+data:{"type":"response","delta":" ->"}
+
+event:message
+data:{"type":"response","delta":" remove"}
+
+event:message
+data:{"type":"response","delta":"Connection"}
+
+event:message
+data:{"type":"response","delta":"(user"}
+
+event:message
+data:{"type":"response","delta":"Id"}
+
+event:message
+data:{"type":"response","delta":"));\n"}
+
+event:message
+data:{"type":"response","delta":"       "}
+
+event:message
+data:{"type":"response","delta":" emitter"}
+
+event:message
+data:{"type":"response","delta":".on"}
+
+event:message
+data:{"type":"response","delta":"Error"}
+
+event:message
+data:{"type":"response","delta":"(e"}
+
+event:message
+data:{"type":"response","delta":" ->"}
+
+event:message
+data:{"type":"response","delta":" {\n"}
+
+event:message
+data:{"type":"response","delta":"           "}
+
+event:message
+data:{"type":"response","delta":" remove"}
+
+event:message
+data:{"type":"response","delta":"Connection"}
+
+event:message
+data:{"type":"response","delta":"(user"}
+
+event:message
+data:{"type":"response","delta":"Id"}
+
+event:message
+data:{"type":"response","delta":");\n"}
+
+event:message
+data:{"type":"response","delta":"           "}
+
+event:message
+data:{"type":"response","delta":" log"}
+
+event:message
+data:{"type":"response","delta":".error"}
+
+event:message
+data:{"type":"response","delta":"(\""}
+
+event:message
+data:{"type":"response","delta":"SS"}
+
+event:message
+data:{"type":"response","delta":"E"}
+
+event:message
+data:{"type":"response","delta":"连接"}
+
+event:message
+data:{"type":"response","delta":"异常"}
+
+event:message
+data:{"type":"response","delta":":"}
+
+event:message
+data:{"type":"response","delta":" {}\","}
+
+event:message
+data:{"type":"response","delta":" userId"}
+
+event:message
+data:{"type":"response","delta":","}
+
+event:message
+data:{"type":"response","delta":" e"}
+
+event:message
+data:{"type":"response","delta":");\n"}
+
+event:message
+data:{"type":"response","delta":"       "}
+
+event:message
+data:{"type":"response","delta":" });\n"}
+
+event:message
+data:{"type":"response","delta":"        \n"}
+
+event:message
+data:{"type":"response","delta":"       "}
+
+event:message
+data:{"type":"response","delta":" em"}
+
+event:message
+data:{"type":"response","delta":"itters"}
+
+event:message
+data:{"type":"response","delta":".put"}
+
+event:message
+data:{"type":"response","delta":"(user"}
+
+event:message
+data:{"type":"response","delta":"Id"}
+
+event:message
+data:{"type":"response","delta":","}
+
+event:message
+data:{"type":"response","delta":" emitter"}
+
+event:message
+data:{"type":"response","delta":");\n"}
+
+event:message
+data:{"type":"response","delta":"       "}
+
+event:message
+data:{"type":"response","delta":" return"}
+
+event:message
+data:{"type":"response","delta":" emitter"}
+
+event:message
+data:{"type":"response","delta":";\n"}
+
+event:message
+data:{"type":"response","delta":"   "}
+
+event:message
+data:{"type":"response","delta":" }\n"}
+
+event:message
+data:{"type":"response","delta":"    \n"}
+
+event:message
+data:{"type":"response","delta":"   "}
+
+event:message
+data:{"type":"response","delta":" public"}
+
+event:message
+data:{"type":"response","delta":" void"}
+
+event:message
+data:{"type":"response","delta":" send"}
+
+event:message
+data:{"type":"response","delta":"To"}
+
+event:message
+data:{"type":"response","delta":"User"}
+
+event:message
+data:{"type":"response","delta":"(String"}
+
+event:message
+data:{"type":"response","delta":" userId"}
+
+event:message
+data:{"type":"response","delta":","}
+
+event:message
+data:{"type":"response","delta":" String"}
+
+event:message
+data:{"type":"response","delta":" event"}
+
+event:message
+data:{"type":"response","delta":"Name"}
+
+event:message
+data:{"type":"response","delta":","}
+
+event:message
+data:{"type":"response","delta":" Object"}
+
+event:message
+data:{"type":"response","delta":" data"}
+
+event:message
+data:{"type":"response","delta":")"}
+
+event:message
+data:{"type":"response","delta":" {\n"}
+
+event:message
+data:{"type":"response","delta":"       "}
+
+event:message
+data:{"type":"response","delta":" S"}
+
+event:message
+data:{"type":"response","delta":"se"}
+
+event:message
+data:{"type":"response","delta":"Emitter"}
+
+event:message
+data:{"type":"response","delta":" emitter"}
+
+event:message
+data:{"type":"response","delta":" ="}
+
+event:message
+data:{"type":"response","delta":" em"}
+
+event:message
+data:{"type":"response","delta":"itters"}
+
+event:message
+data:{"type":"response","delta":".get"}
+
+event:message
+data:{"type":"response","delta":"(user"}
+
+event:message
+data:{"type":"response","delta":"Id"}
+
+event:message
+data:{"type":"response","delta":");\n"}
+
+event:message
+data:{"type":"response","delta":"       "}
+
+event:message
+data:{"type":"response","delta":" if"}
+
+event:message
+data:{"type":"response","delta":" ("}
+
+event:message
+data:{"type":"response","delta":"em"}
+
+event:message
+data:{"type":"response","delta":"itter"}
+
+event:message
+data:{"type":"response","delta":" !="}
+
+event:message
+data:{"type":"response","delta":" null"}
+
+event:message
+data:{"type":"response","delta":")"}
+
+event:message
+data:{"type":"response","delta":" {\n"}
+
+event:message
+data:{"type":"response","delta":"           "}
+
+event:message
+data:{"type":"response","delta":" try"}
+
+event:message
+data:{"type":"response","delta":" {\n"}
+
+event:message
+data:{"type":"response","delta":"               "}
+
+event:message
+data:{"type":"response","delta":" emitter"}
+
+event:message
+data:{"type":"response","delta":".send"}
+
+event:message
+data:{"type":"response","delta":"(S"}
+
+event:message
+data:{"type":"response","delta":"se"}
+
+event:message
+data:{"type":"response","delta":"Emitter"}
+
+event:message
+data:{"type":"response","delta":".event"}
+
+event:message
+data:{"type":"response","delta":"()\n"}
+
+event:message
+data:{"type":"response","delta":"                   "}
+
+event:message
+data:{"type":"response","delta":" ."}
+
+event:message
+data:{"type":"response","delta":"name"}
+
+event:message
+data:{"type":"response","delta":"(event"}
+
+event:message
+data:{"type":"response","delta":"Name"}
+
+event:message
+data:{"type":"response","delta":")\n"}
+
+event:message
+data:{"type":"response","delta":"                   "}
+
+event:message
+data:{"type":"response","delta":" ."}
+
+event:message
+data:{"type":"response","delta":"data"}
+
+event:message
+data:{"type":"response","delta":"(object"}
+
+event:message
+data:{"type":"response","delta":"Mapper"}
+
+event:message
+data:{"type":"response","delta":".write"}
+
+event:message
+data:{"type":"response","delta":"Value"}
+
+event:message
+data:{"type":"response","delta":"As"}
+
+event:message
+data:{"type":"response","delta":"String"}
+
+event:message
+data:{"type":"response","delta":"(data"}
+
+event:message
+data:{"type":"response","delta":")));\n"}
+
+event:message
+data:{"type":"response","delta":"           "}
+
+event:message
+data:{"type":"response","delta":" }"}
+
+event:message
+data:{"type":"response","delta":" catch"}
+
+event:message
+data:{"type":"response","delta":" ("}
+
+event:message
+data:{"type":"response","delta":"IOException"}
+
+event:message
+data:{"type":"response","delta":" e"}
+
+event:message
+data:{"type":"response","delta":")"}
+
+event:message
+data:{"type":"response","delta":" {\n"}
+
+event:message
+data:{"type":"response","delta":"               "}
+
+event:message
+data:{"type":"response","delta":" remove"}
+
+event:message
+data:{"type":"response","delta":"Connection"}
+
+event:message
+data:{"type":"response","delta":"(user"}
+
+event:message
+data:{"type":"response","delta":"Id"}
+
+event:message
+data:{"type":"response","delta":");\n"}
+
+event:message
+data:{"type":"response","delta":"           "}
+
+event:message
+data:{"type":"response","delta":" }\n"}
+
+event:message
+data:{"type":"response","delta":"       "}
+
+event:message
+data:{"type":"response","delta":" }\n"}
+
+event:message
+data:{"type":"response","delta":"   "}
+
+event:message
+data:{"type":"response","delta":" }\n"}
+
+event:message
+data:{"type":"response","delta":"    \n"}
+
+event:message
+data:{"type":"response","delta":"   "}
+
+event:message
+data:{"type":"response","delta":" private"}
+
+event:message
+data:{"type":"response","delta":" void"}
+
+event:message
+data:{"type":"response","delta":" send"}
+
+event:message
+data:{"type":"response","delta":"Heart"}
+
+event:message
+data:{"type":"response","delta":"beat"}
+
+event:message
+data:{"type":"response","delta":"()"}
+
+event:message
+data:{"type":"response","delta":" {\n"}
+
+event:message
+data:{"type":"response","delta":"       "}
+
+event:message
+data:{"type":"response","delta":" List"}
+
+event:message
+data:{"type":"response","delta":"<String"}
+
+event:message
+data:{"type":"response","delta":">"}
+
+event:message
+data:{"type":"response","delta":" dead"}
+
+event:message
+data:{"type":"response","delta":"Conn"}
+
+event:message
+data:{"type":"response","delta":"ections"}
+
+event:message
+data:{"type":"response","delta":" ="}
+
+event:message
+data:{"type":"response","delta":" new"}
+
+event:message
+data:{"type":"response","delta":" ArrayList"}
+
+event:message
+data:{"type":"response","delta":"<>();\n"}
+
+event:message
+data:{"type":"response","delta":"       "}
+
+event:message
+data:{"type":"response","delta":" em"}
+
+event:message
+data:{"type":"response","delta":"itters"}
+
+event:message
+data:{"type":"response","delta":".forEach"}
+
+event:message
+data:{"type":"response","delta":"(("}
+
+event:message
+data:{"type":"response","delta":"userId"}
+
+event:message
+data:{"type":"response","delta":","}
+
+event:message
+data:{"type":"response","delta":" emitter"}
+
+event:message
+data:{"type":"response","delta":")"}
+
+event:message
+data:{"type":"response","delta":" ->"}
+
+event:message
+data:{"type":"response","delta":" {\n"}
+
+event:message
+data:{"type":"response","delta":"           "}
+
+event:message
+data:{"type":"response","delta":" try"}
+
+event:message
+data:{"type":"response","delta":" {\n"}
+
+event:message
+data:{"type":"response","delta":"               "}
+
+event:message
+data:{"type":"response","delta":" emitter"}
+
+event:message
+data:{"type":"response","delta":".send"}
+
+event:message
+data:{"type":"response","delta":"(S"}
+
+event:message
+data:{"type":"response","delta":"se"}
+
+event:message
+data:{"type":"response","delta":"Emitter"}
+
+event:message
+data:{"type":"response","delta":".event"}
+
+event:message
+data:{"type":"response","delta":"()\n"}
+
+event:message
+data:{"type":"response","delta":"                   "}
+
+event:message
+data:{"type":"response","delta":" ."}
+
+event:message
+data:{"type":"response","delta":"name"}
+
+event:message
+data:{"type":"response","delta":"(\""}
+
+event:message
+data:{"type":"response","delta":"heart"}
+
+event:message
+data:{"type":"response","delta":"beat"}
+
+event:message
+data:{"type":"response","delta":"\")\n"}
+
+event:message
+data:{"type":"response","delta":"                   "}
+
+event:message
+data:{"type":"response","delta":" ."}
+
+event:message
+data:{"type":"response","delta":"data"}
+
+event:message
+data:{"type":"response","delta":"(\""}
+
+event:message
+data:{"type":"response","delta":"ping"}
+
+event:message
+data:{"type":"response","delta":"\"));\n"}
+
+event:message
+data:{"type":"response","delta":"           "}
+
+event:message
+data:{"type":"response","delta":" }"}
+
+event:message
+data:{"type":"response","delta":" catch"}
+
+event:message
+data:{"type":"response","delta":" ("}
+
+event:message
+data:{"type":"response","delta":"IOException"}
+
+event:message
+data:{"type":"response","delta":" e"}
+
+event:message
+data:{"type":"response","delta":")"}
+
+event:message
+data:{"type":"response","delta":" {\n"}
+
+event:message
+data:{"type":"response","delta":"               "}
+
+event:message
+data:{"type":"response","delta":" dead"}
+
+event:message
+data:{"type":"response","delta":"Conn"}
+
+event:message
+data:{"type":"response","delta":"ections"}
+
+event:message
+data:{"type":"response","delta":".add"}
+
+event:message
+data:{"type":"response","delta":"(user"}
+
+event:message
+data:{"type":"response","delta":"Id"}
+
+event:message
+data:{"type":"response","delta":");\n"}
+
+event:message
+data:{"type":"response","delta":"           "}
+
+event:message
+data:{"type":"response","delta":" }\n"}
+
+event:message
+data:{"type":"response","delta":"       "}
+
+event:message
+data:{"type":"response","delta":" });\n"}
+
+event:message
+data:{"type":"response","delta":"       "}
+
+event:message
+data:{"type":"response","delta":" dead"}
+
+event:message
+data:{"type":"response","delta":"Conn"}
+
+event:message
+data:{"type":"response","delta":"ections"}
+
+event:message
+data:{"type":"response","delta":".forEach"}
+
+event:message
+data:{"type":"response","delta":"(this"}
+
+event:message
+data:{"type":"response","delta":"::"}
+
+event:message
+data:{"type":"response","delta":"remove"}
+
+event:message
+data:{"type":"response","delta":"Connection"}
+
+event:message
+data:{"type":"response","delta":");\n"}
+
+event:message
+data:{"type":"response","delta":"   "}
+
+event:message
+data:{"type":"response","delta":" }\n"}
+
+event:message
+data:{"type":"response","delta":"    \n"}
+
+event:message
+data:{"type":"response","delta":"   "}
+
+event:message
+data:{"type":"response","delta":" public"}
+
+event:message
+data:{"type":"response","delta":" void"}
+
+event:message
+data:{"type":"response","delta":" remove"}
+
+event:message
+data:{"type":"response","delta":"Connection"}
+
+event:message
+data:{"type":"response","delta":"(String"}
+
+event:message
+data:{"type":"response","delta":" userId"}
+
+event:message
+data:{"type":"response","delta":")"}
+
+event:message
+data:{"type":"response","delta":" {\n"}
+
+event:message
+data:{"type":"response","delta":"       "}
+
+event:message
+data:{"type":"response","delta":" S"}
+
+event:message
+data:{"type":"response","delta":"se"}
+
+event:message
+data:{"type":"response","delta":"Emitter"}
+
+event:message
+data:{"type":"response","delta":" emitter"}
+
+event:message
+data:{"type":"response","delta":" ="}
+
+event:message
+data:{"type":"response","delta":" em"}
+
+event:message
+data:{"type":"response","delta":"itters"}
+
+event:message
+data:{"type":"response","delta":".remove"}
+
+event:message
+data:{"type":"response","delta":"(user"}
+
+event:message
+data:{"type":"response","delta":"Id"}
+
+event:message
+data:{"type":"response","delta":");\n"}
+
+event:message
+data:{"type":"response","delta":"       "}
+
+event:message
+data:{"type":"response","delta":" if"}
+
+event:message
+data:{"type":"response","delta":" ("}
+
+event:message
+data:{"type":"response","delta":"em"}
+
+event:message
+data:{"type":"response","delta":"itter"}
+
+event:message
+data:{"type":"response","delta":" !="}
+
+event:message
+data:{"type":"response","delta":" null"}
+
+event:message
+data:{"type":"response","delta":")"}
+
+event:message
+data:{"type":"response","delta":" {\n"}
+
+event:message
+data:{"type":"response","delta":"           "}
+
+event:message
+data:{"type":"response","delta":" emitter"}
+
+event:message
+data:{"type":"response","delta":".com"}
+
+event:message
+data:{"type":"response","delta":"plete"}
+
+event:message
+data:{"type":"response","delta":"();\n"}
+
+event:message
+data:{"type":"response","delta":"       "}
+
+event:message
+data:{"type":"response","delta":" }\n"}
+
+event:message
+data:{"type":"response","delta":"   "}
+
+event:message
+data:{"type":"response","delta":" }\n"}
+
+event:message
+data:{"type":"response","delta":"    \n"}
+
+event:message
+data:{"type":"response","delta":"   "}
+
+event:message
+data:{"type":"response","delta":" @"}
+
+event:message
+data:{"type":"response","delta":"Pre"}
+
+event:message
+data:{"type":"response","delta":"Destroy"}
+
+event:message
+data:{"type":"response","delta":"\n"}
+
+event:message
+data:{"type":"response","delta":"   "}
+
+event:message
+data:{"type":"response","delta":" public"}
+
+event:message
+data:{"type":"response","delta":" void"}
+
+event:message
+data:{"type":"response","delta":" clean"}
+
+event:message
+data:{"type":"response","delta":"Up"}
+
+event:message
+data:{"type":"response","delta":"()"}
+
+event:message
+data:{"type":"response","delta":" {\n"}
+
+event:message
+data:{"type":"response","delta":"       "}
+
+event:message
+data:{"type":"response","delta":" em"}
+
+event:message
+data:{"type":"response","delta":"itters"}
+
+event:message
+data:{"type":"response","delta":".forEach"}
+
+event:message
+data:{"type":"response","delta":"(("}
+
+event:message
+data:{"type":"response","delta":"id"}
+
+event:message
+data:{"type":"response","delta":","}
+
+event:message
+data:{"type":"response","delta":" emitter"}
+
+event:message
+data:{"type":"response","delta":")"}
+
+event:message
+data:{"type":"response","delta":" ->"}
+
+event:message
+data:{"type":"response","delta":" emitter"}
+
+event:message
+data:{"type":"response","delta":".com"}
+
+event:message
+data:{"type":"response","delta":"plete"}
+
+event:message
+data:{"type":"response","delta":"());\n"}
+
+event:message
+data:{"type":"response","delta":"       "}
+
+event:message
+data:{"type":"response","delta":" em"}
+
+event:message
+data:{"type":"response","delta":"itters"}
+
+event:message
+data:{"type":"response","delta":".clear"}
+
+event:message
+data:{"type":"response","delta":"();\n"}
+
+event:message
+data:{"type":"response","delta":"       "}
+
+event:message
+data:{"type":"response","delta":" scheduler"}
+
+event:message
+data:{"type":"response","delta":".sh"}
+
+event:message
+data:{"type":"response","delta":"utdown"}
+
+event:message
+data:{"type":"response","delta":"();\n"}
+
+event:message
+data:{"type":"response","delta":"   "}
+
+event:message
+data:{"type":"response","delta":" }\n"}
+
+event:message
+data:{"type":"response","delta":"}\n"}
+
+event:message
+data:{"type":"response","delta":"```\n\n"}
+
+event:message
+data:{"type":"response","delta":"####"}
+
+event:message
+data:{"type":"response","delta":" "}
+
+event:message
+data:{"type":"response","delta":"3"}
+
+event:message
+data:{"type":"response","delta":"."}
+
+event:message
+data:{"type":"response","delta":"2"}
+
+event:message
+data:{"type":"response","delta":" "}
+
+event:message
+data:{"type":"response","delta":"消息"}
+
+event:message
+data:{"type":"response","delta":"推送"}
+
+event:message
+data:{"type":"response","delta":"服务"}
+
+event:message
+data:{"type":"response","delta":"\n\n"}
+
+event:message
+data:{"type":"response","delta":"```"}
+
+event:message
+data:{"type":"response","delta":"java"}
+
+event:message
+data:{"type":"response","delta":"\n"}
+
+event:message
+data:{"type":"response","delta":"@Service"}
+
+event:message
+data:{"type":"response","delta":"\n"}
+
+event:message
+data:{"type":"response","delta":"public"}
+
+event:message
+data:{"type":"response","delta":" class"}
+
+event:message
+data:{"type":"response","delta":" Notification"}
+
+event:message
+data:{"type":"response","delta":"Service"}
+
+event:message
+data:{"type":"response","delta":" {\n"}
+
+event:message
+data:{"type":"response","delta":"   "}
+
+event:message
+data:{"type":"response","delta":" @"}
+
+event:message
+data:{"type":"response","delta":"Autowired"}
+
+event:message
+data:{"type":"response","delta":"\n"}
+
+event:message
+data:{"type":"response","delta":"   "}
+
+event:message
+data:{"type":"response","delta":" private"}
+
+event:message
+data:{"type":"response","delta":" SSE"}
+
+event:message
+data:{"type":"response","delta":"Connection"}
+
+event:message
+data:{"type":"response","delta":"Manager"}
+
+event:message
+data:{"type":"response","delta":" connection"}
+
+event:message
+data:{"type":"response","delta":"Manager"}
+
+event:message
+data:{"type":"response","delta":";\n"}
+
+event:message
+data:{"type":"response","delta":"    \n"}
+
+event:message
+data:{"type":"response","delta":"   "}
+
+event:message
+data:{"type":"response","delta":" public"}
+
+event:message
+data:{"type":"response","delta":" void"}
+
+event:message
+data:{"type":"response","delta":" notify"}
+
+event:message
+data:{"type":"response","delta":"Order"}
+
+event:message
+data:{"type":"response","delta":"Update"}
+
+event:message
+data:{"type":"response","delta":"("}
+
+event:message
+data:{"type":"response","delta":"Order"}
+
+event:message
+data:{"type":"response","delta":" order"}
+
+event:message
+data:{"type":"response","delta":")"}
+
+event:message
+data:{"type":"response","delta":" {\n"}
+
+event:message
+data:{"type":"response","delta":"       "}
+
+event:message
+data:{"type":"response","delta":" Event"}
+
+event:message
+data:{"type":"response","delta":"Message"}
+
+event:message
+data:{"type":"response","delta":" message"}
+
+event:message
+data:{"type":"response","delta":" ="}
+
+event:message
+data:{"type":"response","delta":" new"}
+
+event:message
+data:{"type":"response","delta":" Event"}
+
+event:message
+data:{"type":"response","delta":"Message"}
+
+event:message
+data:{"type":"response","delta":"(\n"}
+
+event:message
+data:{"type":"response","delta":"           "}
+
+event:message
+data:{"type":"response","delta":" \""}
+
+event:message
+data:{"type":"response","delta":"order"}
+
+event:message
+data:{"type":"response","delta":"_update"}
+
+event:message
+data:{"type":"response","delta":"\",\n"}
+
+event:message
+data:{"type":"response","delta":"           "}
+
+event:message
+data:{"type":"response","delta":" order"}
+
+event:message
+data:{"type":"response","delta":".get"}
+
+event:message
+data:{"type":"response","delta":"Status"}
+
+event:message
+data:{"type":"response","delta":"(),\n"}
+
+event:message
+data:{"type":"response","delta":"           "}
+
+event:message
+data:{"type":"response","delta":" Local"}
+
+event:message
+data:{"type":"response","delta":"DateTime"}
+
+event:message
+data:{"type":"response","delta":".now"}
+
+event:message
+data:{"type":"response","delta":"()\n"}
+
+event:message
+data:{"type":"response","delta":"       "}
+
+event:message
+data:{"type":"response","delta":" );\n"}
+
+event:message
+data:{"type":"response","delta":"       "}
+
+event:message
+data:{"type":"response","delta":" connection"}
+
+event:message
+data:{"type":"response","delta":"Manager"}
+
+event:message
+data:{"type":"response","delta":".send"}
+
+event:message
+data:{"type":"response","delta":"To"}
+
+event:message
+data:{"type":"response","delta":"User"}
+
+event:message
+data:{"type":"response","delta":"(\n"}
+
+event:message
+data:{"type":"response","delta":"           "}
+
+event:message
+data:{"type":"response","delta":" order"}
+
+event:message
+data:{"type":"response","delta":".get"}
+
+event:message
+data:{"type":"response","delta":"UserId"}
+
+event:message
+data:{"type":"response","delta":"()."}
+
+event:message
+data:{"type":"response","delta":"toString"}
+
+event:message
+data:{"type":"response","delta":"(),\n"}
+
+event:message
+data:{"type":"response","delta":"           "}
+
+event:message
+data:{"type":"response","delta":" \""}
+
+event:message
+data:{"type":"response","delta":"order"}
+
+event:message
+data:{"type":"response","delta":"\",\n"}
+
+event:message
+data:{"type":"response","delta":"           "}
+
+event:message
+data:{"type":"response","delta":" message"}
+
+event:message
+data:{"type":"response","delta":"\n"}
+
+event:message
+data:{"type":"response","delta":"       "}
+
+event:message
+data:{"type":"response","delta":" );\n"}
+
+event:message
+data:{"type":"response","delta":"   "}
+
+event:message
+data:{"type":"response","delta":" }\n"}
+
+event:message
+data:{"type":"response","delta":"}\n\n"}
+
+event:message
+data:{"type":"response","delta":"@Data"}
+
+event:message
+data:{"type":"response","delta":"\n"}
+
+event:message
+data:{"type":"response","delta":"@"}
+
+event:message
+data:{"type":"response","delta":"All"}
+
+event:message
+data:{"type":"response","delta":"ArgsConstructor"}
+
+event:message
+data:{"type":"response","delta":"\n"}
+
+event:message
+data:{"type":"response","delta":"public"}
+
+event:message
+data:{"type":"response","delta":" class"}
+
+event:message
+data:{"type":"response","delta":" Event"}
+
+event:message
+data:{"type":"response","delta":"Message"}
+
+event:message
+data:{"type":"response","delta":" {\n"}
+
+event:message
+data:{"type":"response","delta":"   "}
+
+event:message
+data:{"type":"response","delta":" private"}
+
+event:message
+data:{"type":"response","delta":" String"}
+
+event:message
+data:{"type":"response","delta":" type"}
+
+event:message
+data:{"type":"response","delta":";\n"}
+
+event:message
+data:{"type":"response","delta":"   "}
+
+event:message
+data:{"type":"response","delta":" private"}
+
+event:message
+data:{"type":"response","delta":" String"}
+
+event:message
+data:{"type":"response","delta":" content"}
+
+event:message
+data:{"type":"response","delta":";\n"}
+
+event:message
+data:{"type":"response","delta":"   "}
+
+event:message
+data:{"type":"response","delta":" private"}
+
+event:message
+data:{"type":"response","delta":" Local"}
+
+event:message
+data:{"type":"response","delta":"DateTime"}
+
+event:message
+data:{"type":"response","delta":" timestamp"}
+
+event:message
+data:{"type":"response","delta":";\n"}
+
+event:message
+data:{"type":"response","delta":"}\n"}
+
+event:message
+data:{"type":"response","delta":"```\n\n"}
+
+event:message
+data:{"type":"response","delta":"####"}
+
+event:message
+data:{"type":"response","delta":" "}
+
+event:message
+data:{"type":"response","delta":"3"}
+
+event:message
+data:{"type":"response","delta":"."}
+
+event:message
+data:{"type":"response","delta":"3"}
+
+event:message
+data:{"type":"response","delta":" "}
+
+event:message
+data:{"type":"response","delta":"安全"}
+
+event:message
+data:{"type":"response","delta":"认证"}
+
+event:message
+data:{"type":"response","delta":"配置"}
+
+event:message
+data:{"type":"response","delta":"\n\n"}
+
+event:message
+data:{"type":"response","delta":"```"}
+
+event:message
+data:{"type":"response","delta":"java"}
+
+event:message
+data:{"type":"response","delta":"\n"}
+
+event:message
+data:{"type":"response","delta":"@"}
+
+event:message
+data:{"type":"response","delta":"RestController"}
+
+event:message
+data:{"type":"response","delta":"\n"}
+
+event:message
+data:{"type":"response","delta":"public"}
+
+event:message
+data:{"type":"response","delta":" class"}
+
+event:message
+data:{"type":"response","delta":" Secure"}
+
+event:message
+data:{"type":"response","delta":"SS"}
+
+event:message
+data:{"type":"response","delta":"EC"}
+
+event:message
+data:{"type":"response","delta":"ont"}
+
+event:message
+data:{"type":"response","delta":"roller"}
+
+event:message
+data:{"type":"response","delta":" {\n"}
+
+event:message
+data:{"type":"response","delta":"    \n"}
+
+event:message
+data:{"type":"response","delta":"   "}
+
+event:message
+data:{"type":"response","delta":" @"}
+
+event:message
+data:{"type":"response","delta":"GetMapping"}
+
+event:message
+data:{"type":"response","delta":"(\"/"}
+
+event:message
+data:{"type":"response","delta":"secure"}
+
+event:message
+data:{"type":"response","delta":"-e"}
+
+event:message
+data:{"type":"response","delta":"vents"}
+
+event:message
+data:{"type":"response","delta":"\")\n"}
+
+event:message
+data:{"type":"response","delta":"   "}
+
+event:message
+data:{"type":"response","delta":" public"}
+
+event:message
+data:{"type":"response","delta":" S"}
+
+event:message
+data:{"type":"response","delta":"se"}
+
+event:message
+data:{"type":"response","delta":"Emitter"}
+
+event:message
+data:{"type":"response","delta":" authenticated"}
+
+event:message
+data:{"type":"response","delta":"Events"}
+
+event:message
+data:{"type":"response","delta":"(@"}
+
+event:message
+data:{"type":"response","delta":"Request"}
+
+event:message
+data:{"type":"response","delta":"Param"}
+
+event:message
+data:{"type":"response","delta":" String"}
+
+event:message
+data:{"type":"response","delta":" token"}
+
+event:message
+data:{"type":"response","delta":")"}
+
+event:message
+data:{"type":"response","delta":" {\n"}
+
+event:message
+data:{"type":"response","delta":"       "}
+
+event:message
+data:{"type":"response","delta":" //"}
+
+event:message
+data:{"type":"response","delta":" "}
+
+event:message
+data:{"type":"response","delta":"验证"}
+
+event:message
+data:{"type":"response","delta":"Token"}
+
+event:message
+data:{"type":"response","delta":"\n"}
+
+event:message
+data:{"type":"response","delta":"       "}
+
+event:message
+data:{"type":"response","delta":" if"}
+
+event:message
+data:{"type":"response","delta":" (!"}
+
+event:message
+data:{"type":"response","delta":"token"}
+
+event:message
+data:{"type":"response","delta":"Service"}
+
+event:message
+data:{"type":"response","delta":".validate"}
+
+event:message
+data:{"type":"response","delta":"(token"}
+
+event:message
+data:{"type":"response","delta":"))"}
+
+event:message
+data:{"type":"response","delta":" {\n"}
+
+event:message
+data:{"type":"response","delta":"           "}
+
+event:message
+data:{"type":"response","delta":" throw"}
+
+event:message
+data:{"type":"response","delta":" new"}
+
+event:message
+data:{"type":"response","delta":" Un"}
+
+event:message
+data:{"type":"response","delta":"author"}
+
+event:message
+data:{"type":"response","delta":"ized"}
+
+event:message
+data:{"type":"response","delta":"Exception"}
+
+event:message
+data:{"type":"response","delta":"(\""}
+
+event:message
+data:{"type":"response","delta":"无效"}
+
+event:message
+data:{"type":"response","delta":"的"}
+
+event:message
+data:{"type":"response","delta":"Token"}
+
+event:message
+data:{"type":"response","delta":"\");\n"}
+
+event:message
+data:{"type":"response","delta":"       "}
+
+event:message
+data:{"type":"response","delta":" }\n"}
+
+event:message
+data:{"type":"response","delta":"        \n"}
+
+event:message
+data:{"type":"response","delta":"       "}
+
+event:message
+data:{"type":"response","delta":" String"}
+
+event:message
+data:{"type":"response","delta":" userId"}
+
+event:message
+data:{"type":"response","delta":" ="}
+
+event:message
+data:{"type":"response","delta":" token"}
+
+event:message
+data:{"type":"response","delta":"Service"}
+
+event:message
+data:{"type":"response","delta":".get"}
+
+event:message
+data:{"type":"response","delta":"UserId"}
+
+event:message
+data:{"type":"response","delta":"(token"}
+
+event:message
+data:{"type":"response","delta":");\n"}
+
+event:message
+data:{"type":"response","delta":"       "}
+
+event:message
+data:{"type":"response","delta":" return"}
+
+event:message
+data:{"type":"response","delta":" connection"}
+
+event:message
+data:{"type":"response","delta":"Manager"}
+
+event:message
+data:{"type":"response","delta":".create"}
+
+event:message
+data:{"type":"response","delta":"Connection"}
+
+event:message
+data:{"type":"response","delta":"(user"}
+
+event:message
+data:{"type":"response","delta":"Id"}
+
+event:message
+data:{"type":"response","delta":");\n"}
+
+event:message
+data:{"type":"response","delta":"   "}
+
+event:message
+data:{"type":"response","delta":" }\n"}
+
+event:message
+data:{"type":"response","delta":"}\n"}
+
+event:message
+data:{"type":"response","delta":"```\n\n"}
+
+event:message
+data:{"type":"response","delta":"####"}
+
+event:message
+data:{"type":"response","delta":" "}
+
+event:message
+data:{"type":"response","delta":"3"}
+
+event:message
+data:{"type":"response","delta":"."}
+
+event:message
+data:{"type":"response","delta":"4"}
+
+event:message
+data:{"type":"response","delta":" N"}
+
+event:message
+data:{"type":"response","delta":"ginx"}
+
+event:message
+data:{"type":"response","delta":"反向"}
+
+event:message
+data:{"type":"response","delta":"代理"}
+
+event:message
+data:{"type":"response","delta":"配置"}
+
+event:message
+data:{"type":"response","delta":"\n\n"}
+
+event:message
+data:{"type":"response","delta":"```"}
+
+event:message
+data:{"type":"response","delta":"nginx"}
+
+event:message
+data:{"type":"response","delta":"\n"}
+
+event:message
+data:{"type":"response","delta":"server"}
+
+event:message
+data:{"type":"response","delta":" {\n"}
+
+event:message
+data:{"type":"response","delta":"   "}
+
+event:message
+data:{"type":"response","delta":" listen"}
+
+event:message
+data:{"type":"response","delta":" "}
+
+event:message
+data:{"type":"response","delta":"443"}
+
+event:message
+data:{"type":"response","delta":" s"}
+
+event:message
+data:{"type":"response","delta":"sl"}
+
+event:message
+data:{"type":"response","delta":";\n"}
+
+event:message
+data:{"type":"response","delta":"   "}
+
+event:message
+data:{"type":"response","delta":" server"}
+
+event:message
+data:{"type":"response","delta":"_name"}
+
+event:message
+data:{"type":"response","delta":" example"}
+
+event:message
+data:{"type":"response","delta":".com"}
+
+event:message
+data:{"type":"response","delta":";\n"}
+
+event:message
+data:{"type":"response","delta":"    \n"}
+
+event:message
+data:{"type":"response","delta":"   "}
+
+event:message
+data:{"type":"response","delta":" location"}
+
+event:message
+data:{"type":"response","delta":" /"}
+
+event:message
+data:{"type":"response","delta":"events"}
+
+event:message
+data:{"type":"response","delta":" {\n"}
+
+event:message
+data:{"type":"response","delta":"       "}
+
+event:message
+data:{"type":"response","delta":" proxy"}
+
+event:message
+data:{"type":"response","delta":"_pass"}
+
+event:message
+data:{"type":"response","delta":" http"}
+
+event:message
+data:{"type":"response","delta":"://"}
+
+event:message
+data:{"type":"response","delta":"localhost"}
+
+event:message
+data:{"type":"response","delta":":"}
+
+event:message
+data:{"type":"response","delta":"808"}
+
+event:message
+data:{"type":"response","delta":"0"}
+
+event:message
+data:{"type":"response","delta":";\n"}
+
+event:message
+data:{"type":"response","delta":"        \n"}
+
+event:message
+data:{"type":"response","delta":"       "}
+
+event:message
+data:{"type":"response","delta":" proxy"}
+
+event:message
+data:{"type":"response","delta":"_b"}
+
+event:message
+data:{"type":"response","delta":"uff"}
+
+event:message
+data:{"type":"response","delta":"ering"}
+
+event:message
+data:{"type":"response","delta":" off"}
+
+event:message
+data:{"type":"response","delta":";\n"}
+
+event:message
+data:{"type":"response","delta":"       "}
+
+event:message
+data:{"type":"response","delta":" proxy"}
+
+event:message
+data:{"type":"response","delta":"_cache"}
+
+event:message
+data:{"type":"response","delta":" off"}
+
+event:message
+data:{"type":"response","delta":";\n"}
+
+event:message
+data:{"type":"response","delta":"       "}
+
+event:message
+data:{"type":"response","delta":" chunk"}
+
+event:message
+data:{"type":"response","delta":"ed"}
+
+event:message
+data:{"type":"response","delta":"_trans"}
+
+event:message
+data:{"type":"response","delta":"fer"}
+
+event:message
+data:{"type":"response","delta":"_"}
+
+event:message
+data:{"type":"response","delta":"encoding"}
+
+event:message
+data:{"type":"response","delta":" on"}
+
+event:message
+data:{"type":"response","delta":";\n"}
+
+event:message
+data:{"type":"response","delta":"        \n"}
+
+event:message
+data:{"type":"response","delta":"       "}
+
+event:message
+data:{"type":"response","delta":" proxy"}
+
+event:message
+data:{"type":"response","delta":"_read"}
+
+event:message
+data:{"type":"response","delta":"_time"}
+
+event:message
+data:{"type":"response","delta":"out"}
+
+event:message
+data:{"type":"response","delta":" "}
+
+event:message
+data:{"type":"response","delta":"864"}
+
+event:message
+data:{"type":"response","delta":"00"}
+
+event:message
+data:{"type":"response","delta":"s"}
+
+event:message
+data:{"type":"response","delta":";"}
+
+event:message
+data:{"type":"response","delta":" "}
+
+event:message
+data:{"type":"response","delta":" #"}
+
+event:message
+data:{"type":"response","delta":" "}
+
+event:message
+data:{"type":"response","delta":"24"}
+
+event:message
+data:{"type":"response","delta":"小时"}
+
+event:message
+data:{"type":"response","delta":"\n"}
+
+event:message
+data:{"type":"response","delta":"       "}
+
+event:message
+data:{"type":"response","delta":" proxy"}
+
+event:message
+data:{"type":"response","delta":"_"}
+
+event:message
+data:{"type":"response","delta":"connect"}
+
+event:message
+data:{"type":"response","delta":"_time"}
+
+event:message
+data:{"type":"response","delta":"out"}
+
+event:message
+data:{"type":"response","delta":" "}
+
+event:message
+data:{"type":"response","delta":"5"}
+
+event:message
+data:{"type":"response","delta":"s"}
+
+event:message
+data:{"type":"response","delta":";\n"}
+
+event:message
+data:{"type":"response","delta":"       "}
+
+event:message
+data:{"type":"response","delta":" proxy"}
+
+event:message
+data:{"type":"response","delta":"_s"}
+
+event:message
+data:{"type":"response","delta":"end"}
+
+event:message
+data:{"type":"response","delta":"_time"}
+
+event:message
+data:{"type":"response","delta":"out"}
+
+event:message
+data:{"type":"response","delta":" "}
+
+event:message
+data:{"type":"response","delta":"864"}
+
+event:message
+data:{"type":"response","delta":"00"}
+
+event:message
+data:{"type":"response","delta":"s"}
+
+event:message
+data:{"type":"response","delta":";\n"}
+
+event:message
+data:{"type":"response","delta":"        \n"}
+
+event:message
+data:{"type":"response","delta":"       "}
+
+event:message
+data:{"type":"response","delta":" proxy"}
+
+event:message
+data:{"type":"response","delta":"_set"}
+
+event:message
+data:{"type":"response","delta":"_header"}
+
+event:message
+data:{"type":"response","delta":" Connection"}
+
+event:message
+data:{"type":"response","delta":" '';\n"}
+
+event:message
+data:{"type":"response","delta":"       "}
+
+event:message
+data:{"type":"response","delta":" proxy"}
+
+event:message
+data:{"type":"response","delta":"_"}
+
+event:message
+data:{"type":"response","delta":"http"}
+
+event:message
+data:{"type":"response","delta":"_version"}
+
+event:message
+data:{"type":"response","delta":" "}
+
+event:message
+data:{"type":"response","delta":"1"}
+
+event:message
+data:{"type":"response","delta":"."}
+
+event:message
+data:{"type":"response","delta":"1"}
+
+event:message
+data:{"type":"response","delta":";\n"}
+
+event:message
+data:{"type":"response","delta":"        \n"}
+
+event:message
+data:{"type":"response","delta":"       "}
+
+event:message
+data:{"type":"response","delta":" proxy"}
+
+event:message
+data:{"type":"response","delta":"_set"}
+
+event:message
+data:{"type":"response","delta":"_header"}
+
+event:message
+data:{"type":"response","delta":" X"}
+
+event:message
+data:{"type":"response","delta":"-"}
+
+event:message
+data:{"type":"response","delta":"Real"}
+
+event:message
+data:{"type":"response","delta":"-"}
+
+event:message
+data:{"type":"response","delta":"IP"}
+
+event:message
+data:{"type":"response","delta":" $"}
+
+event:message
+data:{"type":"response","delta":"remote"}
+
+event:message
+data:{"type":"response","delta":"_addr"}
+
+event:message
+data:{"type":"response","delta":";\n"}
+
+event:message
+data:{"type":"response","delta":"       "}
+
+event:message
+data:{"type":"response","delta":" proxy"}
+
+event:message
+data:{"type":"response","delta":"_set"}
+
+event:message
+data:{"type":"response","delta":"_header"}
+
+event:message
+data:{"type":"response","delta":" X"}
+
+event:message
+data:{"type":"response","delta":"-"}
+
+event:message
+data:{"type":"response","delta":"Forward"}
+
+event:message
+data:{"type":"response","delta":"ed"}
+
+event:message
+data:{"type":"response","delta":"-"}
+
+event:message
+data:{"type":"response","delta":"For"}
+
+event:message
+data:{"type":"response","delta":" $"}
+
+event:message
+data:{"type":"response","delta":"proxy"}
+
+event:message
+data:{"type":"response","delta":"_add"}
+
+event:message
+data:{"type":"response","delta":"_x"}
+
+event:message
+data:{"type":"response","delta":"_"}
+
+event:message
+data:{"type":"response","delta":"forward"}
+
+event:message
+data:{"type":"response","delta":"ed"}
+
+event:message
+data:{"type":"response","delta":"_for"}
+
+event:message
+data:{"type":"response","delta":";\n"}
+
+event:message
+data:{"type":"response","delta":"       "}
+
+event:message
+data:{"type":"response","delta":" proxy"}
+
+event:message
+data:{"type":"response","delta":"_set"}
+
+event:message
+data:{"type":"response","delta":"_header"}
+
+event:message
+data:{"type":"response","delta":" Host"}
+
+event:message
+data:{"type":"response","delta":" $"}
+
+event:message
+data:{"type":"response","delta":"host"}
+
+event:message
+data:{"type":"response","delta":";\n"}
+
+event:message
+data:{"type":"response","delta":"   "}
+
+event:message
+data:{"type":"response","delta":" }\n"}
+
+event:message
+data:{"type":"response","delta":"}\n"}
+
+event:message
+data:{"type":"response","delta":"```\n\n"}
+
+event:message
+data:{"type":"response","delta":"####"}
+
+event:message
+data:{"type":"response","delta":" "}
+
+event:message
+data:{"type":"response","delta":"3"}
+
+event:message
+data:{"type":"response","delta":"."}
+
+event:message
+data:{"type":"response","delta":"5"}
+
+event:message
+data:{"type":"response","delta":" "}
+
+event:message
+data:{"type":"response","delta":"性能"}
+
+event:message
+data:{"type":"response","delta":"配置"}
+
+event:message
+data:{"type":"response","delta":"\n\n"}
+
+event:message
+data:{"type":"response","delta":"```"}
+
+event:message
+data:{"type":"response","delta":"y"}
+
+event:message
+data:{"type":"response","delta":"aml"}
+
+event:message
+data:{"type":"response","delta":"\n"}
+
+event:message
+data:{"type":"response","delta":"#"}
+
+event:message
+data:{"type":"response","delta":" application"}
+
+event:message
+data:{"type":"response","delta":".yml"}
+
+event:message
+data:{"type":"response","delta":"\n"}
+
+event:message
+data:{"type":"response","delta":"server"}
+
+event:message
+data:{"type":"response","delta":":\n"}
+
+event:message
+data:{"type":"response","delta":" "}
+
+event:message
+data:{"type":"response","delta":" compression"}
+
+event:message
+data:{"type":"response","delta":":\n"}
+
+event:message
+data:{"type":"response","delta":"   "}
+
+event:message
+data:{"type":"response","delta":" enabled"}
+
+event:message
+data:{"type":"response","delta":":"}
+
+event:message
+data:{"type":"response","delta":" true"}
+
+event:message
+data:{"type":"response","delta":"\n"}
+
+event:message
+data:{"type":"response","delta":"   "}
+
+event:message
+data:{"type":"response","delta":" m"}
+
+event:message
+data:{"type":"response","delta":"ime"}
+
+event:message
+data:{"type":"response","delta":"-types"}
+
+event:message
+data:{"type":"response","delta":":"}
+
+event:message
+data:{"type":"response","delta":" text"}
+
+event:message
+data:{"type":"response","delta":"/"}
+
+event:message
+data:{"type":"response","delta":"event"}
+
+event:message
+data:{"type":"response","delta":"-stream"}
+
+event:message
+data:{"type":"response","delta":","}
+
+event:message
+data:{"type":"response","delta":" application"}
+
+event:message
+data:{"type":"response","delta":"/json"}
+
+event:message
+data:{"type":"response","delta":"\n"}
+
+event:message
+data:{"type":"response","delta":" "}
+
+event:message
+data:{"type":"response","delta":" tom"}
+
+event:message
+data:{"type":"response","delta":"cat"}
+
+event:message
+data:{"type":"response","delta":":\n"}
+
+event:message
+data:{"type":"response","delta":"   "}
+
+event:message
+data:{"type":"response","delta":" max"}
+
+event:message
+data:{"type":"response","delta":"-"}
+
+event:message
+data:{"type":"response","delta":"connections"}
+
+event:message
+data:{"type":"response","delta":":"}
+
+event:message
+data:{"type":"response","delta":" "}
+
+event:message
+data:{"type":"response","delta":"100"}
+
+event:message
+data:{"type":"response","delta":"00"}
+
+event:message
+data:{"type":"response","delta":"\n"}
+
+event:message
+data:{"type":"response","delta":"   "}
+
+event:message
+data:{"type":"response","delta":" threads"}
+
+event:message
+data:{"type":"response","delta":":\n"}
+
+event:message
+data:{"type":"response","delta":"     "}
+
+event:message
+data:{"type":"response","delta":" max"}
+
+event:message
+data:{"type":"response","delta":":"}
+
+event:message
+data:{"type":"response","delta":" "}
+
+event:message
+data:{"type":"response","delta":"200"}
+
+event:message
+data:{"type":"response","delta":"\n"}
+
+event:message
+data:{"type":"response","delta":"     "}
+
+event:message
+data:{"type":"response","delta":" min"}
+
+event:message
+data:{"type":"response","delta":"-sp"}
+
+event:message
+data:{"type":"response","delta":"are"}
+
+event:message
+data:{"type":"response","delta":":"}
+
+event:message
+data:{"type":"response","delta":" "}
+
+event:message
+data:{"type":"response","delta":"20"}
+
+event:message
+data:{"type":"response","delta":"\n\n"}
+
+event:message
+data:{"type":"response","delta":"spring"}
+
+event:message
+data:{"type":"response","delta":":\n"}
+
+event:message
+data:{"type":"response","delta":" "}
+
+event:message
+data:{"type":"response","delta":" task"}
+
+event:message
+data:{"type":"response","delta":":\n"}
+
+event:message
+data:{"type":"response","delta":"   "}
+
+event:message
+data:{"type":"response","delta":" execution"}
+
+event:message
+data:{"type":"response","delta":":\n"}
+
+event:message
+data:{"type":"response","delta":"     "}
+
+event:message
+data:{"type":"response","delta":" pool"}
+
+event:message
+data:{"type":"response","delta":":\n"}
+
+event:message
+data:{"type":"response","delta":"       "}
+
+event:message
+data:{"type":"response","delta":" core"}
+
+event:message
+data:{"type":"response","delta":"-size"}
+
+event:message
+data:{"type":"response","delta":":"}
+
+event:message
+data:{"type":"response","delta":" "}
+
+event:message
+data:{"type":"response","delta":"10"}
+
+event:message
+data:{"type":"response","delta":"\n"}
+
+event:message
+data:{"type":"response","delta":"       "}
+
+event:message
+data:{"type":"response","delta":" max"}
+
+event:message
+data:{"type":"response","delta":"-size"}
+
+event:message
+data:{"type":"response","delta":":"}
+
+event:message
+data:{"type":"response","delta":" "}
+
+event:message
+data:{"type":"response","delta":"50"}
+
+event:message
+data:{"type":"response","delta":"\n"}
+
+event:message
+data:{"type":"response","delta":"       "}
+
+event:message
+data:{"type":"response","delta":" queue"}
+
+event:message
+data:{"type":"response","delta":"-cap"}
+
+event:message
+data:{"type":"response","delta":"acity"}
+
+event:message
+data:{"type":"response","delta":":"}
+
+event:message
+data:{"type":"response","delta":" "}
+
+event:message
+data:{"type":"response","delta":"100"}
+
+event:message
+data:{"type":"response","delta":"\n"}
+
+event:message
+data:{"type":"response","delta":"```\n\n"}
+
+event:message
+data:{"type":"response","delta":"---\n\n"}
+
+event:message
+data:{"type":"response","delta":"###"}
+
+event:message
+data:{"type":"response","delta":" "}
+
+event:message
+data:{"type":"response","delta":"4"}
+
+event:message
+data:{"type":"response","delta":"."}
+
+event:message
+data:{"type":"response","delta":" "}
+
+event:message
+data:{"type":"response","delta":"适用"}
+
+event:message
+data:{"type":"response","delta":"场景"}
+
+event:message
+data:{"type":"response","delta":"对比"}
+
+event:message
+data:{"type":"response","delta":"\n\n"}
+
+event:message
+data:{"type":"response","delta":"|"}
+
+event:message
+data:{"type":"response","delta":" "}
+
+event:message
+data:{"type":"response","delta":"场景"}
+
+event:message
+data:{"type":"response","delta":" |"}
+
+event:message
+data:{"type":"response","delta":" "}
+
+event:message
+data:{"type":"response","delta":"推荐"}
+
+event:message
+data:{"type":"response","delta":"方案"}
+
+event:message
+data:{"type":"response","delta":" |"}
+
+event:message
+data:{"type":"response","delta":" "}
+
+event:message
+data:{"type":"response","delta":"原因"}
+
+event:message
+data:{"type":"response","delta":" |\n"}
+
+event:message
+data:{"type":"response","delta":"|"}
+
+event:message
+data:{"type":"response","delta":"------"}
+
+event:message
+data:{"type":"response","delta":"|"}
+
+event:message
+data:{"type":"response","delta":"----------"}
+
+event:message
+data:{"type":"response","delta":"|"}
+
+event:message
+data:{"type":"response","delta":"------"}
+
+event:message
+data:{"type":"response","delta":"|\n"}
+
+event:message
+data:{"type":"response","delta":"|"}
+
+event:message
+data:{"type":"response","delta":" **"}
+
+event:message
+data:{"type":"response","delta":"实时"}
+
+event:message
+data:{"type":"response","delta":"通知"}
+
+event:message
+data:{"type":"response","delta":"**"}
+
+event:message
+data:{"type":"response","delta":"（"}
+
+event:message
+data:{"type":"response","delta":"订单"}
+
+event:message
+data:{"type":"response","delta":"、"}
+
+event:message
+data:{"type":"response","delta":"告"}
+
+event:message
+data:{"type":"response","delta":"警"}
+
+event:message
+data:{"type":"response","delta":"）"}
+
+event:message
+data:{"type":"response","delta":" |"}
+
+event:message
+data:{"type":"response","delta":" SSE"}
+
+event:message
+data:{"type":"response","delta":" |"}
+
+event:message
+data:{"type":"response","delta":" "}
+
+event:message
+data:{"type":"response","delta":"简单"}
+
+event:message
+data:{"type":"response","delta":"，"}
+
+event:message
+data:{"type":"response","delta":"自动"}
+
+event:message
+data:{"type":"response","delta":"重"}
+
+event:message
+data:{"type":"response","delta":"连"}
+
+event:message
+data:{"type":"response","delta":"，"}
+
+event:message
+data:{"type":"response","delta":"成本"}
+
+event:message
+data:{"type":"response","delta":"低"}
+
+event:message
+data:{"type":"response","delta":" |\n"}
+
+event:message
+data:{"type":"response","delta":"|"}
+
+event:message
+data:{"type":"response","delta":" **"}
+
+event:message
+data:{"type":"response","delta":"日志"}
+
+event:message
+data:{"type":"response","delta":"流"}
+
+event:message
+data:{"type":"response","delta":"**"}
+
+event:message
+data:{"type":"response","delta":" |"}
+
+event:message
+data:{"type":"response","delta":" SSE"}
+
+event:message
+data:{"type":"response","delta":" |"}
+
+event:message
+data:{"type":"response","delta":" "}
+
+event:message
+data:{"type":"response","delta":"单向"}
+
+event:message
+data:{"type":"response","delta":"推送"}
+
+event:message
+data:{"type":"response","delta":"，"}
+
+event:message
+data:{"type":"response","delta":"天然"}
+
+event:message
+data:{"type":"response","delta":"适合"}
+
+event:message
+data:{"type":"response","delta":" |\n"}
+
+event:message
+data:{"type":"response","delta":"|"}
+
+event:message
+data:{"type":"response","delta":" **"}
+
+event:message
+data:{"type":"response","delta":"数据"}
+
+event:message
+data:{"type":"response","delta":"大"}
+
+event:message
+data:{"type":"response","delta":"屏"}
+
+event:message
+data:{"type":"response","delta":"**"}
+
+event:message
+data:{"type":"response","delta":" |"}
+
+event:message
+data:{"type":"response","delta":" SSE"}
+
+event:message
+data:{"type":"response","delta":" |"}
+
+event:message
+data:{"type":"response","delta":" "}
+
+event:message
+data:{"type":"response","delta":"服务器"}
+
+event:message
+data:{"type":"response","delta":"主动"}
+
+event:message
+data:{"type":"response","delta":"推送"}
+
+event:message
+data:{"type":"response","delta":"更新"}
+
+event:message
+data:{"type":"response","delta":" |\n"}
+
+event:message
+data:{"type":"response","delta":"|"}
+
+event:message
+data:{"type":"response","delta":" **"}
+
+event:message
+data:{"type":"response","delta":"文件"}
+
+event:message
+data:{"type":"response","delta":"上传"}
+
+event:message
+data:{"type":"response","delta":"进度"}
+
+event:message
+data:{"type":"response","delta":"**"}
+
+event:message
+data:{"type":"response","delta":" |"}
+
+event:message
+data:{"type":"response","delta":" SSE"}
+
+event:message
+data:{"type":"response","delta":" |"}
+
+event:message
+data:{"type":"response","delta":" "}
+
+event:message
+data:{"type":"response","delta":"实时"}
+
+event:message
+data:{"type":"response","delta":"反馈"}
+
+event:message
+data:{"type":"response","delta":"进度"}
+
+event:message
+data:{"type":"response","delta":" |\n"}
+
+event:message
+data:{"type":"response","delta":"|"}
+
+event:message
+data:{"type":"response","delta":" **"}
+
+event:message
+data:{"type":"response","delta":"实时"}
+
+event:message
+data:{"type":"response","delta":"聊天"}
+
+event:message
+data:{"type":"response","delta":"**"}
+
+event:message
+data:{"type":"response","delta":" |"}
+
+event:message
+data:{"type":"response","delta":" Web"}
+
+event:message
+data:{"type":"response","delta":"Socket"}
+
+event:message
+data:{"type":"response","delta":" |"}
+
+event:message
+data:{"type":"response","delta":" "}
+
+event:message
+data:{"type":"response","delta":"需要"}
+
+event:message
+data:{"type":"response","delta":"双向"}
+
+event:message
+data:{"type":"response","delta":"通信"}
+
+event:message
+data:{"type":"response","delta":" |\n"}
+
+event:message
+data:{"type":"response","delta":"|"}
+
+event:message
+data:{"type":"response","delta":" **"}
+
+event:message
+data:{"type":"response","delta":"在线"}
+
+event:message
+data:{"type":"response","delta":"游戏"}
+
+event:message
+data:{"type":"response","delta":"**"}
+
+event:message
+data:{"type":"response","delta":" |"}
+
+event:message
+data:{"type":"response","delta":" Web"}
+
+event:message
+data:{"type":"response","delta":"Socket"}
+
+event:message
+data:{"type":"response","delta":" |"}
+
+event:message
+data:{"type":"response","delta":" "}
+
+event:message
+data:{"type":"response","delta":"低"}
+
+event:message
+data:{"type":"response","delta":"延迟"}
+
+event:message
+data:{"type":"response","delta":"，"}
+
+event:message
+data:{"type":"response","delta":"双向"}
+
+event:message
+data:{"type":"response","delta":"通信"}
+
+event:message
+data:{"type":"response","delta":" |\n"}
+
+event:message
+data:{"type":"response","delta":"|"}
+
+event:message
+data:{"type":"response","delta":" **"}
+
+event:message
+data:{"type":"response","delta":"股票"}
+
+event:message
+data:{"type":"response","delta":"行情"}
+
+event:message
+data:{"type":"response","delta":"**"}
+
+event:message
+data:{"type":"response","delta":" |"}
+
+event:message
+data:{"type":"response","delta":" SSE"}
+
+event:message
+data:{"type":"response","delta":" |"}
+
+event:message
+data:{"type":"response","delta":" "}
+
+event:message
+data:{"type":"response","delta":"单向"}
+
+event:message
+data:{"type":"response","delta":"推送"}
+
+event:message
+data:{"type":"response","delta":"，"}
+
+event:message
+data:{"type":"response","delta":"简单"}
+
+event:message
+data:{"type":"response","delta":"可靠"}
+
+event:message
+data:{"type":"response","delta":" |\n\n"}
+
+event:message
+data:{"type":"response","delta":"---\n\n"}
+
+event:message
+data:{"type":"response","delta":"###"}
+
+event:message
+data:{"type":"response","delta":" "}
+
+event:message
+data:{"type":"response","delta":"5"}
+
+event:message
+data:{"type":"response","delta":"."}
+
+event:message
+data:{"type":"response","delta":" "}
+
+event:message
+data:{"type":"response","delta":"常见"}
+
+event:message
+data:{"type":"response","delta":"问题"}
+
+event:message
+data:{"type":"response","delta":"与"}
+
+event:message
+data:{"type":"response","delta":"解决方案"}
+
+event:message
+data:{"type":"response","delta":"\n\n"}
+
+event:message
+data:{"type":"response","delta":"|"}
+
+event:message
+data:{"type":"response","delta":" "}
+
+event:message
+data:{"type":"response","delta":"问题"}
+
+event:message
+data:{"type":"response","delta":" |"}
+
+event:message
+data:{"type":"response","delta":" "}
+
+event:message
+data:{"type":"response","delta":"原因"}
+
+event:message
+data:{"type":"response","delta":" |"}
+
+event:message
+data:{"type":"response","delta":" "}
+
+event:message
+data:{"type":"response","delta":"解决方案"}
+
+event:message
+data:{"type":"response","delta":" |\n"}
+
+event:message
+data:{"type":"response","delta":"|"}
+
+event:message
+data:{"type":"response","delta":"------"}
+
+event:message
+data:{"type":"response","delta":"|"}
+
+event:message
+data:{"type":"response","delta":"------"}
+
+event:message
+data:{"type":"response","delta":"|"}
+
+event:message
+data:{"type":"response","delta":"----------"}
+
+event:message
+data:{"type":"response","delta":"|\n"}
+
+event:message
+data:{"type":"response","delta":"|"}
+
+event:message
+data:{"type":"response","delta":" **"}
+
+event:message
+data:{"type":"response","delta":"连接"}
+
+event:message
+data:{"type":"response","delta":"频繁"}
+
+event:message
+data:{"type":"response","delta":"断开"}
+
+event:message
+data:{"type":"response","delta":"**"}
+
+event:message
+data:{"type":"response","delta":" |"}
+
+event:message
+data:{"type":"response","delta":" N"}
+
+event:message
+data:{"type":"response","delta":"ginx"}
+
+event:message
+data:{"type":"response","delta":"超"}
+
+event:message
+data:{"type":"response","delta":"时"}
+
+event:message
+data:{"type":"response","delta":"配置"}
+
+event:message
+data:{"type":"response","delta":" |"}
+
+event:message
+data:{"type":"response","delta":" "}
+
+event:message
+data:{"type":"response","delta":"增加"}
+
+event:message
+data:{"type":"response","delta":" `"}
+
+event:message
+data:{"type":"response","delta":"proxy"}
+
+event:message
+data:{"type":"response","delta":"_read"}
+
+event:message
+data:{"type":"response","delta":"_time"}
+
+event:message
+data:{"type":"response","delta":"out"}
+
+event:message
+data:{"type":"response","delta":"`"}
+
+event:message
+data:{"type":"response","delta":" |\n"}
+
+event:message
+data:{"type":"response","delta":"|"}
+
+event:message
+data:{"type":"response","delta":" **"}
+
+event:message
+data:{"type":"response","delta":"内存"}
+
+event:message
+data:{"type":"response","delta":"泄漏"}
+
+event:message
+data:{"type":"response","delta":"**"}
+
+event:message
+data:{"type":"response","delta":" |"}
+
+event:message
+data:{"type":"response","delta":" "}
+
+event:message
+data:{"type":"response","delta":"未"}
+
+event:message
+data:{"type":"response","delta":"清理"}
+
+event:message
+data:{"type":"response","delta":"死"}
+
+event:message
+data:{"type":"response","delta":"连接"}
+
+event:message
+data:{"type":"response","delta":" |"}
+
+event:message
+data:{"type":"response","delta":" "}
+
+event:message
+data:{"type":"response","delta":"使用"}
+
+event:message
+data:{"type":"response","delta":"连接"}
+
+event:message
+data:{"type":"response","delta":"管理器"}
+
+event:message
+data:{"type":"response","delta":" +"}
+
+event:message
+data:{"type":"response","delta":" "}
+
+event:message
+data:{"type":"response","delta":"心跳"}
+
+event:message
+data:{"type":"response","delta":"检测"}
+
+event:message
+data:{"type":"response","delta":" |\n"}
+
+event:message
+data:{"type":"response","delta":"|"}
+
+event:message
+data:{"type":"response","delta":" **"}
+
+event:message
+data:{"type":"response","delta":"数据"}
+
+event:message
+data:{"type":"response","delta":"丢失"}
+
+event:message
+data:{"type":"response","delta":"**"}
+
+event:message
+data:{"type":"response","delta":" |"}
+
+event:message
+data:{"type":"response","delta":" "}
+
+event:message
+data:{"type":"response","delta":"推送"}
+
+event:message
+data:{"type":"response","delta":"时"}
+
+event:message
+data:{"type":"response","delta":"连接"}
+
+event:message
+data:{"type":"response","delta":"断开"}
+
+event:message
+data:{"type":"response","delta":" |"}
+
+event:message
+data:{"type":"response","delta":" "}
+
+event:message
+data:{"type":"response","delta":"实现"}
+
+event:message
+data:{"type":"response","delta":"重"}
+
+event:message
+data:{"type":"response","delta":"试"}
+
+event:message
+data:{"type":"response","delta":"机制"}
+
+event:message
+data:{"type":"response","delta":"或"}
+
+event:message
+data:{"type":"response","delta":"消息"}
+
+event:message
+data:{"type":"response","delta":"队列"}
+
+event:message
+data:{"type":"response","delta":" |\n"}
+
+event:message
+data:{"type":"response","delta":"|"}
+
+event:message
+data:{"type":"response","delta":" **"}
+
+event:message
+data:{"type":"response","delta":"浏览器"}
+
+event:message
+data:{"type":"response","delta":"连接"}
+
+event:message
+data:{"type":"response","delta":"数"}
+
+event:message
+data:{"type":"response","delta":"限制"}
+
+event:message
+data:{"type":"response","delta":"**"}
+
+event:message
+data:{"type":"response","delta":" |"}
+
+event:message
+data:{"type":"response","delta":" "}
+
+event:message
+data:{"type":"response","delta":"同"}
+
+event:message
+data:{"type":"response","delta":"域名"}
+
+event:message
+data:{"type":"response","delta":"限制"}
+
+event:message
+data:{"type":"response","delta":"6"}
+
+event:message
+data:{"type":"response","delta":"-"}
+
+event:message
+data:{"type":"response","delta":"8"}
+
+event:message
+data:{"type":"response","delta":"个"}
+
+event:message
+data:{"type":"response","delta":" |"}
+
+event:message
+data:{"type":"response","delta":" "}
+
+event:message
+data:{"type":"response","delta":"使用"}
+
+event:message
+data:{"type":"response","delta":"HTTP"}
+
+event:message
+data:{"type":"response","delta":"/"}
+
+event:message
+data:{"type":"response","delta":"2"}
+
+event:message
+data:{"type":"response","delta":"或"}
+
+event:message
+data:{"type":"response","delta":"子"}
+
+event:message
+data:{"type":"response","delta":"域名"}
+
+event:message
+data:{"type":"response","delta":"分流"}
+
+event:message
+data:{"type":"response","delta":" |\n"}
+
+event:message
+data:{"type":"response","delta":"|"}
+
+event:message
+data:{"type":"response","delta":" **"}
+
+event:message
+data:{"type":"response","delta":"跨"}
+
+event:message
+data:{"type":"response","delta":"域"}
+
+event:message
+data:{"type":"response","delta":"问题"}
+
+event:message
+data:{"type":"response","delta":"**"}
+
+event:message
+data:{"type":"response","delta":" |"}
+
+event:message
+data:{"type":"response","delta":" "}
+
+event:message
+data:{"type":"response","delta":"浏览器"}
+
+event:message
+data:{"type":"response","delta":"安全"}
+
+event:message
+data:{"type":"response","delta":"策略"}
+
+event:message
+data:{"type":"response","delta":" |"}
+
+event:message
+data:{"type":"response","delta":" "}
+
+event:message
+data:{"type":"response","delta":"配置"}
+
+event:message
+data:{"type":"response","delta":"C"}
+
+event:message
+data:{"type":"response","delta":"ORS"}
+
+event:message
+data:{"type":"response","delta":" |\n\n"}
+
+event:message
+data:{"type":"response","delta":"---\n\n"}
+
+event:message
+data:{"type":"response","delta":"###"}
+
+event:message
+data:{"type":"response","delta":" "}
+
+event:message
+data:{"type":"response","delta":"6"}
+
+event:message
+data:{"type":"response","delta":"."}
+
+event:message
+data:{"type":"response","delta":" "}
+
+event:message
+data:{"type":"response","delta":"总结"}
+
+event:message
+data:{"type":"response","delta":"\n\n"}
+
+event:message
+data:{"type":"response","delta":"**"}
+
+event:message
+data:{"type":"response","delta":"核心"}
+
+event:message
+data:{"type":"response","delta":"要点"}
+
+event:message
+data:{"type":"response","delta":"："}
+
+event:message
+data:{"type":"response","delta":"**\n"}
+
+event:message
+data:{"type":"response","delta":"1"}
+
+event:message
+data:{"type":"response","delta":"."}
+
+event:message
+data:{"type":"response","delta":" **"}
+
+event:message
+data:{"type":"response","delta":"连接"}
+
+event:message
+data:{"type":"response","delta":"管理"}
+
+event:message
+data:{"type":"response","delta":"**"}
+
+event:message
+data:{"type":"response","delta":"："}
+
+event:message
+data:{"type":"response","delta":"使用"}
+
+event:message
+data:{"type":"response","delta":"连接"}
+
+event:message
+data:{"type":"response","delta":"管理器"}
+
+event:message
+data:{"type":"response","delta":"统一"}
+
+event:message
+data:{"type":"response","delta":"管理"}
+
+event:message
+data:{"type":"response","delta":"S"}
+
+event:message
+data:{"type":"response","delta":"se"}
+
+event:message
+data:{"type":"response","delta":"Emitter"}
+
+event:message
+data:{"type":"response","delta":"，"}
+
+event:message
+data:{"type":"response","delta":"避免"}
+
+event:message
+data:{"type":"response","delta":"内存"}
+
+event:message
+data:{"type":"response","delta":"泄漏"}
+
+event:message
+data:{"type":"response","delta":"\n"}
+
+event:message
+data:{"type":"response","delta":"2"}
+
+event:message
+data:{"type":"response","delta":"."}
+
+event:message
+data:{"type":"response","delta":" **"}
+
+event:message
+data:{"type":"response","delta":"心跳"}
+
+event:message
+data:{"type":"response","delta":"机制"}
+
+event:message
+data:{"type":"response","delta":"**"}
+
+event:message
+data:{"type":"response","delta":"："}
+
+event:message
+data:{"type":"response","delta":"30"}
+
+event:message
+data:{"type":"response","delta":"秒"}
+
+event:message
+data:{"type":"response","delta":"心跳"}
+
+event:message
+data:{"type":"response","delta":"保持"}
+
+event:message
+data:{"type":"response","delta":"连接"}
+
+event:message
+data:{"type":"response","delta":"活跃"}
+
+event:message
+data:{"type":"response","delta":"，"}
+
+event:message
+data:{"type":"response","delta":"自动"}
+
+event:message
+data:{"type":"response","delta":"清理"}
+
+event:message
+data:{"type":"response","delta":"死"}
+
+event:message
+data:{"type":"response","delta":"连接"}
+
+event:message
+data:{"type":"response","delta":"\n"}
+
+event:message
+data:{"type":"response","delta":"3"}
+
+event:message
+data:{"type":"response","delta":"."}
+
+event:message
+data:{"type":"response","delta":" **"}
+
+event:message
+data:{"type":"response","delta":"自动"}
+
+event:message
+data:{"type":"response","delta":"重"}
+
+event:message
+data:{"type":"response","delta":"连"}
+
+event:message
+data:{"type":"response","delta":"**"}
+
+event:message
+data:{"type":"response","delta":"："}
+
+event:message
+data:{"type":"response","delta":"利用"}
+
+event:message
+data:{"type":"response","delta":"浏览器"}
+
+event:message
+data:{"type":"response","delta":"内置"}
+
+event:message
+data:{"type":"response","delta":"重"}
+
+event:message
+data:{"type":"response","delta":"连"}
+
+event:message
+data:{"type":"response","delta":"机制"}
+
+event:message
+data:{"type":"response","delta":" +"}
+
+event:message
+data:{"type":"response","delta":" "}
+
+event:message
+data:{"type":"response","delta":"服务"}
+
+event:message
+data:{"type":"response","delta":"端"}
+
+event:message
+data:{"type":"response","delta":"Ret"}
+
+event:message
+data:{"type":"response","delta":"ry"}
+
+event:message
+data:{"type":"response","delta":"控制"}
+
+event:message
+data:{"type":"response","delta":"\n"}
+
+event:message
+data:{"type":"response","delta":"4"}
+
+event:message
+data:{"type":"response","delta":"."}
+
+event:message
+data:{"type":"response","delta":" **"}
+
+event:message
+data:{"type":"response","delta":"消息"}
+
+event:message
+data:{"type":"response","delta":"格式"}
+
+event:message
+data:{"type":"response","delta":"**"}
+
+event:message
+data:{"type":"response","delta":"："}
+
+event:message
+data:{"type":"response","delta":"统一"}
+
+event:message
+data:{"type":"response","delta":"JSON"}
+
+event:message
+data:{"type":"response","delta":"格式"}
+
+event:message
+data:{"type":"response","delta":"，"}
+
+event:message
+data:{"type":"response","delta":"使用"}
+
+event:message
+data:{"type":"response","delta":"事件"}
+
+event:message
+data:{"type":"response","delta":"名"}
+
+event:message
+data:{"type":"response","delta":"区分"}
+
+event:message
+data:{"type":"response","delta":"业务"}
+
+event:message
+data:{"type":"response","delta":"类型"}
+
+event:message
+data:{"type":"response","delta":"\n"}
+
+event:message
+data:{"type":"response","delta":"5"}
+
+event:message
+data:{"type":"response","delta":"."}
+
+event:message
+data:{"type":"response","delta":" **"}
+
+event:message
+data:{"type":"response","delta":"性能"}
+
+event:message
+data:{"type":"response","delta":"优化"}
+
+event:message
+data:{"type":"response","delta":"**"}
+
+event:message
+data:{"type":"response","delta":"："}
+
+event:message
+data:{"type":"response","delta":"关闭"}
+
+event:message
+data:{"type":"response","delta":"N"}
+
+event:message
+data:{"type":"response","delta":"ginx"}
+
+event:message
+data:{"type":"response","delta":"缓冲"}
+
+event:message
+data:{"type":"response","delta":"，"}
+
+event:message
+data:{"type":"response","delta":"启用"}
+
+event:message
+data:{"type":"response","delta":"压缩"}
+
+event:message
+data:{"type":"response","delta":"，"}
+
+event:message
+data:{"type":"response","delta":"合理"}
+
+event:message
+data:{"type":"response","delta":"设置"}
+
+event:message
+data:{"type":"response","delta":"超"}
+
+event:message
+data:{"type":"response","delta":"时"}
+
+event:message
+data:{"type":"response","delta":"\n"}
+
+event:message
+data:{"type":"response","delta":"6"}
+
+event:message
+data:{"type":"response","delta":"."}
+
+event:message
+data:{"type":"response","delta":" **"}
+
+event:message
+data:{"type":"response","delta":"安全"}
+
+event:message
+data:{"type":"response","delta":"认证"}
+
+event:message
+data:{"type":"response","delta":"**"}
+
+event:message
+data:{"type":"response","delta":"："}
+
+event:message
+data:{"type":"response","delta":"通过"}
+
+event:message
+data:{"type":"response","delta":"Token"}
+
+event:message
+data:{"type":"response","delta":"/S"}
+
+event:message
+data:{"type":"response","delta":"ession"}
+
+event:message
+data:{"type":"response","delta":"验证"}
+
+event:message
+data:{"type":"response","delta":"，"}
+
+event:message
+data:{"type":"response","delta":"SS"}
+
+event:message
+data:{"type":"response","delta":"E"}
+
+event:message
+data:{"type":"response","delta":"不支持"}
+
+event:message
+data:{"type":"response","delta":"自定义"}
+
+event:message
+data:{"type":"response","delta":"Header"}
+
+event:message
+data:{"type":"response","delta":"\n\n"}
+
+event:message
+data:{"type":"response","delta":"**"}
+
+event:message
+data:{"type":"response","delta":"Spring"}
+
+event:message
+data:{"type":"response","delta":" Boot"}
+
+event:message
+data:{"type":"response","delta":" SSE"}
+
+event:message
+data:{"type":"response","delta":"是"}
+
+event:message
+data:{"type":"response","delta":"单向"}
+
+event:message
+data:{"type":"response","delta":"实时"}
+
+event:message
+data:{"type":"response","delta":"推送"}
+
+event:message
+data:{"type":"response","delta":"的最佳"}
+
+event:message
+data:{"type":"response","delta":"选择"}
+
+event:message
+data:{"type":"response","delta":"**"}
+
+event:message
+data:{"type":"response","delta":"，"}
+
+event:message
+data:{"type":"response","delta":"在"}
+
+event:message
+data:{"type":"response","delta":"大多数"}
+
+event:message
+data:{"type":"response","delta":"通知"}
+
+event:message
+data:{"type":"response","delta":"、"}
+
+event:message
+data:{"type":"response","delta":"日志"}
+
+event:message
+data:{"type":"response","delta":"、"}
+
+event:message
+data:{"type":"response","delta":"进度"}
+
+event:message
+data:{"type":"response","delta":"场景"}
+
+event:message
+data:{"type":"response","delta":"中"}
+
+event:message
+data:{"type":"response","delta":"，"}
+
+event:message
+data:{"type":"response","delta":"比"}
+
+event:message
+data:{"type":"response","delta":"Web"}
+
+event:message
+data:{"type":"response","delta":"Socket"}
+
+event:message
+data:{"type":"response","delta":"更"}
+
+event:message
+data:{"type":"response","delta":"轻"}
+
+event:message
+data:{"type":"response","delta":"量"}
+
+event:message
+data:{"type":"response","delta":"、"}
+
+event:message
+data:{"type":"response","delta":"更"}
+
+event:message
+data:{"type":"response","delta":"易"}
+
+event:message
+data:{"type":"response","delta":"用"}
+
+event:message
+data:{"type":"response","delta":"。"}
+
+event:finish
+data:{"conversationId":2001,"content":"我来为您全面总结**Spring Boot SSE（Server-Sent Events）最佳实践**。\n\n---\n\n## Spring Boot SSE 最佳实践 完整总结\n\n### 1. 技术概述\n\nSSE（Server-Sent Events）是**基于HTTP的服务器主动推送技术**，允许服务器单向向客户端发送实时数据。相比WebSocket，SSE更轻量、更简单，**适合通知推送、日志流、进度更新等场景**。\n\n---\n\n### 2. 核心实现方式\n\n#### 2.1 基础服务端实现（SseEmitter）\n\n```java\n@RestController\npublic class SSEController {\n    \n    @GetMapping(\"/events\")\n    public SseEmitter streamEvents() {\n        SseEmitter emitter = new SseEmitter(1800000L); // 30分钟超时\n        \n        Executors.newSingleThreadExecutor().execute(() -> {\n            try {\n                for (int i = 0; i < 10; i++) {\n                    emitter.send(SseEmitter.event()\n                        .name(\"message\")\n                        .id(String.valueOf(i))\n                        .data(\"Event \" + i)\n                        .reconnectTime(3000)); // 重连间隔3秒\n                    Thread.sleep(1000);\n                }\n                emitter.complete();\n            } catch (Exception e) {\n                emitter.completeWithError(e);\n            }\n        });\n        \n        return emitter;\n    }\n}\n```\n\n#### 2.2 客户端实现（JavaScript）\n\n```javascript\nconst eventSource = new EventSource('/events');\n\neventSource.addEventListener('message', (event) => {\n    console.log('收到消息:', event.data);\n    console.log('事件ID:', event.lastEventId);\n});\n\neventSource.onerror = (error) => {\n    console.error('连接错误，准备自动重连...');\n    // 浏览器会自动重连\n};\n```\n\n---\n\n### 3. 最佳实践详解\n\n#### 3.1 连接管理器（核心实践）\n\n```java\n@Component\npublic class SSEConnectionManager {\n    private final ConcurrentHashMap<String, SseEmitter> emitters = new ConcurrentHashMap<>();\n    private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(2);\n    \n    @PostConstruct\n    public void startHeartbeat() {\n        scheduler.scheduleAtFixedRate(this::sendHeartbeat, 10, 30, TimeUnit.SECONDS);\n    }\n    \n    public SseEmitter createConnection(String userId) {\n        removeConnection(userId);\n        \n        SseEmitter emitter = new SseEmitter(1800000L);\n        \n        emitter.onCompletion(() -> removeConnection(userId));\n        emitter.onTimeout(() -> removeConnection(userId));\n        emitter.onError(e -> {\n            removeConnection(userId);\n            log.error(\"SSE连接异常: {}\", userId, e);\n        });\n        \n        emitters.put(userId, emitter);\n        return emitter;\n    }\n    \n    public void sendToUser(String userId, String eventName, Object data) {\n        SseEmitter emitter = emitters.get(userId);\n        if (emitter != null) {\n            try {\n                emitter.send(SseEmitter.event()\n                    .name(eventName)\n                    .data(objectMapper.writeValueAsString(data)));\n            } catch (IOException e) {\n                removeConnection(userId);\n            }\n        }\n    }\n    \n    private void sendHeartbeat() {\n        List<String> deadConnections = new ArrayList<>();\n        emitters.forEach((userId, emitter) -> {\n            try {\n                emitter.send(SseEmitter.event()\n                    .name(\"heartbeat\")\n                    .data(\"ping\"));\n            } catch (IOException e) {\n                deadConnections.add(userId);\n            }\n        });\n        deadConnections.forEach(this::removeConnection);\n    }\n    \n    public void removeConnection(String userId) {\n        SseEmitter emitter = emitters.remove(userId);\n        if (emitter != null) {\n            emitter.complete();\n        }\n    }\n    \n    @PreDestroy\n    public void cleanUp() {\n        emitters.forEach((id, emitter) -> emitter.complete());\n        emitters.clear();\n        scheduler.shutdown();\n    }\n}\n```\n\n#### 3.2 消息推送服务\n\n```java\n@Service\npublic class NotificationService {\n    @Autowired\n    private SSEConnectionManager connectionManager;\n    \n    public void notifyOrderUpdate(Order order) {\n        EventMessage message = new EventMessage(\n            \"order_update\",\n            order.getStatus(),\n            LocalDateTime.now()\n        );\n        connectionManager.sendToUser(\n            order.getUserId().toString(),\n            \"order\",\n            message\n        );\n    }\n}\n\n@Data\n@AllArgsConstructor\npublic class EventMessage {\n    private String type;\n    private String content;\n    private LocalDateTime timestamp;\n}\n```\n\n#### 3.3 安全认证配置\n\n```java\n@RestController\npublic class SecureSSEController {\n    \n    @GetMapping(\"/secure-events\")\n    public SseEmitter authenticatedEvents(@RequestParam String token) {\n        // 验证Token\n        if (!tokenService.validate(token)) {\n            throw new UnauthorizedException(\"无效的Token\");\n        }\n        \n        String userId = tokenService.getUserId(token);\n        return connectionManager.createConnection(userId);\n    }\n}\n```\n\n#### 3.4 Nginx反向代理配置\n\n```nginx\nserver {\n    listen 443 ssl;\n    server_name example.com;\n    \n    location /events {\n        proxy_pass http://localhost:8080;\n        \n        proxy_buffering off;\n        proxy_cache off;\n        chunked_transfer_encoding on;\n        \n        proxy_read_timeout 86400s;  # 24小时\n        proxy_connect_timeout 5s;\n        proxy_send_timeout 86400s;\n        \n        proxy_set_header Connection '';\n        proxy_http_version 1.1;\n        \n        proxy_set_header X-Real-IP $remote_addr;\n        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n        proxy_set_header Host $host;\n    }\n}\n```\n\n#### 3.5 性能配置\n\n```yaml\n# application.yml\nserver:\n  compression:\n    enabled: true\n    mime-types: text/event-stream, application/json\n  tomcat:\n    max-connections: 10000\n    threads:\n      max: 200\n      min-spare: 20\n\nspring:\n  task:\n    execution:\n      pool:\n        core-size: 10\n        max-size: 50\n        queue-capacity: 100\n```\n\n---\n\n### 4. 适用场景对比\n\n| 场景 | 推荐方案 | 原因 |\n|------|----------|------|\n| **实时通知**（订单、告警） | SSE | 简单，自动重连，成本低 |\n| **日志流** | SSE | 单向推送，天然适合 |\n| **数据大屏** | SSE | 服务器主动推送更新 |\n| **文件上传进度** | SSE | 实时反馈进度 |\n| **实时聊天** | WebSocket | 需要双向通信 |\n| **在线游戏** | WebSocket | 低延迟，双向通信 |\n| **股票行情** | SSE | 单向推送，简单可靠 |\n\n---\n\n### 5. 常见问题与解决方案\n\n| 问题 | 原因 | 解决方案 |\n|------|------|----------|\n| **连接频繁断开** | Nginx超时配置 | 增加 `proxy_read_timeout` |\n| **内存泄漏** | 未清理死连接 | 使用连接管理器 + 心跳检测 |\n| **数据丢失** | 推送时连接断开 | 实现重试机制或消息队列 |\n| **浏览器连接数限制** | 同域名限制6-8个 | 使用HTTP/2或子域名分流 |\n| **跨域问题** | 浏览器安全策略 | 配置CORS |\n\n---\n\n### 6. 总结\n\n**核心要点：**\n1. **连接管理**：使用连接管理器统一管理SseEmitter，避免内存泄漏\n2. **心跳机制**：30秒心跳保持连接活跃，自动清理死连接\n3. **自动重连**：利用浏览器内置重连机制 + 服务端Retry控制\n4. **消息格式**：统一JSON格式，使用事件名区分业务类型\n5. **性能优化**：关闭Nginx缓冲，启用压缩，合理设置超时\n6. **安全认证**：通过Token/Session验证，SSE不支持自定义Header\n\n**Spring Boot SSE是单向实时推送的最佳选择**，在大多数通知、日志、进度场景中，比WebSocket更轻量、更易用。","title":"Default Demo Conversation"}
+
+event:done
+data:{"conversationId":2001}
+

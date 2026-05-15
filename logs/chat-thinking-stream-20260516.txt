@@ -1,0 +1,483 @@
+﻿event:meta
+data:{"deepThinking":false,"conversationId":"2055337874475741184"}
+
+event:step
+data:{"stepTitle":"搜索资料","sequenceNo":"1","content":"OA系统","runId":"2055337874555432960","id":"2055337888627322880","stepType":"search","stepStatus":"COMPLETED"}
+
+event:artifact
+data:{"storagePath":"D:/code/CodingX/backend/target/classes/artifacts/2055337874475741184/search-report.docx","preview":"搜索结果整理中","name":"search-report.docx","conversationId":"2055337874475741184","mimeType":"application/vnd.openxmlformats-officedocument.wordprocessingml.document","runId":"2055337874555432960","artifactType":"docx","messageId":"2055337875662729216","id":"2055337888828649472"}
+
+event:message
+data:{"delta":"OA","type":"response"}
+
+event:message
+data:{"delta":" 系统（","type":"response"}
+
+event:message
+data:{"delta":"Office","type":"response"}
+
+event:message
+data:{"delta":" Automation System，办公","type":"response"}
+
+event:message
+data:{"delta":"自动化系统）是一种","type":"response"}
+
+event:message
+data:{"delta":"利用信息技术（如计算机、","type":"response"}
+
+event:message
+data:{"delta":"网络、数据库、流程","type":"response"}
+
+event:message
+data:{"delta":"引擎等）来","type":"response"}
+
+event:message
+data:{"delta":"支持和优化组织","type":"response"}
+
+event:message
+data:{"delta":"内部日常办公活动","type":"response"}
+
+event:message
+data:{"delta":"的综合管理软件系统。","type":"response"}
+
+event:message
+data:{"delta":"其核心目标是**","type":"response"}
+
+event:message
+data:{"delta":"提升办公效率、","type":"response"}
+
+event:message
+data:{"delta":"规范业务流程、加强","type":"response"}
+
+event:message
+data:{"delta":"信息共享、降低","type":"response"}
+
+event:message
+data:{"delta":"沟通成本、实现无","type":"response"}
+
+event:message
+data:{"delta":"纸化与可","type":"response"}
+
+event:message
+data:{"delta":"追溯管理**。\n\n","type":"response"}
+
+event:message
+data:{"delta":"---\n\n### 一、OA","type":"response"}
+
+event:message
+data:{"delta":" 系统的核心功能","type":"response"}
+
+event:message
+data:{"delta":"\n\n1. **","type":"response"}
+
+event:message
+data:{"delta":"协同办公**\n   -","type":"response"}
+
+event:message
+data:{"delta":" 公文管理：","type":"response"}
+
+event:message
+data:{"delta":"收文、发文","type":"response"}
+
+event:message
+data:{"delta":"、签报、公","type":"response"}
+
+event:message
+data:{"delta":"文流转、电子","type":"response"}
+
+event:message
+data:{"delta":"签章、归","type":"response"}
+
+event:message
+data:{"delta":"档；\n   - 日","type":"response"}
+
+event:message
+data:{"delta":"常事务：请","type":"response"}
+
+event:message
+data:{"delta":"休假、出差、","type":"response"}
+
+event:message
+data:{"delta":"加班、用印","type":"response"}
+
+event:message
+data:{"delta":"、车辆/会议室","type":"response"}
+
+event:message
+data:{"delta":"预约等在线审批；\n  ","type":"response"}
+
+event:message
+data:{"delta":" - 待办","type":"response"}
+
+event:message
+data:{"delta":"中心：统一聚合","type":"response"}
+
+event:message
+data:{"delta":"待审批、待","type":"response"}
+
+event:message
+data:{"delta":"阅、待处理","type":"response"}
+
+event:message
+data:{"delta":"事项，支持移动","type":"response"}
+
+event:message
+data:{"delta":"提醒。\n\n2. **流程","type":"response"}
+
+event:message
+data:{"delta":"自动化（BPM）**\n","type":"response"}
+
+event:message
+data:{"delta":"   - 可视化","type":"response"}
+
+event:message
+data:{"delta":"流程设计器，支持自","type":"response"}
+
+event:message
+data:{"delta":"定义审批流（如“","type":"response"}
+
+event:message
+data:{"delta":"部门负责人→分管","type":"response"}
+
+event:message
+data:{"delta":"领导→总经理”多","type":"response"}
+
+event:message
+data:{"delta":"级会签）；\n  ","type":"response"}
+
+event:message
+data:{"delta":" - 支持条件","type":"response"}
+
+event:message
+data:{"delta":"分支、并行审批","type":"response"}
+
+event:message
+data:{"delta":"、退回重审","type":"response"}
+
+event:message
+data:{"delta":"、加签、催","type":"response"}
+
+event:message
+data:{"delta":"办、超时自动","type":"response"}
+
+event:message
+data:{"delta":"升级等逻辑；\n   -","type":"response"}
+
+event:message
+data:{"delta":" 全流程留","type":"response"}
+
+event:message
+data:{"delta":"痕，操作可审计","type":"response"}
+
+event:message
+data:{"delta":"、可追溯。\n\n3.","type":"response"}
+
+event:message
+data:{"delta":" **信息门户与知识","type":"response"}
+
+event:message
+data:{"delta":"管理**\n   -","type":"response"}
+
+event:message
+data:{"delta":" 企业门户（In","type":"response"}
+
+event:message
+data:{"delta":"tranet）：集成","type":"response"}
+
+event:message
+data:{"delta":"新闻公告、政策","type":"response"}
+
+event:message
+data:{"delta":"制度、通知通告","type":"response"}
+
+event:message
+data:{"delta":"、员工风采等","type":"response"}
+
+event:message
+data:{"delta":"；\n   -","type":"response"}
+
+event:message
+data:{"delta":" 知识库：文档","type":"response"}
+
+event:message
+data:{"delta":"分类存储、版本","type":"response"}
+
+event:message
+data:{"delta":"控制、权限管控","type":"response"}
+
+event:message
+data:{"delta":"、全文检索、在线","type":"response"}
+
+event:message
+data:{"delta":"预览/协作","type":"response"}
+
+event:message
+data:{"delta":"编辑（如集成","type":"response"}
+
+event:message
+data:{"delta":"WPS或Office","type":"response"}
+
+event:message
+data:{"delta":" Online）；\n  ","type":"response"}
+
+event:message
+data:{"delta":" - 员工自助","type":"response"}
+
+event:message
+data:{"delta":"服务（ESS）：查看","type":"response"}
+
+event:message
+data:{"delta":"个人信息、薪资条","type":"response"}
+
+event:message
+data:{"delta":"、合同、培训","type":"response"}
+
+event:message
+data:{"delta":"记录等。\n\n4","type":"response"}
+
+event:message
+data:{"delta":". **沟通协作","type":"response"}
+
+event:message
+data:{"delta":"工具**\n   -","type":"response"}
+
+event:message
+data:{"delta":" 即时通讯","type":"response"}
+
+event:message
+data:{"delta":"（IM）：组织","type":"response"}
+
+event:message
+data:{"delta":"架构内实时消息","type":"response"}
+
+event:message
+data:{"delta":"、群组讨论","type":"response"}
+
+event:message
+data:{"delta":"、已读回","type":"response"}
+
+event:message
+data:{"delta":"执；\n   -","type":"response"}
+
+event:message
+data:{"delta":" 视频会议/语音","type":"response"}
+
+event:message
+data:{"delta":"通话（部分集成或内置","type":"response"}
+
+event:message
+data:{"delta":"）；\n   - 任务","type":"response"}
+
+event:message
+data:{"delta":"协同：项目看","type":"response"}
+
+event:message
+data:{"delta":"板、任务分配、进度","type":"response"}
+
+event:message
+data:{"delta":"跟踪（轻量","type":"response"}
+
+event:message
+data:{"delta":"级项目管理）。\n\n5","type":"response"}
+
+event:message
+data:{"delta":". **移动办公","type":"response"}
+
+event:message
+data:{"delta":"（Mobile OA）**\n  ","type":"response"}
+
+event:message
+data:{"delta":" - 支持","type":"response"}
+
+event:message
+data:{"delta":"iOS/Android App","type":"response"}
+
+event:message
+data:{"delta":" 或微信/钉","type":"response"}
+
+event:message
+data:{"delta":"钉/飞书小程序","type":"response"}
+
+event:message
+data:{"delta":"；\n   - 实","type":"response"}
+
+event:message
+data:{"delta":"现“随时、","type":"response"}
+
+event:message
+data:{"delta":"随地、随","type":"response"}
+
+event:message
+data:{"delta":"需”审批、","type":"response"}
+
+event:message
+data:{"delta":"查阅、签字、汇报","type":"response"}
+
+event:message
+data:{"delta":"，大幅提升响应速度。\n\n6","type":"response"}
+
+event:message
+data:{"delta":". **集成与扩展","type":"response"}
+
+event:message
+data:{"delta":"能力**\n   -","type":"response"}
+
+event:message
+data:{"delta":" 标准接口（","type":"response"}
+
+event:message
+data:{"delta":"API/SDK）：与","type":"response"}
+
+event:message
+data:{"delta":"HR系统（如S","type":"response"}
+
+event:message
+data:{"delta":"AP SuccessFactors、北","type":"response"}
+
+event:message
+data:{"delta":"森）、ERP（","type":"response"}
+
+event:message
+data:{"delta":"如用友U","type":"response"}
+
+event:message
+data:{"delta":"8、金蝶K","type":"response"}
+
+event:message
+data:{"delta":"/3）、CRM、","type":"response"}
+
+event:message
+data:{"delta":"财务系统、档案","type":"response"}
+
+event:message
+data:{"delta":"系统等打通；\n   -","type":"response"}
+
+event:message
+data:{"delta":" 单点登录（SS","type":"response"}
+
+event:message
+data:{"delta":"O）：一次","type":"response"}
+
+event:message
+data:{"delta":"登录，全平台","type":"response"}
+
+event:message
+data:{"delta":"通行；\n   -","type":"response"}
+
+event:message
+data:{"delta":" 支持国产","type":"response"}
+
+event:message
+data:{"delta":"化适配（信","type":"response"}
+
+event:message
+data:{"delta":"创环境）：兼容","type":"response"}
+
+event:message
+data:{"delta":"麒麟、统信U","type":"response"}
+
+event:message
+data:{"delta":"OS操作系统，达","type":"response"}
+
+event:message
+data:{"delta":"梦、人大金","type":"response"}
+
+event:message
+data:{"delta":"仓数据库，东方","type":"response"}
+
+event:message
+data:{"delta":"通、金蝶","type":"response"}
+
+event:message
+data:{"delta":"天燕中间件等。\n\n","type":"response"}
+
+event:message
+data:{"delta":"---\n\n### 二、OA","type":"response"}
+
+event:message
+data:{"delta":" 系统的发展","type":"response"}
+
+event:message
+data:{"delta":"演进\n\n|","type":"response"}
+
+event:message
+data:{"delta":" 阶段 |","type":"response"}
+
+event:message
+data:{"delta":" 特征 | ","type":"response"}
+
+event:message
+data:{"delta":"代表形态 |\n|------","type":"response"}
+
+event:message
+data:{"delta":"|------|-----------|\n|","type":"response"}
+
+event:message
+data:{"delta":" 1.0","type":"response"}
+
+event:message
+data:{"delta":"（文书自动化） | ","type":"response"}
+
+event:message
+data:{"delta":"以电子公文、","type":"response"}
+
+event:message
+data:{"delta":"邮件、打印替代","type":"response"}
+
+event:message
+data:{"delta":"为主，功能单一 |","type":"response"}
+
+event:message
+data:{"delta":" 早期Lotus Notes","type":"response"}
+
+event:message
+data:{"delta":"、国产单机","type":"response"}
+
+event:message
+data:{"delta":"版OA |\n| 2","type":"response"}
+
+event:message
+data:{"delta":".0（流程","type":"response"}
+
+event:message
+data:{"delta":"驱动型） |","type":"response"}
+
+event:message
+data:{"delta":" 强调BPM引擎","type":"response"}
+
+event:message
+data:{"delta":"，固化审批流","type":"response"}
+
+event:message
+data:{"delta":"，注重合规与","type":"response"}
+
+event:message
+data:{"delta":"管控 | 泛","type":"response"}
+
+event:message
+data:{"delta":"微e-cology","type":"response"}
+
+event:message
+data:{"delta":"、致远A","type":"response"}
+
+event:message
+data:{"delta":"8、蓝凌","type":"response"}
+
+event:message
+data:{"delta":"MK-CRM |\n| ","type":"response"}
+
+event:message
+data:{"delta":"3.0（平台","type":"response"}
+
+event:message
+data:{"delta":"化+生态化","type":"response"}
+
+event:message
+data:{"delta":"） | 开放平台","type":"response"}
+
+event:message
+data:{"delta":"、低代码配置","type":"response"}
+
+event:message
+data:{"delta":"、深度集成、AI","type":"response"}
+

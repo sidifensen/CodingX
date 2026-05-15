@@ -25,7 +25,7 @@ export default defineConfig({
   server: {
     // 步骤：统一当前前端开发端口，便于与仓库约定保持一致。
     host: '0.0.0.0',
-    port: 5001,
+    port: 5002,
     // 步骤：在 AI Studio 指定禁用热更新时关闭 HMR，避免代理编辑期间页面闪烁。
     hmr: process.env.DISABLE_HMR !== 'true',
     // 步骤：在禁用 HMR 时同步关闭文件监听，减少编辑阶段的额外占用。

@@ -12,6 +12,7 @@ import { ViewType } from '../App';
 import { AuthSession } from '../types/auth';
 import ProfileMenu from './sidebar/ProfileMenu';
 import LoginEntry from './sidebar/LoginEntry';
+import { ConversationItem } from '../views/chat/types';
 
 /**
  * 定义 Sidebar 组件需要的输入属性。
@@ -27,6 +28,10 @@ interface SidebarProps {
   isAuthSubmitting: boolean;
   onOpenLogin: () => void;
   onLogout: () => Promise<void>;
+  conversations: ConversationItem[];
+  activeConversationId: number | null;
+  onSelectConversation: (conversationId: number) => Promise<void>;
+  onStartNewConversation: () => Promise<void>;
 }
 
 /**
@@ -43,6 +48,10 @@ export default function Sidebar({
   isAuthSubmitting,
   onOpenLogin,
   onLogout,
+  conversations,
+  activeConversationId,
+  onSelectConversation,
+  onStartNewConversation,
 }: SidebarProps) {
   const NavItem = ({
     id,
@@ -98,7 +107,7 @@ export default function Sidebar({
       <div className="px-5 mb-6">
         <button
           onClick={() => {
-            setActiveView('chat');
+            void onStartNewConversation();
             setIsMobileMenuOpen(false);
           }}
           className="w-full bg-background border border-border text-foreground hover:bg-surface-high py-3.5 rounded-2xl text-[15px] font-bold active:scale-95 transition-all flex items-center justify-center gap-2 shadow-sm"
@@ -119,42 +128,15 @@ export default function Sidebar({
       </nav>
 
       {/* History / Tasks */}
-      <div className="px-5 mb-2 font-mono text-[11px] text-muted tracking-widest uppercase">
-        今天
+      <div className="flex-1 overflow-y-auto pb-4">
+        {authSession ? (
+          <ConversationHistory
+            conversations={conversations}
+            activeConversationId={activeConversationId}
+            onSelectConversation={onSelectConversation}
+          />
+        ) : null}
       </div>
-      <nav className="px-3 mb-4 space-y-0.5">
-        <button className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-foreground bg-surface-container-high transition-colors group">
-          <span className="text-[14px] truncate pr-2 font-medium">量子力学是什么</span>
-          <div className="flex items-center gap-1 shrink-0">
-            <div className="w-1.5 h-1.5 rounded-full bg-primary mr-1"></div>
-            <MoreHorizontal size={14} className="text-muted hover:text-foreground" />
-          </div>
-        </button>
-      </nav>
-
-      <div className="px-5 mb-2 font-mono text-[11px] text-muted tracking-widest uppercase">
-        最近一周
-      </div>
-      <nav className="flex-1 px-3 space-y-[2px] overflow-y-auto pb-4 custom-scrollbar">
-        {[
-          'Lumina战略方向: 深色模式设...',
-          '了解Lynx浏览器',
-          '超级代理平台设计初稿总结',
-          '新时代社会矛盾及中国式现代化特...',
-          '国内AI算力卡市场份额分析',
-        ].map((task, i) => (
-          <button
-            key={i}
-            className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-muted hover:text-foreground hover:bg-surface-container transition-colors group"
-          >
-            <span className="text-[14px] truncate pr-2">{task}</span>
-            <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-              <div className="w-1.5 h-1.5 rounded-full bg-primary mr-1"></div>
-              <MoreHorizontal size={14} className="text-muted hover:text-foreground" />
-            </div>
-          </button>
-        ))}
-      </nav>
 
       {/* Footer actions */}
       {authSession ? (
@@ -170,4 +152,111 @@ export default function Sidebar({
       )}
     </aside>
   );
+}
+
+/**
+ * 按时间分组渲染真实会话历史，替换原有静态假数据列表。
+ */
+function ConversationHistory({
+  conversations,
+  activeConversationId,
+  onSelectConversation,
+}: {
+  conversations: ConversationItem[];
+  activeConversationId: number | null;
+  onSelectConversation: (conversationId: number) => Promise<void>;
+}) {
+  const sections = groupConversationsByTime(conversations);
+
+  return (
+    <>
+      {sections.map((section) => (
+        <div key={section.key}>
+          <div className="px-5 mb-2 font-mono text-[11px] text-muted tracking-widest uppercase">
+            {section.label}
+          </div>
+          {section.items.length ? (
+            <nav className="px-3 mb-4 space-y-[2px]">
+              {section.items.map((conversation) => {
+                const isActive = conversation.id === activeConversationId;
+                return (
+                  <button
+                    key={conversation.id}
+                    type="button"
+                    onClick={() => void onSelectConversation(conversation.id)}
+                    className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl transition-colors group ${
+                      isActive
+                        ? 'text-foreground bg-surface-container-high'
+                        : 'text-muted hover:text-foreground hover:bg-surface-container'
+                    }`}
+                  >
+                    <span className={`text-[14px] truncate pr-2 ${isActive ? 'font-medium' : ''}`}>{conversation.title}</span>
+                    <div className={`flex items-center gap-1 shrink-0 transition-opacity ${isActive ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
+                      <div className="w-1.5 h-1.5 rounded-full bg-primary mr-1"></div>
+                      <MoreHorizontal size={14} className="text-muted hover:text-foreground" />
+                    </div>
+                  </button>
+                );
+              })}
+            </nav>
+          ) : null}
+        </div>
+      ))}
+      {!conversations.length ? (
+        <div className="px-5 text-sm text-muted">
+          暂无真实会话
+        </div>
+      ) : null}
+    </>
+  );
+}
+
+/**
+ * 根据最近消息时间把真实会话分组到今天、最近七天和更早。
+ * @param conversations 当前用户真实会话列表。
+ * @returns Sidebar 所需分组结构。
+ */
+function groupConversationsByTime(conversations: ConversationItem[]) {
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const sevenDaysAgo = new Date(startOfToday);
+  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+  const sections = [
+    { key: 'today', label: '今天', items: [] as ConversationItem[] },
+    { key: 'recent', label: '最近七天', items: [] as ConversationItem[] },
+    { key: 'older', label: '更早', items: [] as ConversationItem[] },
+  ];
+
+  conversations.forEach((conversation) => {
+    const conversationDate = parseConversationDate(conversation.lastMessageAt);
+    if (conversationDate && conversationDate >= startOfToday) {
+      sections[0].items.push(conversation);
+      return;
+    }
+    if (conversationDate && conversationDate >= sevenDaysAgo) {
+      sections[1].items.push(conversation);
+      return;
+    }
+    sections[2].items.push(conversation);
+  });
+
+  return sections;
+}
+
+/**
+ * 解析后端返回的会话时间字符串，失败时返回 null 以便安全降级。
+ * @param value 后端返回的最近消息时间。
+ * @returns 可比较的 Date 或 null。
+ */
+function parseConversationDate(value?: string) {
+  if (!value) {
+    return null;
+  }
+  const normalizedValue = value.includes('T') ? value : value.replace(' ', 'T');
+  const nextDate = new Date(normalizedValue);
+  if (Number.isNaN(nextDate.getTime())) {
+    return null;
+  }
+  return nextDate;
 }

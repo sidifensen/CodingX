@@ -2,18 +2,19 @@ import React from 'react';
 import { motion } from 'motion/react';
 import {
   ArrowUp,
-  BookOpen,
   CheckCircle2,
   CircleStop,
+  Database,
   FileText,
-  FolderArchive,
   Globe2,
   MessageSquareHeart,
   Paperclip,
+  FolderOpen,
   Search,
   Sparkles,
+  WandSparkles,
 } from 'lucide-react';
-import { useChatWorkspace } from './chat/useChatWorkspace';
+import { ChatWorkspaceController } from './chat/types';
 
 /**
  * 定义聊天视图的输入属性。
@@ -21,14 +22,14 @@ import { useChatWorkspace } from './chat/useChatWorkspace';
 interface ChatViewProps {
   isAuthenticated: boolean;
   onRequireLogin: () => void;
+  workspace: ChatWorkspaceController;
 }
 
 /**
  * 渲染接入真实后端数据的聊天三栏工作台。
  */
-export default function ChatView({ isAuthenticated, onRequireLogin }: ChatViewProps) {
+export default function ChatView({ isAuthenticated, onRequireLogin, workspace }: ChatViewProps) {
   const {
-    conversations,
     activeConversationId,
     messages,
     executionSteps,
@@ -42,9 +43,8 @@ export default function ChatView({ isAuthenticated, onRequireLogin }: ChatViewPr
     setInputValue,
     submitMessage,
     cancelCurrentStream,
-    selectConversation,
     submitPositiveFeedback,
-  } = useChatWorkspace(isAuthenticated);
+  } = workspace;
 
   /**
    * 统一处理底部输入提交。
@@ -62,17 +62,6 @@ export default function ChatView({ isAuthenticated, onRequireLogin }: ChatViewPr
     await submitMessage();
   };
 
-  /**
-   * 点击会话时切换回放上下文。
-   * @param conversationId 会话标识。
-   */
-  const handleConversationSelect = async (conversationId: number) => {
-    if (conversationId === activeConversationId) {
-      return;
-    }
-    await selectConversation(conversationId);
-  };
-
   const showEmpty = !messages.length && !isBootstrapping;
 
   return (
@@ -82,82 +71,39 @@ export default function ChatView({ isAuthenticated, onRequireLogin }: ChatViewPr
       exit={{ opacity: 0 }}
       className="relative flex h-full overflow-hidden bg-background"
     >
-      <section className="hidden border-r border-border bg-surface md:flex md:w-[280px] md:flex-col">
-        <div className="border-b border-border px-5 py-5">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="font-mono text-[11px] uppercase tracking-[0.28em] text-muted">Conversations</p>
-              <h2 className="mt-2 text-xl font-semibold text-foreground">聊天工作台</h2>
-            </div>
-            <div className="rounded-full border border-border bg-surface-container px-2 py-1 text-[11px] text-muted">
-              {conversations.length}
-            </div>
-          </div>
-        </div>
-        <div className="flex-1 overflow-y-auto px-3 py-3">
-          {conversations.length ? (
-            conversations.map((conversation) => {
-              const isActive = conversation.id === activeConversationId;
-              return (
-                <button
-                  key={conversation.id}
-                  type="button"
-                  onClick={() => void handleConversationSelect(conversation.id)}
-                  className={`mb-2 w-full rounded-2xl border px-4 py-3 text-left transition-colors ${
-                    isActive
-                      ? 'border-border-active bg-surface-container-high text-foreground'
-                      : 'border-transparent bg-transparent text-muted hover:border-border hover:bg-surface-container hover:text-foreground'
-                  }`}
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="truncate text-sm font-medium">{conversation.title}</div>
-                      <div className="mt-2 text-[11px] uppercase tracking-[0.2em] text-muted">
-                        {conversation.lastRunId ? `Run ${conversation.lastRunId}` : 'No Run'}
-                      </div>
-                    </div>
-                    {conversation.lastRunId ? <CheckCircle2 size={16} className="mt-0.5 text-accent-breeze" /> : null}
-                  </div>
-                </button>
-              );
-            })
-          ) : (
-            <div className="rounded-3xl border border-dashed border-border bg-surface-container p-5 text-sm text-muted">
-              当前账号还没有可回放会话。
-            </div>
-          )}
-        </div>
-      </section>
-
       <section className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(71,96,122,0.16),transparent_38%),radial-gradient(circle_at_80%_18%,rgba(188,75,0,0.12),transparent_26%)]" />
         <div className="relative flex-1 overflow-y-auto px-4 pb-40 pt-6 md:px-8">
           {showEmpty ? (
-            <div className="mx-auto flex max-w-3xl flex-col items-center justify-center px-6 py-16 text-center">
-              <div className="mb-5 rounded-full border border-border bg-surface-container px-4 py-2 font-mono text-[11px] uppercase tracking-[0.35em] text-muted">
-                Live Chat Workspace
-              </div>
-              <h1 className="max-w-2xl text-4xl font-semibold tracking-tight text-foreground md:text-5xl">
-                会话、SSE 与工作区回放已经接入同一条真实链路
+            <div className="mx-auto flex max-w-4xl flex-col items-center justify-center px-6 py-16 text-center">
+              <h1 className="max-w-3xl text-4xl font-semibold tracking-tight text-foreground md:text-6xl">
+                你好，我是 CodingX
               </h1>
               <p className="mt-5 max-w-2xl text-base leading-7 text-muted">
-                直接提问即可触发后端聊天流。左栏显示真实会话，中央回放消息，右栏联动步骤、来源与产物。
+                从左侧选择真实历史会话，或者直接新建一个空白对话开始新的任务。
               </p>
-              <div className="mt-10 grid w-full max-w-3xl gap-4 md:grid-cols-3">
+              <div className="mt-10 grid w-full max-w-3xl gap-4 md:grid-cols-2">
                 {[
-                  { icon: Search, title: '搜索任务', desc: '请搜索 Spring Boot SSE 最佳实践' },
-                  { icon: BookOpen, title: '方案整理', desc: '帮我整理前端 SSE 接入清单' },
-                  { icon: FolderArchive, title: '产物回放', desc: '总结最近一次搜索结果并生成产物' },
+                  { icon: Globe2, title: '网页读取', desc: '解析并总结外部网页内容' },
+                  { icon: Search, title: '调研分析', desc: '深度搜索并生成研究报告' },
+                  { icon: Database, title: '数据挖掘', desc: '结构化数据提取与清洗' },
+                  { icon: FolderOpen, title: '文件管理', desc: '上传并与您的文档进行对话' },
                 ].map((item) => (
                   <button
                     key={item.title}
                     type="button"
                     onClick={() => setInputValue(item.desc)}
-                    className="rounded-3xl border border-border bg-surface px-5 py-5 text-left shadow-sm transition-colors hover:border-border-active hover:bg-surface-container"
+                    className="rounded-3xl border border-border bg-surface px-6 py-6 text-left shadow-sm transition-colors hover:border-border-active hover:bg-surface-container"
                   >
-                    <item.icon size={20} className="text-accent-breeze" />
-                    <div className="mt-4 text-sm font-semibold text-foreground">{item.title}</div>
-                    <div className="mt-2 text-sm leading-6 text-muted">{item.desc}</div>
+                    <div className="flex items-center gap-4">
+                      <div className="flex h-12 w-12 items-center justify-center rounded-full bg-surface-container">
+                        <item.icon size={22} className="text-accent-breeze" />
+                      </div>
+                      <div>
+                        <div className="text-2xl font-semibold text-foreground">{item.title}</div>
+                        <div className="mt-1 text-sm leading-6 text-muted">{item.desc}</div>
+                      </div>
+                    </div>
                   </button>
                 ))}
               </div>
@@ -177,9 +123,9 @@ export default function ChatView({ isAuthenticated, onRequireLogin }: ChatViewPr
                           ? 'border-border bg-surface text-foreground'
                           : 'border-transparent bg-foreground text-background'
                       }`}
-                    >
-                      <div className="mb-3 flex items-center gap-2 text-[11px] uppercase tracking-[0.22em]">
-                        {isAssistant ? <Sparkles size={14} className="text-accent-breeze" /> : <CheckCircle2 size={14} />}
+                      >
+                        <div className="mb-3 flex items-center gap-2 text-[11px] uppercase tracking-[0.22em]">
+                        {isAssistant ? <WandSparkles size={14} className="text-accent-breeze" /> : <CheckCircle2 size={14} />}
                         <span>{isAssistant ? 'CodingX' : 'You'}</span>
                       </div>
                       <div className="whitespace-pre-wrap text-sm leading-7">
@@ -247,9 +193,9 @@ export default function ChatView({ isAuthenticated, onRequireLogin }: ChatViewPr
               <div className="flex items-center justify-between gap-3 px-4 pb-4 pt-3">
                 <div className="flex items-center gap-3 text-[12px] text-muted">
                   <span className="rounded-full border border-border bg-surface-container px-3 py-1">
-                    {activeConversationId ? `会话 #${activeConversationId}` : '未选中会话'}
+                    {activeConversationId ? `会话 #${activeConversationId}` : '新会话'}
                   </span>
-                  <span>{isStreaming ? 'SSE 连接中' : '回放模式'}</span>
+                  <span>{isStreaming ? 'SSE 连接中' : '主页面待命'}</span>
                 </div>
                 <button
                   type="button"

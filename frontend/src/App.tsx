@@ -10,6 +10,7 @@ import ExpertsView from './views/ExpertsView';
 import Sidebar from './components/Sidebar';
 import LoginModal from './components/auth/LoginModal';
 import { useAuth } from './hooks/useAuth';
+import { useChatWorkspace } from './views/chat/useChatWorkspace';
 
 /**
  * 定义应用支持的主视图类型。
@@ -35,6 +36,8 @@ export default function App() {
 
   // 步骤：聚合认证相关状态和操作，复用组件化登录流程。
   const { session, isAuthenticated, isSubmitting, errorMessage, login, logout, clearErrorMessage } = useAuth();
+  // 步骤：由应用壳层统一持有聊天工作区状态，确保 Sidebar 与主区共用同一份真实会话数据。
+  const chatWorkspace = useChatWorkspace(isAuthenticated);
 
   useEffect(() => {
     // 步骤：初始化主题样式。
@@ -85,6 +88,23 @@ export default function App() {
     }
   };
 
+  /**
+   * 统一处理侧边栏点击真实会话后的主区切换。
+   * @param conversationId 被点击的会话标识。
+   */
+  const handleConversationSelect = async (conversationId: number) => {
+    setActiveView('chat');
+    await chatWorkspace.selectConversation(conversationId, chatWorkspace.conversations);
+  };
+
+  /**
+   * 统一处理侧边栏“新建对话”动作，回到聊天首页空态。
+   */
+  const handleStartNewConversation = async () => {
+    setActiveView('chat');
+    await chatWorkspace.startNewConversation();
+  };
+
   return (
     <div className="relative h-screen w-full overflow-hidden bg-background text-foreground transition-colors duration-300">
       {/* 抽屉推动容器 */}
@@ -104,6 +124,10 @@ export default function App() {
           isAuthSubmitting={isSubmitting}
           onOpenLogin={openLoginModal}
           onLogout={logout}
+          conversations={chatWorkspace.conversations}
+          activeConversationId={chatWorkspace.activeConversationId}
+          onSelectConversation={handleConversationSelect}
+          onStartNewConversation={handleStartNewConversation}
         />
 
         {/* 主内容区域 */}
@@ -138,6 +162,7 @@ export default function App() {
                   key="chat"
                   isAuthenticated={isAuthenticated}
                   onRequireLogin={openLoginModal}
+                  workspace={chatWorkspace}
                 />
               )}
               {activeView === 'automation' && <AutomationView key="automation" />}

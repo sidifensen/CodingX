@@ -6,6 +6,7 @@ import {
   ActiveStreamState,
   ArtifactItem,
   ChatMessageItem,
+  ChatWorkspaceController,
   ConversationItem,
   ExecutionStepItem,
   ReferenceItem,
@@ -47,16 +48,11 @@ export function useChatWorkspace(isAuthenticated: boolean) {
     }
     setIsBootstrapping(true);
     try {
-      const nextConversations = await ChatApi.listConversations(token);
-      setConversations(nextConversations);
+      const nextConversations = await loadConversations(token);
       if (nextConversations[0]?.id) {
         await selectConversation(nextConversations[0].id, nextConversations);
       } else {
-        setActiveConversationId(null);
-        setMessages([]);
-        setExecutionSteps([]);
-        setReferences([]);
-        setArtifacts([]);
+        clearConversationPlayback();
       }
     } finally {
       setIsBootstrapping(false);
@@ -135,7 +131,7 @@ export function useChatWorkspace(isAuthenticated: boolean) {
     ]);
 
     try {
-      const response = await fetch(`/api/chat/stream?conversationId=${encodeURIComponent(activeConversationId ?? 2001)}&question=${encodeURIComponent(question)}`, {
+      const response = await fetch(buildStreamRequestUrl(question, activeConversationId), {
         headers: {
           satoken: token,
         },
@@ -146,10 +142,10 @@ export function useChatWorkspace(isAuthenticated: boolean) {
       }
       setInputValue('');
       await consumeSseStream(response, optimisticAssistantId);
-      await bootstrapWorkspace();
+      const nextConversations = await loadConversations(token);
       const nextConversationId = streamStateRef.current?.conversationId ?? activeConversationId;
       if (nextConversationId) {
-        await selectConversation(nextConversationId);
+        await selectConversation(nextConversationId, nextConversations);
       }
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') {
@@ -200,6 +196,33 @@ export function useChatWorkspace(isAuthenticated: boolean) {
   };
 
   /**
+   * 切换到“新建对话”空态，并确保下一次发送不再复用旧会话标识。
+   */
+  const startNewConversation = async () => {
+    const token = currentToken();
+    const runningConversationId = streamStateRef.current?.conversationId ?? activeConversationId;
+
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    if (isStreaming && token && runningConversationId) {
+      try {
+        await ChatApi.cancelConversation(token, runningConversationId);
+      } catch {
+        // 步骤：新建流程以清空本地上下文为主，取消失败不应阻断用户回到首页空态。
+      }
+    }
+
+    abortControllerRef.current = null;
+    streamStateRef.current = null;
+    setIsStreaming(false);
+    setIsCancelling(false);
+    setStreamError('');
+    setInputValue('');
+    clearConversationPlayback();
+  };
+
+  /**
    * 读取当前登录态 token。
    * @returns token 或 null。
    */
@@ -211,11 +234,7 @@ export function useChatWorkspace(isAuthenticated: boolean) {
   const resetWorkspace = () => {
     abortControllerRef.current?.abort();
     setConversations([]);
-    setActiveConversationId(null);
-    setMessages([]);
-    setExecutionSteps([]);
-    setReferences([]);
-    setArtifacts([]);
+    clearConversationPlayback();
     setIsStreaming(false);
     setIsCancelling(false);
     setStreamError('');
@@ -393,7 +412,46 @@ export function useChatWorkspace(isAuthenticated: boolean) {
     cancelCurrentStream,
     selectConversation,
     submitPositiveFeedback,
-  };
+    startNewConversation,
+  } satisfies ChatWorkspaceController;
+
+  /**
+   * 只刷新真实会话列表，避免在发送后错误回跳到旧会话。
+   * @param token 当前登录令牌。
+   * @returns 最新会话列表。
+   */
+  async function loadConversations(token: string) {
+    const nextConversations = await ChatApi.listConversations(token);
+    setConversations(nextConversations);
+    return nextConversations;
+  }
+
+  /**
+   * 清空当前主区与右栏回放状态，但保留左侧真实会话历史。
+   */
+  function clearConversationPlayback() {
+    setActiveConversationId(null);
+    setMessages([]);
+    setExecutionSteps([]);
+    setReferences([]);
+    setArtifacts([]);
+  }
+}
+
+/**
+ * 统一拼装聊天流请求地址，保证新建态不会误带旧会话标识。
+ * @param question 用户输入问题。
+ * @param conversationId 当前选中的会话标识。
+ * @returns 可直接用于 fetch 的 SSE 地址。
+ */
+function buildStreamRequestUrl(question: string, conversationId: number | null) {
+  const searchParams = new URLSearchParams({
+    question,
+  });
+  if (conversationId != null) {
+    searchParams.set('conversationId', String(conversationId));
+  }
+  return `/api/chat/stream?${searchParams.toString()}`;
 }
 
 /**

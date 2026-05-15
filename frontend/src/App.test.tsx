@@ -215,4 +215,205 @@ describe('App', () => {
     expect(await screen.findByRole('button', { name: '侧边栏登录入口' })).toBeInTheDocument();
     expect(window.localStorage.getItem('codingx.auth.session')).toBeNull();
   });
+
+  /**
+   * 验证左侧侧边栏应展示真实会话，而不是保留演示假数据。
+   */
+  it('应在侧边栏展示真实会话并移除假数据', async () => {
+    window.localStorage.setItem(
+      'codingx.auth.session',
+      JSON.stringify({
+        token: 'token-123',
+        userId: 1002,
+        username: 'user',
+        displayName: 'CodingX User',
+        userType: 'USER',
+      }),
+    );
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === '/api/chat/conversations') {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            code: 'OK',
+            message: 'success',
+            data: [
+              {
+                id: 2001,
+                title: 'Spring Boot SSE 最佳实践',
+                status: 'ACTIVE',
+                lastMessageAt: '2026-05-15 00:36:58',
+                lastRunId: 5002,
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      if (
+        url === '/api/chat/conversations/2001/messages' ||
+        url === '/api/chat/conversations/2001/steps' ||
+        url === '/api/chat/conversations/2001/references' ||
+        url === '/api/chat/conversations/2001/artifacts'
+      ) {
+        return new Response(JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }), { status: 200 });
+      }
+      throw new Error(`Unhandled fetch in sidebar conversation test: ${url}`);
+    });
+
+    render(<App />);
+
+    expect(await screen.findByText('Spring Boot SSE 最佳实践')).toBeInTheDocument();
+    expect(screen.queryByText('量子力学是什么')).not.toBeInTheDocument();
+    expect(screen.queryByText('Lumina战略方向: 深色模式设...')).not.toBeInTheDocument();
+  });
+
+  /**
+   * 验证点击新建对话后会回到欢迎页，并让下一次发送走新会话链路。
+   */
+  it('应在点击新建对话后回到欢迎页并以无旧会话参数发送消息', async () => {
+    window.localStorage.setItem(
+      'codingx.auth.session',
+      JSON.stringify({
+        token: 'token-123',
+        userId: 1002,
+        username: 'user',
+        displayName: 'CodingX User',
+        userType: 'USER',
+      }),
+    );
+    const streamUrls: string[] = [];
+    let messageRequestCount = 0;
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === '/api/chat/conversations') {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            code: 'OK',
+            message: 'success',
+            data: [
+              {
+                id: 2001,
+                title: 'Default Demo Conversation',
+                status: 'ACTIVE',
+                lastMessageAt: '2026-05-15 00:36:58',
+                lastRunId: 5002,
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      if (url === '/api/chat/conversations/2001/messages') {
+        messageRequestCount += 1;
+        return new Response(
+          JSON.stringify({
+            success: true,
+            code: 'OK',
+            message: 'success',
+            data: messageRequestCount > 1
+              ? [
+                  {
+                    id: 201,
+                    conversationId: 2010,
+                    runId: 5003,
+                    role: 'USER',
+                    content: '请搜索新的会话问题',
+                    status: 'COMPLETED',
+                    createdAt: '2026-05-15 00:38:10',
+                  },
+                  {
+                    id: 202,
+                    conversationId: 2010,
+                    runId: 5003,
+                    role: 'ASSISTANT',
+                    content: '新的会话回答',
+                    status: 'COMPLETED',
+                    createdAt: '2026-05-15 00:38:22',
+                  },
+                ]
+              : [
+                  {
+                    id: 101,
+                    conversationId: 2001,
+                    runId: 5002,
+                    role: 'USER',
+                    content: '请搜索 Spring Boot SSE 最佳实践',
+                    status: 'COMPLETED',
+                    createdAt: '2026-05-15 00:36:58',
+                  },
+                  {
+                    id: 102,
+                    conversationId: 2001,
+                    runId: 5002,
+                    role: 'ASSISTANT',
+                    content: '旧会话回答',
+                    status: 'COMPLETED',
+                    createdAt: '2026-05-15 00:37:11',
+                  },
+                ],
+          }),
+          { status: 200 },
+        );
+      }
+      if (
+        url === '/api/chat/conversations/2001/steps' ||
+        url === '/api/chat/conversations/2001/references' ||
+        url === '/api/chat/conversations/2001/artifacts'
+      ) {
+        return new Response(JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }), { status: 200 });
+      }
+      if (url.includes('/api/chat/stream')) {
+        streamUrls.push(url);
+        return new Response(
+          [
+            'event:meta',
+            'data:{"conversationId":2010}',
+            '',
+            'event:message',
+            'data:{"type":"response","delta":"新的会话回答"}',
+            '',
+            'event:finish',
+            'data:{"conversationId":2010,"content":"新的会话回答","title":"新的会话标题"}',
+            '',
+            'event:done',
+            'data:{"conversationId":2010}',
+            '',
+          ].join('\n'),
+          { status: 200 },
+        );
+      }
+      if (
+        url === '/api/chat/conversations/2010/messages' ||
+        url === '/api/chat/conversations/2010/steps' ||
+        url === '/api/chat/conversations/2010/references' ||
+        url === '/api/chat/conversations/2010/artifacts'
+      ) {
+        return new Response(JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }), { status: 200 });
+      }
+      throw new Error(`Unhandled fetch in new conversation test: ${url}`);
+    });
+
+    render(<App />);
+
+    await screen.findByText('旧会话回答');
+    fireEvent.click(screen.getByRole('button', { name: '新建对话' }));
+
+    expect(await screen.findByText('你好，我是 CodingX')).toBeInTheDocument();
+    expect(screen.queryByText('旧会话回答')).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByPlaceholderText('输入指令以重构组件库或分析代码...'), {
+      target: { value: '请搜索新的会话问题' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '发送消息' }));
+
+    await waitFor(() => {
+      expect(streamUrls.length).toBeGreaterThan(0);
+    });
+    expect(streamUrls[0]).toContain('/api/chat/stream?');
+    expect(streamUrls[0]).toContain('question=');
+    expect(streamUrls[0]).not.toContain('conversationId=2001');
+  });
 });

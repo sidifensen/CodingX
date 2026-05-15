@@ -88,3 +88,26 @@ export interface StreamMetaPayload {
   taskId?: number;
   traceId?: string;
 }
+
+/**
+ * 统一描述聊天工作区对页面和侧边栏暴露的状态与动作。
+ */
+export interface ChatWorkspaceController {
+  conversations: ConversationItem[];
+  activeConversationId: number | null;
+  messages: ChatMessageItem[];
+  executionSteps: ExecutionStepItem[];
+  references: ReferenceItem[];
+  artifacts: ArtifactItem[];
+  isStreaming: boolean;
+  isCancelling: boolean;
+  streamError: string;
+  inputValue: string;
+  isBootstrapping: boolean;
+  setInputValue: (value: string) => void;
+  submitMessage: () => Promise<void>;
+  cancelCurrentStream: () => Promise<void>;
+  selectConversation: (conversationId: number, sourceConversations?: ConversationItem[]) => Promise<void>;
+  submitPositiveFeedback: () => Promise<void>;
+  startNewConversation: () => Promise<void>;
+}

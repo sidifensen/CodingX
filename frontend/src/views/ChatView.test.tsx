@@ -104,6 +104,56 @@ describe('ChatView', () => {
     expect(screen.queryByText('聊天工作台')).not.toBeInTheDocument();
     expect(screen.queryByText('Conversations')).not.toBeInTheDocument();
   });
+
+  /**
+   * 新建页输入区应去掉状态行、反馈按钮和顶部边线。
+   */
+  it('应在新建页移除输入区状态行与顶部分割线', async () => {
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          activeConversationId: null,
+          messages: [],
+          executionSteps: [],
+          references: [],
+          artifacts: [],
+          inputValue: '',
+        })}
+      />,
+    );
+
+    expect(screen.getByText('你好，我是 CodingX')).toBeInTheDocument();
+    expect(screen.queryByText('主页面待命')).not.toBeInTheDocument();
+    expect(screen.queryByText('反馈')).not.toBeInTheDocument();
+    expect(screen.queryByText(/会话 #/)).not.toBeInTheDocument();
+
+    const inputWrapper = screen.getByPlaceholderText('输入指令以重构组件库或分析代码...').closest('form')?.parentElement?.parentElement;
+    expect(inputWrapper).not.toHaveClass('border-t');
+  });
+
+  /**
+   * 已选中历史会话但消息为空时，不应回退到新建页空态。
+   */
+  it('应在选中空会话时展示会话空态而不是新建页', async () => {
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          activeConversationId: 2002,
+          messages: [],
+          executionSteps: [],
+          references: [],
+          artifacts: [],
+        })}
+      />,
+    );
+
+    expect(screen.queryByText('你好，我是 CodingX')).not.toBeInTheDocument();
+    expect(screen.getByText('当前会话暂无消息')).toBeInTheDocument();
+  });
 });
 
 /**

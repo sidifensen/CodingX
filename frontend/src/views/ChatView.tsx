@@ -62,7 +62,10 @@ export default function ChatView({ isAuthenticated, onRequireLogin, workspace }:
     await submitMessage();
   };
 
-  const showEmpty = !messages.length && !isBootstrapping;
+  // 步骤：仅当没有选中任何真实会话时才展示“新建对话”首页；避免空历史会话被误判为未跳转。
+  const showLandingState = activeConversationId == null && !messages.length && !isBootstrapping;
+  // 步骤：选中了历史会话但暂无消息时，显示会话级空态而不是回到首页。
+  const showConversationEmptyState = activeConversationId != null && !messages.length && !isBootstrapping;
 
   return (
     <motion.div
@@ -74,14 +77,11 @@ export default function ChatView({ isAuthenticated, onRequireLogin, workspace }:
       <section className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(71,96,122,0.16),transparent_38%),radial-gradient(circle_at_80%_18%,rgba(188,75,0,0.12),transparent_26%)]" />
         <div className="relative flex-1 overflow-y-auto px-4 pb-40 pt-6 md:px-8">
-          {showEmpty ? (
+          {showLandingState ? (
             <div className="mx-auto flex max-w-4xl flex-col items-center justify-center px-6 py-16 text-center">
               <h1 className="max-w-3xl text-4xl font-semibold tracking-tight text-foreground md:text-6xl">
                 你好，我是 CodingX
               </h1>
-              <p className="mt-5 max-w-2xl text-base leading-7 text-muted">
-                从左侧选择真实历史会话，或者直接新建一个空白对话开始新的任务。
-              </p>
               <div className="mt-10 grid w-full max-w-3xl gap-4 md:grid-cols-2">
                 {[
                   { icon: Globe2, title: '网页读取', desc: '解析并总结外部网页内容' },
@@ -107,6 +107,18 @@ export default function ChatView({ isAuthenticated, onRequireLogin, workspace }:
                   </button>
                 ))}
               </div>
+            </div>
+          ) : showConversationEmptyState ? (
+            <div className="mx-auto flex max-w-3xl flex-col items-center justify-center px-6 py-24 text-center">
+              <div className="rounded-full border border-border bg-surface-container px-4 py-2 font-mono text-[11px] uppercase tracking-[0.32em] text-muted">
+                Conversation
+              </div>
+              <h2 className="mt-6 text-3xl font-semibold tracking-tight text-foreground">
+                当前会话暂无消息
+              </h2>
+              <p className="mt-4 max-w-xl text-sm leading-7 text-muted">
+                这个历史会话还没有可回放内容。你可以直接在下方输入，继续往当前会话追加新的对话。
+              </p>
             </div>
           ) : (
             <div className="mx-auto flex max-w-4xl flex-col gap-6">
@@ -149,13 +161,13 @@ export default function ChatView({ isAuthenticated, onRequireLogin, workspace }:
           )}
         </div>
 
-        <div className="absolute bottom-0 left-0 right-0 border-t border-border bg-background/92 px-4 pb-6 pt-4 backdrop-blur-xl md:px-8">
+        <div className="absolute bottom-0 left-0 right-0 bg-background/88 px-4 pb-6 pt-4 backdrop-blur-xl md:px-8">
           <div className="mx-auto max-w-4xl">
             <form
               onSubmit={(event) => void handleSubmit(event)}
               className="rounded-[28px] border border-border bg-surface shadow-[0_24px_80px_rgba(0,0,0,0.12)]"
             >
-              <div className="flex items-center gap-3 px-4 pt-4">
+              <div className="flex items-center gap-3 px-4 py-4">
                 <button type="button" className="rounded-full border border-border bg-surface-container p-2 text-muted">
                   <Paperclip size={18} />
                 </button>
@@ -190,23 +202,19 @@ export default function ChatView({ isAuthenticated, onRequireLogin, workspace }:
                   </button>
                 )}
               </div>
-              <div className="flex items-center justify-between gap-3 px-4 pb-4 pt-3">
-                <div className="flex items-center gap-3 text-[12px] text-muted">
-                  <span className="rounded-full border border-border bg-surface-container px-3 py-1">
-                    {activeConversationId ? `会话 #${activeConversationId}` : '新会话'}
-                  </span>
-                  <span>{isStreaming ? 'SSE 连接中' : '主页面待命'}</span>
-                </div>
+            </form>
+            {!showLandingState && activeConversationId != null ? (
+              <div className="mt-3 flex justify-end">
                 <button
                   type="button"
                   onClick={() => void submitPositiveFeedback()}
-                  className="flex items-center gap-2 rounded-full border border-border bg-surface-container px-3 py-1.5 text-[12px] text-muted transition-colors hover:border-border-active hover:text-foreground"
+                  className="flex items-center gap-2 rounded-full border border-border bg-surface/80 px-3 py-1.5 text-[12px] text-muted transition-colors hover:border-border-active hover:text-foreground"
                 >
                   <MessageSquareHeart size={14} />
                   反馈
                 </button>
               </div>
-            </form>
+            ) : null}
           </div>
         </div>
       </section>

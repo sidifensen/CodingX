@@ -416,4 +416,110 @@ describe('App', () => {
     expect(streamUrls[0]).toContain('question=');
     expect(streamUrls[0]).not.toContain('conversationId=2001');
   });
+
+  /**
+   * 验证点击左侧不同真实会话后，主区会切换到对应对话内容。
+   */
+  it('应在点击侧边栏真实会话后切换到对应消息回放', async () => {
+    window.localStorage.setItem(
+      'codingx.auth.session',
+      JSON.stringify({
+        token: 'token-123',
+        userId: 1002,
+        username: 'user',
+        displayName: 'CodingX User',
+        userType: 'USER',
+      }),
+    );
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === '/api/chat/conversations') {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            code: 'OK',
+            message: 'success',
+            data: [
+              {
+                id: 2001,
+                title: '第一个真实会话',
+                status: 'ACTIVE',
+                lastMessageAt: '2026-05-15 09:36:58',
+                lastRunId: 5001,
+              },
+              {
+                id: 2002,
+                title: '第二个真实会话',
+                status: 'ACTIVE',
+                lastMessageAt: '2026-05-15 09:56:58',
+                lastRunId: 5002,
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      if (url === '/api/chat/conversations/2001/messages') {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            code: 'OK',
+            message: 'success',
+            data: [
+              {
+                id: 101,
+                conversationId: 2001,
+                runId: 5001,
+                role: 'ASSISTANT',
+                content: '这是第一个会话的回答',
+                status: 'COMPLETED',
+                createdAt: '2026-05-15 09:37:11',
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      if (url === '/api/chat/conversations/2002/messages') {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            code: 'OK',
+            message: 'success',
+            data: [
+              {
+                id: 201,
+                conversationId: 2002,
+                runId: 5002,
+                role: 'ASSISTANT',
+                content: '这是第二个会话的回答',
+                status: 'COMPLETED',
+                createdAt: '2026-05-15 09:57:11',
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      if (
+        url === '/api/chat/conversations/2001/steps' ||
+        url === '/api/chat/conversations/2001/references' ||
+        url === '/api/chat/conversations/2001/artifacts' ||
+        url === '/api/chat/conversations/2002/steps' ||
+        url === '/api/chat/conversations/2002/references' ||
+        url === '/api/chat/conversations/2002/artifacts'
+      ) {
+        return new Response(JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }), { status: 200 });
+      }
+      throw new Error(`Unhandled fetch in sidebar switch test: ${url}`);
+    });
+
+    render(<App />);
+
+    expect(await screen.findByText('这是第一个会话的回答')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /第二个真实会话/ }));
+
+    expect(await screen.findByText('这是第二个会话的回答')).toBeInTheDocument();
+    expect(screen.queryByText('这是第一个会话的回答')).not.toBeInTheDocument();
+  });
 });

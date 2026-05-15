@@ -84,4 +84,57 @@
     -ms-overflow-style: none;
     scrollbar-width: none;
   }
+
+  /* 仅缩短聊天主内容区右侧滚动条的可视轨道，避免整条从顶部贯穿到底部。 */
+  .chat-scroll-region::-webkit-scrollbar-track-piece:start {
+    margin-top: 96px;
+  }
+
+  .chat-scroll-region::-webkit-scrollbar-track-piece:end {
+    margin-bottom: 180px;
+  }
+
+  /* 统一助手消息操作栏样式，保证亮暗主题下复制和反馈按钮可辨识。 */
+  .chat-message-action-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 28px;
+    width: 28px;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    color: var(--text-muted);
+    transition: background-color 160ms ease, color 160ms ease, border-color 160ms ease;
+  }
+
+  .chat-message-action-button:hover {
+    color: var(--text-primary);
+    background-color: var(--surface-container);
+    border-color: var(--border-subtle);
+  }
+
+  .chat-message-action-button-active {
+    color: var(--text-primary);
+    background-color: var(--surface-container);
+    border-color: var(--border-active);
+  }
+
+  .chat-copy-menu-item {
+    width: 100%;
+    border-radius: 10px;
+    padding: 8px 10px;
+    text-align: left;
+    font-size: 14px;
+    line-height: 1.35;
+    color: var(--text-primary);
+    transition: background-color 160ms ease;
+  }
+
+  .chat-copy-menu-item:hover {
+    background-color: var(--surface-container);
+  }
+
+  .chat-message-image {
+    background-color: var(--surface);
+  }
 }

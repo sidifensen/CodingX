@@ -22,6 +22,12 @@ describe('ChatView', () => {
       }),
     );
     vi.restoreAllMocks();
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: {
+        writeText: vi.fn().mockResolvedValue(undefined),
+      },
+    });
   });
 
   /**
@@ -159,7 +165,8 @@ describe('ChatView', () => {
     expect(screen.queryByText('你好，我是 CodingX')).not.toBeInTheDocument();
     expect(screen.getByText('当前会话暂无消息')).toBeInTheDocument();
     expect(screen.queryByText('反馈')).not.toBeInTheDocument();
-    expect(screen.queryByText('执行回放')).not.toBeInTheDocument();
+    const workspaceHeading = screen.getByText('执行回放');
+    expect(workspaceHeading.closest('aside')).toHaveAttribute('aria-hidden', 'true');
     expect(screen.getByRole('button', { name: '展开右侧工作区' })).toBeInTheDocument();
   });
 
@@ -180,6 +187,45 @@ describe('ChatView', () => {
 
     const assistantMessage = screen.getByText('我来为您总结 Spring Boot SSE 最佳实践。').parentElement;
     expect(assistantMessage).not.toHaveClass('border');
+  });
+
+  /**
+   * 用户消息气泡应保持更紧凑的尺寸与较小圆角，避免视觉上过高过椭圆。
+   */
+  it('应渲染紧凑的用户消息气泡样式', async () => {
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace()}
+      />,
+    );
+
+    const userMessageText = screen.getAllByText('请搜索 Spring Boot SSE 最佳实践').find((element) =>
+      element.classList.contains('whitespace-pre-wrap'),
+    );
+    const userMessage = userMessageText?.closest('div.rounded-\\[20px\\]');
+    expect(userMessage).toBeTruthy();
+    expect(userMessage).toHaveClass('px-4');
+    expect(userMessage).toHaveClass('py-2');
+    expect(userMessageText).toHaveClass('leading-6');
+  });
+
+  /**
+   * 消息滚动区需要固定底部安全留白，避免滚动条到底后仍可继续被压缩。
+   */
+  it('应为消息滚动区使用稳定的底部留白配置', async () => {
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace()}
+      />,
+    );
+
+    const scrollRegion = screen.getByTestId('chat-scroll-region');
+    expect(scrollRegion).toHaveClass('pb-36');
+    expect(scrollRegion).toHaveClass('md:pb-40');
   });
 
   /**
@@ -344,13 +390,15 @@ describe('ChatView', () => {
       />,
     );
 
-    expect(screen.getByText('执行回放')).toBeInTheDocument();
+    const workspaceHeading = screen.getByText('执行回放');
+    expect(workspaceHeading).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: '折叠右侧工作区' }));
-    expect(screen.queryByText('执行回放')).not.toBeInTheDocument();
+    expect(workspaceHeading).toBeInTheDocument();
+    expect(workspaceHeading.closest('aside')).toHaveAttribute('aria-hidden', 'true');
 
     fireEvent.click(screen.getByRole('button', { name: '展开右侧工作区' }));
-    expect(screen.getByText('执行回放')).toBeInTheDocument();
+    expect(workspaceHeading.closest('aside')).toHaveAttribute('aria-hidden', 'false');
   });
 
   /**
@@ -369,7 +417,8 @@ describe('ChatView', () => {
       />,
     );
 
-    expect(screen.queryByText('执行回放')).not.toBeInTheDocument();
+    const workspaceHeading = screen.getByText('执行回放');
+    expect(workspaceHeading.closest('aside')).toHaveAttribute('aria-hidden', 'true');
     expect(screen.getByRole('button', { name: '展开右侧工作区' })).toBeInTheDocument();
 
     rerender(
@@ -394,8 +443,119 @@ describe('ChatView', () => {
       />,
     );
 
-    expect(screen.getByText('执行回放')).toBeInTheDocument();
+    expect(workspaceHeading.closest('aside')).toHaveAttribute('aria-hidden', 'false');
     expect(screen.getByRole('button', { name: '折叠右侧工作区' })).toBeInTheDocument();
+  });
+
+  /**
+   * 助手消息底部应提供复制、复制更多、点赞和倒赞操作。
+   */
+  it('应渲染助手消息操作栏', async () => {
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace()}
+      />,
+    );
+
+    expect(screen.getByTestId('copy-message-102')).toBeInTheDocument();
+    expect(screen.getByTestId('copy-menu-toggle-102')).toBeInTheDocument();
+    expect(screen.getByTestId('thumbs-up-102')).toBeInTheDocument();
+    expect(screen.getByTestId('thumbs-down-102')).toBeInTheDocument();
+  });
+
+  /**
+   * 点击复制应写入剪贴板，复制更多中应支持复制 Markdown 原文。
+   */
+  it('应支持复制消息与复制 Markdown', async () => {
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          messages: [
+            {
+              id: '501',
+              conversationId: '2001',
+              role: 'ASSISTANT',
+              content: '### 标题\n\n- 列表项',
+              status: 'COMPLETED',
+            },
+          ],
+          executionSteps: [],
+          references: [],
+          artifacts: [],
+        })}
+      />,
+    );
+
+    const writeText = vi.mocked(navigator.clipboard.writeText);
+    fireEvent.click(screen.getByTestId('copy-message-501'));
+    await waitFor(() => {
+      expect(writeText).toHaveBeenCalledWith(expect.stringContaining('标题'));
+    });
+
+    fireEvent.click(screen.getByTestId('copy-menu-toggle-501'));
+    fireEvent.click(screen.getByTestId('copy-markdown-501'));
+    await waitFor(() => {
+      expect(writeText).toHaveBeenCalledWith('### 标题\n\n- 列表项');
+    });
+  });
+
+  /**
+   * 点赞和倒赞应支持单选切换，保证反馈状态直观可见。
+   */
+  it('应支持点赞倒赞切换', async () => {
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace()}
+      />,
+    );
+
+    const upButton = screen.getByTestId('thumbs-up-102');
+    const downButton = screen.getByTestId('thumbs-down-102');
+    expect(upButton).toHaveAttribute('aria-pressed', 'false');
+    expect(downButton).toHaveAttribute('aria-pressed', 'false');
+
+    fireEvent.click(upButton);
+    expect(upButton).toHaveAttribute('aria-pressed', 'true');
+    expect(downButton).toHaveAttribute('aria-pressed', 'false');
+
+    fireEvent.click(downButton);
+    expect(upButton).toHaveAttribute('aria-pressed', 'false');
+    expect(downButton).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  /**
+   * 助手 Markdown 图片应以消息内图片样式渲染，保证与文本消息视觉一致。
+   */
+  it('应在助手消息中渲染 Markdown 图片', async () => {
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          messages: [
+            {
+              id: '601',
+              conversationId: '2001',
+              role: 'ASSISTANT',
+              content: '![演示图](https://example.com/demo.png)',
+              status: 'COMPLETED',
+            },
+          ],
+          executionSteps: [],
+          references: [],
+          artifacts: [],
+        })}
+      />,
+    );
+
+    const image = screen.getByAltText('演示图');
+    expect(image).toHaveClass('chat-message-image');
   });
 });
 

@@ -75,7 +75,7 @@ public class ChatStreamExecutionService {
             .createdAt(now)
             .updatedAt(now)
             .build());
-        conversationTraceRecordService.startTrace("chat-entry", command.conversationId(), userId);
+        com.codingx.chat.domain.model.ChatTraceRun traceRun = conversationTraceRecordService.startTrace("chat-entry", command.conversationId(), userId);
         AtomicReference<Future<?>> futureRef = new AtomicReference<>();
         chatRuntimeGuardService.registerCancellation(command.conversationId(), () -> {
             Future<?> future = futureRef.get();
@@ -86,10 +86,12 @@ public class ChatStreamExecutionService {
         Future<?> future = executor.submit(() -> {
             try {
                 ChatExecutionContext.start(runId);
+                ConversationTraceContext.bind(traceRun);
                 chatApplicationService.sendMessage(command, userId);
             } finally {
                 chatRuntimeGuardService.completeConversation(command.conversationId());
                 ChatExecutionContext.clear();
+                ConversationTraceContext.clear();
             }
         });
         futureRef.set(future);

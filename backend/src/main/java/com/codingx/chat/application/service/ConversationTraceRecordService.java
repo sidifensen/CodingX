@@ -50,4 +50,40 @@ public class ConversationTraceRecordService {
             .build());
         return traceRun;
     }
+
+    /**
+     * 将当前链路收口为终态，并同步更新入口节点状态与任务标识。
+     * @param traceId 链路标识。
+     * @param taskId 关联任务标识。
+     * @param status 终态状态值。
+     * @param errorMessage 错误信息。
+     */
+    public void finishTrace(String traceId, Long taskId, String status, String errorMessage) {
+        LocalDateTime now = LocalDateTime.now();
+        ChatTraceRun traceRun = chatTraceRunRepository.findByTraceId(traceId)
+            .orElseThrow(() -> new IllegalArgumentException("Trace not found"));
+        LocalDateTime startedAt = traceRun.getStartedAt() != null ? traceRun.getStartedAt() : now;
+        chatTraceRunRepository.save(traceRun.toBuilder()
+            .taskId(taskId)
+            .status(status)
+            .errorMessage(errorMessage)
+            .finishedAt(now)
+            .updatedAt(now)
+            .durationMs(java.time.Duration.between(startedAt, now).toMillis())
+            .build());
+
+        for (ChatTraceNode node : chatTraceNodeRepository.findByTraceId(traceId)) {
+            if (!"entry".equals(node.getNodeType())) {
+                continue;
+            }
+            LocalDateTime nodeStartedAt = node.getStartedAt() != null ? node.getStartedAt() : now;
+            chatTraceNodeRepository.save(node.toBuilder()
+                .status(status)
+                .errorMessage(errorMessage)
+                .finishedAt(now)
+                .durationMs(java.time.Duration.between(nodeStartedAt, now).toMillis())
+                .build());
+        }
+        ConversationTraceContext.clear();
+    }
 }

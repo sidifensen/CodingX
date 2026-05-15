@@ -7,6 +7,7 @@ import static org.mockito.Mockito.verify;
 
 import com.codingx.chat.application.command.SendChatMessageCommand;
 import com.codingx.chat.domain.model.ChatExecutionRun;
+import com.codingx.chat.domain.model.ChatTraceRun;
 import com.codingx.chat.domain.repository.ChatExecutionRunRepository;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -158,5 +159,34 @@ class ChatStreamExecutionServiceTest {
 
         assertTrue(captured.await(1, TimeUnit.SECONDS), "background task should capture run id");
         assertEquals(savedRunId.get(), observedRunId.get(), "background task should reuse dispatch run id");
+    }
+
+    /**
+     * trace 上下文也必须透传到后台线程，否则后续收口拿不到 traceId。
+     * @throws Exception 等待后台线程执行时抛出。
+     */
+    @Test
+    void dispatchPropagatesTraceContextIntoBackgroundThread() throws Exception {
+        CountDownLatch captured = new CountDownLatch(1);
+        ChatStreamExecutionService service = new ChatStreamExecutionService(
+            chatApplicationService,
+            chatRuntimeGuardService,
+            conversationTraceRecordService,
+            chatExecutionRunRepository,
+            executorService
+        );
+        org.mockito.Mockito.when(conversationTraceRecordService.startTrace("chat-entry", 1001L, 2001L))
+            .thenReturn(ChatTraceRun.builder().traceId("trace-1").traceName("chat-entry").build());
+        AtomicReference<String> observedTraceId = new AtomicReference<>();
+        org.mockito.Mockito.doAnswer(invocation -> {
+            observedTraceId.set(ConversationTraceContext.current() != null ? ConversationTraceContext.current().getTraceId() : null);
+            captured.countDown();
+            return null;
+        }).when(chatApplicationService).sendMessage(new SendChatMessageCommand(1001L, "你好"), 2001L);
+
+        service.dispatch(new SendChatMessageCommand(1001L, "你好"), 2001L);
+
+        assertTrue(captured.await(1, TimeUnit.SECONDS), "background task should capture trace context");
+        assertEquals("trace-1", observedTraceId.get());
     }
 }

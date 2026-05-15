@@ -220,4 +220,28 @@ class ChatApplicationServiceTest {
         assertEquals("partial", captor.getAllValues().get(1).getContent());
         ChatExecutionContext.clear();
     }
+
+    /**
+     * 后台线程收到中断时也必须按取消状态收口，避免 run 永久停留在 RUNNING。
+     */
+    @Test
+    void sendMessagePersistsCancelledMessageWhenStreamInterrupted() {
+        bindRunContext();
+        ChatConversation conversation = ChatConversation.create(1L, "Default", 1002L, ChatConversationStatus.ACTIVE);
+        when(chatConversationRepository.requireById(1L)).thenReturn(conversation);
+        when(chatMessageRepository.findByConversationId(1L)).thenReturn(new ArrayList<>());
+        when(conversationRewriteService.rewrite(any(), any())).thenReturn("Hi");
+        when(conversationIntentService.route("Hi")).thenReturn(new ConversationIntentDecision("chat.normal", ConversationIntentAction.DIRECT, null));
+        when(chatRuntimeGuardService.isCancelled(1L)).thenReturn(true);
+        doAnswer(invocation -> {
+            throw new IllegalStateException("interrupted");
+        }).when(aiChatClient).streamChat(any(), any());
+
+        chatApplicationService.sendMessage(new SendChatMessageCommand(1L, "Hi"), 1002L);
+
+        ArgumentCaptor<ChatMessage> captor = ArgumentCaptor.forClass(ChatMessage.class);
+        verify(chatMessageRepository, org.mockito.Mockito.times(2)).save(captor.capture());
+        assertEquals(ChatMessageStatus.CANCELLED, captor.getAllValues().get(1).getStatus());
+        ChatExecutionContext.clear();
+    }
 }

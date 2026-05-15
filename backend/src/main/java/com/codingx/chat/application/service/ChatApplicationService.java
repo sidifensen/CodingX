@@ -6,6 +6,7 @@ import com.codingx.chat.domain.model.ChatExecutionStep;
 import com.codingx.chat.domain.model.ChatExecutionRun;
 import com.codingx.chat.domain.model.ChatMessage;
 import com.codingx.chat.domain.model.ChatMessageStatus;
+import com.codingx.chat.domain.model.ChatTraceRun;
 import com.codingx.chat.domain.repository.ChatConversationRepository;
 import com.codingx.chat.domain.repository.ChatExecutionRunRepository;
 import com.codingx.chat.domain.repository.ChatExecutionStepRepository;
@@ -97,6 +98,11 @@ public class ChatApplicationService {
     private final DocumentArtifactService documentArtifactService;
 
     /**
+     * Trace 收口服务依赖。
+     */
+    private final ConversationTraceRecordService conversationTraceRecordService;
+
+    /**
      * 发送 sendMessage 处理的消息或请求。
      * @param command 输入参数。
      * @param userId 输入参数。
@@ -139,6 +145,7 @@ public class ChatApplicationService {
             conversation.recordLastRunId(runId);
             chatConversationRepository.save(conversation);
             recordExecutionOutcome(conversation, userMessage.getId(), assistantMessage.getId(), intentDecision.intentCode(), false, false, ChatMessageStatus.COMPLETED, null);
+            finishTrace(runId, "SUCCESS", null);
             chatStreamPublisher.publishAssistantCompleted(command.conversationId(), assistantMessage.getContent(), conversation.getTitle());
             return;
         }
@@ -170,27 +177,48 @@ public class ChatApplicationService {
         }
         StringBuilder builder = new StringBuilder();
         final Throwable[] streamError = new Throwable[1];
-        aiChatClient.streamChat(history, new AiChatClient.StreamHandler() {
-            @Override
-            public void onDelta(String delta) {
-                if (chatRuntimeGuardService.isCancelled(command.conversationId())) {
-                    return;
+        try {
+            aiChatClient.streamChat(history, new AiChatClient.StreamHandler() {
+                @Override
+                public void onDelta(String delta) {
+                    if (chatRuntimeGuardService.isCancelled(command.conversationId())) {
+                        return;
+                    }
+                    builder.append(delta);
+                    chatStreamPublisher.publishAssistantDelta(command.conversationId(), delta);
                 }
-                builder.append(delta);
-                chatStreamPublisher.publishAssistantDelta(command.conversationId(), delta);
+                @Override
+                public void onComplete() {
+                }
+                @Override
+                public void onError(Throwable throwable) {
+                    streamError[0] = throwable;
+                }
+            });
+        } catch (RuntimeException exception) {
+            if (chatRuntimeGuardService.isCancelled(command.conversationId())) {
+                ChatMessage cancelledMessage = ChatMessage.assistantMessage(
+                    command.conversationId(),
+                    StrUtil.blankToDefault(builder.toString(), "已取消"),
+                    ChatMessageStatus.CANCELLED,
+                    null,
+                    null,
+                    null
+                ).attachRun(runId);
+                chatMessageRepository.save(cancelledMessage);
+                conversation.touch();
+                conversation.recordLastRunId(runId);
+                chatConversationRepository.save(conversation);
+                recordExecutionOutcome(conversation, userMessage.getId(), cancelledMessage.getId(), intentDecision.intentCode(), intentDecision.action() == ConversationIntentAction.SEARCH, true, ChatMessageStatus.CANCELLED, null);
+                finishTrace(runId, "CANCELLED", null);
+                return;
             }
-            @Override
-            public void onComplete() {
-            }
-            @Override
-            public void onError(Throwable throwable) {
-                streamError[0] = throwable;
-            }
-        });
+            throw exception;
+        }
         if (chatRuntimeGuardService.isCancelled(command.conversationId())) {
             ChatMessage cancelledMessage = ChatMessage.assistantMessage(
                 command.conversationId(),
-                StrUtil.blankToDefault(builder.toString(), ""),
+                StrUtil.blankToDefault(builder.toString(), "已取消"),
                 ChatMessageStatus.CANCELLED,
                 null,
                 null,
@@ -201,6 +229,7 @@ public class ChatApplicationService {
             conversation.recordLastRunId(runId);
             chatConversationRepository.save(conversation);
             recordExecutionOutcome(conversation, userMessage.getId(), cancelledMessage.getId(), intentDecision.intentCode(), intentDecision.action() == ConversationIntentAction.SEARCH, true, ChatMessageStatus.CANCELLED, null);
+            finishTrace(runId, "CANCELLED", null);
             return;
         }
         if (streamError[0] != null) {
@@ -220,6 +249,7 @@ public class ChatApplicationService {
             chatConversationRepository.save(conversation);
             chatStreamPublisher.publishError(command.conversationId(), streamError[0].getMessage());
             recordExecutionOutcome(conversation, userMessage.getId(), failedMessage.getId(), intentDecision.intentCode(), intentDecision.action() == ConversationIntentAction.SEARCH, false, ChatMessageStatus.FAILED, streamError[0].getMessage());
+            finishTrace(runId, "ERROR", streamError[0].getMessage());
             return;
         }
         ChatMessage assistantMessage = ChatMessage.assistantMessage(
@@ -239,6 +269,7 @@ public class ChatApplicationService {
         conversation.recordLastRunId(runId);
         chatConversationRepository.save(conversation);
         recordExecutionOutcome(conversation, userMessage.getId(), assistantMessage.getId(), intentDecision.intentCode(), intentDecision.action() == ConversationIntentAction.SEARCH, true, ChatMessageStatus.COMPLETED, null);
+        finishTrace(runId, "SUCCESS", null);
         chatStreamPublisher.publishAssistantCompleted(command.conversationId(), assistantMessage.getContent(), conversation.getTitle());
     }
 
@@ -274,5 +305,19 @@ public class ChatApplicationService {
             .updatedAt(java.time.LocalDateTime.now())
             .build();
         chatExecutionRunRepository.save(run);
+    }
+
+    /**
+     * 按当前 run 主键收口 Trace，保证真实链路不会永久停留在 RUNNING。
+     * @param runId 运行标识。
+     * @param status Trace 终态。
+     * @param errorMessage 错误信息。
+     */
+    private void finishTrace(Long runId, String status, String errorMessage) {
+        ChatTraceRun traceRun = ConversationTraceContext.current();
+        if (traceRun == null) {
+            return;
+        }
+        conversationTraceRecordService.finishTrace(traceRun.getTraceId(), runId, status, errorMessage);
     }
 }

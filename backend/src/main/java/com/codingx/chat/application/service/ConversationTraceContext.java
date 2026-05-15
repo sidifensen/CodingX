@@ -33,6 +33,14 @@ public final class ConversationTraceContext {
     }
 
     /**
+     * 显式绑定既有根 Trace，供异步线程继续沿用同一条链路上下文。
+     * @param traceRun 根 Trace。
+     */
+    public static void bind(ChatTraceRun traceRun) {
+        CURRENT.set(traceRun);
+    }
+
+    /**
      * 返回当前线程绑定的根 Trace。
      * @return 当前 Trace。
      */

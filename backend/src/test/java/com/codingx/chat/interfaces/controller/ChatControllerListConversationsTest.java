@@ -61,8 +61,27 @@ class ChatControllerListConversationsTest {
             mockMvc().perform(get("/api/chat/conversations"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
-                .andExpect(jsonPath("$.data[0].id").value(2001L))
-                .andExpect(jsonPath("$.data[0].lastRunId").value(2054964195115945984L));
+                .andExpect(jsonPath("$.data[0].id").value("2001"))
+                .andExpect(jsonPath("$.data[0].lastRunId").value("2054964195115945984"));
+        }
+    }
+
+    /**
+     * 会话列表中的超大 Long ID 应序列化为字符串，避免浏览器 Number 精度丢失后无法正确切换历史会话。
+     */
+    @Test
+    void listConversationsSerializesLongIdentifiersAsStrings() throws Exception {
+        ChatConversation conversation = ChatConversation.create(2055114974648864768L, "历史会话", 1002L, ChatConversationStatus.ACTIVE);
+        conversation.restoreRuntimeState(LocalDateTime.of(2026, 5, 15, 10, 36, 58), 2055114974682419200L);
+        when(chatConversationApplicationService.listConversations(1002L)).thenReturn(List.of(conversation));
+
+        try (MockedStatic<StpUtil> mocked = Mockito.mockStatic(StpUtil.class)) {
+            mocked.when(StpUtil::getLoginIdAsLong).thenReturn(1002L);
+
+            mockMvc().perform(get("/api/chat/conversations"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].id").value("2055114974648864768"))
+                .andExpect(jsonPath("$.data[0].lastRunId").value("2055114974682419200"));
         }
     }
 

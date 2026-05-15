@@ -61,7 +61,7 @@ export function Tasks() {
             {tasks.map((task) => (
               <tr key={task.id} className="hover:bg-surface-container-low transition-colors group">
                 <td className="px-lg py-md font-data-mono text-tertiary-container"><Link to={`/tasks/${task.id}`} className="hover:text-primary transition-colors hover:underline">#{task.id}</Link></td>
-                <td className="px-lg py-md text-ink font-medium max-w-sm truncate" title={task.description}>{task.description}</td>
+                <td className="px-lg py-md text-ink font-medium max-w-[24rem] truncate" title={task.description}>{task.description}</td>
                 <td className="px-lg py-md text-secondary text-[12px]"><span className="material-symbols-outlined text-[14px] align-middle mr-1">person</span>{task.assignee}</td>
                 <td className="px-lg py-md">
                    <div className="flex items-center gap-1.5">

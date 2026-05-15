@@ -40,7 +40,7 @@ export function AdminLoginPage({
 
   return (
     <div className="min-h-screen bg-background text-on-surface flex items-center justify-center p-6">
-      <div className="w-full max-w-md rounded-2xl border border-border-hairline bg-surface-container-lowest p-8 shadow-[0_30px_80px_rgba(0,0,0,0.16)]">
+      <div className="w-full max-w-[28rem] rounded-2xl border border-border-hairline bg-surface-container-lowest p-8 shadow-[0_30px_80px_rgba(0,0,0,0.16)]">
         <div className="mb-6">
           <h1 className="font-headline-md text-headline-md font-bold text-ink">CodingX 管理端登录</h1>
           <p className="mt-2 text-body-sm text-secondary">仅管理员账号可登录后台管理系统</p>

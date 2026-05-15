@@ -35,6 +35,12 @@ export default defineConfig({
       '/api': {
         target: env.BACKEND_URL ?? 'http://localhost:5001',
         changeOrigin: true,
+        // 步骤：开发代理转发时移除浏览器 Origin，避免本地多端口联调被后端 CORS 拦截。
+        configure: (proxy) => {
+          proxy.on('proxyReq', (proxyReq) => {
+            proxyReq.removeHeader('origin');
+          });
+        },
       },
     },
   },

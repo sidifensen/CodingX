@@ -80,14 +80,8 @@ public class DeepSeekOkHttpChatClient implements AiProviderClient {
                 throw new IllegalStateException("AI response body is empty");
             }
             BufferedSource source = responseBodyValue.source();
-            StringBuilder rawStream = new StringBuilder();
-            while (!source.exhausted()) {
-                String line = source.readUtf8Line();
-                if (line != null) {
-                    rawStream.append(line).append('\n');
-                }
-            }
-            openAiStyleStreamParser.parse(rawStream.toString(), new OpenAiStyleStreamParser.StreamConsumer() {
+            StringBuilder chunkBuffer = new StringBuilder();
+            OpenAiStyleStreamParser.StreamConsumer streamConsumer = new OpenAiStyleStreamParser.StreamConsumer() {
                 @Override
                 public void onContentDelta(String delta) {
                     handler.onContentDelta(delta);
@@ -97,7 +91,15 @@ public class DeepSeekOkHttpChatClient implements AiProviderClient {
                 public void onDone() {
                     handler.onComplete();
                 }
-            });
+            };
+            while (true) {
+                String line = source.readUtf8Line();
+                if (line == null) {
+                    break;
+                }
+                openAiStyleStreamParser.parseChunk(line + "\n", chunkBuffer, streamConsumer);
+            }
+            openAiStyleStreamParser.flush(chunkBuffer, streamConsumer);
         } catch (IOException exception) {
             throw new IllegalStateException("AI request failed", exception);
         }

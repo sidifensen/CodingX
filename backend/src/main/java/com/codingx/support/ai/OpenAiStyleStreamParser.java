@@ -17,19 +17,39 @@ public class OpenAiStyleStreamParser {
      */
     public void parse(String rawStream, StreamConsumer consumer) {
         for (String line : StrUtil.split(rawStream, '\n')) {
-            if (StrUtil.isBlank(line) || !line.startsWith("data:")) {
-                continue;
-            }
-            String payload = StrUtil.trim(line.substring(5));
-            if ("[DONE]".equals(payload)) {
-                consumer.onDone();
-                continue;
-            }
-            String delta = extractContentDelta(payload);
-            if (StrUtil.isNotEmpty(delta)) {
-                consumer.onContentDelta(delta);
-            }
+            consumeLine(line, consumer);
         }
+    }
+
+    /**
+     * 以 chunk 方式增量消费上游 SSE 文本，并在完整行到达时立刻触发回调。
+     * @param chunk 当前收到的原始文本块。
+     * @param consumer 流式事件消费者。
+     */
+    public void parseChunk(String chunk, StringBuilder lineBuffer, StreamConsumer consumer) {
+        if (StrUtil.isEmpty(chunk)) {
+            return;
+        }
+        lineBuffer.append(chunk);
+        int lineBreakIndex = findNextLineBreak(lineBuffer);
+        while (lineBreakIndex >= 0) {
+            String line = lineBuffer.substring(0, lineBreakIndex);
+            deleteConsumedLine(lineBuffer, lineBreakIndex);
+            consumeLine(line, consumer);
+            lineBreakIndex = findNextLineBreak(lineBuffer);
+        }
+    }
+
+    /**
+     * 在流式读取结束时处理尾部残留数据，避免最后一行未换行时被吞掉。
+     * @param consumer 流式事件消费者。
+     */
+    public void flush(StringBuilder lineBuffer, StreamConsumer consumer) {
+        if (lineBuffer.isEmpty()) {
+            return;
+        }
+        consumeLine(lineBuffer.toString(), consumer);
+        lineBuffer.setLength(0);
     }
 
     /**
@@ -52,6 +72,51 @@ public class OpenAiStyleStreamParser {
             return StrUtil.nullToEmpty(delta.getStr("content"));
         } catch (Exception exception) {
             return null;
+        }
+    }
+
+    /**
+     * 消费单行 SSE 文本，只处理 data 行，其他控制行与空行直接忽略。
+     * @param line 原始单行文本。
+     * @param consumer 流式事件消费者。
+     */
+    private void consumeLine(String line, StreamConsumer consumer) {
+        if (StrUtil.isBlank(line) || !line.startsWith("data:")) {
+            return;
+        }
+        String payload = StrUtil.trim(line.substring(5));
+        if ("[DONE]".equals(payload)) {
+            consumer.onDone();
+            return;
+        }
+        String delta = extractContentDelta(payload);
+        if (StrUtil.isNotEmpty(delta)) {
+            consumer.onContentDelta(delta);
+        }
+    }
+
+    /**
+     * 计算缓冲区中下一条完整行的边界位置，兼容 LF 与 CRLF。
+     * @param lineBuffer 当前增量缓冲区。
+     * @return 行尾索引，若不存在完整行则返回 -1。
+     */
+    private int findNextLineBreak(StringBuilder lineBuffer) {
+        for (int index = 0; index < lineBuffer.length(); index++) {
+            if (lineBuffer.charAt(index) == '\n') {
+                return index;
+            }
+        }
+        return -1;
+    }
+
+    /**
+     * 删除已经消费的整行，并顺带去掉 CRLF 场景中残留的回车字符。
+     * @param lineBreakIndex 换行符索引。
+     */
+    private void deleteConsumedLine(StringBuilder lineBuffer, int lineBreakIndex) {
+        lineBuffer.delete(0, lineBreakIndex + 1);
+        if (!lineBuffer.isEmpty() && lineBuffer.charAt(0) == '\r') {
+            lineBuffer.deleteCharAt(0);
         }
     }
 

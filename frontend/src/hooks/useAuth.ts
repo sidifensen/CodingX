@@ -41,7 +41,8 @@ export function useAuth() {
       const loginResult = await AuthApi.login(payload);
       const nextSession: AuthSession = {
         token: loginResult.token,
-        userId: loginResult.userId,
+        // 步骤：统一将后端长整型 userId 序列化为字符串，避免前端数值精度与恢复逻辑不一致。
+        userId: String(loginResult.userId),
         username: loginResult.username,
         displayName: loginResult.displayName,
         userType: loginResult.userType,

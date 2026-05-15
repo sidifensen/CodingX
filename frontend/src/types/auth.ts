@@ -3,7 +3,7 @@
  */
 export interface AuthSession {
   token: string;
-  userId: number;
+  userId: string;
   username: string;
   displayName: string;
   userType: string;
@@ -21,7 +21,7 @@ export interface LoginFormPayload {
  * 描述后端登录接口返回的用户信息与令牌。
  */
 export interface LoginResponseData {
-  userId: number;
+  userId: string | number;
   username: string;
   displayName: string;
   userType: string;

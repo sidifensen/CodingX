@@ -7,11 +7,15 @@ import { ChatWorkspaceController } from './chat/types';
  */
 describe('ChatView', () => {
   beforeEach(() => {
+    Object.defineProperty(window.HTMLElement.prototype, 'scrollIntoView', {
+      configurable: true,
+      value: vi.fn(),
+    });
     window.localStorage.setItem(
       'codingx.auth.session',
       JSON.stringify({
         token: 'token-123',
-        userId: 1002,
+        userId: '1002',
         username: 'user',
         displayName: 'CodingX User',
         userType: 'USER',
@@ -175,6 +179,125 @@ describe('ChatView', () => {
 
     const assistantMessage = screen.getByText('我来为您总结 Spring Boot SSE 最佳实践。').parentElement;
     expect(assistantMessage).not.toHaveClass('border');
+  });
+
+  /**
+   * 助手消息正文应按 Markdown 渲染，避免把标题、加粗和列表原样当纯文本展示。
+   */
+  it('应将助手消息按 Markdown 渲染', async () => {
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          messages: [
+            {
+              id: '201',
+              conversationId: '2001',
+              role: 'ASSISTANT',
+              content: '### 总结\n\n- **要点一**\n- `ThreadLocal`',
+              status: 'COMPLETED',
+            },
+          ],
+          executionSteps: [],
+          references: [],
+          artifacts: [],
+        })}
+      />,
+    );
+
+    expect(screen.getByRole('heading', { name: '总结', level: 3 })).toBeInTheDocument();
+    expect(screen.getByText('要点一')).toBeInTheDocument();
+    expect(screen.getByText('ThreadLocal')).toContainHTML('code');
+  });
+
+  /**
+   * 进入有消息的会话页后应自动滚动到最后一条消息，避免用户手动拖到底部。
+   */
+  it('应在加载会话消息后自动滚动到最新消息', async () => {
+    const scrollIntoView = vi.mocked(window.HTMLElement.prototype.scrollIntoView);
+
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace()}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(scrollIntoView).toHaveBeenCalled();
+    });
+  });
+
+  /**
+   * 流式生成时每次新内容到达都应继续跟随滚动到底部，保证页面随着消息增长而下移。
+   */
+  it('应在流式消息增长时持续滚动到最新内容', async () => {
+    const scrollIntoView = vi.mocked(window.HTMLElement.prototype.scrollIntoView);
+    const { rerender } = render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          messages: [
+            {
+              id: '301',
+              conversationId: '2001',
+              role: 'USER',
+              content: '继续解释 ThreadLocal',
+              status: 'COMPLETED',
+            },
+            {
+              id: '302',
+              conversationId: '2001',
+              role: 'ASSISTANT',
+              content: '第一段',
+              status: 'streaming',
+            },
+          ],
+          executionSteps: [],
+          references: [],
+          artifacts: [],
+          isStreaming: true,
+        })}
+      />,
+    );
+
+    const initialCalls = scrollIntoView.mock.calls.length;
+
+    rerender(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          messages: [
+            {
+              id: '301',
+              conversationId: '2001',
+              role: 'USER',
+              content: '继续解释 ThreadLocal',
+              status: 'COMPLETED',
+            },
+            {
+              id: '302',
+              conversationId: '2001',
+              role: 'ASSISTANT',
+              content: '第一段\n第二段',
+              status: 'streaming',
+            },
+          ],
+          executionSteps: [],
+          references: [],
+          artifacts: [],
+          isStreaming: true,
+        })}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(scrollIntoView.mock.calls.length).toBeGreaterThan(initialCalls);
+    });
   });
 });
 

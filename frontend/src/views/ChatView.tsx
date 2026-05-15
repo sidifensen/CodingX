@@ -1,5 +1,7 @@
 import React from 'react';
 import { motion } from 'motion/react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import {
   ArrowUp,
   CheckCircle2,
@@ -46,6 +48,16 @@ export default function ChatView({ isAuthenticated, onRequireLogin, workspace }:
     renameConversation,
     deleteConversation,
   } = workspace;
+  const latestMessageAnchorRef = React.useRef<HTMLDivElement | null>(null);
+
+  React.useEffect(() => {
+    if (!messages.length) {
+      return;
+    }
+    if (typeof latestMessageAnchorRef.current?.scrollIntoView === 'function') {
+      latestMessageAnchorRef.current.scrollIntoView({ block: 'end' });
+    }
+  }, [messages]);
 
   /**
    * 统一处理底部输入提交。
@@ -127,6 +139,7 @@ export default function ChatView({ isAuthenticated, onRequireLogin, workspace }:
             <div className="mx-auto flex max-w-4xl flex-col gap-6">
               {messages.map((message) => {
                 const isAssistant = message.role === 'ASSISTANT';
+                const isLatestMessage = message.id === messages[messages.length - 1]?.id;
                 return (
                   <div
                     key={message.id}
@@ -139,14 +152,19 @@ export default function ChatView({ isAuthenticated, onRequireLogin, workspace }:
                           : 'rounded-[28px] bg-foreground px-5 py-4 text-background'
                       }`}
                     >
-                      <div className="whitespace-pre-wrap text-sm leading-7">
-                        {message.content || (message.status === 'streaming' ? '正在生成回答...' : '')}
-                      </div>
+                      {isAssistant ? (
+                        <MarkdownMessage content={message.content || (message.status === 'streaming' ? '正在生成回答...' : '')} />
+                      ) : (
+                        <div className="whitespace-pre-wrap text-sm leading-7">
+                          {message.content || (message.status === 'streaming' ? '正在生成回答...' : '')}
+                        </div>
+                      )}
                       {message.errorMessage ? (
                         <div className="mt-3 rounded-2xl border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-300">
                           {message.errorMessage}
                         </div>
                       ) : null}
+                      {isLatestMessage ? <div ref={latestMessageAnchorRef} data-testid="latest-message-anchor" /> : null}
                     </div>
                   </div>
                 );
@@ -296,6 +314,62 @@ export default function ChatView({ isAuthenticated, onRequireLogin, workspace }:
         />
       ) : null}
     </motion.div>
+  );
+}
+
+/**
+ * 使用 Markdown 渲染助手消息，保证标题、列表、代码块等富文本结构按预期展示。
+ */
+function MarkdownMessage({ content }: { content: string }) {
+  return (
+    <div className="chat-markdown text-sm leading-7 text-foreground">
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          h1: ({ node: _node, ...props }) => <h1 className="mb-4 text-3xl font-semibold tracking-tight" {...props} />,
+          h2: ({ node: _node, ...props }) => <h2 className="mb-3 mt-6 text-2xl font-semibold tracking-tight" {...props} />,
+          h3: ({ node: _node, ...props }) => <h3 className="mb-3 mt-6 text-xl font-semibold tracking-tight" {...props} />,
+          p: ({ node: _node, ...props }) => <p className="mb-4 last:mb-0" {...props} />,
+          ul: ({ node: _node, ...props }) => <ul className="mb-4 list-disc space-y-2 pl-6" {...props} />,
+          ol: ({ node: _node, ...props }) => <ol className="mb-4 list-decimal space-y-2 pl-6" {...props} />,
+          li: ({ node: _node, ...props }) => <li className="pl-1" {...props} />,
+          hr: ({ node: _node, ...props }) => <hr className="my-6 border-border" {...props} />,
+          code: ({ node: _node, className, children, ...props }) => {
+            const isBlockCode = className?.includes('language-');
+            if (isBlockCode) {
+              return (
+                <code
+                  className={`block overflow-x-auto rounded-2xl border border-border bg-surface-container px-4 py-3 font-mono text-[13px] leading-6 ${className}`}
+                  {...props}
+                >
+                  {children}
+                </code>
+              );
+            }
+            return (
+              <code className="rounded bg-surface-container px-1.5 py-0.5 font-mono text-[13px]" {...props}>
+                {children}
+              </code>
+            );
+          },
+          pre: ({ node: _node, ...props }) => <pre className="mb-4 overflow-x-auto whitespace-pre-wrap" {...props} />,
+          table: ({ node: _node, ...props }) => (
+            <div className="mb-4 overflow-x-auto rounded-2xl border border-border">
+              <table className="min-w-full border-collapse text-left text-sm" {...props} />
+            </div>
+          ),
+          thead: ({ node: _node, ...props }) => <thead className="bg-surface-container" {...props} />,
+          th: ({ node: _node, ...props }) => <th className="border-b border-border px-3 py-2 font-semibold" {...props} />,
+          td: ({ node: _node, ...props }) => <td className="border-b border-border px-3 py-2 align-top last:border-b-0" {...props} />,
+          blockquote: ({ node: _node, ...props }) => (
+            <blockquote className="mb-4 border-l-2 border-border-active pl-4 text-muted" {...props} />
+          ),
+          strong: ({ node: _node, ...props }) => <strong className="font-semibold text-foreground" {...props} />,
+        }}
+      >
+        {content}
+      </ReactMarkdown>
+    </div>
   );
 }
 

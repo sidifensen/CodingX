@@ -295,6 +295,10 @@ export function useChatWorkspace(isAuthenticated: boolean) {
     while (true) {
       const { done, value } = await reader.read();
       if (done) {
+        const { events } = extractSseEvents(`${buffer}\n\n`);
+        for (const event of events) {
+          applySseEvent(event.event, event.data, optimisticAssistantId);
+        }
         break;
       }
       buffer += decoder.decode(value, { stream: true });

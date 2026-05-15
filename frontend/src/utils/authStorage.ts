@@ -19,17 +19,24 @@ export class AuthStorage {
     try {
       // 步骤：解析 JSON 并做最小结构校验，避免脏数据污染运行态。
       const parsedValue = JSON.parse(rawValue) as Partial<AuthSession>;
+      const normalizedUserId = normalizeUserId(parsedValue.userId);
       if (
         typeof parsedValue.token !== 'string' ||
         typeof parsedValue.username !== 'string' ||
         typeof parsedValue.displayName !== 'string' ||
         typeof parsedValue.userType !== 'string' ||
-        typeof parsedValue.userId !== 'number'
+        normalizedUserId == null
       ) {
         window.localStorage.removeItem(AUTH_SESSION_STORAGE_KEY);
         return null;
       }
-      return parsedValue as AuthSession;
+      return {
+        token: parsedValue.token,
+        userId: normalizedUserId,
+        username: parsedValue.username,
+        displayName: parsedValue.displayName,
+        userType: parsedValue.userType,
+      } satisfies AuthSession;
     } catch {
       // 步骤：解析异常时主动清理坏数据，确保后续流程回到未登录态。
       window.localStorage.removeItem(AUTH_SESSION_STORAGE_KEY);
@@ -53,4 +60,19 @@ export class AuthStorage {
     // 步骤：删除本地会话键，确保界面回退为未登录态。
     window.localStorage.removeItem(AUTH_SESSION_STORAGE_KEY);
   }
+}
+
+/**
+ * 兼容历史 number 与后端当前 string 两种 userId 形态，统一转成字符串以避免精度与校验分歧。
+ * @param rawUserId 原始 userId 值。
+ * @returns 归一化后的字符串 userId，非法时返回 null。
+ */
+function normalizeUserId(rawUserId: unknown): string | null {
+  if (typeof rawUserId === 'string' && rawUserId.trim()) {
+    return rawUserId;
+  }
+  if (typeof rawUserId === 'number' && Number.isFinite(rawUserId)) {
+    return String(rawUserId);
+  }
+  return null;
 }

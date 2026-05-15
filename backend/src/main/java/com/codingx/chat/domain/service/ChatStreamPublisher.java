@@ -20,6 +20,13 @@ public interface ChatStreamPublisher {
     void publishAssistantDelta(Long conversationId, String delta);
 
     /**
+     * 发布思考增量事件，供前端展示模型思考过程。
+     * @param conversationId 会话标识。
+     * @param delta 思考增量。
+     */
+    void publishAssistantThinkingDelta(Long conversationId, String delta);
+
+    /**
      * 发布执行步骤事件，供前端右栏在流式过程中增量更新。
      * @param conversationId 会话标识。
      * @param payload 步骤载荷。

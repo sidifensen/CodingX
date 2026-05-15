@@ -100,6 +100,27 @@ describe('ChatView', () => {
   });
 
   /**
+   * 输入区应支持切换深度思考开关，避免功能只停留在后端参数。
+   */
+  it('应支持切换深度思考开关', async () => {
+    const setDeepThinkingEnabled = vi.fn();
+
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          deepThinkingEnabled: false,
+          setDeepThinkingEnabled,
+        })}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '切换深度思考' }));
+    expect(setDeepThinkingEnabled).toHaveBeenCalledWith(true);
+  });
+
+  /**
    * 聊天页改造后不应继续渲染内部 Conversations 侧栏。
    */
   it('不应继续渲染内部会话侧栏标题', async () => {
@@ -256,6 +277,36 @@ describe('ChatView', () => {
     expect(screen.getByRole('heading', { name: '总结', level: 3 })).toBeInTheDocument();
     expect(screen.getByText('要点一')).toBeInTheDocument();
     expect(screen.getByText('ThreadLocal')).toContainHTML('code');
+  });
+
+  /**
+   * 助手消息存在思考内容时，应展示可展开的思考区块。
+   */
+  it('应渲染助手思考内容区块', async () => {
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          messages: [
+            {
+              id: '701',
+              conversationId: '2001',
+              role: 'ASSISTANT',
+              content: '最终回答',
+              thinkingContent: '先分析问题，再组织答案。',
+              status: 'COMPLETED',
+            },
+          ],
+          executionSteps: [],
+          references: [],
+          artifacts: [],
+        })}
+      />,
+    );
+
+    expect(screen.getByText('思考过程')).toBeInTheDocument();
+    expect(screen.getByText('先分析问题，再组织答案。')).toBeInTheDocument();
   });
 
   /**
@@ -643,10 +694,12 @@ function createWorkspace(overrides?: Partial<ChatWorkspaceController>): ChatWork
     ],
     isStreaming: false,
     isCancelling: false,
+    deepThinkingEnabled: false,
     streamError: '',
     inputValue: '请搜索 Spring Boot SSE 最佳实践',
     isBootstrapping: false,
     setInputValue: vi.fn(),
+    setDeepThinkingEnabled: vi.fn(),
     submitMessage: vi.fn().mockResolvedValue(undefined),
     cancelCurrentStream: vi.fn().mockResolvedValue(undefined),
     selectConversation: vi.fn().mockResolvedValue(undefined),

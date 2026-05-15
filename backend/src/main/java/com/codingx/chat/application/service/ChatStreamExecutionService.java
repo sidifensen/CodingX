@@ -6,10 +6,10 @@ import com.codingx.chat.domain.model.ChatTraceRun;
 import com.codingx.chat.domain.repository.ChatExecutionRunRepository;
 import java.time.LocalDateTime;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicReference;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 
 /**
@@ -25,31 +25,18 @@ public class ChatStreamExecutionService {
     private final ExecutorService executor;
 
     /**
-     * 使用默认后台线程池构造聊天流派发服务。
+     * 注入可替换执行器，便于测试与后续线程池治理。
      * @param chatApplicationService 聊天应用服务。
      * @param chatRuntimeGuardService 运行保护服务。
+     * @param executor 后台执行器。
      */
     @Autowired
     public ChatStreamExecutionService(
         ChatApplicationService chatApplicationService,
         ChatRuntimeGuardService chatRuntimeGuardService,
         ConversationTraceRecordService conversationTraceRecordService,
-        ChatExecutionRunRepository chatExecutionRunRepository
-    ) {
-        this(chatApplicationService, chatRuntimeGuardService, conversationTraceRecordService, chatExecutionRunRepository, Executors.newCachedThreadPool());
-    }
-
-    /**
-     * 注入可替换执行器，便于测试与后续线程池治理。
-     * @param chatApplicationService 聊天应用服务。
-     * @param chatRuntimeGuardService 运行保护服务。
-     * @param executor 后台执行器。
-     */
-    public ChatStreamExecutionService(
-        ChatApplicationService chatApplicationService,
-        ChatRuntimeGuardService chatRuntimeGuardService,
-        ConversationTraceRecordService conversationTraceRecordService,
         ChatExecutionRunRepository chatExecutionRunRepository,
+        @Qualifier("chatStreamExecutor")
         ExecutorService executor
     ) {
         this.chatApplicationService = chatApplicationService;

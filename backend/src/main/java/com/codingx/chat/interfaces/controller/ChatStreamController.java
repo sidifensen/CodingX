@@ -60,7 +60,7 @@ public class ChatStreamController {
             "conversationId", actualConversationId,
             "deepThinking", deepThinkingEnabled
         ));
-        chatStreamExecutionService.dispatch(new SendChatMessageCommand(actualConversationId, question), userId);
+        chatStreamExecutionService.dispatch(new SendChatMessageCommand(actualConversationId, question, deepThinkingEnabled), userId);
         return emitter;
     }
 

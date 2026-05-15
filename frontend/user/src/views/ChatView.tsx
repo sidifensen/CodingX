@@ -52,10 +52,12 @@ export default function ChatView({
     sampleQuestions,
     isStreaming,
     isCancelling,
+    deepThinkingEnabled,
     streamError,
     inputValue,
     isBootstrapping,
     setInputValue,
+    setDeepThinkingEnabled,
     submitMessage,
     cancelCurrentStream,
     renameDialog,
@@ -210,6 +212,12 @@ export default function ChatView({
                     >
                       {isAssistant ? (
                         <>
+                          {message.thinkingContent ? (
+                            <details className="mb-3 rounded-2xl border border-border bg-surface-container px-4 py-3 text-sm text-muted">
+                              <summary className="cursor-pointer list-none font-medium text-foreground">思考过程</summary>
+                              <div className="mt-3 whitespace-pre-wrap leading-6">{message.thinkingContent}</div>
+                            </details>
+                          ) : null}
                           <MarkdownMessage content={messageContent} />
                           <AssistantMessageActions messageId={message.id} content={messageContent} />
                         </>
@@ -261,6 +269,21 @@ export default function ChatView({
                   placeholder="输入指令以重构组件库或分析代码..."
                   className="h-8 flex-1 bg-transparent text-[14px] text-foreground outline-none placeholder:text-muted"
                 />
+                <button
+                  type="button"
+                  aria-label="切换深度思考"
+                  onClick={() => setDeepThinkingEnabled(!deepThinkingEnabled)}
+                  className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+                    deepThinkingEnabled
+                      ? 'border-foreground bg-foreground text-background'
+                      : 'border-border bg-surface-container text-muted'
+                  }`}
+                >
+                  <span className="flex items-center gap-1.5">
+                    <WandSparkles size={14} />
+                    深度思考
+                  </span>
+                </button>
                 {isStreaming ? (
                   <button
                     type="button"

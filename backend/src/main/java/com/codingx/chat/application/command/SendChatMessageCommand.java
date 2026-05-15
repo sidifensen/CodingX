@@ -5,6 +5,7 @@ package com.codingx.chat.application.command;
  */
 public record SendChatMessageCommand(
     Long conversationId, // 关联会话标识。
-    String content // 主体内容。
+    String content, // 主体内容。
+    boolean deepThinking // 是否开启深度思考。
 ) {
 }

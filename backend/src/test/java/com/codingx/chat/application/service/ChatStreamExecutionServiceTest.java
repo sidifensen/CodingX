@@ -86,10 +86,10 @@ class ChatStreamExecutionServiceTest {
             started.countDown();
             release.await(3, TimeUnit.SECONDS);
             return null;
-        }).when(chatApplicationService).sendMessage(new SendChatMessageCommand(1001L, "你好"), 2001L);
+        }).when(chatApplicationService).sendMessage(new SendChatMessageCommand(1001L, "你好", false), 2001L);
 
         long startAt = System.nanoTime();
-        service.dispatch(new SendChatMessageCommand(1001L, "你好"), 2001L);
+        service.dispatch(new SendChatMessageCommand(1001L, "你好", false), 2001L);
         long elapsedMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startAt);
 
         assertTrue(elapsedMs < 100, "dispatch should return immediately");
@@ -97,7 +97,7 @@ class ChatStreamExecutionServiceTest {
         verify(conversationTraceRecordService).startTrace("chat-entry", 1001L, 2001L);
 
         release.countDown();
-        verify(chatApplicationService, org.mockito.Mockito.timeout(1000)).sendMessage(new SendChatMessageCommand(1001L, "你好"), 2001L);
+        verify(chatApplicationService, org.mockito.Mockito.timeout(1000)).sendMessage(new SendChatMessageCommand(1001L, "你好", false), 2001L);
     }
 
     /**
@@ -122,9 +122,9 @@ class ChatStreamExecutionServiceTest {
                     captured.countDown();
                 }
                 return null;
-            }).when(chatApplicationService).sendMessage(new SendChatMessageCommand(1001L, "你好"), 2001L);
+            }).when(chatApplicationService).sendMessage(new SendChatMessageCommand(1001L, "你好", false), 2001L);
 
-            service.dispatch(new SendChatMessageCommand(1001L, "你好"), 2001L);
+            service.dispatch(new SendChatMessageCommand(1001L, "你好", false), 2001L);
         }
 
         assertTrue(captured.await(1, TimeUnit.SECONDS), "background task should receive forwarded login id");
@@ -155,9 +155,9 @@ class ChatStreamExecutionServiceTest {
             observedRunId.set(ChatExecutionContext.currentRunId().orElse(null));
             captured.countDown();
             return null;
-        }).when(chatApplicationService).sendMessage(new SendChatMessageCommand(1001L, "你好"), 2001L);
+        }).when(chatApplicationService).sendMessage(new SendChatMessageCommand(1001L, "你好", false), 2001L);
 
-        service.dispatch(new SendChatMessageCommand(1001L, "你好"), 2001L);
+        service.dispatch(new SendChatMessageCommand(1001L, "你好", false), 2001L);
 
         assertTrue(captured.await(1, TimeUnit.SECONDS), "background task should capture run id");
         assertEquals(savedRunId.get(), observedRunId.get(), "background task should reuse dispatch run id");
@@ -184,9 +184,9 @@ class ChatStreamExecutionServiceTest {
             observedTraceId.set(ConversationTraceContext.current() != null ? ConversationTraceContext.current().getTraceId() : null);
             captured.countDown();
             return null;
-        }).when(chatApplicationService).sendMessage(new SendChatMessageCommand(1001L, "你好"), 2001L);
+        }).when(chatApplicationService).sendMessage(new SendChatMessageCommand(1001L, "你好", false), 2001L);
 
-        service.dispatch(new SendChatMessageCommand(1001L, "你好"), 2001L);
+        service.dispatch(new SendChatMessageCommand(1001L, "你好", false), 2001L);
 
         assertTrue(captured.await(1, TimeUnit.SECONDS), "background task should capture trace context");
         assertEquals("trace-1", observedTraceId.get());
@@ -220,9 +220,9 @@ class ChatStreamExecutionServiceTest {
             return null;
         }).when(chatExecutionRunRepository).save(any(ChatExecutionRun.class));
         org.mockito.Mockito.doThrow(new IllegalStateException("boom"))
-            .when(chatApplicationService).sendMessage(new SendChatMessageCommand(1001L, "你好"), 2001L);
+            .when(chatApplicationService).sendMessage(new SendChatMessageCommand(1001L, "你好", false), 2001L);
 
-        service.dispatch(new SendChatMessageCommand(1001L, "你好"), 2001L);
+        service.dispatch(new SendChatMessageCommand(1001L, "你好", false), 2001L);
 
         assertTrue(captured.await(1, TimeUnit.SECONDS), "failed run should be updated to ERROR");
         verify(chatExecutionRunRepository, org.mockito.Mockito.atLeast(2)).save(any(ChatExecutionRun.class));

@@ -33,6 +33,35 @@ public class ChatQueryTermMappingRepositoryImpl implements ChatQueryTermMappingR
             .toList();
     }
 
+    @Override
+    public List<ChatQueryTermMapping> findAllMappings() {
+        return chatQueryTermMappingMapper.selectList(new LambdaQueryWrapper<ChatQueryTermMappingDO>()
+                .eq(ChatQueryTermMappingDO::getDeleted, 0)
+                .orderByAsc(ChatQueryTermMappingDO::getSortNo))
+            .stream()
+            .map(this::toDomain)
+            .toList();
+    }
+
+    @Override
+    public void save(ChatQueryTermMapping mapping) {
+        ChatQueryTermMappingDO dataObject = new ChatQueryTermMappingDO();
+        dataObject.setId(mapping.getId());
+        dataObject.setSourceTerm(mapping.getSourceTerm());
+        dataObject.setTargetTerm(mapping.getTargetTerm());
+        dataObject.setMappingType(mapping.getMappingType());
+        dataObject.setEnabled(mapping.getEnabled());
+        dataObject.setSortNo(mapping.getSortNo());
+        dataObject.setCreatedAt(mapping.getCreatedAt());
+        dataObject.setUpdatedAt(mapping.getUpdatedAt());
+        dataObject.setDeleted(mapping.getDeleted());
+        if (chatQueryTermMappingMapper.selectById(mapping.getId()) == null) {
+            chatQueryTermMappingMapper.insert(dataObject);
+        } else {
+            chatQueryTermMappingMapper.updateById(dataObject);
+        }
+    }
+
     private ChatQueryTermMapping toDomain(ChatQueryTermMappingDO dataObject) {
         return ChatQueryTermMapping.builder()
             .id(dataObject.getId())

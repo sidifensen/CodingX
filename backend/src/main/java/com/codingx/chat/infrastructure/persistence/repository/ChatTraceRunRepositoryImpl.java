@@ -36,6 +36,17 @@ public class ChatTraceRunRepositoryImpl implements ChatTraceRunRepository {
             .last("LIMIT 1"))).map(this::toDomain);
     }
 
+    @Override
+    public java.util.List<ChatTraceRun> findRecent(int limit) {
+        return chatTraceRunMapper.selectList(new LambdaQueryWrapper<ChatTraceRunDO>()
+                .eq(ChatTraceRunDO::getDeleted, 0)
+                .orderByDesc(ChatTraceRunDO::getCreatedAt)
+                .last("LIMIT " + Math.max(1, limit)))
+            .stream()
+            .map(this::toDomain)
+            .toList();
+    }
+
     private ChatTraceRunDO toDataObject(ChatTraceRun traceRun) {
         ChatTraceRunDO dataObject = new ChatTraceRunDO();
         dataObject.setId(traceRun.getId());

@@ -9,6 +9,9 @@ const navItems = [
   { path: '/tasks', icon: 'assignment', label: '任务管理' },
   { path: '/skills', icon: 'extension', label: '技能管理' },
   { path: '/mcp', icon: 'terminal', label: 'MCP管理' },
+  { path: '/traces', icon: 'account_tree', label: 'Trace管理' },
+  { path: '/intent-tree', icon: 'schema', label: '意图树' },
+  { path: '/query-term-mappings', icon: 'manage_search', label: '关键词映射' },
   { path: '/settings', icon: 'settings', label: '系统配置' },
   { path: '/notifications', icon: 'notifications', label: '通知中心' },
 ];

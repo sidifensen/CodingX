@@ -96,6 +96,15 @@ class ChatApplicationServiceTest {
     @Mock
     private PromptTemplateLoader promptTemplateLoader;
 
+    @Mock
+    private com.codingx.support.ai.TokenCounterService tokenCounterService;
+
+    @Mock
+    private com.codingx.support.ai.LlmResponseCleaner llmResponseCleaner;
+
+    @Mock
+    private java.util.concurrent.ExecutorService searchExecutor;
+
     /**
      * ChatRuntimeGuardService 依赖。
      */
@@ -132,16 +141,17 @@ class ChatApplicationServiceTest {
         when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
             new ConversationRewriteResult("Hi", false, List.of("Hi"))
         );
+        when(llmResponseCleaner.clean(any())).thenAnswer(invocation -> invocation.getArgument(0));
         when(conversationIntentService.route("Hi")).thenReturn(new ConversationIntentDecision("chat.normal", ConversationIntentAction.DIRECT, null));
         doAnswer(invocation -> {
 
-            AiChatClient.StreamHandler handler = invocation.getArgument(1);
+            AiChatClient.StreamHandler handler = invocation.getArgument(2);
             handler.onDelta("Hello");
             handler.onDelta(" world");
             handler.onComplete();
             return null;
-        }).when(aiChatClient).streamChat(any(), any());
-        chatApplicationService.sendMessage(new SendChatMessageCommand(1L, "Hi"), 1002L);
+        }).when(aiChatClient).streamChat(any(), org.mockito.ArgumentMatchers.anyBoolean(), any());
+        chatApplicationService.sendMessage(new SendChatMessageCommand(1L, "Hi", false), 1002L);
 
         ArgumentCaptor<ChatMessage> captor = ArgumentCaptor.forClass(ChatMessage.class);
         ArgumentCaptor<ChatExecutionRun> runCaptor = ArgumentCaptor.forClass(ChatExecutionRun.class);
@@ -172,7 +182,7 @@ class ChatApplicationServiceTest {
         when(chatConversationRepository.requireById(1L)).thenReturn(conversation);
         ForbiddenException exception = assertThrows(
             ForbiddenException.class,
-            () -> chatApplicationService.sendMessage(new SendChatMessageCommand(1L, "Hi"), 2001L)
+            () -> chatApplicationService.sendMessage(new SendChatMessageCommand(1L, "Hi", false), 2001L)
 
         );
         assertEquals("You cannot access this conversation", exception.getMessage());
@@ -192,7 +202,7 @@ class ChatApplicationServiceTest {
 
         IllegalStateException exception = assertThrows(
             IllegalStateException.class,
-            () -> chatApplicationService.sendMessage(new SendChatMessageCommand(1L, "Hi"), 1002L)
+            () -> chatApplicationService.sendMessage(new SendChatMessageCommand(1L, "Hi", false), 1002L)
         );
 
         assertEquals("Conversation rejected: busy", exception.getMessage());
@@ -216,13 +226,13 @@ class ChatApplicationServiceTest {
         AtomicInteger cancelChecks = new AtomicInteger();
         when(chatRuntimeGuardService.isCancelled(1L)).thenAnswer(invocation -> cancelChecks.incrementAndGet() > 1);
         doAnswer(invocation -> {
-            AiChatClient.StreamHandler handler = invocation.getArgument(1);
+            AiChatClient.StreamHandler handler = invocation.getArgument(2);
             handler.onDelta("partial");
             handler.onComplete();
             return null;
-        }).when(aiChatClient).streamChat(any(), any());
+        }).when(aiChatClient).streamChat(any(), org.mockito.ArgumentMatchers.anyBoolean(), any());
 
-        chatApplicationService.sendMessage(new SendChatMessageCommand(1L, "Hi"), 1002L);
+        chatApplicationService.sendMessage(new SendChatMessageCommand(1L, "Hi", false), 1002L);
 
         ArgumentCaptor<ChatMessage> captor = ArgumentCaptor.forClass(ChatMessage.class);
         verify(chatMessageRepository, org.mockito.Mockito.times(2)).save(captor.capture());
@@ -247,9 +257,9 @@ class ChatApplicationServiceTest {
         when(chatRuntimeGuardService.isCancelled(1L)).thenReturn(true);
         doAnswer(invocation -> {
             throw new IllegalStateException("interrupted");
-        }).when(aiChatClient).streamChat(any(), any());
+        }).when(aiChatClient).streamChat(any(), org.mockito.ArgumentMatchers.anyBoolean(), any());
 
-        chatApplicationService.sendMessage(new SendChatMessageCommand(1L, "Hi"), 1002L);
+        chatApplicationService.sendMessage(new SendChatMessageCommand(1L, "Hi", false), 1002L);
 
         ArgumentCaptor<ChatMessage> captor = ArgumentCaptor.forClass(ChatMessage.class);
         verify(chatMessageRepository, org.mockito.Mockito.times(2)).save(captor.capture());

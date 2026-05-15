@@ -27,6 +27,10 @@ public class NoopChatStreamPublisher implements ChatStreamPublisher {
     }
 
     @Override
+    public void publishAssistantThinkingDelta(Long conversationId, String delta) {
+    }
+
+    @Override
     public void publishStep(Long conversationId, Object payload) {
     }
 

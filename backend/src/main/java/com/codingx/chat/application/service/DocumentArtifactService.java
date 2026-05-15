@@ -17,6 +17,7 @@ public class DocumentArtifactService {
 
     private final ChatMessageArtifactRepository chatMessageArtifactRepository;
     private final com.codingx.chat.domain.service.ChatStreamPublisher chatStreamPublisher;
+    private final FileStorageService fileStorageService;
 
     /**
      * 生成 docx 产物记录并持久化。
@@ -27,6 +28,7 @@ public class DocumentArtifactService {
      */
     @ConversationTraceNode(name = "artifact-generate", type = "ARTIFACT")
     public void createDocxArtifact(Long runId, Long messageId, Long conversationId, String content) {
+        StoredArtifact storedArtifact = fileStorageService.saveArtifact(conversationId, "search-report.docx", content);
         ChatMessageArtifact artifact = ChatMessageArtifact.builder()
             .id(IdUtil.getSnowflakeNextId())
             .runId(runId)
@@ -35,7 +37,7 @@ public class DocumentArtifactService {
             .artifactType("docx")
             .name("search-report.docx")
             .mimeType("application/vnd.openxmlformats-officedocument.wordprocessingml.document")
-            .storagePath("artifacts/" + conversationId + "/search-report.docx")
+            .storagePath(storedArtifact.storagePath())
             .contentPreview(content)
             .createdAt(LocalDateTime.now())
             .build();

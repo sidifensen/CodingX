@@ -21,6 +21,12 @@ public interface ChatIntentNodeRepository {
     List<ChatIntentNode> findEnabledNodes();
 
     /**
+     * 查询全部未删除的意图节点集合，供后台管理使用。
+     * @return 节点集合。
+     */
+    List<ChatIntentNode> findAllNodes();
+
+    /**
      * 按意图编码查询单个节点。
      * @param intentCode 意图编码。
      * @return 意图节点；不存在时返回 null。

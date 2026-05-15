@@ -40,6 +40,16 @@ public class ChatIntentNodeRepositoryImpl implements ChatIntentNodeRepository {
     }
 
     @Override
+    public List<ChatIntentNode> findAllNodes() {
+        return chatIntentNodeMapper.selectList(new LambdaQueryWrapper<ChatIntentNodeDO>()
+                .eq(ChatIntentNodeDO::getDeleted, 0)
+                .orderByAsc(ChatIntentNodeDO::getSortNo))
+            .stream()
+            .map(this::toDomain)
+            .toList();
+    }
+
+    @Override
     public ChatIntentNode findByIntentCode(String intentCode) {
         ChatIntentNodeDO dataObject = chatIntentNodeMapper.selectOne(new LambdaQueryWrapper<ChatIntentNodeDO>()
             .eq(ChatIntentNodeDO::getIntentCode, intentCode)

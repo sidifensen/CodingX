@@ -11,6 +11,8 @@ public record ChatMessageResponse(
     Long conversationId, // 关联会话标识。
     ChatMessageRole role, // role 字段。
     String content, // 主体内容。
+    String thinkingContent, // 深度思考内容。
+    Integer thinkingDuration, // 深度思考耗时。
     ChatMessageStatus status, // 当前状态值。
     String provider, // 提供方标识。
     String model, // 模型标识。

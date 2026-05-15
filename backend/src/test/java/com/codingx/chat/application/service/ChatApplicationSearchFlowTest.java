@@ -17,7 +17,10 @@ import com.codingx.chat.domain.service.AiChatClient;
 import com.codingx.chat.domain.service.ChatStreamPublisher;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
@@ -45,9 +48,17 @@ class ChatApplicationSearchFlowTest {
     @Mock private WebSearchExecutionService webSearchExecutionService;
     @Mock private SearchReferenceCollector searchReferenceCollector;
     @Mock private DocumentArtifactService documentArtifactService;
+    @Mock private com.codingx.support.ai.TokenCounterService tokenCounterService;
+    @Mock private com.codingx.support.ai.LlmResponseCleaner llmResponseCleaner;
+    private final ExecutorService searchExecutor = Executors.newSingleThreadExecutor();
 
     @InjectMocks
     private ChatApplicationService chatApplicationService;
+
+    @AfterEach
+    void shutdownExecutor() {
+        searchExecutor.shutdownNow();
+    }
 
     /**
      * 搜索型问题应触发搜索服务、参考来源收集和 docx 产物生成。
@@ -66,15 +77,16 @@ class ChatApplicationSearchFlowTest {
         when(webSearchExecutionService.search("请搜索 Spring Boot SSE")).thenReturn(List.of(
             new SearchReferenceCandidate("SSE", "https://example.com", "Example", "snippet")
         ));
+        when(llmResponseCleaner.clean(any())).thenAnswer(invocation -> invocation.getArgument(0));
         when(conversationTitleService.generateTitle(any(), any())).thenReturn("SSE搜索");
         org.mockito.Mockito.doAnswer(invocation -> {
-            AiChatClient.StreamHandler handler = invocation.getArgument(1);
+            AiChatClient.StreamHandler handler = invocation.getArgument(2);
             handler.onDelta("搜索结果总结");
             handler.onComplete();
             return null;
-        }).when(aiChatClient).streamChat(any(), any());
+        }).when(aiChatClient).streamChat(any(), org.mockito.ArgumentMatchers.anyBoolean(), any());
 
-        chatApplicationService.sendMessage(new SendChatMessageCommand(1L, "请搜索 Spring Boot SSE"), 1002L);
+        chatApplicationService.sendMessage(new SendChatMessageCommand(1L, "请搜索 Spring Boot SSE", false), 1002L);
 
         verify(webSearchExecutionService).search("请搜索 Spring Boot SSE");
         verify(searchReferenceCollector).collect(any(), any(), any(), any());
@@ -101,15 +113,16 @@ class ChatApplicationSearchFlowTest {
         when(webSearchExecutionService.search("介绍 保险系统")).thenReturn(List.of(
             new SearchReferenceCandidate("保险系统", "https://example.com/ins", "Example", "ins")
         ));
+        when(llmResponseCleaner.clean(any())).thenAnswer(invocation -> invocation.getArgument(0));
         when(conversationTitleService.generateTitle(any(), any())).thenReturn("双系统介绍");
         org.mockito.Mockito.doAnswer(invocation -> {
-            AiChatClient.StreamHandler handler = invocation.getArgument(1);
+            AiChatClient.StreamHandler handler = invocation.getArgument(2);
             handler.onDelta("合并总结");
             handler.onComplete();
             return null;
-        }).when(aiChatClient).streamChat(any(), any());
+        }).when(aiChatClient).streamChat(any(), org.mockito.ArgumentMatchers.anyBoolean(), any());
 
-        chatApplicationService.sendMessage(new SendChatMessageCommand(1L, "帮我分别介绍 OA 系统和保险系统"), 1002L);
+        chatApplicationService.sendMessage(new SendChatMessageCommand(1L, "帮我分别介绍 OA 系统和保险系统", false), 1002L);
 
         verify(webSearchExecutionService).search("介绍 OA 系统");
         verify(webSearchExecutionService).search("介绍 保险系统");

@@ -484,6 +484,26 @@ COMMENT ON COLUMN chat_sample_question.created_at IS '创建时间';
 COMMENT ON COLUMN chat_sample_question.updated_at IS '更新时间';
 COMMENT ON COLUMN chat_sample_question.deleted IS '是否删除 0：正常 1：删除';
 
+CREATE TABLE IF NOT EXISTS chat_runtime_setting (
+    id BIGINT PRIMARY KEY,
+    setting_key VARCHAR(128) NOT NULL UNIQUE,
+    setting_value TEXT NOT NULL,
+    value_type VARCHAR(32) NOT NULL,
+    description VARCHAR(255),
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted SMALLINT NOT NULL DEFAULT 0
+);
+COMMENT ON TABLE chat_runtime_setting IS '聊天运行时配置表';
+COMMENT ON COLUMN chat_runtime_setting.id IS '主键ID';
+COMMENT ON COLUMN chat_runtime_setting.setting_key IS '配置键';
+COMMENT ON COLUMN chat_runtime_setting.setting_value IS '配置值';
+COMMENT ON COLUMN chat_runtime_setting.value_type IS '值类型';
+COMMENT ON COLUMN chat_runtime_setting.description IS '配置说明';
+COMMENT ON COLUMN chat_runtime_setting.created_at IS '创建时间';
+COMMENT ON COLUMN chat_runtime_setting.updated_at IS '更新时间';
+COMMENT ON COLUMN chat_runtime_setting.deleted IS '是否删除 0：正常 1：删除';
+
 CREATE INDEX IF NOT EXISTS idx_task_created_by ON task (created_by, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_task_status ON task (status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_task_event_task_seq ON task_event (task_id, sequence_no ASC);
@@ -507,3 +527,4 @@ CREATE INDEX IF NOT EXISTS idx_chat_trace_run_task ON chat_trace_run (task_id);
 CREATE INDEX IF NOT EXISTS idx_chat_trace_node_trace_depth ON chat_trace_node (trace_id, depth ASC, created_at ASC);
 CREATE INDEX IF NOT EXISTS idx_chat_query_term_mapping_source ON chat_query_term_mapping (source_term, enabled, sort_no ASC);
 CREATE INDEX IF NOT EXISTS idx_chat_sample_question_enabled ON chat_sample_question (enabled, sort_no ASC);
+CREATE INDEX IF NOT EXISTS idx_chat_runtime_setting_key ON chat_runtime_setting (setting_key, deleted);

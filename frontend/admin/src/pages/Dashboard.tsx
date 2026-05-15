@@ -1,7 +1,14 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
+import { AdminChatApi, AdminDashboardView } from '../api/adminChatApi';
 
 export function Dashboard() {
+  const [dashboard, setDashboard] = React.useState<AdminDashboardView | null>(null);
+
+  React.useEffect(() => {
+    void AdminChatApi.getDashboard().then(setDashboard);
+  }, []);
+
   return (
     <>
       <div className="sky-wash pt-xl pb-section px-xl">
@@ -17,7 +24,7 @@ export function Dashboard() {
                 <span className="font-label-caps text-label-caps text-secondary uppercase tracking-widest">用户总数</span>
                 <span className="material-symbols-outlined text-secondary group-hover:text-primary transition-colors">group</span>
               </div>
-              <div className="font-metric-lg text-metric-lg text-ink font-bold">1,240</div>
+              <div className="font-metric-lg text-metric-lg text-ink font-bold">{dashboard?.intentNodeCount ?? '-'}</div>
               <div className="mt-xs flex items-center gap-1 text-[12px] text-status-running">
                 <span className="material-symbols-outlined text-[14px]">trending_up</span>
                 <span>+12% 较上月</span>
@@ -29,7 +36,7 @@ export function Dashboard() {
                 <span className="font-label-caps text-label-caps text-secondary uppercase tracking-widest">任务总数</span>
                 <span className="material-symbols-outlined text-secondary group-hover:text-primary transition-colors">assignment</span>
               </div>
-              <div className="font-metric-lg text-metric-lg text-ink font-bold">8,562</div>
+              <div className="font-metric-lg text-metric-lg text-ink font-bold">{dashboard?.mappingCount ?? '-'}</div>
               <div className="mt-xs flex items-center gap-1 text-[12px] text-secondary">
                 <span className="material-symbols-outlined text-[14px]">history</span>
                 <span>近24小时新增 142</span>
@@ -41,7 +48,7 @@ export function Dashboard() {
                 <span className="font-label-caps text-label-caps text-secondary uppercase tracking-widest">运行中任务</span>
                 <div className="w-2 h-2 rounded-full bg-status-running animate-pulse"></div>
               </div>
-              <div className="font-metric-lg text-metric-lg text-ink font-bold">12</div>
+              <div className="font-metric-lg text-metric-lg text-ink font-bold">{dashboard?.runningTraceCount ?? '-'}</div>
               <div className="mt-xs">
                 <span className="px-xs py-0.5 bg-status-running-bg text-status-running rounded text-[10px] font-bold border border-status-running-border">HEALTHY</span>
               </div>
@@ -52,7 +59,7 @@ export function Dashboard() {
                 <span className="font-label-caps text-label-caps text-secondary uppercase tracking-widest">失败任务</span>
                 <span className="material-symbols-outlined text-status-failed transition-colors">error_outline</span>
               </div>
-              <div className="font-metric-lg text-metric-lg text-ink font-bold">3</div>
+              <div className="font-metric-lg text-metric-lg text-ink font-bold">{dashboard?.traceCount ?? '-'}</div>
               <div className="mt-xs">
                 <span className="px-xs py-0.5 bg-status-failed-bg text-status-failed rounded text-[10px] font-bold border border-status-failed-border">CRITICAL</span>
               </div>
@@ -92,6 +99,24 @@ export function Dashboard() {
                   <span className="material-symbols-outlined text-[28px]">terminal</span>
                 </div>
                 <span className="font-medium text-ink">MCP管理</span>
+              </Link>
+              <Link to="/traces" className="flex flex-col items-center justify-center p-xl bg-surface-container-lowest border border-border-hairline rounded-xl hover:border-ink hover:bg-surface-container-low transition-all group active:scale-95">
+                <div className="w-12 h-12 bg-surface-container rounded-lg flex items-center justify-center mb-sm group-hover:bg-ink group-hover:text-on-ink transition-colors">
+                  <span className="material-symbols-outlined text-[28px]">account_tree</span>
+                </div>
+                <span className="font-medium text-ink">Trace管理</span>
+              </Link>
+              <Link to="/intent-tree" className="flex flex-col items-center justify-center p-xl bg-surface-container-lowest border border-border-hairline rounded-xl hover:border-ink hover:bg-surface-container-low transition-all group active:scale-95">
+                <div className="w-12 h-12 bg-surface-container rounded-lg flex items-center justify-center mb-sm group-hover:bg-ink group-hover:text-on-ink transition-colors">
+                  <span className="material-symbols-outlined text-[28px]">schema</span>
+                </div>
+                <span className="font-medium text-ink">意图树</span>
+              </Link>
+              <Link to="/query-term-mappings" className="flex flex-col items-center justify-center p-xl bg-surface-container-lowest border border-border-hairline rounded-xl hover:border-ink hover:bg-surface-container-low transition-all group active:scale-95">
+                <div className="w-12 h-12 bg-surface-container rounded-lg flex items-center justify-center mb-sm group-hover:bg-ink group-hover:text-on-ink transition-colors">
+                  <span className="material-symbols-outlined text-[28px]">manage_search</span>
+                </div>
+                <span className="font-medium text-ink">关键词映射</span>
               </Link>
               <Link to="/settings" className="flex flex-col items-center justify-center p-xl bg-surface-container-lowest border border-border-hairline rounded-xl hover:border-ink hover:bg-surface-container-low transition-all group active:scale-95">
                 <div className="w-12 h-12 bg-surface-container rounded-lg flex items-center justify-center mb-sm group-hover:bg-ink group-hover:text-on-ink transition-colors">

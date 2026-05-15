@@ -20,6 +20,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.ForkJoinPool;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -119,6 +121,9 @@ public class ChatApplicationService {
      * Trace 收口服务依赖。
      */
     private final ConversationTraceRecordService conversationTraceRecordService;
+    private final com.codingx.support.ai.TokenCounterService tokenCounterService;
+    private final com.codingx.support.ai.LlmResponseCleaner llmResponseCleaner;
+    private final ExecutorService searchExecutor;
 
     /**
      * 发送 sendMessage 处理的消息或请求。
@@ -244,12 +249,14 @@ public class ChatApplicationService {
             documentArtifactService.createDocxArtifact(runId, userMessage.getId(), command.conversationId(), "搜索结果整理中");
         }
         StringBuilder builder = new StringBuilder();
+        StringBuilder thinkingBuilder = new StringBuilder();
         final Throwable[] streamError = new Throwable[1];
         final String[] selectedProvider = new String[1];
         final String[] selectedModel = new String[1];
         List<ChatMessage> aiHistory = buildAiHistory(history, intentDecision, command.conversationId());
+        tokenCounterService.estimateConversationTokens(aiHistory);
         try {
-            aiChatClient.streamChat(aiHistory, new AiChatClient.StreamHandler() {
+            aiChatClient.streamChat(aiHistory, command.deepThinking(), new AiChatClient.StreamHandler() {
                 @Override
                 public void onMetadata(String provider, String model) {
                     selectedProvider[0] = provider;
@@ -263,6 +270,15 @@ public class ChatApplicationService {
                     }
                     builder.append(delta);
                     chatStreamPublisher.publishAssistantDelta(command.conversationId(), delta);
+                }
+
+                @Override
+                public void onThinkingDelta(String delta) {
+                    if (chatRuntimeGuardService.isCancelled(command.conversationId())) {
+                        return;
+                    }
+                    thinkingBuilder.append(delta);
+                    chatStreamPublisher.publishAssistantThinkingDelta(command.conversationId(), delta);
                 }
                 @Override
                 public void onComplete() {
@@ -313,7 +329,7 @@ public class ChatApplicationService {
 
             ChatMessage failedMessage = ChatMessage.assistantMessage(
                 command.conversationId(),
-                StrUtil.blankToDefault(builder.toString(), "AI response failed"),
+                StrUtil.blankToDefault(llmResponseCleaner.clean(builder.toString()), "AI response failed"),
                 ChatMessageStatus.FAILED,
                 selectedProvider[0],
                 selectedModel[0],
@@ -331,13 +347,21 @@ public class ChatApplicationService {
         }
         ChatMessage assistantMessage = ChatMessage.assistantMessage(
             command.conversationId(),
-            StrUtil.blankToDefault(builder.toString(), ""),
+            StrUtil.blankToDefault(llmResponseCleaner.clean(builder.toString()), ""),
             ChatMessageStatus.COMPLETED,
             selectedProvider[0],
             selectedModel[0],
             null
 
         ).attachRun(runId);
+        assistantMessage.restoreRuntimeState(
+            assistantMessage.getRunId(),
+            llmResponseCleaner.clean(thinkingBuilder.toString()),
+            StrUtil.isBlank(thinkingBuilder.toString()) ? null : 0,
+            null,
+            assistantMessage.getCreatedAt(),
+            assistantMessage.getUpdatedAt()
+        );
         chatMessageRepository.save(assistantMessage);
         history.add(assistantMessage);
         conversation.rename(conversationTitleService.generateTitle(conversation, history));
@@ -456,7 +480,10 @@ public class ChatApplicationService {
                 "sequenceNo", searchStep.getSequenceNo(),
                 "content", searchStep.getContent()
             ));
-            futures.add(CompletableFuture.supplyAsync(() -> webSearchExecutionService.search(searchQuestion)));
+            futures.add(CompletableFuture.supplyAsync(
+                () -> webSearchExecutionService.search(searchQuestion),
+                searchExecutor == null ? ForkJoinPool.commonPool() : searchExecutor
+            ));
         }
         LinkedHashMap<String, SearchReferenceCandidate> merged = new LinkedHashMap<>();
         for (CompletableFuture<List<SearchReferenceCandidate>> future : futures) {

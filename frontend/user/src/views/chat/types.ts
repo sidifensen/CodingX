@@ -111,10 +111,12 @@ export interface ChatWorkspaceController {
   sampleQuestions: SampleQuestionItem[];
   isStreaming: boolean;
   isCancelling: boolean;
+  deepThinkingEnabled: boolean;
   streamError: string;
   inputValue: string;
   isBootstrapping: boolean;
   setInputValue: (value: string) => void;
+  setDeepThinkingEnabled: (value: boolean) => void;
   submitMessage: () => Promise<void>;
   cancelCurrentStream: () => Promise<void>;
   selectConversation: (conversationId: string, sourceConversations?: ConversationItem[]) => Promise<void>;

@@ -1,6 +1,7 @@
 package com.codingx.chat.application.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 
 import com.codingx.chat.domain.model.ChatMessageArtifact;
@@ -25,6 +26,9 @@ class DocumentArtifactServiceTest {
     @Mock
     private ChatStreamPublisher chatStreamPublisher;
 
+    @Mock
+    private FileStorageService fileStorageService;
+
     @InjectMocks
     private DocumentArtifactService documentArtifactService;
 
@@ -33,11 +37,15 @@ class DocumentArtifactServiceTest {
      */
     @Test
     void createDocxArtifactPersistsArtifactRecord() {
+        org.mockito.Mockito.when(fileStorageService.saveArtifact(eq(3001L), eq("search-report.docx"), eq("整理后的报告内容")))
+            .thenReturn(new StoredArtifact("storage/docx/3001-search-report.docx", "/files/storage/docx/3001-search-report.docx"));
+
         documentArtifactService.createDocxArtifact(1001L, 2001L, 3001L, "整理后的报告内容");
 
         ArgumentCaptor<ChatMessageArtifact> captor = ArgumentCaptor.forClass(ChatMessageArtifact.class);
         verify(chatMessageArtifactRepository).save(captor.capture());
         verify(chatStreamPublisher).publishArtifact(org.mockito.ArgumentMatchers.eq(3001L), org.mockito.ArgumentMatchers.any());
         assertEquals("docx", captor.getValue().getArtifactType());
+        assertEquals("storage/docx/3001-search-report.docx", captor.getValue().getStoragePath());
     }
 }

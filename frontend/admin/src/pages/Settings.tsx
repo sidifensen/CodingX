@@ -1,6 +1,13 @@
 import React from 'react';
+import { AdminChatApi, AdminRuntimeSetting } from '../api/adminChatApi';
 
 export function Settings() {
+  const [settings, setSettings] = React.useState<AdminRuntimeSetting[]>([]);
+
+  React.useEffect(() => {
+    void AdminChatApi.listSettings().then(setSettings);
+  }, []);
+
   return (
     <div className="p-lg w-full">
       <div className="mb-lg">
@@ -12,15 +19,12 @@ export function Settings() {
         <section className="bg-surface-container-lowest border border-border-hairline rounded-xl p-xl shadow-sm">
           <h3 className="font-title-sm text-ink mb-md border-b border-border-hairline pb-sm">基础服务配置</h3>
           <div className="space-y-md">
-            <div>
-              <label className="block text-secondary text-[12px] mb-1">系统管理员联系邮箱</label>
-              <input type="text" defaultValue="admin@codingx.io" className="w-full border border-border-hairline rounded-lg px-3 py-2 bg-surface-container-lowest focus:ring-1 focus:ring-ink focus:border-ink transition-all text-body-sm" />
-            </div>
-            <div>
-              <label className="block text-secondary text-[12px] mb-1">会话超时时间 (分钟)</label>
-              <input type="number" defaultValue="120" className="w-full border border-border-hairline rounded-lg px-3 py-2 bg-surface-container-lowest focus:ring-1 focus:ring-ink focus:border-ink transition-all text-body-sm" />
-              <p className="text-[11px] text-tertiary-container mt-1">超过此时间未操作，用户将自动登出。</p>
-            </div>
+            {settings.map((setting) => (
+              <div key={setting.settingKey}>
+                <label className="block text-secondary text-[12px] mb-1">{setting.description ?? setting.settingKey}</label>
+                <input type="text" readOnly value={setting.settingValue} className="w-full border border-border-hairline rounded-lg px-3 py-2 bg-surface-container-lowest focus:ring-1 focus:ring-ink focus:border-ink transition-all text-body-sm" />
+              </div>
+            ))}
           </div>
         </section>
 

@@ -80,7 +80,7 @@ class ChatApplicationIntentFlowTest {
             new ConversationIntentDecision("clarify.ambiguity", ConversationIntentAction.CLARIFY, "请补充你指的是哪一部分")
         );
 
-        chatApplicationService.sendMessage(new SendChatMessageCommand(1L, "这个要怎么改"), 1002L);
+        chatApplicationService.sendMessage(new SendChatMessageCommand(1L, "这个要怎么改", false), 1002L);
 
         ArgumentCaptor<ChatMessage> captor = ArgumentCaptor.forClass(ChatMessage.class);
         verify(chatMessageRepository, org.mockito.Mockito.times(2)).save(captor.capture());
@@ -105,7 +105,7 @@ class ChatApplicationIntentFlowTest {
             new ConversationIntentDecision("sys-about-bot", ConversationIntentAction.DIRECT, "我是 CodingX 的知识助手")
         );
 
-        chatApplicationService.sendMessage(new SendChatMessageCommand(1L, "你是谁"), 1002L);
+        chatApplicationService.sendMessage(new SendChatMessageCommand(1L, "你是谁", false), 1002L);
 
         verify(chatStreamPublisher).publishAssistantCompleted(1L, "我是 CodingX 的知识助手", "New Conversation");
         org.mockito.Mockito.verifyNoInteractions(aiChatClient);

@@ -20,4 +20,11 @@ public interface ChatTraceRunRepository {
      * @return 根链路记录。
      */
     Optional<ChatTraceRun> findByTraceId(String traceId);
+
+    /**
+     * 查询最近的 Trace 根记录。
+     * @param limit 返回数量上限。
+     * @return 根记录列表。
+     */
+    java.util.List<ChatTraceRun> findRecent(int limit);
 }

@@ -39,7 +39,7 @@ class RoutingAiChatClientTest {
         List<String> deltas = new ArrayList<>();
         List<String> terminals = new ArrayList<>();
 
-        client.streamChat(List.of(ChatMessage.userMessage(1L, "你好")), new AiChatClient.StreamHandler() {
+        client.streamChat(List.of(ChatMessage.userMessage(1L, "你好")), false, new AiChatClient.StreamHandler() {
             @Override
             public void onDelta(String delta) {
                 deltas.add(delta);

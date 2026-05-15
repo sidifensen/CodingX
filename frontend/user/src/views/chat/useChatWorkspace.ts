@@ -26,6 +26,7 @@ export function useChatWorkspace(isAuthenticated: boolean) {
   const [sampleQuestions, setSampleQuestions] = useState<SampleQuestionItem[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
+  const [deepThinkingEnabled, setDeepThinkingEnabled] = useState(false);
   const [streamError, setStreamError] = useState('');
   const [inputValue, setInputValue] = useState('');
   const [isBootstrapping, setIsBootstrapping] = useState(false);
@@ -147,7 +148,7 @@ export function useChatWorkspace(isAuthenticated: boolean) {
     ]);
 
     try {
-      const response = await fetch(buildStreamRequestUrl(question, activeConversationId), {
+      const response = await fetch(buildStreamRequestUrl(question, activeConversationId, deepThinkingEnabled), {
         headers: {
           satoken: token,
         },
@@ -351,6 +352,21 @@ export function useChatWorkspace(isAuthenticated: boolean) {
       return;
     }
 
+    if (eventName === 'thinking' && isRecord(payload) && payload.type === 'thinking') {
+      const delta = String(payload.delta ?? '');
+      setMessages((previousMessages) =>
+        previousMessages.map((message) =>
+          message.id === optimisticAssistantId
+            ? {
+                ...message,
+                thinkingContent: `${message.thinkingContent ?? ''}${delta}`,
+              }
+            : message,
+        ),
+      );
+      return;
+    }
+
     if (eventName === 'step' && isRecord(payload)) {
       setExecutionSteps((previousSteps) => upsertById(previousSteps, {
         id: String(payload.id ?? ''),
@@ -453,10 +469,12 @@ export function useChatWorkspace(isAuthenticated: boolean) {
     sampleQuestions,
     isStreaming,
     isCancelling,
+    deepThinkingEnabled,
     streamError,
     inputValue,
     isBootstrapping,
     setInputValue,
+    setDeepThinkingEnabled,
     submitMessage,
     cancelCurrentStream,
     selectConversation,
@@ -506,12 +524,15 @@ export function useChatWorkspace(isAuthenticated: boolean) {
  * @param conversationId 当前选中的会话标识。
  * @returns 可直接用于 fetch 的 SSE 地址。
  */
-function buildStreamRequestUrl(question: string, conversationId: string | null) {
+function buildStreamRequestUrl(question: string, conversationId: string | null, deepThinkingEnabled: boolean) {
   const searchParams = new URLSearchParams({
     question,
   });
   if (conversationId != null) {
     searchParams.set('conversationId', String(conversationId));
+  }
+  if (deepThinkingEnabled) {
+    searchParams.set('deepThinking', 'true');
   }
   return `/api/chat/stream?${searchParams.toString()}`;
 }

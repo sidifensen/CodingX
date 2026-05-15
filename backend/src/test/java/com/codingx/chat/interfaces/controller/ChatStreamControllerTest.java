@@ -69,7 +69,7 @@ class ChatStreamControllerTest {
             assertEquals(emitter, actual);
             verify(chatSseRegistry).register(1L);
             verify(chatSseRegistry).publish(1L, "meta", java.util.Map.of("conversationId", 1L, "deepThinking", true));
-            verify(chatStreamExecutionService).dispatch(new SendChatMessageCommand(1L, "你好"), 1001L);
+            verify(chatStreamExecutionService).dispatch(new SendChatMessageCommand(1L, "你好", true), 1001L);
         }
     }
 
@@ -91,7 +91,7 @@ class ChatStreamControllerTest {
             verify(chatConversationApplicationService).createConversation(new CreateConversationCommand(null), 1001L);
             verify(chatSseRegistry).register(2001L);
             verify(chatSseRegistry).publish(2001L, "meta", java.util.Map.of("conversationId", 2001L, "deepThinking", false));
-            verify(chatStreamExecutionService).dispatch(new SendChatMessageCommand(2001L, "新的问题"), 1001L);
+            verify(chatStreamExecutionService).dispatch(new SendChatMessageCommand(2001L, "新的问题", false), 1001L);
         }
     }
 

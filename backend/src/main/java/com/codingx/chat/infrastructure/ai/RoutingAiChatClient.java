@@ -27,10 +27,11 @@ public class RoutingAiChatClient implements AiChatClient {
     }
 
     @Override
-    public void streamChat(List<ChatMessage> history, StreamHandler handler) {
+    public void streamChat(List<ChatMessage> history, boolean deepThinking, StreamHandler handler) {
         AiConversationRequest request = AiConversationRequest.builder()
             .messages(history)
             .stream(true)
+            .thinkingEnabled(deepThinking)
             .build();
         aiModelDispatchService.streamChat(request, new AiStreamHandler() {
             @Override

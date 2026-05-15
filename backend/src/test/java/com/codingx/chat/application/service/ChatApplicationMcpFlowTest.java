@@ -75,7 +75,7 @@ class ChatApplicationMcpFlowTest {
         );
         when(conversationTitleService.generateTitle(any(), any())).thenReturn("销售数据统计");
 
-        chatApplicationService.sendMessage(new SendChatMessageCommand(1L, "销售总额是多少"), 1002L);
+        chatApplicationService.sendMessage(new SendChatMessageCommand(1L, "销售总额是多少", false), 1002L);
 
         verify(chatMcpExecutionService).execute("sales_query", "销售总额是多少");
         verify(chatStreamPublisher).publishAssistantCompleted(1L, "销售总额为 1280 万元，本月环比增长 8%。", "销售数据统计");

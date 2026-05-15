@@ -10,9 +10,10 @@ public interface AiChatClient {
     /**
      * 以流式方式处理 streamChat 的结果。
      * @param history 输入参数。
+     * @param deepThinking 是否开启深度思考。
      * @param handler 输入参数。
      */
-    void streamChat(List<ChatMessage> history, StreamHandler handler);
+    void streamChat(List<ChatMessage> history, boolean deepThinking, StreamHandler handler);
 
     /**
      * 基于会话消息生成简短标题。

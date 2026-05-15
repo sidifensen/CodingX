@@ -39,6 +39,11 @@ public class SseChatStreamPublisher implements ChatStreamPublisher {
     }
 
     @Override
+    public void publishAssistantThinkingDelta(Long conversationId, String delta) {
+        chatSseRegistry.publish(conversationId, "thinking", Map.of("type", "thinking", "delta", delta));
+    }
+
+    @Override
     public void publishStep(Long conversationId, Object payload) {
         chatSseRegistry.publish(conversationId, "step", payload);
     }

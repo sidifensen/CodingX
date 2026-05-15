@@ -113,3 +113,18 @@ SET
     sort_no = EXCLUDED.sort_no,
     updated_at = CURRENT_TIMESTAMP,
     deleted = EXCLUDED.deleted;
+
+INSERT INTO chat_runtime_setting (id, setting_key, setting_value, value_type, description, deleted)
+VALUES
+    (7001, 'search.top_k', '5', 'INTEGER', '搜索结果返回数量上限', 0),
+    (7002, 'search.rerank_enabled', 'true', 'BOOLEAN', '是否启用搜索结果重排', 0),
+    (7003, 'chat.token_budget', '4096', 'INTEGER', '聊天请求 token 预算', 0),
+    (7004, 'chat.thinking_visible', 'true', 'BOOLEAN', '是否展示思考内容', 0),
+    (7005, 'queue.max_concurrent', '1', 'INTEGER', '聊天链路最大并发数', 0)
+ON CONFLICT (setting_key) DO UPDATE
+SET
+    setting_value = EXCLUDED.setting_value,
+    value_type = EXCLUDED.value_type,
+    description = EXCLUDED.description,
+    updated_at = CURRENT_TIMESTAMP,
+    deleted = EXCLUDED.deleted;

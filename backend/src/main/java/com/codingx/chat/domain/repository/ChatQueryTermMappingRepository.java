@@ -13,4 +13,16 @@ public interface ChatQueryTermMappingRepository {
      * @return 映射规则列表。
      */
     List<ChatQueryTermMapping> findEnabledMappings();
+
+    /**
+     * 返回全部映射规则，供后台管理使用。
+     * @return 映射规则列表。
+     */
+    List<ChatQueryTermMapping> findAllMappings();
+
+    /**
+     * 保存或更新映射规则。
+     * @param mapping 映射规则。
+     */
+    void save(ChatQueryTermMapping mapping);
 }

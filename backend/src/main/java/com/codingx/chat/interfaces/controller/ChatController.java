@@ -96,7 +96,7 @@ public class ChatController {
      */
     @PostMapping("/{conversationId}/messages")
     public ApiResponse<Void> sendMessage(@PathVariable Long conversationId, @Valid @RequestBody SendChatMessageRequest request) {
-        chatApplicationService.sendMessage(new SendChatMessageCommand(conversationId, request.content()), StpUtil.getLoginIdAsLong());
+        chatApplicationService.sendMessage(new SendChatMessageCommand(conversationId, request.content(), false), StpUtil.getLoginIdAsLong());
         return ApiResponse.successMessage("message processed");
     }
 
@@ -169,6 +169,7 @@ public class ChatController {
     private ChatMessageResponse toMessageResponse(ChatMessage message) {
         return new ChatMessageResponse(
             message.getId(), message.getConversationId(), message.getRole(), message.getContent(),
+            message.getThinkingContent(), message.getThinkingDuration(),
             message.getStatus(), message.getProvider(), message.getModel(), message.getErrorMessage(), message.getCreatedAt()
         );
     }

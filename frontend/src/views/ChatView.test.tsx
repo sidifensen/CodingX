@@ -128,6 +128,7 @@ describe('ChatView', () => {
     expect(screen.queryByText('主页面待命')).not.toBeInTheDocument();
     expect(screen.queryByText('反馈')).not.toBeInTheDocument();
     expect(screen.queryByText(/会话 #/)).not.toBeInTheDocument();
+    expect(screen.queryByText('执行回放')).not.toBeInTheDocument();
 
     const inputWrapper = screen.getByPlaceholderText('输入指令以重构组件库或分析代码...').closest('form')?.parentElement?.parentElement;
     expect(inputWrapper).not.toHaveClass('border-t');
@@ -154,6 +155,7 @@ describe('ChatView', () => {
     expect(screen.queryByText('你好，我是 CodingX')).not.toBeInTheDocument();
     expect(screen.getByText('当前会话暂无消息')).toBeInTheDocument();
     expect(screen.queryByText('反馈')).not.toBeInTheDocument();
+    expect(screen.getByText('执行回放')).toBeInTheDocument();
   });
 });
 

@@ -63,6 +63,8 @@ export default function ChatView({ isAuthenticated, onRequireLogin, workspace }:
   const showLandingState = activeConversationId == null && !messages.length && !isBootstrapping;
   // 步骤：选中了历史会话但暂无消息时，显示会话级空态而不是回到首页。
   const showConversationEmptyState = activeConversationId != null && !messages.length && !isBootstrapping;
+  // 步骤：首页只保留欢迎内容和输入框，右侧执行回放仅在真实会话上下文中展示。
+  const showWorkspacePanel = !showLandingState;
 
   return (
     <motion.div
@@ -204,61 +206,63 @@ export default function ChatView({ isAuthenticated, onRequireLogin, workspace }:
         </div>
       </section>
 
-      <aside className="hidden w-[340px] border-l border-border bg-surface/96 md:flex md:flex-col">
-        <div className="border-b border-border px-5 py-5">
-          <p className="font-mono text-[11px] uppercase tracking-[0.3em] text-muted">Workspace</p>
-          <h3 className="mt-2 text-lg font-semibold text-foreground">执行回放</h3>
-        </div>
-        <div className="flex-1 overflow-y-auto px-4 py-4">
-          <Panel title="执行步骤" icon={CheckCircle2}>
-            {executionSteps.length ? (
-              executionSteps.map((step) => (
-                <div key={step.id} className="rounded-2xl border border-border bg-surface-container px-4 py-3">
-                  <div className="text-sm font-medium text-foreground">{step.stepTitle}</div>
-                  <div className="mt-2 text-[12px] uppercase tracking-[0.2em] text-muted">{step.stepStatus}</div>
-                  {step.content ? <div className="mt-3 text-sm leading-6 text-muted">{step.content}</div> : null}
-                </div>
-              ))
-            ) : (
-              <EmptyBlock text="当前会话暂无步骤回放" />
-            )}
-          </Panel>
+      {showWorkspacePanel ? (
+        <aside className="hidden w-[340px] border-l border-border bg-surface/96 md:flex md:flex-col">
+          <div className="border-b border-border px-5 py-5">
+            <p className="font-mono text-[11px] uppercase tracking-[0.3em] text-muted">Workspace</p>
+            <h3 className="mt-2 text-lg font-semibold text-foreground">执行回放</h3>
+          </div>
+          <div className="flex-1 overflow-y-auto px-4 py-4">
+            <Panel title="执行步骤" icon={CheckCircle2}>
+              {executionSteps.length ? (
+                executionSteps.map((step) => (
+                  <div key={step.id} className="rounded-2xl border border-border bg-surface-container px-4 py-3">
+                    <div className="text-sm font-medium text-foreground">{step.stepTitle}</div>
+                    <div className="mt-2 text-[12px] uppercase tracking-[0.2em] text-muted">{step.stepStatus}</div>
+                    {step.content ? <div className="mt-3 text-sm leading-6 text-muted">{step.content}</div> : null}
+                  </div>
+                ))
+              ) : (
+                <EmptyBlock text="当前会话暂无步骤回放" />
+              )}
+            </Panel>
 
-          <Panel title="参考来源" icon={Globe2}>
-            {references.length ? (
-              references.map((reference) => (
-                <a
-                  key={reference.id}
-                  href={reference.url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="block rounded-2xl border border-border bg-surface-container px-4 py-3 transition-colors hover:border-border-active"
-                >
-                  <div className="text-sm font-medium text-foreground">{reference.title}</div>
-                  {reference.siteName ? <div className="mt-2 text-[12px] text-muted">{reference.siteName}</div> : null}
-                  {reference.snippet ? <div className="mt-3 text-sm leading-6 text-muted">{reference.snippet}</div> : null}
-                </a>
-              ))
-            ) : (
-              <EmptyBlock text="当前会话暂无来源回放" />
-            )}
-          </Panel>
+            <Panel title="参考来源" icon={Globe2}>
+              {references.length ? (
+                references.map((reference) => (
+                  <a
+                    key={reference.id}
+                    href={reference.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="block rounded-2xl border border-border bg-surface-container px-4 py-3 transition-colors hover:border-border-active"
+                  >
+                    <div className="text-sm font-medium text-foreground">{reference.title}</div>
+                    {reference.siteName ? <div className="mt-2 text-[12px] text-muted">{reference.siteName}</div> : null}
+                    {reference.snippet ? <div className="mt-3 text-sm leading-6 text-muted">{reference.snippet}</div> : null}
+                  </a>
+                ))
+              ) : (
+                <EmptyBlock text="当前会话暂无来源回放" />
+              )}
+            </Panel>
 
-          <Panel title="生成产物" icon={FileText}>
-            {artifacts.length ? (
-              artifacts.map((artifact) => (
-                <div key={artifact.id} className="rounded-2xl border border-border bg-surface-container px-4 py-3">
-                  <div className="text-sm font-medium text-foreground">{artifact.name}</div>
-                  <div className="mt-2 text-[12px] uppercase tracking-[0.2em] text-muted">{artifact.artifactType}</div>
-                  {artifact.contentPreview ? <div className="mt-3 text-sm leading-6 text-muted">{artifact.contentPreview}</div> : null}
-                </div>
-              ))
-            ) : (
-              <EmptyBlock text="当前会话暂无产物回放" />
-            )}
-          </Panel>
-        </div>
-      </aside>
+            <Panel title="生成产物" icon={FileText}>
+              {artifacts.length ? (
+                artifacts.map((artifact) => (
+                  <div key={artifact.id} className="rounded-2xl border border-border bg-surface-container px-4 py-3">
+                    <div className="text-sm font-medium text-foreground">{artifact.name}</div>
+                    <div className="mt-2 text-[12px] uppercase tracking-[0.2em] text-muted">{artifact.artifactType}</div>
+                    {artifact.contentPreview ? <div className="mt-3 text-sm leading-6 text-muted">{artifact.contentPreview}</div> : null}
+                  </div>
+                ))
+              ) : (
+                <EmptyBlock text="当前会话暂无产物回放" />
+              )}
+            </Panel>
+          </div>
+        </aside>
+      ) : null}
     </motion.div>
   );
 }

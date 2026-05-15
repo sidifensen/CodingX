@@ -57,8 +57,8 @@ export default function ChatView({
     deleteConversation,
   } = workspace;
   const latestMessageAnchorRef = React.useRef<HTMLDivElement | null>(null);
-  // 步骤：在聊天视图内部维护右侧工作区折叠状态，仅影响当前聊天工作台布局。
-  const [isWorkspacePanelCollapsed, setIsWorkspacePanelCollapsed] = React.useState(false);
+  // 步骤：右侧工作区默认折叠，仅在存在真实回放内容时自动展开一次，后续允许用户手动控制。
+  const [isWorkspacePanelCollapsed, setIsWorkspacePanelCollapsed] = React.useState(true);
 
   React.useEffect(() => {
     if (!messages.length) {
@@ -91,8 +91,16 @@ export default function ChatView({
   const showConversationEmptyState = activeConversationId != null && !messages.length && !isBootstrapping;
   // 步骤：首页只保留欢迎内容和输入框，右侧执行回放仅在真实会话上下文中展示。
   const showWorkspacePanel = !showLandingState;
+  // 步骤：仅当步骤、来源或产物任一存在时，才认为右侧栏具备真实回放内容。
+  const hasWorkspaceContent = executionSteps.length > 0 || references.length > 0 || artifacts.length > 0;
   // 步骤：右侧栏保留挂载以支持宽度过渡动画，面板内容在收起后不再渲染。
   const isWorkspacePanelVisible = showWorkspacePanel && !isWorkspacePanelCollapsed;
+
+  React.useEffect(() => {
+    if (hasWorkspaceContent) {
+      setIsWorkspacePanelCollapsed(false);
+    }
+  }, [hasWorkspaceContent]);
 
   return (
     <motion.div
@@ -175,7 +183,7 @@ export default function ChatView({
                     className={`flex ${isAssistant ? 'justify-start' : 'justify-end'}`}
                   >
                     <div
-                      className={`max-w-3xl px-1 py-1 ${
+                      className={`min-w-0 max-w-3xl px-1 py-1 ${
                         isAssistant
                           ? 'text-foreground'
                           : 'rounded-[28px] bg-foreground px-5 py-3 text-background'
@@ -362,7 +370,7 @@ export default function ChatView({
  */
 function MarkdownMessage({ content }: { content: string }) {
   return (
-    <div className="chat-markdown text-sm leading-7 text-foreground">
+    <div className="chat-markdown min-w-0 [overflow-wrap:anywhere] text-sm leading-7 text-foreground">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{

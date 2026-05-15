@@ -159,7 +159,8 @@ describe('ChatView', () => {
     expect(screen.queryByText('你好，我是 CodingX')).not.toBeInTheDocument();
     expect(screen.getByText('当前会话暂无消息')).toBeInTheDocument();
     expect(screen.queryByText('反馈')).not.toBeInTheDocument();
-    expect(screen.getByText('执行回放')).toBeInTheDocument();
+    expect(screen.queryByText('执行回放')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '展开右侧工作区' })).toBeInTheDocument();
   });
 
   /**
@@ -209,6 +210,37 @@ describe('ChatView', () => {
     expect(screen.getByRole('heading', { name: '总结', level: 3 })).toBeInTheDocument();
     expect(screen.getByText('要点一')).toBeInTheDocument();
     expect(screen.getByText('ThreadLocal')).toContainHTML('code');
+  });
+
+  /**
+   * 移动端长标题与长词应允许在容器内换行，避免横向撑出页面。
+   */
+  it('应为助手 Markdown 消息启用窄屏断行约束', async () => {
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          messages: [
+            {
+              id: '202',
+              conversationId: '2001',
+              role: 'ASSISTANT',
+              content: '## 可能性三：你有具体问题但打字不全\n\nsupercalifragilisticexpialidocioussupercalifragilisticexpialidocious',
+              status: 'COMPLETED',
+            },
+          ],
+          executionSteps: [],
+          references: [],
+          artifacts: [],
+        })}
+      />,
+    );
+
+    const heading = screen.getByRole('heading', { name: '可能性三：你有具体问题但打字不全', level: 2 });
+    const markdownContainer = heading.closest('.chat-markdown');
+    expect(markdownContainer).toHaveClass('min-w-0');
+    expect(markdownContainer).toHaveClass('[overflow-wrap:anywhere]');
   });
 
   /**
@@ -319,6 +351,51 @@ describe('ChatView', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '展开右侧工作区' }));
     expect(screen.getByText('执行回放')).toBeInTheDocument();
+  });
+
+  /**
+   * 右侧回放区默认为折叠，仅当存在步骤、来源或产物时自动展开。
+   */
+  it('应在右侧无回放内容时默认折叠并在有内容时自动展开', async () => {
+    const { rerender } = render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          executionSteps: [],
+          references: [],
+          artifacts: [],
+        })}
+      />,
+    );
+
+    expect(screen.queryByText('执行回放')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '展开右侧工作区' })).toBeInTheDocument();
+
+    rerender(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          executionSteps: [
+            {
+              id: '9',
+              runId: '5009',
+              stepType: 'search',
+              stepTitle: '生成新步骤',
+              stepStatus: 'COMPLETED',
+              sequenceNo: 1,
+              content: '新的步骤内容',
+            },
+          ],
+          references: [],
+          artifacts: [],
+        })}
+      />,
+    );
+
+    expect(screen.getByText('执行回放')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '折叠右侧工作区' })).toBeInTheDocument();
   });
 });
 

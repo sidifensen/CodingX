@@ -222,9 +222,9 @@ function ConversationHistory({
                       isActive ? 'text-foreground' : 'text-muted hover:text-foreground'
                     }`}
                   >
-                    <div className="min-w-0">
+                    <div className="flex min-w-0 items-center justify-between gap-3">
                       <div className={`truncate text-[14px] ${isActive ? 'font-medium' : ''}`}>{conversation.title}</div>
-                      <div className="mt-1 text-[12px] text-muted">{conversation.relativeTimeText}</div>
+                      <div className="shrink-0 text-[12px] text-muted">{conversation.relativeTimeText}</div>
                     </div>
                   </button>
                   <button
@@ -233,7 +233,9 @@ function ConversationHistory({
                     onClick={() => {
                       setOpenMenuId(isMenuOpen ? null : conversation.id);
                     }}
-                    className="mt-0.5 rounded-md p-1 text-muted transition-colors hover:bg-surface-container-high hover:text-foreground"
+                    className={`mt-0.5 rounded-md p-1 text-muted transition-colors hover:bg-surface-container-high hover:text-foreground ${
+                      isMenuOpen ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+                    }`}
                   >
                     <MoreHorizontal size={16} />
                   </button>
@@ -243,26 +245,21 @@ function ConversationHistory({
                   <div className="absolute right-0 top-[calc(100%+6px)] z-20 w-44 rounded-xl border border-border bg-surface-container p-2 shadow-[0_16px_40px_rgba(0,0,0,0.24)]">
                     <button
                       type="button"
-                      aria-label="重命名这次对话"
+                      aria-label="重命名对话"
                       onClick={() => {
-                        const nextTitle = window.prompt('请输入新的会话名称', conversation.title);
-                        if (nextTitle && nextTitle.trim()) {
-                          void onRenameConversation(conversation.id, nextTitle.trim());
-                        }
+                        void onRenameConversation(conversation.id, conversation.title);
                         setOpenMenuId(null);
                       }}
                       className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm text-foreground transition-colors hover:bg-surface-high"
                     >
                       <PencilLine size={16} />
-                      重命名这次对话
+                      重命名对话
                     </button>
                     <button
                       type="button"
                       aria-label="删除对话"
                       onClick={() => {
-                        if (window.confirm('确认删除这次对话吗？')) {
-                          void onDeleteConversation(conversation.id);
-                        }
+                        void onDeleteConversation(conversation.id);
                         setOpenMenuId(null);
                       }}
                       className="mt-1 flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm text-[#ff5b57] transition-colors hover:bg-[#ff5b57]/10"

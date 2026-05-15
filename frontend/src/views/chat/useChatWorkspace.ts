@@ -27,6 +27,16 @@ export function useChatWorkspace(isAuthenticated: boolean) {
   const [streamError, setStreamError] = useState('');
   const [inputValue, setInputValue] = useState('');
   const [isBootstrapping, setIsBootstrapping] = useState(false);
+  const [renameDialogState, setRenameDialogState] = useState<{ isOpen: boolean; conversationId: string | null; initialTitle: string }>({
+    isOpen: false,
+    conversationId: null,
+    initialTitle: '',
+  });
+  const [deleteDialogState, setDeleteDialogState] = useState<{ isOpen: boolean; conversationId: string | null; title: string }>({
+    isOpen: false,
+    conversationId: null,
+    title: '',
+  });
   const streamStateRef = useRef<ActiveStreamState | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
 
@@ -264,6 +274,8 @@ export function useChatWorkspace(isAuthenticated: boolean) {
     setIsCancelling(false);
     setStreamError('');
     setInputValue('');
+    setRenameDialogState({ isOpen: false, conversationId: null, initialTitle: '' });
+    setDeleteDialogState({ isOpen: false, conversationId: null, title: '' });
     streamStateRef.current = null;
   };
 
@@ -439,6 +451,18 @@ export function useChatWorkspace(isAuthenticated: boolean) {
     startNewConversation,
     renameConversation,
     deleteConversation,
+    renameDialog: {
+      ...renameDialogState,
+      open: (conversationId: string, initialTitle: string) =>
+        setRenameDialogState({ isOpen: true, conversationId, initialTitle }),
+      close: () => setRenameDialogState({ isOpen: false, conversationId: null, initialTitle: '' }),
+    },
+    deleteDialog: {
+      ...deleteDialogState,
+      open: (conversationId: string, title: string) =>
+        setDeleteDialogState({ isOpen: true, conversationId, title }),
+      close: () => setDeleteDialogState({ isOpen: false, conversationId: null, title: '' }),
+    },
   } satisfies ChatWorkspaceController;
 
   /**

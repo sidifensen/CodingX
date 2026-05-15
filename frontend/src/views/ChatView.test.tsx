@@ -157,6 +157,25 @@ describe('ChatView', () => {
     expect(screen.queryByText('反馈')).not.toBeInTheDocument();
     expect(screen.getByText('执行回放')).toBeInTheDocument();
   });
+
+  /**
+   * 会话消息区应去掉角色头与助手卡片边框，保持更干净的正文排版。
+   */
+  it('应在消息区隐藏角色头并移除助手卡片边框', async () => {
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace()}
+      />,
+    );
+
+    expect(screen.queryByText('YOU')).not.toBeInTheDocument();
+    expect(screen.queryByText('CODINGX')).not.toBeInTheDocument();
+
+    const assistantMessage = screen.getByText('我来为您总结 Spring Boot SSE 最佳实践。').parentElement;
+    expect(assistantMessage).not.toHaveClass('border');
+  });
 });
 
 /**
@@ -239,6 +258,22 @@ function createWorkspace(overrides?: Partial<ChatWorkspaceController>): ChatWork
     cancelCurrentStream: vi.fn().mockResolvedValue(undefined),
     selectConversation: vi.fn().mockResolvedValue(undefined),
     startNewConversation: vi.fn().mockResolvedValue(undefined),
+    renameConversation: vi.fn().mockResolvedValue(undefined),
+    deleteConversation: vi.fn().mockResolvedValue(undefined),
+    renameDialog: {
+      conversationId: null,
+      initialTitle: '',
+      isOpen: false,
+      open: vi.fn(),
+      close: vi.fn(),
+    },
+    deleteDialog: {
+      conversationId: null,
+      title: '',
+      isOpen: false,
+      open: vi.fn(),
+      close: vi.fn(),
+    },
     ...overrides,
   };
 }

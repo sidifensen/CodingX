@@ -111,7 +111,7 @@ export default function App() {
    * @param title 新标题。
    */
   const handleRenameConversation = async (conversationId: string, title: string) => {
-    await chatWorkspace.renameConversation(conversationId, title);
+    chatWorkspace.renameDialog.open(conversationId, title);
   };
 
   /**
@@ -119,7 +119,8 @@ export default function App() {
    * @param conversationId 会话标识。
    */
   const handleDeleteConversation = async (conversationId: string) => {
-    await chatWorkspace.deleteConversation(conversationId);
+    const conversation = chatWorkspace.conversations.find((item) => item.id === conversationId);
+    chatWorkspace.deleteDialog.open(conversationId, conversation?.title ?? '');
   };
 
   return (

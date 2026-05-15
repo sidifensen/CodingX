@@ -41,6 +41,10 @@ export default function ChatView({ isAuthenticated, onRequireLogin, workspace }:
     setInputValue,
     submitMessage,
     cancelCurrentStream,
+    renameDialog,
+    deleteDialog,
+    renameConversation,
+    deleteConversation,
   } = workspace;
 
   /**
@@ -129,16 +133,12 @@ export default function ChatView({ isAuthenticated, onRequireLogin, workspace }:
                     className={`flex ${isAssistant ? 'justify-start' : 'justify-end'}`}
                   >
                     <div
-                      className={`max-w-3xl rounded-[28px] border px-5 py-4 shadow-sm ${
+                      className={`max-w-3xl px-1 py-1 ${
                         isAssistant
-                          ? 'border-border bg-surface text-foreground'
-                          : 'border-transparent bg-foreground text-background'
+                          ? 'text-foreground'
+                          : 'rounded-[28px] bg-foreground px-5 py-4 text-background'
                       }`}
-                      >
-                        <div className="mb-3 flex items-center gap-2 text-[11px] uppercase tracking-[0.22em]">
-                        {isAssistant ? <WandSparkles size={14} className="text-accent-breeze" /> : <CheckCircle2 size={14} />}
-                        <span>{isAssistant ? 'CodingX' : 'You'}</span>
-                      </div>
+                    >
                       <div className="whitespace-pre-wrap text-sm leading-7">
                         {message.content || (message.status === 'streaming' ? '正在生成回答...' : '')}
                       </div>
@@ -263,6 +263,38 @@ export default function ChatView({ isAuthenticated, onRequireLogin, workspace }:
           </div>
         </aside>
       ) : null}
+
+      {renameDialog.isOpen ? (
+        <InlineDialog
+          title="重命名对话"
+          defaultValue={renameDialog.initialTitle}
+          confirmLabel="确认"
+          cancelLabel="取消"
+          onCancel={renameDialog.close}
+          onConfirm={async (nextTitle) => {
+            if (renameDialog.conversationId) {
+              await renameConversation(renameDialog.conversationId, nextTitle);
+            }
+            renameDialog.close();
+          }}
+        />
+      ) : null}
+
+      {deleteDialog.isOpen ? (
+        <ConfirmDialog
+          title="删除对话"
+          description={`确认删除对话“${deleteDialog.title}”吗？`}
+          confirmLabel="删除"
+          cancelLabel="取消"
+          onCancel={deleteDialog.close}
+          onConfirm={async () => {
+            if (deleteDialog.conversationId) {
+              await deleteConversation(deleteDialog.conversationId);
+            }
+            deleteDialog.close();
+          }}
+        />
+      ) : null}
     </motion.div>
   );
 }
@@ -297,6 +329,100 @@ function EmptyBlock({ text }: { text: string }) {
   return (
     <div className="rounded-2xl border border-dashed border-border bg-surface-container px-4 py-4 text-sm text-muted">
       {text}
+    </div>
+  );
+}
+
+/**
+ * 渲染页面内重命名弹窗，替代浏览器原生 prompt。
+ */
+function InlineDialog({
+  title,
+  defaultValue,
+  confirmLabel,
+  cancelLabel,
+  onCancel,
+  onConfirm,
+}: {
+  title: string;
+  defaultValue: string;
+  confirmLabel: string;
+  cancelLabel: string;
+  onCancel: () => void;
+  onConfirm: (value: string) => Promise<void>;
+}) {
+  const [value, setValue] = React.useState(defaultValue);
+
+  return (
+    <div className="absolute inset-0 z-40 flex items-center justify-center bg-background/35 backdrop-blur-sm">
+      <div className="w-full max-w-md rounded-2xl border border-border bg-surface-container p-5 shadow-[0_24px_64px_rgba(0,0,0,0.26)]">
+        <h3 className="text-base font-semibold text-foreground">{title}</h3>
+        <input
+          value={value}
+          onChange={(event) => setValue(event.target.value)}
+          className="mt-4 h-24 w-full rounded-xl border border-border bg-surface px-4 py-3 text-sm text-foreground outline-none"
+        />
+        <div className="mt-4 flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="rounded-lg bg-surface px-4 py-2 text-sm text-muted transition-colors hover:bg-surface-high hover:text-foreground"
+          >
+            {cancelLabel}
+          </button>
+          <button
+            type="button"
+            onClick={() => void onConfirm(value)}
+            className="rounded-lg bg-foreground px-4 py-2 text-sm text-background transition-opacity hover:opacity-90"
+          >
+            {confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * 渲染页面内删除确认弹窗，替代浏览器原生 confirm。
+ */
+function ConfirmDialog({
+  title,
+  description,
+  confirmLabel,
+  cancelLabel,
+  onCancel,
+  onConfirm,
+}: {
+  title: string;
+  description: string;
+  confirmLabel: string;
+  cancelLabel: string;
+  onCancel: () => void;
+  onConfirm: () => Promise<void>;
+}) {
+  return (
+    <div className="absolute inset-0 z-40 flex items-center justify-center bg-background/35 backdrop-blur-sm">
+      <div className="w-full max-w-sm rounded-2xl border border-border bg-surface-container p-5 shadow-[0_24px_64px_rgba(0,0,0,0.26)]">
+        <h3 className="text-base font-semibold text-foreground">{title}</h3>
+        <p className="mt-3 text-sm leading-6 text-muted">{description}</p>
+        <div className="mt-5 flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="rounded-lg bg-surface px-4 py-2 text-sm text-muted transition-colors hover:bg-surface-high hover:text-foreground"
+          >
+            {cancelLabel}
+          </button>
+          <button
+            type="button"
+            onClick={() => void onConfirm()}
+            className="rounded-lg bg-[#ff5b57] px-4 py-2 text-sm text-white transition-opacity hover:opacity-90"
+          >
+            {confirmLabel}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

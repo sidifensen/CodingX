@@ -111,4 +111,18 @@ export interface ChatWorkspaceController {
   startNewConversation: () => Promise<void>;
   renameConversation: (conversationId: string, title: string) => Promise<void>;
   deleteConversation: (conversationId: string) => Promise<void>;
+  renameDialog: {
+    conversationId: string | null;
+    initialTitle: string;
+    isOpen: boolean;
+    open: (conversationId: string, initialTitle: string) => void;
+    close: () => void;
+  };
+  deleteDialog: {
+    conversationId: string | null;
+    title: string;
+    isOpen: boolean;
+    open: (conversationId: string, title: string) => void;
+    close: () => void;
+  };
 }

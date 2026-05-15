@@ -644,7 +644,7 @@ describe('App', () => {
     await screen.findByText('可操作会话');
     fireEvent.click(screen.getByRole('button', { name: '打开会话菜单 可操作会话' }));
 
-    expect(await screen.findByRole('button', { name: '重命名这次对话' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: '重命名对话' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '删除对话' })).toBeInTheDocument();
   });
 });

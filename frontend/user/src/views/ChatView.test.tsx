@@ -161,7 +161,7 @@ describe('ChatView', () => {
     expect(screen.queryByText(/会话 #/)).not.toBeInTheDocument();
     expect(screen.queryByText('执行回放')).not.toBeInTheDocument();
 
-    const inputWrapper = screen.getByPlaceholderText('输入 / 选择技能，或直接提问...').closest('form')?.parentElement?.parentElement;
+    const inputWrapper = screen.getByPlaceholderText('输入 / 选择MCP，或直接提问...').closest('form')?.parentElement?.parentElement;
     expect(inputWrapper).not.toHaveClass('border-t');
   });
 
@@ -668,10 +668,10 @@ describe('ChatView', () => {
   });
 
   /**
-   * 输入斜杠后应打开 技能 面板，回车选中高亮项并写入已选 技能 列表。
+   * 输入斜杠后应打开 MCP 面板，回车选中高亮项并写入已选 MCP 列表。
    */
-  it('应支持通过斜杠命令面板回车选择技能', async () => {
-    const setSelectedSkillCodes = vi.fn();
+  it('应支持通过斜杠命令面板回车选择MCP', async () => {
+    const setSelectedMcpCodes = vi.fn();
     const setInputValue = vi.fn();
 
     render(
@@ -680,27 +680,27 @@ describe('ChatView', () => {
         onRequireLogin={vi.fn()}
         workspace={createWorkspace({
           inputValue: '/查',
-          setSelectedSkillCodes,
+          setSelectedMcpCodes,
           setInputValue,
         })}
       />,
     );
 
-    expect(screen.getByTestId('skill-command-panel')).toBeInTheDocument();
-    expect(screen.getByTestId('skill-option-sales_query')).toBeInTheDocument();
-    fireEvent.keyDown(screen.getByPlaceholderText('输入 / 选择技能，或直接提问...'), { key: 'Enter' });
+    expect(screen.getByTestId('mcp-command-panel')).toBeInTheDocument();
+    expect(screen.getByTestId('mcp-option-sales_query')).toBeInTheDocument();
+    fireEvent.keyDown(screen.getByPlaceholderText('输入 / 选择MCP，或直接提问...'), { key: 'Enter' });
 
-    expect(setSelectedSkillCodes).toHaveBeenCalled();
-    const updater = setSelectedSkillCodes.mock.calls[0][0] as (codes: string[]) => string[];
+    expect(setSelectedMcpCodes).toHaveBeenCalled();
+    const updater = setSelectedMcpCodes.mock.calls[0][0] as (codes: string[]) => string[];
     expect(updater([])).toEqual(['sales_query']);
     expect(setInputValue).toHaveBeenCalledWith('');
   });
 
   /**
-   * 斜杠面板应支持上下方向键移动高亮，回车选择当前 技能。
+   * 斜杠面板应支持上下方向键移动高亮，回车选择当前 MCP。
    */
-  it('应支持键盘方向键切换技能高亮并回车选择', async () => {
-    const setSelectedSkillCodes = vi.fn();
+  it('应支持键盘方向键切换MCP高亮并回车选择', async () => {
+    const setSelectedMcpCodes = vi.fn();
     const setInputValue = vi.fn();
 
     render(
@@ -709,39 +709,39 @@ describe('ChatView', () => {
         onRequireLogin={vi.fn()}
         workspace={createWorkspace({
           inputValue: '/',
-          setSelectedSkillCodes,
+          setSelectedMcpCodes,
           setInputValue,
         })}
       />,
     );
 
-    const input = screen.getByPlaceholderText('输入 / 选择技能，或直接提问...');
+    const input = screen.getByPlaceholderText('输入 / 选择MCP，或直接提问...');
     fireEvent.keyDown(input, { key: 'ArrowDown' });
     fireEvent.keyDown(input, { key: 'Enter' });
 
-    const updater = setSelectedSkillCodes.mock.calls[0][0] as (codes: string[]) => string[];
+    const updater = setSelectedMcpCodes.mock.calls[0][0] as (codes: string[]) => string[];
     expect(updater([])).toEqual(['ticket_query']);
   });
 
   /**
-   * 已选 技能 气泡应支持删除操作。
+   * 已选 MCP 气泡应支持删除操作。
    */
-  it('应支持删除已选技能气泡', async () => {
-    const setSelectedSkillCodes = vi.fn();
+  it('应支持删除已选MCP气泡', async () => {
+    const setSelectedMcpCodes = vi.fn();
 
     render(
       <ChatView
         isAuthenticated={true}
         onRequireLogin={vi.fn()}
         workspace={createWorkspace({
-          selectedSkillCodes: ['sales_query'],
-          setSelectedSkillCodes,
+          selectedMcpCodes: ['sales_query'],
+          setSelectedMcpCodes,
         })}
       />,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: '移除技能 销售查询' }));
-    const updater = setSelectedSkillCodes.mock.calls[0][0] as (codes: string[]) => string[];
+    fireEvent.click(screen.getByRole('button', { name: '移除MCP 销售查询' }));
+    const updater = setSelectedMcpCodes.mock.calls[0][0] as (codes: string[]) => string[];
     expect(updater(['sales_query'])).toEqual([]);
   });
 
@@ -798,6 +798,54 @@ describe('ChatView', () => {
 
     const image = screen.getByAltText('演示图');
     expect(image).toHaveClass('chat-message-image');
+  });
+
+  /**
+   * 助手消息存在 MCP 调用时，应展示可折叠的 MCP 调用信息面板。
+   */
+  it('应渲染并支持折叠MCP调用面板', async () => {
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          messages: [
+            {
+              id: '801',
+              conversationId: '2001',
+              role: 'ASSISTANT',
+              content: '已完成天气查询',
+              mcpCalls: [
+                {
+                  toolId: 'weather_query',
+                  displayName: '天气查询',
+                  input: '北京今天天气怎么样',
+                  content: '北京今日晴，最高 28°C',
+                  metadata: {
+                    source: 'open-meteo',
+                  },
+                },
+              ],
+              status: 'COMPLETED',
+            },
+          ],
+          executionSteps: [],
+          references: [],
+          artifacts: [],
+        })}
+      />,
+    );
+
+    const panel = screen.getByTestId('mcp-call-panel-801');
+    expect(panel).toBeInTheDocument();
+    expect(screen.getByText('MCP 调用')).toBeInTheDocument();
+    expect(screen.getByText('天气查询')).toBeInTheDocument();
+    expect(screen.getByText('北京今天天气怎么样')).toBeInTheDocument();
+
+    const toggleButton = screen.getByTestId('mcp-call-toggle-button-801');
+    expect(toggleButton).toHaveAttribute('aria-expanded', 'true');
+    fireEvent.click(toggleButton);
+    expect(toggleButton).toHaveAttribute('aria-expanded', 'false');
   });
 });
 
@@ -883,23 +931,24 @@ function createWorkspace(overrides?: Partial<ChatWorkspaceController>): ChatWork
         category: 'IT支持',
       },
     ],
-    availableSkills: [
+    availableMcps: [
       {
         id: '7001',
-        skillCode: 'sales_query',
+        mcpCode: 'sales_query',
         displayName: '销售查询',
         description: '联网检索信息并生成摘要',
         category: '检索',
       },
       {
         id: '7002',
-        skillCode: 'ticket_query',
+        mcpCode: 'ticket_query',
         displayName: '工单查询',
         description: '分析代码结构与缺陷',
         category: '工程',
       },
     ],
-    selectedSkillCodes: [],
+    selectedMcpCodes: [],
+    mcpConnected: true,
     isStreaming: false,
     isCancelling: false,
     deepThinkingEnabled: false,
@@ -908,7 +957,8 @@ function createWorkspace(overrides?: Partial<ChatWorkspaceController>): ChatWork
     isBootstrapping: false,
     setInputValue: vi.fn(),
     setDeepThinkingEnabled: vi.fn(),
-    setSelectedSkillCodes: vi.fn(),
+    setSelectedMcpCodes: vi.fn(),
+    setMcpConnected: vi.fn(),
     submitMessage: vi.fn().mockResolvedValue(undefined),
     cancelCurrentStream: vi.fn().mockResolvedValue(undefined),
     selectConversation: vi.fn().mockResolvedValue(undefined),
@@ -932,3 +982,4 @@ function createWorkspace(overrides?: Partial<ChatWorkspaceController>): ChatWork
     ...overrides,
   };
 }
+

@@ -49,7 +49,7 @@ export function useChatWorkspace(isAuthenticated: boolean) {
   const abortControllerRef = useRef<AbortController | null>(null);
 
   /**
-   * 统一更新技能选择列表，支持直接赋值与函数式更新。
+   * 统一更新 MCP 选择列表，支持直接赋值与函数式更新。
    * @param nextValue 目标值或计算函数。
    */
   const setSelectedMcpCodes = (nextValue: string[] | ((previous: string[]) => string[])) => {

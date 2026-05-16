@@ -31,6 +31,22 @@ public class WeatherMcpToolExecutor implements ChatMcpToolExecutor {
     private static final String OPEN_METEO_GEOCODING = "https://geocoding-api.open-meteo.com/v1/search";
     private static final String OPEN_METEO_FORECAST = "https://api.open-meteo.com/v1/forecast";
 
+    /**
+     * 暴露地理编码地址，便于测试注入替身接口。
+     * @return 地理编码接口地址。
+     */
+    protected String geocodingEndpoint() {
+        return OPEN_METEO_GEOCODING;
+    }
+
+    /**
+     * 暴露天气预报地址，便于测试注入替身接口。
+     * @return 天气预报接口地址。
+     */
+    protected String forecastEndpoint() {
+        return OPEN_METEO_FORECAST;
+    }
+
     @Override
     public String toolId() {
         return TOOL_ID;
@@ -251,7 +267,7 @@ public class WeatherMcpToolExecutor implements ChatMcpToolExecutor {
      * @return 坐标与规范化名称。
      */
     private GeocodeResult resolveCoordinates(String city) {
-        HttpResponse response = HttpRequest.get(OPEN_METEO_GEOCODING)
+        HttpResponse response = HttpRequest.get(geocodingEndpoint())
             .form("name", city)
             .form("count", 1)
             .form("language", "zh")
@@ -286,7 +302,7 @@ public class WeatherMcpToolExecutor implements ChatMcpToolExecutor {
      */
     private ForecastResult queryForecast(double latitude, double longitude, int days) {
         int forecastDays = Math.min(Math.max(days, 1), 7);
-        HttpResponse response = HttpRequest.get(OPEN_METEO_FORECAST)
+        HttpResponse response = HttpRequest.get(forecastEndpoint())
             .form("latitude", latitude)
             .form("longitude", longitude)
             .form("current", "temperature_2m,apparent_temperature,weather_code,wind_speed_10m")

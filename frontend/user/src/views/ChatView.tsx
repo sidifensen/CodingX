@@ -22,7 +22,7 @@ import {
   WandSparkles,
   X,
 } from 'lucide-react';
-import { ChatWorkspaceController } from './chat/types';
+import { ChatWorkspaceController, McpCallItem } from './chat/types';
 
 /**
  * 定义聊天视图的输入属性。
@@ -671,6 +671,78 @@ function ThinkingPanel({ messageId, content }: { messageId: string; content: str
         }`}
       >
         <div className="whitespace-pre-wrap leading-6">{content}</div>
+      </div>
+    </section>
+  );
+}
+
+/**
+ * 渲染助手消息中的 MCP 调用折叠面板，展示工具、入参与返回片段。
+ */
+function McpCallPanel({ messageId, calls }: { messageId: string; calls: McpCallItem[] }) {
+  const [isExpanded, setIsExpanded] = React.useState(true);
+  const contentId = `mcp-call-content-panel-${messageId}`;
+
+  return (
+    <section
+      data-testid={`mcp-call-panel-${messageId}`}
+      className={`mb-3 rounded-2xl border border-border bg-surface-container text-sm text-muted transition-[width,padding] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] ${
+        isExpanded ? 'w-full px-4 py-3' : 'w-fit px-3 py-2'
+      }`}
+    >
+      <div className="flex items-center gap-3 font-medium text-foreground">
+        <span>MCP 调用</span>
+        <span className="rounded-full border border-border bg-surface px-2 py-0.5 text-[11px] text-muted">
+          {calls.length}
+        </span>
+        <button
+          type="button"
+          data-testid={`mcp-call-toggle-button-${messageId}`}
+          aria-expanded={isExpanded}
+          aria-controls={contentId}
+          aria-label={isExpanded ? '折叠MCP调用详情' : '展开MCP调用详情'}
+          onClick={() => setIsExpanded((current) => !current)}
+          className="flex h-7 w-7 items-center justify-center rounded-full border border-border bg-surface text-muted transition-colors hover:text-foreground"
+        >
+          <ChevronDown size={15} className={`transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
+        </button>
+      </div>
+      <div
+        id={contentId}
+        className={`overflow-hidden transition-all duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] ${
+          isExpanded
+            ? 'mt-3 max-h-[640px] max-w-full translate-y-0 opacity-100'
+            : 'mt-0 max-h-0 max-w-0 -translate-y-1 opacity-0 pointer-events-none'
+        }`}
+      >
+        <div className="space-y-3">
+          {calls.map((call, index) => (
+            <article
+              key={`${call.toolId}-${index}`}
+              data-testid={`mcp-call-item-${messageId}-${index}`}
+              className="rounded-xl border border-border bg-surface px-3 py-2.5"
+            >
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="truncate text-sm font-medium text-foreground">{call.displayName || call.toolId}</div>
+                  <div className="mt-1 font-mono text-[11px] text-muted">/{call.toolId}</div>
+                </div>
+              </div>
+              {call.input ? (
+                <div className="mt-2 rounded-lg bg-surface-container px-2.5 py-2">
+                  <div className="text-[11px] uppercase tracking-[0.16em] text-muted">输入</div>
+                  <div className="mt-1 whitespace-pre-wrap text-xs leading-5 text-foreground">{call.input}</div>
+                </div>
+              ) : null}
+              {call.content ? (
+                <div className="mt-2 rounded-lg bg-surface-container px-2.5 py-2">
+                  <div className="text-[11px] uppercase tracking-[0.16em] text-muted">返回</div>
+                  <div className="mt-1 whitespace-pre-wrap text-xs leading-5 text-foreground">{call.content}</div>
+                </div>
+              ) : null}
+            </article>
+          ))}
+        </div>
       </div>
     </section>
   );

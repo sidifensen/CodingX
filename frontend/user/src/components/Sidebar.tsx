@@ -3,6 +3,7 @@ import {
   SquareTerminal,
   Search,
   PlusCircle,
+  PlugZap,
   Zap,
   Brain,
   Bot,
@@ -140,6 +141,7 @@ export default function Sidebar({
             我的空间
           </div>
           <nav className="px-3 space-y-1 mb-6">
+            <NavItem id="mcp" label="MCP 管理" icon={PlugZap} />
             <NavItem id="skills" label="技能与套件" icon={Zap} />
             <NavItem id="experts" label="专家团队" icon={Brain} />
             <NavItem id="automation" label="自动化" icon={Bot} />

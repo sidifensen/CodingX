@@ -5,6 +5,7 @@ import { AnimatePresence } from 'motion/react';
 // 视图组件
 import ChatView from './views/ChatView';
 import AutomationView from './views/AutomationView';
+import McpView from './views/McpView';
 import SkillsView from './views/SkillsView';
 import ExpertsView from './views/ExpertsView';
 import Sidebar from './components/Sidebar';
@@ -15,7 +16,7 @@ import { useChatWorkspace } from './views/chat/useChatWorkspace';
 /**
  * 定义应用支持的主视图类型。
  */
-export type ViewType = 'chat' | 'skills' | 'experts' | 'automation';
+export type ViewType = 'chat' | 'mcp' | 'skills' | 'experts' | 'automation';
 
 /**
  * 渲染前端应用壳层，并管理视图、主题、移动端导航与登录弹窗状态。
@@ -202,6 +203,16 @@ export default function App() {
                   onRequireLogin={openLoginModal}
                   isDesktopSidebarCollapsed={isDesktopSidebarCollapsed}
                   workspace={chatWorkspace}
+                />
+              )}
+              {activeView === 'mcp' && (
+                <McpView
+                  key="mcp"
+                  availableMcps={chatWorkspace.availableMcps}
+                  selectedMcpCodes={chatWorkspace.selectedMcpCodes}
+                  mcpConnected={chatWorkspace.mcpConnected}
+                  setSelectedMcpCodes={chatWorkspace.setSelectedMcpCodes}
+                  setMcpConnected={chatWorkspace.setMcpConnected}
                 />
               )}
               {activeView === 'automation' && <AutomationView key="automation" />}

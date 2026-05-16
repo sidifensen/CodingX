@@ -340,6 +340,7 @@ describe('ChatView', () => {
 
     expect(screen.getByText('思考过程')).toBeInTheDocument();
     expect(screen.getByText('先分析问题，再组织答案。')).toBeInTheDocument();
+    expect(screen.getByTestId('thinking-toggle-button-701')).toHaveAttribute('aria-expanded', 'true');
   });
 
   /**
@@ -370,6 +371,50 @@ describe('ChatView', () => {
 
     expect(screen.getByTestId('thinking-summary-702')).toBeInTheDocument();
     expect(screen.getByTestId('thinking-toggle-icon-702')).toBeInTheDocument();
+  });
+
+  /**
+   * 思考区块应支持展开与折叠动画状态切换，且默认保持展开。
+   */
+  it('应支持思考区块默认展开并在点击后切换动画状态', async () => {
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          messages: [
+            {
+              id: '703',
+              conversationId: '2001',
+              role: 'ASSISTANT',
+              content: '最终回答',
+              thinkingContent: '这是思考内容。',
+              status: 'COMPLETED',
+            },
+          ],
+          executionSteps: [],
+          references: [],
+          artifacts: [],
+        })}
+      />,
+    );
+
+    const toggleButton = screen.getByTestId('thinking-toggle-button-703');
+    const content = screen.getByTestId('thinking-content-703');
+
+    expect(toggleButton).toHaveAttribute('aria-expanded', 'true');
+    expect(content).toHaveClass('max-h-[640px]');
+    expect(content).toHaveClass('opacity-100');
+
+    fireEvent.click(toggleButton);
+    expect(toggleButton).toHaveAttribute('aria-expanded', 'false');
+    expect(content).toHaveClass('max-h-0');
+    expect(content).toHaveClass('opacity-0');
+
+    fireEvent.click(toggleButton);
+    expect(toggleButton).toHaveAttribute('aria-expanded', 'true');
+    expect(content).toHaveClass('max-h-[640px]');
+    expect(content).toHaveClass('opacity-100');
   });
 
   /**

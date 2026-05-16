@@ -215,22 +215,7 @@ export default function ChatView({
                       {isAssistant ? (
                         <>
                           {message.thinkingContent ? (
-                            <details className="group mb-3 rounded-2xl border border-border bg-surface-container px-4 py-3 text-sm text-muted">
-                              <summary
-                                data-testid={`thinking-summary-${message.id}`}
-                                className="flex cursor-pointer list-none items-center gap-3 font-medium text-foreground [&::-webkit-details-marker]:hidden"
-                              >
-                                <span>思考过程</span>
-                                <span
-                                  data-testid={`thinking-toggle-icon-${message.id}`}
-                                  aria-hidden="true"
-                                  className="ml-auto flex h-7 w-7 items-center justify-center rounded-full border border-border bg-surface text-muted transition-colors group-hover:text-foreground"
-                                >
-                                  <ChevronDown size={15} className="transition-transform duration-200 group-open:rotate-180" />
-                                </span>
-                              </summary>
-                              <div className="mt-3 whitespace-pre-wrap leading-6">{message.thinkingContent}</div>
-                            </details>
+                            <ThinkingPanel messageId={message.id} content={message.thinkingContent} />
                           ) : null}
                           <MarkdownMessage content={messageContent} />
                           <AssistantMessageActions messageId={message.id} content={messageContent} />
@@ -430,6 +415,53 @@ export default function ChatView({
         />
       ) : null}
     </motion.div>
+  );
+}
+
+/**
+ * 渲染助手“思考过程”折叠面板，默认展开并通过过渡类提供展开/收起动画。
+ */
+function ThinkingPanel({ messageId, content }: { messageId: string; content: string }) {
+  // 步骤：思考面板在首次渲染时默认展开，减少用户额外点击成本。
+  const [isExpanded, setIsExpanded] = React.useState(true);
+  const contentId = `thinking-content-panel-${messageId}`;
+
+  return (
+    <section className="mb-3 rounded-2xl border border-border bg-surface-container px-4 py-3 text-sm text-muted">
+      <div
+        data-testid={`thinking-summary-${messageId}`}
+        className="flex items-center gap-3 font-medium text-foreground"
+      >
+        <span>思考过程</span>
+        <button
+          type="button"
+          data-testid={`thinking-toggle-button-${messageId}`}
+          aria-expanded={isExpanded}
+          aria-controls={contentId}
+          aria-label={isExpanded ? '折叠思考过程' : '展开思考过程'}
+          onClick={() => setIsExpanded((current) => !current)}
+          className="ml-auto flex h-7 w-7 items-center justify-center rounded-full border border-border bg-surface text-muted transition-colors hover:text-foreground"
+        >
+          <span
+            data-testid={`thinking-toggle-icon-${messageId}`}
+            aria-hidden="true"
+            className="flex h-7 w-7 items-center justify-center"
+          >
+            <ChevronDown size={15} className={`transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
+          </span>
+        </button>
+      </div>
+      <div
+        id={contentId}
+        data-testid={`thinking-content-${messageId}`}
+        // 步骤：内容区保持挂载，通过高度/透明度过渡实现展开与折叠动画，避免闪烁和重排跳变。
+        className={`overflow-hidden transition-all duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] ${
+          isExpanded ? 'mt-3 max-h-[640px] translate-y-0 opacity-100' : 'mt-0 max-h-0 -translate-y-1 opacity-0 pointer-events-none'
+        }`}
+      >
+        <div className="whitespace-pre-wrap leading-6">{content}</div>
+      </div>
+    </section>
   );
 }
 

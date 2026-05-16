@@ -288,7 +288,10 @@ export function IntentTreePage() {
   };
 
   return (
-    <div className="p-lg w-full space-y-lg">
+    <div
+      data-testid="intent-tree-page-shell"
+      className="w-full p-lg space-y-lg xl:flex xl:h-full xl:min-h-0 xl:flex-col xl:overflow-hidden"
+    >
       <div className="flex flex-col gap-md lg:flex-row lg:items-start lg:justify-between">
         <div>
           <h2 className="font-headline-md text-headline-md text-ink">意图树配置</h2>
@@ -320,16 +323,19 @@ export function IntentTreePage() {
         </div>
       ) : null}
 
-      <div className="grid grid-cols-1 gap-lg xl:grid-cols-[minmax(320px,0.95fr)_minmax(0,1.25fr)]">
+      <div className="grid grid-cols-1 gap-lg xl:flex-1 xl:min-h-0 xl:grid-cols-[minmax(320px,0.95fr)_minmax(0,1.25fr)] xl:overflow-hidden">
         <section
           aria-label="意图树结构"
-          className="rounded-2xl border border-border-hairline bg-surface-container-lowest shadow-sm"
+          className="rounded-2xl border border-border-hairline bg-surface-container-lowest shadow-sm xl:flex xl:min-h-0 xl:flex-col xl:overflow-hidden"
         >
           <div className="border-b border-border-hairline px-lg py-md">
             <h3 className="font-title-md text-title-md text-ink">意图树结构</h3>
             <p className="mt-1 text-body-sm text-secondary">点击节点查看详情，徽标展示层级与运行类型。</p>
           </div>
-          <div className="space-y-xs p-md">
+          <div
+            data-testid="intent-tree-list-scroll"
+            className="space-y-xs p-md xl:flex-1 xl:min-h-0 xl:overflow-y-auto"
+          >
             {loading ? (
               <div className="rounded-xl bg-surface-container-low px-lg py-xl text-center text-secondary">
                 加载中...
@@ -361,18 +367,24 @@ export function IntentTreePage() {
 
         <section
           aria-label="节点详情"
-          className="rounded-2xl border border-border-hairline bg-surface-container-lowest shadow-sm"
+          className="rounded-2xl border border-border-hairline bg-surface-container-lowest shadow-sm xl:flex xl:min-h-0 xl:flex-col xl:overflow-hidden"
         >
           <div className="border-b border-border-hairline px-lg py-md">
             <h3 className="font-title-md text-title-md text-ink">节点详情</h3>
             <p className="mt-1 text-body-sm text-secondary">查看当前选中节点并进行新增、编辑或删除。</p>
           </div>
-          <IntentNodeDetail
-            node={selectedNode}
-            onCreateChild={() => selectedNode && openCreateDialog(selectedNode)}
-            onEdit={() => selectedNode && openEditDialog(selectedNode)}
-            onDelete={() => selectedNode && setDeleteTarget(selectedNode)}
-          />
+          {/* 步骤：桌面端将详情区限制在视口内，避免左侧树变长时把整个管理页一起撑出滚动。 */}
+          <div
+            data-testid="intent-tree-detail-scroll"
+            className="xl:flex-1 xl:min-h-0 xl:overflow-y-auto"
+          >
+            <IntentNodeDetail
+              node={selectedNode}
+              onCreateChild={() => selectedNode && openCreateDialog(selectedNode)}
+              onEdit={() => selectedNode && openEditDialog(selectedNode)}
+              onDelete={() => selectedNode && setDeleteTarget(selectedNode)}
+            />
+          </div>
         </section>
       </div>
 

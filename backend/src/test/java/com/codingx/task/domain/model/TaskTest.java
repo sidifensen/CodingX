@@ -19,6 +19,15 @@ class TaskTest {
     }
 
     /**
+     * 创建任务时应保留绑定技能编码，供后续运行链路读取。
+     */
+    @Test
+    void createStoresSkillCodes() {
+        Task task = Task.create(1L, "Build backend", "phase 2", RuntimeType.MOCK, null, 1002L, java.util.List.of("conversation-core", "web-search"));
+        assertEquals(java.util.List.of("conversation-core", "web-search"), task.getSkillCodes());
+    }
+
+    /**
      * 将 completeRequiresRunningStatus 处理的流程标记为完成。
      */
     @Test

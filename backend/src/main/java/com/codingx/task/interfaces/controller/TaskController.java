@@ -45,7 +45,7 @@ public class TaskController {
     public ApiResponse<TaskResponse> createTask(@Valid @RequestBody CreateTaskRequest request) {
         Long userId = StpUtil.getLoginIdAsLong();
         Task task = taskCommandApplicationService.createTask(
-            new CreateTaskCommand(request.title(), request.description(), request.runtimeType(), request.workspaceId()),
+            new CreateTaskCommand(request.title(), request.description(), request.runtimeType(), request.workspaceId(), request.skillCodes()),
             userId
         );
         return ApiResponse.success(toResponse(task));

@@ -21,6 +21,7 @@ import com.codingx.chat.domain.repository.ChatMessageRepository;
 import com.codingx.chat.domain.service.AiChatClient;
 import com.codingx.chat.domain.service.ChatStreamPublisher;
 import com.codingx.common.exception.ForbiddenException;
+import com.codingx.mcp.domain.repository.ChatMcpRepository;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -109,6 +110,9 @@ class ChatApplicationServiceTest {
     @Mock
     private java.util.concurrent.ExecutorService searchExecutor;
 
+    @Mock
+    private ChatMcpRepository chatMcpRepository;
+
     /**
      * ChatRuntimeGuardService 依赖。
      */
@@ -146,7 +150,7 @@ class ChatApplicationServiceTest {
             new ConversationRewriteResult("Hi", false, List.of("Hi"))
         );
         when(llmResponseCleaner.clean(any())).thenAnswer(invocation -> invocation.getArgument(0));
-        when(conversationIntentService.route("Hi")).thenReturn(new ConversationIntentDecision("chat.normal", ConversationIntentAction.DIRECT, null));
+        when(conversationIntentService.route("Hi", false)).thenReturn(new ConversationIntentDecision("chat.normal", ConversationIntentAction.DIRECT, null));
         when(chatIntentNodeRepository.findByIntentCode("chat.normal")).thenReturn(null);
         doAnswer(invocation -> {
 
@@ -227,7 +231,7 @@ class ChatApplicationServiceTest {
         when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
             new ConversationRewriteResult("Hi", false, List.of("Hi"))
         );
-        when(conversationIntentService.route("Hi")).thenReturn(new ConversationIntentDecision("chat.normal", ConversationIntentAction.DIRECT, null));
+        when(conversationIntentService.route("Hi", false)).thenReturn(new ConversationIntentDecision("chat.normal", ConversationIntentAction.DIRECT, null));
         when(chatIntentNodeRepository.findByIntentCode("chat.normal")).thenReturn(null);
         AtomicInteger cancelChecks = new AtomicInteger();
         when(chatRuntimeGuardService.isCancelled(1L)).thenAnswer(invocation -> cancelChecks.incrementAndGet() > 1);
@@ -259,7 +263,7 @@ class ChatApplicationServiceTest {
         when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
             new ConversationRewriteResult("Hi", false, List.of("Hi"))
         );
-        when(conversationIntentService.route("Hi")).thenReturn(new ConversationIntentDecision("chat.normal", ConversationIntentAction.DIRECT, null));
+        when(conversationIntentService.route("Hi", false)).thenReturn(new ConversationIntentDecision("chat.normal", ConversationIntentAction.DIRECT, null));
         when(chatIntentNodeRepository.findByIntentCode("chat.normal")).thenReturn(null);
         when(chatRuntimeGuardService.isCancelled(1L)).thenReturn(true);
         doAnswer(invocation -> {

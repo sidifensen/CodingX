@@ -20,6 +20,7 @@ import com.codingx.chat.domain.repository.ChatIntentNodeRepository;
 import com.codingx.chat.domain.repository.ChatMessageRepository;
 import com.codingx.chat.domain.service.AiChatClient;
 import com.codingx.chat.domain.service.ChatStreamPublisher;
+import com.codingx.mcp.domain.repository.ChatMcpRepository;
 import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -77,6 +78,9 @@ class ChatApplicationIntentFlowTest {
     @Mock
     private com.codingx.support.ai.LlmResponseCleaner llmResponseCleaner;
 
+    @Mock
+    private ChatMcpRepository chatMcpRepository;
+
     @InjectMocks
     private ChatApplicationService chatApplicationService;
 
@@ -85,13 +89,15 @@ class ChatApplicationIntentFlowTest {
      */
     @Test
     void sendMessageReturnsClarificationWhenIntentIsAmbiguous() {
+        Long runId = 9101001L;
+        ChatExecutionContext.start(runId);
         ChatConversation conversation = ChatConversation.create(1L, "New Conversation", 1002L, ChatConversationStatus.ACTIVE);
         when(chatConversationRepository.requireById(1L)).thenReturn(conversation);
         when(chatMessageRepository.findByConversationId(1L)).thenReturn(new ArrayList<>());
         when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
             new ConversationRewriteResult("这个要怎么改", false, java.util.List.of("这个要怎么改"))
         );
-        when(conversationIntentService.route("这个要怎么改")).thenReturn(
+        when(conversationIntentService.route("这个要怎么改", false)).thenReturn(
             new ConversationIntentDecision("clarify.ambiguity", ConversationIntentAction.CLARIFY, "请补充你指的是哪一部分")
         );
 
@@ -103,6 +109,7 @@ class ChatApplicationIntentFlowTest {
         assertEquals("请补充你指的是哪一部分", captor.getAllValues().get(1).getContent());
         verify(chatStreamPublisher).publishAssistantCompleted(1L, "请补充你指的是哪一部分", "New Conversation");
         org.mockito.Mockito.verifyNoInteractions(aiChatClient);
+        ChatExecutionContext.clear();
     }
 
     /**
@@ -110,13 +117,15 @@ class ChatApplicationIntentFlowTest {
      */
     @Test
     void sendMessageStreamsSystemReplyFromNodePrompt() {
+        Long runId = 9101002L;
+        ChatExecutionContext.start(runId);
         ChatConversation conversation = ChatConversation.create(1L, "New Conversation", 1002L, ChatConversationStatus.ACTIVE);
         when(chatConversationRepository.requireById(1L)).thenReturn(conversation);
         when(chatMessageRepository.findByConversationId(1L)).thenReturn(new ArrayList<>());
         when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
             new ConversationRewriteResult("你是谁", false, java.util.List.of("你是谁"))
         );
-        when(conversationIntentService.route("你是谁")).thenReturn(
+        when(conversationIntentService.route("你是谁", false)).thenReturn(
             new ConversationIntentDecision("sys-about-bot", ConversationIntentAction.DIRECT, null)
         );
         when(chatIntentNodeRepository.findByIntentCode("sys-about-bot")).thenReturn(
@@ -146,5 +155,6 @@ class ChatApplicationIntentFlowTest {
         ArgumentCaptor<ChatMessage> captor = ArgumentCaptor.forClass(ChatMessage.class);
         verify(chatMessageRepository, org.mockito.Mockito.times(2)).save(captor.capture());
         assertEquals("我是配置驱动的知识助手。", captor.getAllValues().get(1).getContent());
+        ChatExecutionContext.clear();
     }
 }

@@ -50,7 +50,8 @@ public class TaskCommandApplicationService {
             command.description(),
             command.runtimeType(),
             command.workspaceId(),
-            createdBy
+            createdBy,
+            command.skillCodes()
         );
         taskRepository.save(task);
         return task;

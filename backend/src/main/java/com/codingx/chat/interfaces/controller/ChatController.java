@@ -1,5 +1,6 @@
 package com.codingx.chat.interfaces.controller;
 import cn.dev33.satoken.stp.StpUtil;
+import cn.hutool.core.util.StrUtil;
 import com.codingx.chat.application.command.CreateConversationCommand;
 import com.codingx.chat.application.command.SendChatMessageCommand;
 import com.codingx.chat.application.service.ChatApplicationService;
@@ -8,6 +9,8 @@ import com.codingx.chat.application.service.ChatReactionService;
 import com.codingx.chat.application.service.ChatRuntimeGuardService;
 import com.codingx.chat.domain.model.ChatConversation;
 import com.codingx.chat.domain.model.ChatMessage;
+import com.codingx.chat.domain.model.ChatSkill;
+import com.codingx.chat.domain.repository.ChatSkillRepository;
 import com.codingx.chat.interfaces.request.ChatMessageFeedbackRequest;
 import com.codingx.chat.interfaces.request.CreateConversationRequest;
 import com.codingx.chat.interfaces.request.RenameConversationRequest;
@@ -17,6 +20,7 @@ import com.codingx.chat.interfaces.response.ChatMessageResponse;
 import com.codingx.common.model.ApiResponse;
 import jakarta.validation.Valid;
 import java.util.List;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -52,6 +56,7 @@ public class ChatController {
      * ChatReactionService 依赖。
      */
     private final ChatReactionService chatReactionService;
+    private final ChatSkillRepository chatSkillRepository;
 
     /**
      * 创建 createConversation 所需数据并返回结果。
@@ -96,7 +101,11 @@ public class ChatController {
      */
     @PostMapping("/{conversationId}/messages")
     public ApiResponse<Void> sendMessage(@PathVariable Long conversationId, @Valid @RequestBody SendChatMessageRequest request) {
-        chatApplicationService.sendMessage(new SendChatMessageCommand(conversationId, request.content(), false), StpUtil.getLoginIdAsLong());
+        List<String> selectedSkillCodes = chatSkillRepository.findAllEnabled().stream()
+            .map(ChatSkill::getSkillCode)
+            .filter(StrUtil::isNotBlank)
+            .collect(Collectors.toList());
+        chatApplicationService.sendMessage(new SendChatMessageCommand(conversationId, request.content(), false, selectedSkillCodes), StpUtil.getLoginIdAsLong());
         return ApiResponse.successMessage("message processed");
     }
 

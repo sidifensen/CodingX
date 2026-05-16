@@ -329,3 +329,19 @@ SET
     description = EXCLUDED.description,
     updated_at = CURRENT_TIMESTAMP,
     deleted = EXCLUDED.deleted;
+
+INSERT INTO chat_mcp (id, mcp_code, display_name, description, category, source_type, enabled, sort_no, deleted)
+VALUES
+    (7101, 'sales_query', '销售查询', '查询销售汇总、排名、趋势与明细', '销售', 'built-in', 1, 1, 0),
+    (7102, 'ticket_query', '工单查询', '查询工单状态、列表、优先级与解决率', '工单', 'built-in', 1, 2, 0),
+    (7103, 'weather_query', '天气查询', '查询当前天气与未来预报', '天气', 'built-in', 1, 3, 0)
+ON CONFLICT (mcp_code) DO UPDATE
+SET
+    display_name = EXCLUDED.display_name,
+    description = EXCLUDED.description,
+    category = EXCLUDED.category,
+    source_type = EXCLUDED.source_type,
+    enabled = EXCLUDED.enabled,
+    sort_no = EXCLUDED.sort_no,
+    updated_at = CURRENT_TIMESTAMP,
+    deleted = EXCLUDED.deleted;

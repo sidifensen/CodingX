@@ -161,7 +161,7 @@ describe('ChatView', () => {
     expect(screen.queryByText(/会话 #/)).not.toBeInTheDocument();
     expect(screen.queryByText('执行回放')).not.toBeInTheDocument();
 
-    const inputWrapper = screen.getByPlaceholderText('输入指令以重构组件库或分析代码...').closest('form')?.parentElement?.parentElement;
+    const inputWrapper = screen.getByPlaceholderText('输入 / 选择技能，或直接提问...').closest('form')?.parentElement?.parentElement;
     expect(inputWrapper).not.toHaveClass('border-t');
   });
 
@@ -401,18 +401,23 @@ describe('ChatView', () => {
 
     const toggleButton = screen.getByTestId('thinking-toggle-button-703');
     const content = screen.getByTestId('thinking-content-703');
+    const panel = screen.getByTestId('thinking-panel-703');
 
     expect(toggleButton).toHaveAttribute('aria-expanded', 'true');
+    expect(panel).toHaveClass('w-full');
     expect(content).toHaveClass('max-h-[640px]');
     expect(content).toHaveClass('opacity-100');
 
     fireEvent.click(toggleButton);
     expect(toggleButton).toHaveAttribute('aria-expanded', 'false');
+    expect(panel).toHaveClass('w-fit');
     expect(content).toHaveClass('max-h-0');
+    expect(content).toHaveClass('max-w-0');
     expect(content).toHaveClass('opacity-0');
 
     fireEvent.click(toggleButton);
     expect(toggleButton).toHaveAttribute('aria-expanded', 'true');
+    expect(panel).toHaveClass('w-full');
     expect(content).toHaveClass('max-h-[640px]');
     expect(content).toHaveClass('opacity-100');
   });
@@ -663,6 +668,84 @@ describe('ChatView', () => {
   });
 
   /**
+   * 输入斜杠后应打开 技能 面板，回车选中高亮项并写入已选 技能 列表。
+   */
+  it('应支持通过斜杠命令面板回车选择技能', async () => {
+    const setSelectedSkillCodes = vi.fn();
+    const setInputValue = vi.fn();
+
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          inputValue: '/查',
+          setSelectedSkillCodes,
+          setInputValue,
+        })}
+      />,
+    );
+
+    expect(screen.getByTestId('skill-command-panel')).toBeInTheDocument();
+    expect(screen.getByTestId('skill-option-sales_query')).toBeInTheDocument();
+    fireEvent.keyDown(screen.getByPlaceholderText('输入 / 选择技能，或直接提问...'), { key: 'Enter' });
+
+    expect(setSelectedSkillCodes).toHaveBeenCalled();
+    const updater = setSelectedSkillCodes.mock.calls[0][0] as (codes: string[]) => string[];
+    expect(updater([])).toEqual(['sales_query']);
+    expect(setInputValue).toHaveBeenCalledWith('');
+  });
+
+  /**
+   * 斜杠面板应支持上下方向键移动高亮，回车选择当前 技能。
+   */
+  it('应支持键盘方向键切换技能高亮并回车选择', async () => {
+    const setSelectedSkillCodes = vi.fn();
+    const setInputValue = vi.fn();
+
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          inputValue: '/',
+          setSelectedSkillCodes,
+          setInputValue,
+        })}
+      />,
+    );
+
+    const input = screen.getByPlaceholderText('输入 / 选择技能，或直接提问...');
+    fireEvent.keyDown(input, { key: 'ArrowDown' });
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    const updater = setSelectedSkillCodes.mock.calls[0][0] as (codes: string[]) => string[];
+    expect(updater([])).toEqual(['ticket_query']);
+  });
+
+  /**
+   * 已选 技能 气泡应支持删除操作。
+   */
+  it('应支持删除已选技能气泡', async () => {
+    const setSelectedSkillCodes = vi.fn();
+
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          selectedSkillCodes: ['sales_query'],
+          setSelectedSkillCodes,
+        })}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '移除技能 销售查询' }));
+    const updater = setSelectedSkillCodes.mock.calls[0][0] as (codes: string[]) => string[];
+    expect(updater(['sales_query'])).toEqual([]);
+  });
+
+  /**
    * 点赞和倒赞应支持单选切换，保证反馈状态直观可见。
    */
   it('应支持点赞倒赞切换', async () => {
@@ -800,6 +883,23 @@ function createWorkspace(overrides?: Partial<ChatWorkspaceController>): ChatWork
         category: 'IT支持',
       },
     ],
+    availableSkills: [
+      {
+        id: '7001',
+        skillCode: 'sales_query',
+        displayName: '销售查询',
+        description: '联网检索信息并生成摘要',
+        category: '检索',
+      },
+      {
+        id: '7002',
+        skillCode: 'ticket_query',
+        displayName: '工单查询',
+        description: '分析代码结构与缺陷',
+        category: '工程',
+      },
+    ],
+    selectedSkillCodes: [],
     isStreaming: false,
     isCancelling: false,
     deepThinkingEnabled: false,
@@ -808,6 +908,7 @@ function createWorkspace(overrides?: Partial<ChatWorkspaceController>): ChatWork
     isBootstrapping: false,
     setInputValue: vi.fn(),
     setDeepThinkingEnabled: vi.fn(),
+    setSelectedSkillCodes: vi.fn(),
     submitMessage: vi.fn().mockResolvedValue(undefined),
     cancelCurrentStream: vi.fn().mockResolvedValue(undefined),
     selectConversation: vi.fn().mockResolvedValue(undefined),

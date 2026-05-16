@@ -7,5 +7,6 @@ public enum ConversationIntentAction {
     DIRECT,
     SEARCH,
     CLARIFY,
-    MCP
+    MCP,
+    MCP_DISABLED
 }

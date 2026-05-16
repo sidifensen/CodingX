@@ -9,6 +9,8 @@ import {
   ChatWorkspaceController,
   ConversationItem,
   ExecutionStepItem,
+  McpCallItem,
+  McpItem,
   ReferenceItem,
   SampleQuestionItem,
 } from './types';
@@ -24,6 +26,9 @@ export function useChatWorkspace(isAuthenticated: boolean) {
   const [references, setReferences] = useState<ReferenceItem[]>([]);
   const [artifacts, setArtifacts] = useState<ArtifactItem[]>([]);
   const [sampleQuestions, setSampleQuestions] = useState<SampleQuestionItem[]>([]);
+  const [availableMcps, setAvailableMcps] = useState<McpItem[]>([]);
+  const [selectedMcpCodes, setSelectedMcpCodesState] = useState<string[]>([]);
+  const [mcpConnected, setMcpConnected] = useState(true);
   const [isStreaming, setIsStreaming] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
   const [deepThinkingEnabled, setDeepThinkingEnabled] = useState(false);
@@ -43,6 +48,18 @@ export function useChatWorkspace(isAuthenticated: boolean) {
   const streamStateRef = useRef<ActiveStreamState | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
 
+  /**
+   * 统一更新技能选择列表，支持直接赋值与函数式更新。
+   * @param nextValue 目标值或计算函数。
+   */
+  const setSelectedMcpCodes = (nextValue: string[] | ((previous: string[]) => string[])) => {
+    if (typeof nextValue === 'function') {
+      setSelectedMcpCodesState((previous) => nextValue(previous));
+      return;
+    }
+    setSelectedMcpCodesState(nextValue);
+  };
+
   useEffect(() => {
     if (!isAuthenticated) {
       resetWorkspace();
@@ -61,11 +78,15 @@ export function useChatWorkspace(isAuthenticated: boolean) {
     }
     setIsBootstrapping(true);
     try {
-      const [nextConversations, nextSampleQuestions] = await Promise.all([
+      const [nextConversations, nextSampleQuestions, nextMcps] = await Promise.all([
         loadConversations(token),
         ChatApi.listSampleQuestions(token),
+        ChatApi.listMcps(token),
       ]);
       setSampleQuestions(nextSampleQuestions);
+      setAvailableMcps(nextMcps);
+      setSelectedMcpCodes(nextMcps.map((item) => item.mcpCode));
+      setMcpConnected(nextMcps.length > 0);
       if (nextConversations[0]?.id) {
         await selectConversation(nextConversations[0].id, nextConversations);
       } else {
@@ -148,7 +169,9 @@ export function useChatWorkspace(isAuthenticated: boolean) {
     ]);
 
     try {
-      const response = await fetch(buildStreamRequestUrl(question, activeConversationId, deepThinkingEnabled), {
+      const response = await fetch(
+        buildStreamRequestUrl(question, activeConversationId, deepThinkingEnabled, mcpConnected, selectedMcpCodes),
+        {
         headers: {
           satoken: token,
         },
@@ -278,6 +301,9 @@ export function useChatWorkspace(isAuthenticated: boolean) {
     setConversations([]);
     clearConversationPlayback();
     setSampleQuestions([]);
+    setAvailableMcps([]);
+    setSelectedMcpCodes([]);
+    setMcpConnected(false);
     setIsStreaming(false);
     setIsCancelling(false);
     setStreamError('');
@@ -360,6 +386,27 @@ export function useChatWorkspace(isAuthenticated: boolean) {
             ? {
                 ...message,
                 thinkingContent: `${message.thinkingContent ?? ''}${delta}`,
+              }
+            : message,
+        ),
+      );
+      return;
+    }
+
+    if (eventName === 'mcp-call' && isRecord(payload)) {
+      const call: McpCallItem = {
+        toolId: String(payload.toolId ?? ''),
+        displayName: String(payload.displayName ?? payload.toolId ?? ''),
+        input: String(payload.input ?? ''),
+        content: String(payload.content ?? ''),
+        metadata: isRecord(payload.metadata) ? payload.metadata : undefined,
+      };
+      setMessages((previousMessages) =>
+        previousMessages.map((message) =>
+          message.id === optimisticAssistantId
+            ? {
+                ...message,
+                mcpCalls: [...(message.mcpCalls ?? []), call],
               }
             : message,
         ),
@@ -467,6 +514,9 @@ export function useChatWorkspace(isAuthenticated: boolean) {
     references,
     artifacts,
     sampleQuestions,
+    availableMcps,
+    selectedMcpCodes,
+    mcpConnected,
     isStreaming,
     isCancelling,
     deepThinkingEnabled,
@@ -475,6 +525,8 @@ export function useChatWorkspace(isAuthenticated: boolean) {
     isBootstrapping,
     setInputValue,
     setDeepThinkingEnabled,
+    setSelectedMcpCodes,
+    setMcpConnected,
     submitMessage,
     cancelCurrentStream,
     selectConversation,
@@ -524,7 +576,13 @@ export function useChatWorkspace(isAuthenticated: boolean) {
  * @param conversationId 当前选中的会话标识。
  * @returns 可直接用于 fetch 的 SSE 地址。
  */
-function buildStreamRequestUrl(question: string, conversationId: string | null, deepThinkingEnabled: boolean) {
+function buildStreamRequestUrl(
+  question: string,
+  conversationId: string | null,
+  deepThinkingEnabled: boolean,
+  mcpConnected: boolean,
+  selectedMcpCodes: string[],
+) {
   const searchParams = new URLSearchParams({
     question,
   });
@@ -533,6 +591,9 @@ function buildStreamRequestUrl(question: string, conversationId: string | null, 
   }
   if (deepThinkingEnabled) {
     searchParams.set('deepThinking', 'true');
+  }
+  if (mcpConnected && selectedMcpCodes.length > 0) {
+    searchParams.set('mcpCodes', selectedMcpCodes.join(','));
   }
   return `/api/chat/stream?${searchParams.toString()}`;
 }

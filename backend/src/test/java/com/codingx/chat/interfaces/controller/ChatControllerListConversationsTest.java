@@ -12,6 +12,7 @@ import com.codingx.chat.application.service.ChatReactionService;
 import com.codingx.chat.application.service.ChatRuntimeGuardService;
 import com.codingx.chat.domain.model.ChatConversation;
 import com.codingx.chat.domain.model.ChatConversationStatus;
+import com.codingx.chat.domain.repository.ChatSkillRepository;
 import com.codingx.config.GlobalExceptionHandler;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -42,6 +43,9 @@ class ChatControllerListConversationsTest {
 
     @Mock
     private ChatReactionService chatReactionService;
+
+    @Mock
+    private ChatSkillRepository chatSkillRepository;
 
     @InjectMocks
     private ChatController chatController;

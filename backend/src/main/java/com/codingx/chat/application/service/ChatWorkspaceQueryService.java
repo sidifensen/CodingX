@@ -4,10 +4,12 @@ import com.codingx.chat.domain.model.ChatExecutionRun;
 import com.codingx.chat.domain.model.ChatExecutionStep;
 import com.codingx.chat.domain.model.ChatMessageArtifact;
 import com.codingx.chat.domain.model.ChatMessageReference;
+import com.codingx.chat.domain.model.ChatSkill;
 import com.codingx.chat.domain.repository.ChatExecutionRunRepository;
 import com.codingx.chat.domain.repository.ChatExecutionStepRepository;
 import com.codingx.chat.domain.repository.ChatMessageArtifactRepository;
 import com.codingx.chat.domain.repository.ChatMessageReferenceRepository;
+import com.codingx.chat.domain.repository.ChatSkillRepository;
 import java.util.List;
 import java.util.Comparator;
 import lombok.RequiredArgsConstructor;
@@ -24,6 +26,7 @@ public class ChatWorkspaceQueryService {
     private final ChatExecutionStepRepository chatExecutionStepRepository;
     private final ChatMessageReferenceRepository chatMessageReferenceRepository;
     private final ChatMessageArtifactRepository chatMessageArtifactRepository;
+    private final ChatSkillRepository chatSkillRepository;
 
     /**
      * 返回当前会话最新一条运行记录对应的执行步骤列表。
@@ -55,6 +58,18 @@ public class ChatWorkspaceQueryService {
     public List<ChatMessageArtifact> listArtifacts(Long conversationId) {
         return latestRun(conversationId)
             .map(run -> chatMessageArtifactRepository.findByRunId(run.getId()))
+            .orElse(List.of());
+    }
+
+    /**
+     * 返回当前会话最新运行任务绑定的技能列表，供工作区展示“当前技能”。
+     * @param conversationId 会话标识。
+     * @return 技能列表。
+     */
+    public List<ChatSkill> listCurrentSkills(Long conversationId) {
+        return latestRun(conversationId)
+            // 历史运行记录可能未补齐 taskId；此时回退 runId，兼容旧数据与单测构造。
+            .map(run -> chatSkillRepository.findByTaskId(run.getTaskId() == null ? run.getId() : run.getTaskId()))
             .orElse(List.of());
     }
 

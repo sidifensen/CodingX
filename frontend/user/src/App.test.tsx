@@ -35,6 +35,9 @@ describe('App', () => {
       if (url === '/api/chat/sample-questions') {
         return new Response(JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }), { status: 200 });
       }
+      if (url === '/api/chat/skills') {
+        return new Response(JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }), { status: 200 });
+      }
       throw new Error(`Unhandled fetch in App test: ${url}`);
     });
   };
@@ -94,7 +97,7 @@ describe('App', () => {
     render(<App />);
 
     // 步骤：输入消息并触发发送。
-    fireEvent.change(screen.getByPlaceholderText('输入指令以重构组件库或分析代码...'), {
+    fireEvent.change(screen.getByPlaceholderText('输入 / 选择技能，或直接提问...'), {
       target: { value: '请帮我分析项目结构' },
     });
     fireEvent.click(screen.getByRole('button', { name: '发送消息' }));
@@ -131,6 +134,9 @@ describe('App', () => {
         return new Response(JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }), { status: 200 });
       }
       if (url === '/api/chat/sample-questions') {
+        return new Response(JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }), { status: 200 });
+      }
+      if (url === '/api/chat/skills') {
         return new Response(JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }), { status: 200 });
       }
       if (
@@ -194,6 +200,9 @@ describe('App', () => {
         return new Response(JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }), { status: 200 });
       }
       if (url === '/api/chat/sample-questions') {
+        return new Response(JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }), { status: 200 });
+      }
+      if (url === '/api/chat/skills') {
         return new Response(JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }), { status: 200 });
       }
       if (
@@ -263,6 +272,9 @@ describe('App', () => {
       if (url === '/api/chat/sample-questions') {
         return new Response(JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }), { status: 200 });
       }
+      if (url === '/api/chat/skills') {
+        return new Response(JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }), { status: 200 });
+      }
       if (
         url === '/api/chat/conversations/2001/messages' ||
         url === '/api/chat/conversations/2001/steps' ||
@@ -319,6 +331,9 @@ describe('App', () => {
         );
       }
       if (url === '/api/chat/sample-questions') {
+        return new Response(JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }), { status: 200 });
+      }
+      if (url === '/api/chat/skills') {
         return new Response(JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }), { status: 200 });
       }
       if (url === '/api/chat/conversations/2001/messages') {
@@ -419,7 +434,7 @@ describe('App', () => {
     expect(await screen.findByText('你好，我是 CodingX')).toBeInTheDocument();
     expect(screen.queryByText('旧会话回答')).not.toBeInTheDocument();
 
-    fireEvent.change(screen.getByPlaceholderText('输入指令以重构组件库或分析代码...'), {
+    fireEvent.change(screen.getByPlaceholderText('输入 / 选择技能，或直接提问...'), {
       target: { value: '请搜索新的会话问题' },
     });
     fireEvent.click(screen.getByRole('button', { name: '发送消息' }));
@@ -475,6 +490,9 @@ describe('App', () => {
         );
       }
       if (url === '/api/chat/sample-questions') {
+        return new Response(JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }), { status: 200 });
+      }
+      if (url === '/api/chat/skills') {
         return new Response(JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }), { status: 200 });
       }
       if (url === '/api/chat/conversations/2055114974648864768/messages') {
@@ -588,6 +606,9 @@ describe('App', () => {
       if (url === '/api/chat/sample-questions') {
         return new Response(JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }), { status: 200 });
       }
+      if (url === '/api/chat/skills') {
+        return new Response(JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }), { status: 200 });
+      }
       if (
         url === '/api/chat/conversations/2055114974648864768/messages' ||
         url === '/api/chat/conversations/2055114974648864768/steps' ||
@@ -650,6 +671,9 @@ describe('App', () => {
         );
       }
       if (url === '/api/chat/sample-questions') {
+        return new Response(JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }), { status: 200 });
+      }
+      if (url === '/api/chat/skills') {
         return new Response(JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }), { status: 200 });
       }
       if (

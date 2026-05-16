@@ -4,6 +4,7 @@ import com.codingx.chat.application.command.SendChatMessageCommand;
 import com.codingx.chat.domain.model.ChatExecutionRun;
 import com.codingx.chat.domain.model.ChatTraceRun;
 import com.codingx.chat.domain.repository.ChatExecutionRunRepository;
+import com.codingx.chat.domain.repository.ChatSkillRepository;
 import java.time.LocalDateTime;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
@@ -22,6 +23,7 @@ public class ChatStreamExecutionService {
     private final ChatRuntimeGuardService chatRuntimeGuardService;
     private final ConversationTraceRecordService conversationTraceRecordService;
     private final ChatExecutionRunRepository chatExecutionRunRepository;
+    private final ChatSkillRepository chatSkillRepository;
     private final ExecutorService executor;
 
     /**
@@ -36,6 +38,7 @@ public class ChatStreamExecutionService {
         ChatRuntimeGuardService chatRuntimeGuardService,
         ConversationTraceRecordService conversationTraceRecordService,
         ChatExecutionRunRepository chatExecutionRunRepository,
+        ChatSkillRepository chatSkillRepository,
         @Qualifier("chatStreamExecutor")
         ExecutorService executor
     ) {
@@ -43,6 +46,7 @@ public class ChatStreamExecutionService {
         this.chatRuntimeGuardService = chatRuntimeGuardService;
         this.conversationTraceRecordService = conversationTraceRecordService;
         this.chatExecutionRunRepository = chatExecutionRunRepository;
+        this.chatSkillRepository = chatSkillRepository;
         this.executor = executor;
     }
 
@@ -63,6 +67,8 @@ public class ChatStreamExecutionService {
             .createdAt(now)
             .updatedAt(now)
             .build());
+        // 步骤：派发入口固定先写入本次技能绑定，保证工作区“当前技能”可在回放接口中稳定读取。
+        chatSkillRepository.bindTaskSkills(runId, command.mcpCodes());
         com.codingx.chat.domain.model.ChatTraceRun traceRun = conversationTraceRecordService.startTrace("chat-entry", command.conversationId(), userId);
         AtomicReference<Future<?>> futureRef = new AtomicReference<>();
         chatRuntimeGuardService.registerCancellation(command.conversationId(), () -> {

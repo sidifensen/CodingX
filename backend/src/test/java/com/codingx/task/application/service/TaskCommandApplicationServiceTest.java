@@ -55,10 +55,11 @@ class TaskCommandApplicationServiceTest {
     @Test
     void createTaskPersistsCreatedTask() {
 
-        CreateTaskCommand command = new CreateTaskCommand("Build backend", "phase 2", RuntimeType.MOCK, null);
+        CreateTaskCommand command = new CreateTaskCommand("Build backend", "phase 2", RuntimeType.MOCK, null, java.util.List.of("conversation-core"));
         Task created = taskCommandApplicationService.createTask(command, 1002L);
         assertEquals("Build backend", created.getTitle());
         assertEquals(RuntimeType.MOCK, created.getRuntimeType());
+        assertEquals(java.util.List.of("conversation-core"), created.getSkillCodes());
         verify(taskRepository).save(created);
     }
 
@@ -97,7 +98,7 @@ class TaskCommandApplicationServiceTest {
     @Test
     void createTaskValidatesWorkspaceExists() {
 
-        CreateTaskCommand command = new CreateTaskCommand("Build backend", "phase 2", RuntimeType.MOCK, 3001L);
+        CreateTaskCommand command = new CreateTaskCommand("Build backend", "phase 2", RuntimeType.MOCK, 3001L, java.util.List.of("conversation-core"));
         doThrow(new NotFoundException("Workspace not found")).when(workspaceRepository).ensureExists(3001L);
         NotFoundException exception = assertThrows(
             NotFoundException.class,

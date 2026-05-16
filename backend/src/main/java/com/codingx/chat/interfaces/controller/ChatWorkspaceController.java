@@ -4,6 +4,7 @@ import com.codingx.chat.application.service.ChatWorkspaceQueryService;
 import com.codingx.chat.domain.model.ChatExecutionStep;
 import com.codingx.chat.domain.model.ChatMessageArtifact;
 import com.codingx.chat.domain.model.ChatMessageReference;
+import com.codingx.chat.domain.model.ChatSkill;
 import com.codingx.common.model.ApiResponse;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -35,5 +36,10 @@ public class ChatWorkspaceController {
     @GetMapping("/{conversationId}/artifacts")
     public ApiResponse<List<ChatMessageArtifact>> listArtifacts(@PathVariable Long conversationId) {
         return ApiResponse.success(chatWorkspaceQueryService.listArtifacts(conversationId));
+    }
+
+    @GetMapping("/{conversationId}/current-skills")
+    public ApiResponse<List<ChatSkill>> listCurrentSkills(@PathVariable Long conversationId) {
+        return ApiResponse.success(chatWorkspaceQueryService.listCurrentSkills(conversationId));
     }
 }

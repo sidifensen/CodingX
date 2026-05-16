@@ -15,6 +15,8 @@ import com.codingx.chat.domain.repository.ChatMessageRepository;
 import com.codingx.chat.domain.service.AiChatClient;
 import com.codingx.chat.domain.service.ChatStreamPublisher;
 import com.codingx.common.exception.ForbiddenException;
+import com.codingx.mcp.domain.model.ChatMcp;
+import com.codingx.mcp.domain.repository.ChatMcpRepository;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -96,6 +98,7 @@ public class ChatApplicationService {
      * MCP 执行服务依赖。
      */
     private final ChatMcpExecutionService chatMcpExecutionService;
+    private final ChatMcpRepository chatMcpRepository;
 
     /**
      * 意图节点仓储依赖。
@@ -152,7 +155,8 @@ public class ChatApplicationService {
             command.content()
         );
         String rewrittenQuestion = rewriteResult.rewrite();
-        ConversationIntentDecision intentDecision = conversationIntentService.route(rewrittenQuestion);
+        boolean mcpEnabled = command.mcpCodes() != null && !command.mcpCodes().isEmpty();
+        ConversationIntentDecision intentDecision = conversationIntentService.route(rewrittenQuestion, mcpEnabled);
         if (intentDecision.action() == ConversationIntentAction.CLARIFY) {
             ChatMessage assistantMessage = ChatMessage.assistantMessage(
                 command.conversationId(),
@@ -193,10 +197,50 @@ public class ChatApplicationService {
             chatStreamPublisher.publishAssistantCompleted(command.conversationId(), assistantMessage.getContent(), conversation.getTitle());
             return;
         }
+        if (intentDecision.action() == ConversationIntentAction.MCP_DISABLED) {
+            ChatMessage assistantMessage = ChatMessage.assistantMessage(
+                command.conversationId(),
+                "你当前未连接 MCP。请在输入框上方开启“连接 MCP”并至少选择一个 MCP 后重试",
+                ChatMessageStatus.COMPLETED,
+                null,
+                null,
+                null
+            ).attachRun(runId);
+            chatMessageRepository.save(assistantMessage);
+            history.add(assistantMessage);
+            conversation.rename(conversationTitleService.generateTitle(conversation, history));
+            conversation.touch();
+            conversation.recordLastRunId(runId);
+            chatConversationRepository.save(conversation);
+            recordExecutionOutcome(conversation, userMessage.getId(), assistantMessage.getId(), intentDecision.intentCode(), false, false, ChatMessageStatus.COMPLETED, null);
+            finishTrace(runId, "SUCCESS", null);
+            chatStreamPublisher.publishAssistantCompleted(command.conversationId(), assistantMessage.getContent(), conversation.getTitle());
+            return;
+        }
         if (intentDecision.action() == ConversationIntentAction.MCP) {
             com.codingx.chat.domain.model.ChatIntentNode intentNode = chatIntentNodeRepository.findByIntentCode(intentDecision.intentCode());
             if (intentNode == null || StrUtil.isBlank(intentNode.getMcpToolId())) {
                 throw new IllegalStateException("MCP tool config is missing for intent: " + intentDecision.intentCode());
+            }
+            if (!isMcpEnabledForCurrentMessage(intentNode.getMcpToolId(), command.mcpCodes())) {
+                ChatMessage assistantMessage = ChatMessage.assistantMessage(
+                    command.conversationId(),
+                    "当前会话未连接该 MCP，请在输入框上方先启用对应 MCP 后重试",
+                    ChatMessageStatus.COMPLETED,
+                    null,
+                    null,
+                    null
+                ).attachRun(runId);
+                chatMessageRepository.save(assistantMessage);
+                history.add(assistantMessage);
+                conversation.rename(conversationTitleService.generateTitle(conversation, history));
+                conversation.touch();
+                conversation.recordLastRunId(runId);
+                chatConversationRepository.save(conversation);
+                recordExecutionOutcome(conversation, userMessage.getId(), assistantMessage.getId(), intentDecision.intentCode(), false, false, ChatMessageStatus.COMPLETED, null);
+                finishTrace(runId, "SUCCESS", null);
+                chatStreamPublisher.publishAssistantCompleted(command.conversationId(), assistantMessage.getContent(), conversation.getTitle());
+                return;
             }
             ChatMcpToolResult toolResult = chatMcpExecutionService.execute(intentNode.getMcpToolId(), rewrittenQuestion);
             ChatExecutionStep mcpStep = ChatExecutionStep.builder()
@@ -219,6 +263,13 @@ public class ChatApplicationService {
                 "stepStatus", mcpStep.getStepStatus(),
                 "sequenceNo", mcpStep.getSequenceNo(),
                 "content", mcpStep.getContent()
+            ));
+            chatStreamPublisher.publishMcpCall(command.conversationId(), Map.of(
+                "toolId", toolResult.toolId(),
+                "displayName", resolveMcpDisplayName(toolResult.toolId()),
+                "input", rewrittenQuestion,
+                "content", toolResult.content(),
+                "metadata", toolResult.metadata() == null ? Map.of() : toolResult.metadata()
             ));
             ChatMessage assistantMessage = ChatMessage.assistantMessage(
                 command.conversationId(),
@@ -513,5 +564,41 @@ public class ChatApplicationService {
             }
         }
         return new ArrayList<>(merged.values());
+    }
+
+    /**
+     * 判断当前意图命中的 MCP 是否在本次会话显式启用列表内。
+     * @param toolId 命中的工具标识。
+     * @param selectedMcpCodes 当前消息携带的 MCP 编码。
+     * @return 是否允许执行。
+     */
+    private boolean isMcpEnabledForCurrentMessage(String toolId, List<String> selectedMcpCodes) {
+        if (StrUtil.isBlank(toolId)) {
+            return false;
+        }
+        if (selectedMcpCodes == null || selectedMcpCodes.isEmpty()) {
+            return false;
+        }
+        ChatMcp configuredMcp = chatMcpRepository.findByMcpCode(toolId);
+        if (configuredMcp == null || configuredMcp.getEnabled() == null || configuredMcp.getEnabled() != 1) {
+            return false;
+        }
+        return selectedMcpCodes.stream()
+            .filter(StrUtil::isNotBlank)
+            .map(String::trim)
+            .anyMatch(code -> StrUtil.equalsIgnoreCase(code, toolId));
+    }
+
+    /**
+     * 从配置表解析 MCP 展示名称，缺失时回退为工具编码。
+     * @param toolId MCP 工具编码。
+     * @return 展示名称。
+     */
+    private String resolveMcpDisplayName(String toolId) {
+        ChatMcp configuredMcp = chatMcpRepository.findByMcpCode(toolId);
+        if (configuredMcp == null || StrUtil.isBlank(configuredMcp.getDisplayName())) {
+            return toolId;
+        }
+        return configuredMcp.getDisplayName();
     }
 }

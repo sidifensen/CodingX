@@ -1,10 +1,14 @@
 package com.codingx.chat.application.service;
 
 import com.codingx.common.exception.BusinessException;
+import com.codingx.mcp.domain.model.ChatMcp;
+import com.codingx.mcp.domain.repository.ChatMcpRepository;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.Builder;
 import lombok.RequiredArgsConstructor;
@@ -20,6 +24,7 @@ public class AdminChatMcpService {
     private static final DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     private final ChatMcpToolRegistry chatMcpToolRegistry;
+    private final ChatMcpRepository chatMcpRepository;
 
     /**
      * 返回当前后端可用的 MCP 工具清单。
@@ -27,10 +32,12 @@ public class AdminChatMcpService {
      * @return MCP 工具视图列表。
      */
     public List<McpToolHealthView> listTools() {
-        List<ChatMcpToolExecutor> executors = chatMcpToolRegistry.all();
-        return executors.stream()
-            .sorted(Comparator.comparing(ChatMcpToolExecutor::toolId))
-            .map(this::toHealthyView)
+        Map<String, ChatMcpToolExecutor> executorMap = chatMcpToolRegistry.all().stream()
+            .collect(Collectors.toMap(ChatMcpToolExecutor::toolId, Function.identity(), (left, right) -> left));
+        return chatMcpRepository.findAll().stream()
+            .sorted(Comparator.comparing(ChatMcp::getSortNo, Comparator.nullsLast(Comparator.naturalOrder()))
+                .thenComparing(ChatMcp::getMcpCode, Comparator.nullsLast(String::compareToIgnoreCase)))
+            .map(mcp -> toConfiguredView(mcp, executorMap.get(mcp.getMcpCode())))
             .collect(Collectors.toList());
     }
 
@@ -42,6 +49,10 @@ public class AdminChatMcpService {
      */
     public McpToolHealthView pingTool(String toolId) {
         long startedAt = System.currentTimeMillis();
+        ChatMcp configuredMcp = chatMcpRepository.findByMcpCode(toolId);
+        if (configuredMcp == null || configuredMcp.getDeleted() != null && configuredMcp.getDeleted() == 1) {
+            throw new BusinessException("CHAT_MCP_NOT_FOUND", "MCP 配置不存在");
+        }
         ChatMcpToolExecutor executor = chatMcpToolRegistry.require(toolId);
         String message;
         String status;
@@ -67,7 +78,7 @@ public class AdminChatMcpService {
         }
 
         long durationMs = Math.max(1, System.currentTimeMillis() - startedAt);
-        return baseViewFor(toolId).toBuilder()
+        return toConfiguredView(configuredMcp, executor).toBuilder()
             .ok(ok)
             .status(status)
             .statusLabel(statusLabel)
@@ -78,64 +89,46 @@ public class AdminChatMcpService {
     }
 
     /**
-     * 将执行器映射为默认可用视图。
+     * 将 MCP 配置映射为后台状态视图。
      *
-     * @param executor MCP 执行器。
+     * @param configuredMcp MCP 配置。
+     * @param executor 可选执行器。
      * @return 视图对象。
      */
-    private McpToolHealthView toHealthyView(ChatMcpToolExecutor executor) {
-        String toolId = executor.toolId();
-        return baseViewFor(toolId).toBuilder()
-            .ok(true)
-            .status("healthy")
-            .statusLabel("可用")
-            .message(toolId + " 已注册")
+    private McpToolHealthView toConfiguredView(ChatMcp configuredMcp, ChatMcpToolExecutor executor) {
+        String toolId = configuredMcp.getMcpCode();
+        boolean enabled = configuredMcp.getEnabled() != null && configuredMcp.getEnabled() == 1;
+        boolean hasExecutor = executor != null;
+        String status;
+        String statusLabel;
+        String message;
+        if (!enabled) {
+            status = "degraded";
+            statusLabel = "禁用";
+            message = toolId + " 已禁用";
+        } else if (hasExecutor) {
+            status = "healthy";
+            statusLabel = "可用";
+            message = toolId + " 已注册";
+        } else {
+            status = "failed";
+            statusLabel = "未接入";
+            message = toolId + " 缺少执行器";
+        }
+        return McpToolHealthView.builder()
+            .toolId(toolId)
+            .displayName(configuredMcp.getDisplayName())
+            .category(configuredMcp.getCategory())
+            .source(configuredMcp.getSourceType())
+            .description(configuredMcp.getDescription())
+            .sampleQuestion(sampleQuestionFor(toolId))
+            .ok(enabled && hasExecutor)
+            .status(status)
+            .statusLabel(statusLabel)
+            .message(message)
             .checkedAt(LocalDateTime.now().format(DATE_TIME_FORMATTER))
             .durationMs(0L)
             .build();
-    }
-
-    /**
-     * 根据工具标识构建基础展示信息。
-     *
-     * @param toolId 工具标识。
-     * @return 视图对象。
-     */
-    private McpToolHealthView baseViewFor(String toolId) {
-        return switch (toolId) {
-            case "sales_query" -> McpToolHealthView.builder()
-                .toolId(toolId)
-                .displayName("销售查询")
-                .category("销售")
-                .source("内置后端")
-                .description("查询销售汇总、排名、趋势与明细")
-                .sampleQuestion("本月华东销售总额是多少")
-                .build();
-            case "ticket_query" -> McpToolHealthView.builder()
-                .toolId(toolId)
-                .displayName("工单查询")
-                .category("工单")
-                .source("内置后端")
-                .description("查询工单状态、列表、优先级与解决率")
-                .sampleQuestion("列出本周紧急工单")
-                .build();
-            case "weather_query" -> McpToolHealthView.builder()
-                .toolId(toolId)
-                .displayName("天气查询")
-                .category("天气")
-                .source("内置后端")
-                .description("查询当前天气与未来预报")
-                .sampleQuestion("上海未来三天天气预报")
-                .build();
-            default -> McpToolHealthView.builder()
-                .toolId(toolId)
-                .displayName(toolId)
-                .category("自定义")
-                .source("内置后端")
-                .description("未配置描述")
-                .sampleQuestion("请执行该工具")
-                .build();
-        };
     }
 
     /**

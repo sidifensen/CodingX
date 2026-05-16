@@ -93,6 +93,26 @@ describe('IntentTreePage', () => {
     expect(within(treePanel).queryByText('报销制度')).not.toBeInTheDocument();
   });
 
+  it('uses independent scroll containers so the desktop page shell does not grow with the tree list', async () => {
+    render(<IntentTreePage />);
+
+    await screen.findByRole('region', { name: '意图树结构' });
+
+    const pageShell = screen.getByTestId('intent-tree-page-shell');
+    const treeScroll = screen.getByTestId('intent-tree-list-scroll');
+    const detailScroll = screen.getByTestId('intent-tree-detail-scroll');
+
+    expect(pageShell).toHaveClass('xl:h-full');
+    expect(pageShell).toHaveClass('xl:min-h-0');
+    expect(pageShell).toHaveClass('xl:overflow-hidden');
+    expect(treeScroll).toHaveClass('xl:flex-1');
+    expect(treeScroll).toHaveClass('xl:min-h-0');
+    expect(treeScroll).toHaveClass('xl:overflow-y-auto');
+    expect(detailScroll).toHaveClass('xl:flex-1');
+    expect(detailScroll).toHaveClass('xl:min-h-0');
+    expect(detailScroll).toHaveClass('xl:overflow-y-auto');
+  });
+
   it('selects a child node and opens an edit dialog with grouped configuration fields', async () => {
     render(<IntentTreePage />);
 

@@ -2,18 +2,24 @@ package com.codingx.chat.application.service;
 
 import cn.hutool.core.util.ReUtil;
 import cn.hutool.core.util.StrUtil;
+import cn.hutool.http.HttpRequest;
+import cn.hutool.http.HttpResponse;
+import cn.hutool.http.HttpStatus;
+import cn.hutool.json.JSONArray;
+import cn.hutool.json.JSONObject;
+import cn.hutool.json.JSONUtil;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Random;
+import java.util.Objects;
 import org.springframework.stereotype.Component;
 
 /**
  * 天气查询 MCP 工具执行器。
  * <p>
- * 该执行器在后端服务内直接提供天气能力，返回当前天气或未来天气预报文本。
+ * 该执行器通过 Open-Meteo 实时接口获取天气能力，返回当前天气或未来天气预报文本。
  */
 @Component
 public class WeatherMcpToolExecutor implements ChatMcpToolExecutor {
@@ -22,34 +28,8 @@ public class WeatherMcpToolExecutor implements ChatMcpToolExecutor {
      * 工具唯一标识。
      */
     private static final String TOOL_ID = "weather_query";
-    private static final Map<String, double[]> CITY_COORDINATES = new LinkedHashMap<>();
-    private static final List<String> WEATHER_TYPES_SPRING = List.of("晴", "多云", "阴", "小雨", "阵雨", "多云转晴");
-    private static final List<String> WEATHER_TYPES_SUMMER = List.of("晴", "多云", "雷阵雨", "大雨", "暴雨", "多云转阴");
-    private static final List<String> WEATHER_TYPES_AUTUMN = List.of("晴", "多云", "阴", "小雨", "晴转多云", "多云转晴");
-    private static final List<String> WEATHER_TYPES_WINTER = List.of("晴", "多云", "阴", "小雪", "中雪", "晴转多云", "雾");
-
-    static {
-        CITY_COORDINATES.put("北京", new double[]{39.9, 116.4});
-        CITY_COORDINATES.put("上海", new double[]{31.2, 121.5});
-        CITY_COORDINATES.put("广州", new double[]{23.1, 113.3});
-        CITY_COORDINATES.put("深圳", new double[]{22.5, 114.1});
-        CITY_COORDINATES.put("杭州", new double[]{30.3, 120.2});
-        CITY_COORDINATES.put("成都", new double[]{30.6, 104.1});
-        CITY_COORDINATES.put("武汉", new double[]{30.6, 114.3});
-        CITY_COORDINATES.put("南京", new double[]{32.1, 118.8});
-        CITY_COORDINATES.put("西安", new double[]{34.3, 108.9});
-        CITY_COORDINATES.put("重庆", new double[]{29.6, 106.5});
-        CITY_COORDINATES.put("长沙", new double[]{28.2, 112.9});
-        CITY_COORDINATES.put("天津", new double[]{39.1, 117.2});
-        CITY_COORDINATES.put("苏州", new double[]{31.3, 120.6});
-        CITY_COORDINATES.put("郑州", new double[]{34.7, 113.6});
-        CITY_COORDINATES.put("青岛", new double[]{36.1, 120.4});
-        CITY_COORDINATES.put("大连", new double[]{38.9, 121.6});
-        CITY_COORDINATES.put("厦门", new double[]{24.5, 118.1});
-        CITY_COORDINATES.put("昆明", new double[]{25.0, 102.7});
-        CITY_COORDINATES.put("哈尔滨", new double[]{45.8, 126.5});
-        CITY_COORDINATES.put("三亚", new double[]{18.3, 109.5});
-    }
+    private static final String OPEN_METEO_GEOCODING = "https://geocoding-api.open-meteo.com/v1/search";
+    private static final String OPEN_METEO_FORECAST = "https://api.open-meteo.com/v1/forecast";
 
     @Override
     public String toolId() {
@@ -69,21 +49,32 @@ public class WeatherMcpToolExecutor implements ChatMcpToolExecutor {
         if (StrUtil.isBlank(context.city())) {
             return new ChatMcpToolResult(toolId(), "请提供城市名称", Map.of("error", true));
         }
-        if (!CITY_COORDINATES.containsKey(context.city())) {
-            return new ChatMcpToolResult(
-                toolId(),
-                "暂不支持查询该城市，当前支持：" + String.join("、", CITY_COORDINATES.keySet()),
-                Map.of("error", true, "city", context.city())
-            );
+        try {
+            GeocodeResult geocodeResult = resolveCoordinates(context.city());
+            ForecastResult forecastResult = queryForecast(geocodeResult.latitude(), geocodeResult.longitude(), context.days());
+            String content = "forecast".equals(context.queryType())
+                ? buildForecastResult(geocodeResult.displayCity(), forecastResult.dailyRows(), context.days())
+                : buildCurrentResult(geocodeResult.displayCity(), forecastResult.current(), forecastResult.today());
+            Map<String, Object> metadata = new LinkedHashMap<>();
+            metadata.put("city", geocodeResult.displayCity());
+            metadata.put("queryCity", context.city());
+            metadata.put("queryType", context.queryType());
+            metadata.put("days", context.days());
+            metadata.put("latitude", geocodeResult.latitude());
+            metadata.put("longitude", geocodeResult.longitude());
+            metadata.put("timezone", forecastResult.timezone());
+            metadata.put("source", "open-meteo");
+            metadata.put("sourceApi", List.of(OPEN_METEO_GEOCODING, OPEN_METEO_FORECAST));
+            metadata.put("resolvedName", geocodeResult.fullName());
+            return new ChatMcpToolResult(toolId(), content, metadata);
+        } catch (Exception exception) {
+            Map<String, Object> metadata = new LinkedHashMap<>();
+            metadata.put("city", context.city());
+            metadata.put("queryType", context.queryType());
+            metadata.put("days", context.days());
+            metadata.put("error", true);
+            return new ChatMcpToolResult(toolId(), "天气服务暂时不可用，请稍后重试", metadata);
         }
-        String content = "forecast".equals(context.queryType())
-            ? buildForecastResult(context.city(), context.days())
-            : buildCurrentResult(context.city());
-        Map<String, Object> metadata = new LinkedHashMap<>();
-        metadata.put("city", context.city());
-        metadata.put("queryType", context.queryType());
-        metadata.put("days", context.days());
-        return new ChatMcpToolResult(toolId(), content, metadata);
     }
 
     /**
@@ -93,10 +84,28 @@ public class WeatherMcpToolExecutor implements ChatMcpToolExecutor {
      * @return 查询上下文。
      */
     private WeatherQueryContext parseQuestion(String question) {
-        String city = CITY_COORDINATES.keySet().stream().filter(question::contains).findFirst().orElse(null);
+        String city = extractCity(question);
         String queryType = containsAny(question, List.of("预报", "未来", "后天", "明天")) ? "forecast" : "current";
         int days = parseDays(question, 3);
         return new WeatherQueryContext(city, queryType, days);
+    }
+
+    /**
+     * 从用户问题中提取城市关键词。
+     *
+     * @param question 用户问题。
+     * @return 城市名；无法识别返回 null。
+     */
+    private String extractCity(String question) {
+        if (StrUtil.isBlank(question)) {
+            return null;
+        }
+        String directCity = ReUtil.get("([\\p{IsHan}]{2,8})(市|区|县|州|盟)?(今天天气|明天天气|后天天气|天气|气温|温度|预报)", question, 1);
+        if (StrUtil.isNotBlank(directCity)) {
+            return directCity;
+        }
+        String fallbackCity = ReUtil.get("(北京|上海|广州|深圳|杭州|成都|武汉|南京|西安|重庆|长沙|天津|苏州|郑州|青岛|大连|厦门|昆明|哈尔滨|三亚)", question, 1);
+        return StrUtil.isBlank(fallbackCity) ? null : fallbackCity.trim();
     }
 
     /**
@@ -176,26 +185,25 @@ public class WeatherMcpToolExecutor implements ChatMcpToolExecutor {
      * @param city 城市。
      * @return 当前天气文本。
      */
-    private String buildCurrentResult(String city) {
-        LocalDate today = LocalDate.now();
-        WeatherData weather = generateWeatherForDate(city, today);
+    private String buildCurrentResult(String city, CurrentWeatherData current, DailyWeatherData today) {
         StringBuilder builder = new StringBuilder();
         builder.append(String.format("【%s 今日天气】\n\n", city));
-        builder.append(String.format("日期: %s\n", today.format(DateTimeFormatter.ofPattern("yyyy年MM月dd日"))));
-        builder.append(String.format("天气: %s\n", weather.weatherType));
-        builder.append(String.format("当前温度: %d°C\n", weather.currentTemp));
-        builder.append(String.format("最高温度: %d°C\n", weather.highTemp));
-        builder.append(String.format("最低温度: %d°C\n", weather.lowTemp));
-        builder.append(String.format("相对湿度: %d%%\n", weather.humidity));
-        builder.append(String.format("风向: %s\n", weather.windDirection));
-        builder.append(String.format("风力: %s\n", weather.windLevel));
-        builder.append(String.format("空气质量: %s\n", weather.airQuality));
+        builder.append(String.format("日期: %s\n", current.date().format(DateTimeFormatter.ofPattern("yyyy年MM月dd日"))));
+        builder.append(String.format("天气: %s\n", weatherCodeLabel(current.weatherCode())));
+        builder.append(String.format("当前温度: %.1f°C\n", current.temperature()));
+        builder.append(String.format("体感温度: %.1f°C\n", current.apparentTemperature()));
+        builder.append(String.format("最高温度: %.1f°C\n", today.tempMax()));
+        builder.append(String.format("最低温度: %.1f°C\n", today.tempMin()));
+        builder.append(String.format("降水概率: %d%%\n", today.precipitationProbabilityMax()));
+        builder.append(String.format("风速: %.1f km/h\n", current.windSpeed()));
+        builder.append(String.format("数据源: Open-Meteo（UTC偏移 %d 秒）\n", current.utcOffsetSeconds()));
 
-        if (weather.weatherType.contains("雨") || weather.weatherType.contains("雪")) {
+        if (today.precipitationProbabilityMax() >= 50 || weatherCodeLabel(current.weatherCode()).contains("雨")
+            || weatherCodeLabel(current.weatherCode()).contains("雪")) {
             builder.append("\n提示: 今日有降水，出行请携带雨具。");
-        } else if (weather.highTemp >= 35) {
+        } else if (today.tempMax() >= 35) {
             builder.append("\n提示: 今日高温，注意防暑降温。");
-        } else if (weather.lowTemp <= 0) {
+        } else if (today.tempMin() <= 0) {
             builder.append("\n提示: 今日气温较低，注意防寒保暖。");
         }
         return builder.toString().trim();
@@ -208,105 +216,170 @@ public class WeatherMcpToolExecutor implements ChatMcpToolExecutor {
      * @param days 天数。
      * @return 预报文本。
      */
-    private String buildForecastResult(String city, int days) {
-        LocalDate today = LocalDate.now();
+    private String buildForecastResult(String city, List<DailyWeatherData> dailyRows, int days) {
         StringBuilder builder = new StringBuilder();
         builder.append(String.format("【%s 未来%d天天气预报】\n\n", city, days));
-        for (int d = 0; d < days; d++) {
-            LocalDate date = today.plusDays(d);
-            WeatherData weather = generateWeatherForDate(city, date);
+        int loopDays = Math.min(days, dailyRows.size());
+        for (int d = 0; d < loopDays; d++) {
+            DailyWeatherData weather = dailyRows.get(d);
+            LocalDate date = weather.date();
             String dayLabel = d == 0 ? "今天" : d == 1 ? "明天" : d == 2 ? "后天" : date.format(DateTimeFormatter.ofPattern("MM月dd日"));
             builder.append(String.format("📅 %s（%s）\n", dayLabel, date.format(DateTimeFormatter.ofPattern("MM-dd"))));
-            builder.append(String.format("   天气: %s | 温度: %d°C ~ %d°C\n", weather.weatherType, weather.lowTemp, weather.highTemp));
-            builder.append(String.format("   湿度: %d%% | %s %s\n\n", weather.humidity, weather.windDirection, weather.windLevel));
+            builder.append(String.format("   天气: %s | 温度: %.1f°C ~ %.1f°C\n", weatherCodeLabel(weather.weatherCode()), weather.tempMin(), weather.tempMax()));
+            builder.append(String.format("   降水概率: %d%% | 最大风速: %.1f km/h\n\n", weather.precipitationProbabilityMax(), weather.windSpeedMax()));
         }
-
-        WeatherData todayWeather = generateWeatherForDate(city, today);
-        WeatherData lastDayWeather = generateWeatherForDate(city, today.plusDays(days - 1));
-        int tempTrend = lastDayWeather.highTemp - todayWeather.highTemp;
-        if (Math.abs(tempTrend) >= 5) {
-            builder.append(String.format(
-                "趋势: 未来%d天气温%s，注意%s。",
-                days,
-                tempTrend > 0 ? "逐渐升高" : "逐渐下降",
-                tempTrend > 0 ? "防暑" : "保暖"
-            ));
+        if (!dailyRows.isEmpty()) {
+            DailyWeatherData todayWeather = dailyRows.getFirst();
+            DailyWeatherData lastDayWeather = dailyRows.get(loopDays - 1);
+            double tempTrend = lastDayWeather.tempMax() - todayWeather.tempMax();
+            if (Math.abs(tempTrend) >= 5) {
+                builder.append(String.format(
+                    "趋势: 未来%d天气温%s，注意%s。",
+                    days,
+                    tempTrend > 0 ? "逐渐升高" : "逐渐下降",
+                    tempTrend > 0 ? "防暑" : "保暖"
+                ));
+            }
         }
         return builder.toString().trim();
     }
 
     /**
-     * 生成指定城市与日期的模拟天气。
+     * 通过地理编码接口将城市名解析为坐标。
      *
      * @param city 城市。
-     * @param date 日期。
-     * @return 天气对象。
+     * @return 坐标与规范化名称。
      */
-    private WeatherData generateWeatherForDate(String city, LocalDate date) {
-        double[] coordinates = CITY_COORDINATES.get(city);
-        double latitude = coordinates[0];
-        long seed = date.toEpochDay() * 31 + city.hashCode();
-        Random random = new Random(seed);
-
-        int month = date.getMonthValue();
-        int season = (month >= 3 && month <= 5) ? 0 : (month >= 6 && month <= 8) ? 1 : (month >= 9 && month <= 11) ? 2 : 3;
-        double baseTemp = switch (season) {
-            case 0 -> 15 - (latitude - 25) * 0.5;
-            case 1 -> 30 - (latitude - 25) * 0.3;
-            case 2 -> 18 - (latitude - 25) * 0.5;
-            default -> 5 - (latitude - 25) * 0.8;
-        };
-        int highTemp = (int) (baseTemp + 3 + random.nextInt(6));
-        int lowTemp = (int) (baseTemp - 3 - random.nextInt(5));
-        int currentTemp = lowTemp + random.nextInt(Math.max(1, highTemp - lowTemp + 1));
-
-        List<String> weatherTypes = switch (season) {
-            case 0 -> WEATHER_TYPES_SPRING;
-            case 1 -> WEATHER_TYPES_SUMMER;
-            case 2 -> WEATHER_TYPES_AUTUMN;
-            default -> WEATHER_TYPES_WINTER;
-        };
-        String weatherType = weatherTypes.get(random.nextInt(weatherTypes.size()));
-
-        int humidity = switch (season) {
-            case 1 -> 60 + random.nextInt(30);
-            case 3 -> 20 + random.nextInt(30);
-            default -> 40 + random.nextInt(30);
-        };
-        if (weatherType.contains("雨") || weatherType.contains("雪")) {
-            humidity = Math.min(95, humidity + 20);
+    private GeocodeResult resolveCoordinates(String city) {
+        HttpResponse response = HttpRequest.get(OPEN_METEO_GEOCODING)
+            .form("name", city)
+            .form("count", 1)
+            .form("language", "zh")
+            .form("format", "json")
+            .timeout(5000)
+            .execute();
+        if (response.getStatus() != HttpStatus.HTTP_OK) {
+            throw new IllegalStateException("天气地理编码服务调用失败");
         }
-
-        String[] directions = {"东风", "南风", "西风", "北风", "东南风", "西北风", "东北风", "西南风"};
-        String windDirection = directions[random.nextInt(directions.length)];
-        int windForce = 1 + random.nextInt(5);
-        String windLevel = windForce + "-" + (windForce + 1) + "级";
-
-        int aqiBase = 30 + random.nextInt(120);
-        if (latitude > 35) {
-            aqiBase += 20;
+        JSONObject body = JSONUtil.parseObj(response.body());
+        JSONArray results = body.getJSONArray("results");
+        if (results == null || results.isEmpty()) {
+            throw new IllegalStateException("未找到该城市的天气坐标");
         }
-        String airQuality;
-        if (aqiBase <= 50) {
-            airQuality = "优";
-        } else if (aqiBase <= 100) {
-            airQuality = "良";
-        } else if (aqiBase <= 150) {
-            airQuality = "轻度污染";
-        } else {
-            airQuality = "中度污染";
-        }
+        JSONObject first = results.getJSONObject(0);
+        double latitude = first.getDouble("latitude", 0D);
+        double longitude = first.getDouble("longitude", 0D);
+        String name = first.getStr("name", city);
+        String admin1 = first.getStr("admin1", "");
+        String country = first.getStr("country", "");
+        String fullName = StrUtil.join(" ", List.of(name, admin1, country).stream().filter(StrUtil::isNotBlank).toList());
+        return new GeocodeResult(latitude, longitude, name, fullName);
+    }
 
-        WeatherData weatherData = new WeatherData();
-        weatherData.weatherType = weatherType;
-        weatherData.currentTemp = currentTemp;
-        weatherData.highTemp = highTemp;
-        weatherData.lowTemp = lowTemp;
-        weatherData.humidity = humidity;
-        weatherData.windDirection = windDirection;
-        weatherData.windLevel = windLevel;
-        weatherData.airQuality = airQuality;
-        return weatherData;
+    /**
+     * 调用 Open-Meteo 预报接口并组装当前天气与日级预报。
+     *
+     * @param latitude 纬度。
+     * @param longitude 经度。
+     * @param days 预报天数。
+     * @return 预报结果。
+     */
+    private ForecastResult queryForecast(double latitude, double longitude, int days) {
+        int forecastDays = Math.min(Math.max(days, 1), 7);
+        HttpResponse response = HttpRequest.get(OPEN_METEO_FORECAST)
+            .form("latitude", latitude)
+            .form("longitude", longitude)
+            .form("current", "temperature_2m,apparent_temperature,weather_code,wind_speed_10m")
+            .form("daily", "weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,wind_speed_10m_max")
+            .form("forecast_days", forecastDays)
+            .form("timezone", "auto")
+            .timeout(5000)
+            .execute();
+        if (response.getStatus() != HttpStatus.HTTP_OK) {
+            throw new IllegalStateException("天气预报服务调用失败");
+        }
+        JSONObject body = JSONUtil.parseObj(response.body());
+        JSONObject currentNode = body.getJSONObject("current");
+        JSONObject dailyNode = body.getJSONObject("daily");
+        if (currentNode == null || dailyNode == null) {
+            throw new IllegalStateException("天气服务返回结构异常");
+        }
+        CurrentWeatherData current = new CurrentWeatherData(
+            parseDate(currentNode.getStr("time")),
+            currentNode.getDouble("temperature_2m", 0D),
+            currentNode.getDouble("apparent_temperature", 0D),
+            currentNode.getInt("weather_code", 0),
+            currentNode.getDouble("wind_speed_10m", 0D),
+            body.getInt("utc_offset_seconds", 0)
+        );
+
+        JSONArray timeArray = dailyNode.getJSONArray("time");
+        JSONArray weatherCodeArray = dailyNode.getJSONArray("weather_code");
+        JSONArray maxArray = dailyNode.getJSONArray("temperature_2m_max");
+        JSONArray minArray = dailyNode.getJSONArray("temperature_2m_min");
+        JSONArray precipitationArray = dailyNode.getJSONArray("precipitation_probability_max");
+        JSONArray windArray = dailyNode.getJSONArray("wind_speed_10m_max");
+        int length = Objects.requireNonNullElse(timeArray, new JSONArray()).size();
+        if (length == 0) {
+            throw new IllegalStateException("天气预报为空");
+        }
+        if (weatherCodeArray == null || maxArray == null || minArray == null || precipitationArray == null || windArray == null) {
+            throw new IllegalStateException("天气预报字段缺失");
+        }
+        List<DailyWeatherData> dailyRows = new java.util.ArrayList<>();
+        for (int i = 0; i < length; i++) {
+            dailyRows.add(new DailyWeatherData(
+                parseDate(timeArray.getStr(i)),
+                weatherCodeArray.getInt(i),
+                maxArray.getDouble(i),
+                minArray.getDouble(i),
+                precipitationArray.getInt(i),
+                windArray.getDouble(i)
+            ));
+        }
+        return new ForecastResult(
+            body.getStr("timezone", "auto"),
+            current,
+            dailyRows,
+            dailyRows.getFirst()
+        );
+    }
+
+    /**
+     * 把 Open-Meteo 的 WMO 代码映射为中文天气文案。
+     *
+     * @param code WMO 天气代码。
+     * @return 中文文案。
+     */
+    private String weatherCodeLabel(int code) {
+        return switch (code) {
+            case 0 -> "晴";
+            case 1 -> "基本晴";
+            case 2 -> "局部多云";
+            case 3 -> "阴";
+            case 45, 48 -> "雾";
+            case 51, 53, 55 -> "毛毛雨";
+            case 56, 57 -> "冻毛毛雨";
+            case 61, 63, 65 -> "雨";
+            case 66, 67 -> "冻雨";
+            case 71, 73, 75 -> "雪";
+            case 77 -> "雪粒";
+            case 80, 81, 82 -> "阵雨";
+            case 85, 86 -> "阵雪";
+            case 95 -> "雷暴";
+            case 96, 99 -> "雷暴伴冰雹";
+            default -> "未知";
+        };
+    }
+
+    private LocalDate parseDate(String value) {
+        if (StrUtil.isBlank(value)) {
+            return LocalDate.now();
+        }
+        if (value.contains("T")) {
+            return LocalDate.parse(value.substring(0, 10));
+        }
+        return LocalDate.parse(value);
     }
 
     /**
@@ -319,41 +392,34 @@ public class WeatherMcpToolExecutor implements ChatMcpToolExecutor {
     private record WeatherQueryContext(String city, String queryType, int days) {
     }
 
-    /**
-     * 天气数据模型。
-     */
-    private static class WeatherData {
-        /**
-         * 天气现象。
-         */
-        String weatherType;
-        /**
-         * 当前温度。
-         */
-        int currentTemp;
-        /**
-         * 最高温度。
-         */
-        int highTemp;
-        /**
-         * 最低温度。
-         */
-        int lowTemp;
-        /**
-         * 相对湿度。
-         */
-        int humidity;
-        /**
-         * 风向。
-         */
-        String windDirection;
-        /**
-         * 风力等级。
-         */
-        String windLevel;
-        /**
-         * 空气质量等级。
-         */
-        String airQuality;
+    private record GeocodeResult(double latitude, double longitude, String displayCity, String fullName) {
+    }
+
+    private record CurrentWeatherData(
+        LocalDate date,
+        double temperature,
+        double apparentTemperature,
+        int weatherCode,
+        double windSpeed,
+        int utcOffsetSeconds
+    ) {
+    }
+
+    private record DailyWeatherData(
+        LocalDate date,
+        int weatherCode,
+        double tempMax,
+        double tempMin,
+        int precipitationProbabilityMax,
+        double windSpeedMax
+    ) {
+    }
+
+    private record ForecastResult(
+        String timezone,
+        CurrentWeatherData current,
+        List<DailyWeatherData> dailyRows,
+        DailyWeatherData today
+    ) {
     }
 }

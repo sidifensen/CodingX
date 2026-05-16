@@ -5,6 +5,7 @@ import {
   ChatMessageItem,
   ConversationItem,
   ExecutionStepItem,
+  McpItem,
   ReferenceItem,
   SampleQuestionItem,
 } from './types';
@@ -80,6 +81,20 @@ export class ChatApi {
     return envelope.data.map((item) => ({
       ...item,
       id: String(item.id),
+    }));
+  }
+
+  /**
+   * 加载用户侧可选 MCP 列表。
+   * @param token 当前登录令牌。
+   * @returns MCP 列表。
+   */
+  static async listMcps(token: string): Promise<McpItem[]> {
+    const envelope = await this.request<McpItem[]>('/api/chat/mcps', token);
+    return envelope.data.map((item) => ({
+      ...item,
+      id: String(item.id),
+      mcpCode: String(item.mcpCode ?? ''),
     }));
   }
 

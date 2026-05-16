@@ -7,6 +7,7 @@ import com.codingx.chat.application.service.ChatApplicationService;
 import com.codingx.chat.application.service.ChatConversationApplicationService;
 import com.codingx.chat.application.service.ChatReactionService;
 import com.codingx.chat.application.service.ChatRuntimeGuardService;
+import com.codingx.chat.domain.repository.ChatSkillRepository;
 import com.codingx.common.model.ApiResponse;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -33,6 +34,9 @@ class ChatControllerConversationMutationTest {
 
     @Mock
     private ChatReactionService chatReactionService;
+
+    @Mock
+    private ChatSkillRepository chatSkillRepository;
 
     @InjectMocks
     private ChatController chatController;

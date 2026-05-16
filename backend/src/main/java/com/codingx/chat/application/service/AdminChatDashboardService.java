@@ -16,6 +16,7 @@ public class AdminChatDashboardService {
 
     private final ChatTraceRunRepository chatTraceRunRepository;
     private final ChatIntentNodeRepository chatIntentNodeRepository;
+    private final com.codingx.mcp.domain.repository.ChatMcpRepository chatMcpRepository;
     private final ChatQueryTermMappingRepository chatQueryTermMappingRepository;
     private final ChatSampleQuestionRepository chatSampleQuestionRepository;
 
@@ -25,6 +26,7 @@ public class AdminChatDashboardService {
             traces.size(),
             (int) traces.stream().filter(trace -> "RUNNING".equalsIgnoreCase(trace.getStatus())).count(),
             chatIntentNodeRepository.findAllNodes().size(),
+            chatMcpRepository.findAll().size(),
             chatQueryTermMappingRepository.findAllMappings().size(),
             chatSampleQuestionRepository.findEnabledQuestions().size()
         );

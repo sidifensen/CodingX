@@ -7,10 +7,12 @@ import com.codingx.chat.domain.model.ChatExecutionRun;
 import com.codingx.chat.domain.model.ChatExecutionStep;
 import com.codingx.chat.domain.model.ChatMessageArtifact;
 import com.codingx.chat.domain.model.ChatMessageReference;
+import com.codingx.chat.domain.model.ChatSkill;
 import com.codingx.chat.domain.repository.ChatExecutionRunRepository;
 import com.codingx.chat.domain.repository.ChatExecutionStepRepository;
 import com.codingx.chat.domain.repository.ChatMessageArtifactRepository;
 import com.codingx.chat.domain.repository.ChatMessageReferenceRepository;
+import com.codingx.chat.domain.repository.ChatSkillRepository;
 import java.time.LocalDateTime;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -29,6 +31,7 @@ class ChatWorkspaceQueryServiceTest {
     @Mock private ChatExecutionStepRepository chatExecutionStepRepository;
     @Mock private ChatMessageReferenceRepository chatMessageReferenceRepository;
     @Mock private ChatMessageArtifactRepository chatMessageArtifactRepository;
+    @Mock private ChatSkillRepository chatSkillRepository;
 
     @InjectMocks
     private ChatWorkspaceQueryService chatWorkspaceQueryService;
@@ -81,6 +84,24 @@ class ChatWorkspaceQueryServiceTest {
         List<ChatMessageArtifact> artifacts = chatWorkspaceQueryService.listArtifacts(2001L);
 
         assertEquals(List.of(), artifacts);
+    }
+
+    /**
+     * 当前会话存在任务技能绑定时应返回技能列表供右栏展示。
+     */
+    @Test
+    void listCurrentSkillsReturnsBoundSkillsFromLatestTask() {
+        when(chatExecutionRunRepository.findByConversationId(2001L)).thenReturn(List.of(
+            run(5002L, LocalDateTime.of(2026, 5, 15, 10, 5))
+        ));
+        when(chatSkillRepository.findByTaskId(5002L)).thenReturn(List.of(
+            ChatSkill.builder().id(1L).skillCode("conversation-core").displayName("会话核心").category("核心能力").enabled(1).sortNo(1).build()
+        ));
+
+        List<ChatSkill> skills = chatWorkspaceQueryService.listCurrentSkills(2001L);
+
+        assertEquals(1, skills.size());
+        assertEquals("conversation-core", skills.getFirst().getSkillCode());
     }
 
     /**

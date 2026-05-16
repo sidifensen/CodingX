@@ -4,6 +4,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import {
   ArrowUp,
+  Check,
   ChevronDown,
   CheckCircle2,
   CircleStop,
@@ -19,6 +20,7 @@ import {
   ThumbsDown,
   ThumbsUp,
   WandSparkles,
+  X,
 } from 'lucide-react';
 import { ChatWorkspaceController } from './chat/types';
 
@@ -50,6 +52,9 @@ export default function ChatView({
     references,
     artifacts,
     sampleQuestions,
+    availableMcps,
+    selectedMcpCodes,
+    mcpConnected,
     isStreaming,
     isCancelling,
     deepThinkingEnabled,
@@ -58,6 +63,8 @@ export default function ChatView({
     isBootstrapping,
     setInputValue,
     setDeepThinkingEnabled,
+    setSelectedMcpCodes,
+    setMcpConnected,
     submitMessage,
     cancelCurrentStream,
     renameDialog,
@@ -68,6 +75,80 @@ export default function ChatView({
   const latestMessageAnchorRef = React.useRef<HTMLDivElement | null>(null);
   // 步骤：右侧工作区默认折叠，仅在存在真实回放内容时自动展开一次，后续允许用户手动控制。
   const [isWorkspacePanelCollapsed, setIsWorkspacePanelCollapsed] = React.useState(true);
+  const [highlightedMcpIndex, setHighlightedMcpIndex] = React.useState(0);
+
+  /**
+   * 解析输入中的斜杠命令查询串；非斜杠模式时返回 null。
+   * @param value 输入框原始值。
+   * @returns 斜杠查询串。
+   */
+  const resolveSlashQuery = React.useCallback((value: string) => {
+    const trimmedStart = value.trimStart();
+    if (!trimmedStart.startsWith('/')) {
+      return null;
+    }
+    return trimmedStart.slice(1);
+  }, []);
+
+  const slashQuery = resolveSlashQuery(inputValue);
+  const isMcpPanelOpen = slashQuery !== null;
+  const normalizedSlashQuery = (slashQuery ?? '').trim().toLowerCase();
+  const filteredMcps = React.useMemo(
+    () => availableMcps.filter((mcp) => {
+      if (!normalizedSlashQuery) {
+        return true;
+      }
+      return (
+        mcp.displayName.toLowerCase().includes(normalizedSlashQuery)
+        || mcp.mcpCode.toLowerCase().includes(normalizedSlashQuery)
+      );
+    }),
+    [availableMcps, normalizedSlashQuery],
+  );
+
+  React.useEffect(() => {
+    if (!isMcpPanelOpen || filteredMcps.length === 0) {
+      setHighlightedMcpIndex(0);
+      return;
+    }
+    setHighlightedMcpIndex((current) => {
+      if (current >= filteredMcps.length) {
+        return filteredMcps.length - 1;
+      }
+      return current;
+    });
+  }, [filteredMcps.length, isMcpPanelOpen]);
+
+  /**
+   * 将当前高亮 MCP 加入已选列表并关闭斜杠面板。
+   * @param mcpCode 被选择 MCP 编码。
+   */
+  const selectMcp = React.useCallback((mcpCode: string) => {
+    setSelectedMcpCodes((previous) => {
+      if (previous.includes(mcpCode)) {
+        return previous;
+      }
+      return [...previous, mcpCode];
+    });
+    setMcpConnected(true);
+    setInputValue('');
+    setHighlightedMcpIndex(0);
+  }, [setInputValue, setSelectedMcpCodes, setMcpConnected]);
+
+  /**
+   * 删除一个已选 MCP 气泡。
+   * @param mcpCode MCP 编码。
+   */
+  const removeSelectedMcp = React.useCallback((mcpCode: string) => {
+    setSelectedMcpCodes((previous) => previous.filter((item) => item !== mcpCode));
+  }, [setSelectedMcpCodes]);
+
+  const selectedMcps = React.useMemo(
+    () => selectedMcpCodes
+      .map((code) => availableMcps.find((item) => item.mcpCode === code))
+      .filter((mcp): mcp is NonNullable<typeof mcp> => mcp != null),
+    [availableMcps, selectedMcpCodes],
+  );
 
   React.useEffect(() => {
     if (!messages.length) {
@@ -84,6 +165,13 @@ export default function ChatView({
    */
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
+    if (isMcpPanelOpen) {
+      if (filteredMcps.length > 0) {
+        const targetMcp = filteredMcps[Math.min(highlightedMcpIndex, filteredMcps.length - 1)];
+        selectMcp(targetMcp.mcpCode);
+      }
+      return;
+    }
     if (!inputValue.trim()) {
       return;
     }
@@ -110,6 +198,42 @@ export default function ChatView({
       setIsWorkspacePanelCollapsed(false);
     }
   }, [hasWorkspaceContent]);
+
+  /**
+   * 处理输入框中的斜杠 MCP 快捷键交互。
+   * @param event 键盘事件。
+   */
+  const handleInputKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (!isMcpPanelOpen) {
+      return;
+    }
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      if (!filteredMcps.length) {
+        return;
+      }
+      setHighlightedMcpIndex((current) => (current + 1) % filteredMcps.length);
+      return;
+    }
+    if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      if (!filteredMcps.length) {
+        return;
+      }
+      setHighlightedMcpIndex((current) => (current - 1 + filteredMcps.length) % filteredMcps.length);
+      return;
+    }
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      setInputValue('');
+      return;
+    }
+    if (event.key === 'Enter' && filteredMcps.length > 0) {
+      event.preventDefault();
+      const targetMcp = filteredMcps[Math.min(highlightedMcpIndex, filteredMcps.length - 1)];
+      selectMcp(targetMcp.mcpCode);
+    }
+  };
 
   return (
     <motion.div
@@ -217,6 +341,9 @@ export default function ChatView({
                           {message.thinkingContent ? (
                             <ThinkingPanel messageId={message.id} content={message.thinkingContent} />
                           ) : null}
+                          {message.mcpCalls && message.mcpCalls.length > 0 ? (
+                            <McpCallPanel messageId={message.id} calls={message.mcpCalls} />
+                          ) : null}
                           <MarkdownMessage content={messageContent} />
                           <AssistantMessageActions messageId={message.id} content={messageContent} />
                         </>
@@ -257,55 +384,131 @@ export default function ChatView({
               onSubmit={(event) => void handleSubmit(event)}
               className="rounded-[24px] border border-border bg-surface shadow-[0_20px_64px_rgba(0,0,0,0.12)]"
             >
-              <div className="flex items-center gap-3 px-4 py-2.5">
-                <button type="button" className="rounded-full border border-border bg-surface-container p-1.5 text-muted">
-                  <Paperclip size={17} />
-                </button>
-                <input
-                  type="text"
-                  value={inputValue}
-                  onChange={(event) => setInputValue(event.target.value)}
-                  placeholder="输入指令以重构组件库或分析代码..."
-                  className="h-8 flex-1 bg-transparent text-[14px] text-foreground outline-none placeholder:text-muted"
-                />
-                <button
-                  type="button"
-                  aria-label="切换深度思考"
-                  onClick={() => setDeepThinkingEnabled(!deepThinkingEnabled)}
-                  className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
-                    deepThinkingEnabled
-                      ? 'border-foreground bg-foreground text-background'
-                      : 'border-border bg-surface-container text-muted'
-                  }`}
-                >
-                  <span className="flex items-center gap-1.5">
-                    <WandSparkles size={14} />
-                    深度思考
-                  </span>
-                </button>
-                {isStreaming ? (
+              <div className="px-4 pb-2 pt-3">
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <div className="text-[12px] text-muted">连接 MCP</div>
                   <button
                     type="button"
-                    aria-label="停止生成"
-                    onClick={() => void cancelCurrentStream()}
-                    disabled={isCancelling}
-                    className="rounded-full bg-red-500 px-3 py-1.5 text-sm font-medium text-white transition-opacity disabled:opacity-60"
+                    aria-label="切换MCP连接"
+                    aria-pressed={mcpConnected}
+                    onClick={() => setMcpConnected(!mcpConnected)}
+                    className={`inline-flex h-6 w-11 items-center rounded-full border transition-colors ${
+                      mcpConnected ? 'border-border-active bg-surface-container-high' : 'border-border bg-surface-container'
+                    }`}
                   >
-                    <span className="flex items-center gap-2">
-                      <CircleStop size={16} />
-                      {isCancelling ? '停止中' : '停止'}
+                    <span
+                      className={`mx-0.5 h-4 w-4 rounded-full bg-foreground transition-transform ${
+                        mcpConnected ? 'translate-x-5' : 'translate-x-0'
+                      }`}
+                    />
+                  </button>
+                </div>
+                {selectedMcps.length > 0 ? (
+                  <div className="mb-2 flex flex-wrap gap-2">
+                    {selectedMcps.map((mcp) => (
+                      <button
+                        key={mcp.mcpCode}
+                        type="button"
+                        aria-label={`移除MCP ${mcp.displayName}`}
+                        data-testid={`selected-mcp-${mcp.mcpCode}`}
+                        onClick={() => removeSelectedMcp(mcp.mcpCode)}
+                        className="inline-flex items-center gap-1 rounded-full border border-border bg-surface-container px-2.5 py-1 text-xs text-foreground transition-colors hover:border-border-active"
+                      >
+                        <span>{mcp.displayName}</span>
+                        <X size={12} />
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+                <div className="flex items-center gap-3">
+                  <button type="button" className="rounded-full border border-border bg-surface-container p-1.5 text-muted">
+                    <Paperclip size={17} />
+                  </button>
+                  <div className="relative flex-1">
+                    <input
+                      type="text"
+                      value={inputValue}
+                      onChange={(event) => setInputValue(event.target.value)}
+                      onKeyDown={handleInputKeyDown}
+                      placeholder="输入 / 选择MCP，或直接提问..."
+                      className="h-8 w-full bg-transparent text-[14px] text-foreground outline-none placeholder:text-muted"
+                    />
+                    {isMcpPanelOpen ? (
+                      <div
+                        data-testid="mcp-command-panel"
+                        className="absolute bottom-[calc(100%+10px)] left-0 right-0 z-20 rounded-2xl border border-border bg-surface p-2 shadow-[0_18px_44px_rgba(0,0,0,0.25)]"
+                      >
+                        {filteredMcps.length > 0 ? (
+                          <div className="max-h-60 overflow-y-auto">
+                            {filteredMcps.map((mcp, index) => {
+                              const isSelected = index === highlightedMcpIndex;
+                              return (
+                                <button
+                                  key={mcp.mcpCode}
+                                  type="button"
+                                  data-testid={`mcp-option-${mcp.mcpCode}`}
+                                  onMouseEnter={() => setHighlightedMcpIndex(index)}
+                                  onClick={() => selectMcp(mcp.mcpCode)}
+                                  className={`mb-1 flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm transition-colors last:mb-0 ${
+                                    isSelected
+                                      ? 'bg-surface-container text-foreground'
+                                      : 'text-muted hover:bg-surface-container hover:text-foreground'
+                                  }`}
+                                >
+                                  <span className="min-w-0">
+                                    <span className="block truncate text-foreground">{mcp.displayName}</span>
+                                    <span className="mt-1 block truncate font-mono text-[11px] text-muted">/{mcp.mcpCode}</span>
+                                  </span>
+                                  {isSelected ? <Check size={14} className="text-foreground" /> : null}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <div className="rounded-xl bg-surface-container px-3 py-2 text-sm text-muted">未匹配到 MCP</div>
+                        )}
+                      </div>
+                    ) : null}
+                  </div>
+                  <button
+                    type="button"
+                    aria-label="切换深度思考"
+                    onClick={() => setDeepThinkingEnabled(!deepThinkingEnabled)}
+                    className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+                      deepThinkingEnabled
+                        ? 'border-foreground bg-foreground text-background'
+                        : 'border-border bg-surface-container text-muted'
+                    }`}
+                  >
+                    <span className="flex items-center gap-1.5">
+                      <WandSparkles size={14} />
+                      深度思考
                     </span>
                   </button>
-                ) : (
-                  <button
-                    type="submit"
-                    aria-label="发送消息"
-                    className="rounded-full bg-foreground p-2 text-background transition-opacity hover:opacity-90 disabled:opacity-60"
-                    disabled={!inputValue.trim()}
-                  >
-                    <ArrowUp size={17} />
-                  </button>
-                )}
+                  {isStreaming ? (
+                    <button
+                      type="button"
+                      aria-label="停止生成"
+                      onClick={() => void cancelCurrentStream()}
+                      disabled={isCancelling}
+                      className="rounded-full bg-red-500 px-3 py-1.5 text-sm font-medium text-white transition-opacity disabled:opacity-60"
+                    >
+                      <span className="flex items-center gap-2">
+                        <CircleStop size={16} />
+                        {isCancelling ? '停止中' : '停止'}
+                      </span>
+                    </button>
+                  ) : (
+                    <button
+                      type="submit"
+                      aria-label="发送消息"
+                      className="rounded-full bg-foreground p-2 text-background transition-opacity hover:opacity-90 disabled:opacity-60"
+                      disabled={!inputValue.trim() && !isMcpPanelOpen}
+                    >
+                      <ArrowUp size={17} />
+                    </button>
+                  )}
+                </div>
               </div>
             </form>
           </div>
@@ -427,7 +630,13 @@ function ThinkingPanel({ messageId, content }: { messageId: string; content: str
   const contentId = `thinking-content-panel-${messageId}`;
 
   return (
-    <section className="mb-3 rounded-2xl border border-border bg-surface-container px-4 py-3 text-sm text-muted">
+    <section
+      data-testid={`thinking-panel-${messageId}`}
+      // 步骤：折叠态改为自适应宽度胶囊，避免面板在收起后仍占据整行宽度。
+      className={`mb-3 rounded-2xl border border-border bg-surface-container text-sm text-muted transition-[width,padding] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] ${
+        isExpanded ? 'w-full px-4 py-3' : 'w-fit px-3 py-2'
+      }`}
+    >
       <div
         data-testid={`thinking-summary-${messageId}`}
         className="flex items-center gap-3 font-medium text-foreground"
@@ -440,7 +649,7 @@ function ThinkingPanel({ messageId, content }: { messageId: string; content: str
           aria-controls={contentId}
           aria-label={isExpanded ? '折叠思考过程' : '展开思考过程'}
           onClick={() => setIsExpanded((current) => !current)}
-          className="ml-auto flex h-7 w-7 items-center justify-center rounded-full border border-border bg-surface text-muted transition-colors hover:text-foreground"
+          className="flex h-7 w-7 items-center justify-center rounded-full border border-border bg-surface text-muted transition-colors hover:text-foreground"
         >
           <span
             data-testid={`thinking-toggle-icon-${messageId}`}
@@ -456,7 +665,9 @@ function ThinkingPanel({ messageId, content }: { messageId: string; content: str
         data-testid={`thinking-content-${messageId}`}
         // 步骤：内容区保持挂载，通过高度/透明度过渡实现展开与折叠动画，避免闪烁和重排跳变。
         className={`overflow-hidden transition-all duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] ${
-          isExpanded ? 'mt-3 max-h-[640px] translate-y-0 opacity-100' : 'mt-0 max-h-0 -translate-y-1 opacity-0 pointer-events-none'
+          isExpanded
+            ? 'mt-3 max-h-[640px] max-w-full translate-y-0 opacity-100'
+            : 'mt-0 max-h-0 max-w-0 -translate-y-1 opacity-0 pointer-events-none'
         }`}
       >
         <div className="whitespace-pre-wrap leading-6">{content}</div>

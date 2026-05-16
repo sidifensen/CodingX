@@ -12,6 +12,7 @@ import com.codingx.chat.application.service.ChatReactionService;
 import com.codingx.chat.application.service.ChatRuntimeGuardService;
 import com.codingx.chat.domain.model.ChatMessage;
 import com.codingx.chat.domain.model.ChatMessageStatus;
+import com.codingx.chat.domain.repository.ChatSkillRepository;
 import com.codingx.config.GlobalExceptionHandler;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -41,6 +42,9 @@ class ChatControllerListMessagesTest {
 
     @Mock
     private ChatReactionService chatReactionService;
+
+    @Mock
+    private ChatSkillRepository chatSkillRepository;
 
     @InjectMocks
     private ChatController chatController;

@@ -11,6 +11,7 @@ import com.codingx.chat.application.command.SendChatMessageCommand;
 import com.codingx.chat.domain.model.ChatExecutionRun;
 import com.codingx.chat.domain.model.ChatTraceRun;
 import com.codingx.chat.domain.repository.ChatExecutionRunRepository;
+import com.codingx.chat.domain.repository.ChatSkillRepository;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -59,6 +60,9 @@ class ChatStreamExecutionServiceTest {
     @Mock
     private ChatExecutionRunRepository chatExecutionRunRepository;
 
+    @Mock
+    private ChatSkillRepository chatSkillRepository;
+
     /**
      * 释放测试线程池，避免用例之间残留后台线程。
      */
@@ -80,6 +84,7 @@ class ChatStreamExecutionServiceTest {
             chatRuntimeGuardService,
             conversationTraceRecordService,
             chatExecutionRunRepository,
+            chatSkillRepository,
             executorService
         );
         org.mockito.Mockito.doAnswer(invocation -> {
@@ -112,6 +117,7 @@ class ChatStreamExecutionServiceTest {
             chatRuntimeGuardService,
             conversationTraceRecordService,
             chatExecutionRunRepository,
+            chatSkillRepository,
             executorService
         );
         try (org.mockito.MockedStatic<cn.dev33.satoken.stp.StpUtil> mocked = org.mockito.Mockito.mockStatic(cn.dev33.satoken.stp.StpUtil.class)) {
@@ -144,6 +150,7 @@ class ChatStreamExecutionServiceTest {
             chatRuntimeGuardService,
             conversationTraceRecordService,
             chatExecutionRunRepository,
+            chatSkillRepository,
             executorService
         );
         org.mockito.Mockito.doAnswer(invocation -> {
@@ -175,6 +182,7 @@ class ChatStreamExecutionServiceTest {
             chatRuntimeGuardService,
             conversationTraceRecordService,
             chatExecutionRunRepository,
+            chatSkillRepository,
             executorService
         );
         org.mockito.Mockito.when(conversationTraceRecordService.startTrace("chat-entry", 1001L, 2001L))
@@ -205,6 +213,7 @@ class ChatStreamExecutionServiceTest {
             chatRuntimeGuardService,
             conversationTraceRecordService,
             chatExecutionRunRepository,
+            chatSkillRepository,
             executorService
         );
         ChatTraceRun traceRun = ChatTraceRun.builder().traceId("trace-error").traceName("chat-entry").build();

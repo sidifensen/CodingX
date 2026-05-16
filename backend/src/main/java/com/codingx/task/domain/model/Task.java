@@ -1,6 +1,7 @@
 package com.codingx.task.domain.model;
 import cn.hutool.core.util.StrUtil;
 import java.time.LocalDateTime;
+import java.util.List;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -72,6 +73,11 @@ public class Task {
     private String summary;
 
     /**
+     * 任务绑定的技能编码列表。
+     */
+    private List<String> skillCodes;
+
+    /**
      * 创建 create 所需数据并返回结果。
      * @param id 输入参数。
      * @param title 输入参数。
@@ -82,6 +88,21 @@ public class Task {
      * @return 输入参数。
      */
     public static Task create(Long id, String title, String description, RuntimeType runtimeType, Long workspaceId, Long createdBy) {
+        return create(id, title, description, runtimeType, workspaceId, createdBy, List.of());
+    }
+
+    /**
+     * 创建 create 所需数据并返回结果。
+     * @param id 输入参数。
+     * @param title 输入参数。
+     * @param description 输入参数。
+     * @param runtimeType 输入参数。
+     * @param workspaceId 输入参数。
+     * @param createdBy 输入参数。
+     * @param skillCodes 绑定技能编码列表。
+     * @return 输入参数。
+     */
+    public static Task create(Long id, String title, String description, RuntimeType runtimeType, Long workspaceId, Long createdBy, List<String> skillCodes) {
         if (id == null || createdBy == null) {
             throw new IllegalArgumentException("Task id and createdBy are required");
         }
@@ -96,6 +117,7 @@ public class Task {
             .runtimeType(runtimeType)
             .workspaceId(workspaceId)
             .createdBy(createdBy)
+            .skillCodes(skillCodes == null ? List.of() : skillCodes)
             .build();
     }
 

@@ -16,6 +16,7 @@ import com.codingx.chat.domain.repository.ChatIntentNodeRepository;
 import com.codingx.chat.domain.repository.ChatMessageRepository;
 import com.codingx.chat.domain.service.AiChatClient;
 import com.codingx.chat.domain.service.ChatStreamPublisher;
+import com.codingx.mcp.domain.repository.ChatMcpRepository;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
@@ -52,6 +53,7 @@ class ChatApplicationSearchFlowTest {
     @Mock private DocumentArtifactService documentArtifactService;
     @Mock private com.codingx.support.ai.TokenCounterService tokenCounterService;
     @Mock private com.codingx.support.ai.LlmResponseCleaner llmResponseCleaner;
+    @Mock private ChatMcpRepository chatMcpRepository;
     private final ExecutorService searchExecutor = Executors.newSingleThreadExecutor();
 
     @InjectMocks
@@ -67,13 +69,15 @@ class ChatApplicationSearchFlowTest {
      */
     @Test
     void sendMessageInvokesSearchFlowForSearchIntent() {
+        Long runId = 9201001L;
+        ChatExecutionContext.start(runId);
         ChatConversation conversation = ChatConversation.create(1L, "New Conversation", 1002L, ChatConversationStatus.ACTIVE);
         when(chatConversationRepository.requireById(1L)).thenReturn(conversation);
         when(chatMessageRepository.findByConversationId(1L)).thenReturn(new ArrayList<>());
         when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
             new ConversationRewriteResult("请搜索 Spring Boot SSE", false, List.of("请搜索 Spring Boot SSE"))
         );
-        when(conversationIntentService.route("请搜索 Spring Boot SSE")).thenReturn(
+        when(conversationIntentService.route("请搜索 Spring Boot SSE", false)).thenReturn(
             new ConversationIntentDecision("search.web", ConversationIntentAction.SEARCH, null)
         );
         when(chatIntentNodeRepository.findByIntentCode("search.web")).thenReturn(null);
@@ -94,6 +98,7 @@ class ChatApplicationSearchFlowTest {
         verify(webSearchExecutionService).search("请搜索 Spring Boot SSE");
         verify(searchReferenceCollector).collect(any(), any(), any(), any());
         verify(documentArtifactService).createDocxArtifact(any(), any(), any(), any());
+        ChatExecutionContext.clear();
     }
 
     /**
@@ -101,13 +106,15 @@ class ChatApplicationSearchFlowTest {
      */
     @Test
     void sendMessageExecutesSearchForEachSplitQuestion() {
+        Long runId = 9201002L;
+        ChatExecutionContext.start(runId);
         ChatConversation conversation = ChatConversation.create(1L, "New Conversation", 1002L, ChatConversationStatus.ACTIVE);
         when(chatConversationRepository.requireById(1L)).thenReturn(conversation);
         when(chatMessageRepository.findByConversationId(1L)).thenReturn(new ArrayList<>());
         when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
             new ConversationRewriteResult("介绍 OA 系统和保险系统", true, List.of("介绍 OA 系统", "介绍 保险系统"))
         );
-        when(conversationIntentService.route("介绍 OA 系统和保险系统")).thenReturn(
+        when(conversationIntentService.route("介绍 OA 系统和保险系统", false)).thenReturn(
             new ConversationIntentDecision("biz-oa-intro", ConversationIntentAction.SEARCH, null)
         );
         when(chatIntentNodeRepository.findByIntentCode("biz-oa-intro")).thenReturn(null);
@@ -131,5 +138,6 @@ class ChatApplicationSearchFlowTest {
         verify(webSearchExecutionService).search("介绍 OA 系统");
         verify(webSearchExecutionService).search("介绍 保险系统");
         verify(searchReferenceCollector).collect(any(), any(), any(), any());
+        ChatExecutionContext.clear();
     }
 }

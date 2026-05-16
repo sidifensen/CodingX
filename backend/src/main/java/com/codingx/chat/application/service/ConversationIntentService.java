@@ -30,6 +30,16 @@ public class ConversationIntentService {
      * @return 决策结果。
      */
     public ConversationIntentDecision route(String question) {
+        return route(question, true);
+    }
+
+    /**
+     * 对当前问题进行分流，并结合是否允许 MCP 做路由约束。
+     * @param question 当前问题。
+     * @param mcpEnabled 当前消息是否允许 MCP。
+     * @return 决策结果。
+     */
+    public ConversationIntentDecision route(String question, boolean mcpEnabled) {
         if (StrUtil.isBlank(question)) {
             return new ConversationIntentDecision("clarify.ambiguity", ConversationIntentAction.CLARIFY, "请补充你的具体问题");
         }
@@ -48,6 +58,9 @@ public class ConversationIntentService {
             return new ConversationIntentDecision(topNode.getIntentCode(), ConversationIntentAction.DIRECT, null);
         }
         if ("mcp".equalsIgnoreCase(topNode.getIntentType())) {
+            if (!mcpEnabled) {
+                return new ConversationIntentDecision(topNode.getIntentCode(), ConversationIntentAction.MCP_DISABLED, "当前消息未连接 MCP");
+            }
             return new ConversationIntentDecision(topNode.getIntentCode(), ConversationIntentAction.MCP, null);
         }
         return new ConversationIntentDecision(topNode.getIntentCode(), ConversationIntentAction.SEARCH, null);

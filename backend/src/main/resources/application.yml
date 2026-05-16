@@ -3,6 +3,12 @@ spring:
     import: optional:file:.env[.properties],optional:file:backend/.env[.properties]
   application:
     name: codingx-backend
+  sql:
+    init:
+      # 显式启用 SQL 初始化，确保 PostgreSQL 环境也会执行 schema/init 脚本
+      mode: always
+      schema-locations: classpath:db/schema.sql
+      data-locations: classpath:db/init.sql
   datasource:
     driver-class-name: org.postgresql.Driver
     url: ${DB_URL:jdbc:postgresql://localhost:5432/codingx}
@@ -39,13 +45,20 @@ mybatis-plus:
   configuration:
     map-underscore-to-camel-case: true
     cache-enabled: false
-    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+    # 关闭 MyBatis 控制台 SQL/会话调试输出，避免污染后端运行日志
+    log-impl: org.apache.ibatis.logging.nologging.NoLoggingImpl
   global-config:
     db-config:
       id-type: input
       logic-delete-field: deleted
       logic-delete-value: 1
       logic-not-delete-value: 0
+
+logging:
+  level:
+    # 屏蔽 MyBatis / MyBatis-Spring 的调试级会话日志
+    org.apache.ibatis: WARN
+    org.mybatis.spring: WARN
 
 springdoc:
   api-docs:

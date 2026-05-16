@@ -191,7 +191,7 @@ export function Layout({ onLogout, isAuthSubmitting }: LayoutProps) {
   };
 
   return (
-    <div className="bg-surface font-body-sm text-body-sm text-on-surface selection:bg-sky-wash-start min-h-screen flex transition-colors duration-300">
+    <div className="bg-surface font-body-sm text-body-sm text-on-surface selection:bg-sky-wash-start flex h-screen overflow-hidden transition-colors duration-300">
       <Sidebar
         isCollapsed={isCollapsed}
         setIsCollapsed={setIsCollapsed}
@@ -202,11 +202,11 @@ export function Layout({ onLogout, isAuthSubmitting }: LayoutProps) {
       />
       <div
         className={clsx(
-          'flex-1 flex flex-col min-h-screen w-full relative transition-all duration-300',
+          'relative flex h-screen min-h-0 w-full flex-1 flex-col transition-all duration-300',
           isCollapsed ? 'ml-[68px]' : 'ml-[200px]',
         )}
       >
-        <main className="flex-1 w-full overflow-x-hidden relative">
+        <main className="relative flex-1 min-h-0 w-full overflow-y-auto overflow-x-hidden">
           <AnimatePresence mode="wait">
             <motion.div
               key={location.pathname}
@@ -214,7 +214,8 @@ export function Layout({ onLogout, isAuthSubmitting }: LayoutProps) {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
               transition={{ duration: 0.2 }}
-              className="h-full"
+              // 步骤：为需要锁定视口高度的页面提供稳定的 100% 高度参照，同时保留普通页面在 main 内继续滚动的能力。
+              className="h-full min-h-full"
             >
               <Outlet />
             </motion.div>

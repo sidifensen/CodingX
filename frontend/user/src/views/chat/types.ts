@@ -20,6 +20,7 @@ export interface ChatMessageItem {
   content: string;
   thinkingContent?: string;
   thinkingDuration?: number;
+  mcpCalls?: McpCallItem[];
   status: string;
   provider?: string;
   model?: string;
@@ -81,6 +82,28 @@ export interface SampleQuestionItem {
 }
 
 /**
+ * 描述用户可选 MCP 项。
+ */
+export interface McpItem {
+  id: string;
+  mcpCode: string;
+  displayName: string;
+  description?: string;
+  category?: string;
+}
+
+/**
+ * 描述一次 MCP 调用信息，供消息区折叠面板展示。
+ */
+export interface McpCallItem {
+  toolId: string;
+  displayName: string;
+  input: string;
+  content: string;
+  metadata?: Record<string, unknown>;
+}
+
+/**
  * 记录当前 SSE 会话的流式上下文。
  */
 export interface ActiveStreamState {
@@ -109,6 +132,9 @@ export interface ChatWorkspaceController {
   references: ReferenceItem[];
   artifacts: ArtifactItem[];
   sampleQuestions: SampleQuestionItem[];
+  availableMcps: McpItem[];
+  selectedMcpCodes: string[];
+  mcpConnected: boolean;
   isStreaming: boolean;
   isCancelling: boolean;
   deepThinkingEnabled: boolean;
@@ -117,6 +143,8 @@ export interface ChatWorkspaceController {
   isBootstrapping: boolean;
   setInputValue: (value: string) => void;
   setDeepThinkingEnabled: (value: boolean) => void;
+  setSelectedMcpCodes: (mcpCodes: string[] | ((previous: string[]) => string[])) => void;
+  setMcpConnected: (value: boolean) => void;
   submitMessage: () => Promise<void>;
   cancelCurrentStream: () => Promise<void>;
   selectConversation: (conversationId: string, sourceConversations?: ConversationItem[]) => Promise<void>;

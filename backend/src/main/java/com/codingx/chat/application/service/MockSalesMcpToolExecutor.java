@@ -1,12 +1,14 @@
 package com.codingx.chat.application.service;
 
 import java.util.Map;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 /**
  * 提供销售汇总数据的本地 mock 工具执行器，便于在未接真实 MCP server 前跑通主链路。
  */
 @Component
+@ConditionalOnProperty(prefix = "app.chat.mcp.mock-sales", name = "enabled", havingValue = "true")
 public class MockSalesMcpToolExecutor implements ChatMcpToolExecutor {
 
     @Override

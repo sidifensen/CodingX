@@ -1,0 +1,33 @@
+{
+  "mcpServers": {
+    "postgres": {
+      "command": "cmd",
+      "args": [
+        "/c",
+        "npx",
+        "-y",
+        "enhanced-postgres-mcp-server",
+        "postgresql://postgres:postgres@localhost:5432/codingx"
+      ]
+    },
+    "redis": {
+      "command": "cmd",
+      "args": [
+        "/c",
+        "npx",
+        "-y",
+        "@modelcontextprotocol/server-redis",
+        "redis://localhost:6379/0"
+      ]
+    },
+    "chrome-devtools": {
+      "command": "cmd",
+      "args": [
+        "/c",
+        "npx",
+        "-y",
+        "chrome-devtools-mcp"
+      ]
+    }
+  }
+}

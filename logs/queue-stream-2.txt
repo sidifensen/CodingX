@@ -1,9 +1,0 @@
-﻿event:meta
-data:{"conversationId":"2055299112576221184","deepThinking":false}
-
-event:reject
-data:{"conversationId":"2055299112576221184","reason":"busy"}
-
-event:done
-data:{"conversationId":"2055299112576221184"}
-

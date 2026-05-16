@@ -1,6 +1,8 @@
 package com.codingx.chat.application.service;
 
 import cn.hutool.core.util.StrUtil;
+import cn.hutool.json.JSONArray;
+import cn.hutool.json.JSONUtil;
 import com.codingx.chat.domain.model.ChatIntentExample;
 import com.codingx.chat.domain.model.ChatIntentNode;
 import com.codingx.chat.domain.repository.ChatIntentExampleRepository;
@@ -32,10 +34,7 @@ public class ConversationIntentService {
             return new ConversationIntentDecision("clarify.ambiguity", ConversationIntentAction.CLARIFY, "请补充你的具体问题");
         }
         List<ChatIntentNode> nodes = chatIntentNodeRepository.findEnabledNodes();
-        List<ChatIntentExample> examples = new ArrayList<>();
-        for (ChatIntentNode node : nodes) {
-            examples.addAll(chatIntentExampleRepository.findByIntentCode(node.getIntentCode()));
-        }
+        List<ChatIntentExample> examples = collectExamples(nodes);
         List<ConversationIntentCandidate> candidates = conversationIntentResolver.resolveCandidates(question, nodes, examples);
         String guidancePrompt = conversationIntentGuidanceService.buildGuidancePrompt(question, candidates, nodes);
         if (StrUtil.isNotBlank(guidancePrompt)) {
@@ -46,7 +45,7 @@ public class ConversationIntentService {
         }
         ChatIntentNode topNode = candidates.getFirst().node();
         if ("system".equalsIgnoreCase(topNode.getIntentType())) {
-            return new ConversationIntentDecision(topNode.getIntentCode(), ConversationIntentAction.DIRECT, buildSystemReply(topNode.getIntentCode()));
+            return new ConversationIntentDecision(topNode.getIntentCode(), ConversationIntentAction.DIRECT, null);
         }
         if ("mcp".equalsIgnoreCase(topNode.getIntentType())) {
             return new ConversationIntentDecision(topNode.getIntentCode(), ConversationIntentAction.MCP, null);
@@ -55,17 +54,46 @@ public class ConversationIntentService {
     }
 
     /**
-     * 为系统意图提供确定性的直答短路，避免这类问题继续走模型自由生成。
-     * @param intentCode 命中的系统意图编码。
-     * @return 直答内容。
+     * 兼容读取旧示例表与节点 JSON 示例，确保后台配置和 ragent 导入数据都能参与识别。
+     * @param nodes 启用中的节点集合。
+     * @return 汇总后的示例列表。
      */
-    private String buildSystemReply(String intentCode) {
-        if ("sys-welcome".equals(intentCode)) {
-            return "你好，我是 CodingX 的知识助手。你可以问我项目结构、系统配置、IT 支持、业务流程或公开技术资料。";
+    private List<ChatIntentExample> collectExamples(List<ChatIntentNode> nodes) {
+        List<ChatIntentExample> examples = new ArrayList<>();
+        for (ChatIntentNode node : nodes) {
+            examples.addAll(chatIntentExampleRepository.findByIntentCode(node.getIntentCode()));
+            examples.addAll(parseNodeExamples(node));
         }
-        if ("sys-about-bot".equals(intentCode)) {
-            return "我是基于当前接入的大语言模型服务和搜索能力构建的 CodingX 知识助手，底层模型会由平台配置动态切换，我主要负责项目知识、系统说明、IT 支持和公开技术信息整理。";
+        return examples;
+    }
+
+    /**
+     * 解析节点上的 JSON 示例文本，避免当前项目维护两套必须同步的人工作业数据。
+     * @param node 当前节点。
+     * @return 解析出的示例集合。
+     */
+    private List<ChatIntentExample> parseNodeExamples(ChatIntentNode node) {
+        if (node == null || StrUtil.isBlank(node.getExamples())) {
+            return List.of();
         }
-        return "你好，我是 CodingX 的知识助手，很高兴为你提供帮助。";
+        try {
+            JSONArray exampleArray = JSONUtil.parseArray(node.getExamples());
+            List<ChatIntentExample> examples = new ArrayList<>();
+            int sortNo = 1;
+            for (Object item : exampleArray) {
+                String exampleText = StrUtil.trim(item == null ? null : item.toString());
+                if (StrUtil.isBlank(exampleText)) {
+                    continue;
+                }
+                examples.add(ChatIntentExample.builder()
+                    .intentCode(node.getIntentCode())
+                    .exampleText(exampleText)
+                    .sortNo(sortNo++)
+                    .build());
+            }
+            return examples;
+        } catch (Exception exception) {
+            return List.of();
+        }
     }
 }

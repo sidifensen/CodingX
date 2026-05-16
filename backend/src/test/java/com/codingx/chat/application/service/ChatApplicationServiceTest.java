@@ -16,6 +16,7 @@ import com.codingx.chat.domain.model.ChatMessageRole;
 import com.codingx.chat.domain.model.ChatMessageStatus;
 import com.codingx.chat.domain.repository.ChatConversationRepository;
 import com.codingx.chat.domain.repository.ChatExecutionRunRepository;
+import com.codingx.chat.domain.repository.ChatIntentNodeRepository;
 import com.codingx.chat.domain.repository.ChatMessageRepository;
 import com.codingx.chat.domain.service.AiChatClient;
 import com.codingx.chat.domain.service.ChatStreamPublisher;
@@ -97,6 +98,9 @@ class ChatApplicationServiceTest {
     private PromptTemplateLoader promptTemplateLoader;
 
     @Mock
+    private ChatIntentNodeRepository chatIntentNodeRepository;
+
+    @Mock
     private com.codingx.support.ai.TokenCounterService tokenCounterService;
 
     @Mock
@@ -143,6 +147,7 @@ class ChatApplicationServiceTest {
         );
         when(llmResponseCleaner.clean(any())).thenAnswer(invocation -> invocation.getArgument(0));
         when(conversationIntentService.route("Hi")).thenReturn(new ConversationIntentDecision("chat.normal", ConversationIntentAction.DIRECT, null));
+        when(chatIntentNodeRepository.findByIntentCode("chat.normal")).thenReturn(null);
         doAnswer(invocation -> {
 
             AiChatClient.StreamHandler handler = invocation.getArgument(2);
@@ -223,6 +228,7 @@ class ChatApplicationServiceTest {
             new ConversationRewriteResult("Hi", false, List.of("Hi"))
         );
         when(conversationIntentService.route("Hi")).thenReturn(new ConversationIntentDecision("chat.normal", ConversationIntentAction.DIRECT, null));
+        when(chatIntentNodeRepository.findByIntentCode("chat.normal")).thenReturn(null);
         AtomicInteger cancelChecks = new AtomicInteger();
         when(chatRuntimeGuardService.isCancelled(1L)).thenAnswer(invocation -> cancelChecks.incrementAndGet() > 1);
         doAnswer(invocation -> {
@@ -254,6 +260,7 @@ class ChatApplicationServiceTest {
             new ConversationRewriteResult("Hi", false, List.of("Hi"))
         );
         when(conversationIntentService.route("Hi")).thenReturn(new ConversationIntentDecision("chat.normal", ConversationIntentAction.DIRECT, null));
+        when(chatIntentNodeRepository.findByIntentCode("chat.normal")).thenReturn(null);
         when(chatRuntimeGuardService.isCancelled(1L)).thenReturn(true);
         doAnswer(invocation -> {
             throw new IllegalStateException("interrupted");

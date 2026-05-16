@@ -151,10 +151,10 @@ public class ConversationIntentResolver {
      * @return 兜底候选。
      */
     private List<ConversationIntentCandidate> fallbackCandidates(String question, List<ChatIntentNode> leafNodes) {
-        String normalizedQuestion = question == null ? "" : question.toLowerCase();
+        String normalizedQuestion = normalizeText(question);
         return leafNodes.stream()
-            .filter(node -> normalizedQuestion.contains(node.getName() == null ? "" : node.getName().toLowerCase())
-                || "system".equalsIgnoreCase(node.getIntentType()) && normalizedQuestion.matches(".*(你好|hello|hi|你是谁|能做什么).*"))
+            .filter(node -> normalizedQuestion.contains(normalizeText(node.getName()))
+                || normalizedQuestion.contains(normalizeText(node.getDescription())))
             .map(node -> new ConversationIntentCandidate(node, 0.60D))
             .sorted(Comparator.comparingDouble(ConversationIntentCandidate::score).reversed())
             .toList();
@@ -184,31 +184,54 @@ public class ConversationIntentResolver {
      * @return 命中的启发式候选。
      */
     private List<ConversationIntentCandidate> heuristicCandidates(String question, List<ChatIntentNode> leafNodes, Map<String, List<String>> examplesByCode) {
-        String normalizedQuestion = question == null ? "" : question.toLowerCase();
+        String normalizedQuestion = normalizeText(question);
         List<ConversationIntentCandidate> candidates = new ArrayList<>();
         for (ChatIntentNode node : leafNodes) {
-            if ("system".equalsIgnoreCase(node.getIntentType())) {
-                if ("sys-welcome".equals(node.getIntentCode()) && normalizedQuestion.matches(".*(你好|hello|hi|在吗).*")) {
-                    candidates.add(new ConversationIntentCandidate(node, 0.95D));
-                }
-                if ("sys-about-bot".equals(node.getIntentCode()) && normalizedQuestion.matches(".*(你是谁|你能帮我做什么|你是什么ai).*")) {
-                    candidates.add(new ConversationIntentCandidate(node, 0.95D));
-                }
+            if (!"system".equalsIgnoreCase(node.getIntentType()) && !"mcp".equalsIgnoreCase(node.getIntentType())) {
+                continue;
             }
-            if ("mcp".equalsIgnoreCase(node.getIntentType())) {
-                if (normalizedQuestion.contains("销售")) {
-                    candidates.add(new ConversationIntentCandidate(node, 0.96D));
-                    continue;
-                }
-                for (String example : examplesByCode.getOrDefault(node.getIntentCode(), List.of())) {
-                    if (StrUtil.isNotBlank(example) && normalizedQuestion.contains(example.replaceAll("[？?]", "").toLowerCase())) {
-                        candidates.add(new ConversationIntentCandidate(node, 0.92D));
-                        break;
-                    }
-                }
+            double score = resolveHeuristicScore(normalizedQuestion, node, examplesByCode.getOrDefault(node.getIntentCode(), List.of()));
+            if (score > 0D) {
+                candidates.add(new ConversationIntentCandidate(node, score));
             }
         }
         candidates.sort(Comparator.comparingDouble(ConversationIntentCandidate::score).reversed());
         return candidates;
+    }
+
+    /**
+     * 基于节点示例与节点名做轻量启发式命中，避免把欢迎语、MCP 查询入口绑死在具体编码上。
+     * @param normalizedQuestion 标准化后的用户问题。
+     * @param node 当前叶子节点。
+     * @param examples 当前节点示例。
+     * @return 命中分数；未命中返回 0。
+     */
+    private double resolveHeuristicScore(String normalizedQuestion, ChatIntentNode node, List<String> examples) {
+        for (String example : examples) {
+            String normalizedExample = normalizeText(example);
+            if (StrUtil.isBlank(normalizedExample)) {
+                continue;
+            }
+            if (normalizedQuestion.equals(normalizedExample)) {
+                return 0.96D;
+            }
+            if (normalizedQuestion.contains(normalizedExample) || normalizedExample.contains(normalizedQuestion)) {
+                return 0.92D;
+            }
+        }
+        String normalizedName = normalizeText(node.getName());
+        if (StrUtil.isNotBlank(normalizedName) && normalizedQuestion.contains(normalizedName)) {
+            return 0.82D;
+        }
+        return 0D;
+    }
+
+    /**
+     * 统一标准化问句与示例文本，减少中英文标点和大小写差异带来的误判。
+     * @param value 原始文本。
+     * @return 标准化文本。
+     */
+    private String normalizeText(String value) {
+        return value == null ? "" : value.replaceAll("[\\p{Punct}\\s]+", "").toLowerCase(java.util.Locale.ROOT);
     }
 }

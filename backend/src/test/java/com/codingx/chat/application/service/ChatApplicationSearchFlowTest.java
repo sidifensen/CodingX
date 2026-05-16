@@ -12,6 +12,7 @@ import com.codingx.chat.domain.model.ChatMessage;
 import com.codingx.chat.domain.repository.ChatConversationRepository;
 import com.codingx.chat.domain.repository.ChatExecutionRunRepository;
 import com.codingx.chat.domain.repository.ChatExecutionStepRepository;
+import com.codingx.chat.domain.repository.ChatIntentNodeRepository;
 import com.codingx.chat.domain.repository.ChatMessageRepository;
 import com.codingx.chat.domain.service.AiChatClient;
 import com.codingx.chat.domain.service.ChatStreamPublisher;
@@ -45,6 +46,7 @@ class ChatApplicationSearchFlowTest {
     @Mock private ConversationRewriteService conversationRewriteService;
     @Mock private ConversationIntentService conversationIntentService;
     @Mock private PromptTemplateLoader promptTemplateLoader;
+    @Mock private ChatIntentNodeRepository chatIntentNodeRepository;
     @Mock private WebSearchExecutionService webSearchExecutionService;
     @Mock private SearchReferenceCollector searchReferenceCollector;
     @Mock private DocumentArtifactService documentArtifactService;
@@ -74,6 +76,7 @@ class ChatApplicationSearchFlowTest {
         when(conversationIntentService.route("请搜索 Spring Boot SSE")).thenReturn(
             new ConversationIntentDecision("search.web", ConversationIntentAction.SEARCH, null)
         );
+        when(chatIntentNodeRepository.findByIntentCode("search.web")).thenReturn(null);
         when(webSearchExecutionService.search("请搜索 Spring Boot SSE")).thenReturn(List.of(
             new SearchReferenceCandidate("SSE", "https://example.com", "Example", "snippet")
         ));
@@ -107,6 +110,7 @@ class ChatApplicationSearchFlowTest {
         when(conversationIntentService.route("介绍 OA 系统和保险系统")).thenReturn(
             new ConversationIntentDecision("biz-oa-intro", ConversationIntentAction.SEARCH, null)
         );
+        when(chatIntentNodeRepository.findByIntentCode("biz-oa-intro")).thenReturn(null);
         when(webSearchExecutionService.search("介绍 OA 系统")).thenReturn(List.of(
             new SearchReferenceCandidate("OA系统", "https://example.com/oa", "Example", "oa")
         ));

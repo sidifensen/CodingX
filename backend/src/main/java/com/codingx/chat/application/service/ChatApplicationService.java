@@ -430,7 +430,11 @@ public class ChatApplicationService {
      * @return 送入模型层的实际历史。
      */
     private List<ChatMessage> buildAiHistory(List<ChatMessage> history, ConversationIntentDecision intentDecision, Long conversationId) {
-        if (intentDecision.intentCode() == null || !intentDecision.intentCode().startsWith("sys-")) {
+        if (intentDecision.intentCode() == null) {
+            return history;
+        }
+        com.codingx.chat.domain.model.ChatIntentNode intentNode = chatIntentNodeRepository.findByIntentCode(intentDecision.intentCode());
+        if (intentNode == null || !"system".equalsIgnoreCase(intentNode.getIntentType())) {
             return history;
         }
         List<ChatMessage> aiHistory = new ArrayList<>();
@@ -438,7 +442,7 @@ public class ChatApplicationService {
             cn.hutool.core.util.IdUtil.getSnowflakeNextId(),
             conversationId,
             ChatMessageRole.SYSTEM,
-            promptTemplateLoader.load("answer-chat-system"),
+            resolveSystemPrompt(intentNode),
             ChatMessageStatus.COMPLETED,
             null,
             null,
@@ -446,6 +450,22 @@ public class ChatApplicationService {
         ));
         aiHistory.addAll(history);
         return aiHistory;
+    }
+
+    /**
+     * 系统意图优先使用节点自定义 Prompt，未配置时回退到全局系统模板。
+     * @param intentNode 命中的系统节点。
+     * @return 最终送入模型的 system prompt。
+     */
+    private String resolveSystemPrompt(com.codingx.chat.domain.model.ChatIntentNode intentNode) {
+        if (StrUtil.isNotBlank(intentNode.getPromptTemplate())) {
+            return intentNode.getPromptTemplate().trim();
+        }
+        String basePrompt = promptTemplateLoader.load("answer-chat-system");
+        if (StrUtil.isNotBlank(intentNode.getPromptSnippet())) {
+            return basePrompt + "\n\n# 节点补充规则\n" + intentNode.getPromptSnippet().trim();
+        }
+        return basePrompt;
     }
 
     /**

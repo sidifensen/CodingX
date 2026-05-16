@@ -1,6 +1,10 @@
 package com.codingx.chat.application.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 
 import com.codingx.chat.domain.model.ChatIntentExample;
@@ -71,7 +75,7 @@ class ConversationIntentServiceTest {
 
         assertEquals(ConversationIntentAction.DIRECT, decision.action());
         assertEquals("sys-about-bot", decision.intentCode());
-        org.junit.jupiter.api.Assertions.assertTrue(decision.reply().contains("CodingX"));
+        assertNull(decision.reply());
     }
 
     /**
@@ -96,5 +100,41 @@ class ConversationIntentServiceTest {
         assertEquals(ConversationIntentAction.CLARIFY, decision.action());
         assertEquals("clarify.ambiguity", decision.intentCode());
         assertEquals("关于系统介绍，候选如下：\n1) OA系统\n2) 保险系统", decision.reply());
+    }
+
+    /**
+     * 当前项目运行时应同时吸收节点 JSON 示例与旧示例表，确保导入 ragent SQL 后无需双写也能参与识别。
+     */
+    @Test
+    void routeMergesNodeExamplesWithLegacyExamples() {
+        ChatIntentNode node = ChatIntentNode.builder()
+            .intentCode("weather-data")
+            .name("天气查询")
+            .intentType("mcp")
+            .enabled(1)
+            .examples("[\"北京今天天气怎么样？\",\"上海明天会下雨吗？\"]")
+            .build();
+        when(chatIntentNodeRepository.findEnabledNodes()).thenReturn(List.of(node));
+        when(chatIntentExampleRepository.findByIntentCode("weather-data")).thenReturn(List.of(
+            ChatIntentExample.builder().intentCode("weather-data").exampleText("杭州现在多少度？").sortNo(1).build()
+        ));
+        when(conversationIntentResolver.resolveCandidates(eq("北京今天天气怎么样？"), eq(List.of(node)), any()))
+            .thenAnswer(invocation -> {
+                @SuppressWarnings("unchecked")
+                List<ChatIntentExample> examples = invocation.getArgument(2, List.class);
+                List<String> exampleTexts = examples.stream().map(ChatIntentExample::getExampleText).toList();
+                assertEquals(3, examples.size());
+                assertTrue(exampleTexts.contains("北京今天天气怎么样？"));
+                assertTrue(exampleTexts.contains("上海明天会下雨吗？"));
+                assertTrue(exampleTexts.contains("杭州现在多少度？"));
+                return List.of(new ConversationIntentCandidate(node, 0.93D));
+            });
+        when(conversationIntentGuidanceService.buildGuidancePrompt(eq("北京今天天气怎么样？"), any(), eq(List.of(node))))
+            .thenReturn(null);
+
+        ConversationIntentDecision decision = conversationIntentService.route("北京今天天气怎么样？");
+
+        assertEquals(ConversationIntentAction.MCP, decision.action());
+        assertEquals("weather-data", decision.intentCode());
     }
 }

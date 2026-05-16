@@ -27,4 +27,14 @@ public interface ChatTraceRunRepository {
      * @return 根记录列表。
      */
     java.util.List<ChatTraceRun> findRecent(int limit);
+
+    /**
+     * 按页查询 Trace 根记录，并支持最小过滤能力。
+     *
+     * @param current 页码（从 1 开始）。
+     * @param size 每页大小。
+     * @param traceId 链路标识过滤条件，空值表示不过滤。
+     * @return 分页结果。
+     */
+    com.codingx.chat.application.service.AdminTraceRunPageView pageByFilters(int current, int size, String traceId);
 }

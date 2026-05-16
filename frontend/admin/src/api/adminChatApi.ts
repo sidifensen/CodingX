@@ -2,12 +2,13 @@ import { ApiResponseParser } from './apiResponse';
 import { AuthStorage } from '../utils/authStorage';
 
 export interface AdminTraceRun {
-  id: string;
+  id?: string;
   traceId: string;
   traceName: string;
-  conversationId?: string;
-  taskId?: string;
-  userId?: string;
+  conversationId?: string | number;
+  taskId?: string | number;
+  userId?: string | number;
+  username?: string;
   status: string;
   errorMessage?: string;
   durationMs?: number;
@@ -18,6 +19,9 @@ export interface AdminTraceRun {
 export interface AdminTraceNode {
   id: string;
   traceId: string;
+  nodeId?: string;
+  parentNodeId?: string;
+  depth?: number;
   nodeType: string;
   nodeName: string;
   className?: string;
@@ -25,11 +29,27 @@ export interface AdminTraceNode {
   status: string;
   errorMessage?: string;
   durationMs?: number;
+  startedAt?: string;
+  finishedAt?: string;
 }
 
 export interface AdminTraceDetail {
   traceRun: AdminTraceRun;
   nodes: AdminTraceNode[];
+}
+
+export interface AdminTraceRunPageResult {
+  records: AdminTraceRun[];
+  total: number;
+  size: number;
+  current: number;
+  pages: number;
+}
+
+export interface AdminTraceRunQuery {
+  current?: number;
+  size?: number;
+  traceId?: string;
 }
 
 export interface AdminIntentNode {
@@ -96,12 +116,40 @@ export interface AdminMcpToolView {
   durationMs?: number;
 }
 
+export interface AdminMcpConfig {
+  id?: string | number;
+  mcpCode: string;
+  displayName: string;
+  description?: string;
+  category?: string;
+  sourceType?: string;
+  enabled?: number;
+  sortNo?: number;
+}
+
+export interface AdminSkill {
+  id?: string | number;
+  skillCode: string;
+  displayName: string;
+  description?: string;
+  category?: string;
+  sourceType?: string;
+  enabled?: number;
+  sortNo?: number;
+}
+
 /**
  * 统一封装管理端聊天运行时后台接口。
  */
 export class AdminChatApi {
-  static async listTraces(): Promise<AdminTraceRun[]> {
-    return this.request<AdminTraceRun[]>('/api/admin/chat/traces');
+  static async listTraces(query: AdminTraceRunQuery = {}): Promise<AdminTraceRunPageResult> {
+    const searchParams = new URLSearchParams();
+    searchParams.set('current', String(query.current ?? 1));
+    searchParams.set('size', String(query.size ?? 10));
+    if (query.traceId && query.traceId.trim()) {
+      searchParams.set('traceId', query.traceId.trim());
+    }
+    return this.request<AdminTraceRunPageResult>(`/api/admin/chat/traces?${searchParams.toString()}`);
   }
 
   static async getTrace(traceId: string): Promise<AdminTraceDetail> {
@@ -172,6 +220,54 @@ export class AdminChatApi {
 
   static async pingMcpTool(toolId: string): Promise<AdminMcpToolView> {
     return this.request<AdminMcpToolView>(`/api/admin/chat/mcp-tools/${encodeURIComponent(toolId)}/ping`);
+  }
+
+  static async listSkills(): Promise<AdminSkill[]> {
+    return this.request<AdminSkill[]>('/api/admin/chat/skills');
+  }
+
+  static async createSkill(payload: AdminSkill): Promise<AdminSkill> {
+    return this.request<AdminSkill>('/api/admin/chat/skills', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  static async updateSkill(id: string | number, payload: AdminSkill): Promise<AdminSkill> {
+    return this.request<AdminSkill>(`/api/admin/chat/skills/${encodeURIComponent(String(id))}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  static async deleteSkill(id: string | number): Promise<void> {
+    await this.request<void>(`/api/admin/chat/skills/${encodeURIComponent(String(id))}`, {
+      method: 'DELETE',
+    });
+  }
+
+  static async listMcpConfigs(): Promise<AdminMcpConfig[]> {
+    return this.request<AdminMcpConfig[]>('/api/admin/chat/mcps');
+  }
+
+  static async createMcpConfig(payload: AdminMcpConfig): Promise<AdminMcpConfig> {
+    return this.request<AdminMcpConfig>('/api/admin/chat/mcps', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  static async updateMcpConfig(id: string | number, payload: AdminMcpConfig): Promise<AdminMcpConfig> {
+    return this.request<AdminMcpConfig>(`/api/admin/chat/mcps/${encodeURIComponent(String(id))}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  static async deleteMcpConfig(id: string | number): Promise<void> {
+    await this.request<void>(`/api/admin/chat/mcps/${encodeURIComponent(String(id))}`, {
+      method: 'DELETE',
+    });
   }
 
   private static async request<T>(path: string, init?: RequestInit): Promise<T> {

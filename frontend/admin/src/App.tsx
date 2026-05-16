@@ -13,6 +13,7 @@ import { Notifications } from './pages/Notifications';
 import { AdminLoginPage } from './pages/AdminLoginPage';
 import { useAdminAuth } from './hooks/useAdminAuth';
 import { TracePage } from './pages/TracePage';
+import { TraceDetailPage } from './pages/traces/TraceDetailPage';
 import { IntentTreePage } from './pages/IntentTreePage';
 import { QueryTermMappingPage } from './pages/QueryTermMappingPage';
 
@@ -72,6 +73,7 @@ export default function App() {
           <Route path="skills" element={<Skills />} />
           <Route path="mcp" element={<MCP />} />
           <Route path="traces" element={<TracePage />} />
+          <Route path="traces/:traceId" element={<TraceDetailPage />} />
           <Route path="intent-tree" element={<IntentTreePage />} />
           <Route path="query-term-mappings" element={<QueryTermMappingPage />} />
           <Route path="settings" element={<Settings />} />

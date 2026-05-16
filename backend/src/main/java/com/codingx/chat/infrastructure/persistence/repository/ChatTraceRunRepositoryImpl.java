@@ -1,10 +1,13 @@
 package com.codingx.chat.infrastructure.persistence.repository;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.toolkit.Wrappers;
+import com.codingx.chat.application.service.AdminTraceRunPageView;
 import com.codingx.chat.domain.model.ChatTraceRun;
 import com.codingx.chat.domain.repository.ChatTraceRunRepository;
 import com.codingx.chat.infrastructure.persistence.dataobject.ChatTraceRunDO;
 import com.codingx.chat.infrastructure.persistence.mapper.ChatTraceRunMapper;
+import java.util.List;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Repository;
@@ -45,6 +48,26 @@ public class ChatTraceRunRepositoryImpl implements ChatTraceRunRepository {
             .stream()
             .map(this::toDomain)
             .toList();
+    }
+
+    @Override
+    public AdminTraceRunPageView pageByFilters(int current, int size, String traceId) {
+        int normalizedCurrent = Math.max(1, current);
+        int normalizedSize = Math.max(1, Math.min(size, 100));
+        LambdaQueryWrapper<ChatTraceRunDO> queryWrapper = Wrappers.lambdaQuery(ChatTraceRunDO.class)
+            .eq(ChatTraceRunDO::getDeleted, 0)
+            .orderByDesc(ChatTraceRunDO::getStartedAt)
+            .orderByDesc(ChatTraceRunDO::getId);
+        if (traceId != null && !traceId.isBlank()) {
+            queryWrapper.eq(ChatTraceRunDO::getTraceId, traceId.trim());
+        }
+        List<ChatTraceRunDO> dataObjects = chatTraceRunMapper.selectList(queryWrapper);
+        long total = dataObjects.size();
+        long pages = total == 0 ? 0 : (total + normalizedSize - 1L) / normalizedSize;
+        int fromIndex = Math.min((normalizedCurrent - 1) * normalizedSize, dataObjects.size());
+        int toIndex = Math.min(fromIndex + normalizedSize, dataObjects.size());
+        List<ChatTraceRun> pageRecords = dataObjects.subList(fromIndex, toIndex).stream().map(this::toDomain).toList();
+        return new AdminTraceRunPageView(pageRecords, total, normalizedSize, normalizedCurrent, pages);
     }
 
     private ChatTraceRunDO toDataObject(ChatTraceRun traceRun) {

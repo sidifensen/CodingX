@@ -81,6 +81,21 @@ export interface AdminDashboardView {
   sampleQuestionCount: number;
 }
 
+export interface AdminMcpToolView {
+  toolId: string;
+  displayName: string;
+  category: string;
+  source: string;
+  status: string;
+  statusLabel: string;
+  ok: boolean;
+  message?: string;
+  description?: string;
+  sampleQuestion?: string;
+  checkedAt?: string;
+  durationMs?: number;
+}
+
 /**
  * 统一封装管理端聊天运行时后台接口。
  */
@@ -149,6 +164,14 @@ export class AdminChatApi {
 
   static async getDashboard(): Promise<AdminDashboardView> {
     return this.request<AdminDashboardView>('/api/admin/chat/dashboard');
+  }
+
+  static async listMcpTools(): Promise<AdminMcpToolView[]> {
+    return this.request<AdminMcpToolView[]>('/api/admin/chat/mcp-tools');
+  }
+
+  static async pingMcpTool(toolId: string): Promise<AdminMcpToolView> {
+    return this.request<AdminMcpToolView>(`/api/admin/chat/mcp-tools/${encodeURIComponent(toolId)}/ping`);
   }
 
   private static async request<T>(path: string, init?: RequestInit): Promise<T> {

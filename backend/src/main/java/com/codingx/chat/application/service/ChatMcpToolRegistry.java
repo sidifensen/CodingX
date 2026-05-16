@@ -24,4 +24,12 @@ public class ChatMcpToolRegistry {
             .findFirst()
             .orElseThrow(() -> new IllegalArgumentException("MCP tool not found: " + toolId));
     }
+
+    /**
+     * 返回当前已注册的全部 MCP 执行器，供管理端做工具清单与健康探测。
+     * @return 执行器列表。
+     */
+    public List<ChatMcpToolExecutor> all() {
+        return List.copyOf(executors);
+    }
 }

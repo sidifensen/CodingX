@@ -103,7 +103,7 @@ class ConversationIntentServiceTest {
     }
 
     /**
-     * 当前项目运行时应同时吸收节点 JSON 示例与旧示例表，确保导入 ragent SQL 后无需双写也能参与识别。
+     * 当前项目运行时应同时吸收节点 JSON 示例与旧示例表，确保导入种子 SQL 后无需双写也能参与识别。
      */
     @Test
     void routeMergesNodeExamplesWithLegacyExamples() {

@@ -59,7 +59,7 @@ public class PromptTemplateLoader {
     }
 
     /**
-     * 渲染模板中的简单命名占位符，适配从 ragent 迁来的 `{slot}` 风格 Prompt。
+     * 渲染模板中的简单命名占位符，适配 `{slot}` 风格 Prompt 资产。
      * @param templateName 模板名。
      * @param slots 占位符映射。
      * @return 渲染后的 Prompt。

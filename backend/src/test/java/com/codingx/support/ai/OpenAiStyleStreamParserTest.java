@@ -74,7 +74,7 @@ class OpenAiStyleStreamParserTest {
     }
 
     /**
-     * ragent 兼容解析要求 reasoning_content 既能来自 delta，也能来自 message。
+     * 兼容解析要求 reasoning_content 既能来自 delta，也能来自 message。
      */
     @Test
     void parseExtractsThinkingFromDeltaAndMessagePayloads() {

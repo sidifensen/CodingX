@@ -25,7 +25,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 /**
- * 验证管理端意图树 HTTP 契约，确保前端配置台可按 ragent 字段读写节点。
+ * 验证管理端意图树 HTTP 契约，确保前端配置台可按扩展字段读写节点。
  */
 @ExtendWith(MockitoExtension.class)
 class AdminChatIntentControllerTest {
@@ -37,7 +37,7 @@ class AdminChatIntentControllerTest {
     private AdminChatIntentController adminChatIntentController;
 
     /**
-     * 树形接口应返回 children 与 ragent 兼容字段，供左侧树和右侧详情复用同一载体。
+     * 树形接口应返回 children 与扩展字段，供左侧树和右侧详情复用同一载体。
      */
     @Test
     void getTreeReturnsNestedIntentNodes() throws Exception {

@@ -27,7 +27,7 @@ class PromptTemplateLoaderTest {
     }
 
     /**
-     * 渲染器应按占位符替换模板变量，便于复用 ragent 的 Prompt 资产。
+     * 渲染器应按占位符替换模板变量，便于复用配置台 Prompt 资产。
      * @throws Exception 文件准备或读取失败时抛出。
      */
     @Test

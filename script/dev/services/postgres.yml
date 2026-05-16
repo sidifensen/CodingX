@@ -5,7 +5,7 @@ services:
     container_name: postgres
     image: pgvector/pgvector:pg16
     environment:
-      - POSTGRES_DB=ragent
+      - POSTGRES_DB=codingx
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=postgres
     ports:

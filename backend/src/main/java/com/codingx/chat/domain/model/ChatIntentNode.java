@@ -9,7 +9,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 /**
- * 表示意图树中的单个配置节点，兼容聊天运行时旧字段与管理端 ragent 风格配置字段。
+ * 表示意图树中的单个配置节点，兼容聊天运行时旧字段与管理端配置字段。
  */
 @Getter
 @Builder(toBuilder = true)

@@ -7,7 +7,7 @@ import java.time.LocalDateTime;
 import lombok.Data;
 
 /**
- * 定义意图树节点表的数据对象映射，显式保留运行时字段与管理端 ragent 扩展字段。
+ * 定义意图树节点表的数据对象映射，显式保留运行时字段与管理端扩展字段。
  */
 @Data
 @TableName("chat_intent_node")

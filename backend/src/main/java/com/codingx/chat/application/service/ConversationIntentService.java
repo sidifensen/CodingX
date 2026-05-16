@@ -54,7 +54,7 @@ public class ConversationIntentService {
     }
 
     /**
-     * 兼容读取旧示例表与节点 JSON 示例，确保后台配置和 ragent 导入数据都能参与识别。
+     * 兼容读取旧示例表与节点 JSON 示例，确保后台配置和导入种子都能参与识别。
      * @param nodes 启用中的节点集合。
      * @return 汇总后的示例列表。
      */

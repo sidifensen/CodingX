@@ -18,7 +18,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 /**
- * 提供意图树后台管理服务，集中处理 ragent 字段与运行时旧字段的兼容派生。
+ * 提供意图树后台管理服务，集中处理配置台字段与运行时旧字段的兼容派生。
  */
 @Service
 @RequiredArgsConstructor

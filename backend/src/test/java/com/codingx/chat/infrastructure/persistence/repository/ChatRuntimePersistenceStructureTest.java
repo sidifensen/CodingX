@@ -29,11 +29,11 @@ class ChatRuntimePersistenceStructureTest {
     }
 
     /**
-     * 管理端意图树需要在 DO 层暴露 ragent 兼容字段，避免数据库迁移已存在但映射层不可用。
+     * 管理端意图树需要在 DO 层暴露扩展字段，避免数据库迁移已存在但映射层不可用。
      * @throws Exception 目标 DO 类或字段缺失时抛出。
      */
     @Test
-    void chatIntentNodeDataObjectContainsRagentAdminFields() throws Exception {
+    void chatIntentNodeDataObjectContainsIntentAdminFields() throws Exception {
         Class<?> dataObjectClass = Class.forName("com.codingx.chat.infrastructure.persistence.dataobject.ChatIntentNodeDO");
         List<String> fieldNames = List.of(dataObjectClass.getDeclaredFields()).stream().map(Field::getName).toList();
 

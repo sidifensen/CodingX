@@ -39,7 +39,7 @@ export interface AdminIntentNode {
   name: string;
   description?: string;
   intentType: string;
-  // ragent 风格配置台字段与旧 intentType/sortNo 并存，保证管理端升级时不破坏运行时分流。
+  // 意图配置台字段与旧 intentType/sortNo 并存，保证管理端升级时不破坏运行时分流。
   kbId?: string;
   level?: number;
   examples?: string | string[];

@@ -683,7 +683,7 @@ function IntentNodeDialog({
               {mode === 'create' ? '新建意图节点' : '编辑意图节点'}
             </h3>
             <p className="mt-1 text-body-sm text-secondary">
-              按 ragent 风格分组维护基础信息、示例、Prompt 与高级参数。
+              按统一配置台分组维护基础信息、示例、Prompt 与高级参数。
             </p>
           </div>
           <button

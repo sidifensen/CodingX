@@ -93,7 +93,7 @@ public class OpenAiStyleStreamParser {
     }
 
     /**
-     * 按 ragent 的兼容策略从 delta 或 message 两种结构中抽取文本字段。
+     * 按兼容策略从 delta 或 message 两种结构中抽取文本字段。
      * @param choice 首个 choice 对象。
      * @param fieldName 字段名。
      * @return 文本字段值。

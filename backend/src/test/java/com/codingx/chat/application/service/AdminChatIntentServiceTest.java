@@ -22,7 +22,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 /**
- * 验证管理端意图树服务的 ragent 字段兼容、树形组装与删除保护规则。
+ * 验证管理端意图树服务的扩展字段兼容、树形组装与删除保护规则。
  */
 @ExtendWith(MockitoExtension.class)
 class AdminChatIntentServiceTest {
@@ -91,7 +91,7 @@ class AdminChatIntentServiceTest {
     }
 
     /**
-     * 历史请求缺少 level 时，根节点应按 ragent 语义落为 0，而不是偏移成 1。
+     * 历史请求缺少 level 时，根节点应按既有语义落为 0，而不是偏移成 1。
      */
     @Test
     void saveDefaultsRootLevelToZero() {

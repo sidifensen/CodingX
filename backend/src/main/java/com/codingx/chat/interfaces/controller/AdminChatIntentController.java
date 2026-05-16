@@ -34,7 +34,7 @@ public class AdminChatIntentController {
     }
 
     /**
-     * 返回树形意图列表，供 ragent 风格配置台直接渲染左侧树。
+     * 返回树形意图列表，供意图配置台直接渲染左侧树。
      * @return 标准接口响应。
      */
     @GetMapping("/tree")

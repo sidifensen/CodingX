@@ -2,6 +2,7 @@ package com.codingx.chat.application.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
@@ -90,6 +91,21 @@ class AdminChatIntentServiceTest {
     }
 
     /**
+     * 历史请求缺少 level 时，根节点应按 ragent 语义落为 0，而不是偏移成 1。
+     */
+    @Test
+    void saveDefaultsRootLevelToZero() {
+        when(chatIntentNodeRepository.existsByIntentCode(eq("root-domain"), isNull())).thenReturn(false);
+
+        ChatIntentNode saved = adminChatIntentService.save(
+            ChatIntentNode.builder().intentCode("root-domain").name("根领域").kind(0).build()
+        );
+
+        assertEquals(0, saved.getLevel());
+        verify(chatIntentNodeRepository).save(argThat(node -> Integer.valueOf(0).equals(node.getLevel())));
+    }
+
+    /**
      * 意图编码是跨前后端引用的业务唯一键，保存时必须阻止重复编码写入。
      */
     @Test
@@ -141,6 +157,33 @@ class AdminChatIntentServiceTest {
         assertEquals(8, updated.getSortNo());
         verify(chatIntentNodeRepository).save(argThat(node ->
             Long.valueOf(3002L).equals(node.getId()) && Integer.valueOf(8).equals(node.getSortNo())
+        ));
+    }
+
+    /**
+     * 管理端将父节点改回 ROOT 时会发送空字符串，服务层需要显式归一化为 null 持久化。
+     */
+    @Test
+    void updateAllowsResetParentToRoot() {
+        when(chatIntentNodeRepository.findById(3010L)).thenReturn(
+            ChatIntentNode.builder()
+                .id(3010L)
+                .intentCode("group-ticket")
+                .parentCode("group")
+                .name("工单")
+                .createdAt(java.time.LocalDateTime.now())
+                .build()
+        );
+        when(chatIntentNodeRepository.existsByIntentCode(eq("group-ticket"), eq(3010L))).thenReturn(false);
+
+        ChatIntentNode updated = adminChatIntentService.update(
+            3010L,
+            ChatIntentNode.builder().intentCode("group-ticket").name("工单").parentCode("").kind(0).build()
+        );
+
+        assertNull(updated.getParentCode());
+        verify(chatIntentNodeRepository).save(argThat(node ->
+            Long.valueOf(3010L).equals(node.getId()) && node.getParentCode() == null
         ));
     }
 }

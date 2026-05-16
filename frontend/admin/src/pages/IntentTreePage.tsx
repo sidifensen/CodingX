@@ -192,7 +192,8 @@ function toOptionalNumber(value: string): number | undefined {
 function buildPayload(form: IntentFormState, editingNode?: AdminIntentNode | null): AdminIntentNode {
   const kind = Number(form.kind);
   const sortOrder = toOptionalNumber(form.sortOrder) ?? 0;
-  const parentCode = form.parentCode === ROOT_PARENT ? undefined : form.parentCode;
+  // 编辑节点回到根节点时显式传空串，后端会归一化为 null，避免字段缺失被误判为“不修改父节点”。
+  const parentCode = form.parentCode === ROOT_PARENT ? '' : form.parentCode;
 
   return {
     id: editingNode?.id,

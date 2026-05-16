@@ -35,7 +35,7 @@ export interface AdminTraceDetail {
 export interface AdminIntentNode {
   id?: string;
   intentCode: string;
-  parentCode?: string;
+  parentCode?: string | null;
   name: string;
   description?: string;
   intentType: string;

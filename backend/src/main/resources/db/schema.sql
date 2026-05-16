@@ -332,7 +332,7 @@ CREATE TABLE IF NOT EXISTS chat_intent_node (
     description TEXT,
     intent_type VARCHAR(32) NOT NULL,
     kb_id BIGINT,
-    level INTEGER NOT NULL DEFAULT 1,
+    level INTEGER NOT NULL DEFAULT 0,
     examples TEXT,
     collection_name VARCHAR(255),
     top_k INTEGER,
@@ -356,11 +356,11 @@ COMMENT ON COLUMN chat_intent_node.name IS '展示名称';
 COMMENT ON COLUMN chat_intent_node.description IS '语义描述';
 COMMENT ON COLUMN chat_intent_node.intent_type IS '意图类型';
 COMMENT ON COLUMN chat_intent_node.kb_id IS '关联知识库ID';
-COMMENT ON COLUMN chat_intent_node.level IS '树节点层级';
+COMMENT ON COLUMN chat_intent_node.level IS '层级 0：DOMAIN 1：CATEGORY 2：TOPIC';
 COMMENT ON COLUMN chat_intent_node.examples IS '示例问题JSON';
 COMMENT ON COLUMN chat_intent_node.collection_name IS '知识库集合名称';
 COMMENT ON COLUMN chat_intent_node.top_k IS '检索返回数量';
-COMMENT ON COLUMN chat_intent_node.kind IS '管理端节点类型';
+COMMENT ON COLUMN chat_intent_node.kind IS '类型 0：KB 1：SYSTEM 2：MCP';
 COMMENT ON COLUMN chat_intent_node.prompt_template IS '提示词模板';
 COMMENT ON COLUMN chat_intent_node.mcp_tool_id IS 'MCP 工具标识';
 COMMENT ON COLUMN chat_intent_node.param_prompt_template IS 'MCP 参数提取提示词模板';

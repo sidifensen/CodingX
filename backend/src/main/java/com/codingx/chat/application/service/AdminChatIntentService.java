@@ -98,10 +98,12 @@ public class AdminChatIntentService {
         if (existing == null) {
             throw new NotFoundException("意图节点不存在");
         }
-        ChatIntentNode request = requireNode(node).toBuilder()
+        ChatIntentNode incoming = requireNode(node);
+        ChatIntentNode request = incoming.toBuilder()
             .id(id)
-            .intentCode(StrUtil.blankToDefault(node.getIntentCode(), existing.getIntentCode()))
-            .name(StrUtil.blankToDefault(node.getName(), existing.getName()))
+            .intentCode(StrUtil.blankToDefault(incoming.getIntentCode(), existing.getIntentCode()))
+            .parentCode(normalizeParentCode(incoming.getParentCode()))
+            .name(StrUtil.blankToDefault(incoming.getName(), existing.getName()))
             .createdAt(existing.getCreatedAt())
             .updatedAt(LocalDateTime.now())
             .deleted(existing.getDeleted() == null ? 0 : existing.getDeleted())
@@ -148,10 +150,12 @@ public class AdminChatIntentService {
     private ChatIntentNode normalizeForSave(ChatIntentNode node) {
         KindType kindType = resolveKindType(node.getKind(), node.getIntentType());
         int sortValue = resolveSortValue(node);
+        String parentCode = normalizeParentCode(node.getParentCode());
         return node.toBuilder()
+            .parentCode(parentCode)
             .intentType(kindType.intentType())
             .kind(kindType.kind())
-            .level(node.getLevel() == null ? 1 : node.getLevel())
+            .level(resolveLevel(node.getLevel(), parentCode))
             .enabled(node.getEnabled() == null ? 1 : node.getEnabled())
             .sortNo(sortValue)
             .sortOrder(sortValue)
@@ -224,6 +228,17 @@ public class AdminChatIntentService {
             return node.getSortNo();
         }
         return 0;
+    }
+
+    private int resolveLevel(Integer level, String parentCode) {
+        if (level != null) {
+            return level;
+        }
+        return StrUtil.isBlank(parentCode) ? 0 : 1;
+    }
+
+    private String normalizeParentCode(String parentCode) {
+        return StrUtil.emptyToNull(StrUtil.trim(parentCode));
     }
 
     private Comparator<ChatIntentNode> nodeComparator() {

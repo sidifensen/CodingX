@@ -19,9 +19,19 @@ public class ChatQueryTermMapping {
     private Long id;
     private String sourceTerm;
     private String targetTerm;
-    private String mappingType;
+    /**
+     * 匹配类型：1-精确匹配，2-前缀匹配，3-正则匹配，4-整词匹配。
+     */
+    private Integer matchType;
+    /**
+     * 优先级，数值越小优先级越高。
+     */
+    private Integer priority;
     private Integer enabled;
-    private Integer sortNo;
+    /**
+     * 管理端备注信息。
+     */
+    private String remark;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
     private Integer deleted;

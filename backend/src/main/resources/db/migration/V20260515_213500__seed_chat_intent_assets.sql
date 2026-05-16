@@ -63,19 +63,20 @@ SET
     example_text = EXCLUDED.example_text,
     sort_no = EXCLUDED.sort_no;
 
-INSERT INTO chat_query_term_mapping (id, source_term, target_term, mapping_type, enabled, sort_no, deleted)
+INSERT INTO chat_query_term_mapping (id, source_term, target_term, match_type, priority, enabled, remark, deleted)
 VALUES
-    (5001, 'oa', 'OA系统', 'alias', 1, 1, 0),
-    (5002, 'vpn', 'VPN', 'alias', 1, 2, 0),
-    (5003, 'rag', '检索增强生成', 'alias', 1, 3, 0),
-    (5004, 'llm', '大语言模型', 'alias', 1, 4, 0)
+    (5001, 'oa', 'OA系统', 1, 1, 1, '系统简称归一化', 0),
+    (5002, 'vpn', 'VPN', 1, 2, 1, '网络术语归一化', 0),
+    (5003, 'rag', '检索增强生成', 1, 3, 1, 'AI术语归一化', 0),
+    (5004, 'llm', '大语言模型', 1, 4, 1, 'AI术语归一化', 0)
 ON CONFLICT (id) DO UPDATE
 SET
     source_term = EXCLUDED.source_term,
     target_term = EXCLUDED.target_term,
-    mapping_type = EXCLUDED.mapping_type,
+    match_type = EXCLUDED.match_type,
+    priority = EXCLUDED.priority,
     enabled = EXCLUDED.enabled,
-    sort_no = EXCLUDED.sort_no,
+    remark = EXCLUDED.remark,
     updated_at = CURRENT_TIMESTAMP,
     deleted = EXCLUDED.deleted;
 

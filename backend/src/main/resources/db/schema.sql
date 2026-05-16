@@ -462,23 +462,25 @@ CREATE TABLE IF NOT EXISTS chat_query_term_mapping (
     id BIGINT PRIMARY KEY,
     source_term VARCHAR(255) NOT NULL,
     target_term VARCHAR(255) NOT NULL,
-    mapping_type VARCHAR(32) NOT NULL,
+    match_type INTEGER NOT NULL DEFAULT 1,
+    priority INTEGER NOT NULL DEFAULT 0,
     enabled SMALLINT NOT NULL DEFAULT 1,
-    sort_no INTEGER NOT NULL DEFAULT 0,
+    remark VARCHAR(255),
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     deleted SMALLINT NOT NULL DEFAULT 0
 );
 COMMENT ON TABLE chat_query_term_mapping IS '关键词归一化映射表';
-COMMENT ON COLUMN chat_query_term_mapping.id IS 'ID';
-COMMENT ON COLUMN chat_query_term_mapping.source_term IS '源词';
+COMMENT ON COLUMN chat_query_term_mapping.id IS '映射主键ID';
+COMMENT ON COLUMN chat_query_term_mapping.source_term IS '原始词';
 COMMENT ON COLUMN chat_query_term_mapping.target_term IS '目标词';
-COMMENT ON COLUMN chat_query_term_mapping.mapping_type IS '映射类型';
-COMMENT ON COLUMN chat_query_term_mapping.enabled IS '是否启用';
-COMMENT ON COLUMN chat_query_term_mapping.sort_no IS '优先级排序';
+COMMENT ON COLUMN chat_query_term_mapping.match_type IS '匹配类型 1精确 2前缀 3正则 4整词';
+COMMENT ON COLUMN chat_query_term_mapping.priority IS '优先级 数值越小越优先';
+COMMENT ON COLUMN chat_query_term_mapping.enabled IS '是否启用 1启用 0禁用';
+COMMENT ON COLUMN chat_query_term_mapping.remark IS '映射备注';
 COMMENT ON COLUMN chat_query_term_mapping.created_at IS '创建时间';
 COMMENT ON COLUMN chat_query_term_mapping.updated_at IS '更新时间';
-COMMENT ON COLUMN chat_query_term_mapping.deleted IS '是否删除 0：正常 1：删除';
+COMMENT ON COLUMN chat_query_term_mapping.deleted IS '逻辑删除标记 0未删除 1已删除';
 
 CREATE TABLE IF NOT EXISTS chat_sample_question (
     id BIGINT PRIMARY KEY,
@@ -580,7 +582,7 @@ CREATE INDEX IF NOT EXISTS idx_chat_intent_example_code ON chat_intent_example (
 CREATE INDEX IF NOT EXISTS idx_chat_trace_run_conversation ON chat_trace_run (conversation_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_chat_trace_run_task ON chat_trace_run (task_id);
 CREATE INDEX IF NOT EXISTS idx_chat_trace_node_trace_depth ON chat_trace_node (trace_id, depth ASC, created_at ASC);
-CREATE INDEX IF NOT EXISTS idx_chat_query_term_mapping_source ON chat_query_term_mapping (source_term, enabled, sort_no ASC);
+CREATE INDEX IF NOT EXISTS idx_chat_query_term_mapping_source ON chat_query_term_mapping (source_term, enabled, priority ASC);
 CREATE INDEX IF NOT EXISTS idx_chat_sample_question_enabled ON chat_sample_question (enabled, sort_no ASC);
 CREATE INDEX IF NOT EXISTS idx_chat_runtime_setting_key ON chat_runtime_setting (setting_key, deleted);
 CREATE INDEX IF NOT EXISTS idx_chat_mcp_enabled_sort ON chat_mcp (enabled, sort_no ASC);

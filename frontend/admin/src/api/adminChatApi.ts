@@ -77,12 +77,32 @@ export interface AdminIntentNode {
 }
 
 export interface AdminQueryTermMapping {
-  id?: string;
+  id?: string | number;
   sourceTerm: string;
   targetTerm: string;
-  mappingType: string;
-  enabled?: number;
-  sortNo?: number;
+  matchType: number;
+  priority: number;
+  enabled: boolean;
+  remark?: string | null;
+  createTime?: string;
+  updateTime?: string;
+}
+
+export interface AdminQueryTermMappingPayload {
+  sourceTerm: string;
+  targetTerm: string;
+  matchType?: number;
+  priority?: number;
+  enabled?: boolean;
+  remark?: string | null;
+}
+
+export interface AdminPageResult<T> {
+  records: T[];
+  total: number;
+  size: number;
+  current: number;
+  pages: number;
 }
 
 export interface AdminRuntimeSetting {
@@ -188,14 +208,102 @@ export class AdminChatApi {
     });
   }
 
-  static async listMappings(): Promise<AdminQueryTermMapping[]> {
-    return this.request<AdminQueryTermMapping[]>('/api/admin/chat/query-term-mappings');
+  /**
+   * 分页查询关键词映射规则。
+   * @param current 当前页码（从 1 开始）
+   * @param size 每页条数
+   * @param keyword 搜索关键字（匹配原始词/目标词）
+   * @returns 映射规则分页结果
+   */
+  static async listMappingsPage(
+    current = 1,
+    size = 10,
+    keyword?: string,
+  ): Promise<AdminPageResult<AdminQueryTermMapping>> {
+    const searchParams = new URLSearchParams();
+    searchParams.set('current', String(current));
+    searchParams.set('size', String(size));
+    if (keyword && keyword.trim()) {
+      searchParams.set('keyword', keyword.trim());
+    }
+    const response = await this.request<AdminPageResult<AdminQueryTermMapping> | AdminQueryTermMapping[]>(
+      `/api/admin/chat/query-term-mappings?${searchParams.toString()}`,
+    );
+
+    // 兼容旧接口直接返回数组的场景，避免分页组件出现 NaN。
+    if (Array.isArray(response)) {
+      return {
+        records: response,
+        total: response.length,
+        size: response.length || size,
+        current: 1,
+        pages: 1,
+      };
+    }
+
+    const records = Array.isArray(response?.records) ? response.records : [];
+    const total = Number(response?.total ?? records.length ?? 0);
+    const pageSize = Number(response?.size ?? size);
+    const pageCurrent = Number(response?.current ?? current);
+    const pageCount = Number(response?.pages ?? Math.max(1, Math.ceil(total / Math.max(1, pageSize))));
+    return {
+      records,
+      total: Number.isFinite(total) ? total : records.length,
+      size: Number.isFinite(pageSize) && pageSize > 0 ? pageSize : size,
+      current: Number.isFinite(pageCurrent) && pageCurrent > 0 ? pageCurrent : 1,
+      pages: Number.isFinite(pageCount) && pageCount > 0 ? pageCount : 1,
+    };
   }
 
-  static async saveMapping(payload: AdminQueryTermMapping): Promise<AdminQueryTermMapping> {
+  /**
+   * 根据主键查询关键词映射详情。
+   * @param id 映射规则 ID
+   * @returns 映射规则详情
+   */
+  static async getMappingById(id: string | number): Promise<AdminQueryTermMapping> {
+    return this.request<AdminQueryTermMapping>(
+      `/api/admin/chat/query-term-mappings/${encodeURIComponent(String(id))}`,
+    );
+  }
+
+  /**
+   * 新增关键词映射规则。
+   * @param payload 映射规则创建参数
+   * @returns 创建后的映射规则
+   */
+  static async createMapping(payload: AdminQueryTermMappingPayload): Promise<AdminQueryTermMapping> {
     return this.request<AdminQueryTermMapping>('/api/admin/chat/query-term-mappings', {
       method: 'POST',
       body: JSON.stringify(payload),
+    });
+  }
+
+  /**
+   * 更新关键词映射规则。
+   * @param id 映射规则 ID
+   * @param payload 映射规则更新参数
+   * @returns 更新后的映射规则
+   */
+  static async updateMapping(
+    id: string | number,
+    payload: AdminQueryTermMappingPayload,
+  ): Promise<AdminQueryTermMapping> {
+    return this.request<AdminQueryTermMapping>(
+      `/api/admin/chat/query-term-mappings/${encodeURIComponent(String(id))}`,
+      {
+        method: 'PUT',
+        body: JSON.stringify(payload),
+      },
+    );
+  }
+
+  /**
+   * 删除关键词映射规则。
+   * @param id 映射规则 ID
+   */
+  static async deleteMapping(id: string | number): Promise<void> {
+    await this.request<void>(`/api/admin/chat/query-term-mappings/${encodeURIComponent(String(id))}`, {
+      method: 'DELETE',
     });
   }
 

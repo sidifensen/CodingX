@@ -15,9 +15,10 @@ public class ChatQueryTermMappingDO {
     @TableId("id") private Long id;
     @TableField("source_term") private String sourceTerm;
     @TableField("target_term") private String targetTerm;
-    @TableField("mapping_type") private String mappingType;
+    @TableField("match_type") private Integer matchType;
+    @TableField("priority") private Integer priority;
     @TableField("enabled") private Integer enabled;
-    @TableField("sort_no") private Integer sortNo;
+    @TableField("remark") private String remark;
     @TableField("created_at") private LocalDateTime createdAt;
     @TableField("updated_at") private LocalDateTime updatedAt;
     @TableField("deleted") private Integer deleted;

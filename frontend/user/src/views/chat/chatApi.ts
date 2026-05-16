@@ -2,6 +2,7 @@ import { ApiResponseEnvelope } from '../../types/auth';
 import { ApiResponseParser } from '../../api/apiResponse';
 import {
   ArtifactItem,
+  ChatSkillItem,
   ChatMessageItem,
   ConversationItem,
   ExecutionStepItem,
@@ -95,6 +96,20 @@ export class ChatApi {
       ...item,
       id: String(item.id),
       mcpCode: String(item.mcpCode ?? ''),
+    }));
+  }
+
+  /**
+   * 加载用户侧可选技能列表。
+   * @param token 当前登录令牌。
+   * @returns 技能列表。
+   */
+  static async listSkills(token: string): Promise<ChatSkillItem[]> {
+    const envelope = await this.request<ChatSkillItem[]>('/api/chat/skills', token);
+    return envelope.data.map((item) => ({
+      ...item,
+      id: String(item.id ?? ''),
+      skillCode: String(item.skillCode ?? ''),
     }));
   }
 

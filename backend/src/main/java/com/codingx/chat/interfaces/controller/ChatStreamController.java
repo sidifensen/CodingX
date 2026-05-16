@@ -61,13 +61,14 @@ public class ChatStreamController {
         @RequestParam String question,
         @RequestParam(required = false) Long conversationId,
         @RequestParam(required = false) Boolean deepThinking,
-        @RequestParam(required = false) String mcpCodes
+        @RequestParam(required = false) String mcpCodes,
+        @RequestParam(required = false) String skillCodes
     ) {
         StpUtil.checkLogin();
         Long userId = StpUtil.getLoginIdAsLong();
         Long actualConversationId = resolveConversationId(conversationId, userId);
         boolean deepThinkingEnabled = Boolean.TRUE.equals(deepThinking);
-        List<String> selectedMcpCodes = resolveMcpCodes(mcpCodes);
+        List<String> selectedMcpCodes = resolveMcpCodes(mcpCodes, skillCodes);
         SseEmitter emitter = chatSseRegistry.register(actualConversationId);
         Long taskId = cn.hutool.core.util.IdUtil.getSnowflakeNextId();
         chatSseRegistry.publish(actualConversationId, "meta", Map.of(
@@ -88,7 +89,7 @@ public class ChatStreamController {
      * @return SSE emitter。
      */
     public SseEmitter streamChat(String question, Long conversationId, Boolean deepThinking) {
-        return streamChat(question, conversationId, deepThinking, null);
+        return streamChat(question, conversationId, deepThinking, null, null);
     }
 
     /**
@@ -121,7 +122,15 @@ public class ChatStreamController {
      * @param mcpCodesParam 查询参数字符串。
      * @return 规范化 MCP 编码列表。
      */
-    private List<String> resolveMcpCodes(String mcpCodesParam) {
+    private List<String> resolveMcpCodes(String mcpCodesParam, String skillCodesParam) {
+        // 步骤：兼容前端新增 skillCodes 参数；显式传入时优先使用，便于 slash 技能选择直通运行时绑定。
+        if (skillCodesParam != null) {
+            return StrUtil.splitTrim(skillCodesParam, ',').stream()
+                .map(String::trim)
+                .filter(StrUtil::isNotBlank)
+                .distinct()
+                .collect(Collectors.toList());
+        }
         if (mcpCodesParam != null) {
             return StrUtil.splitTrim(mcpCodesParam, ',').stream()
                 .map(String::trim)

@@ -52,6 +52,8 @@ export default function ChatView({
     references,
     artifacts,
     sampleQuestions,
+    availableSkills,
+    selectedSkillCodes,
     availableMcps,
     selectedMcpCodes,
     mcpConnected,
@@ -63,6 +65,7 @@ export default function ChatView({
     isBootstrapping,
     setInputValue,
     setDeepThinkingEnabled,
+    setSelectedSkillCodes,
     setSelectedMcpCodes,
     setMcpConnected,
     submitMessage,
@@ -75,7 +78,7 @@ export default function ChatView({
   const latestMessageAnchorRef = React.useRef<HTMLDivElement | null>(null);
   // 步骤：右侧工作区默认折叠，仅在存在真实回放内容时自动展开一次，后续允许用户手动控制。
   const [isWorkspacePanelCollapsed, setIsWorkspacePanelCollapsed] = React.useState(true);
-  const [highlightedMcpIndex, setHighlightedMcpIndex] = React.useState(0);
+  const [highlightedCommandIndex, setHighlightedCommandIndex] = React.useState(0);
 
   /**
    * 解析输入中的斜杠命令查询串；非斜杠模式时返回 null。
@@ -91,33 +94,49 @@ export default function ChatView({
   }, []);
 
   const slashQuery = resolveSlashQuery(inputValue);
-  const isMcpPanelOpen = slashQuery !== null;
+  const isCommandPanelOpen = slashQuery !== null;
   const normalizedSlashQuery = (slashQuery ?? '').trim().toLowerCase();
-  const filteredMcps = React.useMemo(
-    () => availableMcps.filter((mcp) => {
-      if (!normalizedSlashQuery) {
-        return true;
-      }
-      return (
-        mcp.displayName.toLowerCase().includes(normalizedSlashQuery)
-        || mcp.mcpCode.toLowerCase().includes(normalizedSlashQuery)
-      );
-    }),
-    [availableMcps, normalizedSlashQuery],
-  );
+  const filteredCommands = React.useMemo(() => {
+    const filterByQuery = (displayName: string, code: string) =>
+      !normalizedSlashQuery
+      || displayName.toLowerCase().includes(normalizedSlashQuery)
+      || code.toLowerCase().includes(normalizedSlashQuery);
+
+    const skillCommands = availableSkills
+      .filter((skill) => filterByQuery(skill.displayName, skill.skillCode))
+      .map((skill) => ({
+        kind: 'skill' as const,
+        code: skill.skillCode,
+        displayName: skill.displayName,
+        description: skill.description,
+        category: skill.category,
+      }));
+
+    const mcpCommands = availableMcps
+      .filter((mcp) => filterByQuery(mcp.displayName, mcp.mcpCode))
+      .map((mcp) => ({
+        kind: 'mcp' as const,
+        code: mcp.mcpCode,
+        displayName: mcp.displayName,
+        description: mcp.description,
+        category: mcp.category,
+      }));
+
+    return [...skillCommands, ...mcpCommands];
+  }, [availableMcps, availableSkills, normalizedSlashQuery]);
 
   React.useEffect(() => {
-    if (!isMcpPanelOpen || filteredMcps.length === 0) {
-      setHighlightedMcpIndex(0);
+    if (!isCommandPanelOpen || filteredCommands.length === 0) {
+      setHighlightedCommandIndex(0);
       return;
     }
-    setHighlightedMcpIndex((current) => {
-      if (current >= filteredMcps.length) {
-        return filteredMcps.length - 1;
+    setHighlightedCommandIndex((current) => {
+      if (current >= filteredCommands.length) {
+        return filteredCommands.length - 1;
       }
       return current;
     });
-  }, [filteredMcps.length, isMcpPanelOpen]);
+  }, [filteredCommands.length, isCommandPanelOpen]);
 
   /**
    * 将当前高亮 MCP 加入已选列表并关闭斜杠面板。
@@ -132,8 +151,23 @@ export default function ChatView({
     });
     setMcpConnected(true);
     setInputValue('');
-    setHighlightedMcpIndex(0);
+    setHighlightedCommandIndex(0);
   }, [setInputValue, setSelectedMcpCodes, setMcpConnected]);
+
+  /**
+   * 将当前高亮技能加入已选列表并关闭斜杠面板。
+   * @param skillCode 被选择技能编码。
+   */
+  const selectSkill = React.useCallback((skillCode: string) => {
+    setSelectedSkillCodes((previous) => {
+      if (previous.includes(skillCode)) {
+        return previous;
+      }
+      return [...previous, skillCode];
+    });
+    setInputValue('');
+    setHighlightedCommandIndex(0);
+  }, [setInputValue, setSelectedSkillCodes]);
 
   /**
    * 删除一个已选 MCP 气泡。
@@ -143,11 +177,26 @@ export default function ChatView({
     setSelectedMcpCodes((previous) => previous.filter((item) => item !== mcpCode));
   }, [setSelectedMcpCodes]);
 
+  /**
+   * 删除一个已选技能气泡。
+   * @param skillCode 技能编码。
+   */
+  const removeSelectedSkill = React.useCallback((skillCode: string) => {
+    setSelectedSkillCodes((previous) => previous.filter((item) => item !== skillCode));
+  }, [setSelectedSkillCodes]);
+
   const selectedMcps = React.useMemo(
     () => selectedMcpCodes
       .map((code) => availableMcps.find((item) => item.mcpCode === code))
       .filter((mcp): mcp is NonNullable<typeof mcp> => mcp != null),
     [availableMcps, selectedMcpCodes],
+  );
+
+  const selectedSkills = React.useMemo(
+    () => selectedSkillCodes
+      .map((code) => availableSkills.find((item) => item.skillCode === code))
+      .filter((skill): skill is NonNullable<typeof skill> => skill != null),
+    [availableSkills, selectedSkillCodes],
   );
 
   React.useEffect(() => {
@@ -165,10 +214,14 @@ export default function ChatView({
    */
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (isMcpPanelOpen) {
-      if (filteredMcps.length > 0) {
-        const targetMcp = filteredMcps[Math.min(highlightedMcpIndex, filteredMcps.length - 1)];
-        selectMcp(targetMcp.mcpCode);
+    if (isCommandPanelOpen) {
+      if (filteredCommands.length > 0) {
+        const targetCommand = filteredCommands[Math.min(highlightedCommandIndex, filteredCommands.length - 1)];
+        if (targetCommand.kind === 'skill') {
+          selectSkill(targetCommand.code);
+        } else {
+          selectMcp(targetCommand.code);
+        }
       }
       return;
     }
@@ -200,27 +253,27 @@ export default function ChatView({
   }, [hasWorkspaceContent]);
 
   /**
-   * 处理输入框中的斜杠 MCP 快捷键交互。
+   * 处理输入框中的斜杠命令快捷键交互（技能 + MCP）。
    * @param event 键盘事件。
    */
   const handleInputKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
-    if (!isMcpPanelOpen) {
+    if (!isCommandPanelOpen) {
       return;
     }
     if (event.key === 'ArrowDown') {
       event.preventDefault();
-      if (!filteredMcps.length) {
+      if (!filteredCommands.length) {
         return;
       }
-      setHighlightedMcpIndex((current) => (current + 1) % filteredMcps.length);
+      setHighlightedCommandIndex((current) => (current + 1) % filteredCommands.length);
       return;
     }
     if (event.key === 'ArrowUp') {
       event.preventDefault();
-      if (!filteredMcps.length) {
+      if (!filteredCommands.length) {
         return;
       }
-      setHighlightedMcpIndex((current) => (current - 1 + filteredMcps.length) % filteredMcps.length);
+      setHighlightedCommandIndex((current) => (current - 1 + filteredCommands.length) % filteredCommands.length);
       return;
     }
     if (event.key === 'Escape') {
@@ -228,10 +281,14 @@ export default function ChatView({
       setInputValue('');
       return;
     }
-    if (event.key === 'Enter' && filteredMcps.length > 0) {
+    if (event.key === 'Enter' && filteredCommands.length > 0) {
       event.preventDefault();
-      const targetMcp = filteredMcps[Math.min(highlightedMcpIndex, filteredMcps.length - 1)];
-      selectMcp(targetMcp.mcpCode);
+      const targetCommand = filteredCommands[Math.min(highlightedCommandIndex, filteredCommands.length - 1)];
+      if (targetCommand.kind === 'skill') {
+        selectSkill(targetCommand.code);
+      } else {
+        selectMcp(targetCommand.code);
+      }
     }
   };
 
@@ -403,6 +460,23 @@ export default function ChatView({
                     />
                   </button>
                 </div>
+                {selectedSkills.length > 0 ? (
+                  <div className="mb-2 flex flex-wrap gap-2">
+                    {selectedSkills.map((skill) => (
+                      <button
+                        key={skill.skillCode}
+                        type="button"
+                        aria-label={`移除技能 ${skill.displayName}`}
+                        data-testid={`selected-skill-${skill.skillCode}`}
+                        onClick={() => removeSelectedSkill(skill.skillCode)}
+                        className="inline-flex items-center gap-1 rounded-full border border-border bg-surface-container px-2.5 py-1 text-xs text-foreground transition-colors hover:border-border-active"
+                      >
+                        <span>{skill.displayName}</span>
+                        <X size={12} />
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
                 {selectedMcps.length > 0 ? (
                   <div className="mb-2 flex flex-wrap gap-2">
                     {selectedMcps.map((mcp) => (
@@ -430,25 +504,31 @@ export default function ChatView({
                       value={inputValue}
                       onChange={(event) => setInputValue(event.target.value)}
                       onKeyDown={handleInputKeyDown}
-                      placeholder="输入 / 选择MCP，或直接提问..."
+                      placeholder="输入 / 选择技能或MCP，或直接提问..."
                       className="h-8 w-full bg-transparent text-[14px] text-foreground outline-none placeholder:text-muted"
                     />
-                    {isMcpPanelOpen ? (
+                    {isCommandPanelOpen ? (
                       <div
                         data-testid="mcp-command-panel"
                         className="absolute bottom-[calc(100%+10px)] left-0 right-0 z-20 rounded-2xl border border-border bg-surface p-2 shadow-[0_18px_44px_rgba(0,0,0,0.25)]"
                       >
-                        {filteredMcps.length > 0 ? (
+                        {filteredCommands.length > 0 ? (
                           <div className="max-h-60 overflow-y-auto">
-                            {filteredMcps.map((mcp, index) => {
-                              const isSelected = index === highlightedMcpIndex;
+                            {filteredCommands.map((command, index) => {
+                              const isSelected = index === highlightedCommandIndex;
                               return (
                                 <button
-                                  key={mcp.mcpCode}
+                                  key={`${command.kind}-${command.code}`}
                                   type="button"
-                                  data-testid={`mcp-option-${mcp.mcpCode}`}
-                                  onMouseEnter={() => setHighlightedMcpIndex(index)}
-                                  onClick={() => selectMcp(mcp.mcpCode)}
+                                  data-testid={`${command.kind}-option-${command.code}`}
+                                  onMouseEnter={() => setHighlightedCommandIndex(index)}
+                                  onClick={() => {
+                                    if (command.kind === 'skill') {
+                                      selectSkill(command.code);
+                                      return;
+                                    }
+                                    selectMcp(command.code);
+                                  }}
                                   className={`mb-1 flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm transition-colors last:mb-0 ${
                                     isSelected
                                       ? 'bg-surface-container text-foreground'
@@ -456,8 +536,13 @@ export default function ChatView({
                                   }`}
                                 >
                                   <span className="min-w-0">
-                                    <span className="block truncate text-foreground">{mcp.displayName}</span>
-                                    <span className="mt-1 block truncate font-mono text-[11px] text-muted">/{mcp.mcpCode}</span>
+                                    <span className="block truncate text-foreground">{command.displayName}</span>
+                                    <span className="mt-1 block truncate font-mono text-[11px] text-muted">
+                                      /{command.code}
+                                    </span>
+                                  </span>
+                                  <span className="ml-2 rounded-full border border-border px-2 py-0.5 text-[10px] text-muted">
+                                    {command.kind === 'skill' ? '技能' : 'MCP'}
                                   </span>
                                   {isSelected ? <Check size={14} className="text-foreground" /> : null}
                                 </button>
@@ -465,7 +550,7 @@ export default function ChatView({
                             })}
                           </div>
                         ) : (
-                          <div className="rounded-xl bg-surface-container px-3 py-2 text-sm text-muted">未匹配到 MCP</div>
+                          <div className="rounded-xl bg-surface-container px-3 py-2 text-sm text-muted">未匹配到技能或MCP</div>
                         )}
                       </div>
                     ) : null}
@@ -503,7 +588,7 @@ export default function ChatView({
                       type="submit"
                       aria-label="发送消息"
                       className="rounded-full bg-foreground p-2 text-background transition-opacity hover:opacity-90 disabled:opacity-60"
-                      disabled={!inputValue.trim() && !isMcpPanelOpen}
+                      disabled={!inputValue.trim() && !isCommandPanelOpen}
                     >
                       <ArrowUp size={17} />
                     </button>

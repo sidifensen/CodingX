@@ -140,10 +140,45 @@ class ChatStreamControllerTest {
     }
 
     /**
-     * 设置 register 方法的统一返回值。
+     * 显式传入 skillCodes 时，应优先使用前端指定列表，不回退默认启用项。
+     */
+    @Test
+    void streamChatUsesExplicitSkillCodesWhenProvided() {
+        SseEmitter emitter = new SseEmitter(0L);
+        whenRegisterReturns(emitter);
+        try (MockedStatic<StpUtil> mocked = Mockito.mockStatic(StpUtil.class)) {
+            mocked.when(StpUtil::getLoginIdAsLong).thenReturn(1001L);
+
+            SseEmitter actual = chatStreamController.streamChat(
+                "查询销售",
+                3001L,
+                false,
+                "sales_query",
+                "ticket_query,sales_query"
+            );
+
+            assertEquals(emitter, actual);
+            verify(chatSseRegistry).publish(
+                eq(3001L),
+                eq("meta"),
+                argThat(payload -> payload instanceof java.util.Map<?, ?> map
+                    && map.get("mcpCodes").equals(List.of("ticket_query", "sales_query")))
+            );
+            verify(chatStreamExecutionService).dispatch(
+                argThat(command -> command.conversationId().equals(3001L)
+                    && command.content().equals("查询销售")
+                    && !command.deepThinking()
+                    && command.mcpCodes().equals(List.of("ticket_query", "sales_query"))),
+                eq(1001L)
+            );
+        }
+    }
+
+    /**
      * @param emitter 预期返回的 emitter。
      */
     private void whenRegisterReturns(SseEmitter emitter) {
         doAnswer(invocation -> emitter).when(chatSseRegistry).register(any());
     }
 }
+

@@ -82,6 +82,20 @@ export interface SampleQuestionItem {
 }
 
 /**
+ * 描述用户可选技能项。
+ */
+export interface ChatSkillItem {
+  id: string;
+  skillCode: string;
+  displayName: string;
+  description?: string;
+  category?: string;
+  sourceType?: string;
+  enabled?: number;
+  sortNo?: number;
+}
+
+/**
  * 描述用户可选 MCP 项。
  */
 export interface McpItem {
@@ -132,6 +146,8 @@ export interface ChatWorkspaceController {
   references: ReferenceItem[];
   artifacts: ArtifactItem[];
   sampleQuestions: SampleQuestionItem[];
+  availableSkills: ChatSkillItem[];
+  selectedSkillCodes: string[];
   availableMcps: McpItem[];
   selectedMcpCodes: string[];
   mcpConnected: boolean;
@@ -143,6 +159,7 @@ export interface ChatWorkspaceController {
   isBootstrapping: boolean;
   setInputValue: (value: string) => void;
   setDeepThinkingEnabled: (value: boolean) => void;
+  setSelectedSkillCodes: (skillCodes: string[] | ((previous: string[]) => string[])) => void;
   setSelectedMcpCodes: (mcpCodes: string[] | ((previous: string[]) => string[])) => void;
   setMcpConnected: (value: boolean) => void;
   submitMessage: () => Promise<void>;

@@ -109,6 +109,43 @@ describe('ChatApi', () => {
   });
 
   /**
+   * 技能列表请求应命中用户侧技能接口并携带鉴权头。
+   */
+  it('应携带 satoken 加载技能列表', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          success: true,
+          code: 'OK',
+          message: 'success',
+          data: [
+            {
+              id: 7101,
+              skillCode: 'sales_query',
+              displayName: '销售查询',
+              description: '查询销售汇总、排名、趋势与明细',
+            },
+          ],
+        }),
+        { status: 200 },
+      ),
+    );
+
+    const result = await ChatApi.listSkills('token-123');
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      '/api/chat/skills',
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          satoken: 'token-123',
+        }),
+      }),
+    );
+    expect(result[0].skillCode).toBe('sales_query');
+    expect(result[0].displayName).toBe('销售查询');
+  });
+
+  /**
    * 会话重命名应通过专用接口提交新标题。
    */
   it('应通过专用接口提交会话重命名', async () => {

@@ -5,6 +5,7 @@ import { extractSseEvents } from './sse';
 import {
   ActiveStreamState,
   ArtifactItem,
+  ChatSkillItem,
   ChatMessageItem,
   ChatWorkspaceController,
   ConversationItem,
@@ -26,6 +27,8 @@ export function useChatWorkspace(isAuthenticated: boolean) {
   const [references, setReferences] = useState<ReferenceItem[]>([]);
   const [artifacts, setArtifacts] = useState<ArtifactItem[]>([]);
   const [sampleQuestions, setSampleQuestions] = useState<SampleQuestionItem[]>([]);
+  const [availableSkills, setAvailableSkills] = useState<ChatSkillItem[]>([]);
+  const [selectedSkillCodes, setSelectedSkillCodesState] = useState<string[]>([]);
   const [availableMcps, setAvailableMcps] = useState<McpItem[]>([]);
   const [selectedMcpCodes, setSelectedMcpCodesState] = useState<string[]>([]);
   const [mcpConnected, setMcpConnected] = useState(true);
@@ -60,6 +63,18 @@ export function useChatWorkspace(isAuthenticated: boolean) {
     setSelectedMcpCodesState(nextValue);
   };
 
+  /**
+   * 统一更新技能选择列表，支持直接赋值与函数式更新。
+   * @param nextValue 目标值或计算函数。
+   */
+  const setSelectedSkillCodes = (nextValue: string[] | ((previous: string[]) => string[])) => {
+    if (typeof nextValue === 'function') {
+      setSelectedSkillCodesState((previous) => nextValue(previous));
+      return;
+    }
+    setSelectedSkillCodesState(nextValue);
+  };
+
   useEffect(() => {
     if (!isAuthenticated) {
       resetWorkspace();
@@ -78,12 +93,15 @@ export function useChatWorkspace(isAuthenticated: boolean) {
     }
     setIsBootstrapping(true);
     try {
-      const [nextConversations, nextSampleQuestions, nextMcps] = await Promise.all([
+      const [nextConversations, nextSampleQuestions, nextSkills, nextMcps] = await Promise.all([
         loadConversations(token),
         ChatApi.listSampleQuestions(token),
+        ChatApi.listSkills(token),
         ChatApi.listMcps(token),
       ]);
       setSampleQuestions(nextSampleQuestions);
+      setAvailableSkills(nextSkills);
+      setSelectedSkillCodes(nextSkills.map((item) => item.skillCode));
       setAvailableMcps(nextMcps);
       setSelectedMcpCodes(nextMcps.map((item) => item.mcpCode));
       setMcpConnected(nextMcps.length > 0);
@@ -170,7 +188,14 @@ export function useChatWorkspace(isAuthenticated: boolean) {
 
     try {
       const response = await fetch(
-        buildStreamRequestUrl(question, activeConversationId, deepThinkingEnabled, mcpConnected, selectedMcpCodes),
+        buildStreamRequestUrl(
+          question,
+          activeConversationId,
+          deepThinkingEnabled,
+          mcpConnected,
+          selectedMcpCodes,
+          selectedSkillCodes,
+        ),
         {
         headers: {
           satoken: token,
@@ -301,6 +326,8 @@ export function useChatWorkspace(isAuthenticated: boolean) {
     setConversations([]);
     clearConversationPlayback();
     setSampleQuestions([]);
+    setAvailableSkills([]);
+    setSelectedSkillCodes([]);
     setAvailableMcps([]);
     setSelectedMcpCodes([]);
     setMcpConnected(false);
@@ -514,6 +541,8 @@ export function useChatWorkspace(isAuthenticated: boolean) {
     references,
     artifacts,
     sampleQuestions,
+    availableSkills,
+    selectedSkillCodes,
     availableMcps,
     selectedMcpCodes,
     mcpConnected,
@@ -525,6 +554,7 @@ export function useChatWorkspace(isAuthenticated: boolean) {
     isBootstrapping,
     setInputValue,
     setDeepThinkingEnabled,
+    setSelectedSkillCodes,
     setSelectedMcpCodes,
     setMcpConnected,
     submitMessage,
@@ -582,6 +612,7 @@ function buildStreamRequestUrl(
   deepThinkingEnabled: boolean,
   mcpConnected: boolean,
   selectedMcpCodes: string[],
+  selectedSkillCodes: string[],
 ) {
   const searchParams = new URLSearchParams({
     question,
@@ -594,6 +625,9 @@ function buildStreamRequestUrl(
   }
   if (mcpConnected && selectedMcpCodes.length > 0) {
     searchParams.set('mcpCodes', selectedMcpCodes.join(','));
+  }
+  if (selectedSkillCodes.length > 0) {
+    searchParams.set('skillCodes', selectedSkillCodes.join(','));
   }
   return `/api/chat/stream?${searchParams.toString()}`;
 }

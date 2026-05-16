@@ -35,6 +35,10 @@ public class NoopChatStreamPublisher implements ChatStreamPublisher {
     }
 
     @Override
+    public void publishMcpCall(Long conversationId, Object payload) {
+    }
+
+    @Override
     public void publishReference(Long conversationId, Object payload) {
     }
 

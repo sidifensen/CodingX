@@ -37,12 +37,30 @@ class ConversationQueryTermMappingServiceTest {
             return supplier.get();
         });
         when(chatQueryTermMappingRepository.findEnabledMappings()).thenReturn(List.of(
-            ChatQueryTermMapping.builder().sourceTerm("oa").targetTerm("OA系统").sortNo(1).enabled(1).build(),
-            ChatQueryTermMapping.builder().sourceTerm("rag").targetTerm("检索增强生成").sortNo(2).enabled(1).build()
+            ChatQueryTermMapping.builder().sourceTerm("oa").targetTerm("OA系统").matchType(1).priority(1).enabled(1).build(),
+            ChatQueryTermMapping.builder().sourceTerm("rag").targetTerm("检索增强生成").matchType(1).priority(2).enabled(1).build()
         ));
 
         String normalized = conversationQueryTermMappingService.normalize("oa 里接入 rag 怎么做");
 
         assertEquals("OA系统 里接入 检索增强生成 怎么做", normalized);
+    }
+
+    /**
+     * 非精确匹配规则当前不参与归一化替换，避免误伤文本。
+     */
+    @Test
+    void normalizeSkipsNonExactMatchTypeRules() {
+        when(conversationQueryTermMappingCacheManager.getMappings(org.mockito.ArgumentMatchers.any())).thenAnswer(invocation -> {
+            java.util.function.Supplier<List<ChatQueryTermMapping>> supplier = invocation.getArgument(0);
+            return supplier.get();
+        });
+        when(chatQueryTermMappingRepository.findEnabledMappings()).thenReturn(List.of(
+            ChatQueryTermMapping.builder().sourceTerm("rag").targetTerm("检索增强生成").matchType(2).priority(1).enabled(1).build()
+        ));
+
+        String normalized = conversationQueryTermMappingService.normalize("rag 怎么接入");
+
+        assertEquals("rag 怎么接入", normalized);
     }
 }

@@ -49,6 +49,11 @@ public class SseChatStreamPublisher implements ChatStreamPublisher {
     }
 
     @Override
+    public void publishMcpCall(Long conversationId, Object payload) {
+        chatSseRegistry.publish(conversationId, "mcp-call", payload);
+    }
+
+    @Override
     public void publishReference(Long conversationId, Object payload) {
         chatSseRegistry.publish(conversationId, "reference", payload);
     }

@@ -161,7 +161,7 @@ describe('ChatView', () => {
     expect(screen.queryByText(/会话 #/)).not.toBeInTheDocument();
     expect(screen.queryByText('执行回放')).not.toBeInTheDocument();
 
-    const inputWrapper = screen.getByPlaceholderText('输入 / 选择技能或MCP，或直接提问...').closest('form')?.parentElement?.parentElement;
+    const inputWrapper = screen.getByPlaceholderText('输入问题，或先选择技能/MCP...').closest('form')?.parentElement?.parentElement;
     expect(inputWrapper).not.toHaveClass('border-t');
   });
 
@@ -668,39 +668,72 @@ describe('ChatView', () => {
   });
 
   /**
-   * 输入斜杠后应打开 MCP 面板，回车选中高亮项并写入已选 MCP 列表。
+   * 输入区应通过 MCP 按钮打开滚动列表，而不是继续依赖斜杠命令面板。
    */
-  it('应支持通过斜杠命令面板回车选择MCP', async () => {
+  it('应通过MCP按钮展开滚动列表并展示可选MCP', async () => {
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '打开MCP列表' }));
+
+    const selectorPanel = screen.getByTestId('mcp-selector-panel');
+    expect(selectorPanel).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '选择MCP 销售查询' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '选择MCP 工单查询' })).toBeInTheDocument();
+  });
+
+  /**
+   * MCP 列表项点击后应更新 selectedMcpCodes，确保不再依赖气泡删除入口。
+   */
+  it('应支持通过MCP列表切换选中状态', async () => {
     const setSelectedMcpCodes = vi.fn();
-    const setInputValue = vi.fn();
 
     render(
       <ChatView
         isAuthenticated={true}
         onRequireLogin={vi.fn()}
         workspace={createWorkspace({
-          inputValue: '/ticket',
-          availableSkills: [],
           setSelectedMcpCodes,
-          setInputValue,
         })}
       />,
     );
 
-    expect(screen.getByTestId('mcp-command-panel')).toBeInTheDocument();
-    expect(screen.getByTestId('mcp-option-ticket_query')).toBeInTheDocument();
-    fireEvent.keyDown(screen.getByPlaceholderText('输入 / 选择技能或MCP，或直接提问...'), { key: 'Enter' });
+    fireEvent.click(screen.getByRole('button', { name: '打开MCP列表' }));
+    fireEvent.click(screen.getByRole('button', { name: '选择MCP 工单查询' }));
 
     expect(setSelectedMcpCodes).toHaveBeenCalled();
     const updater = setSelectedMcpCodes.mock.calls[0][0] as (codes: string[]) => string[];
-    expect(updater([])).toEqual(['ticket_query']);
-    expect(setInputValue).toHaveBeenCalledWith('');
+    expect(updater(['sales_query'])).toEqual(['sales_query', 'ticket_query']);
   });
 
   /**
-   * 斜杠命令面板应支持技能候选，并在回车时写入 selectedSkillCodes。
+   * 技能按钮应打开可滚动列表，并支持输入过滤。
    */
-  it('应支持通过斜杠命令面板回车选择技能', async () => {
+  it('应通过技能按钮展开滚动列表并展示可选技能', async () => {
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '打开技能列表' }));
+
+    const selectorPanel = screen.getByTestId('skill-selector-panel');
+    expect(selectorPanel).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '选择技能 销售查询' })).toBeInTheDocument();
+  });
+
+  /**
+   * 选择技能后应把技能引用写入输入框开头，并同步更新 selectedSkillCodes。
+   */
+  it('应在选择技能后写入输入前缀并更新技能选择', async () => {
     const setSelectedSkillCodes = vi.fn();
     const setInputValue = vi.fn();
 
@@ -709,88 +742,36 @@ describe('ChatView', () => {
         isAuthenticated={true}
         onRequireLogin={vi.fn()}
         workspace={createWorkspace({
-          inputValue: '/销',
-          availableSkills: [
-            {
-              id: '7101',
-              skillCode: 'sales_query',
-              displayName: '销售查询',
-              description: '查询销售汇总、排名、趋势与明细',
-              category: '销售',
-            },
-            {
-              id: '7102',
-              skillCode: 'ticket_query',
-              displayName: '工单查询',
-              description: '查询工单状态、列表、优先级与解决率',
-              category: '工单',
-            },
-          ],
+          inputValue: '帮我分析本周销售',
           setSelectedSkillCodes,
           setInputValue,
         })}
       />,
     );
 
-    expect(screen.getByTestId('mcp-command-panel')).toBeInTheDocument();
-    expect(screen.getByTestId('skill-option-sales_query')).toBeInTheDocument();
-
-    fireEvent.keyDown(screen.getByPlaceholderText('输入 / 选择技能或MCP，或直接提问...'), { key: 'Enter' });
+    fireEvent.click(screen.getByRole('button', { name: '打开技能列表' }));
+    fireEvent.click(screen.getByRole('button', { name: '选择技能 销售查询' }));
 
     expect(setSelectedSkillCodes).toHaveBeenCalled();
-    const updater = setSelectedSkillCodes.mock.calls[0][0] as (codes: string[]) => string[];
-    expect(updater([])).toEqual(['sales_query']);
-    expect(setInputValue).toHaveBeenCalledWith('');
+    expect(setSelectedSkillCodes.mock.calls[0][0]).toEqual(['sales_query']);
+    expect(setInputValue).toHaveBeenCalledWith('/sales_query 帮我分析本周销售');
   });
 
   /**
-   * 斜杠面板应支持上下方向键移动高亮，回车选择当前 MCP。
+   * 输入以斜杠开头时不应再触发旧命令面板，避免与按钮式列表并存。
    */
-  it('应支持键盘方向键切换MCP高亮并回车选择', async () => {
-    const setSelectedMcpCodes = vi.fn();
-    const setInputValue = vi.fn();
-
+  it('不应再渲染旧的斜杠命令面板', async () => {
     render(
       <ChatView
         isAuthenticated={true}
         onRequireLogin={vi.fn()}
         workspace={createWorkspace({
-          inputValue: '/',
-          availableSkills: [],
-          setSelectedMcpCodes,
-          setInputValue,
+          inputValue: '/ticket',
         })}
       />,
     );
 
-    const input = screen.getByPlaceholderText('输入 / 选择技能或MCP，或直接提问...');
-    fireEvent.keyDown(input, { key: 'ArrowDown' });
-    fireEvent.keyDown(input, { key: 'Enter' });
-
-    const updater = setSelectedMcpCodes.mock.calls[0][0] as (codes: string[]) => string[];
-    expect(updater([])).toEqual(['ticket_query']);
-  });
-
-  /**
-   * 已选 MCP 气泡应支持删除操作。
-   */
-  it('应支持删除已选MCP气泡', async () => {
-    const setSelectedMcpCodes = vi.fn();
-
-    render(
-      <ChatView
-        isAuthenticated={true}
-        onRequireLogin={vi.fn()}
-        workspace={createWorkspace({
-          selectedMcpCodes: ['sales_query'],
-          setSelectedMcpCodes,
-        })}
-      />,
-    );
-
-    fireEvent.click(screen.getByRole('button', { name: '移除MCP 销售查询' }));
-    const updater = setSelectedMcpCodes.mock.calls[0][0] as (codes: string[]) => string[];
-    expect(updater(['sales_query'])).toEqual([]);
+    expect(screen.queryByTestId('mcp-command-panel')).not.toBeInTheDocument();
   });
 
   /**

@@ -34,6 +34,13 @@ public interface ChatStreamPublisher {
     void publishStep(Long conversationId, Object payload);
 
     /**
+     * 发布 MCP 调用事件，供前端在消息区展示调用详情折叠面板。
+     * @param conversationId 会话标识。
+     * @param payload MCP 调用载荷。
+     */
+    void publishMcpCall(Long conversationId, Object payload);
+
+    /**
      * 发布参考来源事件，供前端右栏在搜索完成后即时展示。
      * @param conversationId 会话标识。
      * @param payload 来源载荷。

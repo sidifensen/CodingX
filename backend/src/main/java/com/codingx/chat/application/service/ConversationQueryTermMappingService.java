@@ -31,6 +31,13 @@ public class ConversationQueryTermMappingService {
             chatQueryTermMappingRepository::findEnabledMappings
         );
         for (ChatQueryTermMapping mapping : mappings) {
+            if (mapping.getEnabled() == null || mapping.getEnabled() != 1) {
+                continue;
+            }
+            // 当前版本仅支持精确匹配，其他匹配类型保留给后续扩展。
+            if (mapping.getMatchType() != null && mapping.getMatchType() != 1) {
+                continue;
+            }
             String source = mapping.getSourceTerm();
             String target = mapping.getTargetTerm();
             if (StrUtil.hasBlank(source, target)) {

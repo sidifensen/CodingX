@@ -4,7 +4,6 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import {
   ArrowUp,
-  Check,
   ChevronDown,
   CheckCircle2,
   CircleStop,
@@ -20,7 +19,6 @@ import {
   ThumbsDown,
   ThumbsUp,
   WandSparkles,
-  X,
 } from 'lucide-react';
 import { ChatWorkspaceController, McpCallItem } from './chat/types';
 
@@ -78,126 +76,92 @@ export default function ChatView({
   const latestMessageAnchorRef = React.useRef<HTMLDivElement | null>(null);
   // 步骤：右侧工作区默认折叠，仅在存在真实回放内容时自动展开一次，后续允许用户手动控制。
   const [isWorkspacePanelCollapsed, setIsWorkspacePanelCollapsed] = React.useState(true);
-  const [highlightedCommandIndex, setHighlightedCommandIndex] = React.useState(0);
+  const [isMcpSelectorOpen, setIsMcpSelectorOpen] = React.useState(false);
+  const [isSkillSelectorOpen, setIsSkillSelectorOpen] = React.useState(false);
+  const [skillSearchKeyword, setSkillSearchKeyword] = React.useState('');
+  const selectorLayerRef = React.useRef<HTMLDivElement | null>(null);
 
   /**
-   * 解析输入中的斜杠命令查询串；非斜杠模式时返回 null。
-   * @param value 输入框原始值。
-   * @returns 斜杠查询串。
+   * 过滤技能列表，支持名称与编码模糊检索。
+   * @returns 过滤后的技能列表。
    */
-  const resolveSlashQuery = React.useCallback((value: string) => {
-    const trimmedStart = value.trimStart();
-    if (!trimmedStart.startsWith('/')) {
-      return null;
+  const filteredSkills = React.useMemo(() => {
+    const normalizedKeyword = skillSearchKeyword.trim().toLowerCase();
+    if (!normalizedKeyword) {
+      return availableSkills;
     }
-    return trimmedStart.slice(1);
-  }, []);
-
-  const slashQuery = resolveSlashQuery(inputValue);
-  const isCommandPanelOpen = slashQuery !== null;
-  const normalizedSlashQuery = (slashQuery ?? '').trim().toLowerCase();
-  const filteredCommands = React.useMemo(() => {
-    const filterByQuery = (displayName: string, code: string) =>
-      !normalizedSlashQuery
-      || displayName.toLowerCase().includes(normalizedSlashQuery)
-      || code.toLowerCase().includes(normalizedSlashQuery);
-
-    const skillCommands = availableSkills
-      .filter((skill) => filterByQuery(skill.displayName, skill.skillCode))
-      .map((skill) => ({
-        kind: 'skill' as const,
-        code: skill.skillCode,
-        displayName: skill.displayName,
-        description: skill.description,
-        category: skill.category,
-      }));
-
-    const mcpCommands = availableMcps
-      .filter((mcp) => filterByQuery(mcp.displayName, mcp.mcpCode))
-      .map((mcp) => ({
-        kind: 'mcp' as const,
-        code: mcp.mcpCode,
-        displayName: mcp.displayName,
-        description: mcp.description,
-        category: mcp.category,
-      }));
-
-    return [...skillCommands, ...mcpCommands];
-  }, [availableMcps, availableSkills, normalizedSlashQuery]);
-
-  React.useEffect(() => {
-    if (!isCommandPanelOpen || filteredCommands.length === 0) {
-      setHighlightedCommandIndex(0);
-      return;
-    }
-    setHighlightedCommandIndex((current) => {
-      if (current >= filteredCommands.length) {
-        return filteredCommands.length - 1;
-      }
-      return current;
+    return availableSkills.filter((skill) => {
+      const displayName = (skill.displayName ?? '').toLowerCase();
+      const skillCode = (skill.skillCode ?? '').toLowerCase();
+      return displayName.includes(normalizedKeyword) || skillCode.includes(normalizedKeyword);
     });
-  }, [filteredCommands.length, isCommandPanelOpen]);
+  }, [availableSkills, skillSearchKeyword]);
 
   /**
-   * 将当前高亮 MCP 加入已选列表并关闭斜杠面板。
-   * @param mcpCode 被选择 MCP 编码。
+   * 点击外部区域时自动关闭 MCP/技能下拉，避免面板残留遮挡输入区。
    */
-  const selectMcp = React.useCallback((mcpCode: string) => {
+  React.useEffect(() => {
+    if (!isMcpSelectorOpen && !isSkillSelectorOpen) {
+      return undefined;
+    }
+    const closeSelectorPanels = (event: MouseEvent) => {
+      if (selectorLayerRef.current?.contains(event.target as Node)) {
+        return;
+      }
+      setIsMcpSelectorOpen(false);
+      setIsSkillSelectorOpen(false);
+    };
+    document.addEventListener('mousedown', closeSelectorPanels);
+    return () => {
+      document.removeEventListener('mousedown', closeSelectorPanels);
+    };
+  }, [isMcpSelectorOpen, isSkillSelectorOpen]);
+
+  /**
+   * 切换 MCP 启用状态，允许在弹层内直接管理本次会话可调用 MCP。
+   * @param mcpCode 被切换 MCP 编码。
+   */
+  const toggleMcpSelection = React.useCallback((mcpCode: string) => {
     setSelectedMcpCodes((previous) => {
       if (previous.includes(mcpCode)) {
-        return previous;
+        return previous.filter((item) => item !== mcpCode);
       }
       return [...previous, mcpCode];
     });
     setMcpConnected(true);
-    setInputValue('');
-    setHighlightedCommandIndex(0);
-  }, [setInputValue, setSelectedMcpCodes, setMcpConnected]);
+  }, [setSelectedMcpCodes, setMcpConnected]);
 
   /**
-   * 将当前高亮技能加入已选列表并关闭斜杠面板。
+   * 把技能引用写入输入框开头，确保用户发送内容显式带上技能前缀。
+   * @param skillCode 技能编码。
+   */
+  const prependSkillPrefixToInput = React.useCallback((skillCode: string) => {
+    const normalizedInput = inputValue.trim();
+    const plainInput = normalizedInput.replace(/^\/[a-zA-Z0-9_-]+\s*/, '');
+    const prefixedInput = `/${skillCode} ${plainInput}`.trim();
+    setInputValue(prefixedInput);
+  }, [inputValue, setInputValue]);
+
+  /**
+   * 设置当前技能并关闭技能弹层，保持“点选即引用”交互。
    * @param skillCode 被选择技能编码。
    */
   const selectSkill = React.useCallback((skillCode: string) => {
-    setSelectedSkillCodes((previous) => {
-      if (previous.includes(skillCode)) {
-        return previous;
-      }
-      return [...previous, skillCode];
-    });
-    setInputValue('');
-    setHighlightedCommandIndex(0);
-  }, [setInputValue, setSelectedSkillCodes]);
+    setSelectedSkillCodes([skillCode]);
+    prependSkillPrefixToInput(skillCode);
+    setIsSkillSelectorOpen(false);
+  }, [prependSkillPrefixToInput, setSelectedSkillCodes]);
 
   /**
-   * 删除一个已选 MCP 气泡。
-   * @param mcpCode MCP 编码。
+   * 读取当前激活技能，供技能按钮显示状态。
+   * @returns 当前技能对象。
    */
-  const removeSelectedMcp = React.useCallback((mcpCode: string) => {
-    setSelectedMcpCodes((previous) => previous.filter((item) => item !== mcpCode));
-  }, [setSelectedMcpCodes]);
-
-  /**
-   * 删除一个已选技能气泡。
-   * @param skillCode 技能编码。
-   */
-  const removeSelectedSkill = React.useCallback((skillCode: string) => {
-    setSelectedSkillCodes((previous) => previous.filter((item) => item !== skillCode));
-  }, [setSelectedSkillCodes]);
-
-  const selectedMcps = React.useMemo(
-    () => selectedMcpCodes
-      .map((code) => availableMcps.find((item) => item.mcpCode === code))
-      .filter((mcp): mcp is NonNullable<typeof mcp> => mcp != null),
-    [availableMcps, selectedMcpCodes],
-  );
-
-  const selectedSkills = React.useMemo(
-    () => selectedSkillCodes
-      .map((code) => availableSkills.find((item) => item.skillCode === code))
-      .filter((skill): skill is NonNullable<typeof skill> => skill != null),
-    [availableSkills, selectedSkillCodes],
-  );
+  const activeSkill = React.useMemo(() => {
+    if (!selectedSkillCodes.length) {
+      return null;
+    }
+    return availableSkills.find((item) => item.skillCode === selectedSkillCodes[0]) ?? null;
+  }, [availableSkills, selectedSkillCodes]);
 
   React.useEffect(() => {
     if (!messages.length) {
@@ -214,17 +178,6 @@ export default function ChatView({
    */
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (isCommandPanelOpen) {
-      if (filteredCommands.length > 0) {
-        const targetCommand = filteredCommands[Math.min(highlightedCommandIndex, filteredCommands.length - 1)];
-        if (targetCommand.kind === 'skill') {
-          selectSkill(targetCommand.code);
-        } else {
-          selectMcp(targetCommand.code);
-        }
-      }
-      return;
-    }
     if (!inputValue.trim()) {
       return;
     }
@@ -251,46 +204,6 @@ export default function ChatView({
       setIsWorkspacePanelCollapsed(false);
     }
   }, [hasWorkspaceContent]);
-
-  /**
-   * 处理输入框中的斜杠命令快捷键交互（技能 + MCP）。
-   * @param event 键盘事件。
-   */
-  const handleInputKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
-    if (!isCommandPanelOpen) {
-      return;
-    }
-    if (event.key === 'ArrowDown') {
-      event.preventDefault();
-      if (!filteredCommands.length) {
-        return;
-      }
-      setHighlightedCommandIndex((current) => (current + 1) % filteredCommands.length);
-      return;
-    }
-    if (event.key === 'ArrowUp') {
-      event.preventDefault();
-      if (!filteredCommands.length) {
-        return;
-      }
-      setHighlightedCommandIndex((current) => (current - 1 + filteredCommands.length) % filteredCommands.length);
-      return;
-    }
-    if (event.key === 'Escape') {
-      event.preventDefault();
-      setInputValue('');
-      return;
-    }
-    if (event.key === 'Enter' && filteredCommands.length > 0) {
-      event.preventDefault();
-      const targetCommand = filteredCommands[Math.min(highlightedCommandIndex, filteredCommands.length - 1)];
-      if (targetCommand.kind === 'skill') {
-        selectSkill(targetCommand.code);
-      } else {
-        selectMcp(targetCommand.code);
-      }
-    }
-  };
 
   return (
     <motion.div
@@ -441,9 +354,35 @@ export default function ChatView({
               onSubmit={(event) => void handleSubmit(event)}
               className="rounded-[24px] border border-border bg-surface shadow-[0_20px_64px_rgba(0,0,0,0.12)]"
             >
-              <div className="px-4 pb-2 pt-3">
+              <div ref={selectorLayerRef} className="px-4 pb-2 pt-3">
                 <div className="mb-2 flex items-center justify-between gap-3">
-                  <div className="text-[12px] text-muted">连接 MCP</div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      aria-label="打开MCP列表"
+                      aria-expanded={isMcpSelectorOpen}
+                      onClick={() => {
+                        setIsMcpSelectorOpen((current) => !current);
+                        setIsSkillSelectorOpen(false);
+                      }}
+                      className="inline-flex h-7 items-center rounded-full border border-border bg-surface-container px-3 text-xs text-foreground transition-colors hover:border-border-active"
+                    >
+                      MCP
+                    </button>
+                    <button
+                      type="button"
+                      aria-label="打开技能列表"
+                      aria-expanded={isSkillSelectorOpen}
+                      onClick={() => {
+                        setIsSkillSelectorOpen((current) => !current);
+                        setIsMcpSelectorOpen(false);
+                      }}
+                      className="inline-flex h-7 max-w-[180px] items-center gap-1 rounded-full border border-border bg-surface-container px-3 text-xs text-foreground transition-colors hover:border-border-active"
+                    >
+                      <span className="truncate">{activeSkill?.displayName ?? '技能'}</span>
+                      <ChevronDown size={12} className={`transition-transform ${isSkillSelectorOpen ? 'rotate-180' : ''}`} />
+                    </button>
+                  </div>
                   <button
                     type="button"
                     aria-label="切换MCP连接"
@@ -460,38 +399,83 @@ export default function ChatView({
                     />
                   </button>
                 </div>
-                {selectedSkills.length > 0 ? (
-                  <div className="mb-2 flex flex-wrap gap-2">
-                    {selectedSkills.map((skill) => (
-                      <button
-                        key={skill.skillCode}
-                        type="button"
-                        aria-label={`移除技能 ${skill.displayName}`}
-                        data-testid={`selected-skill-${skill.skillCode}`}
-                        onClick={() => removeSelectedSkill(skill.skillCode)}
-                        className="inline-flex items-center gap-1 rounded-full border border-border bg-surface-container px-2.5 py-1 text-xs text-foreground transition-colors hover:border-border-active"
-                      >
-                        <span>{skill.displayName}</span>
-                        <X size={12} />
-                      </button>
-                    ))}
+                {isMcpSelectorOpen ? (
+                  <div
+                    data-testid="mcp-selector-panel"
+                    className="mb-3 rounded-2xl border border-border bg-surface px-2 py-2"
+                  >
+                    <div className="max-h-64 overflow-y-auto">
+                      {availableMcps.map((mcp) => {
+                        const isSelected = selectedMcpCodes.includes(mcp.mcpCode);
+                        return (
+                          <button
+                            key={mcp.mcpCode}
+                            type="button"
+                            aria-label={`选择MCP ${mcp.displayName}`}
+                            onClick={() => toggleMcpSelection(mcp.mcpCode)}
+                            className={`mb-1 flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm transition-colors last:mb-0 ${
+                              isSelected
+                                ? 'bg-surface-container text-foreground'
+                                : 'text-muted hover:bg-surface-container hover:text-foreground'
+                            }`}
+                          >
+                            <span className="min-w-0">
+                              <span className="block truncate text-foreground">{mcp.displayName}</span>
+                              <span className="mt-1 block truncate font-mono text-[11px] text-muted">/{mcp.mcpCode}</span>
+                            </span>
+                            <span className="rounded-full border border-border px-2 py-0.5 text-[10px] text-muted">
+                              {isSelected ? '已启用' : '未启用'}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
                 ) : null}
-                {selectedMcps.length > 0 ? (
-                  <div className="mb-2 flex flex-wrap gap-2">
-                    {selectedMcps.map((mcp) => (
-                      <button
-                        key={mcp.mcpCode}
-                        type="button"
-                        aria-label={`移除MCP ${mcp.displayName}`}
-                        data-testid={`selected-mcp-${mcp.mcpCode}`}
-                        onClick={() => removeSelectedMcp(mcp.mcpCode)}
-                        className="inline-flex items-center gap-1 rounded-full border border-border bg-surface-container px-2.5 py-1 text-xs text-foreground transition-colors hover:border-border-active"
-                      >
-                        <span>{mcp.displayName}</span>
-                        <X size={12} />
-                      </button>
-                    ))}
+                {isSkillSelectorOpen ? (
+                  <div
+                    data-testid="skill-selector-panel"
+                    className="mb-3 rounded-2xl border border-border bg-surface px-2 py-2"
+                  >
+                    <div className="mb-2 px-1">
+                      <input
+                        type="text"
+                        value={skillSearchKeyword}
+                        onChange={(event) => setSkillSearchKeyword(event.target.value)}
+                        placeholder="搜索技能"
+                        className="h-8 w-full rounded-lg border border-border bg-surface-container px-3 text-xs text-foreground outline-none placeholder:text-muted"
+                      />
+                    </div>
+                    <div className="max-h-64 overflow-y-auto">
+                      {filteredSkills.length ? (
+                        filteredSkills.map((skill) => {
+                          const isSelected = selectedSkillCodes.includes(skill.skillCode);
+                          return (
+                            <button
+                              key={skill.skillCode}
+                              type="button"
+                              aria-label={`选择技能 ${skill.displayName}`}
+                              onClick={() => selectSkill(skill.skillCode)}
+                              className={`mb-1 flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm transition-colors last:mb-0 ${
+                                isSelected
+                                  ? 'bg-surface-container text-foreground'
+                                  : 'text-muted hover:bg-surface-container hover:text-foreground'
+                              }`}
+                            >
+                              <span className="min-w-0">
+                                <span className="block truncate text-foreground">{skill.displayName}</span>
+                                <span className="mt-1 block truncate font-mono text-[11px] text-muted">/{skill.skillCode}</span>
+                              </span>
+                              {isSelected ? (
+                                <span className="rounded-full border border-border px-2 py-0.5 text-[10px] text-muted">已选中</span>
+                              ) : null}
+                            </button>
+                          );
+                        })
+                      ) : (
+                        <div className="rounded-xl bg-surface-container px-3 py-2 text-sm text-muted">未匹配到技能</div>
+                      )}
+                    </div>
                   </div>
                 ) : null}
                 <div className="flex items-center gap-3">
@@ -503,57 +487,9 @@ export default function ChatView({
                       type="text"
                       value={inputValue}
                       onChange={(event) => setInputValue(event.target.value)}
-                      onKeyDown={handleInputKeyDown}
-                      placeholder="输入 / 选择技能或MCP，或直接提问..."
+                      placeholder="输入问题，或先选择技能/MCP..."
                       className="h-8 w-full bg-transparent text-[14px] text-foreground outline-none placeholder:text-muted"
                     />
-                    {isCommandPanelOpen ? (
-                      <div
-                        data-testid="mcp-command-panel"
-                        className="absolute bottom-[calc(100%+10px)] left-0 right-0 z-20 rounded-2xl border border-border bg-surface p-2 shadow-[0_18px_44px_rgba(0,0,0,0.25)]"
-                      >
-                        {filteredCommands.length > 0 ? (
-                          <div className="max-h-60 overflow-y-auto">
-                            {filteredCommands.map((command, index) => {
-                              const isSelected = index === highlightedCommandIndex;
-                              return (
-                                <button
-                                  key={`${command.kind}-${command.code}`}
-                                  type="button"
-                                  data-testid={`${command.kind}-option-${command.code}`}
-                                  onMouseEnter={() => setHighlightedCommandIndex(index)}
-                                  onClick={() => {
-                                    if (command.kind === 'skill') {
-                                      selectSkill(command.code);
-                                      return;
-                                    }
-                                    selectMcp(command.code);
-                                  }}
-                                  className={`mb-1 flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm transition-colors last:mb-0 ${
-                                    isSelected
-                                      ? 'bg-surface-container text-foreground'
-                                      : 'text-muted hover:bg-surface-container hover:text-foreground'
-                                  }`}
-                                >
-                                  <span className="min-w-0">
-                                    <span className="block truncate text-foreground">{command.displayName}</span>
-                                    <span className="mt-1 block truncate font-mono text-[11px] text-muted">
-                                      /{command.code}
-                                    </span>
-                                  </span>
-                                  <span className="ml-2 rounded-full border border-border px-2 py-0.5 text-[10px] text-muted">
-                                    {command.kind === 'skill' ? '技能' : 'MCP'}
-                                  </span>
-                                  {isSelected ? <Check size={14} className="text-foreground" /> : null}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        ) : (
-                          <div className="rounded-xl bg-surface-container px-3 py-2 text-sm text-muted">未匹配到技能或MCP</div>
-                        )}
-                      </div>
-                    ) : null}
                   </div>
                   <button
                     type="button"
@@ -588,7 +524,7 @@ export default function ChatView({
                       type="submit"
                       aria-label="发送消息"
                       className="rounded-full bg-foreground p-2 text-background transition-opacity hover:opacity-90 disabled:opacity-60"
-                      disabled={!inputValue.trim() && !isCommandPanelOpen}
+                      disabled={!inputValue.trim()}
                     >
                       <ArrowUp size={17} />
                     </button>

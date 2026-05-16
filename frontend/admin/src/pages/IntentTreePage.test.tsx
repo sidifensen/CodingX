@@ -134,6 +134,22 @@ describe('IntentTreePage', () => {
     expect(within(dialog).getByText('高级设置')).toBeInTheDocument();
   });
 
+  it('switches to cascade columns view and allows selecting child nodes', async () => {
+    render(<IntentTreePage />);
+
+    const treePanel = await screen.findByRole('region', { name: '意图树结构' });
+    fireEvent.click(within(treePanel).getByRole('button', { name: '分栏级联' }));
+
+    expect(within(treePanel).getByTestId('intent-cascade-columns')).toBeInTheDocument();
+    expect(within(treePanel).queryByRole('button', { name: '收起 企业知识' })).not.toBeInTheDocument();
+
+    fireEvent.click(within(treePanel).getByRole('button', { name: '级联选择 报销制度' }));
+
+    const detailPanel = screen.getByRole('region', { name: '节点详情' });
+    expect(within(detailPanel).getByText('expense_lookup')).toBeInTheDocument();
+    expect(within(detailPanel).getByText('报销制度')).toBeInTheDocument();
+  });
+
   it('validates MCP tool id before creating an MCP node', async () => {
     render(<IntentTreePage />);
 

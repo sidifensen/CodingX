@@ -17,6 +17,7 @@ const KIND_OPTIONS = [
 ];
 
 type DialogMode = 'create' | 'edit';
+type IntentTreeViewMode = 'tree' | 'cascade';
 
 interface IntentFormState {
   intentCode: string;
@@ -148,6 +149,54 @@ function buildTreeOptions(nodes: AdminIntentNode[], prefix = '', result: TreeOpt
   return result;
 }
 
+function findPathByCode(
+  nodes: AdminIntentNode[],
+  code?: string | null,
+  trail: AdminIntentNode[] = [],
+): AdminIntentNode[] {
+  if (!code) {
+    return [];
+  }
+
+  for (const node of nodes) {
+    const nextTrail = [...trail, node];
+    if (node.intentCode === code) {
+      return nextTrail;
+    }
+    const found = findPathByCode(node.children ?? [], code, nextTrail);
+    if (found.length > 0) {
+      return found;
+    }
+  }
+  return [];
+}
+
+function buildCascadeColumns(nodes: AdminIntentNode[], selectedCode?: string | null): AdminIntentNode[][] {
+  if (nodes.length === 0) {
+    return [];
+  }
+
+  const columns: AdminIntentNode[][] = [nodes];
+  const path = findPathByCode(nodes, selectedCode);
+  let currentLevelNodes = nodes;
+
+  // 分栏级联按“当前选中路径”逐列展开子节点，保证点击任意祖先节点时列内容立即对齐。
+  for (const node of path) {
+    const matched = currentLevelNodes.find((candidate) => candidate.intentCode === node.intentCode);
+    if (!matched) {
+      break;
+    }
+    const children = matched.children ?? [];
+    if (children.length === 0) {
+      break;
+    }
+    columns.push(children);
+    currentLevelNodes = children;
+  }
+
+  return columns;
+}
+
 function defaultFormFromNode(node: AdminIntentNode): IntentFormState {
   const kind = resolveKind(node);
   return {
@@ -227,6 +276,7 @@ export function IntentTreePage() {
   const [loading, setLoading] = React.useState(true);
   const [errorMessage, setErrorMessage] = React.useState('');
   const [selectedCode, setSelectedCode] = React.useState<string | null>(null);
+  const [treeViewMode, setTreeViewMode] = React.useState<IntentTreeViewMode>('tree');
   const [expandedMap, setExpandedMap] = React.useState<Record<string, boolean>>({});
   const [dialogOpen, setDialogOpen] = React.useState(false);
   const [dialogMode, setDialogMode] = React.useState<DialogMode>('create');
@@ -235,6 +285,12 @@ export function IntentTreePage() {
   const [deleteTarget, setDeleteTarget] = React.useState<AdminIntentNode | null>(null);
 
   const selectedNode = React.useMemo(() => findNodeByCode(tree, selectedCode), [tree, selectedCode]);
+  const selectedPath = React.useMemo(() => findPathByCode(tree, selectedCode), [tree, selectedCode]);
+  const selectedPathCodes = React.useMemo(
+    () => new Set(selectedPath.map((node) => node.intentCode)),
+    [selectedPath],
+  );
+  const cascadeColumns = React.useMemo(() => buildCascadeColumns(tree, selectedCode), [tree, selectedCode]);
   const treeOptions = React.useMemo(() => buildTreeOptions(tree), [tree]);
 
   const reload = React.useCallback(async () => {
@@ -329,12 +385,49 @@ export function IntentTreePage() {
           className="rounded-2xl border border-border-hairline bg-surface-container-lowest shadow-sm xl:flex xl:min-h-0 xl:flex-col xl:overflow-hidden"
         >
           <div className="border-b border-border-hairline px-lg py-md">
-            <h3 className="font-title-md text-title-md text-ink">意图树结构</h3>
-            <p className="mt-1 text-body-sm text-secondary">点击节点查看详情，徽标展示层级与运行类型。</p>
+            <div className="flex flex-col gap-sm lg:flex-row lg:items-start lg:justify-between">
+              <div>
+                <h3 className="font-title-md text-title-md text-ink">意图树结构</h3>
+                <p className="mt-1 text-body-sm text-secondary">
+                  点击节点查看详情，徽标展示层级与运行类型。
+                </p>
+              </div>
+              <div className="inline-flex items-center rounded-lg border border-border-hairline bg-surface-container-low p-1">
+                <button
+                  type="button"
+                  aria-pressed={treeViewMode === 'tree'}
+                  className={[
+                    'rounded-md px-sm py-1 text-[12px] font-medium transition-colors',
+                    treeViewMode === 'tree'
+                      ? 'bg-surface-container text-ink shadow-sm'
+                      : 'text-secondary hover:bg-surface-container-lowest hover:text-ink',
+                  ].join(' ')}
+                  onClick={() => setTreeViewMode('tree')}
+                >
+                  树形结构
+                </button>
+                <button
+                  type="button"
+                  aria-pressed={treeViewMode === 'cascade'}
+                  className={[
+                    'rounded-md px-sm py-1 text-[12px] font-medium transition-colors',
+                    treeViewMode === 'cascade'
+                      ? 'bg-surface-container text-ink shadow-sm'
+                      : 'text-secondary hover:bg-surface-container-lowest hover:text-ink',
+                  ].join(' ')}
+                  onClick={() => setTreeViewMode('cascade')}
+                >
+                  分栏级联
+                </button>
+              </div>
+            </div>
           </div>
           <div
             data-testid="intent-tree-list-scroll"
-            className="space-y-xs p-md xl:flex-1 xl:min-h-0 xl:overflow-y-auto"
+            className={[
+              'p-md xl:flex-1 xl:min-h-0 xl:overflow-y-auto',
+              treeViewMode === 'tree' ? 'space-y-xs' : '',
+            ].join(' ')}
           >
             {loading ? (
               <div className="rounded-xl bg-surface-container-low px-lg py-xl text-center text-secondary">
@@ -345,22 +438,31 @@ export function IntentTreePage() {
                 暂无节点，请先创建根节点。
               </div>
             ) : (
-              tree.map((node) => (
-                <IntentTreeNode
-                  key={node.intentCode}
-                  node={node}
-                  depth={0}
+              treeViewMode === 'tree' ? (
+                tree.map((node) => (
+                  <IntentTreeNode
+                    key={node.intentCode}
+                    node={node}
+                    depth={0}
+                    selectedCode={selectedCode}
+                    expandedMap={expandedMap}
+                    onToggle={(intentCode) =>
+                      setExpandedMap((previous) => ({
+                        ...previous,
+                        [intentCode]: !(previous[intentCode] ?? true),
+                      }))
+                    }
+                    onSelect={setSelectedCode}
+                  />
+                ))
+              ) : (
+                <IntentCascadeColumns
+                  columns={cascadeColumns}
                   selectedCode={selectedCode}
-                  expandedMap={expandedMap}
-                  onToggle={(intentCode) =>
-                    setExpandedMap((previous) => ({
-                      ...previous,
-                      [intentCode]: !(previous[intentCode] ?? true),
-                    }))
-                  }
+                  selectedPathCodes={selectedPathCodes}
                   onSelect={setSelectedCode}
                 />
-              ))
+              )
             )}
           </div>
         </section>
@@ -498,6 +600,74 @@ function IntentTreeNode({
             />
           ))
         : null}
+    </div>
+  );
+}
+
+interface IntentCascadeColumnsProps {
+  columns: AdminIntentNode[][];
+  selectedCode: string | null;
+  selectedPathCodes: Set<string>;
+  onSelect: (intentCode: string) => void;
+}
+
+function IntentCascadeColumns({
+  columns,
+  selectedCode,
+  selectedPathCodes,
+  onSelect,
+}: IntentCascadeColumnsProps) {
+  return (
+    <div data-testid="intent-cascade-columns" className="flex h-full min-h-0 gap-sm overflow-x-auto pb-xs">
+      {columns.map((column, columnIndex) => (
+        <div
+          key={`cascade-column-${columnIndex}`}
+          className="min-w-[220px] flex-1 rounded-xl border border-border-hairline bg-surface-container-low"
+        >
+          <div className="border-b border-border-hairline px-sm py-xs">
+            <p className="text-[12px] font-medium text-secondary">
+              {columnIndex === 0 ? 'ROOT' : `第 ${columnIndex + 1} 级`}
+            </p>
+          </div>
+          <div className="space-y-xs p-sm">
+            {column.map((node) => {
+              const isSelected = selectedCode === node.intentCode;
+              const inPath = selectedPathCodes.has(node.intentCode);
+              return (
+                <button
+                  key={node.intentCode}
+                  type="button"
+                  aria-label={`级联选择 ${node.name}`}
+                  className={[
+                    'w-full rounded-lg border px-sm py-sm text-left transition-colors',
+                    isSelected
+                      ? 'border-border-strong bg-surface-container text-ink shadow-sm'
+                      : inPath
+                        ? 'border-border-hairline bg-surface-container-lowest text-ink'
+                        : 'border-transparent text-secondary hover:bg-surface-container-lowest hover:text-ink',
+                  ].join(' ')}
+                  onClick={() => onSelect(node.intentCode)}
+                >
+                  <div className="flex items-start justify-between gap-xs">
+                    <div className="min-w-0">
+                      <span className="block truncate font-medium text-ink">{node.name}</span>
+                      <span className="mt-0.5 block truncate font-data-mono text-[11px] text-secondary">
+                        {node.intentCode}
+                      </span>
+                    </div>
+                    <div className="flex shrink-0 flex-wrap justify-end gap-xs">
+                      <IntentBadge>{resolveLevelLabel(node.level)}</IntentBadge>
+                      <IntentBadge tone={resolveKind(node) === 2 ? 'strong' : 'soft'}>
+                        {resolveKindLabel(resolveKind(node))}
+                      </IntentBadge>
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

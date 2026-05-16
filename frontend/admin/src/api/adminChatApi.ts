@@ -232,16 +232,19 @@ export class AdminChatApi {
 
     // 兼容旧接口直接返回数组的场景，避免分页组件出现 NaN。
     if (Array.isArray(response)) {
+      const legacyRecords = response.map((item) => normalizeLegacyMapping(item));
       return {
-        records: response,
-        total: response.length,
-        size: response.length || size,
+        records: legacyRecords,
+        total: legacyRecords.length,
+        size: legacyRecords.length || size,
         current: 1,
         pages: 1,
       };
     }
 
-    const records = Array.isArray(response?.records) ? response.records : [];
+    const records = Array.isArray(response?.records)
+      ? response.records.map((item) => normalizeLegacyMapping(item))
+      : [];
     const total = Number(response?.total ?? records.length ?? 0);
     const pageSize = Number(response?.size ?? size);
     const pageCurrent = Number(response?.current ?? current);
@@ -392,4 +395,49 @@ export class AdminChatApi {
     ApiResponseParser.assertSuccess(response, envelope, '管理端请求失败');
     return envelope.data;
   }
+}
+
+function normalizeLegacyMapping(input: unknown): AdminQueryTermMapping {
+  const item = (input ?? {}) as Record<string, unknown>;
+  const matchTypeValue = Number(item.matchType ?? convertLegacyMatchType(item.mappingType));
+  const priorityValue = Number(item.priority ?? item.sortNo ?? 0);
+  return {
+    id: (item.id as string | number | undefined) ?? undefined,
+    sourceTerm: String(item.sourceTerm ?? ''),
+    targetTerm: String(item.targetTerm ?? ''),
+    matchType: Number.isFinite(matchTypeValue) && matchTypeValue > 0 ? matchTypeValue : 1,
+    priority: Number.isFinite(priorityValue) ? priorityValue : 0,
+    enabled: toBooleanEnabled(item.enabled),
+    remark: (item.remark as string | null | undefined) ?? null,
+    createTime: (item.createTime as string | undefined) ?? (item.createdAt as string | undefined),
+    updateTime: (item.updateTime as string | undefined) ?? (item.updatedAt as string | undefined),
+  };
+}
+
+function convertLegacyMatchType(mappingType: unknown): number {
+  const normalized = String(mappingType ?? '').toLowerCase();
+  if (normalized === 'prefix') {
+    return 2;
+  }
+  if (normalized === 'regex') {
+    return 3;
+  }
+  if (normalized === 'word') {
+    return 4;
+  }
+  return 1;
+}
+
+function toBooleanEnabled(enabled: unknown): boolean {
+  if (typeof enabled === 'boolean') {
+    return enabled;
+  }
+  if (typeof enabled === 'number') {
+    return enabled === 1;
+  }
+  if (typeof enabled === 'string') {
+    const normalized = enabled.toLowerCase();
+    return normalized === '1' || normalized === 'true';
+  }
+  return true;
 }

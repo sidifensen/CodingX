@@ -18,6 +18,8 @@ import com.codingx.chat.interfaces.request.SendChatMessageRequest;
 import com.codingx.chat.interfaces.response.ChatConversationResponse;
 import com.codingx.chat.interfaces.response.ChatMessageResponse;
 import com.codingx.common.model.ApiResponse;
+import com.codingx.mcp.domain.model.ChatMcp;
+import com.codingx.mcp.domain.repository.ChatMcpRepository;
 import jakarta.validation.Valid;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -56,6 +58,7 @@ public class ChatController {
      * ChatReactionService 依赖。
      */
     private final ChatReactionService chatReactionService;
+    private final ChatMcpRepository chatMcpRepository;
     private final ChatSkillRepository chatSkillRepository;
 
     /**
@@ -105,7 +108,14 @@ public class ChatController {
             .map(ChatSkill::getSkillCode)
             .filter(StrUtil::isNotBlank)
             .collect(Collectors.toList());
-        chatApplicationService.sendMessage(new SendChatMessageCommand(conversationId, request.content(), false, selectedSkillCodes), StpUtil.getLoginIdAsLong());
+        List<String> selectedMcpCodes = chatMcpRepository.findAllEnabled().stream()
+            .map(ChatMcp::getMcpCode)
+            .filter(StrUtil::isNotBlank)
+            .collect(Collectors.toList());
+        chatApplicationService.sendMessage(
+            new SendChatMessageCommand(conversationId, request.content(), false, selectedMcpCodes, selectedSkillCodes),
+            StpUtil.getLoginIdAsLong()
+        );
         return ApiResponse.successMessage("message processed");
     }
 

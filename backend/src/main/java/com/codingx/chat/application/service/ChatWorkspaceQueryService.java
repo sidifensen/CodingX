@@ -10,6 +10,8 @@ import com.codingx.chat.domain.repository.ChatExecutionStepRepository;
 import com.codingx.chat.domain.repository.ChatMessageArtifactRepository;
 import com.codingx.chat.domain.repository.ChatMessageReferenceRepository;
 import com.codingx.chat.domain.repository.ChatSkillRepository;
+import com.codingx.mcp.domain.model.ChatMcp;
+import com.codingx.mcp.domain.repository.ChatMcpRepository;
 import java.util.List;
 import java.util.Comparator;
 import lombok.RequiredArgsConstructor;
@@ -26,6 +28,7 @@ public class ChatWorkspaceQueryService {
     private final ChatExecutionStepRepository chatExecutionStepRepository;
     private final ChatMessageReferenceRepository chatMessageReferenceRepository;
     private final ChatMessageArtifactRepository chatMessageArtifactRepository;
+    private final ChatMcpRepository chatMcpRepository;
     private final ChatSkillRepository chatSkillRepository;
 
     /**
@@ -70,6 +73,18 @@ public class ChatWorkspaceQueryService {
         return latestRun(conversationId)
             // 历史运行记录可能未补齐 taskId；此时回退 runId，兼容旧数据与单测构造。
             .map(run -> chatSkillRepository.findByTaskId(run.getTaskId() == null ? run.getId() : run.getTaskId()))
+            .orElse(List.of());
+    }
+
+    /**
+     * 返回当前会话最新运行任务绑定的 MCP 列表，供工作区展示“当前 MCP”。
+     * @param conversationId 会话标识。
+     * @return MCP 列表。
+     */
+    public List<ChatMcp> listCurrentMcps(Long conversationId) {
+        return latestRun(conversationId)
+            // 历史运行记录可能未补齐 taskId；此时回退 runId，兼容旧数据与单测构造。
+            .map(run -> chatMcpRepository.findByTaskId(run.getTaskId() == null ? run.getId() : run.getTaskId()))
             .orElse(List.of());
     }
 

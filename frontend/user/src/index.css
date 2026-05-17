@@ -104,7 +104,10 @@
     border: 1px solid transparent;
     border-radius: 8px;
     color: var(--text-muted);
-    transition: background-color 160ms ease, color 160ms ease, border-color 160ms ease;
+    transition:
+      background-color 160ms ease,
+      color 160ms ease,
+      border-color 160ms ease;
   }
 
   .chat-message-action-button:hover {

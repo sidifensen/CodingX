@@ -27,11 +27,11 @@ export default function McpView({
    * @param mcpCode MCP 编码。
    */
   const toggleMcp = (mcpCode: string) => {
-    setSelectedMcpCodes((previous) => (
+    setSelectedMcpCodes((previous) =>
       previous.includes(mcpCode)
         ? previous.filter((item) => item !== mcpCode)
-        : [...previous, mcpCode]
-    ));
+        : [...previous, mcpCode],
+    );
   };
 
   return (
@@ -44,7 +44,9 @@ export default function McpView({
       <div className="mx-auto w-full max-w-6xl">
         <div className="mb-8 flex flex-col gap-4 rounded-2xl border border-border bg-surface-container-low p-6 md:flex-row md:items-center md:justify-between">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight text-foreground md:text-4xl">MCP 管理</h1>
+            <h1 className="text-3xl font-bold tracking-tight text-foreground md:text-4xl">
+              MCP 管理
+            </h1>
             <p className="mt-2 text-sm leading-6 text-muted">
               选择要在对话中可调用的 MCP，并控制当前会话是否连接 MCP。
             </p>
@@ -99,9 +101,13 @@ export default function McpView({
                         <PlugZap size={16} />
                         <span className="truncate">{mcp.displayName}</span>
                       </span>
-                      <span className="mt-1 block font-mono text-[11px] text-muted">/{mcp.mcpCode}</span>
+                      <span className="mt-1 block font-mono text-[11px] text-muted">
+                        /{mcp.mcpCode}
+                      </span>
                       {mcp.description ? (
-                        <span className="mt-2 block text-xs leading-5 text-muted">{mcp.description}</span>
+                        <span className="mt-2 block text-xs leading-5 text-muted">
+                          {mcp.description}
+                        </span>
                       ) : null}
                     </span>
                     <span className={`ml-3 mt-0.5 ${checked ? 'text-foreground' : 'text-muted'}`}>

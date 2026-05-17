@@ -21,7 +21,10 @@ export class AuthApi {
     });
 
     // 步骤：解析响应体，统一处理网络层与业务层错误。
-    const envelope = await ApiResponseParser.parseEnvelope<LoginResponseData>(response, '登录失败，请检查账号或密码');
+    const envelope = await ApiResponseParser.parseEnvelope<LoginResponseData>(
+      response,
+      '登录失败，请检查账号或密码',
+    );
     ApiResponseParser.assertSuccess(response, envelope, '登录失败，请检查账号或密码');
     return envelope.data;
   }
@@ -57,7 +60,10 @@ export class AuthApi {
       },
     });
 
-    const envelope = await ApiResponseParser.parseEnvelope<MeResponseData>(response, '登录已失效，请重新登录');
+    const envelope = await ApiResponseParser.parseEnvelope<MeResponseData>(
+      response,
+      '登录已失效，请重新登录',
+    );
     ApiResponseParser.assertSuccess(response, envelope, '登录已失效，请重新登录');
     return envelope.data;
   }

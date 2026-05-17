@@ -6,6 +6,7 @@ import com.codingx.chat.domain.model.ChatMessageArtifact;
 import com.codingx.chat.domain.model.ChatMessageReference;
 import com.codingx.chat.domain.model.ChatSkill;
 import com.codingx.common.model.ApiResponse;
+import com.codingx.mcp.domain.model.ChatMcp;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -41,5 +42,10 @@ public class ChatWorkspaceController {
     @GetMapping("/{conversationId}/current-skills")
     public ApiResponse<List<ChatSkill>> listCurrentSkills(@PathVariable Long conversationId) {
         return ApiResponse.success(chatWorkspaceQueryService.listCurrentSkills(conversationId));
+    }
+
+    @GetMapping("/{conversationId}/current-mcps")
+    public ApiResponse<List<ChatMcp>> listCurrentMcps(@PathVariable Long conversationId) {
+        return ApiResponse.success(chatWorkspaceQueryService.listCurrentMcps(conversationId));
     }
 }

@@ -15,9 +15,12 @@ import com.codingx.chat.application.service.ChatConversationApplicationService;
 import com.codingx.chat.application.service.ChatStreamExecutionService;
 import com.codingx.chat.domain.model.ChatConversation;
 import com.codingx.chat.domain.model.ChatConversationStatus;
+import com.codingx.chat.domain.model.ChatMessage;
+import com.codingx.chat.domain.model.ChatSkill;
 import com.codingx.chat.infrastructure.stream.ChatSseRegistry;
 import com.codingx.mcp.domain.model.ChatMcp;
 import com.codingx.mcp.domain.repository.ChatMcpRepository;
+import com.codingx.chat.domain.repository.ChatSkillRepository;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -59,6 +62,12 @@ class ChatStreamControllerTest {
     private ChatMcpRepository chatMcpRepository;
 
     /**
+     * 技能仓储依赖。
+     */
+    @Mock
+    private ChatSkillRepository chatSkillRepository;
+
+    /**
      * 被测控制器。
      */
     @InjectMocks
@@ -74,6 +83,12 @@ class ChatStreamControllerTest {
         when(chatMcpRepository.findAllEnabled()).thenReturn(List.of(
             ChatMcp.builder().id(1L).mcpCode("sales_query").displayName("销售查询").category("销售").enabled(1).sortNo(1).build()
         ));
+        when(chatSkillRepository.findAllEnabled()).thenReturn(List.of(
+            ChatSkill.builder().id(2L).skillCode("ticket_query").displayName("工单查询").category("工单").enabled(1).sortNo(1).build()
+        ));
+        when(chatConversationApplicationService.listMessages(1L, 1001L)).thenReturn(List.of(
+            ChatMessage.userMessage(1L, "历史消息")
+        ));
         try (MockedStatic<StpUtil> mocked = Mockito.mockStatic(StpUtil.class)) {
             mocked.when(StpUtil::getLoginIdAsLong).thenReturn(1001L);
 
@@ -88,13 +103,15 @@ class ChatStreamControllerTest {
                     && map.get("conversationId").equals(1L)
                     && map.get("deepThinking").equals(true)
                     && map.get("mcpCodes").equals(List.of("sales_query"))
+                    && map.get("skillCodes").equals(List.of("ticket_query"))
                     && map.containsKey("taskId"))
             );
             verify(chatStreamExecutionService).dispatch(
                 argThat(command -> command.conversationId().equals(1L)
                     && command.content().equals("你好")
                     && command.deepThinking()
-                    && command.mcpCodes().equals(List.of("sales_query"))),
+                    && command.mcpCodes().equals(List.of("sales_query"))
+                    && command.skillCodes().equals(List.of("ticket_query"))),
                 eq(1001L)
             );
         }
@@ -109,6 +126,9 @@ class ChatStreamControllerTest {
         whenRegisterReturns(emitter);
         when(chatMcpRepository.findAllEnabled()).thenReturn(List.of(
             ChatMcp.builder().id(1L).mcpCode("sales_query").displayName("销售查询").category("销售").enabled(1).sortNo(1).build()
+        ));
+        when(chatSkillRepository.findAllEnabled()).thenReturn(List.of(
+            ChatSkill.builder().id(2L).skillCode("ticket_query").displayName("工单查询").category("工单").enabled(1).sortNo(1).build()
         ));
         ChatConversation conversation = ChatConversation.create(2001L, "New Conversation", 1001L, ChatConversationStatus.ACTIVE);
         when(chatConversationApplicationService.createConversation(any(CreateConversationCommand.class), any(Long.class))).thenReturn(conversation);
@@ -127,13 +147,15 @@ class ChatStreamControllerTest {
                     && map.get("conversationId").equals(2001L)
                     && map.get("deepThinking").equals(false)
                     && map.get("mcpCodes").equals(List.of("sales_query"))
+                    && map.get("skillCodes").equals(List.of("ticket_query"))
                     && map.containsKey("taskId"))
             );
             verify(chatStreamExecutionService).dispatch(
                 argThat(command -> command.conversationId().equals(2001L)
                     && command.content().equals("新的问题")
                     && !command.deepThinking()
-                    && command.mcpCodes().equals(List.of("sales_query"))),
+                    && command.mcpCodes().equals(List.of("sales_query"))
+                    && command.skillCodes().equals(List.of("ticket_query"))),
                 eq(1001L)
             );
         }
@@ -146,6 +168,9 @@ class ChatStreamControllerTest {
     void streamChatUsesExplicitSkillCodesWhenProvided() {
         SseEmitter emitter = new SseEmitter(0L);
         whenRegisterReturns(emitter);
+        when(chatConversationApplicationService.listMessages(3001L, 1001L)).thenReturn(List.of(
+            ChatMessage.userMessage(3001L, "历史消息")
+        ));
         try (MockedStatic<StpUtil> mocked = Mockito.mockStatic(StpUtil.class)) {
             mocked.when(StpUtil::getLoginIdAsLong).thenReturn(1001L);
 
@@ -162,15 +187,39 @@ class ChatStreamControllerTest {
                 eq(3001L),
                 eq("meta"),
                 argThat(payload -> payload instanceof java.util.Map<?, ?> map
-                    && map.get("mcpCodes").equals(List.of("ticket_query", "sales_query")))
+                    && map.get("mcpCodes").equals(List.of("sales_query"))
+                    && map.get("skillCodes").equals(List.of("ticket_query", "sales_query")))
             );
             verify(chatStreamExecutionService).dispatch(
                 argThat(command -> command.conversationId().equals(3001L)
                     && command.content().equals("查询销售")
                     && !command.deepThinking()
-                    && command.mcpCodes().equals(List.of("ticket_query", "sales_query"))),
+                    && command.mcpCodes().equals(List.of("sales_query"))
+                    && command.skillCodes().equals(List.of("ticket_query", "sales_query"))),
                 eq(1001L)
             );
+        }
+    }
+
+    /**
+     * 兼容订阅接口也必须校验 owner，避免越权监听他人会话。
+     */
+    @Test
+    void streamChecksConversationOwnershipBeforeRegister() {
+        SseEmitter emitter = new SseEmitter(0L);
+        whenRegisterReturns(emitter);
+        when(chatConversationApplicationService.listMessages(4001L, 1001L)).thenReturn(List.of(
+            ChatMessage.userMessage(4001L, "历史消息")
+        ));
+
+        try (MockedStatic<StpUtil> mocked = Mockito.mockStatic(StpUtil.class)) {
+            mocked.when(StpUtil::getLoginIdAsLong).thenReturn(1001L);
+
+            SseEmitter actual = chatStreamController.stream(4001L);
+
+            assertEquals(emitter, actual);
+            verify(chatConversationApplicationService).listMessages(4001L, 1001L);
+            verify(chatSseRegistry).register(4001L);
         }
     }
 

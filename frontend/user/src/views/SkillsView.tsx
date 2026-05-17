@@ -94,7 +94,9 @@ export default function SkillsView() {
     >
       <div className="mx-auto w-full max-w-7xl">
         <div className="mb-12">
-          <h1 className="mb-2 text-4xl font-bold tracking-tight text-foreground md:text-5xl">技能库</h1>
+          <h1 className="mb-2 text-4xl font-bold tracking-tight text-foreground md:text-5xl">
+            技能库
+          </h1>
           <p className="max-w-lg text-base leading-relaxed text-muted">
             管理和扩展您的工作台能力，发现更多强大的 AI 工具与套件。
           </p>
@@ -102,18 +104,27 @@ export default function SkillsView() {
 
         <section className="mb-16">
           <div className="mb-6 flex items-center justify-between">
-            <h2 className="font-mono text-xs uppercase tracking-widest text-muted">已安装 ({skills.length})</h2>
-            <button className="text-sm text-muted transition-colors hover:text-foreground" type="button">
+            <h2 className="font-mono text-xs uppercase tracking-widest text-muted">
+              已安装 ({skills.length})
+            </h2>
+            <button
+              className="text-sm text-muted transition-colors hover:text-foreground"
+              type="button"
+            >
               管理
             </button>
           </div>
 
           {isLoading ? (
-            <div className="rounded-xl border border-border bg-surface-container px-4 py-6 text-sm text-muted">技能加载中...</div>
+            <div className="rounded-xl border border-border bg-surface-container px-4 py-6 text-sm text-muted">
+              技能加载中...
+            </div>
           ) : null}
 
           {!isLoading && errorMessage ? (
-            <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-6 text-sm text-red-300">{errorMessage}</div>
+            <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-6 text-sm text-red-300">
+              {errorMessage}
+            </div>
           ) : null}
 
           {!isLoading && !errorMessage ? (
@@ -133,8 +144,12 @@ export default function SkillsView() {
                         {skill.sourceType || '技能'}
                       </span>
                     </div>
-                    <h3 className="mt-auto mb-1 font-semibold text-foreground">{skill.displayName}</h3>
-                    <p className="line-clamp-2 text-[13px] leading-relaxed text-muted">{skill.description || '暂无描述'}</p>
+                    <h3 className="mt-auto mb-1 font-semibold text-foreground">
+                      {skill.displayName}
+                    </h3>
+                    <p className="line-clamp-2 text-[13px] leading-relaxed text-muted">
+                      {skill.description || '暂无描述'}
+                    </p>
                     <div className="mt-3 flex items-center justify-between text-[11px] text-muted">
                       <span>{skill.category || '未分类'}</span>
                       <span className="font-mono">/{skill.skillCode}</span>
@@ -149,10 +164,16 @@ export default function SkillsView() {
         <section className="mb-12">
           <div className="mb-6 border-b border-border">
             <div className="flex gap-8">
-              <button className="relative -bottom-[1px] border-b-2 border-foreground pb-3 text-sm font-bold text-foreground" type="button">
+              <button
+                className="relative -bottom-[1px] border-b-2 border-foreground pb-3 text-sm font-bold text-foreground"
+                type="button"
+              >
                 推荐
               </button>
-              <button className="border-b-2 border-transparent pb-3 text-sm font-medium text-muted transition-colors hover:text-foreground" type="button">
+              <button
+                className="border-b-2 border-transparent pb-3 text-sm font-medium text-muted transition-colors hover:text-foreground"
+                type="button"
+              >
                 SkillHub
               </button>
             </div>

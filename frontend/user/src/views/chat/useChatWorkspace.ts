@@ -6,6 +6,8 @@ import {
   ActiveStreamState,
   ArtifactItem,
   ChatSkillItem,
+  CurrentMcpItem,
+  CurrentSkillItem,
   ChatMessageItem,
   ChatWorkspaceController,
   ConversationItem,
@@ -28,8 +30,10 @@ export function useChatWorkspace(isAuthenticated: boolean) {
   const [artifacts, setArtifacts] = useState<ArtifactItem[]>([]);
   const [sampleQuestions, setSampleQuestions] = useState<SampleQuestionItem[]>([]);
   const [availableSkills, setAvailableSkills] = useState<ChatSkillItem[]>([]);
+  const [currentSkills, setCurrentSkills] = useState<CurrentSkillItem[]>([]);
   const [selectedSkillCodes, setSelectedSkillCodesState] = useState<string[]>([]);
   const [availableMcps, setAvailableMcps] = useState<McpItem[]>([]);
+  const [currentMcps, setCurrentMcps] = useState<CurrentMcpItem[]>([]);
   const [selectedMcpCodes, setSelectedMcpCodesState] = useState<string[]>([]);
   const [mcpConnected, setMcpConnected] = useState(true);
   const [isStreaming, setIsStreaming] = useState(false);
@@ -38,12 +42,20 @@ export function useChatWorkspace(isAuthenticated: boolean) {
   const [streamError, setStreamError] = useState('');
   const [inputValue, setInputValue] = useState('');
   const [isBootstrapping, setIsBootstrapping] = useState(false);
-  const [renameDialogState, setRenameDialogState] = useState<{ isOpen: boolean; conversationId: string | null; initialTitle: string }>({
+  const [renameDialogState, setRenameDialogState] = useState<{
+    isOpen: boolean;
+    conversationId: string | null;
+    initialTitle: string;
+  }>({
     isOpen: false,
     conversationId: null,
     initialTitle: '',
   });
-  const [deleteDialogState, setDeleteDialogState] = useState<{ isOpen: boolean; conversationId: string | null; title: string }>({
+  const [deleteDialogState, setDeleteDialogState] = useState<{
+    isOpen: boolean;
+    conversationId: string | null;
+    title: string;
+  }>({
     isOpen: false,
     conversationId: null,
     title: '',
@@ -121,22 +133,36 @@ export function useChatWorkspace(isAuthenticated: boolean) {
    * @param conversationId 会话标识。
    * @param sourceConversations 可选的最新会话列表，避免重复读取旧状态。
    */
-  const selectConversation = async (conversationId: string, sourceConversations?: ConversationItem[]) => {
+  const selectConversation = async (
+    conversationId: string,
+    sourceConversations?: ConversationItem[],
+  ) => {
     const token = currentToken();
     if (!token) {
       return;
     }
     setActiveConversationId(conversationId);
-    const [nextMessages, nextSteps, nextReferences, nextArtifacts] = await Promise.all([
+    const [
+      nextMessages,
+      nextSteps,
+      nextReferences,
+      nextArtifacts,
+      nextCurrentSkills,
+      nextCurrentMcps,
+    ] = await Promise.all([
       ChatApi.listMessages(token, conversationId),
       ChatApi.listSteps(token, conversationId),
       ChatApi.listReferences(token, conversationId),
       ChatApi.listArtifacts(token, conversationId),
+      ChatApi.listCurrentSkills(token, conversationId),
+      ChatApi.listCurrentMcps(token, conversationId),
     ]);
     setMessages(nextMessages);
     setExecutionSteps(nextSteps);
     setReferences(nextReferences);
     setArtifacts(nextArtifacts);
+    setCurrentSkills(nextCurrentSkills);
+    setCurrentMcps(nextCurrentMcps);
     const conversationList = sourceConversations ?? conversations;
     const selectedConversation = conversationList.find((item) => item.id === conversationId);
     if (selectedConversation?.lastRunId && nextMessages.length > 0) {
@@ -198,13 +224,14 @@ export function useChatWorkspace(isAuthenticated: boolean) {
           selectedSkillCodes,
         ),
         {
-        headers: {
-          satoken: token,
+          headers: {
+            satoken: token,
+          },
+          signal: abortControllerRef.current.signal,
         },
-        signal: abortControllerRef.current.signal,
-      });
+      );
       if (!response.ok) {
-        throw new Error(await response.text() || '聊天请求失败');
+        throw new Error((await response.text()) || '聊天请求失败');
       }
       setInputValue('');
       await consumeSseStream(response, optimisticAssistantId);
@@ -286,9 +313,11 @@ export function useChatWorkspace(isAuthenticated: boolean) {
     if (activeConversationId === conversationId) {
       const renamedConversation = nextConversations.find((item) => item.id === conversationId);
       if (renamedConversation && messages.length) {
-        setMessages((previousMessages) => previousMessages.map((message, index) =>
-          index === previousMessages.length - 1 ? { ...message } : message,
-        ));
+        setMessages((previousMessages) =>
+          previousMessages.map((message, index) =>
+            index === previousMessages.length - 1 ? { ...message } : message,
+          ),
+        );
       }
     }
   };
@@ -328,8 +357,10 @@ export function useChatWorkspace(isAuthenticated: boolean) {
     clearConversationPlayback();
     setSampleQuestions([]);
     setAvailableSkills([]);
+    setCurrentSkills([]);
     setSelectedSkillCodes([]);
     setAvailableMcps([]);
+    setCurrentMcps([]);
     setSelectedMcpCodes([]);
     setMcpConnected(false);
     setIsStreaming(false);
@@ -443,50 +474,57 @@ export function useChatWorkspace(isAuthenticated: boolean) {
     }
 
     if (eventName === 'step' && isRecord(payload)) {
-      setExecutionSteps((previousSteps) => upsertById(previousSteps, {
-        id: String(payload.id ?? ''),
-        runId: String(payload.runId ?? ''),
-        stepType: String(payload.stepType ?? ''),
-        stepTitle: String(payload.stepTitle ?? ''),
-        stepStatus: String(payload.stepStatus ?? ''),
-        sequenceNo: Number(payload.sequenceNo ?? 0),
-        content: typeof payload.content === 'string' ? payload.content : undefined,
-      }));
+      setExecutionSteps((previousSteps) =>
+        upsertById(previousSteps, {
+          id: String(payload.id ?? ''),
+          runId: String(payload.runId ?? ''),
+          stepType: String(payload.stepType ?? ''),
+          stepTitle: String(payload.stepTitle ?? ''),
+          stepStatus: String(payload.stepStatus ?? ''),
+          sequenceNo: Number(payload.sequenceNo ?? 0),
+          content: typeof payload.content === 'string' ? payload.content : undefined,
+        }),
+      );
       return;
     }
 
     if (eventName === 'reference' && isRecord(payload)) {
-      setReferences((previousReferences) => upsertById(previousReferences, {
-        id: String(payload.id ?? ''),
-        runId: String(payload.runId ?? ''),
-        messageId: payload.messageId == null ? undefined : String(payload.messageId),
-        conversationId: String(payload.conversationId ?? ''),
-        sourceType: typeof payload.sourceType === 'string' ? payload.sourceType : undefined,
-        title: String(payload.title ?? ''),
-        url: typeof payload.url === 'string' ? payload.url : undefined,
-        siteName: typeof payload.siteName === 'string' ? payload.siteName : undefined,
-        snippet: typeof payload.snippet === 'string' ? payload.snippet : undefined,
-        rankNo: payload.rankNo == null ? undefined : Number(payload.rankNo),
-      }));
+      setReferences((previousReferences) =>
+        upsertById(previousReferences, {
+          id: String(payload.id ?? ''),
+          runId: String(payload.runId ?? ''),
+          messageId: payload.messageId == null ? undefined : String(payload.messageId),
+          conversationId: String(payload.conversationId ?? ''),
+          sourceType: typeof payload.sourceType === 'string' ? payload.sourceType : undefined,
+          title: String(payload.title ?? ''),
+          url: typeof payload.url === 'string' ? payload.url : undefined,
+          siteName: typeof payload.siteName === 'string' ? payload.siteName : undefined,
+          snippet: typeof payload.snippet === 'string' ? payload.snippet : undefined,
+          rankNo: payload.rankNo == null ? undefined : Number(payload.rankNo),
+        }),
+      );
       return;
     }
 
     if (eventName === 'artifact' && isRecord(payload)) {
-      setArtifacts((previousArtifacts) => upsertById(previousArtifacts, {
-        id: String(payload.id ?? ''),
-        runId: String(payload.runId ?? ''),
-        messageId: payload.messageId == null ? undefined : String(payload.messageId),
-        conversationId: String(payload.conversationId ?? ''),
-        artifactType: String(payload.artifactType ?? ''),
-        name: String(payload.name ?? ''),
-        mimeType: typeof payload.mimeType === 'string' ? payload.mimeType : undefined,
-        storagePath: String(payload.storagePath ?? ''),
-        contentPreview: typeof payload.preview === 'string'
-          ? payload.preview
-          : typeof payload.contentPreview === 'string'
-            ? payload.contentPreview
-            : undefined,
-      }));
+      setArtifacts((previousArtifacts) =>
+        upsertById(previousArtifacts, {
+          id: String(payload.id ?? ''),
+          runId: String(payload.runId ?? ''),
+          messageId: payload.messageId == null ? undefined : String(payload.messageId),
+          conversationId: String(payload.conversationId ?? ''),
+          artifactType: String(payload.artifactType ?? ''),
+          name: String(payload.name ?? ''),
+          mimeType: typeof payload.mimeType === 'string' ? payload.mimeType : undefined,
+          storagePath: String(payload.storagePath ?? ''),
+          contentPreview:
+            typeof payload.preview === 'string'
+              ? payload.preview
+              : typeof payload.contentPreview === 'string'
+                ? payload.contentPreview
+                : undefined,
+        }),
+      );
       return;
     }
 
@@ -543,8 +581,10 @@ export function useChatWorkspace(isAuthenticated: boolean) {
     artifacts,
     sampleQuestions,
     availableSkills,
+    currentSkills,
     selectedSkillCodes,
     availableMcps,
+    currentMcps,
     selectedMcpCodes,
     mcpConnected,
     isStreaming,
@@ -598,6 +638,8 @@ export function useChatWorkspace(isAuthenticated: boolean) {
     setExecutionSteps([]);
     setReferences([]);
     setArtifacts([]);
+    setCurrentSkills([]);
+    setCurrentMcps([]);
   }
 }
 

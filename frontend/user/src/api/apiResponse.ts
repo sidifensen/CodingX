@@ -10,7 +10,10 @@ export class ApiResponseParser {
    * @param fallbackMessage 兜底错误文案。
    * @returns 统一响应结构。
    */
-  static async parseEnvelope<T>(response: Response, fallbackMessage: string): Promise<ApiResponseEnvelope<T>> {
+  static async parseEnvelope<T>(
+    response: Response,
+    fallbackMessage: string,
+  ): Promise<ApiResponseEnvelope<T>> {
     const rawText = await response.text();
     if (!rawText) {
       return {
@@ -39,7 +42,11 @@ export class ApiResponseParser {
    * @param envelope 统一响应结构。
    * @param fallbackMessage 兜底错误文案。
    */
-  static assertSuccess<T>(response: Response, envelope: ApiResponseEnvelope<T>, fallbackMessage: string): void {
+  static assertSuccess<T>(
+    response: Response,
+    envelope: ApiResponseEnvelope<T>,
+    fallbackMessage: string,
+  ): void {
     if (!response.ok || !envelope.success) {
       throw new Error(envelope.message || fallbackMessage);
     }

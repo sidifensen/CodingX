@@ -58,17 +58,18 @@ describe('ChatView', () => {
    */
   it('应渲染消息与工作区回放', async () => {
     render(
-      <ChatView
-        isAuthenticated={true}
-        onRequireLogin={vi.fn()}
-        workspace={createWorkspace()}
-      />,
+      <ChatView isAuthenticated={true} onRequireLogin={vi.fn()} workspace={createWorkspace()} />,
     );
 
-    expect((await screen.findAllByText('请搜索 Spring Boot SSE 最佳实践')).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText('请搜索 Spring Boot SSE 最佳实践')).length).toBeGreaterThan(
+      0,
+    );
     expect(screen.getByText('搜索资料')).toBeInTheDocument();
     expect(screen.getByText('Spring Boot SSE 最佳实践')).toBeInTheDocument();
     expect(screen.getByText('search-report.docx')).toBeInTheDocument();
+    expect(screen.getByText('当前技能')).toBeInTheDocument();
+    expect(screen.getByText('当前 MCP')).toBeInTheDocument();
+    expect(screen.getAllByText('销售查询').length).toBeGreaterThan(0);
   });
 
   /**
@@ -125,11 +126,7 @@ describe('ChatView', () => {
    */
   it('不应继续渲染内部会话侧栏标题', async () => {
     render(
-      <ChatView
-        isAuthenticated={true}
-        onRequireLogin={vi.fn()}
-        workspace={createWorkspace()}
-      />,
+      <ChatView isAuthenticated={true} onRequireLogin={vi.fn()} workspace={createWorkspace()} />,
     );
 
     expect(screen.queryByText('聊天工作台')).not.toBeInTheDocument();
@@ -161,7 +158,9 @@ describe('ChatView', () => {
     expect(screen.queryByText(/会话 #/)).not.toBeInTheDocument();
     expect(screen.queryByText('执行回放')).not.toBeInTheDocument();
 
-    const inputWrapper = screen.getByPlaceholderText('输入问题，或先选择技能/MCP...').closest('form')?.parentElement?.parentElement;
+    const inputWrapper = screen
+      .getByPlaceholderText('输入问题，或先选择技能/MCP...')
+      .closest('form')?.parentElement?.parentElement;
     expect(inputWrapper).not.toHaveClass('border-t');
   });
 
@@ -212,6 +211,8 @@ describe('ChatView', () => {
           executionSteps: [],
           references: [],
           artifacts: [],
+          currentSkills: [],
+          currentMcps: [],
         })}
       />,
     );
@@ -229,17 +230,15 @@ describe('ChatView', () => {
    */
   it('应在消息区隐藏角色头并移除助手卡片边框', async () => {
     render(
-      <ChatView
-        isAuthenticated={true}
-        onRequireLogin={vi.fn()}
-        workspace={createWorkspace()}
-      />,
+      <ChatView isAuthenticated={true} onRequireLogin={vi.fn()} workspace={createWorkspace()} />,
     );
 
     expect(screen.queryByText('YOU')).not.toBeInTheDocument();
     expect(screen.queryByText('CODINGX')).not.toBeInTheDocument();
 
-    const assistantMessage = screen.getByText('我来为您总结 Spring Boot SSE 最佳实践。').parentElement;
+    const assistantMessage = screen.getByText(
+      '我来为您总结 Spring Boot SSE 最佳实践。',
+    ).parentElement;
     expect(assistantMessage).not.toHaveClass('border');
   });
 
@@ -248,16 +247,12 @@ describe('ChatView', () => {
    */
   it('应渲染紧凑的用户消息气泡样式', async () => {
     render(
-      <ChatView
-        isAuthenticated={true}
-        onRequireLogin={vi.fn()}
-        workspace={createWorkspace()}
-      />,
+      <ChatView isAuthenticated={true} onRequireLogin={vi.fn()} workspace={createWorkspace()} />,
     );
 
-    const userMessageText = screen.getAllByText('请搜索 Spring Boot SSE 最佳实践').find((element) =>
-      element.classList.contains('whitespace-pre-wrap'),
-    );
+    const userMessageText = screen
+      .getAllByText('请搜索 Spring Boot SSE 最佳实践')
+      .find((element) => element.classList.contains('whitespace-pre-wrap'));
     const userMessage = userMessageText?.closest('div.rounded-\\[20px\\]');
     expect(userMessage).toBeTruthy();
     expect(userMessage).toHaveClass('px-4');
@@ -270,11 +265,7 @@ describe('ChatView', () => {
    */
   it('应为消息滚动区使用稳定的底部留白配置', async () => {
     render(
-      <ChatView
-        isAuthenticated={true}
-        onRequireLogin={vi.fn()}
-        workspace={createWorkspace()}
-      />,
+      <ChatView isAuthenticated={true} onRequireLogin={vi.fn()} workspace={createWorkspace()} />,
     );
 
     const scrollRegion = screen.getByTestId('chat-scroll-region');
@@ -340,7 +331,10 @@ describe('ChatView', () => {
 
     expect(screen.getByText('思考过程')).toBeInTheDocument();
     expect(screen.getByText('先分析问题，再组织答案。')).toBeInTheDocument();
-    expect(screen.getByTestId('thinking-toggle-button-701')).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByTestId('thinking-toggle-button-701')).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    );
   });
 
   /**
@@ -436,7 +430,8 @@ describe('ChatView', () => {
               id: '202',
               conversationId: '2001',
               role: 'ASSISTANT',
-              content: '## 可能性三：你有具体问题但打字不全\n\nsupercalifragilisticexpialidocioussupercalifragilisticexpialidocious',
+              content:
+                '## 可能性三：你有具体问题但打字不全\n\nsupercalifragilisticexpialidocioussupercalifragilisticexpialidocious',
               status: 'COMPLETED',
             },
           ],
@@ -447,7 +442,10 @@ describe('ChatView', () => {
       />,
     );
 
-    const heading = screen.getByRole('heading', { name: '可能性三：你有具体问题但打字不全', level: 2 });
+    const heading = screen.getByRole('heading', {
+      name: '可能性三：你有具体问题但打字不全',
+      level: 2,
+    });
     const markdownContainer = heading.closest('.chat-markdown');
     expect(markdownContainer).toHaveClass('min-w-0');
     expect(markdownContainer).toHaveClass('[overflow-wrap:anywhere]');
@@ -460,11 +458,7 @@ describe('ChatView', () => {
     const scrollIntoView = vi.mocked(window.HTMLElement.prototype.scrollIntoView);
 
     render(
-      <ChatView
-        isAuthenticated={true}
-        onRequireLogin={vi.fn()}
-        workspace={createWorkspace()}
-      />,
+      <ChatView isAuthenticated={true} onRequireLogin={vi.fn()} workspace={createWorkspace()} />,
     );
 
     await waitFor(() => {
@@ -547,11 +541,7 @@ describe('ChatView', () => {
    */
   it('应支持折叠和展开右侧工作区面板', async () => {
     render(
-      <ChatView
-        isAuthenticated={true}
-        onRequireLogin={vi.fn()}
-        workspace={createWorkspace()}
-      />,
+      <ChatView isAuthenticated={true} onRequireLogin={vi.fn()} workspace={createWorkspace()} />,
     );
 
     const workspaceHeading = screen.getByText('执行回放');
@@ -577,6 +567,8 @@ describe('ChatView', () => {
           executionSteps: [],
           references: [],
           artifacts: [],
+          currentSkills: [],
+          currentMcps: [],
         })}
       />,
     );
@@ -616,11 +608,7 @@ describe('ChatView', () => {
    */
   it('应渲染助手消息操作栏', async () => {
     render(
-      <ChatView
-        isAuthenticated={true}
-        onRequireLogin={vi.fn()}
-        workspace={createWorkspace()}
-      />,
+      <ChatView isAuthenticated={true} onRequireLogin={vi.fn()} workspace={createWorkspace()} />,
     );
 
     expect(screen.getByTestId('copy-message-102')).toBeInTheDocument();
@@ -672,11 +660,7 @@ describe('ChatView', () => {
    */
   it('应通过MCP按钮展开滚动列表并展示可选MCP', async () => {
     render(
-      <ChatView
-        isAuthenticated={true}
-        onRequireLogin={vi.fn()}
-        workspace={createWorkspace()}
-      />,
+      <ChatView isAuthenticated={true} onRequireLogin={vi.fn()} workspace={createWorkspace()} />,
     );
 
     fireEvent.click(screen.getByRole('button', { name: '打开MCP列表' }));
@@ -718,11 +702,7 @@ describe('ChatView', () => {
    */
   it('应通过技能按钮展开滚动列表并展示可选技能', async () => {
     render(
-      <ChatView
-        isAuthenticated={true}
-        onRequireLogin={vi.fn()}
-        workspace={createWorkspace()}
-      />,
+      <ChatView isAuthenticated={true} onRequireLogin={vi.fn()} workspace={createWorkspace()} />,
     );
 
     fireEvent.click(screen.getByRole('button', { name: '打开技能列表' }));
@@ -950,6 +930,8 @@ describe('ChatView', () => {
 
     const textarea = screen.getByPlaceholderText('输入问题，或先选择技能/MCP...');
     expect(textarea).toHaveClass('w-full');
+    expect(textarea).toHaveClass('py-1');
+    expect(textarea).toHaveClass('align-middle');
   });
 
   /**
@@ -957,11 +939,7 @@ describe('ChatView', () => {
    */
   it('应在输入区上方复用同一个选择浮层', async () => {
     render(
-      <ChatView
-        isAuthenticated={true}
-        onRequireLogin={vi.fn()}
-        workspace={createWorkspace()}
-      />,
+      <ChatView isAuthenticated={true} onRequireLogin={vi.fn()} workspace={createWorkspace()} />,
     );
 
     fireEvent.click(screen.getByRole('button', { name: '打开技能列表' }));
@@ -978,11 +956,7 @@ describe('ChatView', () => {
    */
   it('不应再渲染右侧MCP连接开关', async () => {
     render(
-      <ChatView
-        isAuthenticated={true}
-        onRequireLogin={vi.fn()}
-        workspace={createWorkspace()}
-      />,
+      <ChatView isAuthenticated={true} onRequireLogin={vi.fn()} workspace={createWorkspace()} />,
     );
 
     expect(screen.queryByRole('button', { name: '切换MCP连接' })).not.toBeInTheDocument();
@@ -1010,11 +984,7 @@ describe('ChatView', () => {
    */
   it('应支持点赞倒赞切换', async () => {
     render(
-      <ChatView
-        isAuthenticated={true}
-        onRequireLogin={vi.fn()}
-        workspace={createWorkspace()}
-      />,
+      <ChatView isAuthenticated={true} onRequireLogin={vi.fn()} workspace={createWorkspace()} />,
     );
 
     const upButton = screen.getByTestId('thumbs-up-102');
@@ -1065,25 +1035,24 @@ describe('ChatView', () => {
    */
   it('点赞应调用反馈接口并更新选中态', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
-      new Response(JSON.stringify({
-        success: true,
-        code: 'OK',
-        message: 'feedback submitted',
-        data: null,
-      }), {
-        status: 200,
-        headers: {
-          'Content-Type': 'application/json',
+      new Response(
+        JSON.stringify({
+          success: true,
+          code: 'OK',
+          message: 'feedback submitted',
+          data: null,
+        }),
+        {
+          status: 200,
+          headers: {
+            'Content-Type': 'application/json',
+          },
         },
-      }),
+      ),
     );
 
     render(
-      <ChatView
-        isAuthenticated={true}
-        onRequireLogin={vi.fn()}
-        workspace={createWorkspace()}
-      />,
+      <ChatView isAuthenticated={true} onRequireLogin={vi.fn()} workspace={createWorkspace()} />,
     );
 
     const upButton = screen.getByTestId('thumbs-up-102');
@@ -1105,11 +1074,7 @@ describe('ChatView', () => {
    */
   it('复制按钮和下拉按钮应位于同一复制操作组', async () => {
     render(
-      <ChatView
-        isAuthenticated={true}
-        onRequireLogin={vi.fn()}
-        workspace={createWorkspace()}
-      />,
+      <ChatView isAuthenticated={true} onRequireLogin={vi.fn()} workspace={createWorkspace()} />,
     );
 
     const copyButton = screen.getByTestId('copy-message-102');
@@ -1255,6 +1220,15 @@ function createWorkspace(overrides?: Partial<ChatWorkspaceController>): ChatWork
         category: '工单',
       },
     ],
+    currentSkills: [
+      {
+        id: '7101',
+        skillCode: 'sales_query',
+        displayName: '销售查询',
+        description: '查询销售汇总、排名、趋势与明细',
+        category: '销售',
+      },
+    ],
     selectedSkillCodes: [],
     sampleQuestions: [
       {
@@ -1282,6 +1256,15 @@ function createWorkspace(overrides?: Partial<ChatWorkspaceController>): ChatWork
         displayName: '工单查询',
         description: '分析代码结构与缺陷',
         category: '工程',
+      },
+    ],
+    currentMcps: [
+      {
+        id: '7001',
+        mcpCode: 'sales_query',
+        displayName: '销售查询',
+        description: '联网检索信息并生成摘要',
+        category: '检索',
       },
     ],
     selectedMcpCodes: [],
@@ -1320,7 +1303,3 @@ function createWorkspace(overrides?: Partial<ChatWorkspaceController>): ChatWork
     ...overrides,
   };
 }
-
-
-
-

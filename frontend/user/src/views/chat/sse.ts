@@ -18,7 +18,11 @@ export function parseSseText(rawText: string): ParsedSseEvent[] {
     .filter(Boolean)
     .map((chunk) => {
       const lines = chunk.split(/\r?\n/);
-      const event = lines.find((line) => line.startsWith('event:'))?.slice(6).trim() ?? 'message';
+      const event =
+        lines
+          .find((line) => line.startsWith('event:'))
+          ?.slice(6)
+          .trim() ?? 'message';
       const dataText = lines
         .filter((line) => line.startsWith('data:'))
         .map((line) => line.slice(5).trim())
@@ -38,7 +42,7 @@ export function parseSseText(rawText: string): ParsedSseEvent[] {
 export function extractSseEvents(buffer: string): { events: ParsedSseEvent[]; remainder: string } {
   const normalized = buffer.replace(/\r\n/g, '\n');
   const chunks = normalized.split('\n\n');
-  const remainder = normalized.endsWith('\n\n') ? '' : chunks.pop() ?? '';
+  const remainder = normalized.endsWith('\n\n') ? '' : (chunks.pop() ?? '');
   return {
     events: chunks.filter(Boolean).flatMap((chunk) => parseSseText(`${chunk}\n\n`)),
     remainder,

@@ -9,7 +9,7 @@ describe('App', () => {
    * 统一模拟聊天页在壳层测试期间会触发的基础数据请求，避免与认证测试互相污染。
    */
   const mockChatWorkspaceFetch = () => {
-    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
       const url = String(input);
       if (
         url.startsWith('/api/chat/conversations/') &&

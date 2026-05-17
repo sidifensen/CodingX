@@ -51,7 +51,7 @@ interface SidebarProps {
 export default function Sidebar({
   activeView,
   setActiveView,
-  isMobileMenuOpen,
+  isMobileMenuOpen: _isMobileMenuOpen,
   setIsMobileMenuOpen,
   isDesktopCollapsed,
   isDarkMode,

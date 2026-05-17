@@ -5,6 +5,8 @@ import {
   ChatSkillItem,
   ChatMessageItem,
   ConversationItem,
+  CurrentMcpItem,
+  CurrentSkillItem,
   ExecutionStepItem,
   McpItem,
   ReferenceItem,
@@ -35,7 +37,10 @@ export class ChatApi {
    * @returns 消息列表。
    */
   static async listMessages(token: string, conversationId: string): Promise<ChatMessageItem[]> {
-    const envelope = await this.request<ChatMessageItem[]>(`/api/chat/conversations/${conversationId}/messages`, token);
+    const envelope = await this.request<ChatMessageItem[]>(
+      `/api/chat/conversations/${conversationId}/messages`,
+      token,
+    );
     return envelope.data;
   }
 
@@ -46,7 +51,10 @@ export class ChatApi {
    * @returns 步骤列表。
    */
   static async listSteps(token: string, conversationId: string): Promise<ExecutionStepItem[]> {
-    const envelope = await this.request<ExecutionStepItem[]>(`/api/chat/conversations/${conversationId}/steps`, token);
+    const envelope = await this.request<ExecutionStepItem[]>(
+      `/api/chat/conversations/${conversationId}/steps`,
+      token,
+    );
     return envelope.data;
   }
 
@@ -57,7 +65,10 @@ export class ChatApi {
    * @returns 来源列表。
    */
   static async listReferences(token: string, conversationId: string): Promise<ReferenceItem[]> {
-    const envelope = await this.request<ReferenceItem[]>(`/api/chat/conversations/${conversationId}/references`, token);
+    const envelope = await this.request<ReferenceItem[]>(
+      `/api/chat/conversations/${conversationId}/references`,
+      token,
+    );
     return envelope.data;
   }
 
@@ -68,8 +79,50 @@ export class ChatApi {
    * @returns 产物列表。
    */
   static async listArtifacts(token: string, conversationId: string): Promise<ArtifactItem[]> {
-    const envelope = await this.request<ArtifactItem[]>(`/api/chat/conversations/${conversationId}/artifacts`, token);
+    const envelope = await this.request<ArtifactItem[]>(
+      `/api/chat/conversations/${conversationId}/artifacts`,
+      token,
+    );
     return envelope.data;
+  }
+
+  /**
+   * 加载指定会话当前运行绑定的技能列表。
+   * @param token 当前登录令牌。
+   * @param conversationId 会话标识。
+   * @returns 当前技能列表。
+   */
+  static async listCurrentSkills(
+    token: string,
+    conversationId: string,
+  ): Promise<CurrentSkillItem[]> {
+    const envelope = await this.request<CurrentSkillItem[]>(
+      `/api/chat/conversations/${conversationId}/current-skills`,
+      token,
+    );
+    return envelope.data.map((item) => ({
+      ...item,
+      id: String(item.id ?? ''),
+      skillCode: String(item.skillCode ?? ''),
+    }));
+  }
+
+  /**
+   * 加载指定会话当前运行绑定的 MCP 列表。
+   * @param token 当前登录令牌。
+   * @param conversationId 会话标识。
+   * @returns 当前 MCP 列表。
+   */
+  static async listCurrentMcps(token: string, conversationId: string): Promise<CurrentMcpItem[]> {
+    const envelope = await this.request<CurrentMcpItem[]>(
+      `/api/chat/conversations/${conversationId}/current-mcps`,
+      token,
+    );
+    return envelope.data.map((item) => ({
+      ...item,
+      id: String(item.id ?? ''),
+      mcpCode: String(item.mcpCode ?? ''),
+    }));
   }
 
   /**
@@ -119,7 +172,11 @@ export class ChatApi {
    * @param conversationId 会话标识。
    * @param title 新会话标题。
    */
-  static async renameConversation(token: string, conversationId: string, title: string): Promise<void> {
+  static async renameConversation(
+    token: string,
+    conversationId: string,
+    title: string,
+  ): Promise<void> {
     await this.request<void>(`/api/chat/conversations/${conversationId}`, token, {
       method: 'PATCH',
       body: JSON.stringify({ title }),
@@ -177,7 +234,7 @@ export class ChatApi {
       headers: {
         'Content-Type': 'application/json',
         satoken: token,
-        ...(init?.headers ?? {}),
+        ...init?.headers,
       },
     });
     const envelope = await ApiResponseParser.parseEnvelope<T>(response, '聊天请求失败');

@@ -6,6 +6,8 @@ import com.codingx.chat.application.command.SendChatMessageCommand;
 import com.codingx.chat.application.service.ChatConversationApplicationService;
 import com.codingx.chat.application.service.ChatStreamExecutionService;
 import com.codingx.chat.domain.model.ChatConversation;
+import com.codingx.chat.domain.model.ChatSkill;
+import com.codingx.chat.domain.repository.ChatSkillRepository;
 import com.codingx.chat.infrastructure.stream.ChatSseRegistry;
 import com.codingx.mcp.domain.model.ChatMcp;
 import com.codingx.mcp.domain.repository.ChatMcpRepository;
@@ -47,6 +49,7 @@ public class ChatStreamController {
      * 技能配置仓储依赖。
      */
     private final ChatMcpRepository chatMcpRepository;
+    private final ChatSkillRepository chatSkillRepository;
 
     /**
      * 建立单次 SSE 聊天入口，并在同一请求内完成注册与消息发送。
@@ -68,16 +71,22 @@ public class ChatStreamController {
         Long userId = StpUtil.getLoginIdAsLong();
         Long actualConversationId = resolveConversationId(conversationId, userId);
         boolean deepThinkingEnabled = Boolean.TRUE.equals(deepThinking);
-        List<String> selectedMcpCodes = resolveMcpCodes(mcpCodes, skillCodes);
+        // 步骤：同一入口同时支持 MCP 与技能绑定，分别解析后传入运行时，避免语义混淆。
+        List<String> selectedMcpCodes = resolveMcpCodes(mcpCodes);
+        List<String> selectedSkillCodes = resolveSkillCodes(skillCodes);
         SseEmitter emitter = chatSseRegistry.register(actualConversationId);
         Long taskId = cn.hutool.core.util.IdUtil.getSnowflakeNextId();
         chatSseRegistry.publish(actualConversationId, "meta", Map.of(
             "conversationId", actualConversationId,
             "deepThinking", deepThinkingEnabled,
             "taskId", taskId,
-            "mcpCodes", selectedMcpCodes
+            "mcpCodes", selectedMcpCodes,
+            "skillCodes", selectedSkillCodes
         ));
-        chatStreamExecutionService.dispatch(new SendChatMessageCommand(actualConversationId, question, deepThinkingEnabled, selectedMcpCodes), userId);
+        chatStreamExecutionService.dispatch(
+            new SendChatMessageCommand(actualConversationId, question, deepThinkingEnabled, selectedMcpCodes, selectedSkillCodes),
+            userId
+        );
         return emitter;
     }
 
@@ -100,6 +109,7 @@ public class ChatStreamController {
     @GetMapping("/conversations/{conversationId}/stream")
     public SseEmitter stream(@PathVariable Long conversationId) {
         StpUtil.checkLogin();
+        chatConversationApplicationService.listMessages(conversationId, StpUtil.getLoginIdAsLong());
         return chatSseRegistry.register(conversationId);
     }
 
@@ -111,6 +121,8 @@ public class ChatStreamController {
      */
     private Long resolveConversationId(Long conversationId, Long userId) {
         if (conversationId != null) {
+            // 步骤：复用既有会话时先做 owner 校验，避免越权订阅或发送到他人会话。
+            chatConversationApplicationService.listMessages(conversationId, userId);
             return conversationId;
         }
         ChatConversation conversation = chatConversationApplicationService.createConversation(new CreateConversationCommand(null), userId);
@@ -122,15 +134,7 @@ public class ChatStreamController {
      * @param mcpCodesParam 查询参数字符串。
      * @return 规范化 MCP 编码列表。
      */
-    private List<String> resolveMcpCodes(String mcpCodesParam, String skillCodesParam) {
-        // 步骤：兼容前端新增 skillCodes 参数；显式传入时优先使用，便于 slash 技能选择直通运行时绑定。
-        if (skillCodesParam != null) {
-            return StrUtil.splitTrim(skillCodesParam, ',').stream()
-                .map(String::trim)
-                .filter(StrUtil::isNotBlank)
-                .distinct()
-                .collect(Collectors.toList());
-        }
+    private List<String> resolveMcpCodes(String mcpCodesParam) {
         if (mcpCodesParam != null) {
             return StrUtil.splitTrim(mcpCodesParam, ',').stream()
                 .map(String::trim)
@@ -140,6 +144,25 @@ public class ChatStreamController {
         }
         return chatMcpRepository.findAllEnabled().stream()
             .map(ChatMcp::getMcpCode)
+            .filter(StrUtil::isNotBlank)
+            .toList();
+    }
+
+    /**
+     * 解析显式技能编码，未传时回退到已启用技能全量列表，保证对话运行时可稳定绑定技能上下文。
+     * @param skillCodesParam 查询参数字符串。
+     * @return 规范化技能编码列表。
+     */
+    private List<String> resolveSkillCodes(String skillCodesParam) {
+        if (skillCodesParam != null) {
+            return StrUtil.splitTrim(skillCodesParam, ',').stream()
+                .map(String::trim)
+                .filter(StrUtil::isNotBlank)
+                .distinct()
+                .collect(Collectors.toList());
+        }
+        return chatSkillRepository.findAllEnabled().stream()
+            .map(ChatSkill::getSkillCode)
             .filter(StrUtil::isNotBlank)
             .toList();
     }

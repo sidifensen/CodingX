@@ -8,11 +8,13 @@ import com.codingx.chat.domain.model.ChatExecutionStep;
 import com.codingx.chat.domain.model.ChatMessageArtifact;
 import com.codingx.chat.domain.model.ChatMessageReference;
 import com.codingx.chat.domain.model.ChatSkill;
+import com.codingx.mcp.domain.model.ChatMcp;
 import com.codingx.chat.domain.repository.ChatExecutionRunRepository;
 import com.codingx.chat.domain.repository.ChatExecutionStepRepository;
 import com.codingx.chat.domain.repository.ChatMessageArtifactRepository;
 import com.codingx.chat.domain.repository.ChatMessageReferenceRepository;
 import com.codingx.chat.domain.repository.ChatSkillRepository;
+import com.codingx.mcp.domain.repository.ChatMcpRepository;
 import java.time.LocalDateTime;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -31,6 +33,7 @@ class ChatWorkspaceQueryServiceTest {
     @Mock private ChatExecutionStepRepository chatExecutionStepRepository;
     @Mock private ChatMessageReferenceRepository chatMessageReferenceRepository;
     @Mock private ChatMessageArtifactRepository chatMessageArtifactRepository;
+    @Mock private ChatMcpRepository chatMcpRepository;
     @Mock private ChatSkillRepository chatSkillRepository;
 
     @InjectMocks
@@ -102,6 +105,24 @@ class ChatWorkspaceQueryServiceTest {
 
         assertEquals(1, skills.size());
         assertEquals("conversation-core", skills.getFirst().getSkillCode());
+    }
+
+    /**
+     * 当前会话存在任务 MCP 绑定时应返回 MCP 列表供工作区展示。
+     */
+    @Test
+    void listCurrentMcpsReturnsBoundMcpsFromLatestTask() {
+        when(chatExecutionRunRepository.findByConversationId(2001L)).thenReturn(List.of(
+            run(5002L, LocalDateTime.of(2026, 5, 15, 10, 5))
+        ));
+        when(chatMcpRepository.findByTaskId(5002L)).thenReturn(List.of(
+            ChatMcp.builder().id(1L).mcpCode("sales_query").displayName("销售查询").category("销售").enabled(1).sortNo(1).build()
+        ));
+
+        List<ChatMcp> mcps = chatWorkspaceQueryService.listCurrentMcps(2001L);
+
+        assertEquals(1, mcps.size());
+        assertEquals("sales_query", mcps.getFirst().getMcpCode());
     }
 
     /**

@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.contains;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -11,6 +12,7 @@ import com.codingx.chat.application.command.SendChatMessageCommand;
 import com.codingx.chat.domain.model.ChatExecutionRun;
 import com.codingx.chat.domain.model.ChatTraceRun;
 import com.codingx.chat.domain.repository.ChatExecutionRunRepository;
+import com.codingx.mcp.domain.repository.ChatMcpRepository;
 import com.codingx.chat.domain.repository.ChatSkillRepository;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -63,6 +65,9 @@ class ChatStreamExecutionServiceTest {
     @Mock
     private ChatSkillRepository chatSkillRepository;
 
+    @Mock
+    private ChatMcpRepository chatMcpRepository;
+
     /**
      * 释放测试线程池，避免用例之间残留后台线程。
      */
@@ -84,6 +89,7 @@ class ChatStreamExecutionServiceTest {
             chatRuntimeGuardService,
             conversationTraceRecordService,
             chatExecutionRunRepository,
+            chatMcpRepository,
             chatSkillRepository,
             executorService
         );
@@ -100,6 +106,8 @@ class ChatStreamExecutionServiceTest {
         assertTrue(elapsedMs < 100, "dispatch should return immediately");
         assertTrue(started.await(1, TimeUnit.SECONDS), "background task should start");
         verify(conversationTraceRecordService).startTrace("chat-entry", 1001L, 2001L);
+        verify(chatMcpRepository).bindTaskMcps(any(Long.class), eq(java.util.List.of()));
+        verify(chatSkillRepository).bindTaskSkills(any(Long.class), eq(java.util.List.of()));
 
         release.countDown();
         verify(chatApplicationService, org.mockito.Mockito.timeout(1000)).sendMessage(new SendChatMessageCommand(1001L, "你好", false), 2001L);
@@ -117,6 +125,7 @@ class ChatStreamExecutionServiceTest {
             chatRuntimeGuardService,
             conversationTraceRecordService,
             chatExecutionRunRepository,
+            chatMcpRepository,
             chatSkillRepository,
             executorService
         );
@@ -134,6 +143,8 @@ class ChatStreamExecutionServiceTest {
         }
 
         assertTrue(captured.await(1, TimeUnit.SECONDS), "background task should receive forwarded login id");
+        verify(chatMcpRepository).bindTaskMcps(any(Long.class), eq(java.util.List.of()));
+        verify(chatSkillRepository).bindTaskSkills(any(Long.class), eq(java.util.List.of()));
     }
 
     /**
@@ -150,6 +161,7 @@ class ChatStreamExecutionServiceTest {
             chatRuntimeGuardService,
             conversationTraceRecordService,
             chatExecutionRunRepository,
+            chatMcpRepository,
             chatSkillRepository,
             executorService
         );
@@ -168,6 +180,8 @@ class ChatStreamExecutionServiceTest {
 
         assertTrue(captured.await(1, TimeUnit.SECONDS), "background task should capture run id");
         assertEquals(savedRunId.get(), observedRunId.get(), "background task should reuse dispatch run id");
+        verify(chatMcpRepository).bindTaskMcps(savedRunId.get(), java.util.List.of());
+        verify(chatSkillRepository).bindTaskSkills(savedRunId.get(), java.util.List.of());
     }
 
     /**
@@ -182,6 +196,7 @@ class ChatStreamExecutionServiceTest {
             chatRuntimeGuardService,
             conversationTraceRecordService,
             chatExecutionRunRepository,
+            chatMcpRepository,
             chatSkillRepository,
             executorService
         );
@@ -198,6 +213,8 @@ class ChatStreamExecutionServiceTest {
 
         assertTrue(captured.await(1, TimeUnit.SECONDS), "background task should capture trace context");
         assertEquals("trace-1", observedTraceId.get());
+        verify(chatMcpRepository).bindTaskMcps(any(Long.class), eq(java.util.List.of()));
+        verify(chatSkillRepository).bindTaskSkills(any(Long.class), eq(java.util.List.of()));
     }
 
     /**
@@ -213,6 +230,7 @@ class ChatStreamExecutionServiceTest {
             chatRuntimeGuardService,
             conversationTraceRecordService,
             chatExecutionRunRepository,
+            chatMcpRepository,
             chatSkillRepository,
             executorService
         );
@@ -236,5 +254,47 @@ class ChatStreamExecutionServiceTest {
         assertTrue(captured.await(1, TimeUnit.SECONDS), "failed run should be updated to ERROR");
         verify(chatExecutionRunRepository, org.mockito.Mockito.atLeast(2)).save(any(ChatExecutionRun.class));
         verify(conversationTraceRecordService).finishTrace("trace-error", runIdRef.get(), "ERROR", "boom");
+        verify(chatMcpRepository).bindTaskMcps(any(Long.class), eq(java.util.List.of()));
+        verify(chatSkillRepository).bindTaskSkills(any(Long.class), eq(java.util.List.of()));
+    }
+
+    /**
+     * 派发入口应把消息级 MCP 与技能绑定同时写入，确保工作台可回放“当前能力上下文”。
+     * @throws Exception 等待后台线程执行时抛出。
+     */
+    @Test
+    void dispatchBindsBothMcpAndSkillSelections() throws Exception {
+        CountDownLatch captured = new CountDownLatch(1);
+        ChatStreamExecutionService service = new ChatStreamExecutionService(
+            chatApplicationService,
+            chatRuntimeGuardService,
+            conversationTraceRecordService,
+            chatExecutionRunRepository,
+            chatMcpRepository,
+            chatSkillRepository,
+            executorService
+        );
+        org.mockito.Mockito.doAnswer(invocation -> {
+            captured.countDown();
+            return null;
+        }).when(chatApplicationService).sendMessage(new SendChatMessageCommand(
+            1001L,
+            "你好",
+            false,
+            java.util.List.of("sales_query"),
+            java.util.List.of("ticket_query")
+        ), 2001L);
+
+        service.dispatch(new SendChatMessageCommand(
+            1001L,
+            "你好",
+            false,
+            java.util.List.of("sales_query"),
+            java.util.List.of("ticket_query")
+        ), 2001L);
+
+        assertTrue(captured.await(1, TimeUnit.SECONDS), "background task should start with explicit selections");
+        verify(chatMcpRepository).bindTaskMcps(any(Long.class), eq(java.util.List.of("sales_query")));
+        verify(chatSkillRepository).bindTaskSkills(any(Long.class), eq(java.util.List.of("ticket_query")));
     }
 }

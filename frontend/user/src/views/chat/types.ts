@@ -96,9 +96,31 @@ export interface ChatSkillItem {
 }
 
 /**
+ * 描述会话当前运行绑定的技能项。
+ */
+export interface CurrentSkillItem {
+  id: string;
+  skillCode: string;
+  displayName: string;
+  description?: string;
+  category?: string;
+}
+
+/**
  * 描述用户可选 MCP 项。
  */
 export interface McpItem {
+  id: string;
+  mcpCode: string;
+  displayName: string;
+  description?: string;
+  category?: string;
+}
+
+/**
+ * 描述会话当前运行绑定的 MCP 项。
+ */
+export interface CurrentMcpItem {
   id: string;
   mcpCode: string;
   displayName: string;
@@ -148,8 +170,10 @@ export interface ChatWorkspaceController {
   sampleQuestions: SampleQuestionItem[];
   availableSkills: ChatSkillItem[];
   selectedSkillCodes: string[];
+  currentSkills: CurrentSkillItem[];
   availableMcps: McpItem[];
   selectedMcpCodes: string[];
+  currentMcps: CurrentMcpItem[];
   mcpConnected: boolean;
   isStreaming: boolean;
   isCancelling: boolean;
@@ -164,7 +188,10 @@ export interface ChatWorkspaceController {
   setMcpConnected: (value: boolean) => void;
   submitMessage: () => Promise<void>;
   cancelCurrentStream: () => Promise<void>;
-  selectConversation: (conversationId: string, sourceConversations?: ConversationItem[]) => Promise<void>;
+  selectConversation: (
+    conversationId: string,
+    sourceConversations?: ConversationItem[],
+  ) => Promise<void>;
   startNewConversation: () => Promise<void>;
   renameConversation: (conversationId: string, title: string) => Promise<void>;
   deleteConversation: (conversationId: string) => Promise<void>;

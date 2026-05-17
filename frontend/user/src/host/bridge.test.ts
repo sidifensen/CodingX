@@ -18,7 +18,7 @@ describe('resolveHostBridge', () => {
     const desktopBridge = {
       getContext: async () => ({
         hostType: 'desktop' as const,
-        executionTargets: ['cloud', 'local'] as const,
+        executionTargets: ['cloud', 'local'] as Array<'cloud' | 'local'>,
         capabilities: {
           localFiles: true,
           localFolderPicker: true,
@@ -36,7 +36,7 @@ describe('resolveHostBridge', () => {
       pickRepositoryDirectory: async () => 'D:/code/CodingX',
       bindRepositoryPath: async () => ({
         hostType: 'desktop' as const,
-        executionTargets: ['cloud', 'local'] as const,
+        executionTargets: ['cloud', 'local'] as Array<'cloud' | 'local'>,
         capabilities: {
           localFiles: true,
           localFolderPicker: true,

@@ -14,6 +14,7 @@ import com.codingx.chat.domain.model.ChatConversation;
 import com.codingx.chat.domain.model.ChatConversationStatus;
 import com.codingx.chat.domain.repository.ChatSkillRepository;
 import com.codingx.config.GlobalExceptionHandler;
+import com.codingx.mcp.domain.repository.ChatMcpRepository;
 import java.time.LocalDateTime;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -46,6 +47,9 @@ class ChatControllerListConversationsTest {
 
     @Mock
     private ChatSkillRepository chatSkillRepository;
+
+    @Mock
+    private ChatMcpRepository chatMcpRepository;
 
     @InjectMocks
     private ChatController chatController;

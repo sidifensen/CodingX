@@ -10,6 +10,7 @@ import com.codingx.chat.domain.model.ChatExecutionStep;
 import com.codingx.chat.domain.model.ChatMessageArtifact;
 import com.codingx.chat.domain.model.ChatMessageReference;
 import com.codingx.chat.domain.model.ChatSkill;
+import com.codingx.mcp.domain.model.ChatMcp;
 import com.codingx.config.GlobalExceptionHandler;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -99,6 +100,23 @@ class ChatWorkspaceControllerTest {
             .andExpect(jsonPath("$.data[0].skillCode").value("conversation-core"))
             .andExpect(jsonPath("$.data[0].displayName").value("会话核心"))
             .andExpect(jsonPath("$.data[0].category").value("核心能力"));
+    }
+
+    /**
+     * 当前 MCP 接口应返回任务绑定 MCP，供工作台显示“当前 MCP”区块。
+     */
+    @Test
+    void listCurrentMcpsReturnsWorkspaceMcpPayload() throws Exception {
+        when(chatWorkspaceQueryService.listCurrentMcps(2001L)).thenReturn(List.of(
+            ChatMcp.builder().id(41L).mcpCode("sales_query").displayName("销售查询").category("销售").enabled(1).sortNo(1).build()
+        ));
+
+        mockMvc().perform(get("/api/chat/conversations/2001/current-mcps"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.success").value(true))
+            .andExpect(jsonPath("$.data[0].mcpCode").value("sales_query"))
+            .andExpect(jsonPath("$.data[0].displayName").value("销售查询"))
+            .andExpect(jsonPath("$.data[0].category").value("销售"));
     }
 
     /**

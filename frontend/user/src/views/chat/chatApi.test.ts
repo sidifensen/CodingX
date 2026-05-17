@@ -197,4 +197,78 @@ describe('ChatApi', () => {
       }),
     );
   });
+
+  /**
+   * 当前技能列表请求应命中会话级 current-skills 接口并返回字符串化标识。
+   */
+  it('应加载会话当前技能列表', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          success: true,
+          code: 'OK',
+          message: 'success',
+          data: [
+            {
+              id: 7101,
+              skillCode: 'sales_query',
+              displayName: '销售查询',
+              category: '销售',
+            },
+          ],
+        }),
+        { status: 200 },
+      ),
+    );
+
+    const result = await ChatApi.listCurrentSkills('token-123', '2055114974648864768');
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      '/api/chat/conversations/2055114974648864768/current-skills',
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          satoken: 'token-123',
+        }),
+      }),
+    );
+    expect(result[0].id).toBe('7101');
+    expect(result[0].skillCode).toBe('sales_query');
+  });
+
+  /**
+   * 当前 MCP 列表请求应命中会话级 current-mcps 接口并返回字符串化标识。
+   */
+  it('应加载会话当前MCP列表', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          success: true,
+          code: 'OK',
+          message: 'success',
+          data: [
+            {
+              id: 7001,
+              mcpCode: 'sales_query',
+              displayName: '销售查询',
+              category: '检索',
+            },
+          ],
+        }),
+        { status: 200 },
+      ),
+    );
+
+    const result = await ChatApi.listCurrentMcps('token-123', '2055114974648864768');
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      '/api/chat/conversations/2055114974648864768/current-mcps',
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          satoken: 'token-123',
+        }),
+      }),
+    );
+    expect(result[0].id).toBe('7001');
+    expect(result[0].mcpCode).toBe('sales_query');
+  });
 });

@@ -56,8 +56,10 @@ export default function ChatView({
     sampleQuestions,
     availableSkills,
     selectedSkillCodes,
+    currentSkills,
     availableMcps,
     selectedMcpCodes,
+    currentMcps,
     isStreaming,
     isCancelling,
     deepThinkingEnabled,
@@ -81,7 +83,9 @@ export default function ChatView({
   const [isWorkspacePanelCollapsed, setIsWorkspacePanelCollapsed] = React.useState(true);
   const [activeSelectorMode, setActiveSelectorMode] = React.useState<'mcp' | 'skill' | null>(null);
   const [skillSearchKeyword, setSkillSearchKeyword] = React.useState('');
-  const [skillSelectorSource, setSkillSelectorSource] = React.useState<'button' | 'slash' | null>(null);
+  const [skillSelectorSource, setSkillSelectorSource] = React.useState<'button' | 'slash' | null>(
+    null,
+  );
   const selectorLayerRef = React.useRef<HTMLDivElement | null>(null);
   const chatInputRef = React.useRef<HTMLTextAreaElement | null>(null);
 
@@ -139,44 +143,53 @@ export default function ChatView({
    * 切换 MCP 启用状态，允许在弹层内直接管理本次会话可调用 MCP。
    * @param mcpCode 被切换 MCP 编码。
    */
-  const toggleMcpSelection = React.useCallback((mcpCode: string) => {
-    setSelectedMcpCodes((previous) => {
-      if (previous.includes(mcpCode)) {
-        return previous.filter((item) => item !== mcpCode);
-      }
-      return [...previous, mcpCode];
-    });
-    setMcpConnected(true);
-  }, [setSelectedMcpCodes, setMcpConnected]);
+  const toggleMcpSelection = React.useCallback(
+    (mcpCode: string) => {
+      setSelectedMcpCodes((previous) => {
+        if (previous.includes(mcpCode)) {
+          return previous.filter((item) => item !== mcpCode);
+        }
+        return [...previous, mcpCode];
+      });
+      setMcpConnected(true);
+    },
+    [setSelectedMcpCodes, setMcpConnected],
+  );
 
   /**
    * 切换技能选中状态：支持多选，已选中再次点击可取消。
    * @param skillCode 被选择技能编码。
    */
-  const selectSkill = React.useCallback((skillCode: string) => {
-    setSelectedSkillCodes((previous) => {
-      if (previous.includes(skillCode)) {
-        return previous.filter((item) => item !== skillCode);
+  const selectSkill = React.useCallback(
+    (skillCode: string) => {
+      setSelectedSkillCodes((previous) => {
+        if (previous.includes(skillCode)) {
+          return previous.filter((item) => item !== skillCode);
+        }
+        return [...previous, skillCode];
+      });
+      if (skillSelectorSource === 'slash') {
+        // 步骤：斜杠只作为技能检索触发器，选中后回写为正常输入文本。
+        setInputValue(inputValue.replace(/^\s*\/[^\s]*\s*/, ''));
+        setActiveSelectorMode(null);
+        setSkillSelectorSource(null);
+        setSkillSearchKeyword('');
+        return;
       }
-      return [...previous, skillCode];
-    });
-    if (skillSelectorSource === 'slash') {
-      // 步骤：斜杠只作为技能检索触发器，选中后回写为正常输入文本。
-      setInputValue(inputValue.replace(/^\s*\/[^\s]*\s*/, ''));
-      setActiveSelectorMode(null);
-      setSkillSelectorSource(null);
-      setSkillSearchKeyword('');
-      return;
-    }
-  }, [inputValue, setInputValue, setSelectedSkillCodes, skillSelectorSource]);
+    },
+    [inputValue, setInputValue, setSelectedSkillCodes, skillSelectorSource],
+  );
 
   /**
    * 移除技能气泡，允许用户在输入区快速取消技能上下文。
    * @param skillCode 被移除技能编码。
    */
-  const removeSkillTag = React.useCallback((skillCode: string) => {
-    setSelectedSkillCodes((previous) => previous.filter((item) => item !== skillCode));
-  }, [setSelectedSkillCodes]);
+  const removeSkillTag = React.useCallback(
+    (skillCode: string) => {
+      setSelectedSkillCodes((previous) => previous.filter((item) => item !== skillCode));
+    },
+    [setSelectedSkillCodes],
+  );
 
   /**
    * 判断当前共享选择弹层是否打开。
@@ -224,7 +237,9 @@ export default function ChatView({
     textarea.style.height = 'auto';
     const computedStyle = window.getComputedStyle(textarea);
     const lineHeight = Number.parseFloat(computedStyle.lineHeight || '24') || 24;
-    const verticalPadding = Number.parseFloat(computedStyle.paddingTop || '0') + Number.parseFloat(computedStyle.paddingBottom || '0');
+    const verticalPadding =
+      Number.parseFloat(computedStyle.paddingTop || '0') +
+      Number.parseFloat(computedStyle.paddingBottom || '0');
     const maxHeight = lineHeight * 9 + verticalPadding;
     const nextHeight = Math.min(textarea.scrollHeight, maxHeight);
     textarea.style.height = `${Math.max(nextHeight, lineHeight + verticalPadding)}px`;
@@ -257,11 +272,17 @@ export default function ChatView({
   // 步骤：仅当没有选中任何真实会话时才展示“新建对话”首页；避免空历史会话被误判为未跳转。
   const showLandingState = activeConversationId == null && !messages.length && !isBootstrapping;
   // 步骤：选中了历史会话但暂无消息时，显示会话级空态而不是回到首页。
-  const showConversationEmptyState = activeConversationId != null && !messages.length && !isBootstrapping;
+  const showConversationEmptyState =
+    activeConversationId != null && !messages.length && !isBootstrapping;
   // 步骤：首页只保留欢迎内容和输入框，右侧执行回放仅在真实会话上下文中展示。
   const showWorkspacePanel = !showLandingState;
-  // 步骤：仅当步骤、来源或产物任一存在时，才认为右侧栏具备真实回放内容。
-  const hasWorkspaceContent = executionSteps.length > 0 || references.length > 0 || artifacts.length > 0;
+  // 步骤：仅当步骤、来源、产物或当前能力上下文任一存在时，才认为右侧栏具备真实回放内容。
+  const hasWorkspaceContent =
+    executionSteps.length > 0 ||
+    references.length > 0 ||
+    artifacts.length > 0 ||
+    currentSkills.length > 0 ||
+    currentMcps.length > 0;
   // 步骤：右侧栏保留挂载以支持宽度过渡动画，面板内容在收起后不再渲染。
   const isWorkspacePanelVisible = showWorkspacePanel && !isWorkspacePanelCollapsed;
 
@@ -291,7 +312,11 @@ export default function ChatView({
               onClick={() => setIsWorkspacePanelCollapsed((current) => !current)}
               className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-xl border border-border bg-surface/92 text-foreground shadow-[0_14px_30px_rgba(0,0,0,0.18)] backdrop-blur"
             >
-              {isWorkspacePanelCollapsed ? <PanelRightOpen size={18} /> : <PanelRightClose size={18} />}
+              {isWorkspacePanelCollapsed ? (
+                <PanelRightOpen size={18} />
+              ) : (
+                <PanelRightClose size={18} />
+              )}
             </button>
           ) : (
             <div className="w-10" />
@@ -313,15 +338,45 @@ export default function ChatView({
                       icon: [Globe2, Search, Database, FolderOpen][index % 4],
                       title: item.category || '示例问题',
                       desc: item.questionText,
-                      iconClassName: ['text-[#8fb3da]', 'text-[#ff8a24]', 'text-[#a78bfa]', 'text-[#f4f4f5]'][index % 4],
+                      iconClassName: [
+                        'text-[#8fb3da]',
+                        'text-[#ff8a24]',
+                        'text-[#a78bfa]',
+                        'text-[#f4f4f5]',
+                      ][index % 4],
                       dataSource: 'api',
                     }))
                   : [
-                      { icon: Globe2, title: '网页读取', desc: '解析并总结外部网页内容', iconClassName: 'text-[#8fb3da]', dataSource: 'fallback' },
-                      { icon: Search, title: '调研分析', desc: '深度搜索并生成研究报告', iconClassName: 'text-[#ff8a24]', dataSource: 'fallback' },
-                      { icon: Database, title: '数据挖掘', desc: '结构化数据提取与清洗', iconClassName: 'text-[#a78bfa]', dataSource: 'fallback' },
-                      { icon: FolderOpen, title: '文件管理', desc: '上传并与您的文档进行对话', iconClassName: 'text-[#f4f4f5]', dataSource: 'fallback' },
-                    ]).map((item) => (
+                      {
+                        icon: Globe2,
+                        title: '网页读取',
+                        desc: '解析并总结外部网页内容',
+                        iconClassName: 'text-[#8fb3da]',
+                        dataSource: 'fallback',
+                      },
+                      {
+                        icon: Search,
+                        title: '调研分析',
+                        desc: '深度搜索并生成研究报告',
+                        iconClassName: 'text-[#ff8a24]',
+                        dataSource: 'fallback',
+                      },
+                      {
+                        icon: Database,
+                        title: '数据挖掘',
+                        desc: '结构化数据提取与清洗',
+                        iconClassName: 'text-[#a78bfa]',
+                        dataSource: 'fallback',
+                      },
+                      {
+                        icon: FolderOpen,
+                        title: '文件管理',
+                        desc: '上传并与您的文档进行对话',
+                        iconClassName: 'text-[#f4f4f5]',
+                        dataSource: 'fallback',
+                      },
+                    ]
+                ).map((item) => (
                   <button
                     key={`${item.title}-${item.desc}`}
                     type="button"
@@ -359,7 +414,8 @@ export default function ChatView({
               {messages.map((message) => {
                 const isAssistant = message.role === 'ASSISTANT';
                 const isLatestMessage = message.id === messages[messages.length - 1]?.id;
-                const messageContent = message.content || (message.status === 'streaming' ? '正在生成回答...' : '');
+                const messageContent =
+                  message.content || (message.status === 'streaming' ? '正在生成回答...' : '');
                 return (
                   <div
                     key={message.id}
@@ -375,13 +431,20 @@ export default function ChatView({
                       {isAssistant ? (
                         <>
                           {message.thinkingContent ? (
-                            <ThinkingPanel messageId={message.id} content={message.thinkingContent} />
+                            <ThinkingPanel
+                              messageId={message.id}
+                              content={message.thinkingContent}
+                            />
                           ) : null}
                           {message.mcpCalls && message.mcpCalls.length > 0 ? (
                             <McpCallPanel messageId={message.id} calls={message.mcpCalls} />
                           ) : null}
                           <MarkdownMessage content={messageContent} />
-                          <AssistantMessageActions messageId={message.id} conversationId={message.conversationId} content={messageContent} />
+                          <AssistantMessageActions
+                            messageId={message.id}
+                            conversationId={message.conversationId}
+                            content={messageContent}
+                          />
                         </>
                       ) : (
                         <div className="whitespace-pre-wrap text-sm leading-6">
@@ -424,7 +487,9 @@ export default function ChatView({
                 <div className="relative mb-2">
                   {isSelectorPanelOpen ? (
                     <div
-                      data-testid={activeSelectorMode === 'mcp' ? 'mcp-selector-panel' : 'skill-selector-panel'}
+                      data-testid={
+                        activeSelectorMode === 'mcp' ? 'mcp-selector-panel' : 'skill-selector-panel'
+                      }
                       // 步骤：弹层宽度在桌面端收敛为中等尺寸，移动端仍自适应屏宽，避免视觉占用过大。
                       className="absolute bottom-[calc(100%+10px)] left-0 z-30 w-[calc(100vw-2.5rem)] max-w-[480px] rounded-2xl border border-border bg-surface px-2 py-2 shadow-[0_18px_44px_rgba(0,0,0,0.25)] md:w-[480px]"
                     >
@@ -456,18 +521,26 @@ export default function ChatView({
                                 }`}
                               >
                                 <span className="min-w-0">
-                                  <span className="block truncate text-foreground">{mcp.displayName}</span>
-                                  <span className="mt-1 block truncate font-mono text-[11px] text-muted">/{mcp.mcpCode}</span>
+                                  <span className="block truncate text-foreground">
+                                    {mcp.displayName}
+                                  </span>
+                                  <span className="mt-1 block truncate font-mono text-[11px] text-muted">
+                                    /{mcp.mcpCode}
+                                  </span>
                                 </span>
                                 <span className="inline-flex items-center gap-2">
-                                  <span className="sr-only">{isSelected ? '已启用' : '未启用'}</span>
+                                  <span className="sr-only">
+                                    {isSelected ? '已启用' : '未启用'}
+                                  </span>
                                   <span
                                     role="switch"
                                     aria-label={`切换MCP ${mcp.displayName}`}
                                     aria-checked={isSelected}
                                     data-testid={`mcp-switch-${mcp.mcpCode}`}
                                     className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full border transition-colors ${
-                                      isSelected ? 'border-foreground bg-foreground/90' : 'border-border bg-surface-high'
+                                      isSelected
+                                        ? 'border-foreground bg-foreground/90'
+                                        : 'border-border bg-surface-high'
                                     }`}
                                   >
                                     <span
@@ -502,18 +575,26 @@ export default function ChatView({
                                       data-testid={`skill-option-icon-${skill.skillCode}`}
                                       className="shrink-0 text-muted"
                                     />
-                                    <span className="block truncate text-foreground">{skill.displayName}</span>
+                                    <span className="block truncate text-foreground">
+                                      {skill.displayName}
+                                    </span>
                                   </span>
-                                  <span className="mt-1 block truncate font-mono text-[11px] text-muted">/{skill.skillCode}</span>
+                                  <span className="mt-1 block truncate font-mono text-[11px] text-muted">
+                                    /{skill.skillCode}
+                                  </span>
                                 </span>
                                 {isSelected ? (
-                                  <span className="rounded-full border border-border px-2 py-0.5 text-[10px] text-muted">已选中</span>
+                                  <span className="rounded-full border border-border px-2 py-0.5 text-[10px] text-muted">
+                                    已选中
+                                  </span>
                                 ) : null}
                               </button>
                             );
                           })
                         ) : (
-                          <div className="rounded-xl bg-surface-container px-3 py-2 text-sm text-muted">未匹配到技能</div>
+                          <div className="rounded-xl bg-surface-container px-3 py-2 text-sm text-muted">
+                            未匹配到技能
+                          </div>
                         )}
                       </div>
                     </div>
@@ -529,7 +610,11 @@ export default function ChatView({
                       }}
                       className="inline-flex h-7 items-center rounded-full border border-border bg-surface-container px-3 text-xs text-foreground transition-colors hover:border-border-active"
                     >
-                      <Workflow size={12} data-testid="mcp-trigger-icon" className="mr-1 text-muted" />
+                      <Workflow
+                        size={12}
+                        data-testid="mcp-trigger-icon"
+                        className="mr-1 text-muted"
+                      />
                       MCP
                     </button>
                     <button
@@ -557,12 +642,18 @@ export default function ChatView({
                     >
                       <Sparkles size={12} data-testid="skill-trigger-icon" className="text-muted" />
                       <span className="truncate">技能</span>
-                      <ChevronDown size={12} className={`transition-transform ${activeSelectorMode === 'skill' ? 'rotate-180' : ''}`} />
+                      <ChevronDown
+                        size={12}
+                        className={`transition-transform ${activeSelectorMode === 'skill' ? 'rotate-180' : ''}`}
+                      />
                     </button>
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
-                  <button type="button" className="rounded-full border border-border bg-surface-container p-1.5 text-muted">
+                  <button
+                    type="button"
+                    className="rounded-full border border-border bg-surface-container p-1.5 text-muted"
+                  >
                     <Paperclip size={17} />
                   </button>
                   <div className="relative flex-1">
@@ -611,11 +702,9 @@ export default function ChatView({
                           }}
                           rows={1}
                           placeholder="输入问题，或先选择技能/MCP..."
-                          // 步骤：输入框改为行内自适应宽度，让文字在有空间时紧跟技能标签后方开始输入。
-                          className={`inline min-h-8 resize-none bg-transparent align-baseline text-[14px] leading-6 text-foreground outline-none placeholder:text-muted ${
-                            selectedSkillTags.length > 0
-                              ? 'min-w-[180px] max-w-full'
-                              : 'w-full'
+                          // 步骤：单行态通过上下内边距与中线对齐保持垂直居中，多行仍由自适应高度逻辑接管。
+                          className={`inline min-h-8 resize-none bg-transparent py-1 align-middle text-[14px] leading-6 text-foreground outline-none placeholder:text-muted ${
+                            selectedSkillTags.length > 0 ? 'min-w-[180px] max-w-full' : 'w-full'
                           }`}
                         />
                       </div>
@@ -680,59 +769,127 @@ export default function ChatView({
               isWorkspacePanelVisible ? 'translate-x-0 opacity-100' : 'translate-x-4 opacity-0'
             }`}
           >
-              <div className="border-b border-border px-5 py-5">
-                <p className="font-mono text-[11px] uppercase tracking-[0.3em] text-muted">Workspace</p>
-                <h3 className="mt-2 text-lg font-semibold text-foreground">执行回放</h3>
-              </div>
-              <div className="flex-1 overflow-y-auto px-4 py-4">
-                <Panel title="执行步骤" icon={CheckCircle2}>
-                  {executionSteps.length ? (
-                    executionSteps.map((step) => (
-                      <div key={step.id} className="rounded-2xl border border-border bg-surface-container px-4 py-3">
-                        <div className="text-sm font-medium text-foreground">{step.stepTitle}</div>
-                        <div className="mt-2 text-[12px] uppercase tracking-[0.2em] text-muted">{step.stepStatus}</div>
-                        {step.content ? <div className="mt-3 text-sm leading-6 text-muted">{step.content}</div> : null}
+            <div className="border-b border-border px-5 py-5">
+              <p className="font-mono text-[11px] uppercase tracking-[0.3em] text-muted">
+                Workspace
+              </p>
+              <h3 className="mt-2 text-lg font-semibold text-foreground">执行回放</h3>
+            </div>
+            <div className="flex-1 overflow-y-auto px-4 py-4">
+              <Panel title="执行步骤" icon={CheckCircle2}>
+                {executionSteps.length ? (
+                  executionSteps.map((step) => (
+                    <div
+                      key={step.id}
+                      className="rounded-2xl border border-border bg-surface-container px-4 py-3"
+                    >
+                      <div className="text-sm font-medium text-foreground">{step.stepTitle}</div>
+                      <div className="mt-2 text-[12px] uppercase tracking-[0.2em] text-muted">
+                        {step.stepStatus}
                       </div>
-                    ))
-                  ) : (
-                    <EmptyBlock text="当前会话暂无步骤回放" />
-                  )}
-                </Panel>
+                      {step.content ? (
+                        <div className="mt-3 text-sm leading-6 text-muted">{step.content}</div>
+                      ) : null}
+                    </div>
+                  ))
+                ) : (
+                  <EmptyBlock text="当前会话暂无步骤回放" />
+                )}
+              </Panel>
 
-                <Panel title="参考来源" icon={Globe2}>
-                  {references.length ? (
-                    references.map((reference) => (
-                      <a
-                        key={reference.id}
-                        href={reference.url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="block rounded-2xl border border-border bg-surface-container px-4 py-3 transition-colors hover:border-border-active"
-                      >
-                        <div className="text-sm font-medium text-foreground">{reference.title}</div>
-                        {reference.siteName ? <div className="mt-2 text-[12px] text-muted">{reference.siteName}</div> : null}
-                        {reference.snippet ? <div className="mt-3 text-sm leading-6 text-muted">{reference.snippet}</div> : null}
-                      </a>
-                    ))
-                  ) : (
-                    <EmptyBlock text="当前会话暂无来源回放" />
-                  )}
-                </Panel>
+              <Panel title="参考来源" icon={Globe2}>
+                {references.length ? (
+                  references.map((reference) => (
+                    <a
+                      key={reference.id}
+                      href={reference.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="block rounded-2xl border border-border bg-surface-container px-4 py-3 transition-colors hover:border-border-active"
+                    >
+                      <div className="text-sm font-medium text-foreground">{reference.title}</div>
+                      {reference.siteName ? (
+                        <div className="mt-2 text-[12px] text-muted">{reference.siteName}</div>
+                      ) : null}
+                      {reference.snippet ? (
+                        <div className="mt-3 text-sm leading-6 text-muted">{reference.snippet}</div>
+                      ) : null}
+                    </a>
+                  ))
+                ) : (
+                  <EmptyBlock text="当前会话暂无来源回放" />
+                )}
+              </Panel>
 
-                <Panel title="生成产物" icon={FileText}>
-                  {artifacts.length ? (
-                    artifacts.map((artifact) => (
-                      <div key={artifact.id} className="rounded-2xl border border-border bg-surface-container px-4 py-3">
-                        <div className="text-sm font-medium text-foreground">{artifact.name}</div>
-                        <div className="mt-2 text-[12px] uppercase tracking-[0.2em] text-muted">{artifact.artifactType}</div>
-                        {artifact.contentPreview ? <div className="mt-3 text-sm leading-6 text-muted">{artifact.contentPreview}</div> : null}
+              <Panel title="生成产物" icon={FileText}>
+                {artifacts.length ? (
+                  artifacts.map((artifact) => (
+                    <div
+                      key={artifact.id}
+                      className="rounded-2xl border border-border bg-surface-container px-4 py-3"
+                    >
+                      <div className="text-sm font-medium text-foreground">{artifact.name}</div>
+                      <div className="mt-2 text-[12px] uppercase tracking-[0.2em] text-muted">
+                        {artifact.artifactType}
                       </div>
-                    ))
-                  ) : (
-                    <EmptyBlock text="当前会话暂无产物回放" />
-                  )}
-                </Panel>
-              </div>
+                      {artifact.contentPreview ? (
+                        <div className="mt-3 text-sm leading-6 text-muted">
+                          {artifact.contentPreview}
+                        </div>
+                      ) : null}
+                    </div>
+                  ))
+                ) : (
+                  <EmptyBlock text="当前会话暂无产物回放" />
+                )}
+              </Panel>
+
+              <Panel title="当前技能" icon={Sparkles}>
+                {currentSkills.length ? (
+                  currentSkills.map((skill) => (
+                    <div
+                      key={`${skill.id}-${skill.skillCode}`}
+                      className="rounded-2xl border border-border bg-surface-container px-4 py-3"
+                    >
+                      <div className="text-sm font-medium text-foreground">{skill.displayName}</div>
+                      <div className="mt-2 font-mono text-[12px] text-muted">
+                        /{skill.skillCode}
+                      </div>
+                      {skill.category ? (
+                        <div className="mt-2 text-xs text-muted">{skill.category}</div>
+                      ) : null}
+                      {skill.description ? (
+                        <div className="mt-3 text-sm leading-6 text-muted">{skill.description}</div>
+                      ) : null}
+                    </div>
+                  ))
+                ) : (
+                  <EmptyBlock text="当前会话暂无技能绑定" />
+                )}
+              </Panel>
+
+              <Panel title="当前 MCP" icon={Workflow}>
+                {currentMcps.length ? (
+                  currentMcps.map((mcp) => (
+                    <div
+                      key={`${mcp.id}-${mcp.mcpCode}`}
+                      className="rounded-2xl border border-border bg-surface-container px-4 py-3"
+                    >
+                      <div className="text-sm font-medium text-foreground">{mcp.displayName}</div>
+                      <div className="mt-2 font-mono text-[12px] text-muted">/{mcp.mcpCode}</div>
+                      {mcp.category ? (
+                        <div className="mt-2 text-xs text-muted">{mcp.category}</div>
+                      ) : null}
+                      {mcp.description ? (
+                        <div className="mt-3 text-sm leading-6 text-muted">{mcp.description}</div>
+                      ) : null}
+                    </div>
+                  ))
+                ) : (
+                  <EmptyBlock text="当前会话暂无 MCP 绑定" />
+                )}
+              </Panel>
+            </div>
           </div>
         </aside>
       ) : null}
@@ -807,7 +964,10 @@ function ThinkingPanel({ messageId, content }: { messageId: string; content: str
             aria-hidden="true"
             className="flex h-7 w-7 items-center justify-center"
           >
-            <ChevronDown size={15} className={`transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
+            <ChevronDown
+              size={15}
+              className={`transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}
+            />
           </span>
         </button>
       </div>
@@ -855,7 +1015,10 @@ function McpCallPanel({ messageId, calls }: { messageId: string; calls: McpCallI
           onClick={() => setIsExpanded((current) => !current)}
           className="flex h-7 w-7 items-center justify-center rounded-full border border-border bg-surface text-muted transition-colors hover:text-foreground"
         >
-          <ChevronDown size={15} className={`transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
+          <ChevronDown
+            size={15}
+            className={`transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}
+          />
         </button>
       </div>
       <div
@@ -875,20 +1038,26 @@ function McpCallPanel({ messageId, calls }: { messageId: string; calls: McpCallI
             >
               <div className="flex items-center justify-between gap-3">
                 <div className="min-w-0">
-                  <div className="truncate text-sm font-medium text-foreground">{call.displayName || call.toolId}</div>
+                  <div className="truncate text-sm font-medium text-foreground">
+                    {call.displayName || call.toolId}
+                  </div>
                   <div className="mt-1 font-mono text-[11px] text-muted">/{call.toolId}</div>
                 </div>
               </div>
               {call.input ? (
                 <div className="mt-2 rounded-lg bg-surface-container px-2.5 py-2">
                   <div className="text-[11px] uppercase tracking-[0.16em] text-muted">输入</div>
-                  <div className="mt-1 whitespace-pre-wrap text-xs leading-5 text-foreground">{call.input}</div>
+                  <div className="mt-1 whitespace-pre-wrap text-xs leading-5 text-foreground">
+                    {call.input}
+                  </div>
                 </div>
               ) : null}
               {call.content ? (
                 <div className="mt-2 rounded-lg bg-surface-container px-2.5 py-2">
                   <div className="text-[11px] uppercase tracking-[0.16em] text-muted">返回</div>
-                  <div className="mt-1 whitespace-pre-wrap text-xs leading-5 text-foreground">{call.content}</div>
+                  <div className="mt-1 whitespace-pre-wrap text-xs leading-5 text-foreground">
+                    {call.content}
+                  </div>
                 </div>
               ) : null}
             </article>
@@ -908,12 +1077,22 @@ function MarkdownMessage({ content }: { content: string }) {
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
-          h1: ({ node: _node, ...props }) => <h1 className="mb-4 text-3xl font-semibold tracking-tight" {...props} />,
-          h2: ({ node: _node, ...props }) => <h2 className="mb-3 mt-6 text-2xl font-semibold tracking-tight" {...props} />,
-          h3: ({ node: _node, ...props }) => <h3 className="mb-3 mt-6 text-xl font-semibold tracking-tight" {...props} />,
+          h1: ({ node: _node, ...props }) => (
+            <h1 className="mb-4 text-3xl font-semibold tracking-tight" {...props} />
+          ),
+          h2: ({ node: _node, ...props }) => (
+            <h2 className="mb-3 mt-6 text-2xl font-semibold tracking-tight" {...props} />
+          ),
+          h3: ({ node: _node, ...props }) => (
+            <h3 className="mb-3 mt-6 text-xl font-semibold tracking-tight" {...props} />
+          ),
           p: ({ node: _node, ...props }) => <p className="mb-4 last:mb-0" {...props} />,
-          ul: ({ node: _node, ...props }) => <ul className="mb-4 list-disc space-y-2 pl-6" {...props} />,
-          ol: ({ node: _node, ...props }) => <ol className="mb-4 list-decimal space-y-2 pl-6" {...props} />,
+          ul: ({ node: _node, ...props }) => (
+            <ul className="mb-4 list-disc space-y-2 pl-6" {...props} />
+          ),
+          ol: ({ node: _node, ...props }) => (
+            <ol className="mb-4 list-decimal space-y-2 pl-6" {...props} />
+          ),
           li: ({ node: _node, ...props }) => <li className="pl-1" {...props} />,
           hr: ({ node: _node, ...props }) => <hr className="my-6 border-border" {...props} />,
           code: ({ node: _node, className, children, ...props }) => {
@@ -929,24 +1108,40 @@ function MarkdownMessage({ content }: { content: string }) {
               );
             }
             return (
-              <code className="rounded bg-surface-container px-1.5 py-0.5 font-mono text-[13px]" {...props}>
+              <code
+                className="rounded bg-surface-container px-1.5 py-0.5 font-mono text-[13px]"
+                {...props}
+              >
                 {children}
               </code>
             );
           },
-          pre: ({ node: _node, ...props }) => <pre className="mb-4 overflow-x-auto whitespace-pre-wrap" {...props} />,
+          pre: ({ node: _node, ...props }) => (
+            <pre className="mb-4 overflow-x-auto whitespace-pre-wrap" {...props} />
+          ),
           table: ({ node: _node, ...props }) => (
             <div className="mb-4 overflow-x-auto rounded-2xl border border-border">
               <table className="min-w-full border-collapse text-left text-sm" {...props} />
             </div>
           ),
-          thead: ({ node: _node, ...props }) => <thead className="bg-surface-container" {...props} />,
-          th: ({ node: _node, ...props }) => <th className="border-b border-border px-3 py-2 font-semibold" {...props} />,
-          td: ({ node: _node, ...props }) => <td className="border-b border-border px-3 py-2 align-top last:border-b-0" {...props} />,
-          blockquote: ({ node: _node, ...props }) => (
-            <blockquote className="mb-4 border-l-2 border-border-active pl-4 text-muted" {...props} />
+          thead: ({ node: _node, ...props }) => (
+            <thead className="bg-surface-container" {...props} />
           ),
-          strong: ({ node: _node, ...props }) => <strong className="font-semibold text-foreground" {...props} />,
+          th: ({ node: _node, ...props }) => (
+            <th className="border-b border-border px-3 py-2 font-semibold" {...props} />
+          ),
+          td: ({ node: _node, ...props }) => (
+            <td className="border-b border-border px-3 py-2 align-top last:border-b-0" {...props} />
+          ),
+          blockquote: ({ node: _node, ...props }) => (
+            <blockquote
+              className="mb-4 border-l-2 border-border-active pl-4 text-muted"
+              {...props}
+            />
+          ),
+          strong: ({ node: _node, ...props }) => (
+            <strong className="font-semibold text-foreground" {...props} />
+          ),
           img: ({ node: _node, ...props }) => (
             <img
               className="chat-message-image mb-4 max-h-[460px] w-full rounded-2xl border border-border object-contain shadow-sm"
@@ -968,7 +1163,15 @@ type MessageReaction = 'up' | 'down' | null;
 /**
  * 渲染助手消息底部操作栏，统一提供复制、复制 Markdown 与点赞反馈入口。
  */
-function AssistantMessageActions({ messageId, conversationId, content }: { messageId: string; conversationId: string; content: string }) {
+function AssistantMessageActions({
+  messageId,
+  conversationId,
+  content,
+}: {
+  messageId: string;
+  conversationId: string;
+  content: string;
+}) {
   const [isMenuOpen, setIsMenuOpen] = React.useState(false);
   const [copiedMode, setCopiedMode] = React.useState<CopyMode | null>(null);
   const [reaction, setReaction] = React.useState<MessageReaction>(null);
@@ -1037,7 +1240,10 @@ function AssistantMessageActions({ messageId, conversationId, content }: { messa
 
   return (
     <div className="chat-message-actions mt-3 flex items-center gap-1 text-muted">
-      <div className="chat-message-action-button-group" data-testid={`copy-action-group-${messageId}`}>
+      <div
+        className="chat-message-action-button-group"
+        data-testid={`copy-action-group-${messageId}`}
+      >
         <button
           type="button"
           data-testid={`copy-message-${messageId}`}
@@ -1057,7 +1263,10 @@ function AssistantMessageActions({ messageId, conversationId, content }: { messa
             onClick={() => setIsMenuOpen((open) => !open)}
             className="chat-message-action-button chat-message-action-button-group-item"
           >
-            <ChevronDown size={15} className={`transition-transform ${isMenuOpen ? 'rotate-180' : ''}`} />
+            <ChevronDown
+              size={15}
+              className={`transition-transform ${isMenuOpen ? 'rotate-180' : ''}`}
+            />
           </button>
           {isMenuOpen ? (
             <div className="chat-copy-menu absolute bottom-11 left-0 min-w-[190px] rounded-2xl border border-border bg-surface px-2 py-2 shadow-[0_16px_40px_rgba(0,0,0,0.24)]">
@@ -1102,7 +1311,9 @@ function AssistantMessageActions({ messageId, conversationId, content }: { messa
         <ThumbsDown size={15} />
       </button>
       {copiedMode ? (
-        <span className="ml-2 text-[11px] text-muted">{copiedMode === 'markdown' ? '已复制 Markdown' : '已复制'}</span>
+        <span className="ml-2 text-[11px] text-muted">
+          {copiedMode === 'markdown' ? '已复制 Markdown' : '已复制'}
+        </span>
       ) : null}
       {reactionError ? <span className="ml-2 text-[11px] text-error">{reactionError}</span> : null}
     </div>

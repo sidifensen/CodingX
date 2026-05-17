@@ -15,11 +15,43 @@ export function useAuth() {
   const [errorMessage, setErrorMessage] = useState<string>('');
 
   useEffect(() => {
-    // 步骤：初始化阶段读取本地会话，实现刷新后登录状态恢复。
-    const cachedSession = AuthStorage.getSession();
-    if (cachedSession) {
-      setSession(cachedSession);
-    }
+    let isMounted = true;
+
+    /**
+     * 启动阶段先做服务端会话校验，阻止失效 token 在未登录态下错误渲染用户名。
+     */
+    const bootstrapSession = async () => {
+      // 步骤：先读取本地缓存会话，无会话时直接保持未登录态。
+      const cachedSession = AuthStorage.getSession();
+      if (!cachedSession) {
+        if (isMounted) {
+          setSession(null);
+        }
+        return;
+      }
+
+      try {
+        // 步骤：服务端校验 token 有效性，仅在通过时恢复登录态。
+        await AuthApi.me(cachedSession.token);
+        if (!isMounted) {
+          return;
+        }
+        setSession(cachedSession);
+      } catch {
+        if (!isMounted) {
+          return;
+        }
+        // 步骤：校验失败时回收本地会话，避免未登录用户看到历史用户名。
+        AuthStorage.clearSession();
+        setSession(null);
+      }
+    };
+
+    void bootstrapSession();
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   /**

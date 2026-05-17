@@ -247,6 +247,68 @@ describe('App', () => {
   });
 
   /**
+   * 本地残留会话但服务端判定未登录时，不应渲染左下角用户名。
+   */
+  it('应在本地会话失效时清理会话并展示登录入口', async () => {
+    window.localStorage.setItem(
+      'codingx.auth.session',
+      JSON.stringify({
+        token: 'expired-token',
+        userId: 1002,
+        username: 'user',
+        displayName: 'CodingX Admin',
+        userType: 'USER',
+      }),
+    );
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url === '/api/auth/me') {
+        expect(init?.method).toBe('GET');
+        expect((init?.headers as Record<string, string>)?.satoken).toBe('expired-token');
+        return new Response(
+          JSON.stringify({
+            success: false,
+            code: 'UNAUTHORIZED',
+            message: '未登录',
+            data: null,
+          }),
+          { status: 401 },
+        );
+      }
+      if (url === '/api/chat/sample-questions') {
+        return new Response(JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }), { status: 200 });
+      }
+      if (url === '/api/chat/mcps') {
+        return new Response(JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }), { status: 200 });
+      }
+      if (url === '/api/chat/skills') {
+        return new Response(JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }), { status: 200 });
+      }
+      if (url === '/api/chat/conversations') {
+        return new Response(JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }), { status: 200 });
+      }
+      if (url.startsWith('/api/chat/conversations/') && url.endsWith('/messages')) {
+        return new Response(JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }), { status: 200 });
+      }
+      if (
+        (url.startsWith('/api/chat/conversations/') && url.endsWith('/steps')) ||
+        (url.startsWith('/api/chat/conversations/') && url.endsWith('/references')) ||
+        (url.startsWith('/api/chat/conversations/') && url.endsWith('/artifacts'))
+      ) {
+        return new Response(JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }), { status: 200 });
+      }
+      throw new Error(`Unhandled fetch in expired session test: ${url}`);
+    });
+
+    render(<App />);
+
+    expect(await screen.findByRole('button', { name: '侧边栏登录入口' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'CodingX Admin 个人中心' })).not.toBeInTheDocument();
+    expect(window.localStorage.getItem('codingx.auth.session')).toBeNull();
+  });
+
+  /**
    * 验证左侧侧边栏应展示真实会话，而不是保留演示假数据。
    */
   it('应在侧边栏展示真实会话并移除假数据', async () => {
@@ -262,6 +324,22 @@ describe('App', () => {
     );
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
       const url = String(input);
+      if (url === '/api/auth/me') {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            code: 'OK',
+            message: 'success',
+            data: {
+              userId: 1002,
+              username: 'user',
+              displayName: 'CodingX User',
+              userType: 'USER',
+            },
+          }),
+          { status: 200 },
+        );
+      }
       if (url === '/api/chat/conversations') {
         return new Response(
           JSON.stringify({
@@ -326,6 +404,22 @@ describe('App', () => {
     let messageRequestCount = 0;
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
       const url = String(input);
+      if (url === '/api/auth/me') {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            code: 'OK',
+            message: 'success',
+            data: {
+              userId: 1002,
+              username: 'user',
+              displayName: 'CodingX User',
+              userType: 'USER',
+            },
+          }),
+          { status: 200 },
+        );
+      }
       if (url === '/api/chat/conversations') {
         return new Response(
           JSON.stringify({
@@ -481,6 +575,22 @@ describe('App', () => {
     );
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
       const url = String(input);
+      if (url === '/api/auth/me') {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            code: 'OK',
+            message: 'success',
+            data: {
+              userId: 1002,
+              username: 'user',
+              displayName: 'CodingX User',
+              userType: 'USER',
+            },
+          }),
+          { status: 200 },
+        );
+      }
       if (url === '/api/chat/conversations') {
         return new Response(
           JSON.stringify({
@@ -598,6 +708,22 @@ describe('App', () => {
     vi.spyOn(Date, 'now').mockReturnValue(new Date('2026-05-15T12:00:00').getTime());
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
       const url = String(input);
+      if (url === '/api/auth/me') {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            code: 'OK',
+            message: 'success',
+            data: {
+              userId: 1002,
+              username: 'user',
+              displayName: 'CodingX User',
+              userType: 'USER',
+            },
+          }),
+          { status: 200 },
+        );
+      }
       if (url === '/api/chat/conversations') {
         return new Response(
           JSON.stringify({
@@ -675,6 +801,22 @@ describe('App', () => {
     );
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
       const url = String(input);
+      if (url === '/api/auth/me') {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            code: 'OK',
+            message: 'success',
+            data: {
+              userId: 1002,
+              username: 'user',
+              displayName: 'CodingX User',
+              userType: 'USER',
+            },
+          }),
+          { status: 200 },
+        );
+      }
       if (url === '/api/chat/conversations') {
         return new Response(
           JSON.stringify({

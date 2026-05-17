@@ -30,7 +30,7 @@ export function TraceRunsTable({
   const showSkeletonRows = loading && runs.length === 0;
 
   return (
-    <section className="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-border-hairline bg-surface-container-lowest shadow-sm">
+    <section className="flex min-h-0 max-h-full flex-col overflow-hidden rounded-xl border border-border-hairline bg-surface-container-lowest shadow-sm">
       <div className="shrink-0 border-b border-border-hairline px-lg py-md">
         <h2 className="font-title-md text-title-md text-ink">运行列表</h2>
         <p className="mt-1 text-secondary">按时间倒序查看运行记录，通过操作按钮进入独立详情页</p>

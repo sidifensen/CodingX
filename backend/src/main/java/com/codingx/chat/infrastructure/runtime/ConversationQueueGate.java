@@ -3,68 +3,29 @@ package com.codingx.chat.infrastructure.runtime;
 import com.codingx.config.RuntimeProperties;
 import jakarta.annotation.PreDestroy;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicLong;
 import lombok.extern.slf4j.Slf4j;
+import org.redisson.api.RPermitExpirableSemaphore;
+import org.redisson.api.RScoredSortedSet;
+import org.redisson.api.RedissonClient;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Component;
 
 /**
- * 提供聊天链路并发门控，支持进程内和 Redis 两种实现。
+ * 提供聊天链路并发门控，支持进程内和 Redisson 分布式信号量两种实现。
  */
 @Component
 @Slf4j
 public class ConversationQueueGate {
 
+    private static final String SEMAPHORE_NAME = "chat:queue:semaphore";
     private static final String QUEUE_KEY = "chat:queue:waiting";
-    private static final String ACTIVE_ZSET_KEY = "chat:queue:active";
-    private static final String NOTIFY_CHANNEL = "chat:queue:notify";
-
-    private static final DefaultRedisScript<String> CLAIM_SCRIPT = new DefaultRedisScript<>( """
-        local member = ARGV[1]
-        local nowMillis = tonumber(ARGV[2])
-        local maxConcurrent = tonumber(ARGV[3])
-        local leaseSeconds = tonumber(ARGV[4])
-        local expireAt = nowMillis + leaseSeconds * 1000
-        redis.call('ZREMRANGEBYSCORE', KEYS[2], '-inf', nowMillis)
-        if redis.call('ZSCORE', KEYS[2], member) ~= false then
-          redis.call('ZADD', KEYS[2], expireAt, member)
-          redis.call('ZREM', KEYS[1], member)
-          return 'granted'
-        end
-        redis.call('ZADD', KEYS[1], 'NX', nowMillis, member)
-        local rank = redis.call('ZRANK', KEYS[1], member)
-        local activeCount = redis.call('ZCARD', KEYS[2])
-        if rank ~= false and rank < maxConcurrent and activeCount < maxConcurrent then
-          redis.call('ZREM', KEYS[1], member)
-          redis.call('ZADD', KEYS[2], expireAt, member)
-          return 'granted'
-        end
-        return 'wait'
-        """, String.class);
-
-    private static final DefaultRedisScript<Long> RELEASE_SCRIPT = new DefaultRedisScript<>( """
-        local member = ARGV[1]
-        local removed = redis.call('ZREM', KEYS[1], member)
-        redis.call('ZREM', KEYS[2], member)
-        return removed
-        """, Long.class);
-
-    private static final DefaultRedisScript<Long> RENEW_SCRIPT = new DefaultRedisScript<>( """
-        local member = ARGV[1]
-        local expireAt = tonumber(ARGV[2])
-        if redis.call('ZSCORE', KEYS[1], member) == false then
-          return 0
-        end
-        redis.call('ZADD', KEYS[1], expireAt, member)
-        return 1
-        """, Long.class);
+    private static final String NOTIFY_TOPIC = "chat:queue:notify";
 
     private final boolean useRedisQueueGate;
     private final int maxConcurrent;
@@ -72,21 +33,20 @@ public class ConversationQueueGate {
     private final long queuePollIntervalMs;
     private final long queueLeaseSeconds;
     private final long queueLeaseRenewIntervalMs;
-    private final StringRedisTemplate stringRedisTemplate;
+    private final RedissonClient redissonClient;
+
     private final Map<Long, Boolean> activeConversations = new ConcurrentHashMap<>();
-    private final Map<Long, Boolean> redisActiveConversations = new ConcurrentHashMap<>();
+    private final Map<Long, String> permitByConversation = new ConcurrentHashMap<>();
     private final Object inMemoryMonitor = new Object();
-    private final Object redisWaitMonitor = new Object();
-    private final AtomicLong notifyVersion = new AtomicLong(0L);
     private final ScheduledExecutorService renewScheduler;
 
     /**
-     * Spring 运行时构造器，按配置决定是否启用 Redis 队列门控。
+     * Spring 运行时构造器，按配置决定是否启用 Redisson 队列门控。
      * @param runtimeProperties 运行时配置。
-     * @param redisTemplateProvider Redis 模板提供者。
+     * @param redissonClientProvider Redisson 客户端提供者。
      */
     @Autowired
-    public ConversationQueueGate(RuntimeProperties runtimeProperties, ObjectProvider<StringRedisTemplate> redisTemplateProvider) {
+    public ConversationQueueGate(RuntimeProperties runtimeProperties, ObjectProvider<RedissonClient> redissonClientProvider) {
         this(
             runtimeProperties.isUseRedisQueueGate(),
             runtimeProperties.getQueueMaxConcurrent(),
@@ -94,7 +54,7 @@ public class ConversationQueueGate {
             runtimeProperties.getQueuePollIntervalMs(),
             runtimeProperties.getQueueLeaseSeconds(),
             runtimeProperties.getQueueLeaseRenewIntervalMs(),
-            redisTemplateProvider.getIfAvailable()
+            redissonClientProvider.getIfAvailable()
         );
     }
 
@@ -108,13 +68,13 @@ public class ConversationQueueGate {
 
     /**
      * 显式构造器，便于测试和运行时复用。
-     * @param useRedisQueueGate 是否启用 Redis 门控。
+     * @param useRedisQueueGate 是否启用 Redisson 门控。
      * @param maxConcurrent 最大并发数。
      * @param queueAcquireTimeoutMs 获取超时时间。
      * @param queuePollIntervalMs 轮询间隔。
      * @param queueLeaseSeconds 租约秒数。
      * @param queueLeaseRenewIntervalMs 租约续期间隔毫秒数。
-     * @param stringRedisTemplate Redis 模板。
+     * @param redissonClient Redisson 客户端。
      */
     public ConversationQueueGate(
         boolean useRedisQueueGate,
@@ -123,7 +83,7 @@ public class ConversationQueueGate {
         long queuePollIntervalMs,
         long queueLeaseSeconds,
         long queueLeaseRenewIntervalMs,
-        StringRedisTemplate stringRedisTemplate
+        RedissonClient redissonClient
     ) {
         this.useRedisQueueGate = useRedisQueueGate;
         this.maxConcurrent = Math.max(1, maxConcurrent);
@@ -131,8 +91,12 @@ public class ConversationQueueGate {
         this.queuePollIntervalMs = Math.max(50L, queuePollIntervalMs);
         this.queueLeaseSeconds = Math.max(30L, queueLeaseSeconds);
         this.queueLeaseRenewIntervalMs = normalizeRenewInterval(queueLeaseSeconds, queueLeaseRenewIntervalMs);
-        this.stringRedisTemplate = stringRedisTemplate;
-        this.renewScheduler = createRenewScheduler();
+        this.redissonClient = redissonClient;
+        this.renewScheduler = Executors.newSingleThreadScheduledExecutor(runnable -> {
+            Thread thread = new Thread(runnable, "chat-queue-lease-renew");
+            thread.setDaemon(true);
+            return thread;
+        });
         scheduleLeaseRenewalTask();
     }
 
@@ -143,7 +107,7 @@ public class ConversationQueueGate {
      * @param queueAcquireTimeoutMs 获取超时时间。
      * @param queuePollIntervalMs 轮询间隔。
      * @param queueLeaseSeconds 租约秒数。
-     * @param stringRedisTemplate Redis 模板。
+     * @param redissonClient Redisson 客户端。
      */
     public ConversationQueueGate(
         boolean useRedisQueueGate,
@@ -151,7 +115,7 @@ public class ConversationQueueGate {
         long queueAcquireTimeoutMs,
         long queuePollIntervalMs,
         long queueLeaseSeconds,
-        StringRedisTemplate stringRedisTemplate
+        RedissonClient redissonClient
     ) {
         this(
             useRedisQueueGate,
@@ -160,7 +124,7 @@ public class ConversationQueueGate {
             queuePollIntervalMs,
             queueLeaseSeconds,
             defaultRenewInterval(queueLeaseSeconds),
-            stringRedisTemplate
+            redissonClient
         );
     }
 
@@ -170,12 +134,12 @@ public class ConversationQueueGate {
      * @return 获取结果。
      */
     public QueueAcquireResult tryAcquire(Long conversationId) {
-        if (!useRedisQueueGate || stringRedisTemplate == null) {
+        if (!useRedisQueueGate || redissonClient == null) {
             synchronized (inMemoryMonitor) {
                 return tryAcquireInMemory(conversationId);
             }
         }
-        return tryAcquireWithRedis(conversationId);
+        return tryAcquireWithRedisson(conversationId);
     }
 
     /**
@@ -183,19 +147,25 @@ public class ConversationQueueGate {
      * @param conversationId 会话标识。
      */
     public void release(Long conversationId) {
-        if (!useRedisQueueGate || stringRedisTemplate == null) {
+        if (!useRedisQueueGate || redissonClient == null) {
             synchronized (inMemoryMonitor) {
                 activeConversations.remove(conversationId);
             }
             return;
         }
-        redisActiveConversations.remove(conversationId);
-        stringRedisTemplate.execute(
-            RELEASE_SCRIPT,
-            java.util.List.of(ACTIVE_ZSET_KEY, QUEUE_KEY),
-            String.valueOf(conversationId)
-        );
-        publishQueueNotify();
+        String permitId = permitByConversation.remove(conversationId);
+        if (permitId == null) {
+            redissonClient.getScoredSortedSet(QUEUE_KEY).remove(member(conversationId));
+            return;
+        }
+        try {
+            redissonClient.getPermitExpirableSemaphore(SEMAPHORE_NAME).release(permitId);
+        } catch (RuntimeException exception) {
+            log.warn("释放会话许可失败，conversationId={}", conversationId, exception);
+        } finally {
+            redissonClient.getScoredSortedSet(QUEUE_KEY).remove(member(conversationId));
+            publishQueueNotify();
+        }
     }
 
     /**
@@ -204,20 +174,29 @@ public class ConversationQueueGate {
      * @return 续租是否成功。
      */
     public boolean renew(Long conversationId) {
-        if (!useRedisQueueGate || stringRedisTemplate == null) {
+        if (!useRedisQueueGate || redissonClient == null) {
             return true;
         }
-        Long renewed = stringRedisTemplate.execute(
-            RENEW_SCRIPT,
-            java.util.List.of(ACTIVE_ZSET_KEY),
-            String.valueOf(conversationId),
-            String.valueOf(System.currentTimeMillis() + TimeUnit.SECONDS.toMillis(queueLeaseSeconds))
-        );
-        boolean success = renewed != null && renewed > 0;
-        if (!success) {
-            redisActiveConversations.remove(conversationId);
+        String permitId = permitByConversation.get(conversationId);
+        if (permitId == null) {
+            return false;
         }
-        return success;
+        try {
+            return redissonClient.getPermitExpirableSemaphore(SEMAPHORE_NAME)
+                .updateLeaseTime(permitId, queueLeaseSeconds, TimeUnit.SECONDS);
+        } catch (RuntimeException exception) {
+            permitByConversation.remove(conversationId);
+            log.warn("续租会话许可失败，conversationId={}", conversationId, exception);
+            return false;
+        }
+    }
+
+    /**
+     * 生命周期结束时关闭续租调度器，避免后台线程泄漏。
+     */
+    @PreDestroy
+    public void destroy() {
+        renewScheduler.shutdownNow();
     }
 
     /**
@@ -237,55 +216,88 @@ public class ConversationQueueGate {
     }
 
     /**
-     * 基于 Redis ZSet + 计数器的门控实现。
-     * Redis 轮询阶段不能持有 JVM 级锁，否则等待中的请求会反向阻塞 release。
+     * 基于 Redisson 可过期信号量 + 排队集合的门控实现。
      * @param conversationId 会话标识。
      * @return 获取结果。
      */
-    private QueueAcquireResult tryAcquireWithRedis(Long conversationId) {
-        String member = String.valueOf(conversationId);
-        long deadline = System.currentTimeMillis() + queueAcquireTimeoutMs;
-        while (System.currentTimeMillis() < deadline) {
-            long nowMillis = System.currentTimeMillis();
-            String result = stringRedisTemplate.execute(
-                CLAIM_SCRIPT,
-                java.util.List.of(QUEUE_KEY, ACTIVE_ZSET_KEY),
-                member,
-                String.valueOf(nowMillis),
-                String.valueOf(maxConcurrent),
-                String.valueOf(queueLeaseSeconds)
-            );
-            if ("granted".equals(result)) {
-                redisActiveConversations.put(conversationId, Boolean.TRUE);
-                return QueueAcquireResult.granted();
-            }
-            waitForQueueNotify(queuePollIntervalMs);
+    private QueueAcquireResult tryAcquireWithRedisson(Long conversationId) {
+        String requestMember = member(conversationId);
+        RScoredSortedSet<String> queue = redissonClient.getScoredSortedSet(QUEUE_KEY);
+        RPermitExpirableSemaphore semaphore = redissonClient.getPermitExpirableSemaphore(SEMAPHORE_NAME);
+        semaphore.trySetPermits(maxConcurrent);
+
+        if (permitByConversation.containsKey(conversationId)) {
+            return QueueAcquireResult.granted();
         }
-        stringRedisTemplate.opsForZSet().remove(QUEUE_KEY, member);
+        queue.add(System.currentTimeMillis(), requestMember);
+        long deadline = System.currentTimeMillis() + queueAcquireTimeoutMs;
+
+        while (System.currentTimeMillis() < deadline) {
+            Integer rank = queue.rank(requestMember);
+            if (rank != null && rank < maxConcurrent) {
+                String permitId = acquirePermit(semaphore);
+                if (permitId != null) {
+                    permitByConversation.put(conversationId, permitId);
+                    queue.remove(requestMember);
+                    publishQueueNotify();
+                    return QueueAcquireResult.granted();
+                }
+            }
+            waitForSignalOrTimeout(queuePollIntervalMs);
+        }
+        queue.remove(requestMember);
         return QueueAcquireResult.rejected("busy");
+    }
+
+    /**
+     * 从 Redisson 信号量尝试获取可过期 permit。
+     * @param semaphore 信号量实例。
+     * @return permitId；获取失败返回 null。
+     */
+    private String acquirePermit(RPermitExpirableSemaphore semaphore) {
+        try {
+            return semaphore.tryAcquire(0, queueLeaseSeconds, TimeUnit.SECONDS);
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Interrupted while acquiring queue permit", exception);
+        } catch (RuntimeException exception) {
+            log.warn("获取队列许可失败，将在下一轮重试", exception);
+            return null;
+        }
+    }
+
+    /**
+     * 等待队列通知或超时轮询，通知失败时自动退化为超时重试。
+     * @param millis 等待毫秒数。
+     */
+    private void waitForSignalOrTimeout(long millis) {
+        try {
+            // 通过轻量查询触发一次网络往返，确保连接可用；失败时退化为纯轮询。
+            redissonClient.getTopic(NOTIFY_TOPIC).countSubscribers();
+        } catch (RuntimeException ignored) {
+            // 通知通道不可用时继续轮询退化，不阻断主流程。
+        }
+        sleepQuietly(millis);
+    }
+
+    /**
+     * 主动发布队列通知，唤醒其他等待中的线程或节点。
+     */
+    private void publishQueueNotify() {
+        try {
+            redissonClient.getTopic(NOTIFY_TOPIC).publish("permit_released");
+        } catch (RuntimeException exception) {
+            log.warn("发布队列唤醒通知失败，等待线程将继续按轮询间隔重试", exception);
+        }
     }
 
     /**
      * 在轮询等待窗口中短暂睡眠，避免忙等。
      * @param millis 睡眠毫秒数。
      */
-    private void waitForQueueNotify(long millis) {
-        long beforeVersion = notifyVersion.get();
-        synchronized (redisWaitMonitor) {
-            if (notifyVersion.get() != beforeVersion) {
-                return;
-            }
-            sleepQuietly(millis);
-        }
-    }
-
-    /**
-     * 使用对象监视器实现可中断等待，兼容超时轮询与显式唤醒。
-     * @param millis 等待毫秒数。
-     */
     private void sleepQuietly(long millis) {
         try {
-            redisWaitMonitor.wait(millis);
+            Thread.sleep(millis);
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
             throw new IllegalStateException("Interrupted while waiting for queue permit", exception);
@@ -293,34 +305,7 @@ public class ConversationQueueGate {
     }
 
     /**
-     * 发布排队唤醒信号，优先唤醒同节点等待线程并广播到 Redis 频道。
-     */
-    private void publishQueueNotify() {
-        notifyVersion.incrementAndGet();
-        synchronized (redisWaitMonitor) {
-            redisWaitMonitor.notifyAll();
-        }
-        try {
-            stringRedisTemplate.convertAndSend(NOTIFY_CHANNEL, "permit_released");
-        } catch (RuntimeException exception) {
-            log.warn("发布队列唤醒通知失败，等待线程将继续按轮询间隔重试", exception);
-        }
-    }
-
-    /**
-     * 初始化续租调度器，线程使用 daemon 模式避免影响进程退出。
-     * @return 续租调度器。
-     */
-    private ScheduledExecutorService createRenewScheduler() {
-        return Executors.newSingleThreadScheduledExecutor(runnable -> {
-            Thread thread = new Thread(runnable, "chat-queue-lease-renew");
-            thread.setDaemon(true);
-            return thread;
-        });
-    }
-
-    /**
-     * 启动续租任务，周期性刷新 Redis 活跃会话租约。
+     * 周期性刷新当前节点活跃会话租约，降低长会话租约过期概率。
      */
     private void scheduleLeaseRenewalTask() {
         renewScheduler.scheduleAtFixedRate(
@@ -332,18 +317,14 @@ public class ConversationQueueGate {
     }
 
     /**
-     * 扫描当前节点仍活跃的会话并续租，续租失败则移除本地跟踪状态。
+     * 扫描当前节点活跃会话并续租，续租失败将剔除本地 permit 记录。
      */
     private void renewAllActiveLeases() {
-        if (!useRedisQueueGate || stringRedisTemplate == null || redisActiveConversations.isEmpty()) {
+        if (!useRedisQueueGate || redissonClient == null || permitByConversation.isEmpty()) {
             return;
         }
-        for (Long conversationId : redisActiveConversations.keySet()) {
-            try {
-                renew(conversationId);
-            } catch (RuntimeException exception) {
-                log.warn("续租会话执行资格失败，conversationId={}", conversationId, exception);
-            }
+        for (Long conversationId : permitByConversation.keySet()) {
+            renew(conversationId);
         }
     }
 
@@ -370,10 +351,11 @@ public class ConversationQueueGate {
     }
 
     /**
-     * 生命周期结束时关闭续租调度器，避免后台线程泄漏。
+     * 统一构造排队 member，避免直接暴露业务主键格式。
+     * @param conversationId 会话标识。
+     * @return 排队集合 member。
      */
-    @PreDestroy
-    public void destroy() {
-        renewScheduler.shutdownNow();
+    private String member(Long conversationId) {
+        return Objects.toString(conversationId);
     }
 }

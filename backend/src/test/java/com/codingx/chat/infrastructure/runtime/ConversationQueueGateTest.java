@@ -4,20 +4,25 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyDouble;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.time.Duration;
-import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.Test;
-import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.data.redis.core.script.RedisScript;
+import org.redisson.api.RPermitExpirableSemaphore;
+import org.redisson.api.RScoredSortedSet;
+import org.redisson.api.RTopic;
+import org.redisson.api.RedissonClient;
 
 /**
  * 验证聊天队列门控的最小并发、通知唤醒与租约续期行为。
@@ -57,30 +62,43 @@ class ConversationQueueGateTest {
      */
     @Test
     void redisWaiterCanProceedAfterPermitReleased() throws Exception {
-        StringRedisTemplate redisTemplate = mock(StringRedisTemplate.class);
+        RedissonClient redissonClient = mock(RedissonClient.class);
+        @SuppressWarnings("unchecked")
+        RScoredSortedSet<String> queue = mock(RScoredSortedSet.class);
+        RPermitExpirableSemaphore semaphore = mock(RPermitExpirableSemaphore.class);
+        RTopic topic = mock(RTopic.class);
         AtomicBoolean firstConversationActive = new AtomicBoolean(false);
+        AtomicBoolean secondQueued = new AtomicBoolean(false);
 
-        when(redisTemplate.execute(any(RedisScript.class), anyList(), anyString(), anyString(), anyString(), anyString()))
-            .thenAnswer(invocation -> {
-                @SuppressWarnings("unchecked")
-                List<String> keys = invocation.getArgument(1, List.class);
-                String member = invocation.getArgument(2, String.class);
-                if (keys.size() != 2) {
-                    return "wait";
-                }
-                if ("1001".equals(member)) {
-                    firstConversationActive.set(true);
-                    return "granted";
-                }
-                return firstConversationActive.get() ? "wait" : "granted";
-            });
-        when(redisTemplate.execute(any(RedisScript.class), anyList(), anyString()))
-            .thenAnswer(invocation -> {
-                firstConversationActive.set(false);
-                return 1L;
-            });
+        when(redissonClient.<String>getScoredSortedSet(anyString())).thenReturn(queue);
+        when(redissonClient.getPermitExpirableSemaphore(anyString())).thenReturn(semaphore);
+        when(redissonClient.getTopic(anyString())).thenReturn(topic);
+        when(semaphore.trySetPermits(anyInt())).thenReturn(false);
 
-        ConversationQueueGate gate = new ConversationQueueGate(true, 1, 500L, 50L, 300L, redisTemplate);
+        when(queue.rank("1001")).thenReturn(0);
+        when(queue.rank("1002")).thenAnswer(invocation -> secondQueued.get() ? 0 : 1);
+        when(queue.add(anyDouble(), anyString())).thenAnswer(invocation -> {
+            if ("1002".equals(invocation.getArgument(1, String.class))) {
+                secondQueued.set(true);
+            }
+            return true;
+        });
+        when(semaphore.tryAcquire(anyLong(), anyLong(), any(TimeUnit.class))).thenAnswer(invocation -> {
+            if (!firstConversationActive.get()) {
+                firstConversationActive.set(true);
+                return "permit-1001";
+            }
+            return firstConversationActive.get() ? null : "permit-1002";
+        });
+
+        doAnswer(invocation -> {
+            firstConversationActive.set(false);
+            return null;
+        }).when(semaphore).release("permit-1001");
+        when(topic.publish(anyString())).thenReturn(1L);
+        when(topic.countSubscribers()).thenReturn(0L);
+
+        ConversationQueueGate gate = new ConversationQueueGate(true, 1, 500L, 50L, 300L, redissonClient);
         assertTrue(gate.tryAcquire(1001L).allowed());
 
         CompletableFuture<QueueAcquireResult> waitingAcquire = CompletableFuture.supplyAsync(() -> gate.tryAcquire(1002L));
@@ -97,35 +115,50 @@ class ConversationQueueGateTest {
      * Redis 许可释放后应广播唤醒通知，减少排队线程额外轮询等待。
      */
     @Test
-    void redisReleasePublishesQueueNotify() {
-        StringRedisTemplate redisTemplate = mock(StringRedisTemplate.class);
-        when(redisTemplate.execute(any(RedisScript.class), anyList(), anyString(), anyString(), anyString(), anyString()))
-            .thenReturn("granted");
-        when(redisTemplate.execute(any(RedisScript.class), anyList()))
-            .thenReturn(1L);
+    void redisReleasePublishesQueueNotify() throws Exception {
+        RedissonClient redissonClient = mock(RedissonClient.class);
+        @SuppressWarnings("unchecked")
+        RScoredSortedSet<String> queue = mock(RScoredSortedSet.class);
+        RPermitExpirableSemaphore semaphore = mock(RPermitExpirableSemaphore.class);
+        RTopic topic = mock(RTopic.class);
 
-        ConversationQueueGate gate = new ConversationQueueGate(true, 1, 500L, 50L, 300L, redisTemplate);
+        when(redissonClient.<String>getScoredSortedSet(anyString())).thenReturn(queue);
+        when(redissonClient.getPermitExpirableSemaphore(anyString())).thenReturn(semaphore);
+        when(redissonClient.getTopic(anyString())).thenReturn(topic);
+        when(semaphore.trySetPermits(anyInt())).thenReturn(false);
+        when(queue.rank("1001")).thenReturn(0);
+        when(semaphore.tryAcquire(anyLong(), anyLong(), any(TimeUnit.class))).thenReturn("permit-1001");
+        when(topic.publish(anyString())).thenReturn(1L);
+
+        ConversationQueueGate gate = new ConversationQueueGate(true, 1, 500L, 50L, 300L, redissonClient);
         assertTrue(gate.tryAcquire(1001L).allowed());
-
         gate.release(1001L);
 
-        verify(redisTemplate).convertAndSend("chat:queue:notify", "permit_released");
+        verify(topic, atLeastOnce()).publish("permit_released");
     }
 
     /**
      * Redis 活跃会话在租约窗口内应允许续租，防止长会话被误释放。
      */
     @Test
-    void redisActiveConversationCanRenewLease() {
-        StringRedisTemplate redisTemplate = mock(StringRedisTemplate.class);
-        when(redisTemplate.execute(any(RedisScript.class), anyList(), anyString(), anyString(), anyString(), anyString()))
-            .thenReturn("granted");
-        when(redisTemplate.execute(any(RedisScript.class), anyList(), anyString(), anyString()))
-            .thenReturn(1L);
+    void redisActiveConversationCanRenewLease() throws Exception {
+        RedissonClient redissonClient = mock(RedissonClient.class);
+        @SuppressWarnings("unchecked")
+        RScoredSortedSet<String> queue = mock(RScoredSortedSet.class);
+        RPermitExpirableSemaphore semaphore = mock(RPermitExpirableSemaphore.class);
+        RTopic topic = mock(RTopic.class);
 
-        ConversationQueueGate gate = new ConversationQueueGate(true, 1, 500L, 50L, 300L, redisTemplate);
+        when(redissonClient.<String>getScoredSortedSet(anyString())).thenReturn(queue);
+        when(redissonClient.getPermitExpirableSemaphore(anyString())).thenReturn(semaphore);
+        when(redissonClient.getTopic(anyString())).thenReturn(topic);
+        when(semaphore.trySetPermits(anyInt())).thenReturn(false);
+        when(queue.rank("1001")).thenReturn(0);
+        when(semaphore.tryAcquire(anyLong(), anyLong(), any(TimeUnit.class))).thenReturn("permit-1001");
+        when(semaphore.updateLeaseTime(anyString(), anyLong(), any(TimeUnit.class))).thenReturn(true);
+        when(topic.publish(anyString())).thenReturn(1L);
+
+        ConversationQueueGate gate = new ConversationQueueGate(true, 1, 500L, 50L, 300L, redissonClient);
         assertTrue(gate.tryAcquire(1001L).allowed());
-
         assertTrue(gate.renew(1001L));
     }
 

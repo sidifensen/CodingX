@@ -683,8 +683,10 @@ describe('ChatView', () => {
 
     const selectorPanel = screen.getByTestId('mcp-selector-panel');
     expect(selectorPanel).toBeInTheDocument();
+    expect(screen.getByTestId('mcp-trigger-icon')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '选择MCP 销售查询' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '选择MCP 工单查询' })).toBeInTheDocument();
+    expect(screen.getByRole('switch', { name: '切换MCP 销售查询' })).toBeInTheDocument();
   });
 
   /**

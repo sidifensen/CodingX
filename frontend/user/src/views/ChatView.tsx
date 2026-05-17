@@ -12,6 +12,7 @@ import {
   FileText,
   Globe2,
   Sparkles,
+  Workflow,
   PanelRightClose,
   PanelRightOpen,
   Paperclip,
@@ -426,8 +427,23 @@ export default function ChatView({
                                   <span className="block truncate text-foreground">{mcp.displayName}</span>
                                   <span className="mt-1 block truncate font-mono text-[11px] text-muted">/{mcp.mcpCode}</span>
                                 </span>
-                                <span className="rounded-full border border-border px-2 py-0.5 text-[10px] text-muted">
-                                  {isSelected ? '已启用' : '未启用'}
+                                <span className="inline-flex items-center gap-2">
+                                  <span className="sr-only">{isSelected ? '已启用' : '未启用'}</span>
+                                  <span
+                                    role="switch"
+                                    aria-label={`切换MCP ${mcp.displayName}`}
+                                    aria-checked={isSelected}
+                                    data-testid={`mcp-switch-${mcp.mcpCode}`}
+                                    className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full border transition-colors ${
+                                      isSelected ? 'border-foreground bg-foreground/90' : 'border-border bg-surface-high'
+                                    }`}
+                                  >
+                                    <span
+                                      className={`inline-block h-4 w-4 rounded-full bg-background shadow-sm transition-transform ${
+                                        isSelected ? 'translate-x-[18px]' : 'translate-x-[1px]'
+                                      }`}
+                                    />
+                                  </span>
                                 </span>
                               </button>
                             );
@@ -481,6 +497,7 @@ export default function ChatView({
                       }}
                       className="inline-flex h-7 items-center rounded-full border border-border bg-surface-container px-3 text-xs text-foreground transition-colors hover:border-border-active"
                     >
+                      <Workflow size={12} data-testid="mcp-trigger-icon" className="mr-1 text-muted" />
                       MCP
                     </button>
                     <button

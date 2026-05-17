@@ -137,4 +137,29 @@ class ConversationIntentServiceTest {
         assertEquals(ConversationIntentAction.MCP, decision.action());
         assertEquals("weather-data", decision.intentCode());
     }
+
+    /**
+     * 命中代码检索 MCP 节点时应返回 MCP 动作，保证“查代码”可自动调用工具。
+     */
+    @Test
+    void routeReturnsMcpActionForCodeSearchIntent() {
+        ChatIntentNode node = ChatIntentNode.builder()
+            .intentCode("code-search")
+            .name("代码查找")
+            .intentType("mcp")
+            .enabled(1)
+            .examples("[\"查找 ChatController 的 sendMessage 方法\"]")
+            .build();
+        when(chatIntentNodeRepository.findEnabledNodes()).thenReturn(List.of(node));
+        when(chatIntentExampleRepository.findByIntentCode("code-search")).thenReturn(List.of());
+        when(conversationIntentResolver.resolveCandidates(eq("查找 ChatController 的 sendMessage 方法"), eq(List.of(node)), any()))
+            .thenReturn(List.of(new ConversationIntentCandidate(node, 0.98D)));
+        when(conversationIntentGuidanceService.buildGuidancePrompt(eq("查找 ChatController 的 sendMessage 方法"), any(), eq(List.of(node))))
+            .thenReturn(null);
+
+        ConversationIntentDecision decision = conversationIntentService.route("查找 ChatController 的 sendMessage 方法", true);
+
+        assertEquals(ConversationIntentAction.MCP, decision.action());
+        assertEquals("code-search", decision.intentCode());
+    }
 }

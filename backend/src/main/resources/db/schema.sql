@@ -600,6 +600,7 @@ COMMENT ON COLUMN chat_mcp.sort_no IS '排序字段';
 COMMENT ON COLUMN chat_mcp.created_at IS '创建时间';
 COMMENT ON COLUMN chat_mcp.updated_at IS '更新时间';
 COMMENT ON COLUMN chat_mcp.deleted IS '是否删除 0正常 1删除';
+-- 默认内置 MCP 编码示例：code_search、sales_query、ticket_query、weather_query。
 
 CREATE TABLE IF NOT EXISTS chat_skill (
     id BIGINT PRIMARY KEY,

@@ -38,6 +38,16 @@ const mcpToolFixture = [
     description: '查询当前天气与未来预报',
     sampleQuestion: '上海未来三天天气预报',
   },
+  {
+    toolId: 'code_search',
+    displayName: '代码检索',
+    category: '研发',
+    source: '内置后端',
+    status: 'healthy',
+    statusLabel: '可用',
+    description: '按关键词检索代码文件与行号',
+    sampleQuestion: '查找 ChatController 的 sendMessage 方法',
+  },
 ] as const;
 
 const mcpConfigFixture = [
@@ -93,6 +103,7 @@ describe('MCP page', () => {
     expect(screen.getByText('/sales_query')).toBeInTheDocument();
     expect(screen.getByText('/ticket_query')).toBeInTheDocument();
     expect(screen.getByText('/weather_query')).toBeInTheDocument();
+    expect(screen.getByText('/code_search')).toBeInTheDocument();
     expect(screen.queryAllByText('sales_query')).toHaveLength(0);
     expect(screen.getAllByText('可用').length).toBeGreaterThanOrEqual(1);
   });

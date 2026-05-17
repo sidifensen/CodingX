@@ -53,4 +53,19 @@ public class RuntimeProperties {
      * 租约续期任务执行间隔毫秒数，避免长会话被租约误回收。
      */
     private long queueLeaseRenewIntervalMs = 10000L;
+
+    /**
+     * 代码检索工具扫描根目录；为空时自动回退到项目根目录。
+     */
+    private String codeSearchRoot = "";
+
+    /**
+     * 代码检索工具单次最大返回命中数。
+     */
+    private int codeSearchMaxResults = 20;
+
+    /**
+     * 代码检索工具单文件最大扫描大小（字节）。
+     */
+    private long codeSearchMaxFileSizeBytes = 1024 * 1024L;
 }

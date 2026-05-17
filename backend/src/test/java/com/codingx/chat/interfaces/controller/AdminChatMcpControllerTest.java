@@ -45,6 +45,16 @@ class AdminChatMcpControllerTest {
                 .statusLabel("可用")
                 .description("查询销售汇总、排名、趋势与明细")
                 .sampleQuestion("本月华东销售总额是多少")
+                .build(),
+            McpToolHealthView.builder()
+                .toolId("code_search")
+                .displayName("代码检索")
+                .category("研发")
+                .source("内置后端")
+                .status("healthy")
+                .statusLabel("可用")
+                .description("按关键词检索代码文件与行号")
+                .sampleQuestion("请查找 ChatController 中 sendMessage 的实现")
                 .build()
         ));
 
@@ -54,7 +64,8 @@ class AdminChatMcpControllerTest {
             .andExpect(jsonPath("$.data[0].toolId").value("sales_query"))
             .andExpect(jsonPath("$.data[0].displayName").value("销售查询"))
             .andExpect(jsonPath("$.data[0].status").value("healthy"))
-            .andExpect(jsonPath("$.data[0].statusLabel").value("可用"));
+            .andExpect(jsonPath("$.data[0].statusLabel").value("可用"))
+            .andExpect(jsonPath("$.data[1].toolId").value("code_search"));
     }
 
     /**

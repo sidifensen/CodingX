@@ -92,4 +92,42 @@ class ChatApplicationMcpFlowTest {
         org.mockito.Mockito.verifyNoInteractions(aiChatClient);
         ChatExecutionContext.clear();
     }
+
+    /**
+     * 命中代码检索意图时应调用 code_search 工具并透传结果。
+     */
+    @Test
+    void sendMessageExecutesCodeSearchToolForCodeIntent() {
+        Long runId = 9301002L;
+        ChatExecutionContext.start(runId);
+        ChatConversation conversation = ChatConversation.create(2L, "Code Search Conversation", 1002L, ChatConversationStatus.ACTIVE);
+        when(chatConversationRepository.requireById(2L)).thenReturn(conversation);
+        when(chatMessageRepository.findByConversationId(2L)).thenReturn(new ArrayList<>());
+        when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+            new ConversationRewriteResult("查找 ChatController 的 sendMessage 方法", false, java.util.List.of("查找 ChatController 的 sendMessage 方法"))
+        );
+        when(conversationIntentService.route("查找 ChatController 的 sendMessage 方法", true)).thenReturn(
+            new ConversationIntentDecision("code-search", ConversationIntentAction.MCP, null)
+        );
+        when(chatIntentNodeRepository.findByIntentCode("code-search")).thenReturn(
+            ChatIntentNode.builder().intentCode("code-search").mcpToolId("code_search").intentType("mcp").build()
+        );
+        when(chatMcpRepository.findByMcpCode("code_search")).thenReturn(
+            com.codingx.mcp.domain.model.ChatMcp.builder().mcpCode("code_search").displayName("代码检索").enabled(1).build()
+        );
+        when(chatMcpExecutionService.execute("code_search", "查找 ChatController 的 sendMessage 方法")).thenReturn(
+            new ChatMcpToolResult("code_search", "命中 ChatController.java:95", java.util.Map.of())
+        );
+        when(conversationTitleService.generateTitle(any(), any())).thenReturn("代码定位");
+
+        chatApplicationService.sendMessage(
+            new SendChatMessageCommand(2L, "查找 ChatController 的 sendMessage 方法", false, java.util.List.of("code_search")),
+            1002L
+        );
+
+        verify(chatMcpExecutionService).execute("code_search", "查找 ChatController 的 sendMessage 方法");
+        verify(chatStreamPublisher).publishAssistantCompleted(2L, "命中 ChatController.java:95", "代码定位");
+        org.mockito.Mockito.verifyNoInteractions(aiChatClient);
+        ChatExecutionContext.clear();
+    }
 }

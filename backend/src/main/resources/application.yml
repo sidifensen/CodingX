@@ -142,6 +142,12 @@ app:
     queue-lease-seconds: ${APP_RUNTIME_QUEUE_LEASE_SECONDS:300}
     # 活跃会话续租间隔，必须小于租约时长。
     queue-lease-renew-interval-ms: ${APP_RUNTIME_QUEUE_LEASE_RENEW_INTERVAL_MS:10000}
+    # 代码检索工具默认扫描根目录；未配置时自动回退到项目根。
+    code-search-root: ${APP_RUNTIME_CODE_SEARCH_ROOT:}
+    # 代码检索工具单次最大返回命中条数。
+    code-search-max-results: ${APP_RUNTIME_CODE_SEARCH_MAX_RESULTS:20}
+    # 代码检索工具单文件最大扫描大小（字节），避免读取超大构建产物。
+    code-search-max-file-size-bytes: ${APP_RUNTIME_CODE_SEARCH_MAX_FILE_SIZE_BYTES:1048576}
   chat:
     memory:
       summary-enabled: ${CHAT_MEMORY_SUMMARY_ENABLED:true}

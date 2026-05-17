@@ -169,6 +169,12 @@ public class ChatSkillRepositoryImpl implements ChatSkillRepository {
         dataObject.setSourceType(skill.getSourceType());
         dataObject.setEnabled(skill.getEnabled());
         dataObject.setSortNo(skill.getSortNo());
+        dataObject.setStorageKey(skill.getStorageKey());
+        dataObject.setPackageFileName(skill.getPackageFileName());
+        dataObject.setPackageSize(skill.getPackageSize());
+        dataObject.setPackageChecksum(skill.getPackageChecksum());
+        dataObject.setUploadedBy(skill.getUploadedBy());
+        dataObject.setUploadedAt(skill.getUploadedAt());
         dataObject.setCreatedAt(skill.getCreatedAt());
         dataObject.setUpdatedAt(skill.getUpdatedAt());
         dataObject.setDeleted(skill.getDeleted());
@@ -185,6 +191,12 @@ public class ChatSkillRepositoryImpl implements ChatSkillRepository {
             .sourceType(dataObject.getSourceType())
             .enabled(dataObject.getEnabled())
             .sortNo(dataObject.getSortNo())
+            .storageKey(dataObject.getStorageKey())
+            .packageFileName(dataObject.getPackageFileName())
+            .packageSize(dataObject.getPackageSize())
+            .packageChecksum(dataObject.getPackageChecksum())
+            .uploadedBy(dataObject.getUploadedBy())
+            .uploadedAt(dataObject.getUploadedAt())
             .createdAt(dataObject.getCreatedAt())
             .updatedAt(dataObject.getUpdatedAt())
             .deleted(dataObject.getDeleted())

@@ -11,6 +11,7 @@ vi.mock('../api/adminChatApi', () => ({
     listSkills: vi.fn(),
     createSkill: vi.fn(),
     updateSkill: vi.fn(),
+    uploadSkillPackage: vi.fn(),
   },
 }));
 
@@ -42,6 +43,16 @@ describe('Skills page', () => {
     vi.mocked(AdminChatApi.listSkills).mockResolvedValue([...skillFixture]);
     vi.mocked(AdminChatApi.createSkill).mockResolvedValue(skillFixture[0] as any);
     vi.mocked(AdminChatApi.updateSkill).mockResolvedValue(skillFixture[0] as any);
+    vi.mocked(AdminChatApi.uploadSkillPackage).mockResolvedValue({
+      id: 7110,
+      skillCode: 'pdf-processing',
+      displayName: 'pdf-processing',
+      description: '处理 PDF 文档',
+      category: '文档处理',
+      sourceType: 'uploaded',
+      enabled: 1,
+      sortNo: 3,
+    } as any);
   });
 
   afterEach(() => {
@@ -124,5 +135,27 @@ describe('Skills page', () => {
       expect(AdminChatApi.listSkills).toHaveBeenCalledTimes(2);
     });
   });
-});
 
+  /**
+   * 技能管理页应支持上传技能包并调用后端上传接口。
+   */
+  it('supports upload skill package in skills page', async () => {
+    render(<Skills />);
+    await screen.findByText('/sales_query');
+
+    fireEvent.click(screen.getByRole('button', { name: '上传技能包' }));
+    const dialog = await screen.findByRole('dialog', { name: '上传技能包' });
+    const fileInput = within(dialog).getByLabelText('技能包文件') as HTMLInputElement;
+    const file = new File(['zip-binary'], 'pdf-processing.skill', { type: 'application/octet-stream' });
+    fireEvent.change(fileInput, { target: { files: [file] } });
+    fireEvent.change(within(dialog).getByLabelText('分类（可选）'), { target: { value: '文档处理' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: '确认上传' }));
+
+    await waitFor(() => {
+      expect(AdminChatApi.uploadSkillPackage).toHaveBeenCalledWith(file, '文档处理');
+    });
+    await waitFor(() => {
+      expect(AdminChatApi.listSkills).toHaveBeenCalledTimes(2);
+    });
+  });
+});

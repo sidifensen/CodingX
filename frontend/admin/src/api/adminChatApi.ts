@@ -196,6 +196,12 @@ export interface AdminSkill {
   sourceType?: string;
   enabled?: number;
   sortNo?: number;
+  storageKey?: string;
+  packageFileName?: string;
+  packageSize?: number;
+  packageChecksum?: string;
+  uploadedBy?: string | number;
+  uploadedAt?: string;
 }
 
 /**
@@ -439,6 +445,24 @@ export class AdminChatApi {
     });
   }
 
+  /**
+   * 上传技能包并由后端自动解析 SKILL.md 元信息。
+   * @param file 技能包文件（zip 或 skill）。
+   * @param category 可选分类。
+   * @returns 解析后的技能配置。
+   */
+  static async uploadSkillPackage(file: File, category?: string): Promise<AdminSkill> {
+    const formData = new FormData();
+    formData.append('file', file);
+    if (category && category.trim()) {
+      formData.append('category', category.trim());
+    }
+    return this.request<AdminSkill>('/api/admin/chat/skills/upload', {
+      method: 'POST',
+      body: formData,
+    });
+  }
+
   static async listMcpConfigs(): Promise<AdminMcpConfig[]> {
     return this.request<AdminMcpConfig[]>('/api/admin/chat/mcps');
   }
@@ -465,13 +489,15 @@ export class AdminChatApi {
 
   private static async request<T>(path: string, init?: RequestInit): Promise<T> {
     const token = AuthStorage.getSession()?.token ?? '';
+    const headers = new Headers(init?.headers ?? {});
+    headers.set('satoken', token);
+    const hasMultipartBody = typeof FormData !== 'undefined' && init?.body instanceof FormData;
+    if (!hasMultipartBody && !headers.has('Content-Type')) {
+        headers.set('Content-Type', 'application/json');
+    }
     const response = await fetch(path, {
       ...init,
-      headers: {
-        'Content-Type': 'application/json',
-        satoken: token,
-        ...(init?.headers ?? {}),
-      },
+      headers,
     });
     const envelope = await ApiResponseParser.parseEnvelope<T>(response, '管理端请求失败');
     if (isUnauthorizedResponse(response, envelope)) {

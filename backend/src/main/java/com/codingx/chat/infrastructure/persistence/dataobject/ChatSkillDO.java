@@ -38,6 +38,24 @@ public class ChatSkillDO {
     @TableField("sort_no")
     private Integer sortNo;
 
+    @TableField("storage_key")
+    private String storageKey;
+
+    @TableField("package_file_name")
+    private String packageFileName;
+
+    @TableField("package_size")
+    private Long packageSize;
+
+    @TableField("package_checksum")
+    private String packageChecksum;
+
+    @TableField("uploaded_by")
+    private Long uploadedBy;
+
+    @TableField("uploaded_at")
+    private LocalDateTime uploadedAt;
+
     @TableField("created_at")
     private LocalDateTime createdAt;
 

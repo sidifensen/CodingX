@@ -5,6 +5,7 @@ import com.codingx.chat.domain.model.ChatSkill;
 import com.codingx.common.model.ApiResponse;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -13,6 +14,7 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 /**
  * 提供聊天技能后台管理接口。
@@ -32,6 +34,20 @@ public class AdminChatSkillController {
     @PostMapping
     public ApiResponse<ChatSkill> createSkill(@RequestBody ChatSkill request) {
         return ApiResponse.<ChatSkill>success(adminChatSkillService.create(request));
+    }
+
+    /**
+     * 上传技能包并自动解析技能元信息。
+     * @param file 技能包文件。
+     * @param category 可选分类。
+     * @return 解析后的技能记录。
+     */
+    @PostMapping("/upload")
+    public ApiResponse<ChatSkill> uploadSkillPackage(
+        @RequestParam("file") MultipartFile file,
+        @RequestParam(value = "category", required = false) String category
+    ) {
+        return ApiResponse.success(adminChatSkillService.uploadSkillPackage(file, category));
     }
 
     @PutMapping("/{id}")

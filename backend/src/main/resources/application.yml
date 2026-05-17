@@ -130,3 +130,11 @@ app:
   runtime:
     mock-step-delay-ms: ${MOCK_STEP_DELAY_MS:300}
     mock-fail-keyword: ${MOCK_FAIL_KEYWORD:fail}
+
+rustfs:
+  endpoint: ${RUSTFS_ENDPOINT:http://localhost:9000}
+  access-key: ${RUSTFS_ACCESS_KEY:rustfsadmin}
+  secret-key: ${RUSTFS_SECRET_KEY:rustfsadmin}
+  region: ${RUSTFS_REGION:us-east-1}
+  bucket: ${RUSTFS_BUCKET:codingx-skills}
+  skill-prefix: ${RUSTFS_SKILL_PREFIX:chat-skills/packages}

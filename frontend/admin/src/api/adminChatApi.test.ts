@@ -77,4 +77,38 @@ describe('AdminChatApi unauthorized handling', () => {
     expect(result.records).toHaveLength(1);
     expect(result.records[0].id).toBe(9001);
   });
+
+  /**
+   * 上传技能包时应以 multipart/form-data 提交，并携带 satoken。
+   */
+  it('uploads skill package as multipart payload', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          success: true,
+          code: 'OK',
+          message: 'success',
+          data: {
+            id: 7109,
+            skillCode: 'pdf-processing',
+            displayName: 'pdf-processing',
+            sourceType: 'uploaded',
+          },
+        }),
+        { status: 200 },
+      ),
+    );
+    const file = new File(['dummy'], 'pdf-processing.skill', { type: 'application/octet-stream' });
+
+    const result = await AdminChatApi.uploadSkillPackage(file, '文档处理');
+
+    expect(result.skillCode).toBe('pdf-processing');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const call = fetchMock.mock.calls[0];
+    const requestInit = call[1] as RequestInit;
+    const requestHeaders = requestInit.headers as Headers;
+    expect(requestHeaders.get('satoken')).toBe('expired-token');
+    expect(requestHeaders.get('Content-Type')).toBeNull();
+    expect(requestInit.body).toBeInstanceOf(FormData);
+  });
 });

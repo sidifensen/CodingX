@@ -32,6 +32,7 @@ export function Skills() {
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
   const [dialogMode, setDialogMode] = useState<SkillDialogMode>('create');
   const [editingSkill, setEditingSkill] = useState<AdminSkill | null>(null);
 
@@ -80,17 +81,28 @@ export function Skills() {
       <div className="mb-lg flex items-end justify-between">
         <div>
           <h2 className="font-headline-md text-headline-md text-ink">技能管理 (Skills)</h2>
-          <p className="mt-1 text-secondary">管理应用内部搭载的各类型代理技能。</p>
+          <p className="mt-1 text-secondary">管理应用内部搭载的各类型代理技能与上传技能包。</p>
         </div>
-        <button
-          type="button"
-          aria-label="创建新技能"
-          className="flex items-center gap-xs rounded-lg bg-primary px-lg py-2 font-button text-button text-on-primary transition-transform hover:shadow-md active:scale-95"
-          onClick={openCreateDialog}
-        >
-          <span className="material-symbols-outlined text-[18px]">add</span>
-          创建新技能
-        </button>
+        <div className="flex items-center gap-sm">
+          <button
+            type="button"
+            aria-label="上传技能包"
+            className="flex items-center gap-xs rounded-lg border border-border-strong bg-surface-container-lowest px-lg py-2 font-button text-button text-ink transition-colors hover:bg-surface-container-low active:scale-95"
+            onClick={() => setUploadDialogOpen(true)}
+          >
+            <span className="material-symbols-outlined text-[18px]">upload_file</span>
+            上传技能包
+          </button>
+          <button
+            type="button"
+            aria-label="创建新技能"
+            className="flex items-center gap-xs rounded-lg bg-primary px-lg py-2 font-button text-button text-on-primary transition-transform hover:shadow-md active:scale-95"
+            onClick={openCreateDialog}
+          >
+            <span className="material-symbols-outlined text-[18px]">add</span>
+            创建新技能
+          </button>
+        </div>
       </div>
 
       {isLoading ? (
@@ -153,6 +165,16 @@ export function Skills() {
               await AdminChatApi.createSkill(payload);
             }
             setDialogOpen(false);
+            await loadSkills();
+          }}
+        />
+      ) : null}
+
+      {uploadDialogOpen ? (
+        <SkillUploadDialog
+          onClose={() => setUploadDialogOpen(false)}
+          onUploaded={async () => {
+            setUploadDialogOpen(false);
             await loadSkills();
           }}
         />
@@ -318,6 +340,121 @@ function SkillEditDialog({ mode, skill, onClose, onSubmit }: SkillEditDialogProp
               className="rounded-lg bg-primary px-lg py-2 font-button text-button text-on-primary disabled:opacity-60"
             >
               {saving ? '保存中...' : mode === 'create' ? '创建技能' : '保存修改'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+interface SkillUploadDialogProps {
+  onClose: () => void;
+  onUploaded: () => Promise<void>;
+}
+
+/**
+ * 上传技能包弹窗：提交 zip/skill 文件并交由后端解析 SKILL.md。
+ */
+function SkillUploadDialog({ onClose, onUploaded }: SkillUploadDialogProps) {
+  const [file, setFile] = React.useState<File | null>(null);
+  const [category, setCategory] = React.useState('');
+  const [submitting, setSubmitting] = React.useState(false);
+  const [errorMessage, setErrorMessage] = React.useState('');
+
+  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setErrorMessage('');
+    if (!file) {
+      setErrorMessage('请选择技能包文件');
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await AdminChatApi.uploadSkillPackage(file, category);
+      await onUploaded();
+    } catch (error) {
+      setErrorMessage(extractErrorMessage(error, '技能包上传失败'));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/45 px-md py-lg">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="上传技能包"
+        className="max-h-[88vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-border-hairline bg-surface-container-lowest shadow-2xl"
+      >
+        <div className="sticky top-0 z-10 flex items-start justify-between gap-md border-b border-border-hairline bg-surface-container-lowest px-lg py-md">
+          <div>
+            <h3 className="font-title-md text-title-md text-ink">上传技能包</h3>
+            <p className="mt-1 text-body-sm text-secondary">上传包含根级 SKILL.md 的 zip 或 .skill 文件。</p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg px-sm py-xs text-secondary transition-colors hover:bg-surface-container-low hover:text-ink"
+            aria-label="关闭上传弹窗"
+          >
+            <span className="material-symbols-outlined text-[20px]">close</span>
+          </button>
+        </div>
+
+        <form className="space-y-lg p-lg" onSubmit={handleSubmit}>
+          {errorMessage ? (
+            <div className="rounded-xl border border-error bg-error-container px-md py-sm text-sm text-on-error-container">
+              {errorMessage}
+            </div>
+          ) : null}
+          <fieldset className="rounded-xl border border-border-hairline bg-surface-container-low p-md">
+            <legend className="px-xs font-title-sm text-ink">文件与分类</legend>
+            <div className="space-y-md">
+              <div>
+                <label htmlFor="skill-package-file" className="mb-1 block text-[12px] font-medium text-secondary">
+                  技能包文件
+                </label>
+                <input
+                  id="skill-package-file"
+                  aria-label="技能包文件"
+                  type="file"
+                  accept=".zip,.skill"
+                  className="block w-full rounded-lg border border-border-hairline bg-surface-container-lowest px-3 py-2 text-ink file:mr-sm file:rounded-md file:border-0 file:bg-surface-container file:px-sm file:py-1.5 file:text-ink"
+                  onChange={(event) => {
+                    const selectedFile = event.target.files?.[0] ?? null;
+                    setFile(selectedFile);
+                  }}
+                />
+                <p className="mt-1 text-[12px] text-secondary">
+                  仅支持 .zip / .skill，且压缩包根目录必须包含 SKILL.md
+                </p>
+              </div>
+              <TextField
+                id="skill-upload-category"
+                label="分类（可选）"
+                value={category}
+                onChange={(value) => setCategory(value)}
+              />
+            </div>
+          </fieldset>
+
+          <div className="flex flex-wrap justify-end gap-sm">
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={submitting}
+              className="rounded-lg border border-border-strong bg-surface-container-lowest px-lg py-2 font-button text-button text-ink hover:bg-surface-container-low disabled:opacity-60"
+            >
+              取消
+            </button>
+            <button
+              type="submit"
+              disabled={submitting}
+              className="rounded-lg bg-primary px-lg py-2 font-button text-button text-on-primary disabled:opacity-60"
+            >
+              {submitting ? '上传中...' : '确认上传'}
             </button>
           </div>
         </form>

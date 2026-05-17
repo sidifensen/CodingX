@@ -24,6 +24,12 @@ public class ChatSkill {
     private String sourceType;
     private Integer enabled;
     private Integer sortNo;
+    private String storageKey;
+    private String packageFileName;
+    private Long packageSize;
+    private String packageChecksum;
+    private Long uploadedBy;
+    private LocalDateTime uploadedAt;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
     private Integer deleted;

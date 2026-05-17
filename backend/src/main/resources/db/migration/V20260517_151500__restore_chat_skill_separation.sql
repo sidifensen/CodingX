@@ -7,6 +7,12 @@ CREATE TABLE IF NOT EXISTS chat_skill (
     source_type VARCHAR(64) NOT NULL DEFAULT 'built-in',
     enabled SMALLINT NOT NULL DEFAULT 1,
     sort_no INTEGER NOT NULL DEFAULT 0,
+    storage_key VARCHAR(512),
+    package_file_name VARCHAR(255),
+    package_size BIGINT,
+    package_checksum VARCHAR(128),
+    uploaded_by BIGINT,
+    uploaded_at TIMESTAMP,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     deleted SMALLINT NOT NULL DEFAULT 0
@@ -20,6 +26,12 @@ COMMENT ON COLUMN chat_skill.category IS '技能分类';
 COMMENT ON COLUMN chat_skill.source_type IS '技能来源';
 COMMENT ON COLUMN chat_skill.enabled IS '是否启用 1启用 0禁用';
 COMMENT ON COLUMN chat_skill.sort_no IS '排序字段';
+COMMENT ON COLUMN chat_skill.storage_key IS '技能包对象存储键';
+COMMENT ON COLUMN chat_skill.package_file_name IS '技能包原始文件名';
+COMMENT ON COLUMN chat_skill.package_size IS '技能包大小字节数';
+COMMENT ON COLUMN chat_skill.package_checksum IS '技能包SHA256摘要';
+COMMENT ON COLUMN chat_skill.uploaded_by IS '上传人用户ID';
+COMMENT ON COLUMN chat_skill.uploaded_at IS '上传时间';
 COMMENT ON COLUMN chat_skill.created_at IS '创建时间';
 COMMENT ON COLUMN chat_skill.updated_at IS '更新时间';
 COMMENT ON COLUMN chat_skill.deleted IS '是否删除 0正常 1删除';

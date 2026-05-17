@@ -6,6 +6,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -21,6 +22,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
@@ -137,6 +139,38 @@ class AdminChatSkillControllerTest {
             .andExpect(jsonPath("$.message").value("删除成功"));
 
         verify(adminChatSkillService).delete(7101L);
+    }
+
+    /**
+     * 上传技能包接口应按 multipart 契约返回技能记录。
+     */
+    @Test
+    void uploadSkillPackageReturnsParsedSkill() throws Exception {
+        when(adminChatSkillService.uploadSkillPackage(any(), any())).thenReturn(
+            ChatSkill.builder()
+                .id(7110L)
+                .skillCode("pdf-processing")
+                .displayName("pdf-processing")
+                .description("处理 PDF 文档")
+                .sourceType("uploaded")
+                .enabled(1)
+                .sortNo(0)
+                .build()
+        );
+
+        MockMultipartFile file = new MockMultipartFile(
+            "file",
+            "pdf-processing.skill",
+            "application/octet-stream",
+            "dummy".getBytes()
+        );
+
+        mockMvc().perform(multipart("/api/admin/chat/skills/upload")
+                .file(file))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.success").value(true))
+            .andExpect(jsonPath("$.data.skillCode").value("pdf-processing"))
+            .andExpect(jsonPath("$.data.sourceType").value("uploaded"));
     }
 
     /**

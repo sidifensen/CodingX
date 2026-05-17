@@ -12,3 +12,4 @@ logs/
 # frontend desktop host
 /frontend/desktop/node_modules/
 /frontend/desktop/dist/
+/frontend/desktop/release/

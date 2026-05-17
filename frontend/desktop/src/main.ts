@@ -58,6 +58,13 @@ async function createWindow() {
     mainWindow?.show();
   });
 
+  // 开发态优先连接本地 user 前端；打包后从应用资源目录加载静态页面。
+  if (app.isPackaged) {
+    const packagedUserEntry = path.join(process.resourcesPath, 'user-dist', 'index.html');
+    await mainWindow.loadFile(packagedUserEntry);
+    return;
+  }
+
   await mainWindow.loadURL(process.env.CODINGX_USER_URL ?? 'http://localhost:5002');
 }
 

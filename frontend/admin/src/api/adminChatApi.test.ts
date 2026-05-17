@@ -79,6 +79,36 @@ describe('AdminChatApi unauthorized handling', () => {
   });
 
   /**
+   * 技能列表接口应按 current/size 查询参数返回分页结构。
+   */
+  it('requests paged skills list with current and size query', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          success: true,
+          code: 'OK',
+          message: 'success',
+          data: {
+            records: [{ id: 7101, skillCode: 'conversation-core', displayName: '会话核心' }],
+            total: 1,
+            size: 10,
+            current: 1,
+            pages: 1,
+          },
+        }),
+        { status: 200 },
+      ),
+    );
+
+    const result = await AdminChatApi.listSkills({ current: 1, size: 10 });
+
+    expect(result.records).toHaveLength(1);
+    expect(result.total).toBe(1);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(String(fetchMock.mock.calls[0][0])).toContain('/api/admin/chat/skills?current=1&size=10');
+  });
+
+  /**
    * 上传技能包时应以 multipart/form-data 提交，并携带 satoken。
    */
   it('uploads skill package as multipart payload', async () => {

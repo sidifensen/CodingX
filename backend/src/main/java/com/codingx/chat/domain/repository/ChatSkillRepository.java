@@ -1,6 +1,7 @@
 package com.codingx.chat.domain.repository;
 
 import com.codingx.chat.domain.model.ChatSkill;
+import com.codingx.chat.interfaces.response.PageResult;
 import java.util.List;
 
 /**
@@ -13,6 +14,14 @@ public interface ChatSkillRepository {
      * @return 技能列表。
      */
     List<ChatSkill> findAll();
+
+    /**
+     * 分页查询未删除技能，按 sortNo 与 skillCode 升序输出。
+     * @param current 当前页码（从 1 开始）。
+     * @param size 每页条数。
+     * @return 技能分页结果。
+     */
+    PageResult<ChatSkill> pageQuery(int current, int size);
 
     /**
      * 查询所有启用技能，按 sortNo 与 skillCode 升序输出。

@@ -204,6 +204,11 @@ export interface AdminSkill {
   uploadedAt?: string;
 }
 
+export interface AdminSkillQuery {
+  current?: number;
+  size?: number;
+}
+
 export interface AdminSkillPackageEntry {
   path: string;
   name: string;
@@ -434,8 +439,11 @@ export class AdminChatApi {
     return this.request<AdminMcpToolView>(`/api/admin/chat/mcp-tools/${encodeURIComponent(toolId)}/ping`);
   }
 
-  static async listSkills(): Promise<AdminSkill[]> {
-    return this.request<AdminSkill[]>('/api/admin/chat/skills');
+  static async listSkills(query: AdminSkillQuery = {}): Promise<AdminPageResult<AdminSkill>> {
+    const searchParams = new URLSearchParams();
+    searchParams.set('current', String(query.current ?? 1));
+    searchParams.set('size', String(query.size ?? 10));
+    return this.request<AdminPageResult<AdminSkill>>(`/api/admin/chat/skills?${searchParams.toString()}`);
   }
 
   static async createSkill(payload: AdminSkill): Promise<AdminSkill> {

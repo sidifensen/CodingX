@@ -7,6 +7,7 @@ import cn.hutool.core.util.ArrayUtil;
 import cn.hutool.core.util.StrUtil;
 import com.codingx.chat.domain.model.ChatSkill;
 import com.codingx.chat.domain.repository.ChatSkillRepository;
+import com.codingx.chat.interfaces.response.PageResult;
 import com.codingx.common.exception.BusinessException;
 import com.codingx.common.exception.NotFoundException;
 import com.codingx.storage.RustFsSkillPackageClient;
@@ -45,6 +46,16 @@ public class AdminChatSkillService {
      */
     public List<ChatSkill> listAll() {
         return chatSkillRepository.findAll();
+    }
+
+    /**
+     * 分页返回技能列表，供管理端列表页按页加载。
+     * @param current 当前页码（从 1 开始）。
+     * @param size 每页条数。
+     * @return 技能分页结果。
+     */
+    public PageResult<ChatSkill> pageSkills(int current, int size) {
+        return chatSkillRepository.pageQuery(current, size);
     }
 
     /**

@@ -4,6 +4,7 @@ import com.codingx.chat.application.service.AdminChatSkillService;
 import com.codingx.chat.domain.model.ChatSkill;
 import com.codingx.chat.interfaces.response.AdminSkillPackageEntryResponse;
 import com.codingx.chat.interfaces.response.AdminSkillPackageFileContentResponse;
+import com.codingx.chat.interfaces.response.PageResult;
 import com.codingx.common.model.ApiResponse;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -28,9 +29,18 @@ public class AdminChatSkillController {
 
     private final AdminChatSkillService adminChatSkillService;
 
+    /**
+     * 分页查询技能列表，默认每页 10 条，供管理端技能页分页展示。
+     * @param current 当前页码（从 1 开始）。
+     * @param size 每页条数。
+     * @return 技能分页结果。
+     */
     @GetMapping
-    public ApiResponse<List<ChatSkill>> listSkills() {
-        return ApiResponse.<List<ChatSkill>>success(adminChatSkillService.listAll());
+    public ApiResponse<PageResult<ChatSkill>> listSkills(
+        @RequestParam(defaultValue = "1") int current,
+        @RequestParam(defaultValue = "10") int size
+    ) {
+        return ApiResponse.success(adminChatSkillService.pageSkills(current, size));
     }
 
     @PostMapping

@@ -12,6 +12,7 @@ import static org.mockito.Mockito.when;
 import cn.dev33.satoken.stp.StpUtil;
 import com.codingx.chat.domain.model.ChatSkill;
 import com.codingx.chat.domain.repository.ChatSkillRepository;
+import com.codingx.chat.interfaces.response.PageResult;
 import com.codingx.common.exception.BusinessException;
 import com.codingx.storage.RustFsSkillPackageClient;
 import java.io.ByteArrayOutputStream;
@@ -42,6 +43,32 @@ class AdminChatSkillServiceTest {
 
     @InjectMocks
     private AdminChatSkillService adminChatSkillService;
+
+    /**
+     * 分页查询应透传仓储分页结果，保持 records/total/current/size/pages 契约。
+     */
+    @Test
+    void pageSkillsReturnsRepositoryPageResult() {
+        PageResult<ChatSkill> repositoryPage = PageResult.<ChatSkill>builder()
+            .records(List.of(ChatSkill.builder()
+                .id(7101L)
+                .skillCode("conversation-core")
+                .displayName("会话核心")
+                .build()))
+            .total(1L)
+            .size(10L)
+            .current(1L)
+            .pages(1L)
+            .build();
+        when(chatSkillRepository.pageQuery(1, 10)).thenReturn(repositoryPage);
+
+        PageResult<ChatSkill> pageResult = adminChatSkillService.pageSkills(1, 10);
+
+        assertEquals(1L, pageResult.total());
+        assertEquals(1L, pageResult.current());
+        assertEquals(1, pageResult.records().size());
+        assertEquals("conversation-core", pageResult.records().getFirst().getSkillCode());
+    }
 
     /**
      * 上传合法技能包时应解析 SKILL.md 并写入对象存储与数据库。

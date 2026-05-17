@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 
 import {
   AdminChatApi,
+  AdminPageResult,
   AdminSkill,
   AdminSkillPackageEntry,
   AdminSkillPackageFileContent,
@@ -9,6 +10,8 @@ import {
 
 type SkillDialogMode = 'create' | 'edit';
 type SkillViewMode = 'list' | 'card';
+
+const SKILL_PAGE_SIZE = 10;
 
 interface SkillFormState {
   skillCode: string;
@@ -38,7 +41,8 @@ const emptySkillForm: SkillFormState = {
  * 管理端技能管理页：支持列表/卡片切换、上传、编辑以及技能包在线预览。
  */
 export function Skills() {
-  const [skills, setSkills] = useState<AdminSkill[]>([]);
+  const [pageNo, setPageNo] = useState(1);
+  const [pageData, setPageData] = useState<AdminPageResult<AdminSkill> | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -48,26 +52,34 @@ export function Skills() {
   const [viewMode, setViewMode] = useState<SkillViewMode>('list');
   const [editingSkill, setEditingSkill] = useState<AdminSkill | null>(null);
 
+  const skills = pageData?.records ?? [];
+  const current = pageData?.current ?? pageNo;
+  const pages = pageData?.pages ?? 1;
+  const total = pageData?.total ?? 0;
+
   /**
-   * 统一加载技能列表，供初始化与保存后刷新复用。
+   * 统一加载技能分页，供初始化与保存后刷新复用。
    */
-  const loadSkills = React.useCallback(async () => {
+  const loadSkills = React.useCallback(async (currentPage = pageNo) => {
     setIsLoading(true);
     setErrorMessage('');
     try {
-      const response = await AdminChatApi.listSkills();
-      setSkills(response);
+      const response = await AdminChatApi.listSkills({
+        current: currentPage,
+        size: SKILL_PAGE_SIZE,
+      });
+      setPageData(response);
     } catch (error) {
       setErrorMessage(extractErrorMessage(error, '技能加载失败'));
-      setSkills([]);
+      setPageData(null);
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [pageNo]);
 
   React.useEffect(() => {
-    void loadSkills();
-  }, [loadSkills]);
+    void loadSkills(pageNo);
+  }, [loadSkills, pageNo]);
 
   /**
    * 打开新增技能弹窗。
@@ -165,10 +177,44 @@ export function Skills() {
 
       {!isLoading && !errorMessage ? (
         viewMode === 'list' ? (
-          <SkillListView skills={skills} onEditSkill={openEditDialog} onPreviewSkill={openPackagePreviewDialog} />
+          <SkillListView
+            skills={skills}
+            onEditSkill={openEditDialog}
+            onPreviewSkill={openPackagePreviewDialog}
+          />
         ) : (
-          <SkillCardView skills={skills} onEditSkill={openEditDialog} onPreviewSkill={openPackagePreviewDialog} />
+          <SkillCardView
+            skills={skills}
+            onEditSkill={openEditDialog}
+            onPreviewSkill={openPackagePreviewDialog}
+          />
         )
+      ) : null}
+
+      {!isLoading && !errorMessage ? (
+        <div className="mt-md flex items-center justify-between gap-sm rounded-lg border border-border-hairline bg-surface-container-low px-md py-sm">
+          <p className="text-[12px] text-secondary">
+            第 {current} / {Math.max(1, pages)} 页，共 {total} 条
+          </p>
+          <div className="flex items-center gap-xs">
+            <button
+              type="button"
+              className="rounded-lg border border-border-strong bg-surface-container-lowest px-md py-1.5 text-button font-button text-ink transition-colors hover:bg-surface-container-low disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={current <= 1}
+              onClick={() => setPageNo((previous) => Math.max(1, previous - 1))}
+            >
+              上一页
+            </button>
+            <button
+              type="button"
+              className="rounded-lg border border-border-strong bg-surface-container-lowest px-md py-1.5 text-button font-button text-ink transition-colors hover:bg-surface-container-low disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={current >= Math.max(1, pages)}
+              onClick={() => setPageNo((previous) => Math.min(Math.max(1, pages), previous + 1))}
+            >
+              下一页
+            </button>
+          </div>
+        </div>
       ) : null}
 
       {dialogOpen ? (
@@ -183,7 +229,7 @@ export function Skills() {
               await AdminChatApi.createSkill(payload);
             }
             setDialogOpen(false);
-            await loadSkills();
+            await loadSkills(pageNo);
           }}
         />
       ) : null}
@@ -193,7 +239,7 @@ export function Skills() {
           onClose={() => setUploadDialogOpen(false)}
           onUploaded={async () => {
             setUploadDialogOpen(false);
-            await loadSkills();
+            await loadSkills(pageNo);
           }}
         />
       ) : null}

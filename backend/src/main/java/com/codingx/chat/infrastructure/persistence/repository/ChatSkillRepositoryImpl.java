@@ -4,12 +4,14 @@ import cn.hutool.core.util.StrUtil;
 import cn.hutool.core.util.IdUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.codingx.chat.domain.model.ChatSkill;
 import com.codingx.chat.domain.repository.ChatSkillRepository;
 import com.codingx.chat.infrastructure.persistence.dataobject.ChatSkillDO;
 import com.codingx.chat.infrastructure.persistence.dataobject.TaskSkillDO;
 import com.codingx.chat.infrastructure.persistence.mapper.ChatSkillMapper;
 import com.codingx.chat.infrastructure.persistence.mapper.TaskSkillMapper;
+import com.codingx.chat.interfaces.response.PageResult;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.LinkedHashSet;
@@ -32,6 +34,21 @@ public class ChatSkillRepositoryImpl implements ChatSkillRepository {
             .stream()
             .map(this::toDomain)
             .toList();
+    }
+
+    @Override
+    public PageResult<ChatSkill> pageQuery(int current, int size) {
+        Page<ChatSkillDO> page = chatSkillMapper.selectPage(
+            new Page<>(Math.max(1, current), Math.max(1, size)),
+            baseListWrapper()
+        );
+        return PageResult.<ChatSkill>builder()
+            .records(page.getRecords().stream().map(this::toDomain).toList())
+            .total(page.getTotal())
+            .size(page.getSize())
+            .current(page.getCurrent())
+            .pages(page.getPages())
+            .build();
     }
 
     @Override

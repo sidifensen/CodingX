@@ -43,7 +43,13 @@ const skillFixture = [
 
 describe('Skills page', () => {
   beforeEach(() => {
-    vi.mocked(AdminChatApi.listSkills).mockResolvedValue([...skillFixture]);
+    vi.mocked(AdminChatApi.listSkills).mockResolvedValue({
+      records: [...skillFixture],
+      total: 22,
+      size: 10,
+      current: 1,
+      pages: 3,
+    } as any);
     vi.mocked(AdminChatApi.createSkill).mockResolvedValue(skillFixture[0] as any);
     vi.mocked(AdminChatApi.updateSkill).mockResolvedValue(skillFixture[0] as any);
     vi.mocked(AdminChatApi.uploadSkillPackage).mockResolvedValue({
@@ -83,6 +89,7 @@ describe('Skills page', () => {
 
     await waitFor(() => {
       expect(AdminChatApi.listSkills).toHaveBeenCalledTimes(1);
+      expect(AdminChatApi.listSkills).toHaveBeenCalledWith(expect.objectContaining({ current: 1, size: 10 }));
     });
 
     expect(screen.getByText('销售查询')).toBeInTheDocument();
@@ -91,6 +98,47 @@ describe('Skills page', () => {
     expect(screen.getByText('/ticket_query')).toBeInTheDocument();
     expect(screen.getByText('销售')).toBeInTheDocument();
     expect(screen.getByText('工单')).toBeInTheDocument();
+    expect(screen.getByText('第 1 / 3 页，共 22 条')).toBeInTheDocument();
+  });
+
+  /**
+   * 技能管理分页应支持点击下一页后按新页码请求。
+   */
+  it('supports paged navigation in skills page', async () => {
+    vi.mocked(AdminChatApi.listSkills)
+      .mockResolvedValueOnce({
+        records: [...skillFixture],
+        total: 22,
+        size: 10,
+        current: 1,
+        pages: 3,
+      } as any)
+      .mockResolvedValueOnce({
+        records: [
+          {
+            id: 7201,
+            skillCode: 'archive-helper',
+            displayName: '归档助手',
+            description: '处理归档任务',
+            category: '流程',
+            sourceType: 'uploaded',
+            enabled: 1,
+            sortNo: 11,
+          },
+        ],
+        total: 22,
+        size: 10,
+        current: 2,
+        pages: 3,
+      } as any);
+
+    render(<Skills />);
+    await screen.findByText('/sales_query');
+    fireEvent.click(screen.getByRole('button', { name: '下一页' }));
+
+    await waitFor(() => {
+      expect(AdminChatApi.listSkills).toHaveBeenLastCalledWith(expect.objectContaining({ current: 2, size: 10 }));
+    });
   });
 
   /**

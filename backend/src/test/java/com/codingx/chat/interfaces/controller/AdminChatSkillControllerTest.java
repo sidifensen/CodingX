@@ -14,6 +14,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.codingx.chat.application.service.AdminChatSkillService;
 import com.codingx.chat.domain.model.ChatSkill;
+import com.codingx.chat.interfaces.response.PageResult;
 import com.codingx.config.GlobalExceptionHandler;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -43,23 +44,33 @@ class AdminChatSkillControllerTest {
      */
     @Test
     void listSkillsReturnsSkillRows() throws Exception {
-        when(adminChatSkillService.listAll()).thenReturn(List.of(
-            ChatSkill.builder()
-                .id(7101L)
-                .skillCode("conversation-core")
-                .displayName("会话核心")
-                .category("核心能力")
-                .enabled(1)
-                .sortNo(1)
-                .build()
-        ));
+        when(adminChatSkillService.pageSkills(1, 10)).thenReturn(PageResult.<ChatSkill>builder()
+            .records(List.of(
+                ChatSkill.builder()
+                    .id(7101L)
+                    .skillCode("conversation-core")
+                    .displayName("会话核心")
+                    .category("核心能力")
+                    .enabled(1)
+                    .sortNo(1)
+                    .build()
+            ))
+            .total(1L)
+            .size(10L)
+            .current(1L)
+            .pages(1L)
+            .build());
 
         mockMvc().perform(get("/api/admin/chat/skills"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.success").value(true))
-            .andExpect(jsonPath("$.data[0].skillCode").value("conversation-core"))
-            .andExpect(jsonPath("$.data[0].displayName").value("会话核心"))
-            .andExpect(jsonPath("$.data[0].category").value("核心能力"));
+            .andExpect(jsonPath("$.data.records[0].skillCode").value("conversation-core"))
+            .andExpect(jsonPath("$.data.records[0].displayName").value("会话核心"))
+            .andExpect(jsonPath("$.data.records[0].category").value("核心能力"))
+            .andExpect(jsonPath("$.data.total").value(1))
+            .andExpect(jsonPath("$.data.size").value(10))
+            .andExpect(jsonPath("$.data.current").value(1))
+            .andExpect(jsonPath("$.data.pages").value(1));
     }
 
     /**

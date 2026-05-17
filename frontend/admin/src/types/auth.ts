@@ -29,6 +29,16 @@ export interface LoginResponseData {
 }
 
 /**
+ * 描述后端 me 接口返回的当前登录用户信息。
+ */
+export interface MeResponseData {
+  userId: string | number;
+  username: string;
+  displayName: string;
+  userType: string;
+}
+
+/**
  * 描述后端统一响应包裹结构。
  */
 export interface ApiResponseEnvelope<T> {

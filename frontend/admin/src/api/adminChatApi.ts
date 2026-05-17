@@ -1,4 +1,5 @@
 import { ApiResponseParser } from './apiResponse';
+import { publishAdminAuthExpired } from '../auth/authEvents';
 import { AuthStorage } from '../utils/authStorage';
 
 export interface AdminTraceRun {
@@ -392,9 +393,34 @@ export class AdminChatApi {
       },
     });
     const envelope = await ApiResponseParser.parseEnvelope<T>(response, '管理端请求失败');
+    if (isUnauthorizedResponse(response, envelope)) {
+      // 步骤：统一派发会话失效事件，让认证层集中处理“清会话 + 提示 + 跳登录页”。
+      publishAdminAuthExpired(envelope.message || '登录已失效，请重新登录');
+    }
     ApiResponseParser.assertSuccess(response, envelope, '管理端请求失败');
     return envelope.data;
   }
+}
+
+/**
+ * 判断当前响应是否为登录失效语义。
+ * @param response Fetch 响应对象。
+ * @param envelope 统一响应包裹结构。
+ * @returns true 表示应按未登录处理。
+ */
+function isUnauthorizedResponse<T>(
+  response: Response,
+  envelope: { code?: string; message?: string; success?: boolean },
+): boolean {
+  if (response.status === 401) {
+    return true;
+  }
+  const normalizedCode = String(envelope.code || '').toUpperCase();
+  if (normalizedCode === 'UNAUTHORIZED' || normalizedCode === 'NOT_LOGIN') {
+    return true;
+  }
+  const normalizedMessage = String(envelope.message || '');
+  return normalizedMessage.includes('未登录') || normalizedMessage.includes('登录已失效');
 }
 
 function normalizeLegacyMapping(input: unknown): AdminQueryTermMapping {

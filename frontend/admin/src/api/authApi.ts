@@ -1,4 +1,4 @@
-import { AdminLoginFormPayload, LoginResponseData } from '../types/auth';
+import { AdminLoginFormPayload, LoginResponseData, MeResponseData } from '../types/auth';
 import { ApiResponseParser } from './apiResponse';
 
 /**
@@ -38,5 +38,23 @@ export class AuthApi {
 
     const envelope = await ApiResponseParser.parseEnvelope<null>(response, '退出登录失败');
     ApiResponseParser.assertSuccess(response, envelope, '退出登录失败');
+  }
+
+  /**
+   * 调用后端 me 接口校验当前 token 是否仍然有效，并返回当前登录用户。
+   * @param token 当前会话 token。
+   * @returns 当前登录用户信息。
+   */
+  static async me(token: string): Promise<MeResponseData> {
+    const response = await fetch('/api/auth/me', {
+      method: 'GET',
+      headers: {
+        satoken: token,
+      },
+    });
+
+    const envelope = await ApiResponseParser.parseEnvelope<MeResponseData>(response, '登录已失效，请重新登录');
+    ApiResponseParser.assertSuccess(response, envelope, '登录已失效，请重新登录');
+    return envelope.data;
   }
 }

@@ -16,6 +16,7 @@ import { TracePage } from './pages/TracePage';
 import { TraceDetailPage } from './pages/traces/TraceDetailPage';
 import { IntentTreePage } from './pages/IntentTreePage';
 import { QueryTermMappingPage } from './pages/QueryTermMappingPage';
+import { GlobalAuthNotice } from './components/GlobalAuthNotice';
 
 /**
  * @license
@@ -24,7 +25,7 @@ import { QueryTermMappingPage } from './pages/QueryTermMappingPage';
 
 export default function App() {
   // 步骤：统一托管管理端认证状态，确保登录页与后台页面共用同一会话上下文。
-  const { isAuthenticated, isSubmitting, errorMessage, login, logout } = useAdminAuth();
+  const { isAuthenticated, isSubmitting, errorMessage, login, logout, clearErrorMessage, isBootstrapping } = useAdminAuth();
   // 步骤：在开发环境预填管理员账号密码，降低本地联调成本。
   const isDevelopmentMode = import.meta.env.DEV;
   const loginDefaultUsername = isDevelopmentMode ? 'admin' : '';
@@ -44,6 +45,7 @@ export default function App() {
 
   return (
     <Router>
+      <GlobalAuthNotice message={errorMessage} onClose={clearErrorMessage} />
       <Routes>
         <Route
           path="/login"
@@ -63,7 +65,15 @@ export default function App() {
         />
         <Route
           path="/"
-          element={isAuthenticated ? <Layout onLogout={logout} isAuthSubmitting={isSubmitting} /> : <Navigate to="/login" replace />}
+          element={
+            isBootstrapping ? (
+              <AdminGuardLoading />
+            ) : isAuthenticated ? (
+              <Layout onLogout={logout} isAuthSubmitting={isSubmitting} />
+            ) : (
+              <Navigate to="/login" replace />
+            )
+          }
         >
           <Route index element={<Dashboard />} />
           <Route path="users" element={<Users />} />
@@ -82,5 +92,16 @@ export default function App() {
         <Route path="*" element={<Navigate to={isAuthenticated ? '/' : '/login'} replace />} />
       </Routes>
     </Router>
+  );
+}
+
+/**
+ * 管理端认证校验中的加载占位，避免会话校验前闪现后台页面内容。
+ */
+function AdminGuardLoading() {
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-background px-6 text-secondary">
+      正在校验登录状态...
+    </div>
   );
 }

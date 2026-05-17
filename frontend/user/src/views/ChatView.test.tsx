@@ -847,6 +847,31 @@ describe('ChatView', () => {
   });
 
   /**
+   * 已选技能标签应进入输入框内部，且技能入口与技能选项都带前置图标。
+   */
+  it('应将技能标签放入输入框并渲染技能图标', async () => {
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          selectedSkillCodes: ['sales_query'],
+        })}
+      />,
+    );
+
+    const inlineTokenContainer = screen.getByTestId('input-inline-skill-tokens');
+    const selectedChip = screen.getByTestId('selected-skill-chip-sales_query');
+    expect(inlineTokenContainer).toContainElement(selectedChip);
+
+    expect(screen.getByTestId('selected-skill-chip-icon-sales_query')).toBeInTheDocument();
+    expect(screen.getByTestId('skill-trigger-icon')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '打开技能列表' }));
+    expect(screen.getByTestId('skill-option-icon-sales_query')).toBeInTheDocument();
+  });
+
+  /**
    * MCP 与技能应共用同一个浮层区域，并且浮层在输入区上方弹出，不应挤压输入区。
    */
   it('应在输入区上方复用同一个选择浮层', async () => {

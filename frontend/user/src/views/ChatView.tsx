@@ -11,6 +11,7 @@ import {
   Database,
   FileText,
   Globe2,
+  Sparkles,
   PanelRightClose,
   PanelRightOpen,
   Paperclip,
@@ -447,7 +448,14 @@ export default function ChatView({
                                 }`}
                               >
                                 <span className="min-w-0">
-                                  <span className="block truncate text-foreground">{skill.displayName}</span>
+                                  <span className="flex items-center gap-1.5">
+                                    <Sparkles
+                                      size={13}
+                                      data-testid={`skill-option-icon-${skill.skillCode}`}
+                                      className="shrink-0 text-muted"
+                                    />
+                                    <span className="block truncate text-foreground">{skill.displayName}</span>
+                                  </span>
                                   <span className="mt-1 block truncate font-mono text-[11px] text-muted">/{skill.skillCode}</span>
                                 </span>
                                 {isSelected ? (
@@ -475,23 +483,6 @@ export default function ChatView({
                     >
                       MCP
                     </button>
-                    {selectedSkillTags.map((tag) => (
-                      <span
-                        key={tag.skillCode}
-                        data-testid={`selected-skill-chip-${tag.skillCode}`}
-                        className="inline-flex h-7 items-center gap-1 rounded-full border border-border bg-surface-container px-2.5 text-xs text-foreground"
-                      >
-                        <span className="truncate">{tag.displayName}</span>
-                        <button
-                          type="button"
-                          aria-label={`移除技能 ${tag.displayName}`}
-                          onClick={() => removeSkillTag(tag.skillCode)}
-                          className="inline-flex h-4 w-4 items-center justify-center rounded-full text-muted transition-colors hover:bg-surface-high hover:text-foreground"
-                        >
-                          ×
-                        </button>
-                      </span>
-                    ))}
                     <button
                       type="button"
                       aria-label="打开技能列表"
@@ -515,6 +506,7 @@ export default function ChatView({
                       }}
                       className="inline-flex h-7 max-w-[180px] items-center gap-1 rounded-full border border-border bg-surface-container px-3 text-xs text-foreground transition-colors hover:border-border-active"
                     >
+                      <Sparkles size={12} data-testid="skill-trigger-icon" className="text-muted" />
                       <span className="truncate">技能</span>
                       <ChevronDown size={12} className={`transition-transform ${activeSelectorMode === 'skill' ? 'rotate-180' : ''}`} />
                     </button>
@@ -525,14 +517,42 @@ export default function ChatView({
                     <Paperclip size={17} />
                   </button>
                   <div className="relative flex-1">
-                    <input
-                      ref={chatInputRef}
-                      type="text"
-                      value={inputValue}
-                      onChange={(event) => setInputValue(event.target.value)}
-                      placeholder="输入问题，或先选择技能/MCP..."
-                      className="h-8 w-full bg-transparent text-[14px] text-foreground outline-none placeholder:text-muted"
-                    />
+                    {/* 步骤：把技能标签内嵌到输入框区域，保证交互入口与输入内容处于同一视觉容器。 */}
+                    <div
+                      data-testid="input-inline-skill-tokens"
+                      className="flex min-h-8 w-full flex-wrap items-center gap-1.5 rounded-xl bg-transparent px-0.5 py-1"
+                    >
+                      {selectedSkillTags.map((tag) => (
+                        <span
+                          key={tag.skillCode}
+                          data-testid={`selected-skill-chip-${tag.skillCode}`}
+                          className="inline-flex h-6 max-w-[220px] items-center gap-1 rounded-full border border-border bg-surface-container px-2 text-xs text-foreground"
+                        >
+                          <Sparkles
+                            size={12}
+                            data-testid={`selected-skill-chip-icon-${tag.skillCode}`}
+                            className="shrink-0 text-muted"
+                          />
+                          <span className="truncate">{tag.displayName}</span>
+                          <button
+                            type="button"
+                            aria-label={`移除技能 ${tag.displayName}`}
+                            onClick={() => removeSkillTag(tag.skillCode)}
+                            className="inline-flex h-4 w-4 items-center justify-center rounded-full text-muted transition-colors hover:bg-surface-high hover:text-foreground"
+                          >
+                            ×
+                          </button>
+                        </span>
+                      ))}
+                      <input
+                        ref={chatInputRef}
+                        type="text"
+                        value={inputValue}
+                        onChange={(event) => setInputValue(event.target.value)}
+                        placeholder="输入问题，或先选择技能/MCP..."
+                        className="h-8 min-w-[180px] flex-1 bg-transparent text-[14px] text-foreground outline-none placeholder:text-muted"
+                      />
+                    </div>
                   </div>
                   <button
                     type="button"

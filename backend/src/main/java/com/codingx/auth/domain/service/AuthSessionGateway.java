@@ -23,4 +23,10 @@ public interface AuthSessionGateway {
      * @return 输入参数。
      */
     Long currentLoginId();
+
+    /**
+     * 返回当前请求来源 IP，用于记录登录审计信息。
+     * @return 客户端 IP，获取失败时可返回 null。
+     */
+    String currentRequestIp();
 }

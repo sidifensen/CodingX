@@ -8,10 +8,10 @@ import lombok.Data;
 
 /**
  * 定义任务技能绑定表的数据对象映射。
- * 当前沿用存量 `task_mcp` 物理表，避免迁移期间中断线上数据。
+ * 任务技能绑定与任务 MCP 绑定独立存储，避免运行时上下文串扰。
  */
 @Data
-@TableName("task_mcp")
+@TableName("task_skill")
 public class TaskSkillDO {
 
     @TableId("id")
@@ -20,7 +20,7 @@ public class TaskSkillDO {
     @TableField("task_id")
     private Long taskId;
 
-    @TableField("mcp_code")
+    @TableField("skill_code")
     private String skillCode;
 
     @TableField("created_at")

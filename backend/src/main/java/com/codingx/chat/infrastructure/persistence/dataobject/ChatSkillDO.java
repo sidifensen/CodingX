@@ -8,16 +8,16 @@ import lombok.Data;
 
 /**
  * 定义聊天技能配置表的数据对象映射。
- * 当前沿用存量 `chat_mcp` 物理表，避免迁移期间中断线上数据。
+ * 技能配置与 MCP 配置独立存储，避免两者数据相互污染。
  */
 @Data
-@TableName("chat_mcp")
+@TableName("chat_skill")
 public class ChatSkillDO {
 
     @TableId("id")
     private Long id;
 
-    @TableField("mcp_code")
+    @TableField("skill_code")
     private String skillCode;
 
     @TableField("display_name")

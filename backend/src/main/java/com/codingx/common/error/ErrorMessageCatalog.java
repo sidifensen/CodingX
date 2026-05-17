@@ -40,6 +40,51 @@ public final class ErrorMessageCatalog {
      */
     public static final String CURRENT_USER_NOT_FOUND = "当前登录用户不存在";
 
+    /**
+     * 管理端用户不存在提示。
+     */
+    public static final String ADMIN_USER_NOT_FOUND = "用户不存在或已删除";
+
+    /**
+     * 管理端用户请求体缺失提示。
+     */
+    public static final String ADMIN_USER_REQUEST_INVALID = "用户请求参数无效";
+
+    /**
+     * 管理端用户必填字段缺失提示。
+     */
+    public static final String ADMIN_USER_REQUIRED_FIELDS_MISSING = "用户名、展示名称和初始密码不能为空";
+
+    /**
+     * 管理端用户类型非法提示。
+     */
+    public static final String ADMIN_USER_TYPE_INVALID = "用户类型不合法";
+
+    /**
+     * 管理端用户状态非法提示。
+     */
+    public static final String ADMIN_USER_STATUS_INVALID = "用户状态不合法";
+
+    /**
+     * 管理端用户邮箱重复提示。
+     */
+    public static final String ADMIN_USER_EMAIL_DUPLICATED = "邮箱已被占用";
+
+    /**
+     * 管理端用户展示名缺失提示。
+     */
+    public static final String ADMIN_USER_DISPLAY_NAME_REQUIRED = "展示名称不能为空";
+
+    /**
+     * 管理端审核状态非法提示。
+     */
+    public static final String ADMIN_USER_APPROVE_STATUS_INVALID = "仅待审核用户可执行审核通过";
+
+    /**
+     * 管理端重置密码必填提示。
+     */
+    public static final String ADMIN_USER_PASSWORD_REQUIRED = "新密码不能为空";
+
     private ErrorMessageCatalog() {
     }
 }

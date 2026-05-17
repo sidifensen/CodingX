@@ -141,6 +141,11 @@
     --theme-status-failed-border: #fee2e2; /* red-100 */
     --theme-status-pending-bg: #fff7ed; /* orange-50 */
     --theme-status-pending-border: #ffedd5; /* orange-100 */
+
+    /* 全局滚动条颜色令牌：默认浅色模式下保持低对比中性灰，避免与主内容抢视觉焦点。 */
+    --theme-scrollbar-track: #f0f0f3;
+    --theme-scrollbar-thumb: #c9ccd2;
+    --theme-scrollbar-thumb-hover: #b7bbc3;
   }
 
   :root.dark {
@@ -208,7 +213,40 @@
       --theme-status-failed-border: rgba(255, 180, 171, 0.2);
       --theme-status-pending-bg: rgba(255, 184, 77, 0.1);
       --theme-status-pending-border: rgba(255, 184, 77, 0.2);
+
+      /* 暗色模式滚动条需要避免亮白默认皮肤，保证滚动槽与滑块都可辨识。 */
+      --theme-scrollbar-track: #1f1f1f;
+      --theme-scrollbar-thumb: #4f4f4f;
+      --theme-scrollbar-thumb-hover: #666666;
     }
+
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--theme-scrollbar-thumb) var(--theme-scrollbar-track);
+  }
+
+  *::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  *::-webkit-scrollbar-track {
+    background: var(--theme-scrollbar-track);
+  }
+
+  *::-webkit-scrollbar-thumb {
+    background: var(--theme-scrollbar-thumb);
+    border: 2px solid var(--theme-scrollbar-track);
+    border-radius: 999px;
+  }
+
+  *::-webkit-scrollbar-thumb:hover {
+    background: var(--theme-scrollbar-thumb-hover);
+  }
+
+  *::-webkit-scrollbar-corner {
+    background: var(--theme-scrollbar-track);
+  }
 }
 
 @layer utilities {

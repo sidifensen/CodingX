@@ -9,5 +9,8 @@ public enum UserStatus {
     ACTIVE,
 
     // 当前禁用。
-    DISABLED
+    DISABLED,
+
+    // 待管理员审核。
+    PENDING
 }

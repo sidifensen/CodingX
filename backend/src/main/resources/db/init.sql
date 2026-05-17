@@ -1,7 +1,7 @@
-INSERT INTO sys_user (id, username, display_name, password_hash, user_type, status)
+INSERT INTO sys_user (id, username, display_name, password_hash, user_type, status, email, phone, avatar_url, last_login_at, last_login_ip)
 VALUES
-    (1001, 'admin', 'CodingX Admin', '$2b$12$6jylJFgrNWiFT.dc.qwS9.fi7vLUZXZPpgnNKR3t7.HAJ/4BF4waa', 'ADMIN', 'ACTIVE'),
-    (1002, 'user', 'CodingX User', '$2b$12$rC3HC//tzz5D.YC1/fO0J.8ZIKaGzz54pHuWlrEibabJHdR0OC4uC', 'USER', 'ACTIVE')
+    (1001, 'admin', 'CodingX Admin', '$2b$12$6jylJFgrNWiFT.dc.qwS9.fi7vLUZXZPpgnNKR3t7.HAJ/4BF4waa', 'ADMIN', 'ACTIVE', 'admin@codingx.io', '13800000001', 'https://api.dicebear.com/9.x/thumbs/svg?seed=admin', CURRENT_TIMESTAMP, '127.0.0.1'),
+    (1002, 'user', 'CodingX User', '$2b$12$rC3HC//tzz5D.YC1/fO0J.8ZIKaGzz54pHuWlrEibabJHdR0OC4uC', 'USER', 'PENDING', 'user@codingx.io', '13800000002', 'https://api.dicebear.com/9.x/thumbs/svg?seed=user', NULL, NULL)
 ON CONFLICT (id) DO UPDATE
 SET
     username = EXCLUDED.username,
@@ -9,6 +9,11 @@ SET
     password_hash = EXCLUDED.password_hash,
     user_type = EXCLUDED.user_type,
     status = EXCLUDED.status,
+    email = EXCLUDED.email,
+    phone = EXCLUDED.phone,
+    avatar_url = EXCLUDED.avatar_url,
+    last_login_at = EXCLUDED.last_login_at,
+    last_login_ip = EXCLUDED.last_login_ip,
     updated_at = CURRENT_TIMESTAMP,
     deleted = 0;
 
@@ -337,6 +342,23 @@ VALUES
     (7102, 'ticket_query', '工单查询', '查询工单状态、列表、优先级与解决率', '工单', 'built-in', 1, 2, 0),
     (7103, 'weather_query', '天气查询', '查询当前天气与未来预报', '天气', 'built-in', 1, 3, 0)
 ON CONFLICT (mcp_code) DO UPDATE
+SET
+    display_name = EXCLUDED.display_name,
+    description = EXCLUDED.description,
+    category = EXCLUDED.category,
+    source_type = EXCLUDED.source_type,
+    enabled = EXCLUDED.enabled,
+    sort_no = EXCLUDED.sort_no,
+    updated_at = CURRENT_TIMESTAMP,
+    deleted = EXCLUDED.deleted;
+
+INSERT INTO chat_skill (id, skill_code, display_name, description, category, source_type, enabled, sort_no, deleted)
+VALUES
+    (8101, 'web-read', '网页读取', '解析并总结外部网页内容', '信息处理', 'built-in', 1, 1, 0),
+    (8102, 'deep-research', '调研分析', '深度搜索并生成研究报告', '研究分析', 'built-in', 1, 2, 0),
+    (8103, 'data-mining', '数据挖掘', '结构化数据提取与清洗', '数据处理', 'built-in', 1, 3, 0),
+    (8104, 'file-manage', '文件管理', '上传并与您的文档进行对话', '文档处理', 'built-in', 1, 4, 0)
+ON CONFLICT (skill_code) DO UPDATE
 SET
     display_name = EXCLUDED.display_name,
     description = EXCLUDED.description,

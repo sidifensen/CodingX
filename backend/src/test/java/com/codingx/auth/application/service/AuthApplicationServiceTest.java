@@ -1,6 +1,7 @@
 package com.codingx.auth.application.service;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import com.codingx.auth.application.command.LoginCommand;
@@ -56,9 +57,11 @@ class AuthApplicationServiceTest {
         User user = User.create(1002L, "demo", "CodingX Demo", "hash", UserType.USER, UserStatus.ACTIVE);
         when(userRepository.findByUsername("demo")).thenReturn(Optional.of(user));
         when(passwordHasher.matches("password", "hash")).thenReturn(true);
+        when(authSessionGateway.currentRequestIp()).thenReturn("127.0.0.1");
         when(authSessionGateway.login(user)).thenReturn("token-1");
         LoginResult result = authApplicationService.login(new LoginCommand("demo", "password"));
         assertEquals("token-1", result.token());
+        verify(userRepository).save(any(User.class));
         verify(authSessionGateway).login(user);
     }
 

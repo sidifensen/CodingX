@@ -5,17 +5,35 @@ CREATE TABLE IF NOT EXISTS sys_user (
     password_hash VARCHAR(255) NOT NULL,
     user_type VARCHAR(32) NOT NULL,
     status VARCHAR(32) NOT NULL,
+    email VARCHAR(128),
+    phone VARCHAR(32),
+    avatar_url VARCHAR(512),
+    last_login_at TIMESTAMP,
+    last_login_ip VARCHAR(64),
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     deleted SMALLINT NOT NULL DEFAULT 0
 );
+-- 兼容历史环境：当 sys_user 已存在旧结构时，补齐用户管理所需列，避免注释和初始化脚本执行失败。
+ALTER TABLE sys_user
+    ADD COLUMN IF NOT EXISTS email VARCHAR(128),
+    ADD COLUMN IF NOT EXISTS phone VARCHAR(32),
+    ADD COLUMN IF NOT EXISTS avatar_url VARCHAR(512),
+    ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMP,
+    ADD COLUMN IF NOT EXISTS last_login_ip VARCHAR(64);
+
 COMMENT ON TABLE sys_user IS '系统用户表，存储登录账号、展示名称、身份类型与启停状态';
 COMMENT ON COLUMN sys_user.id IS '用户主键 ID';
 COMMENT ON COLUMN sys_user.username IS '登录用户名，系统内唯一';
 COMMENT ON COLUMN sys_user.display_name IS '用户展示名称，用于界面显示';
 COMMENT ON COLUMN sys_user.password_hash IS '密码哈希值，不存储明文密码';
 COMMENT ON COLUMN sys_user.user_type IS '用户类型，例如管理员或普通用户';
-COMMENT ON COLUMN sys_user.status IS '用户状态，例如启用或禁用';
+COMMENT ON COLUMN sys_user.status IS '用户状态，例如启用、禁用或待审核';
+COMMENT ON COLUMN sys_user.email IS '用户邮箱';
+COMMENT ON COLUMN sys_user.phone IS '用户手机号';
+COMMENT ON COLUMN sys_user.avatar_url IS '用户头像地址';
+COMMENT ON COLUMN sys_user.last_login_at IS '最近登录时间';
+COMMENT ON COLUMN sys_user.last_login_ip IS '最近登录IP';
 COMMENT ON COLUMN sys_user.created_at IS '记录创建时间';
 COMMENT ON COLUMN sys_user.updated_at IS '记录最后更新时间';
 COMMENT ON COLUMN sys_user.deleted IS '逻辑删除标记，0 表示未删除，1 表示已删除';
@@ -470,10 +488,45 @@ CREATE TABLE IF NOT EXISTS chat_query_term_mapping (
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     deleted SMALLINT NOT NULL DEFAULT 0
 );
+-- 兼容历史环境：旧表可能仍使用 mapping_type/sort_no 结构，补齐新版字段避免初始化脚本失败。
+ALTER TABLE chat_query_term_mapping
+    ADD COLUMN IF NOT EXISTS mapping_type VARCHAR(32),
+    ADD COLUMN IF NOT EXISTS sort_no INTEGER,
+    ADD COLUMN IF NOT EXISTS match_type INTEGER,
+    ADD COLUMN IF NOT EXISTS priority INTEGER,
+    ADD COLUMN IF NOT EXISTS remark VARCHAR(255);
+ALTER TABLE chat_query_term_mapping
+    ALTER COLUMN mapping_type SET DEFAULT 'exact',
+    ALTER COLUMN sort_no SET DEFAULT 0,
+    ALTER COLUMN match_type SET DEFAULT 1,
+    ALTER COLUMN priority SET DEFAULT 0;
+UPDATE chat_query_term_mapping
+SET
+    mapping_type = COALESCE(mapping_type, 'exact'),
+    sort_no = COALESCE(sort_no, 0),
+    match_type = COALESCE(match_type,
+        CASE
+            WHEN mapping_type = 'prefix' THEN 2
+            WHEN mapping_type = 'regex' THEN 3
+            WHEN mapping_type = 'word' THEN 4
+            ELSE 1
+        END),
+    priority = COALESCE(priority, sort_no, 0)
+WHERE mapping_type IS NULL OR sort_no IS NULL OR match_type IS NULL OR priority IS NULL;
+UPDATE chat_query_term_mapping SET mapping_type = 'exact' WHERE mapping_type IS NULL;
+UPDATE chat_query_term_mapping SET sort_no = 0 WHERE sort_no IS NULL;
+UPDATE chat_query_term_mapping SET match_type = 1 WHERE match_type IS NULL;
+UPDATE chat_query_term_mapping SET priority = 0 WHERE priority IS NULL;
+ALTER TABLE chat_query_term_mapping
+    ALTER COLUMN match_type SET NOT NULL,
+    ALTER COLUMN priority SET NOT NULL;
+
 COMMENT ON TABLE chat_query_term_mapping IS '关键词归一化映射表';
 COMMENT ON COLUMN chat_query_term_mapping.id IS '映射主键ID';
 COMMENT ON COLUMN chat_query_term_mapping.source_term IS '原始词';
 COMMENT ON COLUMN chat_query_term_mapping.target_term IS '目标词';
+COMMENT ON COLUMN chat_query_term_mapping.mapping_type IS '兼容旧版映射类型字段';
+COMMENT ON COLUMN chat_query_term_mapping.sort_no IS '兼容旧版排序字段';
 COMMENT ON COLUMN chat_query_term_mapping.match_type IS '匹配类型 1精确 2前缀 3正则 4整词';
 COMMENT ON COLUMN chat_query_term_mapping.priority IS '优先级 数值越小越优先';
 COMMENT ON COLUMN chat_query_term_mapping.enabled IS '是否启用 1启用 0禁用';
@@ -548,6 +601,32 @@ COMMENT ON COLUMN chat_mcp.created_at IS '创建时间';
 COMMENT ON COLUMN chat_mcp.updated_at IS '更新时间';
 COMMENT ON COLUMN chat_mcp.deleted IS '是否删除 0正常 1删除';
 
+CREATE TABLE IF NOT EXISTS chat_skill (
+    id BIGINT PRIMARY KEY,
+    skill_code VARCHAR(128) NOT NULL UNIQUE,
+    display_name VARCHAR(255) NOT NULL,
+    description TEXT,
+    category VARCHAR(128),
+    source_type VARCHAR(64) NOT NULL DEFAULT 'built-in',
+    enabled SMALLINT NOT NULL DEFAULT 1,
+    sort_no INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted SMALLINT NOT NULL DEFAULT 0
+);
+COMMENT ON TABLE chat_skill IS '聊天技能配置表';
+COMMENT ON COLUMN chat_skill.id IS '技能主键ID';
+COMMENT ON COLUMN chat_skill.skill_code IS '技能编码';
+COMMENT ON COLUMN chat_skill.display_name IS '技能名称';
+COMMENT ON COLUMN chat_skill.description IS '技能描述';
+COMMENT ON COLUMN chat_skill.category IS '技能分类';
+COMMENT ON COLUMN chat_skill.source_type IS '技能来源';
+COMMENT ON COLUMN chat_skill.enabled IS '是否启用 1启用 0禁用';
+COMMENT ON COLUMN chat_skill.sort_no IS '排序字段';
+COMMENT ON COLUMN chat_skill.created_at IS '创建时间';
+COMMENT ON COLUMN chat_skill.updated_at IS '更新时间';
+COMMENT ON COLUMN chat_skill.deleted IS '是否删除 0正常 1删除';
+
 CREATE TABLE IF NOT EXISTS task_mcp (
     id BIGINT PRIMARY KEY,
     task_id BIGINT NOT NULL,
@@ -560,7 +639,20 @@ COMMENT ON COLUMN task_mcp.task_id IS '任务ID';
 COMMENT ON COLUMN task_mcp.mcp_code IS 'MCP编码';
 COMMENT ON COLUMN task_mcp.created_at IS '创建时间';
 
+CREATE TABLE IF NOT EXISTS task_skill (
+    id BIGINT PRIMARY KEY,
+    task_id BIGINT NOT NULL,
+    skill_code VARCHAR(128) NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+COMMENT ON TABLE task_skill IS '任务技能绑定表';
+COMMENT ON COLUMN task_skill.id IS '主键ID';
+COMMENT ON COLUMN task_skill.task_id IS '任务ID';
+COMMENT ON COLUMN task_skill.skill_code IS '技能编码';
+COMMENT ON COLUMN task_skill.created_at IS '创建时间';
+
 CREATE INDEX IF NOT EXISTS idx_task_created_by ON task (created_by, created_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_sys_user_email ON sys_user (email) WHERE email IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_task_status ON task (status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_task_event_task_seq ON task_event (task_id, sequence_no ASC);
 CREATE INDEX IF NOT EXISTS idx_task_artifact_task ON task_artifact (task_id, created_at ASC);
@@ -586,5 +678,8 @@ CREATE INDEX IF NOT EXISTS idx_chat_query_term_mapping_source ON chat_query_term
 CREATE INDEX IF NOT EXISTS idx_chat_sample_question_enabled ON chat_sample_question (enabled, sort_no ASC);
 CREATE INDEX IF NOT EXISTS idx_chat_runtime_setting_key ON chat_runtime_setting (setting_key, deleted);
 CREATE INDEX IF NOT EXISTS idx_chat_mcp_enabled_sort ON chat_mcp (enabled, sort_no ASC);
+CREATE INDEX IF NOT EXISTS idx_chat_skill_enabled_sort ON chat_skill (enabled, sort_no ASC);
 CREATE INDEX IF NOT EXISTS idx_task_mcp_task ON task_mcp (task_id, created_at ASC);
 CREATE INDEX IF NOT EXISTS idx_task_mcp_mcp_code ON task_mcp (mcp_code);
+CREATE INDEX IF NOT EXISTS idx_task_skill_task ON task_skill (task_id, created_at ASC);
+CREATE INDEX IF NOT EXISTS idx_task_skill_skill_code ON task_skill (skill_code);

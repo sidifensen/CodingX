@@ -8,6 +8,7 @@ import com.codingx.auth.domain.service.PasswordHasher;
 import com.codingx.common.error.ErrorMessageCatalog;
 import com.codingx.common.exception.NotFoundException;
 import com.codingx.common.exception.UnauthorizedException;
+import java.time.LocalDateTime;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -48,6 +49,8 @@ public class AuthApplicationService {
         if (!passwordHasher.matches(command.password(), user.getPasswordHash())) {
             throw new UnauthorizedException(ErrorMessageCatalog.LOGIN_INVALID_CREDENTIALS);
         }
+        user.markLogin(LocalDateTime.now(), authSessionGateway.currentRequestIp());
+        userRepository.save(user);
         String token = authSessionGateway.login(user);
         return new LoginResult(user.getId(), user.getUsername(), user.getDisplayName(), user.getUserType(), token);
     }

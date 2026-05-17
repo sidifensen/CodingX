@@ -1,9 +1,13 @@
 package com.codingx.auth.infrastructure.security;
 import cn.dev33.satoken.stp.StpUtil;
+import cn.hutool.core.util.StrUtil;
 import com.codingx.auth.domain.model.User;
 import com.codingx.auth.domain.service.AuthSessionGateway;
 import com.codingx.common.exception.UnauthorizedException;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.stereotype.Component;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
 
 /**
  * 实现 SaTokenSessionGateway 的安全基础设施适配。
@@ -44,5 +48,24 @@ public class SaTokenSessionGateway implements AuthSessionGateway {
         } catch (Exception exception) {
             throw new UnauthorizedException("Not logged in");
         }
+    }
+
+    /**
+     * 返回当前请求来源 IP，用于记录登录审计信息。
+     * @return 客户端 IP，获取失败时返回 null。
+     */
+    @Override
+    public String currentRequestIp() {
+        ServletRequestAttributes requestAttributes = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
+        if (requestAttributes == null) {
+            return null;
+        }
+        HttpServletRequest request = requestAttributes.getRequest();
+        String forwardedFor = request.getHeader("X-Forwarded-For");
+        if (StrUtil.isNotBlank(forwardedFor)) {
+            String firstIp = forwardedFor.split(",")[0];
+            return StrUtil.trimToNull(firstIp);
+        }
+        return StrUtil.trimToNull(request.getRemoteAddr());
     }
 }

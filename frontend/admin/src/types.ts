@@ -1,16 +1,3 @@
-export interface User {
-  id: string;
-  uid: string;
-  name: string;
-  email: string;
-  role: 'Admin' | 'Developer' | 'Visitor';
-  roleLabel: string;
-  status: 'Normal' | 'Disabled' | 'Pending';
-  lastLogon: string;
-  createdAt: string;
-  avatar: string;
-}
-
 export interface Task {
     id: string;
     description: string;

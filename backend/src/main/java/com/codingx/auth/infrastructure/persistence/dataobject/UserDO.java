@@ -49,6 +49,36 @@ public class UserDO {
     private String status;
 
     /**
+     * 用户邮箱。
+     */
+    @TableField("email")
+    private String email;
+
+    /**
+     * 用户手机号。
+     */
+    @TableField("phone")
+    private String phone;
+
+    /**
+     * 用户头像地址。
+     */
+    @TableField("avatar_url")
+    private String avatarUrl;
+
+    /**
+     * 最近登录时间。
+     */
+    @TableField("last_login_at")
+    private LocalDateTime lastLoginAt;
+
+    /**
+     * 最近登录 IP。
+     */
+    @TableField("last_login_ip")
+    private String lastLoginIp;
+
+    /**
      * 创建时间。
      */
     @TableField("created_at")

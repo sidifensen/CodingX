@@ -869,6 +869,26 @@ describe('ChatView', () => {
   });
 
   /**
+   * 技能文本标记应在同位渲染层展示为气泡样式，保持原有视觉形态。
+   */
+  it('应将技能文本标记渲染为气泡样式预览', async () => {
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          inputValue: '@sales_query 帮我分析一下',
+          selectedSkillCodes: ['sales_query'],
+        })}
+      />,
+    );
+
+    expect(screen.getByTestId('input-rich-preview')).toBeInTheDocument();
+    expect(screen.getByTestId('selected-skill-chip-sales_query')).toBeInTheDocument();
+    expect(screen.getByTestId('selected-skill-chip-icon-sales_query')).toBeInTheDocument();
+  });
+
+  /**
    * 无技能标签时占位文案不应被挤压换行，输入框应占满整行。
    */
   it('应在无技能标签时让输入框占满整行', async () => {

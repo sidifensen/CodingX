@@ -85,6 +85,7 @@ export default function ChatView({
   );
   const selectorLayerRef = React.useRef<HTMLDivElement | null>(null);
   const chatInputRef = React.useRef<HTMLTextAreaElement | null>(null);
+  const inputPreviewRef = React.useRef<HTMLDivElement | null>(null);
 
   /**
    * 过滤技能列表，支持名称与编码模糊检索。
@@ -108,6 +109,14 @@ export default function ChatView({
   const availableSkillCodeSet = React.useMemo(
     () => new Set(availableSkills.map((skill) => skill.skillCode)),
     [availableSkills],
+  );
+  const availableSkillNameMap = React.useMemo(
+    () => new Map(availableSkills.map((skill) => [skill.skillCode, skill.displayName])),
+    [availableSkills],
+  );
+  const inputPreviewSegments = React.useMemo(
+    () => tokenizeInputForPreview(inputValue, availableSkillNameMap),
+    [availableSkillNameMap, inputValue],
   );
 
   /**
@@ -302,6 +311,11 @@ export default function ChatView({
     const nextHeight = Math.min(textarea.scrollHeight, maxHeight);
     textarea.style.height = `${Math.max(nextHeight, lineHeight + verticalPadding)}px`;
     textarea.style.overflowY = textarea.scrollHeight > maxHeight ? 'auto' : 'hidden';
+    const preview = inputPreviewRef.current;
+    if (preview) {
+      preview.scrollTop = textarea.scrollTop;
+      preview.scrollLeft = textarea.scrollLeft;
+    }
   }, [inputValue]);
 
   /**
@@ -718,6 +732,35 @@ export default function ChatView({
                         data-testid="input-inline-content-flow"
                         className="relative min-h-8 w-full text-[14px] leading-6 text-foreground"
                       >
+                        <div
+                          ref={inputPreviewRef}
+                          data-testid="input-rich-preview"
+                          aria-hidden="true"
+                          className="pointer-events-none absolute inset-0 overflow-hidden py-1 whitespace-pre-wrap break-words text-[14px] leading-6 text-foreground"
+                        >
+                          {inputPreviewSegments.length > 0 ? (
+                            inputPreviewSegments.map((segment, index) =>
+                              segment.type === 'skill' ? (
+                                <span
+                                  key={`${segment.skillCode}-${segment.start}-${index}`}
+                                  data-testid={`selected-skill-chip-${segment.skillCode}`}
+                                  className="mx-0.5 inline-flex h-6 max-w-[220px] translate-y-[1px] items-center gap-1 rounded-md border border-border/70 bg-surface-container/70 px-2 text-xs font-normal text-foreground align-baseline"
+                                >
+                                  <Sparkles
+                                    size={12}
+                                    data-testid={`selected-skill-chip-icon-${segment.skillCode}`}
+                                    className="shrink-0 text-muted"
+                                  />
+                                  <span className="truncate">{segment.displayName}</span>
+                                </span>
+                              ) : (
+                                <span key={`text-${segment.start}-${index}`}>{segment.value}</span>
+                              ),
+                            )
+                          ) : (
+                            <span className="text-transparent">.</span>
+                          )}
+                        </div>
                         <textarea
                           ref={chatInputRef}
                           value={inputValue}
@@ -732,10 +775,20 @@ export default function ChatView({
                               void submitCurrentInput();
                             }
                           }}
+                          onScroll={(event) => {
+                            const preview = inputPreviewRef.current;
+                            if (!preview) {
+                              return;
+                            }
+                            preview.scrollTop = event.currentTarget.scrollTop;
+                            preview.scrollLeft = event.currentTarget.scrollLeft;
+                          }}
                           rows={1}
                           placeholder="输入问题，或先选择技能/MCP..."
-                          // 步骤：技能文本标记直接和正文混排，保持完整可选中、可删除、可任意移动。
-                          className="min-h-8 w-full min-w-0 resize-none overflow-x-hidden bg-transparent py-1 text-[14px] leading-6 text-foreground outline-none placeholder:overflow-hidden placeholder:whitespace-nowrap placeholder:text-muted"
+                          // 步骤：输入仍由 textarea 驱动编辑，显示层负责把技能标记渲染为气泡样式。
+                          className={`min-h-8 w-full min-w-0 resize-none overflow-x-hidden bg-transparent py-1 text-[14px] leading-6 outline-none placeholder:overflow-hidden placeholder:whitespace-nowrap placeholder:text-muted ${
+                            inputValue ? 'text-transparent caret-foreground selection:bg-border-active/35 selection:text-transparent' : 'text-foreground'
+                          }`}
                         />
                       </div>
                     </div>
@@ -1337,6 +1390,76 @@ function normalizeMessageForPlainCopy(content: string) {
     .replace(/^[>\-#*]+\s*/gm, '')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
+}
+
+type InputPreviewSegment =
+  | {
+      type: 'text';
+      value: string;
+      start: number;
+      end: number;
+    }
+  | {
+      type: 'skill';
+      rawToken: string;
+      skillCode: string;
+      displayName: string;
+      start: number;
+      end: number;
+    };
+
+/**
+ * 将输入文本切分为“普通文本片段 + 技能标记片段”，供输入区气泡预览层渲染。
+ * @param rawInput 原始输入文本。
+ * @param skillNameMap 技能编码到展示名的映射。
+ * @returns 预览片段列表。
+ */
+function tokenizeInputForPreview(
+  rawInput: string,
+  skillNameMap: Map<string, string>,
+): InputPreviewSegment[] {
+  if (!rawInput) {
+    return [];
+  }
+  const segments: InputPreviewSegment[] = [];
+  let cursor = 0;
+  const tokenPattern = /@([a-zA-Z0-9_-]+)/g;
+  for (const match of rawInput.matchAll(tokenPattern)) {
+    const fullToken = match[0];
+    const skillCode = match[1];
+    const tokenStart = match.index ?? -1;
+    const tokenEnd = tokenStart + fullToken.length;
+    const displayName = skillNameMap.get(skillCode);
+    if (tokenStart < 0 || !displayName) {
+      continue;
+    }
+    if (tokenStart > cursor) {
+      segments.push({
+        type: 'text',
+        value: rawInput.slice(cursor, tokenStart),
+        start: cursor,
+        end: tokenStart,
+      });
+    }
+    segments.push({
+      type: 'skill',
+      rawToken: fullToken,
+      skillCode,
+      displayName,
+      start: tokenStart,
+      end: tokenEnd,
+    });
+    cursor = tokenEnd;
+  }
+  if (cursor < rawInput.length) {
+    segments.push({
+      type: 'text',
+      value: rawInput.slice(cursor),
+      start: cursor,
+      end: rawInput.length,
+    });
+  }
+  return segments;
 }
 
 /**

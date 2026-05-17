@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import clsx from 'clsx';
 
 import type { AdminTraceRun } from '../../../api/adminChatApi';
+import { DataTableCard } from '../../../components/DataTableCard';
 import { Pagination } from '../../../components/Pagination';
 import { formatDateTime, formatDuration, statusBadgeClassName, statusLabel } from '../traceUtils';
 
@@ -30,16 +31,12 @@ export function TraceRunsTable({
   const showSkeletonRows = loading && runs.length === 0;
 
   return (
-    <section className="flex min-h-0 max-h-full flex-col overflow-hidden rounded-xl border border-border-hairline bg-surface-container-lowest shadow-sm">
-      <div className="shrink-0 border-b border-border-hairline px-lg py-md">
-        <h2 className="font-title-md text-title-md text-ink">运行列表</h2>
-        <p className="mt-1 text-secondary">按时间倒序查看运行记录，通过操作按钮进入独立详情页</p>
-      </div>
-
-      <div
-        data-testid="trace-runs-scroll"
-        className="relative min-h-0 flex-1 overflow-auto"
-      >
+    <DataTableCard
+      title="运行列表"
+      description="按时间倒序查看运行记录，通过操作按钮进入独立详情页"
+      scrollTestId="trace-runs-scroll"
+      loading={loading}
+      tableContent={(
         <table className="w-full min-w-[1180px] border-collapse text-left">
           <thead>
             <tr className="bg-surface-container-low border-b border-border-hairline">
@@ -125,17 +122,9 @@ export function TraceRunsTable({
               : null}
           </tbody>
         </table>
-
-        {loading ? (
-          <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-surface-container-lowest/50">
-            <span className="rounded-lg border border-border-hairline bg-surface-container-lowest px-md py-xs text-[12px] text-secondary">
-              加载中...
-            </span>
-          </div>
-        ) : null}
-      </div>
-
-      <div className="shrink-0 flex items-center justify-between gap-sm border-t border-border-hairline bg-surface-container-low px-lg py-sm">
+      )}
+      footerContent={(
+        <>
         <p className="text-secondary text-[12px]">
           第 {current} / {Math.max(pages, 1)} 页，共 {total.toLocaleString('zh-CN')} 条
         </p>
@@ -145,7 +134,8 @@ export function TraceRunsTable({
           loading={loading}
           onChange={onChangePage}
         />
-      </div>
-    </section>
+        </>
+      )}
+    />
   );
 }

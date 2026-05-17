@@ -891,8 +891,10 @@ describe('ChatView', () => {
     );
 
     const inlineTokenContainer = screen.getByTestId('input-inline-skill-tokens');
+    const inlineContentFlow = screen.getByTestId('input-inline-content-flow');
     const selectedChip = screen.getByTestId('selected-skill-chip-sales_query');
     expect(inlineTokenContainer).toContainElement(selectedChip);
+    expect(inlineContentFlow).toContainElement(selectedChip);
 
     expect(screen.getByTestId('selected-skill-chip-icon-sales_query')).toBeInTheDocument();
     expect(screen.getByTestId('skill-trigger-icon')).toBeInTheDocument();
@@ -917,6 +919,7 @@ describe('ChatView', () => {
     );
 
     const inlineTokenContainer = screen.getByTestId('input-inline-skill-tokens');
+    const inlineContentFlow = screen.getByTestId('input-inline-content-flow');
     const selectedChip = screen.getByTestId('selected-skill-chip-sales_query');
     const textarea = screen.getByPlaceholderText('输入问题，或先选择技能/MCP...');
 
@@ -925,6 +928,8 @@ describe('ChatView', () => {
     expect(inlineTokenContainer).toHaveAttribute('data-max-lines', '9');
     expect(inlineTokenContainer).toContainElement(selectedChip);
     expect(inlineTokenContainer).toContainElement(textarea);
+    expect(inlineContentFlow).toContainElement(selectedChip);
+    expect(inlineContentFlow).toContainElement(textarea);
   });
 
   /**

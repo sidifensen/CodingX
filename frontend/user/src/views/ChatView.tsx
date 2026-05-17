@@ -572,12 +572,16 @@ export default function ChatView({
                       data-max-lines="9"
                       className="max-h-[calc(1.5rem*9+1rem)] w-full overflow-y-auto rounded-xl bg-transparent px-0.5 py-1"
                     >
-                      <div className="flex min-h-8 w-full flex-wrap items-start gap-1.5">
+                      {/* 步骤：使用同一段“行内文本流”承载技能标签和输入框，避免视觉分区断层。 */}
+                      <div
+                        data-testid="input-inline-content-flow"
+                        className="inline min-h-8 w-full text-[14px] leading-6 text-foreground"
+                      >
                         {selectedSkillTags.map((tag) => (
                           <span
                             key={tag.skillCode}
                             data-testid={`selected-skill-chip-${tag.skillCode}`}
-                            className="inline-flex h-6 max-w-[220px] items-center gap-1 rounded-full border border-border bg-surface-container px-2 text-xs text-foreground"
+                            className="mr-1.5 inline-flex h-6 max-w-[220px] translate-y-[2px] items-center gap-1 rounded-full border border-border bg-surface-container px-2 text-xs text-foreground align-baseline"
                           >
                             <Sparkles
                               size={12}
@@ -607,7 +611,7 @@ export default function ChatView({
                           }}
                           rows={1}
                           placeholder="输入问题，或先选择技能/MCP..."
-                          className="min-h-8 min-w-[180px] flex-1 resize-none bg-transparent text-[14px] leading-6 text-foreground outline-none placeholder:text-muted"
+                          className="inline min-h-8 min-w-[180px] w-full resize-none bg-transparent align-baseline text-[14px] leading-6 text-foreground outline-none placeholder:text-muted"
                         />
                       </div>
                     </div>

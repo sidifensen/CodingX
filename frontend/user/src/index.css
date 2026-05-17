@@ -119,6 +119,30 @@
     border-color: var(--border-active);
   }
 
+  .chat-message-action-button-group {
+    display: inline-flex;
+    align-items: center;
+    border: 1px solid var(--border-subtle);
+    border-radius: 10px;
+    background: var(--surface);
+    padding: 0 1px;
+  }
+
+  .chat-message-action-button-group-item {
+    border-color: transparent;
+    background: transparent;
+  }
+
+  .chat-message-action-button-group-item:hover {
+    border-color: transparent;
+  }
+
+  .chat-message-action-divider {
+    width: 1px;
+    height: 14px;
+    background: var(--border-subtle);
+  }
+
   .chat-copy-menu-item {
     width: 100%;
     border-radius: 10px;

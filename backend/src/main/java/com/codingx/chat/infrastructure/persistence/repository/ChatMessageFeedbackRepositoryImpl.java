@@ -1,10 +1,13 @@
 package com.codingx.chat.infrastructure.persistence.repository;
 
+import cn.hutool.core.util.StrUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.codingx.chat.domain.model.ChatMessageFeedback;
 import com.codingx.chat.domain.repository.ChatMessageFeedbackRepository;
 import com.codingx.chat.infrastructure.persistence.dataobject.ChatMessageFeedbackDO;
 import com.codingx.chat.infrastructure.persistence.mapper.ChatMessageFeedbackMapper;
+import com.codingx.chat.interfaces.response.PageResult;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Repository;
@@ -35,6 +38,42 @@ public class ChatMessageFeedbackRepositoryImpl implements ChatMessageFeedbackRep
             .eq(ChatMessageFeedbackDO::getUserId, userId)
             .eq(ChatMessageFeedbackDO::getDeleted, 0)
             .last("LIMIT 1"))).map(this::toDomain);
+    }
+
+    @Override
+    public PageResult<ChatMessageFeedback> pageQuery(int current, int size, String keyword, Integer vote) {
+        LambdaQueryWrapper<ChatMessageFeedbackDO> wrapper = new LambdaQueryWrapper<ChatMessageFeedbackDO>()
+            .eq(ChatMessageFeedbackDO::getDeleted, 0)
+            .eq(vote != null, ChatMessageFeedbackDO::getVote, vote)
+            .and(StrUtil.isNotBlank(keyword), query -> query
+                .like(ChatMessageFeedbackDO::getReason, keyword)
+                .or()
+                .like(ChatMessageFeedbackDO::getComment, keyword))
+            .orderByDesc(ChatMessageFeedbackDO::getCreatedAt)
+            .orderByDesc(ChatMessageFeedbackDO::getId);
+        Page<ChatMessageFeedbackDO> page = chatMessageFeedbackMapper.selectPage(
+            new Page<>(Math.max(1, current), Math.max(1, size)),
+            wrapper
+        );
+        return PageResult.<ChatMessageFeedback>builder()
+            .records(page.getRecords().stream().map(this::toDomain).toList())
+            .total(page.getTotal())
+            .size(page.getSize())
+            .current(page.getCurrent())
+            .pages(page.getPages())
+            .build();
+    }
+
+    @Override
+    public Optional<ChatMessageFeedback> findById(Long id) {
+        if (id == null) {
+            return Optional.empty();
+        }
+        ChatMessageFeedbackDO dataObject = chatMessageFeedbackMapper.selectById(id);
+        if (dataObject == null || Integer.valueOf(1).equals(dataObject.getDeleted())) {
+            return Optional.empty();
+        }
+        return Optional.of(toDomain(dataObject));
     }
 
     private ChatMessageFeedbackDO toDataObject(ChatMessageFeedback feedback) {

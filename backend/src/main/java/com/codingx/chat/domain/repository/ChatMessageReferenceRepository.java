@@ -20,4 +20,11 @@ public interface ChatMessageReferenceRepository {
      * @return 来源列表。
      */
     List<ChatMessageReference> findByRunId(Long runId);
+
+    /**
+     * 根据消息查询来源列表，供反馈追溯页展示引用证据。
+     * @param messageId 消息标识。
+     * @return 来源列表。
+     */
+    List<ChatMessageReference> findByMessageId(Long messageId);
 }

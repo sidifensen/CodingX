@@ -98,6 +98,45 @@ export interface AdminQueryTermMappingPayload {
   remark?: string | null;
 }
 
+export interface AdminChatMessageFeedback {
+  id: number;
+  messageId: number;
+  conversationId: number;
+  userId?: number;
+  vote: number;
+  reason?: string;
+  comment?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface AdminChatMessageFeedbackDetail extends AdminChatMessageFeedback {
+  conversationTitle?: string;
+  messageRole?: string;
+  messageContent?: string;
+}
+
+export interface AdminChatMessageReference {
+  id: number;
+  runId?: number;
+  messageId?: number;
+  conversationId?: number;
+  sourceType?: string;
+  title?: string;
+  url?: string;
+  siteName?: string;
+  snippet?: string;
+  rankNo?: number;
+  createdAt?: string;
+}
+
+export interface AdminFeedbackQuery {
+  current?: number;
+  size?: number;
+  keyword?: string;
+  vote?: number | null;
+}
+
 export interface AdminPageResult<T> {
   records: T[];
   total: number;
@@ -309,6 +348,48 @@ export class AdminChatApi {
     await this.request<void>(`/api/admin/chat/query-term-mappings/${encodeURIComponent(String(id))}`, {
       method: 'DELETE',
     });
+  }
+
+  /**
+   * 分页查询聊天反馈记录，支持关键字与投票方向过滤。
+   * @param query 分页与筛选参数。
+   * @returns 反馈分页结果。
+   */
+  static async listFeedbacks(query: AdminFeedbackQuery = {}): Promise<AdminPageResult<AdminChatMessageFeedback>> {
+    const searchParams = new URLSearchParams();
+    searchParams.set('current', String(query.current ?? 1));
+    searchParams.set('size', String(query.size ?? 10));
+    if (query.keyword && query.keyword.trim()) {
+      searchParams.set('keyword', query.keyword.trim());
+    }
+    if (typeof query.vote === 'number' && Number.isFinite(query.vote) && query.vote !== 0) {
+      searchParams.set('vote', String(query.vote));
+    }
+    return this.request<AdminPageResult<AdminChatMessageFeedback>>(
+      `/api/admin/chat/feedbacks?${searchParams.toString()}`,
+    );
+  }
+
+  /**
+   * 查询单条反馈详情，聚合消息角色与内容。
+   * @param feedbackId 反馈主键。
+   * @returns 反馈详情。
+   */
+  static async getFeedbackDetail(feedbackId: string | number): Promise<AdminChatMessageFeedbackDetail> {
+    return this.request<AdminChatMessageFeedbackDetail>(
+      `/api/admin/chat/feedbacks/${encodeURIComponent(String(feedbackId))}`,
+    );
+  }
+
+  /**
+   * 查询反馈关联消息的引用来源列表。
+   * @param feedbackId 反馈主键。
+   * @returns 引用来源列表。
+   */
+  static async listFeedbackReferences(feedbackId: string | number): Promise<AdminChatMessageReference[]> {
+    return this.request<AdminChatMessageReference[]>(
+      `/api/admin/chat/feedbacks/${encodeURIComponent(String(feedbackId))}/references`,
+    );
   }
 
   static async listSettings(): Promise<AdminRuntimeSetting[]> {

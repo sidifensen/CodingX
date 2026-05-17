@@ -1,6 +1,7 @@
 package com.codingx.chat.domain.repository;
 import com.codingx.chat.domain.model.ChatMessage;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * 定义 ChatMessageRepository 的仓储契约。
@@ -19,4 +20,11 @@ public interface ChatMessageRepository {
      * @return 输入参数。
      */
     List<ChatMessage> findByConversationId(Long conversationId);
+
+    /**
+     * 按消息主键查询单条记录。
+     * @param id 消息主键。
+     * @return 消息记录。
+     */
+    Optional<ChatMessage> findById(Long id);
 }

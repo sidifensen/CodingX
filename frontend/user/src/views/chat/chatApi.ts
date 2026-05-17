@@ -144,6 +144,23 @@ export class ChatApi {
   }
 
   /**
+   * 提交指定消息的点赞/点踩反馈，确保用户操作写入后端反馈表。
+   * @param token 当前登录令牌。
+   * @param messageId 消息标识。
+   * @param payload 反馈请求体。
+   */
+  static async submitMessageFeedback(
+    token: string,
+    messageId: string,
+    payload: { conversationId: string; vote: 1 | -1; reason?: string; comment?: string },
+  ): Promise<void> {
+    await this.request<void>(`/api/chat/messages/${messageId}/feedback`, token, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  /**
    * 统一执行带鉴权的 JSON 请求。
    * @param path 接口路径。
    * @param token 当前登录令牌。

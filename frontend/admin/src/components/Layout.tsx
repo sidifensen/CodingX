@@ -10,6 +10,7 @@ const navItems = [
   { path: '/skills', icon: 'extension', label: '技能管理' },
   { path: '/mcp', icon: 'terminal', label: 'MCP管理' },
   { path: '/traces', icon: 'account_tree', label: 'Trace管理' },
+  { path: '/feedbacks', icon: 'thumbs_up_down', label: '反馈管理' },
   { path: '/intent-tree', icon: 'schema', label: '意图树' },
   { path: '/query-term-mappings', icon: 'manage_search', label: '关键词映射' },
   { path: '/settings', icon: 'settings', label: '系统配置' },

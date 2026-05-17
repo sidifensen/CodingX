@@ -7,6 +7,7 @@ import com.codingx.chat.domain.repository.ChatMessageRepository;
 import com.codingx.chat.infrastructure.persistence.dataobject.ChatMessageDO;
 import com.codingx.chat.infrastructure.persistence.mapper.ChatMessageMapper;
 import java.util.List;
+import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Repository;
 
@@ -49,6 +50,19 @@ public class ChatMessageRepositoryImpl implements ChatMessageRepository {
             .stream()
             .map(this::toDomain)
             .toList();
+    }
+
+    /**
+     * 按消息主键查询单条记录，供管理端反馈详情聚合消息上下文。
+     * @param id 消息主键。
+     * @return 消息记录。
+     */
+    @Override
+    public Optional<ChatMessage> findById(Long id) {
+        if (id == null) {
+            return Optional.empty();
+        }
+        return Optional.ofNullable(chatMessageMapper.selectById(id)).map(this::toDomain);
     }
 
     /**

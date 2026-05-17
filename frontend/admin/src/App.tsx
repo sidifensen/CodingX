@@ -16,6 +16,9 @@ import { TracePage } from './pages/TracePage';
 import { TraceDetailPage } from './pages/traces/TraceDetailPage';
 import { IntentTreePage } from './pages/IntentTreePage';
 import { QueryTermMappingPage } from './pages/QueryTermMappingPage';
+import { FeedbackPage } from './pages/FeedbackPage';
+import { FeedbackDetailPage } from './pages/FeedbackDetailPage';
+import { FeedbackReferencePage } from './pages/FeedbackReferencePage';
 import { GlobalAuthNotice } from './components/GlobalAuthNotice';
 
 /**
@@ -86,6 +89,9 @@ export default function App() {
           <Route path="traces/:traceId" element={<TraceDetailPage />} />
           <Route path="intent-tree" element={<IntentTreePage />} />
           <Route path="query-term-mappings" element={<QueryTermMappingPage />} />
+          <Route path="feedbacks" element={<FeedbackPage />} />
+          <Route path="feedbacks/:feedbackId" element={<FeedbackDetailPage />} />
+          <Route path="feedbacks/:feedbackId/references" element={<FeedbackReferencePage />} />
           <Route path="settings" element={<Settings />} />
           <Route path="notifications" element={<Notifications />} />
         </Route>

@@ -8,6 +8,7 @@ import com.codingx.chat.infrastructure.persistence.dataobject.ChatConversationDO
 import com.codingx.chat.infrastructure.persistence.mapper.ChatConversationMapper;
 import com.codingx.common.exception.NotFoundException;
 import java.util.List;
+import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Repository;
 
@@ -79,6 +80,23 @@ public class ChatConversationRepositoryImpl implements ChatConversationRepositor
             .stream()
             .map(this::toDomain)
             .toList();
+    }
+
+    /**
+     * 按会话主键查询记录，供反馈详情页展示会话标题与上下文信息。
+     * @param conversationId 会话标识。
+     * @return 会话记录。
+     */
+    @Override
+    public Optional<ChatConversation> findById(Long conversationId) {
+        if (conversationId == null) {
+            return Optional.empty();
+        }
+        ChatConversationDO dataObject = chatConversationMapper.selectById(conversationId);
+        if (dataObject == null || Integer.valueOf(1).equals(dataObject.getDeleted())) {
+            return Optional.empty();
+        }
+        return Optional.of(toDomain(dataObject));
     }
 
     /**

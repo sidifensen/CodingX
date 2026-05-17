@@ -48,4 +48,33 @@ describe('AdminChatApi unauthorized handling', () => {
     await expect(AdminChatApi.listSkills()).rejects.toThrow('登录已失效，请重新登录');
     expect(publishAdminAuthExpired).toHaveBeenCalledWith('登录已失效，请重新登录');
   });
+
+  /**
+   * 反馈列表接口应返回 records/total/current/size/pages 分页结构。
+   */
+  it('parses feedback list page payload', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          success: true,
+          code: 'OK',
+          message: 'success',
+          data: {
+            records: [{ id: 9001, messageId: 102, vote: 1 }],
+            total: 1,
+            size: 10,
+            current: 1,
+            pages: 1,
+          },
+        }),
+        { status: 200 },
+      ),
+    );
+
+    const result = await AdminChatApi.listFeedbacks();
+
+    expect(result.total).toBe(1);
+    expect(result.records).toHaveLength(1);
+    expect(result.records[0].id).toBe(9001);
+  });
 });

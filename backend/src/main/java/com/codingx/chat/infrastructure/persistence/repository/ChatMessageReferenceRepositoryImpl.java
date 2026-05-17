@@ -38,6 +38,17 @@ public class ChatMessageReferenceRepositoryImpl implements ChatMessageReferenceR
             .toList();
     }
 
+    @Override
+    public List<ChatMessageReference> findByMessageId(Long messageId) {
+        return chatMessageReferenceMapper.selectList(new LambdaQueryWrapper<ChatMessageReferenceDO>()
+                .eq(ChatMessageReferenceDO::getMessageId, messageId)
+                .orderByAsc(ChatMessageReferenceDO::getRankNo)
+                .orderByAsc(ChatMessageReferenceDO::getId))
+            .stream()
+            .map(this::toDomain)
+            .toList();
+    }
+
     private ChatMessageReferenceDO toDataObject(ChatMessageReference reference) {
         ChatMessageReferenceDO dataObject = new ChatMessageReferenceDO();
         dataObject.setId(reference.getId());

@@ -78,4 +78,69 @@ describe('TracePage', () => {
       ),
     );
   });
+
+  it('renders advanced pager and supports goto page interaction', async () => {
+    vi.mocked(AdminChatApi.listTraces)
+      .mockResolvedValueOnce({
+        records: [
+          {
+            traceId: 'trace-1',
+            traceName: 'chat-entry',
+            conversationId: '1001',
+            taskId: '2001',
+            userId: '3001',
+            username: 'admin',
+            status: 'SUCCESS',
+            durationMs: 6124,
+            startedAt: '2026-05-16T18:00:00',
+          },
+        ],
+        total: 77,
+        size: 10,
+        current: 1,
+        pages: 8,
+      } as any)
+      .mockResolvedValueOnce({
+        records: [
+          {
+            traceId: 'trace-6',
+            traceName: 'chat-entry',
+            conversationId: '1006',
+            taskId: '2006',
+            userId: '3006',
+            username: 'admin',
+            status: 'SUCCESS',
+            durationMs: 5000,
+            startedAt: '2026-05-16T19:00:00',
+          },
+        ],
+        total: 77,
+        size: 10,
+        current: 6,
+        pages: 8,
+      } as any);
+
+    render(
+      <MemoryRouter>
+        <TracePage />
+      </MemoryRouter>,
+    );
+
+    await screen.findByRole('heading', { name: '链路追踪' });
+    expect(screen.getByText('第 1 / 8 页，共 77 条')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '第 1 页' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '第 2 页' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '第 3 页' })).toBeInTheDocument();
+    expect(screen.getByText('...')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '第 8 页' })).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText('前往页码'), { target: { value: '6' } });
+    fireEvent.click(screen.getByRole('button', { name: '前往' }));
+
+    await waitFor(() =>
+      expect(AdminChatApi.listTraces).toHaveBeenLastCalledWith(
+        expect.objectContaining({ current: 6, size: 10 }),
+      ),
+    );
+  });
 });

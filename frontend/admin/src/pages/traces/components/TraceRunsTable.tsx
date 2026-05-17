@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import clsx from 'clsx';
 
 import type { AdminTraceRun } from '../../../api/adminChatApi';
+import { Pagination } from '../../../components/Pagination';
 import { formatDateTime, formatDuration, statusBadgeClassName, statusLabel } from '../traceUtils';
 
 interface TraceRunsTableProps {
@@ -11,8 +12,7 @@ interface TraceRunsTableProps {
   current: number;
   pages: number;
   total: number;
-  onPrevPage: () => void;
-  onNextPage: () => void;
+  onChangePage: (page: number) => void;
 }
 
 /**
@@ -24,8 +24,7 @@ export function TraceRunsTable({
   current,
   pages,
   total,
-  onPrevPage,
-  onNextPage,
+  onChangePage,
 }: TraceRunsTableProps) {
   return (
     <section className="rounded-xl border border-border-hairline bg-surface-container-lowest overflow-hidden shadow-sm">
@@ -107,24 +106,12 @@ export function TraceRunsTable({
         <p className="text-secondary text-[12px]">
           第 {current} / {Math.max(pages, 1)} 页，共 {total.toLocaleString('zh-CN')} 条
         </p>
-        <div className="flex items-center gap-xs">
-          <button
-            type="button"
-            className="rounded-lg border border-border-strong bg-surface-container-lowest px-md py-1.5 text-button font-button text-ink hover:bg-surface-container-low disabled:opacity-50 disabled:cursor-not-allowed"
-            disabled={loading || current <= 1}
-            onClick={onPrevPage}
-          >
-            上一页
-          </button>
-          <button
-            type="button"
-            className="rounded-lg border border-border-strong bg-surface-container-lowest px-md py-1.5 text-button font-button text-ink hover:bg-surface-container-low disabled:opacity-50 disabled:cursor-not-allowed"
-            disabled={loading || current >= Math.max(pages, 1)}
-            onClick={onNextPage}
-          >
-            下一页
-          </button>
-        </div>
+        <Pagination
+          current={current}
+          pages={Math.max(1, pages)}
+          loading={loading}
+          onChange={onChangePage}
+        />
       </div>
     </section>
   );

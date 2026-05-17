@@ -176,8 +176,7 @@ export function TracePage() {
         current={current}
         pages={pages}
         total={total}
-        onPrevPage={() => setPageNo((previous) => Math.max(1, previous - 1))}
-        onNextPage={() => setPageNo((previous) => previous + 1)}
+        onChangePage={(nextPage) => setPageNo(nextPage)}
       />
     </div>
   );

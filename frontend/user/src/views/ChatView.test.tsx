@@ -731,9 +731,9 @@ describe('ChatView', () => {
   });
 
   /**
-   * 选择技能后应把技能引用写入输入框开头，并同步更新 selectedSkillCodes。
+   * 选择技能后应仅更新 selectedSkillCodes，不应改写用户输入。
    */
-  it('应在选择技能后写入输入前缀并更新技能选择', async () => {
+  it('应在选择技能后保持输入不变并更新技能选择', async () => {
     const setSelectedSkillCodes = vi.fn();
     const setInputValue = vi.fn();
 
@@ -754,7 +754,43 @@ describe('ChatView', () => {
 
     expect(setSelectedSkillCodes).toHaveBeenCalled();
     expect(setSelectedSkillCodes.mock.calls[0][0]).toEqual(['sales_query']);
-    expect(setInputValue).toHaveBeenCalledWith('/sales_query 帮我分析本周销售');
+    expect(setInputValue).not.toHaveBeenCalled();
+  });
+
+  /**
+   * MCP 与技能应共用同一个浮层区域，并且浮层在输入区上方弹出，不应挤压输入区。
+   */
+  it('应在输入区上方复用同一个选择浮层', async () => {
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '打开技能列表' }));
+    expect(screen.getByTestId('skill-selector-panel')).toBeInTheDocument();
+    expect(screen.queryByTestId('mcp-selector-panel')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '打开MCP列表' }));
+    expect(screen.getByTestId('mcp-selector-panel')).toBeInTheDocument();
+    expect(screen.queryByTestId('skill-selector-panel')).not.toBeInTheDocument();
+  });
+
+  /**
+   * 输入区不再展示右侧 MCP 连接开关，避免与按钮选择逻辑重复。
+   */
+  it('不应再渲染右侧MCP连接开关', async () => {
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace()}
+      />,
+    );
+
+    expect(screen.queryByRole('button', { name: '切换MCP连接' })).not.toBeInTheDocument();
   });
 
   /**
@@ -1004,6 +1040,7 @@ function createWorkspace(overrides?: Partial<ChatWorkspaceController>): ChatWork
     setInputValue: vi.fn(),
     setDeepThinkingEnabled: vi.fn(),
     setSelectedSkillCodes: vi.fn(),
+    setSelectedMcpCodes: vi.fn(),
     setMcpConnected: vi.fn(),
     submitMessage: vi.fn().mockResolvedValue(undefined),
     cancelCurrentStream: vi.fn().mockResolvedValue(undefined),

@@ -575,7 +575,7 @@ export default function ChatView({
                       {/* 步骤：使用同一段“行内文本流”承载技能标签和输入框，避免视觉分区断层。 */}
                       <div
                         data-testid="input-inline-content-flow"
-                        className="inline min-h-8 w-full text-[14px] leading-6 text-foreground"
+                        className="block min-h-8 w-full text-[14px] leading-6 text-foreground"
                       >
                         {selectedSkillTags.map((tag) => (
                           <span
@@ -612,7 +612,11 @@ export default function ChatView({
                           rows={1}
                           placeholder="输入问题，或先选择技能/MCP..."
                           // 步骤：输入框改为行内自适应宽度，让文字在有空间时紧跟技能标签后方开始输入。
-                          className="inline min-h-8 min-w-[180px] max-w-full resize-none bg-transparent align-baseline text-[14px] leading-6 text-foreground outline-none placeholder:text-muted"
+                          className={`inline min-h-8 resize-none bg-transparent align-baseline text-[14px] leading-6 text-foreground outline-none placeholder:text-muted ${
+                            selectedSkillTags.length > 0
+                              ? 'min-w-[180px] max-w-full'
+                              : 'w-full'
+                          }`}
                         />
                       </div>
                     </div>

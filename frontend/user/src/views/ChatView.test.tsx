@@ -934,6 +934,25 @@ describe('ChatView', () => {
   });
 
   /**
+   * 无技能标签时占位文案不应被挤压换行，输入框应占满整行。
+   */
+  it('应在无技能标签时让输入框占满整行', async () => {
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          selectedSkillCodes: [],
+          inputValue: '',
+        })}
+      />,
+    );
+
+    const textarea = screen.getByPlaceholderText('输入问题，或先选择技能/MCP...');
+    expect(textarea).toHaveClass('w-full');
+  });
+
+  /**
    * MCP 与技能应共用同一个浮层区域，并且浮层在输入区上方弹出，不应挤压输入区。
    */
   it('应在输入区上方复用同一个选择浮层', async () => {

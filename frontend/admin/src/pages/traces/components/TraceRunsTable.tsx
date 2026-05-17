@@ -26,6 +26,9 @@ export function TraceRunsTable({
   total,
   onChangePage,
 }: TraceRunsTableProps) {
+  const showEmptyState = !loading && runs.length === 0;
+  const showSkeletonRows = loading && runs.length === 0;
+
   return (
     <section className="rounded-xl border border-border-hairline bg-surface-container-lowest overflow-hidden shadow-sm">
       <div className="border-b border-border-hairline px-lg py-md">
@@ -33,28 +36,41 @@ export function TraceRunsTable({
         <p className="mt-1 text-secondary">按时间倒序查看运行记录，通过操作按钮进入独立详情页</p>
       </div>
 
-      <div className="overflow-x-auto">
+      <div
+        data-testid="trace-runs-scroll"
+        className="relative overflow-auto max-h-[clamp(320px,52vh,640px)]"
+      >
         <table className="w-full min-w-[1180px] border-collapse text-left">
           <thead>
             <tr className="bg-surface-container-low border-b border-border-hairline">
-              <th className="px-lg py-md font-label-caps text-label-caps text-secondary">Trace Name</th>
-              <th className="px-lg py-md font-label-caps text-label-caps text-secondary">Trace Id</th>
-              <th className="px-lg py-md font-label-caps text-label-caps text-secondary">会话ID / TaskID</th>
-              <th className="px-lg py-md font-label-caps text-label-caps text-secondary">用户名</th>
-              <th className="px-lg py-md font-label-caps text-label-caps text-secondary">耗时</th>
-              <th className="px-lg py-md font-label-caps text-label-caps text-secondary">状态</th>
-              <th className="px-lg py-md font-label-caps text-label-caps text-secondary">执行时间</th>
-              <th className="px-lg py-md font-label-caps text-label-caps text-secondary text-right">操作</th>
+              <th className="sticky top-0 z-10 bg-surface-container-low px-lg py-md font-label-caps text-label-caps text-secondary">
+                Trace Name
+              </th>
+              <th className="sticky top-0 z-10 bg-surface-container-low px-lg py-md font-label-caps text-label-caps text-secondary">
+                Trace Id
+              </th>
+              <th className="sticky top-0 z-10 bg-surface-container-low px-lg py-md font-label-caps text-label-caps text-secondary">
+                会话ID / TaskID
+              </th>
+              <th className="sticky top-0 z-10 bg-surface-container-low px-lg py-md font-label-caps text-label-caps text-secondary">
+                用户名
+              </th>
+              <th className="sticky top-0 z-10 bg-surface-container-low px-lg py-md font-label-caps text-label-caps text-secondary">
+                耗时
+              </th>
+              <th className="sticky top-0 z-10 bg-surface-container-low px-lg py-md font-label-caps text-label-caps text-secondary">
+                状态
+              </th>
+              <th className="sticky top-0 z-10 bg-surface-container-low px-lg py-md font-label-caps text-label-caps text-secondary">
+                执行时间
+              </th>
+              <th className="sticky top-0 z-10 bg-surface-container-low px-lg py-md font-label-caps text-label-caps text-secondary text-right">
+                操作
+              </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border-hairline">
-            {loading ? (
-              <tr>
-                <td colSpan={8} className="px-lg py-xl text-center text-secondary">
-                  加载中...
-                </td>
-              </tr>
-            ) : runs.length === 0 ? (
+            {showEmptyState ? (
               <tr>
                 <td colSpan={8} className="px-lg py-xl text-center text-secondary">
                   暂无链路数据
@@ -98,8 +114,25 @@ export function TraceRunsTable({
                 </tr>
               ))
             )}
+            {showSkeletonRows
+              ? Array.from({ length: 10 }, (_, index) => (
+                <tr key={`trace-loading-row-${index}`}>
+                  <td colSpan={8} className="px-lg py-md">
+                    <div className="h-6 w-full animate-pulse rounded bg-surface-container-low" />
+                  </td>
+                </tr>
+              ))
+              : null}
           </tbody>
         </table>
+
+        {loading ? (
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-surface-container-lowest/50">
+            <span className="rounded-lg border border-border-hairline bg-surface-container-lowest px-md py-xs text-[12px] text-secondary">
+              加载中...
+            </span>
+          </div>
+        ) : null}
       </div>
 
       <div className="flex items-center justify-between gap-sm border-t border-border-hairline bg-surface-container-low px-lg py-sm">

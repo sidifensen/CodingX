@@ -143,4 +143,79 @@ describe('TracePage', () => {
       ),
     );
   });
+
+  it('keeps table content height with loading overlay when switching pages', async () => {
+    vi.mocked(AdminChatApi.listTraces)
+      .mockResolvedValueOnce({
+        records: [
+          {
+            traceId: 'trace-1',
+            traceName: 'chat-entry',
+            conversationId: '1001',
+            taskId: '2001',
+            userId: '3001',
+            username: 'admin',
+            status: 'SUCCESS',
+            durationMs: 6124,
+            startedAt: '2026-05-16T18:00:00',
+          },
+        ],
+        total: 77,
+        size: 10,
+        current: 1,
+        pages: 8,
+      } as any)
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) =>
+            setTimeout(
+              () =>
+                resolve({
+                  records: [
+                    {
+                      traceId: 'trace-2',
+                      traceName: 'chat-entry',
+                      conversationId: '1002',
+                      taskId: '2002',
+                      userId: '3002',
+                      username: 'admin',
+                      status: 'SUCCESS',
+                      durationMs: 5123,
+                      startedAt: '2026-05-16T19:00:00',
+                    },
+                  ],
+                  total: 77,
+                  size: 10,
+                  current: 2,
+                  pages: 8,
+                }),
+              20,
+            ),
+          ),
+      );
+
+    render(
+      <MemoryRouter>
+        <TracePage />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText('chat-entry');
+    fireEvent.click(screen.getByRole('button', { name: '第 2 页' }));
+    expect(await screen.findByText('加载中...')).toBeInTheDocument();
+    expect(screen.getByText('chat-entry')).toBeInTheDocument();
+  });
+
+  it('renders internal scroll container for trace runs table', async () => {
+    render(
+      <MemoryRouter>
+        <TracePage />
+      </MemoryRouter>,
+    );
+
+    await screen.findByRole('heading', { name: '链路追踪' });
+    const scrollContainer = screen.getByTestId('trace-runs-scroll');
+    expect(scrollContainer).toHaveClass('overflow-auto');
+    expect(scrollContainer).toHaveClass('max-h-[clamp(320px,52vh,640px)]');
+  });
 });

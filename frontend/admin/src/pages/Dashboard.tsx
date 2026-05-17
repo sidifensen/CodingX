@@ -94,6 +94,12 @@ export function Dashboard() {
                 </div>
                 <span className="font-medium text-ink">技能管理</span>
               </Link>
+              <Link to="/tools" className="flex flex-col items-center justify-center p-xl bg-surface-container-lowest border border-border-hairline rounded-xl hover:border-ink hover:bg-surface-container-low transition-all group active:scale-95">
+                <div className="w-12 h-12 bg-surface-container rounded-lg flex items-center justify-center mb-sm group-hover:bg-ink group-hover:text-on-ink transition-colors">
+                  <span className="material-symbols-outlined text-[28px]">build_circle</span>
+                </div>
+                <span className="font-medium text-ink">工具管理</span>
+              </Link>
               <Link to="/mcp" className="flex flex-col items-center justify-center p-xl bg-surface-container-lowest border border-border-hairline rounded-xl hover:border-ink hover:bg-surface-container-low transition-all group active:scale-95">
                 <div className="w-12 h-12 bg-surface-container rounded-lg flex items-center justify-center mb-sm group-hover:bg-ink group-hover:text-on-ink transition-colors">
                   <span className="material-symbols-outlined text-[28px]">terminal</span>

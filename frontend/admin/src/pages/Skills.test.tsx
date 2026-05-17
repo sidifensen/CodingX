@@ -14,6 +14,10 @@ vi.mock('../api/adminChatApi', () => ({
     uploadSkillPackage: vi.fn(),
     listSkillPackageEntries: vi.fn(),
     getSkillPackageFileContent: vi.fn(),
+    listTools: vi.fn(),
+    createTool: vi.fn(),
+    updateTool: vi.fn(),
+    deleteTool: vi.fn(),
   },
 }));
 

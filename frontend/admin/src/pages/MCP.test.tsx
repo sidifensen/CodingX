@@ -14,6 +14,10 @@ vi.mock('../api/adminChatApi', () => ({
     deleteMcpConfig: vi.fn(),
     listMcpTools: vi.fn(),
     pingMcpTool: vi.fn(),
+    listTools: vi.fn(),
+    createTool: vi.fn(),
+    updateTool: vi.fn(),
+    deleteTool: vi.fn(),
   },
 }));
 

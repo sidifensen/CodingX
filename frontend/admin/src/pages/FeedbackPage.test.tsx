@@ -10,6 +10,10 @@ import { FeedbackPage } from './FeedbackPage';
 vi.mock('../api/adminChatApi', () => ({
   AdminChatApi: {
     listFeedbacks: vi.fn(),
+    listTools: vi.fn(),
+    createTool: vi.fn(),
+    updateTool: vi.fn(),
+    deleteTool: vi.fn(),
   },
 }));
 
@@ -72,4 +76,3 @@ describe('FeedbackPage', () => {
     });
   });
 });
-

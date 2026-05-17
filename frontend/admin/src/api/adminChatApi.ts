@@ -222,6 +222,17 @@ export interface AdminSkillPackageFileContent {
   truncated: boolean;
 }
 
+export interface AdminChatTool {
+  id?: string | number;
+  toolCode: string;
+  displayName: string;
+  description?: string;
+  category?: string;
+  sourceType?: string;
+  enabled?: number;
+  sortNo?: number;
+}
+
 /**
  * 统一封装管理端聊天运行时后台接口。
  */
@@ -532,6 +543,30 @@ export class AdminChatApi {
 
   static async deleteMcpConfig(id: string | number): Promise<void> {
     await this.request<void>(`/api/admin/chat/mcps/${encodeURIComponent(String(id))}`, {
+      method: 'DELETE',
+    });
+  }
+
+  static async listTools(): Promise<AdminChatTool[]> {
+    return this.request<AdminChatTool[]>('/api/admin/chat/tools');
+  }
+
+  static async createTool(payload: AdminChatTool): Promise<AdminChatTool> {
+    return this.request<AdminChatTool>('/api/admin/chat/tools', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  static async updateTool(id: string | number, payload: AdminChatTool): Promise<AdminChatTool> {
+    return this.request<AdminChatTool>(`/api/admin/chat/tools/${encodeURIComponent(String(id))}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  static async deleteTool(id: string | number): Promise<void> {
+    await this.request<void>(`/api/admin/chat/tools/${encodeURIComponent(String(id))}`, {
       method: 'DELETE',
     });
   }

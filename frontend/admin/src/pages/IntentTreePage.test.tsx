@@ -14,6 +14,10 @@ vi.mock('../api/adminChatApi', () => ({
     updateIntent: vi.fn(),
     deleteIntent: vi.fn(),
     saveIntent: vi.fn(),
+    listTools: vi.fn(),
+    createTool: vi.fn(),
+    updateTool: vi.fn(),
+    deleteTool: vi.fn(),
   },
 }));
 

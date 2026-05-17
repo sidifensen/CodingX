@@ -12,6 +12,10 @@ vi.mock('../api/adminChatApi', () => ({
     createMapping: vi.fn(),
     updateMapping: vi.fn(),
     deleteMapping: vi.fn(),
+    listTools: vi.fn(),
+    createTool: vi.fn(),
+    updateTool: vi.fn(),
+    deleteTool: vi.fn(),
   },
 }));
 

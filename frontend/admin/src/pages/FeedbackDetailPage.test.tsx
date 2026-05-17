@@ -10,6 +10,10 @@ import { FeedbackDetailPage } from './FeedbackDetailPage';
 vi.mock('../api/adminChatApi', () => ({
   AdminChatApi: {
     getFeedbackDetail: vi.fn(),
+    listTools: vi.fn(),
+    createTool: vi.fn(),
+    updateTool: vi.fn(),
+    deleteTool: vi.fn(),
   },
 }));
 
@@ -51,4 +55,3 @@ describe('FeedbackDetailPage', () => {
     expect(screen.getByRole('link', { name: '查看引用来源' })).toHaveAttribute('href', '/feedbacks/9001/references');
   });
 });
-

@@ -7,6 +7,7 @@ import { UserDetail } from './pages/UserDetail';
 import { Tasks } from './pages/Tasks';
 import { TaskDetail } from './pages/TaskDetail';
 import { Skills } from './pages/Skills';
+import { ToolsPage } from './pages/ToolsPage';
 import { MCP } from './pages/MCP';
 import { Settings } from './pages/Settings';
 import { Notifications } from './pages/Notifications';
@@ -84,6 +85,7 @@ export default function App() {
           <Route path="tasks" element={<Tasks />} />
           <Route path="tasks/:id" element={<TaskDetail />} />
           <Route path="skills" element={<Skills />} />
+          <Route path="tools" element={<ToolsPage />} />
           <Route path="mcp" element={<MCP />} />
           <Route path="traces" element={<TracePage />} />
           <Route path="traces/:traceId" element={<TraceDetailPage />} />

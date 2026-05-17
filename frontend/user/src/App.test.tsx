@@ -11,6 +11,15 @@ describe('App', () => {
   const mockChatWorkspaceFetch = () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
       const url = String(input);
+      if (
+        url.startsWith('/api/chat/conversations/') &&
+        (url.endsWith('/current-skills') || url.endsWith('/current-mcps'))
+      ) {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
       if (url === '/api/chat/conversations') {
         return new Response(
           JSON.stringify({
@@ -23,23 +32,38 @@ describe('App', () => {
         );
       }
       if (url.startsWith('/api/chat/conversations/') && url.endsWith('/messages')) {
-        return new Response(JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }), { status: 200 });
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
       }
       if (
         (url.startsWith('/api/chat/conversations/') && url.endsWith('/steps')) ||
         (url.startsWith('/api/chat/conversations/') && url.endsWith('/references')) ||
         (url.startsWith('/api/chat/conversations/') && url.endsWith('/artifacts'))
       ) {
-        return new Response(JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }), { status: 200 });
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
       }
       if (url === '/api/chat/sample-questions') {
-        return new Response(JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }), { status: 200 });
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
       }
       if (url === '/api/chat/mcps') {
-        return new Response(JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }), { status: 200 });
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
       }
       if (url === '/api/chat/skills') {
-        return new Response(JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }), { status: 200 });
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
       }
       throw new Error(`Unhandled fetch in App test: ${url}`);
     });
@@ -119,6 +143,15 @@ describe('App', () => {
     // 步骤：按 URL 模拟登录接口与登录后自动触发的会话列表请求。
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
       const url = String(input);
+      if (
+        url.startsWith('/api/chat/conversations/') &&
+        (url.endsWith('/current-skills') || url.endsWith('/current-mcps'))
+      ) {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
       if (url === '/api/auth/login') {
         return new Response(
           JSON.stringify({
@@ -137,16 +170,28 @@ describe('App', () => {
         );
       }
       if (url === '/api/chat/conversations') {
-        return new Response(JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }), { status: 200 });
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
       }
       if (url === '/api/chat/sample-questions') {
-        return new Response(JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }), { status: 200 });
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
       }
       if (url === '/api/chat/mcps') {
-        return new Response(JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }), { status: 200 });
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
       }
       if (url === '/api/chat/skills') {
-        return new Response(JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }), { status: 200 });
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
       }
       if (
         (url.startsWith('/api/chat/conversations/') && url.endsWith('/messages')) ||
@@ -154,7 +199,10 @@ describe('App', () => {
         (url.startsWith('/api/chat/conversations/') && url.endsWith('/references')) ||
         (url.startsWith('/api/chat/conversations/') && url.endsWith('/artifacts'))
       ) {
-        return new Response(JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }), { status: 200 });
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
       }
       throw new Error(`Unhandled fetch in login success test: ${url}`);
     });
@@ -183,6 +231,15 @@ describe('App', () => {
     // 步骤：按 URL 模拟登录、聊天列表加载和退出接口响应。
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
       const url = String(input);
+      if (
+        url.startsWith('/api/chat/conversations/') &&
+        (url.endsWith('/current-skills') || url.endsWith('/current-mcps'))
+      ) {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
       if (url === '/api/auth/login') {
         return new Response(
           JSON.stringify({
@@ -201,21 +258,36 @@ describe('App', () => {
         );
       }
       if (url === '/api/auth/logout') {
-        return new Response(JSON.stringify({ success: true, code: 'OK', message: 'logged out', data: null }), {
-          status: 200,
-        });
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'logged out', data: null }),
+          {
+            status: 200,
+          },
+        );
       }
       if (url === '/api/chat/conversations') {
-        return new Response(JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }), { status: 200 });
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
       }
       if (url === '/api/chat/sample-questions') {
-        return new Response(JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }), { status: 200 });
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
       }
       if (url === '/api/chat/mcps') {
-        return new Response(JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }), { status: 200 });
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
       }
       if (url === '/api/chat/skills') {
-        return new Response(JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }), { status: 200 });
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
       }
       if (
         (url.startsWith('/api/chat/conversations/') && url.endsWith('/messages')) ||
@@ -223,7 +295,10 @@ describe('App', () => {
         (url.startsWith('/api/chat/conversations/') && url.endsWith('/references')) ||
         (url.startsWith('/api/chat/conversations/') && url.endsWith('/artifacts'))
       ) {
-        return new Response(JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }), { status: 200 });
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
       }
       throw new Error(`Unhandled fetch in logout test: ${url}`);
     });
@@ -263,6 +338,15 @@ describe('App', () => {
 
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
       const url = String(input);
+      if (
+        url.startsWith('/api/chat/conversations/') &&
+        (url.endsWith('/current-skills') || url.endsWith('/current-mcps'))
+      ) {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
       if (url === '/api/auth/me') {
         expect(init?.method).toBe('GET');
         expect((init?.headers as Record<string, string>)?.satoken).toBe('expired-token');
@@ -277,26 +361,44 @@ describe('App', () => {
         );
       }
       if (url === '/api/chat/sample-questions') {
-        return new Response(JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }), { status: 200 });
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
       }
       if (url === '/api/chat/mcps') {
-        return new Response(JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }), { status: 200 });
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
       }
       if (url === '/api/chat/skills') {
-        return new Response(JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }), { status: 200 });
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
       }
       if (url === '/api/chat/conversations') {
-        return new Response(JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }), { status: 200 });
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
       }
       if (url.startsWith('/api/chat/conversations/') && url.endsWith('/messages')) {
-        return new Response(JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }), { status: 200 });
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
       }
       if (
         (url.startsWith('/api/chat/conversations/') && url.endsWith('/steps')) ||
         (url.startsWith('/api/chat/conversations/') && url.endsWith('/references')) ||
         (url.startsWith('/api/chat/conversations/') && url.endsWith('/artifacts'))
       ) {
-        return new Response(JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }), { status: 200 });
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
       }
       throw new Error(`Unhandled fetch in expired session test: ${url}`);
     });
@@ -304,7 +406,9 @@ describe('App', () => {
     render(<App />);
 
     expect(await screen.findByRole('button', { name: '侧边栏登录入口' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'CodingX Admin 个人中心' })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'CodingX Admin 个人中心' }),
+    ).not.toBeInTheDocument();
     expect(window.localStorage.getItem('codingx.auth.session')).toBeNull();
   });
 
@@ -324,6 +428,15 @@ describe('App', () => {
     );
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
       const url = String(input);
+      if (
+        url.startsWith('/api/chat/conversations/') &&
+        (url.endsWith('/current-skills') || url.endsWith('/current-mcps'))
+      ) {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
       if (url === '/api/auth/me') {
         return new Response(
           JSON.stringify({
@@ -360,13 +473,22 @@ describe('App', () => {
         );
       }
       if (url === '/api/chat/sample-questions') {
-        return new Response(JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }), { status: 200 });
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
       }
       if (url === '/api/chat/mcps') {
-        return new Response(JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }), { status: 200 });
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
       }
       if (url === '/api/chat/skills') {
-        return new Response(JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }), { status: 200 });
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
       }
       if (
         url === '/api/chat/conversations/2001/messages' ||
@@ -374,7 +496,10 @@ describe('App', () => {
         url === '/api/chat/conversations/2001/references' ||
         url === '/api/chat/conversations/2001/artifacts'
       ) {
-        return new Response(JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }), { status: 200 });
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
       }
       throw new Error(`Unhandled fetch in sidebar conversation test: ${url}`);
     });
@@ -404,6 +529,15 @@ describe('App', () => {
     let messageRequestCount = 0;
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
       const url = String(input);
+      if (
+        url.startsWith('/api/chat/conversations/') &&
+        (url.endsWith('/current-skills') || url.endsWith('/current-mcps'))
+      ) {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
       if (url === '/api/auth/me') {
         return new Response(
           JSON.stringify({
@@ -440,13 +574,22 @@ describe('App', () => {
         );
       }
       if (url === '/api/chat/sample-questions') {
-        return new Response(JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }), { status: 200 });
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
       }
       if (url === '/api/chat/mcps') {
-        return new Response(JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }), { status: 200 });
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
       }
       if (url === '/api/chat/skills') {
-        return new Response(JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }), { status: 200 });
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
       }
       if (url === '/api/chat/conversations/2001/messages') {
         messageRequestCount += 1;
@@ -455,47 +598,48 @@ describe('App', () => {
             success: true,
             code: 'OK',
             message: 'success',
-            data: messageRequestCount > 1
-              ? [
-                  {
-                    id: 201,
-                    conversationId: 2010,
-                    runId: 5003,
-                    role: 'USER',
-                    content: '请搜索新的会话问题',
-                    status: 'COMPLETED',
-                    createdAt: '2026-05-15 00:38:10',
-                  },
-                  {
-                    id: 202,
-                    conversationId: 2010,
-                    runId: 5003,
-                    role: 'ASSISTANT',
-                    content: '新的会话回答',
-                    status: 'COMPLETED',
-                    createdAt: '2026-05-15 00:38:22',
-                  },
-                ]
-              : [
-                  {
-                    id: 101,
-                    conversationId: 2001,
-                    runId: 5002,
-                    role: 'USER',
-                    content: '请搜索 Spring Boot SSE 最佳实践',
-                    status: 'COMPLETED',
-                    createdAt: '2026-05-15 00:36:58',
-                  },
-                  {
-                    id: 102,
-                    conversationId: 2001,
-                    runId: 5002,
-                    role: 'ASSISTANT',
-                    content: '旧会话回答',
-                    status: 'COMPLETED',
-                    createdAt: '2026-05-15 00:37:11',
-                  },
-                ],
+            data:
+              messageRequestCount > 1
+                ? [
+                    {
+                      id: 201,
+                      conversationId: 2010,
+                      runId: 5003,
+                      role: 'USER',
+                      content: '请搜索新的会话问题',
+                      status: 'COMPLETED',
+                      createdAt: '2026-05-15 00:38:10',
+                    },
+                    {
+                      id: 202,
+                      conversationId: 2010,
+                      runId: 5003,
+                      role: 'ASSISTANT',
+                      content: '新的会话回答',
+                      status: 'COMPLETED',
+                      createdAt: '2026-05-15 00:38:22',
+                    },
+                  ]
+                : [
+                    {
+                      id: 101,
+                      conversationId: 2001,
+                      runId: 5002,
+                      role: 'USER',
+                      content: '请搜索 Spring Boot SSE 最佳实践',
+                      status: 'COMPLETED',
+                      createdAt: '2026-05-15 00:36:58',
+                    },
+                    {
+                      id: 102,
+                      conversationId: 2001,
+                      runId: 5002,
+                      role: 'ASSISTANT',
+                      content: '旧会话回答',
+                      status: 'COMPLETED',
+                      createdAt: '2026-05-15 00:37:11',
+                    },
+                  ],
           }),
           { status: 200 },
         );
@@ -505,7 +649,10 @@ describe('App', () => {
         url === '/api/chat/conversations/2001/references' ||
         url === '/api/chat/conversations/2001/artifacts'
       ) {
-        return new Response(JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }), { status: 200 });
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
       }
       if (url.includes('/api/chat/stream')) {
         streamUrls.push(url);
@@ -533,7 +680,10 @@ describe('App', () => {
         url === '/api/chat/conversations/2010/references' ||
         url === '/api/chat/conversations/2010/artifacts'
       ) {
-        return new Response(JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }), { status: 200 });
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
       }
       throw new Error(`Unhandled fetch in new conversation test: ${url}`);
     });
@@ -575,6 +725,15 @@ describe('App', () => {
     );
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
       const url = String(input);
+      if (
+        url.startsWith('/api/chat/conversations/') &&
+        (url.endsWith('/current-skills') || url.endsWith('/current-mcps'))
+      ) {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
       if (url === '/api/auth/me') {
         return new Response(
           JSON.stringify({
@@ -618,13 +777,22 @@ describe('App', () => {
         );
       }
       if (url === '/api/chat/sample-questions') {
-        return new Response(JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }), { status: 200 });
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
       }
       if (url === '/api/chat/mcps') {
-        return new Response(JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }), { status: 200 });
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
       }
       if (url === '/api/chat/skills') {
-        return new Response(JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }), { status: 200 });
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
       }
       if (url === '/api/chat/conversations/2055114974648864768/messages') {
         return new Response(
@@ -676,7 +844,10 @@ describe('App', () => {
         url === '/api/chat/conversations/2055120756043943936/references' ||
         url === '/api/chat/conversations/2055120756043943936/artifacts'
       ) {
-        return new Response(JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }), { status: 200 });
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
       }
       throw new Error(`Unhandled fetch in sidebar switch test: ${url}`);
     });
@@ -708,6 +879,15 @@ describe('App', () => {
     vi.spyOn(Date, 'now').mockReturnValue(new Date('2026-05-15T12:00:00').getTime());
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
       const url = String(input);
+      if (
+        url.startsWith('/api/chat/conversations/') &&
+        (url.endsWith('/current-skills') || url.endsWith('/current-mcps'))
+      ) {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
       if (url === '/api/auth/me') {
         return new Response(
           JSON.stringify({
@@ -751,13 +931,22 @@ describe('App', () => {
         );
       }
       if (url === '/api/chat/sample-questions') {
-        return new Response(JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }), { status: 200 });
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
       }
       if (url === '/api/chat/mcps') {
-        return new Response(JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }), { status: 200 });
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
       }
       if (url === '/api/chat/skills') {
-        return new Response(JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }), { status: 200 });
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
       }
       if (
         url === '/api/chat/conversations/2055114974648864768/messages' ||
@@ -769,7 +958,10 @@ describe('App', () => {
         url === '/api/chat/conversations/2055120756043943936/references' ||
         url === '/api/chat/conversations/2055120756043943936/artifacts'
       ) {
-        return new Response(JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }), { status: 200 });
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
       }
       throw new Error(`Unhandled fetch in relative time test: ${url}`);
     });
@@ -801,6 +993,15 @@ describe('App', () => {
     );
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
       const url = String(input);
+      if (
+        url.startsWith('/api/chat/conversations/') &&
+        (url.endsWith('/current-skills') || url.endsWith('/current-mcps'))
+      ) {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
       if (url === '/api/auth/me') {
         return new Response(
           JSON.stringify({
@@ -837,13 +1038,22 @@ describe('App', () => {
         );
       }
       if (url === '/api/chat/sample-questions') {
-        return new Response(JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }), { status: 200 });
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
       }
       if (url === '/api/chat/mcps') {
-        return new Response(JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }), { status: 200 });
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
       }
       if (url === '/api/chat/skills') {
-        return new Response(JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }), { status: 200 });
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
       }
       if (
         url === '/api/chat/conversations/2055114974648864768/messages' ||
@@ -851,7 +1061,10 @@ describe('App', () => {
         url === '/api/chat/conversations/2055114974648864768/references' ||
         url === '/api/chat/conversations/2055114974648864768/artifacts'
       ) {
-        return new Response(JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }), { status: 200 });
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
       }
       throw new Error(`Unhandled fetch in conversation menu test: ${url}`);
     });
@@ -898,4 +1111,3 @@ describe('App', () => {
     expect(sidebarLabel.closest('aside')).toHaveAttribute('aria-hidden', 'true');
   });
 });
-

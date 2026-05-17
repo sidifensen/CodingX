@@ -8,3 +8,7 @@ backend/*.log
 *.class
 /docs/
 logs/
+
+# desktop shell
+/desktop-shell/node_modules/
+/desktop-shell/dist/

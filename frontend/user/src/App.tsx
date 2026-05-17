@@ -12,6 +12,7 @@ import Sidebar from './components/Sidebar';
 import LoginModal from './components/auth/LoginModal';
 import { useAuth } from './hooks/useAuth';
 import { useChatWorkspace } from './views/chat/useChatWorkspace';
+import { useHostContext } from './host/useHostContext';
 
 /**
  * 定义应用支持的主视图类型。
@@ -38,9 +39,17 @@ export default function App() {
   const loginDefaultPassword = isDevelopmentMode ? '123456' : '';
 
   // 步骤：聚合认证相关状态和操作，复用组件化登录流程。
-  const { session, isAuthenticated, isSubmitting, errorMessage, login, logout, clearErrorMessage } = useAuth();
+  const { session, isAuthenticated, isSubmitting, errorMessage, login, logout, clearErrorMessage } =
+    useAuth();
   // 步骤：由应用壳层统一持有聊天工作区状态，确保 Sidebar 与主区共用同一份真实会话数据。
   const chatWorkspace = useChatWorkspace(isAuthenticated);
+  // 步骤：读取当前宿主能力上下文，为侧边栏和后续本地能力入口提供统一数据源。
+  const {
+    hostContext,
+    isLoading: isHostContextLoading,
+    errorMessage: hostContextError,
+    pickRepositoryDirectory,
+  } = useHostContext();
 
   useEffect(() => {
     // 步骤：初始化主题样式。
@@ -159,6 +168,10 @@ export default function App() {
           onStartNewConversation={handleStartNewConversation}
           onRenameConversation={handleRenameConversation}
           onDeleteConversation={handleDeleteConversation}
+          hostContext={hostContext}
+          isHostContextLoading={isHostContextLoading}
+          hostContextError={hostContextError}
+          onPickRepositoryDirectory={pickRepositoryDirectory}
         />
 
         {/* 主内容区域 */}
@@ -193,7 +206,11 @@ export default function App() {
               onClick={toggleDesktopSidebar}
               className="absolute left-4 top-4 z-30 hidden h-10 w-10 cursor-pointer items-center justify-center rounded-xl border border-border bg-surface/92 text-foreground shadow-[0_14px_30px_rgba(0,0,0,0.18)] backdrop-blur md:flex"
             >
-              {isDesktopSidebarCollapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
+              {isDesktopSidebarCollapsed ? (
+                <PanelLeftOpen size={18} />
+              ) : (
+                <PanelLeftClose size={18} />
+              )}
             </button>
             <AnimatePresence mode="wait">
               {activeView === 'chat' && (

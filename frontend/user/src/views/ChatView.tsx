@@ -85,8 +85,6 @@ export default function ChatView({
   );
   const selectorLayerRef = React.useRef<HTMLDivElement | null>(null);
   const chatInputRef = React.useRef<HTMLTextAreaElement | null>(null);
-  const skillPrefixRef = React.useRef<HTMLDivElement | null>(null);
-  const [skillPrefixIndent, setSkillPrefixIndent] = React.useState(0);
 
   /**
    * 过滤技能列表，支持名称与编码模糊检索。
@@ -105,18 +103,53 @@ export default function ChatView({
   }, [availableSkills, skillSearchKeyword]);
 
   /**
-   * 计算已选技能标签，供输入区气泡展示。
-   * @returns 已选技能标签集合。
+   * 建立可识别技能编码集合，用于从输入文本中反向解析技能选择。
    */
-  const selectedSkillTags = React.useMemo(() => {
-    return selectedSkillCodes.map((skillCode) => {
-      const skill = availableSkills.find((item) => item.skillCode === skillCode);
-      return {
-        skillCode,
-        displayName: skill?.displayName ?? skillCode,
-      };
-    });
-  }, [availableSkills, selectedSkillCodes]);
+  const availableSkillCodeSet = React.useMemo(
+    () => new Set(availableSkills.map((skill) => skill.skillCode)),
+    [availableSkills],
+  );
+
+  /**
+   * 解析输入中的技能文本标记，支持在任意光标位置写入与删除。
+   * 标记格式：@skill_code
+   * @param rawInput 当前输入文本。
+   * @returns 去重后的技能编码列表，顺序按文本中首次出现位置。
+   */
+  const parseSkillCodesFromInput = React.useCallback(
+    (rawInput: string) => {
+      const nextSkillCodes: string[] = [];
+      const seenSkillCodes = new Set<string>();
+      for (const match of rawInput.matchAll(/@([a-zA-Z0-9_-]+)/g)) {
+        const skillCode = match[1];
+        if (!availableSkillCodeSet.has(skillCode) || seenSkillCodes.has(skillCode)) {
+          continue;
+        }
+        seenSkillCodes.add(skillCode);
+        nextSkillCodes.push(skillCode);
+      }
+      return nextSkillCodes;
+    },
+    [availableSkillCodeSet],
+  );
+
+  /**
+   * 按输入内容同步技能选择，保证“文本即技能来源”，删除文本即可取消技能。
+   * @param rawInput 当前输入文本。
+   */
+  const syncSelectedSkillCodesFromInput = React.useCallback(
+    (rawInput: string) => {
+      const nextSkillCodes = parseSkillCodesFromInput(rawInput);
+      const hasSameSkillCodes =
+        nextSkillCodes.length === selectedSkillCodes.length &&
+        nextSkillCodes.every((skillCode, index) => skillCode === selectedSkillCodes[index]);
+      if (hasSameSkillCodes) {
+        return;
+      }
+      setSelectedSkillCodes(nextSkillCodes);
+    },
+    [parseSkillCodesFromInput, selectedSkillCodes, setSelectedSkillCodes],
+  );
 
   /**
    * 点击外部区域时自动关闭 MCP/技能下拉，避免面板残留遮挡输入区。
@@ -161,33 +194,52 @@ export default function ChatView({
    */
   const selectSkill = React.useCallback(
     (skillCode: string) => {
-      setSelectedSkillCodes((previous) => {
-        if (previous.includes(skillCode)) {
-          return previous.filter((item) => item !== skillCode);
-        }
-        return [...previous, skillCode];
-      });
+      const skillToken = `@${skillCode}`;
+      const currentInput = inputValue;
+      const isSkillAlreadySelected = selectedSkillCodes.includes(skillCode);
+      let nextInput = currentInput;
+
+      if (isSkillAlreadySelected) {
+        const escapedSkillCode = skillCode.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const removeTokenPattern = new RegExp(`(?:^|\\s)@${escapedSkillCode}(?=\\s|$)`, 'g');
+        nextInput = currentInput
+          .replace(removeTokenPattern, ' ')
+          .replace(/[ \t]{2,}/g, ' ')
+          .trimStart();
+      } else if (skillSelectorSource === 'slash') {
+        // 步骤：斜杠只作为技能检索触发器，选中后替换为可编辑技能文本标记。
+        const remainingText = currentInput.replace(/^\s*\/[^\s]*\s*/, '');
+        nextInput = remainingText ? `${skillToken} ${remainingText}` : `${skillToken} `;
+      } else {
+        const textarea = chatInputRef.current;
+        const selectionStart = textarea?.selectionStart ?? currentInput.length;
+        const selectionEnd = textarea?.selectionEnd ?? currentInput.length;
+        const prefix = currentInput.slice(0, selectionStart);
+        const suffix = currentInput.slice(selectionEnd);
+        const leftGap = prefix.length > 0 && !/\s$/.test(prefix) ? ' ' : '';
+        const rightGap = suffix.length > 0 && !/^\s/.test(suffix) ? ' ' : '';
+        const insertion = `${leftGap}${skillToken}${rightGap || ' '}`;
+        nextInput = `${prefix}${insertion}${suffix}`;
+        const nextCaretPosition = (prefix + insertion).length;
+        window.requestAnimationFrame(() => {
+          const nextTextarea = chatInputRef.current;
+          if (!nextTextarea) {
+            return;
+          }
+          nextTextarea.focus();
+          nextTextarea.setSelectionRange(nextCaretPosition, nextCaretPosition);
+        });
+      }
+
+      setInputValue(nextInput);
+      syncSelectedSkillCodesFromInput(nextInput);
       if (skillSelectorSource === 'slash') {
-        // 步骤：斜杠只作为技能检索触发器，选中后回写为正常输入文本。
-        setInputValue(inputValue.replace(/^\s*\/[^\s]*\s*/, ''));
         setActiveSelectorMode(null);
         setSkillSelectorSource(null);
         setSkillSearchKeyword('');
-        return;
       }
     },
-    [inputValue, setInputValue, setSelectedSkillCodes, skillSelectorSource],
-  );
-
-  /**
-   * 移除技能气泡，允许用户在输入区快速取消技能上下文。
-   * @param skillCode 被移除技能编码。
-   */
-  const removeSkillTag = React.useCallback(
-    (skillCode: string) => {
-      setSelectedSkillCodes((previous) => previous.filter((item) => item !== skillCode));
-    },
-    [setSelectedSkillCodes],
+    [inputValue, selectedSkillCodes, setInputValue, skillSelectorSource, syncSelectedSkillCodesFromInput],
   );
 
   /**
@@ -214,6 +266,13 @@ export default function ChatView({
     setSkillSelectorSource('slash');
     setSkillSearchKeyword(slashKeyword);
   }, [inputValue, skillSelectorSource]);
+
+  /**
+   * 兜底同步：当输入值由外部写入（示例问题、回放填充）时，同步修正技能选择状态。
+   */
+  React.useEffect(() => {
+    syncSelectedSkillCodesFromInput(inputValue);
+  }, [inputValue, syncSelectedSkillCodesFromInput]);
 
   React.useEffect(() => {
     if (!messages.length) {
@@ -243,34 +302,7 @@ export default function ChatView({
     const nextHeight = Math.min(textarea.scrollHeight, maxHeight);
     textarea.style.height = `${Math.max(nextHeight, lineHeight + verticalPadding)}px`;
     textarea.style.overflowY = textarea.scrollHeight > maxHeight ? 'auto' : 'hidden';
-  }, [inputValue, selectedSkillTags.length]);
-
-  /**
-   * 根据技能标签实际宽度计算首行缩进，保证“标签+文本”视觉同流，
-   * 同时让第二行起恢复整行宽度，避免形成持续分栏。
-   */
-  React.useEffect(() => {
-    if (!selectedSkillTags.length) {
-      setSkillPrefixIndent(0);
-      return;
-    }
-    const syncSkillPrefixIndent = () => {
-      const textarea = chatInputRef.current;
-      const prefix = skillPrefixRef.current;
-      if (!textarea || !prefix) {
-        setSkillPrefixIndent(0);
-        return;
-      }
-      const prefixWidth = Math.ceil(prefix.getBoundingClientRect().width) + 8;
-      const maxIndent = Math.max(Math.floor(textarea.clientWidth) - 48, 0);
-      setSkillPrefixIndent(Math.max(0, Math.min(prefixWidth, maxIndent)));
-    };
-    syncSkillPrefixIndent();
-    window.addEventListener('resize', syncSkillPrefixIndent);
-    return () => {
-      window.removeEventListener('resize', syncSkillPrefixIndent);
-    };
-  }, [selectedSkillTags]);
+  }, [inputValue]);
 
   /**
    * 统一执行输入提交，供按钮、回车键与表单提交复用同一逻辑。
@@ -681,46 +713,19 @@ export default function ChatView({
                       data-max-lines="9"
                       className="max-h-[calc(1.5rem*9+1rem)] w-full overflow-x-hidden overflow-y-auto rounded-xl bg-transparent px-0.5 py-1"
                     >
-                      {/* 步骤：标签与输入统一在同一内容层，标签占据首行前缀，文本从后方自然续写。 */}
+                      {/* 步骤：输入文本即技能载体，技能标记直接写入文本，支持任意光标位置编辑与删除。 */}
                       <div
                         data-testid="input-inline-content-flow"
                         className="relative min-h-8 w-full text-[14px] leading-6 text-foreground"
                       >
-                        {selectedSkillTags.length > 0 ? (
-                          <div
-                            ref={skillPrefixRef}
-                            data-testid="input-inline-skill-prefix"
-                            className="absolute left-0 top-1 z-10 flex max-w-[calc(100%-0.5rem)] items-center gap-1 overflow-x-auto pr-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-                          >
-                            {selectedSkillTags.map((tag) => (
-                              <span
-                                key={tag.skillCode}
-                                data-testid={`selected-skill-chip-${tag.skillCode}`}
-                                // 步骤：技能标签弱化为“接近普通文字”的轻量样式，避免视觉上成为独立分栏。
-                                className="inline-flex h-6 max-w-[220px] shrink-0 items-center gap-1 rounded-md border border-border/70 bg-surface-container/55 px-2 text-xs font-normal text-foreground"
-                              >
-                                <Sparkles
-                                  size={12}
-                                  data-testid={`selected-skill-chip-icon-${tag.skillCode}`}
-                                  className="shrink-0 text-muted"
-                                />
-                                <span className="truncate">{tag.displayName}</span>
-                                <button
-                                  type="button"
-                                  aria-label={`移除技能 ${tag.displayName}`}
-                                  onClick={() => removeSkillTag(tag.skillCode)}
-                                  className="inline-flex h-4 w-4 items-center justify-center rounded-full text-muted transition-colors hover:bg-surface-high hover:text-foreground"
-                                >
-                                  ×
-                                </button>
-                              </span>
-                            ))}
-                          </div>
-                        ) : null}
                         <textarea
                           ref={chatInputRef}
                           value={inputValue}
-                          onChange={(event) => setInputValue(event.target.value)}
+                          onChange={(event) => {
+                            const nextInput = event.target.value;
+                            setInputValue(nextInput);
+                            syncSelectedSkillCodesFromInput(nextInput);
+                          }}
                           onKeyDown={(event) => {
                             if (event.key === 'Enter' && !event.shiftKey) {
                               event.preventDefault();
@@ -729,12 +734,7 @@ export default function ChatView({
                           }}
                           rows={1}
                           placeholder="输入问题，或先选择技能/MCP..."
-                          style={
-                            selectedSkillTags.length > 0
-                              ? { textIndent: `${skillPrefixIndent}px` }
-                              : undefined
-                          }
-                          // 步骤：输入框始终全宽；有标签时仅首行缩进，第二行开始恢复整行宽度。
+                          // 步骤：技能文本标记直接和正文混排，保持完整可选中、可删除、可任意移动。
                           className="min-h-8 w-full min-w-0 resize-none overflow-x-hidden bg-transparent py-1 text-[14px] leading-6 text-foreground outline-none placeholder:overflow-hidden placeholder:whitespace-nowrap placeholder:text-muted"
                         />
                       </div>

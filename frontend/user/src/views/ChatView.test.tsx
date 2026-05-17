@@ -747,10 +747,9 @@ describe('ChatView', () => {
   });
 
   /**
-   * 选择技能后应仅更新 selectedSkillCodes，不应改写用户输入。
+   * 选择技能后应把技能文本标记插入输入内容，支持在正文中自然混排。
    */
-  it('应在选择技能后保持输入不变并更新技能选择', async () => {
-    const setSelectedSkillCodes = vi.fn();
+  it('应在选择技能后写入可编辑技能文本标记', async () => {
     const setInputValue = vi.fn();
 
     render(
@@ -759,7 +758,6 @@ describe('ChatView', () => {
         onRequireLogin={vi.fn()}
         workspace={createWorkspace({
           inputValue: '帮我分析本周销售',
-          setSelectedSkillCodes,
           setInputValue,
         })}
       />,
@@ -768,17 +766,13 @@ describe('ChatView', () => {
     fireEvent.click(screen.getByRole('button', { name: '打开技能列表' }));
     fireEvent.click(screen.getByRole('button', { name: '选择技能 销售查询' }));
 
-    expect(setSelectedSkillCodes).toHaveBeenCalled();
-    const updater = setSelectedSkillCodes.mock.calls[0][0] as (codes: string[]) => string[];
-    expect(updater([])).toEqual(['sales_query']);
-    expect(setInputValue).not.toHaveBeenCalled();
+    expect(setInputValue).toHaveBeenCalledWith(expect.stringContaining('@sales_query'));
   });
 
   /**
-   * 斜杠触发技能选择后应清理输入触发词，避免把斜杠指令一并发送给模型。
+   * 斜杠触发选择技能后应替换为技能标记文本，而不是保留斜杠触发词。
    */
-  it('应在斜杠触发技能选择后清理输入中的斜杠前缀', async () => {
-    const setSelectedSkillCodes = vi.fn();
+  it('应在斜杠触发技能选择后写入技能文本标记', async () => {
     const setInputValue = vi.fn();
 
     render(
@@ -787,7 +781,6 @@ describe('ChatView', () => {
         onRequireLogin={vi.fn()}
         workspace={createWorkspace({
           inputValue: '/sale',
-          setSelectedSkillCodes,
           setInputValue,
         })}
       />,
@@ -795,49 +788,23 @@ describe('ChatView', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '选择技能 销售查询' }));
 
-    expect(setSelectedSkillCodes).toHaveBeenCalled();
-    const updater = setSelectedSkillCodes.mock.calls[0][0] as (codes: string[]) => string[];
-    expect(updater([])).toEqual(['sales_query']);
-    expect(setInputValue).toHaveBeenCalledWith('');
+    expect(setInputValue).toHaveBeenCalledWith('@sales_query ');
   });
 
   /**
-   * 已选技能应在输入区顶部渲染为气泡，并支持移除。
+   * 技能列表应支持多选，连续选择时输入中应出现多个技能标记。
    */
-  it('应将已选技能显示为气泡并支持移除', async () => {
-    const setSelectedSkillCodes = vi.fn();
+  it('应支持多技能文本标记累积', async () => {
+    const setInputValue = vi.fn();
 
     render(
       <ChatView
         isAuthenticated={true}
         onRequireLogin={vi.fn()}
         workspace={createWorkspace({
-          selectedSkillCodes: ['sales_query'],
-          setSelectedSkillCodes,
-        })}
-      />,
-    );
-
-    expect(screen.getByTestId('selected-skill-chip-sales_query')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: '移除技能 销售查询' }));
-
-    expect(setSelectedSkillCodes).toHaveBeenCalled();
-    const updater = setSelectedSkillCodes.mock.calls[0][0] as (codes: string[]) => string[];
-    expect(updater(['sales_query'])).toEqual([]);
-  });
-
-  /**
-   * 技能列表应支持多选切换，点击不同技能时累积选中。
-   */
-  it('应支持技能多选累积', async () => {
-    const setSelectedSkillCodes = vi.fn();
-
-    render(
-      <ChatView
-        isAuthenticated={true}
-        onRequireLogin={vi.fn()}
-        workspace={createWorkspace({
-          setSelectedSkillCodes,
+          inputValue: '请先看一下',
+          selectedSkillCodes: ['ticket_query'],
+          setInputValue,
         })}
       />,
     );
@@ -845,72 +812,60 @@ describe('ChatView', () => {
     fireEvent.click(screen.getByRole('button', { name: '打开技能列表' }));
     fireEvent.click(screen.getByRole('button', { name: '选择技能 销售查询' }));
 
-    expect(setSelectedSkillCodes).toHaveBeenCalled();
-    const updater = setSelectedSkillCodes.mock.calls[0][0] as (codes: string[]) => string[];
-    expect(updater([])).toEqual(['sales_query']);
-    expect(updater(['ticket_query'])).toEqual(['ticket_query', 'sales_query']);
+    expect(setInputValue).toHaveBeenCalledWith(expect.stringContaining('@sales_query'));
   });
 
   /**
-   * 已选技能标签应进入输入框内部，且技能入口与技能选项都带前置图标。
+   * 输入区仍应保持多行 textarea，确保技能文本和正文共享一个可编辑区域。
    */
-  it('应将技能标签放入输入框并渲染技能图标', async () => {
+  it('应使用多行输入框承载技能文本与正文', async () => {
     render(
       <ChatView
         isAuthenticated={true}
         onRequireLogin={vi.fn()}
         workspace={createWorkspace({
-          selectedSkillCodes: ['sales_query'],
+          inputValue: '@sales_query 第一行\n第二行',
         })}
       />,
     );
 
     const inlineTokenContainer = screen.getByTestId('input-inline-skill-tokens');
     const inlineContentFlow = screen.getByTestId('input-inline-content-flow');
-    const inlineSkillPrefix = screen.getByTestId('input-inline-skill-prefix');
-    const selectedChip = screen.getByTestId('selected-skill-chip-sales_query');
-    expect(inlineTokenContainer).toContainElement(selectedChip);
-    expect(inlineSkillPrefix).toContainElement(selectedChip);
-    expect(inlineContentFlow).toContainElement(inlineSkillPrefix);
-
-    expect(screen.getByTestId('selected-skill-chip-icon-sales_query')).toBeInTheDocument();
-    expect(screen.getByTestId('skill-trigger-icon')).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('button', { name: '打开技能列表' }));
-    expect(screen.getByTestId('skill-option-icon-sales_query')).toBeInTheDocument();
-  });
-
-  /**
-   * 技能标签与输入文本应共享一个滚动容器，保证超过多行时两者一起滚动。
-   */
-  it('应让技能标签与输入文本共用同一滚动容器并使用多行输入框', async () => {
-    render(
-      <ChatView
-        isAuthenticated={true}
-        onRequireLogin={vi.fn()}
-        workspace={createWorkspace({
-          selectedSkillCodes: ['sales_query'],
-          inputValue: '第一行\n第二行',
-        })}
-      />,
-    );
-
-    const inlineTokenContainer = screen.getByTestId('input-inline-skill-tokens');
-    const inlineContentFlow = screen.getByTestId('input-inline-content-flow');
-    const inlineSkillPrefix = screen.getByTestId('input-inline-skill-prefix');
-    const selectedChip = screen.getByTestId('selected-skill-chip-sales_query');
     const textarea = screen.getByPlaceholderText('输入问题，或先选择技能/MCP...');
 
     expect(textarea.tagName).toBe('TEXTAREA');
     expect(textarea).toHaveAttribute('rows', '1');
     expect(textarea).toHaveClass('w-full');
-    expect(textarea).toHaveStyle({ textIndent: '0px' });
     expect(inlineTokenContainer).toHaveAttribute('data-max-lines', '9');
-    expect(inlineTokenContainer).toContainElement(selectedChip);
     expect(inlineTokenContainer).toContainElement(textarea);
-    expect(inlineSkillPrefix).toContainElement(selectedChip);
-    expect(inlineContentFlow).toContainElement(inlineSkillPrefix);
     expect(inlineContentFlow).toContainElement(textarea);
+  });
+
+  /**
+   * 用户删除技能文本标记后，应同步取消对应技能选中状态。
+   */
+  it('应在删除技能文本标记后同步取消技能选择', async () => {
+    const setSelectedSkillCodes = vi.fn();
+    const setInputValue = vi.fn();
+
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          inputValue: '@sales_query 帮我分析一下',
+          selectedSkillCodes: ['sales_query'],
+          setSelectedSkillCodes,
+          setInputValue,
+        })}
+      />,
+    );
+
+    const textarea = screen.getByPlaceholderText('输入问题，或先选择技能/MCP...');
+    fireEvent.change(textarea, { target: { value: '帮我分析一下' } });
+
+    expect(setInputValue).toHaveBeenCalledWith('帮我分析一下');
+    expect(setSelectedSkillCodes).toHaveBeenCalledWith([]);
   });
 
   /**

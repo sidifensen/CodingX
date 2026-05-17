@@ -130,6 +130,18 @@ app:
   runtime:
     mock-step-delay-ms: ${MOCK_STEP_DELAY_MS:300}
     mock-fail-keyword: ${MOCK_FAIL_KEYWORD:fail}
+    # 聊天并发门控配置：默认关闭 Redis 队列门控，按单机门控运行。
+    use-redis-queue-gate: ${APP_RUNTIME_USE_REDIS_QUEUE_GATE:false}
+    # 全局最大并发，超出后进入队列等待。
+    queue-max-concurrent: ${APP_RUNTIME_QUEUE_MAX_CONCURRENT:2}
+    # 排队最长等待时间，超时后返回 busy。
+    queue-acquire-timeout-ms: ${APP_RUNTIME_QUEUE_ACQUIRE_TIMEOUT_MS:3000}
+    # 排队轮询基础间隔，结合通知唤醒减少额外空转。
+    queue-poll-interval-ms: ${APP_RUNTIME_QUEUE_POLL_INTERVAL_MS:200}
+    # 执行资格租约时长，避免异常退出造成永久占位。
+    queue-lease-seconds: ${APP_RUNTIME_QUEUE_LEASE_SECONDS:300}
+    # 活跃会话续租间隔，必须小于租约时长。
+    queue-lease-renew-interval-ms: ${APP_RUNTIME_QUEUE_LEASE_RENEW_INTERVAL_MS:10000}
   chat:
     memory:
       summary-enabled: ${CHAT_MEMORY_SUMMARY_ENABLED:true}

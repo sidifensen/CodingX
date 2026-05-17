@@ -9,12 +9,48 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 @ConfigurationProperties(prefix = "app.runtime")
 public class RuntimeProperties {
 
+    /**
+     * Mock 运行时每个阶段的默认延迟，便于本地观察流式进度。
+     */
     private long mockStepDelayMs = 300L;
+
+    /**
+     * Mock 运行时触发失败的关键字。
+     */
     private String mockFailKeyword = "fail";
+
+    /**
+     * 是否启用 Redis 运行态存储，用于跨节点取消控制。
+     */
     private boolean useRedisStateStore = false;
+
+    /**
+     * 是否启用 Redis 队列门控，用于跨节点统一并发控制。
+     */
     private boolean useRedisQueueGate = false;
+
+    /**
+     * 聊天链路允许的最大并发数。
+     */
     private int queueMaxConcurrent = 2;
+
+    /**
+     * 单次排队获取执行资格的最长等待毫秒数。
+     */
     private long queueAcquireTimeoutMs = 3000L;
+
+    /**
+     * 排队轮询的基础间隔毫秒数。
+     */
     private long queuePollIntervalMs = 200L;
+
+    /**
+     * Redis 执行资格租约时长（秒），超时后视为失效。
+     */
     private long queueLeaseSeconds = 300L;
+
+    /**
+     * 租约续期任务执行间隔毫秒数，避免长会话被租约误回收。
+     */
+    private long queueLeaseRenewIntervalMs = 10000L;
 }

@@ -1,6 +1,13 @@
 import React from 'react';
 
-import { AdminChatApi, AdminChatTool } from '../api/adminChatApi';
+import clsx from 'clsx';
+
+import {
+  AdminChatApi,
+  AdminChatTool,
+  AdminChatToolHealthView,
+  AdminChatToolInvokeView,
+} from '../api/adminChatApi';
 
 type ToolDialogMode = 'create' | 'edit';
 
@@ -12,6 +19,12 @@ interface ToolFormState {
   sourceType: string;
   sortNo: string;
   enabled: boolean;
+}
+
+interface UnifiedToolRow {
+  toolCode: string;
+  config: AdminChatTool | null;
+  health: AdminChatToolHealthView | null;
 }
 
 const emptyToolForm: ToolFormState = {
@@ -29,32 +42,60 @@ const emptyToolForm: ToolFormState = {
  */
 export function ToolsPage() {
   const [tools, setTools] = React.useState<AdminChatTool[]>([]);
-  const [loading, setLoading] = React.useState(true);
-  const [errorMessage, setErrorMessage] = React.useState('');
+  const [toolHealthViews, setToolHealthViews] = React.useState<AdminChatToolHealthView[]>([]);
+  const [configLoading, setConfigLoading] = React.useState(true);
+  const [healthLoading, setHealthLoading] = React.useState(true);
+  const [configErrorMessage, setConfigErrorMessage] = React.useState('');
+  const [healthErrorMessage, setHealthErrorMessage] = React.useState('');
   const [dialogOpen, setDialogOpen] = React.useState(false);
   const [dialogMode, setDialogMode] = React.useState<ToolDialogMode>('create');
   const [editingTool, setEditingTool] = React.useState<AdminChatTool | null>(null);
   const [deleteTarget, setDeleteTarget] = React.useState<AdminChatTool | null>(null);
+  const [pingingToolCode, setPingingToolCode] = React.useState<string | null>(null);
+  const [pingResult, setPingResult] = React.useState<AdminChatToolHealthView | null>(null);
+  const [invokeDialogToolCode, setInvokeDialogToolCode] = React.useState<string | null>(null);
+  const [invoking, setInvoking] = React.useState(false);
+  const [invokeQuestion, setInvokeQuestion] = React.useState('');
+  const [invokeResult, setInvokeResult] = React.useState<AdminChatToolInvokeView | null>(null);
+  const [invokeErrorMessage, setInvokeErrorMessage] = React.useState('');
+  const mergedRows = React.useMemo(() => mergeToolsAndHealthViews(tools, toolHealthViews), [tools, toolHealthViews]);
+  const isTableLoading = configLoading || healthLoading;
 
   /**
    * 加载工具配置列表。
    */
   const loadTools = React.useCallback(async () => {
-    setLoading(true);
-    setErrorMessage('');
+    setConfigLoading(true);
+    setConfigErrorMessage('');
     try {
       const result = await AdminChatApi.listTools();
       setTools(result ?? []);
     } catch (error) {
-      setErrorMessage(extractErrorMessage(error, '加载工具配置失败'));
+      setConfigErrorMessage(extractErrorMessage(error, '加载工具配置失败'));
     } finally {
-      setLoading(false);
+      setConfigLoading(false);
+    }
+  }, []);
+
+  /**
+   * 加载工具执行器健康视图。
+   */
+  const loadToolHealthViews = React.useCallback(async () => {
+    setHealthLoading(true);
+    setHealthErrorMessage('');
+    try {
+      const result = await AdminChatApi.listToolHealthViews();
+      setToolHealthViews(result ?? []);
+    } catch (error) {
+      setHealthErrorMessage(extractErrorMessage(error, '加载工具探测状态失败'));
+    } finally {
+      setHealthLoading(false);
     }
   }, []);
 
   React.useEffect(() => {
-    void loadTools();
-  }, [loadTools]);
+    void Promise.all([loadTools(), loadToolHealthViews()]);
+  }, [loadTools, loadToolHealthViews]);
 
   const openCreateDialog = () => {
     setDialogMode('create');
@@ -66,6 +107,50 @@ export function ToolsPage() {
     setDialogMode('edit');
     setEditingTool(tool);
     setDialogOpen(true);
+  };
+
+  const openInvokeDialog = (toolCode: string, sampleQuestion?: string) => {
+    setInvokeDialogToolCode(toolCode);
+    setInvokeQuestion(sampleQuestion ?? '');
+    setInvokeResult(null);
+    setInvokeErrorMessage('');
+  };
+
+  const handlePing = async (toolCode: string) => {
+    setPingingToolCode(toolCode);
+    try {
+      const result = await AdminChatApi.pingTool(toolCode);
+      setPingResult(result);
+      await loadToolHealthViews();
+    } catch (error) {
+      setPingResult({
+        toolCode,
+        displayName: toolCode,
+        status: 'failed',
+        statusLabel: '异常',
+        ok: false,
+        message: extractErrorMessage(error, '探测失败'),
+      });
+    } finally {
+      setPingingToolCode(null);
+    }
+  };
+
+  const handleInvoke = async () => {
+    if (!invokeDialogToolCode) {
+      return;
+    }
+    setInvoking(true);
+    setInvokeErrorMessage('');
+    try {
+      const result = await AdminChatApi.invokeTool(invokeDialogToolCode, invokeQuestion.trim() || undefined);
+      setInvokeResult(result);
+      await loadToolHealthViews();
+    } catch (error) {
+      setInvokeErrorMessage(extractErrorMessage(error, '调用工具失败'));
+    } finally {
+      setInvoking(false);
+    }
   };
 
   return (
@@ -80,7 +165,7 @@ export function ToolsPage() {
             type="button"
             aria-label="刷新工具列表"
             className="rounded-lg border border-border-strong bg-surface-container-lowest px-lg py-2 font-button text-button text-ink transition-colors hover:bg-surface-container-low"
-            onClick={() => void loadTools()}
+            onClick={() => void Promise.all([loadTools(), loadToolHealthViews()])}
           >
             刷新列表
           </button>
@@ -95,9 +180,9 @@ export function ToolsPage() {
         </div>
       </div>
 
-      {errorMessage ? (
+      {configErrorMessage || healthErrorMessage ? (
         <div className="rounded-xl border border-error bg-error-container px-lg py-md text-sm text-on-error-container">
-          {errorMessage}
+          {configErrorMessage || healthErrorMessage}
         </div>
       ) : null}
 
@@ -110,65 +195,103 @@ export function ToolsPage() {
               <th className="px-lg py-md font-label-caps text-label-caps text-secondary">分类</th>
               <th className="px-lg py-md font-label-caps text-label-caps text-secondary">来源</th>
               <th className="px-lg py-md font-label-caps text-label-caps text-secondary">状态</th>
+              <th className="px-lg py-md font-label-caps text-label-caps text-secondary">执行器</th>
+              <th className="px-lg py-md font-label-caps text-label-caps text-secondary">样例问题</th>
+              <th className="px-lg py-md font-label-caps text-label-caps text-secondary">最近探测</th>
               <th className="px-lg py-md font-label-caps text-label-caps text-secondary">排序</th>
               <th className="px-lg py-md text-right font-label-caps text-label-caps text-secondary">操作</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border-hairline">
-            {loading ? (
+            {isTableLoading ? (
               <tr>
-                <td className="px-lg py-xl text-center text-secondary" colSpan={7}>
+                <td className="px-lg py-xl text-center text-secondary" colSpan={10}>
                   加载中...
                 </td>
               </tr>
-            ) : tools.length === 0 ? (
+            ) : mergedRows.length === 0 ? (
               <tr>
-                <td className="px-lg py-xl text-center text-secondary" colSpan={7}>
+                <td className="px-lg py-xl text-center text-secondary" colSpan={10}>
                   暂无工具配置
                 </td>
               </tr>
             ) : (
-              tools.map((tool) => (
-                <tr key={String(tool.id ?? tool.toolCode)} className="transition-colors hover:bg-surface-container-low">
-                  <td className="px-lg py-md font-data-mono text-[12px] text-tertiary-container">/{tool.toolCode}</td>
-                  <td className="px-lg py-md text-ink">{tool.displayName}</td>
-                  <td className="px-lg py-md text-body-sm text-secondary">{tool.category || '-'}</td>
-                  <td className="px-lg py-md text-body-sm text-secondary">{tool.sourceType || '-'}</td>
+              mergedRows.map((row) => {
+                const tool = row.config;
+                const health = row.health;
+                const toolCode = row.toolCode;
+                return (
+                <tr key={String(tool?.id ?? toolCode)} className="transition-colors hover:bg-surface-container-low">
+                  <td className="px-lg py-md font-data-mono text-[12px] text-tertiary-container">/{toolCode}</td>
+                  <td className="px-lg py-md text-ink">{tool?.displayName || health?.displayName || toolCode}</td>
+                  <td className="px-lg py-md text-body-sm text-secondary">{tool?.category || health?.category || '-'}</td>
+                  <td className="px-lg py-md text-body-sm text-secondary">{tool?.sourceType || health?.source || '-'}</td>
                   <td className="px-lg py-md">
                     <span
                       className={[
                         'rounded-full border px-2 py-0.5 text-[11px] font-medium',
-                        tool.enabled === 0
+                        tool?.enabled === 0
                           ? 'border-border-hairline bg-surface-container-low text-secondary'
                           : 'border-border-strong bg-surface-container text-ink',
                       ].join(' ')}
                     >
-                      {tool.enabled === 0 ? '停用' : '启用'}
+                      {tool?.enabled === 0 ? '停用' : '启用'}
                     </span>
                   </td>
-                  <td className="px-lg py-md text-body-sm text-secondary">{tool.sortNo ?? 0}</td>
+                  <td className="px-lg py-md">
+                    <div className="flex items-center gap-xs">
+                      <span className={clsx('h-2 w-2 rounded-full', statusDotClass(health?.status))} />
+                      <span className={clsx('text-body-sm font-medium', statusTextClass(health?.status))}>
+                        {health?.statusLabel || '未接入'}
+                      </span>
+                    </div>
+                  </td>
+                  <td className="max-w-[16rem] truncate px-lg py-md text-body-sm text-secondary">
+                    {health?.sampleQuestion || '-'}
+                  </td>
+                  <td className="px-lg py-md text-[12px] text-secondary">{health?.checkedAt || '-'}</td>
+                  <td className="px-lg py-md text-body-sm text-secondary">{tool?.sortNo ?? 0}</td>
                   <td className="px-lg py-md text-right">
                     <div className="inline-flex gap-sm">
                       <button
                         type="button"
-                        aria-label={`编辑工具 ${tool.toolCode}`}
+                        aria-label={`测试工具 ${toolCode}`}
+                        className="rounded-lg border border-border-hairline bg-surface-container-lowest px-sm py-1.5 text-[12px] text-secondary transition-colors hover:bg-surface-container-low hover:text-ink disabled:opacity-60"
+                        onClick={() => void handlePing(toolCode)}
+                        disabled={pingingToolCode === toolCode}
+                      >
+                        {pingingToolCode === toolCode ? '探测中...' : '探测'}
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={`调用工具 ${toolCode}`}
                         className="rounded-lg border border-border-strong bg-surface-container-lowest px-sm py-1.5 text-[12px] text-ink transition-colors hover:bg-surface-container-low"
-                        onClick={() => openEditDialog(tool)}
+                        onClick={() => openInvokeDialog(toolCode, health?.sampleQuestion)}
+                      >
+                        调用
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={`编辑工具 ${toolCode}`}
+                        className="rounded-lg border border-border-strong bg-surface-container-lowest px-sm py-1.5 text-[12px] text-ink transition-colors hover:bg-surface-container-low"
+                        onClick={() => tool ? openEditDialog(tool) : null}
+                        disabled={!tool}
                       >
                         编辑
                       </button>
                       <button
                         type="button"
-                        aria-label={`删除工具 ${tool.toolCode}`}
+                        aria-label={`删除工具 ${toolCode}`}
                         className="rounded-lg border border-error bg-error-container px-sm py-1.5 text-[12px] text-on-error-container transition-opacity hover:opacity-90"
-                        onClick={() => setDeleteTarget(tool)}
+                        onClick={() => (tool ? setDeleteTarget(tool) : null)}
+                        disabled={!tool}
                       >
                         删除
                       </button>
                     </div>
                   </td>
                 </tr>
-              ))
+              )})
             )}
           </tbody>
         </table>
@@ -186,7 +309,7 @@ export function ToolsPage() {
               await AdminChatApi.createTool(payload);
             }
             setDialogOpen(false);
-            await loadTools();
+            await Promise.all([loadTools(), loadToolHealthViews()]);
           }}
         />
       ) : null}
@@ -197,18 +320,38 @@ export function ToolsPage() {
           onCancel={() => setDeleteTarget(null)}
           onConfirm={async () => {
             if (deleteTarget.id == null) {
-              setErrorMessage('工具配置缺少主键，无法删除');
+              setConfigErrorMessage('工具配置缺少主键，无法删除');
               setDeleteTarget(null);
               return;
             }
             try {
               await AdminChatApi.deleteTool(deleteTarget.id);
               setDeleteTarget(null);
-              await loadTools();
+              await Promise.all([loadTools(), loadToolHealthViews()]);
             } catch (error) {
-              setErrorMessage(extractErrorMessage(error, '删除工具配置失败'));
+              setConfigErrorMessage(extractErrorMessage(error, '删除工具配置失败'));
             }
           }}
+        />
+      ) : null}
+
+      {pingResult ? <PingResultDialog result={pingResult} onClose={() => setPingResult(null)} /> : null}
+
+      {invokeDialogToolCode ? (
+        <InvokeToolDialog
+          toolCode={invokeDialogToolCode}
+          question={invokeQuestion}
+          invoking={invoking}
+          result={invokeResult}
+          errorMessage={invokeErrorMessage}
+          onChangeQuestion={setInvokeQuestion}
+          onClose={() => {
+            setInvokeDialogToolCode(null);
+            setInvokeQuestion('');
+            setInvokeResult(null);
+            setInvokeErrorMessage('');
+          }}
+          onInvoke={() => void handleInvoke()}
         />
       ) : null}
     </div>
@@ -517,4 +660,221 @@ function extractErrorMessage(error: unknown, fallback: string): string {
     return error.message || fallback;
   }
   return fallback;
+}
+
+function statusDotClass(status?: string): string {
+  switch (status) {
+    case 'healthy':
+      return 'bg-status-running';
+    case 'degraded':
+      return 'bg-status-pending';
+    default:
+      return 'bg-status-failed';
+  }
+}
+
+function statusTextClass(status?: string): string {
+  switch (status) {
+    case 'healthy':
+      return 'text-status-running';
+    case 'degraded':
+      return 'text-status-pending';
+    default:
+      return 'text-status-failed';
+  }
+}
+
+function mergeToolsAndHealthViews(
+  tools: AdminChatTool[],
+  toolHealthViews: AdminChatToolHealthView[],
+): UnifiedToolRow[] {
+  const toolMap = new Map<string, AdminChatTool>();
+  const healthMap = new Map<string, AdminChatToolHealthView>();
+  const codeSet = new Set<string>();
+
+  tools.forEach((tool) => {
+    const code = normalizeToolCode(tool.toolCode);
+    if (!code) {
+      return;
+    }
+    toolMap.set(code, tool);
+    codeSet.add(code);
+  });
+
+  toolHealthViews.forEach((health) => {
+    const code = normalizeToolCode(health.toolCode);
+    if (!code) {
+      return;
+    }
+    healthMap.set(code, health);
+    codeSet.add(code);
+  });
+
+  return Array.from(codeSet)
+    .map((code) => ({
+      toolCode: toolMap.get(code)?.toolCode ?? healthMap.get(code)?.toolCode ?? code,
+      config: toolMap.get(code) ?? null,
+      health: healthMap.get(code) ?? null,
+    }))
+    .sort((left, right) => {
+      const leftSort = left.config?.sortNo ?? Number.MAX_SAFE_INTEGER;
+      const rightSort = right.config?.sortNo ?? Number.MAX_SAFE_INTEGER;
+      if (leftSort !== rightSort) {
+        return leftSort - rightSort;
+      }
+      return left.toolCode.localeCompare(right.toolCode);
+    });
+}
+
+function normalizeToolCode(code?: string): string {
+  return (code ?? '').trim().toLowerCase();
+}
+
+function PingResultDialog({ result, onClose }: { result: AdminChatToolHealthView; onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/45 px-md py-lg">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="工具探测结果"
+        className="w-full max-w-[42rem] rounded-2xl border border-border-hairline bg-surface-container-lowest shadow-2xl"
+      >
+        <div className="flex items-start justify-between gap-md border-b border-border-hairline px-lg py-md">
+          <div>
+            <h3 className="font-title-md text-title-md text-ink">工具探测结果</h3>
+            <p className="mt-1 break-all font-data-mono text-[12px] text-secondary">{result.toolCode}</p>
+          </div>
+          <button
+            type="button"
+            className="rounded-lg px-sm py-xs text-secondary hover:bg-surface-container-low hover:text-ink"
+            aria-label="关闭探测结果弹窗"
+            onClick={onClose}
+          >
+            <span className="material-symbols-outlined text-[20px]">close</span>
+          </button>
+        </div>
+
+        <div className="space-y-md p-lg">
+          <ResultMeta label="状态" value={result.statusLabel || '-'} />
+          <ResultMeta label="消息" value={result.message || '无返回消息'} />
+          <div className="grid grid-cols-1 gap-sm md:grid-cols-2">
+            <ResultMeta label="耗时" value={typeof result.durationMs === 'number' ? `${result.durationMs} ms` : '-'} />
+            <ResultMeta label="时间" value={result.checkedAt || '-'} />
+          </div>
+          <div className="flex justify-end">
+            <button
+              type="button"
+              className="rounded-lg border border-border-strong bg-surface-container-lowest px-lg py-2 text-button font-button text-ink hover:bg-surface-container-low"
+              onClick={onClose}
+            >
+              知道了
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function InvokeToolDialog({
+  toolCode,
+  question,
+  invoking,
+  result,
+  errorMessage,
+  onChangeQuestion,
+  onClose,
+  onInvoke,
+}: {
+  toolCode: string;
+  question: string;
+  invoking: boolean;
+  result: AdminChatToolInvokeView | null;
+  errorMessage: string;
+  onChangeQuestion: (value: string) => void;
+  onClose: () => void;
+  onInvoke: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/45 px-md py-lg">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="调用工具"
+        className="w-full max-w-3xl rounded-2xl border border-border-hairline bg-surface-container-lowest shadow-2xl"
+      >
+        <div className="flex items-start justify-between gap-md border-b border-border-hairline px-lg py-md">
+          <div>
+            <h3 className="font-title-md text-title-md text-ink">调用工具</h3>
+            <p className="mt-1 break-all font-data-mono text-[12px] text-secondary">{toolCode}</p>
+          </div>
+          <button
+            type="button"
+            className="rounded-lg px-sm py-xs text-secondary hover:bg-surface-container-low hover:text-ink"
+            aria-label="关闭调用弹窗"
+            onClick={onClose}
+          >
+            <span className="material-symbols-outlined text-[20px]">close</span>
+          </button>
+        </div>
+
+        <div className="space-y-md p-lg">
+          <div>
+            <label htmlFor="tool-invoke-question" className="mb-1 block text-[12px] font-medium text-secondary">
+              调用参数（自然语言或 JSON）
+            </label>
+            <textarea
+              id="tool-invoke-question"
+              rows={5}
+              value={question}
+              onChange={(event) => onChangeQuestion(event.target.value)}
+              className="w-full rounded-lg border border-border-hairline bg-surface-container-lowest px-3 py-2 text-ink outline-none transition-colors focus:border-border-strong"
+            />
+          </div>
+
+          {errorMessage ? (
+            <div className="rounded-xl border border-error bg-error-container px-md py-sm text-sm text-on-error-container">
+              {errorMessage}
+            </div>
+          ) : null}
+
+          {result ? (
+            <div className="space-y-sm rounded-xl border border-border-hairline bg-surface-container-low p-md">
+              <ResultMeta label="状态" value={result.statusLabel || '-'} />
+              <ResultMeta label="消息" value={result.message || '-'} />
+              <ResultMeta label="输出" value={result.content || '-'} />
+              <ResultMeta label="元数据" value={JSON.stringify(result.metadata ?? {}, null, 2)} />
+            </div>
+          ) : null}
+
+          <div className="flex justify-end gap-sm">
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-lg border border-border-strong bg-surface-container-lowest px-lg py-2 font-button text-button text-ink hover:bg-surface-container-low"
+            >
+              关闭
+            </button>
+            <button
+              type="button"
+              onClick={onInvoke}
+              disabled={invoking}
+              className="rounded-lg bg-primary px-lg py-2 font-button text-button text-on-primary disabled:opacity-60"
+            >
+              {invoking ? '调用中...' : '开始调用'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ResultMeta({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-xl border border-border-hairline bg-surface-container-low px-md py-sm">
+      <p className="text-[12px] text-secondary">{label}</p>
+      <p className="mt-1 whitespace-pre-wrap break-words text-body-sm text-ink">{value}</p>
+    </div>
+  );
 }

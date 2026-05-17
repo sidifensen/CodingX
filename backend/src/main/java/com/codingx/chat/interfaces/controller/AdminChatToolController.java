@@ -1,7 +1,10 @@
 package com.codingx.chat.interfaces.controller;
 
 import com.codingx.chat.application.service.AdminChatToolService;
+import com.codingx.chat.application.service.AdminChatToolService.ToolHealthView;
+import com.codingx.chat.application.service.AdminChatToolService.ToolInvokeView;
 import com.codingx.chat.domain.model.ChatTool;
+import com.codingx.chat.interfaces.request.ChatToolInvokeRequest;
 import com.codingx.common.model.ApiResponse;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -63,5 +66,36 @@ public class AdminChatToolController {
     public ApiResponse<Void> deleteTool(@PathVariable Long id) {
         adminChatToolService.delete(id);
         return ApiResponse.successMessage("删除成功");
+    }
+
+    /**
+     * 查询工具配置+执行器接入状态。
+     * @return 工具健康视图列表。
+     */
+    @GetMapping("/health")
+    public ApiResponse<List<ToolHealthView>> listToolHealthViews() {
+        return ApiResponse.success(adminChatToolService.listToolHealthViews());
+    }
+
+    /**
+     * 对指定工具执行一次探测。
+     * @param toolCode 工具编码。
+     * @return 探测结果。
+     */
+    @GetMapping("/{toolCode}/ping")
+    public ApiResponse<ToolHealthView> pingTool(@PathVariable String toolCode) {
+        return ApiResponse.success(adminChatToolService.pingTool(toolCode));
+    }
+
+    /**
+     * 手工调用指定工具。
+     * @param toolCode 工具编码。
+     * @param request 调用参数。
+     * @return 调用结果。
+     */
+    @PostMapping("/{toolCode}/invoke")
+    public ApiResponse<ToolInvokeView> invokeTool(@PathVariable String toolCode, @RequestBody(required = false) ChatToolInvokeRequest request) {
+        String question = request == null ? null : request.question();
+        return ApiResponse.success(adminChatToolService.invokeTool(toolCode, question));
     }
 }

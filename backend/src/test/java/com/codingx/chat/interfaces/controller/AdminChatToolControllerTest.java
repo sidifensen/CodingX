@@ -12,9 +12,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.codingx.chat.application.service.AdminChatToolService;
+import com.codingx.chat.application.service.AdminChatToolService.ToolHealthView;
+import com.codingx.chat.application.service.AdminChatToolService.ToolInvokeView;
 import com.codingx.chat.domain.model.ChatTool;
 import com.codingx.config.GlobalExceptionHandler;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -136,6 +139,96 @@ class AdminChatToolControllerTest {
             .andExpect(jsonPath("$.message").value("删除成功"));
 
         verify(adminChatToolService).delete(9101L);
+    }
+
+    /**
+     * 健康列表接口应返回配置态+执行器态字段。
+     */
+    @Test
+    void listToolHealthViewsReturnsRows() throws Exception {
+        when(adminChatToolService.listToolHealthViews()).thenReturn(List.of(
+            ToolHealthView.builder()
+                .toolCode("shell_command")
+                .displayName("Shell 命令执行")
+                .category("终端")
+                .source("codex-cli")
+                .status("healthy")
+                .statusLabel("可用")
+                .ok(true)
+                .message("shell_command 已接入内置执行器")
+                .sampleQuestion("command=date")
+                .checkedAt("2026-05-18 10:00:00")
+                .durationMs(0L)
+                .build()
+        ));
+
+        mockMvc().perform(get("/api/admin/chat/tools/health"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.success").value(true))
+            .andExpect(jsonPath("$.data[0].toolCode").value("shell_command"))
+            .andExpect(jsonPath("$.data[0].status").value("healthy"))
+            .andExpect(jsonPath("$.data[0].statusLabel").value("可用"));
+    }
+
+    /**
+     * 探测接口应返回单工具探测结果。
+     */
+    @Test
+    void pingToolReturnsHealthView() throws Exception {
+        when(adminChatToolService.pingTool("shell_command")).thenReturn(
+            ToolHealthView.builder()
+                .toolCode("shell_command")
+                .displayName("Shell 命令执行")
+                .status("healthy")
+                .statusLabel("可用")
+                .ok(true)
+                .message("shell_command 调用成功")
+                .checkedAt("2026-05-18 10:01:00")
+                .durationMs(8L)
+                .build()
+        );
+
+        mockMvc().perform(get("/api/admin/chat/tools/shell_command/ping"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.success").value(true))
+            .andExpect(jsonPath("$.data.toolCode").value("shell_command"))
+            .andExpect(jsonPath("$.data.ok").value(true))
+            .andExpect(jsonPath("$.data.durationMs").value(8));
+    }
+
+    /**
+     * 调用接口应返回执行结果与元数据。
+     */
+    @Test
+    void invokeToolReturnsInvokeResult() throws Exception {
+        when(adminChatToolService.invokeTool(eq("shell_command"), eq("command=date"))).thenReturn(
+            ToolInvokeView.builder()
+                .toolCode("shell_command")
+                .displayName("Shell 命令执行")
+                .ok(true)
+                .status("success")
+                .statusLabel("成功")
+                .message("工具调用成功")
+                .requestQuestion("command=date")
+                .content("exitCode: 0")
+                .metadata(Map.of("exitCode", 0))
+                .checkedAt("2026-05-18 10:02:00")
+                .durationMs(12L)
+                .build()
+        );
+
+        mockMvc().perform(post("/api/admin/chat/tools/shell_command/invoke")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {
+                      "question":"command=date"
+                    }
+                    """))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.success").value(true))
+            .andExpect(jsonPath("$.data.toolCode").value("shell_command"))
+            .andExpect(jsonPath("$.data.status").value("success"))
+            .andExpect(jsonPath("$.data.content").value("exitCode: 0"));
     }
 
     /**

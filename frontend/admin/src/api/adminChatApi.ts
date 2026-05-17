@@ -233,6 +233,35 @@ export interface AdminChatTool {
   sortNo?: number;
 }
 
+export interface AdminChatToolHealthView {
+  toolCode: string;
+  displayName: string;
+  category?: string;
+  source?: string;
+  status: string;
+  statusLabel: string;
+  ok: boolean;
+  message?: string;
+  description?: string;
+  sampleQuestion?: string;
+  checkedAt?: string;
+  durationMs?: number;
+}
+
+export interface AdminChatToolInvokeView {
+  toolCode: string;
+  displayName: string;
+  ok: boolean;
+  status: string;
+  statusLabel: string;
+  message?: string;
+  requestQuestion?: string;
+  content?: string;
+  metadata?: Record<string, unknown>;
+  checkedAt?: string;
+  durationMs?: number;
+}
+
 /**
  * 统一封装管理端聊天运行时后台接口。
  */
@@ -568,6 +597,21 @@ export class AdminChatApi {
   static async deleteTool(id: string | number): Promise<void> {
     await this.request<void>(`/api/admin/chat/tools/${encodeURIComponent(String(id))}`, {
       method: 'DELETE',
+    });
+  }
+
+  static async listToolHealthViews(): Promise<AdminChatToolHealthView[]> {
+    return this.request<AdminChatToolHealthView[]>('/api/admin/chat/tools/health');
+  }
+
+  static async pingTool(toolCode: string): Promise<AdminChatToolHealthView> {
+    return this.request<AdminChatToolHealthView>(`/api/admin/chat/tools/${encodeURIComponent(toolCode)}/ping`);
+  }
+
+  static async invokeTool(toolCode: string, question?: string): Promise<AdminChatToolInvokeView> {
+    return this.request<AdminChatToolInvokeView>(`/api/admin/chat/tools/${encodeURIComponent(toolCode)}/invoke`, {
+      method: 'POST',
+      body: JSON.stringify({ question }),
     });
   }
 

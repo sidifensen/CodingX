@@ -149,6 +149,7 @@ class ChatApplicationServiceTest {
         when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
             new ConversationRewriteResult("Hi", false, List.of("Hi"))
         );
+        when(conversationSummaryService.buildModelHistory(any(), any())).thenAnswer(invocation -> invocation.getArgument(1));
         when(llmResponseCleaner.clean(any())).thenAnswer(invocation -> invocation.getArgument(0));
         when(conversationIntentService.route("Hi", false)).thenReturn(new ConversationIntentDecision("chat.normal", ConversationIntentAction.DIRECT, null));
         when(chatIntentNodeRepository.findByIntentCode("chat.normal")).thenReturn(null);
@@ -168,6 +169,7 @@ class ChatApplicationServiceTest {
         verify(chatExecutionRunRepository).save(runCaptor.capture());
         verify(chatRuntimeGuardService).ensureAccepted(1L);
         verify(conversationTitleService).generateTitle(org.mockito.ArgumentMatchers.eq(conversation), any());
+        verify(conversationSummaryService).buildModelHistory(org.mockito.ArgumentMatchers.eq(1L), any());
         verify(conversationSummaryService).refreshSummaryIfNeeded(org.mockito.ArgumentMatchers.eq(conversation), any());
         verify(chatStreamPublisher).publishAssistantCompleted(1L, "Hello world", "AI搜索重构计划");
         assertEquals(ChatMessageRole.ASSISTANT, captor.getAllValues().get(1).getRole());
@@ -231,6 +233,7 @@ class ChatApplicationServiceTest {
         when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
             new ConversationRewriteResult("Hi", false, List.of("Hi"))
         );
+        when(conversationSummaryService.buildModelHistory(any(), any())).thenAnswer(invocation -> invocation.getArgument(1));
         when(conversationIntentService.route("Hi", false)).thenReturn(new ConversationIntentDecision("chat.normal", ConversationIntentAction.DIRECT, null));
         when(chatIntentNodeRepository.findByIntentCode("chat.normal")).thenReturn(null);
         AtomicInteger cancelChecks = new AtomicInteger();
@@ -263,6 +266,7 @@ class ChatApplicationServiceTest {
         when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
             new ConversationRewriteResult("Hi", false, List.of("Hi"))
         );
+        when(conversationSummaryService.buildModelHistory(any(), any())).thenAnswer(invocation -> invocation.getArgument(1));
         when(conversationIntentService.route("Hi", false)).thenReturn(new ConversationIntentDecision("chat.normal", ConversationIntentAction.DIRECT, null));
         when(chatIntentNodeRepository.findByIntentCode("chat.normal")).thenReturn(null);
         when(chatRuntimeGuardService.isCancelled(1L)).thenReturn(true);

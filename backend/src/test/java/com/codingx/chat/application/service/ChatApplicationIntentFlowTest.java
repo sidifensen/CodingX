@@ -125,6 +125,7 @@ class ChatApplicationIntentFlowTest {
         when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
             new ConversationRewriteResult("你是谁", false, java.util.List.of("你是谁"))
         );
+        when(conversationSummaryService.buildModelHistory(any(), any())).thenAnswer(invocation -> invocation.getArgument(1));
         when(conversationIntentService.route("你是谁", false)).thenReturn(
             new ConversationIntentDecision("sys-about-bot", ConversationIntentAction.DIRECT, null)
         );

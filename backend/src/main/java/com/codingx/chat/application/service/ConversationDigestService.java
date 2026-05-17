@@ -1,5 +1,6 @@
 package com.codingx.chat.application.service;
 
+import com.codingx.config.ChatMemoryProperties;
 import org.springframework.stereotype.Service;
 
 /**
@@ -15,6 +16,14 @@ public class ConversationDigestService {
      */
     public ConversationDigestService() {
         this(12);
+    }
+
+    /**
+     * 按运行时配置创建摘要服务，保证阈值可按环境调整。
+     * @param chatMemoryProperties 会话记忆配置。
+     */
+    public ConversationDigestService(ChatMemoryProperties chatMemoryProperties) {
+        this(chatMemoryProperties == null ? 12 : chatMemoryProperties.getSummaryTriggerMessages());
     }
 
     /**

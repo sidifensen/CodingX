@@ -1,5 +1,6 @@
 package com.codingx;
 import com.codingx.config.AiProperties;
+import com.codingx.config.ChatMemoryProperties;
 import com.codingx.config.RuntimeProperties;
 import org.mybatis.spring.annotation.MapperScan;
 import org.springframework.boot.SpringApplication;
@@ -11,7 +12,7 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
  */
 @SpringBootApplication
 @MapperScan("com.codingx.**.infrastructure.persistence.mapper")
-@EnableConfigurationProperties({AiProperties.class, RuntimeProperties.class})
+@EnableConfigurationProperties({AiProperties.class, RuntimeProperties.class, ChatMemoryProperties.class})
 public class CodingXApplication {
 
     /**

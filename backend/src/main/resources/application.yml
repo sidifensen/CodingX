@@ -130,6 +130,12 @@ app:
   runtime:
     mock-step-delay-ms: ${MOCK_STEP_DELAY_MS:300}
     mock-fail-keyword: ${MOCK_FAIL_KEYWORD:fail}
+  chat:
+    memory:
+      summary-enabled: ${CHAT_MEMORY_SUMMARY_ENABLED:true}
+      summary-trigger-messages: ${CHAT_MEMORY_SUMMARY_TRIGGER_MESSAGES:12}
+      history-keep-turns: ${CHAT_MEMORY_HISTORY_KEEP_TURNS:6}
+      summary-max-characters: ${CHAT_MEMORY_SUMMARY_MAX_CHARACTERS:4000}
 
 rustfs:
   endpoint: ${RUSTFS_ENDPOINT:http://localhost:9000}

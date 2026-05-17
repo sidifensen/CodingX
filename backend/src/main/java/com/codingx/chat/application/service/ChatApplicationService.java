@@ -304,7 +304,11 @@ public class ChatApplicationService {
         final Throwable[] streamError = new Throwable[1];
         final String[] selectedProvider = new String[1];
         final String[] selectedModel = new String[1];
-        List<ChatMessage> aiHistory = buildAiHistory(history, intentDecision, command.conversationId());
+        List<ChatMessage> aiHistory = buildAiHistory(
+            conversationSummaryService.buildModelHistory(command.conversationId(), history),
+            intentDecision,
+            command.conversationId()
+        );
         tokenCounterService.estimateConversationTokens(aiHistory);
         try {
             aiChatClient.streamChat(aiHistory, command.deepThinking(), new AiChatClient.StreamHandler() {

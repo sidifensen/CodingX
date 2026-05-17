@@ -77,6 +77,7 @@ class ChatApplicationSearchFlowTest {
         when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
             new ConversationRewriteResult("请搜索 Spring Boot SSE", false, List.of("请搜索 Spring Boot SSE"))
         );
+        when(conversationSummaryService.buildModelHistory(any(), any())).thenAnswer(invocation -> invocation.getArgument(1));
         when(conversationIntentService.route("请搜索 Spring Boot SSE", false)).thenReturn(
             new ConversationIntentDecision("search.web", ConversationIntentAction.SEARCH, null)
         );
@@ -114,6 +115,7 @@ class ChatApplicationSearchFlowTest {
         when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
             new ConversationRewriteResult("介绍 OA 系统和保险系统", true, List.of("介绍 OA 系统", "介绍 保险系统"))
         );
+        when(conversationSummaryService.buildModelHistory(any(), any())).thenAnswer(invocation -> invocation.getArgument(1));
         when(conversationIntentService.route("介绍 OA 系统和保险系统", false)).thenReturn(
             new ConversationIntentDecision("biz-oa-intro", ConversationIntentAction.SEARCH, null)
         );

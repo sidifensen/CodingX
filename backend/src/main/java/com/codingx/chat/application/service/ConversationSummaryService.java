@@ -2,11 +2,15 @@ package com.codingx.chat.application.service;
 
 import cn.hutool.core.util.IdUtil;
 import cn.hutool.core.util.StrUtil;
+import com.codingx.config.ChatMemoryProperties;
 import com.codingx.chat.domain.model.ChatConversation;
 import com.codingx.chat.domain.model.ChatConversationSummary;
 import com.codingx.chat.domain.model.ChatMessage;
+import com.codingx.chat.domain.model.ChatMessageRole;
+import com.codingx.chat.domain.model.ChatMessageStatus;
 import com.codingx.chat.domain.repository.ChatConversationSummaryRepository;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.stereotype.Service;
@@ -19,6 +23,7 @@ public class ConversationSummaryService {
 
     private final ConversationDigestService conversationDigestService;
     private final ChatConversationSummaryRepository chatConversationSummaryRepository;
+    private final ChatMemoryProperties chatMemoryProperties;
 
     /**
      * 注入摘要阈值判断器与摘要仓储。
@@ -27,10 +32,12 @@ public class ConversationSummaryService {
      */
     public ConversationSummaryService(
         ConversationDigestService conversationDigestService,
-        ChatConversationSummaryRepository chatConversationSummaryRepository
+        ChatConversationSummaryRepository chatConversationSummaryRepository,
+        ChatMemoryProperties chatMemoryProperties
     ) {
         this.conversationDigestService = conversationDigestService;
         this.chatConversationSummaryRepository = chatConversationSummaryRepository;
+        this.chatMemoryProperties = chatMemoryProperties;
     }
 
     /**
@@ -40,23 +47,47 @@ public class ConversationSummaryService {
      * @return 新增或更新后的摘要。
      */
     public Optional<ChatConversationSummary> refreshSummaryIfNeeded(ChatConversation conversation, List<ChatMessage> history) {
+        if (!chatMemoryProperties.isSummaryEnabled()) {
+            return Optional.empty();
+        }
         if (!conversationDigestService.shouldSummarize(history)) {
             return Optional.empty();
         }
+        int keepMessages = resolveKeepMessages();
+        int summarizeCount = history.size() - keepMessages;
+        if (summarizeCount <= 0) {
+            return Optional.empty();
+        }
+        List<ChatMessage> summarizeCandidates = history.subList(0, summarizeCount);
+        if (summarizeCandidates.isEmpty()) {
+            return Optional.empty();
+        }
+        Long cutoffMessageId = summarizeCandidates.getLast().getId();
         LocalDateTime now = LocalDateTime.now();
-        String summaryContent = buildSummaryContent(history);
-        Long lastMessageId = history.getLast().getId();
-        ChatConversationSummary summary = chatConversationSummaryRepository.findLatestByConversationId(conversation.getId())
+        Optional<ChatConversationSummary> existingOptional = chatConversationSummaryRepository.findLatestByConversationId(conversation.getId());
+        if (existingOptional.isPresent() && existingOptional.get().getLastMessageId() != null
+            && existingOptional.get().getLastMessageId() >= cutoffMessageId) {
+            return Optional.empty();
+        }
+        List<ChatMessage> incrementalMessages = resolveIncrementalMessages(existingOptional.orElse(null), summarizeCandidates);
+        if (incrementalMessages.isEmpty()) {
+            return Optional.empty();
+        }
+        String summaryContent = buildSummaryContent(existingOptional.map(ChatConversationSummary::getContent).orElse(""), incrementalMessages);
+        if (StrUtil.isBlank(summaryContent)) {
+            return Optional.empty();
+        }
+        ChatConversationSummary summary = existingOptional
             .map(existing -> existing.toBuilder()
                 .content(summaryContent)
-                .lastMessageId(lastMessageId)
+                .lastMessageId(cutoffMessageId)
                 .updatedAt(now)
                 .build())
             .orElseGet(() -> ChatConversationSummary.builder()
                 .id(IdUtil.getSnowflakeNextId())
                 .conversationId(conversation.getId())
                 .userId(conversation.getCreatedBy())
-                .lastMessageId(lastMessageId)
+                .lastMessageId(cutoffMessageId)
                 .content(summaryContent)
                 .createdAt(now)
                 .updatedAt(now)
@@ -67,15 +98,124 @@ public class ConversationSummaryService {
     }
 
     /**
-     * 使用最近几条消息构造可回放的压缩摘要文本。
-     * @param history 当前消息历史。
+     * 将完整历史裁剪为「摘要 + 最近窗口原文」的入模上下文。
+     * @param conversationId 会话标识。
+     * @param history 当前完整历史。
+     * @return 裁剪后的会话上下文。
+     */
+    public List<ChatMessage> buildModelHistory(Long conversationId, List<ChatMessage> history) {
+        if (history == null || history.isEmpty()) {
+            return List.of();
+        }
+        if (!chatMemoryProperties.isSummaryEnabled()) {
+            return new ArrayList<>(history);
+        }
+        Optional<ChatConversationSummary> summaryOptional = chatConversationSummaryRepository.findLatestByConversationId(conversationId)
+            .filter(summary -> StrUtil.isNotBlank(summary.getContent()));
+        if (summaryOptional.isEmpty()) {
+            return trimToRecentWindow(history);
+        }
+        ChatConversationSummary summary = summaryOptional.get();
+        List<ChatMessage> recentMessages = resolveRecentMessages(history, summary.getLastMessageId());
+        List<ChatMessage> context = new ArrayList<>();
+        context.add(buildSummarySystemMessage(conversationId, summary.getContent()));
+        context.addAll(recentMessages);
+        return context;
+    }
+
+    /**
+     * 使用新增历史与既有摘要构造可回放的压缩摘要文本。
+     * @param existingSummary 既有摘要。
+     * @param incrementalMessages 新增待压缩消息。
      * @return 摘要内容。
      */
-    private String buildSummaryContent(List<ChatMessage> history) {
-        return history.stream()
-            .skip(Math.max(0, history.size() - 4))
+    private String buildSummaryContent(String existingSummary, List<ChatMessage> incrementalMessages) {
+        String appended = incrementalMessages.stream()
             .map(message -> message.getRole().name().toLowerCase() + ": " + StrUtil.blankToDefault(message.getContent(), ""))
             .reduce((left, right) -> left + "\n" + right)
             .orElse("");
+        String merged = StrUtil.isBlank(existingSummary)
+            ? appended
+            : existingSummary.trim() + "\n" + appended;
+        int maxCharacters = Math.max(500, chatMemoryProperties.getSummaryMaxCharacters());
+        if (merged.length() <= maxCharacters) {
+            return merged;
+        }
+        // 摘要过长时保留尾部近况，确保后续对话延续最近上下文。
+        return StrUtil.sub(merged, merged.length() - maxCharacters, merged.length());
+    }
+
+    /**
+     * 计算本次需要新增压缩的消息集合，避免重复汇总已压缩片段。
+     * @param existingSummary 已有摘要。
+     * @param summarizeCandidates 可压缩消息候选。
+     * @return 本次增量消息。
+     */
+    private List<ChatMessage> resolveIncrementalMessages(ChatConversationSummary existingSummary, List<ChatMessage> summarizeCandidates) {
+        if (existingSummary == null || existingSummary.getLastMessageId() == null) {
+            return summarizeCandidates;
+        }
+        return summarizeCandidates.stream()
+            .filter(message -> message.getId() != null && message.getId() > existingSummary.getLastMessageId())
+            .toList();
+    }
+
+    /**
+     * 基于摘要覆盖点筛选最近原文，并在异常场景回退到固定窗口。
+     * @param history 完整历史。
+     * @param lastSummarizedMessageId 摘要覆盖到的最后消息。
+     * @return 需要原文保留的消息。
+     */
+    private List<ChatMessage> resolveRecentMessages(List<ChatMessage> history, Long lastSummarizedMessageId) {
+        List<ChatMessage> filtered = history;
+        if (lastSummarizedMessageId != null) {
+            filtered = history.stream()
+                .filter(message -> message.getId() != null && message.getId() > lastSummarizedMessageId)
+                .toList();
+        }
+        if (filtered.isEmpty()) {
+            return trimToRecentWindow(history);
+        }
+        return trimToRecentWindow(filtered);
+    }
+
+    /**
+     * 仅保留最近窗口消息，防止上下文无限增长。
+     * @param messages 待裁剪消息。
+     * @return 裁剪结果。
+     */
+    private List<ChatMessage> trimToRecentWindow(List<ChatMessage> messages) {
+        int keepMessages = resolveKeepMessages();
+        if (messages.size() <= keepMessages) {
+            return new ArrayList<>(messages);
+        }
+        return new ArrayList<>(messages.subList(messages.size() - keepMessages, messages.size()));
+    }
+
+    /**
+     * 将摘要包装为系统消息，明确告诉模型该内容仅用于承接历史语义。
+     * @param conversationId 会话标识。
+     * @param summaryContent 摘要内容。
+     * @return 系统消息。
+     */
+    private ChatMessage buildSummarySystemMessage(Long conversationId, String summaryContent) {
+        return ChatMessage.create(
+            IdUtil.getSnowflakeNextId(),
+            conversationId,
+            ChatMessageRole.SYSTEM,
+            "以下是历史会话摘要，请仅作为上下文参考，不要逐字复述：\n" + summaryContent.trim(),
+            ChatMessageStatus.COMPLETED,
+            null,
+            null,
+            null
+        );
+    }
+
+    /**
+     * 将保留窗口从“轮次”转换为“消息条数”。
+     * @return 保留消息条数。
+     */
+    private int resolveKeepMessages() {
+        return Math.max(2, Math.max(1, chatMemoryProperties.getHistoryKeepTurns()) * 2);
     }
 }

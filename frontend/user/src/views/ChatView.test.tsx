@@ -731,6 +731,45 @@ describe('ChatView', () => {
   });
 
   /**
+   * 点击技能按钮时应自动补充斜杠，便于快速触发技能检索。
+   */
+  it('应在点击技能按钮时自动写入斜杠', async () => {
+    const setInputValue = vi.fn();
+
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          inputValue: '',
+          setInputValue,
+        })}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '打开技能列表' }));
+    expect(setInputValue).toHaveBeenCalledWith('/');
+  });
+
+  /**
+   * 输入框以斜杠开头时应自动弹出技能列表，并把斜杠后的关键字作为过滤词。
+   */
+  it('应在输入斜杠时自动展开技能列表并同步过滤关键字', async () => {
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          inputValue: '/sale',
+        })}
+      />,
+    );
+
+    expect(screen.getByTestId('skill-selector-panel')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('搜索技能')).toHaveValue('sale');
+  });
+
+  /**
    * 选择技能后应仅更新 selectedSkillCodes，不应改写用户输入。
    */
   it('应在选择技能后保持输入不变并更新技能选择', async () => {
@@ -755,6 +794,56 @@ describe('ChatView', () => {
     expect(setSelectedSkillCodes).toHaveBeenCalled();
     expect(setSelectedSkillCodes.mock.calls[0][0]).toEqual(['sales_query']);
     expect(setInputValue).not.toHaveBeenCalled();
+  });
+
+  /**
+   * 斜杠触发技能选择后应清理输入触发词，避免把斜杠指令一并发送给模型。
+   */
+  it('应在斜杠触发技能选择后清理输入中的斜杠前缀', async () => {
+    const setSelectedSkillCodes = vi.fn();
+    const setInputValue = vi.fn();
+
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          inputValue: '/sale',
+          setSelectedSkillCodes,
+          setInputValue,
+        })}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '选择技能 销售查询' }));
+
+    expect(setSelectedSkillCodes).toHaveBeenCalledWith(['sales_query']);
+    expect(setInputValue).toHaveBeenCalledWith('');
+  });
+
+  /**
+   * 已选技能应在输入区顶部渲染为气泡，并支持移除。
+   */
+  it('应将已选技能显示为气泡并支持移除', async () => {
+    const setSelectedSkillCodes = vi.fn();
+
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          selectedSkillCodes: ['sales_query'],
+          setSelectedSkillCodes,
+        })}
+      />,
+    );
+
+    expect(screen.getByTestId('selected-skill-chip-sales_query')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '移除技能 销售查询' }));
+
+    expect(setSelectedSkillCodes).toHaveBeenCalled();
+    const updater = setSelectedSkillCodes.mock.calls[0][0] as (codes: string[]) => string[];
+    expect(updater(['sales_query'])).toEqual([]);
   });
 
   /**
@@ -863,6 +952,66 @@ describe('ChatView', () => {
 
     const image = screen.getByAltText('演示图');
     expect(image).toHaveClass('chat-message-image');
+  });
+
+  /**
+   * 点赞时应调用真实反馈接口，确保前端状态与后端反馈记录一致。
+   */
+  it('点赞应调用反馈接口并更新选中态', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(JSON.stringify({
+        success: true,
+        code: 'OK',
+        message: 'feedback submitted',
+        data: null,
+      }), {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      }),
+    );
+
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace()}
+      />,
+    );
+
+    const upButton = screen.getByTestId('thumbs-up-102');
+    fireEvent.click(upButton);
+
+    await waitFor(() => {
+      expect(fetchSpy).toHaveBeenCalledWith(
+        '/api/chat/messages/102/feedback',
+        expect.objectContaining({
+          method: 'POST',
+        }),
+      );
+    });
+    expect(upButton).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  /**
+   * 复制按钮与箭头应属于同一组合，避免视觉断层。
+   */
+  it('复制按钮和下拉按钮应位于同一复制操作组', async () => {
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace()}
+      />,
+    );
+
+    const copyButton = screen.getByTestId('copy-message-102');
+    const toggleButton = screen.getByTestId('copy-menu-toggle-102');
+    const copyGroup = screen.getByTestId('copy-action-group-102');
+
+    expect(copyGroup).toContainElement(copyButton);
+    expect(copyGroup).toContainElement(toggleButton);
   });
 
   /**

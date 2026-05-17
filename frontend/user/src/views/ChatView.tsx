@@ -20,6 +20,8 @@ import {
   ThumbsUp,
   WandSparkles,
 } from 'lucide-react';
+import { AuthStorage } from '../utils/authStorage';
+import { ChatApi } from './chat/chatApi';
 import { ChatWorkspaceController, McpCallItem } from './chat/types';
 
 /**
@@ -77,7 +79,9 @@ export default function ChatView({
   const [isWorkspacePanelCollapsed, setIsWorkspacePanelCollapsed] = React.useState(true);
   const [activeSelectorMode, setActiveSelectorMode] = React.useState<'mcp' | 'skill' | null>(null);
   const [skillSearchKeyword, setSkillSearchKeyword] = React.useState('');
+  const [skillSelectorSource, setSkillSelectorSource] = React.useState<'button' | 'slash' | null>(null);
   const selectorLayerRef = React.useRef<HTMLDivElement | null>(null);
+  const chatInputRef = React.useRef<HTMLInputElement | null>(null);
 
   /**
    * 过滤技能列表，支持名称与编码模糊检索。
@@ -96,6 +100,20 @@ export default function ChatView({
   }, [availableSkills, skillSearchKeyword]);
 
   /**
+   * 计算已选技能标签，供输入区气泡展示。
+   * @returns 已选技能标签集合。
+   */
+  const selectedSkillTags = React.useMemo(() => {
+    return selectedSkillCodes.map((skillCode) => {
+      const skill = availableSkills.find((item) => item.skillCode === skillCode);
+      return {
+        skillCode,
+        displayName: skill?.displayName ?? skillCode,
+      };
+    });
+  }, [availableSkills, selectedSkillCodes]);
+
+  /**
    * 点击外部区域时自动关闭 MCP/技能下拉，避免面板残留遮挡输入区。
    */
   React.useEffect(() => {
@@ -107,6 +125,7 @@ export default function ChatView({
         return;
       }
       setActiveSelectorMode(null);
+      setSkillSelectorSource(null);
     };
     document.addEventListener('mousedown', closeSelectorPanels);
     return () => {
@@ -134,25 +153,47 @@ export default function ChatView({
    */
   const selectSkill = React.useCallback((skillCode: string) => {
     setSelectedSkillCodes([skillCode]);
+    if (skillSelectorSource === 'slash') {
+      // 步骤：斜杠只作为技能检索触发器，选中后回写为正常输入文本。
+      setInputValue(inputValue.replace(/^\s*\/[^\s]*\s*/, ''));
+    }
     setActiveSelectorMode(null);
-  }, [setSelectedSkillCodes]);
+    setSkillSelectorSource(null);
+    setSkillSearchKeyword('');
+  }, [inputValue, setInputValue, setSelectedSkillCodes, skillSelectorSource]);
 
   /**
-   * 读取当前激活技能，供技能按钮显示状态。
-   * @returns 当前技能对象。
+   * 移除技能气泡，允许用户在输入区快速取消技能上下文。
+   * @param skillCode 被移除技能编码。
    */
-  const activeSkill = React.useMemo(() => {
-    if (!selectedSkillCodes.length) {
-      return null;
-    }
-    return availableSkills.find((item) => item.skillCode === selectedSkillCodes[0]) ?? null;
-  }, [availableSkills, selectedSkillCodes]);
+  const removeSkillTag = React.useCallback((skillCode: string) => {
+    setSelectedSkillCodes((previous) => previous.filter((item) => item !== skillCode));
+  }, [setSelectedSkillCodes]);
 
   /**
    * 判断当前共享选择弹层是否打开。
    * @returns 共享选择弹层是否打开。
    */
   const isSelectorPanelOpen = activeSelectorMode !== null;
+
+  /**
+   * 监听输入框斜杠触发技能检索，支持“输入 / 即打开技能列表”。
+   */
+  React.useEffect(() => {
+    const normalizedInput = inputValue.trimStart();
+    if (!normalizedInput.startsWith('/')) {
+      if (skillSelectorSource === 'slash') {
+        setActiveSelectorMode(null);
+        setSkillSelectorSource(null);
+        setSkillSearchKeyword('');
+      }
+      return;
+    }
+    const slashKeyword = normalizedInput.slice(1).split(/\s+/)[0] ?? '';
+    setActiveSelectorMode('skill');
+    setSkillSelectorSource('slash');
+    setSkillSearchKeyword(slashKeyword);
+  }, [inputValue, skillSelectorSource]);
 
   React.useEffect(() => {
     if (!messages.length) {
@@ -306,7 +347,7 @@ export default function ChatView({
                             <McpCallPanel messageId={message.id} calls={message.mcpCalls} />
                           ) : null}
                           <MarkdownMessage content={messageContent} />
-                          <AssistantMessageActions messageId={message.id} content={messageContent} />
+                          <AssistantMessageActions messageId={message.id} conversationId={message.conversationId} content={messageContent} />
                         </>
                       ) : (
                         <div className="whitespace-pre-wrap text-sm leading-6">
@@ -350,7 +391,8 @@ export default function ChatView({
                   {isSelectorPanelOpen ? (
                     <div
                       data-testid={activeSelectorMode === 'mcp' ? 'mcp-selector-panel' : 'skill-selector-panel'}
-                      className="absolute bottom-[calc(100%+10px)] left-0 right-0 z-30 rounded-2xl border border-border bg-surface px-2 py-2 shadow-[0_18px_44px_rgba(0,0,0,0.25)]"
+                      // 步骤：弹层宽度在桌面端收敛为中等尺寸，移动端仍自适应屏宽，避免视觉占用过大。
+                      className="absolute bottom-[calc(100%+10px)] left-0 z-30 w-[calc(100vw-2.5rem)] max-w-[480px] rounded-2xl border border-border bg-surface px-2 py-2 shadow-[0_18px_44px_rgba(0,0,0,0.25)] md:w-[480px]"
                     >
                       {activeSelectorMode === 'skill' ? (
                         <div className="mb-2 px-1">
@@ -427,21 +469,53 @@ export default function ChatView({
                       aria-expanded={activeSelectorMode === 'mcp'}
                       onClick={() => {
                         setActiveSelectorMode((current) => (current === 'mcp' ? null : 'mcp'));
+                        setSkillSelectorSource(null);
                       }}
                       className="inline-flex h-7 items-center rounded-full border border-border bg-surface-container px-3 text-xs text-foreground transition-colors hover:border-border-active"
                     >
                       MCP
                     </button>
+                    {selectedSkillTags.map((tag) => (
+                      <span
+                        key={tag.skillCode}
+                        data-testid={`selected-skill-chip-${tag.skillCode}`}
+                        className="inline-flex h-7 items-center gap-1 rounded-full border border-border bg-surface-container px-2.5 text-xs text-foreground"
+                      >
+                        <span className="truncate">{tag.displayName}</span>
+                        <button
+                          type="button"
+                          aria-label={`移除技能 ${tag.displayName}`}
+                          onClick={() => removeSkillTag(tag.skillCode)}
+                          className="inline-flex h-4 w-4 items-center justify-center rounded-full text-muted transition-colors hover:bg-surface-high hover:text-foreground"
+                        >
+                          ×
+                        </button>
+                      </span>
+                    ))}
                     <button
                       type="button"
                       aria-label="打开技能列表"
                       aria-expanded={activeSelectorMode === 'skill'}
                       onClick={() => {
-                        setActiveSelectorMode((current) => (current === 'skill' ? null : 'skill'));
+                        if (activeSelectorMode === 'skill') {
+                          setActiveSelectorMode(null);
+                          setSkillSelectorSource(null);
+                          return;
+                        }
+                        setActiveSelectorMode('skill');
+                        setSkillSelectorSource('button');
+                        setSkillSearchKeyword('');
+                        if (!inputValue.trim()) {
+                          // 步骤：点击技能按钮时自动补斜杠，降低触发门槛并统一交互预期。
+                          setInputValue('/');
+                          window.requestAnimationFrame(() => {
+                            chatInputRef.current?.focus();
+                          });
+                        }
                       }}
                       className="inline-flex h-7 max-w-[180px] items-center gap-1 rounded-full border border-border bg-surface-container px-3 text-xs text-foreground transition-colors hover:border-border-active"
                     >
-                      <span className="truncate">{activeSkill?.displayName ?? '技能'}</span>
+                      <span className="truncate">技能</span>
                       <ChevronDown size={12} className={`transition-transform ${activeSelectorMode === 'skill' ? 'rotate-180' : ''}`} />
                     </button>
                   </div>
@@ -452,6 +526,7 @@ export default function ChatView({
                   </button>
                   <div className="relative flex-1">
                     <input
+                      ref={chatInputRef}
                       type="text"
                       value={inputValue}
                       onChange={(event) => setInputValue(event.target.value)}
@@ -806,10 +881,11 @@ type MessageReaction = 'up' | 'down' | null;
 /**
  * 渲染助手消息底部操作栏，统一提供复制、复制 Markdown 与点赞反馈入口。
  */
-function AssistantMessageActions({ messageId, content }: { messageId: string; content: string }) {
+function AssistantMessageActions({ messageId, conversationId, content }: { messageId: string; conversationId: string; content: string }) {
   const [isMenuOpen, setIsMenuOpen] = React.useState(false);
   const [copiedMode, setCopiedMode] = React.useState<CopyMode | null>(null);
   const [reaction, setReaction] = React.useState<MessageReaction>(null);
+  const [reactionError, setReactionError] = React.useState('');
   const menuContainerRef = React.useRef<HTMLDivElement | null>(null);
 
   React.useEffect(() => {
@@ -853,59 +929,77 @@ function AssistantMessageActions({ messageId, content }: { messageId: string; co
    * 同步本地反馈状态，确保点赞与倒赞互斥。
    * @param nextReaction 下一次反馈值。
    */
-  const toggleReaction = (nextReaction: Exclude<MessageReaction, null>) => {
-    setReaction((previousReaction) => (previousReaction === nextReaction ? null : nextReaction));
+  const submitReaction = async (nextReaction: Exclude<MessageReaction, null>) => {
+    const token = AuthStorage.getSession()?.token ?? null;
+    if (!token) {
+      return;
+    }
+    const previousReaction = reaction;
+    setReaction(nextReaction);
+    setReactionError('');
+    try {
+      await ChatApi.submitMessageFeedback(token, messageId, {
+        conversationId,
+        vote: nextReaction === 'up' ? 1 : -1,
+      });
+    } catch (error) {
+      setReaction(previousReaction);
+      setReactionError(error instanceof Error ? error.message : '反馈提交失败');
+    }
   };
 
   return (
     <div className="chat-message-actions mt-3 flex items-center gap-1 text-muted">
-      <button
-        type="button"
-        data-testid={`copy-message-${messageId}`}
-        aria-label="复制消息"
-        onClick={() => void copyContent('plain')}
-        className="chat-message-action-button"
-      >
-        <Copy size={15} />
-      </button>
-      <div ref={menuContainerRef} className="relative">
+      <div className="chat-message-action-button-group" data-testid={`copy-action-group-${messageId}`}>
         <button
           type="button"
-          data-testid={`copy-menu-toggle-${messageId}`}
-          aria-label="复制更多"
-          aria-expanded={isMenuOpen}
-          onClick={() => setIsMenuOpen((open) => !open)}
-          className="chat-message-action-button"
+          data-testid={`copy-message-${messageId}`}
+          aria-label="复制消息"
+          onClick={() => void copyContent('plain')}
+          className="chat-message-action-button chat-message-action-button-group-item"
         >
-          <ChevronDown size={15} className={`transition-transform ${isMenuOpen ? 'rotate-180' : ''}`} />
+          <Copy size={15} />
         </button>
-        {isMenuOpen ? (
-          <div className="chat-copy-menu absolute bottom-11 left-0 min-w-[190px] rounded-2xl border border-border bg-surface px-2 py-2 shadow-[0_16px_40px_rgba(0,0,0,0.24)]">
-            <button
-              type="button"
-              data-testid={`copy-markdown-${messageId}`}
-              onClick={() => void copyContent('markdown')}
-              className="chat-copy-menu-item"
-            >
-              复制为Markdown
-            </button>
-            <button
-              type="button"
-              data-testid={`copy-plain-${messageId}`}
-              onClick={() => void copyContent('plain')}
-              className="chat-copy-menu-item"
-            >
-              复制
-            </button>
-          </div>
-        ) : null}
+        <span aria-hidden="true" className="chat-message-action-divider" />
+        <div ref={menuContainerRef} className="relative">
+          <button
+            type="button"
+            data-testid={`copy-menu-toggle-${messageId}`}
+            aria-label="复制更多"
+            aria-expanded={isMenuOpen}
+            onClick={() => setIsMenuOpen((open) => !open)}
+            className="chat-message-action-button chat-message-action-button-group-item"
+          >
+            <ChevronDown size={15} className={`transition-transform ${isMenuOpen ? 'rotate-180' : ''}`} />
+          </button>
+          {isMenuOpen ? (
+            <div className="chat-copy-menu absolute bottom-11 left-0 min-w-[190px] rounded-2xl border border-border bg-surface px-2 py-2 shadow-[0_16px_40px_rgba(0,0,0,0.24)]">
+              <button
+                type="button"
+                data-testid={`copy-markdown-${messageId}`}
+                onClick={() => void copyContent('markdown')}
+                className="chat-copy-menu-item"
+              >
+                复制为Markdown
+              </button>
+              <button
+                type="button"
+                data-testid={`copy-plain-${messageId}`}
+                onClick={() => void copyContent('plain')}
+                className="chat-copy-menu-item"
+              >
+                复制
+              </button>
+            </div>
+          ) : null}
+        </div>
       </div>
       <button
         type="button"
         data-testid={`thumbs-up-${messageId}`}
         aria-label="点赞"
         aria-pressed={reaction === 'up'}
-        onClick={() => toggleReaction('up')}
+        onClick={() => void submitReaction('up')}
         className={`chat-message-action-button ${reaction === 'up' ? 'chat-message-action-button-active' : ''}`}
       >
         <ThumbsUp size={15} />
@@ -915,7 +1009,7 @@ function AssistantMessageActions({ messageId, content }: { messageId: string; co
         data-testid={`thumbs-down-${messageId}`}
         aria-label="倒赞"
         aria-pressed={reaction === 'down'}
-        onClick={() => toggleReaction('down')}
+        onClick={() => void submitReaction('down')}
         className={`chat-message-action-button ${reaction === 'down' ? 'chat-message-action-button-active' : ''}`}
       >
         <ThumbsDown size={15} />
@@ -923,6 +1017,7 @@ function AssistantMessageActions({ messageId, content }: { messageId: string; co
       {copiedMode ? (
         <span className="ml-2 text-[11px] text-muted">{copiedMode === 'markdown' ? '已复制 Markdown' : '已复制'}</span>
       ) : null}
+      {reactionError ? <span className="ml-2 text-[11px] text-error">{reactionError}</span> : null}
     </div>
   );
 }

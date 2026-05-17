@@ -12,7 +12,6 @@ import {
   FileText,
   Globe2,
   Sparkles,
-  Workflow,
   PanelRightClose,
   PanelRightOpen,
   Paperclip,
@@ -56,10 +55,8 @@ export default function ChatView({
     sampleQuestions,
     availableSkills,
     selectedSkillCodes,
-    currentSkills,
     availableMcps,
     selectedMcpCodes,
-    currentMcps,
     isStreaming,
     isCancelling,
     deepThinkingEnabled,
@@ -88,6 +85,8 @@ export default function ChatView({
   );
   const selectorLayerRef = React.useRef<HTMLDivElement | null>(null);
   const chatInputRef = React.useRef<HTMLTextAreaElement | null>(null);
+  const skillPrefixRef = React.useRef<HTMLDivElement | null>(null);
+  const [skillPrefixIndent, setSkillPrefixIndent] = React.useState(0);
 
   /**
    * 过滤技能列表，支持名称与编码模糊检索。
@@ -247,6 +246,33 @@ export default function ChatView({
   }, [inputValue, selectedSkillTags.length]);
 
   /**
+   * 根据技能标签实际宽度计算首行缩进，保证“标签+文本”视觉同流，
+   * 同时让第二行起恢复整行宽度，避免形成持续分栏。
+   */
+  React.useEffect(() => {
+    if (!selectedSkillTags.length) {
+      setSkillPrefixIndent(0);
+      return;
+    }
+    const syncSkillPrefixIndent = () => {
+      const textarea = chatInputRef.current;
+      const prefix = skillPrefixRef.current;
+      if (!textarea || !prefix) {
+        setSkillPrefixIndent(0);
+        return;
+      }
+      const prefixWidth = Math.ceil(prefix.getBoundingClientRect().width) + 8;
+      const maxIndent = Math.max(Math.floor(textarea.clientWidth) - 48, 0);
+      setSkillPrefixIndent(Math.max(0, Math.min(prefixWidth, maxIndent)));
+    };
+    syncSkillPrefixIndent();
+    window.addEventListener('resize', syncSkillPrefixIndent);
+    return () => {
+      window.removeEventListener('resize', syncSkillPrefixIndent);
+    };
+  }, [selectedSkillTags]);
+
+  /**
    * 统一执行输入提交，供按钮、回车键与表单提交复用同一逻辑。
    */
   const submitCurrentInput = async () => {
@@ -276,13 +302,11 @@ export default function ChatView({
     activeConversationId != null && !messages.length && !isBootstrapping;
   // 步骤：首页只保留欢迎内容和输入框，右侧执行回放仅在真实会话上下文中展示。
   const showWorkspacePanel = !showLandingState;
-  // 步骤：仅当步骤、来源、产物或当前能力上下文任一存在时，才认为右侧栏具备真实回放内容。
+  // 步骤：仅当步骤、来源或产物任一存在时，才认为右侧栏具备真实回放内容。
   const hasWorkspaceContent =
     executionSteps.length > 0 ||
     references.length > 0 ||
-    artifacts.length > 0 ||
-    currentSkills.length > 0 ||
-    currentMcps.length > 0;
+    artifacts.length > 0;
   // 步骤：右侧栏保留挂载以支持宽度过渡动画，面板内容在收起后不再渲染。
   const isWorkspacePanelVisible = showWorkspacePanel && !isWorkspacePanelCollapsed;
 
@@ -610,7 +634,7 @@ export default function ChatView({
                       }}
                       className="inline-flex h-7 items-center rounded-full border border-border bg-surface-container px-3 text-xs text-foreground transition-colors hover:border-border-active"
                     >
-                      <Workflow
+                      <Database
                         size={12}
                         data-testid="mcp-trigger-icon"
                         className="mr-1 text-muted"
@@ -649,47 +673,50 @@ export default function ChatView({
                     </button>
                   </div>
                 </div>
-                <div className="flex items-center gap-3">
-                  <button
-                    type="button"
-                    className="rounded-full border border-border bg-surface-container p-1.5 text-muted"
-                  >
-                    <Paperclip size={17} />
-                  </button>
-                  <div className="relative flex-1">
-                    {/* 步骤：把技能标签内嵌到输入框区域，保证交互入口与输入内容处于同一视觉容器。 */}
+                <div className="space-y-3">
+                  <div data-testid="chat-input-content-area" className="relative">
+                    {/* 步骤：输入内容独占上层区域，避免文本增多时挤压底部工具栏。 */}
                     <div
                       data-testid="input-inline-skill-tokens"
                       data-max-lines="9"
-                      className="max-h-[calc(1.5rem*9+1rem)] w-full overflow-y-auto rounded-xl bg-transparent px-0.5 py-1"
+                      className="max-h-[calc(1.5rem*9+1rem)] w-full overflow-x-hidden overflow-y-auto rounded-xl bg-transparent px-0.5 py-1"
                     >
-                      {/* 步骤：使用同一段“行内文本流”承载技能标签和输入框，避免视觉分区断层。 */}
+                      {/* 步骤：标签与输入统一在同一内容层，标签占据首行前缀，文本从后方自然续写。 */}
                       <div
                         data-testid="input-inline-content-flow"
-                        className="block min-h-8 w-full text-[14px] leading-6 text-foreground"
+                        className="relative min-h-8 w-full text-[14px] leading-6 text-foreground"
                       >
-                        {selectedSkillTags.map((tag) => (
-                          <span
-                            key={tag.skillCode}
-                            data-testid={`selected-skill-chip-${tag.skillCode}`}
-                            className="mr-1.5 inline-flex h-6 max-w-[220px] translate-y-[2px] items-center gap-1 rounded-full border border-border bg-surface-container px-2 text-xs text-foreground align-baseline"
+                        {selectedSkillTags.length > 0 ? (
+                          <div
+                            ref={skillPrefixRef}
+                            data-testid="input-inline-skill-prefix"
+                            className="absolute left-0 top-1 z-10 flex max-w-[calc(100%-0.5rem)] items-center gap-1 overflow-x-auto pr-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
                           >
-                            <Sparkles
-                              size={12}
-                              data-testid={`selected-skill-chip-icon-${tag.skillCode}`}
-                              className="shrink-0 text-muted"
-                            />
-                            <span className="truncate">{tag.displayName}</span>
-                            <button
-                              type="button"
-                              aria-label={`移除技能 ${tag.displayName}`}
-                              onClick={() => removeSkillTag(tag.skillCode)}
-                              className="inline-flex h-4 w-4 items-center justify-center rounded-full text-muted transition-colors hover:bg-surface-high hover:text-foreground"
-                            >
-                              ×
-                            </button>
-                          </span>
-                        ))}
+                            {selectedSkillTags.map((tag) => (
+                              <span
+                                key={tag.skillCode}
+                                data-testid={`selected-skill-chip-${tag.skillCode}`}
+                                // 步骤：技能标签弱化为“接近普通文字”的轻量样式，避免视觉上成为独立分栏。
+                                className="inline-flex h-6 max-w-[220px] shrink-0 items-center gap-1 rounded-md border border-border/70 bg-surface-container/55 px-2 text-xs font-normal text-foreground"
+                              >
+                                <Sparkles
+                                  size={12}
+                                  data-testid={`selected-skill-chip-icon-${tag.skillCode}`}
+                                  className="shrink-0 text-muted"
+                                />
+                                <span className="truncate">{tag.displayName}</span>
+                                <button
+                                  type="button"
+                                  aria-label={`移除技能 ${tag.displayName}`}
+                                  onClick={() => removeSkillTag(tag.skillCode)}
+                                  className="inline-flex h-4 w-4 items-center justify-center rounded-full text-muted transition-colors hover:bg-surface-high hover:text-foreground"
+                                >
+                                  ×
+                                </button>
+                              </span>
+                            ))}
+                          </div>
+                        ) : null}
                         <textarea
                           ref={chatInputRef}
                           value={inputValue}
@@ -702,52 +729,73 @@ export default function ChatView({
                           }}
                           rows={1}
                           placeholder="输入问题，或先选择技能/MCP..."
-                          // 步骤：单行态通过上下内边距与中线对齐保持垂直居中，多行仍由自适应高度逻辑接管。
-                          className={`inline min-h-8 resize-none bg-transparent py-1 align-middle text-[14px] leading-6 text-foreground outline-none placeholder:text-muted ${
-                            selectedSkillTags.length > 0 ? 'min-w-[180px] max-w-full' : 'w-full'
-                          }`}
+                          style={
+                            selectedSkillTags.length > 0
+                              ? { textIndent: `${skillPrefixIndent}px` }
+                              : undefined
+                          }
+                          // 步骤：输入框始终全宽；有标签时仅首行缩进，第二行开始恢复整行宽度。
+                          className="min-h-8 w-full min-w-0 resize-none overflow-x-hidden bg-transparent py-1 text-[14px] leading-6 text-foreground outline-none placeholder:overflow-hidden placeholder:whitespace-nowrap placeholder:text-muted"
                         />
                       </div>
                     </div>
                   </div>
-                  <button
-                    type="button"
-                    aria-label="切换深度思考"
-                    onClick={() => setDeepThinkingEnabled(!deepThinkingEnabled)}
-                    className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
-                      deepThinkingEnabled
-                        ? 'border-foreground bg-foreground text-background'
-                        : 'border-border bg-surface-container text-muted'
-                    }`}
+                  <div
+                    data-testid="chat-input-toolbar"
+                    className="flex items-center justify-between gap-3"
                   >
-                    <span className="flex items-center gap-1.5">
-                      <WandSparkles size={14} />
-                      深度思考
-                    </span>
-                  </button>
-                  {isStreaming ? (
-                    <button
-                      type="button"
-                      aria-label="停止生成"
-                      onClick={() => void cancelCurrentStream()}
-                      disabled={isCancelling}
-                      className="rounded-full bg-red-500 px-3 py-1.5 text-sm font-medium text-white transition-opacity disabled:opacity-60"
+                    <div data-testid="chat-input-toolbar-left" className="flex items-center">
+                      <button
+                        type="button"
+                        className="rounded-full border border-border bg-surface-container p-1.5 text-muted"
+                      >
+                        <Paperclip size={17} />
+                      </button>
+                    </div>
+                    <div
+                      data-testid="chat-input-toolbar-right"
+                      className="flex shrink-0 items-center gap-2"
                     >
-                      <span className="flex items-center gap-2">
-                        <CircleStop size={16} />
-                        {isCancelling ? '停止中' : '停止'}
-                      </span>
-                    </button>
-                  ) : (
-                    <button
-                      type="submit"
-                      aria-label="发送消息"
-                      className="rounded-full bg-foreground p-2 text-background transition-opacity hover:opacity-90 disabled:opacity-60"
-                      disabled={!inputValue.trim()}
-                    >
-                      <ArrowUp size={17} />
-                    </button>
-                  )}
+                      <button
+                        type="button"
+                        aria-label="切换深度思考"
+                        onClick={() => setDeepThinkingEnabled(!deepThinkingEnabled)}
+                        className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+                          deepThinkingEnabled
+                            ? 'border-foreground bg-foreground text-background'
+                            : 'border-border bg-surface-container text-muted'
+                        }`}
+                      >
+                        <span className="flex items-center gap-1.5">
+                          <WandSparkles size={14} />
+                          深度思考
+                        </span>
+                      </button>
+                      {isStreaming ? (
+                        <button
+                          type="button"
+                          aria-label="停止生成"
+                          onClick={() => void cancelCurrentStream()}
+                          disabled={isCancelling}
+                          className="rounded-full bg-red-500 px-3 py-1.5 text-sm font-medium text-white transition-opacity disabled:opacity-60"
+                        >
+                          <span className="flex items-center gap-2">
+                            <CircleStop size={16} />
+                            {isCancelling ? '停止中' : '停止'}
+                          </span>
+                        </button>
+                      ) : (
+                        <button
+                          type="submit"
+                          aria-label="发送消息"
+                          className="rounded-full bg-foreground p-2 text-background transition-opacity hover:opacity-90 disabled:opacity-60"
+                          disabled={!inputValue.trim()}
+                        >
+                          <ArrowUp size={17} />
+                        </button>
+                      )}
+                    </div>
+                  </div>
                 </div>
               </div>
             </form>
@@ -844,51 +892,6 @@ export default function ChatView({
                 )}
               </Panel>
 
-              <Panel title="当前技能" icon={Sparkles}>
-                {currentSkills.length ? (
-                  currentSkills.map((skill) => (
-                    <div
-                      key={`${skill.id}-${skill.skillCode}`}
-                      className="rounded-2xl border border-border bg-surface-container px-4 py-3"
-                    >
-                      <div className="text-sm font-medium text-foreground">{skill.displayName}</div>
-                      <div className="mt-2 font-mono text-[12px] text-muted">
-                        /{skill.skillCode}
-                      </div>
-                      {skill.category ? (
-                        <div className="mt-2 text-xs text-muted">{skill.category}</div>
-                      ) : null}
-                      {skill.description ? (
-                        <div className="mt-3 text-sm leading-6 text-muted">{skill.description}</div>
-                      ) : null}
-                    </div>
-                  ))
-                ) : (
-                  <EmptyBlock text="当前会话暂无技能绑定" />
-                )}
-              </Panel>
-
-              <Panel title="当前 MCP" icon={Workflow}>
-                {currentMcps.length ? (
-                  currentMcps.map((mcp) => (
-                    <div
-                      key={`${mcp.id}-${mcp.mcpCode}`}
-                      className="rounded-2xl border border-border bg-surface-container px-4 py-3"
-                    >
-                      <div className="text-sm font-medium text-foreground">{mcp.displayName}</div>
-                      <div className="mt-2 font-mono text-[12px] text-muted">/{mcp.mcpCode}</div>
-                      {mcp.category ? (
-                        <div className="mt-2 text-xs text-muted">{mcp.category}</div>
-                      ) : null}
-                      {mcp.description ? (
-                        <div className="mt-3 text-sm leading-6 text-muted">{mcp.description}</div>
-                      ) : null}
-                    </div>
-                  ))
-                ) : (
-                  <EmptyBlock text="当前会话暂无 MCP 绑定" />
-                )}
-              </Panel>
             </div>
           </div>
         </aside>
@@ -1463,3 +1466,4 @@ function ConfirmDialog({
     </div>
   );
 }
+

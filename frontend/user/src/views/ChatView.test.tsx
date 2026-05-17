@@ -67,9 +67,8 @@ describe('ChatView', () => {
     expect(screen.getByText('搜索资料')).toBeInTheDocument();
     expect(screen.getByText('Spring Boot SSE 最佳实践')).toBeInTheDocument();
     expect(screen.getByText('search-report.docx')).toBeInTheDocument();
-    expect(screen.getByText('当前技能')).toBeInTheDocument();
-    expect(screen.getByText('当前 MCP')).toBeInTheDocument();
-    expect(screen.getAllByText('销售查询').length).toBeGreaterThan(0);
+    expect(screen.queryByText('当前技能')).not.toBeInTheDocument();
+    expect(screen.queryByText('当前 MCP')).not.toBeInTheDocument();
   });
 
   /**
@@ -211,8 +210,6 @@ describe('ChatView', () => {
           executionSteps: [],
           references: [],
           artifacts: [],
-          currentSkills: [],
-          currentMcps: [],
         })}
       />,
     );
@@ -567,8 +564,6 @@ describe('ChatView', () => {
           executionSteps: [],
           references: [],
           artifacts: [],
-          currentSkills: [],
-          currentMcps: [],
         })}
       />,
     );
@@ -872,9 +867,11 @@ describe('ChatView', () => {
 
     const inlineTokenContainer = screen.getByTestId('input-inline-skill-tokens');
     const inlineContentFlow = screen.getByTestId('input-inline-content-flow');
+    const inlineSkillPrefix = screen.getByTestId('input-inline-skill-prefix');
     const selectedChip = screen.getByTestId('selected-skill-chip-sales_query');
     expect(inlineTokenContainer).toContainElement(selectedChip);
-    expect(inlineContentFlow).toContainElement(selectedChip);
+    expect(inlineSkillPrefix).toContainElement(selectedChip);
+    expect(inlineContentFlow).toContainElement(inlineSkillPrefix);
 
     expect(screen.getByTestId('selected-skill-chip-icon-sales_query')).toBeInTheDocument();
     expect(screen.getByTestId('skill-trigger-icon')).toBeInTheDocument();
@@ -900,16 +897,19 @@ describe('ChatView', () => {
 
     const inlineTokenContainer = screen.getByTestId('input-inline-skill-tokens');
     const inlineContentFlow = screen.getByTestId('input-inline-content-flow');
+    const inlineSkillPrefix = screen.getByTestId('input-inline-skill-prefix');
     const selectedChip = screen.getByTestId('selected-skill-chip-sales_query');
     const textarea = screen.getByPlaceholderText('输入问题，或先选择技能/MCP...');
 
     expect(textarea.tagName).toBe('TEXTAREA');
     expect(textarea).toHaveAttribute('rows', '1');
-    expect(textarea).not.toHaveClass('w-full');
+    expect(textarea).toHaveClass('w-full');
+    expect(textarea).toHaveStyle({ textIndent: '0px' });
     expect(inlineTokenContainer).toHaveAttribute('data-max-lines', '9');
     expect(inlineTokenContainer).toContainElement(selectedChip);
     expect(inlineTokenContainer).toContainElement(textarea);
-    expect(inlineContentFlow).toContainElement(selectedChip);
+    expect(inlineSkillPrefix).toContainElement(selectedChip);
+    expect(inlineContentFlow).toContainElement(inlineSkillPrefix);
     expect(inlineContentFlow).toContainElement(textarea);
   });
 
@@ -931,7 +931,38 @@ describe('ChatView', () => {
     const textarea = screen.getByPlaceholderText('输入问题，或先选择技能/MCP...');
     expect(textarea).toHaveClass('w-full');
     expect(textarea).toHaveClass('py-1');
-    expect(textarea).toHaveClass('align-middle');
+    expect(textarea).toHaveClass('overflow-x-hidden');
+    expect(textarea).toHaveClass('placeholder:whitespace-nowrap');
+  });
+
+  /**
+   * 输入区应拆分为“上内容区 + 下工具栏”，避免长文本时工具按钮被挤压到中间。
+   */
+  it('应将附件与操作按钮固定在输入区底部工具栏', async () => {
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          inputValue:
+            '这是一个很长的输入内容这是一个很长的输入内容这是一个很长的输入内容\n第二行内容继续拉长以触发更明显的布局占用',
+        })}
+      />,
+    );
+
+    const contentArea = screen.getByTestId('chat-input-content-area');
+    const toolbar = screen.getByTestId('chat-input-toolbar');
+    const toolbarLeft = screen.getByTestId('chat-input-toolbar-left');
+    const toolbarRight = screen.getByTestId('chat-input-toolbar-right');
+    const deepThinkingButton = screen.getByRole('button', { name: '切换深度思考' });
+    const sendButton = screen.getByRole('button', { name: '发送消息' });
+    const attachButton = toolbarLeft.querySelector('button');
+
+    expect(contentArea).toBeInTheDocument();
+    expect(toolbar).toBeInTheDocument();
+    expect(toolbarLeft).toContainElement(attachButton);
+    expect(toolbarRight).toContainElement(deepThinkingButton);
+    expect(toolbarRight).toContainElement(sendButton);
   });
 
   /**

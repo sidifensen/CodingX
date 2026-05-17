@@ -1,12 +1,16 @@
 import React from 'react';
 import clsx from 'clsx';
+import { Pagination } from './Pagination';
 
 interface DataTableCardProps {
   title: string;
   description?: string;
   scrollTestId?: string;
   tableContent: React.ReactNode;
-  footerContent: React.ReactNode;
+  summaryText: string;
+  paginationCurrent: number;
+  paginationPages: number;
+  onPaginationChange: (page: number) => void;
   loading?: boolean;
   loadingText?: string;
   className?: string;
@@ -20,7 +24,10 @@ export function DataTableCard({
   description,
   scrollTestId,
   tableContent,
-  footerContent,
+  summaryText,
+  paginationCurrent,
+  paginationPages,
+  onPaginationChange,
   loading = false,
   loadingText = '加载中...',
   className,
@@ -50,7 +57,13 @@ export function DataTableCard({
       </div>
 
       <div className="shrink-0 flex items-center justify-between gap-sm border-t border-border-hairline bg-surface-container-low px-lg py-sm">
-        {footerContent}
+        <p className="text-secondary text-[12px]">{summaryText}</p>
+        <Pagination
+          current={paginationCurrent}
+          pages={Math.max(1, paginationPages)}
+          loading={loading}
+          onChange={onPaginationChange}
+        />
       </div>
     </section>
   );

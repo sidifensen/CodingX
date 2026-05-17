@@ -4,7 +4,6 @@ import clsx from 'clsx';
 
 import type { AdminTraceRun } from '../../../api/adminChatApi';
 import { DataTableCard } from '../../../components/DataTableCard';
-import { Pagination } from '../../../components/Pagination';
 import { formatDateTime, formatDuration, statusBadgeClassName, statusLabel } from '../traceUtils';
 
 interface TraceRunsTableProps {
@@ -123,19 +122,10 @@ export function TraceRunsTable({
           </tbody>
         </table>
       )}
-      footerContent={(
-        <>
-        <p className="text-secondary text-[12px]">
-          第 {current} / {Math.max(pages, 1)} 页，共 {total.toLocaleString('zh-CN')} 条
-        </p>
-        <Pagination
-          current={current}
-          pages={Math.max(1, pages)}
-          loading={loading}
-          onChange={onChangePage}
-        />
-        </>
-      )}
+      summaryText={`第 ${current} / ${Math.max(pages, 1)} 页，共 ${total.toLocaleString('zh-CN')} 条`}
+      paginationCurrent={current}
+      paginationPages={pages}
+      onPaginationChange={onChangePage}
     />
   );
 }

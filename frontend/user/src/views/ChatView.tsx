@@ -611,7 +611,8 @@ export default function ChatView({
                           }}
                           rows={1}
                           placeholder="输入问题，或先选择技能/MCP..."
-                          className="inline min-h-8 min-w-[180px] w-full resize-none bg-transparent align-baseline text-[14px] leading-6 text-foreground outline-none placeholder:text-muted"
+                          // 步骤：输入框改为行内自适应宽度，让文字在有空间时紧跟技能标签后方开始输入。
+                          className="inline min-h-8 min-w-[180px] max-w-full resize-none bg-transparent align-baseline text-[14px] leading-6 text-foreground outline-none placeholder:text-muted"
                         />
                       </div>
                     </div>

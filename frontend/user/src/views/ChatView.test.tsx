@@ -925,6 +925,7 @@ describe('ChatView', () => {
 
     expect(textarea.tagName).toBe('TEXTAREA');
     expect(textarea).toHaveAttribute('rows', '1');
+    expect(textarea).not.toHaveClass('w-full');
     expect(inlineTokenContainer).toHaveAttribute('data-max-lines', '9');
     expect(inlineTokenContainer).toContainElement(selectedChip);
     expect(inlineTokenContainer).toContainElement(textarea);

@@ -150,18 +150,24 @@ export default function ChatView({
   }, [setSelectedMcpCodes, setMcpConnected]);
 
   /**
-   * 设置当前技能并关闭技能弹层，保持“点选即引用”交互。
+   * 切换技能选中状态：支持多选，已选中再次点击可取消。
    * @param skillCode 被选择技能编码。
    */
   const selectSkill = React.useCallback((skillCode: string) => {
-    setSelectedSkillCodes([skillCode]);
+    setSelectedSkillCodes((previous) => {
+      if (previous.includes(skillCode)) {
+        return previous.filter((item) => item !== skillCode);
+      }
+      return [...previous, skillCode];
+    });
     if (skillSelectorSource === 'slash') {
       // 步骤：斜杠只作为技能检索触发器，选中后回写为正常输入文本。
       setInputValue(inputValue.replace(/^\s*\/[^\s]*\s*/, ''));
+      setActiveSelectorMode(null);
+      setSkillSelectorSource(null);
+      setSkillSearchKeyword('');
+      return;
     }
-    setActiveSelectorMode(null);
-    setSkillSelectorSource(null);
-    setSkillSearchKeyword('');
   }, [inputValue, setInputValue, setSelectedSkillCodes, skillSelectorSource]);
 
   /**

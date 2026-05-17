@@ -794,7 +794,8 @@ describe('ChatView', () => {
     fireEvent.click(screen.getByRole('button', { name: '选择技能 销售查询' }));
 
     expect(setSelectedSkillCodes).toHaveBeenCalled();
-    expect(setSelectedSkillCodes.mock.calls[0][0]).toEqual(['sales_query']);
+    const updater = setSelectedSkillCodes.mock.calls[0][0] as (codes: string[]) => string[];
+    expect(updater([])).toEqual(['sales_query']);
     expect(setInputValue).not.toHaveBeenCalled();
   });
 
@@ -819,7 +820,9 @@ describe('ChatView', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '选择技能 销售查询' }));
 
-    expect(setSelectedSkillCodes).toHaveBeenCalledWith(['sales_query']);
+    expect(setSelectedSkillCodes).toHaveBeenCalled();
+    const updater = setSelectedSkillCodes.mock.calls[0][0] as (codes: string[]) => string[];
+    expect(updater([])).toEqual(['sales_query']);
     expect(setInputValue).toHaveBeenCalledWith('');
   });
 
@@ -846,6 +849,31 @@ describe('ChatView', () => {
     expect(setSelectedSkillCodes).toHaveBeenCalled();
     const updater = setSelectedSkillCodes.mock.calls[0][0] as (codes: string[]) => string[];
     expect(updater(['sales_query'])).toEqual([]);
+  });
+
+  /**
+   * 技能列表应支持多选切换，点击不同技能时累积选中。
+   */
+  it('应支持技能多选累积', async () => {
+    const setSelectedSkillCodes = vi.fn();
+
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          setSelectedSkillCodes,
+        })}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '打开技能列表' }));
+    fireEvent.click(screen.getByRole('button', { name: '选择技能 销售查询' }));
+
+    expect(setSelectedSkillCodes).toHaveBeenCalled();
+    const updater = setSelectedSkillCodes.mock.calls[0][0] as (codes: string[]) => string[];
+    expect(updater([])).toEqual(['sales_query']);
+    expect(updater(['ticket_query'])).toEqual(['ticket_query', 'sales_query']);
   });
 
   /**

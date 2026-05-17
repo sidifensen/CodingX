@@ -9,6 +9,6 @@ backend/*.log
 /docs/
 logs/
 
-# desktop shell
-/desktop-shell/node_modules/
-/desktop-shell/dist/
+# frontend desktop host
+/frontend/desktop/node_modules/
+/frontend/desktop/dist/

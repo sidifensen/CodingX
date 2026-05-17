@@ -204,6 +204,19 @@ export interface AdminSkill {
   uploadedAt?: string;
 }
 
+export interface AdminSkillPackageEntry {
+  path: string;
+  name: string;
+  directory: boolean;
+  size?: number | null;
+}
+
+export interface AdminSkillPackageFileContent {
+  path: string;
+  content: string;
+  truncated: boolean;
+}
+
 /**
  * 统一封装管理端聊天运行时后台接口。
  */
@@ -461,6 +474,34 @@ export class AdminChatApi {
       method: 'POST',
       body: formData,
     });
+  }
+
+  /**
+   * 查询技能包目录树，用于资源管理器展示。
+   * @param id 技能主键。
+   * @returns 目录树条目列表。
+   */
+  static async listSkillPackageEntries(id: string | number): Promise<AdminSkillPackageEntry[]> {
+    return this.request<AdminSkillPackageEntry[]>(
+      `/api/admin/chat/skills/${encodeURIComponent(String(id))}/package/entries`,
+    );
+  }
+
+  /**
+   * 按路径读取技能包中的文本文件内容。
+   * @param id 技能主键。
+   * @param path 归档内相对路径。
+   * @returns 文件预览内容。
+   */
+  static async getSkillPackageFileContent(
+    id: string | number,
+    path: string,
+  ): Promise<AdminSkillPackageFileContent> {
+    const searchParams = new URLSearchParams();
+    searchParams.set('path', path);
+    return this.request<AdminSkillPackageFileContent>(
+      `/api/admin/chat/skills/${encodeURIComponent(String(id))}/package/file-content?${searchParams.toString()}`,
+    );
   }
 
   static async listMcpConfigs(): Promise<AdminMcpConfig[]> {

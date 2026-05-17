@@ -2,6 +2,8 @@ package com.codingx.chat.interfaces.controller;
 
 import com.codingx.chat.application.service.AdminChatSkillService;
 import com.codingx.chat.domain.model.ChatSkill;
+import com.codingx.chat.interfaces.response.AdminSkillPackageEntryResponse;
+import com.codingx.chat.interfaces.response.AdminSkillPackageFileContentResponse;
 import com.codingx.common.model.ApiResponse;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -48,6 +50,44 @@ public class AdminChatSkillController {
         @RequestParam(value = "category", required = false) String category
     ) {
         return ApiResponse.success(adminChatSkillService.uploadSkillPackage(file, category));
+    }
+
+    /**
+     * 返回技能包文件树，供管理端资源管理器按目录浏览。
+     * @param id 技能主键。
+     * @return 目录树条目列表。
+     */
+    @GetMapping("/{id}/package/entries")
+    public ApiResponse<List<AdminSkillPackageEntryResponse>> listPackageEntries(@PathVariable Long id) {
+        List<AdminSkillPackageEntryResponse> responses = adminChatSkillService.listPackageEntries(id)
+            .stream()
+            .map(entry -> new AdminSkillPackageEntryResponse(
+                entry.path(),
+                entry.name(),
+                entry.directory(),
+                entry.size()
+            ))
+            .toList();
+        return ApiResponse.success(responses);
+    }
+
+    /**
+     * 在线读取技能包中的文本文件内容，供管理端预览。
+     * @param id 技能主键。
+     * @param path 文件相对路径。
+     * @return 文件内容预览。
+     */
+    @GetMapping("/{id}/package/file-content")
+    public ApiResponse<AdminSkillPackageFileContentResponse> readPackageFileContent(
+        @PathVariable Long id,
+        @RequestParam("path") String path
+    ) {
+        AdminChatSkillService.SkillPackageFileContent content = adminChatSkillService.readPackageFileContent(id, path);
+        return ApiResponse.success(new AdminSkillPackageFileContentResponse(
+            content.path(),
+            content.content(),
+            content.truncated()
+        ));
     }
 
     @PutMapping("/{id}")

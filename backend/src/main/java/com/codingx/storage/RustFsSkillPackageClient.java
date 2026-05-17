@@ -5,9 +5,12 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
+import software.amazon.awssdk.core.ResponseBytes;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.CreateBucketRequest;
+import software.amazon.awssdk.services.s3.model.GetObjectRequest;
+import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 import software.amazon.awssdk.services.s3.model.HeadBucketRequest;
 import software.amazon.awssdk.services.s3.model.NoSuchBucketException;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
@@ -51,6 +54,23 @@ public class RustFsSkillPackageClient {
         return key;
     }
 
+    /**
+     * 根据对象键下载技能包字节。
+     * @param objectKey 对象键。
+     * @return 技能包字节。
+     */
+    public byte[] download(String objectKey) {
+        ensureBucketExists();
+        String normalizedObjectKey = StrUtil.blankToDefault(StrUtil.trim(objectKey), "");
+        ResponseBytes<GetObjectResponse> responseBytes = rustFsS3Client.getObjectAsBytes(
+            GetObjectRequest.builder()
+                .bucket(bucketName)
+                .key(normalizedObjectKey)
+                .build()
+        );
+        return responseBytes.asByteArray();
+    }
+
     private String buildObjectKey(String originalFilename) {
         String sanitizedName = StrUtil.removePrefix(originalFilename.trim(), "/");
         sanitizedName = sanitizedName.replace("\\", "_");
@@ -76,4 +96,3 @@ public class RustFsSkillPackageClient {
         }
     }
 }
-

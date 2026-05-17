@@ -12,6 +12,8 @@ vi.mock('../api/adminChatApi', () => ({
     createSkill: vi.fn(),
     updateSkill: vi.fn(),
     uploadSkillPackage: vi.fn(),
+    listSkillPackageEntries: vi.fn(),
+    getSkillPackageFileContent: vi.fn(),
   },
 }));
 
@@ -22,9 +24,10 @@ const skillFixture = [
     displayName: '销售查询',
     description: '查询销售汇总、排名、趋势与明细',
     category: '销售',
-    sourceType: 'built-in',
+    sourceType: 'uploaded',
     enabled: 1,
     sortNo: 1,
+    storageKey: 'chat-skills/packages/sales-query.zip',
   },
   {
     id: 7102,
@@ -52,6 +55,16 @@ describe('Skills page', () => {
       sourceType: 'uploaded',
       enabled: 1,
       sortNo: 3,
+    } as any);
+    vi.mocked(AdminChatApi.listSkillPackageEntries).mockResolvedValue([
+      { path: 'SKILL.md', name: 'SKILL.md', directory: false, size: 1200 },
+      { path: 'templates', name: 'templates', directory: true, size: null },
+      { path: 'templates/prompt.txt', name: 'prompt.txt', directory: false, size: 200 },
+    ] as any);
+    vi.mocked(AdminChatApi.getSkillPackageFileContent).mockResolvedValue({
+      path: 'SKILL.md',
+      content: '# Skill Manifest',
+      truncated: false,
     } as any);
   });
 
@@ -157,5 +170,31 @@ describe('Skills page', () => {
     await waitFor(() => {
       expect(AdminChatApi.listSkills).toHaveBeenCalledTimes(2);
     });
+  });
+
+  /**
+   * 技能管理页应支持列表模式，并可打开资源预览展示技能包文件内容。
+   */
+  it('supports list view and package preview explorer', async () => {
+    render(<Skills />);
+    await screen.findByText('/sales_query');
+
+    fireEvent.click(screen.getByRole('button', { name: '列表视图' }));
+    expect(screen.getByText('编码')).toBeInTheDocument();
+    expect(screen.getByText('状态')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '资源预览 sales_query' }));
+    const dialog = await screen.findByRole('dialog', { name: '技能包资源预览 sales_query' });
+    expect(within(dialog).getByText('文件目录')).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(AdminChatApi.listSkillPackageEntries).toHaveBeenCalledWith(7101);
+    });
+
+    expect((await within(dialog).findAllByText('SKILL.md')).length).toBeGreaterThan(0);
+    await waitFor(() => {
+      expect(AdminChatApi.getSkillPackageFileContent).toHaveBeenCalledWith(7101, 'SKILL.md');
+    });
+    expect(within(dialog).getByText('# Skill Manifest')).toBeInTheDocument();
   });
 });

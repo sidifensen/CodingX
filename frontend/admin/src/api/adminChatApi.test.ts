@@ -111,4 +111,33 @@ describe('AdminChatApi unauthorized handling', () => {
     expect(requestHeaders.get('Content-Type')).toBeNull();
     expect(requestInit.body).toBeInstanceOf(FormData);
   });
+
+  /**
+   * 技能包文件内容接口应按 query 参数传递归档内路径。
+   */
+  it('requests skill package file content with encoded path query', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          success: true,
+          code: 'OK',
+          message: 'success',
+          data: {
+            path: 'templates/prompt.txt',
+            content: 'prompt-body',
+            truncated: false,
+          },
+        }),
+        { status: 200 },
+      ),
+    );
+
+    const response = await AdminChatApi.getSkillPackageFileContent(7110, 'templates/prompt.txt');
+
+    expect(response.path).toBe('templates/prompt.txt');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const requestUrl = String(fetchMock.mock.calls[0][0]);
+    expect(requestUrl).toContain('/api/admin/chat/skills/7110/package/file-content?');
+    expect(requestUrl).toContain('path=templates%2Fprompt.txt');
+  });
 });

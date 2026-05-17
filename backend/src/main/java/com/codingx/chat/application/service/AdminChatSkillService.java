@@ -2,6 +2,8 @@ package com.codingx.chat.application.service;
 
 import cn.hutool.core.util.IdUtil;
 import cn.hutool.crypto.digest.DigestUtil;
+import cn.hutool.core.io.IoUtil;
+import cn.hutool.core.util.ArrayUtil;
 import cn.hutool.core.util.StrUtil;
 import com.codingx.chat.domain.model.ChatSkill;
 import com.codingx.chat.domain.repository.ChatSkillRepository;
@@ -13,6 +15,9 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.LinkedHashSet;
 import java.util.Locale;
 import java.util.List;
 import java.util.zip.ZipEntry;
@@ -28,6 +33,8 @@ import cn.dev33.satoken.stp.StpUtil;
 @Service
 @RequiredArgsConstructor
 public class AdminChatSkillService {
+
+    private static final int MAX_PREVIEW_BYTES = 128 * 1024;
 
     private final ChatSkillRepository chatSkillRepository;
     private final RustFsSkillPackageClient rustFsSkillPackageClient;
@@ -152,6 +159,80 @@ public class AdminChatSkillService {
         }
     }
 
+    /**
+     * 读取技能包目录树，用于管理端资源管理器展示。
+     * @param id 技能主键。
+     * @return 技能包条目列表（目录优先）。
+     */
+    public List<SkillPackageEntry> listPackageEntries(Long id) {
+        ChatSkill skill = requireSkillById(id);
+        byte[] bytes = downloadSkillPackage(skill);
+        LinkedHashSet<String> directoryPaths = new LinkedHashSet<>();
+        List<SkillPackageEntry> fileEntries = new ArrayList<>();
+        try (ZipInputStream zipInputStream = new ZipInputStream(new ByteArrayInputStream(bytes), StandardCharsets.UTF_8)) {
+            ZipEntry zipEntry;
+            while ((zipEntry = zipInputStream.getNextEntry()) != null) {
+                String normalizedPath = normalizeArchivePath(zipEntry.getName());
+                if (StrUtil.isBlank(normalizedPath)) {
+                    continue;
+                }
+                collectDirectoryPaths(normalizedPath, directoryPaths);
+                if (!zipEntry.isDirectory()) {
+                    fileEntries.add(new SkillPackageEntry(normalizedPath, extractName(normalizedPath), false, zipEntry.getSize()));
+                }
+            }
+        } catch (IOException exception) {
+            throw new BusinessException("CHAT_SKILL_PACKAGE_PARSE_FAILED", "技能包目录解析失败");
+        }
+        List<SkillPackageEntry> entries = new ArrayList<>();
+        for (String directoryPath : directoryPaths) {
+            entries.add(new SkillPackageEntry(directoryPath, extractName(directoryPath), true, null));
+        }
+        entries.addAll(fileEntries);
+        entries.sort(Comparator
+            .comparing(SkillPackageEntry::directory).reversed()
+            .thenComparing(SkillPackageEntry::path));
+        return entries;
+    }
+
+    /**
+     * 读取技能包内文本文件内容，默认超限截断，避免管理端预览卡顿。
+     * @param id 技能主键。
+     * @param path 归档内文件路径。
+     * @return 预览内容与截断标记。
+     */
+    public SkillPackageFileContent readPackageFileContent(Long id, String path) {
+        ChatSkill skill = requireSkillById(id);
+        String normalizedPath = normalizeArchivePath(path);
+        if (StrUtil.isBlank(normalizedPath)) {
+            throw new BusinessException("CHAT_SKILL_PACKAGE_INVALID_PATH", "文件路径不能为空");
+        }
+        byte[] bytes = downloadSkillPackage(skill);
+        try (ZipInputStream zipInputStream = new ZipInputStream(new ByteArrayInputStream(bytes), StandardCharsets.UTF_8)) {
+            ZipEntry zipEntry;
+            while ((zipEntry = zipInputStream.getNextEntry()) != null) {
+                if (zipEntry.isDirectory()) {
+                    continue;
+                }
+                String entryPath = normalizeArchivePath(zipEntry.getName());
+                if (!StrUtil.equals(entryPath, normalizedPath)) {
+                    continue;
+                }
+                byte[] entryBytes = IoUtil.readBytes(zipInputStream);
+                if (looksLikeBinary(entryBytes)) {
+                    throw new BusinessException("CHAT_SKILL_PACKAGE_BINARY_FILE", "该文件为二进制文件，暂不支持在线预览");
+                }
+                boolean truncated = entryBytes.length > MAX_PREVIEW_BYTES;
+                int previewLength = Math.min(entryBytes.length, MAX_PREVIEW_BYTES);
+                String content = new String(ArrayUtil.sub(entryBytes, 0, previewLength), StandardCharsets.UTF_8);
+                return new SkillPackageFileContent(normalizedPath, content, truncated);
+            }
+        } catch (IOException exception) {
+            throw new BusinessException("CHAT_SKILL_PACKAGE_PARSE_FAILED", "技能包文件读取失败");
+        }
+        throw new NotFoundException("技能包文件不存在");
+    }
+
     private void validateRequired(ChatSkill request) {
         if (request == null) {
             throw new BusinessException("CHAT_SKILL_INVALID", "技能信息不能为空");
@@ -251,6 +332,69 @@ public class AdminChatSkillService {
         return normalized;
     }
 
+    private ChatSkill requireSkillById(Long id) {
+        ChatSkill skill = chatSkillRepository.findById(id);
+        if (skill == null) {
+            throw new NotFoundException("技能不存在");
+        }
+        if (StrUtil.isBlank(skill.getStorageKey())) {
+            throw new BusinessException("CHAT_SKILL_PACKAGE_NOT_FOUND", "该技能没有可预览的技能包");
+        }
+        return skill;
+    }
+
+    private byte[] downloadSkillPackage(ChatSkill skill) {
+        try {
+            return rustFsSkillPackageClient.download(skill.getStorageKey());
+        } catch (Exception exception) {
+            throw new BusinessException("CHAT_SKILL_PACKAGE_DOWNLOAD_FAILED", "技能包下载失败");
+        }
+    }
+
+    private void collectDirectoryPaths(String filePath, LinkedHashSet<String> directories) {
+        String current = filePath;
+        int index = current.lastIndexOf('/');
+        while (index > 0) {
+            current = current.substring(0, index);
+            directories.add(current);
+            index = current.lastIndexOf('/');
+        }
+    }
+
+    private String normalizeArchivePath(String originalPath) {
+        String normalizedPath = StrUtil.blankToDefault(originalPath, "")
+            .replace("\\", "/")
+            .trim();
+        normalizedPath = StrUtil.removePrefix(normalizedPath, "./");
+        normalizedPath = StrUtil.removePrefix(normalizedPath, "/");
+        normalizedPath = StrUtil.removeSuffix(normalizedPath, "/");
+        return normalizedPath;
+    }
+
+    private String extractName(String path) {
+        int index = path.lastIndexOf('/');
+        if (index < 0) {
+            return path;
+        }
+        return path.substring(index + 1);
+    }
+
+    private boolean looksLikeBinary(byte[] bytes) {
+        int sampleLength = Math.min(bytes.length, 1024);
+        for (int index = 0; index < sampleLength; index++) {
+            if (bytes[index] == 0) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private record SkillManifest(String name, String description) {
+    }
+
+    public record SkillPackageEntry(String path, String name, boolean directory, Long size) {
+    }
+
+    public record SkillPackageFileContent(String path, String content, boolean truncated) {
     }
 }

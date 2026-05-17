@@ -3,6 +3,7 @@ package com.codingx.chat.application.service;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
@@ -15,6 +16,8 @@ import com.codingx.common.exception.BusinessException;
 import com.codingx.storage.RustFsSkillPackageClient;
 import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDateTime;
+import java.util.List;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 import org.junit.jupiter.api.Test;
@@ -86,6 +89,77 @@ class AdminChatSkillServiceTest {
         }
     }
 
+    /**
+     * 已上传技能应支持读取包内目录树，目录在前、文件在后。
+     */
+    @Test
+    void listPackageEntriesReturnsDirectoriesAndFiles() {
+        ChatSkill uploadedSkill = ChatSkill.builder()
+            .id(7101L)
+            .skillCode("meeting-notes")
+            .displayName("meeting-notes")
+            .storageKey("chat-skills/packages/meeting-notes.zip")
+            .createdAt(LocalDateTime.now())
+            .updatedAt(LocalDateTime.now())
+            .deleted(0)
+            .build();
+        when(chatSkillRepository.findById(7101L)).thenReturn(uploadedSkill);
+        when(rustFsSkillPackageClient.download("chat-skills/packages/meeting-notes.zip"))
+            .thenReturn(buildSkillZipWithNestedFiles());
+
+        List<AdminChatSkillService.SkillPackageEntry> entries = adminChatSkillService.listPackageEntries(7101L);
+
+        assertTrue(entries.stream().anyMatch(entry -> entry.directory() && "templates".equals(entry.path())));
+        assertTrue(entries.stream().anyMatch(entry -> !entry.directory() && "SKILL.md".equals(entry.path())));
+        assertTrue(entries.stream().anyMatch(entry -> !entry.directory() && "templates/prompt.txt".equals(entry.path())));
+    }
+
+    /**
+     * 包内文本文件预览应返回内容并标记是否截断。
+     */
+    @Test
+    void readPackageFileContentReturnsPlainTextContent() {
+        ChatSkill uploadedSkill = ChatSkill.builder()
+            .id(7102L)
+            .skillCode("meeting-notes")
+            .displayName("meeting-notes")
+            .storageKey("chat-skills/packages/meeting-notes.zip")
+            .createdAt(LocalDateTime.now())
+            .updatedAt(LocalDateTime.now())
+            .deleted(0)
+            .build();
+        when(chatSkillRepository.findById(7102L)).thenReturn(uploadedSkill);
+        when(rustFsSkillPackageClient.download("chat-skills/packages/meeting-notes.zip"))
+            .thenReturn(buildSkillZipWithNestedFiles());
+
+        AdminChatSkillService.SkillPackageFileContent content = adminChatSkillService.readPackageFileContent(7102L, "templates/prompt.txt");
+
+        assertEquals("templates/prompt.txt", content.path());
+        assertEquals("prompt-template", content.content());
+        assertEquals(false, content.truncated());
+    }
+
+    /**
+     * 二进制文件不允许在线预览，避免前端展示乱码。
+     */
+    @Test
+    void readPackageFileContentThrowsWhenBinaryFile() {
+        ChatSkill uploadedSkill = ChatSkill.builder()
+            .id(7103L)
+            .skillCode("meeting-notes")
+            .displayName("meeting-notes")
+            .storageKey("chat-skills/packages/meeting-notes.zip")
+            .createdAt(LocalDateTime.now())
+            .updatedAt(LocalDateTime.now())
+            .deleted(0)
+            .build();
+        when(chatSkillRepository.findById(7103L)).thenReturn(uploadedSkill);
+        when(rustFsSkillPackageClient.download("chat-skills/packages/meeting-notes.zip"))
+            .thenReturn(buildSkillZipWithBinaryFile());
+
+        assertThrows(BusinessException.class, () -> adminChatSkillService.readPackageFileContent(7103L, "assets/logo.png"));
+    }
+
     private byte[] buildSkillZip(String name, String description) {
         String skillMarkdown = """
             ---
@@ -124,5 +198,56 @@ class AdminChatSkillServiceTest {
             throw new RuntimeException("构造测试压缩包失败", exception);
         }
     }
-}
 
+    private byte[] buildSkillZipWithNestedFiles() {
+        try {
+            ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+            try (ZipOutputStream zipOutputStream = new ZipOutputStream(outputStream, StandardCharsets.UTF_8)) {
+                zipOutputStream.putNextEntry(new ZipEntry("SKILL.md"));
+                zipOutputStream.write("""
+                    ---
+                    name: meeting-notes
+                    description: meeting notes skill
+                    ---
+                    # meeting-notes
+                    """.getBytes(StandardCharsets.UTF_8));
+                zipOutputStream.closeEntry();
+
+                zipOutputStream.putNextEntry(new ZipEntry("templates/prompt.txt"));
+                zipOutputStream.write("prompt-template".getBytes(StandardCharsets.UTF_8));
+                zipOutputStream.closeEntry();
+
+                zipOutputStream.putNextEntry(new ZipEntry("docs/readme.md"));
+                zipOutputStream.write("# docs".getBytes(StandardCharsets.UTF_8));
+                zipOutputStream.closeEntry();
+            }
+            return outputStream.toByteArray();
+        } catch (Exception exception) {
+            throw new RuntimeException("构造测试压缩包失败", exception);
+        }
+    }
+
+    private byte[] buildSkillZipWithBinaryFile() {
+        try {
+            ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+            try (ZipOutputStream zipOutputStream = new ZipOutputStream(outputStream, StandardCharsets.UTF_8)) {
+                zipOutputStream.putNextEntry(new ZipEntry("SKILL.md"));
+                zipOutputStream.write("""
+                    ---
+                    name: binary-skill
+                    description: binary test skill
+                    ---
+                    # binary-skill
+                    """.getBytes(StandardCharsets.UTF_8));
+                zipOutputStream.closeEntry();
+
+                zipOutputStream.putNextEntry(new ZipEntry("assets/logo.png"));
+                zipOutputStream.write(new byte[] {1, 2, 0, 3, 4});
+                zipOutputStream.closeEntry();
+            }
+            return outputStream.toByteArray();
+        } catch (Exception exception) {
+            throw new RuntimeException("构造测试压缩包失败", exception);
+        }
+    }
+}

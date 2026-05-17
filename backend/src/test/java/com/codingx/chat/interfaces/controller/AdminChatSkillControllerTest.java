@@ -174,6 +174,46 @@ class AdminChatSkillControllerTest {
     }
 
     /**
+     * 技能包目录树接口应返回目录与文件条目。
+     */
+    @Test
+    void listPackageEntriesReturnsResourceTree() throws Exception {
+        when(adminChatSkillService.listPackageEntries(7110L)).thenReturn(List.of(
+            new AdminChatSkillService.SkillPackageEntry("templates", "templates", true, null),
+            new AdminChatSkillService.SkillPackageEntry("templates/prompt.txt", "prompt.txt", false, 128L)
+        ));
+
+        mockMvc().perform(get("/api/admin/chat/skills/7110/package/entries"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.success").value(true))
+            .andExpect(jsonPath("$.data[0].path").value("templates"))
+            .andExpect(jsonPath("$.data[0].directory").value(true))
+            .andExpect(jsonPath("$.data[1].name").value("prompt.txt"))
+            .andExpect(jsonPath("$.data[1].size").value(128));
+    }
+
+    /**
+     * 技能包文件内容接口应返回文本内容与截断标识。
+     */
+    @Test
+    void readPackageFileContentReturnsTextPreview() throws Exception {
+        when(adminChatSkillService.readPackageFileContent(7110L, "templates/prompt.txt"))
+            .thenReturn(new AdminChatSkillService.SkillPackageFileContent(
+                "templates/prompt.txt",
+                "prompt-content",
+                false
+            ));
+
+        mockMvc().perform(get("/api/admin/chat/skills/7110/package/file-content")
+                .param("path", "templates/prompt.txt"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.success").value(true))
+            .andExpect(jsonPath("$.data.path").value("templates/prompt.txt"))
+            .andExpect(jsonPath("$.data.content").value("prompt-content"))
+            .andExpect(jsonPath("$.data.truncated").value(false));
+    }
+
+    /**
      * 创建 MockMvc 并挂载全局异常处理器，保证错误响应格式一致。
      * @return 测试用 MockMvc。
      */

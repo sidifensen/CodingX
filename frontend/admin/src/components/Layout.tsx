@@ -212,9 +212,10 @@ export function Layout({ onLogout, isAuthSubmitting }: LayoutProps) {
           <AnimatePresence mode="wait">
             <motion.div
               key={location.pathname}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
+              // 关键约束：路由容器避免使用 y 位移动画，防止 transform 进入 scrollable overflow 导致主容器出现“轻微可滚动”。
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
               transition={{ duration: 0.2 }}
               // 步骤：为需要锁定视口高度的页面提供稳定的 100% 高度参照，同时保留普通页面在 main 内继续滚动的能力。
               className="h-full min-h-full"

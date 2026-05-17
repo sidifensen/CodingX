@@ -7,12 +7,6 @@ import { MemoryRouter } from 'react-router-dom';
 import { AdminChatApi } from '../../api/adminChatApi';
 import { TracePage } from './TracePage';
 
-class MockResizeObserver {
-  observe() {}
-  unobserve() {}
-  disconnect() {}
-}
-
 vi.mock('../../api/adminChatApi', () => ({
   AdminChatApi: {
     listTraces: vi.fn(),
@@ -22,7 +16,6 @@ vi.mock('../../api/adminChatApi', () => ({
 
 describe('TracePage', () => {
   beforeEach(() => {
-    vi.stubGlobal('ResizeObserver', MockResizeObserver);
     vi.mocked(AdminChatApi.listTraces).mockResolvedValue({
       records: [
         {
@@ -47,7 +40,6 @@ describe('TracePage', () => {
   afterEach(() => {
     cleanup();
     vi.clearAllMocks();
-    vi.unstubAllGlobals();
   });
 
   it('renders list header, metrics and run table columns', async () => {
@@ -214,7 +206,7 @@ describe('TracePage', () => {
     expect(screen.getByText('chat-entry')).toBeInTheDocument();
   });
 
-  it('uses full-expand mode when viewport has enough space', async () => {
+  it('renders table section with internal scroll container', async () => {
     render(
       <MemoryRouter>
         <TracePage />
@@ -223,7 +215,7 @@ describe('TracePage', () => {
 
     await screen.findByRole('heading', { name: '链路追踪' });
     const scrollContainer = screen.getByTestId('trace-runs-scroll');
-    expect(scrollContainer).toHaveClass('overflow-x-auto');
-    expect(scrollContainer).toHaveAttribute('data-scroll-mode', 'full-expand');
+    expect(scrollContainer).toHaveClass('flex-1');
+    expect(scrollContainer).toHaveClass('overflow-auto');
   });
 });

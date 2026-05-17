@@ -15,11 +15,6 @@ interface TraceRunsTableProps {
   onChangePage: (page: number) => void;
 }
 
-const TABLE_SCROLL_MIN_HEIGHT = 260;
-const TABLE_SCROLL_BOTTOM_GAP = 16;
-const TABLE_SCROLL_RELAX_VIEWPORT = 1000;
-const TABLE_SCROLL_RELAX_DELTA = 120;
-
 /**
  * Trace 运行记录表格，承载列表页主信息与分页导航。
  */
@@ -33,88 +28,19 @@ export function TraceRunsTable({
 }: TraceRunsTableProps) {
   const showEmptyState = !loading && runs.length === 0;
   const showSkeletonRows = loading && runs.length === 0;
-  const scrollContainerRef = React.useRef<HTMLDivElement | null>(null);
-  const tableRef = React.useRef<HTMLTableElement | null>(null);
-  const footerRef = React.useRef<HTMLDivElement | null>(null);
-  const [maxTableHeight, setMaxTableHeight] = React.useState<number | null>(null);
-
-  const updateTableScrollMode = React.useCallback(() => {
-    const scrollContainer = scrollContainerRef.current;
-    const tableElement = tableRef.current;
-    const footerElement = footerRef.current;
-    if (!scrollContainer || !tableElement || !footerElement) {
-      return;
-    }
-
-    const previousMaxHeight = scrollContainer.style.maxHeight;
-    const previousOverflowY = scrollContainer.style.overflowY;
-    scrollContainer.style.maxHeight = 'none';
-    scrollContainer.style.overflowY = 'visible';
-
-    const naturalTableHeight = tableElement.scrollHeight;
-    const scrollTop = scrollContainer.getBoundingClientRect().top;
-    const footerHeight = footerElement.getBoundingClientRect().height;
-    const availableHeight = Math.floor(window.innerHeight - scrollTop - footerHeight - TABLE_SCROLL_BOTTOM_GAP);
-
-    scrollContainer.style.maxHeight = previousMaxHeight;
-    scrollContainer.style.overflowY = previousOverflowY;
-
-    const overflowDelta = naturalTableHeight - availableHeight;
-    const canRelaxToPageScroll =
-      window.innerHeight >= TABLE_SCROLL_RELAX_VIEWPORT && overflowDelta <= TABLE_SCROLL_RELAX_DELTA;
-
-    if (availableHeight <= 0 || overflowDelta <= 0 || canRelaxToPageScroll) {
-      setMaxTableHeight(null);
-      return;
-    }
-
-    setMaxTableHeight(Math.max(availableHeight, TABLE_SCROLL_MIN_HEIGHT));
-  }, []);
-
-  React.useLayoutEffect(() => {
-    updateTableScrollMode();
-  }, [updateTableScrollMode, runs, loading, current, pages, total]);
-
-  React.useEffect(() => {
-    const handleResize = () => updateTableScrollMode();
-    window.addEventListener('resize', handleResize);
-
-    const Observer = window.ResizeObserver;
-    const observer = Observer ? new Observer(() => updateTableScrollMode()) : null;
-    if (observer && scrollContainerRef.current) {
-      observer.observe(scrollContainerRef.current);
-    }
-    if (observer && tableRef.current) {
-      observer.observe(tableRef.current);
-    }
-    if (observer && footerRef.current) {
-      observer.observe(footerRef.current);
-    }
-
-    return () => {
-      window.removeEventListener('resize', handleResize);
-      observer?.disconnect();
-    };
-  }, [updateTableScrollMode]);
 
   return (
-    <section className="rounded-xl border border-border-hairline bg-surface-container-lowest overflow-hidden shadow-sm">
-      <div className="border-b border-border-hairline px-lg py-md">
+    <section className="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-border-hairline bg-surface-container-lowest shadow-sm">
+      <div className="shrink-0 border-b border-border-hairline px-lg py-md">
         <h2 className="font-title-md text-title-md text-ink">运行列表</h2>
         <p className="mt-1 text-secondary">按时间倒序查看运行记录，通过操作按钮进入独立详情页</p>
       </div>
 
       <div
         data-testid="trace-runs-scroll"
-        data-scroll-mode={maxTableHeight ? 'inner-scroll' : 'full-expand'}
-        ref={scrollContainerRef}
-        className={clsx(
-          'relative overflow-x-auto',
-          maxTableHeight ? 'overflow-y-auto' : 'overflow-y-visible',
-        )}
-        style={maxTableHeight ? { maxHeight: `${maxTableHeight}px` } : undefined}
+        className="relative min-h-0 flex-1 overflow-auto"
       >
-        <table ref={tableRef} className="w-full min-w-[1180px] border-collapse text-left">
+        <table className="w-full min-w-[1180px] border-collapse text-left">
           <thead>
             <tr className="bg-surface-container-low border-b border-border-hairline">
               <th className="sticky top-0 z-10 bg-surface-container-low px-lg py-md font-label-caps text-label-caps text-secondary">
@@ -209,10 +135,7 @@ export function TraceRunsTable({
         ) : null}
       </div>
 
-      <div
-        ref={footerRef}
-        className="flex items-center justify-between gap-sm border-t border-border-hairline bg-surface-container-low px-lg py-sm"
-      >
+      <div className="shrink-0 flex items-center justify-between gap-sm border-t border-border-hairline bg-surface-container-low px-lg py-sm">
         <p className="text-secondary text-[12px]">
           第 {current} / {Math.max(pages, 1)} 页，共 {total.toLocaleString('zh-CN')} 条
         </p>

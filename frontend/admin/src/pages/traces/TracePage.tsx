@@ -125,8 +125,8 @@ export function TracePage() {
   };
 
   return (
-    <div className="p-lg w-full space-y-lg">
-      <header className="flex flex-col gap-sm lg:flex-row lg:items-end lg:justify-between">
+    <div className="box-border flex h-full min-h-0 w-full flex-col gap-lg overflow-hidden p-lg">
+      <header className="shrink-0 flex flex-col gap-sm lg:flex-row lg:items-end lg:justify-between">
         <div>
           <h2 className="font-headline-md text-headline-md text-ink">链路追踪</h2>
           <p className="text-secondary mt-1">
@@ -157,7 +157,7 @@ export function TracePage() {
         </div>
       </header>
 
-      <section className="grid grid-cols-1 gap-sm xl:grid-cols-4">
+      <section className="shrink-0 grid grid-cols-1 gap-sm xl:grid-cols-4">
         {statCards.map((item) => (
           <TraceStatCard
             key={item.key}
@@ -170,14 +170,16 @@ export function TracePage() {
         ))}
       </section>
 
-      <TraceRunsTable
-        runs={runs}
-        loading={loading}
-        current={current}
-        pages={pages}
-        total={total}
-        onChangePage={(nextPage) => setPageNo(nextPage)}
-      />
+      <div className="min-h-0 flex-1">
+        <TraceRunsTable
+          runs={runs}
+          loading={loading}
+          current={current}
+          pages={pages}
+          total={total}
+          onChangePage={(nextPage) => setPageNo(nextPage)}
+        />
+      </div>
     </div>
   );
 }

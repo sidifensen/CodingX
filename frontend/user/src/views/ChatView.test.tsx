@@ -874,6 +874,32 @@ describe('ChatView', () => {
   });
 
   /**
+   * 技能标签与输入文本应共享一个滚动容器，保证超过多行时两者一起滚动。
+   */
+  it('应让技能标签与输入文本共用同一滚动容器并使用多行输入框', async () => {
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          selectedSkillCodes: ['sales_query'],
+          inputValue: '第一行\n第二行',
+        })}
+      />,
+    );
+
+    const inlineTokenContainer = screen.getByTestId('input-inline-skill-tokens');
+    const selectedChip = screen.getByTestId('selected-skill-chip-sales_query');
+    const textarea = screen.getByPlaceholderText('输入问题，或先选择技能/MCP...');
+
+    expect(textarea.tagName).toBe('TEXTAREA');
+    expect(textarea).toHaveAttribute('rows', '1');
+    expect(inlineTokenContainer).toHaveAttribute('data-max-lines', '9');
+    expect(inlineTokenContainer).toContainElement(selectedChip);
+    expect(inlineTokenContainer).toContainElement(textarea);
+  });
+
+  /**
    * MCP 与技能应共用同一个浮层区域，并且浮层在输入区上方弹出，不应挤压输入区。
    */
   it('应在输入区上方复用同一个选择浮层', async () => {

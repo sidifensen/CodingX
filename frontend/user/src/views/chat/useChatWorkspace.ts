@@ -101,7 +101,8 @@ export function useChatWorkspace(isAuthenticated: boolean) {
       ]);
       setSampleQuestions(nextSampleQuestions);
       setAvailableSkills(nextSkills);
-      setSelectedSkillCodes(nextSkills.map((item) => item.skillCode));
+      // 步骤：默认不预选任何技能，避免首次进入时把全部技能无差别注入上下文。
+      setSelectedSkillCodes([]);
       setAvailableMcps(nextMcps);
       setSelectedMcpCodes(nextMcps.map((item) => item.mcpCode));
       setMcpConnected(nextMcps.length > 0);

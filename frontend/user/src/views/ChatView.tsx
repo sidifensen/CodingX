@@ -83,7 +83,7 @@ export default function ChatView({
   const [skillSearchKeyword, setSkillSearchKeyword] = React.useState('');
   const [skillSelectorSource, setSkillSelectorSource] = React.useState<'button' | 'slash' | null>(null);
   const selectorLayerRef = React.useRef<HTMLDivElement | null>(null);
-  const chatInputRef = React.useRef<HTMLInputElement | null>(null);
+  const chatInputRef = React.useRef<HTMLTextAreaElement | null>(null);
 
   /**
    * 过滤技能列表，支持名称与编码模糊检索。
@@ -207,11 +207,28 @@ export default function ChatView({
   }, [messages]);
 
   /**
-   * 统一处理底部输入提交。
-   * @param event 表单事件。
+   * 根据输入内容动态计算输入框高度，保持 1 行起步、最多 9 行后内部滚动。
    */
-  const handleSubmit = async (event: React.FormEvent) => {
-    event.preventDefault();
+  React.useEffect(() => {
+    const textarea = chatInputRef.current;
+    if (!textarea) {
+      return;
+    }
+    // 步骤：先重置为 auto，确保读取 scrollHeight 时拿到真实内容高度。
+    textarea.style.height = 'auto';
+    const computedStyle = window.getComputedStyle(textarea);
+    const lineHeight = Number.parseFloat(computedStyle.lineHeight || '24') || 24;
+    const verticalPadding = Number.parseFloat(computedStyle.paddingTop || '0') + Number.parseFloat(computedStyle.paddingBottom || '0');
+    const maxHeight = lineHeight * 9 + verticalPadding;
+    const nextHeight = Math.min(textarea.scrollHeight, maxHeight);
+    textarea.style.height = `${Math.max(nextHeight, lineHeight + verticalPadding)}px`;
+    textarea.style.overflowY = textarea.scrollHeight > maxHeight ? 'auto' : 'hidden';
+  }, [inputValue, selectedSkillTags.length]);
+
+  /**
+   * 统一执行输入提交，供按钮、回车键与表单提交复用同一逻辑。
+   */
+  const submitCurrentInput = async () => {
     if (!inputValue.trim()) {
       return;
     }
@@ -220,6 +237,15 @@ export default function ChatView({
       return;
     }
     await submitMessage();
+  };
+
+  /**
+   * 统一处理底部输入提交。
+   * @param event 表单事件。
+   */
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    await submitCurrentInput();
   };
 
   // 步骤：仅当没有选中任何真实会话时才展示“新建对话”首页；避免空历史会话被误判为未跳转。
@@ -537,38 +563,47 @@ export default function ChatView({
                     {/* 步骤：把技能标签内嵌到输入框区域，保证交互入口与输入内容处于同一视觉容器。 */}
                     <div
                       data-testid="input-inline-skill-tokens"
-                      className="flex min-h-8 w-full flex-wrap items-center gap-1.5 rounded-xl bg-transparent px-0.5 py-1"
+                      data-max-lines="9"
+                      className="max-h-[calc(1.5rem*9+1rem)] w-full overflow-y-auto rounded-xl bg-transparent px-0.5 py-1"
                     >
-                      {selectedSkillTags.map((tag) => (
-                        <span
-                          key={tag.skillCode}
-                          data-testid={`selected-skill-chip-${tag.skillCode}`}
-                          className="inline-flex h-6 max-w-[220px] items-center gap-1 rounded-full border border-border bg-surface-container px-2 text-xs text-foreground"
-                        >
-                          <Sparkles
-                            size={12}
-                            data-testid={`selected-skill-chip-icon-${tag.skillCode}`}
-                            className="shrink-0 text-muted"
-                          />
-                          <span className="truncate">{tag.displayName}</span>
-                          <button
-                            type="button"
-                            aria-label={`移除技能 ${tag.displayName}`}
-                            onClick={() => removeSkillTag(tag.skillCode)}
-                            className="inline-flex h-4 w-4 items-center justify-center rounded-full text-muted transition-colors hover:bg-surface-high hover:text-foreground"
+                      <div className="flex min-h-8 w-full flex-wrap items-start gap-1.5">
+                        {selectedSkillTags.map((tag) => (
+                          <span
+                            key={tag.skillCode}
+                            data-testid={`selected-skill-chip-${tag.skillCode}`}
+                            className="inline-flex h-6 max-w-[220px] items-center gap-1 rounded-full border border-border bg-surface-container px-2 text-xs text-foreground"
                           >
-                            ×
-                          </button>
-                        </span>
-                      ))}
-                      <input
-                        ref={chatInputRef}
-                        type="text"
-                        value={inputValue}
-                        onChange={(event) => setInputValue(event.target.value)}
-                        placeholder="输入问题，或先选择技能/MCP..."
-                        className="h-8 min-w-[180px] flex-1 bg-transparent text-[14px] text-foreground outline-none placeholder:text-muted"
-                      />
+                            <Sparkles
+                              size={12}
+                              data-testid={`selected-skill-chip-icon-${tag.skillCode}`}
+                              className="shrink-0 text-muted"
+                            />
+                            <span className="truncate">{tag.displayName}</span>
+                            <button
+                              type="button"
+                              aria-label={`移除技能 ${tag.displayName}`}
+                              onClick={() => removeSkillTag(tag.skillCode)}
+                              className="inline-flex h-4 w-4 items-center justify-center rounded-full text-muted transition-colors hover:bg-surface-high hover:text-foreground"
+                            >
+                              ×
+                            </button>
+                          </span>
+                        ))}
+                        <textarea
+                          ref={chatInputRef}
+                          value={inputValue}
+                          onChange={(event) => setInputValue(event.target.value)}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter' && !event.shiftKey) {
+                              event.preventDefault();
+                              void submitCurrentInput();
+                            }
+                          }}
+                          rows={1}
+                          placeholder="输入问题，或先选择技能/MCP..."
+                          className="min-h-8 min-w-[180px] flex-1 resize-none bg-transparent text-[14px] leading-6 text-foreground outline-none placeholder:text-muted"
+                        />
+                      </div>
                     </div>
                   </div>
                   <button

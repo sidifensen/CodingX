@@ -26,6 +26,11 @@ public final class ErrorMessageCatalog {
     public static final String VALIDATION_ERROR = "请求参数校验失败";
 
     /**
+     * 请求资源不存在通用提示。
+     */
+    public static final String RESOURCE_NOT_FOUND = "请求的资源不存在";
+
+    /**
      * 账号密码缺失提示。
      */
     public static final String LOGIN_REQUIRED_CREDENTIALS = "请输入账号和密码";

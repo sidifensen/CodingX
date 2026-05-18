@@ -23,7 +23,7 @@ import org.springframework.web.multipart.MultipartFile;
  * 提供聊天技能后台管理接口。
  */
 @RestController
-@RequestMapping("/api/admin/chat/skills")
+@RequestMapping("/api/admin/skills")
 @RequiredArgsConstructor
 public class AdminChatSkillController {
 

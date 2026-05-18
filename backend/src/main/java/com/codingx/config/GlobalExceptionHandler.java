@@ -17,6 +17,8 @@ import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.servlet.NoHandlerFoundException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 /**
  * 负责统一处理后端异常：记录结构化中文日志，并返回可直接给前端展示的中文错误信息。
@@ -79,6 +81,24 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(NotFoundException.class)
     public ResponseEntity<ApiResponse<Void>> handleNotFound(NotFoundException exception, HttpServletRequest request) {
         return buildResponse(HttpStatus.NOT_FOUND, exception.getCode(), exception.getMessage(), exception, request, false);
+    }
+
+    /**
+     * 处理请求路由不存在或静态资源不存在异常，统一返回 404。
+     * @param exception 未命中路由异常。
+     * @param request 当前请求。
+     * @return 标准错误响应。
+     */
+    @ExceptionHandler({NoHandlerFoundException.class, NoResourceFoundException.class})
+    public ResponseEntity<ApiResponse<Void>> handleNoRoute(Exception exception, HttpServletRequest request) {
+        return buildResponse(
+            HttpStatus.NOT_FOUND,
+            "RESOURCE_NOT_FOUND",
+            ErrorMessageCatalog.RESOURCE_NOT_FOUND,
+            exception,
+            request,
+            false
+        );
     }
 
     /**

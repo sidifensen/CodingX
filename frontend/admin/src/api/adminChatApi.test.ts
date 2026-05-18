@@ -105,7 +105,7 @@ describe('AdminChatApi unauthorized handling', () => {
     expect(result.records).toHaveLength(1);
     expect(result.total).toBe(1);
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(String(fetchMock.mock.calls[0][0])).toContain('/api/admin/chat/skills?current=1&size=10');
+    expect(String(fetchMock.mock.calls[0][0])).toContain('/api/admin/skills?current=1&size=10');
   });
 
   /**
@@ -167,7 +167,7 @@ describe('AdminChatApi unauthorized handling', () => {
     expect(response.path).toBe('templates/prompt.txt');
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const requestUrl = String(fetchMock.mock.calls[0][0]);
-    expect(requestUrl).toContain('/api/admin/chat/skills/7110/package/file-content?');
+    expect(requestUrl).toContain('/api/admin/skills/7110/package/file-content?');
     expect(requestUrl).toContain('path=templates%2Fprompt.txt');
   });
 });

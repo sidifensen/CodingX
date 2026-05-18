@@ -472,36 +472,36 @@ export class AdminChatApi {
   }
 
   static async listMcpTools(): Promise<AdminMcpToolView[]> {
-    return this.request<AdminMcpToolView[]>('/api/admin/chat/mcps/tools');
+    return this.request<AdminMcpToolView[]>('/api/admin/mcps/tools');
   }
 
   static async pingMcpTool(toolId: string): Promise<AdminMcpToolView> {
-    return this.request<AdminMcpToolView>(`/api/admin/chat/mcps/tools/${encodeURIComponent(toolId)}/ping`);
+    return this.request<AdminMcpToolView>(`/api/admin/mcps/tools/${encodeURIComponent(toolId)}/ping`);
   }
 
   static async listSkills(query: AdminSkillQuery = {}): Promise<AdminPageResult<AdminSkill>> {
     const searchParams = new URLSearchParams();
     searchParams.set('current', String(query.current ?? 1));
     searchParams.set('size', String(query.size ?? 10));
-    return this.request<AdminPageResult<AdminSkill>>(`/api/admin/chat/skills?${searchParams.toString()}`);
+    return this.request<AdminPageResult<AdminSkill>>(`/api/admin/skills?${searchParams.toString()}`);
   }
 
   static async createSkill(payload: AdminSkill): Promise<AdminSkill> {
-    return this.request<AdminSkill>('/api/admin/chat/skills', {
+    return this.request<AdminSkill>('/api/admin/skills', {
       method: 'POST',
       body: JSON.stringify(payload),
     });
   }
 
   static async updateSkill(id: string | number, payload: AdminSkill): Promise<AdminSkill> {
-    return this.request<AdminSkill>(`/api/admin/chat/skills/${encodeURIComponent(String(id))}`, {
+    return this.request<AdminSkill>(`/api/admin/skills/${encodeURIComponent(String(id))}`, {
       method: 'PUT',
       body: JSON.stringify(payload),
     });
   }
 
   static async deleteSkill(id: string | number): Promise<void> {
-    await this.request<void>(`/api/admin/chat/skills/${encodeURIComponent(String(id))}`, {
+    await this.request<void>(`/api/admin/skills/${encodeURIComponent(String(id))}`, {
       method: 'DELETE',
     });
   }
@@ -518,7 +518,7 @@ export class AdminChatApi {
     if (category && category.trim()) {
       formData.append('category', category.trim());
     }
-    return this.request<AdminSkill>('/api/admin/chat/skills/upload', {
+    return this.request<AdminSkill>('/api/admin/skills/upload', {
       method: 'POST',
       body: formData,
     });
@@ -531,7 +531,7 @@ export class AdminChatApi {
    */
   static async listSkillPackageEntries(id: string | number): Promise<AdminSkillPackageEntry[]> {
     return this.request<AdminSkillPackageEntry[]>(
-      `/api/admin/chat/skills/${encodeURIComponent(String(id))}/package/entries`,
+      `/api/admin/skills/${encodeURIComponent(String(id))}/package/entries`,
     );
   }
 
@@ -548,68 +548,68 @@ export class AdminChatApi {
     const searchParams = new URLSearchParams();
     searchParams.set('path', path);
     return this.request<AdminSkillPackageFileContent>(
-      `/api/admin/chat/skills/${encodeURIComponent(String(id))}/package/file-content?${searchParams.toString()}`,
+      `/api/admin/skills/${encodeURIComponent(String(id))}/package/file-content?${searchParams.toString()}`,
     );
   }
 
   static async listMcpConfigs(): Promise<AdminMcpConfig[]> {
-    return this.request<AdminMcpConfig[]>('/api/admin/chat/mcps');
+    return this.request<AdminMcpConfig[]>('/api/admin/mcps');
   }
 
   static async createMcpConfig(payload: AdminMcpConfig): Promise<AdminMcpConfig> {
-    return this.request<AdminMcpConfig>('/api/admin/chat/mcps', {
+    return this.request<AdminMcpConfig>('/api/admin/mcps', {
       method: 'POST',
       body: JSON.stringify(payload),
     });
   }
 
   static async updateMcpConfig(id: string | number, payload: AdminMcpConfig): Promise<AdminMcpConfig> {
-    return this.request<AdminMcpConfig>(`/api/admin/chat/mcps/${encodeURIComponent(String(id))}`, {
+    return this.request<AdminMcpConfig>(`/api/admin/mcps/${encodeURIComponent(String(id))}`, {
       method: 'PUT',
       body: JSON.stringify(payload),
     });
   }
 
   static async deleteMcpConfig(id: string | number): Promise<void> {
-    await this.request<void>(`/api/admin/chat/mcps/${encodeURIComponent(String(id))}`, {
+    await this.request<void>(`/api/admin/mcps/${encodeURIComponent(String(id))}`, {
       method: 'DELETE',
     });
   }
 
   static async listTools(): Promise<AdminChatTool[]> {
-    return this.request<AdminChatTool[]>('/api/admin/chat/tools');
+    return this.request<AdminChatTool[]>('/api/admin/tools');
   }
 
   static async createTool(payload: AdminChatTool): Promise<AdminChatTool> {
-    return this.request<AdminChatTool>('/api/admin/chat/tools', {
+    return this.request<AdminChatTool>('/api/admin/tools', {
       method: 'POST',
       body: JSON.stringify(payload),
     });
   }
 
   static async updateTool(id: string | number, payload: AdminChatTool): Promise<AdminChatTool> {
-    return this.request<AdminChatTool>(`/api/admin/chat/tools/${encodeURIComponent(String(id))}`, {
+    return this.request<AdminChatTool>(`/api/admin/tools/${encodeURIComponent(String(id))}`, {
       method: 'PUT',
       body: JSON.stringify(payload),
     });
   }
 
   static async deleteTool(id: string | number): Promise<void> {
-    await this.request<void>(`/api/admin/chat/tools/${encodeURIComponent(String(id))}`, {
+    await this.request<void>(`/api/admin/tools/${encodeURIComponent(String(id))}`, {
       method: 'DELETE',
     });
   }
 
   static async listToolHealthViews(): Promise<AdminChatToolHealthView[]> {
-    return this.request<AdminChatToolHealthView[]>('/api/admin/chat/tools/health');
+    return this.request<AdminChatToolHealthView[]>('/api/admin/tools/health');
   }
 
   static async pingTool(toolCode: string): Promise<AdminChatToolHealthView> {
-    return this.request<AdminChatToolHealthView>(`/api/admin/chat/tools/${encodeURIComponent(toolCode)}/ping`);
+    return this.request<AdminChatToolHealthView>(`/api/admin/tools/${encodeURIComponent(toolCode)}/ping`);
   }
 
   static async invokeTool(toolCode: string, question?: string): Promise<AdminChatToolInvokeView> {
-    return this.request<AdminChatToolInvokeView>(`/api/admin/chat/tools/${encodeURIComponent(toolCode)}/invoke`, {
+    return this.request<AdminChatToolInvokeView>(`/api/admin/tools/${encodeURIComponent(toolCode)}/invoke`, {
       method: 'POST',
       body: JSON.stringify({ question }),
     });

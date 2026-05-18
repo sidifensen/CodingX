@@ -138,7 +138,7 @@ describe('Skills page', () => {
 
     render(<Skills />);
     await screen.findByText('/sales_query');
-    fireEvent.click(screen.getByRole('button', { name: '下一页' }));
+    fireEvent.click(screen.getByRole('button', { name: '第 2 页' }));
 
     await waitFor(() => {
       expect(AdminChatApi.listSkills).toHaveBeenLastCalledWith(expect.objectContaining({ current: 2, size: 10 }));

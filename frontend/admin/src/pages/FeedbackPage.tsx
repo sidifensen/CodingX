@@ -2,6 +2,7 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 
 import { AdminChatApi, type AdminChatMessageFeedback, type AdminPageResult } from '../api/adminChatApi';
+import { DataTableCard } from '../components/DataTableCard';
 
 const PAGE_SIZE = 10;
 
@@ -107,26 +108,32 @@ export function FeedbackPage() {
       ) : null}
 
       <section className="space-y-md rounded-2xl border border-border-hairline bg-surface-container-lowest p-lg shadow-sm">
-        <div className="overflow-hidden rounded-xl border border-border-hairline">
+        <DataTableCard
+          title="反馈列表"
+          description="按反馈记录查看点赞/点踩详情，并支持跳转详情页排查上下文。"
+          scrollTestId="feedback-table-scroll"
+          loading={loading}
+          loadingText="加载中..."
+          summaryText={`第 ${current} / ${Math.max(1, pages)} 页，共 ${total.toLocaleString('zh-CN')} 条`}
+          paginationCurrent={current}
+          paginationPages={pages}
+          onPaginationChange={setPageNo}
+          tableContent={(
           <table className="min-w-[980px] w-full border-collapse text-left">
             <thead>
               <tr className="border-b border-border-hairline bg-surface-container-low">
-                <th className="px-lg py-md font-label-caps text-label-caps text-secondary">反馈ID</th>
-                <th className="px-lg py-md font-label-caps text-label-caps text-secondary">消息ID</th>
-                <th className="px-lg py-md font-label-caps text-label-caps text-secondary">会话ID</th>
-                <th className="px-lg py-md font-label-caps text-label-caps text-secondary">投票</th>
-                <th className="px-lg py-md font-label-caps text-label-caps text-secondary">原因</th>
-                <th className="px-lg py-md font-label-caps text-label-caps text-secondary">评论</th>
-                <th className="px-lg py-md font-label-caps text-label-caps text-secondary">创建时间</th>
-                <th className="px-lg py-md text-right font-label-caps text-label-caps text-secondary">操作</th>
+                <th className="sticky top-0 z-10 bg-surface-container-low px-lg py-md font-label-caps text-label-caps text-secondary">反馈ID</th>
+                <th className="sticky top-0 z-10 bg-surface-container-low px-lg py-md font-label-caps text-label-caps text-secondary">消息ID</th>
+                <th className="sticky top-0 z-10 bg-surface-container-low px-lg py-md font-label-caps text-label-caps text-secondary">会话ID</th>
+                <th className="sticky top-0 z-10 bg-surface-container-low px-lg py-md font-label-caps text-label-caps text-secondary">投票</th>
+                <th className="sticky top-0 z-10 bg-surface-container-low px-lg py-md font-label-caps text-label-caps text-secondary">原因</th>
+                <th className="sticky top-0 z-10 bg-surface-container-low px-lg py-md font-label-caps text-label-caps text-secondary">评论</th>
+                <th className="sticky top-0 z-10 bg-surface-container-low px-lg py-md font-label-caps text-label-caps text-secondary">创建时间</th>
+                <th className="sticky top-0 z-10 bg-surface-container-low px-lg py-md text-right font-label-caps text-label-caps text-secondary">操作</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border-hairline">
-              {loading ? (
-                <tr>
-                  <td colSpan={8} className="px-lg py-xl text-center text-secondary">加载中...</td>
-                </tr>
-              ) : records.length === 0 ? (
+              {!loading && records.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="px-lg py-xl text-center text-secondary">暂无反馈记录</td>
                 </tr>
@@ -160,30 +167,8 @@ export function FeedbackPage() {
               ))}
             </tbody>
           </table>
-        </div>
-
-        <div className="flex flex-wrap items-center justify-between gap-sm">
-          <span className="text-body-sm text-secondary">共 {total} 条</span>
-          <div className="flex items-center gap-sm">
-            <button
-              type="button"
-              onClick={() => setPageNo((previous) => Math.max(1, previous - 1))}
-              disabled={current <= 1}
-              className="rounded-lg border border-border-strong bg-surface-container-lowest px-md py-1.5 text-[12px] text-ink transition-colors hover:bg-surface-container-low disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              上一页
-            </button>
-            <span className="text-[12px] text-secondary">{current} / {Math.max(1, pages)}</span>
-            <button
-              type="button"
-              onClick={() => setPageNo((previous) => Math.min(Math.max(1, pages), previous + 1))}
-              disabled={current >= pages}
-              className="rounded-lg border border-border-strong bg-surface-container-lowest px-md py-1.5 text-[12px] text-ink transition-colors hover:bg-surface-container-low disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              下一页
-            </button>
-          </div>
-        </div>
+          )}
+        />
       </section>
     </div>
   );
@@ -206,4 +191,3 @@ function extractErrorMessage(error: unknown, fallback: string): string {
   }
   return fallback;
 }
-

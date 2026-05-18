@@ -54,6 +54,7 @@ describe('FeedbackPage', () => {
     expect(await screen.findByRole('heading', { name: '反馈管理' })).toBeInTheDocument();
     expect(screen.getByText('helpful')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: '查看 9001' })).toHaveAttribute('href', '/feedbacks/9001');
+    expect(screen.getByText('第 1 / 1 页，共 1 条')).toBeInTheDocument();
   });
 
   it('submits vote filter and refreshes data', async () => {

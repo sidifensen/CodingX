@@ -7,6 +7,7 @@ import {
   AdminSkillPackageEntry,
   AdminSkillPackageFileContent,
 } from '../api/adminChatApi';
+import { DataTableCard } from '../components/DataTableCard';
 
 type SkillDialogMode = 'create' | 'edit';
 type SkillViewMode = 'list' | 'card';
@@ -179,6 +180,11 @@ export function Skills() {
         viewMode === 'list' ? (
           <SkillListView
             skills={skills}
+            current={current}
+            pages={pages}
+            total={total}
+            loading={isLoading}
+            onChangePage={setPageNo}
             onEditSkill={openEditDialog}
             onPreviewSkill={openPackagePreviewDialog}
           />
@@ -189,32 +195,6 @@ export function Skills() {
             onPreviewSkill={openPackagePreviewDialog}
           />
         )
-      ) : null}
-
-      {!isLoading && !errorMessage ? (
-        <div className="mt-md flex items-center justify-between gap-sm rounded-lg border border-border-hairline bg-surface-container-low px-md py-sm">
-          <p className="text-[12px] text-secondary">
-            第 {current} / {Math.max(1, pages)} 页，共 {total} 条
-          </p>
-          <div className="flex items-center gap-xs">
-            <button
-              type="button"
-              className="rounded-lg border border-border-strong bg-surface-container-lowest px-md py-1.5 text-button font-button text-ink transition-colors hover:bg-surface-container-low disabled:cursor-not-allowed disabled:opacity-50"
-              disabled={current <= 1}
-              onClick={() => setPageNo((previous) => Math.max(1, previous - 1))}
-            >
-              上一页
-            </button>
-            <button
-              type="button"
-              className="rounded-lg border border-border-strong bg-surface-container-lowest px-md py-1.5 text-button font-button text-ink transition-colors hover:bg-surface-container-low disabled:cursor-not-allowed disabled:opacity-50"
-              disabled={current >= Math.max(1, pages)}
-              onClick={() => setPageNo((previous) => Math.min(Math.max(1, pages), previous + 1))}
-            >
-              下一页
-            </button>
-          </div>
-        </div>
       ) : null}
 
       {dialogOpen ? (
@@ -256,77 +236,106 @@ export function Skills() {
 
 function SkillListView({
   skills,
+  current,
+  pages,
+  total,
+  loading,
+  onChangePage,
   onEditSkill,
   onPreviewSkill,
 }: {
   skills: AdminSkill[];
+  current: number;
+  pages: number;
+  total: number;
+  loading: boolean;
+  onChangePage: (page: number) => void;
   onEditSkill: (skill: AdminSkill) => void;
   onPreviewSkill: (skill: AdminSkill) => void;
 }) {
-  if (skills.length === 0) {
-    return (
-      <div className="rounded-xl border border-border-hairline bg-surface-container-lowest px-4 py-6 text-sm text-secondary">
-        暂无技能数据
-      </div>
-    );
-  }
-
   return (
-    <div className="overflow-hidden rounded-xl border border-border-hairline bg-surface-container-lowest">
-      <div className="grid grid-cols-[1.6fr_1.2fr_1fr_0.9fr_0.8fr_1.2fr] gap-sm border-b border-border-hairline px-md py-sm text-[12px] text-secondary">
-        <span>技能</span>
-        <span>编码</span>
-        <span>分类</span>
-        <span>来源</span>
-        <span>状态</span>
-        <span className="text-right">操作</span>
-      </div>
-      <div className="max-h-[72vh] overflow-y-auto">
-        {skills.map((skill) => (
-          <div
-            key={skill.id ?? skill.skillCode}
-            className="grid grid-cols-[1.6fr_1.2fr_1fr_0.9fr_0.8fr_1.2fr] gap-sm border-b border-border-hairline px-md py-sm text-[13px] text-ink last:border-b-0"
-          >
-            <div>
-              <div className="font-medium text-ink">{skill.displayName}</div>
-              <p className="line-clamp-2 text-[12px] text-secondary">{skill.description || '暂无描述'}</p>
-            </div>
-            <div className="font-data-mono text-[12px] text-secondary">/{skill.skillCode}</div>
-            <div className="text-secondary">{skill.category || '未分类'}</div>
-            <div className="text-secondary">{skill.sourceType || 'built-in'}</div>
-            <div>
-              <span className={[
-                'rounded px-2 py-1 text-[11px]',
-                skill.enabled === 0
-                  ? 'bg-surface-container text-secondary'
-                  : 'bg-primary/15 text-primary',
-              ].join(' ')}>
-                {skill.enabled === 0 ? '禁用' : '启用'}
-              </span>
-            </div>
-            <div className="flex justify-end gap-xs">
-              <button
-                type="button"
-                aria-label={`资源预览 ${skill.skillCode}`}
-                disabled={!skill.id || !skill.storageKey}
-                className="rounded-md border border-border-hairline bg-surface-container-low px-sm py-1 text-[12px] text-ink transition-colors hover:bg-surface-container disabled:cursor-not-allowed disabled:opacity-45"
-                onClick={() => onPreviewSkill(skill)}
-              >
-                资源预览
-              </button>
-              <button
-                type="button"
-                aria-label={`编辑技能 ${skill.skillCode}`}
-                className="rounded-md border border-border-strong bg-surface-container-lowest px-sm py-1 text-[12px] text-ink transition-colors hover:bg-surface-container-low"
-                onClick={() => onEditSkill(skill)}
-              >
-                编辑
-              </button>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
+    <DataTableCard
+      title="技能列表"
+      description="统一展示技能配置信息，支持资源预览与编辑。"
+      scrollTestId="skills-table-scroll"
+      loading={loading}
+      loadingText="技能加载中..."
+      summaryText={`第 ${current} / ${Math.max(1, pages)} 页，共 ${total.toLocaleString('zh-CN')} 条`}
+      paginationCurrent={current}
+      paginationPages={pages}
+      onPaginationChange={onChangePage}
+      tableContent={(
+        <table className="w-full min-w-[1160px] border-collapse text-left">
+          <thead>
+            <tr className="border-b border-border-hairline bg-surface-container-low">
+              <th className="sticky top-0 z-10 bg-surface-container-low px-md py-sm text-[12px] text-secondary">技能</th>
+              <th className="sticky top-0 z-10 bg-surface-container-low px-md py-sm text-[12px] text-secondary">编码</th>
+              <th className="sticky top-0 z-10 bg-surface-container-low px-md py-sm text-[12px] text-secondary">分类</th>
+              <th className="sticky top-0 z-10 bg-surface-container-low px-md py-sm text-[12px] text-secondary">来源</th>
+              <th className="sticky top-0 z-10 bg-surface-container-low px-md py-sm text-[12px] text-secondary">状态</th>
+              <th className="sticky top-0 z-10 bg-surface-container-low px-md py-sm text-right text-[12px] text-secondary">操作</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border-hairline">
+            {skills.length === 0 ? (
+              <tr>
+                <td colSpan={6} className="px-md py-lg text-center text-sm text-secondary">
+                  暂无技能数据
+                </td>
+              </tr>
+            ) : (
+              skills.map((skill) => (
+                <tr
+                  key={skill.id ?? skill.skillCode}
+                  className="text-[13px] text-ink transition-colors hover:bg-surface-container-low"
+                >
+                  <td className="px-md py-sm">
+                    <div className="font-medium text-ink">{skill.displayName}</div>
+                    <p className="line-clamp-2 text-[12px] text-secondary">{skill.description || '暂无描述'}</p>
+                  </td>
+                  <td className="px-md py-sm font-data-mono text-[12px] text-secondary">/{skill.skillCode}</td>
+                  <td className="px-md py-sm text-secondary">{skill.category || '未分类'}</td>
+                  <td className="px-md py-sm text-secondary">{skill.sourceType || 'built-in'}</td>
+                  <td className="px-md py-sm">
+                    <span
+                      className={[
+                        'rounded px-2 py-1 text-[11px]',
+                        skill.enabled === 0
+                          ? 'bg-surface-container text-secondary'
+                          : 'bg-primary/15 text-primary',
+                      ].join(' ')}
+                    >
+                      {skill.enabled === 0 ? '禁用' : '启用'}
+                    </span>
+                  </td>
+                  <td className="px-md py-sm text-right">
+                    <div className="inline-flex gap-xs">
+                      <button
+                        type="button"
+                        aria-label={`资源预览 ${skill.skillCode}`}
+                        disabled={!skill.id || !skill.storageKey}
+                        className="rounded-md border border-border-hairline bg-surface-container-low px-sm py-1 text-[12px] text-ink transition-colors hover:bg-surface-container disabled:cursor-not-allowed disabled:opacity-45"
+                        onClick={() => onPreviewSkill(skill)}
+                      >
+                        资源预览
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={`编辑技能 ${skill.skillCode}`}
+                        className="rounded-md border border-border-strong bg-surface-container-lowest px-sm py-1 text-[12px] text-ink transition-colors hover:bg-surface-container-low"
+                        onClick={() => onEditSkill(skill)}
+                      >
+                        编辑
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      )}
+    />
   );
 }
 

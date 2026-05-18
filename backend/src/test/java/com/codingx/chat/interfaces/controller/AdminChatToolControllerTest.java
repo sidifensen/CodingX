@@ -11,10 +11,11 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.codingx.chat.application.service.AdminChatToolService;
-import com.codingx.chat.application.service.AdminChatToolService.ToolHealthView;
-import com.codingx.chat.application.service.AdminChatToolService.ToolInvokeView;
-import com.codingx.chat.domain.model.ChatTool;
+import com.codingx.tool.application.service.AdminChatToolService;
+import com.codingx.tool.application.service.AdminChatToolService.ToolHealthView;
+import com.codingx.tool.application.service.AdminChatToolService.ToolInvokeView;
+import com.codingx.tool.domain.model.ChatTool;
+import com.codingx.tool.interfaces.controller.AdminChatToolController;
 import com.codingx.config.GlobalExceptionHandler;
 import java.util.List;
 import java.util.Map;
@@ -55,7 +56,7 @@ class AdminChatToolControllerTest {
                 .build()
         ));
 
-        mockMvc().perform(get("/api/admin/chat/tools"))
+        mockMvc().perform(get("/api/admin/tools"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.success").value(true))
             .andExpect(jsonPath("$.data[0].toolCode").value("shell_command"))
@@ -78,7 +79,7 @@ class AdminChatToolControllerTest {
                 .build()
         );
 
-        mockMvc().perform(post("/api/admin/chat/tools")
+        mockMvc().perform(post("/api/admin/tools")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                     {
@@ -111,7 +112,7 @@ class AdminChatToolControllerTest {
                 .build()
         );
 
-        mockMvc().perform(put("/api/admin/chat/tools/9101")
+        mockMvc().perform(put("/api/admin/tools/9101")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                     {
@@ -133,7 +134,7 @@ class AdminChatToolControllerTest {
      */
     @Test
     void deleteToolReturnsSuccessMessage() throws Exception {
-        mockMvc().perform(delete("/api/admin/chat/tools/9101"))
+        mockMvc().perform(delete("/api/admin/tools/9101"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.success").value(true))
             .andExpect(jsonPath("$.message").value("删除成功"));
@@ -162,7 +163,7 @@ class AdminChatToolControllerTest {
                 .build()
         ));
 
-        mockMvc().perform(get("/api/admin/chat/tools/health"))
+        mockMvc().perform(get("/api/admin/tools/health"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.success").value(true))
             .andExpect(jsonPath("$.data[0].toolCode").value("shell_command"))
@@ -188,7 +189,7 @@ class AdminChatToolControllerTest {
                 .build()
         );
 
-        mockMvc().perform(get("/api/admin/chat/tools/shell_command/ping"))
+        mockMvc().perform(get("/api/admin/tools/shell_command/ping"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.success").value(true))
             .andExpect(jsonPath("$.data.toolCode").value("shell_command"))
@@ -217,7 +218,7 @@ class AdminChatToolControllerTest {
                 .build()
         );
 
-        mockMvc().perform(post("/api/admin/chat/tools/shell_command/invoke")
+        mockMvc().perform(post("/api/admin/tools/shell_command/invoke")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                     {

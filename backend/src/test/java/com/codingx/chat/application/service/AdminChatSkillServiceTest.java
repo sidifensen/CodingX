@@ -10,8 +10,9 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import cn.dev33.satoken.stp.StpUtil;
-import com.codingx.chat.domain.model.ChatSkill;
-import com.codingx.chat.domain.repository.ChatSkillRepository;
+import com.codingx.skill.application.service.AdminChatSkillService;
+import com.codingx.skill.domain.model.ChatSkill;
+import com.codingx.skill.domain.repository.ChatSkillRepository;
 import com.codingx.chat.interfaces.response.PageResult;
 import com.codingx.common.exception.BusinessException;
 import com.codingx.storage.RustFsSkillPackageClient;

@@ -5,8 +5,9 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.codingx.chat.application.service.ChatSkillQueryService;
-import com.codingx.chat.domain.model.ChatSkill;
+import com.codingx.skill.application.service.ChatSkillQueryService;
+import com.codingx.skill.domain.model.ChatSkill;
+import com.codingx.skill.interfaces.controller.ChatSkillController;
 import com.codingx.config.GlobalExceptionHandler;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -45,7 +46,7 @@ class ChatSkillControllerTest {
                 .build()
         ));
 
-        mockMvc().perform(get("/api/chat/skills"))
+        mockMvc().perform(get("/api/skills"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.success").value(true))
             .andExpect(jsonPath("$.data[0].skillCode").value("conversation-core"))

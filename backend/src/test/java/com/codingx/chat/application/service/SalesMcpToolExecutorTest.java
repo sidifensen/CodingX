@@ -3,6 +3,8 @@ package com.codingx.chat.application.service;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.codingx.mcp.application.service.ChatMcpToolResult;
+import com.codingx.mcp.application.service.SalesMcpToolExecutor;
 import org.junit.jupiter.api.Test;
 
 /**

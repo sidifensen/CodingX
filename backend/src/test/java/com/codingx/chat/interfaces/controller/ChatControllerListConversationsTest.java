@@ -12,7 +12,7 @@ import com.codingx.chat.application.service.ChatReactionService;
 import com.codingx.chat.application.service.ChatRuntimeGuardService;
 import com.codingx.chat.domain.model.ChatConversation;
 import com.codingx.chat.domain.model.ChatConversationStatus;
-import com.codingx.chat.domain.repository.ChatSkillRepository;
+import com.codingx.skill.domain.repository.ChatSkillRepository;
 import com.codingx.config.GlobalExceptionHandler;
 import com.codingx.mcp.domain.repository.ChatMcpRepository;
 import java.time.LocalDateTime;

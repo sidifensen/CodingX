@@ -390,7 +390,7 @@ SET
     updated_at = CURRENT_TIMESTAMP,
     deleted = EXCLUDED.deleted;
 
-INSERT INTO chat_mcp (id, mcp_code, display_name, description, category, source_type, enabled, sort_no, deleted)
+INSERT INTO mcp (id, mcp_code, display_name, description, category, source_type, enabled, sort_no, deleted)
 VALUES
     (7100, 'code_search', '代码检索', '按关键词检索代码文件、行号与命中片段', '研发', 'built-in', 1, 0, 0),
     (7101, 'sales_query', '销售查询', '查询销售汇总、排名、趋势与明细', '销售', 'built-in', 1, 1, 0),
@@ -407,7 +407,7 @@ SET
     updated_at = CURRENT_TIMESTAMP,
     deleted = EXCLUDED.deleted;
 
-INSERT INTO chat_tool (id, tool_code, display_name, description, category, source_type, enabled, sort_no, deleted)
+INSERT INTO tool (id, tool_code, display_name, description, category, source_type, enabled, sort_no, deleted)
 VALUES
     (9101, 'shell_command', 'Shell 命令执行', '在当前工作区执行终端命令', '终端', 'codex-cli', 1, 1, 0),
     (9102, 'apply_patch', '补丁编辑', '通过补丁语法修改本地文件', '代码编辑', 'codex-cli', 1, 2, 0),
@@ -447,7 +447,7 @@ SET
     updated_at = CURRENT_TIMESTAMP,
     deleted = EXCLUDED.deleted;
 
-INSERT INTO chat_skill (id, skill_code, display_name, description, category, source_type, enabled, sort_no, deleted)
+INSERT INTO skill (id, skill_code, display_name, description, category, source_type, enabled, sort_no, deleted)
 VALUES
     (8101, 'web-read', '网页读取', '解析并总结外部网页内容', '信息处理', 'built-in', 1, 1, 0),
     (8102, 'deep-research', '调研分析', '深度搜索并生成研究报告', '研究分析', 'built-in', 1, 2, 0),

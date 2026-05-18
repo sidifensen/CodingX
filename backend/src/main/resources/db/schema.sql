@@ -575,7 +575,7 @@ COMMENT ON COLUMN chat_runtime_setting.created_at IS '创建时间';
 COMMENT ON COLUMN chat_runtime_setting.updated_at IS '更新时间';
 COMMENT ON COLUMN chat_runtime_setting.deleted IS '是否删除 0：正常 1：删除';
 
-CREATE TABLE IF NOT EXISTS chat_mcp (
+CREATE TABLE IF NOT EXISTS mcp (
     id BIGINT PRIMARY KEY,
     mcp_code VARCHAR(128) NOT NULL UNIQUE,
     display_name VARCHAR(255) NOT NULL,
@@ -588,21 +588,21 @@ CREATE TABLE IF NOT EXISTS chat_mcp (
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     deleted SMALLINT NOT NULL DEFAULT 0
 );
-COMMENT ON TABLE chat_mcp IS '聊天MCP配置表';
-COMMENT ON COLUMN chat_mcp.id IS 'MCP主键ID';
-COMMENT ON COLUMN chat_mcp.mcp_code IS 'MCP编码';
-COMMENT ON COLUMN chat_mcp.display_name IS 'MCP名称';
-COMMENT ON COLUMN chat_mcp.description IS 'MCP描述';
-COMMENT ON COLUMN chat_mcp.category IS 'MCP分类';
-COMMENT ON COLUMN chat_mcp.source_type IS 'MCP来源';
-COMMENT ON COLUMN chat_mcp.enabled IS '是否启用 1启用 0禁用';
-COMMENT ON COLUMN chat_mcp.sort_no IS '排序字段';
-COMMENT ON COLUMN chat_mcp.created_at IS '创建时间';
-COMMENT ON COLUMN chat_mcp.updated_at IS '更新时间';
-COMMENT ON COLUMN chat_mcp.deleted IS '是否删除 0正常 1删除';
+COMMENT ON TABLE mcp IS '聊天MCP配置表';
+COMMENT ON COLUMN mcp.id IS 'MCP主键ID';
+COMMENT ON COLUMN mcp.mcp_code IS 'MCP编码';
+COMMENT ON COLUMN mcp.display_name IS 'MCP名称';
+COMMENT ON COLUMN mcp.description IS 'MCP描述';
+COMMENT ON COLUMN mcp.category IS 'MCP分类';
+COMMENT ON COLUMN mcp.source_type IS 'MCP来源';
+COMMENT ON COLUMN mcp.enabled IS '是否启用 1启用 0禁用';
+COMMENT ON COLUMN mcp.sort_no IS '排序字段';
+COMMENT ON COLUMN mcp.created_at IS '创建时间';
+COMMENT ON COLUMN mcp.updated_at IS '更新时间';
+COMMENT ON COLUMN mcp.deleted IS '是否删除 0正常 1删除';
 -- 默认内置 MCP 编码示例：code_search、sales_query、ticket_query、weather_query。
 
-CREATE TABLE IF NOT EXISTS chat_tool (
+CREATE TABLE IF NOT EXISTS tool (
     id BIGINT PRIMARY KEY,
     tool_code VARCHAR(128) NOT NULL UNIQUE,
     display_name VARCHAR(255) NOT NULL,
@@ -615,21 +615,21 @@ CREATE TABLE IF NOT EXISTS chat_tool (
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     deleted SMALLINT NOT NULL DEFAULT 0
 );
-COMMENT ON TABLE chat_tool IS '聊天工具配置表';
-COMMENT ON COLUMN chat_tool.id IS '工具主键ID';
-COMMENT ON COLUMN chat_tool.tool_code IS '工具编码';
-COMMENT ON COLUMN chat_tool.display_name IS '工具名称';
-COMMENT ON COLUMN chat_tool.description IS '工具描述';
-COMMENT ON COLUMN chat_tool.category IS '工具分类';
-COMMENT ON COLUMN chat_tool.source_type IS '工具来源';
-COMMENT ON COLUMN chat_tool.enabled IS '是否启用 1启用 0禁用';
-COMMENT ON COLUMN chat_tool.sort_no IS '排序字段';
-COMMENT ON COLUMN chat_tool.created_at IS '创建时间';
-COMMENT ON COLUMN chat_tool.updated_at IS '更新时间';
-COMMENT ON COLUMN chat_tool.deleted IS '是否删除 0正常 1删除';
+COMMENT ON TABLE tool IS '聊天工具配置表';
+COMMENT ON COLUMN tool.id IS '工具主键ID';
+COMMENT ON COLUMN tool.tool_code IS '工具编码';
+COMMENT ON COLUMN tool.display_name IS '工具名称';
+COMMENT ON COLUMN tool.description IS '工具描述';
+COMMENT ON COLUMN tool.category IS '工具分类';
+COMMENT ON COLUMN tool.source_type IS '工具来源';
+COMMENT ON COLUMN tool.enabled IS '是否启用 1启用 0禁用';
+COMMENT ON COLUMN tool.sort_no IS '排序字段';
+COMMENT ON COLUMN tool.created_at IS '创建时间';
+COMMENT ON COLUMN tool.updated_at IS '更新时间';
+COMMENT ON COLUMN tool.deleted IS '是否删除 0正常 1删除';
 -- 默认 Codex CLI 工具编码示例：shell_command、apply_patch、update_plan、view_image。
 
-CREATE TABLE IF NOT EXISTS chat_skill (
+CREATE TABLE IF NOT EXISTS skill (
     id BIGINT PRIMARY KEY,
     skill_code VARCHAR(128) NOT NULL UNIQUE,
     display_name VARCHAR(255) NOT NULL,
@@ -648,24 +648,24 @@ CREATE TABLE IF NOT EXISTS chat_skill (
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     deleted SMALLINT NOT NULL DEFAULT 0
 );
-COMMENT ON TABLE chat_skill IS '聊天技能配置表';
-COMMENT ON COLUMN chat_skill.id IS '技能主键ID';
-COMMENT ON COLUMN chat_skill.skill_code IS '技能编码';
-COMMENT ON COLUMN chat_skill.display_name IS '技能名称';
-COMMENT ON COLUMN chat_skill.description IS '技能描述';
-COMMENT ON COLUMN chat_skill.category IS '技能分类';
-COMMENT ON COLUMN chat_skill.source_type IS '技能来源';
-COMMENT ON COLUMN chat_skill.enabled IS '是否启用 1启用 0禁用';
-COMMENT ON COLUMN chat_skill.sort_no IS '排序字段';
-COMMENT ON COLUMN chat_skill.storage_key IS '技能包对象存储键';
-COMMENT ON COLUMN chat_skill.package_file_name IS '技能包原始文件名';
-COMMENT ON COLUMN chat_skill.package_size IS '技能包大小字节数';
-COMMENT ON COLUMN chat_skill.package_checksum IS '技能包SHA256摘要';
-COMMENT ON COLUMN chat_skill.uploaded_by IS '上传人用户ID';
-COMMENT ON COLUMN chat_skill.uploaded_at IS '上传时间';
-COMMENT ON COLUMN chat_skill.created_at IS '创建时间';
-COMMENT ON COLUMN chat_skill.updated_at IS '更新时间';
-COMMENT ON COLUMN chat_skill.deleted IS '是否删除 0正常 1删除';
+COMMENT ON TABLE skill IS '聊天技能配置表';
+COMMENT ON COLUMN skill.id IS '技能主键ID';
+COMMENT ON COLUMN skill.skill_code IS '技能编码';
+COMMENT ON COLUMN skill.display_name IS '技能名称';
+COMMENT ON COLUMN skill.description IS '技能描述';
+COMMENT ON COLUMN skill.category IS '技能分类';
+COMMENT ON COLUMN skill.source_type IS '技能来源';
+COMMENT ON COLUMN skill.enabled IS '是否启用 1启用 0禁用';
+COMMENT ON COLUMN skill.sort_no IS '排序字段';
+COMMENT ON COLUMN skill.storage_key IS '技能包对象存储键';
+COMMENT ON COLUMN skill.package_file_name IS '技能包原始文件名';
+COMMENT ON COLUMN skill.package_size IS '技能包大小字节数';
+COMMENT ON COLUMN skill.package_checksum IS '技能包SHA256摘要';
+COMMENT ON COLUMN skill.uploaded_by IS '上传人用户ID';
+COMMENT ON COLUMN skill.uploaded_at IS '上传时间';
+COMMENT ON COLUMN skill.created_at IS '创建时间';
+COMMENT ON COLUMN skill.updated_at IS '更新时间';
+COMMENT ON COLUMN skill.deleted IS '是否删除 0正常 1删除';
 
 CREATE TABLE IF NOT EXISTS task_mcp (
     id BIGINT PRIMARY KEY,
@@ -717,10 +717,10 @@ CREATE INDEX IF NOT EXISTS idx_chat_trace_node_trace_depth ON chat_trace_node (t
 CREATE INDEX IF NOT EXISTS idx_chat_query_term_mapping_source ON chat_query_term_mapping (source_term, enabled, priority ASC);
 CREATE INDEX IF NOT EXISTS idx_chat_sample_question_enabled ON chat_sample_question (enabled, sort_no ASC);
 CREATE INDEX IF NOT EXISTS idx_chat_runtime_setting_key ON chat_runtime_setting (setting_key, deleted);
-CREATE INDEX IF NOT EXISTS idx_chat_mcp_enabled_sort ON chat_mcp (enabled, sort_no ASC);
-CREATE INDEX IF NOT EXISTS idx_chat_tool_enabled_sort ON chat_tool (enabled, sort_no ASC);
-CREATE INDEX IF NOT EXISTS idx_chat_skill_enabled_sort ON chat_skill (enabled, sort_no ASC);
-CREATE INDEX IF NOT EXISTS idx_chat_skill_uploaded_at ON chat_skill (uploaded_at DESC);
+CREATE INDEX IF NOT EXISTS idx_mcp_enabled_sort ON mcp (enabled, sort_no ASC);
+CREATE INDEX IF NOT EXISTS idx_tool_enabled_sort ON tool (enabled, sort_no ASC);
+CREATE INDEX IF NOT EXISTS idx_skill_enabled_sort ON skill (enabled, sort_no ASC);
+CREATE INDEX IF NOT EXISTS idx_skill_uploaded_at ON skill (uploaded_at DESC);
 CREATE INDEX IF NOT EXISTS idx_task_mcp_task ON task_mcp (task_id, created_at ASC);
 CREATE INDEX IF NOT EXISTS idx_task_mcp_mcp_code ON task_mcp (mcp_code);
 CREATE INDEX IF NOT EXISTS idx_task_skill_task ON task_skill (task_id, created_at ASC);

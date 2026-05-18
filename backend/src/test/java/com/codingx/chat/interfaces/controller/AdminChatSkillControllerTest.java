@@ -12,9 +12,10 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.codingx.chat.application.service.AdminChatSkillService;
-import com.codingx.chat.domain.model.ChatSkill;
+import com.codingx.skill.application.service.AdminChatSkillService;
+import com.codingx.skill.domain.model.ChatSkill;
 import com.codingx.chat.interfaces.response.PageResult;
+import com.codingx.skill.interfaces.controller.AdminChatSkillController;
 import com.codingx.config.GlobalExceptionHandler;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -61,7 +62,7 @@ class AdminChatSkillControllerTest {
             .pages(1L)
             .build());
 
-        mockMvc().perform(get("/api/admin/chat/skills"))
+        mockMvc().perform(get("/api/admin/skills"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.success").value(true))
             .andExpect(jsonPath("$.data.records[0].skillCode").value("conversation-core"))
@@ -89,7 +90,7 @@ class AdminChatSkillControllerTest {
                 .build()
         );
 
-        mockMvc().perform(post("/api/admin/chat/skills")
+        mockMvc().perform(post("/api/admin/skills")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                     {
@@ -122,7 +123,7 @@ class AdminChatSkillControllerTest {
                 .build()
         );
 
-        mockMvc().perform(put("/api/admin/chat/skills/7101")
+        mockMvc().perform(put("/api/admin/skills/7101")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                     {
@@ -144,7 +145,7 @@ class AdminChatSkillControllerTest {
      */
     @Test
     void deleteSkillReturnsSuccessMessage() throws Exception {
-        mockMvc().perform(delete("/api/admin/chat/skills/7101"))
+        mockMvc().perform(delete("/api/admin/skills/7101"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.success").value(true))
             .andExpect(jsonPath("$.message").value("删除成功"));
@@ -176,7 +177,7 @@ class AdminChatSkillControllerTest {
             "dummy".getBytes()
         );
 
-        mockMvc().perform(multipart("/api/admin/chat/skills/upload")
+        mockMvc().perform(multipart("/api/admin/skills/upload")
                 .file(file))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.success").value(true))
@@ -194,7 +195,7 @@ class AdminChatSkillControllerTest {
             new AdminChatSkillService.SkillPackageEntry("templates/prompt.txt", "prompt.txt", false, 128L)
         ));
 
-        mockMvc().perform(get("/api/admin/chat/skills/7110/package/entries"))
+        mockMvc().perform(get("/api/admin/skills/7110/package/entries"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.success").value(true))
             .andExpect(jsonPath("$.data[0].path").value("templates"))
@@ -215,7 +216,7 @@ class AdminChatSkillControllerTest {
                 false
             ));
 
-        mockMvc().perform(get("/api/admin/chat/skills/7110/package/file-content")
+        mockMvc().perform(get("/api/admin/skills/7110/package/file-content")
                 .param("path", "templates/prompt.txt"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.success").value(true))

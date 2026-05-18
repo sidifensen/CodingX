@@ -4,7 +4,7 @@ import com.codingx.chat.application.service.ChatWorkspaceQueryService;
 import com.codingx.chat.domain.model.ChatExecutionStep;
 import com.codingx.chat.domain.model.ChatMessageArtifact;
 import com.codingx.chat.domain.model.ChatMessageReference;
-import com.codingx.chat.domain.model.ChatSkill;
+import com.codingx.skill.domain.model.ChatSkill;
 import com.codingx.common.model.ApiResponse;
 import com.codingx.mcp.domain.model.ChatMcp;
 import java.util.List;

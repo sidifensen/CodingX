@@ -6,8 +6,9 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.codingx.chat.application.service.AdminChatMcpService;
-import com.codingx.chat.application.service.AdminChatMcpService.McpToolHealthView;
+import com.codingx.mcp.application.service.AdminChatMcpService;
+import com.codingx.mcp.application.service.AdminChatMcpService.McpToolHealthView;
+import com.codingx.mcp.interfaces.controller.AdminChatMcpController;
 import com.codingx.config.GlobalExceptionHandler;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -58,7 +59,7 @@ class AdminChatMcpControllerTest {
                 .build()
         ));
 
-        mockMvc().perform(get("/api/admin/chat/mcp-tools"))
+        mockMvc().perform(get("/api/admin/mcps/tools"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.success").value(true))
             .andExpect(jsonPath("$.data[0].toolId").value("sales_query"))
@@ -88,7 +89,7 @@ class AdminChatMcpControllerTest {
                 .build()
         );
 
-        mockMvc().perform(get("/api/admin/chat/mcp-tools/weather_query/ping"))
+        mockMvc().perform(get("/api/admin/mcps/tools/weather_query/ping"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.success").value(true))
             .andExpect(jsonPath("$.data.toolId").value("weather_query"))

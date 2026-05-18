@@ -7,7 +7,7 @@ import com.codingx.chat.application.service.ChatApplicationService;
 import com.codingx.chat.application.service.ChatConversationApplicationService;
 import com.codingx.chat.application.service.ChatReactionService;
 import com.codingx.chat.application.service.ChatRuntimeGuardService;
-import com.codingx.chat.domain.repository.ChatSkillRepository;
+import com.codingx.skill.domain.repository.ChatSkillRepository;
 import com.codingx.common.model.ApiResponse;
 import com.codingx.mcp.domain.repository.ChatMcpRepository;
 import org.junit.jupiter.api.Test;

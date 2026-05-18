@@ -13,7 +13,7 @@ import org.springframework.web.bind.annotation.RestController;
  * 提供用户侧 MCP 查询接口。
  */
 @RestController
-@RequestMapping("/api/chat/mcps")
+@RequestMapping("/api/mcps")
 @RequiredArgsConstructor
 public class ChatMcpController {
 

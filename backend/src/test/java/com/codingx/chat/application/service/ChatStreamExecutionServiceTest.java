@@ -13,7 +13,7 @@ import com.codingx.chat.domain.model.ChatExecutionRun;
 import com.codingx.chat.domain.model.ChatTraceRun;
 import com.codingx.chat.domain.repository.ChatExecutionRunRepository;
 import com.codingx.mcp.domain.repository.ChatMcpRepository;
-import com.codingx.chat.domain.repository.ChatSkillRepository;
+import com.codingx.skill.domain.repository.ChatSkillRepository;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;

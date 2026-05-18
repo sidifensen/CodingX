@@ -15,6 +15,8 @@ import com.codingx.chat.domain.repository.ChatMessageRepository;
 import com.codingx.chat.domain.service.AiChatClient;
 import com.codingx.chat.domain.service.ChatStreamPublisher;
 import com.codingx.common.exception.ForbiddenException;
+import com.codingx.mcp.application.service.ChatMcpExecutionService;
+import com.codingx.mcp.application.service.ChatMcpToolResult;
 import com.codingx.mcp.domain.model.ChatMcp;
 import com.codingx.mcp.domain.repository.ChatMcpRepository;
 import java.util.ArrayList;

@@ -10,7 +10,7 @@ import lombok.Data;
  * 聊天 MCP 配置表数据对象。
  */
 @Data
-@TableName("chat_mcp")
+@TableName("mcp")
 public class ChatMcpDO {
 
     @TableId("id")

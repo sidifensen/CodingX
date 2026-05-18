@@ -472,11 +472,11 @@ export class AdminChatApi {
   }
 
   static async listMcpTools(): Promise<AdminMcpToolView[]> {
-    return this.request<AdminMcpToolView[]>('/api/admin/chat/mcp-tools');
+    return this.request<AdminMcpToolView[]>('/api/admin/chat/mcps/tools');
   }
 
   static async pingMcpTool(toolId: string): Promise<AdminMcpToolView> {
-    return this.request<AdminMcpToolView>(`/api/admin/chat/mcp-tools/${encodeURIComponent(toolId)}/ping`);
+    return this.request<AdminMcpToolView>(`/api/admin/chat/mcps/tools/${encodeURIComponent(toolId)}/ping`);
   }
 
   static async listSkills(query: AdminSkillQuery = {}): Promise<AdminPageResult<AdminSkill>> {

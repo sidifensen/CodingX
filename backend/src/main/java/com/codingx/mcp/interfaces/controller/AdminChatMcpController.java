@@ -14,7 +14,7 @@ import org.springframework.web.bind.annotation.RestController;
  * 提供管理端 MCP 工具清单与探测接口。
  */
 @RestController
-@RequestMapping("/api/admin/mcps/tools")
+@RequestMapping("/api/admin/chat/mcps/tools")
 @RequiredArgsConstructor
 public class AdminChatMcpController {
 

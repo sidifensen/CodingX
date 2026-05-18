@@ -21,7 +21,7 @@ import org.springframework.web.bind.annotation.RestController;
  * 提供管理端工具配置增删改查接口。
  */
 @RestController
-@RequestMapping("/api/admin/tools")
+@RequestMapping("/api/admin/chat/tools")
 @RequiredArgsConstructor
 public class AdminChatToolController {
 

@@ -18,7 +18,7 @@ import org.springframework.web.bind.annotation.RestController;
  * 提供管理端 MCP 配置增删改查接口。
  */
 @RestController
-@RequestMapping("/api/admin/mcps")
+@RequestMapping("/api/admin/chat/mcps")
 @RequiredArgsConstructor
 public class AdminChatMcpConfigController {
 

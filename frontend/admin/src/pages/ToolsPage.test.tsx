@@ -194,4 +194,29 @@ describe('Tools page', () => {
     });
     expect(await screen.findByText('exitCode: 0')).toBeInTheDocument();
   });
+
+  it('uses paginated table card and supports page switch', async () => {
+    vi.mocked(AdminChatApi.listTools).mockResolvedValue(
+      Array.from({ length: 12 }, (_, index) => ({
+        id: 9900 + index,
+        toolCode: `tool_${index + 1}`,
+        displayName: `工具 ${index + 1}`,
+        description: '',
+        category: '测试',
+        sourceType: 'codex-cli',
+        enabled: 1,
+        sortNo: index + 1,
+      })) as any,
+    );
+    vi.mocked(AdminChatApi.listToolHealthViews).mockResolvedValue([]);
+
+    render(<ToolsPage />);
+    expect(await screen.findByText('/tool_1')).toBeInTheDocument();
+    expect(screen.getByText('第 1 / 2 页，共 12 条')).toBeInTheDocument();
+    expect(screen.queryByText('/tool_11')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '第 2 页' }));
+    expect(await screen.findByText('/tool_11')).toBeInTheDocument();
+    expect(screen.queryByText('/tool_1')).not.toBeInTheDocument();
+  });
 });

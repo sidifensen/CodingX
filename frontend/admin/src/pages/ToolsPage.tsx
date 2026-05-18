@@ -8,6 +8,7 @@ import {
   AdminChatToolHealthView,
   AdminChatToolInvokeView,
 } from '../api/adminChatApi';
+import { DataTableCard } from '../components/DataTableCard';
 
 type ToolDialogMode = 'create' | 'edit';
 
@@ -37,6 +38,8 @@ const emptyToolForm: ToolFormState = {
   enabled: true,
 };
 
+const TOOL_TABLE_PAGE_SIZE = 10;
+
 /**
  * 管理端工具管理页：独立维护 chat_tool 表，不复用 MCP 管理页。
  */
@@ -58,8 +61,22 @@ export function ToolsPage() {
   const [invokeQuestion, setInvokeQuestion] = React.useState('');
   const [invokeResult, setInvokeResult] = React.useState<AdminChatToolInvokeView | null>(null);
   const [invokeErrorMessage, setInvokeErrorMessage] = React.useState('');
+  const [pageNo, setPageNo] = React.useState(1);
   const mergedRows = React.useMemo(() => mergeToolsAndHealthViews(tools, toolHealthViews), [tools, toolHealthViews]);
   const isTableLoading = configLoading || healthLoading;
+  const totalRows = mergedRows.length;
+  const pageCount = Math.max(1, Math.ceil(totalRows / TOOL_TABLE_PAGE_SIZE));
+  const safePageNo = Math.min(pageNo, pageCount);
+  const pagedRows = React.useMemo(() => {
+    const start = (safePageNo - 1) * TOOL_TABLE_PAGE_SIZE;
+    return mergedRows.slice(start, start + TOOL_TABLE_PAGE_SIZE);
+  }, [mergedRows, safePageNo]);
+
+  React.useEffect(() => {
+    if (pageNo > pageCount) {
+      setPageNo(pageCount);
+    }
+  }, [pageNo, pageCount]);
 
   /**
    * 加载工具配置列表。
@@ -186,116 +203,122 @@ export function ToolsPage() {
         </div>
       ) : null}
 
-      <section className="overflow-hidden rounded-xl border border-border-hairline bg-surface-container-lowest">
-        <table className="w-full border-collapse text-left">
+      <DataTableCard
+        title="工具列表"
+        description="统一展示工具配置与执行器状态，支持探测、调用和配置维护。"
+        scrollTestId="tools-table-scroll"
+        loading={isTableLoading}
+        loadingText="加载中..."
+        summaryText={`第 ${safePageNo} / ${pageCount} 页，共 ${totalRows.toLocaleString('zh-CN')} 条`}
+        paginationCurrent={safePageNo}
+        paginationPages={pageCount}
+        onPaginationChange={setPageNo}
+        tableContent={(
+        <table className="w-full min-w-[1420px] border-collapse text-left">
           <thead>
             <tr className="border-b border-border-hairline bg-surface-container-low">
-              <th className="px-lg py-md font-label-caps text-label-caps text-secondary">编码</th>
-              <th className="px-lg py-md font-label-caps text-label-caps text-secondary">名称</th>
-              <th className="px-lg py-md font-label-caps text-label-caps text-secondary">分类</th>
-              <th className="px-lg py-md font-label-caps text-label-caps text-secondary">来源</th>
-              <th className="px-lg py-md font-label-caps text-label-caps text-secondary">状态</th>
-              <th className="px-lg py-md font-label-caps text-label-caps text-secondary">执行器</th>
-              <th className="px-lg py-md font-label-caps text-label-caps text-secondary">样例问题</th>
-              <th className="px-lg py-md font-label-caps text-label-caps text-secondary">最近探测</th>
-              <th className="px-lg py-md font-label-caps text-label-caps text-secondary">排序</th>
-              <th className="px-lg py-md text-right font-label-caps text-label-caps text-secondary">操作</th>
+              <th className="sticky top-0 z-10 bg-surface-container-low px-lg py-md font-label-caps text-label-caps text-secondary">编码</th>
+              <th className="sticky top-0 z-10 bg-surface-container-low px-lg py-md font-label-caps text-label-caps text-secondary">名称</th>
+              <th className="sticky top-0 z-10 bg-surface-container-low px-lg py-md font-label-caps text-label-caps text-secondary">分类</th>
+              <th className="sticky top-0 z-10 bg-surface-container-low px-lg py-md font-label-caps text-label-caps text-secondary">来源</th>
+              <th className="sticky top-0 z-10 bg-surface-container-low px-lg py-md font-label-caps text-label-caps text-secondary">状态</th>
+              <th className="sticky top-0 z-10 bg-surface-container-low px-lg py-md font-label-caps text-label-caps text-secondary">执行器</th>
+              <th className="sticky top-0 z-10 bg-surface-container-low px-lg py-md font-label-caps text-label-caps text-secondary">样例问题</th>
+              <th className="sticky top-0 z-10 bg-surface-container-low px-lg py-md font-label-caps text-label-caps text-secondary">最近探测</th>
+              <th className="sticky top-0 z-10 bg-surface-container-low px-lg py-md font-label-caps text-label-caps text-secondary">排序</th>
+              <th className="sticky top-0 z-10 bg-surface-container-low px-lg py-md text-right font-label-caps text-label-caps text-secondary">操作</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border-hairline">
-            {isTableLoading ? (
-              <tr>
-                <td className="px-lg py-xl text-center text-secondary" colSpan={10}>
-                  加载中...
-                </td>
-              </tr>
-            ) : mergedRows.length === 0 ? (
+            {!isTableLoading && pagedRows.length === 0 ? (
               <tr>
                 <td className="px-lg py-xl text-center text-secondary" colSpan={10}>
                   暂无工具配置
                 </td>
               </tr>
             ) : (
-              mergedRows.map((row) => {
+              pagedRows.map((row) => {
                 const tool = row.config;
                 const health = row.health;
                 const toolCode = row.toolCode;
                 return (
-                <tr key={String(tool?.id ?? toolCode)} className="transition-colors hover:bg-surface-container-low">
-                  <td className="px-lg py-md font-data-mono text-[12px] text-tertiary-container">/{toolCode}</td>
-                  <td className="px-lg py-md text-ink">{tool?.displayName || health?.displayName || toolCode}</td>
-                  <td className="px-lg py-md text-body-sm text-secondary">{tool?.category || health?.category || '-'}</td>
-                  <td className="px-lg py-md text-body-sm text-secondary">{tool?.sourceType || health?.source || '-'}</td>
-                  <td className="px-lg py-md">
-                    <span
-                      className={[
-                        'rounded-full border px-2 py-0.5 text-[11px] font-medium',
-                        tool?.enabled === 0
-                          ? 'border-border-hairline bg-surface-container-low text-secondary'
-                          : 'border-border-strong bg-surface-container text-ink',
-                      ].join(' ')}
-                    >
-                      {tool?.enabled === 0 ? '停用' : '启用'}
-                    </span>
-                  </td>
-                  <td className="px-lg py-md">
-                    <div className="flex items-center gap-xs">
-                      <span className={clsx('h-2 w-2 rounded-full', statusDotClass(health?.status))} />
-                      <span className={clsx('text-body-sm font-medium', statusTextClass(health?.status))}>
-                        {health?.statusLabel || '未接入'}
+                  <tr key={String(tool?.id ?? toolCode)} className="transition-colors hover:bg-surface-container-low">
+                    <td className="px-lg py-md font-data-mono text-[12px] text-tertiary-container">/{toolCode}</td>
+                    <td className="px-lg py-md text-ink">{tool?.displayName || health?.displayName || toolCode}</td>
+                    <td className="px-lg py-md text-body-sm text-secondary">{tool?.category || health?.category || '-'}</td>
+                    <td className="px-lg py-md text-body-sm text-secondary">{tool?.sourceType || health?.source || '-'}</td>
+                    <td className="px-lg py-md">
+                      <span
+                        className={[
+                          'rounded-full border px-2 py-0.5 text-[11px] font-medium',
+                          tool?.enabled === 0
+                            ? 'border-border-hairline bg-surface-container-low text-secondary'
+                            : 'border-border-strong bg-surface-container text-ink',
+                        ].join(' ')}
+                      >
+                        {tool?.enabled === 0 ? '停用' : '启用'}
                       </span>
-                    </div>
-                  </td>
-                  <td className="max-w-[16rem] truncate px-lg py-md text-body-sm text-secondary">
-                    {health?.sampleQuestion || '-'}
-                  </td>
-                  <td className="px-lg py-md text-[12px] text-secondary">{health?.checkedAt || '-'}</td>
-                  <td className="px-lg py-md text-body-sm text-secondary">{tool?.sortNo ?? 0}</td>
-                  <td className="px-lg py-md text-right">
-                    <div className="inline-flex gap-sm">
-                      <button
-                        type="button"
-                        aria-label={`测试工具 ${toolCode}`}
-                        className="rounded-lg border border-border-hairline bg-surface-container-lowest px-sm py-1.5 text-[12px] text-secondary transition-colors hover:bg-surface-container-low hover:text-ink disabled:opacity-60"
-                        onClick={() => void handlePing(toolCode)}
-                        disabled={pingingToolCode === toolCode}
-                      >
-                        {pingingToolCode === toolCode ? '探测中...' : '探测'}
-                      </button>
-                      <button
-                        type="button"
-                        aria-label={`调用工具 ${toolCode}`}
-                        className="rounded-lg border border-border-strong bg-surface-container-lowest px-sm py-1.5 text-[12px] text-ink transition-colors hover:bg-surface-container-low"
-                        onClick={() => openInvokeDialog(toolCode, health?.sampleQuestion)}
-                      >
-                        调用
-                      </button>
-                      <button
-                        type="button"
-                        aria-label={`编辑工具 ${toolCode}`}
-                        className="rounded-lg border border-border-strong bg-surface-container-lowest px-sm py-1.5 text-[12px] text-ink transition-colors hover:bg-surface-container-low"
-                        onClick={() => tool ? openEditDialog(tool) : null}
-                        disabled={!tool}
-                      >
-                        编辑
-                      </button>
-                      <button
-                        type="button"
-                        aria-label={`删除工具 ${toolCode}`}
-                        className="rounded-lg border border-error bg-error-container px-sm py-1.5 text-[12px] text-on-error-container transition-opacity hover:opacity-90"
-                        onClick={() => (tool ? setDeleteTarget(tool) : null)}
-                        disabled={!tool}
-                      >
-                        删除
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              )})
+                    </td>
+                    <td className="px-lg py-md">
+                      <div className="flex items-center gap-xs">
+                        <span className={clsx('h-2 w-2 rounded-full', statusDotClass(health?.status))} />
+                        <span className={clsx('text-body-sm font-medium', statusTextClass(health?.status))}>
+                          {health?.statusLabel || '未接入'}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="max-w-[16rem] truncate px-lg py-md text-body-sm text-secondary">
+                      {health?.sampleQuestion || '-'}
+                    </td>
+                    <td className="px-lg py-md text-[12px] text-secondary">{health?.checkedAt || '-'}</td>
+                    <td className="px-lg py-md text-body-sm text-secondary">{tool?.sortNo ?? 0}</td>
+                    <td className="px-lg py-md text-right">
+                      <div className="inline-flex gap-sm">
+                        <button
+                          type="button"
+                          aria-label={`测试工具 ${toolCode}`}
+                          className="rounded-lg border border-border-hairline bg-surface-container-lowest px-sm py-1.5 text-[12px] text-secondary transition-colors hover:bg-surface-container-low hover:text-ink disabled:opacity-60"
+                          onClick={() => void handlePing(toolCode)}
+                          disabled={pingingToolCode === toolCode}
+                        >
+                          {pingingToolCode === toolCode ? '探测中...' : '探测'}
+                        </button>
+                        <button
+                          type="button"
+                          aria-label={`调用工具 ${toolCode}`}
+                          className="rounded-lg border border-border-strong bg-surface-container-lowest px-sm py-1.5 text-[12px] text-ink transition-colors hover:bg-surface-container-low"
+                          onClick={() => openInvokeDialog(toolCode, health?.sampleQuestion)}
+                        >
+                          调用
+                        </button>
+                        <button
+                          type="button"
+                          aria-label={`编辑工具 ${toolCode}`}
+                          className="rounded-lg border border-border-strong bg-surface-container-lowest px-sm py-1.5 text-[12px] text-ink transition-colors hover:bg-surface-container-low"
+                          onClick={() => tool ? openEditDialog(tool) : null}
+                          disabled={!tool}
+                        >
+                          编辑
+                        </button>
+                        <button
+                          type="button"
+                          aria-label={`删除工具 ${toolCode}`}
+                          className="rounded-lg border border-error bg-error-container px-sm py-1.5 text-[12px] text-on-error-container transition-opacity hover:opacity-90"
+                          onClick={() => (tool ? setDeleteTarget(tool) : null)}
+                          disabled={!tool}
+                        >
+                          删除
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })
             )}
           </tbody>
         </table>
-      </section>
+        )}
+      />
 
       {dialogOpen ? (
         <ToolEditDialog

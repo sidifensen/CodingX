@@ -2,6 +2,7 @@ import React from 'react';
 import clsx from 'clsx';
 
 import { AdminChatApi, AdminMcpConfig, AdminMcpToolView } from '../api/adminChatApi';
+import { DataTableCard } from '../components/DataTableCard';
 
 type McpDialogMode = 'create' | 'edit';
 
@@ -31,6 +32,8 @@ const emptyMcpForm: McpFormState = {
   enabled: true,
 };
 
+const MCP_TABLE_PAGE_SIZE = 10;
+
 /**
  * 管理端 MCP 页面：同时承载数据库配置管理和在线探测能力。
  */
@@ -47,8 +50,22 @@ export function MCP() {
   const [dialogMode, setDialogMode] = React.useState<McpDialogMode>('create');
   const [editingConfig, setEditingConfig] = React.useState<AdminMcpConfig | null>(null);
   const [deleteTarget, setDeleteTarget] = React.useState<AdminMcpConfig | null>(null);
+  const [pageNo, setPageNo] = React.useState(1);
   const mergedRows = React.useMemo(() => mergeConfigAndTools(configs, tools), [configs, tools]);
   const isTableLoading = configLoading || toolLoading;
+  const totalRows = mergedRows.length;
+  const pageCount = Math.max(1, Math.ceil(totalRows / MCP_TABLE_PAGE_SIZE));
+  const safePageNo = Math.min(pageNo, pageCount);
+  const pagedRows = React.useMemo(() => {
+    const start = (safePageNo - 1) * MCP_TABLE_PAGE_SIZE;
+    return mergedRows.slice(start, start + MCP_TABLE_PAGE_SIZE);
+  }, [mergedRows, safePageNo]);
+
+  React.useEffect(() => {
+    if (pageNo > pageCount) {
+      setPageNo(pageCount);
+    }
+  }, [pageNo, pageCount]);
 
   /**
    * 加载数据库中的 MCP 配置列表。
@@ -165,11 +182,7 @@ export function MCP() {
       </div>
 
       <section className="space-y-md rounded-2xl border border-border-hairline bg-surface-container-lowest p-lg">
-        <div className="flex flex-col gap-sm lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <h3 className="font-title-md text-title-md text-ink">MCP 列表</h3>
-            <p className="mt-1 text-body-sm text-secondary">统一展示数据库配置和执行器探测状态，避免同页双列表割裂。</p>
-          </div>
+        <div className="flex justify-end">
           <div className="flex gap-sm">
             <button
               type="button"
@@ -196,94 +209,100 @@ export function MCP() {
           </div>
         ) : null}
 
-        <div className="overflow-hidden rounded-xl border border-border-hairline">
-          <table className="w-full border-collapse text-left">
+        <DataTableCard
+          title="MCP 列表"
+          description="统一展示数据库配置和执行器探测状态，避免同页双列表割裂。"
+          scrollTestId="mcp-table-scroll"
+          loading={isTableLoading}
+          loadingText="加载中..."
+          summaryText={`第 ${safePageNo} / ${pageCount} 页，共 ${totalRows.toLocaleString('zh-CN')} 条`}
+          paginationCurrent={safePageNo}
+          paginationPages={pageCount}
+          onPaginationChange={setPageNo}
+          tableContent={(
+            <table className="w-full min-w-[1280px] border-collapse text-left">
             <thead>
               <tr className="bg-surface-container-low border-b border-border-hairline">
-                <th className="px-lg py-md font-label-caps text-label-caps text-secondary">编码</th>
-                <th className="px-lg py-md font-label-caps text-label-caps text-secondary">名称</th>
-                <th className="px-lg py-md font-label-caps text-label-caps text-secondary">分类</th>
-                <th className="px-lg py-md font-label-caps text-label-caps text-secondary">来源</th>
-                <th className="px-lg py-md font-label-caps text-label-caps text-secondary">配置状态</th>
-                <th className="px-lg py-md font-label-caps text-label-caps text-secondary">执行器状态</th>
-                <th className="px-lg py-md font-label-caps text-label-caps text-secondary">最近探测</th>
-                <th className="px-lg py-md font-label-caps text-label-caps text-secondary">排序</th>
-                <th className="px-lg py-md text-right font-label-caps text-label-caps text-secondary">操作</th>
+                <th className="sticky top-0 z-10 bg-surface-container-low px-lg py-md font-label-caps text-label-caps text-secondary">编码</th>
+                <th className="sticky top-0 z-10 bg-surface-container-low px-lg py-md font-label-caps text-label-caps text-secondary">名称</th>
+                <th className="sticky top-0 z-10 bg-surface-container-low px-lg py-md font-label-caps text-label-caps text-secondary">分类</th>
+                <th className="sticky top-0 z-10 bg-surface-container-low px-lg py-md font-label-caps text-label-caps text-secondary">来源</th>
+                <th className="sticky top-0 z-10 bg-surface-container-low px-lg py-md font-label-caps text-label-caps text-secondary">配置状态</th>
+                <th className="sticky top-0 z-10 bg-surface-container-low px-lg py-md font-label-caps text-label-caps text-secondary">执行器状态</th>
+                <th className="sticky top-0 z-10 bg-surface-container-low px-lg py-md font-label-caps text-label-caps text-secondary">最近探测</th>
+                <th className="sticky top-0 z-10 bg-surface-container-low px-lg py-md font-label-caps text-label-caps text-secondary">排序</th>
+                <th className="sticky top-0 z-10 bg-surface-container-low px-lg py-md text-right font-label-caps text-label-caps text-secondary">操作</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border-hairline">
-              {isTableLoading ? (
-                <tr>
-                  <td className="px-lg py-xl text-center text-secondary" colSpan={9}>
-                    加载中...
-                  </td>
-                </tr>
-              ) : mergedRows.length === 0 ? (
+              {!isTableLoading && pagedRows.length === 0 ? (
                 <tr>
                   <td className="px-lg py-xl text-center text-secondary" colSpan={9}>
                     暂无 MCP 配置
                   </td>
                 </tr>
               ) : (
-                mergedRows.map((row) => {
+                pagedRows.map((row) => {
                   const config = row.config;
                   const tool = row.tool;
                   const rowKey = String(config?.id ?? row.mcpCode);
                   const statusLabel = tool?.statusLabel ?? (config ? '未接入' : '仅执行器');
                   const status = tool?.status ?? 'failed';
                   return (
-                  <tr key={rowKey} className="hover:bg-surface-container-low transition-colors">
-                    <td className="px-lg py-md font-data-mono text-[12px] text-tertiary-container">/{row.mcpCode}</td>
-                    <td className="px-lg py-md text-ink">{config?.displayName || tool?.displayName || row.mcpCode}</td>
-                    <td className="px-lg py-md text-secondary text-body-sm">{config?.category || tool?.category || '-'}</td>
-                    <td className="px-lg py-md text-secondary text-body-sm">{config?.sourceType || tool?.source || '-'}</td>
-                    <td className="px-lg py-md">
-                      <EnabledBadge enabled={(config?.enabled ?? 0) !== 0} />
-                    </td>
-                    <td className="px-lg py-md">
-                      <div className="flex items-center gap-xs">
-                        <span className={clsx('w-2 h-2 rounded-full', statusDotClass(status))} />
-                        <span className={clsx('text-body-sm font-medium', statusTextClass(status))}>{statusLabel}</span>
-                      </div>
-                    </td>
-                    <td className="px-lg py-md text-secondary text-[12px]">{tool?.checkedAt || '-'}</td>
-                    <td className="px-lg py-md text-secondary text-body-sm">{config?.sortNo ?? 0}</td>
-                    <td className="px-lg py-md text-right">
-                      <div className="inline-flex gap-sm">
-                        <button
-                          type="button"
-                          aria-label={`测试 ${row.mcpCode}`}
-                          className="rounded-lg border border-border-hairline bg-surface-container-lowest px-sm py-1.5 text-[12px] text-secondary transition-colors hover:bg-surface-container-low hover:text-ink disabled:opacity-60"
-                          onClick={() => void handlePing(row.mcpCode)}
-                          disabled={pingingToolId === row.mcpCode}
-                        >
-                          {pingingToolId === row.mcpCode ? '探测中...' : '测试'}
-                        </button>
-                        <button
-                          type="button"
-                          aria-label={`编辑配置 ${row.mcpCode}`}
-                          className="rounded-lg border border-border-strong bg-surface-container-lowest px-sm py-1.5 text-[12px] text-ink transition-colors hover:bg-surface-container-low"
-                          onClick={() => config ? openEditDialog(config) : openCreateDialogWithCode(row.mcpCode)}
-                        >
-                          {config ? '编辑' : '补配置'}
-                        </button>
-                        <button
-                          type="button"
-                          aria-label={`删除配置 ${row.mcpCode}`}
-                          className="rounded-lg border border-error bg-error-container px-sm py-1.5 text-[12px] text-on-error-container transition-opacity hover:opacity-90"
-                          onClick={() => config ? setDeleteTarget(config) : undefined}
-                          disabled={!config}
-                        >
-                          删除
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                )})
+                    <tr key={rowKey} className="hover:bg-surface-container-low transition-colors">
+                      <td className="px-lg py-md font-data-mono text-[12px] text-tertiary-container">/{row.mcpCode}</td>
+                      <td className="px-lg py-md text-ink">{config?.displayName || tool?.displayName || row.mcpCode}</td>
+                      <td className="px-lg py-md text-secondary text-body-sm">{config?.category || tool?.category || '-'}</td>
+                      <td className="px-lg py-md text-secondary text-body-sm">{config?.sourceType || tool?.source || '-'}</td>
+                      <td className="px-lg py-md">
+                        <EnabledBadge enabled={(config?.enabled ?? 0) !== 0} />
+                      </td>
+                      <td className="px-lg py-md">
+                        <div className="flex items-center gap-xs">
+                          <span className={clsx('w-2 h-2 rounded-full', statusDotClass(status))} />
+                          <span className={clsx('text-body-sm font-medium', statusTextClass(status))}>{statusLabel}</span>
+                        </div>
+                      </td>
+                      <td className="px-lg py-md text-secondary text-[12px]">{tool?.checkedAt || '-'}</td>
+                      <td className="px-lg py-md text-secondary text-body-sm">{config?.sortNo ?? 0}</td>
+                      <td className="px-lg py-md text-right">
+                        <div className="inline-flex gap-sm">
+                          <button
+                            type="button"
+                            aria-label={`测试 ${row.mcpCode}`}
+                            className="rounded-lg border border-border-hairline bg-surface-container-lowest px-sm py-1.5 text-[12px] text-secondary transition-colors hover:bg-surface-container-low hover:text-ink disabled:opacity-60"
+                            onClick={() => void handlePing(row.mcpCode)}
+                            disabled={pingingToolId === row.mcpCode}
+                          >
+                            {pingingToolId === row.mcpCode ? '探测中...' : '测试'}
+                          </button>
+                          <button
+                            type="button"
+                            aria-label={`编辑配置 ${row.mcpCode}`}
+                            className="rounded-lg border border-border-strong bg-surface-container-lowest px-sm py-1.5 text-[12px] text-ink transition-colors hover:bg-surface-container-low"
+                            onClick={() => config ? openEditDialog(config) : openCreateDialogWithCode(row.mcpCode)}
+                          >
+                            {config ? '编辑' : '补配置'}
+                          </button>
+                          <button
+                            type="button"
+                            aria-label={`删除配置 ${row.mcpCode}`}
+                            className="rounded-lg border border-error bg-error-container px-sm py-1.5 text-[12px] text-on-error-container transition-opacity hover:opacity-90"
+                            onClick={() => config ? setDeleteTarget(config) : undefined}
+                            disabled={!config}
+                          >
+                            删除
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
-        </div>
+          )}
+        />
       </section>
 
       {dialogOpen ? (

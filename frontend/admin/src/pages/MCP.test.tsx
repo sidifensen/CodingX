@@ -181,4 +181,29 @@ describe('MCP page', () => {
       expect(screen.queryByRole('dialog', { name: '工具探测结果' })).not.toBeInTheDocument(),
     );
   });
+
+  it('uses paginated table card and supports page navigation', async () => {
+    vi.mocked(AdminChatApi.listMcpConfigs).mockResolvedValue(
+      Array.from({ length: 12 }, (_, index) => ({
+        id: 8000 + index,
+        mcpCode: `mcp_${index + 1}`,
+        displayName: `MCP ${index + 1}`,
+        description: '',
+        category: '测试',
+        sourceType: 'built-in',
+        enabled: 1,
+        sortNo: index + 1,
+      })) as any,
+    );
+    vi.mocked(AdminChatApi.listMcpTools).mockResolvedValue([]);
+
+    render(<MCP />);
+    expect(await screen.findByText('/mcp_1')).toBeInTheDocument();
+    expect(screen.getByText('第 1 / 2 页，共 12 条')).toBeInTheDocument();
+    expect(screen.queryByText('/mcp_11')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '第 2 页' }));
+    expect(await screen.findByText('/mcp_11')).toBeInTheDocument();
+    expect(screen.queryByText('/mcp_1')).not.toBeInTheDocument();
+  });
 });

@@ -5,6 +5,8 @@ import App from './App';
  * 验证应用壳层在默认状态下可正常渲染。
  */
 describe('App', () => {
+  const previousCodingxHost = window.codingxHost;
+
   /**
    * 统一模拟聊天页在壳层测试期间会触发的基础数据请求，避免与认证测试互相污染。
    */
@@ -79,6 +81,66 @@ describe('App', () => {
     // 步骤：清理 fetch 模拟，避免上一条用例的响应残留影响当前断言。
     vi.restoreAllMocks();
     mockChatWorkspaceFetch();
+
+    // 步骤：默认提供 Web 宿主桥接占位，避免测试环境因标题栏窗口事件能力缺失触发异常。
+    window.codingxHost = {
+      getContext: async () => ({
+        hostType: 'web',
+        executionTargets: ['cloud'],
+        capabilities: {
+          localFiles: false,
+          localFolderPicker: false,
+          shell: false,
+          browserAutomation: true,
+          desktopNotifications: false,
+          officeInterop: false,
+          localMcp: false,
+          windowControls: false,
+        },
+        localResource: {
+          boundRepositoryPath: null,
+          permissionGranted: false,
+        },
+      }),
+      getWindowState: async () => ({
+        isMaximized: false,
+        isMinimized: false,
+        isFullScreen: false,
+      }),
+      minimizeWindow: async () => undefined,
+      toggleMaximizeWindow: async () => ({
+        isMaximized: false,
+        isMinimized: false,
+        isFullScreen: false,
+      }),
+      closeWindow: async () => undefined,
+      onWindowStateChanged: () => () => undefined,
+      pickRepositoryDirectory: async () => null,
+      bindRepositoryPath: async () => ({
+        hostType: 'web',
+        executionTargets: ['cloud'],
+        capabilities: {
+          localFiles: false,
+          localFolderPicker: false,
+          shell: false,
+          browserAutomation: true,
+          desktopNotifications: false,
+          officeInterop: false,
+          localMcp: false,
+          windowControls: false,
+        },
+        localResource: {
+          boundRepositoryPath: null,
+          permissionGranted: false,
+        },
+      }),
+      requestFileAccess: async () => false,
+      listDirectory: async () => [],
+    };
+  });
+
+  afterAll(() => {
+    window.codingxHost = previousCodingxHost;
   });
 
   /**
@@ -409,6 +471,124 @@ describe('App', () => {
     expect(
       screen.queryByRole('button', { name: 'CodingX Admin 个人中心' }),
     ).not.toBeInTheDocument();
+    expect(window.localStorage.getItem('codingx.auth.session')).toBeNull();
+  });
+
+  /**
+   * 聊天请求若返回未登录错误，应立即清理本地会话并拉起登录弹窗，避免页面停留在错误态。
+   */
+  it('应在聊天流返回未登录时立即打开登录弹窗并清理会话', async () => {
+    window.localStorage.setItem(
+      'codingx.auth.session',
+      JSON.stringify({
+        token: 'token-123',
+        userId: 1002,
+        username: 'user',
+        displayName: 'CodingX User',
+        userType: 'USER',
+      }),
+    );
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (
+        url.startsWith('/api/chat/conversations/') &&
+        (url.endsWith('/current-skills') || url.endsWith('/current-mcps'))
+      ) {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (url === '/api/auth/me') {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            code: 'OK',
+            message: 'success',
+            data: {
+              userId: 1002,
+              username: 'user',
+              displayName: 'CodingX User',
+              userType: 'USER',
+            },
+          }),
+          { status: 200 },
+        );
+      }
+      if (url === '/api/chat/conversations') {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            code: 'OK',
+            message: 'success',
+            data: [
+              {
+                id: 2001,
+                title: '会话A',
+                status: 'ACTIVE',
+                lastMessageAt: '2026-05-15 00:36:58',
+                lastRunId: 5002,
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      if (url === '/api/chat/sample-questions') {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (url === '/api/chat/mcps') {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (url === '/api/chat/skills') {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (
+        url === '/api/chat/conversations/2001/messages' ||
+        url === '/api/chat/conversations/2001/steps' ||
+        url === '/api/chat/conversations/2001/references' ||
+        url === '/api/chat/conversations/2001/artifacts'
+      ) {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (url.startsWith('/api/chat/stream?')) {
+        expect((init?.headers as Record<string, string>)?.satoken).toBe('token-123');
+        return new Response(
+          JSON.stringify({
+            success: false,
+            code: 'UNAUTHORIZED',
+            message: '未登录或登录已失效，请重新登录',
+            data: null,
+          }),
+          { status: 401 },
+        );
+      }
+      throw new Error(`Unhandled fetch in stream unauthorized test: ${url}`);
+    });
+
+    render(<App />);
+
+    await screen.findByRole('button', { name: 'CodingX User 个人中心' });
+    fireEvent.change(screen.getByPlaceholderText('输入问题，或先选择技能/MCP...'), {
+      target: { value: '北京天气' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '发送消息' }));
+
+    expect(await screen.findByRole('heading', { name: '登录 CodingX' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: '侧边栏登录入口' })).toBeInTheDocument();
     expect(window.localStorage.getItem('codingx.auth.session')).toBeNull();
   });
 
@@ -1109,5 +1289,71 @@ describe('App', () => {
 
     expect(sidebarLabel).toBeInTheDocument();
     expect(sidebarLabel.closest('aside')).toHaveAttribute('aria-hidden', 'true');
+  });
+
+  /**
+   * 桌面宿主下应渲染自定义标题栏并展示窗口控制按钮，避免依赖原生标题栏。
+   */
+  it('应在桌面宿主下显示自定义窗口控制栏', async () => {
+    window.codingxHost = {
+      getContext: async () => ({
+        hostType: 'desktop',
+        executionTargets: ['cloud', 'local'],
+        capabilities: {
+          localFiles: true,
+          localFolderPicker: true,
+          shell: true,
+          browserAutomation: true,
+          desktopNotifications: true,
+          officeInterop: true,
+          localMcp: true,
+          windowControls: true,
+        },
+        localResource: {
+          boundRepositoryPath: null,
+          permissionGranted: false,
+        },
+      }),
+      getWindowState: async () => ({
+        isMaximized: false,
+        isMinimized: false,
+        isFullScreen: false,
+      }),
+      minimizeWindow: async () => undefined,
+      toggleMaximizeWindow: async () => ({
+        isMaximized: true,
+        isMinimized: false,
+        isFullScreen: false,
+      }),
+      closeWindow: async () => undefined,
+      onWindowStateChanged: () => () => undefined,
+      pickRepositoryDirectory: async () => null,
+      bindRepositoryPath: async () => ({
+        hostType: 'desktop',
+        executionTargets: ['cloud', 'local'],
+        capabilities: {
+          localFiles: true,
+          localFolderPicker: true,
+          shell: true,
+          browserAutomation: true,
+          desktopNotifications: true,
+          officeInterop: true,
+          localMcp: true,
+          windowControls: true,
+        },
+        localResource: {
+          boundRepositoryPath: null,
+          permissionGranted: false,
+        },
+      }),
+      requestFileAccess: async () => true,
+      listDirectory: async () => [],
+    };
+
+    render(<App />);
+
+    expect(await screen.findByRole('button', { name: '最小化窗口' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '最大化窗口' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '关闭窗口' })).toBeInTheDocument();
   });
 });

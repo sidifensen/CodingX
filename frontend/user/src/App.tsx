@@ -10,6 +10,7 @@ import SkillsView from './views/SkillsView';
 import ExpertsView from './views/ExpertsView';
 import Sidebar from './components/Sidebar';
 import LoginModal from './components/auth/LoginModal';
+import DesktopTitleBar from './components/DesktopTitleBar';
 import { useAuth } from './hooks/useAuth';
 import { useChatWorkspace } from './views/chat/useChatWorkspace';
 import { useHostContext } from './host/useHostContext';
@@ -39,17 +40,37 @@ export default function App() {
   const loginDefaultPassword = isDevelopmentMode ? '123456' : '';
 
   // 步骤：聚合认证相关状态和操作，复用组件化登录流程。
-  const { session, isAuthenticated, isSubmitting, errorMessage, login, logout, clearErrorMessage } =
-    useAuth();
+  const {
+    session,
+    isAuthenticated,
+    isSubmitting,
+    errorMessage,
+    login,
+    logout,
+    clearErrorMessage,
+    invalidateSession,
+  } = useAuth();
+  /**
+   * 聊天接口返回未登录时，统一回收登录态并立刻拉起登录弹窗。
+   */
+  const handleUnauthorized = () => {
+    invalidateSession();
+    setIsLoginModalOpen(true);
+  };
   // 步骤：由应用壳层统一持有聊天工作区状态，确保 Sidebar 与主区共用同一份真实会话数据。
-  const chatWorkspace = useChatWorkspace(isAuthenticated);
+  const chatWorkspace = useChatWorkspace(isAuthenticated, {
+    onUnauthorized: handleUnauthorized,
+  });
   // 步骤：读取当前宿主能力上下文，为侧边栏和后续本地能力入口提供统一数据源。
   const {
     hostContext,
-    isLoading: isHostContextLoading,
-    errorMessage: hostContextError,
-    pickRepositoryDirectory,
+    isLoading: _isHostContextLoading,
+    errorMessage: _hostContextError,
+    pickRepositoryDirectory: _pickRepositoryDirectory,
   } = useHostContext();
+  // 步骤：仅在桌面宿主且支持窗口控制时启用自定义标题栏占位高度。
+  const hasDesktopTitleBar =
+    hostContext?.hostType === 'desktop' && Boolean(hostContext.capabilities.windowControls);
 
   useEffect(() => {
     // 步骤：初始化主题样式。
@@ -144,9 +165,12 @@ export default function App() {
 
   return (
     <div className="relative h-screen w-full overflow-hidden bg-background text-foreground transition-colors duration-300">
+      <DesktopTitleBar hostContext={hostContext} />
       {/* 抽屉推动容器 */}
       <div
-        className={`flex h-full w-full transition-transform duration-400 ease-[cubic-bezier(0.32,0.72,0,1)] ${
+        className={`flex w-full transition-transform duration-400 ease-[cubic-bezier(0.32,0.72,0,1)] ${
+          hasDesktopTitleBar ? 'h-[calc(100%-2.25rem)]' : 'h-full'
+        } ${
           isMobileMenuOpen ? 'translate-x-72 md:translate-x-0' : 'translate-x-0'
         }`}
       >
@@ -168,10 +192,6 @@ export default function App() {
           onStartNewConversation={handleStartNewConversation}
           onRenameConversation={handleRenameConversation}
           onDeleteConversation={handleDeleteConversation}
-          hostContext={hostContext}
-          isHostContextLoading={isHostContextLoading}
-          hostContextError={hostContextError}
-          onPickRepositoryDirectory={pickRepositoryDirectory}
         />
 
         {/* 主内容区域 */}

@@ -1,6 +1,21 @@
 import { ApiResponseEnvelope } from '../types/auth';
 
 /**
+ * 标记后端鉴权失败（未登录/登录失效）的统一异常类型。
+ */
+export class ApiUnauthorizedError extends Error {
+  status: number;
+  code: string;
+
+  constructor(message: string, status: number, code: string) {
+    super(message);
+    this.name = 'ApiUnauthorizedError';
+    this.status = status;
+    this.code = code;
+  }
+}
+
+/**
  * 统一解析后端响应并提取错误信息，确保前端优先展示后端返回的中文文案。
  */
 export class ApiResponseParser {
@@ -48,7 +63,25 @@ export class ApiResponseParser {
     fallbackMessage: string,
   ): void {
     if (!response.ok || !envelope.success) {
+      if (this.isUnauthorized(response, envelope)) {
+        throw new ApiUnauthorizedError(
+          envelope.message || fallbackMessage,
+          response.status,
+          envelope.code ?? '',
+        );
+      }
       throw new Error(envelope.message || fallbackMessage);
     }
+  }
+
+  /**
+   * 判断当前响应是否属于“未登录/登录失效”语义。
+   * @param response Fetch 响应对象。
+   * @param envelope 统一响应结构。
+   * @returns 是否命中鉴权失效。
+   */
+  static isUnauthorized<T>(response: Response, envelope: ApiResponseEnvelope<T>): boolean {
+    const responseCode = String(envelope.code ?? '').toUpperCase();
+    return response.status === 401 || responseCode === 'UNAUTHORIZED';
   }
 }

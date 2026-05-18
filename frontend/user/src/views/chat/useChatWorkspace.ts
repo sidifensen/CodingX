@@ -16,12 +16,18 @@ import {
   McpItem,
   ReferenceItem,
   SampleQuestionItem,
+  UseChatWorkspaceOptions,
 } from './types';
 
 /**
  * 聚合聊天页三栏所需的真实状态、接口请求与 SSE 流式控制。
  */
-export function useChatWorkspace(isAuthenticated: boolean) {
+export function useChatWorkspace(
+  isAuthenticated: boolean,
+  options?: UseChatWorkspaceOptions,
+) {
+  const onUnauthorizedRef = useRef(options?.onUnauthorized);
+  onUnauthorizedRef.current = options?.onUnauthorized;
   const [conversations, setConversations] = useState<ConversationItem[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessageItem[]>([]);
@@ -230,9 +236,7 @@ export function useChatWorkspace(isAuthenticated: boolean) {
           signal: abortControllerRef.current.signal,
         },
       );
-      if (!response.ok) {
-        throw new Error((await response.text()) || '聊天请求失败');
-      }
+      await ChatApi.assertStreamAuthorized(response);
       setInputValue('');
       await consumeSseStream(response, optimisticAssistantId);
       const nextConversations = await loadConversations(token);
@@ -243,6 +247,9 @@ export function useChatWorkspace(isAuthenticated: boolean) {
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') {
         setStreamError('已停止当前生成');
+      } else if (error instanceof ChatApi.UnauthorizedError) {
+        // 步骤：会话失效时交由壳层统一回收会话并弹出登录，避免留在业务错误态。
+        onUnauthorizedRef.current?.();
       } else {
         setStreamError(error instanceof Error ? error.message : '聊天请求失败');
       }

@@ -124,6 +124,15 @@ export function useAuth() {
     setErrorMessage('');
   };
 
+  /**
+   * 在前端主动检测到 token 失效时，立即回收本地会话并重置错误态。
+   */
+  const invalidateSession = () => {
+    AuthStorage.clearSession();
+    setSession(null);
+    setErrorMessage('');
+  };
+
   return {
     session,
     isAuthenticated: Boolean(session),
@@ -132,5 +141,6 @@ export function useAuth() {
     login,
     logout,
     clearErrorMessage,
+    invalidateSession,
   };
 }

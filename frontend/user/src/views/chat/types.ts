@@ -210,3 +210,10 @@ export interface ChatWorkspaceController {
     close: () => void;
   };
 }
+
+/**
+ * 聊天工作区可选的鉴权失效回调。
+ */
+export interface UseChatWorkspaceOptions {
+  onUnauthorized?: () => void;
+}

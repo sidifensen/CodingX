@@ -1,5 +1,5 @@
 import { ApiResponseEnvelope } from '../../types/auth';
-import { ApiResponseParser } from '../../api/apiResponse';
+import { ApiResponseParser, ApiUnauthorizedError } from '../../api/apiResponse';
 import {
   ArtifactItem,
   ChatSkillItem,
@@ -17,6 +17,11 @@ import {
  * 统一封装聊天工作区的 HTTP 请求，确保会话、消息和右栏回放共享同一套鉴权与错误处理逻辑。
  */
 export class ChatApi {
+  /**
+   * 复用统一鉴权异常类型，供上层快速判断是否需要回退到登录页。
+   */
+  static UnauthorizedError = ApiUnauthorizedError;
+
   /**
    * 加载当前用户可见的会话列表。
    * @param token 当前登录令牌。
@@ -240,5 +245,24 @@ export class ChatApi {
     const envelope = await ApiResponseParser.parseEnvelope<T>(response, '聊天请求失败');
     ApiResponseParser.assertSuccess(response, envelope, '聊天请求失败');
     return envelope;
+  }
+
+  /**
+   * 统一解析聊天流（SSE）请求的授权失败，避免 UI 把 JSON 错误体直接展示给用户。
+   * @param response SSE 响应对象。
+   */
+  static async assertStreamAuthorized(response: Response): Promise<void> {
+    if (response.ok) {
+      return;
+    }
+    const envelope = await ApiResponseParser.parseEnvelope<null>(response, '聊天请求失败');
+    if (ApiResponseParser.isUnauthorized(response, envelope)) {
+      throw new ApiUnauthorizedError(
+        envelope.message || '登录已失效，请重新登录',
+        response.status,
+        envelope.code ?? '',
+      );
+    }
+    throw new Error(envelope.message || '聊天请求失败');
   }
 }

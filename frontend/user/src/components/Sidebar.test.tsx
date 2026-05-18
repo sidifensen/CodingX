@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import Sidebar from './Sidebar';
 import { HostContext } from '../host/types';
@@ -8,7 +8,6 @@ import { HostContext } from '../host/types';
  */
 function createSidebarProps(overrides?: {
   hostContext?: HostContext;
-  onPickRepositoryDirectory?: () => Promise<void>;
 }) {
   return {
     activeView: 'chat' as const,
@@ -31,13 +30,11 @@ function createSidebarProps(overrides?: {
     hostContext: overrides?.hostContext,
     isHostContextLoading: false,
     hostContextError: '',
-    onPickRepositoryDirectory: overrides?.onPickRepositoryDirectory ?? vi.fn(async () => undefined),
   };
 }
 
-describe('Sidebar local resource entry', () => {
-  it('应在桌面宿主下展示本地资源入口并支持选择仓库', async () => {
-    const onPickRepositoryDirectory = vi.fn(async () => undefined);
+describe('Sidebar host capability panel', () => {
+  it('应移除宿主能力信息卡片展示', () => {
     const props = createSidebarProps({
       hostContext: {
         hostType: 'desktop',
@@ -56,19 +53,17 @@ describe('Sidebar local resource entry', () => {
           permissionGranted: false,
         },
       },
-      onPickRepositoryDirectory,
     });
 
     render(<Sidebar {...props} />);
 
-    expect(screen.getByText('桌面宿主')).toBeInTheDocument();
-    const pickButton = screen.getByRole('button', { name: '选择本地仓库目录' });
-    fireEvent.click(pickButton);
-
-    expect(onPickRepositoryDirectory).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText('宿主能力')).not.toBeInTheDocument();
+    expect(screen.queryByText('桌面宿主')).not.toBeInTheDocument();
+    expect(screen.queryByText('执行目标：')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '选择本地仓库目录' })).not.toBeInTheDocument();
   });
 
-  it('应在 Web 宿主下隐藏本地资源入口', () => {
+  it('应在 Web 宿主下同样不展示宿主信息文案', () => {
     const props = createSidebarProps({
       hostContext: {
         hostType: 'web',
@@ -87,7 +82,8 @@ describe('Sidebar local resource entry', () => {
 
     render(<Sidebar {...props} />);
 
-    expect(screen.getByText('Web 宿主')).toBeInTheDocument();
+    expect(screen.queryByText('Web 宿主')).not.toBeInTheDocument();
+    expect(screen.queryByText('执行目标：cloud')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '选择本地仓库目录' })).not.toBeInTheDocument();
   });
 });

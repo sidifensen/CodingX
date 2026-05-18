@@ -27,6 +27,7 @@ describe('resolveHostBridge', () => {
           desktopNotifications: true,
           officeInterop: true,
           localMcp: true,
+          windowControls: true,
         },
         localResource: {
           boundRepositoryPath: 'D:/code/CodingX',
@@ -45,6 +46,7 @@ describe('resolveHostBridge', () => {
           desktopNotifications: true,
           officeInterop: true,
           localMcp: true,
+          windowControls: true,
         },
         localResource: {
           boundRepositoryPath: 'D:/code/CodingX',
@@ -53,6 +55,19 @@ describe('resolveHostBridge', () => {
       }),
       requestFileAccess: async () => true,
       listDirectory: async () => [],
+      getWindowState: async () => ({
+        isMaximized: false,
+        isMinimized: false,
+        isFullScreen: false,
+      }),
+      minimizeWindow: async () => undefined,
+      toggleMaximizeWindow: async () => ({
+        isMaximized: true,
+        isMinimized: false,
+        isFullScreen: false,
+      }),
+      closeWindow: async () => undefined,
+      onWindowStateChanged: () => () => undefined,
     };
 
     window.codingxHost = desktopBridge;

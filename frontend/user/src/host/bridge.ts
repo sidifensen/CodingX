@@ -1,9 +1,14 @@
-import { CodingxHostBridge, HostContext, LocalDirectoryEntry } from './types';
+import { CodingxHostBridge, HostContext, HostWindowState, LocalDirectoryEntry } from './types';
 
 /**
  * 生成 Web 宿主 fallback 能力，确保无桌面注入时页面可稳定运行。
  */
 function createWebFallbackBridge(): CodingxHostBridge {
+  const windowState: HostWindowState = {
+    isMaximized: false,
+    isMinimized: false,
+    isFullScreen: false,
+  };
   return {
     async getContext(): Promise<HostContext> {
       return {
@@ -17,12 +22,28 @@ function createWebFallbackBridge(): CodingxHostBridge {
           desktopNotifications: false,
           officeInterop: false,
           localMcp: false,
+          windowControls: false,
         },
         localResource: {
           boundRepositoryPath: null,
           permissionGranted: false,
         },
       };
+    },
+    async getWindowState(): Promise<HostWindowState> {
+      return windowState;
+    },
+    async minimizeWindow(): Promise<void> {
+      return;
+    },
+    async toggleMaximizeWindow(): Promise<HostWindowState> {
+      return windowState;
+    },
+    async closeWindow(): Promise<void> {
+      return;
+    },
+    onWindowStateChanged(): () => void {
+      return () => undefined;
     },
     async pickRepositoryDirectory(): Promise<string | null> {
       return null;

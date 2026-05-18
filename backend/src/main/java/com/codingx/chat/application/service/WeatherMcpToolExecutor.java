@@ -14,6 +14,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 /**
@@ -22,6 +23,7 @@ import org.springframework.stereotype.Component;
  * 该执行器通过 Open-Meteo 实时接口获取天气能力，返回当前天气或未来天气预报文本。
  */
 @Component
+@Slf4j
 public class WeatherMcpToolExecutor implements ChatMcpToolExecutor {
 
     /**
@@ -89,6 +91,15 @@ public class WeatherMcpToolExecutor implements ChatMcpToolExecutor {
             metadata.put("queryType", context.queryType());
             metadata.put("days", context.days());
             metadata.put("error", true);
+            // 记录外部天气接口失败根因，便于线上定位“统一降级文案”背后的真实异常。
+            log.warn(
+                "天气工具调用失败，question={}, city={}, queryType={}, days={}",
+                safeQuestion,
+                context.city(),
+                context.queryType(),
+                context.days(),
+                exception
+            );
             return new ChatMcpToolResult(toolId(), "天气服务暂时不可用，请稍后重试", metadata);
         }
     }
@@ -116,7 +127,12 @@ public class WeatherMcpToolExecutor implements ChatMcpToolExecutor {
         if (StrUtil.isBlank(question)) {
             return null;
         }
-        String directCity = ReUtil.get("([\\p{IsHan}]{2,8})(市|区|县|州|盟)?(今天天气|明天天气|后天天气|天气|气温|温度|预报)", question, 1);
+        // 城市与时间词分组提取，避免把“北京今天/上海未来三天”误识别为城市名。
+        String directCity = ReUtil.get(
+            "([\\p{IsHan}]{2,8}?)(?:市|区|县|州|盟)?(?:今天|明天|后天|未来\\d+天|未来[一二三四五六七八九十两]+天)?(?:天气|气温|温度|预报)",
+            question,
+            1
+        );
         if (StrUtil.isNotBlank(directCity)) {
             return directCity;
         }
@@ -268,6 +284,8 @@ public class WeatherMcpToolExecutor implements ChatMcpToolExecutor {
      */
     private GeocodeResult resolveCoordinates(String city) {
         HttpResponse response = HttpRequest.get(geocodingEndpoint())
+            // 部分网络环境下自动压缩解码会返回损坏流，显式禁用压缩可规避 ZipException。
+            .header("Accept-Encoding", "identity")
             .form("name", city)
             .form("count", 1)
             .form("language", "zh")
@@ -303,6 +321,8 @@ public class WeatherMcpToolExecutor implements ChatMcpToolExecutor {
     private ForecastResult queryForecast(double latitude, double longitude, int days) {
         int forecastDays = Math.min(Math.max(days, 1), 7);
         HttpResponse response = HttpRequest.get(forecastEndpoint())
+            // 与地理编码保持一致，统一使用未压缩响应，避免压缩流解码异常导致整链路降级。
+            .header("Accept-Encoding", "identity")
             .form("latitude", latitude)
             .form("longitude", longitude)
             .form("current", "temperature_2m,apparent_temperature,weather_code,wind_speed_10m")

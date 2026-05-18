@@ -12,11 +12,21 @@ export interface HostContext {
     desktopNotifications: boolean;
     officeInterop: boolean;
     localMcp: boolean;
+    windowControls: boolean;
   };
   localResource?: {
     boundRepositoryPath: string | null;
     permissionGranted: boolean;
   };
+}
+
+/**
+ * 描述桌面窗口当前状态，供自定义标题栏同步按钮展示。
+ */
+export interface HostWindowState {
+  isMaximized: boolean;
+  isMinimized: boolean;
+  isFullScreen: boolean;
 }
 
 /**
@@ -33,6 +43,11 @@ export interface LocalDirectoryEntry {
  */
 export interface CodingxHostBridge {
   getContext: () => Promise<HostContext>;
+  getWindowState: () => Promise<HostWindowState | null>;
+  minimizeWindow: () => Promise<void>;
+  toggleMaximizeWindow: () => Promise<HostWindowState | null>;
+  closeWindow: () => Promise<void>;
+  onWindowStateChanged: (listener: (state: HostWindowState) => void) => (() => void);
   pickRepositoryDirectory: () => Promise<string | null>;
   bindRepositoryPath: (path: string) => Promise<HostContext>;
   requestFileAccess: (path: string) => Promise<boolean>;

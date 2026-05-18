@@ -9,6 +9,7 @@ export interface HostContext {
     desktopNotifications: boolean;
     officeInterop: boolean;
     localMcp: boolean;
+    windowControls: boolean;
   };
   localResource: {
     boundRepositoryPath: string | null;
@@ -20,4 +21,10 @@ export interface LocalDirectoryEntry {
   name: string;
   path: string;
   entryType: 'file' | 'directory';
+}
+
+export interface HostWindowState {
+  isMaximized: boolean;
+  isMinimized: boolean;
+  isFullScreen: boolean;
 }

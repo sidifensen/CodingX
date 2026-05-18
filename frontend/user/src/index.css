@@ -164,4 +164,15 @@
   .chat-message-image {
     background-color: var(--surface);
   }
+
+  /* Electron 自定义标题栏需要可拖拽区域，按钮区域必须可点击。 */
+  .desktop-titlebar {
+    -webkit-app-region: drag;
+    user-select: none;
+  }
+
+  .desktop-titlebar-no-drag,
+  .desktop-titlebar-control {
+    -webkit-app-region: no-drag;
+  }
 }

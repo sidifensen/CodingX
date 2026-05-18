@@ -10,12 +10,13 @@
     "build": "tsc -p tsconfig.json",
     "start": "electron .",
     "dev": "npm run start",
-    "dev:all": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev-all.ps1",
     "build:user": "npm --prefix ../user run build",
     "pack:win": "npm run build && npm run build:user && electron-builder --win nsis",
     "pack:dir": "npm run build && npm run build:user && electron-builder --dir"
   },
-  "dependencies": {},
+  "dependencies": {
+    "dotenv": "^17.4.2"
+  },
   "devDependencies": {
     "@types/node": "^22.14.0",
     "electron": "^31.0.2",

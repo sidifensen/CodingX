@@ -526,6 +526,7 @@ export default function ChatView({
                 return (
                   <div
                     key={message.id}
+                    data-message-status={message.status}
                     className={`flex ${isAssistant ? 'justify-start' : 'justify-end'}`}
                   >
                     <div
@@ -544,7 +545,11 @@ export default function ChatView({
                             />
                           ) : null}
                           {message.mcpCalls && message.mcpCalls.length > 0 ? (
-                            <McpCallPanel messageId={message.id} calls={message.mcpCalls} />
+                            <McpCallPanel
+                              messageId={message.id}
+                              calls={message.mcpCalls}
+                              messageStatus={message.status}
+                            />
                           ) : null}
                           <MarkdownMessage content={messageContent} />
                           <AssistantMessageActions
@@ -1093,9 +1098,54 @@ function ThinkingPanel({ messageId, content }: { messageId: string; content: str
 /**
  * 渲染助手消息中的 MCP 调用折叠面板，展示工具、入参与返回片段。
  */
-function McpCallPanel({ messageId, calls }: { messageId: string; calls: McpCallItem[] }) {
+function McpCallPanel({
+  messageId,
+  calls,
+  messageStatus,
+}: {
+  messageId: string;
+  calls: McpCallItem[];
+  messageStatus: string;
+}) {
+  // 步骤：调用状态至少保留短暂可见时长，避免“调用中”在完成瞬间闪烁造成不可感知。
+  const MCP_CALL_RUNNING_MIN_VISIBLE_MS = 1000;
   const [isExpanded, setIsExpanded] = React.useState(true);
+  const [displayStatus, setDisplayStatus] = React.useState<'running' | 'completed'>(
+    messageStatus === 'streaming' ? 'running' : 'completed',
+  );
+  const runningStartedAtRef = React.useRef<number | null>(
+    messageStatus === 'streaming' ? Date.now() : null,
+  );
   const contentId = `mcp-call-content-panel-${messageId}`;
+  const isRunning = displayStatus === 'running';
+
+  React.useEffect(() => {
+    // 步骤：基于消息流状态驱动调用徽标，并在完成后维持最小时长再切到“调用完成”。
+    if (messageStatus === 'streaming') {
+      if (runningStartedAtRef.current == null) {
+        runningStartedAtRef.current = Date.now();
+      }
+      setDisplayStatus('running');
+      return;
+    }
+    const runningStartedAt = runningStartedAtRef.current;
+    if (runningStartedAt == null) {
+      setDisplayStatus('completed');
+      return;
+    }
+    const elapsed = Date.now() - runningStartedAt;
+    const remaining = Math.max(0, MCP_CALL_RUNNING_MIN_VISIBLE_MS - elapsed);
+    if (remaining === 0) {
+      runningStartedAtRef.current = null;
+      setDisplayStatus('completed');
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      runningStartedAtRef.current = null;
+      setDisplayStatus('completed');
+    }, remaining);
+    return () => window.clearTimeout(timer);
+  }, [messageStatus]);
 
   return (
     <section
@@ -1108,6 +1158,16 @@ function McpCallPanel({ messageId, calls }: { messageId: string; calls: McpCallI
         <span>MCP 调用</span>
         <span className="rounded-full border border-border bg-surface px-2 py-0.5 text-[11px] text-muted">
           {calls.length}
+        </span>
+        <span
+          data-testid={`mcp-call-status-${messageId}`}
+          className={`rounded-full border px-2 py-0.5 text-[11px] ${
+            isRunning
+              ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+              : 'border-border bg-surface text-muted'
+          }`}
+        >
+          {isRunning ? '调用中' : '调用完成'}
         </span>
         <button
           type="button"

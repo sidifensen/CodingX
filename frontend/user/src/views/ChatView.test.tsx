@@ -1,4 +1,4 @@
-﻿import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import ChatView from './ChatView';
 import { ChatWorkspaceController } from './chat/types';
 
@@ -1137,11 +1137,78 @@ describe('ChatView', () => {
     expect(screen.getByText('MCP 调用')).toBeInTheDocument();
     expect(screen.getByText('天气查询')).toBeInTheDocument();
     expect(screen.getByText('北京今天天气怎么样')).toBeInTheDocument();
+    expect(screen.getByTestId('mcp-call-status-801')).toHaveTextContent('调用完成');
 
     const toggleButton = screen.getByTestId('mcp-call-toggle-button-801');
     expect(toggleButton).toHaveAttribute('aria-expanded', 'true');
     fireEvent.click(toggleButton);
     expect(toggleButton).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  /**
+   * MCP 调用状态在流结束后应至少短暂停留“调用中”，避免状态闪现导致用户难以感知。
+   */
+  it('应在流结束后维持MCP调用中状态最短可见时长', async () => {
+    vi.useFakeTimers();
+    try {
+      const streamingWorkspace = createWorkspace({
+        messages: [
+          {
+            id: '901',
+            conversationId: '2001',
+            role: 'ASSISTANT',
+            content: '处理中',
+            mcpCalls: [
+              {
+                toolId: 'weather_query',
+                displayName: '天气查询',
+                input: '美国天气',
+                content: '处理中',
+              },
+            ],
+            status: 'streaming',
+          },
+        ],
+        executionSteps: [],
+        references: [],
+        artifacts: [],
+      });
+      const { rerender } = render(
+        <ChatView
+          isAuthenticated={true}
+          onRequireLogin={vi.fn()}
+          workspace={streamingWorkspace}
+        />,
+      );
+
+      expect(screen.getByTestId('mcp-call-status-901')).toHaveTextContent('调用中');
+
+      const completedWorkspace = {
+        ...streamingWorkspace,
+        messages: [
+          {
+            ...streamingWorkspace.messages[0],
+            content: '已完成',
+            status: 'COMPLETED',
+          },
+        ],
+      };
+      rerender(
+        <ChatView
+          isAuthenticated={true}
+          onRequireLogin={vi.fn()}
+          workspace={completedWorkspace}
+        />,
+      );
+
+      expect(screen.getByTestId('mcp-call-status-901')).toHaveTextContent('调用中');
+      act(() => {
+        vi.advanceTimersByTime(1000);
+      });
+      expect(screen.getByTestId('mcp-call-status-901')).toHaveTextContent('调用完成');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

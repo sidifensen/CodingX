@@ -68,6 +68,7 @@ export function useChatWorkspace(
   });
   const streamStateRef = useRef<ActiveStreamState | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const streamMcpCallsRef = useRef<Record<string, McpCallItem[]>>({});
 
   /**
    * 统一更新 MCP 选择列表，支持直接赋值与函数式更新。
@@ -142,6 +143,7 @@ export function useChatWorkspace(
   const selectConversation = async (
     conversationId: string,
     sourceConversations?: ConversationItem[],
+    latestAssistantMcpCalls?: McpCallItem[],
   ) => {
     const token = currentToken();
     if (!token) {
@@ -163,7 +165,8 @@ export function useChatWorkspace(
       ChatApi.listCurrentSkills(token, conversationId),
       ChatApi.listCurrentMcps(token, conversationId),
     ]);
-    setMessages(nextMessages);
+    // 步骤：流式阶段的 MCP 调用仅存在于事件流，历史回放接口暂未持久化该字段时需回填到末条助手消息。
+    setMessages(patchLatestAssistantMcpCalls(nextMessages, latestAssistantMcpCalls));
     setExecutionSteps(nextSteps);
     setReferences(nextReferences);
     setArtifacts(nextArtifacts);
@@ -196,6 +199,7 @@ export function useChatWorkspace(
     const optimisticConversationId = activeConversationId ?? 'pending-conversation';
     const optimisticMessageId = `optimistic-user-${Date.now()}`;
     const optimisticAssistantId = `optimistic-assistant-${Date.now()}`;
+    streamMcpCallsRef.current[optimisticAssistantId] = [];
     streamStateRef.current = {
       conversationId: optimisticConversationId,
       activeMessageId: optimisticAssistantId,
@@ -242,7 +246,11 @@ export function useChatWorkspace(
       const nextConversations = await loadConversations(token);
       const nextConversationId = streamStateRef.current?.conversationId ?? activeConversationId;
       if (nextConversationId) {
-        await selectConversation(nextConversationId, nextConversations);
+        await selectConversation(
+          nextConversationId,
+          nextConversations,
+          streamMcpCallsRef.current[optimisticAssistantId],
+        );
       }
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') {
@@ -254,6 +262,7 @@ export function useChatWorkspace(
         setStreamError(error instanceof Error ? error.message : '聊天请求失败');
       }
     } finally {
+      delete streamMcpCallsRef.current[optimisticAssistantId];
       setIsStreaming(false);
       abortControllerRef.current = null;
     }
@@ -467,6 +476,10 @@ export function useChatWorkspace(
         content: String(payload.content ?? ''),
         metadata: isRecord(payload.metadata) ? payload.metadata : undefined,
       };
+      streamMcpCallsRef.current[optimisticAssistantId] = [
+        ...(streamMcpCallsRef.current[optimisticAssistantId] ?? []),
+        call,
+      ];
       setMessages((previousMessages) =>
         previousMessages.map((message) =>
           message.id === optimisticAssistantId
@@ -703,4 +716,38 @@ function upsertById<T extends { id: string }>(items: T[], nextItem: T): T[] {
     return [...items, nextItem];
   }
   return items.map((item) => (item.id === nextItem.id ? nextItem : item));
+}
+
+/**
+ * 将流式阶段采集到的 MCP 调用回填到末条助手消息，避免刷新历史回放时面板闪现后消失。
+ * @param messages 接口返回的历史消息。
+ * @param latestAssistantMcpCalls 流式阶段采集的 MCP 调用列表。
+ * @returns 回填后的消息列表。
+ */
+function patchLatestAssistantMcpCalls(
+  messages: ChatMessageItem[],
+  latestAssistantMcpCalls?: McpCallItem[],
+): ChatMessageItem[] {
+  if (!latestAssistantMcpCalls || latestAssistantMcpCalls.length === 0) {
+    return messages;
+  }
+  const latestAssistantIndex = [...messages]
+    .map((message, index) => ({ message, index }))
+    .reverse()
+    .find((item) => item.message.role === 'ASSISTANT')?.index;
+  if (latestAssistantIndex == null) {
+    return messages;
+  }
+  const latestAssistantMessage = messages[latestAssistantIndex];
+  if (latestAssistantMessage.mcpCalls && latestAssistantMessage.mcpCalls.length > 0) {
+    return messages;
+  }
+  return messages.map((message, index) =>
+    index === latestAssistantIndex
+      ? {
+          ...message,
+          mcpCalls: latestAssistantMcpCalls,
+        }
+      : message,
+  );
 }

@@ -16,7 +16,6 @@ import { AuthSession } from '../types/auth';
 import ProfileMenu from './sidebar/ProfileMenu';
 import LoginEntry from './sidebar/LoginEntry';
 import { ConversationItem } from '../views/chat/types';
-import { HostContext } from '../host/types';
 
 /**
  * 定义 Sidebar 组件需要的输入属性。
@@ -39,10 +38,6 @@ interface SidebarProps {
   onStartNewConversation: () => Promise<void>;
   onRenameConversation: (conversationId: string, title: string) => Promise<void>;
   onDeleteConversation: (conversationId: string) => Promise<void>;
-  hostContext: HostContext | null;
-  isHostContextLoading: boolean;
-  hostContextError: string;
-  onPickRepositoryDirectory: () => Promise<void>;
 }
 
 /**
@@ -66,10 +61,6 @@ export default function Sidebar({
   onStartNewConversation,
   onRenameConversation,
   onDeleteConversation,
-  hostContext,
-  isHostContextLoading,
-  hostContextError,
-  onPickRepositoryDirectory,
 }: SidebarProps) {
   const NavItem = ({
     id,
@@ -158,16 +149,6 @@ export default function Sidebar({
           <NavItem id="automation" label="自动化" icon={Bot} />
         </nav>
 
-        {/* Host / Local Resource */}
-        <div className="px-5 mb-4">
-          <HostCapabilityPanel
-            hostContext={hostContext}
-            isHostContextLoading={isHostContextLoading}
-            hostContextError={hostContextError}
-            onPickRepositoryDirectory={onPickRepositoryDirectory}
-          />
-        </div>
-
         {/* History / Tasks */}
         <div className="flex-1 overflow-y-auto pb-4">
           {authSession ? (
@@ -195,67 +176,6 @@ export default function Sidebar({
         )}
       </div>
     </aside>
-  );
-}
-
-/**
- * 渲染宿主能力信息与本地资源入口，确保同一套前端在 Web/桌面端按能力差异展示。
- */
-function HostCapabilityPanel({
-  hostContext,
-  isHostContextLoading,
-  hostContextError,
-  onPickRepositoryDirectory,
-}: {
-  hostContext: HostContext | null;
-  isHostContextLoading: boolean;
-  hostContextError: string;
-  onPickRepositoryDirectory: () => Promise<void>;
-}) {
-  if (isHostContextLoading) {
-    return (
-      <section className="rounded-2xl border border-border bg-background px-4 py-3">
-        <div className="text-xs text-muted">读取宿主能力中...</div>
-      </section>
-    );
-  }
-
-  if (!hostContext) {
-    return null;
-  }
-
-  return (
-    <section className="rounded-2xl border border-border bg-background px-4 py-3">
-      <div className="flex items-center justify-between">
-        <span className="text-[11px] font-mono uppercase tracking-[0.2em] text-muted">
-          宿主能力
-        </span>
-        <span className="text-xs font-semibold text-foreground">
-          {hostContext.hostType === 'desktop' ? '桌面宿主' : 'Web 宿主'}
-        </span>
-      </div>
-      <p className="mt-2 text-xs text-muted">
-        执行目标：{hostContext.executionTargets.join(' / ')}
-      </p>
-      {hostContext.capabilities.localFolderPicker ? (
-        <div className="mt-3">
-          <button
-            type="button"
-            aria-label="选择本地仓库目录"
-            onClick={() => void onPickRepositoryDirectory()}
-            className="w-full cursor-pointer rounded-xl border border-border bg-surface px-3 py-2 text-left text-xs font-medium text-foreground transition-colors hover:bg-surface-high"
-          >
-            选择本地仓库目录
-          </button>
-          <p className="mt-2 text-[11px] leading-5 text-muted">
-            {hostContext.localResource?.boundRepositoryPath ?? '尚未绑定本地仓库'}
-          </p>
-        </div>
-      ) : null}
-      {hostContextError ? (
-        <p className="mt-2 text-[11px] text-[#ff5b57]">{hostContextError}</p>
-      ) : null}
-    </section>
   );
 }
 

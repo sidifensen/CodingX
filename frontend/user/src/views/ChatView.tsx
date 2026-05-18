@@ -44,8 +44,10 @@ export default function ChatView({
   onRequireLogin,
   workspace,
 }: ChatViewProps) {
-  // 步骤：统一抽出底部输入区预留高度，避免滚动容器与绝对定位输入区叠加时出现尾部滚动错位。
-  const CHAT_INPUT_SAFE_BOTTOM_CLASS = 'pb-36 md:pb-40';
+  // 步骤：基准底部留白用于兜底，避免在首帧测量前消息末尾与输入区发生重叠。
+  const CHAT_INPUT_BASE_SAFE_BOTTOM = 160;
+  // 步骤：在输入区高度基础上再补偿额外空隙，确保最后一条消息与操作栏保持可读间距。
+  const CHAT_INPUT_EXTRA_SAFE_GAP = 24;
   const {
     activeConversationId,
     messages,
@@ -86,6 +88,8 @@ export default function ChatView({
   const selectorLayerRef = React.useRef<HTMLDivElement | null>(null);
   const chatInputRef = React.useRef<HTMLTextAreaElement | null>(null);
   const inputPreviewRef = React.useRef<HTMLDivElement | null>(null);
+  const chatInputDockRef = React.useRef<HTMLDivElement | null>(null);
+  const [chatInputSafeBottom, setChatInputSafeBottom] = React.useState(CHAT_INPUT_BASE_SAFE_BOTTOM);
 
   /**
    * 过滤技能列表，支持名称与编码模糊检索。
@@ -293,6 +297,35 @@ export default function ChatView({
   }, [messages]);
 
   /**
+   * 动态测量底部输入栏高度，并同步到消息滚动区底部留白。
+   * 避免输入栏因多行文本增高后遮挡最后一条消息。
+   */
+  React.useEffect(() => {
+    const inputDockElement = chatInputDockRef.current;
+    if (!inputDockElement) {
+      return undefined;
+    }
+
+    const syncChatInputSafeBottom = () => {
+      const measuredHeight = inputDockElement.offsetHeight;
+      const nextSafeBottom = Math.max(
+        CHAT_INPUT_BASE_SAFE_BOTTOM,
+        measuredHeight + CHAT_INPUT_EXTRA_SAFE_GAP,
+      );
+      setChatInputSafeBottom(nextSafeBottom);
+    };
+
+    syncChatInputSafeBottom();
+    const resizeObserver = new ResizeObserver(syncChatInputSafeBottom);
+    resizeObserver.observe(inputDockElement);
+    window.addEventListener('resize', syncChatInputSafeBottom);
+    return () => {
+      resizeObserver.disconnect();
+      window.removeEventListener('resize', syncChatInputSafeBottom);
+    };
+  }, []);
+
+  /**
    * 根据输入内容动态计算输入框高度，保持 1 行起步、最多 9 行后内部滚动。
    */
   React.useEffect(() => {
@@ -394,8 +427,12 @@ export default function ChatView({
         </div>
         <div
           data-testid="chat-scroll-region"
-          className={`chat-scroll-region relative flex-1 overflow-y-auto px-4 pt-6 md:px-8 md:pt-20 ${CHAT_INPUT_SAFE_BOTTOM_CLASS}`}
-          style={{ scrollPaddingTop: '96px', scrollPaddingBottom: '160px' }}
+          className="chat-scroll-region relative flex-1 overflow-y-auto px-4 pt-6 md:px-8 md:pt-20"
+          style={{
+            paddingBottom: `${chatInputSafeBottom}px`,
+            scrollPaddingTop: '96px',
+            scrollPaddingBottom: `${chatInputSafeBottom}px`,
+          }}
         >
           {showLandingState ? (
             <div className="mx-auto flex max-w-4xl flex-col items-center justify-center px-6 py-16 text-center">
@@ -547,7 +584,11 @@ export default function ChatView({
           )}
         </div>
 
-        <div className="absolute bottom-0 left-0 right-0 bg-background/88 px-4 pb-6 pt-4 backdrop-blur-xl md:px-8">
+        <div
+          ref={chatInputDockRef}
+          data-testid="chat-input-dock"
+          className="absolute bottom-0 left-0 right-0 bg-background/88 px-4 pb-6 pt-4 backdrop-blur-xl md:px-8"
+        >
           <div className="mx-auto max-w-4xl">
             <form
               onSubmit={(event) => void handleSubmit(event)}
@@ -743,15 +784,21 @@ export default function ChatView({
                               segment.type === 'skill' ? (
                                 <span
                                   key={`${segment.skillCode}-${segment.start}-${index}`}
-                                  data-testid={`selected-skill-chip-${segment.skillCode}`}
-                                  className="mx-0.5 inline-flex h-6 max-w-[220px] translate-y-[1px] items-center gap-1 rounded-md border border-border/70 bg-surface-container/70 px-2 text-xs font-normal text-foreground align-baseline"
+                                  className="relative inline-flex align-baseline"
                                 >
-                                  <Sparkles
-                                    size={12}
-                                    data-testid={`selected-skill-chip-icon-${segment.skillCode}`}
-                                    className="shrink-0 text-muted"
-                                  />
-                                  <span className="truncate">{segment.displayName}</span>
+                                  {/* 步骤：保留原始 token 宽度占位，确保 textarea 光标位置与预览层严格对齐。 */}
+                                  <span className="invisible whitespace-pre">{segment.rawToken}</span>
+                                  <span
+                                    data-testid={`selected-skill-chip-${segment.skillCode}`}
+                                    className="absolute left-0 top-0 inline-flex h-6 max-w-[220px] items-center gap-1 rounded-md border border-border/70 bg-surface-container/70 px-2 text-xs font-normal text-foreground"
+                                  >
+                                    <Sparkles
+                                      size={12}
+                                      data-testid={`selected-skill-chip-icon-${segment.skillCode}`}
+                                      className="shrink-0 text-muted"
+                                    />
+                                    <span className="truncate">{segment.displayName}</span>
+                                  </span>
                                 </span>
                               ) : (
                                 <span key={`text-${segment.start}-${index}`}>{segment.value}</span>

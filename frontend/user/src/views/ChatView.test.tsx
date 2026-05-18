@@ -260,14 +260,18 @@ describe('ChatView', () => {
   /**
    * 消息滚动区需要固定底部安全留白，避免滚动条到底后仍可继续被压缩。
    */
-  it('应为消息滚动区使用稳定的底部留白配置', async () => {
+  it('应按输入区高度动态设置消息滚动区底部留白', async () => {
     render(
       <ChatView isAuthenticated={true} onRequireLogin={vi.fn()} workspace={createWorkspace()} />,
     );
 
     const scrollRegion = screen.getByTestId('chat-scroll-region');
-    expect(scrollRegion).toHaveClass('pb-36');
-    expect(scrollRegion).toHaveClass('md:pb-40');
+    const inputDock = screen.getByTestId('chat-input-dock');
+    expect(scrollRegion).toHaveStyle({
+      paddingBottom: '160px',
+      scrollPaddingBottom: '160px',
+    });
+    expect(inputDock).toBeInTheDocument();
   });
 
   /**
@@ -886,6 +890,7 @@ describe('ChatView', () => {
     expect(screen.getByTestId('input-rich-preview')).toBeInTheDocument();
     expect(screen.getByTestId('selected-skill-chip-sales_query')).toBeInTheDocument();
     expect(screen.getByTestId('selected-skill-chip-icon-sales_query')).toBeInTheDocument();
+    expect(screen.getByText('@sales_query')).toHaveClass('invisible');
   });
 
   /**

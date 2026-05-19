@@ -50,6 +50,9 @@ export default function ChatView({
   const CHAT_INPUT_EXTRA_SAFE_GAP = 24;
   const {
     activeConversationId,
+    workspaceLabel,
+    workspacePath,
+    workspaceRuntimeTarget,
     messages,
     executionSteps,
     references,
@@ -76,6 +79,7 @@ export default function ChatView({
     deleteDialog,
     renameConversation,
     deleteConversation,
+    setActiveWorkspacePath,
   } = workspace;
   const latestMessageAnchorRef = React.useRef<HTMLDivElement | null>(null);
   // 步骤：右侧工作区默认折叠，仅在存在真实回放内容时自动展开一次，后续允许用户手动控制。
@@ -845,10 +849,10 @@ export default function ChatView({
                       </div>
                     </div>
                   </div>
-                  <div
-                    data-testid="chat-input-toolbar"
-                    className="flex items-center justify-between gap-3"
-                  >
+                <div
+                  data-testid="chat-input-toolbar"
+                  className="flex items-center justify-between gap-3"
+                >
                     <div data-testid="chat-input-toolbar-left" className="flex items-center">
                       <button
                         type="button"
@@ -900,6 +904,31 @@ export default function ChatView({
                         </button>
                       )}
                     </div>
+                  </div>
+                  <div
+                    data-testid="chat-workspace-bar"
+                    className="mt-3 flex items-center justify-between rounded-2xl border border-border bg-surface-container/80 px-4 py-3"
+                  >
+                    <div className="min-w-0">
+                      <div className="text-[11px] uppercase tracking-[0.24em] text-muted">
+                        当前环境
+                      </div>
+                      <div className="mt-1 flex items-center gap-2 text-sm text-foreground">
+                        <span className="rounded-full border border-border bg-surface px-2 py-0.5 text-xs text-muted">
+                          {workspaceRuntimeTarget === 'local' ? '本地' : '云端'}
+                        </span>
+                        <span className="truncate">{workspacePath ?? workspaceLabel}</span>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      aria-label="切换工作空间"
+                      onClick={() => void setActiveWorkspacePath(null)}
+                      className="flex items-center gap-2 rounded-xl border border-border bg-surface px-3 py-2 text-xs text-foreground transition-colors hover:border-border-active"
+                    >
+                      <FolderOpen size={14} />
+                      选择文件夹
+                    </button>
                   </div>
                 </div>
               </div>

@@ -158,9 +158,27 @@ export interface StreamMetaPayload {
 }
 
 /**
+ * 描述左侧工作空间树中的单个分组项。
+ */
+export interface WorkspaceConversationGroup {
+  partitionKey: string;
+  workspacePath: string | null;
+  workspaceLabel: string;
+  runtimeTarget: 'cloud' | 'local';
+  lastOpenedAt: number;
+  activeConversationId: string | null;
+  conversations: ConversationItem[];
+}
+
+/**
  * 统一描述聊天工作区对页面和侧边栏暴露的状态与动作。
  */
 export interface ChatWorkspaceController {
+  workspaceGroups: WorkspaceConversationGroup[];
+  activeWorkspacePartitionKey: string | null;
+  workspacePath: string | null;
+  workspaceLabel: string;
+  workspaceRuntimeTarget: 'cloud' | 'local';
   conversations: ConversationItem[];
   activeConversationId: string | null;
   messages: ChatMessageItem[];
@@ -186,6 +204,8 @@ export interface ChatWorkspaceController {
   setSelectedSkillCodes: (skillCodes: string[] | ((previous: string[]) => string[])) => void;
   setSelectedMcpCodes: (mcpCodes: string[] | ((previous: string[]) => string[])) => void;
   setMcpConnected: (value: boolean) => void;
+  pickRepositoryDirectory: () => Promise<void>;
+  setActiveWorkspacePath: (workspacePath: string | null) => Promise<void>;
   submitMessage: () => Promise<void>;
   cancelCurrentStream: () => Promise<void>;
   selectConversation: (
@@ -216,4 +236,7 @@ export interface ChatWorkspaceController {
  */
 export interface UseChatWorkspaceOptions {
   onUnauthorized?: () => void;
+  hostContext?: import('../../host/types').HostContext | null;
+  pickRepositoryDirectory?: () => Promise<void>;
+  bindWorkspacePath?: (workspacePath: string) => Promise<void>;
 }

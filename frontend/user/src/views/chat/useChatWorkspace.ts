@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { AuthStorage } from '../../utils/authStorage';
 import { ChatApi } from './chatApi';
 import { extractSseEvents } from './sse';
@@ -17,7 +17,16 @@ import {
   ReferenceItem,
   SampleQuestionItem,
   UseChatWorkspaceOptions,
+  WorkspaceConversationGroup,
 } from './types';
+import {
+  buildWorkspacePartitionKey,
+  getWorkspaceLabel,
+  listWorkspaceGroups,
+  readWorkspaceSnapshot,
+  saveConversationRecordToWorkspace,
+  upsertWorkspaceSnapshot,
+} from './localConversationStorage';
 
 /**
  * 聚合聊天页三栏所需的真实状态、接口请求与 SSE 流式控制。
@@ -28,6 +37,24 @@ export function useChatWorkspace(
 ) {
   const onUnauthorizedRef = useRef(options?.onUnauthorized);
   onUnauthorizedRef.current = options?.onUnauthorized;
+  const hostContext = options?.hostContext ?? null;
+  const bindWorkspacePath =
+    options?.bindWorkspacePath ??
+    (async () => {
+      return;
+    });
+  const openRepositoryPicker =
+    options?.pickRepositoryDirectory ??
+    (async () => {
+      return;
+    });
+  const runtimeTarget = hostContext?.executionTargets.includes('local') ? 'local' : 'cloud';
+  const [workspaceGroups, setWorkspaceGroups] = useState<WorkspaceConversationGroup[]>([]);
+  const [activeWorkspacePartitionKey, setActiveWorkspacePartitionKey] = useState<string | null>(
+    null,
+  );
+  const [workspacePath, setWorkspacePath] = useState<string | null>(null);
+  const [workspaceLabel, setWorkspaceLabel] = useState('云端工作空间');
   const [conversations, setConversations] = useState<ConversationItem[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessageItem[]>([]);
@@ -94,13 +121,36 @@ export function useChatWorkspace(
     setSelectedSkillCodesState(nextValue);
   };
 
+  /**
+   * 当前工作空间分区刷新后，重新读取对应快照，保证切换目录时左侧与主区同步。
+   */
+  useEffect(() => {
+    if (!hostContext) {
+      return;
+    }
+    const nextWorkspacePath = hostContext.localResource?.boundRepositoryPath ?? null;
+    const nextPartitionKey = buildWorkspacePartitionKey(runtimeTarget, nextWorkspacePath);
+    const nextSnapshot = readWorkspaceSnapshot(nextPartitionKey);
+    setWorkspacePath(nextWorkspacePath);
+    setWorkspaceLabel(nextWorkspacePath ? getWorkspaceLabel(nextWorkspacePath) : '云端工作空间');
+    setActiveWorkspacePartitionKey(nextPartitionKey);
+    setConversations(nextSnapshot.conversations);
+    setActiveConversationId(nextSnapshot.activeConversationId);
+    setWorkspaceGroups(listWorkspaceGroups());
+    if (nextSnapshot.activeConversationId) {
+      void restoreWorkspaceSnapshot(nextPartitionKey, nextSnapshot.activeConversationId);
+    } else {
+      clearConversationPlayback();
+    }
+  }, [hostContext, runtimeTarget]);
+
   useEffect(() => {
     if (!isAuthenticated) {
       resetWorkspace();
       return;
     }
     void bootstrapWorkspace();
-  }, [isAuthenticated]);
+  }, [isAuthenticated, activeWorkspacePartitionKey]);
 
   /**
    * 加载初始会话列表并默认选中最近会话。
@@ -120,11 +170,11 @@ export function useChatWorkspace(
       ]);
       setSampleQuestions(nextSampleQuestions);
       setAvailableSkills(nextSkills);
-      // 步骤：默认不预选任何技能，避免首次进入时把全部技能无差别注入上下文。
       setSelectedSkillCodes([]);
       setAvailableMcps(nextMcps);
       setSelectedMcpCodes(nextMcps.map((item) => item.mcpCode));
       setMcpConnected(nextMcps.length > 0);
+      setWorkspaceGroups(listWorkspaceGroups());
       if (nextConversations[0]?.id) {
         await selectConversation(nextConversations[0].id, nextConversations);
       } else {
@@ -133,6 +183,44 @@ export function useChatWorkspace(
     } finally {
       setIsBootstrapping(false);
     }
+  };
+
+  /**
+   * 切换到指定工作空间目录。
+   * @param nextWorkspacePath 目标工作空间路径。
+   */
+  const setActiveWorkspacePath = async (nextWorkspacePath: string | null) => {
+    if (!hostContext) {
+      return;
+    }
+    if ((nextWorkspacePath ?? null) === (workspacePath ?? null)) {
+      return;
+    }
+    const normalizedWorkspacePath = nextWorkspacePath ? nextWorkspacePath.trim() : null;
+    if (normalizedWorkspacePath && hostContext.hostType === 'desktop') {
+      await bindWorkspacePath(normalizedWorkspacePath);
+    }
+    const nextPartitionKey = buildWorkspacePartitionKey(runtimeTarget, normalizedWorkspacePath);
+    const nextSnapshot = readWorkspaceSnapshot(nextPartitionKey);
+    setWorkspacePath(normalizedWorkspacePath);
+    setWorkspaceLabel(normalizedWorkspacePath ? getWorkspaceLabel(normalizedWorkspacePath) : '云端工作空间');
+    setActiveWorkspacePartitionKey(nextPartitionKey);
+    setConversations(nextSnapshot.conversations);
+    setActiveConversationId(nextSnapshot.activeConversationId);
+    setWorkspaceGroups(listWorkspaceGroups());
+    if (nextSnapshot.activeConversationId) {
+      await restoreWorkspaceSnapshot(nextPartitionKey, nextSnapshot.activeConversationId);
+      return;
+    }
+    clearConversationPlayback();
+    setWorkspaceGroups(listWorkspaceGroups());
+  };
+
+  /**
+   * 打开文件夹选择器并将结果切换为当前工作空间。
+   */
+  const pickRepositoryDirectory = async () => {
+    await openRepositoryPicker();
   };
 
   /**
@@ -165,7 +253,6 @@ export function useChatWorkspace(
       ChatApi.listCurrentSkills(token, conversationId),
       ChatApi.listCurrentMcps(token, conversationId),
     ]);
-    // 步骤：流式阶段的 MCP 调用仅存在于事件流，历史回放接口暂未持久化该字段时需回填到末条助手消息。
     setMessages(patchLatestAssistantMcpCalls(nextMessages, latestAssistantMcpCalls));
     setExecutionSteps(nextSteps);
     setReferences(nextReferences);
@@ -180,6 +267,14 @@ export function useChatWorkspace(
         activeMessageId: nextMessages[nextMessages.length - 1].id,
       };
     }
+    persistConversationState(conversationId, conversationList, {
+      messages: nextMessages,
+      executionSteps: nextSteps,
+      references: nextReferences,
+      artifacts: nextArtifacts,
+      currentSkills: nextCurrentSkills,
+      currentMcps: nextCurrentMcps,
+    });
   };
 
   /**
@@ -205,8 +300,8 @@ export function useChatWorkspace(
       activeMessageId: optimisticAssistantId,
     };
 
-    setMessages((previousMessages) => [
-      ...previousMessages,
+    const nextMessages: ChatMessageItem[] = [
+      ...messages,
       {
         id: optimisticMessageId,
         conversationId: optimisticConversationId,
@@ -221,7 +316,17 @@ export function useChatWorkspace(
         content: '',
         status: 'streaming',
       },
-    ]);
+    ];
+    setMessages(nextMessages);
+
+    persistConversationState(optimisticConversationId, conversations, {
+      messages: nextMessages,
+      executionSteps,
+      references,
+      artifacts,
+      currentSkills,
+      currentMcps,
+    });
 
     try {
       const response = await fetch(
@@ -232,7 +337,7 @@ export function useChatWorkspace(
           mcpConnected,
           selectedMcpCodes,
           selectedSkillCodes,
-          resolveBoundRepositoryPathFromStorage(),
+          workspacePath,
         ),
         {
           headers: {
@@ -253,11 +358,11 @@ export function useChatWorkspace(
           streamMcpCallsRef.current[optimisticAssistantId],
         );
       }
+      setWorkspaceGroups(listWorkspaceGroups());
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') {
         setStreamError('已停止当前生成');
       } else if (error instanceof ChatApi.UnauthorizedError) {
-        // 步骤：会话失效时交由壳层统一回收会话并弹出登录，避免留在业务错误态。
         onUnauthorizedRef.current?.();
       } else {
         setStreamError(error instanceof Error ? error.message : '聊天请求失败');
@@ -337,6 +442,7 @@ export function useChatWorkspace(
         );
       }
     }
+    setWorkspaceGroups(listWorkspaceGroups());
   };
 
   /**
@@ -357,6 +463,7 @@ export function useChatWorkspace(
         clearConversationPlayback();
       }
     }
+    setWorkspaceGroups(listWorkspaceGroups());
   };
 
   /**
@@ -594,6 +701,11 @@ export function useChatWorkspace(
   };
 
   return {
+    workspaceGroups,
+    activeWorkspacePartitionKey,
+    workspacePath,
+    workspaceLabel,
+    workspaceRuntimeTarget: runtimeTarget,
     conversations,
     activeConversationId,
     messages,
@@ -619,6 +731,8 @@ export function useChatWorkspace(
     setSelectedSkillCodes,
     setSelectedMcpCodes,
     setMcpConnected,
+    pickRepositoryDirectory,
+    setActiveWorkspacePath,
     submitMessage,
     cancelCurrentStream,
     selectConversation,
@@ -647,6 +761,28 @@ export function useChatWorkspace(
   async function loadConversations(token: string) {
     const nextConversations = await ChatApi.listConversations(token);
     setConversations(nextConversations);
+    const fallbackWorkspacePath = workspacePath ?? null;
+    upsertWorkspaceSnapshot(runtimeTarget, fallbackWorkspacePath, {
+      conversations: nextConversations,
+      activeConversationId: activeConversationId ?? nextConversations[0]?.id ?? null,
+      workspaceLabel: fallbackWorkspacePath ? getWorkspaceLabel(fallbackWorkspacePath) : '云端工作空间',
+    });
+    const partitionKey = buildWorkspacePartitionKey(runtimeTarget, fallbackWorkspacePath);
+    const snapshot = readWorkspaceSnapshot(partitionKey);
+    for (const conversation of nextConversations) {
+      if (snapshot.conversationRecords[conversation.id]) {
+        continue;
+      }
+      saveConversationRecordToWorkspace(runtimeTarget, fallbackWorkspacePath, conversation.id, nextConversations, {
+        messages: [],
+        executionSteps: [],
+        references: [],
+        artifacts: [],
+        currentSkills: [],
+        currentMcps: [],
+      });
+    }
+    setWorkspaceGroups(listWorkspaceGroups());
     return nextConversations;
   }
 
@@ -661,6 +797,64 @@ export function useChatWorkspace(
     setArtifacts([]);
     setCurrentSkills([]);
     setCurrentMcps([]);
+  }
+
+  /**
+   * 将当前会话回放保存到指定工作空间分区。
+   * @param conversationId 会话标识。
+   * @param conversationList 会话列表。
+   * @param record 快照内容。
+   */
+  function persistConversationState(
+    conversationId: string | null,
+    conversationList: ConversationItem[],
+    record: {
+      messages: ChatMessageItem[];
+      executionSteps: ExecutionStepItem[];
+      references: ReferenceItem[];
+      artifacts: ArtifactItem[];
+      currentSkills: CurrentSkillItem[];
+      currentMcps: CurrentMcpItem[];
+    },
+  ) {
+    if (!activeWorkspacePartitionKey) {
+      return;
+    }
+    saveConversationRecordToWorkspace(
+      runtimeTarget,
+      workspacePath,
+      conversationId,
+      conversationList,
+      record,
+    );
+    upsertWorkspaceSnapshot(runtimeTarget, workspacePath, {
+      conversations: conversationList,
+      activeConversationId: conversationId,
+    });
+    setWorkspaceGroups(listWorkspaceGroups());
+  }
+
+  /**
+   * 从快照恢复指定会话。
+   * @param partitionKey 分区键。
+   * @param conversationId 会话标识。
+   */
+  async function restoreWorkspaceSnapshot(partitionKey: string, conversationId: string) {
+    const snapshot = readWorkspaceSnapshot(partitionKey);
+    setConversations(snapshot.conversations);
+    setWorkspaceGroups(listWorkspaceGroups());
+    const record = snapshot.conversationRecords[conversationId];
+    if (!record) {
+      await selectConversation(conversationId, snapshot.conversations);
+      return;
+    }
+    setActiveConversationId(conversationId);
+    setMessages(record.messages);
+    setExecutionSteps(record.executionSteps);
+    setReferences(record.references);
+    setArtifacts(record.artifacts);
+    setCurrentSkills(record.currentSkills);
+    setCurrentMcps(record.currentMcps);
   }
 }
 

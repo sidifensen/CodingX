@@ -57,17 +57,21 @@ export default function App() {
     invalidateSession();
     setIsLoginModalOpen(true);
   };
-  // 步骤：由应用壳层统一持有聊天工作区状态，确保 Sidebar 与主区共用同一份真实会话数据。
-  const chatWorkspace = useChatWorkspace(isAuthenticated, {
-    onUnauthorized: handleUnauthorized,
-  });
   // 步骤：读取当前宿主能力上下文，为侧边栏和后续本地能力入口提供统一数据源。
   const {
     hostContext,
     isLoading: _isHostContextLoading,
     errorMessage: _hostContextError,
     pickRepositoryDirectory: _pickRepositoryDirectory,
+    bindWorkspacePath: _bindWorkspacePath,
   } = useHostContext();
+  // 步骤：把宿主上下文与本地选择能力注入聊天工作区，避免多份状态分裂。
+  const chatWorkspace = useChatWorkspace(isAuthenticated, {
+    onUnauthorized: handleUnauthorized,
+    hostContext,
+    pickRepositoryDirectory: _pickRepositoryDirectory,
+    bindWorkspacePath: _bindWorkspacePath,
+  });
   // 步骤：仅在桌面宿主且支持窗口控制时启用自定义标题栏占位高度。
   const hasDesktopTitleBar =
     hostContext?.hostType === 'desktop' && Boolean(hostContext.capabilities.windowControls);
@@ -174,9 +178,9 @@ export default function App() {
           isMobileMenuOpen ? 'translate-x-72 md:translate-x-0' : 'translate-x-0'
         }`}
       >
-        <Sidebar
-          activeView={activeView}
-          setActiveView={setActiveView}
+          <Sidebar
+            activeView={activeView}
+            setActiveView={setActiveView}
           isMobileMenuOpen={isMobileMenuOpen}
           setIsMobileMenuOpen={setIsMobileMenuOpen}
           isDesktopCollapsed={isDesktopSidebarCollapsed}
@@ -192,6 +196,11 @@ export default function App() {
           onStartNewConversation={handleStartNewConversation}
           onRenameConversation={handleRenameConversation}
           onDeleteConversation={handleDeleteConversation}
+          workspaceGroups={chatWorkspace.workspaceGroups}
+          activeWorkspacePartitionKey={chatWorkspace.activeWorkspacePartitionKey}
+          onSelectWorkspacePath={chatWorkspace.setActiveWorkspacePath}
+          onPickRepositoryDirectory={chatWorkspace.pickRepositoryDirectory}
+          workspaceLabel={chatWorkspace.workspaceLabel}
         />
 
         {/* 主内容区域 */}

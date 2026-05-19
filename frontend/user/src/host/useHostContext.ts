@@ -12,6 +12,7 @@ export function useHostContext() {
   const [hostContext, setHostContext] = useState<HostContext | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState('');
+  const [workspaceErrorMessage, setWorkspaceErrorMessage] = useState('');
 
   const reloadContext = useCallback(async () => {
     setErrorMessage('');
@@ -20,6 +21,23 @@ export function useHostContext() {
     setHostContext(context);
     return context;
   }, [bridge]);
+
+  /**
+   * 将宿主侧本地仓库路径同步到后端工作区绑定接口，保证聊天执行链路能复用该目录。
+   * @param repositoryPath 本地仓库路径。
+   */
+  const syncWorkspaceBinding = useCallback(async (repositoryPath: string) => {
+    setWorkspaceErrorMessage('');
+    const token = AuthStorage.getSession()?.token ?? null;
+    if (!token) {
+      return;
+    }
+    try {
+      await ChatApi.bindWorkspaceRepository(token, repositoryPath);
+    } catch (error) {
+      setWorkspaceErrorMessage(error instanceof Error ? error.message : '同步工作空间失败');
+    }
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -61,22 +79,41 @@ export function useHostContext() {
         throw new Error('未授予本地文件访问权限');
       }
       const nextContext = await bridge.bindRepositoryPath(selectedPath);
-      const token = AuthStorage.getSession()?.token ?? null;
-      if (token) {
-        await ChatApi.bindWorkspaceRepository(token, selectedPath);
-      }
+      await syncWorkspaceBinding(selectedPath);
       window.localStorage.setItem('codingx.host.context', JSON.stringify(nextContext));
       setHostContext(nextContext);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : '绑定本地仓库失败');
     }
-  }, [bridge]);
+  }, [bridge, syncWorkspaceBinding]);
+
+  /**
+   * 直接切换到指定本地仓库路径，供工作空间列表点击切换时复用。
+   * @param repositoryPath 本地仓库路径。
+   */
+  const bindWorkspacePath = useCallback(
+    async (repositoryPath: string) => {
+      setErrorMessage('');
+      try {
+        const nextContext = await bridge.bindRepositoryPath(repositoryPath);
+        await syncWorkspaceBinding(repositoryPath);
+        window.localStorage.setItem('codingx.host.context', JSON.stringify(nextContext));
+        setHostContext(nextContext);
+      } catch (error) {
+        setErrorMessage(error instanceof Error ? error.message : '切换工作空间失败');
+      }
+    },
+    [bridge, syncWorkspaceBinding],
+  );
 
   return {
     hostContext,
     isLoading,
     errorMessage,
+    workspaceErrorMessage,
     reloadContext,
     pickRepositoryDirectory,
+    bindWorkspacePath,
+    syncWorkspaceBinding,
   };
 }

@@ -7,6 +7,7 @@ import {
   ChevronDown,
   CheckCircle2,
   CircleStop,
+  Cloud,
   Copy,
   Database,
   File,
@@ -19,6 +20,7 @@ import {
   PanelRightOpen,
   Paperclip,
   FolderOpen,
+  Monitor,
   Search,
   ThumbsDown,
   ThumbsUp,
@@ -309,13 +311,15 @@ export default function ChatView({
    * @returns 共享选择弹层是否打开。
    */
   const isSelectorPanelOpen = activeSelectorMode !== null;
+  // 步骤：统一云端/本地图标映射，确保切换器主按钮与下拉选项视觉语义一致。
   const runtimeDisplayLabel = activeRuntimeTarget === 'local' ? '本地' : '云端';
+  const ActiveRuntimeIcon = activeRuntimeTarget === 'local' ? Monitor : Cloud;
   /**
    * 工作空间切换仅展示当前环境可选项，避免跨环境误切换。
    */
   const workspaceSwitcherOptions = React.useMemo(() => {
     const runtimeWorkspaceGroups = workspaceGroups.filter(
-      (group) => group.runtimeTarget === activeRuntimeTarget,
+      (group) => group.runtimeTarget === activeRuntimeTarget && group.groupType !== 'history',
     );
     if (runtimeWorkspaceGroups.length > 0) {
       return runtimeWorkspaceGroups;
@@ -849,14 +853,21 @@ export default function ChatView({
                         setActiveSelectorMode((current) => (current === 'mcp' ? null : 'mcp'));
                         setSkillSelectorSource(null);
                       }}
-                      className="inline-flex h-7 items-center rounded-full border border-border bg-surface-container px-3 text-xs text-foreground transition-colors hover:border-border-active"
+                      className="inline-flex h-7 items-center gap-1 rounded-full border border-border bg-surface-container px-3 text-xs text-foreground transition-[box-shadow,border-color,background-color] duration-200 hover:border-border-active hover:bg-surface hover:shadow-[0_8px_18px_rgba(0,0,0,0.16)]"
                     >
                       <Database
                         size={12}
                         data-testid="mcp-trigger-icon"
-                        className="mr-1 text-muted"
+                        className="text-muted"
                       />
-                      MCP
+                      <span className="truncate">MCP</span>
+                      <ChevronDown
+                        size={12}
+                        data-testid="mcp-trigger-chevron"
+                        className={`text-muted transition-transform ${
+                          activeSelectorMode === 'mcp' ? 'rotate-180' : ''
+                        }`}
+                      />
                     </button>
                     <button
                       type="button"
@@ -879,7 +890,7 @@ export default function ChatView({
                           });
                         }
                       }}
-                      className="inline-flex h-7 max-w-[180px] items-center gap-1 rounded-full border border-border bg-surface-container px-3 text-xs text-foreground transition-colors hover:border-border-active"
+                      className="inline-flex h-7 max-w-[180px] items-center gap-1 rounded-full border border-border bg-surface-container px-3 text-xs text-foreground transition-[box-shadow,border-color,background-color] duration-200 hover:border-border-active hover:bg-surface hover:shadow-[0_8px_18px_rgba(0,0,0,0.16)]"
                     >
                       <Sparkles size={12} data-testid="skill-trigger-icon" className="text-muted" />
                       <span className="truncate">技能</span>
@@ -959,7 +970,7 @@ export default function ChatView({
                           type="button"
                           aria-label="清空附件"
                           onClick={() => clearPendingAttachments()}
-                          className="ml-auto rounded-lg border border-border bg-surface px-3 py-1.5 text-xs text-muted transition-colors hover:text-foreground"
+                          className="ml-auto rounded-lg border border-border bg-surface px-3 py-1.5 text-xs text-muted transition-[color,border-color,background-color] duration-200 hover:border-border-active hover:text-foreground"
                         >
                           清空
                         </button>
@@ -1064,7 +1075,7 @@ export default function ChatView({
                         type="button"
                         aria-label="上传附件"
                         onClick={() => fileInputRef.current?.click()}
-                        className="rounded-full border border-border bg-surface-container p-1.5 text-muted"
+                        className="rounded-full border border-border bg-surface-container p-1.5 text-muted transition-[box-shadow,color,border-color,background-color] duration-200 hover:border-border-active hover:bg-surface hover:text-foreground hover:shadow-[0_8px_18px_rgba(0,0,0,0.16)]"
                       >
                         <Paperclip size={17} />
                       </button>
@@ -1077,10 +1088,10 @@ export default function ChatView({
                         type="button"
                         aria-label="切换深度思考"
                         onClick={() => setDeepThinkingEnabled(!deepThinkingEnabled)}
-                        className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+                        className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-[box-shadow,color,border-color,background-color] duration-200 hover:shadow-[0_8px_18px_rgba(0,0,0,0.16)] ${
                           deepThinkingEnabled
-                            ? 'border-foreground bg-foreground text-background'
-                            : 'border-border bg-surface-container text-muted'
+                            ? 'border-foreground bg-foreground text-background hover:opacity-92'
+                            : 'border-border bg-surface-container text-muted hover:border-border-active hover:bg-surface hover:text-foreground'
                         }`}
                       >
                         <span className="flex items-center gap-1.5">
@@ -1094,7 +1105,7 @@ export default function ChatView({
                           aria-label="停止生成"
                           onClick={() => void cancelCurrentStream()}
                           disabled={isCancelling}
-                          className="rounded-full bg-red-500 px-3 py-1.5 text-sm font-medium text-white transition-opacity disabled:opacity-60"
+                          className="rounded-full bg-red-500 px-3 py-1.5 text-sm font-medium text-white transition-[opacity,box-shadow] duration-200 hover:shadow-[0_8px_18px_rgba(185,28,28,0.36)] disabled:opacity-60"
                         >
                           <span className="flex items-center gap-2">
                             <CircleStop size={16} />
@@ -1105,7 +1116,7 @@ export default function ChatView({
                         <button
                           type="submit"
                           aria-label="发送消息"
-                          className="rounded-full bg-foreground p-2 text-background transition-opacity hover:opacity-90 disabled:opacity-60"
+                          className="rounded-full bg-foreground p-2 text-background transition-[opacity,box-shadow] duration-200 hover:opacity-90 hover:shadow-[0_8px_18px_rgba(0,0,0,0.28)] disabled:opacity-60"
                           disabled={!inputValue.trim()}
                         >
                           <ArrowUp size={17} />
@@ -1131,6 +1142,11 @@ export default function ChatView({
                   }
                   className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-sm transition-colors hover:bg-surface-container"
                 >
+                  <ActiveRuntimeIcon
+                    size={14}
+                    data-testid={`runtime-active-icon-${activeRuntimeTarget}`}
+                    className="shrink-0 text-muted"
+                  />
                   <span>{runtimeDisplayLabel}</span>
                   <ChevronDown
                     size={14}
@@ -1143,11 +1159,13 @@ export default function ChatView({
                   <div className="absolute bottom-[calc(100%+8px)] left-0 z-40 w-[170px] rounded-xl border border-border bg-surface p-1.5 shadow-[0_18px_44px_rgba(0,0,0,0.25)]">
                     {runtimeTargets.map((runtimeTarget) => {
                       const isActiveRuntime = runtimeTarget === activeRuntimeTarget;
+                      const runtimeLabel = runtimeTarget === 'local' ? '本地' : '云端';
+                      const RuntimeOptionIcon = runtimeTarget === 'local' ? Monitor : Cloud;
                       return (
                         <button
                           key={runtimeTarget}
                           type="button"
-                          aria-label={`切换运行环境 ${runtimeTarget === 'local' ? '本地' : '云端'}`}
+                          aria-label={`切换运行环境 ${runtimeLabel}`}
                           onClick={() => {
                             void setActiveRuntimeTarget(runtimeTarget);
                             setActiveRuntimeWorkspaceMenu(null);
@@ -1158,7 +1176,14 @@ export default function ChatView({
                               : 'text-muted hover:bg-surface-container hover:text-foreground'
                           }`}
                         >
-                          <span>{runtimeTarget === 'local' ? '本地' : '云端'}</span>
+                          <span className="inline-flex items-center gap-1.5">
+                            <RuntimeOptionIcon
+                              size={14}
+                              data-testid={`runtime-option-icon-${runtimeTarget}`}
+                              className={isActiveRuntime ? 'text-foreground' : 'text-muted'}
+                            />
+                            {runtimeLabel}
+                          </span>
                           {isActiveRuntime ? <CheckCircle2 size={14} className="text-foreground" /> : null}
                         </button>
                       );
@@ -1408,9 +1433,9 @@ function ThinkingPanel({ messageId, content }: { messageId: string; content: str
   return (
     <section
       data-testid={`thinking-panel-${messageId}`}
-      // 步骤：折叠态改为自适应宽度胶囊，避免面板在收起后仍占据整行宽度。
+      // 步骤：折叠态改为自适应宽度胶囊，且展开/折叠保持同一内边距，避免标题产生位移抖动。
       className={`mb-3 rounded-2xl border border-border bg-surface-container text-sm text-muted transition-[width,padding] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] ${
-        isExpanded ? 'w-full px-4 py-3' : 'w-fit px-3 py-2'
+        isExpanded ? 'w-full px-4 py-3' : 'w-fit px-4 py-3'
       }`}
     >
       <div

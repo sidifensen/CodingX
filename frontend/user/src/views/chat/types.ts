@@ -193,6 +193,7 @@ export interface StreamMetaPayload {
  */
 export interface WorkspaceConversationGroup {
   partitionKey: string;
+  groupType?: 'workspace' | 'history';
   workspacePath: string | null;
   workspaceLabel: string;
   runtimeTarget: 'cloud' | 'local';

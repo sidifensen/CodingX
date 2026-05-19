@@ -22,11 +22,16 @@ import {
   WorkspaceConversationGroup,
 } from './types';
 import {
+  buildWorkspaceHistoryPartitionKey,
   buildWorkspacePartitionKey,
+  filterUnassignedConversations,
   getWorkspaceLabel,
+  findWorkspacePartitionByConversationId,
   listWorkspaceGroups,
+  markWorkspaceConversationOwnership,
   readWorkspaceSnapshot,
   saveConversationRecordToWorkspace,
+  upsertWorkspaceHistorySnapshot,
   upsertWorkspaceSnapshot,
 } from './localConversationStorage';
 
@@ -173,7 +178,7 @@ export function useChatWorkspace(
     setConversations(nextSnapshot.conversations);
     setActiveConversationId(nextSnapshot.activeConversationId);
     setWorkspaceGroups(listWorkspaceGroups(activeRuntimeTarget));
-    if (nextSnapshot.activeConversationId) {
+    if (nextSnapshot.activeConversationId && nextSnapshot.conversations.length > 0) {
       void restoreWorkspaceSnapshot(nextPartitionKey, nextSnapshot.activeConversationId);
     } else {
       clearConversationPlayback();
@@ -187,6 +192,9 @@ export function useChatWorkspace(
   useEffect(() => {
     if (!isAuthenticated) {
       resetWorkspace();
+      return;
+    }
+    if (!activeWorkspacePartitionKey) {
       return;
     }
     void bootstrapWorkspace();
@@ -875,33 +883,36 @@ export function useChatWorkspace(
    * @returns 最新会话列表。
    */
   async function loadConversations(token: string) {
-    const nextConversations = await ChatApi.listConversations(token);
-    setConversations(nextConversations);
+    const remoteConversations = await ChatApi.listConversations(token);
     const fallbackWorkspacePath = workspacePath ?? null;
+    const nextWorkspaceConversations = resolveWorkspaceConversations(
+      activeRuntimeTarget,
+      fallbackWorkspacePath,
+      remoteConversations,
+    );
+    markWorkspaceConversationOwnership(
+      activeRuntimeTarget,
+      fallbackWorkspacePath,
+      nextWorkspaceConversations.map((conversation) => conversation.id),
+    );
+    const nextHistoryConversations = filterUnassignedConversations(remoteConversations);
+    setConversations(nextWorkspaceConversations);
     upsertWorkspaceSnapshot(activeRuntimeTarget, fallbackWorkspacePath, {
-      conversations: nextConversations,
-      activeConversationId: activeConversationId ?? nextConversations[0]?.id ?? null,
+      conversations: nextWorkspaceConversations,
+      activeConversationId: activeConversationId ?? nextWorkspaceConversations[0]?.id ?? null,
       workspaceLabel: fallbackWorkspacePath
         ? getWorkspaceLabel(fallbackWorkspacePath)
         : getDefaultWorkspaceLabel(activeRuntimeTarget),
     });
-    const partitionKey = buildWorkspacePartitionKey(activeRuntimeTarget, fallbackWorkspacePath);
-    const snapshot = readWorkspaceSnapshot(partitionKey);
-    for (const conversation of nextConversations) {
-      if (snapshot.conversationRecords[conversation.id]) {
-        continue;
-      }
-      saveConversationRecordToWorkspace(activeRuntimeTarget, fallbackWorkspacePath, conversation.id, nextConversations, {
-        messages: [],
-        executionSteps: [],
-        references: [],
-        artifacts: [],
-        currentSkills: [],
-        currentMcps: [],
-      });
+    upsertWorkspaceHistorySnapshot(activeRuntimeTarget, nextHistoryConversations);
+    if (
+      activeConversationId &&
+      !nextWorkspaceConversations.some((conversation) => conversation.id === activeConversationId)
+    ) {
+      setActiveConversationId(nextWorkspaceConversations[0]?.id ?? null);
     }
     setWorkspaceGroups(listWorkspaceGroups(activeRuntimeTarget));
-    return nextConversations;
+    return nextWorkspaceConversations;
   }
 
   /**
@@ -945,6 +956,8 @@ export function useChatWorkspace(
       conversationList,
       record,
     );
+    // 业务约束：会话一旦在当前工作空间产生真实回放，需要从历史分组移除，避免重复展示。
+    removeConversationFromHistoryGroup(activeRuntimeTarget, conversationId);
     upsertWorkspaceSnapshot(activeRuntimeTarget, workspacePath, {
       conversations: conversationList,
       activeConversationId: conversationId,
@@ -973,6 +986,47 @@ export function useChatWorkspace(
     setArtifacts(record.artifacts);
     setCurrentSkills(record.currentSkills);
     setCurrentMcps(record.currentMcps);
+  }
+
+  /**
+   * 根据已归属记录推导当前工作空间会话列表，避免把其他工作空间会话写入当前分区。
+   * @param runtimeTarget 当前运行环境。
+   * @param currentWorkspacePath 当前工作空间路径。
+   * @param remoteConversations 后端返回会话列表。
+   * @returns 当前工作空间应展示的会话列表。
+   */
+  function resolveWorkspaceConversations(
+    runtimeTarget: 'cloud' | 'local',
+    currentWorkspacePath: string | null,
+    remoteConversations: ConversationItem[],
+  ) {
+    const currentPartitionKey = buildWorkspacePartitionKey(runtimeTarget, currentWorkspacePath);
+    return remoteConversations.filter(
+      (conversation) => findWorkspacePartitionByConversationId(conversation.id) === currentPartitionKey,
+    );
+  }
+
+  /**
+   * 将指定会话从历史分组移除，避免会话在“当前工作空间”和“历史会话”重复展示。
+   * @param runtimeTarget 运行环境。
+   * @param conversationId 会话标识。
+   */
+  function removeConversationFromHistoryGroup(
+    runtimeTarget: 'cloud' | 'local',
+    conversationId: string | null,
+  ) {
+    if (!conversationId) {
+      return;
+    }
+    const historyPartitionKey = buildWorkspaceHistoryPartitionKey(runtimeTarget);
+    const historySnapshot = readWorkspaceSnapshot(historyPartitionKey);
+    if (!historySnapshot.conversations.some((conversation) => conversation.id === conversationId)) {
+      return;
+    }
+    upsertWorkspaceHistorySnapshot(
+      runtimeTarget,
+      historySnapshot.conversations.filter((conversation) => conversation.id !== conversationId),
+    );
   }
 
   /**

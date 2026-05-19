@@ -1,4 +1,4 @@
-import { renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import { buildStreamRequestUrl, useChatWorkspace } from './useChatWorkspace';
 
 /**
@@ -86,6 +86,40 @@ describe('useChatWorkspace', () => {
         username: 'user',
         displayName: 'CodingX User',
         userType: 'USER',
+      }),
+    );
+    window.localStorage.setItem(
+      'codingx.chat.workspace.conversations.v1',
+      JSON.stringify({
+        version: 1,
+        snapshots: {
+          'cloud::__no_workspace__': {
+            workspacePath: null,
+            workspaceLabel: '云端工作空间',
+            runtimeTarget: 'cloud',
+            lastOpenedAt: Date.now(),
+            activeConversationId: '2001',
+            conversations: [
+              {
+                id: '2001',
+                title: 'Default Demo Conversation',
+                status: 'ACTIVE',
+                lastRunId: '5002',
+              },
+            ],
+            conversationRecords: {
+              '2001': {
+                owned: true,
+                messages: [],
+                executionSteps: [],
+                references: [],
+                artifacts: [],
+                currentSkills: [],
+                currentMcps: [],
+              },
+            },
+          },
+        },
       }),
     );
 
@@ -190,6 +224,220 @@ describe('useChatWorkspace', () => {
     expect(result.current.currentMcps).toEqual([
       expect.objectContaining({ mcpCode: 'sales_query', displayName: '销售查询' }),
     ]);
+  });
+
+  /**
+   * 切换本地工作空间后，后端返回的跨工作空间会话应进入“历史会话”分组，不应污染当前工作空间。
+   */
+  it('应将未归属当前工作空间的会话归入历史会话分组', async () => {
+    window.localStorage.setItem(
+      'codingx.auth.session',
+      JSON.stringify({
+        token: 'token-123',
+        userId: '1002',
+        username: 'user',
+        displayName: 'CodingX User',
+        userType: 'USER',
+      }),
+    );
+
+    const chatConversations = [
+      {
+        id: '3001',
+        title: 'A 工作空间会话',
+        status: 'ACTIVE',
+        lastRunId: '7001',
+      },
+      {
+        id: '3002',
+        title: '跨工作空间历史会话',
+        status: 'ACTIVE',
+        lastRunId: '7002',
+      },
+    ];
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === '/api/chat/conversations') {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            code: 'OK',
+            message: 'success',
+            data: chatConversations,
+          }),
+          { status: 200 },
+        );
+      }
+      if (url === '/api/chat/sample-questions') {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (url === '/api/chat/skills') {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (url === '/api/chat/mcps') {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (url === '/api/chat/conversations/3001/messages') {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            code: 'OK',
+            message: 'success',
+            data: [
+              {
+                id: '9001',
+                conversationId: '3001',
+                role: 'USER',
+                content: '先在 A 工作空间建会话',
+                status: 'COMPLETED',
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      if (url === '/api/chat/conversations/3001/steps') {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (url === '/api/chat/conversations/3001/references') {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (url === '/api/chat/conversations/3001/artifacts') {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (url === '/api/chat/conversations/3001/current-skills') {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (url === '/api/chat/conversations/3001/current-mcps') {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (url === '/api/chat/conversations/3002/messages') {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            code: 'OK',
+            message: 'success',
+            data: [
+              {
+                id: '9002',
+                conversationId: '3002',
+                role: 'USER',
+                content: '这是 test 工作空间外的历史会话',
+                status: 'COMPLETED',
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      if (url === '/api/chat/conversations/3002/steps') {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (url === '/api/chat/conversations/3002/references') {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (url === '/api/chat/conversations/3002/artifacts') {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (url === '/api/chat/conversations/3002/current-skills') {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (url === '/api/chat/conversations/3002/current-mcps') {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      throw new Error(`Unhandled fetch in workspace history grouping test: ${url}`);
+    });
+
+    const hostContext = {
+      hostType: 'desktop',
+      executionTargets: ['local'] as const,
+      capabilities: {
+        localFiles: true,
+        localFolderPicker: true,
+        shell: true,
+        browserAutomation: false,
+        desktopNotifications: false,
+        officeInterop: false,
+        localMcp: true,
+        windowControls: true,
+      },
+      localResource: {
+        boundRepositoryPath: 'D:/code/workspace-a',
+        permissionGranted: true,
+      },
+    };
+
+    const bindWorkspacePath = vi.fn().mockResolvedValue(undefined);
+    const { result } = renderHook(() =>
+      useChatWorkspace(true, {
+        hostContext,
+        bindWorkspacePath,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(result.current.isBootstrapping).toBe(false);
+    });
+
+    expect(result.current.workspaceLabel).toBe('workspace-a');
+    expect(result.current.conversations.map((item) => item.id)).toEqual([]);
+    expect(result.current.workspaceGroups.some((group) => group.workspaceLabel === '历史会话')).toBe(true);
+    const initialHistoryGroup = result.current.workspaceGroups.find(
+      (group) => group.workspaceLabel === '历史会话',
+    );
+    expect(initialHistoryGroup?.conversations.map((item) => item.id)).toEqual(['3001', '3002']);
+
+    await act(async () => {
+      await result.current.setActiveWorkspacePath('D:/code/test');
+    });
+
+    await waitFor(() => {
+      expect(result.current.workspaceLabel).toBe('test');
+    });
+
+    expect(result.current.conversations).toEqual([]);
+    const historyGroup = result.current.workspaceGroups.find((group) => group.workspaceLabel === '历史会话');
+    expect(historyGroup?.conversations.map((item) => item.id)).toEqual(['3001', '3002']);
   });
 
   /**

@@ -706,6 +706,60 @@ describe('App', () => {
         userType: 'USER',
       }),
     );
+    window.localStorage.setItem(
+      'codingx.chat.workspace.conversations.v1',
+      JSON.stringify({
+        version: 1,
+        snapshots: {
+          'cloud::__no_workspace__': {
+            workspacePath: null,
+            workspaceLabel: '云端工作空间',
+            runtimeTarget: 'cloud',
+            lastOpenedAt: Date.now(),
+            activeConversationId: '2001',
+            conversations: [
+              {
+                id: '2001',
+                title: 'Default Demo Conversation',
+                status: 'ACTIVE',
+                lastMessageAt: '2026-05-15 00:36:58',
+                lastRunId: '5002',
+              },
+            ],
+            conversationRecords: {
+              '2001': {
+                owned: true,
+                messages: [
+                  {
+                    id: '101',
+                    conversationId: '2001',
+                    runId: '5002',
+                    role: 'USER',
+                    content: '请搜索 Spring Boot SSE 最佳实践',
+                    status: 'COMPLETED',
+                    createdAt: '2026-05-15 00:36:58',
+                  },
+                  {
+                    id: '102',
+                    conversationId: '2001',
+                    runId: '5002',
+                    role: 'ASSISTANT',
+                    content: '旧会话回答',
+                    status: 'COMPLETED',
+                    createdAt: '2026-05-15 00:37:11',
+                  },
+                ],
+                executionSteps: [],
+                references: [],
+                artifacts: [],
+                currentSkills: [],
+                currentMcps: [],
+              },
+            },
+          },
+        },
+      }),
+    );
     const streamUrls: string[] = [];
     let messageRequestCount = 0;
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
@@ -902,6 +956,77 @@ describe('App', () => {
         username: 'user',
         displayName: 'CodingX User',
         userType: 'USER',
+      }),
+    );
+    window.localStorage.setItem(
+      'codingx.chat.workspace.conversations.v1',
+      JSON.stringify({
+        version: 1,
+        snapshots: {
+          'cloud::__no_workspace__': {
+            workspacePath: null,
+            workspaceLabel: '云端工作空间',
+            runtimeTarget: 'cloud',
+            lastOpenedAt: Date.now(),
+            activeConversationId: '2055114974648864768',
+            conversations: [
+              {
+                id: '2055114974648864768',
+                title: '第一个真实会话',
+                status: 'ACTIVE',
+                lastMessageAt: '2026-05-15 09:36:58',
+                lastRunId: '5001',
+              },
+              {
+                id: '2055120756043943936',
+                title: '第二个真实会话',
+                status: 'ACTIVE',
+                lastMessageAt: '2026-05-15 09:56:58',
+                lastRunId: '5002',
+              },
+            ],
+            conversationRecords: {
+              '2055114974648864768': {
+                owned: true,
+                messages: [
+                  {
+                    id: '101',
+                    conversationId: '2055114974648864768',
+                    runId: '5001',
+                    role: 'ASSISTANT',
+                    content: '这是第一个会话的回答',
+                    status: 'COMPLETED',
+                    createdAt: '2026-05-15 09:37:11',
+                  },
+                ],
+                executionSteps: [],
+                references: [],
+                artifacts: [],
+                currentSkills: [],
+                currentMcps: [],
+              },
+              '2055120756043943936': {
+                owned: true,
+                messages: [
+                  {
+                    id: '201',
+                    conversationId: '2055120756043943936',
+                    runId: '5002',
+                    role: 'ASSISTANT',
+                    content: '这是第二个会话的回答',
+                    status: 'COMPLETED',
+                    createdAt: '2026-05-15 09:57:11',
+                  },
+                ],
+                executionSteps: [],
+                references: [],
+                artifacts: [],
+                currentSkills: [],
+                currentMcps: [],
+              },
+            },
+          },
+        },
       }),
     );
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {

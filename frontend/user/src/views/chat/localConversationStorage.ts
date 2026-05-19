@@ -12,11 +12,14 @@ import {
  * 本地会话快照存储键，按工作空间隔离保存聊天历史。
  */
 const LOCAL_WORKSPACE_CONVERSATION_STORE_KEY = 'codingx.chat.workspace.conversations.v1';
+const WORKSPACE_HISTORY_PARTITION_SUFFIX = '__history__';
+const WORKSPACE_HISTORY_LABEL = '历史会话';
 
 /**
  * 统一表示单个会话在本地缓存中的完整回放数据。
  */
 export interface LocalConversationRecord {
+  owned?: boolean;
   messages: ChatMessageItem[];
   executionSteps: ExecutionStepItem[];
   references: ReferenceItem[];
@@ -43,6 +46,7 @@ export interface LocalWorkspaceConversationSnapshot {
  */
 export interface WorkspaceConversationGroup extends LocalWorkspaceConversationSnapshot {
   partitionKey: string;
+  groupType?: 'workspace' | 'history';
 }
 
 interface LocalWorkspaceConversationStore {
@@ -72,6 +76,24 @@ export function buildWorkspacePartitionKey(
 ) {
   const normalizedPath = (workspacePath ?? '').trim().toLowerCase();
   return `${runtimeTarget}::${normalizedPath || '__no_workspace__'}`;
+}
+
+/**
+ * 生成“历史会话”分区键，用于承载未归属当前工作空间的历史会话。
+ * @param runtimeTarget 运行环境。
+ * @returns 历史分区键。
+ */
+export function buildWorkspaceHistoryPartitionKey(runtimeTarget: 'cloud' | 'local') {
+  return `${runtimeTarget}::${WORKSPACE_HISTORY_PARTITION_SUFFIX}`;
+}
+
+/**
+ * 判断分区键是否属于“历史会话”分组。
+ * @param partitionKey 分区键。
+ * @returns 是否为历史分组。
+ */
+export function isWorkspaceHistoryPartitionKey(partitionKey: string) {
+  return partitionKey.endsWith(`::${WORKSPACE_HISTORY_PARTITION_SUFFIX}`);
 }
 
 /**
@@ -189,6 +211,7 @@ export function listWorkspaceGroups(
       lastOpenedAt: snapshot.lastOpenedAt ?? 0,
       activeConversationId: snapshot.activeConversationId ?? null,
       conversations: Array.isArray(snapshot.conversations) ? snapshot.conversations : [],
+      groupType: isWorkspaceHistoryPartitionKey(partitionKey) ? 'history' : 'workspace',
       conversationRecords:
         snapshot.conversationRecords && typeof snapshot.conversationRecords === 'object'
           ? snapshot.conversationRecords
@@ -208,14 +231,18 @@ export function findWorkspacePartitionByConversationId(conversationId: string | 
     return null;
   }
   const store = readStore();
-  const entry = Object.entries(store.snapshots).find(([, snapshot]) => {
+  const entry = Object.entries(store.snapshots).find(([partitionKey, snapshot]) => {
+    if (isWorkspaceHistoryPartitionKey(partitionKey)) {
+      return false;
+    }
     if (snapshot.activeConversationId === conversationId) {
       return true;
     }
-    if (snapshot.conversationRecords?.[conversationId]) {
+    const record = snapshot.conversationRecords?.[conversationId];
+    if (record && isOwnedConversationRecord(record)) {
       return true;
     }
-    return snapshot.conversations.some((conversation) => conversation.id === conversationId);
+    return false;
   });
   return entry?.[0] ?? null;
 }
@@ -227,6 +254,72 @@ export function findWorkspacePartitionByConversationId(conversationId: string | 
  */
 export function filterUnassignedConversations(conversations: ConversationItem[]) {
   return conversations.filter((conversation) => findWorkspacePartitionByConversationId(conversation.id) == null);
+}
+
+/**
+ * 更新指定运行环境下的历史会话分组，保证未归属会话不混入当前工作空间。
+ * @param runtimeTarget 运行环境。
+ * @param conversations 历史会话列表。
+ */
+export function upsertWorkspaceHistorySnapshot(
+  runtimeTarget: 'cloud' | 'local',
+  conversations: ConversationItem[],
+) {
+  const partitionKey = buildWorkspaceHistoryPartitionKey(runtimeTarget);
+  const snapshot = readWorkspaceSnapshot(partitionKey);
+  const conversationIds = new Set(conversations.map((conversation) => conversation.id));
+  const nextConversationRecords = Object.fromEntries(
+    Object.entries(snapshot.conversationRecords ?? {}).filter(([conversationId]) =>
+      conversationIds.has(conversationId),
+    ),
+  );
+  writeWorkspaceSnapshot(partitionKey, {
+    workspacePath: null,
+    workspaceLabel: WORKSPACE_HISTORY_LABEL,
+    runtimeTarget,
+    lastOpenedAt: Date.now(),
+    activeConversationId: null,
+    conversations,
+    conversationRecords: nextConversationRecords,
+  });
+}
+
+/**
+ * 批量标记会话归属到指定工作空间，避免后续刷新时归属丢失。
+ * @param runtimeTarget 运行环境。
+ * @param workspacePath 工作空间路径。
+ * @param conversationIds 会话标识列表。
+ */
+export function markWorkspaceConversationOwnership(
+  runtimeTarget: 'cloud' | 'local',
+  workspacePath: string | null,
+  conversationIds: string[],
+) {
+  if (conversationIds.length === 0) {
+    return;
+  }
+  const partitionKey = buildWorkspacePartitionKey(runtimeTarget, workspacePath);
+  const snapshot = readWorkspaceSnapshot(partitionKey);
+  const nextConversationRecords = { ...(snapshot.conversationRecords ?? {}) };
+  for (const conversationId of conversationIds) {
+    const currentRecord = nextConversationRecords[conversationId];
+    nextConversationRecords[conversationId] = {
+      owned: true,
+      messages: currentRecord?.messages ?? [],
+      executionSteps: currentRecord?.executionSteps ?? [],
+      references: currentRecord?.references ?? [],
+      artifacts: currentRecord?.artifacts ?? [],
+      currentSkills: currentRecord?.currentSkills ?? [],
+      currentMcps: currentRecord?.currentMcps ?? [],
+    };
+  }
+  writeWorkspaceSnapshot(partitionKey, {
+    ...snapshot,
+    runtimeTarget,
+    workspacePath: workspacePath ?? snapshot.workspacePath ?? null,
+    lastOpenedAt: Date.now(),
+    conversationRecords: nextConversationRecords,
+  });
 }
 
 /**
@@ -262,6 +355,31 @@ function readStore(): LocalWorkspaceConversationStore {
 }
 
 /**
+ * 判断会话记录是否包含真实回放内容，用于区分“仅占位空记录”和“真实已归属会话”。
+ * @param record 会话记录。
+ * @returns 是否存在真实回放内容。
+ */
+function hasPersistedConversationData(record: LocalConversationRecord) {
+  return (
+    record.messages.length > 0 ||
+    record.executionSteps.length > 0 ||
+    record.references.length > 0 ||
+    record.artifacts.length > 0 ||
+    record.currentSkills.length > 0 ||
+    record.currentMcps.length > 0
+  );
+}
+
+/**
+ * 判断记录是否已明确归属到某个工作空间。
+ * @param record 会话记录。
+ * @returns 是否归属。
+ */
+function isOwnedConversationRecord(record: LocalConversationRecord) {
+  return record.owned === true || hasPersistedConversationData(record);
+}
+
+/**
  * 将当前会话数据写回指定工作空间快照，保证刷新后仍能按工作空间恢复。
  * @param runtimeTarget 运行环境。
  * @param workspacePath 当前工作空间路径。
@@ -290,7 +408,10 @@ export function saveConversationRecordToWorkspace(
     conversations: conversationList,
     conversationRecords: {
       ...(nextSnapshot.conversationRecords ?? {}),
-      [conversationId ?? 'pending-conversation']: record,
+      [conversationId ?? 'pending-conversation']: {
+        ...record,
+        owned: true,
+      },
     },
   };
   window.localStorage.setItem(LOCAL_WORKSPACE_CONVERSATION_STORE_KEY, JSON.stringify(store));

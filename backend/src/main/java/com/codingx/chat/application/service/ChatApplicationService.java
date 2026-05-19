@@ -20,6 +20,7 @@ import com.codingx.mcp.application.service.ChatMcpExecutionService;
 import com.codingx.mcp.application.service.ChatMcpToolResult;
 import com.codingx.mcp.domain.model.ChatMcp;
 import com.codingx.mcp.domain.repository.ChatMcpRepository;
+import com.codingx.skill.application.service.ChatSkillContextService;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -132,6 +133,7 @@ public class ChatApplicationService {
     private final com.codingx.common.support.ai.LlmResponseCleaner llmResponseCleaner;
     private final ExecutorService searchExecutor;
     private final RuntimeSettingService runtimeSettingService;
+    private final ChatSkillContextService chatSkillContextService;
 
     /**
      * 发送 sendMessage 处理的消息或请求。
@@ -320,7 +322,8 @@ public class ChatApplicationService {
         List<ChatMessage> aiHistory = buildAiHistory(
             conversationSummaryService.buildModelHistory(command.conversationId(), history),
             intentDecision,
-            command.conversationId()
+            command.conversationId(),
+            command.skillCodes()
         );
         tokenCounterService.estimateConversationTokens(aiHistory);
         try {
@@ -497,20 +500,28 @@ public class ChatApplicationService {
      * @param conversationId 会话标识。
      * @return 送入模型层的实际历史。
      */
-    private List<ChatMessage> buildAiHistory(List<ChatMessage> history, ConversationIntentDecision intentDecision, Long conversationId) {
-        if (intentDecision.intentCode() == null) {
+    private List<ChatMessage> buildAiHistory(
+        List<ChatMessage> history,
+        ConversationIntentDecision intentDecision,
+        Long conversationId,
+        List<String> selectedSkillCodes
+    ) {
+        String systemPrompt = resolveSystemPromptFromIntent(intentDecision);
+        String skillContext = chatSkillContextService.buildSkillContext(selectedSkillCodes);
+        if (StrUtil.isBlank(systemPrompt) && StrUtil.isBlank(skillContext)) {
             return history;
         }
-        com.codingx.chat.domain.model.ChatIntentNode intentNode = chatIntentNodeRepository.findByIntentCode(intentDecision.intentCode());
-        if (intentNode == null || !"system".equalsIgnoreCase(intentNode.getIntentType())) {
-            return history;
-        }
+        String composedSystemPrompt = StrUtil.isBlank(skillContext)
+            ? systemPrompt
+            : (StrUtil.isBlank(systemPrompt)
+                ? skillContext
+                : systemPrompt + "\n\n" + skillContext);
         List<ChatMessage> aiHistory = new ArrayList<>();
         aiHistory.add(ChatMessage.create(
             cn.hutool.core.util.IdUtil.getSnowflakeNextId(),
             conversationId,
             ChatMessageRole.SYSTEM,
-            resolveSystemPrompt(intentNode),
+            composedSystemPrompt,
             ChatMessageStatus.COMPLETED,
             null,
             null,
@@ -518,6 +529,22 @@ public class ChatApplicationService {
         ));
         aiHistory.addAll(history);
         return aiHistory;
+    }
+
+    /**
+     * 根据意图解析系统提示，未命中 system 意图时返回空字符串。
+     * @param intentDecision 意图决策。
+     * @return 系统提示。
+     */
+    private String resolveSystemPromptFromIntent(ConversationIntentDecision intentDecision) {
+        if (intentDecision.intentCode() == null) {
+            return "";
+        }
+        com.codingx.chat.domain.model.ChatIntentNode intentNode = chatIntentNodeRepository.findByIntentCode(intentDecision.intentCode());
+        if (intentNode == null || !"system".equalsIgnoreCase(intentNode.getIntentType())) {
+            return "";
+        }
+        return resolveSystemPrompt(intentNode);
     }
 
     /**

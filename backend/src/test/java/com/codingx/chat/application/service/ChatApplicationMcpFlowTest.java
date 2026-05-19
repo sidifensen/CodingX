@@ -21,6 +21,7 @@ import com.codingx.chat.domain.service.ChatStreamPublisher;
 import com.codingx.mcp.application.service.ChatMcpExecutionService;
 import com.codingx.mcp.application.service.ChatMcpToolResult;
 import com.codingx.mcp.domain.repository.ChatMcpRepository;
+import com.codingx.skill.application.service.ChatSkillContextService;
 import java.util.ArrayList;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -55,6 +56,7 @@ class ChatApplicationMcpFlowTest {
     @Mock private ConversationTraceRecordService conversationTraceRecordService;
     @Mock private ChatMcpRepository chatMcpRepository;
     @Mock private ChatAttachmentService chatAttachmentService;
+    @Mock private ChatSkillContextService chatSkillContextService;
 
     @InjectMocks
     private ChatApplicationService chatApplicationService;

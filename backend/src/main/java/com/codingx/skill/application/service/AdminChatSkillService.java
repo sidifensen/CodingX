@@ -253,21 +253,21 @@ public class AdminChatSkillService {
     }
 
     /**
-     * 批量迁移历史压缩包技能为目录化存储。
+     * 批量迁移对象存储中的历史压缩包技能为目录化存储。
+     * 业务约束：只处理已落对象存储（storageKey 非空）的技能，兼容 uploaded 与 built-in 来源。
      * @return 迁移统计。
      */
     public SkillPackageMigrationSummary migrateUploadedSkillPackages() {
-        List<ChatSkill> uploadedSkills = chatSkillRepository.findAll()
+        List<ChatSkill> storedSkills = chatSkillRepository.findAll()
             .stream()
             .filter(skill -> StrUtil.isNotBlank(skill.getStorageKey()))
-            .filter(skill -> StrUtil.equalsIgnoreCase(skill.getSourceType(), "uploaded"))
             .toList();
 
         int migrated = 0;
         int skipped = 0;
         List<SkillPackageMigrationFailure> failures = new ArrayList<>();
 
-        for (ChatSkill skill : uploadedSkills) {
+        for (ChatSkill skill : storedSkills) {
             if (!isLegacyArchiveStorage(skill)) {
                 skipped++;
                 continue;
@@ -284,7 +284,7 @@ public class AdminChatSkillService {
             }
         }
 
-        return new SkillPackageMigrationSummary(uploadedSkills.size(), migrated, skipped, failures);
+        return new SkillPackageMigrationSummary(storedSkills.size(), migrated, skipped, failures);
     }
 
     private void validateRequired(ChatSkill request) {

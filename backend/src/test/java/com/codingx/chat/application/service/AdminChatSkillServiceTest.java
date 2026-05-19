@@ -249,7 +249,7 @@ class AdminChatSkillServiceTest {
     }
 
     /**
-     * 批量迁移接口应统计迁移成功、跳过和失败数量。
+     * 批量迁移接口应覆盖对象存储中的全部技能（含 built-in），并统计迁移成功与跳过数量。
      */
     @Test
     void migrateUploadedSkillPackagesReturnsSummary() {
@@ -275,16 +275,42 @@ class AdminChatSkillServiceTest {
             .updatedAt(LocalDateTime.now())
             .deleted(0)
             .build();
-        when(chatSkillRepository.findAll()).thenReturn(List.of(legacySkill, directorySkill));
+        ChatSkill builtInLegacySkill = ChatSkill.builder()
+            .id(7107L)
+            .skillCode("builtin-legacy")
+            .displayName("builtin-legacy")
+            .sourceType("built-in")
+            .storageKey("chat-skills/packages/builtin-legacy.skill")
+            .packageStorageFormat("zip")
+            .createdAt(LocalDateTime.now())
+            .updatedAt(LocalDateTime.now())
+            .deleted(0)
+            .build();
+        ChatSkill noStorageKeySkill = ChatSkill.builder()
+            .id(7108L)
+            .skillCode("no-storage-key")
+            .displayName("no-storage-key")
+            .sourceType("uploaded")
+            .storageKey(null)
+            .packageStorageFormat("zip")
+            .createdAt(LocalDateTime.now())
+            .updatedAt(LocalDateTime.now())
+            .deleted(0)
+            .build();
+        when(chatSkillRepository.findAll()).thenReturn(List.of(legacySkill, directorySkill, builtInLegacySkill, noStorageKeySkill));
         when(rustFsSkillPackageClient.download("chat-skills/packages/legacy-skill.zip"))
             .thenReturn(buildSkillZip("legacy-skill", "legacy description"));
+        when(rustFsSkillPackageClient.download("chat-skills/packages/builtin-legacy.skill"))
+            .thenReturn(buildSkillZip("builtin-legacy", "builtin legacy description"));
         when(rustFsSkillPackageClient.uploadDirectory(any(), eq("legacy-skill")))
             .thenReturn("chat-skills/packages/legacy-skill-301");
+        when(rustFsSkillPackageClient.uploadDirectory(any(), eq("builtin-legacy")))
+            .thenReturn("chat-skills/packages/builtin-legacy-302");
 
         AdminChatSkillService.SkillPackageMigrationSummary summary = adminChatSkillService.migrateUploadedSkillPackages();
 
-        assertEquals(2, summary.total());
-        assertEquals(1, summary.migrated());
+        assertEquals(3, summary.total());
+        assertEquals(2, summary.migrated());
         assertEquals(1, summary.skipped());
         assertEquals(0, summary.failures().size());
     }

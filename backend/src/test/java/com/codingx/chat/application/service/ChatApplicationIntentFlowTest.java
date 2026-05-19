@@ -21,6 +21,7 @@ import com.codingx.chat.domain.repository.ChatMessageRepository;
 import com.codingx.chat.domain.service.AiChatClient;
 import com.codingx.chat.domain.service.ChatStreamPublisher;
 import com.codingx.mcp.domain.repository.ChatMcpRepository;
+import com.codingx.skill.application.service.ChatSkillContextService;
 import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -84,6 +85,9 @@ class ChatApplicationIntentFlowTest {
     @Mock
     private ChatAttachmentService chatAttachmentService;
 
+    @Mock
+    private ChatSkillContextService chatSkillContextService;
+
     @InjectMocks
     private ChatApplicationService chatApplicationService;
 
@@ -134,6 +138,7 @@ class ChatApplicationIntentFlowTest {
         when(conversationIntentService.route("你是谁", false)).thenReturn(
             new ConversationIntentDecision("sys-about-bot", ConversationIntentAction.DIRECT, null)
         );
+        when(chatSkillContextService.buildSkillContext(any())).thenReturn("");
         when(chatIntentNodeRepository.findByIntentCode("sys-about-bot")).thenReturn(
             ChatIntentNode.builder()
                 .intentCode("sys-about-bot")

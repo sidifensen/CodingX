@@ -24,6 +24,7 @@ import com.codingx.chat.domain.service.AiChatClient;
 import com.codingx.chat.domain.service.ChatStreamPublisher;
 import com.codingx.common.exception.ForbiddenException;
 import com.codingx.mcp.domain.repository.ChatMcpRepository;
+import com.codingx.skill.application.service.ChatSkillContextService;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -118,6 +119,9 @@ class ChatApplicationServiceTest {
     @Mock
     private ChatAttachmentService chatAttachmentService;
 
+    @Mock
+    private ChatSkillContextService chatSkillContextService;
+
     /**
      * ChatRuntimeGuardService 依赖。
      */
@@ -159,6 +163,7 @@ class ChatApplicationServiceTest {
         when(llmResponseCleaner.clean(any())).thenAnswer(invocation -> invocation.getArgument(0));
         when(conversationIntentService.route("Hi", false)).thenReturn(new ConversationIntentDecision("chat.normal", ConversationIntentAction.DIRECT, null));
         when(chatIntentNodeRepository.findByIntentCode("chat.normal")).thenReturn(null);
+        when(chatSkillContextService.buildSkillContext(any())).thenReturn("");
         doAnswer(invocation -> {
 
             AiChatClient.StreamHandler handler = invocation.getArgument(2);
@@ -243,6 +248,7 @@ class ChatApplicationServiceTest {
         when(conversationSummaryService.buildModelHistory(any(), any())).thenAnswer(invocation -> invocation.getArgument(1));
         when(conversationIntentService.route("Hi", false)).thenReturn(new ConversationIntentDecision("chat.normal", ConversationIntentAction.DIRECT, null));
         when(chatIntentNodeRepository.findByIntentCode("chat.normal")).thenReturn(null);
+        when(chatSkillContextService.buildSkillContext(any())).thenReturn("");
         AtomicInteger cancelChecks = new AtomicInteger();
         when(chatRuntimeGuardService.isCancelled(1L)).thenAnswer(invocation -> cancelChecks.incrementAndGet() > 1);
         doAnswer(invocation -> {
@@ -277,6 +283,7 @@ class ChatApplicationServiceTest {
         when(conversationSummaryService.buildModelHistory(any(), any())).thenAnswer(invocation -> invocation.getArgument(1));
         when(conversationIntentService.route("Hi", false)).thenReturn(new ConversationIntentDecision("chat.normal", ConversationIntentAction.DIRECT, null));
         when(chatIntentNodeRepository.findByIntentCode("chat.normal")).thenReturn(null);
+        when(chatSkillContextService.buildSkillContext(any())).thenReturn("");
         when(chatRuntimeGuardService.isCancelled(1L)).thenReturn(true);
         doAnswer(invocation -> {
             throw new IllegalStateException("interrupted");
@@ -316,6 +323,7 @@ class ChatApplicationServiceTest {
         when(conversationSummaryService.buildModelHistory(any(), any())).thenAnswer(invocation -> invocation.getArgument(1));
         when(conversationIntentService.route("Hi", false)).thenReturn(new ConversationIntentDecision("chat.normal", ConversationIntentAction.DIRECT, null));
         when(chatIntentNodeRepository.findByIntentCode("chat.normal")).thenReturn(null);
+        when(chatSkillContextService.buildSkillContext(any())).thenReturn("");
         when(llmResponseCleaner.clean(any())).thenAnswer(invocation -> invocation.getArgument(0));
         doAnswer(invocation -> {
             AiChatClient.StreamHandler handler = invocation.getArgument(2);
@@ -333,6 +341,56 @@ class ChatApplicationServiceTest {
         verify(chatMessageRepository, org.mockito.Mockito.times(2)).save(messageCaptor.capture());
         Long userMessageId = messageCaptor.getAllValues().get(0).getId();
         verify(chatAttachmentService).bindToMessage(attachment, 1L, userMessageId, runId);
+        ChatExecutionContext.clear();
+    }
+
+    /**
+     * 选中技能时应把技能上下文注入系统消息，确保模型可消费真实技能说明。
+     */
+    @Test
+    void sendMessageInjectsSkillContextIntoSystemPrompt() {
+        Long runId = bindRunContext();
+        ChatConversation conversation = ChatConversation.create(1L, "Default", 1002L, ChatConversationStatus.ACTIVE);
+        when(chatConversationRepository.requireById(1L)).thenReturn(conversation);
+        when(chatMessageRepository.findByConversationId(1L)).thenReturn(new ArrayList<>());
+        when(chatAttachmentService.requireOwnedAttachments(any(), eq(1L), eq(1002L))).thenReturn(List.of());
+        when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+            new ConversationRewriteResult("Hi", false, List.of("Hi"))
+        );
+        when(conversationSummaryService.buildModelHistory(any(), any())).thenAnswer(invocation -> invocation.getArgument(1));
+        when(conversationIntentService.route("Hi", false)).thenReturn(new ConversationIntentDecision("chat.normal", ConversationIntentAction.DIRECT, null));
+        when(chatIntentNodeRepository.findByIntentCode("chat.normal")).thenReturn(null);
+        when(chatSkillContextService.buildSkillContext(List.of("sales_query"))).thenReturn("""
+            以下是当前消息已选择技能的说明文档，请优先按这些技能约束回答。
+            ## /sales_query（销售查询）
+            ---
+            name: sales_query
+            ---
+            """);
+        when(llmResponseCleaner.clean(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(conversationTitleService.generateTitle(any(), any())).thenReturn("技能对话");
+        doAnswer(invocation -> {
+            @SuppressWarnings("unchecked")
+            List<ChatMessage> aiHistory = invocation.getArgument(0, List.class);
+            ChatMessage systemMessage = aiHistory.getFirst();
+            assertEquals(ChatMessageRole.SYSTEM, systemMessage.getRole());
+            org.junit.jupiter.api.Assertions.assertTrue(
+                systemMessage.getContent().contains("/sales_query"),
+                "系统提示应包含技能上下文"
+            );
+            AiChatClient.StreamHandler handler = invocation.getArgument(2);
+            handler.onDelta("技能已生效");
+            handler.onComplete();
+            return null;
+        }).when(aiChatClient).streamChat(any(), org.mockito.ArgumentMatchers.anyBoolean(), any());
+
+        chatApplicationService.sendMessage(
+            new SendChatMessageCommand(1L, "Hi", false, List.of(), List.of("sales_query"), null, List.of()),
+            1002L
+        );
+
+        verify(chatSkillContextService).buildSkillContext(List.of("sales_query"));
+        verify(chatStreamPublisher).publishAssistantCompleted(1L, "技能已生效", "技能对话");
         ChatExecutionContext.clear();
     }
 }

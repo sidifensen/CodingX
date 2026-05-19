@@ -35,6 +35,13 @@ public interface ChatConversationRepository {
     List<ChatConversation> findByCreatedBy(Long userId);
 
     /**
+     * 供管理端按关键字查询会话列表，返回全量会话记录。
+     * @param keyword 可选关键字，支持标题模糊匹配或 ID 精确匹配。
+     * @return 会话列表。
+     */
+    List<ChatConversation> findAll(String keyword);
+
+    /**
      * 按会话主键查询单条记录，不存在时返回空。
      * @param conversationId 会话标识。
      * @return 会话记录。

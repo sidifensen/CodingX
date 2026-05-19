@@ -83,6 +83,32 @@ public class ChatConversationRepositoryImpl implements ChatConversationRepositor
     }
 
     /**
+     * 供管理端按关键字查询会话列表，支持标题模糊匹配或 ID 精确匹配。
+     * @param keyword 可选关键字。
+     * @return 会话列表。
+     */
+    @Override
+    public List<ChatConversation> findAll(String keyword) {
+        String normalizedKeyword = keyword == null ? "" : keyword.trim();
+        LambdaQueryWrapper<ChatConversationDO> wrapper = new LambdaQueryWrapper<ChatConversationDO>()
+            .eq(ChatConversationDO::getDeleted, 0)
+            .orderByDesc(ChatConversationDO::getUpdatedAt)
+            .orderByDesc(ChatConversationDO::getId);
+        if (!normalizedKeyword.isBlank()) {
+            Long conversationId = parseConversationId(normalizedKeyword);
+            if (conversationId != null) {
+                wrapper.and(query -> query
+                    .like(ChatConversationDO::getTitle, normalizedKeyword)
+                    .or()
+                    .eq(ChatConversationDO::getId, conversationId));
+            } else {
+                wrapper.like(ChatConversationDO::getTitle, normalizedKeyword);
+            }
+        }
+        return chatConversationMapper.selectList(wrapper).stream().map(this::toDomain).toList();
+    }
+
+    /**
      * 按会话主键查询记录，供反馈详情页展示会话标题与上下文信息。
      * @param conversationId 会话标识。
      * @return 会话记录。
@@ -112,6 +138,7 @@ public class ChatConversationRepositoryImpl implements ChatConversationRepositor
             ChatConversationStatus.valueOf(dataObject.getStatus())
         );
         conversation.restoreRuntimeState(dataObject.getLastMessageAt(), dataObject.getLastRunId());
+        conversation.restorePersistenceState(dataObject.getCreatedAt(), dataObject.getUpdatedAt());
         return conversation;
     }
 
@@ -130,5 +157,18 @@ public class ChatConversationRepositoryImpl implements ChatConversationRepositor
         dataObject.setLastRunId(conversation.getLastRunId());
         dataObject.setDeleted(0);
         return dataObject;
+    }
+
+    /**
+     * 尝试将关键字解析为会话 ID，便于支持“按 ID 精确查找”。
+     * @param keyword 关键字。
+     * @return 可解析时返回会话 ID，否则返回 null。
+     */
+    private Long parseConversationId(String keyword) {
+        try {
+            return Long.valueOf(keyword);
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
     }
 }

@@ -6,7 +6,7 @@ import { NavLink, Outlet, useLocation } from 'react-router-dom';
 const navItems = [
   { path: '/', icon: 'dashboard', label: '工作台' },
   { path: '/users', icon: 'group', label: '用户管理' },
-  { path: '/tasks', icon: 'assignment', label: '任务管理' },
+  { path: '/tasks', icon: 'assignment', label: '会话管理' },
   { path: '/skills', icon: 'extension', label: '技能管理' },
   { path: '/tools', icon: 'build_circle', label: '工具管理' },
   { path: '/mcp', icon: 'terminal', label: 'MCP管理' },

@@ -33,7 +33,7 @@ export function Dashboard() {
             
             <Link to="/tasks" className="bg-surface-container-lowest p-lg rounded-xl border border-border-hairline hover:shadow-[0_4px_12px_rgba(0,0,0,0.04)] transition-all group block active:scale-[0.98]">
               <div className="flex justify-between items-start mb-sm">
-                <span className="font-label-caps text-label-caps text-secondary uppercase tracking-widest">任务总数</span>
+                <span className="font-label-caps text-label-caps text-secondary uppercase tracking-widest">会话总数</span>
                 <span className="material-symbols-outlined text-secondary group-hover:text-primary transition-colors">assignment</span>
               </div>
               <div className="font-metric-lg text-metric-lg text-ink font-bold">{dashboard?.mappingCount ?? '-'}</div>
@@ -45,7 +45,7 @@ export function Dashboard() {
 
             <Link to="/tasks" className="bg-surface-container-lowest p-lg rounded-xl border border-border-hairline hover:shadow-[0_4px_12px_rgba(0,0,0,0.04)] transition-all group block active:scale-[0.98]">
               <div className="flex justify-between items-start mb-sm">
-                <span className="font-label-caps text-label-caps text-secondary uppercase tracking-widest">运行中任务</span>
+                <span className="font-label-caps text-label-caps text-secondary uppercase tracking-widest">活跃会话</span>
                 <div className="w-2 h-2 rounded-full bg-status-running animate-pulse"></div>
               </div>
               <div className="font-metric-lg text-metric-lg text-ink font-bold">{dashboard?.runningTraceCount ?? '-'}</div>
@@ -56,7 +56,7 @@ export function Dashboard() {
 
             <Link to="/tasks" className="bg-surface-container-lowest p-lg rounded-xl border border-border-hairline hover:shadow-[0_4px_12px_rgba(0,0,0,0.04)] transition-all group block active:scale-[0.98]">
               <div className="flex justify-between items-start mb-sm">
-                <span className="font-label-caps text-label-caps text-secondary uppercase tracking-widest">失败任务</span>
+                <span className="font-label-caps text-label-caps text-secondary uppercase tracking-widest">异常会话</span>
                 <span className="material-symbols-outlined text-status-failed transition-colors">error_outline</span>
               </div>
               <div className="font-metric-lg text-metric-lg text-ink font-bold">{dashboard?.traceCount ?? '-'}</div>
@@ -86,7 +86,7 @@ export function Dashboard() {
                 <div className="w-12 h-12 bg-surface-container rounded-lg flex items-center justify-center mb-sm group-hover:bg-ink group-hover:text-on-ink transition-colors">
                   <span className="material-symbols-outlined text-[28px]">assignment</span>
                 </div>
-                <span className="font-medium text-ink">任务管理</span>
+                <span className="font-medium text-ink">会话管理</span>
               </Link>
               <Link to="/skills" className="flex flex-col items-center justify-center p-xl bg-surface-container-lowest border border-border-hairline rounded-xl hover:border-ink hover:bg-surface-container-low transition-all group active:scale-95">
                 <div className="w-12 h-12 bg-surface-container rounded-lg flex items-center justify-center mb-sm group-hover:bg-ink group-hover:text-on-ink transition-colors">
@@ -142,7 +142,7 @@ export function Dashboard() {
               <table className="w-full text-left">
                 <thead className="bg-surface-container-low font-label-caps text-label-caps text-on-secondary-container">
                   <tr>
-                    <th className="px-lg py-sm font-semibold uppercase">任务 ID</th>
+                    <th className="px-lg py-sm font-semibold uppercase">会话 ID</th>
                     <th className="px-lg py-sm font-semibold uppercase">执行人</th>
                     <th className="px-lg py-sm font-semibold uppercase">状态</th>
                     <th className="px-lg py-sm font-semibold uppercase">耗时</th>
@@ -227,7 +227,7 @@ export function Dashboard() {
 
       <button className="fixed bottom-lg right-lg w-14 h-14 bg-ink text-on-ink rounded-full shadow-lg hover:scale-105 active:scale-95 transition-all flex items-center justify-center group z-50 overflow-visible">
         <span className="material-symbols-outlined text-[28px]">add</span>
-        <span className="absolute right-full mr-md px-sm py-1 bg-ink text-on-ink text-[12px] rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">创建新任务</span>
+        <span className="absolute right-full mr-md px-sm py-1 bg-ink text-on-ink text-[12px] rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">创建新会话</span>
       </button>
     </>
   );

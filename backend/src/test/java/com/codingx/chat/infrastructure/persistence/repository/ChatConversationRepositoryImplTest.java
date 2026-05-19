@@ -3,6 +3,7 @@ package com.codingx.chat.infrastructure.persistence.repository;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.ArgumentMatchers.any;
 
 import com.codingx.chat.domain.model.ChatConversation;
 import com.codingx.chat.domain.model.ChatConversationStatus;
@@ -10,6 +11,7 @@ import com.codingx.chat.infrastructure.persistence.dataobject.ChatConversationDO
 import com.codingx.chat.infrastructure.persistence.mapper.ChatConversationMapper;
 import java.lang.reflect.Field;
 import java.time.LocalDateTime;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -69,6 +71,8 @@ class ChatConversationRepositoryImplTest {
         dataObject.setStatus(ChatConversationStatus.ACTIVE.name());
         dataObject.setDeleted(0);
         dataObject.setLastMessageAt(lastMessageAt);
+        dataObject.setCreatedAt(LocalDateTime.of(2026, 5, 14, 21, 0, 0));
+        dataObject.setUpdatedAt(LocalDateTime.of(2026, 5, 14, 21, 5, 0));
         setField(dataObject, "lastRunId", 9002L);
         when(chatConversationMapper.selectById(1L)).thenReturn(dataObject);
 
@@ -76,6 +80,31 @@ class ChatConversationRepositoryImplTest {
 
         assertEquals(lastMessageAt, readField(conversation, "lastMessageAt"));
         assertEquals(9002L, readField(conversation, "lastRunId"));
+        assertEquals(LocalDateTime.of(2026, 5, 14, 21, 0, 0), readField(conversation, "createdAt"));
+        assertEquals(LocalDateTime.of(2026, 5, 14, 21, 5, 0), readField(conversation, "updatedAt"));
+    }
+
+    /**
+     * 管理端列表查询应支持标题模糊过滤并按更新时间倒序映射。
+     */
+    @Test
+    void findAllFiltersByKeywordAndMapsCreatedAtUpdatedAt() throws Exception {
+        ChatConversationDO dataObject = new ChatConversationDO();
+        dataObject.setId(2L);
+        dataObject.setTitle("报销会话");
+        dataObject.setCreatedBy(1002L);
+        dataObject.setStatus(ChatConversationStatus.ACTIVE.name());
+        dataObject.setDeleted(0);
+        dataObject.setCreatedAt(LocalDateTime.of(2026, 5, 18, 9, 0, 0));
+        dataObject.setUpdatedAt(LocalDateTime.of(2026, 5, 18, 9, 5, 0));
+        when(chatConversationMapper.selectList(any())).thenReturn(List.of(dataObject));
+
+        List<ChatConversation> records = chatConversationRepository.findAll("报销");
+
+        assertEquals(1, records.size());
+        assertEquals("报销会话", records.getFirst().getTitle());
+        assertEquals(LocalDateTime.of(2026, 5, 18, 9, 0, 0), readField(records.getFirst(), "createdAt"));
+        assertEquals(LocalDateTime.of(2026, 5, 18, 9, 5, 0), readField(records.getFirst(), "updatedAt"));
     }
 
     /**

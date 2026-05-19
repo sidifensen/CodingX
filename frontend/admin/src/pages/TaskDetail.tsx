@@ -1,72 +1,266 @@
 import React from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import clsx from 'clsx';
-import { mockTasks } from '../data';
 
+import {
+  AdminChatApi,
+  type AdminChatConversationDetail,
+  type AdminChatConversationMessage,
+} from '../api/adminChatApi';
+
+/**
+ * 管理端会话详情页：展示会话元信息与消息历史。
+ */
 export function TaskDetail() {
-  const { id } = useParams();
+  const { id = '' } = useParams();
   const navigate = useNavigate();
-  const task = mockTasks.find(t => t.id === id) || mockTasks[0];
+  const [detail, setDetail] = React.useState<AdminChatConversationDetail | null>(null);
+  const [loading, setLoading] = React.useState(false);
+  const [errorMessage, setErrorMessage] = React.useState('');
+
+  const loadDetail = React.useCallback(async () => {
+    if (!id) {
+      return;
+    }
+    setLoading(true);
+    setErrorMessage('');
+    try {
+      const data = await AdminChatApi.getConversationDetail(id);
+      setDetail(data);
+    } catch (error) {
+      setErrorMessage(extractErrorMessage(error, '会话详情加载失败'));
+      setDetail(null);
+    } finally {
+      setLoading(false);
+    }
+  }, [id]);
+
+  React.useEffect(() => {
+    void loadDetail();
+  }, [loadDetail]);
 
   return (
-    <div className="p-lg w-full">
-       <div className="mb-lg flex items-center gap-xs">
-        <button onClick={() => navigate(-1)} className="text-secondary hover:text-ink transition-colors flex items-center gap-xs active:scale-95 group">
-          <span className="material-symbols-outlined text-[18px] group-hover:-translate-x-1 transition-transform">arrow_back</span>
-          返回任务列表
+    <div className="w-full space-y-lg p-lg">
+      <div className="flex items-center justify-between gap-sm">
+        <button
+          onClick={() => navigate(-1)}
+          className="group flex items-center gap-xs text-secondary transition-colors hover:text-ink active:scale-95"
+        >
+          <span className="material-symbols-outlined text-[18px] transition-transform group-hover:-translate-x-1">
+            arrow_back
+          </span>
+          返回会话列表
+        </button>
+        <button
+          type="button"
+          onClick={() => void loadDetail()}
+          className="h-10 rounded-lg border border-border-strong bg-surface-container-lowest px-lg text-button font-button text-ink transition-colors hover:bg-surface-container-low"
+        >
+          刷新
         </button>
       </div>
-      
-      <div className="bg-surface-container-lowest p-xl rounded-2xl border border-border-hairline shadow-sm">
-        <div className="flex justify-between items-start mb-xl pb-lg border-b border-border-hairline">
-          <div>
-            <div className="flex items-center gap-sm mb-xs">
-              <span className="font-data-mono text-secondary px-2 py-1 bg-surface-container-low rounded border border-border-hairline text-[12px]">#{task.id}</span>
-              <span className={clsx("px-2 py-0.5 rounded text-[11px] font-bold border flex items-center gap-1", task.status === 'Running' ? "bg-status-running-bg text-status-running border-status-running-border" : task.status === 'Failed' ? "bg-status-failed-bg text-status-failed border-status-failed-border" : task.status === 'Completed' ? "bg-surface-container-low text-secondary border-border-strong" : "bg-status-pending-bg text-status-pending border-status-pending-border")}>
-                {task.status === 'Running' && <span className="w-1.5 h-1.5 rounded-full bg-status-running animate-pulse"></span>}
-                {task.statusLabel}
-              </span>
+
+      {errorMessage ? (
+        <div className="rounded-xl border border-error bg-error-container px-lg py-md text-sm text-on-error-container">
+          {errorMessage}
+        </div>
+      ) : null}
+
+      {loading ? (
+        <div className="rounded-xl border border-border-hairline bg-surface-container-lowest px-lg py-xl text-center text-secondary">
+          会话详情加载中...
+        </div>
+      ) : null}
+
+      {!loading && !detail ? (
+        <div className="rounded-xl border border-border-hairline bg-surface-container-lowest px-lg py-xl text-center text-secondary">
+          暂无会话详情
+        </div>
+      ) : null}
+
+      {!loading && detail ? (
+        <>
+          <section className="rounded-2xl border border-border-hairline bg-surface-container-lowest p-xl shadow-sm">
+            <div className="mb-lg flex flex-col gap-sm border-b border-border-hairline pb-lg lg:flex-row lg:items-start lg:justify-between">
+              <div>
+                <div className="mb-xs flex items-center gap-sm">
+                  <span className="rounded border border-border-hairline bg-surface-container-low px-2 py-1 font-data-mono text-[12px] text-secondary">
+                    #{detail.id}
+                  </span>
+                  <span
+                    className={clsx(
+                      'inline-flex items-center gap-1 rounded border px-2 py-0.5 text-[11px] font-bold',
+                      detail.statusLabel === '活跃'
+                        ? 'border-status-running-border bg-status-running-bg text-status-running'
+                        : 'border-border-hairline bg-surface-container-low text-secondary',
+                    )}
+                  >
+                    {detail.statusLabel}
+                  </span>
+                </div>
+                <h2 className="font-headline-sm text-headline-sm text-ink">{detail.title || '未命名会话'}</h2>
+              </div>
+              <div className="grid grid-cols-2 gap-md text-[12px] text-secondary lg:grid-cols-3">
+                <InfoBlock label="创建人" value={String(detail.createdBy)} />
+                <InfoBlock label="创建时间" value={formatDateTime(detail.createdAt)} />
+                <InfoBlock label="更新时间" value={formatDateTime(detail.updatedAt)} />
+                <InfoBlock label="最近消息" value={formatDateTime(detail.lastMessageAt)} />
+                <InfoBlock label="最近运行ID" value={detail.lastRunId ? String(detail.lastRunId) : '-'} />
+                <InfoBlock label="消息数量" value={String(detail.messages?.length ?? 0)} />
+              </div>
             </div>
-            <h2 className="font-headline-sm text-headline-sm text-ink">{task.description}</h2>
-          </div>
-          <div className="flex gap-sm">
-             <button className="border border-border-strong px-md py-2 text-ink rounded-lg hover:bg-surface-container transition-colors shadow-sm flex items-center gap-1"><span className="material-symbols-outlined text-[18px]">play_arrow</span>重试</button>
-             <button className="border border-border-strong px-md py-2 text-error rounded-lg hover:bg-error/5 transition-colors flex items-center gap-1"><span className="material-symbols-outlined text-[18px]">stop</span>终止</button>
-          </div>
-        </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-lg mb-xl">
-           <div>
-             <p className="text-secondary text-[12px] mb-1">执行人</p>
-             <p className="text-ink font-medium flex items-center gap-1"><span className="material-symbols-outlined text-[16px] text-tertiary-container">person</span> {task.assignee}</p>
-           </div>
-           <div>
-             <p className="text-secondary text-[12px] mb-1">创建时间</p>
-             <p className="text-ink font-medium">{task.createdAt}</p>
-           </div>
-           <div>
-             <p className="text-secondary text-[12px] mb-1">进度耗时</p>
-             <p className="text-ink font-medium">{task.duration}</p>
-           </div>
-           <div>
-             <p className="text-secondary text-[12px] mb-1">重试次数</p>
-             <p className="text-ink font-medium">0</p>
-           </div>
-        </div>
-
-        <div>
-          <h3 className="font-title-sm text-ink mb-md flex items-center gap-xs"><span className="material-symbols-outlined text-[20px] text-secondary">terminal</span> 执行日志</h3>
-          <div className="bg-surface-container-lowest border border-border-hairline rounded-xl p-md font-data-mono text-[13px] leading-relaxed overflow-x-auto">
-            <div className="text-secondary mb-1">[2023-11-20 10:00:00] INFO: Initializing task context...</div>
-            <div className="text-secondary mb-1">[2023-11-20 10:00:02] INFO: Connecting to Database MCP...</div>
-            <div className="text-status-running mb-1">[2023-11-20 10:00:05] SUCCESS: Connection established.</div>
-            <div className="text-secondary mb-1">[2023-11-20 10:00:06] INFO: Executing data migration script {task.id}...</div>
-            {task.status === 'Running' && <div className="text-status-pending mt-2 animate-pulse">Waiting for process to output logs...</div>}
-            {task.status === 'Failed' && <div className="text-status-failed mt-2">[2023-11-20 10:00:10] ERROR: Expected table 'users_v2' not found. Terminating.</div>}
-            {task.status === 'Completed' && <div className="text-status-running mt-2">[2023-11-20 10:04:22] SUCCESS: Data migration completed. 10420 rows affected.</div>}
-          </div>
-        </div>
-      </div>
+            <div className="space-y-md">
+              <h3 className="flex items-center gap-xs text-ink font-title-sm">
+                <span className="material-symbols-outlined text-[20px] text-secondary">chat</span>
+                会话消息
+              </h3>
+              {detail.messages.length === 0 ? (
+                <div className="rounded-xl border border-border-hairline bg-surface-container-low px-lg py-xl text-center text-secondary">
+                  当前会话暂无消息
+                </div>
+              ) : (
+                <div className="space-y-sm">
+                  {detail.messages.map((message) => (
+                    <MessageCard key={message.id} message={message} />
+                  ))}
+                </div>
+              )}
+            </div>
+          </section>
+        </>
+      ) : null}
     </div>
   );
+}
+
+function MessageCard({ message }: { message: AdminChatConversationMessage }) {
+  const isAssistant = message.role === 'ASSISTANT';
+  const isSystem = message.role === 'SYSTEM';
+  const isUser = message.role === 'USER';
+  const toneClassName = isAssistant
+    ? 'border-border-strong bg-surface-container-low'
+    : isSystem
+      ? 'border-status-pending-border bg-status-pending-bg'
+      : 'border-border-hairline bg-surface-container-lowest';
+
+  return (
+    <article className={clsx('rounded-xl border px-lg py-md', toneClassName)}>
+      <header className="mb-sm flex flex-wrap items-center justify-between gap-sm">
+        <div className="flex items-center gap-sm">
+          <span className="font-data-mono text-[12px] text-tertiary-container">#{message.id}</span>
+          <span
+            className={clsx(
+              'rounded px-2 py-0.5 text-[11px] font-bold',
+              isUser
+                ? 'bg-primary/10 text-primary'
+                : isAssistant
+                  ? 'bg-status-running-bg text-status-running'
+                  : 'bg-status-pending-bg text-status-pending',
+            )}
+          >
+            {toRoleLabel(message.role)}
+          </span>
+          <span className="text-[12px] text-secondary">{toMessageStatusLabel(message.status)}</span>
+        </div>
+        <div className="text-[12px] text-secondary">{formatDateTime(message.createdAt)}</div>
+      </header>
+
+      <div className="whitespace-pre-wrap break-words text-ink">{message.content || '-'}</div>
+
+      {message.errorMessage ? (
+        <div className="mt-sm rounded-lg border border-error bg-error-container px-sm py-xs text-[12px] text-on-error-container">
+          {message.errorMessage}
+        </div>
+      ) : null}
+
+      {message.attachments && message.attachments.length > 0 ? (
+        <div className="mt-sm space-y-xs">
+          <p className="text-[12px] text-secondary">附件</p>
+          <ul className="space-y-1">
+            {message.attachments.map((attachment) => (
+              <li
+                key={attachment.id}
+                className="rounded-lg border border-border-hairline bg-surface-container-low px-sm py-xs text-[12px] text-ink"
+              >
+                {attachment.fileName}
+                {attachment.fileSize ? (
+                  <span className="ml-2 text-secondary">({formatFileSize(attachment.fileSize)})</span>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+    </article>
+  );
+}
+
+function InfoBlock({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <p className="mb-1 text-[12px] text-secondary">{label}</p>
+      <p className="font-medium text-ink">{value}</p>
+    </div>
+  );
+}
+
+function toRoleLabel(role: string): string {
+  if (role === 'USER') {
+    return '用户';
+  }
+  if (role === 'ASSISTANT') {
+    return '助手';
+  }
+  if (role === 'SYSTEM') {
+    return '系统';
+  }
+  return role || '未知角色';
+}
+
+function toMessageStatusLabel(status: string): string {
+  if (status === 'PENDING') {
+    return '处理中';
+  }
+  if (status === 'COMPLETED') {
+    return '完成';
+  }
+  if (status === 'FAILED') {
+    return '失败';
+  }
+  if (status === 'CANCELLED') {
+    return '已取消';
+  }
+  return status || '未知状态';
+}
+
+function formatDateTime(value?: string) {
+  if (!value) {
+    return '-';
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  return date.toLocaleString('zh-CN');
+}
+
+function formatFileSize(size: number): string {
+  if (!Number.isFinite(size) || size <= 0) {
+    return '0 B';
+  }
+  if (size < 1024) {
+    return `${size} B`;
+  }
+  if (size < 1024 * 1024) {
+    return `${(size / 1024).toFixed(1)} KB`;
+  }
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function extractErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof Error) {
+    return error.message || fallback;
+  }
+  return fallback;
 }

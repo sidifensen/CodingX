@@ -53,6 +53,58 @@ export interface AdminTraceRunQuery {
   traceId?: string;
 }
 
+export interface AdminChatConversationListItem {
+  id: number;
+  title: string;
+  createdBy: number;
+  status: string;
+  statusLabel: string;
+  lastMessageAt?: string;
+  lastRunId?: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface AdminChatConversationMessageAttachment {
+  id: number;
+  conversationId: number;
+  messageId: number;
+  attachmentType: string;
+  fileName: string;
+  fileExt?: string;
+  mimeType?: string;
+  fileSize?: number;
+  previewUrl?: string;
+  contentSummary?: string;
+  status?: string;
+  createdAt?: string;
+}
+
+export interface AdminChatConversationMessage {
+  id: number;
+  conversationId: number;
+  role: string;
+  content: string;
+  thinkingContent?: string;
+  thinkingDuration?: number;
+  status: string;
+  provider?: string;
+  model?: string;
+  errorMessage?: string;
+  createdAt?: string;
+  attachments?: AdminChatConversationMessageAttachment[];
+}
+
+export interface AdminChatConversationDetail extends AdminChatConversationListItem {
+  messages: AdminChatConversationMessage[];
+}
+
+export interface AdminChatConversationQuery {
+  current?: number;
+  size?: number;
+  keyword?: string;
+}
+
 export interface AdminIntentNode {
   id?: string;
   intentCode: string;
@@ -269,6 +321,36 @@ export interface AdminChatToolInvokeView {
  * 统一封装管理端聊天运行时后台接口。
  */
 export class AdminChatApi {
+  /**
+   * 分页查询会话列表，支持标题或会话 ID 关键字过滤。
+   * @param query 分页与筛选参数。
+   * @returns 会话分页结果。
+   */
+  static async listConversations(
+    query: AdminChatConversationQuery = {},
+  ): Promise<AdminPageResult<AdminChatConversationListItem>> {
+    const searchParams = new URLSearchParams();
+    searchParams.set('current', String(query.current ?? 1));
+    searchParams.set('size', String(query.size ?? 10));
+    if (query.keyword && query.keyword.trim()) {
+      searchParams.set('keyword', query.keyword.trim());
+    }
+    return this.request<AdminPageResult<AdminChatConversationListItem>>(
+      `/api/admin/chat/conversations?${searchParams.toString()}`,
+    );
+  }
+
+  /**
+   * 查询单条会话详情并附带消息列表。
+   * @param conversationId 会话主键。
+   * @returns 会话详情数据。
+   */
+  static async getConversationDetail(conversationId: string | number): Promise<AdminChatConversationDetail> {
+    return this.request<AdminChatConversationDetail>(
+      `/api/admin/chat/conversations/${encodeURIComponent(String(conversationId))}`,
+    );
+  }
+
   static async listTraces(query: AdminTraceRunQuery = {}): Promise<AdminTraceRunPageResult> {
     const searchParams = new URLSearchParams();
     searchParams.set('current', String(query.current ?? 1));

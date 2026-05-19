@@ -47,6 +47,16 @@ public class ChatConversation {
     private Long lastRunId;
 
     /**
+     * 创建时间。
+     */
+    private LocalDateTime createdAt;
+
+    /**
+     * 更新时间。
+     */
+    private LocalDateTime updatedAt;
+
+    /**
      * 创建 create 所需数据并返回结果。
      * @param id 输入参数。
      * @param title 输入参数。
@@ -107,5 +117,15 @@ public class ChatConversation {
     public void restoreRuntimeState(LocalDateTime lastMessageAt, Long lastRunId) {
         this.lastMessageAt = lastMessageAt;
         this.lastRunId = lastRunId;
+    }
+
+    /**
+     * 恢复持久化层记录的创建/更新时间，供管理端展示与排序。
+     * @param createdAt 创建时间。
+     * @param updatedAt 更新时间。
+     */
+    public void restorePersistenceState(LocalDateTime createdAt, LocalDateTime updatedAt) {
+        this.createdAt = createdAt;
+        this.updatedAt = updatedAt;
     }
 }

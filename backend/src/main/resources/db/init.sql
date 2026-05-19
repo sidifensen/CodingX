@@ -309,40 +309,6 @@ SET
     updated_at = CURRENT_TIMESTAMP,
     deleted = EXCLUDED.deleted;
 
-INSERT INTO chat_intent_example (id, intent_code, example_text, sort_no)
-VALUES
-    (4001, 'group-hr', '请假流程是怎样的？', 1),
-    (4002, 'group-hr', '试用期多久转正？', 2),
-    (4003, 'group-hr', '迟到会有什么处罚？', 3),
-    (4004, 'group-it', '公司 VPN 连不上怎么办？', 1),
-    (4005, 'group-it', '电脑打印机怎么连？', 2),
-    (4006, 'group-it', '邮箱密码忘了怎么重置？', 3),
-    (4007, 'group-finance', '差旅报销需要哪些资料？', 1),
-    (4008, 'group-finance-invoice', '发票抬头有哪些？', 1),
-    (4009, 'biz-oa', 'OA系统主要提供哪些功能？', 1),
-    (4010, 'biz-oa', '请假审批在哪个菜单？', 2),
-    (4011, 'biz-oa-intro', 'OA系统是做什么的？', 1),
-    (4012, 'biz-oa-security', 'OA系统如何控制不同角色的权限？', 1),
-    (4013, 'biz-ins', '保险系统整体架构是怎样的？', 1),
-    (4014, 'biz-ins-intro', '保险系统都包括哪些子系统？', 1),
-    (4015, 'biz-ins-arch', '保险系统是如何做服务拆分的？', 1),
-    (4016, 'biz-ins-security', '保险系统的敏感信息如何保护？', 1),
-    (4017, 'sys-welcome', '你好', 1),
-    (4018, 'sys-welcome', 'hello', 2),
-    (4019, 'sys-welcome', '在吗', 3),
-    (4020, 'sys-about-bot', '你是谁', 1),
-    (4021, 'sys-about-bot', '你能帮我做什么', 2),
-    (4022, 'sys-about-bot', '你是什么AI', 3),
-    (4023, 'sales-data', '销售总额是多少？', 1),
-    (4024, 'sales-data', '销售量是多少？', 2),
-    (4025, 'code-search', '查找 ChatController 的 sendMessage 方法', 1),
-    (4026, 'code-search', '搜索 weather_query 执行器实现', 2)
-ON CONFLICT (id) DO UPDATE
-SET
-    intent_code = EXCLUDED.intent_code,
-    example_text = EXCLUDED.example_text,
-    sort_no = EXCLUDED.sort_no;
-
 INSERT INTO chat_query_term_mapping (id, source_term, target_term, match_type, priority, enabled, remark, deleted)
 VALUES
     (5001, 'oa', 'OA系统', 1, 1, 1, '系统简称归一化', 0),

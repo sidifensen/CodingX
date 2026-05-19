@@ -5,7 +5,6 @@ import cn.hutool.json.JSONArray;
 import cn.hutool.json.JSONUtil;
 import com.codingx.chat.domain.model.ChatIntentExample;
 import com.codingx.chat.domain.model.ChatIntentNode;
-import com.codingx.chat.domain.repository.ChatIntentExampleRepository;
 import com.codingx.chat.domain.repository.ChatIntentNodeRepository;
 import java.util.ArrayList;
 import java.util.List;
@@ -20,7 +19,6 @@ import org.springframework.stereotype.Service;
 public class ConversationIntentService {
 
     private final ChatIntentNodeRepository chatIntentNodeRepository;
-    private final ChatIntentExampleRepository chatIntentExampleRepository;
     private final ConversationIntentResolver conversationIntentResolver;
     private final ConversationIntentGuidanceService conversationIntentGuidanceService;
 
@@ -67,14 +65,13 @@ public class ConversationIntentService {
     }
 
     /**
-     * 兼容读取旧示例表与节点 JSON 示例，确保后台配置和导入种子都能参与识别。
+     * 从节点 JSON 示例中汇总识别样本，避免维护已下线的独立示例表。
      * @param nodes 启用中的节点集合。
      * @return 汇总后的示例列表。
      */
     private List<ChatIntentExample> collectExamples(List<ChatIntentNode> nodes) {
         List<ChatIntentExample> examples = new ArrayList<>();
         for (ChatIntentNode node : nodes) {
-            examples.addAll(chatIntentExampleRepository.findByIntentCode(node.getIntentCode()));
             examples.addAll(parseNodeExamples(node));
         }
         return examples;

@@ -140,15 +140,6 @@ class ChatRuntimePersistenceStructureTest {
                 List.of("save", "findEnabledNodes")
             ),
             new PersistenceSkeleton(
-                "com.codingx.chat.domain.model.ChatIntentExample",
-                "com.codingx.chat.domain.repository.ChatIntentExampleRepository",
-                "com.codingx.chat.infrastructure.persistence.dataobject.ChatIntentExampleDO",
-                "com.codingx.chat.infrastructure.persistence.mapper.ChatIntentExampleMapper",
-                "com.codingx.chat.infrastructure.persistence.repository.ChatIntentExampleRepositoryImpl",
-                "chat_intent_example",
-                List.of("save", "findByIntentCode")
-            ),
-            new PersistenceSkeleton(
                 "com.codingx.chat.domain.model.ChatTraceRun",
                 "com.codingx.chat.domain.repository.ChatTraceRunRepository",
                 "com.codingx.chat.infrastructure.persistence.dataobject.ChatTraceRunDO",

@@ -390,20 +390,6 @@ COMMENT ON COLUMN chat_intent_node.created_at IS '创建时间';
 COMMENT ON COLUMN chat_intent_node.updated_at IS '更新时间';
 COMMENT ON COLUMN chat_intent_node.deleted IS '是否删除 0：正常 1：删除';
 
-CREATE TABLE IF NOT EXISTS chat_intent_example (
-    id BIGINT PRIMARY KEY,
-    intent_code VARCHAR(128) NOT NULL,
-    example_text TEXT NOT NULL,
-    sort_no INTEGER NOT NULL DEFAULT 0,
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-COMMENT ON TABLE chat_intent_example IS '意图示例语句表';
-COMMENT ON COLUMN chat_intent_example.id IS '主键ID';
-COMMENT ON COLUMN chat_intent_example.intent_code IS '关联意图编码';
-COMMENT ON COLUMN chat_intent_example.example_text IS '示例问题内容';
-COMMENT ON COLUMN chat_intent_example.sort_no IS '排序字段';
-COMMENT ON COLUMN chat_intent_example.created_at IS '创建时间';
-
 CREATE TABLE IF NOT EXISTS chat_trace_run (
     id BIGINT PRIMARY KEY,
     trace_id VARCHAR(64) NOT NULL UNIQUE,
@@ -710,7 +696,6 @@ CREATE INDEX IF NOT EXISTS idx_chat_message_artifact_run ON chat_message_artifac
 CREATE INDEX IF NOT EXISTS idx_chat_message_artifact_conversation ON chat_message_artifact (conversation_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_chat_intent_node_parent ON chat_intent_node (parent_code, sort_no ASC);
 CREATE INDEX IF NOT EXISTS idx_chat_intent_node_kind_sort ON chat_intent_node (kind, sort_order ASC);
-CREATE INDEX IF NOT EXISTS idx_chat_intent_example_code ON chat_intent_example (intent_code, sort_no ASC);
 CREATE INDEX IF NOT EXISTS idx_chat_trace_run_conversation ON chat_trace_run (conversation_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_chat_trace_run_task ON chat_trace_run (task_id);
 CREATE INDEX IF NOT EXISTS idx_chat_trace_node_trace_depth ON chat_trace_node (trace_id, depth ASC, created_at ASC);

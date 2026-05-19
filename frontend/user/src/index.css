@@ -9,8 +9,10 @@
   --color-surface: var(--surface);
   --color-surface-container: var(--surface-container);
   --color-surface-high: var(--surface-container-high);
+  --color-surface-selected: var(--surface-selected);
   --color-border: var(--border-subtle);
   --color-border-active: var(--border-active);
+  --color-border-selected: var(--border-selected);
   --color-foreground: var(--text-primary);
   --color-muted: var(--text-muted);
   --color-primary: var(--brand-primary);
@@ -27,8 +29,10 @@
     --surface: #ffffff;
     --surface-container: #f7f3f2;
     --surface-container-high: #ebe7e6;
+    --surface-selected: #e3e3e3;
     --border-subtle: #e5e2e1;
     --border-active: #c4c7c7;
+    --border-selected: #b9b9b9;
     --text-primary: #1c1b1b;
     --text-muted: #747878;
     --brand-primary: #000000;
@@ -44,8 +48,10 @@
     --surface: #131313;
     --surface-container: #1c1b1b;
     --surface-container-high: #2a2a2a;
+    --surface-selected: #3a3a3a;
     --border-subtle: #212327;
     --border-active: rgba(255, 255, 255, 0.25);
+    --border-selected: #5a5a5a;
     --text-primary: #ffffff;
     --text-muted: #7d8187;
     --brand-primary: #ffffff;
@@ -128,22 +134,21 @@
     border: 1px solid var(--border-subtle);
     border-radius: 10px;
     background: var(--surface);
-    padding: 0 1px;
+    /* 复制操作组合并后使用更紧凑的容器留白，避免出现松散感。 */
+    padding: 0;
+    gap: 0;
   }
 
   .chat-message-action-button-group-item {
     border-color: transparent;
     background: transparent;
+    width: 26px;
+    height: 26px;
+    border-radius: 7px;
   }
 
   .chat-message-action-button-group-item:hover {
     border-color: transparent;
-  }
-
-  .chat-message-action-divider {
-    width: 1px;
-    height: 14px;
-    background: var(--border-subtle);
   }
 
   .chat-copy-menu-item {

@@ -10,6 +10,9 @@ import {
   MoreHorizontal,
   PencilLine,
   Trash2,
+  ChevronDown,
+  Cloud,
+  Folder,
 } from 'lucide-react';
 import { ViewType } from '../App';
 import { AuthSession } from '../types/auth';
@@ -218,6 +221,7 @@ function ConversationHistory({
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [hoveredActionId, setHoveredActionId] = useState<string | null>(null);
   const [expandedCountMap, setExpandedCountMap] = useState<Record<string, number>>({});
+  const [collapsedGroupMap, setCollapsedGroupMap] = useState<Record<string, boolean>>({});
   const menuRef = useRef<HTMLDivElement | null>(null);
   const touchTimerRef = useRef<number | null>(null);
 
@@ -272,12 +276,31 @@ function ConversationHistory({
     }));
   };
 
+  /**
+   * 切换工作空间分组折叠状态，用于快速隐藏或展示该分组会话。
+   * @param partitionKey 工作空间分区键。
+   */
+  const handleToggleGroupCollapse = (partitionKey: string) => {
+    setCollapsedGroupMap((previousMap) => ({
+      ...previousMap,
+      [partitionKey]: !previousMap[partitionKey],
+    }));
+  };
+
+  /**
+   * 统一工作空间运行环境图标，避免在左侧列表重复出现“云端/本地”文字占位。
+   * @param runtimeTarget 运行环境类型。
+   * @returns 对应的图标组件。
+   */
+  const getWorkspaceRuntimeIcon = (runtimeTarget: WorkspaceConversationGroup['runtimeTarget']) => {
+    return runtimeTarget === 'local' ? Folder : Cloud;
+  };
+
   return (
     <>
       {workspaceGroups.length ? (
         <div className="space-y-4 px-3">
           {workspaceGroups.map((group) => {
-            const isActiveGroup = group.partitionKey === activeWorkspacePartitionKey;
             const totalConversations = group.conversations.length;
             const visibleConversationCount = Math.min(
               totalConversations,
@@ -287,147 +310,179 @@ function ConversationHistory({
             const hasMoreConversations = visibleConversationCount < totalConversations;
             const canCollapseConversations =
               totalConversations > CONVERSATION_PAGE_SIZE && !hasMoreConversations;
+            const isGroupCollapsed = Boolean(collapsedGroupMap[group.partitionKey]);
+            const RuntimeIcon = getWorkspaceRuntimeIcon(group.runtimeTarget);
             return (
-              <section
-                key={group.partitionKey}
-                className={`rounded-2xl border px-3 py-3 ${
-                  isActiveGroup ? 'border-border bg-surface-container/40' : 'border-border bg-surface'
-                }`}
-              >
+              <section key={group.partitionKey}>
                 <button
                   type="button"
-                  className="flex w-full items-start justify-between gap-3 text-left"
-                  onClick={() => void onSelectWorkspacePath(group.workspacePath)}
+                  aria-label={`${isGroupCollapsed ? '展开' : '折叠'}工作空间 ${group.workspaceLabel} 会话`}
+                  onClick={() => {
+                    void onSelectWorkspacePath(group.workspacePath);
+                    handleToggleGroupCollapse(group.partitionKey);
+                  }}
+                  className="flex w-full items-start justify-between gap-3 rounded-md py-0.5 text-left"
                 >
-                  <div className="min-w-0">
+                  <div className="min-w-0 flex flex-1 items-center gap-2">
+                    <RuntimeIcon
+                      size={14}
+                      className="shrink-0 text-muted"
+                      data-testid={`workspace-runtime-icon-${group.runtimeTarget}`}
+                      aria-hidden="true"
+                    />
                     <div className="truncate text-sm font-semibold text-foreground">
                       {group.workspaceLabel}
                     </div>
-                    <div className="mt-1 text-[11px] text-muted">
-                      {group.workspacePath ?? '云端'}
-                    </div>
                   </div>
-                  <div className="text-[11px] text-muted">{formatWorkspaceTime(group.lastOpenedAt)}</div>
+                  <div className="flex items-center gap-2">
+                    <div className="text-[11px] text-muted">{formatWorkspaceTime(group.lastOpenedAt)}</div>
+                    <span
+                      className="rounded-md p-1 text-muted transition-colors hover:bg-surface-container hover:text-foreground"
+                      aria-hidden="true"
+                    >
+                      <ChevronDown
+                        size={16}
+                        className={`transition-transform duration-200 ${
+                          isGroupCollapsed ? '-rotate-90' : 'rotate-0'
+                        }`}
+                      />
+                    </span>
+                  </div>
                 </button>
 
-                <div className="mt-3 space-y-[6px]">
-                  {visibleConversations.length ? (
-                    visibleConversations.map((conversation) => {
-                      const isActive = conversation.id === activeConversationId;
-                      const isMenuOpen = openMenuId === conversation.id;
-                      return (
-                        <div
-                          key={conversation.id}
-                          className="relative"
-                          ref={isMenuOpen ? menuRef : null}
-                          onMouseLeave={() => setHoveredActionId(null)}
-                        >
-                          <div
-                            className={`group flex items-center justify-between gap-3 rounded-xl px-3 py-1.5 transition-colors ${
-                              isActive ? 'bg-surface-container-high' : 'hover:bg-surface-container'
-                            }`}
-                          >
-                            <button
-                              type="button"
-                              onClick={() => void onSelectConversation(conversation.id)}
-                              className={`min-w-0 flex-1 cursor-pointer text-left ${
-                                isActive ? 'text-foreground' : 'text-muted hover:text-foreground'
-                              }`}
+                {/* 使用 grid-rows 过渡折叠高度，避免列表展开/收起时突兀跳变。 */}
+                <div
+                  className={`grid transition-[grid-template-rows,opacity,margin-top] duration-250 ease-out ${
+                    isGroupCollapsed
+                      ? 'mt-0 grid-rows-[0fr] opacity-0 pointer-events-none'
+                      : 'mt-3 grid-rows-[1fr] opacity-100'
+                  }`}
+                  aria-hidden={isGroupCollapsed}
+                >
+                  <div className="min-h-0 overflow-hidden">
+                    <div className="space-y-[6px]">
+                      {visibleConversations.length ? (
+                        visibleConversations.map((conversation) => {
+                          const isActive = conversation.id === activeConversationId;
+                          const isMenuOpen = openMenuId === conversation.id;
+                          return (
+                            <div
+                              key={conversation.id}
+                              className="relative"
+                              ref={isMenuOpen ? menuRef : null}
+                              onMouseLeave={() => setHoveredActionId(null)}
                             >
-                              <div className="flex min-w-0 items-center justify-between gap-3">
-                                <div className={`truncate text-[14px] ${isActive ? 'font-medium' : ''}`}>
-                                  {conversation.title}
+                              <div
+                                className={`group flex items-center justify-between gap-3 rounded-xl border px-3 py-1.5 transition-[border-color,background-color,box-shadow] duration-200 ${
+                                  isActive
+                                    ? 'border-border-selected bg-surface-selected shadow-sm'
+                                    : 'border-transparent hover:border-border-active hover:bg-surface-container-high'
+                                }`}
+                              >
+                                {/* 让会话标题与工作空间标题文字起点对齐，并增强选中态可辨识度。 */}
+                                <button
+                                  type="button"
+                                  onClick={() => void onSelectConversation(conversation.id)}
+                                  className={`min-w-0 flex-1 cursor-pointer pl-2.5 text-left ${
+                                    isActive ? 'text-foreground' : 'text-muted hover:text-foreground'
+                                  }`}
+                                >
+                                  <div className="flex min-w-0 items-center justify-between gap-3">
+                                    <div className={`truncate text-[14px] ${isActive ? 'font-medium' : ''}`}>
+                                      {conversation.title}
+                                    </div>
+                                  </div>
+                                </button>
+                                <div
+                                  className="relative flex h-5 min-w-[56px] shrink-0 items-center justify-end whitespace-nowrap"
+                                  onMouseEnter={() => setHoveredActionId(conversation.id)}
+                                  onMouseLeave={() => setHoveredActionId(null)}
+                                  onTouchStart={() => startLongPress(conversation.id)}
+                                  onTouchEnd={clearLongPress}
+                                  onTouchCancel={clearLongPress}
+                                >
+                                  <span
+                                    className={`absolute right-0 whitespace-nowrap text-[12px] text-muted transition-opacity ${
+                                      hoveredActionId === conversation.id || isMenuOpen
+                                        ? 'opacity-0'
+                                        : 'opacity-100'
+                                    }`}
+                                  >
+                                    {formatRelativeTime(conversation.lastMessageAt)}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    aria-label={`打开会话菜单 ${conversation.title}`}
+                                    onClick={() => setOpenMenuId(isMenuOpen ? null : conversation.id)}
+                                    className={`absolute right-0 cursor-pointer rounded-md p-1 text-muted transition-opacity hover:text-foreground ${
+                                      hoveredActionId === conversation.id || isMenuOpen
+                                        ? 'opacity-100'
+                                        : 'opacity-0'
+                                    }`}
+                                  >
+                                    <MoreHorizontal size={16} />
+                                  </button>
                                 </div>
                               </div>
-                            </button>
-                            <div
-                              className="relative flex h-5 min-w-[56px] shrink-0 items-center justify-end whitespace-nowrap"
-                              onMouseEnter={() => setHoveredActionId(conversation.id)}
-                              onMouseLeave={() => setHoveredActionId(null)}
-                              onTouchStart={() => startLongPress(conversation.id)}
-                              onTouchEnd={clearLongPress}
-                              onTouchCancel={clearLongPress}
-                            >
-                              <span
-                                className={`absolute right-0 whitespace-nowrap text-[12px] text-muted transition-opacity ${
-                                  hoveredActionId === conversation.id || isMenuOpen
-                                    ? 'opacity-0'
-                                    : 'opacity-100'
-                                }`}
-                              >
-                                {formatRelativeTime(conversation.lastMessageAt)}
-                              </span>
-                              <button
-                                type="button"
-                                aria-label={`打开会话菜单 ${conversation.title}`}
-                                onClick={() => setOpenMenuId(isMenuOpen ? null : conversation.id)}
-                                className={`absolute right-0 cursor-pointer rounded-md p-1 text-muted transition-opacity hover:text-foreground ${
-                                  hoveredActionId === conversation.id || isMenuOpen
-                                    ? 'opacity-100'
-                                    : 'opacity-0'
-                                }`}
-                              >
-                                <MoreHorizontal size={16} />
-                              </button>
-                            </div>
-                          </div>
 
-                          {isMenuOpen ? (
-                            <div className="absolute right-0 top-[calc(100%+6px)] z-20 w-44 rounded-xl border border-border bg-surface-container p-2 shadow-[0_16px_40px_rgba(0,0,0,0.24)]">
-                              <button
-                                type="button"
-                                aria-label="重命名对话"
-                                onClick={() => {
-                                  void onRenameConversation(conversation.id, conversation.title);
-                                  setOpenMenuId(null);
-                                }}
-                                className="flex w-full cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-left text-sm text-foreground transition-colors hover:bg-surface-high"
-                              >
-                                <PencilLine size={16} />
-                                重命名对话
-                              </button>
-                              <button
-                                type="button"
-                                aria-label="删除对话"
-                                onClick={() => {
-                                  void onDeleteConversation(conversation.id);
-                                  setOpenMenuId(null);
-                                }}
-                                className="mt-1 flex w-full cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-left text-sm text-[#ff5b57] transition-colors hover:bg-[#ff5b57]/10"
-                              >
-                                <Trash2 size={16} />
-                                删除对话
-                              </button>
+                              {isMenuOpen ? (
+                                <div className="absolute right-0 top-[calc(100%+6px)] z-20 w-44 rounded-xl border border-border bg-surface-container p-2 shadow-[0_16px_40px_rgba(0,0,0,0.24)]">
+                                  <button
+                                    type="button"
+                                    aria-label="重命名对话"
+                                    onClick={() => {
+                                      void onRenameConversation(conversation.id, conversation.title);
+                                      setOpenMenuId(null);
+                                    }}
+                                    className="flex w-full cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-left text-sm text-foreground transition-colors hover:bg-surface-high"
+                                  >
+                                    <PencilLine size={16} />
+                                    重命名对话
+                                  </button>
+                                  <button
+                                    type="button"
+                                    aria-label="删除对话"
+                                    onClick={() => {
+                                      void onDeleteConversation(conversation.id);
+                                      setOpenMenuId(null);
+                                    }}
+                                    className="mt-1 flex w-full cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-left text-sm text-[#ff5b57] transition-colors hover:bg-[#ff5b57]/10"
+                                  >
+                                    <Trash2 size={16} />
+                                    删除对话
+                                  </button>
+                                </div>
+                              ) : null}
                             </div>
-                          ) : null}
+                          );
+                        })
+                      ) : (
+                        <div className="rounded-xl bg-surface-container pl-[22px] pr-3 py-2 text-sm text-muted">
+                          暂无会话
                         </div>
-                      );
-                    })
-                  ) : (
-                    <div className="rounded-xl bg-surface-container px-3 py-2 text-sm text-muted">
-                      暂无会话
+                      )}
+                      {hasMoreConversations ? (
+                        <button
+                          type="button"
+                          aria-label="展开显示"
+                          onClick={() => handleExpandConversations(group.partitionKey, totalConversations)}
+                          className="ml-5 inline-flex cursor-pointer items-center rounded-lg bg-surface-container px-2.5 py-1.5 text-xs font-medium text-muted transition-colors hover:bg-surface-container-high hover:text-foreground"
+                        >
+                          展开显示
+                        </button>
+                      ) : null}
+                      {canCollapseConversations ? (
+                        <button
+                          type="button"
+                          aria-label="收起显示"
+                          onClick={() => handleCollapseConversations(group.partitionKey)}
+                          className="ml-5 inline-flex cursor-pointer items-center rounded-lg bg-surface-container px-2.5 py-1.5 text-xs font-medium text-muted transition-colors hover:bg-surface-container-high hover:text-foreground"
+                        >
+                          收起显示
+                        </button>
+                      ) : null}
                     </div>
-                  )}
-                  {hasMoreConversations ? (
-                    <button
-                      type="button"
-                      aria-label="展开显示"
-                      onClick={() => handleExpandConversations(group.partitionKey, totalConversations)}
-                      className="w-full cursor-pointer rounded-xl border border-border bg-surface px-3 py-2 text-left text-sm font-medium text-muted transition-colors hover:bg-surface-container hover:text-foreground"
-                    >
-                      展开显示
-                    </button>
-                  ) : null}
-                  {canCollapseConversations ? (
-                    <button
-                      type="button"
-                      aria-label="收起显示"
-                      onClick={() => handleCollapseConversations(group.partitionKey)}
-                      className="w-full cursor-pointer rounded-xl border border-border bg-surface px-3 py-2 text-left text-sm font-medium text-muted transition-colors hover:bg-surface-container hover:text-foreground"
-                    >
-                      收起显示
-                    </button>
-                  ) : null}
+                  </div>
                 </div>
               </section>
             );

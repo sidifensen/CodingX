@@ -66,6 +66,24 @@ function createSidebarProps(overrides?: {
 }
 
 describe('Sidebar conversation collapse behavior', () => {
+  it('点击分组箭头可折叠与展开会话列表', () => {
+    render(<Sidebar {...createSidebarProps()} />);
+
+    const toggleButton = screen.getByRole('button', { name: '折叠工作空间 CodingX 会话' });
+    fireEvent.click(toggleButton);
+    const collapsedToggleButton = screen.getByRole('button', { name: '展开工作空间 CodingX 会话' });
+    expect(collapsedToggleButton).toBeInTheDocument();
+    const collapseContainer = collapsedToggleButton.closest('section')?.querySelector('div[aria-hidden=\"true\"]');
+    expect(collapseContainer).toBeInTheDocument();
+    // 折叠区采用高度过渡动画，断言收起态的网格行与透明度状态。
+    expect(collapseContainer?.className).toContain('grid-rows-[0fr]');
+    expect(collapseContainer?.className).toContain('opacity-0');
+
+    fireEvent.click(collapsedToggleButton);
+    expect(screen.getByText('会话 1')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '展开显示' })).toBeInTheDocument();
+  });
+
   it('默认仅显示 5 条并展示展开按钮', () => {
     render(<Sidebar {...createSidebarProps()} />);
 
@@ -90,5 +108,57 @@ describe('Sidebar conversation collapse behavior', () => {
     fireEvent.click(screen.getByRole('button', { name: '收起显示' }));
     expect(screen.queryByText('会话 6')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: '展开显示' })).toBeInTheDocument();
+  });
+
+  it('应以图标区分云端与本地分组并移除次级运行环境文案', () => {
+    // 业务意图：侧栏通过图标表达运行环境，避免重复“云端/本地”文字占据纵向空间。
+    const props = createSidebarProps({
+      workspaceGroups: [
+        {
+          partitionKey: 'cloud::__no_workspace__',
+          workspacePath: null,
+          workspaceLabel: '云端工作空间',
+          runtimeTarget: 'cloud',
+          lastOpenedAt: Date.now(),
+          activeConversationId: 'conversation-1',
+          conversations: [createConversation(1)],
+        },
+        {
+          partitionKey: 'local::d:/code/codingx',
+          workspacePath: 'D:/code/CodingX',
+          workspaceLabel: 'CodingX',
+          runtimeTarget: 'local',
+          lastOpenedAt: Date.now(),
+          activeConversationId: 'conversation-2',
+          conversations: [createConversation(2)],
+        },
+      ],
+    });
+
+    render(<Sidebar {...props} />);
+
+    expect(screen.getByTestId('workspace-runtime-icon-cloud')).toBeInTheDocument();
+    expect(screen.getByTestId('workspace-runtime-icon-local')).toBeInTheDocument();
+    expect(screen.queryByText('云端')).not.toBeInTheDocument();
+    expect(screen.queryByText('D:/code/CodingX')).not.toBeInTheDocument();
+  });
+
+  it('会话项 hover 态应具备高亮边框背景，展开按钮应为无边框紧凑样式', () => {
+    render(<Sidebar {...createSidebarProps()} />);
+
+    const conversationButton = screen.getByRole('button', { name: '会话 1' });
+    const conversationRow = conversationButton.closest('div[class*=\"rounded-xl border\"]');
+    expect(conversationRow?.className).toContain('border-transparent');
+    expect(conversationRow?.className).toContain('hover:border-border-active');
+    expect(conversationRow?.className).toContain('hover:bg-surface-container-high');
+
+    const expandButton = screen.getByRole('button', { name: '展开显示' });
+    expect(expandButton.className).toContain('inline-flex');
+    expect(expandButton.className).toContain('rounded-lg');
+    expect(expandButton.className).toContain('px-2.5');
+    expect(expandButton.className).toContain('py-1.5');
+    expect(expandButton.className).toContain('text-xs');
+    expect(expandButton.className).not.toContain('w-full');
+    expect(expandButton.className).not.toContain('border');
   });
 });

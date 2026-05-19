@@ -1,6 +1,7 @@
 package com.codingx.support.ai;
 
 import cn.hutool.core.collection.CollUtil;
+import com.codingx.chat.domain.model.ChatAttachment;
 import com.codingx.chat.domain.model.ChatMessage;
 import java.util.List;
 import lombok.Builder;
@@ -11,6 +12,7 @@ import lombok.Builder;
 @Builder(toBuilder = true)
 public record AiConversationRequest(
     List<ChatMessage> messages,
+    List<ChatAttachment> attachments,
     String preferredModel,
     boolean stream,
     boolean thinkingEnabled

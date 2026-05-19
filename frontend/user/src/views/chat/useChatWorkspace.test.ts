@@ -203,11 +203,14 @@ describe('useChatWorkspace', () => {
       true,
       ['sales_query'],
       ['sales_query'],
+      undefined,
+      ['9001', '9002'],
     );
     const searchParams = new URLSearchParams(requestUrl.split('?')[1] ?? '');
 
     expect(searchParams.get('question')).toBe('请分析订单趋势');
     expect(searchParams.get('skillCodes')).toBe('sales_query');
+    expect(searchParams.get('attachmentIds')).toBe('9001,9002');
     const messagePayload = JSON.parse(searchParams.get('messages') ?? '[]');
     expect(messagePayload).toEqual([
       {

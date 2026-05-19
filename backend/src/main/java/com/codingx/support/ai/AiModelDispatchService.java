@@ -2,6 +2,7 @@ package com.codingx.support.ai;
 
 import cn.hutool.core.collection.CollUtil;
 import com.codingx.config.AiProperties;
+import com.codingx.config.DynamicAiRoutingProperties;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.LinkedHashMap;
@@ -26,13 +27,31 @@ public class AiModelDispatchService {
      * @param aiProperties AI 配置。
      */
     public AiModelDispatchService(List<AiProviderClient> providerClients, AiProperties aiProperties) {
+        this(providerClients, aiProperties, null);
+    }
+
+    /**
+     * 使用 AI 配置与动态路由配置装配路由层依赖。
+     * @param providerClients provider 客户端列表。
+     * @param aiProperties AI 配置。
+     * @param dynamicProperties 动态路由配置。
+     */
+    public AiModelDispatchService(
+        List<AiProviderClient> providerClients,
+        AiProperties aiProperties,
+        DynamicAiRoutingProperties dynamicProperties
+    ) {
         this(
             providerClients,
             new AiProviderHealthRegistry(
-                aiProperties.getSelection().getFailureThreshold(),
-                aiProperties.getSelection().getOpenDurationMs()
+                dynamicProperties == null
+                    ? aiProperties.getSelection().getFailureThreshold()
+                    : dynamicProperties.failureThreshold(),
+                dynamicProperties == null
+                    ? aiProperties.getSelection().getOpenDurationMs()
+                    : dynamicProperties.openDurationMs()
             ),
-            new AiModelSelector(aiProperties)
+            new AiModelSelector(aiProperties, dynamicProperties)
         );
     }
 
@@ -63,7 +82,11 @@ public class AiModelDispatchService {
     public void streamChat(AiConversationRequest request, AiStreamHandler handler) {
         lastAttemptedProviders.clear();
         Throwable lastError = null;
-        List<AiModelTarget> targets = aiModelSelector.selectChatCandidates(request.preferredModel(), request.thinkingEnabled());
+        List<AiModelTarget> targets = aiModelSelector.selectChatCandidates(
+            request.preferredModel(),
+            request.thinkingEnabled(),
+            request.attachments()
+        );
         for (AiModelTarget target : targets) {
             String modelId = target.id();
             if (!healthRegistry.allowCall(modelId)) {

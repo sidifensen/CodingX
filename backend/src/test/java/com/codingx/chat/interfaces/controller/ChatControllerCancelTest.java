@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.Mockito.verify;
 
 import com.codingx.chat.application.service.ChatApplicationService;
+import com.codingx.chat.application.service.ChatAttachmentService;
 import com.codingx.chat.application.service.ChatConversationApplicationService;
 import com.codingx.chat.application.service.ChatRuntimeGuardService;
 import com.codingx.skill.domain.repository.ChatSkillRepository;
@@ -38,6 +39,9 @@ class ChatControllerCancelTest {
      */
     @Mock
     private ChatRuntimeGuardService chatRuntimeGuardService;
+
+    @Mock
+    private ChatAttachmentService chatAttachmentService;
 
     /**
      * 技能仓储依赖。

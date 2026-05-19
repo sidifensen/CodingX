@@ -101,7 +101,7 @@ class ChatStreamExecutionServiceTest {
             started.countDown();
             release.await(3, TimeUnit.SECONDS);
             return null;
-        }).when(chatApplicationService).sendMessage(new SendChatMessageCommand(1001L, "你好", false), 2001L);
+        }).when(chatApplicationService).sendMessage(new SendChatMessageCommand(1001L, "你好", false, java.util.List.of(), java.util.List.of(), null, java.util.List.of()), 2001L);
 
         long startAt = System.nanoTime();
         service.dispatch(new SendChatMessageCommand(1001L, "你好", false), 2001L);
@@ -114,7 +114,7 @@ class ChatStreamExecutionServiceTest {
         verify(chatSkillRepository).bindTaskSkills(any(Long.class), eq(java.util.List.of()));
 
         release.countDown();
-        verify(chatApplicationService, org.mockito.Mockito.timeout(1000)).sendMessage(new SendChatMessageCommand(1001L, "你好", false), 2001L);
+        verify(chatApplicationService, org.mockito.Mockito.timeout(1000)).sendMessage(new SendChatMessageCommand(1001L, "你好", false, java.util.List.of(), java.util.List.of(), null, java.util.List.of()), 2001L);
     }
 
     /**
@@ -142,7 +142,7 @@ class ChatStreamExecutionServiceTest {
                     captured.countDown();
                 }
                 return null;
-            }).when(chatApplicationService).sendMessage(new SendChatMessageCommand(1001L, "你好", false), 2001L);
+            }).when(chatApplicationService).sendMessage(new SendChatMessageCommand(1001L, "你好", false, java.util.List.of(), java.util.List.of(), null, java.util.List.of()), 2001L);
 
             service.dispatch(new SendChatMessageCommand(1001L, "你好", false), 2001L);
         }
@@ -180,7 +180,7 @@ class ChatStreamExecutionServiceTest {
             observedRunId.set(ChatExecutionContext.currentRunId().orElse(null));
             captured.countDown();
             return null;
-        }).when(chatApplicationService).sendMessage(new SendChatMessageCommand(1001L, "你好", false), 2001L);
+        }).when(chatApplicationService).sendMessage(new SendChatMessageCommand(1001L, "你好", false, java.util.List.of(), java.util.List.of(), null, java.util.List.of()), 2001L);
 
         service.dispatch(new SendChatMessageCommand(1001L, "你好", false), 2001L);
 
@@ -214,7 +214,7 @@ class ChatStreamExecutionServiceTest {
             observedTraceId.set(ConversationTraceContext.current() != null ? ConversationTraceContext.current().getTraceId() : null);
             captured.countDown();
             return null;
-        }).when(chatApplicationService).sendMessage(new SendChatMessageCommand(1001L, "你好", false), 2001L);
+        }).when(chatApplicationService).sendMessage(new SendChatMessageCommand(1001L, "你好", false, java.util.List.of(), java.util.List.of(), null, java.util.List.of()), 2001L);
 
         service.dispatch(new SendChatMessageCommand(1001L, "你好", false), 2001L);
 
@@ -255,7 +255,7 @@ class ChatStreamExecutionServiceTest {
             return null;
         }).when(chatExecutionRunRepository).save(any(ChatExecutionRun.class));
         org.mockito.Mockito.doThrow(new IllegalStateException("boom"))
-            .when(chatApplicationService).sendMessage(new SendChatMessageCommand(1001L, "你好", false), 2001L);
+            .when(chatApplicationService).sendMessage(new SendChatMessageCommand(1001L, "你好", false, java.util.List.of(), java.util.List.of(), null, java.util.List.of()), 2001L);
 
         service.dispatch(new SendChatMessageCommand(1001L, "你好", false), 2001L);
 

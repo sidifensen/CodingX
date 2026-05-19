@@ -5,6 +5,7 @@ import { extractSseEvents } from './sse';
 import {
   ActiveStreamState,
   ArtifactItem,
+  ChatAttachmentItem,
   ChatSkillItem,
   CurrentMcpItem,
   CurrentSkillItem,
@@ -14,6 +15,7 @@ import {
   ExecutionStepItem,
   McpCallItem,
   McpItem,
+  PendingAttachmentItem,
   ReferenceItem,
   SampleQuestionItem,
   UseChatWorkspaceOptions,
@@ -27,6 +29,18 @@ import {
   saveConversationRecordToWorkspace,
   upsertWorkspaceSnapshot,
 } from './localConversationStorage';
+
+const DEFAULT_CLOUD_WORKSPACE_LABEL = '云端工作空间';
+const DEFAULT_LOCAL_WORKSPACE_LABEL = '本地工作空间';
+
+/**
+ * 根据运行环境返回默认工作空间标题，避免本地/云端标签混淆。
+ * @param runtimeTarget 运行环境。
+ * @returns 默认工作空间标题。
+ */
+function getDefaultWorkspaceLabel(runtimeTarget: 'cloud' | 'local') {
+  return runtimeTarget === 'local' ? DEFAULT_LOCAL_WORKSPACE_LABEL : DEFAULT_CLOUD_WORKSPACE_LABEL;
+}
 
 /**
  * 聚合聊天页三栏所需的真实状态、接口请求与 SSE 流式控制。
@@ -46,15 +60,26 @@ export function useChatWorkspace(
   const openRepositoryPicker =
     options?.pickRepositoryDirectory ??
     (async () => {
-      return;
+      return null;
     });
-  const runtimeTarget = hostContext?.executionTargets.includes('local') ? 'local' : 'cloud';
+  const runtimeTargets = useMemo(
+    () =>
+      hostContext?.executionTargets && hostContext.executionTargets.length
+        ? hostContext.executionTargets
+        : ['cloud'],
+    [hostContext?.executionTargets],
+  );
+  const [activeRuntimeTarget, setActiveRuntimeTargetState] = useState<'cloud' | 'local'>(
+    runtimeTargets[0] ?? 'cloud',
+  );
   const [workspaceGroups, setWorkspaceGroups] = useState<WorkspaceConversationGroup[]>([]);
   const [activeWorkspacePartitionKey, setActiveWorkspacePartitionKey] = useState<string | null>(
     null,
   );
   const [workspacePath, setWorkspacePath] = useState<string | null>(null);
-  const [workspaceLabel, setWorkspaceLabel] = useState('云端工作空间');
+  const [workspaceLabel, setWorkspaceLabel] = useState(
+    getDefaultWorkspaceLabel(activeRuntimeTarget),
+  );
   const [conversations, setConversations] = useState<ConversationItem[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessageItem[]>([]);
@@ -74,6 +99,7 @@ export function useChatWorkspace(
   const [deepThinkingEnabled, setDeepThinkingEnabled] = useState(false);
   const [streamError, setStreamError] = useState('');
   const [inputValue, setInputValue] = useState('');
+  const [pendingAttachments, setPendingAttachments] = useState<PendingAttachmentItem[]>([]);
   const [isBootstrapping, setIsBootstrapping] = useState(false);
   const [renameDialogState, setRenameDialogState] = useState<{
     isOpen: boolean;
@@ -125,24 +151,38 @@ export function useChatWorkspace(
    * 当前工作空间分区刷新后，重新读取对应快照，保证切换目录时左侧与主区同步。
    */
   useEffect(() => {
-    if (!hostContext) {
+    if (!runtimeTargets.length) {
       return;
     }
-    const nextWorkspacePath = hostContext.localResource?.boundRepositoryPath ?? null;
-    const nextPartitionKey = buildWorkspacePartitionKey(runtimeTarget, nextWorkspacePath);
+    if (!runtimeTargets.includes(activeRuntimeTarget)) {
+      setActiveRuntimeTargetState(runtimeTargets[0] ?? 'cloud');
+      return;
+    }
+    // 业务约束：云端环境不绑定本地目录，避免与本地工作空间混淆。
+    const nextWorkspacePath =
+      activeRuntimeTarget === 'local' ? hostContext?.localResource?.boundRepositoryPath ?? null : null;
+    const nextPartitionKey = buildWorkspacePartitionKey(activeRuntimeTarget, nextWorkspacePath);
     const nextSnapshot = readWorkspaceSnapshot(nextPartitionKey);
     setWorkspacePath(nextWorkspacePath);
-    setWorkspaceLabel(nextWorkspacePath ? getWorkspaceLabel(nextWorkspacePath) : '云端工作空间');
+    setWorkspaceLabel(
+      nextWorkspacePath
+        ? getWorkspaceLabel(nextWorkspacePath)
+        : getDefaultWorkspaceLabel(activeRuntimeTarget),
+    );
     setActiveWorkspacePartitionKey(nextPartitionKey);
     setConversations(nextSnapshot.conversations);
     setActiveConversationId(nextSnapshot.activeConversationId);
-    setWorkspaceGroups(listWorkspaceGroups());
+    setWorkspaceGroups(listWorkspaceGroups(activeRuntimeTarget));
     if (nextSnapshot.activeConversationId) {
       void restoreWorkspaceSnapshot(nextPartitionKey, nextSnapshot.activeConversationId);
     } else {
       clearConversationPlayback();
     }
-  }, [hostContext, runtimeTarget]);
+  }, [hostContext, runtimeTargets, activeRuntimeTarget]);
+
+  useEffect(() => {
+    setWorkspaceGroups(listWorkspaceGroups(activeRuntimeTarget));
+  }, [activeRuntimeTarget]);
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -174,8 +214,10 @@ export function useChatWorkspace(
       setAvailableMcps(nextMcps);
       setSelectedMcpCodes(nextMcps.map((item) => item.mcpCode));
       setMcpConnected(nextMcps.length > 0);
-      setWorkspaceGroups(listWorkspaceGroups());
-      if (nextConversations[0]?.id) {
+      setWorkspaceGroups(listWorkspaceGroups(activeRuntimeTarget));
+      if (activeConversationId) {
+        await selectConversation(activeConversationId, nextConversations);
+      } else if (nextConversations[0]?.id) {
         await selectConversation(nextConversations[0].id, nextConversations);
       } else {
         clearConversationPlayback();
@@ -186,41 +228,96 @@ export function useChatWorkspace(
   };
 
   /**
+   * 切换执行环境后立即回到新会话，避免不同环境共享同一上下文。
+   * @param runtimeTarget 目标环境。
+   */
+  const setActiveRuntimeTarget = async (runtimeTarget: 'cloud' | 'local') => {
+    if (!runtimeTargets.includes(runtimeTarget) || runtimeTarget === activeRuntimeTarget) {
+      return;
+    }
+    // 环境切换后按该环境默认工作空间重新开新会话，避免上下文串线。
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    streamStateRef.current = null;
+    setIsStreaming(false);
+    setIsCancelling(false);
+    setStreamError('');
+    setInputValue('');
+    clearPendingAttachments();
+    if (runtimeTarget === 'cloud') {
+      await switchWorkspacePartition('cloud', null, false);
+      return;
+    }
+    const fallbackWorkspacePath = hostContext?.localResource?.boundRepositoryPath ?? workspacePath ?? null;
+    await switchWorkspacePartition('local', fallbackWorkspacePath, false);
+  };
+
+  /**
+   * 按指定运行环境切换工作空间分区，可被环境切换与文件夹选择复用。
+   * @param runtimeTarget 目标运行环境。
+   * @param nextWorkspacePath 目标工作空间路径。
+   * @param shouldBindDesktopPath 是否写回桌面宿主绑定目录。
+   */
+  const switchWorkspacePartition = async (
+    runtimeTarget: 'cloud' | 'local',
+    nextWorkspacePath: string | null,
+    shouldBindDesktopPath: boolean,
+  ) => {
+    const normalizedWorkspacePath = nextWorkspacePath ? nextWorkspacePath.trim() : null;
+    if (
+      shouldBindDesktopPath &&
+      normalizedWorkspacePath &&
+      hostContext?.hostType === 'desktop'
+    ) {
+      await bindWorkspacePath(normalizedWorkspacePath);
+    }
+    const nextPartitionKey = buildWorkspacePartitionKey(runtimeTarget, normalizedWorkspacePath);
+    const nextSnapshot = readWorkspaceSnapshot(nextPartitionKey);
+    setActiveRuntimeTargetState(runtimeTarget);
+    setWorkspacePath(normalizedWorkspacePath);
+    setWorkspaceLabel(
+      normalizedWorkspacePath
+        ? getWorkspaceLabel(normalizedWorkspacePath)
+        : getDefaultWorkspaceLabel(runtimeTarget),
+    );
+    setActiveWorkspacePartitionKey(nextPartitionKey);
+    setConversations(nextSnapshot.conversations);
+    clearConversationPlayback();
+    upsertWorkspaceSnapshot(runtimeTarget, normalizedWorkspacePath, {
+      conversations: nextSnapshot.conversations,
+      activeConversationId: null,
+      workspaceLabel: normalizedWorkspacePath
+        ? getWorkspaceLabel(normalizedWorkspacePath)
+        : getDefaultWorkspaceLabel(runtimeTarget),
+    });
+    setWorkspaceGroups(listWorkspaceGroups(runtimeTarget));
+    await startNewConversation();
+  };
+
+  /**
    * 切换到指定工作空间目录。
    * @param nextWorkspacePath 目标工作空间路径。
    */
   const setActiveWorkspacePath = async (nextWorkspacePath: string | null) => {
-    if (!hostContext) {
+    if (activeRuntimeTarget !== 'local') {
       return;
     }
     if ((nextWorkspacePath ?? null) === (workspacePath ?? null)) {
       return;
     }
-    const normalizedWorkspacePath = nextWorkspacePath ? nextWorkspacePath.trim() : null;
-    if (normalizedWorkspacePath && hostContext.hostType === 'desktop') {
-      await bindWorkspacePath(normalizedWorkspacePath);
-    }
-    const nextPartitionKey = buildWorkspacePartitionKey(runtimeTarget, normalizedWorkspacePath);
-    const nextSnapshot = readWorkspaceSnapshot(nextPartitionKey);
-    setWorkspacePath(normalizedWorkspacePath);
-    setWorkspaceLabel(normalizedWorkspacePath ? getWorkspaceLabel(normalizedWorkspacePath) : '云端工作空间');
-    setActiveWorkspacePartitionKey(nextPartitionKey);
-    setConversations(nextSnapshot.conversations);
-    setActiveConversationId(nextSnapshot.activeConversationId);
-    setWorkspaceGroups(listWorkspaceGroups());
-    if (nextSnapshot.activeConversationId) {
-      await restoreWorkspaceSnapshot(nextPartitionKey, nextSnapshot.activeConversationId);
-      return;
-    }
-    clearConversationPlayback();
-    setWorkspaceGroups(listWorkspaceGroups());
+    await switchWorkspacePartition('local', nextWorkspacePath, true);
   };
 
   /**
    * 打开文件夹选择器并将结果切换为当前工作空间。
    */
   const pickRepositoryDirectory = async () => {
-    await openRepositoryPicker();
+    const selectedPath = await openRepositoryPicker();
+    if (!selectedPath) {
+      return;
+    }
+    await switchWorkspacePartition('local', selectedPath, false);
   };
 
   /**
@@ -287,6 +384,14 @@ export function useChatWorkspace(
       return;
     }
     setStreamError('');
+    let uploadedAttachments: ChatAttachmentItem[] = [];
+    try {
+      uploadedAttachments = await uploadPendingAttachments(token, activeConversationId);
+    } catch (error) {
+      setStreamError(error instanceof Error ? error.message : '附件上传失败');
+      return;
+    }
+    const attachmentIds = uploadedAttachments.map((attachment) => attachment.id);
     setIsStreaming(true);
     abortControllerRef.current?.abort();
     abortControllerRef.current = new AbortController();
@@ -307,6 +412,7 @@ export function useChatWorkspace(
         conversationId: optimisticConversationId,
         role: 'USER',
         content: question,
+        attachments: uploadedAttachments,
         status: 'COMPLETED',
       },
       {
@@ -338,6 +444,7 @@ export function useChatWorkspace(
           selectedMcpCodes,
           selectedSkillCodes,
           workspacePath,
+          attachmentIds,
         ),
         {
           headers: {
@@ -348,6 +455,7 @@ export function useChatWorkspace(
       );
       await ChatApi.assertStreamAuthorized(response);
       setInputValue('');
+      clearPendingAttachments();
       await consumeSseStream(response, optimisticAssistantId);
       const nextConversations = await loadConversations(token);
       const nextConversationId = streamStateRef.current?.conversationId ?? activeConversationId;
@@ -358,7 +466,7 @@ export function useChatWorkspace(
           streamMcpCallsRef.current[optimisticAssistantId],
         );
       }
-      setWorkspaceGroups(listWorkspaceGroups());
+      setWorkspaceGroups(listWorkspaceGroups(activeRuntimeTarget));
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') {
         setStreamError('已停止当前生成');
@@ -442,7 +550,7 @@ export function useChatWorkspace(
         );
       }
     }
-    setWorkspaceGroups(listWorkspaceGroups());
+    setWorkspaceGroups(listWorkspaceGroups(activeRuntimeTarget));
   };
 
   /**
@@ -463,7 +571,7 @@ export function useChatWorkspace(
         clearConversationPlayback();
       }
     }
-    setWorkspaceGroups(listWorkspaceGroups());
+    setWorkspaceGroups(listWorkspaceGroups(activeRuntimeTarget));
   };
 
   /**
@@ -491,6 +599,7 @@ export function useChatWorkspace(
     setIsCancelling(false);
     setStreamError('');
     setInputValue('');
+    clearPendingAttachments();
     setRenameDialogState({ isOpen: false, conversationId: null, initialTitle: '' });
     setDeleteDialogState({ isOpen: false, conversationId: null, title: '' });
     streamStateRef.current = null;
@@ -701,11 +810,13 @@ export function useChatWorkspace(
   };
 
   return {
+    runtimeTargets,
+    activeRuntimeTarget,
     workspaceGroups,
     activeWorkspacePartitionKey,
     workspacePath,
     workspaceLabel,
-    workspaceRuntimeTarget: runtimeTarget,
+    workspaceRuntimeTarget: activeRuntimeTarget,
     conversations,
     activeConversationId,
     messages,
@@ -725,12 +836,17 @@ export function useChatWorkspace(
     deepThinkingEnabled,
     streamError,
     inputValue,
+    pendingAttachments,
     isBootstrapping,
     setInputValue,
+    addPendingAttachments,
+    removePendingAttachment,
+    clearPendingAttachments,
     setDeepThinkingEnabled,
     setSelectedSkillCodes,
     setSelectedMcpCodes,
     setMcpConnected,
+    setActiveRuntimeTarget,
     pickRepositoryDirectory,
     setActiveWorkspacePath,
     submitMessage,
@@ -762,18 +878,20 @@ export function useChatWorkspace(
     const nextConversations = await ChatApi.listConversations(token);
     setConversations(nextConversations);
     const fallbackWorkspacePath = workspacePath ?? null;
-    upsertWorkspaceSnapshot(runtimeTarget, fallbackWorkspacePath, {
+    upsertWorkspaceSnapshot(activeRuntimeTarget, fallbackWorkspacePath, {
       conversations: nextConversations,
       activeConversationId: activeConversationId ?? nextConversations[0]?.id ?? null,
-      workspaceLabel: fallbackWorkspacePath ? getWorkspaceLabel(fallbackWorkspacePath) : '云端工作空间',
+      workspaceLabel: fallbackWorkspacePath
+        ? getWorkspaceLabel(fallbackWorkspacePath)
+        : getDefaultWorkspaceLabel(activeRuntimeTarget),
     });
-    const partitionKey = buildWorkspacePartitionKey(runtimeTarget, fallbackWorkspacePath);
+    const partitionKey = buildWorkspacePartitionKey(activeRuntimeTarget, fallbackWorkspacePath);
     const snapshot = readWorkspaceSnapshot(partitionKey);
     for (const conversation of nextConversations) {
       if (snapshot.conversationRecords[conversation.id]) {
         continue;
       }
-      saveConversationRecordToWorkspace(runtimeTarget, fallbackWorkspacePath, conversation.id, nextConversations, {
+      saveConversationRecordToWorkspace(activeRuntimeTarget, fallbackWorkspacePath, conversation.id, nextConversations, {
         messages: [],
         executionSteps: [],
         references: [],
@@ -782,7 +900,7 @@ export function useChatWorkspace(
         currentMcps: [],
       });
     }
-    setWorkspaceGroups(listWorkspaceGroups());
+    setWorkspaceGroups(listWorkspaceGroups(activeRuntimeTarget));
     return nextConversations;
   }
 
@@ -821,17 +939,17 @@ export function useChatWorkspace(
       return;
     }
     saveConversationRecordToWorkspace(
-      runtimeTarget,
+      activeRuntimeTarget,
       workspacePath,
       conversationId,
       conversationList,
       record,
     );
-    upsertWorkspaceSnapshot(runtimeTarget, workspacePath, {
+    upsertWorkspaceSnapshot(activeRuntimeTarget, workspacePath, {
       conversations: conversationList,
       activeConversationId: conversationId,
     });
-    setWorkspaceGroups(listWorkspaceGroups());
+    setWorkspaceGroups(listWorkspaceGroups(activeRuntimeTarget));
   }
 
   /**
@@ -842,7 +960,7 @@ export function useChatWorkspace(
   async function restoreWorkspaceSnapshot(partitionKey: string, conversationId: string) {
     const snapshot = readWorkspaceSnapshot(partitionKey);
     setConversations(snapshot.conversations);
-    setWorkspaceGroups(listWorkspaceGroups());
+    setWorkspaceGroups(listWorkspaceGroups(activeRuntimeTarget));
     const record = snapshot.conversationRecords[conversationId];
     if (!record) {
       await selectConversation(conversationId, snapshot.conversations);
@@ -855,6 +973,127 @@ export function useChatWorkspace(
     setArtifacts(record.artifacts);
     setCurrentSkills(record.currentSkills);
     setCurrentMcps(record.currentMcps);
+  }
+
+  /**
+   * 将用户选择或粘贴的文件加入待发送附件队列。
+   * @param files 需要加入的文件集合。
+   */
+  async function addPendingAttachments(files: File[]) {
+    if (files.length === 0) {
+      return;
+    }
+    const normalizedFiles = files.filter((file) => file.size > 0).slice(0, 9);
+    const nextItems = normalizedFiles.map((file, index) => ({
+      clientId: `pending-${Date.now()}-${index}-${Math.random().toString(16).slice(2, 10)}`,
+      file,
+      previewUrl: URL.createObjectURL(file),
+      uploadStatus: 'pending' as const,
+    }));
+    setPendingAttachments((previous) => {
+      const merged = [...previous, ...nextItems];
+      if (merged.length <= 9) {
+        return merged;
+      }
+      const overflowItems = merged.slice(9);
+      overflowItems.forEach((item) => URL.revokeObjectURL(item.previewUrl));
+      return merged.slice(0, 9);
+    });
+  }
+
+  /**
+   * 删除待发送附件。
+   * @param clientId 前端临时附件主键。
+   */
+  function removePendingAttachment(clientId: string) {
+    setPendingAttachments((previous) => {
+      const target = previous.find((item) => item.clientId === clientId);
+      if (target) {
+        URL.revokeObjectURL(target.previewUrl);
+      }
+      return previous.filter((item) => item.clientId !== clientId);
+    });
+  }
+
+  /**
+   * 清空待发送附件并释放预览 URL，避免内存泄漏。
+   */
+  function clearPendingAttachments() {
+    setPendingAttachments((previous) => {
+      previous.forEach((item) => URL.revokeObjectURL(item.previewUrl));
+      return [];
+    });
+  }
+
+  /**
+   * 将待发送附件上传到后端，返回可透传给消息发送链路的附件列表。
+   * @param token 当前登录令牌。
+   * @param conversationId 当前会话标识。
+   * @returns 上传后的附件信息。
+   */
+  async function uploadPendingAttachments(
+    token: string,
+    conversationId: string | null,
+  ): Promise<ChatAttachmentItem[]> {
+    const pendingItems = pendingAttachments.filter(
+      (item) => item.uploadStatus === 'pending' || item.uploadStatus === 'failed',
+    );
+    if (pendingItems.length === 0) {
+      return pendingAttachments
+        .map((item) => item.attachment)
+        .filter((attachment): attachment is ChatAttachmentItem => attachment != null);
+    }
+    const uploadedItems: ChatAttachmentItem[] = [];
+    for (const pendingItem of pendingItems) {
+      setPendingAttachments((previous) =>
+        previous.map((item) =>
+          item.clientId === pendingItem.clientId
+            ? {
+                ...item,
+                uploadStatus: 'uploading',
+                uploadError: undefined,
+              }
+            : item,
+        ),
+      );
+      try {
+        const uploadedAttachment = await ChatApi.uploadAttachment(
+          token,
+          pendingItem.file,
+          conversationId,
+        );
+        uploadedItems.push(uploadedAttachment);
+        setPendingAttachments((previous) =>
+          previous.map((item) =>
+            item.clientId === pendingItem.clientId
+              ? {
+                  ...item,
+                  uploadStatus: 'uploaded',
+                  uploadError: undefined,
+                  attachment: uploadedAttachment,
+                }
+              : item,
+          ),
+        );
+      } catch (error) {
+        setPendingAttachments((previous) =>
+          previous.map((item) =>
+            item.clientId === pendingItem.clientId
+              ? {
+                  ...item,
+                  uploadStatus: 'failed',
+                  uploadError: error instanceof Error ? error.message : '附件上传失败',
+                }
+              : item,
+          ),
+        );
+        throw error;
+      }
+    }
+    const stableUploaded = pendingItems
+      .map((item) => item.attachment)
+      .filter((attachment): attachment is ChatAttachmentItem => attachment != null);
+    return [...stableUploaded, ...uploadedItems];
   }
 }
 
@@ -872,6 +1111,7 @@ export function buildStreamRequestUrl(
   selectedMcpCodes: string[],
   selectedSkillCodes: string[],
   repositoryPath?: string | null,
+  attachmentIds?: string[],
 ) {
   const skillMessageParseResult = parseSkillMessage(question);
   const searchParams = new URLSearchParams({
@@ -892,29 +1132,13 @@ export function buildStreamRequestUrl(
   if (repositoryPath && repositoryPath.trim().length > 0) {
     searchParams.set('repositoryPath', repositoryPath);
   }
+  if (attachmentIds != null && attachmentIds.length > 0) {
+    searchParams.set('attachmentIds', attachmentIds.join(','));
+  }
   if (skillMessageParseResult.structuredMessages.length > 0) {
     searchParams.set('messages', JSON.stringify(skillMessageParseResult.structuredMessages));
   }
   return `/api/chat/stream?${searchParams.toString()}`;
-}
-
-/**
- * 从本地存储读取桌面端已绑定仓库目录。
- * @returns 已绑定目录或空。
- */
-function resolveBoundRepositoryPathFromStorage(): string | null {
-  try {
-    const raw = window.localStorage.getItem('codingx.host.context');
-    if (!raw) {
-      return null;
-    }
-    const parsed = JSON.parse(raw) as {
-      localResource?: { boundRepositoryPath?: string | null };
-    };
-    return parsed.localResource?.boundRepositoryPath ?? null;
-  } catch {
-    return null;
-  }
 }
 
 /**

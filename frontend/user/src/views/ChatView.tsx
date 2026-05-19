@@ -9,6 +9,9 @@ import {
   CircleStop,
   Copy,
   Database,
+  File,
+  Image as ImageIcon,
+  X,
   FileText,
   Globe2,
   Sparkles,
@@ -23,7 +26,12 @@ import {
 } from 'lucide-react';
 import { AuthStorage } from '../utils/authStorage';
 import { ChatApi } from './chat/chatApi';
-import { ChatWorkspaceController, McpCallItem } from './chat/types';
+import {
+  ChatAttachmentItem,
+  ChatWorkspaceController,
+  McpCallItem,
+  PendingAttachmentItem,
+} from './chat/types';
 
 /**
  * 定义聊天视图的输入属性。
@@ -49,10 +57,13 @@ export default function ChatView({
   // 步骤：在输入区高度基础上再补偿额外空隙，确保最后一条消息与操作栏保持可读间距。
   const CHAT_INPUT_EXTRA_SAFE_GAP = 24;
   const {
+    runtimeTargets,
+    activeRuntimeTarget,
+    workspaceGroups,
+    activeWorkspacePartitionKey,
     activeConversationId,
     workspaceLabel,
     workspacePath,
-    workspaceRuntimeTarget,
     messages,
     executionSteps,
     references,
@@ -67,14 +78,20 @@ export default function ChatView({
     deepThinkingEnabled,
     streamError,
     inputValue,
+    pendingAttachments,
     isBootstrapping,
     setInputValue,
+    addPendingAttachments,
+    removePendingAttachment,
+    clearPendingAttachments,
     setDeepThinkingEnabled,
     setSelectedSkillCodes,
     setSelectedMcpCodes,
     setMcpConnected,
+    setActiveRuntimeTarget,
     submitMessage,
     cancelCurrentStream,
+    pickRepositoryDirectory,
     renameDialog,
     deleteDialog,
     renameConversation,
@@ -85,15 +102,24 @@ export default function ChatView({
   // 步骤：右侧工作区默认折叠，仅在存在真实回放内容时自动展开一次，后续允许用户手动控制。
   const [isWorkspacePanelCollapsed, setIsWorkspacePanelCollapsed] = React.useState(true);
   const [activeSelectorMode, setActiveSelectorMode] = React.useState<'mcp' | 'skill' | null>(null);
+  const [activeRuntimeWorkspaceMenu, setActiveRuntimeWorkspaceMenu] = React.useState<
+    'runtime' | 'workspace' | null
+  >(null);
   const [skillSearchKeyword, setSkillSearchKeyword] = React.useState('');
   const [skillSelectorSource, setSkillSelectorSource] = React.useState<'button' | 'slash' | null>(
     null,
   );
   const selectorLayerRef = React.useRef<HTMLDivElement | null>(null);
+  const runtimeWorkspaceLayerRef = React.useRef<HTMLDivElement | null>(null);
   const chatInputRef = React.useRef<HTMLTextAreaElement | null>(null);
   const inputPreviewRef = React.useRef<HTMLDivElement | null>(null);
+  const fileInputRef = React.useRef<HTMLInputElement | null>(null);
   const chatInputDockRef = React.useRef<HTMLDivElement | null>(null);
   const [chatInputSafeBottom, setChatInputSafeBottom] = React.useState(CHAT_INPUT_BASE_SAFE_BOTTOM);
+  const [previewAttachment, setPreviewAttachment] = React.useState<{
+    src: string;
+    alt: string;
+  } | null>(null);
 
   /**
    * 过滤技能列表，支持名称与编码模糊检索。
@@ -189,6 +215,25 @@ export default function ChatView({
   }, [activeSelectorMode]);
 
   /**
+   * 点击输入区外部时关闭环境/工作空间下拉，保持交互一致性。
+   */
+  React.useEffect(() => {
+    if (activeRuntimeWorkspaceMenu == null) {
+      return undefined;
+    }
+    const closeRuntimeWorkspaceMenus = (event: MouseEvent) => {
+      if (runtimeWorkspaceLayerRef.current?.contains(event.target as Node)) {
+        return;
+      }
+      setActiveRuntimeWorkspaceMenu(null);
+    };
+    document.addEventListener('mousedown', closeRuntimeWorkspaceMenus);
+    return () => {
+      document.removeEventListener('mousedown', closeRuntimeWorkspaceMenus);
+    };
+  }, [activeRuntimeWorkspaceMenu]);
+
+  /**
    * 切换 MCP 启用状态，允许在弹层内直接管理本次会话可调用 MCP。
    * @param mcpCode 被切换 MCP 编码。
    */
@@ -264,6 +309,30 @@ export default function ChatView({
    * @returns 共享选择弹层是否打开。
    */
   const isSelectorPanelOpen = activeSelectorMode !== null;
+  const runtimeDisplayLabel = activeRuntimeTarget === 'local' ? '本地' : '云端';
+  /**
+   * 工作空间切换仅展示当前环境可选项，避免跨环境误切换。
+   */
+  const workspaceSwitcherOptions = React.useMemo(() => {
+    const runtimeWorkspaceGroups = workspaceGroups.filter(
+      (group) => group.runtimeTarget === activeRuntimeTarget,
+    );
+    if (runtimeWorkspaceGroups.length > 0) {
+      return runtimeWorkspaceGroups;
+    }
+    return [
+      {
+        partitionKey: 'fallback-workspace-option',
+        workspacePath: activeRuntimeTarget === 'local' ? workspacePath ?? null : null,
+        workspaceLabel:
+          workspaceLabel || (activeRuntimeTarget === 'local' ? '本地工作空间' : '云端工作空间'),
+        runtimeTarget: activeRuntimeTarget,
+        lastOpenedAt: 0,
+        activeConversationId: activeConversationId ?? null,
+        conversations: [],
+      },
+    ];
+  }, [workspaceGroups, activeRuntimeTarget, workspacePath, workspaceLabel, activeConversationId]);
 
   /**
    * 监听输入框斜杠触发技能检索，支持“输入 / 即打开技能列表”。
@@ -398,6 +467,44 @@ export default function ChatView({
       setIsWorkspacePanelCollapsed(false);
     }
   }, [hasWorkspaceContent]);
+
+  /**
+   * 粘贴图片或文件时直接加入待发送附件队列。
+   * @param event 粘贴事件。
+   */
+  const handlePasteAttachments = React.useCallback(
+    async (event: React.ClipboardEvent<HTMLTextAreaElement>) => {
+      const clipboardItems = Array.from(event.clipboardData?.items ?? []);
+      if (clipboardItems.length === 0) {
+        return;
+      }
+      const files = clipboardItems
+        .filter((item) => item.kind === 'file')
+        .map((item) => item.getAsFile())
+        .filter((file): file is File => file != null);
+      if (files.length === 0) {
+        return;
+      }
+      event.preventDefault();
+      await addPendingAttachments(files);
+    },
+    [addPendingAttachments],
+  );
+
+  /**
+   * 处理系统文件选择器结果并加入待发送附件队列。
+   * @param event 输入框 change 事件。
+   */
+  const handleFileInputChange = React.useCallback(
+    async (event: React.ChangeEvent<HTMLInputElement>) => {
+      const files = Array.from(event.target.files ?? []);
+      if (files.length > 0) {
+        await addPendingAttachments(files);
+      }
+      event.target.value = '';
+    },
+    [addPendingAttachments],
+  );
 
   return (
     <motion.div
@@ -555,6 +662,12 @@ export default function ChatView({
                               messageStatus={message.status}
                             />
                           ) : null}
+                          {message.attachments && message.attachments.length > 0 ? (
+                            <MessageAttachmentList
+                              attachments={message.attachments}
+                              onPreviewImage={(src, alt) => setPreviewAttachment({ src, alt })}
+                            />
+                          ) : null}
                           <MarkdownMessage content={messageContent} />
                           <AssistantMessageActions
                             messageId={message.id}
@@ -563,9 +676,17 @@ export default function ChatView({
                           />
                         </>
                       ) : (
-                        <div className="whitespace-pre-wrap text-sm leading-6">
-                          {messageContent}
-                        </div>
+                        <>
+                          {message.attachments && message.attachments.length > 0 ? (
+                            <MessageAttachmentList
+                              attachments={message.attachments}
+                              onPreviewImage={(src, alt) => setPreviewAttachment({ src, alt })}
+                            />
+                          ) : null}
+                          <div className="whitespace-pre-wrap text-sm leading-6">
+                            {messageContent}
+                          </div>
+                        </>
                       )}
                       {message.errorMessage ? (
                         <div className="mt-3 rounded-2xl border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-300">
@@ -771,6 +892,79 @@ export default function ChatView({
                 </div>
                 <div className="space-y-3">
                   <div data-testid="chat-input-content-area" className="relative">
+                    {pendingAttachments.length > 0 ? (
+                      <div
+                        data-testid="pending-attachment-list"
+                        className="mb-2 flex flex-wrap items-start gap-2 rounded-xl border border-border bg-surface-container/70 p-2"
+                      >
+                        {pendingAttachments.map((attachment) => {
+                          const isImage = attachment.file.type.startsWith('image/');
+                          return (
+                            <div
+                              key={attachment.clientId}
+                              data-testid={`pending-attachment-item-${attachment.clientId}`}
+                              className={`group relative rounded-lg border border-border bg-surface p-1 text-left ${
+                                isImage ? 'h-[78px] w-[78px] overflow-hidden' : 'min-w-[180px] pr-8'
+                              }`}
+                            >
+                              <button
+                                type="button"
+                                aria-label={`删除附件 ${attachment.file.name}`}
+                                data-testid={`remove-pending-attachment-${attachment.clientId}`}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  removePendingAttachment(attachment.clientId);
+                                }}
+                                className="absolute right-1 top-1 z-10 rounded-full border border-border bg-surface p-0.5 text-muted transition-colors hover:text-foreground"
+                              >
+                                <X size={12} />
+                              </button>
+                              {isImage ? (
+                                <button
+                                  type="button"
+                                  aria-label={`预览图片 ${attachment.file.name}`}
+                                  onClick={() =>
+                                    setPreviewAttachment({
+                                      src: attachment.previewUrl,
+                                      alt: attachment.file.name,
+                                    })
+                                  }
+                                  className="h-full w-full"
+                                >
+                                  <img
+                                    src={attachment.previewUrl}
+                                    alt={attachment.file.name}
+                                    className="h-full w-full rounded-md object-cover"
+                                  />
+                                </button>
+                              ) : (
+                                <span className="flex items-center gap-2 px-1 py-1 text-xs text-foreground">
+                                  <File size={13} className="text-muted" />
+                                  <span className="max-w-[128px] truncate">{attachment.file.name}</span>
+                                </span>
+                              )}
+                              <span className="absolute bottom-1 left-1 rounded bg-black/60 px-1.5 py-0.5 text-[10px] text-white">
+                                {attachment.uploadStatus === 'uploaded'
+                                  ? '已上传'
+                                  : attachment.uploadStatus === 'uploading'
+                                    ? '上传中'
+                                    : attachment.uploadStatus === 'failed'
+                                      ? '失败'
+                                      : '待发送'}
+                              </span>
+                            </div>
+                          );
+                        })}
+                        <button
+                          type="button"
+                          aria-label="清空附件"
+                          onClick={() => clearPendingAttachments()}
+                          className="ml-auto rounded-lg border border-border bg-surface px-3 py-1.5 text-xs text-muted transition-colors hover:text-foreground"
+                        >
+                          清空
+                        </button>
+                      </div>
+                    ) : null}
                     {/* 步骤：输入内容独占上层区域，避免文本增多时挤压底部工具栏。 */}
                     <div
                       data-testid="input-inline-skill-tokens"
@@ -839,6 +1033,9 @@ export default function ChatView({
                             preview.scrollTop = event.currentTarget.scrollTop;
                             preview.scrollLeft = event.currentTarget.scrollLeft;
                           }}
+                          onPaste={(event) => {
+                            void handlePasteAttachments(event);
+                          }}
                           rows={1}
                           placeholder="输入问题，或先选择技能/MCP..."
                           // 步骤：输入仍由 textarea 驱动编辑，显示层负责把技能标记渲染为气泡样式。
@@ -849,13 +1046,24 @@ export default function ChatView({
                       </div>
                     </div>
                   </div>
-                <div
-                  data-testid="chat-input-toolbar"
-                  className="flex items-center justify-between gap-3"
+                  <div
+                    data-testid="chat-input-toolbar"
+                    className="flex items-center justify-between gap-3"
                 >
                     <div data-testid="chat-input-toolbar-left" className="flex items-center">
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        multiple
+                        className="hidden"
+                        onChange={(event) => {
+                          void handleFileInputChange(event);
+                        }}
+                      />
                       <button
                         type="button"
+                        aria-label="上传附件"
+                        onClick={() => fileInputRef.current?.click()}
                         className="rounded-full border border-border bg-surface-container p-1.5 text-muted"
                       >
                         <Paperclip size={17} />
@@ -905,37 +1113,160 @@ export default function ChatView({
                       )}
                     </div>
                   </div>
-                  <div
-                    data-testid="chat-workspace-bar"
-                    className="mt-3 flex items-center justify-between rounded-2xl border border-border bg-surface-container/80 px-4 py-3"
-                  >
-                    <div className="min-w-0">
-                      <div className="text-[11px] uppercase tracking-[0.24em] text-muted">
-                        当前环境
-                      </div>
-                      <div className="mt-1 flex items-center gap-2 text-sm text-foreground">
-                        <span className="rounded-full border border-border bg-surface px-2 py-0.5 text-xs text-muted">
-                          {workspaceRuntimeTarget === 'local' ? '本地' : '云端'}
-                        </span>
-                        <span className="truncate">{workspacePath ?? workspaceLabel}</span>
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      aria-label="切换工作空间"
-                      onClick={() => void setActiveWorkspacePath(null)}
-                      className="flex items-center gap-2 rounded-xl border border-border bg-surface px-3 py-2 text-xs text-foreground transition-colors hover:border-border-active"
-                    >
-                      <FolderOpen size={14} />
-                      选择文件夹
-                    </button>
-                  </div>
                 </div>
               </div>
             </form>
+            <div
+              ref={runtimeWorkspaceLayerRef}
+              data-testid="chat-runtime-workspace-switcher"
+              className="mt-3 flex items-center gap-3 px-1 text-sm text-foreground"
+            >
+              <div className="relative">
+                <button
+                  type="button"
+                  aria-label="打开运行环境列表"
+                  aria-expanded={activeRuntimeWorkspaceMenu === 'runtime'}
+                  onClick={() =>
+                    setActiveRuntimeWorkspaceMenu((current) => (current === 'runtime' ? null : 'runtime'))
+                  }
+                  className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-sm transition-colors hover:bg-surface-container"
+                >
+                  <span>{runtimeDisplayLabel}</span>
+                  <ChevronDown
+                    size={14}
+                    className={`transition-transform ${
+                      activeRuntimeWorkspaceMenu === 'runtime' ? 'rotate-180' : ''
+                    }`}
+                  />
+                </button>
+                {activeRuntimeWorkspaceMenu === 'runtime' ? (
+                  <div className="absolute bottom-[calc(100%+8px)] left-0 z-40 w-[170px] rounded-xl border border-border bg-surface p-1.5 shadow-[0_18px_44px_rgba(0,0,0,0.25)]">
+                    {runtimeTargets.map((runtimeTarget) => {
+                      const isActiveRuntime = runtimeTarget === activeRuntimeTarget;
+                      return (
+                        <button
+                          key={runtimeTarget}
+                          type="button"
+                          aria-label={`切换运行环境 ${runtimeTarget === 'local' ? '本地' : '云端'}`}
+                          onClick={() => {
+                            void setActiveRuntimeTarget(runtimeTarget);
+                            setActiveRuntimeWorkspaceMenu(null);
+                          }}
+                          className={`mb-1 flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm transition-colors last:mb-0 ${
+                            isActiveRuntime
+                              ? 'bg-surface-container text-foreground'
+                              : 'text-muted hover:bg-surface-container hover:text-foreground'
+                          }`}
+                        >
+                          <span>{runtimeTarget === 'local' ? '本地' : '云端'}</span>
+                          {isActiveRuntime ? <CheckCircle2 size={14} className="text-foreground" /> : null}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : null}
+              </div>
+              <div className="relative min-w-0">
+                <button
+                  type="button"
+                  aria-label="打开工作空间列表"
+                  aria-expanded={activeRuntimeWorkspaceMenu === 'workspace'}
+                  onClick={() =>
+                    setActiveRuntimeWorkspaceMenu((current) => (current === 'workspace' ? null : 'workspace'))
+                  }
+                  className="inline-flex max-w-[320px] items-center gap-1.5 rounded-lg px-2 py-1 text-sm transition-colors hover:bg-surface-container"
+                >
+                  <FolderOpen size={14} className="shrink-0 text-muted" />
+                  <span className="truncate">{workspaceLabel}</span>
+                  <ChevronDown
+                    size={14}
+                    className={`shrink-0 transition-transform ${
+                      activeRuntimeWorkspaceMenu === 'workspace' ? 'rotate-180' : ''
+                    }`}
+                  />
+                </button>
+                {activeRuntimeWorkspaceMenu === 'workspace' ? (
+                  <div className="absolute bottom-[calc(100%+8px)] left-0 z-40 w-[260px] rounded-xl border border-border bg-surface p-1.5 shadow-[0_18px_44px_rgba(0,0,0,0.25)]">
+                    <div className="max-h-60 overflow-y-auto">
+                      {workspaceSwitcherOptions.map((group) => {
+                        const isActiveWorkspace = group.partitionKey === activeWorkspacePartitionKey;
+                        const optionLabel =
+                          group.runtimeTarget === 'local' ? group.workspaceLabel : '云端工作空间';
+                        return (
+                          <button
+                            key={group.partitionKey}
+                            type="button"
+                            aria-label={`切换工作空间 ${optionLabel}`}
+                            onClick={() => {
+                              if (group.runtimeTarget === 'local') {
+                                void setActiveWorkspacePath(group.workspacePath ?? null);
+                              } else {
+                                void setActiveRuntimeTarget('cloud');
+                              }
+                              setActiveRuntimeWorkspaceMenu(null);
+                            }}
+                            className={`mb-1 flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm transition-colors last:mb-0 ${
+                              isActiveWorkspace
+                                ? 'bg-surface-container text-foreground'
+                                : 'text-muted hover:bg-surface-container hover:text-foreground'
+                            }`}
+                          >
+                            <span className="truncate">{optionLabel}</span>
+                            {isActiveWorkspace ? <CheckCircle2 size={14} className="text-foreground" /> : null}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {activeRuntimeTarget === 'local' ? (
+                      <button
+                        type="button"
+                        aria-label="选择新的本地工作空间"
+                        onClick={() => {
+                          void pickRepositoryDirectory();
+                          setActiveRuntimeWorkspaceMenu(null);
+                        }}
+                        className="mt-1.5 flex w-full items-center justify-center gap-1.5 rounded-lg border border-border px-2 py-2 text-xs text-muted transition-colors hover:text-foreground"
+                      >
+                        <FolderOpen size={13} />
+                        选择新的本地目录
+                      </button>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+            </div>
           </div>
         </div>
       </section>
+
+      {previewAttachment ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="图片预览弹窗"
+          className="absolute inset-0 z-50 flex items-center justify-center bg-background/72 p-4 backdrop-blur-sm"
+          onClick={() => setPreviewAttachment(null)}
+        >
+          <div
+            className="relative w-full max-w-4xl rounded-2xl border border-border bg-surface p-3 shadow-[0_24px_80px_rgba(0,0,0,0.35)]"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <button
+              type="button"
+              aria-label="关闭图片预览"
+              className="absolute right-2 top-2 rounded-full border border-border bg-surface p-1 text-muted transition-colors hover:text-foreground"
+              onClick={() => setPreviewAttachment(null)}
+            >
+              <X size={16} />
+            </button>
+            <img
+              src={previewAttachment.src}
+              alt={previewAttachment.alt}
+              className="max-h-[76vh] w-full rounded-xl object-contain"
+            />
+          </div>
+        </div>
+      ) : null}
 
       {showWorkspacePanel ? (
         <aside
@@ -1526,6 +1857,59 @@ function normalizeMessageForPlainCopy(content: string) {
     .replace(/^[>\-#*]+\s*/gm, '')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
+}
+
+/**
+ * 渲染消息中的附件列表，图片可点击预览，普通文件提供内联下载入口。
+ */
+function MessageAttachmentList({
+  attachments,
+  onPreviewImage,
+}: {
+  attachments: ChatAttachmentItem[];
+  onPreviewImage: (src: string, alt: string) => void;
+}) {
+  if (attachments.length === 0) {
+    return null;
+  }
+  return (
+    <div className="mb-3 flex flex-wrap items-start gap-2">
+      {attachments.map((attachment) => {
+        const isImage = attachment.attachmentType === 'image' && !!attachment.previewUrl;
+        if (isImage) {
+          return (
+            <button
+              key={attachment.id}
+              type="button"
+              aria-label={`预览图片 ${attachment.fileName}`}
+              data-testid={`message-image-attachment-${attachment.id}`}
+              className="h-[88px] w-[88px] overflow-hidden rounded-lg border border-border bg-surface"
+              onClick={() => onPreviewImage(attachment.previewUrl as string, attachment.fileName)}
+            >
+              <img
+                src={attachment.previewUrl}
+                alt={attachment.fileName}
+                className="h-full w-full object-cover"
+              />
+            </button>
+          );
+        }
+        return (
+          <a
+            key={attachment.id}
+            href={attachment.previewUrl}
+            target="_blank"
+            rel="noreferrer"
+            data-testid={`message-file-attachment-${attachment.id}`}
+            className="inline-flex max-w-[260px] items-center gap-2 rounded-lg border border-border bg-surface px-2.5 py-1.5 text-xs text-foreground"
+          >
+            <File size={13} className="text-muted" />
+            <span className="truncate">{attachment.fileName}</span>
+          </a>
+        );
+      })}
+    </div>
+  );
 }
 
 type InputPreviewSegment =

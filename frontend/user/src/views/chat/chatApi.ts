@@ -2,6 +2,7 @@ import { ApiResponseEnvelope } from '../../types/auth';
 import { ApiResponseParser, ApiUnauthorizedError } from '../../api/apiResponse';
 import {
   ArtifactItem,
+  ChatAttachmentItem,
   ChatSkillItem,
   ChatMessageItem,
   ConversationItem,
@@ -46,7 +47,10 @@ export class ChatApi {
       `/api/chat/conversations/${conversationId}/messages`,
       token,
     );
-    return envelope.data;
+    return envelope.data.map((item) => ({
+      ...item,
+      attachments: (item.attachments ?? []).map((attachment) => this.normalizeAttachment(attachment)),
+    }));
   }
 
   /**
@@ -241,6 +245,53 @@ export class ChatApi {
       },
     );
     return envelope.data;
+  }
+
+  /**
+   * 上传聊天附件并返回附件元数据，供发送消息时携带 attachmentIds。
+   * @param token 当前登录令牌。
+   * @param file 上传文件。
+   * @param conversationId 会话标识，可为空。
+   * @returns 附件信息。
+   */
+  static async uploadAttachment(
+    token: string,
+    file: File,
+    conversationId?: string | null,
+  ): Promise<ChatAttachmentItem> {
+    const formData = new FormData();
+    formData.append('file', file);
+    if (conversationId != null) {
+      formData.append('conversationId', conversationId);
+    }
+    const response = await fetch('/api/chat/attachments/upload', {
+      method: 'POST',
+      headers: {
+        satoken: token,
+      },
+      body: formData,
+    });
+    const envelope = await ApiResponseParser.parseEnvelope<ChatAttachmentItem>(response, '附件上传失败');
+    ApiResponseParser.assertSuccess(response, envelope, '附件上传失败');
+    return this.normalizeAttachment(envelope.data);
+  }
+
+  /**
+   * 统一归一化附件结构，避免接口数字主键在前端出现精度问题。
+   * @param attachment 原始附件数据。
+   * @returns 归一化后附件。
+   */
+  private static normalizeAttachment(attachment: ChatAttachmentItem): ChatAttachmentItem {
+    return {
+      ...attachment,
+      id: String(attachment.id ?? ''),
+      conversationId: attachment.conversationId == null ? undefined : String(attachment.conversationId),
+      messageId: attachment.messageId == null ? undefined : String(attachment.messageId),
+      attachmentType: attachment.attachmentType === 'image' ? 'image' : 'file',
+      fileName: String(attachment.fileName ?? ''),
+      fileSize: Number(attachment.fileSize ?? 0),
+      status: String(attachment.status ?? ''),
+    };
   }
 
   /**

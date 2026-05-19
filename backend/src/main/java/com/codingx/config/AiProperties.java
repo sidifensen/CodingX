@@ -143,6 +143,12 @@ public class AiProperties {
          * 是否支持思考模式。
          */
         private Boolean supportsThinking = false;
+
+        /**
+         * 是否支持视觉理解能力。
+         * 说明：图片附件路由会优先挑选标记为视觉模型的候选，避免把图片误发给纯文本模型。
+         */
+        private Boolean supportsVision = false;
     }
 
     /**

@@ -313,6 +313,7 @@ class AiModelDispatchServiceTest {
         candidate.setModel(model);
         candidate.setPriority(priority);
         candidate.setSupportsThinking(supportsThinking);
+        candidate.setSupportsVision(false);
         candidate.setEnabled(true);
         return candidate;
     }

@@ -67,7 +67,8 @@ public class ChatStreamController {
         @RequestParam(required = false) String mcpCodes,
         @RequestParam(required = false) String skillCodes,
         @RequestParam(required = false) String repositoryPath,
-        @RequestParam(required = false) String messages
+        @RequestParam(required = false) String messages,
+        @RequestParam(required = false) String attachmentIds
     ) {
         StpUtil.checkLogin();
         Long userId = StpUtil.getLoginIdAsLong();
@@ -78,6 +79,7 @@ public class ChatStreamController {
         StructuredMessageParseResult structuredMessageParseResult = resolveStructuredMessages(messages);
         String actualQuestion = StrUtil.blankToDefault(structuredMessageParseResult.content(), question);
         List<String> selectedSkillCodes = resolveSkillCodes(skillCodes, structuredMessageParseResult.skillCodes());
+        List<Long> selectedAttachmentIds = resolveAttachmentIds(attachmentIds);
         SseEmitter emitter = chatSseRegistry.register(actualConversationId);
         Long taskId = cn.hutool.core.util.IdUtil.getSnowflakeNextId();
         chatSseRegistry.publish(actualConversationId, "meta", Map.of(
@@ -85,7 +87,8 @@ public class ChatStreamController {
             "deepThinking", deepThinkingEnabled,
             "taskId", taskId,
             "mcpCodes", selectedMcpCodes,
-            "skillCodes", selectedSkillCodes
+            "skillCodes", selectedSkillCodes,
+            "attachmentIds", selectedAttachmentIds
         ));
         chatStreamExecutionService.dispatch(
             new SendChatMessageCommand(
@@ -94,7 +97,8 @@ public class ChatStreamController {
                 deepThinkingEnabled,
                 selectedMcpCodes,
                 selectedSkillCodes,
-                StrUtil.trimToNull(repositoryPath)
+                StrUtil.trimToNull(repositoryPath),
+                selectedAttachmentIds
             ),
             userId
         );
@@ -109,7 +113,7 @@ public class ChatStreamController {
      * @return SSE emitter。
      */
     public SseEmitter streamChat(String question, Long conversationId, Boolean deepThinking) {
-        return streamChat(question, conversationId, deepThinking, null, null, null, null);
+        return streamChat(question, conversationId, deepThinking, null, null, null, null, null);
     }
 
     /**
@@ -128,7 +132,7 @@ public class ChatStreamController {
         String mcpCodes,
         String skillCodes
     ) {
-        return streamChat(question, conversationId, deepThinking, mcpCodes, skillCodes, null, null);
+        return streamChat(question, conversationId, deepThinking, mcpCodes, skillCodes, null, null, null);
     }
 
     /**
@@ -149,7 +153,30 @@ public class ChatStreamController {
         String skillCodes,
         String messages
     ) {
-        return streamChat(question, conversationId, deepThinking, mcpCodes, skillCodes, null, messages);
+        return streamChat(question, conversationId, deepThinking, mcpCodes, skillCodes, null, messages, null);
+    }
+
+    /**
+     * 兼容显式传入 repositoryPath 与结构化 messages 但未传附件参数的调用签名。
+     * @param question 用户问题。
+     * @param conversationId 会话标识。
+     * @param deepThinking 是否深度思考。
+     * @param mcpCodes 显式 MCP 编码。
+     * @param skillCodes 显式技能编码。
+     * @param repositoryPath 当前仓库路径。
+     * @param messages 结构化消息 JSON。
+     * @return SSE emitter。
+     */
+    public SseEmitter streamChat(
+        String question,
+        Long conversationId,
+        Boolean deepThinking,
+        String mcpCodes,
+        String skillCodes,
+        String repositoryPath,
+        String messages
+    ) {
+        return streamChat(question, conversationId, deepThinking, mcpCodes, skillCodes, repositoryPath, messages, null);
     }
 
     /**
@@ -266,6 +293,30 @@ public class ChatStreamController {
             // 结构化消息解析失败时回退到普通文本模式，避免阻断发送链路。
             return new StructuredMessageParseResult(List.of(), null);
         }
+    }
+
+    /**
+     * 解析前端传入的附件主键列表，忽略非法值并按出现顺序去重。
+     * @param attachmentIdsParam 查询参数字符串。
+     * @return 规范化附件主键列表。
+     */
+    private List<Long> resolveAttachmentIds(String attachmentIdsParam) {
+        if (attachmentIdsParam == null) {
+            return List.of();
+        }
+        return StrUtil.splitTrim(attachmentIdsParam, ',').stream()
+            .map(String::trim)
+            .filter(StrUtil::isNotBlank)
+            .map(value -> {
+                try {
+                    return Long.parseLong(value);
+                } catch (NumberFormatException exception) {
+                    return null;
+                }
+            })
+            .filter(id -> id != null && id > 0)
+            .distinct()
+            .collect(Collectors.toList());
     }
 
     /**

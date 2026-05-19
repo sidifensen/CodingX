@@ -18,6 +18,7 @@ export interface ChatMessageItem {
   runId?: string;
   role: 'USER' | 'ASSISTANT' | 'SYSTEM';
   content: string;
+  attachments?: ChatAttachmentItem[];
   thinkingContent?: string;
   thinkingDuration?: number;
   mcpCalls?: McpCallItem[];
@@ -26,6 +27,36 @@ export interface ChatMessageItem {
   model?: string;
   errorMessage?: string;
   createdAt?: string;
+}
+
+/**
+ * 描述聊天附件在“输入中/消息中”两个阶段都可复用的结构。
+ */
+export interface ChatAttachmentItem {
+  id: string;
+  conversationId?: string;
+  messageId?: string;
+  attachmentType: 'image' | 'file';
+  fileName: string;
+  fileExt?: string;
+  mimeType?: string;
+  fileSize: number;
+  previewUrl?: string;
+  contentSummary?: string;
+  status: string;
+  createdAt?: string;
+}
+
+/**
+ * 描述输入区待发送附件的前端运行时状态。
+ */
+export interface PendingAttachmentItem {
+  clientId: string;
+  file: File;
+  previewUrl: string;
+  uploadStatus: 'pending' | 'uploading' | 'uploaded' | 'failed';
+  uploadError?: string;
+  attachment?: ChatAttachmentItem;
 }
 
 /**
@@ -174,6 +205,8 @@ export interface WorkspaceConversationGroup {
  * 统一描述聊天工作区对页面和侧边栏暴露的状态与动作。
  */
 export interface ChatWorkspaceController {
+  runtimeTargets: Array<'cloud' | 'local'>;
+  activeRuntimeTarget: 'cloud' | 'local';
   workspaceGroups: WorkspaceConversationGroup[];
   activeWorkspacePartitionKey: string | null;
   workspacePath: string | null;
@@ -198,12 +231,17 @@ export interface ChatWorkspaceController {
   deepThinkingEnabled: boolean;
   streamError: string;
   inputValue: string;
+  pendingAttachments: PendingAttachmentItem[];
   isBootstrapping: boolean;
   setInputValue: (value: string) => void;
+  addPendingAttachments: (files: File[]) => Promise<void>;
+  removePendingAttachment: (clientId: string) => void;
+  clearPendingAttachments: () => void;
   setDeepThinkingEnabled: (value: boolean) => void;
   setSelectedSkillCodes: (skillCodes: string[] | ((previous: string[]) => string[])) => void;
   setSelectedMcpCodes: (mcpCodes: string[] | ((previous: string[]) => string[])) => void;
   setMcpConnected: (value: boolean) => void;
+  setActiveRuntimeTarget: (runtimeTarget: 'cloud' | 'local') => Promise<void>;
   pickRepositoryDirectory: () => Promise<void>;
   setActiveWorkspacePath: (workspacePath: string | null) => Promise<void>;
   submitMessage: () => Promise<void>;
@@ -237,6 +275,6 @@ export interface ChatWorkspaceController {
 export interface UseChatWorkspaceOptions {
   onUnauthorized?: () => void;
   hostContext?: import('../../host/types').HostContext | null;
-  pickRepositoryDirectory?: () => Promise<void>;
+  pickRepositoryDirectory?: () => Promise<string | null>;
   bindWorkspacePath?: (workspacePath: string) => Promise<void>;
 }

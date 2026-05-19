@@ -81,6 +81,9 @@ class ChatApplicationIntentFlowTest {
     @Mock
     private ChatMcpRepository chatMcpRepository;
 
+    @Mock
+    private ChatAttachmentService chatAttachmentService;
+
     @InjectMocks
     private ChatApplicationService chatApplicationService;
 
@@ -94,6 +97,7 @@ class ChatApplicationIntentFlowTest {
         ChatConversation conversation = ChatConversation.create(1L, "New Conversation", 1002L, ChatConversationStatus.ACTIVE);
         when(chatConversationRepository.requireById(1L)).thenReturn(conversation);
         when(chatMessageRepository.findByConversationId(1L)).thenReturn(new ArrayList<>());
+        when(chatAttachmentService.requireOwnedAttachments(any(), eq(1L), eq(1002L))).thenReturn(List.of());
         when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
             new ConversationRewriteResult("这个要怎么改", false, java.util.List.of("这个要怎么改"))
         );
@@ -122,6 +126,7 @@ class ChatApplicationIntentFlowTest {
         ChatConversation conversation = ChatConversation.create(1L, "New Conversation", 1002L, ChatConversationStatus.ACTIVE);
         when(chatConversationRepository.requireById(1L)).thenReturn(conversation);
         when(chatMessageRepository.findByConversationId(1L)).thenReturn(new ArrayList<>());
+        when(chatAttachmentService.requireOwnedAttachments(any(), eq(1L), eq(1002L))).thenReturn(List.of());
         when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
             new ConversationRewriteResult("你是谁", false, java.util.List.of("你是谁"))
         );

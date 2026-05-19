@@ -7,6 +7,8 @@ import { ChatWorkspaceController } from './chat/types';
  */
 describe('ChatView', () => {
   beforeEach(() => {
+    window.URL.createObjectURL = vi.fn(() => 'blob:mock-preview');
+    window.URL.revokeObjectURL = vi.fn();
     Object.defineProperty(window.HTMLElement.prototype, 'scrollIntoView', {
       configurable: true,
       value: vi.fn(),
@@ -946,6 +948,96 @@ describe('ChatView', () => {
   });
 
   /**
+   * 环境与工作空间切换应独立于输入框容器，避免占用输入框内部高度。
+   */
+  it('应在输入框下方渲染环境与工作空间切换行并移除旧状态栏', async () => {
+    render(
+      <ChatView isAuthenticated={true} onRequireLogin={vi.fn()} workspace={createWorkspace()} />,
+    );
+
+    const switcher = screen.getByTestId('chat-runtime-workspace-switcher');
+    const inputForm = screen.getByRole('button', { name: '发送消息' }).closest('form');
+    expect(switcher).toBeInTheDocument();
+    expect(inputForm).not.toContainElement(switcher);
+    expect(screen.queryByTestId('chat-workspace-bar')).not.toBeInTheDocument();
+    expect(screen.queryByText('当前环境')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '打开运行环境列表' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '打开工作空间列表' })).toBeInTheDocument();
+  });
+
+  /**
+   * 环境切换应通过下拉列表触发统一运行环境切换动作。
+   */
+  it('应支持通过下拉列表切换运行环境', async () => {
+    const setActiveRuntimeTarget = vi.fn().mockResolvedValue(undefined);
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          activeRuntimeTarget: 'local',
+          setActiveRuntimeTarget,
+        })}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '打开运行环境列表' }));
+    fireEvent.click(screen.getByRole('button', { name: '切换运行环境 云端' }));
+
+    expect(setActiveRuntimeTarget).toHaveBeenCalledWith('cloud');
+  });
+
+  /**
+   * 工作空间切换应通过下拉列表选择目标目录，而不是仅保留按钮触发。
+   */
+  it('应支持通过下拉列表切换工作空间', async () => {
+    const setActiveWorkspacePath = vi.fn().mockResolvedValue(undefined);
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          setActiveWorkspacePath,
+          workspaceGroups: [
+            {
+              partitionKey: 'cloud::__no_workspace__',
+              workspacePath: null,
+              workspaceLabel: '云端工作空间',
+              runtimeTarget: 'cloud',
+              lastOpenedAt: 1716101111000,
+              activeConversationId: null,
+              conversations: [],
+            },
+            {
+              partitionKey: 'local::d:/code/codingx',
+              workspacePath: 'D:/code/CodingX',
+              workspaceLabel: 'CodingX',
+              runtimeTarget: 'local',
+              lastOpenedAt: 1716102222000,
+              activeConversationId: '2001',
+              conversations: [],
+            },
+            {
+              partitionKey: 'local::d:/code/designsystem',
+              workspacePath: 'D:/code/DesignSystem',
+              workspaceLabel: 'DesignSystem',
+              runtimeTarget: 'local',
+              lastOpenedAt: 1716103333000,
+              activeConversationId: null,
+              conversations: [],
+            },
+          ],
+        })}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '打开工作空间列表' }));
+    fireEvent.click(screen.getByRole('button', { name: '切换工作空间 DesignSystem' }));
+
+    expect(setActiveWorkspacePath).toHaveBeenCalledWith('D:/code/DesignSystem');
+  });
+
+  /**
    * MCP 与技能应共用同一个浮层区域，并且浮层在输入区上方弹出，不应挤压输入区。
    */
   it('应在输入区上方复用同一个选择浮层', async () => {
@@ -960,6 +1052,79 @@ describe('ChatView', () => {
     fireEvent.click(screen.getByRole('button', { name: '打开MCP列表' }));
     expect(screen.getByTestId('mcp-selector-panel')).toBeInTheDocument();
     expect(screen.queryByTestId('skill-selector-panel')).not.toBeInTheDocument();
+  });
+
+  /**
+   * 输入区应展示待发送附件缩略图，并支持打开预览弹窗与移除附件。
+   */
+  it('应支持待发送图片预览与删除', async () => {
+    const removePendingAttachment = vi.fn();
+
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          pendingAttachments: [
+            {
+              clientId: 'pending-1',
+              file: new File(['mock'], 'demo.png', { type: 'image/png' }),
+              previewUrl: 'blob:demo-preview',
+              uploadStatus: 'pending',
+            },
+          ],
+          removePendingAttachment,
+        })}
+      />,
+    );
+
+    expect(screen.getByTestId('pending-attachment-list')).toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText('预览图片 demo.png'));
+    expect(screen.getByRole('dialog', { name: '图片预览弹窗' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByLabelText('删除附件 demo.png'));
+    expect(removePendingAttachment).toHaveBeenCalledWith('pending-1');
+  });
+
+  /**
+   * 消息中图片附件应渲染为缩略图，点击后可打开预览弹窗。
+   */
+  it('应在消息内渲染附件并支持预览', async () => {
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          messages: [
+            {
+              id: '301',
+              conversationId: '2001',
+              role: 'USER',
+              content: '请看这张图',
+              status: 'COMPLETED',
+              attachments: [
+                {
+                  id: '9001',
+                  conversationId: '2001',
+                  messageId: '301',
+                  attachmentType: 'image',
+                  fileName: 'evidence.png',
+                  fileSize: 2048,
+                  previewUrl: '/api/chat/attachments/9001/content',
+                  status: 'UPLOADED',
+                },
+              ],
+            },
+          ],
+          executionSteps: [],
+          references: [],
+          artifacts: [],
+        })}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId('message-image-attachment-9001'));
+    expect(screen.getByRole('dialog', { name: '图片预览弹窗' })).toBeInTheDocument();
   });
 
   /**
@@ -1217,6 +1382,32 @@ describe('ChatView', () => {
  */
 function createWorkspace(overrides?: Partial<ChatWorkspaceController>): ChatWorkspaceController {
   return {
+    runtimeTargets: ['cloud', 'local'],
+    activeRuntimeTarget: 'local',
+    workspaceGroups: [
+      {
+        partitionKey: 'local::d:/code/codingx',
+        workspacePath: 'D:/code/CodingX',
+        workspaceLabel: 'CodingX',
+        runtimeTarget: 'local',
+        lastOpenedAt: 1716102222000,
+        activeConversationId: '2001',
+        conversations: [],
+      },
+      {
+        partitionKey: 'cloud::__no_workspace__',
+        workspacePath: null,
+        workspaceLabel: '云端工作空间',
+        runtimeTarget: 'cloud',
+        lastOpenedAt: 1716101111000,
+        activeConversationId: null,
+        conversations: [],
+      },
+    ],
+    activeWorkspacePartitionKey: 'local::d:/code/codingx',
+    workspacePath: 'D:/code/CodingX',
+    workspaceLabel: 'CodingX',
+    workspaceRuntimeTarget: 'local',
     conversations: [
       {
         id: '2001',
@@ -1352,12 +1543,19 @@ function createWorkspace(overrides?: Partial<ChatWorkspaceController>): ChatWork
     deepThinkingEnabled: false,
     streamError: '',
     inputValue: '请搜索 Spring Boot SSE 最佳实践',
+    pendingAttachments: [],
     isBootstrapping: false,
     setInputValue: vi.fn(),
+    addPendingAttachments: vi.fn().mockResolvedValue(undefined),
+    removePendingAttachment: vi.fn(),
+    clearPendingAttachments: vi.fn(),
     setDeepThinkingEnabled: vi.fn(),
     setSelectedSkillCodes: vi.fn(),
     setSelectedMcpCodes: vi.fn(),
     setMcpConnected: vi.fn(),
+    setActiveRuntimeTarget: vi.fn().mockResolvedValue(undefined),
+    pickRepositoryDirectory: vi.fn().mockResolvedValue(undefined),
+    setActiveWorkspacePath: vi.fn().mockResolvedValue(undefined),
     submitMessage: vi.fn().mockResolvedValue(undefined),
     cancelCurrentStream: vi.fn().mockResolvedValue(undefined),
     selectConversation: vi.fn().mockResolvedValue(undefined),

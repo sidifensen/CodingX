@@ -2,6 +2,7 @@ package com.codingx.chat.application.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -53,6 +54,7 @@ class ChatApplicationMcpFlowTest {
     @Mock private DocumentArtifactService documentArtifactService;
     @Mock private ConversationTraceRecordService conversationTraceRecordService;
     @Mock private ChatMcpRepository chatMcpRepository;
+    @Mock private ChatAttachmentService chatAttachmentService;
 
     @InjectMocks
     private ChatApplicationService chatApplicationService;
@@ -67,6 +69,7 @@ class ChatApplicationMcpFlowTest {
         ChatConversation conversation = ChatConversation.create(1L, "New Conversation", 1002L, ChatConversationStatus.ACTIVE);
         when(chatConversationRepository.requireById(1L)).thenReturn(conversation);
         when(chatMessageRepository.findByConversationId(1L)).thenReturn(new ArrayList<>());
+        when(chatAttachmentService.requireOwnedAttachments(any(), eq(1L), eq(1002L))).thenReturn(java.util.List.of());
         when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
             new ConversationRewriteResult("销售总额是多少", false, java.util.List.of("销售总额是多少"))
         );
@@ -105,6 +108,7 @@ class ChatApplicationMcpFlowTest {
         ChatConversation conversation = ChatConversation.create(2L, "Code Search Conversation", 1002L, ChatConversationStatus.ACTIVE);
         when(chatConversationRepository.requireById(2L)).thenReturn(conversation);
         when(chatMessageRepository.findByConversationId(2L)).thenReturn(new ArrayList<>());
+        when(chatAttachmentService.requireOwnedAttachments(any(), eq(2L), eq(1002L))).thenReturn(java.util.List.of());
         when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
             new ConversationRewriteResult("查找 ChatController 的 sendMessage 方法", false, java.util.List.of("查找 ChatController 的 sendMessage 方法"))
         );

@@ -4,9 +4,11 @@ import cn.hutool.core.util.StrUtil;
 import com.codingx.chat.application.command.CreateConversationCommand;
 import com.codingx.chat.application.command.SendChatMessageCommand;
 import com.codingx.chat.application.service.ChatApplicationService;
+import com.codingx.chat.application.service.ChatAttachmentService;
 import com.codingx.chat.application.service.ChatConversationApplicationService;
 import com.codingx.chat.application.service.ChatReactionService;
 import com.codingx.chat.application.service.ChatRuntimeGuardService;
+import com.codingx.chat.domain.model.ChatAttachment;
 import com.codingx.chat.domain.model.ChatConversation;
 import com.codingx.chat.domain.model.ChatMessage;
 import com.codingx.skill.domain.model.ChatSkill;
@@ -15,6 +17,7 @@ import com.codingx.chat.interfaces.request.ChatMessageFeedbackRequest;
 import com.codingx.chat.interfaces.request.CreateConversationRequest;
 import com.codingx.chat.interfaces.request.RenameConversationRequest;
 import com.codingx.chat.interfaces.request.SendChatMessageRequest;
+import com.codingx.chat.interfaces.response.ChatAttachmentResponse;
 import com.codingx.chat.interfaces.response.ChatConversationResponse;
 import com.codingx.chat.interfaces.response.ChatMessageResponse;
 import com.codingx.common.model.ApiResponse;
@@ -53,6 +56,7 @@ public class ChatController {
      * ChatRuntimeGuardService 依赖。
      */
     private final ChatRuntimeGuardService chatRuntimeGuardService;
+    private final ChatAttachmentService chatAttachmentService;
 
     /**
      * ChatReactionService 依赖。
@@ -113,7 +117,15 @@ public class ChatController {
             .filter(StrUtil::isNotBlank)
             .collect(Collectors.toList());
         chatApplicationService.sendMessage(
-            new SendChatMessageCommand(conversationId, request.content(), false, selectedMcpCodes, selectedSkillCodes),
+            new SendChatMessageCommand(
+                conversationId,
+                request.content(),
+                false,
+                selectedMcpCodes,
+                selectedSkillCodes,
+                null,
+                request.attachmentIds() == null ? List.of() : request.attachmentIds()
+            ),
             StpUtil.getLoginIdAsLong()
         );
         return ApiResponse.successMessage("message processed");
@@ -186,10 +198,44 @@ public class ChatController {
      * @return 输入参数。
      */
     private ChatMessageResponse toMessageResponse(ChatMessage message) {
+        List<ChatAttachmentResponse> attachments = chatAttachmentService.listByMessageId(message.getId()).stream()
+            .map(this::toAttachmentResponse)
+            .toList();
         return new ChatMessageResponse(
-            message.getId(), message.getConversationId(), message.getRole(), message.getContent(),
-            message.getThinkingContent(), message.getThinkingDuration(),
-            message.getStatus(), message.getProvider(), message.getModel(), message.getErrorMessage(), message.getCreatedAt()
+            message.getId(),
+            message.getConversationId(),
+            message.getRole(),
+            message.getContent(),
+            message.getThinkingContent(),
+            message.getThinkingDuration(),
+            message.getStatus(),
+            message.getProvider(),
+            message.getModel(),
+            message.getErrorMessage(),
+            message.getCreatedAt(),
+            attachments
+        );
+    }
+
+    /**
+     * 将附件领域对象转换为接口响应对象。
+     * @param attachment 附件领域对象。
+     * @return 附件响应。
+     */
+    private ChatAttachmentResponse toAttachmentResponse(ChatAttachment attachment) {
+        return new ChatAttachmentResponse(
+            attachment.getId(),
+            attachment.getConversationId(),
+            attachment.getMessageId(),
+            attachment.getAttachmentType(),
+            attachment.getFileName(),
+            attachment.getFileExt(),
+            attachment.getMimeType(),
+            attachment.getFileSize(),
+            attachment.getPreviewUrl(),
+            attachment.getContentSummary(),
+            attachment.getStatus(),
+            attachment.getCreatedAt()
         );
     }
 }

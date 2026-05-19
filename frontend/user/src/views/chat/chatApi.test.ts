@@ -304,4 +304,49 @@ describe('ChatApi', () => {
     );
     expect(result.repositoryPath).toBe('D:/code/codingx');
   });
+
+  /**
+   * 上传附件应使用 multipart/form-data，并命中附件上传接口。
+   */
+  it('应通过附件上传接口提交文件', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          success: true,
+          code: 'OK',
+          message: 'success',
+          data: {
+            id: 9001,
+            conversationId: 2001,
+            messageId: null,
+            attachmentType: 'image',
+            fileName: 'demo.png',
+            fileSize: 1024,
+            previewUrl: '/api/chat/attachments/9001/content',
+            status: 'UPLOADED',
+          },
+        }),
+        { status: 200 },
+      ),
+    );
+
+    const result = await ChatApi.uploadAttachment(
+      'token-123',
+      new File(['mock'], 'demo.png', { type: 'image/png' }),
+      '2001',
+    );
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      '/api/chat/attachments/upload',
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({
+          satoken: 'token-123',
+        }),
+        body: expect.any(FormData),
+      }),
+    );
+    expect(result.id).toBe('9001');
+    expect(result.attachmentType).toBe('image');
+  });
 });

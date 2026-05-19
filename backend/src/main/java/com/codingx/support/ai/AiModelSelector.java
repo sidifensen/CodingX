@@ -2,6 +2,8 @@ package com.codingx.support.ai;
 
 import cn.hutool.core.collection.CollUtil;
 import cn.hutool.core.util.StrUtil;
+import com.codingx.chat.domain.model.ChatAttachment;
+import com.codingx.config.DynamicAiRoutingProperties;
 import com.codingx.config.AiProperties;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -21,13 +23,24 @@ public class AiModelSelector {
     private static final String STUB_MODEL_NAME = "stub-chat";
 
     private final AiProperties aiProperties;
+    private final DynamicAiRoutingProperties dynamicProperties;
 
     /**
      * 使用 AI 配置构造模型选择器。
      * @param aiProperties AI 配置。
      */
     public AiModelSelector(AiProperties aiProperties) {
+        this(aiProperties, null);
+    }
+
+    /**
+     * 使用 AI 配置和动态路由配置构造模型选择器。
+     * @param aiProperties AI 配置。
+     * @param dynamicProperties 动态路由配置。
+     */
+    public AiModelSelector(AiProperties aiProperties, DynamicAiRoutingProperties dynamicProperties) {
         this.aiProperties = aiProperties;
+        this.dynamicProperties = dynamicProperties;
     }
 
     /**
@@ -35,6 +48,9 @@ public class AiModelSelector {
      * @return 首包等待毫秒数。
      */
     public long firstPacketTimeoutMs() {
+        if (dynamicProperties != null) {
+            return dynamicProperties.firstPacketTimeoutMs();
+        }
         return aiProperties.getSelection().getFirstPacketTimeoutMs();
     }
 
@@ -45,8 +61,33 @@ public class AiModelSelector {
      * @return 有序候选列表。
      */
     public List<AiModelTarget> selectChatCandidates(String preferredModel, boolean thinkingEnabled) {
+        return selectChatCandidates(preferredModel, thinkingEnabled, List.of());
+    }
+
+    /**
+     * 根据附件能力补充候选过滤，图片存在时优先命中视觉模型。
+     * @param preferredModel 显式指定的优先模型。
+     * @param thinkingEnabled 是否开启思考模式。
+     * @param attachments 当前会话消息附件。
+     * @return 有序候选列表。
+     */
+    public List<AiModelTarget> selectChatCandidates(
+        String preferredModel,
+        boolean thinkingEnabled,
+        List<ChatAttachment> attachments
+    ) {
         AiProperties.ChatModelGroup group = chatGroupWithFallback();
         List<AiProperties.ChatCandidate> candidates = enabledCandidates(group.getCandidates());
+        boolean hasImageAttachment = CollUtil.emptyIfNull(attachments).stream()
+            .anyMatch(attachment -> "image".equalsIgnoreCase(attachment.getAttachmentType()));
+        if (hasImageAttachment) {
+            List<AiProperties.ChatCandidate> visionCandidates = candidates.stream()
+                .filter(candidate -> Boolean.TRUE.equals(candidate.getSupportsVision()))
+                .toList();
+            if (CollUtil.isNotEmpty(visionCandidates)) {
+                candidates = visionCandidates;
+            }
+        }
         List<AiProperties.ChatCandidate> filteredCandidates = thinkingEnabled
             ? candidates.stream().filter(candidate -> Boolean.TRUE.equals(candidate.getSupportsThinking())).toList()
             : candidates;
@@ -130,10 +171,14 @@ public class AiModelSelector {
         if (StrUtil.isNotBlank(preferredModel)) {
             return preferredModel;
         }
-        if (thinkingEnabled && StrUtil.isNotBlank(group.getDeepThinkingModel())) {
-            return group.getDeepThinkingModel();
+        String configuredThinkingModel = dynamicProperties == null ? group.getDeepThinkingModel() : dynamicProperties.deepThinkingModel();
+        if (thinkingEnabled && StrUtil.isNotBlank(configuredThinkingModel)) {
+            return configuredThinkingModel;
         }
-        return group.getDefaultModel();
+        return StrUtil.blankToDefault(
+            dynamicProperties == null ? group.getDefaultModel() : dynamicProperties.defaultModel(),
+            group.getDefaultModel()
+        );
     }
 
     /**

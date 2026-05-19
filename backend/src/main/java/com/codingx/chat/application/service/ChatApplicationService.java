@@ -4,6 +4,7 @@ import com.codingx.chat.application.command.SendChatMessageCommand;
 import com.codingx.chat.domain.model.ChatConversation;
 import com.codingx.chat.domain.model.ChatExecutionStep;
 import com.codingx.chat.domain.model.ChatExecutionRun;
+import com.codingx.chat.domain.model.ChatAttachment;
 import com.codingx.chat.domain.model.ChatMessage;
 import com.codingx.chat.domain.model.ChatMessageRole;
 import com.codingx.chat.domain.model.ChatMessageStatus;
@@ -101,6 +102,7 @@ public class ChatApplicationService {
      */
     private final ChatMcpExecutionService chatMcpExecutionService;
     private final ChatMcpRepository chatMcpRepository;
+    private final ChatAttachmentService chatAttachmentService;
 
     /**
      * 意图节点仓储依赖。
@@ -129,6 +131,7 @@ public class ChatApplicationService {
     private final com.codingx.support.ai.TokenCounterService tokenCounterService;
     private final com.codingx.support.ai.LlmResponseCleaner llmResponseCleaner;
     private final ExecutorService searchExecutor;
+    private final RuntimeSettingService runtimeSettingService;
 
     /**
      * 发送 sendMessage 处理的消息或请求。
@@ -146,8 +149,16 @@ public class ChatApplicationService {
         }
         chatRuntimeGuardService.ensureAccepted(command.conversationId());
         List<ChatMessage> history = new ArrayList<>(chatMessageRepository.findByConversationId(command.conversationId()));
+        List<ChatAttachment> validatedAttachments = chatAttachmentService.requireOwnedAttachments(
+            command.attachmentIds(),
+            command.conversationId(),
+            userId
+        );
         ChatMessage userMessage = ChatMessage.userMessage(command.conversationId(), command.content()).attachRun(runId);
         chatMessageRepository.save(userMessage);
+        for (ChatAttachment attachment : validatedAttachments) {
+            chatAttachmentService.bindToMessage(attachment, command.conversationId(), userMessage.getId(), runId);
+        }
         chatStreamPublisher.publishUserMessage(command.conversationId(), userMessage.getContent());
         history.add(userMessage);
         ConversationRewriteResult rewriteResult = conversationRewriteService.rewriteResult(
@@ -534,13 +545,18 @@ public class ChatApplicationService {
      */
     private List<SearchReferenceCandidate> executeSearchQuestions(List<String> searchQuestions, Long runId, Long conversationId) {
         List<CompletableFuture<List<SearchReferenceCandidate>>> futures = new ArrayList<>();
+        int maxParallelQuestions = Math.max(1, runtimeSettingService.searchMaxParallelQuestions());
+        List<String> effectiveQuestions = searchQuestions;
+        if (searchQuestions.size() > maxParallelQuestions) {
+            effectiveQuestions = searchQuestions.subList(0, maxParallelQuestions);
+        }
         int sequenceNo = 1;
-        for (String searchQuestion : searchQuestions) {
+        for (String searchQuestion : effectiveQuestions) {
             ChatExecutionStep searchStep = ChatExecutionStep.builder()
                 .id(cn.hutool.core.util.IdUtil.getSnowflakeNextId())
                 .runId(runId)
                 .stepType("search")
-                .stepTitle(searchQuestions.size() > 1 ? "搜索子问题 " + sequenceNo : "搜索资料")
+                .stepTitle(effectiveQuestions.size() > 1 ? "搜索子问题 " + sequenceNo : "搜索资料")
                 .stepStatus("COMPLETED")
                 .sequenceNo((long) sequenceNo++)
                 .content(searchQuestion)
@@ -607,4 +623,5 @@ public class ChatApplicationService {
         }
         return configuredMcp.getDisplayName();
     }
+
 }

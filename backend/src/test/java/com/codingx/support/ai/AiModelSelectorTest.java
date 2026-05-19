@@ -77,6 +77,22 @@ class AiModelSelectorTest {
     }
 
     /**
+     * 视觉候选应能作为普通聊天候选进入调度池，供附件路由复用。
+     */
+    @Test
+    void selectChatCandidatesIncludesVisionCandidate() {
+        AiModelSelector selector = new AiModelSelector(buildProperties(
+            candidate("qwen-plus", "bailian", "qwen-plus-latest", 1, false, false),
+            candidate("qwen3.6-plus", "bailian", "qwen3.6-plus", 2, true, true)
+        ));
+
+        List<AiModelTarget> targets = selector.selectChatCandidates("qwen3.6-plus", false);
+
+        assertEquals("qwen3.6-plus", targets.getFirst().id());
+        assertTrue(targets.stream().anyMatch(target -> Boolean.TRUE.equals(target.candidate().getSupportsVision())));
+    }
+
+    /**
      * 生成测试配置，避免依赖 Spring 配置绑定。
      * @param candidates 候选模型。
      * @return 测试配置。
@@ -85,6 +101,7 @@ class AiModelSelectorTest {
         AiProperties properties = new AiProperties();
         HashMap<String, AiProperties.Provider> providers = new HashMap<>();
         providers.put("deepseek", provider("https://api.deepseek.com/v1", "test-key"));
+        providers.put("bailian", provider("https://dashscope.aliyuncs.com/compatible-mode/v1", "test-key"));
         providers.put("stub", provider("stub://local", ""));
         properties.setProviders(providers);
 
@@ -105,15 +122,42 @@ class AiModelSelectorTest {
      * @param supportsThinking 是否支持 thinking。
      * @return 候选配置。
      */
-    private AiProperties.ChatCandidate candidate(String id, String provider, String model, int priority, boolean supportsThinking) {
+    private AiProperties.ChatCandidate candidate(
+        String id,
+        String provider,
+        String model,
+        int priority,
+        boolean supportsThinking,
+        boolean supportsVision
+    ) {
         AiProperties.ChatCandidate candidate = new AiProperties.ChatCandidate();
         candidate.setId(id);
         candidate.setProvider(provider);
         candidate.setModel(model);
         candidate.setPriority(priority);
         candidate.setSupportsThinking(supportsThinking);
+        candidate.setSupportsVision(supportsVision);
         candidate.setEnabled(true);
         return candidate;
+    }
+
+    /**
+     * 兼容既有测试调用，默认不标记视觉能力。
+     * @param id 候选 ID。
+     * @param provider provider 名称。
+     * @param model 模型名称。
+     * @param priority 优先级。
+     * @param supportsThinking 是否支持 thinking。
+     * @return 候选配置。
+     */
+    private AiProperties.ChatCandidate candidate(
+        String id,
+        String provider,
+        String model,
+        int priority,
+        boolean supportsThinking
+    ) {
+        return candidate(id, provider, model, priority, supportsThinking, false);
     }
 
     /**

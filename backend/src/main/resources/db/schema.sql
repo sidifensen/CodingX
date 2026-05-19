@@ -342,6 +342,44 @@ COMMENT ON COLUMN chat_message_artifact.content_preview IS '产物预览内容';
 COMMENT ON COLUMN chat_message_artifact.metadata_json IS '产物附加元数据 JSON 文本';
 COMMENT ON COLUMN chat_message_artifact.created_at IS '创建时间';
 
+CREATE TABLE IF NOT EXISTS chat_attachment (
+    id BIGINT PRIMARY KEY,
+    run_id BIGINT,
+    conversation_id BIGINT,
+    message_id BIGINT,
+    uploaded_by BIGINT NOT NULL,
+    attachment_type VARCHAR(32) NOT NULL,
+    file_name VARCHAR(255) NOT NULL,
+    file_ext VARCHAR(32),
+    mime_type VARCHAR(128) NOT NULL,
+    file_size BIGINT NOT NULL,
+    storage_key VARCHAR(1024) NOT NULL,
+    preview_url VARCHAR(2048),
+    content_summary TEXT,
+    status VARCHAR(32) NOT NULL DEFAULT 'UPLOADED',
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted SMALLINT NOT NULL DEFAULT 0
+);
+COMMENT ON TABLE chat_attachment IS '聊天附件表，记录用户上传文件与消息绑定关系';
+COMMENT ON COLUMN chat_attachment.id IS '附件主键 ID';
+COMMENT ON COLUMN chat_attachment.run_id IS '所属执行记录 ID';
+COMMENT ON COLUMN chat_attachment.conversation_id IS '所属会话 ID';
+COMMENT ON COLUMN chat_attachment.message_id IS '所属消息 ID';
+COMMENT ON COLUMN chat_attachment.uploaded_by IS '上传人用户 ID';
+COMMENT ON COLUMN chat_attachment.attachment_type IS '附件类型 image 或 file';
+COMMENT ON COLUMN chat_attachment.file_name IS '原始文件名';
+COMMENT ON COLUMN chat_attachment.file_ext IS '文件扩展名';
+COMMENT ON COLUMN chat_attachment.mime_type IS '文件 MIME 类型';
+COMMENT ON COLUMN chat_attachment.file_size IS '文件字节大小';
+COMMENT ON COLUMN chat_attachment.storage_key IS '对象存储键';
+COMMENT ON COLUMN chat_attachment.preview_url IS '附件预览地址';
+COMMENT ON COLUMN chat_attachment.content_summary IS '附件解析摘要';
+COMMENT ON COLUMN chat_attachment.status IS '附件状态';
+COMMENT ON COLUMN chat_attachment.created_at IS '创建时间';
+COMMENT ON COLUMN chat_attachment.updated_at IS '更新时间';
+COMMENT ON COLUMN chat_attachment.deleted IS '逻辑删除标记 0未删除 1已删除';
+
 CREATE TABLE IF NOT EXISTS chat_intent_node (
     id BIGINT PRIMARY KEY,
     intent_code VARCHAR(128) NOT NULL UNIQUE,
@@ -541,25 +579,31 @@ COMMENT ON COLUMN chat_sample_question.created_at IS '创建时间';
 COMMENT ON COLUMN chat_sample_question.updated_at IS '更新时间';
 COMMENT ON COLUMN chat_sample_question.deleted IS '是否删除 0：正常 1：删除';
 
-CREATE TABLE IF NOT EXISTS chat_runtime_setting (
+CREATE TABLE IF NOT EXISTS setting (
     id BIGINT PRIMARY KEY,
     setting_key VARCHAR(128) NOT NULL UNIQUE,
     setting_value TEXT NOT NULL,
     value_type VARCHAR(32) NOT NULL,
+    category_code VARCHAR(64) NOT NULL DEFAULT 'general',
     description VARCHAR(255),
+    sort_no INTEGER NOT NULL DEFAULT 0,
+    restart_required BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     deleted SMALLINT NOT NULL DEFAULT 0
 );
-COMMENT ON TABLE chat_runtime_setting IS '聊天运行时配置表';
-COMMENT ON COLUMN chat_runtime_setting.id IS '主键ID';
-COMMENT ON COLUMN chat_runtime_setting.setting_key IS '配置键';
-COMMENT ON COLUMN chat_runtime_setting.setting_value IS '配置值';
-COMMENT ON COLUMN chat_runtime_setting.value_type IS '值类型';
-COMMENT ON COLUMN chat_runtime_setting.description IS '配置说明';
-COMMENT ON COLUMN chat_runtime_setting.created_at IS '创建时间';
-COMMENT ON COLUMN chat_runtime_setting.updated_at IS '更新时间';
-COMMENT ON COLUMN chat_runtime_setting.deleted IS '是否删除 0：正常 1：删除';
+COMMENT ON TABLE setting IS '系统配置表';
+COMMENT ON COLUMN setting.id IS '主键ID';
+COMMENT ON COLUMN setting.setting_key IS '配置键';
+COMMENT ON COLUMN setting.setting_value IS '配置值';
+COMMENT ON COLUMN setting.value_type IS '值类型';
+COMMENT ON COLUMN setting.category_code IS '配置分类编码';
+COMMENT ON COLUMN setting.description IS '配置说明';
+COMMENT ON COLUMN setting.sort_no IS '分类内排序号';
+COMMENT ON COLUMN setting.restart_required IS '是否需要重启生效';
+COMMENT ON COLUMN setting.created_at IS '创建时间';
+COMMENT ON COLUMN setting.updated_at IS '更新时间';
+COMMENT ON COLUMN setting.deleted IS '是否删除 0：正常 1：删除';
 
 CREATE TABLE IF NOT EXISTS mcp (
     id BIGINT PRIMARY KEY,
@@ -694,6 +738,9 @@ CREATE INDEX IF NOT EXISTS idx_chat_message_reference_run ON chat_message_refere
 CREATE INDEX IF NOT EXISTS idx_chat_message_reference_conversation ON chat_message_reference (conversation_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_chat_message_artifact_run ON chat_message_artifact (run_id, created_at ASC);
 CREATE INDEX IF NOT EXISTS idx_chat_message_artifact_conversation ON chat_message_artifact (conversation_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_chat_attachment_uploaded_by ON chat_attachment (uploaded_by, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_chat_attachment_conversation ON chat_attachment (conversation_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_chat_attachment_message ON chat_attachment (message_id, created_at ASC);
 CREATE INDEX IF NOT EXISTS idx_chat_intent_node_parent ON chat_intent_node (parent_code, sort_no ASC);
 CREATE INDEX IF NOT EXISTS idx_chat_intent_node_kind_sort ON chat_intent_node (kind, sort_order ASC);
 CREATE INDEX IF NOT EXISTS idx_chat_trace_run_conversation ON chat_trace_run (conversation_id, created_at DESC);
@@ -701,7 +748,7 @@ CREATE INDEX IF NOT EXISTS idx_chat_trace_run_task ON chat_trace_run (task_id);
 CREATE INDEX IF NOT EXISTS idx_chat_trace_node_trace_depth ON chat_trace_node (trace_id, depth ASC, created_at ASC);
 CREATE INDEX IF NOT EXISTS idx_chat_query_term_mapping_source ON chat_query_term_mapping (source_term, enabled, priority ASC);
 CREATE INDEX IF NOT EXISTS idx_chat_sample_question_enabled ON chat_sample_question (enabled, sort_no ASC);
-CREATE INDEX IF NOT EXISTS idx_chat_runtime_setting_key ON chat_runtime_setting (setting_key, deleted);
+CREATE INDEX IF NOT EXISTS idx_setting_category_sort_deleted ON setting (category_code, sort_no, deleted);
 CREATE INDEX IF NOT EXISTS idx_mcp_enabled_sort ON mcp (enabled, sort_no ASC);
 CREATE INDEX IF NOT EXISTS idx_tool_enabled_sort ON tool (enabled, sort_no ASC);
 CREATE INDEX IF NOT EXISTS idx_skill_enabled_sort ON skill (enabled, sort_no ASC);

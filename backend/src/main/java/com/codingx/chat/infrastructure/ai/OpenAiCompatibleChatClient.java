@@ -1,9 +1,13 @@
 package com.codingx.chat.infrastructure.ai;
 
 import cn.hutool.core.util.StrUtil;
+import cn.hutool.core.codec.Base64;
 import cn.hutool.json.JSONObject;
 import cn.hutool.json.JSONUtil;
+import com.codingx.chat.domain.model.ChatAttachment;
 import com.codingx.chat.domain.model.ChatMessage;
+import com.codingx.chat.domain.model.ChatMessageRole;
+import com.codingx.chat.application.service.ChatAttachmentService;
 import com.codingx.support.ai.AiConversationRequest;
 import com.codingx.support.ai.AiModelTarget;
 import com.codingx.support.ai.AiProviderClient;
@@ -37,6 +41,7 @@ public class OpenAiCompatibleChatClient implements AiProviderClient {
 
     private final OkHttpClient okHttpClient;
     private final OpenAiStyleStreamParser openAiStyleStreamParser;
+    private final ChatAttachmentService chatAttachmentService;
 
     @Override
     public String provider() {
@@ -134,7 +139,7 @@ public class OpenAiCompatibleChatClient implements AiProviderClient {
             .set("model", target.candidate().getModel())
             .set("stream", request.stream())
             .set("messages", request.messages().stream()
-                .map(this::toMessagePayload)
+                .map(message -> toMessagePayload(message, request.attachments()))
                 .collect(Collectors.toList()));
         if (request.thinkingEnabled()) {
             // 百炼和兼容 provider 需要显式开关才会在流式响应中返回 reasoning_content。
@@ -148,7 +153,36 @@ public class OpenAiCompatibleChatClient implements AiProviderClient {
      * @param message 聊天消息。
      * @return JSON 消息对象。
      */
-    private Object toMessagePayload(ChatMessage message) {
+    private Object toMessagePayload(ChatMessage message, java.util.List<ChatAttachment> attachments) {
+        java.util.List<ChatAttachment> messageAttachments = attachments == null
+            ? java.util.List.of()
+            : attachments.stream()
+                .filter(attachment -> attachment.getMessageId() != null && attachment.getMessageId().equals(message.getId()))
+                .toList();
+        if (message.getRole() == ChatMessageRole.USER && !messageAttachments.isEmpty()) {
+            java.util.List<Object> contentItems = new java.util.ArrayList<>();
+            if (StrUtil.isNotBlank(message.getContent())) {
+                contentItems.add(JSONUtil.createObj()
+                    .set("type", "text")
+                    .set("text", message.getContent()));
+            }
+            for (ChatAttachment attachment : messageAttachments) {
+                if (!"image".equalsIgnoreCase(attachment.getAttachmentType())) {
+                    continue;
+                }
+                byte[] bytes = chatAttachmentService.downloadContent(attachment);
+                String base64 = Base64.encode(bytes);
+                String dataUrl = "data:" + attachment.getMimeType() + ";base64," + base64;
+                contentItems.add(JSONUtil.createObj()
+                    .set("type", "image_url")
+                    .set("image_url", JSONUtil.createObj().set("url", dataUrl)));
+            }
+            if (!contentItems.isEmpty()) {
+                return JSONUtil.createObj()
+                    .set("role", message.getRole().name().toLowerCase())
+                    .set("content", contentItems);
+            }
+        }
         return JSONUtil.createObj()
             .set("role", message.getRole().name().toLowerCase())
             .set("content", message.getContent());

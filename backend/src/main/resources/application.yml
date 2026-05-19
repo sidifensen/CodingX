@@ -115,6 +115,14 @@ app:
           priority: 2
           enabled: true
           supports-thinking: true
+        # 视觉附件优先路由到这个候选，确保图片不会误发给纯文本模型。
+        - id: qwen3.6-plus
+          provider: bailian
+          model: ${BAILIAN_VISION_MODEL:qwen3.6-plus}
+          priority: 2
+          enabled: true
+          supports-thinking: true
+          supports-vision: true
         - id: glm-4.7
           provider: siliconflow
           model: ${SILICONFLOW_CHAT_MODEL:Pro/zai-org/GLM-4.7}
@@ -162,3 +170,4 @@ rustfs:
   region: ${RUSTFS_REGION:us-east-1}
   bucket: ${RUSTFS_BUCKET:codingx-skills}
   skill-prefix: ${RUSTFS_SKILL_PREFIX:chat-skills/packages}
+  attachment-prefix: ${RUSTFS_ATTACHMENT_PREFIX:chat/attachments}

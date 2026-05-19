@@ -104,6 +104,7 @@ class ChatStreamControllerTest {
                     && map.get("deepThinking").equals(true)
                     && map.get("mcpCodes").equals(List.of("sales_query"))
                     && map.get("skillCodes").equals(List.of("ticket_query"))
+                    && map.get("attachmentIds").equals(List.of())
                     && map.containsKey("taskId"))
             );
             verify(chatStreamExecutionService).dispatch(
@@ -111,7 +112,8 @@ class ChatStreamControllerTest {
                     && command.content().equals("你好")
                     && command.deepThinking()
                     && command.mcpCodes().equals(List.of("sales_query"))
-                    && command.skillCodes().equals(List.of("ticket_query"))),
+                    && command.skillCodes().equals(List.of("ticket_query"))
+                    && command.attachmentIds().isEmpty()),
                 eq(1001L)
             );
         }
@@ -148,6 +150,7 @@ class ChatStreamControllerTest {
                     && map.get("deepThinking").equals(false)
                     && map.get("mcpCodes").equals(List.of("sales_query"))
                     && map.get("skillCodes").equals(List.of("ticket_query"))
+                    && map.get("attachmentIds").equals(List.of())
                     && map.containsKey("taskId"))
             );
             verify(chatStreamExecutionService).dispatch(
@@ -155,7 +158,8 @@ class ChatStreamControllerTest {
                     && command.content().equals("新的问题")
                     && !command.deepThinking()
                     && command.mcpCodes().equals(List.of("sales_query"))
-                    && command.skillCodes().equals(List.of("ticket_query"))),
+                    && command.skillCodes().equals(List.of("ticket_query"))
+                    && command.attachmentIds().isEmpty()),
                 eq(1001L)
             );
         }
@@ -195,7 +199,8 @@ class ChatStreamControllerTest {
                     && command.content().equals("查询销售")
                     && !command.deepThinking()
                     && command.mcpCodes().equals(List.of("sales_query"))
-                    && command.skillCodes().equals(List.of("ticket_query", "sales_query"))),
+                    && command.skillCodes().equals(List.of("ticket_query", "sales_query"))
+                    && command.attachmentIds().isEmpty()),
                 eq(1001L)
             );
         }
@@ -271,7 +276,8 @@ class ChatStreamControllerTest {
             verify(chatStreamExecutionService).dispatch(
                 argThat(command -> command.conversationId().equals(5001L)
                     && command.content().equals("请分析最近订单趋势")
-                    && command.skillCodes().equals(List.of("agent-browser"))),
+                    && command.skillCodes().equals(List.of("agent-browser"))
+                    && command.attachmentIds().isEmpty()),
                 eq(1001L)
             );
         }
@@ -304,7 +310,48 @@ class ChatStreamControllerTest {
             verify(chatStreamExecutionService).dispatch(
                 argThat(command -> command.conversationId().equals(6001L)
                     && command.content().equals("请分析代码")
-                    && command.repositoryPath().equals("D:/code/codingx")),
+                    && command.repositoryPath().equals("D:/code/codingx")
+                    && command.attachmentIds().isEmpty()),
+                eq(1001L)
+            );
+        }
+    }
+
+    /**
+     * 显式传入附件主键时，应透传至消息命令并同步回写到 meta 事件，便于前端确认当前发送上下文。
+     */
+    @Test
+    void streamChatPassesAttachmentIdsToCommand() {
+        SseEmitter emitter = new SseEmitter(0L);
+        whenRegisterReturns(emitter);
+        when(chatConversationApplicationService.listMessages(7001L, 1001L)).thenReturn(List.of(
+            ChatMessage.userMessage(7001L, "历史消息")
+        ));
+        try (MockedStatic<StpUtil> mocked = Mockito.mockStatic(StpUtil.class)) {
+            mocked.when(StpUtil::getLoginIdAsLong).thenReturn(1001L);
+
+            SseEmitter actual = chatStreamController.streamChat(
+                "请结合图片分析",
+                7001L,
+                false,
+                null,
+                null,
+                null,
+                null,
+                "9001,9002,9002,invalid"
+            );
+
+            assertEquals(emitter, actual);
+            verify(chatSseRegistry).publish(
+                eq(7001L),
+                eq("meta"),
+                argThat(payload -> payload instanceof java.util.Map<?, ?> map
+                    && map.get("attachmentIds").equals(List.of(9001L, 9002L)))
+            );
+            verify(chatStreamExecutionService).dispatch(
+                argThat(command -> command.conversationId().equals(7001L)
+                    && command.content().equals("请结合图片分析")
+                    && command.attachmentIds().equals(List.of(9001L, 9002L))),
                 eq(1001L)
             );
         }

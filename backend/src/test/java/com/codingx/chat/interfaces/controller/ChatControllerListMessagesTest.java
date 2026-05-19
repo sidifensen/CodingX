@@ -7,9 +7,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import cn.dev33.satoken.stp.StpUtil;
 import com.codingx.chat.application.service.ChatApplicationService;
+import com.codingx.chat.application.service.ChatAttachmentService;
 import com.codingx.chat.application.service.ChatConversationApplicationService;
 import com.codingx.chat.application.service.ChatReactionService;
 import com.codingx.chat.application.service.ChatRuntimeGuardService;
+import com.codingx.chat.domain.model.ChatAttachment;
 import com.codingx.chat.domain.model.ChatMessage;
 import com.codingx.chat.domain.model.ChatMessageStatus;
 import com.codingx.skill.domain.repository.ChatSkillRepository;
@@ -42,6 +44,9 @@ class ChatControllerListMessagesTest {
     private ChatRuntimeGuardService chatRuntimeGuardService;
 
     @Mock
+    private ChatAttachmentService chatAttachmentService;
+
+    @Mock
     private ChatReactionService chatReactionService;
 
     @Mock
@@ -69,6 +74,24 @@ class ChatControllerListMessagesTest {
             null
         ).attachRun(2055117498822955008L);
         when(chatConversationApplicationService.listMessages(2055114974648864768L, 1002L)).thenReturn(List.of(assistantMessage));
+        when(chatAttachmentService.listByMessageId(2055117513431715840L)).thenReturn(List.of(
+            ChatAttachment.builder()
+                .id(2055117513431715999L)
+                .messageId(2055117513431715840L)
+                .conversationId(2055114974648864768L)
+                .attachmentType("image")
+                .fileName("demo.png")
+                .fileExt("png")
+                .mimeType("image/png")
+                .fileSize(2048L)
+                .previewUrl("/api/chat/attachments/2055117513431715999/content")
+                .status("UPLOADED")
+                .createdAt(java.time.LocalDateTime.now())
+                .updatedAt(java.time.LocalDateTime.now())
+                .uploadedBy(1002L)
+                .deleted(0)
+                .build()
+        ));
 
         try (MockedStatic<StpUtil> mocked = Mockito.mockStatic(StpUtil.class)) {
             mocked.when(StpUtil::getLoginIdAsLong).thenReturn(1002L);
@@ -76,7 +99,8 @@ class ChatControllerListMessagesTest {
             mockMvc().perform(get("/api/chat/conversations/2055114974648864768/messages"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data[0].id").value("2055117513431715840"))
-                .andExpect(jsonPath("$.data[0].conversationId").value("2055114974648864768"));
+                .andExpect(jsonPath("$.data[0].conversationId").value("2055114974648864768"))
+                .andExpect(jsonPath("$.data[0].attachments[0].id").value("2055117513431715999"));
         }
     }
 

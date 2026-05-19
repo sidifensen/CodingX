@@ -2,6 +2,7 @@ package com.codingx.chat.interfaces.response;
 import com.codingx.chat.domain.model.ChatMessageRole;
 import com.codingx.chat.domain.model.ChatMessageStatus;
 import java.time.LocalDateTime;
+import java.util.List;
 
 /**
  * 定义 ChatMessageResponse 使用的数据载体。
@@ -17,6 +18,7 @@ public record ChatMessageResponse(
     String provider, // 提供方标识。
     String model, // 模型标识。
     String errorMessage, // 错误信息。
-    LocalDateTime createdAt // 创建时间。
+    LocalDateTime createdAt, // 创建时间。
+    List<ChatAttachmentResponse> attachments // 关联附件。
 ) {
 }

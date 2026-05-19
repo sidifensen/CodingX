@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import cn.hutool.json.JSONObject;
 import cn.hutool.json.JSONUtil;
 import com.codingx.chat.domain.model.ChatMessage;
+import com.codingx.chat.application.service.ChatAttachmentService;
 import com.codingx.config.AiProperties;
 import com.codingx.support.ai.AiConversationRequest;
 import com.codingx.support.ai.AiModelTarget;
@@ -24,6 +25,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import okhttp3.OkHttpClient;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
 
 /**
  * 验证 OpenAI 兼容 provider 会按深度思考契约下发请求体，并转发上游 reasoning_content。
@@ -65,7 +67,8 @@ class OpenAiCompatibleChatClientTest {
 
         OpenAiCompatibleChatClient client = new OpenAiCompatibleChatClient(
             new OkHttpClient.Builder().readTimeout(5, TimeUnit.SECONDS).build(),
-            new OpenAiStyleStreamParser()
+            new OpenAiStyleStreamParser(),
+            Mockito.mock(ChatAttachmentService.class)
         );
         List<String> thinkingDeltas = new CopyOnWriteArrayList<>();
         List<String> contentDeltas = new CopyOnWriteArrayList<>();

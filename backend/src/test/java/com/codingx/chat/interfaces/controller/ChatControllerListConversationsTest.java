@@ -7,6 +7,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import cn.dev33.satoken.stp.StpUtil;
 import com.codingx.chat.application.service.ChatApplicationService;
+import com.codingx.chat.application.service.ChatAttachmentService;
 import com.codingx.chat.application.service.ChatConversationApplicationService;
 import com.codingx.chat.application.service.ChatReactionService;
 import com.codingx.chat.application.service.ChatRuntimeGuardService;
@@ -41,6 +42,9 @@ class ChatControllerListConversationsTest {
 
     @Mock
     private ChatRuntimeGuardService chatRuntimeGuardService;
+
+    @Mock
+    private ChatAttachmentService chatAttachmentService;
 
     @Mock
     private ChatReactionService chatReactionService;

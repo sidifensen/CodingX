@@ -2,6 +2,7 @@ package com.codingx.chat.application.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -54,6 +55,8 @@ class ChatApplicationSearchFlowTest {
     @Mock private com.codingx.support.ai.TokenCounterService tokenCounterService;
     @Mock private com.codingx.support.ai.LlmResponseCleaner llmResponseCleaner;
     @Mock private ChatMcpRepository chatMcpRepository;
+    @Mock private ChatAttachmentService chatAttachmentService;
+    @Mock private RuntimeSettingService runtimeSettingService;
     private final ExecutorService searchExecutor = Executors.newSingleThreadExecutor();
 
     @InjectMocks
@@ -74,10 +77,12 @@ class ChatApplicationSearchFlowTest {
         ChatConversation conversation = ChatConversation.create(1L, "New Conversation", 1002L, ChatConversationStatus.ACTIVE);
         when(chatConversationRepository.requireById(1L)).thenReturn(conversation);
         when(chatMessageRepository.findByConversationId(1L)).thenReturn(new ArrayList<>());
+        when(chatAttachmentService.requireOwnedAttachments(any(), eq(1L), eq(1002L))).thenReturn(List.of());
         when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
             new ConversationRewriteResult("请搜索 Spring Boot SSE", false, List.of("请搜索 Spring Boot SSE"))
         );
         when(conversationSummaryService.buildModelHistory(any(), any())).thenAnswer(invocation -> invocation.getArgument(1));
+        when(runtimeSettingService.searchMaxParallelQuestions()).thenReturn(3);
         when(conversationIntentService.route("请搜索 Spring Boot SSE", false)).thenReturn(
             new ConversationIntentDecision("search.web", ConversationIntentAction.SEARCH, null)
         );
@@ -112,10 +117,12 @@ class ChatApplicationSearchFlowTest {
         ChatConversation conversation = ChatConversation.create(1L, "New Conversation", 1002L, ChatConversationStatus.ACTIVE);
         when(chatConversationRepository.requireById(1L)).thenReturn(conversation);
         when(chatMessageRepository.findByConversationId(1L)).thenReturn(new ArrayList<>());
+        when(chatAttachmentService.requireOwnedAttachments(any(), eq(1L), eq(1002L))).thenReturn(List.of());
         when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
             new ConversationRewriteResult("介绍 OA 系统和保险系统", true, List.of("介绍 OA 系统", "介绍 保险系统"))
         );
         when(conversationSummaryService.buildModelHistory(any(), any())).thenAnswer(invocation -> invocation.getArgument(1));
+        when(runtimeSettingService.searchMaxParallelQuestions()).thenReturn(3);
         when(conversationIntentService.route("介绍 OA 系统和保险系统", false)).thenReturn(
             new ConversationIntentDecision("biz-oa-intro", ConversationIntentAction.SEARCH, null)
         );

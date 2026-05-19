@@ -1,7 +1,11 @@
 package com.codingx.chat.infrastructure.ai;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
+import com.codingx.chat.application.service.ChatAttachmentService;
+import com.codingx.chat.domain.model.ChatAttachment;
 import com.codingx.chat.domain.model.ChatMessage;
 import com.codingx.chat.domain.service.AiChatClient;
 import com.codingx.config.AiProperties;
@@ -29,12 +33,15 @@ class RoutingAiChatClientTest {
      */
     @Test
     void streamChatBridgesLegacyHandlerToDispatchService() {
+        ChatAttachmentService chatAttachmentService = mock(ChatAttachmentService.class);
+        when(chatAttachmentService.listByMessageId(1L)).thenReturn(List.of());
         RoutingAiChatClient client = new RoutingAiChatClient(
             new AiModelDispatchService(
                 List.of(new EchoProvider()),
                 new AiProviderHealthRegistry(2, 30_000L),
                 new AiModelSelector(buildAiProperties())
-            )
+            ),
+            chatAttachmentService
         );
         List<String> deltas = new ArrayList<>();
         List<String> terminals = new ArrayList<>();

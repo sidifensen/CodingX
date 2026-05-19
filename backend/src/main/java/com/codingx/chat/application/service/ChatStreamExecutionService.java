@@ -1,12 +1,16 @@
 package com.codingx.chat.application.service;
 
+import cn.hutool.core.util.StrUtil;
 import com.codingx.chat.application.command.SendChatMessageCommand;
 import com.codingx.chat.domain.model.ChatExecutionRun;
 import com.codingx.chat.domain.model.ChatTraceRun;
 import com.codingx.chat.domain.repository.ChatExecutionRunRepository;
 import com.codingx.skill.domain.repository.ChatSkillRepository;
 import com.codingx.mcp.domain.repository.ChatMcpRepository;
+import com.codingx.tool.application.service.ChatToolExecutionContext;
 import java.time.LocalDateTime;
+import java.nio.file.Path;
+import java.util.Optional;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicReference;
@@ -26,6 +30,7 @@ public class ChatStreamExecutionService {
     private final ChatExecutionRunRepository chatExecutionRunRepository;
     private final ChatMcpRepository chatMcpRepository;
     private final ChatSkillRepository chatSkillRepository;
+    private final ChatWorkspaceBindingService chatWorkspaceBindingService;
     private final ExecutorService executor;
 
     /**
@@ -42,6 +47,7 @@ public class ChatStreamExecutionService {
         ChatExecutionRunRepository chatExecutionRunRepository,
         ChatMcpRepository chatMcpRepository,
         ChatSkillRepository chatSkillRepository,
+        ChatWorkspaceBindingService chatWorkspaceBindingService,
         @Qualifier("chatStreamExecutor")
         ExecutorService executor
     ) {
@@ -51,6 +57,7 @@ public class ChatStreamExecutionService {
         this.chatExecutionRunRepository = chatExecutionRunRepository;
         this.chatMcpRepository = chatMcpRepository;
         this.chatSkillRepository = chatSkillRepository;
+        this.chatWorkspaceBindingService = chatWorkspaceBindingService;
         this.executor = executor;
     }
 
@@ -86,6 +93,7 @@ public class ChatStreamExecutionService {
             try {
                 ChatExecutionContext.start(runId);
                 ConversationTraceContext.bind(traceRun);
+                bindToolWorkingDirectory(command, userId);
                 chatApplicationService.sendMessage(command, userId);
             } catch (Throwable throwable) {
                 markRunFailed(runId, command.conversationId(), throwable);
@@ -94,9 +102,28 @@ public class ChatStreamExecutionService {
                 chatRuntimeGuardService.completeConversation(command.conversationId());
                 ChatExecutionContext.clear();
                 ConversationTraceContext.clear();
+                ChatToolExecutionContext.clear();
             }
         });
         futureRef.set(future);
+    }
+
+    /**
+     * 将会话绑定仓库目录注入工具执行线程上下文，优先使用消息显式传参。
+     * @param command 聊天命令。
+     * @param userId 当前用户标识。
+     */
+    private void bindToolWorkingDirectory(SendChatMessageCommand command, Long userId) {
+        if (StrUtil.isNotBlank(command.repositoryPath())) {
+            try {
+                ChatToolExecutionContext.bindToolWorkingDirectory(Path.of(command.repositoryPath()));
+                return;
+            } catch (Exception ignored) {
+                // repositoryPath 非法时回退用户默认绑定，避免单次异常参数阻断对话链路。
+            }
+        }
+        Optional<Path> boundRepositoryPath = chatWorkspaceBindingService.findRepositoryPathByUserId(userId);
+        boundRepositoryPath.ifPresent(ChatToolExecutionContext::bindToolWorkingDirectory);
     }
 
     /**

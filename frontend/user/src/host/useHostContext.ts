@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { resolveHostBridge } from './bridge';
 import { HostContext } from './types';
+import { AuthStorage } from '../utils/authStorage';
+import { ChatApi } from '../views/chat/chatApi';
 
 /**
  * 管理宿主上下文读取与本地仓库绑定交互。
@@ -14,6 +16,7 @@ export function useHostContext() {
   const reloadContext = useCallback(async () => {
     setErrorMessage('');
     const context = await bridge.getContext();
+    window.localStorage.setItem('codingx.host.context', JSON.stringify(context));
     setHostContext(context);
     return context;
   }, [bridge]);
@@ -25,6 +28,7 @@ export function useHostContext() {
       try {
         const context = await bridge.getContext();
         if (!cancelled) {
+          window.localStorage.setItem('codingx.host.context', JSON.stringify(context));
           setHostContext(context);
         }
       } catch (error) {
@@ -57,6 +61,11 @@ export function useHostContext() {
         throw new Error('未授予本地文件访问权限');
       }
       const nextContext = await bridge.bindRepositoryPath(selectedPath);
+      const token = AuthStorage.getSession()?.token ?? null;
+      if (token) {
+        await ChatApi.bindWorkspaceRepository(token, selectedPath);
+      }
+      window.localStorage.setItem('codingx.host.context', JSON.stringify(nextContext));
       setHostContext(nextContext);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : '绑定本地仓库失败');

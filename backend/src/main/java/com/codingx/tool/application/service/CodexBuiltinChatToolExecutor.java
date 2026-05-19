@@ -150,7 +150,7 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
         }
         try {
             Process process = new ProcessBuilder(resolveShellCommand(command))
-                .directory(Path.of("").toAbsolutePath().toFile())
+                .directory(resolveToolWorkingDirectory().toFile())
                 .start();
             String sessionId = "cmd-" + UUID.fastUUID().toString(true);
             CommandSession session = new CommandSession(
@@ -217,33 +217,319 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
     }
 
     /**
-     * 按 patch 文本做可应用性检查，不直接改动生产文件。
+     * 按 patch 文本真实应用到工作目录，并返回差异摘要，供前端确认改动结果。
      */
     private ChatToolExecutionResult executeApplyPatch(ToolInput input) {
         String patchText = prefer(input.object().getStr("patch"), extractPatchBlock(input.raw()));
         if (StrUtil.isBlank(patchText)) {
             throw new BusinessException("CHAT_TOOL_PATCH_REQUIRED", "请提供 patch 内容");
         }
+        Path workingDirectory = resolveToolWorkingDirectory();
+        long startedAt = System.currentTimeMillis();
         try {
-            Path tempPatch = Files.createTempFile("chat-tool-", ".patch");
-            FileUtil.writeUtf8String(patchText, tempPatch.toFile());
-            CommandExecution execution = runCommand(
-                "git apply --check \"" + tempPatch.toAbsolutePath().toString() + "\"",
-                10000L
+            applyPatchText(workingDirectory, patchText);
+            CommandExecution diffExecution = runCommand(
+                "git diff -- .",
+                10000L,
+                workingDirectory
             );
-            FileUtil.del(tempPatch.toFile());
             Map<String, Object> metadata = new LinkedHashMap<>();
-            metadata.put("validated", execution.exitCode() == 0);
-            metadata.put("exitCode", execution.exitCode());
-            metadata.put("durationMs", execution.durationMs());
+            metadata.put("applied", Boolean.TRUE);
+            metadata.put("exitCode", 0);
+            metadata.put("durationMs", System.currentTimeMillis() - startedAt);
+            metadata.put("workingDirectory", workingDirectory.toString());
+            metadata.put("diffPreview", StrUtil.blankToDefault(diffExecution.output(), "未检测到差异"));
             return new ChatToolExecutionResult(
                 "apply_patch",
-                execution.exitCode() == 0 ? "Patch 语法与上下文检查通过" : execution.output(),
+                "Patch 已应用",
                 metadata
             );
+        } catch (BusinessException exception) {
+            throw exception;
         } catch (Exception exception) {
-            throw new BusinessException("CHAT_TOOL_APPLY_PATCH_FAILED", "Patch 检查失败: " + exception.getMessage());
+            throw new BusinessException("CHAT_TOOL_APPLY_PATCH_FAILED", "Patch 应用失败: " + exception.getMessage());
         }
+    }
+
+    /**
+     * 根据 patch 内容类型选择应用策略：优先处理 Codex 风格补丁，其次回退 git apply。
+     * @param workingDirectory 工具工作目录。
+     * @param patchText 原始 patch 文本。
+     */
+    private void applyPatchText(Path workingDirectory, String patchText) {
+        String normalizedPatch = normalizeLineEnding(patchText);
+        if (normalizedPatch.contains("*** Begin Patch")) {
+            applyCodexStylePatch(workingDirectory, normalizedPatch);
+            return;
+        }
+        applyGitStylePatch(workingDirectory, normalizedPatch);
+    }
+
+    /**
+     * 使用 git apply 应用标准 unified diff。
+     * @param workingDirectory 工具工作目录。
+     * @param patchText patch 文本。
+     */
+    private void applyGitStylePatch(Path workingDirectory, String patchText) {
+        Path tempPatch = null;
+        try {
+            tempPatch = Files.createTempFile("chat-tool-", ".patch");
+            FileUtil.writeUtf8String(patchText, tempPatch.toFile());
+            CommandExecution checkExecution = runCommand(
+                "git apply --check \"" + tempPatch.toAbsolutePath() + "\"",
+                10000L,
+                workingDirectory
+            );
+            if (checkExecution.exitCode() != 0) {
+                throw new BusinessException(
+                    "CHAT_TOOL_APPLY_PATCH_FAILED",
+                    StrUtil.blankToDefault(checkExecution.output(), "Patch 校验失败")
+                );
+            }
+            CommandExecution applyExecution = runCommand(
+                "git apply \"" + tempPatch.toAbsolutePath() + "\"",
+                10000L,
+                workingDirectory
+            );
+            if (applyExecution.exitCode() != 0) {
+                throw new BusinessException(
+                    "CHAT_TOOL_APPLY_PATCH_FAILED",
+                    StrUtil.blankToDefault(applyExecution.output(), "Patch 应用失败")
+                );
+            }
+        } catch (BusinessException exception) {
+            throw exception;
+        } catch (Exception exception) {
+            throw new BusinessException("CHAT_TOOL_APPLY_PATCH_FAILED", "Patch 应用失败: " + exception.getMessage());
+        } finally {
+            if (tempPatch != null) {
+                FileUtil.del(tempPatch.toFile());
+            }
+        }
+    }
+
+    /**
+     * 解析并应用 Codex `*** Begin Patch` 语法，覆盖 update/add/delete 三类文件操作。
+     * @param workingDirectory 工具工作目录。
+     * @param patchText Codex 补丁文本。
+     */
+    private void applyCodexStylePatch(Path workingDirectory, String patchText) {
+        String[] lines = patchText.split("\n", -1);
+        int lineIndex = 0;
+        while (lineIndex < lines.length && !StrUtil.equals(lines[lineIndex], "*** Begin Patch")) {
+            lineIndex++;
+        }
+        if (lineIndex >= lines.length) {
+            throw new BusinessException("CHAT_TOOL_APPLY_PATCH_FAILED", "Patch 缺少 Begin 标记");
+        }
+        lineIndex++;
+        while (lineIndex < lines.length) {
+            String line = lines[lineIndex];
+            if (StrUtil.equals(line, "*** End Patch")) {
+                return;
+            }
+            if (StrUtil.startWith(line, "*** Update File: ")) {
+                String filePath = StrUtil.removePrefix(line, "*** Update File: ").trim();
+                lineIndex++;
+                String moveToPath = null;
+                if (lineIndex < lines.length && StrUtil.startWith(lines[lineIndex], "*** Move to: ")) {
+                    moveToPath = StrUtil.removePrefix(lines[lineIndex], "*** Move to: ").trim();
+                    lineIndex++;
+                }
+                List<String> updateLines = new ArrayList<>();
+                while (lineIndex < lines.length && !isCodexPatchBoundary(lines[lineIndex])) {
+                    updateLines.add(lines[lineIndex]);
+                    lineIndex++;
+                }
+                applyCodexUpdateFile(workingDirectory, filePath, moveToPath, updateLines);
+                continue;
+            }
+            if (StrUtil.startWith(line, "*** Add File: ")) {
+                String filePath = StrUtil.removePrefix(line, "*** Add File: ").trim();
+                lineIndex++;
+                List<String> addLines = new ArrayList<>();
+                while (lineIndex < lines.length && !isCodexPatchBoundary(lines[lineIndex])) {
+                    addLines.add(lines[lineIndex]);
+                    lineIndex++;
+                }
+                applyCodexAddFile(workingDirectory, filePath, addLines);
+                continue;
+            }
+            if (StrUtil.startWith(line, "*** Delete File: ")) {
+                String filePath = StrUtil.removePrefix(line, "*** Delete File: ").trim();
+                Path targetPath = resolvePatchTargetPath(workingDirectory, filePath);
+                FileUtil.del(targetPath.toFile());
+                lineIndex++;
+                continue;
+            }
+            lineIndex++;
+        }
+        throw new BusinessException("CHAT_TOOL_APPLY_PATCH_FAILED", "Patch 缺少 End 标记");
+    }
+
+    /**
+     * 应用 Codex 风格的 Update File 操作。
+     * @param workingDirectory 工具工作目录。
+     * @param filePath 源文件相对路径。
+     * @param moveToPath 可选目标路径。
+     * @param updateLines 变更行集合。
+     */
+    private void applyCodexUpdateFile(Path workingDirectory, String filePath, String moveToPath, List<String> updateLines) {
+        Path sourcePath = resolvePatchTargetPath(workingDirectory, filePath);
+        if (!Files.exists(sourcePath) || !Files.isRegularFile(sourcePath)) {
+            throw new BusinessException("CHAT_TOOL_APPLY_PATCH_FAILED", "待更新文件不存在: " + filePath);
+        }
+        try {
+            String originalContent = normalizeLineEnding(Files.readString(sourcePath, StandardCharsets.UTF_8));
+            String updatedContent = applyCodexHunks(originalContent, updateLines);
+            Path targetPath = moveToPath == null ? sourcePath : resolvePatchTargetPath(workingDirectory, moveToPath);
+            if (targetPath.getParent() != null) {
+                Files.createDirectories(targetPath.getParent());
+            }
+            Files.writeString(targetPath, updatedContent, StandardCharsets.UTF_8);
+            if (moveToPath != null && !sourcePath.equals(targetPath)) {
+                FileUtil.del(sourcePath.toFile());
+            }
+        } catch (BusinessException exception) {
+            throw exception;
+        } catch (Exception exception) {
+            throw new BusinessException("CHAT_TOOL_APPLY_PATCH_FAILED", "更新文件失败: " + exception.getMessage());
+        }
+    }
+
+    /**
+     * 应用 Codex 风格的 Add File 操作。
+     * @param workingDirectory 工具工作目录。
+     * @param filePath 新文件相对路径。
+     * @param addLines 新增内容行集合。
+     */
+    private void applyCodexAddFile(Path workingDirectory, String filePath, List<String> addLines) {
+        Path targetPath = resolvePatchTargetPath(workingDirectory, filePath);
+        try {
+            if (targetPath.getParent() != null) {
+                Files.createDirectories(targetPath.getParent());
+            }
+            List<String> contentLines = new ArrayList<>();
+            for (String line : addLines) {
+                if (StrUtil.startWith(line, "+")) {
+                    contentLines.add(StrUtil.removePrefix(line, "+"));
+                }
+            }
+            String content = String.join("\n", contentLines);
+            if (!contentLines.isEmpty()) {
+                content += "\n";
+            }
+            Files.writeString(targetPath, content, StandardCharsets.UTF_8);
+        } catch (Exception exception) {
+            throw new BusinessException("CHAT_TOOL_APPLY_PATCH_FAILED", "新增文件失败: " + exception.getMessage());
+        }
+    }
+
+    /**
+     * 将 Update File 中的 hunk 变更应用到原始文本。
+     * @param originalContent 原始文件内容。
+     * @param updateLines 变更行集合。
+     * @return 变更后文本。
+     */
+    private String applyCodexHunks(String originalContent, List<String> updateLines) {
+        List<List<String>> hunks = splitCodexHunks(updateLines);
+        String updatedContent = originalContent;
+        for (List<String> hunk : hunks) {
+            String oldFragment = buildCodexFragment(hunk, true);
+            String newFragment = buildCodexFragment(hunk, false);
+            if (StrUtil.isBlank(oldFragment)) {
+                updatedContent = updatedContent + newFragment;
+                continue;
+            }
+            int index = updatedContent.indexOf(oldFragment);
+            if (index < 0) {
+                throw new BusinessException("CHAT_TOOL_APPLY_PATCH_FAILED", "Patch 上下文不匹配，无法定位修改位置");
+            }
+            updatedContent = updatedContent.substring(0, index)
+                + newFragment
+                + updatedContent.substring(index + oldFragment.length());
+        }
+        return updatedContent;
+    }
+
+    /**
+     * 按 `@@` 分段拆解 Codex patch 的 hunk。
+     * @param updateLines 变更行集合。
+     * @return hunk 列表。
+     */
+    private List<List<String>> splitCodexHunks(List<String> updateLines) {
+        List<List<String>> hunks = new ArrayList<>();
+        List<String> currentHunk = new ArrayList<>();
+        for (String line : updateLines) {
+            if (StrUtil.startWith(line, "@@")) {
+                if (!currentHunk.isEmpty()) {
+                    hunks.add(currentHunk);
+                    currentHunk = new ArrayList<>();
+                }
+                continue;
+            }
+            currentHunk.add(line);
+        }
+        if (!currentHunk.isEmpty()) {
+            hunks.add(currentHunk);
+        }
+        if (hunks.isEmpty()) {
+            hunks.add(updateLines);
+        }
+        return hunks;
+    }
+
+    /**
+     * 根据 hunk 行构造旧片段或新片段文本。
+     * @param hunk hunk 行集合。
+     * @param oldFragment true 表示构造旧片段，false 表示构造新片段。
+     * @return 片段文本。
+     */
+    private String buildCodexFragment(List<String> hunk, boolean oldFragment) {
+        List<String> lines = new ArrayList<>();
+        for (String line : hunk) {
+            if (StrUtil.equals(line, "*** End of File") || StrUtil.startWith(line, "\\ No newline")) {
+                continue;
+            }
+            if (StrUtil.startWith(line, " ")) {
+                lines.add(StrUtil.subSuf(line, 1));
+                continue;
+            }
+            if (oldFragment && StrUtil.startWith(line, "-")) {
+                lines.add(StrUtil.subSuf(line, 1));
+                continue;
+            }
+            if (!oldFragment && StrUtil.startWith(line, "+")) {
+                lines.add(StrUtil.subSuf(line, 1));
+            }
+        }
+        return String.join("\n", lines);
+    }
+
+    /**
+     * 判断当前行是否进入下一个文件块或 patch 结束边界。
+     * @param line 当前行文本。
+     * @return 是否边界行。
+     */
+    private boolean isCodexPatchBoundary(String line) {
+        return StrUtil.equals(line, "*** End Patch")
+            || StrUtil.startWith(line, "*** Update File: ")
+            || StrUtil.startWith(line, "*** Add File: ")
+            || StrUtil.startWith(line, "*** Delete File: ");
+    }
+
+    /**
+     * 解析 patch 内相对路径并限制在当前工作目录内，避免越界写入。
+     * @param workingDirectory 工具工作目录。
+     * @param relativePath patch 相对路径。
+     * @return 解析后的绝对路径。
+     */
+    private Path resolvePatchTargetPath(Path workingDirectory, String relativePath) {
+        Path resolvedPath = workingDirectory.resolve(relativePath).toAbsolutePath().normalize();
+        if (!resolvedPath.startsWith(workingDirectory.toAbsolutePath().normalize())) {
+            throw new BusinessException("CHAT_TOOL_APPLY_PATCH_FAILED", "Patch 路径越界，已拒绝执行");
+        }
+        return resolvedPath;
     }
 
     /**
@@ -801,10 +1087,21 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
     }
 
     private CommandExecution runCommand(String command, long timeoutMs) {
+        return runCommand(command, timeoutMs, resolveToolWorkingDirectory());
+    }
+
+    /**
+     * 在指定目录执行命令并返回标准输出/错误输出。
+     * @param command 命令文本。
+     * @param timeoutMs 超时毫秒数。
+     * @param workingDirectory 工作目录。
+     * @return 命令执行结果。
+     */
+    private CommandExecution runCommand(String command, long timeoutMs, Path workingDirectory) {
         long start = System.currentTimeMillis();
         try {
             Process process = new ProcessBuilder(resolveShellCommand(command))
-                .directory(Path.of("").toAbsolutePath().toFile())
+                .directory(workingDirectory.toFile())
                 .start();
             String stdout = readStream(process.getInputStream());
             String stderr = readStream(process.getErrorStream());
@@ -824,6 +1121,17 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
         } catch (Exception exception) {
             throw new BusinessException("CHAT_TOOL_COMMAND_FAILED", "命令执行失败: " + exception.getMessage());
         }
+    }
+
+    /**
+     * 解析工具执行目录，优先使用聊天线程绑定路径，未绑定时回退当前工作目录。
+     * @return 规范化后的工作目录。
+     */
+    private Path resolveToolWorkingDirectory() {
+        return ChatToolExecutionContext.currentToolWorkingDirectory()
+            .map(Path::toAbsolutePath)
+            .map(Path::normalize)
+            .orElseGet(() -> Path.of("").toAbsolutePath().normalize());
     }
 
     private String[] resolveShellCommand(String command) {
@@ -909,6 +1217,15 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
             return windowsPath;
         }
         return ReUtil.get("(/[^\\s]+\\.csv)", raw, 1);
+    }
+
+    /**
+     * 统一将文本换行规范为 LF，避免 Windows 与 Unix 行尾差异影响 patch 匹配。
+     * @param text 原始文本。
+     * @return 规范化文本。
+     */
+    private String normalizeLineEnding(String text) {
+        return StrUtil.nullToEmpty(text).replace("\r\n", "\n").replace('\r', '\n');
     }
 
     private String buildCommandOutput(String stdout, String stderr, int exitCode) {

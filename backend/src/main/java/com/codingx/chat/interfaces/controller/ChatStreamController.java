@@ -65,7 +65,9 @@ public class ChatStreamController {
         @RequestParam(required = false) Long conversationId,
         @RequestParam(required = false) Boolean deepThinking,
         @RequestParam(required = false) String mcpCodes,
-        @RequestParam(required = false) String skillCodes
+        @RequestParam(required = false) String skillCodes,
+        @RequestParam(required = false) String repositoryPath,
+        @RequestParam(required = false) String messages
     ) {
         StpUtil.checkLogin();
         Long userId = StpUtil.getLoginIdAsLong();
@@ -73,7 +75,9 @@ public class ChatStreamController {
         boolean deepThinkingEnabled = Boolean.TRUE.equals(deepThinking);
         // 步骤：同一入口同时支持 MCP 与技能绑定，分别解析后传入运行时，避免语义混淆。
         List<String> selectedMcpCodes = resolveMcpCodes(mcpCodes);
-        List<String> selectedSkillCodes = resolveSkillCodes(skillCodes);
+        StructuredMessageParseResult structuredMessageParseResult = resolveStructuredMessages(messages);
+        String actualQuestion = StrUtil.blankToDefault(structuredMessageParseResult.content(), question);
+        List<String> selectedSkillCodes = resolveSkillCodes(skillCodes, structuredMessageParseResult.skillCodes());
         SseEmitter emitter = chatSseRegistry.register(actualConversationId);
         Long taskId = cn.hutool.core.util.IdUtil.getSnowflakeNextId();
         chatSseRegistry.publish(actualConversationId, "meta", Map.of(
@@ -84,7 +88,14 @@ public class ChatStreamController {
             "skillCodes", selectedSkillCodes
         ));
         chatStreamExecutionService.dispatch(
-            new SendChatMessageCommand(actualConversationId, question, deepThinkingEnabled, selectedMcpCodes, selectedSkillCodes),
+            new SendChatMessageCommand(
+                actualConversationId,
+                actualQuestion,
+                deepThinkingEnabled,
+                selectedMcpCodes,
+                selectedSkillCodes,
+                StrUtil.trimToNull(repositoryPath)
+            ),
             userId
         );
         return emitter;
@@ -98,7 +109,47 @@ public class ChatStreamController {
      * @return SSE emitter。
      */
     public SseEmitter streamChat(String question, Long conversationId, Boolean deepThinking) {
-        return streamChat(question, conversationId, deepThinking, null, null);
+        return streamChat(question, conversationId, deepThinking, null, null, null, null);
+    }
+
+    /**
+     * 兼容旧调用签名，允许显式 MCP 与技能编码。
+     * @param question 用户问题。
+     * @param conversationId 会话标识。
+     * @param deepThinking 是否深度思考。
+     * @param mcpCodes 显式 MCP 编码。
+     * @param skillCodes 显式技能编码。
+     * @return SSE emitter。
+     */
+    public SseEmitter streamChat(
+        String question,
+        Long conversationId,
+        Boolean deepThinking,
+        String mcpCodes,
+        String skillCodes
+    ) {
+        return streamChat(question, conversationId, deepThinking, mcpCodes, skillCodes, null, null);
+    }
+
+    /**
+     * 兼容传入结构化消息但未显式提供 repositoryPath 的调用签名。
+     * @param question 用户问题。
+     * @param conversationId 会话标识。
+     * @param deepThinking 是否深度思考。
+     * @param mcpCodes 显式 MCP 编码。
+     * @param skillCodes 显式技能编码。
+     * @param messages 结构化消息 JSON。
+     * @return SSE emitter。
+     */
+    public SseEmitter streamChat(
+        String question,
+        Long conversationId,
+        Boolean deepThinking,
+        String mcpCodes,
+        String skillCodes,
+        String messages
+    ) {
+        return streamChat(question, conversationId, deepThinking, mcpCodes, skillCodes, null, messages);
     }
 
     /**
@@ -153,7 +204,10 @@ public class ChatStreamController {
      * @param skillCodesParam 查询参数字符串。
      * @return 规范化技能编码列表。
      */
-    private List<String> resolveSkillCodes(String skillCodesParam) {
+    private List<String> resolveSkillCodes(String skillCodesParam, List<String> parsedSkillCodes) {
+        if (parsedSkillCodes != null && !parsedSkillCodes.isEmpty()) {
+            return parsedSkillCodes;
+        }
         if (skillCodesParam != null) {
             return StrUtil.splitTrim(skillCodesParam, ',').stream()
                 .map(String::trim)
@@ -165,5 +219,60 @@ public class ChatStreamController {
             .map(ChatSkill::getSkillCode)
             .filter(StrUtil::isNotBlank)
             .toList();
+    }
+
+    /**
+     * 解析结构化消息，仅提取技能命令与正文文本，避免技能语法污染自然语言内容。
+     * @param messagesParam 前端传入的结构化消息 JSON。
+     * @return 技能与文本解析结果。
+     */
+    private StructuredMessageParseResult resolveStructuredMessages(String messagesParam) {
+        if (StrUtil.isBlank(messagesParam)) {
+            return new StructuredMessageParseResult(List.of(), null);
+        }
+        try {
+            cn.hutool.json.JSONArray messagesArray = cn.hutool.json.JSONUtil.parseArray(messagesParam);
+            List<String> parsedSkillCodes = new java.util.ArrayList<>();
+            String parsedTextContent = null;
+            for (Object messageItem : messagesArray) {
+                cn.hutool.json.JSONObject messageObject = cn.hutool.json.JSONUtil.parseObj(messageItem);
+                String type = StrUtil.trimToEmpty(messageObject.getStr("type"));
+                cn.hutool.json.JSONObject dataObject = messageObject.getJSONObject("data");
+                if (dataObject == null) {
+                    continue;
+                }
+                if ("slash_command".equalsIgnoreCase(type)) {
+                    String commandType = StrUtil.trimToEmpty(dataObject.getStr("command_type"));
+                    String command = StrUtil.trimToEmpty(dataObject.getStr("command"));
+                    if ("skill".equalsIgnoreCase(commandType) && StrUtil.isNotBlank(command)) {
+                        parsedSkillCodes.add(command);
+                    }
+                    continue;
+                }
+                if ("text".equalsIgnoreCase(type)) {
+                    String content = StrUtil.trimToNull(dataObject.getStr("content"));
+                    if (content != null) {
+                        parsedTextContent = content;
+                    }
+                }
+            }
+            List<String> normalizedSkillCodes = parsedSkillCodes.stream()
+                .map(String::trim)
+                .filter(StrUtil::isNotBlank)
+                .distinct()
+                .collect(Collectors.toList());
+            return new StructuredMessageParseResult(normalizedSkillCodes, parsedTextContent);
+        } catch (Exception ignored) {
+            // 结构化消息解析失败时回退到普通文本模式，避免阻断发送链路。
+            return new StructuredMessageParseResult(List.of(), null);
+        }
+    }
+
+    /**
+     * 结构化消息解析结果。
+     * @param skillCodes 解析出的技能编码列表。
+     * @param content 解析出的最终问题正文。
+     */
+    private record StructuredMessageParseResult(List<String> skillCodes, String content) {
     }
 }

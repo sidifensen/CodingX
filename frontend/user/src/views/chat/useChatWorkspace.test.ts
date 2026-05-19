@@ -1,5 +1,5 @@
 import { renderHook, waitFor } from '@testing-library/react';
-import { useChatWorkspace } from './useChatWorkspace';
+import { buildStreamRequestUrl, useChatWorkspace } from './useChatWorkspace';
 
 /**
  * 验证聊天工作区初始化策略，避免技能在首次进入时被默认全选。
@@ -189,6 +189,46 @@ describe('useChatWorkspace', () => {
     ]);
     expect(result.current.currentMcps).toEqual([
       expect.objectContaining({ mcpCode: 'sales_query', displayName: '销售查询' }),
+    ]);
+  });
+
+  /**
+   * 技能输入应被序列化为结构化技能消息，避免将技能标记直接作为普通问题文本发送。
+   */
+  it('应在构建流请求时按技能类型生成结构化消息', () => {
+    const requestUrl = buildStreamRequestUrl(
+      '@sales_query 请分析订单趋势',
+      '2001',
+      false,
+      true,
+      ['sales_query'],
+      ['sales_query'],
+    );
+    const searchParams = new URLSearchParams(requestUrl.split('?')[1] ?? '');
+
+    expect(searchParams.get('question')).toBe('请分析订单趋势');
+    expect(searchParams.get('skillCodes')).toBe('sales_query');
+    const messagePayload = JSON.parse(searchParams.get('messages') ?? '[]');
+    expect(messagePayload).toEqual([
+      {
+        type: 'slash_command',
+        data: {
+          id: '^/sales_query/SKILL.md',
+          command: 'sales_query',
+          command_type: 'skill',
+          parameters: {
+            argCount: 0,
+            hasArgumentsVar: false,
+            parameterValues: {},
+          },
+        },
+      },
+      {
+        type: 'text',
+        data: {
+          content: '请分析订单趋势',
+        },
+      },
     ]);
   });
 });

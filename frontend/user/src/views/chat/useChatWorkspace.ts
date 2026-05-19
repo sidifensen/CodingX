@@ -232,6 +232,7 @@ export function useChatWorkspace(
           mcpConnected,
           selectedMcpCodes,
           selectedSkillCodes,
+          resolveBoundRepositoryPathFromStorage(),
         ),
         {
           headers: {
@@ -669,16 +670,18 @@ export function useChatWorkspace(
  * @param conversationId 当前选中的会话标识。
  * @returns 可直接用于 fetch 的 SSE 地址。
  */
-function buildStreamRequestUrl(
+export function buildStreamRequestUrl(
   question: string,
   conversationId: string | null,
   deepThinkingEnabled: boolean,
   mcpConnected: boolean,
   selectedMcpCodes: string[],
   selectedSkillCodes: string[],
+  repositoryPath?: string | null,
 ) {
+  const skillMessageParseResult = parseSkillMessage(question);
   const searchParams = new URLSearchParams({
-    question,
+    question: skillMessageParseResult.question,
   });
   if (conversationId != null) {
     searchParams.set('conversationId', String(conversationId));
@@ -692,7 +695,75 @@ function buildStreamRequestUrl(
   if (selectedSkillCodes.length > 0) {
     searchParams.set('skillCodes', selectedSkillCodes.join(','));
   }
+  if (repositoryPath && repositoryPath.trim().length > 0) {
+    searchParams.set('repositoryPath', repositoryPath);
+  }
+  if (skillMessageParseResult.structuredMessages.length > 0) {
+    searchParams.set('messages', JSON.stringify(skillMessageParseResult.structuredMessages));
+  }
   return `/api/chat/stream?${searchParams.toString()}`;
+}
+
+/**
+ * 从本地存储读取桌面端已绑定仓库目录。
+ * @returns 已绑定目录或空。
+ */
+function resolveBoundRepositoryPathFromStorage(): string | null {
+  try {
+    const raw = window.localStorage.getItem('codingx.host.context');
+    if (!raw) {
+      return null;
+    }
+    const parsed = JSON.parse(raw) as {
+      localResource?: { boundRepositoryPath?: string | null };
+    };
+    return parsed.localResource?.boundRepositoryPath ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 解析技能命令输入，生成结构化消息并返回纯文本问题。
+ * @param rawQuestion 原始输入。
+ * @returns 解析结果。
+ */
+function parseSkillMessage(rawQuestion: string): {
+  question: string;
+  structuredMessages: Array<Record<string, unknown>>;
+} {
+  const question = rawQuestion.trim();
+  const skillMatch = question.match(/^@([a-zA-Z0-9_-]+)\s*(.*)$/);
+  if (!skillMatch) {
+    return { question, structuredMessages: [] };
+  }
+  const skillCode = skillMatch[1];
+  const textContent = (skillMatch[2] ?? '').trim();
+  const structuredMessages: Array<Record<string, unknown>> = [
+    {
+      type: 'slash_command',
+      data: {
+        id: `^/${skillCode}/SKILL.md`,
+        command: skillCode,
+        command_type: 'skill',
+        parameters: {
+          argCount: 0,
+          hasArgumentsVar: false,
+          parameterValues: {},
+        },
+      },
+    },
+    {
+      type: 'text',
+      data: {
+        content: textContent,
+      },
+    },
+  ];
+  return {
+    question: textContent,
+    structuredMessages,
+  };
 }
 
 /**

@@ -68,6 +68,9 @@ class ChatStreamExecutionServiceTest {
     @Mock
     private ChatMcpRepository chatMcpRepository;
 
+    @Mock
+    private ChatWorkspaceBindingService chatWorkspaceBindingService;
+
     /**
      * 释放测试线程池，避免用例之间残留后台线程。
      */
@@ -91,6 +94,7 @@ class ChatStreamExecutionServiceTest {
             chatExecutionRunRepository,
             chatMcpRepository,
             chatSkillRepository,
+            chatWorkspaceBindingService,
             executorService
         );
         org.mockito.Mockito.doAnswer(invocation -> {
@@ -127,6 +131,7 @@ class ChatStreamExecutionServiceTest {
             chatExecutionRunRepository,
             chatMcpRepository,
             chatSkillRepository,
+            chatWorkspaceBindingService,
             executorService
         );
         try (org.mockito.MockedStatic<cn.dev33.satoken.stp.StpUtil> mocked = org.mockito.Mockito.mockStatic(cn.dev33.satoken.stp.StpUtil.class)) {
@@ -163,6 +168,7 @@ class ChatStreamExecutionServiceTest {
             chatExecutionRunRepository,
             chatMcpRepository,
             chatSkillRepository,
+            chatWorkspaceBindingService,
             executorService
         );
         org.mockito.Mockito.doAnswer(invocation -> {
@@ -198,6 +204,7 @@ class ChatStreamExecutionServiceTest {
             chatExecutionRunRepository,
             chatMcpRepository,
             chatSkillRepository,
+            chatWorkspaceBindingService,
             executorService
         );
         org.mockito.Mockito.when(conversationTraceRecordService.startTrace("chat-entry", 1001L, 2001L))
@@ -232,6 +239,7 @@ class ChatStreamExecutionServiceTest {
             chatExecutionRunRepository,
             chatMcpRepository,
             chatSkillRepository,
+            chatWorkspaceBindingService,
             executorService
         );
         ChatTraceRun traceRun = ChatTraceRun.builder().traceId("trace-error").traceName("chat-entry").build();
@@ -272,6 +280,7 @@ class ChatStreamExecutionServiceTest {
             chatExecutionRunRepository,
             chatMcpRepository,
             chatSkillRepository,
+            chatWorkspaceBindingService,
             executorService
         );
         org.mockito.Mockito.doAnswer(invocation -> {

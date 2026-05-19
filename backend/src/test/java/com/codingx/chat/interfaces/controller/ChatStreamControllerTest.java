@@ -224,6 +224,93 @@ class ChatStreamControllerTest {
     }
 
     /**
+     * 显式传入结构化 messages 时，应优先解析技能命令与文本内容，避免技能命令被当作普通文本。
+     */
+    @Test
+    void streamChatParsesStructuredMessagesForSkillAndText() {
+        SseEmitter emitter = new SseEmitter(0L);
+        whenRegisterReturns(emitter);
+        when(chatConversationApplicationService.listMessages(5001L, 1001L)).thenReturn(List.of(
+            ChatMessage.userMessage(5001L, "历史消息")
+        ));
+        try (MockedStatic<StpUtil> mocked = Mockito.mockStatic(StpUtil.class)) {
+            mocked.when(StpUtil::getLoginIdAsLong).thenReturn(1001L);
+
+            SseEmitter actual = chatStreamController.streamChat(
+                "@sales_query 这段文本不应生效",
+                5001L,
+                false,
+                null,
+                null,
+                """
+                [
+                  {
+                    "type":"slash_command",
+                    "data":{
+                      "id":"^/agent-browser/SKILL.md",
+                      "command":"agent-browser",
+                      "command_type":"skill",
+                      "parameters":{"argCount":0,"hasArgumentsVar":false,"parameterValues":{}}
+                    }
+                  },
+                  {
+                    "type":"text",
+                    "data":{"content":"请分析最近订单趋势"}
+                  }
+                ]
+                """
+            );
+
+            assertEquals(emitter, actual);
+            verify(chatSseRegistry).publish(
+                eq(5001L),
+                eq("meta"),
+                argThat(payload -> payload instanceof java.util.Map<?, ?> map
+                    && map.get("skillCodes").equals(List.of("agent-browser")))
+            );
+            verify(chatStreamExecutionService).dispatch(
+                argThat(command -> command.conversationId().equals(5001L)
+                    && command.content().equals("请分析最近订单趋势")
+                    && command.skillCodes().equals(List.of("agent-browser"))),
+                eq(1001L)
+            );
+        }
+    }
+
+    /**
+     * 显式传入 repositoryPath 时，应透传到消息命令供后续工具执行使用。
+     */
+    @Test
+    void streamChatPassesRepositoryPathToCommand() {
+        SseEmitter emitter = new SseEmitter(0L);
+        whenRegisterReturns(emitter);
+        when(chatConversationApplicationService.listMessages(6001L, 1001L)).thenReturn(List.of(
+            ChatMessage.userMessage(6001L, "历史消息")
+        ));
+        try (MockedStatic<StpUtil> mocked = Mockito.mockStatic(StpUtil.class)) {
+            mocked.when(StpUtil::getLoginIdAsLong).thenReturn(1001L);
+
+            SseEmitter actual = chatStreamController.streamChat(
+                "请分析代码",
+                6001L,
+                false,
+                "code_search",
+                "agent-browser",
+                "D:/code/codingx",
+                null
+            );
+
+            assertEquals(emitter, actual);
+            verify(chatStreamExecutionService).dispatch(
+                argThat(command -> command.conversationId().equals(6001L)
+                    && command.content().equals("请分析代码")
+                    && command.repositoryPath().equals("D:/code/codingx")),
+                eq(1001L)
+            );
+        }
+    }
+
+    /**
      * @param emitter 预期返回的 emitter。
      */
     private void whenRegisterReturns(SseEmitter emitter) {

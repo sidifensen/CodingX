@@ -271,4 +271,37 @@ describe('ChatApi', () => {
     expect(result[0].id).toBe('7001');
     expect(result[0].mcpCode).toBe('sales_query');
   });
+
+  /**
+   * 绑定本地仓库路径应命中用户态工作区绑定接口。
+   */
+  it('应提交本地仓库路径绑定请求', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          success: true,
+          code: 'OK',
+          message: 'workspace bound',
+          data: {
+            repositoryPath: 'D:/code/codingx',
+          },
+        }),
+        { status: 200 },
+      ),
+    );
+
+    const result = await ChatApi.bindWorkspaceRepository('token-123', 'D:/code/codingx');
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      '/api/chat/workspace/bind-repository',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ repositoryPath: 'D:/code/codingx' }),
+        headers: expect.objectContaining({
+          satoken: 'token-123',
+        }),
+      }),
+    );
+    expect(result.repositoryPath).toBe('D:/code/codingx');
+  });
 });

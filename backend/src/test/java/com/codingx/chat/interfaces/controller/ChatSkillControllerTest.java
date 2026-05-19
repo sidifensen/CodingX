@@ -54,6 +54,29 @@ class ChatSkillControllerTest {
     }
 
     /**
+     * 聊天工作区技能接口兼容路径应返回与标准路径一致的数据结构。
+     */
+    @Test
+    void listEnabledSkillsReturnsRowsForChatPath() throws Exception {
+        when(chatSkillQueryService.listEnabledSkills()).thenReturn(List.of(
+            ChatSkill.builder()
+                .id(7101L)
+                .skillCode("conversation-core")
+                .displayName("会话核心")
+                .category("核心能力")
+                .enabled(1)
+                .sortNo(1)
+                .build()
+        ));
+
+        mockMvc().perform(get("/api/chat/skills"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.success").value(true))
+            .andExpect(jsonPath("$.data[0].skillCode").value("conversation-core"))
+            .andExpect(jsonPath("$.data[0].displayName").value("会话核心"));
+    }
+
+    /**
      * 构造测试用 MockMvc 并启用全局异常处理。
      * @return MockMvc。
      */

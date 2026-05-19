@@ -223,6 +223,27 @@ export class ChatApi {
   }
 
   /**
+   * 绑定当前用户在桌面端选中的本地仓库目录，供后端工具执行链路复用。
+   * @param token 当前登录令牌。
+   * @param repositoryPath 本地仓库绝对路径。
+   * @returns 规范化后的仓库路径。
+   */
+  static async bindWorkspaceRepository(
+    token: string,
+    repositoryPath: string,
+  ): Promise<{ repositoryPath: string }> {
+    const envelope = await this.request<{ repositoryPath: string }>(
+      '/api/chat/workspace/bind-repository',
+      token,
+      {
+        method: 'POST',
+        body: JSON.stringify({ repositoryPath }),
+      },
+    );
+    return envelope.data;
+  }
+
+  /**
    * 统一执行带鉴权的 JSON 请求。
    * @param path 接口路径。
    * @param token 当前登录令牌。

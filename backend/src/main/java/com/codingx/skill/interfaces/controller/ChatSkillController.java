@@ -13,12 +13,16 @@ import org.springframework.web.bind.annotation.RestController;
  * 提供用户侧聊天技能查询接口。
  */
 @RestController
-@RequestMapping("/api/skills")
+@RequestMapping({"/api/skills", "/api/chat/skills"})
 @RequiredArgsConstructor
 public class ChatSkillController {
 
     private final ChatSkillQueryService chatSkillQueryService;
 
+    /**
+     * 查询当前启用技能列表，兼容用户侧旧路径与新路径。
+     * @return 技能列表。
+     */
     @GetMapping
     public ApiResponse<List<ChatSkill>> listEnabledSkills() {
         return ApiResponse.success(chatSkillQueryService.listEnabledSkills());

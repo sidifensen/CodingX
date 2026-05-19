@@ -1,4 +1,4 @@
-package com.codingx.support.ai;
+package com.codingx.common.support.ai;
 
 import com.codingx.config.AiProperties;
 
@@ -14,3 +14,4 @@ public record AiModelTarget(
     AiProperties.Provider provider
 ) {
 }
+

@@ -104,6 +104,8 @@ describe('Tools page', () => {
     render(<ToolsPage />);
 
     expect(await screen.findByRole('heading', { name: '工具管理' })).toBeInTheDocument();
+    expect(screen.queryByText('工具列表')).not.toBeInTheDocument();
+    expect(screen.queryByText('统一展示工具配置与执行器状态，支持探测、调用和配置维护。')).not.toBeInTheDocument();
     expect(AdminChatApi.listTools).toHaveBeenCalledTimes(1);
     expect(AdminChatApi.listToolHealthViews).toHaveBeenCalledTimes(1);
     expect(screen.getByText('/shell_command')).toBeInTheDocument();

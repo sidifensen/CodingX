@@ -1,10 +1,10 @@
 package com.codingx.chat.infrastructure.ai;
 
-import com.codingx.support.ai.AiConversationRequest;
-import com.codingx.support.ai.AiModelTarget;
-import com.codingx.support.ai.AiProviderClient;
-import com.codingx.support.ai.AiStreamSession;
-import com.codingx.support.ai.AiStreamHandler;
+import com.codingx.common.support.ai.AiConversationRequest;
+import com.codingx.common.support.ai.AiModelTarget;
+import com.codingx.common.support.ai.AiProviderClient;
+import com.codingx.common.support.ai.AiStreamSession;
+import com.codingx.common.support.ai.AiStreamHandler;
 import java.util.concurrent.CompletableFuture;
 import org.springframework.stereotype.Component;
 
@@ -30,3 +30,4 @@ public class StubAiChatClient implements AiProviderClient {
         return new AiStreamSession(() -> {}, CompletableFuture.completedFuture(null));
     }
 }
+

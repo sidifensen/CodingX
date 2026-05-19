@@ -12,6 +12,7 @@ vi.mock('../api/adminChatApi', () => ({
     createSkill: vi.fn(),
     updateSkill: vi.fn(),
     uploadSkillPackage: vi.fn(),
+    migrateSkillPackages: vi.fn(),
     listSkillPackageEntries: vi.fn(),
     getSkillPackageFileContent: vi.fn(),
     listTools: vi.fn(),
@@ -66,6 +67,12 @@ describe('Skills page', () => {
       enabled: 1,
       sortNo: 3,
     } as any);
+    vi.mocked(AdminChatApi.migrateSkillPackages).mockResolvedValue({
+      total: 2,
+      migrated: 1,
+      skipped: 1,
+      failures: [],
+    } as any);
     vi.mocked(AdminChatApi.listSkillPackageEntries).mockResolvedValue([
       { path: 'SKILL.md', name: 'SKILL.md', directory: false, size: 1200 },
       { path: 'templates', name: 'templates', directory: true, size: null },
@@ -90,6 +97,8 @@ describe('Skills page', () => {
     render(<Skills />);
 
     expect(await screen.findByRole('heading', { name: '技能管理 (Skills)' })).toBeInTheDocument();
+    expect(screen.queryByText('技能列表')).not.toBeInTheDocument();
+    expect(screen.queryByText('统一展示技能配置信息，支持资源预览与编辑。')).not.toBeInTheDocument();
 
     await waitFor(() => {
       expect(AdminChatApi.listSkills).toHaveBeenCalledTimes(1);
@@ -242,11 +251,49 @@ describe('Skills page', () => {
     fireEvent.click(within(dialog).getByRole('button', { name: '确认上传' }));
 
     await waitFor(() => {
-      expect(AdminChatApi.uploadSkillPackage).toHaveBeenCalledWith(file, '文档处理');
+      expect(AdminChatApi.uploadSkillPackage).toHaveBeenCalledWith(file, '文档处理', []);
     });
     await waitFor(() => {
       expect(AdminChatApi.listSkills).toHaveBeenCalledTimes(2);
     });
+  });
+
+  /**
+   * 技能管理页应支持上传文件夹并触发目录上传接口参数。
+   */
+  it('supports upload skill folder in skills page', async () => {
+    render(<Skills />);
+    await screen.findByText('/sales_query');
+
+    fireEvent.click(screen.getByRole('button', { name: '上传技能包' }));
+    const dialog = await screen.findByRole('dialog', { name: '上传技能包' });
+    const folderInput = within(dialog).getByLabelText('技能文件夹') as HTMLInputElement;
+    const fileA = new File(['manifest'], 'SKILL.md', { type: 'text/markdown' });
+    const fileB = new File(['prompt'], 'prompt.txt', { type: 'text/plain' });
+    fireEvent.change(folderInput, { target: { files: [fileA, fileB] } });
+    fireEvent.change(within(dialog).getByLabelText('分类（可选）'), { target: { value: '文档处理' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: '确认上传' }));
+
+    await waitFor(() => {
+      expect(AdminChatApi.uploadSkillPackage).toHaveBeenCalledWith(null, '文档处理', [fileA, fileB]);
+    });
+  });
+
+  /**
+   * 上传弹窗应支持触发历史技能包迁移并显示结果摘要。
+   */
+  it('supports migrate legacy skill packages in upload dialog', async () => {
+    render(<Skills />);
+    await screen.findByText('/sales_query');
+
+    fireEvent.click(screen.getByRole('button', { name: '上传技能包' }));
+    const dialog = await screen.findByRole('dialog', { name: '上传技能包' });
+    fireEvent.click(within(dialog).getByRole('button', { name: '迁移历史技能包' }));
+
+    await waitFor(() => {
+      expect(AdminChatApi.migrateSkillPackages).toHaveBeenCalledTimes(1);
+    });
+    expect(within(dialog).getByText('迁移完成：总计 2，成功 1，跳过 1，失败 0')).toBeInTheDocument();
   });
 
   /**

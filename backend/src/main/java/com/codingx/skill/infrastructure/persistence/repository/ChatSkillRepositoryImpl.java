@@ -187,6 +187,7 @@ public class ChatSkillRepositoryImpl implements ChatSkillRepository {
         dataObject.setEnabled(skill.getEnabled());
         dataObject.setSortNo(skill.getSortNo());
         dataObject.setStorageKey(skill.getStorageKey());
+        dataObject.setPackageStorageFormat(skill.getPackageStorageFormat());
         dataObject.setPackageFileName(skill.getPackageFileName());
         dataObject.setPackageSize(skill.getPackageSize());
         dataObject.setPackageChecksum(skill.getPackageChecksum());
@@ -209,6 +210,7 @@ public class ChatSkillRepositoryImpl implements ChatSkillRepository {
             .enabled(dataObject.getEnabled())
             .sortNo(dataObject.getSortNo())
             .storageKey(dataObject.getStorageKey())
+            .packageStorageFormat(dataObject.getPackageStorageFormat())
             .packageFileName(dataObject.getPackageFileName())
             .packageSize(dataObject.getPackageSize())
             .packageChecksum(dataObject.getPackageChecksum())

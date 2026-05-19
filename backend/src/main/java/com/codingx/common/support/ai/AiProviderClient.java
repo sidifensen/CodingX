@@ -1,4 +1,4 @@
-package com.codingx.support.ai;
+package com.codingx.common.support.ai;
 
 /**
  * 定义单个 provider 客户端的最小调用契约，路由层按模型目标驱动具体实现。
@@ -20,3 +20,4 @@ public interface AiProviderClient {
      */
     AiStreamSession streamChat(AiConversationRequest request, AiModelTarget target, AiStreamHandler handler);
 }
+

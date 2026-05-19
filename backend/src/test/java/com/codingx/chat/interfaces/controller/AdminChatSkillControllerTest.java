@@ -12,11 +12,11 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.codingx.chat.interfaces.response.PageResult;
+import com.codingx.config.GlobalExceptionHandler;
 import com.codingx.skill.application.service.AdminChatSkillService;
 import com.codingx.skill.domain.model.ChatSkill;
-import com.codingx.chat.interfaces.response.PageResult;
 import com.codingx.skill.interfaces.controller.AdminChatSkillController;
-import com.codingx.config.GlobalExceptionHandler;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -158,7 +158,7 @@ class AdminChatSkillControllerTest {
      */
     @Test
     void uploadSkillPackageReturnsParsedSkill() throws Exception {
-        when(adminChatSkillService.uploadSkillPackage(any(), any())).thenReturn(
+        when(adminChatSkillService.uploadSkillPackage(any(), any(), any())).thenReturn(
             ChatSkill.builder()
                 .id(7110L)
                 .skillCode("pdf-processing")
@@ -183,6 +183,34 @@ class AdminChatSkillControllerTest {
             .andExpect(jsonPath("$.success").value(true))
             .andExpect(jsonPath("$.data.skillCode").value("pdf-processing"))
             .andExpect(jsonPath("$.data.sourceType").value("uploaded"));
+    }
+
+    /**
+     * 上传目录文件时应命中 files 参数契约。
+     */
+    @Test
+    void uploadSkillPackageWithFolderFilesReturnsParsedSkill() throws Exception {
+        when(adminChatSkillService.uploadSkillPackage(any(), any(), any())).thenReturn(
+            ChatSkill.builder()
+                .id(7111L)
+                .skillCode("meeting-notes")
+                .displayName("meeting-notes")
+                .sourceType("uploaded")
+                .enabled(1)
+                .sortNo(0)
+                .build()
+        );
+
+        MockMultipartFile file1 = new MockMultipartFile("files", "SKILL.md", "text/markdown", "dummy".getBytes());
+        MockMultipartFile file2 = new MockMultipartFile("files", "templates/prompt.txt", "text/plain", "prompt".getBytes());
+
+        mockMvc().perform(multipart("/api/admin/skills/upload")
+                .file(file1)
+                .file(file2)
+                .param("category", "文档处理"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.success").value(true))
+            .andExpect(jsonPath("$.data.skillCode").value("meeting-notes"));
     }
 
     /**
@@ -223,6 +251,28 @@ class AdminChatSkillControllerTest {
             .andExpect(jsonPath("$.data.path").value("templates/prompt.txt"))
             .andExpect(jsonPath("$.data.content").value("prompt-content"))
             .andExpect(jsonPath("$.data.truncated").value(false));
+    }
+
+    /**
+     * 迁移接口应返回迁移统计。
+     */
+    @Test
+    void migrateSkillPackagesReturnsSummary() throws Exception {
+        when(adminChatSkillService.migrateUploadedSkillPackages())
+            .thenReturn(new AdminChatSkillService.SkillPackageMigrationSummary(
+                2,
+                1,
+                1,
+                List.of(new AdminChatSkillService.SkillPackageMigrationFailure(7101L, "legacy-skill", "测试失败"))
+            ));
+
+        mockMvc().perform(post("/api/admin/skills/migrate-packages"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.success").value(true))
+            .andExpect(jsonPath("$.data.total").value(2))
+            .andExpect(jsonPath("$.data.migrated").value(1))
+            .andExpect(jsonPath("$.data.skipped").value(1))
+            .andExpect(jsonPath("$.data.failures[0].skillCode").value("legacy-skill"));
     }
 
     /**

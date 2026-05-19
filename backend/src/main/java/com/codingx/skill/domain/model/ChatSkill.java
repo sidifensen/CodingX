@@ -25,6 +25,7 @@ public class ChatSkill {
     private Integer enabled;
     private Integer sortNo;
     private String storageKey;
+    private String packageStorageFormat;
     private String packageFileName;
     private Long packageSize;
     private String packageChecksum;

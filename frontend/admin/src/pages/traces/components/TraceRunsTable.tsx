@@ -31,8 +31,6 @@ export function TraceRunsTable({
 
   return (
     <DataTableCard
-      title="运行列表"
-      description="按时间倒序查看运行记录，通过操作按钮进入独立详情页"
       scrollTestId="trace-runs-scroll"
       loading={loading}
       tableContent={(

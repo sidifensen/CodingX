@@ -321,7 +321,7 @@ function ConversationHistory({
                     void onSelectWorkspacePath(group.workspacePath);
                     handleToggleGroupCollapse(group.partitionKey);
                   }}
-                  className="flex w-full items-start justify-between gap-3 rounded-md py-0.5 text-left"
+                  className="flex w-full cursor-pointer items-start justify-between gap-3 rounded-md py-0.5 text-left transition-colors hover:bg-surface-container active:bg-surface-container-high"
                 >
                   <div className="min-w-0 flex flex-1 items-center gap-2">
                     <RuntimeIcon
@@ -335,7 +335,6 @@ function ConversationHistory({
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
-                    <div className="text-[11px] text-muted">{formatWorkspaceTime(group.lastOpenedAt)}</div>
                     <span
                       className="rounded-md p-1 text-muted transition-colors hover:bg-surface-container hover:text-foreground"
                       aria-hidden="true"
@@ -373,17 +372,17 @@ function ConversationHistory({
                               onMouseLeave={() => setHoveredActionId(null)}
                             >
                               <div
-                                className={`group flex items-center justify-between gap-3 rounded-xl border px-3 py-1.5 transition-[border-color,background-color,box-shadow] duration-200 ${
+                                className={`group flex cursor-pointer items-center justify-between gap-3 rounded-xl border px-3.5 py-2.5 transition-[border-color,background-color,box-shadow] duration-200 ${
                                   isActive
                                     ? 'border-border-selected bg-surface-selected shadow-sm'
-                                    : 'border-transparent hover:border-border-active hover:bg-surface-container-high'
+                                    : 'border-transparent hover:border-border-active hover:bg-surface-container-high active:border-border-active active:bg-surface-container-high'
                                 }`}
                               >
                                 {/* 让会话标题与工作空间标题文字起点对齐，并增强选中态可辨识度。 */}
                                 <button
                                   type="button"
                                   onClick={() => void onSelectConversation(conversation.id)}
-                                  className={`min-w-0 flex-1 cursor-pointer pl-2.5 text-left ${
+                                  className={`min-w-0 flex-1 cursor-pointer pl-3 text-left ${
                                     isActive ? 'text-foreground' : 'text-muted hover:text-foreground'
                                   }`}
                                 >
@@ -494,28 +493,6 @@ function ConversationHistory({
       {!conversations.length ? <div className="px-5 pt-4 text-sm text-muted">暂无真实会话</div> : null}
     </>
   );
-}
-
-/**
- * 格式化工作空间最近打开时间。
- * @param value 最近打开时间戳。
- * @returns 适合展示的时间文案。
- */
-function formatWorkspaceTime(value: number) {
-  if (!value) {
-    return '刚刚';
-  }
-  const diffMs = Date.now() - value;
-  const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-  if (diffHours < 1) {
-    const diffMinutes = Math.max(1, Math.floor(diffMs / (1000 * 60)));
-    return `${diffMinutes} 分钟前`;
-  }
-  if (diffHours < 24) {
-    return `${diffHours} 小时前`;
-  }
-  const diffDays = Math.floor(diffHours / 24);
-  return `${diffDays} 天前`;
 }
 
 /**

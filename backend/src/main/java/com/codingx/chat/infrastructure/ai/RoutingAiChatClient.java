@@ -4,9 +4,9 @@ import com.codingx.chat.domain.model.ChatMessage;
 import com.codingx.chat.domain.service.AiChatClient;
 import com.codingx.chat.domain.model.ChatAttachment;
 import com.codingx.chat.application.service.ChatAttachmentService;
-import com.codingx.support.ai.AiConversationRequest;
-import com.codingx.support.ai.AiModelDispatchService;
-import com.codingx.support.ai.AiStreamHandler;
+import com.codingx.common.support.ai.AiConversationRequest;
+import com.codingx.common.support.ai.AiModelDispatchService;
+import com.codingx.common.support.ai.AiStreamHandler;
 import java.util.List;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Component;
@@ -80,3 +80,4 @@ public class RoutingAiChatClient implements AiChatClient {
             .toList();
     }
 }
+

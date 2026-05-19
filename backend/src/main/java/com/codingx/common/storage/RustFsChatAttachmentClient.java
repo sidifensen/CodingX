@@ -1,4 +1,4 @@
-package com.codingx.storage;
+package com.codingx.common.storage;
 
 import cn.hutool.core.util.StrUtil;
 import lombok.RequiredArgsConstructor;
@@ -94,3 +94,4 @@ public class RustFsChatAttachmentClient {
         }
     }
 }
+

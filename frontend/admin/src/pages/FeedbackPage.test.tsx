@@ -45,7 +45,7 @@ describe('FeedbackPage', () => {
   });
 
   it('renders feedback rows and allows jumping to detail page', async () => {
-    render(
+    const { container } = render(
       <MemoryRouter>
         <FeedbackPage />
       </MemoryRouter>,
@@ -55,6 +55,7 @@ describe('FeedbackPage', () => {
     expect(screen.getByText('helpful')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: '查看 9001' })).toHaveAttribute('href', '/feedbacks/9001');
     expect(screen.getByText('第 1 / 1 页，共 1 条')).toBeInTheDocument();
+    expect(container.querySelector('section.rounded-xl.border.border-border-hairline.bg-surface-container-lowest.shadow-sm')).toBeInTheDocument();
   });
 
   it('shows trace-style skeleton rows while feedback table is loading', async () => {

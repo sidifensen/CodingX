@@ -6,9 +6,17 @@ interface DataTableCardProps {
   title?: string;
   description?: string;
   /**
+   * flat 模式保留滚动和分页，但不渲染卡片边框与阴影，适合页面本身已有容器边界时使用。
+   */
+  variant?: 'card' | 'flat';
+  /**
    * 表格头部右侧操作区：用于放置刷新、新增、筛选等动作按钮。
    */
   headerActions?: React.ReactNode;
+  /**
+   * 底部摘要区的测试标记，便于定位分页统计文本。
+   */
+  summaryTestId?: string;
   scrollTestId?: string;
   tableContent: React.ReactNode;
   summaryText: string;
@@ -26,7 +34,9 @@ interface DataTableCardProps {
 export function DataTableCard({
   title,
   description,
+  variant = 'card',
   headerActions,
+  summaryTestId,
   scrollTestId,
   tableContent,
   summaryText,
@@ -38,16 +48,18 @@ export function DataTableCard({
   className,
 }: DataTableCardProps) {
   const showHeader = Boolean(title || description || headerActions);
+  const isFlat = variant === 'flat';
 
   return (
     <section
       className={clsx(
-        'flex min-h-0 max-h-full flex-col overflow-hidden rounded-xl border border-border-hairline bg-surface-container-lowest shadow-sm',
+        'flex min-h-0 max-h-full flex-col overflow-hidden',
+        isFlat ? 'bg-transparent shadow-none' : 'rounded-xl border border-border-hairline bg-surface-container-lowest shadow-sm',
         className,
       )}
     >
       {showHeader ? (
-        <div className="shrink-0 border-b border-border-hairline px-lg py-md">
+        <div className={clsx('shrink-0 px-lg py-md', !isFlat && 'border-b border-border-hairline')}>
           <div className="flex flex-wrap items-start justify-between gap-md">
             {title || description ? (
               <div>
@@ -81,8 +93,13 @@ export function DataTableCard({
         ) : null}
       </div>
 
-      <div className="shrink-0 flex items-center justify-between gap-sm border-t border-border-hairline bg-surface-container-low px-lg py-sm">
-        <p className="text-secondary text-[12px]">{summaryText}</p>
+      <div
+        className={clsx(
+          'shrink-0 flex items-center justify-between gap-sm px-lg py-sm',
+          !isFlat && 'border-t border-border-hairline bg-surface-container-low',
+        )}
+      >
+        <p data-testid={summaryTestId} className="text-secondary text-[12px]">{summaryText}</p>
         <Pagination
           current={paginationCurrent}
           pages={Math.max(1, paginationPages)}

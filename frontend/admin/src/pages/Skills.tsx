@@ -219,7 +219,6 @@ export function Skills() {
         <SkillUploadDialog
           onClose={() => setUploadDialogOpen(false)}
           onUploaded={async () => {
-            setUploadDialogOpen(false);
             await loadSkills(pageNo);
           }}
         />
@@ -260,8 +259,6 @@ function SkillListView({
 
   return (
     <DataTableCard
-      title="技能列表"
-      description="统一展示技能配置信息，支持资源预览与编辑。"
       scrollTestId="skills-table-scroll"
       loading={loading}
       loadingText="技能加载中..."
@@ -812,25 +809,58 @@ interface SkillUploadDialogProps {
  */
 function SkillUploadDialog({ onClose, onUploaded }: SkillUploadDialogProps) {
   const [file, setFile] = React.useState<File | null>(null);
+  const [directoryFiles, setDirectoryFiles] = React.useState<File[]>([]);
+  const folderInputRef = React.useRef<HTMLInputElement | null>(null);
   const [category, setCategory] = React.useState('');
   const [submitting, setSubmitting] = React.useState(false);
   const [errorMessage, setErrorMessage] = React.useState('');
+  const [migrationMessage, setMigrationMessage] = React.useState('');
+  const [migrating, setMigrating] = React.useState(false);
+
+  React.useEffect(() => {
+    if (!folderInputRef.current) {
+      return;
+    }
+    folderInputRef.current.setAttribute('webkitdirectory', '');
+    folderInputRef.current.setAttribute('directory', '');
+  }, []);
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setErrorMessage('');
-    if (!file) {
-      setErrorMessage('请选择技能包文件');
+    if (!file && directoryFiles.length === 0) {
+      setErrorMessage('请选择技能包文件或文件夹');
       return;
     }
     setSubmitting(true);
     try {
-      await AdminChatApi.uploadSkillPackage(file, category);
+      await AdminChatApi.uploadSkillPackage(file, category, directoryFiles);
       await onUploaded();
+      onClose();
     } catch (error) {
       setErrorMessage(extractErrorMessage(error, '技能包上传失败'));
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  /**
+   * 执行历史技能包迁移，并在弹窗内展示迁移摘要。
+   */
+  const handleMigratePackages = async () => {
+    setMigrationMessage('');
+    setErrorMessage('');
+    setMigrating(true);
+    try {
+      const summary = await AdminChatApi.migrateSkillPackages();
+      const failureCount = summary.failures?.length ?? 0;
+      const firstFailure = failureCount > 0 ? `；失败示例：${summary.failures[0].skillCode}（${summary.failures[0].reason}）` : '';
+      setMigrationMessage(`迁移完成：总计 ${summary.total}，成功 ${summary.migrated}，跳过 ${summary.skipped}，失败 ${failureCount}${firstFailure}`);
+      await onUploaded();
+    } catch (error) {
+      setErrorMessage(extractErrorMessage(error, '历史技能包迁移失败'));
+    } finally {
+      setMigrating(false);
     }
   };
 
@@ -845,7 +875,7 @@ function SkillUploadDialog({ onClose, onUploaded }: SkillUploadDialogProps) {
         <div className="sticky top-0 z-10 flex items-start justify-between gap-md border-b border-border-hairline bg-surface-container-lowest px-lg py-md">
           <div>
             <h3 className="font-title-md text-title-md text-ink">上传技能包</h3>
-            <p className="mt-1 text-body-sm text-secondary">上传包含根级 SKILL.md 的 zip 或 .skill 文件。</p>
+            <p className="mt-1 text-body-sm text-secondary">支持上传文件夹（推荐）或 zip/.skill 压缩包，均需包含根级 SKILL.md。</p>
           </div>
           <button
             type="button"
@@ -861,6 +891,11 @@ function SkillUploadDialog({ onClose, onUploaded }: SkillUploadDialogProps) {
           {errorMessage ? (
             <div className="rounded-xl border border-error bg-error-container px-md py-sm text-sm text-on-error-container">
               {errorMessage}
+            </div>
+          ) : null}
+          {migrationMessage ? (
+            <div className="rounded-xl border border-border-hairline bg-surface-container px-md py-sm text-sm text-ink">
+              {migrationMessage}
             </div>
           ) : null}
           <fieldset className="rounded-xl border border-border-hairline bg-surface-container-low p-md">
@@ -879,10 +914,38 @@ function SkillUploadDialog({ onClose, onUploaded }: SkillUploadDialogProps) {
                   onChange={(event) => {
                     const selectedFile = event.target.files?.[0] ?? null;
                     setFile(selectedFile);
+                    if (selectedFile) {
+                      setDirectoryFiles([]);
+                    }
                   }}
                 />
                 <p className="mt-1 text-[12px] text-secondary">
                   仅支持 .zip / .skill，且压缩包根目录必须包含 SKILL.md
+                </p>
+              </div>
+              <div>
+                <label htmlFor="skill-package-folder" className="mb-1 block text-[12px] font-medium text-secondary">
+                  技能文件夹
+                </label>
+                <input
+                  ref={folderInputRef}
+                  id="skill-package-folder"
+                  aria-label="技能文件夹"
+                  type="file"
+                  multiple
+                  // 使用浏览器目录选择能力，文件名将携带相对路径供后端复原目录结构。
+                  // 通过 ref 动态设置目录属性，避免 JSX 类型约束报错。
+                  className="block w-full rounded-lg border border-border-hairline bg-surface-container-lowest px-3 py-2 text-ink file:mr-sm file:rounded-md file:border-0 file:bg-surface-container file:px-sm file:py-1.5 file:text-ink"
+                  onChange={(event) => {
+                    const selectedFiles = Array.from(event.target.files ?? []);
+                    setDirectoryFiles(selectedFiles);
+                    if (selectedFiles.length > 0) {
+                      setFile(null);
+                    }
+                  }}
+                />
+                <p className="mt-1 text-[12px] text-secondary">
+                  优先推荐上传文件夹，文件夹根目录需包含 SKILL.md
                 </p>
               </div>
               <TextField
@@ -894,7 +957,18 @@ function SkillUploadDialog({ onClose, onUploaded }: SkillUploadDialogProps) {
             </div>
           </fieldset>
 
-          <div className="flex flex-wrap justify-end gap-sm">
+          <div className="flex flex-wrap items-center justify-between gap-sm">
+            <button
+              type="button"
+              aria-label="迁移历史技能包"
+              disabled={submitting || migrating}
+              onClick={() => {
+                void handleMigratePackages();
+              }}
+              className="rounded-lg border border-border-hairline bg-surface-container px-lg py-2 font-button text-button text-ink hover:bg-surface-container-low disabled:opacity-60"
+            >
+              {migrating ? '迁移中...' : '迁移历史技能包'}
+            </button>
             <button
               type="button"
               onClick={onClose}

@@ -143,6 +143,69 @@ describe('AdminChatApi unauthorized handling', () => {
   });
 
   /**
+   * 上传目录文件时应以 files 字段携带相对路径文件名。
+   */
+  it('uploads directory files as multipart files payload', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          success: true,
+          code: 'OK',
+          message: 'success',
+          data: {
+            id: 7111,
+            skillCode: 'meeting-notes',
+            displayName: 'meeting-notes',
+            sourceType: 'uploaded',
+          },
+        }),
+        { status: 200 },
+      ),
+    );
+    const fileA = new File(['manifest'], 'SKILL.md', { type: 'text/markdown' }) as File & { webkitRelativePath?: string };
+    fileA.webkitRelativePath = 'meeting-notes/SKILL.md';
+    const fileB = new File(['prompt'], 'prompt.txt', { type: 'text/plain' }) as File & { webkitRelativePath?: string };
+    fileB.webkitRelativePath = 'meeting-notes/templates/prompt.txt';
+
+    const result = await AdminChatApi.uploadSkillPackage(null, '文档处理', [fileA, fileB]);
+
+    expect(result.skillCode).toBe('meeting-notes');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const call = fetchMock.mock.calls[0];
+    const requestInit = call[1] as RequestInit;
+    expect(requestInit.body).toBeInstanceOf(FormData);
+  });
+
+  /**
+   * 迁移接口应返回总数、成功数与失败清单。
+   */
+  it('requests migrate skill packages summary', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          success: true,
+          code: 'OK',
+          message: 'success',
+          data: {
+            total: 10,
+            migrated: 8,
+            skipped: 1,
+            failures: [{ skillCode: 'legacy-skill', reason: '下载失败' }],
+          },
+        }),
+        { status: 200 },
+      ),
+    );
+
+    const result = await AdminChatApi.migrateSkillPackages();
+
+    expect(result.total).toBe(10);
+    expect(result.migrated).toBe(8);
+    expect(result.failures[0].skillCode).toBe('legacy-skill');
+    expect(String(fetchMock.mock.calls[0][0])).toContain('/api/admin/skills/migrate-packages');
+  });
+
+  /**
    * 技能包文件内容接口应按 query 参数传递归档内路径。
    */
   it('requests skill package file content with encoded path query', async () => {

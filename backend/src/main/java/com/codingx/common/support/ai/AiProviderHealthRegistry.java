@@ -1,4 +1,4 @@
-package com.codingx.support.ai;
+package com.codingx.common.support.ai;
 
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -143,3 +143,4 @@ public class AiProviderHealthRegistry {
         HALF_OPEN
     }
 }
+

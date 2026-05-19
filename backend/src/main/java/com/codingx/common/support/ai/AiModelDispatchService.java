@@ -1,4 +1,4 @@
-package com.codingx.support.ai;
+package com.codingx.common.support.ai;
 
 import cn.hutool.core.collection.CollUtil;
 import com.codingx.config.AiProperties;
@@ -191,3 +191,4 @@ public class AiModelDispatchService {
         return providerClients.get("openai-compatible");
     }
 }
+

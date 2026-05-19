@@ -1,16 +1,18 @@
 package com.codingx.skill.application.service;
 
-import cn.hutool.core.util.IdUtil;
-import cn.hutool.crypto.digest.DigestUtil;
+import cn.dev33.satoken.stp.StpUtil;
+import cn.hutool.core.collection.CollUtil;
 import cn.hutool.core.io.IoUtil;
 import cn.hutool.core.util.ArrayUtil;
+import cn.hutool.core.util.IdUtil;
 import cn.hutool.core.util.StrUtil;
-import com.codingx.skill.domain.model.ChatSkill;
-import com.codingx.skill.domain.repository.ChatSkillRepository;
+import cn.hutool.crypto.digest.DigestUtil;
 import com.codingx.chat.interfaces.response.PageResult;
 import com.codingx.common.exception.BusinessException;
 import com.codingx.common.exception.NotFoundException;
-import com.codingx.storage.RustFsSkillPackageClient;
+import com.codingx.skill.domain.model.ChatSkill;
+import com.codingx.skill.domain.repository.ChatSkillRepository;
+import com.codingx.common.storage.RustFsSkillPackageClient;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -18,15 +20,17 @@ import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
-import java.util.Locale;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 import lombok.RequiredArgsConstructor;
-import org.springframework.web.multipart.MultipartFile;
 import org.springframework.stereotype.Service;
-import cn.dev33.satoken.stp.StpUtil;
+import org.springframework.web.multipart.MultipartFile;
 
 /**
  * 提供聊天技能后台管理服务。
@@ -36,6 +40,9 @@ import cn.dev33.satoken.stp.StpUtil;
 public class AdminChatSkillService {
 
     private static final int MAX_PREVIEW_BYTES = 128 * 1024;
+    private static final String ROOT_SKILL_MANIFEST = "SKILL.md";
+    private static final String STORAGE_FORMAT_DIRECTORY = "directory";
+    private static final String STORAGE_FORMAT_ZIP = "zip";
 
     private final ChatSkillRepository chatSkillRepository;
     private final RustFsSkillPackageClient rustFsSkillPackageClient;
@@ -77,6 +84,7 @@ public class AdminChatSkillService {
             .enabled(request.getEnabled() == null ? 1 : request.getEnabled())
             .sortNo(request.getSortNo() == null ? 0 : request.getSortNo())
             .sourceType(StrUtil.blankToDefault(request.getSourceType(), "built-in"))
+            .packageStorageFormat(StrUtil.blankToDefault(request.getPackageStorageFormat(), STORAGE_FORMAT_DIRECTORY))
             .createdAt(now)
             .updatedAt(now)
             .deleted(0)
@@ -108,6 +116,7 @@ public class AdminChatSkillService {
             .sourceType(StrUtil.blankToDefault(request.getSourceType(), existing.getSourceType()))
             .enabled(request.getEnabled() == null ? existing.getEnabled() : request.getEnabled())
             .sortNo(request.getSortNo() == null ? existing.getSortNo() : request.getSortNo())
+            .packageStorageFormat(StrUtil.blankToDefault(request.getPackageStorageFormat(), existing.getPackageStorageFormat()))
             .createdAt(existing.getCreatedAt())
             .updatedAt(LocalDateTime.now())
             .deleted(existing.getDeleted())
@@ -130,44 +139,61 @@ public class AdminChatSkillService {
 
     /**
      * 上传技能包并解析 SKILL.md 生成技能配置。
-     * @param file 上传文件。
+     * @param file 单文件上传（zip/skill）。
      * @param category 可选分类。
      * @return 新增或更新后的技能。
      */
     public ChatSkill uploadSkillPackage(MultipartFile file, String category) {
-        validateUploadFile(file);
+        return uploadSkillPackage(file, List.of(), category);
+    }
+
+    /**
+     * 上传技能文件并解析 SKILL.md 生成技能配置。
+     * @param file 单文件上传（zip/skill），与 files 二选一。
+     * @param files 多文件上传（目录上传）。
+     * @param category 可选分类。
+     * @return 新增或更新后的技能。
+     */
+    public ChatSkill uploadSkillPackage(MultipartFile file, List<MultipartFile> files, String category) {
+        List<UploadedSkillFile> uploadedFiles = resolveUploadedFiles(file, files);
+        UploadedSkillFile manifestFile = requireRootSkillManifest(uploadedFiles);
+        SkillManifest manifest = parseSkillManifest(new String(manifestFile.bytes(), StandardCharsets.UTF_8));
+        String normalizedSkillCode = normalizeSkillCode(manifest.name());
+
+        String storageKey;
         try {
-            byte[] bytes = file.getBytes();
-            String skillMarkdown = extractRootSkillMarkdown(bytes);
-            SkillManifest manifest = parseSkillManifest(skillMarkdown);
-            String normalizedSkillCode = normalizeSkillCode(manifest.name());
-            String storageKey = rustFsSkillPackageClient.upload(bytes, file.getOriginalFilename());
-            Long loginUserId = StpUtil.getLoginIdAsLong();
-            ChatSkill existing = chatSkillRepository.findBySkillCode(normalizedSkillCode);
-            LocalDateTime now = LocalDateTime.now();
-            ChatSkill persisted = (existing == null ? ChatSkill.builder().id(IdUtil.getSnowflakeNextId()) : existing.toBuilder())
-                .skillCode(normalizedSkillCode)
-                .displayName(manifest.name())
-                .description(StrUtil.blankToDefault(manifest.description(), manifest.name()))
-                .category(StrUtil.blankToDefault(StrUtil.trim(category), StrUtil.blankToDefault(existing == null ? null : existing.getCategory(), "上传技能")))
-                .sourceType("uploaded")
-                .enabled(existing == null ? 1 : existing.getEnabled())
-                .sortNo(existing == null ? 0 : existing.getSortNo())
-                .storageKey(storageKey)
-                .packageFileName(StrUtil.blankToDefault(file.getOriginalFilename(), "unknown.skill"))
-                .packageSize((long) bytes.length)
-                .packageChecksum(DigestUtil.sha256Hex(bytes))
-                .uploadedBy(loginUserId)
-                .uploadedAt(now)
-                .createdAt(existing == null ? now : existing.getCreatedAt())
-                .updatedAt(now)
-                .deleted(0)
-                .build();
-            chatSkillRepository.save(persisted);
-            return persisted;
-        } catch (IOException exception) {
-            throw new BusinessException("CHAT_SKILL_UPLOAD_FAILED", "技能包读取失败");
+            storageKey = rustFsSkillPackageClient.uploadDirectory(toStorageFiles(uploadedFiles), normalizedSkillCode);
+        } catch (Exception exception) {
+            throw new BusinessException("CHAT_SKILL_UPLOAD_FAILED", "技能包上传失败");
         }
+
+        Long loginUserId = StpUtil.getLoginIdAsLong();
+        ChatSkill existing = chatSkillRepository.findBySkillCode(normalizedSkillCode);
+        LocalDateTime now = LocalDateTime.now();
+        long packageSize = uploadedFiles.stream().mapToLong(item -> item.bytes().length).sum();
+        String packageChecksum = calculateDirectoryChecksum(uploadedFiles);
+
+        ChatSkill persisted = (existing == null ? ChatSkill.builder().id(IdUtil.getSnowflakeNextId()) : existing.toBuilder())
+            .skillCode(normalizedSkillCode)
+            .displayName(manifest.name())
+            .description(StrUtil.blankToDefault(manifest.description(), manifest.name()))
+            .category(StrUtil.blankToDefault(StrUtil.trim(category), StrUtil.blankToDefault(existing == null ? null : existing.getCategory(), "上传技能")))
+            .sourceType("uploaded")
+            .enabled(existing == null ? 1 : existing.getEnabled())
+            .sortNo(existing == null ? 0 : existing.getSortNo())
+            .storageKey(storageKey)
+            .packageStorageFormat(STORAGE_FORMAT_DIRECTORY)
+            .packageFileName(resolveUploadedFileName(file, files))
+            .packageSize(packageSize)
+            .packageChecksum(packageChecksum)
+            .uploadedBy(loginUserId)
+            .uploadedAt(now)
+            .createdAt(existing == null ? now : existing.getCreatedAt())
+            .updatedAt(now)
+            .deleted(0)
+            .build();
+        chatSkillRepository.save(persisted);
+        return persisted;
     }
 
     /**
@@ -176,24 +202,17 @@ public class AdminChatSkillService {
      * @return 技能包条目列表（目录优先）。
      */
     public List<SkillPackageEntry> listPackageEntries(Long id) {
-        ChatSkill skill = requireSkillById(id);
-        byte[] bytes = downloadSkillPackage(skill);
+        ChatSkill skill = migrateLegacyPackageIfRequired(requireSkillById(id));
+        List<RustFsSkillPackageClient.SkillObjectMetadata> objects = listSkillDirectory(skill);
         LinkedHashSet<String> directoryPaths = new LinkedHashSet<>();
         List<SkillPackageEntry> fileEntries = new ArrayList<>();
-        try (ZipInputStream zipInputStream = new ZipInputStream(new ByteArrayInputStream(bytes), StandardCharsets.UTF_8)) {
-            ZipEntry zipEntry;
-            while ((zipEntry = zipInputStream.getNextEntry()) != null) {
-                String normalizedPath = normalizeArchivePath(zipEntry.getName());
-                if (StrUtil.isBlank(normalizedPath)) {
-                    continue;
-                }
-                collectDirectoryPaths(normalizedPath, directoryPaths);
-                if (!zipEntry.isDirectory()) {
-                    fileEntries.add(new SkillPackageEntry(normalizedPath, extractName(normalizedPath), false, zipEntry.getSize()));
-                }
+        for (RustFsSkillPackageClient.SkillObjectMetadata objectMetadata : objects) {
+            String normalizedPath = normalizeArchivePath(objectMetadata.relativePath());
+            if (StrUtil.isBlank(normalizedPath)) {
+                continue;
             }
-        } catch (IOException exception) {
-            throw new BusinessException("CHAT_SKILL_PACKAGE_PARSE_FAILED", "技能包目录解析失败");
+            collectDirectoryPaths(normalizedPath, directoryPaths);
+            fileEntries.add(new SkillPackageEntry(normalizedPath, extractName(normalizedPath), false, objectMetadata.size()));
         }
         List<SkillPackageEntry> entries = new ArrayList<>();
         for (String directoryPath : directoryPaths) {
@@ -213,35 +232,59 @@ public class AdminChatSkillService {
      * @return 预览内容与截断标记。
      */
     public SkillPackageFileContent readPackageFileContent(Long id, String path) {
-        ChatSkill skill = requireSkillById(id);
+        ChatSkill skill = migrateLegacyPackageIfRequired(requireSkillById(id));
         String normalizedPath = normalizeArchivePath(path);
         if (StrUtil.isBlank(normalizedPath)) {
             throw new BusinessException("CHAT_SKILL_PACKAGE_INVALID_PATH", "文件路径不能为空");
         }
-        byte[] bytes = downloadSkillPackage(skill);
-        try (ZipInputStream zipInputStream = new ZipInputStream(new ByteArrayInputStream(bytes), StandardCharsets.UTF_8)) {
-            ZipEntry zipEntry;
-            while ((zipEntry = zipInputStream.getNextEntry()) != null) {
-                if (zipEntry.isDirectory()) {
-                    continue;
-                }
-                String entryPath = normalizeArchivePath(zipEntry.getName());
-                if (!StrUtil.equals(entryPath, normalizedPath)) {
-                    continue;
-                }
-                byte[] entryBytes = IoUtil.readBytes(zipInputStream);
-                if (looksLikeBinary(entryBytes)) {
-                    throw new BusinessException("CHAT_SKILL_PACKAGE_BINARY_FILE", "该文件为二进制文件，暂不支持在线预览");
-                }
-                boolean truncated = entryBytes.length > MAX_PREVIEW_BYTES;
-                int previewLength = Math.min(entryBytes.length, MAX_PREVIEW_BYTES);
-                String content = new String(ArrayUtil.sub(entryBytes, 0, previewLength), StandardCharsets.UTF_8);
-                return new SkillPackageFileContent(normalizedPath, content, truncated);
-            }
-        } catch (IOException exception) {
-            throw new BusinessException("CHAT_SKILL_PACKAGE_PARSE_FAILED", "技能包文件读取失败");
+        byte[] entryBytes;
+        try {
+            entryBytes = rustFsSkillPackageClient.downloadDirectoryFile(skill.getStorageKey(), normalizedPath);
+        } catch (Exception exception) {
+            throw new NotFoundException("技能包文件不存在");
         }
-        throw new NotFoundException("技能包文件不存在");
+        if (looksLikeBinary(entryBytes)) {
+            throw new BusinessException("CHAT_SKILL_PACKAGE_BINARY_FILE", "该文件为二进制文件，暂不支持在线预览");
+        }
+        boolean truncated = entryBytes.length > MAX_PREVIEW_BYTES;
+        int previewLength = Math.min(entryBytes.length, MAX_PREVIEW_BYTES);
+        String content = new String(ArrayUtil.sub(entryBytes, 0, previewLength), StandardCharsets.UTF_8);
+        return new SkillPackageFileContent(normalizedPath, content, truncated);
+    }
+
+    /**
+     * 批量迁移历史压缩包技能为目录化存储。
+     * @return 迁移统计。
+     */
+    public SkillPackageMigrationSummary migrateUploadedSkillPackages() {
+        List<ChatSkill> uploadedSkills = chatSkillRepository.findAll()
+            .stream()
+            .filter(skill -> StrUtil.isNotBlank(skill.getStorageKey()))
+            .filter(skill -> StrUtil.equalsIgnoreCase(skill.getSourceType(), "uploaded"))
+            .toList();
+
+        int migrated = 0;
+        int skipped = 0;
+        List<SkillPackageMigrationFailure> failures = new ArrayList<>();
+
+        for (ChatSkill skill : uploadedSkills) {
+            if (!isLegacyArchiveStorage(skill)) {
+                skipped++;
+                continue;
+            }
+            try {
+                migrateSkillPackageToDirectory(skill);
+                migrated++;
+            } catch (Exception exception) {
+                failures.add(new SkillPackageMigrationFailure(
+                    skill.getId(),
+                    skill.getSkillCode(),
+                    StrUtil.blankToDefault(exception.getMessage(), "迁移失败")
+                ));
+            }
+        }
+
+        return new SkillPackageMigrationSummary(uploadedSkills.size(), migrated, skipped, failures);
     }
 
     private void validateRequired(ChatSkill request) {
@@ -256,35 +299,160 @@ public class AdminChatSkillService {
         }
     }
 
-    private void validateUploadFile(MultipartFile file) {
-        if (file == null || file.isEmpty()) {
+    /**
+     * 统一解析上传输入，输出目录化文件集合。
+     */
+    private List<UploadedSkillFile> resolveUploadedFiles(MultipartFile file, List<MultipartFile> files) {
+        boolean hasSingleFile = file != null && !file.isEmpty();
+        List<MultipartFile> folderFiles = files == null ? List.of() : files.stream().filter(item -> item != null && !item.isEmpty()).toList();
+        boolean hasFolderFiles = CollUtil.isNotEmpty(folderFiles);
+
+        if (hasSingleFile && hasFolderFiles) {
+            throw new BusinessException("CHAT_SKILL_UPLOAD_INVALID", "请仅选择一种上传方式");
+        }
+        if (!hasSingleFile && !hasFolderFiles) {
             throw new BusinessException("CHAT_SKILL_UPLOAD_INVALID", "请上传技能包文件");
         }
+
+        if (hasSingleFile) {
+            validateArchiveUploadFile(file);
+            try {
+                return normalizeUploadedSkillFiles(readZipEntries(file.getBytes()));
+            } catch (IOException exception) {
+                throw new BusinessException("CHAT_SKILL_UPLOAD_FAILED", "技能包读取失败");
+            }
+        }
+
+        List<UploadedSkillFile> directoryFiles = new ArrayList<>();
+        for (MultipartFile multipartFile : folderFiles) {
+            String relativePath = normalizeArchivePath(StrUtil.blankToDefault(multipartFile.getOriginalFilename(), multipartFile.getName()));
+            if (StrUtil.isBlank(relativePath)) {
+                continue;
+            }
+            try {
+                directoryFiles.add(new UploadedSkillFile(relativePath, multipartFile.getBytes(), multipartFile.getContentType()));
+            } catch (IOException exception) {
+                throw new BusinessException("CHAT_SKILL_UPLOAD_FAILED", "技能目录文件读取失败");
+            }
+        }
+        return normalizeUploadedSkillFiles(directoryFiles);
+    }
+
+    private void validateArchiveUploadFile(MultipartFile file) {
         String filename = StrUtil.blankToDefault(file.getOriginalFilename(), "").toLowerCase(Locale.ROOT);
         if (!(filename.endsWith(".zip") || filename.endsWith(".skill"))) {
             throw new BusinessException("CHAT_SKILL_UPLOAD_INVALID", "仅支持 zip 或 skill 文件");
         }
     }
 
-    private String extractRootSkillMarkdown(byte[] bytes) {
-        try (ZipInputStream zipInputStream = new ZipInputStream(new ByteArrayInputStream(bytes), StandardCharsets.UTF_8)) {
+    /**
+     * 对路径去重与根目录折叠，确保最终以根级 SKILL.md 为准。
+     */
+    private List<UploadedSkillFile> normalizeUploadedSkillFiles(List<UploadedSkillFile> rawFiles) {
+        if (CollUtil.isEmpty(rawFiles)) {
+            throw new BusinessException("CHAT_SKILL_UPLOAD_INVALID", "技能包缺少文件内容");
+        }
+
+        List<UploadedSkillFile> flattenedFiles = collapseSingleRootDirectory(rawFiles);
+        Map<String, UploadedSkillFile> deduplicatedFiles = new LinkedHashMap<>();
+        for (UploadedSkillFile file : flattenedFiles) {
+            String normalizedPath = normalizeArchivePath(file.path());
+            if (StrUtil.isBlank(normalizedPath)) {
+                continue;
+            }
+            String uniqueKey = normalizedPath.toLowerCase(Locale.ROOT);
+            if (deduplicatedFiles.containsKey(uniqueKey)) {
+                throw new BusinessException("CHAT_SKILL_UPLOAD_INVALID", "技能包存在重复文件路径: " + normalizedPath);
+            }
+            deduplicatedFiles.put(uniqueKey, new UploadedSkillFile(normalizedPath, file.bytes(), file.contentType()));
+        }
+
+        if (deduplicatedFiles.isEmpty()) {
+            throw new BusinessException("CHAT_SKILL_UPLOAD_INVALID", "技能包缺少可用文件");
+        }
+        return new ArrayList<>(deduplicatedFiles.values());
+    }
+
+    private List<UploadedSkillFile> readZipEntries(byte[] archiveBytes) {
+        List<UploadedSkillFile> files = new ArrayList<>();
+        try (ZipInputStream zipInputStream = new ZipInputStream(new ByteArrayInputStream(archiveBytes), StandardCharsets.UTF_8)) {
             ZipEntry entry;
             while ((entry = zipInputStream.getNextEntry()) != null) {
                 if (entry.isDirectory()) {
                     continue;
                 }
-                String name = StrUtil.removePrefix(entry.getName(), "./");
-                if (!StrUtil.equalsIgnoreCase(name, "SKILL.md")) {
+                String normalizedPath = normalizeArchivePath(entry.getName());
+                if (StrUtil.isBlank(normalizedPath)) {
                     continue;
                 }
-                ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
-                zipInputStream.transferTo(outputStream);
-                return outputStream.toString(StandardCharsets.UTF_8);
+                // ZipInputStream 需要保持打开以继续读取后续 entry，因此此处禁止自动关闭流。
+                byte[] bytes = IoUtil.readBytes(zipInputStream, false);
+                files.add(new UploadedSkillFile(normalizedPath, bytes, null));
             }
         } catch (IOException exception) {
             throw new BusinessException("CHAT_SKILL_UPLOAD_INVALID", "技能包不是有效压缩文件");
         }
-        throw new BusinessException("CHAT_SKILL_UPLOAD_INVALID", "技能包缺少根目录 SKILL.md");
+        return files;
+    }
+
+    private List<UploadedSkillFile> collapseSingleRootDirectory(List<UploadedSkillFile> files) {
+        if (containsRootSkillManifest(files)) {
+            return files;
+        }
+        String firstPath = files.getFirst().path();
+        int separatorIndex = firstPath.indexOf('/');
+        if (separatorIndex <= 0) {
+            return files;
+        }
+        String rootDirectory = firstPath.substring(0, separatorIndex);
+        String rootManifestPath = rootDirectory + "/" + ROOT_SKILL_MANIFEST;
+        boolean allUnderSameRoot = files.stream().allMatch(file -> StrUtil.startWith(file.path(), rootDirectory + "/"));
+        boolean rootManifestExists = files.stream().anyMatch(file -> StrUtil.equalsIgnoreCase(file.path(), rootManifestPath));
+        if (!allUnderSameRoot || !rootManifestExists) {
+            return files;
+        }
+        return files.stream()
+            .map(file -> new UploadedSkillFile(file.path().substring(rootDirectory.length() + 1), file.bytes(), file.contentType()))
+            .toList();
+    }
+
+    private boolean containsRootSkillManifest(List<UploadedSkillFile> files) {
+        return files.stream().anyMatch(file -> StrUtil.equalsIgnoreCase(file.path(), ROOT_SKILL_MANIFEST));
+    }
+
+    private UploadedSkillFile requireRootSkillManifest(List<UploadedSkillFile> files) {
+        return files.stream()
+            .filter(file -> StrUtil.equalsIgnoreCase(file.path(), ROOT_SKILL_MANIFEST))
+            .findFirst()
+            .orElseThrow(() -> new BusinessException("CHAT_SKILL_UPLOAD_INVALID", "技能包缺少根目录 SKILL.md"));
+    }
+
+    private List<RustFsSkillPackageClient.SkillFileObject> toStorageFiles(List<UploadedSkillFile> files) {
+        return files.stream()
+            .map(file -> new RustFsSkillPackageClient.SkillFileObject(file.path(), file.bytes(), file.contentType()))
+            .toList();
+    }
+
+    private String resolveUploadedFileName(MultipartFile file, List<MultipartFile> files) {
+        if (file != null && !file.isEmpty()) {
+            return StrUtil.blankToDefault(file.getOriginalFilename(), "unknown.skill");
+        }
+        if (CollUtil.isNotEmpty(files)) {
+            return "folder-upload";
+        }
+        return "unknown.skill";
+    }
+
+    private String calculateDirectoryChecksum(List<UploadedSkillFile> files) {
+        StringBuilder builder = new StringBuilder();
+        files.stream()
+            .sorted(Comparator.comparing(UploadedSkillFile::path))
+            .forEach(file -> builder
+                .append(file.path())
+                .append(':')
+                .append(DigestUtil.sha256Hex(file.bytes()))
+                .append('\n'));
+        return DigestUtil.sha256Hex(builder.toString());
     }
 
     private SkillManifest parseSkillManifest(String markdown) {
@@ -354,15 +522,79 @@ public class AdminChatSkillService {
         return skill;
     }
 
-    private byte[] downloadSkillPackage(ChatSkill skill) {
+    /**
+     * 对历史 zip 对象做惰性迁移，避免管理端预览依赖旧格式。
+     */
+    private ChatSkill migrateLegacyPackageIfRequired(ChatSkill skill) {
+        if (!isLegacyArchiveStorage(skill)) {
+            return skill;
+        }
+        return migrateSkillPackageToDirectory(skill);
+    }
+
+    private boolean isLegacyArchiveStorage(ChatSkill skill) {
+        String storageFormat = StrUtil.blankToDefault(skill.getPackageStorageFormat(), "").trim().toLowerCase(Locale.ROOT);
+        if (StrUtil.equals(storageFormat, STORAGE_FORMAT_DIRECTORY)) {
+            return false;
+        }
+        if (StrUtil.equals(storageFormat, STORAGE_FORMAT_ZIP)) {
+            return true;
+        }
+        String storageKey = StrUtil.blankToDefault(skill.getStorageKey(), "").toLowerCase(Locale.ROOT);
+        return storageKey.endsWith(".zip") || storageKey.endsWith(".skill");
+    }
+
+    /**
+     * 单技能迁移：下载 zip，解压上传目录，更新记录并删除旧对象。
+     */
+    private ChatSkill migrateSkillPackageToDirectory(ChatSkill legacySkill) {
+        byte[] archiveBytes;
         try {
-            return rustFsSkillPackageClient.download(skill.getStorageKey());
+            archiveBytes = rustFsSkillPackageClient.download(legacySkill.getStorageKey());
         } catch (Exception exception) {
             throw new BusinessException("CHAT_SKILL_PACKAGE_DOWNLOAD_FAILED", "技能包下载失败");
         }
+
+        List<UploadedSkillFile> uploadedFiles = normalizeUploadedSkillFiles(readZipEntries(archiveBytes));
+        requireRootSkillManifest(uploadedFiles);
+
+        String newStorageKey;
+        try {
+            newStorageKey = rustFsSkillPackageClient.uploadDirectory(toStorageFiles(uploadedFiles), legacySkill.getSkillCode());
+        } catch (Exception exception) {
+            throw new BusinessException("CHAT_SKILL_UPLOAD_FAILED", "技能包迁移上传失败");
+        }
+
+        long packageSize = uploadedFiles.stream().mapToLong(item -> item.bytes().length).sum();
+        String packageChecksum = calculateDirectoryChecksum(uploadedFiles);
+        LocalDateTime now = LocalDateTime.now();
+
+        ChatSkill migratedSkill = legacySkill.toBuilder()
+            .storageKey(newStorageKey)
+            .packageStorageFormat(STORAGE_FORMAT_DIRECTORY)
+            .packageSize(packageSize)
+            .packageChecksum(packageChecksum)
+            .updatedAt(now)
+            .build();
+        chatSkillRepository.save(migratedSkill);
+
+        try {
+            rustFsSkillPackageClient.deleteObject(legacySkill.getStorageKey());
+        } catch (Exception exception) {
+            throw new BusinessException("CHAT_SKILL_PACKAGE_MIGRATE_DELETE_FAILED", "历史技能包清理失败");
+        }
+        return migratedSkill;
     }
 
-    private void collectDirectoryPaths(String filePath, LinkedHashSet<String> directories) {
+    private List<RustFsSkillPackageClient.SkillObjectMetadata> listSkillDirectory(ChatSkill skill) {
+        try {
+            return rustFsSkillPackageClient.listDirectory(skill.getStorageKey());
+        } catch (Exception exception) {
+            throw new BusinessException("CHAT_SKILL_PACKAGE_PARSE_FAILED", "技能包目录解析失败");
+        }
+    }
+
+    private void collectDirectoryPaths(String filePath, Set<String> directories) {
         String current = filePath;
         int index = current.lastIndexOf('/');
         while (index > 0) {
@@ -376,10 +608,27 @@ public class AdminChatSkillService {
         String normalizedPath = StrUtil.blankToDefault(originalPath, "")
             .replace("\\", "/")
             .trim();
-        normalizedPath = StrUtil.removePrefix(normalizedPath, "./");
+        while (StrUtil.startWith(normalizedPath, "./")) {
+            normalizedPath = normalizedPath.substring(2);
+        }
         normalizedPath = StrUtil.removePrefix(normalizedPath, "/");
         normalizedPath = StrUtil.removeSuffix(normalizedPath, "/");
-        return normalizedPath;
+        if (StrUtil.isBlank(normalizedPath)) {
+            return "";
+        }
+        List<String> segments = StrUtil.split(normalizedPath, '/');
+        if (CollUtil.isEmpty(segments)) {
+            return "";
+        }
+        List<String> sanitizedSegments = new ArrayList<>();
+        for (String segment : segments) {
+            String sanitizedSegment = StrUtil.trim(segment);
+            if (StrUtil.isBlank(sanitizedSegment) || StrUtil.equals(sanitizedSegment, ".") || StrUtil.equals(sanitizedSegment, "..")) {
+                throw new BusinessException("CHAT_SKILL_UPLOAD_INVALID", "技能包路径非法");
+            }
+            sanitizedSegments.add(sanitizedSegment);
+        }
+        return StrUtil.join("/", sanitizedSegments);
     }
 
     private String extractName(String path) {
@@ -403,10 +652,19 @@ public class AdminChatSkillService {
     private record SkillManifest(String name, String description) {
     }
 
+    private record UploadedSkillFile(String path, byte[] bytes, String contentType) {
+    }
+
     public record SkillPackageEntry(String path, String name, boolean directory, Long size) {
     }
 
     public record SkillPackageFileContent(String path, String content, boolean truncated) {
+    }
+
+    public record SkillPackageMigrationFailure(Long skillId, String skillCode, String reason) {
+    }
+
+    public record SkillPackageMigrationSummary(int total, int migrated, int skipped, List<SkillPackageMigrationFailure> failures) {
     }
 }
 

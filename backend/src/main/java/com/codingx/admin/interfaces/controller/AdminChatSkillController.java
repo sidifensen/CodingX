@@ -4,6 +4,7 @@ import com.codingx.skill.application.service.AdminChatSkillService;
 import com.codingx.skill.domain.model.ChatSkill;
 import com.codingx.skill.interfaces.response.AdminSkillPackageEntryResponse;
 import com.codingx.skill.interfaces.response.AdminSkillPackageFileContentResponse;
+import com.codingx.skill.interfaces.response.AdminSkillPackageMigrationSummaryResponse;
 import com.codingx.chat.interfaces.response.PageResult;
 import com.codingx.common.model.ApiResponse;
 import java.util.List;
@@ -56,10 +57,32 @@ public class AdminChatSkillController {
      */
     @PostMapping("/upload")
     public ApiResponse<ChatSkill> uploadSkillPackage(
-        @RequestParam("file") MultipartFile file,
+        @RequestParam(value = "file", required = false) MultipartFile file,
+        @RequestParam(value = "files", required = false) List<MultipartFile> files,
         @RequestParam(value = "category", required = false) String category
     ) {
-        return ApiResponse.success(adminChatSkillService.uploadSkillPackage(file, category));
+        return ApiResponse.success(adminChatSkillService.uploadSkillPackage(file, files, category));
+    }
+
+    /**
+     * 迁移历史压缩包技能为目录化存储，便于运行时直接按路径读取资源。
+     * @return 迁移统计信息。
+     */
+    @PostMapping("/migrate-packages")
+    public ApiResponse<AdminSkillPackageMigrationSummaryResponse> migrateSkillPackages() {
+        AdminChatSkillService.SkillPackageMigrationSummary summary = adminChatSkillService.migrateUploadedSkillPackages();
+        return ApiResponse.success(new AdminSkillPackageMigrationSummaryResponse(
+            summary.total(),
+            summary.migrated(),
+            summary.skipped(),
+            summary.failures().stream()
+                .map(item -> new AdminSkillPackageMigrationSummaryResponse.FailureItem(
+                    item.skillId(),
+                    item.skillCode(),
+                    item.reason()
+                ))
+                .toList()
+        ));
     }
 
     /**

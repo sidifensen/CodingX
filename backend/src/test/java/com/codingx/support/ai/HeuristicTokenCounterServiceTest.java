@@ -1,4 +1,4 @@
-package com.codingx.support.ai;
+package com.codingx.common.support.ai;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 

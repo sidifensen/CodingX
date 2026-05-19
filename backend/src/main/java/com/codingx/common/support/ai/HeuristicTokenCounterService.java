@@ -1,4 +1,4 @@
-package com.codingx.support.ai;
+package com.codingx.common.support.ai;
 
 import com.codingx.chat.domain.model.ChatMessage;
 import java.util.List;
@@ -20,3 +20,4 @@ public class HeuristicTokenCounterService implements TokenCounterService {
         return Math.max(8, (int) Math.round(totalCharacters / 1.9D));
     }
 }
+

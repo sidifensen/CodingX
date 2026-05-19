@@ -1792,6 +1792,7 @@ function AssistantMessageActions({
         className="chat-message-action-button-group"
         data-testid={`copy-action-group-${messageId}`}
       >
+        {/* 复制主按钮与更多菜单使用连续按钮组，去掉视觉分隔线并保持紧凑布局。 */}
         <button
           type="button"
           data-testid={`copy-message-${messageId}`}
@@ -1801,7 +1802,6 @@ function AssistantMessageActions({
         >
           <Copy size={15} />
         </button>
-        <span aria-hidden="true" className="chat-message-action-divider" />
         <div ref={menuContainerRef} className="relative">
           <button
             type="button"

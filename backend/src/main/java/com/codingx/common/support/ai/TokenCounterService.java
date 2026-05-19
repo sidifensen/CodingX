@@ -1,4 +1,4 @@
-package com.codingx.support.ai;
+package com.codingx.common.support.ai;
 
 import com.codingx.chat.domain.model.ChatMessage;
 import java.util.List;
@@ -15,3 +15,4 @@ public interface TokenCounterService {
      */
     int estimateConversationTokens(List<ChatMessage> messages);
 }
+

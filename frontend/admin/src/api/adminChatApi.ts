@@ -277,6 +277,19 @@ export interface AdminSkillPackageFileContent {
   truncated: boolean;
 }
 
+export interface AdminSkillPackageMigrationFailure {
+  skillId?: number;
+  skillCode: string;
+  reason: string;
+}
+
+export interface AdminSkillPackageMigrationSummary {
+  total: number;
+  migrated: number;
+  skipped: number;
+  failures: AdminSkillPackageMigrationFailure[];
+}
+
 export interface AdminChatTool {
   id?: string | number;
   toolCode: string;
@@ -604,15 +617,40 @@ export class AdminChatApi {
    * @param category 可选分类。
    * @returns 解析后的技能配置。
    */
-  static async uploadSkillPackage(file: File, category?: string): Promise<AdminSkill> {
+  static async uploadSkillPackage(
+    file: File | null,
+    category?: string,
+    directoryFiles?: File[],
+  ): Promise<AdminSkill> {
     const formData = new FormData();
-    formData.append('file', file);
+    const hasDirectoryFiles = Array.isArray(directoryFiles) && directoryFiles.length > 0;
+    if (hasDirectoryFiles) {
+      directoryFiles.forEach((directoryFile) => {
+        const relativePath = ((directoryFile as File & { webkitRelativePath?: string }).webkitRelativePath
+          || directoryFile.name).replace(/^\/+/, '');
+        formData.append('files', directoryFile, relativePath);
+      });
+    } else if (file) {
+      formData.append('file', file);
+    } else {
+      throw new Error('请选择技能包文件');
+    }
     if (category && category.trim()) {
       formData.append('category', category.trim());
     }
     return this.request<AdminSkill>('/api/admin/skills/upload', {
       method: 'POST',
       body: formData,
+    });
+  }
+
+  /**
+   * 触发历史技能压缩包迁移，将对象存储格式统一转换为目录结构。
+   * @returns 迁移统计摘要。
+   */
+  static async migrateSkillPackages(): Promise<AdminSkillPackageMigrationSummary> {
+    return this.request<AdminSkillPackageMigrationSummary>('/api/admin/skills/migrate-packages', {
+      method: 'POST',
     });
   }
 

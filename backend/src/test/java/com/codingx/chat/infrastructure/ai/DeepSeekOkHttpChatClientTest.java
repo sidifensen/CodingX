@@ -5,10 +5,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.codingx.chat.domain.model.ChatMessage;
 import com.codingx.config.AiProperties;
-import com.codingx.support.ai.AiConversationRequest;
-import com.codingx.support.ai.AiModelTarget;
-import com.codingx.support.ai.AiStreamHandler;
-import com.codingx.support.ai.OpenAiStyleStreamParser;
+import com.codingx.common.support.ai.AiConversationRequest;
+import com.codingx.common.support.ai.AiModelTarget;
+import com.codingx.common.support.ai.AiStreamHandler;
+import com.codingx.common.support.ai.OpenAiStyleStreamParser;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
 import java.io.OutputStream;

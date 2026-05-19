@@ -110,78 +110,75 @@ export function FeedbackPage() {
         </div>
       ) : null}
 
-      <section className="space-y-md rounded-2xl border border-border-hairline bg-surface-container-lowest p-lg shadow-sm">
-        <DataTableCard
-          title="反馈列表"
-          description="按反馈记录查看点赞/点踩详情，并支持跳转详情页排查上下文。"
-          scrollTestId="feedback-table-scroll"
-          loading={loading}
-          loadingText="加载中..."
-          summaryText={`第 ${current} / ${Math.max(1, pages)} 页，共 ${total.toLocaleString('zh-CN')} 条`}
-          paginationCurrent={current}
-          paginationPages={pages}
-          onPaginationChange={setPageNo}
-          tableContent={(
-          <table className="min-w-[980px] w-full border-collapse text-left">
-            <thead>
-              <tr className="border-b border-border-hairline bg-surface-container-low">
-                <th className="sticky top-0 z-10 bg-surface-container-low px-lg py-md font-label-caps text-label-caps text-secondary">反馈ID</th>
-                <th className="sticky top-0 z-10 bg-surface-container-low px-lg py-md font-label-caps text-label-caps text-secondary">消息ID</th>
-                <th className="sticky top-0 z-10 bg-surface-container-low px-lg py-md font-label-caps text-label-caps text-secondary">会话ID</th>
-                <th className="sticky top-0 z-10 bg-surface-container-low px-lg py-md font-label-caps text-label-caps text-secondary">投票</th>
-                <th className="sticky top-0 z-10 bg-surface-container-low px-lg py-md font-label-caps text-label-caps text-secondary">原因</th>
-                <th className="sticky top-0 z-10 bg-surface-container-low px-lg py-md font-label-caps text-label-caps text-secondary">评论</th>
-                <th className="sticky top-0 z-10 bg-surface-container-low px-lg py-md font-label-caps text-label-caps text-secondary">创建时间</th>
-                <th className="sticky top-0 z-10 bg-surface-container-low px-lg py-md text-right font-label-caps text-label-caps text-secondary">操作</th>
+      {/* 复用统一表格卡片样式，保证分页器与边框表现与其他管理页一致。 */}
+      <DataTableCard
+        scrollTestId="feedback-table-scroll"
+        loading={loading}
+        loadingText="加载中..."
+        summaryText={`第 ${current} / ${Math.max(1, pages)} 页，共 ${total.toLocaleString('zh-CN')} 条`}
+        paginationCurrent={current}
+        paginationPages={pages}
+        onPaginationChange={setPageNo}
+        tableContent={(
+        <table className="min-w-[980px] w-full border-collapse text-left">
+          <thead>
+            <tr className="border-b border-border-hairline bg-surface-container-low">
+              <th className="sticky top-0 z-10 bg-surface-container-low px-lg py-md font-label-caps text-label-caps text-secondary">反馈ID</th>
+              <th className="sticky top-0 z-10 bg-surface-container-low px-lg py-md font-label-caps text-label-caps text-secondary">消息ID</th>
+              <th className="sticky top-0 z-10 bg-surface-container-low px-lg py-md font-label-caps text-label-caps text-secondary">会话ID</th>
+              <th className="sticky top-0 z-10 bg-surface-container-low px-lg py-md font-label-caps text-label-caps text-secondary">投票</th>
+              <th className="sticky top-0 z-10 bg-surface-container-low px-lg py-md font-label-caps text-label-caps text-secondary">原因</th>
+              <th className="sticky top-0 z-10 bg-surface-container-low px-lg py-md font-label-caps text-label-caps text-secondary">评论</th>
+              <th className="sticky top-0 z-10 bg-surface-container-low px-lg py-md font-label-caps text-label-caps text-secondary">创建时间</th>
+              <th className="sticky top-0 z-10 bg-surface-container-low px-lg py-md text-right font-label-caps text-label-caps text-secondary">操作</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border-hairline">
+            {showEmptyState ? (
+              <tr>
+                <td colSpan={8} className="px-lg py-xl text-center text-secondary">暂无反馈记录</td>
               </tr>
-            </thead>
-            <tbody className="divide-y divide-border-hairline">
-              {showEmptyState ? (
-                <tr>
-                  <td colSpan={8} className="px-lg py-xl text-center text-secondary">暂无反馈记录</td>
+            ) : records.map((item) => (
+              <tr key={item.id} className="transition-colors hover:bg-surface-container-low">
+                <td className="px-lg py-md text-ink">{item.id}</td>
+                <td className="px-lg py-md text-secondary">{item.messageId}</td>
+                <td className="px-lg py-md text-secondary">{item.conversationId}</td>
+                <td className="px-lg py-md">
+                  <span className={item.vote === 1 ? 'text-status-running' : 'text-error'}>
+                    {item.vote === 1 ? '点赞' : '点踩'}
+                  </span>
+                </td>
+                <td className="max-w-[180px] truncate px-lg py-md text-secondary" title={item.reason || ''}>
+                  {item.reason || '-'}
+                </td>
+                <td className="max-w-[220px] truncate px-lg py-md text-secondary" title={item.comment || ''}>
+                  {item.comment || '-'}
+                </td>
+                <td className="px-lg py-md text-[12px] text-secondary">{formatDate(item.createdAt)}</td>
+                <td className="px-lg py-md text-right">
+                  <Link
+                    to={`/feedbacks/${item.id}`}
+                    aria-label={`查看 ${item.id}`}
+                    className="rounded-lg border border-border-strong bg-surface-container-lowest px-sm py-1.5 text-[12px] text-ink transition-colors hover:bg-surface-container-low"
+                  >
+                    查看
+                  </Link>
+                </td>
+              </tr>
+            ))}
+            {showSkeletonRows
+              ? Array.from({ length: 10 }, (_, index) => (
+                <tr key={`feedback-loading-row-${index}`} data-testid="feedback-loading-skeleton-row">
+                  <td colSpan={8} className="px-lg py-md">
+                    <div className="h-6 w-full animate-pulse rounded bg-surface-container-low" />
+                  </td>
                 </tr>
-              ) : records.map((item) => (
-                <tr key={item.id} className="transition-colors hover:bg-surface-container-low">
-                  <td className="px-lg py-md text-ink">{item.id}</td>
-                  <td className="px-lg py-md text-secondary">{item.messageId}</td>
-                  <td className="px-lg py-md text-secondary">{item.conversationId}</td>
-                  <td className="px-lg py-md">
-                    <span className={item.vote === 1 ? 'text-status-running' : 'text-error'}>
-                      {item.vote === 1 ? '点赞' : '点踩'}
-                    </span>
-                  </td>
-                  <td className="max-w-[180px] truncate px-lg py-md text-secondary" title={item.reason || ''}>
-                    {item.reason || '-'}
-                  </td>
-                  <td className="max-w-[220px] truncate px-lg py-md text-secondary" title={item.comment || ''}>
-                    {item.comment || '-'}
-                  </td>
-                  <td className="px-lg py-md text-[12px] text-secondary">{formatDate(item.createdAt)}</td>
-                  <td className="px-lg py-md text-right">
-                    <Link
-                      to={`/feedbacks/${item.id}`}
-                      aria-label={`查看 ${item.id}`}
-                      className="rounded-lg border border-border-strong bg-surface-container-lowest px-sm py-1.5 text-[12px] text-ink transition-colors hover:bg-surface-container-low"
-                    >
-                      查看
-                    </Link>
-                  </td>
-                </tr>
-              ))}
-              {showSkeletonRows
-                ? Array.from({ length: 10 }, (_, index) => (
-                  <tr key={`feedback-loading-row-${index}`} data-testid="feedback-loading-skeleton-row">
-                    <td colSpan={8} className="px-lg py-md">
-                      <div className="h-6 w-full animate-pulse rounded bg-surface-container-low" />
-                    </td>
-                  </tr>
-                ))
-                : null}
-            </tbody>
-          </table>
-          )}
-        />
-      </section>
+              ))
+              : null}
+          </tbody>
+        </table>
+        )}
+      />
     </div>
   );
 }

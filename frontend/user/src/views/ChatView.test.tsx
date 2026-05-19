@@ -402,12 +402,16 @@ describe('ChatView', () => {
 
     expect(toggleButton).toHaveAttribute('aria-expanded', 'true');
     expect(panel).toHaveClass('w-full');
+    expect(panel).toHaveClass('px-4');
+    expect(panel).toHaveClass('py-3');
     expect(content).toHaveClass('max-h-[640px]');
     expect(content).toHaveClass('opacity-100');
 
     fireEvent.click(toggleButton);
     expect(toggleButton).toHaveAttribute('aria-expanded', 'false');
     expect(panel).toHaveClass('w-fit');
+    expect(panel).toHaveClass('px-4');
+    expect(panel).toHaveClass('py-3');
     expect(content).toHaveClass('max-h-0');
     expect(content).toHaveClass('max-w-0');
     expect(content).toHaveClass('opacity-0');
@@ -664,7 +668,12 @@ describe('ChatView', () => {
       <ChatView isAuthenticated={true} onRequireLogin={vi.fn()} workspace={createWorkspace()} />,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: '打开MCP列表' }));
+    const mcpTriggerButton = screen.getByRole('button', { name: '打开MCP列表' });
+    // 交互约束：MCP 按钮保留颜色/阴影反馈，但不应出现上浮抖动。
+    expect(mcpTriggerButton.className).not.toContain('hover:-translate-y-0.5');
+    expect(screen.getByTestId('mcp-trigger-chevron')).toBeInTheDocument();
+
+    fireEvent.click(mcpTriggerButton);
 
     const selectorPanel = screen.getByTestId('mcp-selector-panel');
     expect(selectorPanel).toBeInTheDocument();
@@ -963,6 +972,21 @@ describe('ChatView', () => {
     expect(screen.queryByText('当前环境')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: '打开运行环境列表' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '打开工作空间列表' })).toBeInTheDocument();
+    expect(screen.getByTestId('runtime-active-icon-local')).toBeInTheDocument();
+  });
+
+  /**
+   * 运行环境切换器主按钮与下拉选项应渲染语义图标，便于快速区分云端与本地。
+   */
+  it('应为运行环境按钮及选项渲染云端和本地图标', async () => {
+    render(
+      <ChatView isAuthenticated={true} onRequireLogin={vi.fn()} workspace={createWorkspace()} />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '打开运行环境列表' }));
+
+    expect(screen.getByTestId('runtime-option-icon-cloud')).toBeInTheDocument();
+    expect(screen.getByTestId('runtime-option-icon-local')).toBeInTheDocument();
   });
 
   /**

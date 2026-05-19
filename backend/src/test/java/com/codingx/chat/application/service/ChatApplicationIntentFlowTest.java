@@ -73,10 +73,10 @@ class ChatApplicationIntentFlowTest {
     private ChatIntentNodeRepository chatIntentNodeRepository;
 
     @Mock
-    private com.codingx.support.ai.TokenCounterService tokenCounterService;
+    private com.codingx.common.support.ai.TokenCounterService tokenCounterService;
 
     @Mock
-    private com.codingx.support.ai.LlmResponseCleaner llmResponseCleaner;
+    private com.codingx.common.support.ai.LlmResponseCleaner llmResponseCleaner;
 
     @Mock
     private ChatMcpRepository chatMcpRepository;

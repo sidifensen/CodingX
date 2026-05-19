@@ -1,4 +1,4 @@
-package com.codingx.support.ai;
+package com.codingx.common.support.ai;
 
 import cn.hutool.core.util.StrUtil;
 import cn.hutool.json.JSONArray;
@@ -197,3 +197,4 @@ public class OpenAiStyleStreamParser {
         }
     }
 }
+

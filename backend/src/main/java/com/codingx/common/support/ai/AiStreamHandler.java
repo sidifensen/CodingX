@@ -1,4 +1,4 @@
-package com.codingx.support.ai;
+package com.codingx.common.support.ai;
 
 /**
  * 统一模型流式输出回调，支持元信息、thinking、正文和终态事件。
@@ -40,3 +40,4 @@ public interface AiStreamHandler {
     default void onError(Throwable throwable) {
     }
 }
+

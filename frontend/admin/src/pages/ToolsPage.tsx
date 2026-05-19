@@ -247,8 +247,6 @@ export function ToolsPage() {
 
       {viewMode === 'list' ? (
         <DataTableCard
-          title="工具列表"
-          description="统一展示工具配置与执行器状态，支持探测、调用和配置维护。"
           scrollTestId="tools-table-scroll"
           loading={isTableLoading}
           loadingText="加载中..."

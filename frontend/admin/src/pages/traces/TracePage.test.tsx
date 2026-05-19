@@ -50,7 +50,8 @@ describe('TracePage', () => {
     );
 
     expect(await screen.findByRole('heading', { name: '链路追踪' })).toBeInTheDocument();
-    expect(screen.getByText('运行列表')).toBeInTheDocument();
+    expect(screen.queryByText('运行列表')).not.toBeInTheDocument();
+    expect(screen.queryByText('按时间倒序查看运行记录，通过操作按钮进入独立详情页')).not.toBeInTheDocument();
     expect(screen.getByText('Trace Name')).toBeInTheDocument();
     expect(screen.getByText('Trace Id')).toBeInTheDocument();
     expect(screen.getByText('会话ID / TaskID')).toBeInTheDocument();

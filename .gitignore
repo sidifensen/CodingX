@@ -13,3 +13,7 @@ logs/
 /frontend/desktop/node_modules/
 /frontend/desktop/dist/
 /frontend/desktop/release/
+/frontend/desktop/release-tmp/
+
+# stray desktop shell dependency cache
+/desktop-shell/node_modules/

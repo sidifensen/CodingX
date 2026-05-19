@@ -1,4 +1,4 @@
-package com.codingx.support.ai;
+package com.codingx.common.support.ai;
 
 import cn.hutool.core.util.StrUtil;
 import org.springframework.stereotype.Component;
@@ -24,3 +24,4 @@ public class LlmResponseCleaner {
         return StrUtil.trim(normalized);
     }
 }
+

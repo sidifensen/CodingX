@@ -1,4 +1,4 @@
-package com.codingx.storage.config;
+package com.codingx.common.storage.config;
 
 import java.net.URI;
 import org.springframework.beans.factory.annotation.Value;
@@ -43,4 +43,5 @@ public class RustFsConfig {
             .build();
     }
 }
+
 

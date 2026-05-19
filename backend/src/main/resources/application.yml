@@ -1,114 +1,115 @@
 spring:
   config:
-    import: optional:file:.env[.properties],optional:file:backend/.env[.properties]
+    import: optional:file:.env[.properties],optional:file:backend/.env[.properties] # 导入外部配置文件，支持 .env 属性文件
   application:
-    name: codingx-backend
+    name: codingx-backend # 应用名称
   sql:
     init:
-      # 显式启用 SQL 初始化，确保 PostgreSQL 环境也会执行 schema/init 脚本
-      mode: always
-      schema-locations: classpath:db/schema.sql
-      data-locations: classpath:db/init.sql
+      # 默认关闭启动期 SQL 初始化，避免每次启动重复执行 schema/init 脚本。
+      # 如需一次性初始化可显式传入环境变量 SPRING_SQL_INIT_MODE=always。
+      mode: ${SPRING_SQL_INIT_MODE:never} # SQL 初始化模式，默认 never 禁用
+      schema-locations: classpath:db/schema.sql # 数据库 schema 脚本路径
+      data-locations: classpath:db/init.sql # 数据库初始化数据脚本路径
   datasource:
-    driver-class-name: org.postgresql.Driver
-    url: ${DB_URL:jdbc:postgresql://localhost:5432/codingx}
-    username: ${DB_USERNAME:postgres}
-    password: ${DB_PASSWORD:postgres}
+    driver-class-name: org.postgresql.Driver # PostgreSQL JDBC 驱动类名
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/codingx} # 数据库连接 URL，支持环境变量覆盖
+    username: ${DB_USERNAME:postgres} # 数据库用户名，支持环境变量覆盖
+    password: ${DB_PASSWORD:postgres} # 数据库密码，支持环境变量覆盖
   data:
     redis:
-      host: ${REDIS_HOST:localhost}
-      port: ${REDIS_PORT:6379}
-      password: ${REDIS_PASSWORD:}
-      database: ${REDIS_DATABASE:0}
-      timeout: 10s
+      host: ${REDIS_HOST:localhost} # Redis 主机地址，支持环境变量覆盖
+      port: ${REDIS_PORT:6379} # Redis 端口号，支持环境变量覆盖
+      password: ${REDIS_PASSWORD:} # Redis 密码，默认为空，支持环境变量覆盖
+      database: ${REDIS_DATABASE:0} # Redis 数据库编号，支持环境变量覆盖
+      timeout: 10s # Redis 连接超时时间
   jackson:
-    time-zone: Asia/Shanghai
-    date-format: yyyy-MM-dd HH:mm:ss
+    time-zone: Asia/Shanghai # JSON 序列化时区
+    date-format: yyyy-MM-dd HH:mm:ss # JSON 日期格式
     serialization:
-      write-dates-as-timestamps: false
+      write-dates-as-timestamps: false # 日期是否序列化为时间戳，false 使用格式化字符串
 server:
-  port: ${SERVER_PORT:5001}
+  port: ${SERVER_PORT:5001} # 服务端口号，支持环境变量覆盖
 
 sa-token:
-  token-name: satoken
-  timeout: 86400
-  active-timeout: -1
-  is-concurrent: true
-  is-share: false
-  is-log: false
-  token-style: uuid
-  auto-renew: true
-  allow-simple-header: true
-  token-sign-key: ${SA_TOKEN_SIGN_KEY:${SATOKEN_SIGN_KEY:replace-me}}
+  token-name: satoken # Token 参数名称
+  timeout: 86400 # Token 有效期（秒），默认 24 小时
+  active-timeout: -1 # 活跃超时时间，-1 表示不限制
+  is-concurrent: true # 是否允许并发，true 表示同一账号可多处登录
+  is-share: false # Token 是否共享，false 表示不共享
+  is-log: false # 是否打印操作日志
+  token-style: uuid # Token 样式，uuid 表示使用 UUID 格式
+  auto-renew: true # 是否自动续签
+  allow-simple-header: true # 是否允许简单Header传递Token
+  token-sign-key: ${SA_TOKEN_SIGN_KEY:${SATOKEN_SIGN_KEY:replace-me}} # Token 签名密钥，支持嵌套环境变量覆盖
 
 mybatis-plus:
   configuration:
-    map-underscore-to-camel-case: true
-    cache-enabled: false
+    map-underscore-to-camel-case: true # 是否开启下划线转驼峰映射
+    cache-enabled: false # 是否开启二级缓存
     # 关闭 MyBatis 控制台 SQL/会话调试输出，避免污染后端运行日志
-    log-impl: org.apache.ibatis.logging.nologging.NoLoggingImpl
+    log-impl: org.apache.ibatis.logging.nologging.NoLoggingImpl # MyBatis 日志实现类
   global-config:
     db-config:
-      id-type: input
-      logic-delete-field: deleted
-      logic-delete-value: 1
-      logic-not-delete-value: 0
+      id-type: input # 主键 ID 类型，input 表示手动输入
+      logic-delete-field: deleted # 逻辑删除字段名
+      logic-delete-value: 1 # 逻辑删除值
+      logic-not-delete-value: 0 # 逻辑未删除值
 
 logging:
   level:
     # 屏蔽 MyBatis / MyBatis-Spring 的调试级会话日志
-    org.apache.ibatis: WARN
-    org.mybatis.spring: WARN
+    org.apache.ibatis: WARN # MyBatis 日志级别
+    org.mybatis.spring: WARN # MyBatis Spring 日志级别
 
 springdoc:
   api-docs:
-    path: /v3/api-docs
+    path: /v3/api-docs # OpenAPI 文档路径
   swagger-ui:
-    path: /swagger-ui.html
+    path: /swagger-ui.html # Swagger UI 页面路径
 
 app:
   security:
     cors:
-      allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5002,http://localhost:5003}
+      allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5002,http://localhost:5003} # CORS 允许的源列表
   ai:
-    provider: ${AI_PROVIDER:bailian}
-    base-url: ${AI_BASE_URL:${DEEPSEEK_BASE_URL:https://api.deepseek.com/v1}}
-    api-key: ${AI_API_KEY:${DEEPSEEK_API_KEY:}}
-    chat-model: ${AI_CHAT_MODEL:${DEEPSEEK_CHAT_MODEL:deepseek-chat}}
-    connect-timeout-ms: ${AI_CONNECT_TIMEOUT_MS:10000}
-    read-timeout-ms: ${AI_READ_TIMEOUT_MS:120000}
-    system-prompt: ${AI_SYSTEM_PROMPT:You are the CodingX assistant. Be concise, practical, and safe.}
+    provider: ${AI_PROVIDER:bailian} # AI 服务提供商，默认使用百炼
+    base-url: ${AI_BASE_URL:${DEEPSEEK_BASE_URL:https://api.deepseek.com/v1}} # AI API 基础地址，支持嵌套环境变量覆盖
+    api-key: ${AI_API_KEY:${DEEPSEEK_API_KEY:}} # AI API 密钥，支持嵌套环境变量覆盖
+    chat-model: ${AI_CHAT_MODEL:${DEEPSEEK_CHAT_MODEL:deepseek-chat}} # 默认聊天模型，支持环境变量覆盖
+    connect-timeout-ms: ${AI_CONNECT_TIMEOUT_MS:10000} # AI 连接超时时间（毫秒）
+    read-timeout-ms: ${AI_READ_TIMEOUT_MS:120000} # AI 读取超时时间（毫秒）
+    system-prompt: ${AI_SYSTEM_PROMPT:You are the CodingX assistant. Be concise, practical, and safe.} # AI 系统提示词
     selection:
-      failure-threshold: ${AI_FAILURE_THRESHOLD:2}
-      open-duration-ms: ${AI_OPEN_DURATION_MS:30000}
-      first-packet-timeout-ms: ${AI_FIRST_PACKET_TIMEOUT_MS:60000}
+      failure-threshold: ${AI_FAILURE_THRESHOLD:2} # 连续失败次数阈值，超过后切换模型
+      open-duration-ms: ${AI_OPEN_DURATION_MS:30000} # 模型切换后开放时长（毫秒）
+      first-packet-timeout-ms: ${AI_FIRST_PACKET_TIMEOUT_MS:60000} # 首包超时时间（毫秒）
     providers:
       bailian:
-        base-url: ${BAILIAN_BASE_URL:https://dashscope.aliyuncs.com}
-        api-key: ${BAILIAN_API_KEY:}
+        base-url: ${BAILIAN_BASE_URL:https://dashscope.aliyuncs.com} # 百炼 API 基础地址
+        api-key: ${BAILIAN_API_KEY:} # 百炼 API 密钥
         endpoints:
-          chat: /compatible-mode/v1/chat/completions
+          chat: /compatible-mode/v1/chat/completions # 百炼聊天端点路径
       siliconflow:
-        base-url: ${SILICONFLOW_BASE_URL:https://api.siliconflow.cn}
-        api-key: ${SILICONFLOW_API_KEY:}
+        base-url: ${SILICONFLOW_BASE_URL:https://api.siliconflow.cn} # 硅基流动 API 基础地址
+        api-key: ${SILICONFLOW_API_KEY:} # 硅基流动 API 密钥
         endpoints:
-          chat: /v1/chat/completions
+          chat: /v1/chat/completions # 硅基流动聊天端点路径
       deepseek:
-        base-url: ${AI_BASE_URL:${DEEPSEEK_BASE_URL:https://api.deepseek.com/v1}}
-        api-key: ${AI_API_KEY:${DEEPSEEK_API_KEY:}}
+        base-url: ${AI_BASE_URL:${DEEPSEEK_BASE_URL:https://api.deepseek.com/v1}} # DeepSeek API 基础地址
+        api-key: ${AI_API_KEY:${DEEPSEEK_API_KEY:}} # DeepSeek API 密钥
       stub:
-        base-url: stub://local
-        api-key: ""
+        base-url: stub://local # Stub 提供商本地模拟地址
+        api-key: "" # Stub 提供商模拟密钥
     chat:
-      default-model: ${AI_DEFAULT_MODEL:qwen-plus}
-      deep-thinking-model: ${AI_DEEP_THINKING_MODEL:qwen3-max}
+      default-model: ${AI_DEFAULT_MODEL:qwen-plus} # 默认聊天模型 ID
+      deep-thinking-model: ${AI_DEEP_THINKING_MODEL:qwen3-max} # 深度思考模型 ID
       candidates:
-        - id: qwen-plus
-          provider: bailian
-          model: ${BAILIAN_CHAT_MODEL:qwen-plus-latest}
-          priority: 1
-          enabled: true
-          supports-thinking: false
+        - id: qwen-plus # 模型唯一标识
+          provider: bailian # 模型所属提供商
+          model: ${BAILIAN_CHAT_MODEL:qwen-plus-latest} # 实际模型名称
+          priority: 1 # 模型优先级，数字越小优先级越高
+          enabled: true # 是否启用该模型
+          supports-thinking: false # 是否支持思考过程
         - id: qwen3-max
           provider: bailian
           model: ${BAILIAN_DEEP_MODEL:qwen3-max}
@@ -122,7 +123,7 @@ app:
           priority: 2
           enabled: true
           supports-thinking: true
-          supports-vision: true
+          supports-vision: true # 是否支持视觉/图片输入
         - id: glm-4.7
           provider: siliconflow
           model: ${SILICONFLOW_CHAT_MODEL:Pro/zai-org/GLM-4.7}
@@ -136,38 +137,38 @@ app:
           enabled: true
           supports-thinking: true
   runtime:
-    mock-step-delay-ms: ${MOCK_STEP_DELAY_MS:300}
-    mock-fail-keyword: ${MOCK_FAIL_KEYWORD:fail}
+    mock-step-delay-ms: ${MOCK_STEP_DELAY_MS:300} # 模拟步骤延迟（毫秒），用于测试环境
+    mock-fail-keyword: ${MOCK_FAIL_KEYWORD:fail} # 模拟失败关键字，消息包含此关键字时模拟失败
     # 聊天并发门控配置：默认关闭 Redis 队列门控，按单机门控运行。
-    use-redis-queue-gate: ${APP_RUNTIME_USE_REDIS_QUEUE_GATE:false}
+    use-redis-queue-gate: ${APP_RUNTIME_USE_REDIS_QUEUE_GATE:false} # 是否启用 Redis 队列门控
     # 全局最大并发，超出后进入队列等待。
-    queue-max-concurrent: ${APP_RUNTIME_QUEUE_MAX_CONCURRENT:2}
+    queue-max-concurrent: ${APP_RUNTIME_QUEUE_MAX_CONCURRENT:2} # 最大并发数
     # 排队最长等待时间，超时后返回 busy。
-    queue-acquire-timeout-ms: ${APP_RUNTIME_QUEUE_ACQUIRE_TIMEOUT_MS:3000}
+    queue-acquire-timeout-ms: ${APP_RUNTIME_QUEUE_ACQUIRE_TIMEOUT_MS:3000} # 排队获取超时时间（毫秒）
     # 排队轮询基础间隔，结合通知唤醒减少额外空转。
-    queue-poll-interval-ms: ${APP_RUNTIME_QUEUE_POLL_INTERVAL_MS:200}
+    queue-poll-interval-ms: ${APP_RUNTIME_QUEUE_POLL_INTERVAL_MS:200} # 排队轮询间隔（毫秒）
     # 执行资格租约时长，避免异常退出造成永久占位。
-    queue-lease-seconds: ${APP_RUNTIME_QUEUE_LEASE_SECONDS:300}
+    queue-lease-seconds: ${APP_RUNTIME_QUEUE_LEASE_SECONDS:300} # 租约有效期（秒）
     # 活跃会话续租间隔，必须小于租约时长。
-    queue-lease-renew-interval-ms: ${APP_RUNTIME_QUEUE_LEASE_RENEW_INTERVAL_MS:10000}
+    queue-lease-renew-interval-ms: ${APP_RUNTIME_QUEUE_LEASE_RENEW_INTERVAL_MS:10000} # 续租间隔（毫秒）
     # 代码检索工具默认扫描根目录；未配置时自动回退到项目根。
-    code-search-root: ${APP_RUNTIME_CODE_SEARCH_ROOT:}
+    code-search-root: ${APP_RUNTIME_CODE_SEARCH_ROOT:} # 代码检索根目录，为空时使用项目根目录
     # 代码检索工具单次最大返回命中条数。
-    code-search-max-results: ${APP_RUNTIME_CODE_SEARCH_MAX_RESULTS:20}
+    code-search-max-results: ${APP_RUNTIME_CODE_SEARCH_MAX_RESULTS:20} # 代码检索最大结果数
     # 代码检索工具单文件最大扫描大小（字节），避免读取超大构建产物。
-    code-search-max-file-size-bytes: ${APP_RUNTIME_CODE_SEARCH_MAX_FILE_SIZE_BYTES:1048576}
+    code-search-max-file-size-bytes: ${APP_RUNTIME_CODE_SEARCH_MAX_FILE_SIZE_BYTES:1048576} # 代码检索单文件最大字节数
   chat:
     memory:
-      summary-enabled: ${CHAT_MEMORY_SUMMARY_ENABLED:true}
-      summary-trigger-messages: ${CHAT_MEMORY_SUMMARY_TRIGGER_MESSAGES:12}
-      history-keep-turns: ${CHAT_MEMORY_HISTORY_KEEP_TURNS:6}
-      summary-max-characters: ${CHAT_MEMORY_SUMMARY_MAX_CHARACTERS:4000}
+      summary-enabled: ${CHAT_MEMORY_SUMMARY_ENABLED:true} # 是否启用聊天摘要
+      summary-trigger-messages: ${CHAT_MEMORY_SUMMARY_TRIGGER_MESSAGES:12} # 触发摘要的消息数量阈值
+      history-keep-turns: ${CHAT_MEMORY_HISTORY_KEEP_TURNS:6} # 保留的历史对话轮次
+      summary-max-characters: ${CHAT_MEMORY_SUMMARY_MAX_CHARACTERS:4000} # 摘要最大字符数
 
 rustfs:
-  endpoint: ${RUSTFS_ENDPOINT:http://localhost:9000}
-  access-key: ${RUSTFS_ACCESS_KEY:rustfsadmin}
-  secret-key: ${RUSTFS_SECRET_KEY:rustfsadmin}
-  region: ${RUSTFS_REGION:us-east-1}
-  bucket: ${RUSTFS_BUCKET:codingx-skills}
-  skill-prefix: ${RUSTFS_SKILL_PREFIX:chat-skills/packages}
-  attachment-prefix: ${RUSTFS_ATTACHMENT_PREFIX:chat/attachments}
+  endpoint: ${RUSTFS_ENDPOINT:http://localhost:9000} # RustFS 服务端点地址
+  access-key: ${RUSTFS_ACCESS_KEY:rustfsadmin} # RustFS 访问密钥
+  secret-key: ${RUSTFS_SECRET_KEY:rustfsadmin} # RustFS 秘密密钥
+  region: ${RUSTFS_REGION:us-east-1} # RustFS 区域
+  bucket: ${RUSTFS_BUCKET:codingx-skills} # RustFS 存储桶名称
+  skill-prefix: ${RUSTFS_SKILL_PREFIX:chat-skills/packages} # 技能文件前缀路径
+  attachment-prefix: ${RUSTFS_ATTACHMENT_PREFIX:chat/attachments} # 附件文件前缀路径

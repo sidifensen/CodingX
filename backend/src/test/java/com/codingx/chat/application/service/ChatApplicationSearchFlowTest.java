@@ -52,8 +52,8 @@ class ChatApplicationSearchFlowTest {
     @Mock private WebSearchExecutionService webSearchExecutionService;
     @Mock private SearchReferenceCollector searchReferenceCollector;
     @Mock private DocumentArtifactService documentArtifactService;
-    @Mock private com.codingx.support.ai.TokenCounterService tokenCounterService;
-    @Mock private com.codingx.support.ai.LlmResponseCleaner llmResponseCleaner;
+    @Mock private com.codingx.common.support.ai.TokenCounterService tokenCounterService;
+    @Mock private com.codingx.common.support.ai.LlmResponseCleaner llmResponseCleaner;
     @Mock private ChatMcpRepository chatMcpRepository;
     @Mock private ChatAttachmentService chatAttachmentService;
     @Mock private RuntimeSettingService runtimeSettingService;

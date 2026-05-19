@@ -7,6 +7,7 @@ import {
   AdminQueryTermMapping,
   AdminQueryTermMappingPayload,
 } from '../api/adminChatApi';
+import { DataTableCard } from '../components/DataTableCard';
 
 const PAGE_SIZE = 10;
 
@@ -264,112 +265,96 @@ export function QueryTermMappingPage() {
         </div>
       ) : null}
 
-      <section className="space-y-md rounded-2xl border border-border-hairline bg-surface-container-lowest p-lg shadow-sm">
-        <div className="overflow-hidden rounded-xl border border-border-hairline">
-          <table className="min-w-[1080px] w-full border-collapse text-left">
-            <thead>
-              <tr className="border-b border-border-hairline bg-surface-container-low">
-                <th className="px-lg py-md font-label-caps text-label-caps text-secondary">原始词</th>
-                <th className="px-lg py-md font-label-caps text-label-caps text-secondary">目标词</th>
-                <th className="px-lg py-md font-label-caps text-label-caps text-secondary">匹配类型</th>
-                <th className="px-lg py-md font-label-caps text-label-caps text-secondary">优先级</th>
-                <th className="px-lg py-md font-label-caps text-label-caps text-secondary">状态</th>
-                <th className="px-lg py-md font-label-caps text-label-caps text-secondary">备注</th>
-                <th className="px-lg py-md font-label-caps text-label-caps text-secondary">创建时间</th>
-                <th className="px-lg py-md font-label-caps text-label-caps text-secondary">更新时间</th>
-                <th className="px-lg py-md text-right font-label-caps text-label-caps text-secondary">操作</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border-hairline">
-              {loading ? (
-                <tr>
-                  <td className="px-lg py-xl text-center text-secondary" colSpan={9}>
-                    加载中...
-                  </td>
+      <div>
+        {/* 复用统一表格卡片样式，保证分页器与边框表现与其他管理页一致。 */}
+        <DataTableCard
+          scrollTestId="mapping-table-scroll"
+          loading={loading}
+          loadingText="加载中..."
+          summaryTestId="mapping-total"
+          summaryText={pageData ? `共 ${pageData.total} 条` : '共 0 条'}
+          paginationCurrent={pageData?.current ?? pageNo}
+          paginationPages={Math.max(pageData?.pages ?? 1, 1)}
+          onPaginationChange={setPageNo}
+          tableContent={(
+            <table className="min-w-[1080px] w-full border-collapse text-left">
+              <thead>
+                <tr className="border-b border-border-hairline bg-surface-container-low">
+                  <th className="px-lg py-md font-label-caps text-label-caps text-secondary">原始词</th>
+                  <th className="px-lg py-md font-label-caps text-label-caps text-secondary">目标词</th>
+                  <th className="px-lg py-md font-label-caps text-label-caps text-secondary">匹配类型</th>
+                  <th className="px-lg py-md font-label-caps text-label-caps text-secondary">优先级</th>
+                  <th className="px-lg py-md font-label-caps text-label-caps text-secondary">状态</th>
+                  <th className="px-lg py-md font-label-caps text-label-caps text-secondary">备注</th>
+                  <th className="px-lg py-md font-label-caps text-label-caps text-secondary">创建时间</th>
+                  <th className="px-lg py-md font-label-caps text-label-caps text-secondary">更新时间</th>
+                  <th className="px-lg py-md text-right font-label-caps text-label-caps text-secondary">操作</th>
                 </tr>
-              ) : records.length === 0 ? (
-                <tr>
-                  <td className="px-lg py-xl text-center text-secondary" colSpan={9}>
-                    暂无映射规则
-                  </td>
-                </tr>
-              ) : (
-                records.map((item) => (
-                  <tr key={String(item.id)} className="transition-colors hover:bg-surface-container-low">
-                    <td className="max-w-[180px] truncate px-lg py-md text-ink" title={item.sourceTerm}>
-                      {item.sourceTerm}
-                    </td>
-                    <td className="max-w-[180px] truncate px-lg py-md text-ink" title={item.targetTerm}>
-                      {item.targetTerm}
-                    </td>
-                    <td className="px-lg py-md">
-                      <MatchTypeBadge matchType={item.matchType} />
-                    </td>
-                    <td className="px-lg py-md text-secondary">{item.priority ?? 0}</td>
-                    <td className="px-lg py-md">
-                      <StatusBadge enabled={item.enabled !== false} />
-                    </td>
-                    <td className="max-w-[220px] truncate px-lg py-md text-secondary" title={item.remark || ''}>
-                      {item.remark || '-'}
-                    </td>
-                    <td className="px-lg py-md text-[12px] text-secondary">{formatDate(item.createTime)}</td>
-                    <td className="px-lg py-md text-[12px] text-secondary">{formatDate(item.updateTime)}</td>
-                    <td className="px-lg py-md text-right">
-                      <div className="inline-flex gap-sm">
-                        <button
-                          type="button"
-                          data-testid={`mapping-edit-${String(item.id)}`}
-                          className="rounded-lg border border-border-strong bg-surface-container-lowest px-sm py-1.5 text-[12px] text-ink transition-colors hover:bg-surface-container-low"
-                          onClick={() => openEditDialog(item)}
-                          aria-label={`编辑 ${item.sourceTerm}`}
-                        >
-                          编辑
-                        </button>
-                        <button
-                          type="button"
-                          data-testid={`mapping-delete-${String(item.id)}`}
-                          className="rounded-lg border border-error bg-error-container px-sm py-1.5 text-[12px] text-on-error-container transition-opacity hover:opacity-90"
-                          onClick={() => setDeleteTarget(item)}
-                          aria-label={`删除 ${item.sourceTerm}`}
-                        >
-                          删除
-                        </button>
-                      </div>
+              </thead>
+              <tbody className="divide-y divide-border-hairline">
+                {loading ? (
+                  <tr>
+                    <td className="px-lg py-xl text-center text-secondary" colSpan={9}>
+                      加载中...
                     </td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        {pageData ? (
-          <div className="flex flex-wrap items-center justify-between gap-sm">
-            <span data-testid="mapping-total" className="text-body-sm text-secondary">共 {pageData.total} 条</span>
-            <div className="flex items-center gap-sm">
-              <button
-                type="button"
-                className="rounded-lg border border-border-strong bg-surface-container-lowest px-md py-1.5 text-[12px] text-ink transition-colors hover:bg-surface-container-low disabled:cursor-not-allowed disabled:opacity-50"
-                onClick={() => setPageNo((previous) => Math.max(1, previous - 1))}
-                disabled={pageData.current <= 1}
-              >
-                上一页
-              </button>
-              <span className="text-[12px] text-secondary">
-                {pageData.current} / {Math.max(pageData.pages, 1)}
-              </span>
-              <button
-                type="button"
-                className="rounded-lg border border-border-strong bg-surface-container-lowest px-md py-1.5 text-[12px] text-ink transition-colors hover:bg-surface-container-low disabled:cursor-not-allowed disabled:opacity-50"
-                onClick={() => setPageNo((previous) => Math.min(Math.max(pageData.pages, 1), previous + 1))}
-                disabled={pageData.current >= pageData.pages}
-              >
-                下一页
-              </button>
-            </div>
-          </div>
-        ) : null}
-      </section>
+                ) : records.length === 0 ? (
+                  <tr>
+                    <td className="px-lg py-xl text-center text-secondary" colSpan={9}>
+                      暂无映射规则
+                    </td>
+                  </tr>
+                ) : (
+                  records.map((item) => (
+                    <tr key={String(item.id)} className="transition-colors hover:bg-surface-container-low">
+                      <td className="max-w-[180px] truncate px-lg py-md text-ink" title={item.sourceTerm}>
+                        {item.sourceTerm}
+                      </td>
+                      <td className="max-w-[180px] truncate px-lg py-md text-ink" title={item.targetTerm}>
+                        {item.targetTerm}
+                      </td>
+                      <td className="px-lg py-md">
+                        <MatchTypeBadge matchType={item.matchType} />
+                      </td>
+                      <td className="px-lg py-md text-secondary">{item.priority ?? 0}</td>
+                      <td className="px-lg py-md">
+                        <StatusBadge enabled={item.enabled !== false} />
+                      </td>
+                      <td className="max-w-[220px] truncate px-lg py-md text-secondary" title={item.remark || ''}>
+                        {item.remark || '-'}
+                      </td>
+                      <td className="px-lg py-md text-[12px] text-secondary">{formatDate(item.createTime)}</td>
+                      <td className="px-lg py-md text-[12px] text-secondary">{formatDate(item.updateTime)}</td>
+                      <td className="px-lg py-md text-right">
+                        <div className="inline-flex gap-sm">
+                          <button
+                            type="button"
+                            data-testid={`mapping-edit-${String(item.id)}`}
+                            className="rounded-lg border border-border-strong bg-surface-container-lowest px-sm py-1.5 text-[12px] text-ink transition-colors hover:bg-surface-container-low"
+                            onClick={() => openEditDialog(item)}
+                            aria-label={`编辑 ${item.sourceTerm}`}
+                          >
+                            编辑
+                          </button>
+                          <button
+                            type="button"
+                            data-testid={`mapping-delete-${String(item.id)}`}
+                            className="rounded-lg border border-error bg-error-container px-sm py-1.5 text-[12px] text-on-error-container transition-opacity hover:opacity-90"
+                            onClick={() => setDeleteTarget(item)}
+                            aria-label={`删除 ${item.sourceTerm}`}
+                          >
+                            删除
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          )}
+        />
+      </div>
 
       {dialogOpen ? (
         <MappingEditDialog

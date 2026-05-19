@@ -1,8 +1,8 @@
 package com.codingx.config;
 
-import com.codingx.support.ai.AiModelDispatchService;
-import com.codingx.support.ai.AiProviderClient;
-import com.codingx.support.ai.OpenAiStyleStreamParser;
+import com.codingx.common.support.ai.AiModelDispatchService;
+import com.codingx.common.support.ai.AiProviderClient;
+import com.codingx.common.support.ai.OpenAiStyleStreamParser;
 import java.util.List;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -100,3 +100,4 @@ public class ChatAiConfig {
     }
 
 }
+

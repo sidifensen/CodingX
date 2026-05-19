@@ -128,8 +128,8 @@ public class ChatApplicationService {
      * Trace 收口服务依赖。
      */
     private final ConversationTraceRecordService conversationTraceRecordService;
-    private final com.codingx.support.ai.TokenCounterService tokenCounterService;
-    private final com.codingx.support.ai.LlmResponseCleaner llmResponseCleaner;
+    private final com.codingx.common.support.ai.TokenCounterService tokenCounterService;
+    private final com.codingx.common.support.ai.LlmResponseCleaner llmResponseCleaner;
     private final ExecutorService searchExecutor;
     private final RuntimeSettingService runtimeSettingService;
 
@@ -625,3 +625,4 @@ public class ChatApplicationService {
     }
 
 }
+

@@ -1,4 +1,4 @@
-package com.codingx.support.ai;
+package com.codingx.common.support.ai;
 
 import java.util.concurrent.CompletableFuture;
 
@@ -21,3 +21,4 @@ public record AiStreamSession(
         }
     }
 }
+

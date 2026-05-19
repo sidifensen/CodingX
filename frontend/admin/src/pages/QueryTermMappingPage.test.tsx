@@ -64,12 +64,13 @@ describe('QueryTermMappingPage', () => {
   });
 
   it('loads mapping page data and renders table rows', async () => {
-    render(<QueryTermMappingPage />);
+    const { container } = render(<QueryTermMappingPage />);
 
     await screen.findByText('oa');
     expect(AdminChatApi.listMappingsPage).toHaveBeenCalledWith(1, 10, undefined);
     expect(screen.getByText('检索增强生成')).toBeInTheDocument();
     expect(screen.getByTestId('mapping-total')).toHaveTextContent('2');
+    expect(container.querySelector('section.rounded-xl.border.border-border-hairline.bg-surface-container-lowest.shadow-sm')).toBeInTheDocument();
   });
 
   it('searches by keyword', async () => {

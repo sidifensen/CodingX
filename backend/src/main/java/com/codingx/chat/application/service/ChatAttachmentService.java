@@ -11,7 +11,7 @@ import com.codingx.chat.domain.repository.ChatConversationRepository;
 import com.codingx.common.exception.BusinessException;
 import com.codingx.common.exception.ForbiddenException;
 import com.codingx.common.exception.NotFoundException;
-import com.codingx.storage.RustFsChatAttachmentClient;
+import com.codingx.common.storage.RustFsChatAttachmentClient;
 import java.time.LocalDateTime;
 import java.util.HashSet;
 import java.util.List;
@@ -217,3 +217,4 @@ public class ChatAttachmentService {
         }
     }
 }
+

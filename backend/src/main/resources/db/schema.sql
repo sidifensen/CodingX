@@ -669,6 +669,7 @@ CREATE TABLE IF NOT EXISTS skill (
     enabled SMALLINT NOT NULL DEFAULT 1,
     sort_no INTEGER NOT NULL DEFAULT 0,
     storage_key VARCHAR(512),
+    package_storage_format VARCHAR(32) NOT NULL DEFAULT 'zip',
     package_file_name VARCHAR(255),
     package_size BIGINT,
     package_checksum VARCHAR(128),
@@ -678,6 +679,22 @@ CREATE TABLE IF NOT EXISTS skill (
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     deleted SMALLINT NOT NULL DEFAULT 0
 );
+-- 兼容历史环境：旧 skill 表缺少技能包存储字段时先补列，避免后续列注释与索引初始化失败。
+ALTER TABLE skill
+    ADD COLUMN IF NOT EXISTS storage_key VARCHAR(512),
+    ADD COLUMN IF NOT EXISTS package_storage_format VARCHAR(32),
+    ADD COLUMN IF NOT EXISTS package_file_name VARCHAR(255),
+    ADD COLUMN IF NOT EXISTS package_size BIGINT,
+    ADD COLUMN IF NOT EXISTS package_checksum VARCHAR(128),
+    ADD COLUMN IF NOT EXISTS uploaded_by BIGINT,
+    ADD COLUMN IF NOT EXISTS uploaded_at TIMESTAMP;
+UPDATE skill
+SET package_storage_format = 'zip'
+WHERE package_storage_format IS NULL;
+ALTER TABLE skill
+    ALTER COLUMN package_storage_format SET DEFAULT 'zip',
+    ALTER COLUMN package_storage_format SET NOT NULL;
+
 COMMENT ON TABLE skill IS '聊天技能配置表';
 COMMENT ON COLUMN skill.id IS '技能主键ID';
 COMMENT ON COLUMN skill.skill_code IS '技能编码';
@@ -688,6 +705,7 @@ COMMENT ON COLUMN skill.source_type IS '技能来源';
 COMMENT ON COLUMN skill.enabled IS '是否启用 1启用 0禁用';
 COMMENT ON COLUMN skill.sort_no IS '排序字段';
 COMMENT ON COLUMN skill.storage_key IS '技能包对象存储键';
+COMMENT ON COLUMN skill.package_storage_format IS '技能包存储格式 directory目录 zip压缩包';
 COMMENT ON COLUMN skill.package_file_name IS '技能包原始文件名';
 COMMENT ON COLUMN skill.package_size IS '技能包大小字节数';
 COMMENT ON COLUMN skill.package_checksum IS '技能包SHA256摘要';

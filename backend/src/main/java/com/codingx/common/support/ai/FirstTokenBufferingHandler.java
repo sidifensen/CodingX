@@ -1,4 +1,4 @@
-package com.codingx.support.ai;
+package com.codingx.common.support.ai;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -133,3 +133,4 @@ public class FirstTokenBufferingHandler implements AiStreamHandler {
         ERROR
     }
 }
+

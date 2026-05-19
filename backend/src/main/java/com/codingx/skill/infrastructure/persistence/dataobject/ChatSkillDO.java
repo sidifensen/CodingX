@@ -41,6 +41,9 @@ public class ChatSkillDO {
     @TableField("storage_key")
     private String storageKey;
 
+    @TableField("package_storage_format")
+    private String packageStorageFormat;
+
     @TableField("package_file_name")
     private String packageFileName;
 

@@ -5,9 +5,9 @@ import cn.hutool.core.util.StrUtil;
 import com.codingx.chat.domain.model.ChatMessage;
 import com.codingx.chat.domain.model.ChatMessageRole;
 import com.codingx.chat.domain.model.ChatMessageStatus;
-import com.codingx.support.ai.AiConversationRequest;
-import com.codingx.support.ai.AiModelDispatchService;
-import com.codingx.support.ai.AiStreamHandler;
+import com.codingx.common.support.ai.AiConversationRequest;
+import com.codingx.common.support.ai.AiModelDispatchService;
+import com.codingx.common.support.ai.AiStreamHandler;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -78,3 +78,4 @@ public class AiPromptExecutionService {
         );
     }
 }
+

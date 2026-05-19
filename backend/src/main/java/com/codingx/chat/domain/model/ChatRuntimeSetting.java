@@ -20,7 +20,10 @@ public class ChatRuntimeSetting {
     private String settingKey;
     private String settingValue;
     private String valueType;
+    private String categoryCode;
     private String description;
+    private Integer sortNo;
+    private Boolean restartRequired;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
     private Integer deleted;

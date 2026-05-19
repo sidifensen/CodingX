@@ -7,16 +7,19 @@ import java.time.LocalDateTime;
 import lombok.Data;
 
 /**
- * 定义聊天运行时配置表的数据对象映射。
+ * 定义系统运行时配置表的数据对象映射。
  */
 @Data
-@TableName("chat_runtime_setting")
+@TableName("setting")
 public class ChatRuntimeSettingDO {
     @TableId("id") private Long id;
     @TableField("setting_key") private String settingKey;
     @TableField("setting_value") private String settingValue;
     @TableField("value_type") private String valueType;
+    @TableField("category_code") private String categoryCode;
     @TableField("description") private String description;
+    @TableField("sort_no") private Integer sortNo;
+    @TableField("restart_required") private Boolean restartRequired;
     @TableField("created_at") private LocalDateTime createdAt;
     @TableField("updated_at") private LocalDateTime updatedAt;
     @TableField("deleted") private Integer deleted;

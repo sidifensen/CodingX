@@ -3,11 +3,9 @@ package com.codingx.chat.application.service;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.codingx.config.ChatMemoryProperties;
 import com.codingx.chat.domain.model.ChatConversation;
 import com.codingx.chat.domain.model.ChatConversationStatus;
 import com.codingx.chat.domain.model.ChatConversationSummary;
@@ -31,21 +29,22 @@ class ConversationSummaryServiceTest {
 
     @Mock
     private ChatConversationSummaryRepository chatConversationSummaryRepository;
+    @Mock
+    private RuntimeSettingService runtimeSettingService;
 
     /**
      * 达到阈值时应生成摘要，并把 lastMessageId 指向被压缩区间末尾消息。
      */
     @Test
     void refreshSummaryIfNeededShouldPersistSummaryBeforeRecentWindow() {
-        ChatMemoryProperties memoryProperties = new ChatMemoryProperties();
-        memoryProperties.setSummaryEnabled(true);
-        memoryProperties.setSummaryTriggerMessages(4);
-        memoryProperties.setHistoryKeepTurns(1);
-        memoryProperties.setSummaryMaxCharacters(4000);
+        when(runtimeSettingService.summaryEnabled()).thenReturn(true);
+        when(runtimeSettingService.summaryTriggerMessages()).thenReturn(4);
+        when(runtimeSettingService.historyKeepTurns()).thenReturn(1);
+        when(runtimeSettingService.summaryMaxCharacters()).thenReturn(4000);
         ConversationSummaryService service = new ConversationSummaryService(
-            new ConversationDigestService(memoryProperties),
+            new ConversationDigestService(runtimeSettingService),
             chatConversationSummaryRepository,
-            memoryProperties
+            runtimeSettingService
         );
         ChatConversation conversation = ChatConversation.create(100L, "会话", 200L, ChatConversationStatus.ACTIVE);
         List<ChatMessage> history = List.of(
@@ -75,15 +74,12 @@ class ConversationSummaryServiceTest {
      */
     @Test
     void buildModelHistoryShouldUseSummaryAndRecentWindow() {
-        ChatMemoryProperties memoryProperties = new ChatMemoryProperties();
-        memoryProperties.setSummaryEnabled(true);
-        memoryProperties.setSummaryTriggerMessages(4);
-        memoryProperties.setHistoryKeepTurns(1);
-        memoryProperties.setSummaryMaxCharacters(4000);
+        when(runtimeSettingService.summaryEnabled()).thenReturn(true);
+        when(runtimeSettingService.historyKeepTurns()).thenReturn(1);
         ConversationSummaryService service = new ConversationSummaryService(
-            new ConversationDigestService(memoryProperties),
+            new ConversationDigestService(runtimeSettingService),
             chatConversationSummaryRepository,
-            memoryProperties
+            runtimeSettingService
         );
         List<ChatMessage> history = List.of(
             ChatMessage.userMessage(100L, "u1"),

@@ -3,6 +3,7 @@ package com.codingx.mcp.application.service;
 import cn.hutool.core.io.FileUtil;
 import cn.hutool.core.util.ReUtil;
 import cn.hutool.core.util.StrUtil;
+import com.codingx.chat.application.service.RuntimeSettingService;
 import com.codingx.config.RuntimeProperties;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -56,10 +57,18 @@ public class CodeSearchMcpToolExecutor implements ChatMcpToolExecutor {
      * @param runtimeProperties 运行时配置。
      */
     @Autowired
-    public CodeSearchMcpToolExecutor(RuntimeProperties runtimeProperties) {
-        this(resolveSearchRoot(runtimeProperties == null ? null : runtimeProperties.getCodeSearchRoot()),
-            normalizeMaxResults(runtimeProperties == null ? 20 : runtimeProperties.getCodeSearchMaxResults()),
-            normalizeMaxFileSize(runtimeProperties == null ? 1024 * 1024L : runtimeProperties.getCodeSearchMaxFileSizeBytes()));
+    public CodeSearchMcpToolExecutor(RuntimeProperties runtimeProperties, RuntimeSettingService runtimeSettingService) {
+        this(
+            resolveSearchRoot(runtimeSettingService == null
+                ? (runtimeProperties == null ? null : runtimeProperties.getCodeSearchRoot())
+                : runtimeSettingService.codeSearchRoot()),
+            normalizeMaxResults(runtimeSettingService == null
+                ? (runtimeProperties == null ? 20 : runtimeProperties.getCodeSearchMaxResults())
+                : runtimeSettingService.codeSearchMaxResults()),
+            normalizeMaxFileSize(runtimeSettingService == null
+                ? (runtimeProperties == null ? 1024 * 1024L : runtimeProperties.getCodeSearchMaxFileSizeBytes())
+                : runtimeSettingService.codeSearchMaxFileSizeBytes())
+        );
     }
 
     /**

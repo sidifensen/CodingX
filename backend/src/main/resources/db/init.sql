@@ -341,18 +341,37 @@ SET
     updated_at = CURRENT_TIMESTAMP,
     deleted = EXCLUDED.deleted;
 
-INSERT INTO chat_runtime_setting (id, setting_key, setting_value, value_type, description, deleted)
+INSERT INTO setting (id, setting_key, setting_value, value_type, category_code, description, sort_no, restart_required, deleted)
 VALUES
-    (7001, 'search.top_k', '5', 'INTEGER', '搜索结果返回数量上限', 0),
-    (7002, 'search.rerank_enabled', 'true', 'BOOLEAN', '是否启用搜索结果重排', 0),
-    (7003, 'chat.token_budget', '4096', 'INTEGER', '聊天请求 token 预算', 0),
-    (7004, 'chat.thinking_visible', 'true', 'BOOLEAN', '是否展示思考内容', 0),
-    (7005, 'queue.max_concurrent', '1', 'INTEGER', '聊天链路最大并发数', 0)
+    (7001, 'chat.memory.summary_enabled', 'true', 'BOOLEAN', 'chat.memory', '是否启用聊天历史摘要压缩', 10, FALSE, 0),
+    (7002, 'chat.memory.summary_trigger_messages', '12', 'INTEGER', 'chat.memory', '聊天历史摘要触发消息数阈值', 20, FALSE, 0),
+    (7010, 'chat.memory.history_keep_turns', '6', 'INTEGER', 'chat.memory', '聊天历史原文保留轮次', 30, FALSE, 0),
+    (7011, 'chat.memory.summary_max_characters', '4000', 'INTEGER', 'chat.memory', '聊天历史摘要最大字符数', 40, FALSE, 0),
+    (7020, 'search.top_k', '5', 'INTEGER', 'search', '搜索结果返回数量上限', 10, FALSE, 0),
+    (7021, 'search.rerank_enabled', 'true', 'BOOLEAN', 'search', '是否启用搜索结果重排', 20, FALSE, 0),
+    (7022, 'search.timeout_ms', '15000', 'LONG', 'search', '单次搜索超时毫秒', 30, FALSE, 0),
+    (7023, 'search.max_parallel_questions', '3', 'INTEGER', 'search', '搜索拆分子问题最大并发数', 40, FALSE, 0),
+    (7030, 'queue.max_concurrent', '2', 'INTEGER', 'queue', '聊天链路最大并发数', 10, TRUE, 0),
+    (7031, 'queue.acquire_timeout_ms', '3000', 'LONG', 'queue', '队列获取执行资格超时毫秒', 20, TRUE, 0),
+    (7032, 'queue.poll_interval_ms', '200', 'LONG', 'queue', '队列轮询间隔毫秒', 30, TRUE, 0),
+    (7033, 'queue.lease_seconds', '300', 'LONG', 'queue', '执行资格租约秒数', 40, TRUE, 0),
+    (7034, 'queue.lease_renew_interval_ms', '10000', 'LONG', 'queue', '执行资格续租间隔毫秒', 50, TRUE, 0),
+    (7040, 'code_search.root', '', 'STRING', 'code_search', '代码检索根目录', 10, TRUE, 0),
+    (7041, 'code_search.max_results', '20', 'INTEGER', 'code_search', '代码检索最大返回命中数', 20, TRUE, 0),
+    (7042, 'code_search.max_file_size_bytes', '1048576', 'LONG', 'code_search', '代码检索单文件最大扫描字节数', 30, TRUE, 0),
+    (7050, 'ai.selection.failure_threshold', '2', 'INTEGER', 'ai.routing', '模型路由连续失败熔断阈值', 10, TRUE, 0),
+    (7051, 'ai.selection.open_duration_ms', '30000', 'LONG', 'ai.routing', '模型路由熔断打开时长毫秒', 20, TRUE, 0),
+    (7052, 'ai.selection.first_packet_timeout_ms', '60000', 'LONG', 'ai.routing', '模型路由首包超时毫秒', 30, FALSE, 0),
+    (7053, 'ai.chat.default_model', 'qwen-plus', 'STRING', 'ai.routing', '模型路由默认模型ID', 40, FALSE, 0),
+    (7054, 'ai.chat.deep_thinking_model', 'qwen3-max', 'STRING', 'ai.routing', '模型路由深度思考模型ID', 50, FALSE, 0)
 ON CONFLICT (setting_key) DO UPDATE
 SET
     setting_value = EXCLUDED.setting_value,
     value_type = EXCLUDED.value_type,
+    category_code = EXCLUDED.category_code,
     description = EXCLUDED.description,
+    sort_no = EXCLUDED.sort_no,
+    restart_required = EXCLUDED.restart_required,
     updated_at = CURRENT_TIMESTAMP,
     deleted = EXCLUDED.deleted;
 

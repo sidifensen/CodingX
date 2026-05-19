@@ -1,6 +1,7 @@
 package com.codingx.chat.infrastructure.runtime;
 
 import com.codingx.config.RuntimeProperties;
+import com.codingx.chat.application.service.RuntimeSettingService;
 import jakarta.annotation.PreDestroy;
 import java.util.Map;
 import java.util.Objects;
@@ -34,6 +35,7 @@ public class ConversationQueueGate {
     private final long queueLeaseSeconds;
     private final long queueLeaseRenewIntervalMs;
     private final RedissonClient redissonClient;
+    private final RuntimeSettingService runtimeSettingService;
 
     private final Map<Long, Boolean> activeConversations = new ConcurrentHashMap<>();
     private final Map<Long, String> permitByConversation = new ConcurrentHashMap<>();
@@ -46,7 +48,11 @@ public class ConversationQueueGate {
      * @param redissonClientProvider Redisson 客户端提供者。
      */
     @Autowired
-    public ConversationQueueGate(RuntimeProperties runtimeProperties, ObjectProvider<RedissonClient> redissonClientProvider) {
+    public ConversationQueueGate(
+        RuntimeProperties runtimeProperties,
+        RuntimeSettingService runtimeSettingService,
+        ObjectProvider<RedissonClient> redissonClientProvider
+    ) {
         this(
             runtimeProperties.isUseRedisQueueGate(),
             runtimeProperties.getQueueMaxConcurrent(),
@@ -54,7 +60,8 @@ public class ConversationQueueGate {
             runtimeProperties.getQueuePollIntervalMs(),
             runtimeProperties.getQueueLeaseSeconds(),
             runtimeProperties.getQueueLeaseRenewIntervalMs(),
-            redissonClientProvider.getIfAvailable()
+            redissonClientProvider.getIfAvailable(),
+            runtimeSettingService
         );
     }
 
@@ -63,7 +70,7 @@ public class ConversationQueueGate {
      * @param maxConcurrent 最大并发数。
      */
     public ConversationQueueGate(int maxConcurrent) {
-        this(false, maxConcurrent, 3000L, 200L, 300L, 10000L, null);
+        this(false, maxConcurrent, 3000L, 200L, 300L, 10000L, null, null);
     }
 
     /**
@@ -83,14 +90,31 @@ public class ConversationQueueGate {
         long queuePollIntervalMs,
         long queueLeaseSeconds,
         long queueLeaseRenewIntervalMs,
-        RedissonClient redissonClient
+        RedissonClient redissonClient,
+        RuntimeSettingService runtimeSettingService
     ) {
         this.useRedisQueueGate = useRedisQueueGate;
-        this.maxConcurrent = Math.max(1, maxConcurrent);
-        this.queueAcquireTimeoutMs = Math.max(200L, queueAcquireTimeoutMs);
-        this.queuePollIntervalMs = Math.max(50L, queuePollIntervalMs);
-        this.queueLeaseSeconds = Math.max(30L, queueLeaseSeconds);
-        this.queueLeaseRenewIntervalMs = normalizeRenewInterval(queueLeaseSeconds, queueLeaseRenewIntervalMs);
+        this.runtimeSettingService = runtimeSettingService;
+        this.maxConcurrent = Math.max(
+            1,
+            runtimeSettingService == null ? maxConcurrent : runtimeSettingService.queueMaxConcurrent()
+        );
+        this.queueAcquireTimeoutMs = Math.max(
+            200L,
+            runtimeSettingService == null ? queueAcquireTimeoutMs : runtimeSettingService.queueAcquireTimeoutMs()
+        );
+        this.queuePollIntervalMs = Math.max(
+            50L,
+            runtimeSettingService == null ? queuePollIntervalMs : runtimeSettingService.queuePollIntervalMs()
+        );
+        this.queueLeaseSeconds = Math.max(
+            30L,
+            runtimeSettingService == null ? queueLeaseSeconds : runtimeSettingService.queueLeaseSeconds()
+        );
+        long configuredRenewInterval = runtimeSettingService == null
+            ? queueLeaseRenewIntervalMs
+            : runtimeSettingService.queueLeaseRenewIntervalMs();
+        this.queueLeaseRenewIntervalMs = normalizeRenewInterval(this.queueLeaseSeconds, configuredRenewInterval);
         this.redissonClient = redissonClient;
         this.renewScheduler = Executors.newSingleThreadScheduledExecutor(runnable -> {
             Thread thread = new Thread(runnable, "chat-queue-lease-renew");
@@ -124,7 +148,8 @@ public class ConversationQueueGate {
             queuePollIntervalMs,
             queueLeaseSeconds,
             defaultRenewInterval(queueLeaseSeconds),
-            redissonClient
+            redissonClient,
+            null
         );
     }
 

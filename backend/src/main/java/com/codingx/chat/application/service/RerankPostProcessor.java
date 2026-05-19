@@ -10,8 +10,17 @@ import org.springframework.stereotype.Component;
 @Component
 public class RerankPostProcessor implements SearchResultPostProcessor {
 
+    private final RuntimeSettingService runtimeSettingService;
+
+    public RerankPostProcessor(RuntimeSettingService runtimeSettingService) {
+        this.runtimeSettingService = runtimeSettingService;
+    }
+
     @Override
     public List<SearchReferenceCandidate> process(SearchRequestContext context, List<SearchReferenceCandidate> candidates) {
+        if (!runtimeSettingService.searchRerankEnabled()) {
+            return candidates;
+        }
         return candidates.stream()
             .sorted(Comparator.comparingDouble((SearchReferenceCandidate candidate) -> candidate.score() == null ? 0D : candidate.score()).reversed())
             .toList();

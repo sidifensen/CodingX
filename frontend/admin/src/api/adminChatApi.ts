@@ -150,7 +150,10 @@ export interface AdminRuntimeSetting {
   settingKey: string;
   settingValue: string;
   valueType: string;
+  categoryCode?: string;
   description?: string;
+  sortNo?: number;
+  restartRequired?: boolean;
 }
 
 export interface AdminDashboardView {
@@ -462,6 +465,13 @@ export class AdminChatApi {
 
   static async saveSetting(payload: AdminRuntimeSetting): Promise<AdminRuntimeSetting> {
     return this.request<AdminRuntimeSetting>('/api/admin/chat/settings', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  static async saveSettings(payload: AdminRuntimeSetting[]): Promise<AdminRuntimeSetting[]> {
+    return this.request<AdminRuntimeSetting[]>('/api/admin/chat/settings/batch', {
       method: 'POST',
       body: JSON.stringify(payload),
     });

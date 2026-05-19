@@ -2,7 +2,6 @@ package com.codingx.chat.application.service;
 
 import cn.hutool.core.util.IdUtil;
 import cn.hutool.core.util.StrUtil;
-import com.codingx.config.ChatMemoryProperties;
 import com.codingx.chat.domain.model.ChatConversation;
 import com.codingx.chat.domain.model.ChatConversationSummary;
 import com.codingx.chat.domain.model.ChatMessage;
@@ -23,7 +22,7 @@ public class ConversationSummaryService {
 
     private final ConversationDigestService conversationDigestService;
     private final ChatConversationSummaryRepository chatConversationSummaryRepository;
-    private final ChatMemoryProperties chatMemoryProperties;
+    private final RuntimeSettingService runtimeSettingService;
 
     /**
      * 注入摘要阈值判断器与摘要仓储。
@@ -33,11 +32,11 @@ public class ConversationSummaryService {
     public ConversationSummaryService(
         ConversationDigestService conversationDigestService,
         ChatConversationSummaryRepository chatConversationSummaryRepository,
-        ChatMemoryProperties chatMemoryProperties
+        RuntimeSettingService runtimeSettingService
     ) {
         this.conversationDigestService = conversationDigestService;
         this.chatConversationSummaryRepository = chatConversationSummaryRepository;
-        this.chatMemoryProperties = chatMemoryProperties;
+        this.runtimeSettingService = runtimeSettingService;
     }
 
     /**
@@ -47,7 +46,7 @@ public class ConversationSummaryService {
      * @return 新增或更新后的摘要。
      */
     public Optional<ChatConversationSummary> refreshSummaryIfNeeded(ChatConversation conversation, List<ChatMessage> history) {
-        if (!chatMemoryProperties.isSummaryEnabled()) {
+        if (!runtimeSettingService.summaryEnabled()) {
             return Optional.empty();
         }
         if (!conversationDigestService.shouldSummarize(history)) {
@@ -107,7 +106,7 @@ public class ConversationSummaryService {
         if (history == null || history.isEmpty()) {
             return List.of();
         }
-        if (!chatMemoryProperties.isSummaryEnabled()) {
+        if (!runtimeSettingService.summaryEnabled()) {
             return new ArrayList<>(history);
         }
         Optional<ChatConversationSummary> summaryOptional = chatConversationSummaryRepository.findLatestByConversationId(conversationId)
@@ -137,7 +136,7 @@ public class ConversationSummaryService {
         String merged = StrUtil.isBlank(existingSummary)
             ? appended
             : existingSummary.trim() + "\n" + appended;
-        int maxCharacters = Math.max(500, chatMemoryProperties.getSummaryMaxCharacters());
+        int maxCharacters = Math.max(500, runtimeSettingService.summaryMaxCharacters());
         if (merged.length() <= maxCharacters) {
             return merged;
         }
@@ -216,6 +215,6 @@ public class ConversationSummaryService {
      * @return 保留消息条数。
      */
     private int resolveKeepMessages() {
-        return Math.max(2, Math.max(1, chatMemoryProperties.getHistoryKeepTurns()) * 2);
+        return Math.max(2, Math.max(1, runtimeSettingService.historyKeepTurns()) * 2);
     }
 }

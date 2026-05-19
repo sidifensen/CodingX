@@ -22,6 +22,8 @@ public class ChatRuntimeSettingRepositoryImpl implements ChatRuntimeSettingRepos
     public List<ChatRuntimeSetting> findAll() {
         return chatRuntimeSettingMapper.selectList(new LambdaQueryWrapper<ChatRuntimeSettingDO>()
                 .eq(ChatRuntimeSettingDO::getDeleted, 0)
+                .orderByAsc(ChatRuntimeSettingDO::getCategoryCode)
+                .orderByAsc(ChatRuntimeSettingDO::getSortNo)
                 .orderByAsc(ChatRuntimeSettingDO::getSettingKey))
             .stream()
             .map(this::toDomain)
@@ -35,7 +37,10 @@ public class ChatRuntimeSettingRepositoryImpl implements ChatRuntimeSettingRepos
         dataObject.setSettingKey(setting.getSettingKey());
         dataObject.setSettingValue(setting.getSettingValue());
         dataObject.setValueType(setting.getValueType());
+        dataObject.setCategoryCode(setting.getCategoryCode());
         dataObject.setDescription(setting.getDescription());
+        dataObject.setSortNo(setting.getSortNo());
+        dataObject.setRestartRequired(setting.getRestartRequired());
         dataObject.setCreatedAt(setting.getCreatedAt());
         dataObject.setUpdatedAt(setting.getUpdatedAt());
         dataObject.setDeleted(setting.getDeleted());
@@ -52,7 +57,10 @@ public class ChatRuntimeSettingRepositoryImpl implements ChatRuntimeSettingRepos
             .settingKey(dataObject.getSettingKey())
             .settingValue(dataObject.getSettingValue())
             .valueType(dataObject.getValueType())
+            .categoryCode(dataObject.getCategoryCode())
             .description(dataObject.getDescription())
+            .sortNo(dataObject.getSortNo())
+            .restartRequired(dataObject.getRestartRequired())
             .createdAt(dataObject.getCreatedAt())
             .updatedAt(dataObject.getUpdatedAt())
             .deleted(dataObject.getDeleted())

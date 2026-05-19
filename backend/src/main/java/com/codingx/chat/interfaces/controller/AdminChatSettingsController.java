@@ -30,4 +30,19 @@ public class AdminChatSettingsController {
     public ApiResponse<ChatRuntimeSetting> saveSetting(@RequestBody ChatRuntimeSetting setting) {
         return ApiResponse.success(adminChatSettingsService.save(setting));
     }
+
+    /**
+     * 批量保存配置并返回最新配置列表，供管理端“保存覆盖配置”场景一次提交。
+     * @param settings 待保存配置集合。
+     * @return 最新全量配置。
+     */
+    @PostMapping("/batch")
+    public ApiResponse<List<ChatRuntimeSetting>> saveSettings(@RequestBody List<ChatRuntimeSetting> settings) {
+        if (settings != null) {
+            for (ChatRuntimeSetting setting : settings) {
+                adminChatSettingsService.save(setting);
+            }
+        }
+        return ApiResponse.success(adminChatSettingsService.listAllSettings());
+    }
 }

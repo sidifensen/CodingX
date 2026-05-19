@@ -9,12 +9,18 @@ import org.springframework.stereotype.Component;
 @Component
 public class TopKTruncationPostProcessor implements SearchResultPostProcessor {
 
-    private static final int DEFAULT_TOP_K = 5;
+    private final RuntimeSettingService runtimeSettingService;
+
+    public TopKTruncationPostProcessor(RuntimeSettingService runtimeSettingService) {
+        this.runtimeSettingService = runtimeSettingService;
+    }
 
     @Override
     public List<SearchReferenceCandidate> process(SearchRequestContext context, List<SearchReferenceCandidate> candidates) {
+        int configuredTopK = runtimeSettingService.searchTopK();
+        int topK = Math.max(1, Math.min(50, configuredTopK));
         return candidates.stream()
-            .limit(DEFAULT_TOP_K)
+            .limit(topK)
             .toList();
     }
 }

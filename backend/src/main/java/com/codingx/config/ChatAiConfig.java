@@ -17,11 +17,16 @@ public class ChatAiConfig {
      * 根据所有可用 provider 构造统一模型路由服务。
      * @param providerClients AI provider 列表。
      * @param aiProperties AI 配置。
+     * @param dynamicAiRoutingProperties 模型路由动态配置。
      * @return 模型路由服务。
      */
     @Bean
-    public AiModelDispatchService aiModelDispatchService(List<AiProviderClient> providerClients, AiProperties aiProperties) {
-        return new AiModelDispatchService(providerClients, aiProperties);
+    public AiModelDispatchService aiModelDispatchService(
+        List<AiProviderClient> providerClients,
+        AiProperties aiProperties,
+        DynamicAiRoutingProperties dynamicAiRoutingProperties
+    ) {
+        return new AiModelDispatchService(providerClients, aiProperties, dynamicAiRoutingProperties);
     }
 
     /**
@@ -94,15 +99,4 @@ public class ChatAiConfig {
             .toList();
     }
 
-    /**
-     * 默认截断后处理器，限制返回来源数量。
-     * @return 截断后处理器。
-     */
-    @Bean
-    public com.codingx.chat.application.service.SearchResultPostProcessor defaultSearchTopKPostProcessor() {
-        return (context, candidates) -> candidates.stream()
-            .sorted(java.util.Comparator.comparingDouble(com.codingx.chat.application.service.SearchReferenceCandidate::score).reversed())
-            .limit(5)
-            .toList();
-    }
 }

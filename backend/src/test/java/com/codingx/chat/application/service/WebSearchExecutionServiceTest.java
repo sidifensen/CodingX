@@ -2,22 +2,31 @@ package com.codingx.chat.application.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertIterableEquals;
+import static org.mockito.Mockito.when;
 
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 /**
  * 验证搜索执行服务的最小 provider 抽象与返回归一化。
  */
+@ExtendWith(MockitoExtension.class)
 class WebSearchExecutionServiceTest {
+
+    @Mock
+    private RuntimeSettingService runtimeSettingService;
 
     /**
      * 搜索服务应优先使用可用 provider，并返回标准化来源结果。
      */
     @Test
     void searchReturnsNormalizedReferencesFromProvider() {
+        when(runtimeSettingService.searchTimeoutMs()).thenReturn(15_000L);
         ExecutorService executorService = Executors.newSingleThreadExecutor();
         WebSearchExecutionService service = new WebSearchExecutionService(
             List.of(new SearchChannel() {
@@ -37,7 +46,8 @@ class WebSearchExecutionServiceTest {
                 }
             }),
             List.of(),
-            executorService
+            executorService,
+            runtimeSettingService
         );
 
         List<SearchReferenceCandidate> references = service.search("请搜索 Spring Boot SSE");
@@ -52,6 +62,7 @@ class WebSearchExecutionServiceTest {
      */
     @Test
     void searchAggregatesChannelsAndAppliesPostProcessors() {
+        when(runtimeSettingService.searchTimeoutMs()).thenReturn(15_000L);
         ExecutorService executorService = Executors.newFixedThreadPool(2);
         SearchChannel primaryChannel = new SearchChannel() {
             @Override
@@ -105,7 +116,12 @@ class WebSearchExecutionServiceTest {
             .sorted(java.util.Comparator.comparingDouble(SearchReferenceCandidate::score).reversed())
             .limit(2)
             .toList();
-        WebSearchExecutionService service = new WebSearchExecutionService(List.of(primaryChannel, backupChannel), List.of(dedup, rerank), executorService);
+        WebSearchExecutionService service = new WebSearchExecutionService(
+            List.of(primaryChannel, backupChannel),
+            List.of(dedup, rerank),
+            executorService,
+            runtimeSettingService
+        );
 
         List<SearchReferenceCandidate> references = service.search("请搜索 Spring Boot SSE");
 

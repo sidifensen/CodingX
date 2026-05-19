@@ -9,8 +9,10 @@ import {
   AdminChatToolInvokeView,
 } from '../api/adminChatApi';
 import { DataTableCard } from '../components/DataTableCard';
+import { ToolIntentTreePanel } from '../components/ToolIntentTreePanel';
 
 type ToolDialogMode = 'create' | 'edit';
+type ToolViewMode = 'list' | 'intentTree';
 
 interface ToolFormState {
   toolCode: string;
@@ -61,7 +63,9 @@ export function ToolsPage() {
   const [invokeQuestion, setInvokeQuestion] = React.useState('');
   const [invokeResult, setInvokeResult] = React.useState<AdminChatToolInvokeView | null>(null);
   const [invokeErrorMessage, setInvokeErrorMessage] = React.useState('');
+  const [viewMode, setViewMode] = React.useState<ToolViewMode>('list');
   const [pageNo, setPageNo] = React.useState(1);
+  const [selectedToolCode, setSelectedToolCode] = React.useState<string | null>(null);
   const mergedRows = React.useMemo(() => mergeToolsAndHealthViews(tools, toolHealthViews), [tools, toolHealthViews]);
   const isTableLoading = configLoading || healthLoading;
   const totalRows = mergedRows.length;
@@ -71,12 +75,24 @@ export function ToolsPage() {
     const start = (safePageNo - 1) * TOOL_TABLE_PAGE_SIZE;
     return mergedRows.slice(start, start + TOOL_TABLE_PAGE_SIZE);
   }, [mergedRows, safePageNo]);
+  // 对齐 Trace 管理：加载阶段若暂无数据则展示骨架行，不直接留空表格。
+  const showEmptyState = !isTableLoading && pagedRows.length === 0;
+  const showSkeletonRows = isTableLoading && pagedRows.length === 0;
 
   React.useEffect(() => {
     if (pageNo > pageCount) {
       setPageNo(pageCount);
     }
   }, [pageNo, pageCount]);
+
+  React.useEffect(() => {
+    setSelectedToolCode((previous) => {
+      if (previous && mergedRows.some((row) => normalizeToolCode(row.toolCode) === normalizeToolCode(previous))) {
+        return previous;
+      }
+      return mergedRows[0]?.toolCode ?? null;
+    });
+  }, [mergedRows]);
 
   /**
    * 加载工具配置列表。
@@ -177,7 +193,33 @@ export function ToolsPage() {
           <h2 className="font-headline-md text-headline-md text-ink">工具管理</h2>
           <p className="mt-1 text-secondary">独立维护 chat_tool 工具目录，预置 Codex CLI 工具清单。</p>
         </div>
-        <div className="flex gap-sm">
+        <div className="flex flex-wrap items-center gap-sm">
+          <div className="inline-flex items-center rounded-lg border border-border-hairline bg-surface-container-lowest p-1">
+            <button
+              type="button"
+              aria-label="列表视图"
+              className={[
+                'rounded-md px-sm py-1.5 text-[12px] transition-colors',
+                viewMode === 'list' ? 'bg-primary text-on-primary' : 'text-secondary hover:bg-surface-container-low hover:text-ink',
+              ].join(' ')}
+              onClick={() => setViewMode('list')}
+            >
+              列表视图
+            </button>
+            <button
+              type="button"
+              aria-label="意图树视图"
+              className={[
+                'rounded-md px-sm py-1.5 text-[12px] transition-colors',
+                viewMode === 'intentTree'
+                  ? 'bg-primary text-on-primary'
+                  : 'text-secondary hover:bg-surface-container-low hover:text-ink',
+              ].join(' ')}
+              onClick={() => setViewMode('intentTree')}
+            >
+              意图树视图
+            </button>
+          </div>
           <button
             type="button"
             aria-label="刷新工具列表"
@@ -203,122 +245,144 @@ export function ToolsPage() {
         </div>
       ) : null}
 
-      <DataTableCard
-        title="工具列表"
-        description="统一展示工具配置与执行器状态，支持探测、调用和配置维护。"
-        scrollTestId="tools-table-scroll"
-        loading={isTableLoading}
-        loadingText="加载中..."
-        summaryText={`第 ${safePageNo} / ${pageCount} 页，共 ${totalRows.toLocaleString('zh-CN')} 条`}
-        paginationCurrent={safePageNo}
-        paginationPages={pageCount}
-        onPaginationChange={setPageNo}
-        tableContent={(
-        <table className="w-full min-w-[1420px] border-collapse text-left">
-          <thead>
-            <tr className="border-b border-border-hairline bg-surface-container-low">
-              <th className="sticky top-0 z-10 bg-surface-container-low px-lg py-md font-label-caps text-label-caps text-secondary">编码</th>
-              <th className="sticky top-0 z-10 bg-surface-container-low px-lg py-md font-label-caps text-label-caps text-secondary">名称</th>
-              <th className="sticky top-0 z-10 bg-surface-container-low px-lg py-md font-label-caps text-label-caps text-secondary">分类</th>
-              <th className="sticky top-0 z-10 bg-surface-container-low px-lg py-md font-label-caps text-label-caps text-secondary">来源</th>
-              <th className="sticky top-0 z-10 bg-surface-container-low px-lg py-md font-label-caps text-label-caps text-secondary">状态</th>
-              <th className="sticky top-0 z-10 bg-surface-container-low px-lg py-md font-label-caps text-label-caps text-secondary">执行器</th>
-              <th className="sticky top-0 z-10 bg-surface-container-low px-lg py-md font-label-caps text-label-caps text-secondary">样例问题</th>
-              <th className="sticky top-0 z-10 bg-surface-container-low px-lg py-md font-label-caps text-label-caps text-secondary">最近探测</th>
-              <th className="sticky top-0 z-10 bg-surface-container-low px-lg py-md font-label-caps text-label-caps text-secondary">排序</th>
-              <th className="sticky top-0 z-10 bg-surface-container-low px-lg py-md text-right font-label-caps text-label-caps text-secondary">操作</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border-hairline">
-            {!isTableLoading && pagedRows.length === 0 ? (
-              <tr>
-                <td className="px-lg py-xl text-center text-secondary" colSpan={10}>
-                  暂无工具配置
-                </td>
+      {viewMode === 'list' ? (
+        <DataTableCard
+          title="工具列表"
+          description="统一展示工具配置与执行器状态，支持探测、调用和配置维护。"
+          scrollTestId="tools-table-scroll"
+          loading={isTableLoading}
+          loadingText="加载中..."
+          summaryText={`第 ${safePageNo} / ${pageCount} 页，共 ${totalRows.toLocaleString('zh-CN')} 条`}
+          paginationCurrent={safePageNo}
+          paginationPages={pageCount}
+          onPaginationChange={setPageNo}
+          tableContent={(
+          <table className="w-full min-w-[1420px] border-collapse text-left">
+            <thead>
+              <tr className="border-b border-border-hairline bg-surface-container-low">
+                <th className="sticky top-0 z-10 bg-surface-container-low px-lg py-md font-label-caps text-label-caps text-secondary">编码</th>
+                <th className="sticky top-0 z-10 bg-surface-container-low px-lg py-md font-label-caps text-label-caps text-secondary">名称</th>
+                <th className="sticky top-0 z-10 bg-surface-container-low px-lg py-md font-label-caps text-label-caps text-secondary">分类</th>
+                <th className="sticky top-0 z-10 bg-surface-container-low px-lg py-md font-label-caps text-label-caps text-secondary">来源</th>
+                <th className="sticky top-0 z-10 bg-surface-container-low px-lg py-md font-label-caps text-label-caps text-secondary">状态</th>
+                <th className="sticky top-0 z-10 bg-surface-container-low px-lg py-md font-label-caps text-label-caps text-secondary">执行器</th>
+                <th className="sticky top-0 z-10 bg-surface-container-low px-lg py-md font-label-caps text-label-caps text-secondary">样例问题</th>
+                <th className="sticky top-0 z-10 bg-surface-container-low px-lg py-md font-label-caps text-label-caps text-secondary">最近探测</th>
+                <th className="sticky top-0 z-10 bg-surface-container-low px-lg py-md font-label-caps text-label-caps text-secondary">排序</th>
+                <th className="sticky top-0 z-10 bg-surface-container-low px-lg py-md text-right font-label-caps text-label-caps text-secondary">操作</th>
               </tr>
-            ) : (
-              pagedRows.map((row) => {
-                const tool = row.config;
-                const health = row.health;
-                const toolCode = row.toolCode;
-                return (
-                  <tr key={String(tool?.id ?? toolCode)} className="transition-colors hover:bg-surface-container-low">
-                    <td className="px-lg py-md font-data-mono text-[12px] text-tertiary-container">/{toolCode}</td>
-                    <td className="px-lg py-md text-ink">{tool?.displayName || health?.displayName || toolCode}</td>
-                    <td className="px-lg py-md text-body-sm text-secondary">{tool?.category || health?.category || '-'}</td>
-                    <td className="px-lg py-md text-body-sm text-secondary">{tool?.sourceType || health?.source || '-'}</td>
-                    <td className="px-lg py-md">
-                      <span
-                        className={[
-                          'rounded-full border px-2 py-0.5 text-[11px] font-medium',
-                          tool?.enabled === 0
-                            ? 'border-border-hairline bg-surface-container-low text-secondary'
-                            : 'border-border-strong bg-surface-container text-ink',
-                        ].join(' ')}
-                      >
-                        {tool?.enabled === 0 ? '停用' : '启用'}
-                      </span>
-                    </td>
-                    <td className="px-lg py-md">
-                      <div className="flex items-center gap-xs">
-                        <span className={clsx('h-2 w-2 rounded-full', statusDotClass(health?.status))} />
-                        <span className={clsx('text-body-sm font-medium', statusTextClass(health?.status))}>
-                          {health?.statusLabel || '未接入'}
+            </thead>
+            <tbody className="divide-y divide-border-hairline">
+              {showEmptyState ? (
+                <tr>
+                  <td className="px-lg py-xl text-center text-secondary" colSpan={10}>
+                    暂无工具配置
+                  </td>
+                </tr>
+              ) : (
+                pagedRows.map((row) => {
+                  const tool = row.config;
+                  const health = row.health;
+                  const toolCode = row.toolCode;
+                  return (
+                    <tr key={String(tool?.id ?? toolCode)} className="transition-colors hover:bg-surface-container-low">
+                      <td className="px-lg py-md font-data-mono text-[12px] text-tertiary-container">/{toolCode}</td>
+                      <td className="px-lg py-md text-ink">{tool?.displayName || health?.displayName || toolCode}</td>
+                      <td className="px-lg py-md text-body-sm text-secondary">{tool?.category || health?.category || '-'}</td>
+                      <td className="px-lg py-md text-body-sm text-secondary">{tool?.sourceType || health?.source || '-'}</td>
+                      <td className="px-lg py-md">
+                        <span
+                          className={[
+                            'rounded-full border px-2 py-0.5 text-[11px] font-medium',
+                            tool?.enabled === 0
+                              ? 'border-border-hairline bg-surface-container-low text-secondary'
+                              : 'border-border-strong bg-surface-container text-ink',
+                          ].join(' ')}
+                        >
+                          {tool?.enabled === 0 ? '停用' : '启用'}
                         </span>
-                      </div>
-                    </td>
-                    <td className="max-w-[16rem] truncate px-lg py-md text-body-sm text-secondary">
-                      {health?.sampleQuestion || '-'}
-                    </td>
-                    <td className="px-lg py-md text-[12px] text-secondary">{health?.checkedAt || '-'}</td>
-                    <td className="px-lg py-md text-body-sm text-secondary">{tool?.sortNo ?? 0}</td>
-                    <td className="px-lg py-md text-right">
-                      <div className="inline-flex gap-sm">
-                        <button
-                          type="button"
-                          aria-label={`测试工具 ${toolCode}`}
-                          className="rounded-lg border border-border-hairline bg-surface-container-lowest px-sm py-1.5 text-[12px] text-secondary transition-colors hover:bg-surface-container-low hover:text-ink disabled:opacity-60"
-                          onClick={() => void handlePing(toolCode)}
-                          disabled={pingingToolCode === toolCode}
-                        >
-                          {pingingToolCode === toolCode ? '探测中...' : '探测'}
-                        </button>
-                        <button
-                          type="button"
-                          aria-label={`调用工具 ${toolCode}`}
-                          className="rounded-lg border border-border-strong bg-surface-container-lowest px-sm py-1.5 text-[12px] text-ink transition-colors hover:bg-surface-container-low"
-                          onClick={() => openInvokeDialog(toolCode, health?.sampleQuestion)}
-                        >
-                          调用
-                        </button>
-                        <button
-                          type="button"
-                          aria-label={`编辑工具 ${toolCode}`}
-                          className="rounded-lg border border-border-strong bg-surface-container-lowest px-sm py-1.5 text-[12px] text-ink transition-colors hover:bg-surface-container-low"
-                          onClick={() => tool ? openEditDialog(tool) : null}
-                          disabled={!tool}
-                        >
-                          编辑
-                        </button>
-                        <button
-                          type="button"
-                          aria-label={`删除工具 ${toolCode}`}
-                          className="rounded-lg border border-error bg-error-container px-sm py-1.5 text-[12px] text-on-error-container transition-opacity hover:opacity-90"
-                          onClick={() => (tool ? setDeleteTarget(tool) : null)}
-                          disabled={!tool}
-                        >
-                          删除
-                        </button>
-                      </div>
+                      </td>
+                      <td className="px-lg py-md">
+                        <div className="flex items-center gap-xs">
+                          <span className={clsx('h-2 w-2 rounded-full', statusDotClass(health?.status))} />
+                          <span className={clsx('text-body-sm font-medium', statusTextClass(health?.status))}>
+                            {health?.statusLabel || '未接入'}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="max-w-[16rem] truncate px-lg py-md text-body-sm text-secondary">
+                        {health?.sampleQuestion || '-'}
+                      </td>
+                      <td className="px-lg py-md text-[12px] text-secondary">{health?.checkedAt || '-'}</td>
+                      <td className="px-lg py-md text-body-sm text-secondary">{tool?.sortNo ?? 0}</td>
+                      <td className="px-lg py-md text-right">
+                        <div className="inline-flex gap-sm">
+                          <button
+                            type="button"
+                            aria-label={`测试工具 ${toolCode}`}
+                            className="rounded-lg border border-border-hairline bg-surface-container-lowest px-sm py-1.5 text-[12px] text-secondary transition-colors hover:bg-surface-container-low hover:text-ink disabled:opacity-60"
+                            onClick={() => void handlePing(toolCode)}
+                            disabled={pingingToolCode === toolCode}
+                          >
+                            {pingingToolCode === toolCode ? '探测中...' : '探测'}
+                          </button>
+                          <button
+                            type="button"
+                            aria-label={`调用工具 ${toolCode}`}
+                            className="rounded-lg border border-border-strong bg-surface-container-lowest px-sm py-1.5 text-[12px] text-ink transition-colors hover:bg-surface-container-low"
+                            onClick={() => openInvokeDialog(toolCode, health?.sampleQuestion)}
+                          >
+                            调用
+                          </button>
+                          <button
+                            type="button"
+                            aria-label={`编辑工具 ${toolCode}`}
+                            className="rounded-lg border border-border-strong bg-surface-container-lowest px-sm py-1.5 text-[12px] text-ink transition-colors hover:bg-surface-container-low"
+                            onClick={() => tool ? openEditDialog(tool) : null}
+                            disabled={!tool}
+                          >
+                            编辑
+                          </button>
+                          <button
+                            type="button"
+                            aria-label={`删除工具 ${toolCode}`}
+                            className="rounded-lg border border-error bg-error-container px-sm py-1.5 text-[12px] text-on-error-container transition-opacity hover:opacity-90"
+                            onClick={() => (tool ? setDeleteTarget(tool) : null)}
+                            disabled={!tool}
+                          >
+                            删除
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+              {showSkeletonRows
+                ? Array.from({ length: 10 }, (_, index) => (
+                  <tr key={`tools-loading-row-${index}`} data-testid="tools-loading-skeleton-row">
+                    <td colSpan={10} className="px-lg py-md">
+                      <div className="h-6 w-full animate-pulse rounded bg-surface-container-low" />
                     </td>
                   </tr>
-                );
-              })
-            )}
-          </tbody>
-        </table>
-        )}
-      />
+                ))
+                : null}
+            </tbody>
+          </table>
+          )}
+        />
+      ) : (
+        <ToolIntentTreePanel
+          rows={mergedRows}
+          selectedToolCode={selectedToolCode}
+          pingingToolCode={pingingToolCode}
+          onSelectTool={setSelectedToolCode}
+          onPingTool={(toolCode) => void handlePing(toolCode)}
+          onInvokeTool={openInvokeDialog}
+          onEditTool={openEditDialog}
+          onDeleteTool={setDeleteTarget}
+        />
+      )}
 
       {dialogOpen ? (
         <ToolEditDialog

@@ -165,18 +165,13 @@ export function Skills() {
         </div>
       </div>
 
-      {isLoading ? (
-        <div className="rounded-xl border border-border-hairline bg-surface-container-lowest px-4 py-6 text-sm text-secondary">
-          技能加载中...
-        </div>
-      ) : null}
-      {!isLoading && errorMessage ? (
+      {errorMessage ? (
         <div className="rounded-xl border border-error bg-error-container px-4 py-6 text-sm text-on-error-container">
           {errorMessage}
         </div>
       ) : null}
 
-      {!isLoading && !errorMessage ? (
+      {!errorMessage ? (
         viewMode === 'list' ? (
           <SkillListView
             skills={skills}
@@ -189,11 +184,17 @@ export function Skills() {
             onPreviewSkill={openPackagePreviewDialog}
           />
         ) : (
-          <SkillCardView
-            skills={skills}
-            onEditSkill={openEditDialog}
-            onPreviewSkill={openPackagePreviewDialog}
-          />
+          isLoading ? (
+            <div className="rounded-xl border border-border-hairline bg-surface-container-lowest px-4 py-6 text-sm text-secondary">
+              技能加载中...
+            </div>
+          ) : (
+            <SkillCardView
+              skills={skills}
+              onEditSkill={openEditDialog}
+              onPreviewSkill={openPackagePreviewDialog}
+            />
+          )
         )
       ) : null}
 
@@ -253,6 +254,10 @@ function SkillListView({
   onEditSkill: (skill: AdminSkill) => void;
   onPreviewSkill: (skill: AdminSkill) => void;
 }) {
+  // 对齐 Trace 管理加载体验：仅在首屏加载且无记录时渲染骨架行。
+  const showEmptyState = !loading && skills.length === 0;
+  const showSkeletonRows = loading && skills.length === 0;
+
   return (
     <DataTableCard
       title="技能列表"
@@ -277,7 +282,7 @@ function SkillListView({
             </tr>
           </thead>
           <tbody className="divide-y divide-border-hairline">
-            {skills.length === 0 ? (
+            {showEmptyState ? (
               <tr>
                 <td colSpan={6} className="px-md py-lg text-center text-sm text-secondary">
                   暂无技能数据
@@ -332,6 +337,15 @@ function SkillListView({
                 </tr>
               ))
             )}
+            {showSkeletonRows
+              ? Array.from({ length: 10 }, (_, index) => (
+                <tr key={`skills-loading-row-${index}`} data-testid="skills-loading-skeleton-row">
+                  <td colSpan={6} className="px-lg py-md">
+                    <div className="h-6 w-full animate-pulse rounded bg-surface-container-low" />
+                  </td>
+                </tr>
+              ))
+              : null}
           </tbody>
         </table>
       )}

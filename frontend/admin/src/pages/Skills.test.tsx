@@ -106,6 +106,31 @@ describe('Skills page', () => {
   });
 
   /**
+   * 技能管理列表在首屏加载中时应展示与 Trace 管理一致的骨架行。
+   */
+  it('shows trace-style skeleton rows while skills list is loading', async () => {
+    let resolveListSkills: ((value: any) => void) | undefined;
+    vi.mocked(AdminChatApi.listSkills).mockImplementationOnce(
+      () => new Promise((resolve) => {
+        resolveListSkills = resolve;
+      }) as any,
+    );
+
+    render(<Skills />);
+    expect(await screen.findByRole('heading', { name: '技能管理 (Skills)' })).toBeInTheDocument();
+    expect(screen.getAllByTestId('skills-loading-skeleton-row')).toHaveLength(10);
+
+    resolveListSkills?.({
+      records: [...skillFixture],
+      total: 22,
+      size: 10,
+      current: 1,
+      pages: 3,
+    });
+    expect(await screen.findByText('/sales_query')).toBeInTheDocument();
+  });
+
+  /**
    * 技能管理分页应支持点击下一页后按新页码请求。
    */
   it('supports paged navigation in skills page', async () => {

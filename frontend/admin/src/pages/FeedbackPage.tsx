@@ -48,6 +48,9 @@ export function FeedbackPage() {
   const total = pageData?.total ?? 0;
   const current = pageData?.current ?? pageNo;
   const pages = pageData?.pages ?? 1;
+  // 对齐 Trace 管理：加载阶段在表格体渲染骨架占位。
+  const showEmptyState = !loading && records.length === 0;
+  const showSkeletonRows = loading && records.length === 0;
 
   const handleFilter = () => {
     setPageNo(1);
@@ -133,7 +136,7 @@ export function FeedbackPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-border-hairline">
-              {!loading && records.length === 0 ? (
+              {showEmptyState ? (
                 <tr>
                   <td colSpan={8} className="px-lg py-xl text-center text-secondary">暂无反馈记录</td>
                 </tr>
@@ -165,6 +168,15 @@ export function FeedbackPage() {
                   </td>
                 </tr>
               ))}
+              {showSkeletonRows
+                ? Array.from({ length: 10 }, (_, index) => (
+                  <tr key={`feedback-loading-row-${index}`} data-testid="feedback-loading-skeleton-row">
+                    <td colSpan={8} className="px-lg py-md">
+                      <div className="h-6 w-full animate-pulse rounded bg-surface-container-low" />
+                    </td>
+                  </tr>
+                ))
+                : null}
             </tbody>
           </table>
           )}

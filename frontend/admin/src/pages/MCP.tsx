@@ -60,6 +60,9 @@ export function MCP() {
     const start = (safePageNo - 1) * MCP_TABLE_PAGE_SIZE;
     return mergedRows.slice(start, start + MCP_TABLE_PAGE_SIZE);
   }, [mergedRows, safePageNo]);
+  // 对齐 Trace 管理：首屏加载且无记录时在表格内渲染骨架行。
+  const showEmptyState = !isTableLoading && pagedRows.length === 0;
+  const showSkeletonRows = isTableLoading && pagedRows.length === 0;
 
   React.useEffect(() => {
     if (pageNo > pageCount) {
@@ -170,57 +173,51 @@ export function MCP() {
           <h2 className="font-headline-md text-headline-md text-ink">MCP 管理</h2>
           <p className="mt-1 text-secondary">管理数据库 MCP 配置，并在线探测后端工具可用性。</p>
         </div>
-        <button
-          type="button"
-          aria-label="刷新全部"
-          className="flex items-center gap-xs rounded-lg border border-border-strong bg-surface-container-lowest px-lg py-2 font-button text-button text-ink shadow-sm transition-transform hover:bg-surface-container-low active:scale-95"
-          onClick={() => void Promise.all([loadConfigs(), loadTools()])}
-        >
-          <span className="material-symbols-outlined text-[18px]">refresh</span>
-          刷新全部
-        </button>
+        <div className="flex flex-wrap items-center gap-sm">
+          <button
+            type="button"
+            aria-label="刷新列表"
+            className="rounded-lg border border-border-strong bg-surface-container-lowest px-lg py-2 font-button text-button text-ink transition-colors hover:bg-surface-container-low"
+            onClick={() => void Promise.all([loadConfigs(), loadTools()])}
+          >
+            刷新列表
+          </button>
+          <button
+            type="button"
+            aria-label="新增MCP配置"
+            className="rounded-lg bg-primary px-lg py-2 font-button text-button text-on-primary transition-opacity hover:opacity-90"
+            onClick={openCreateDialog}
+          >
+            新增MCP配置
+          </button>
+          <button
+            type="button"
+            aria-label="刷新全部"
+            className="flex items-center gap-xs rounded-lg border border-border-strong bg-surface-container-lowest px-lg py-2 font-button text-button text-ink shadow-sm transition-transform hover:bg-surface-container-low active:scale-95"
+            onClick={() => void Promise.all([loadConfigs(), loadTools()])}
+          >
+            <span className="material-symbols-outlined text-[18px]">refresh</span>
+            刷新全部
+          </button>
+        </div>
       </div>
 
-      <section className="space-y-md rounded-2xl border border-border-hairline bg-surface-container-lowest p-lg">
-        <div className="flex justify-end">
-          <div className="flex gap-sm">
-            <button
-              type="button"
-              aria-label="刷新列表"
-              className="rounded-lg border border-border-strong bg-surface-container-lowest px-lg py-2 font-button text-button text-ink transition-colors hover:bg-surface-container-low"
-              onClick={() => void Promise.all([loadConfigs(), loadTools()])}
-            >
-              刷新列表
-            </button>
-            <button
-              type="button"
-              aria-label="新增MCP配置"
-              className="rounded-lg bg-primary px-lg py-2 font-button text-button text-on-primary transition-opacity hover:opacity-90"
-              onClick={openCreateDialog}
-            >
-              新增MCP配置
-            </button>
-          </div>
+      {configErrorMessage || toolErrorMessage ? (
+        <div className="rounded-xl border border-error bg-error-container px-lg py-md text-sm text-on-error-container">
+          {configErrorMessage || toolErrorMessage}
         </div>
+      ) : null}
 
-        {configErrorMessage || toolErrorMessage ? (
-          <div className="rounded-xl border border-error bg-error-container px-lg py-md text-sm text-on-error-container">
-            {configErrorMessage || toolErrorMessage}
-          </div>
-        ) : null}
-
-        <DataTableCard
-          title="MCP 列表"
-          description="统一展示数据库配置和执行器探测状态，避免同页双列表割裂。"
-          scrollTestId="mcp-table-scroll"
-          loading={isTableLoading}
-          loadingText="加载中..."
-          summaryText={`第 ${safePageNo} / ${pageCount} 页，共 ${totalRows.toLocaleString('zh-CN')} 条`}
-          paginationCurrent={safePageNo}
-          paginationPages={pageCount}
-          onPaginationChange={setPageNo}
-          tableContent={(
-            <table className="w-full min-w-[1280px] border-collapse text-left">
+      <DataTableCard
+        scrollTestId="mcp-table-scroll"
+        loading={isTableLoading}
+        loadingText="加载中..."
+        summaryText={`第 ${safePageNo} / ${pageCount} 页，共 ${totalRows.toLocaleString('zh-CN')} 条`}
+        paginationCurrent={safePageNo}
+        paginationPages={pageCount}
+        onPaginationChange={setPageNo}
+        tableContent={(
+          <table className="w-full min-w-[1280px] border-collapse text-left">
             <thead>
               <tr className="bg-surface-container-low border-b border-border-hairline">
                 <th className="sticky top-0 z-10 bg-surface-container-low px-lg py-md font-label-caps text-label-caps text-secondary">编码</th>
@@ -235,7 +232,7 @@ export function MCP() {
               </tr>
             </thead>
             <tbody className="divide-y divide-border-hairline">
-              {!isTableLoading && pagedRows.length === 0 ? (
+              {showEmptyState ? (
                 <tr>
                   <td className="px-lg py-xl text-center text-secondary" colSpan={9}>
                     暂无 MCP 配置
@@ -299,11 +296,19 @@ export function MCP() {
                   );
                 })
               )}
+              {showSkeletonRows
+                ? Array.from({ length: 10 }, (_, index) => (
+                  <tr key={`mcp-loading-row-${index}`} data-testid="mcp-loading-skeleton-row">
+                    <td colSpan={9} className="px-lg py-md">
+                      <div className="h-6 w-full animate-pulse rounded bg-surface-container-low" />
+                    </td>
+                  </tr>
+                ))
+                : null}
             </tbody>
           </table>
-          )}
-        />
-      </section>
+        )}
+      />
 
       {dialogOpen ? (
         <McpEditDialog

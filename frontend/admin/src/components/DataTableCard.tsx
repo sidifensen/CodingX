@@ -3,8 +3,12 @@ import clsx from 'clsx';
 import { Pagination } from './Pagination';
 
 interface DataTableCardProps {
-  title: string;
+  title?: string;
   description?: string;
+  /**
+   * 表格头部右侧操作区：用于放置刷新、新增、筛选等动作按钮。
+   */
+  headerActions?: React.ReactNode;
   scrollTestId?: string;
   tableContent: React.ReactNode;
   summaryText: string;
@@ -22,6 +26,7 @@ interface DataTableCardProps {
 export function DataTableCard({
   title,
   description,
+  headerActions,
   scrollTestId,
   tableContent,
   summaryText,
@@ -32,6 +37,8 @@ export function DataTableCard({
   loadingText = '加载中...',
   className,
 }: DataTableCardProps) {
+  const showHeader = Boolean(title || description || headerActions);
+
   return (
     <section
       className={clsx(
@@ -39,10 +46,28 @@ export function DataTableCard({
         className,
       )}
     >
-      <div className="shrink-0 border-b border-border-hairline px-lg py-md">
-        <h2 className="font-title-md text-title-md text-ink">{title}</h2>
-        {description ? <p className="mt-1 text-secondary">{description}</p> : null}
-      </div>
+      {showHeader ? (
+        <div className="shrink-0 border-b border-border-hairline px-lg py-md">
+          <div className="flex flex-wrap items-start justify-between gap-md">
+            {title || description ? (
+              <div>
+                {title ? <h2 className="font-title-md text-title-md text-ink">{title}</h2> : null}
+                {description ? <p className="mt-1 text-secondary">{description}</p> : null}
+              </div>
+            ) : null}
+            {headerActions ? (
+              <div
+                className={clsx(
+                  'flex flex-wrap items-center gap-sm',
+                  title || description ? 'ml-auto' : 'w-full justify-end',
+                )}
+              >
+                {headerActions}
+              </div>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
 
       <div data-testid={scrollTestId} className="relative min-h-0 flex-1 overflow-auto">
         {tableContent}

@@ -111,6 +111,29 @@ describe('Tools page', () => {
     expect(screen.getAllByText('可用').length).toBeGreaterThanOrEqual(1);
   });
 
+  it('shows trace-style skeleton rows while tools table is loading', async () => {
+    let resolveListTools: ((value: any) => void) | undefined;
+    let resolveListToolHealthViews: ((value: any) => void) | undefined;
+    vi.mocked(AdminChatApi.listTools).mockImplementationOnce(
+      () => new Promise((resolve) => {
+        resolveListTools = resolve;
+      }) as any,
+    );
+    vi.mocked(AdminChatApi.listToolHealthViews).mockImplementationOnce(
+      () => new Promise((resolve) => {
+        resolveListToolHealthViews = resolve;
+      }) as any,
+    );
+
+    render(<ToolsPage />);
+    expect(await screen.findByRole('heading', { name: '工具管理' })).toBeInTheDocument();
+    expect(screen.getAllByTestId('tools-loading-skeleton-row')).toHaveLength(10);
+
+    resolveListTools?.([...toolFixture]);
+    resolveListToolHealthViews?.([...toolHealthFixture]);
+    expect(await screen.findByText('/shell_command')).toBeInTheDocument();
+  });
+
   it('supports create tool config', async () => {
     render(<ToolsPage />);
     await screen.findByText('/shell_command');
@@ -218,5 +241,25 @@ describe('Tools page', () => {
     fireEvent.click(screen.getByRole('button', { name: '第 2 页' }));
     expect(await screen.findByText('/tool_11')).toBeInTheDocument();
     expect(screen.queryByText('/tool_1')).not.toBeInTheDocument();
+  });
+
+  it('supports switching to intent tree view and selecting tool nodes', async () => {
+    render(<ToolsPage />);
+    await screen.findByText('/shell_command');
+
+    fireEvent.click(screen.getByRole('button', { name: '意图树视图' }));
+
+    const treePanel = await screen.findByRole('region', { name: '工具意图树' });
+    const detailPanel = screen.getByRole('region', { name: '工具详情' });
+
+    expect(within(treePanel).getByText('终端')).toBeInTheDocument();
+    fireEvent.click(within(treePanel).getByRole('button', { name: '选择工具 补丁编辑' }));
+
+    expect(within(detailPanel).getByText('/apply_patch')).toBeInTheDocument();
+    fireEvent.click(within(detailPanel).getByRole('button', { name: '探测工具 apply_patch' }));
+
+    await waitFor(() => {
+      expect(AdminChatApi.pingTool).toHaveBeenCalledWith('apply_patch');
+    });
   });
 });

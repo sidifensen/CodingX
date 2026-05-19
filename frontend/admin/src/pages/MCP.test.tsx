@@ -102,6 +102,9 @@ describe('MCP page', () => {
     render(<MCP />);
 
     expect(await screen.findByRole('heading', { name: 'MCP 管理' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'MCP 列表' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '刷新列表' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '新增MCP配置' })).toBeInTheDocument();
     expect(AdminChatApi.listMcpConfigs).toHaveBeenCalledTimes(1);
     expect(AdminChatApi.listMcpTools).toHaveBeenCalledTimes(1);
     expect(screen.getByText('/sales_query')).toBeInTheDocument();
@@ -110,6 +113,29 @@ describe('MCP page', () => {
     expect(screen.getByText('/code_search')).toBeInTheDocument();
     expect(screen.queryAllByText('sales_query')).toHaveLength(0);
     expect(screen.getAllByText('可用').length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('shows trace-style skeleton rows while MCP table is loading', async () => {
+    let resolveListMcpConfigs: ((value: any) => void) | undefined;
+    let resolveListMcpTools: ((value: any) => void) | undefined;
+    vi.mocked(AdminChatApi.listMcpConfigs).mockImplementationOnce(
+      () => new Promise((resolve) => {
+        resolveListMcpConfigs = resolve;
+      }) as any,
+    );
+    vi.mocked(AdminChatApi.listMcpTools).mockImplementationOnce(
+      () => new Promise((resolve) => {
+        resolveListMcpTools = resolve;
+      }) as any,
+    );
+
+    render(<MCP />);
+    expect(await screen.findByRole('heading', { name: 'MCP 管理' })).toBeInTheDocument();
+    expect(screen.getAllByTestId('mcp-loading-skeleton-row')).toHaveLength(10);
+
+    resolveListMcpConfigs?.([...mcpConfigFixture]);
+    resolveListMcpTools?.([...mcpToolFixture]);
+    expect(await screen.findByText('/sales_query')).toBeInTheDocument();
   });
 
   it('supports create mcp config in MCP page', async () => {

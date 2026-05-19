@@ -176,7 +176,9 @@ export function clearWorkspaceSnapshot(partitionKey: string) {
  * 枚举所有工作空间快照，供左侧工作空间树按最近打开时间排序渲染。
  * @returns 排序后的工作空间分组。
  */
-export function listWorkspaceGroups(): WorkspaceConversationGroup[] {
+export function listWorkspaceGroups(
+  runtimeTarget?: 'cloud' | 'local',
+): WorkspaceConversationGroup[] {
   const store = readStore();
   return Object.entries(store.snapshots)
     .map(([partitionKey, snapshot]) => ({
@@ -192,6 +194,7 @@ export function listWorkspaceGroups(): WorkspaceConversationGroup[] {
           ? snapshot.conversationRecords
           : {},
     }))
+    .filter((group) => (runtimeTarget ? group.runtimeTarget === runtimeTarget : true))
     .sort((left, right) => right.lastOpenedAt - left.lastOpenedAt);
 }
 

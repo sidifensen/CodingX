@@ -72,7 +72,7 @@ export function useHostContext() {
     try {
       const selectedPath = await bridge.pickRepositoryDirectory();
       if (!selectedPath) {
-        return;
+        return null;
       }
       const granted = await bridge.requestFileAccess(selectedPath);
       if (!granted) {
@@ -82,8 +82,10 @@ export function useHostContext() {
       await syncWorkspaceBinding(selectedPath);
       window.localStorage.setItem('codingx.host.context', JSON.stringify(nextContext));
       setHostContext(nextContext);
+      return selectedPath;
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : '绑定本地仓库失败');
+      return null;
     }
   }, [bridge, syncWorkspaceBinding]);
 

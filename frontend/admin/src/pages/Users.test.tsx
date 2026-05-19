@@ -59,6 +59,8 @@ describe('Users page', () => {
     );
 
     expect(await screen.findByText('Alice')).toBeInTheDocument();
+    expect(screen.getByTestId('users-table-scroll')).toBeInTheDocument();
+    expect(screen.getByTestId('users-table-summary')).toHaveTextContent('共 1 条');
     expect(AdminUserApi.listUsers).toHaveBeenCalledWith(expect.objectContaining({ current: 1, size: 10 }));
   });
 

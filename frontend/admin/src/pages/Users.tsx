@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import clsx from 'clsx';
 
 import { AdminUserApi } from '../api/adminUserApi';
+import { DataTableCard } from '../components/DataTableCard';
 import {
   AdminUserCreatePayload,
   AdminUserPageResult,
@@ -149,6 +150,18 @@ export function Users() {
     setPageResult((previous) => ({ ...previous, current: 1 }));
   };
 
+  /**
+   * 表格底部摘要：统一在 DataTableCard 底部展示当前分页区间。
+   */
+  const tableSummaryText = React.useMemo(() => {
+    if (pageResult.total <= 0) {
+      return '显示 0 条，共 0 条';
+    }
+    const start = (pageResult.current - 1) * pageResult.size + 1;
+    const end = Math.min(pageResult.current * pageResult.size, pageResult.total);
+    return `显示 ${start}-${end} 条，共 ${pageResult.total} 条`;
+  }, [pageResult]);
+
   return (
     <div className="p-lg w-full">
       <div className="mb-lg flex justify-between items-end">
@@ -205,148 +218,125 @@ export function Users() {
         <StatCard title="已禁用" value={String(userStats.disabled)} extra="" extraClassName="text-secondary" />
       </div>
 
-      <div className="bg-surface-container-lowest border border-border-hairline rounded-xl overflow-hidden shadow-sm">
-        <table className="w-full text-left border-collapse">
-          <thead>
-            <tr className="bg-surface-container-low border-b border-border-hairline">
-              <th className="px-lg py-md font-label-caps text-label-caps text-secondary border-b border-border-hairline">用户</th>
-              <th className="px-lg py-md font-label-caps text-label-caps text-secondary border-b border-border-hairline">角色</th>
-              <th className="px-lg py-md font-label-caps text-label-caps text-secondary border-b border-border-hairline">状态</th>
-              <th className="px-lg py-md font-label-caps text-label-caps text-secondary border-b border-border-hairline">最近登录</th>
-              <th className="px-lg py-md font-label-caps text-label-caps text-secondary border-b border-border-hairline">创建时间</th>
-              <th className="px-lg py-md font-label-caps text-label-caps text-secondary border-b border-border-hairline text-right">操作</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border-hairline">
-            {isLoading ? (
-              <tr>
-                <td className="px-lg py-lg text-secondary" colSpan={6}>
-                  用户加载中...
-                </td>
+      <DataTableCard
+        scrollTestId="users-table-scroll"
+        summaryTestId="users-table-summary"
+        loading={isLoading}
+        loadingText="用户加载中..."
+        summaryText={tableSummaryText}
+        paginationCurrent={pageResult.current}
+        paginationPages={Math.max(pageResult.pages, 1)}
+        onPaginationChange={(nextPage) => {
+          void loadUsers(nextPage, pageResult.size, filter);
+        }}
+        tableContent={(
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-surface-container-low border-b border-border-hairline">
+                <th className="px-lg py-md font-label-caps text-label-caps text-secondary border-b border-border-hairline">用户</th>
+                <th className="px-lg py-md font-label-caps text-label-caps text-secondary border-b border-border-hairline">角色</th>
+                <th className="px-lg py-md font-label-caps text-label-caps text-secondary border-b border-border-hairline">状态</th>
+                <th className="px-lg py-md font-label-caps text-label-caps text-secondary border-b border-border-hairline">最近登录</th>
+                <th className="px-lg py-md font-label-caps text-label-caps text-secondary border-b border-border-hairline">创建时间</th>
+                <th className="px-lg py-md font-label-caps text-label-caps text-secondary border-b border-border-hairline text-right">操作</th>
               </tr>
-            ) : null}
-            {!isLoading && pageResult.records.length === 0 ? (
-              <tr>
-                <td className="px-lg py-lg text-secondary" colSpan={6}>
-                  当前筛选条件下暂无用户
-                </td>
-              </tr>
-            ) : null}
-            {!isLoading &&
-              pageResult.records.map((user) => (
-                <tr
-                  key={String(user.id)}
-                  className="hover:bg-surface-container-low transition-colors group cursor-pointer"
-                  onClick={() => navigate(`/users/${user.id}`)}
-                >
-                  <td className="px-lg py-md">
-                    <div className="flex items-center gap-md">
-                      <img
-                        className="w-10 h-10 rounded-full border border-border-hairline bg-surface-container-low object-cover"
-                        src={user.avatarUrl || fallbackAvatar(user)}
-                        alt="User"
-                      />
-                      <div>
-                        <div className="font-title-md text-ink leading-tight group-hover:text-status-preview transition-colors">{user.displayName}</div>
-                        <div className="text-secondary text-[12px]">{user.email || `${user.username}@codingx.local`}</div>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-lg py-md">
-                    <span
-                      className={clsx(
-                        'px-2 py-0.5 rounded text-[11px] font-bold uppercase',
-                        user.userType === 'ADMIN' ? 'bg-primary text-on-primary' : 'border border-border-strong text-secondary',
-                      )}
-                    >
-                      {user.userTypeLabel || toUserTypeLabel(user.userType)}
-                    </span>
-                  </td>
-                  <td className="px-lg py-md">
-                    <div className="flex items-center gap-xs">
-                      <div className={clsx('w-2 h-2 rounded-full', toStatusDotClass(user.status))}></div>
-                      <span className={clsx('font-medium', toStatusTextClass(user.status))}>{user.statusLabel || toStatusLabel(user.status)}</span>
-                    </div>
-                  </td>
-                  <td className="px-lg py-md font-data-mono text-secondary">{formatDateTime(user.lastLoginAt)}</td>
-                  <td className="px-lg py-md font-data-mono text-secondary">{formatDateTime(user.createdAt)}</td>
-                  <td className="px-lg py-md text-right">
-                    <div className="flex items-center justify-end gap-md">
-                      {user.status === 'PENDING' ? (
-                        <button
-                          className="text-primary hover:underline transition-colors font-bold"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            void handleApprove(user.id);
-                          }}
-                        >
-                          审核通过
-                        </button>
-                      ) : (
-                        <button
-                          className="text-secondary hover:text-ink transition-colors font-medium"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            navigate(`/users/${user.id}`);
-                          }}
-                        >
-                          详情
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        aria-label={user.status === 'ACTIVE' ? '禁用用户' : '启用用户'}
-                        className={clsx(
-                          'w-10 h-5 rounded-full relative cursor-pointer hover:opacity-80 transition-opacity',
-                          user.status === 'ACTIVE' ? 'bg-ink' : 'bg-surface-container-highest',
-                        )}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          void handleToggleStatus(user);
-                        }}
-                      >
-                        <span
-                          className={clsx(
-                            'absolute top-1 w-3 h-3 bg-surface-container-lowest rounded-full shadow-sm transition-all',
-                            user.status === 'ACTIVE' ? 'right-1' : 'left-1',
-                          )}
-                        />
-                      </button>
-                    </div>
+            </thead>
+            <tbody className="divide-y divide-border-hairline">
+              {pageResult.records.length === 0 ? (
+                <tr>
+                  <td className="px-lg py-lg text-secondary" colSpan={6}>
+                    当前筛选条件下暂无用户
                   </td>
                 </tr>
-              ))}
-          </tbody>
-        </table>
-
-        <div className="px-lg py-md flex items-center justify-between bg-surface-container-low border-t border-border-hairline">
-          <p className="text-secondary">
-            显示 {(pageResult.current - 1) * pageResult.size + 1}-{Math.min(pageResult.current * pageResult.size, pageResult.total)} 条，共{' '}
-            {pageResult.total} 条
-          </p>
-          <div className="flex items-center gap-xs">
-            <button
-              type="button"
-              className="w-8 h-8 flex items-center justify-center rounded border border-border-strong text-secondary hover:bg-surface-container-lowest transition-colors disabled:opacity-50"
-              disabled={pageResult.current <= 1}
-              onClick={() => void loadUsers(pageResult.current - 1, pageResult.size, filter)}
-            >
-              <span className="material-symbols-outlined text-[18px]">chevron_left</span>
-            </button>
-            <button className="w-8 h-8 flex items-center justify-center rounded border border-ink bg-ink text-on-ink font-bold">
-              {pageResult.current}
-            </button>
-            <button
-              type="button"
-              className="w-8 h-8 flex items-center justify-center rounded border border-border-strong text-secondary hover:bg-surface-container-lowest transition-colors disabled:opacity-50"
-              disabled={pageResult.current >= pageResult.pages}
-              onClick={() => void loadUsers(pageResult.current + 1, pageResult.size, filter)}
-            >
-              <span className="material-symbols-outlined text-[18px]">chevron_right</span>
-            </button>
-          </div>
-        </div>
-      </div>
+              ) : (
+                pageResult.records.map((user) => (
+                  <tr
+                    key={String(user.id)}
+                    className="hover:bg-surface-container-low transition-colors group cursor-pointer"
+                    onClick={() => navigate(`/users/${user.id}`)}
+                  >
+                    <td className="px-lg py-md">
+                      <div className="flex items-center gap-md">
+                        <img
+                          className="w-10 h-10 rounded-full border border-border-hairline bg-surface-container-low object-cover"
+                          src={user.avatarUrl || fallbackAvatar(user)}
+                          alt="User"
+                        />
+                        <div>
+                          <div className="font-title-md text-ink leading-tight group-hover:text-status-preview transition-colors">{user.displayName}</div>
+                          <div className="text-secondary text-[12px]">{user.email || `${user.username}@codingx.local`}</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-lg py-md">
+                      <span
+                        className={clsx(
+                          'px-2 py-0.5 rounded text-[11px] font-bold uppercase',
+                          user.userType === 'ADMIN' ? 'bg-primary text-on-primary' : 'border border-border-strong text-secondary',
+                        )}
+                      >
+                        {user.userTypeLabel || toUserTypeLabel(user.userType)}
+                      </span>
+                    </td>
+                    <td className="px-lg py-md">
+                      <div className="flex items-center gap-xs">
+                        <div className={clsx('w-2 h-2 rounded-full', toStatusDotClass(user.status))}></div>
+                        <span className={clsx('font-medium', toStatusTextClass(user.status))}>{user.statusLabel || toStatusLabel(user.status)}</span>
+                      </div>
+                    </td>
+                    <td className="px-lg py-md font-data-mono text-secondary">{formatDateTime(user.lastLoginAt)}</td>
+                    <td className="px-lg py-md font-data-mono text-secondary">{formatDateTime(user.createdAt)}</td>
+                    <td className="px-lg py-md text-right">
+                      <div className="flex items-center justify-end gap-md">
+                        {user.status === 'PENDING' ? (
+                          <button
+                            className="text-primary hover:underline transition-colors font-bold"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              void handleApprove(user.id);
+                            }}
+                          >
+                            审核通过
+                          </button>
+                        ) : (
+                          <button
+                            className="text-secondary hover:text-ink transition-colors font-medium"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              navigate(`/users/${user.id}`);
+                            }}
+                          >
+                            详情
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          aria-label={user.status === 'ACTIVE' ? '禁用用户' : '启用用户'}
+                          className={clsx(
+                            'w-10 h-5 rounded-full relative cursor-pointer hover:opacity-80 transition-opacity',
+                            user.status === 'ACTIVE' ? 'bg-ink' : 'bg-surface-container-highest',
+                          )}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            void handleToggleStatus(user);
+                          }}
+                        >
+                          <span
+                            className={clsx(
+                              'absolute top-1 w-3 h-3 bg-surface-container-lowest rounded-full shadow-sm transition-all',
+                              user.status === 'ACTIVE' ? 'right-1' : 'left-1',
+                            )}
+                          />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        )}
+      />
 
       {isCreateDialogOpen ? (
         <CreateUserDialog

@@ -30,6 +30,21 @@ export interface HostWindowState {
 }
 
 /**
+ * 定义桌面标题栏可触发的菜单动作枚举，确保渲染层与主进程协议一致。
+ */
+export type DesktopMenuAction =
+  | 'undo'
+  | 'redo'
+  | 'cut'
+  | 'copy'
+  | 'paste'
+  | 'select-all'
+  | 'window-minimize'
+  | 'window-maximize-toggle'
+  | 'window-close'
+  | 'toggle-dev-tools';
+
+/**
  * 描述本地目录浏览结果项。
  */
 export interface LocalDirectoryEntry {
@@ -47,6 +62,7 @@ export interface CodingxHostBridge {
   minimizeWindow: () => Promise<void>;
   toggleMaximizeWindow: () => Promise<HostWindowState | null>;
   closeWindow: () => Promise<void>;
+  invokeDesktopMenuAction: (action: DesktopMenuAction) => Promise<void>;
   onWindowStateChanged: (listener: (state: HostWindowState) => void) => (() => void);
   pickRepositoryDirectory: () => Promise<string | null>;
   bindRepositoryPath: (path: string) => Promise<HostContext>;

@@ -9,6 +9,7 @@ const bridgeMock = {
   minimizeWindow: vi.fn(),
   toggleMaximizeWindow: vi.fn(),
   closeWindow: vi.fn(),
+  invokeDesktopMenuAction: vi.fn(),
   onWindowStateChanged: vi.fn(() => () => undefined),
   pickRepositoryDirectory: vi.fn(),
   bindRepositoryPath: vi.fn(),
@@ -88,4 +89,3 @@ describe('useHostContext', () => {
     expect(bindSpy).toHaveBeenCalledWith('token-123', 'D:/code/codingx');
   });
 });
-

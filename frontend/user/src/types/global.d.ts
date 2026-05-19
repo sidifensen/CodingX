@@ -6,6 +6,7 @@ import type { CodingxHostBridge } from '../host/types';
 declare global {
   interface Window {
     codingxHost?: CodingxHostBridge;
+    __forceDesktopHost?: boolean;
   }
 }
 

@@ -114,6 +114,7 @@ describe('App', () => {
         isFullScreen: false,
       }),
       closeWindow: async () => undefined,
+      invokeDesktopMenuAction: async () => undefined,
       onWindowStateChanged: () => () => undefined,
       pickRepositoryDirectory: async () => null,
       bindRepositoryPath: async () => ({
@@ -1326,6 +1327,7 @@ describe('App', () => {
         isFullScreen: false,
       }),
       closeWindow: async () => undefined,
+      invokeDesktopMenuAction: async () => undefined,
       onWindowStateChanged: () => () => undefined,
       pickRepositoryDirectory: async () => null,
       bindRepositoryPath: async () => ({

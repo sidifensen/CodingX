@@ -67,6 +67,7 @@ describe('resolveHostBridge', () => {
         isFullScreen: false,
       }),
       closeWindow: async () => undefined,
+      invokeDesktopMenuAction: async () => undefined,
       onWindowStateChanged: () => () => undefined,
     };
 

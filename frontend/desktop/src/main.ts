@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs';
 import { readdir } from 'node:fs/promises';
 import path from 'node:path';
 import dotenv from 'dotenv';
-import { HostContext, HostWindowState, LocalDirectoryEntry } from './types';
+import { DesktopMenuAction, HostContext, HostWindowState, LocalDirectoryEntry } from './types';
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -130,6 +130,55 @@ function emitWindowState(targetWindow: BrowserWindow) {
 }
 
 /**
+ * 执行桌面标题栏菜单动作，统一由主进程承接系统级能力调用。
+ * @param action 渲染层触发的菜单动作标识。
+ */
+async function handleDesktopMenuAction(action: DesktopMenuAction) {
+  if (!mainWindow) {
+    return;
+  }
+
+  switch (action) {
+    case 'undo':
+      mainWindow.webContents.undo();
+      return;
+    case 'redo':
+      mainWindow.webContents.redo();
+      return;
+    case 'cut':
+      mainWindow.webContents.cut();
+      return;
+    case 'copy':
+      mainWindow.webContents.copy();
+      return;
+    case 'paste':
+      mainWindow.webContents.paste();
+      return;
+    case 'select-all':
+      mainWindow.webContents.selectAll();
+      return;
+    case 'window-minimize':
+      mainWindow.minimize();
+      return;
+    case 'window-maximize-toggle':
+      if (mainWindow.isMaximized()) {
+        mainWindow.unmaximize();
+      } else {
+        mainWindow.maximize();
+      }
+      return;
+    case 'window-close':
+      mainWindow.close();
+      return;
+    case 'toggle-dev-tools':
+      mainWindow.webContents.toggleDevTools();
+      return;
+    default:
+      return;
+  }
+}
+
+/**
  * 注册宿主能力与本地资源相关 IPC 处理器。
  */
 function registerIpcHandlers() {
@@ -156,6 +205,10 @@ function registerIpcHandlers() {
 
   ipcMain.handle('host:window-close', async () => {
     mainWindow?.close();
+  });
+
+  ipcMain.handle('host:menu-action', async (_event, action: DesktopMenuAction) => {
+    await handleDesktopMenuAction(action);
   });
 
   ipcMain.handle('host:pick-repository-directory', async () => {

@@ -1,6 +1,25 @@
 import { CodingxHostBridge, HostContext, HostWindowState, LocalDirectoryEntry } from './types';
 
 /**
+ * 在开发态浏览器验证场景可通过全局开关注入桌面宿主模式，便于复用同一套标题栏交互。
+ */
+function shouldForceDesktopHost() {
+  if (typeof window === 'undefined') {
+    return false;
+  }
+  if (!import.meta.env.DEV) {
+    return false;
+  }
+  const forcedByGlobalFlag =
+    (window as Window & { __forceDesktopHost?: boolean }).__forceDesktopHost === true;
+  if (forcedByGlobalFlag) {
+    return true;
+  }
+  const query = new URLSearchParams(window.location.search);
+  return query.get('desktopHostMock') === '1';
+}
+
+/**
  * 生成 Web 宿主 fallback 能力，确保无桌面注入时页面可稳定运行。
  */
 function createWebFallbackBridge(): CodingxHostBridge {
@@ -11,6 +30,26 @@ function createWebFallbackBridge(): CodingxHostBridge {
   };
   return {
     async getContext(): Promise<HostContext> {
+      if (shouldForceDesktopHost()) {
+        return {
+          hostType: 'desktop',
+          executionTargets: ['cloud', 'local'],
+          capabilities: {
+            localFiles: false,
+            localFolderPicker: false,
+            shell: false,
+            browserAutomation: true,
+            desktopNotifications: false,
+            officeInterop: false,
+            localMcp: false,
+            windowControls: true,
+          },
+          localResource: {
+            boundRepositoryPath: null,
+            permissionGranted: false,
+          },
+        };
+      }
       return {
         hostType: 'web',
         executionTargets: ['cloud'],
@@ -40,6 +79,9 @@ function createWebFallbackBridge(): CodingxHostBridge {
       return windowState;
     },
     async closeWindow(): Promise<void> {
+      return;
+    },
+    async invokeDesktopMenuAction(): Promise<void> {
       return;
     },
     onWindowStateChanged(): () => void {

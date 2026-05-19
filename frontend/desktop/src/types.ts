@@ -28,3 +28,15 @@ export interface HostWindowState {
   isMinimized: boolean;
   isFullScreen: boolean;
 }
+
+export type DesktopMenuAction =
+  | 'undo'
+  | 'redo'
+  | 'cut'
+  | 'copy'
+  | 'paste'
+  | 'select-all'
+  | 'window-minimize'
+  | 'window-maximize-toggle'
+  | 'window-close'
+  | 'toggle-dev-tools';

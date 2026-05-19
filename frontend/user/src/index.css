@@ -175,4 +175,11 @@
   .desktop-titlebar-control {
     -webkit-app-region: no-drag;
   }
+
+  /* 桌面菜单面板置于可点击区域，确保 frameless 窗口内交互正常。 */
+  .desktop-titlebar-menu-panel,
+  .desktop-titlebar-menu-item,
+  .desktop-titlebar-menu-trigger {
+    -webkit-app-region: no-drag;
+  }
 }

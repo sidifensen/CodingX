@@ -1,7 +1,20 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import Sidebar from './Sidebar';
 import { WorkspaceConversationGroup } from '../views/chat/types';
+
+/**
+ * 生成测试所需的会话项，便于验证“每次展开 5 条”的分页行为。
+ */
+function createConversation(index: number) {
+  return {
+    id: `conversation-${index}`,
+    title: `会话 ${index}`,
+    status: 'ACTIVE',
+    lastMessageAt: '2026-05-19 09:00:00',
+    lastRunId: `run-${index}`,
+  };
+}
 
 /**
  * 构建 Sidebar 测试所需的最小属性集。
@@ -9,6 +22,7 @@ import { WorkspaceConversationGroup } from '../views/chat/types';
 function createSidebarProps(overrides?: {
   workspaceGroups?: WorkspaceConversationGroup[];
 }) {
+  const defaultConversations = Array.from({ length: 11 }, (_, i) => createConversation(i + 1));
   return {
     activeView: 'chat' as const,
     setActiveView: vi.fn(),
@@ -27,7 +41,7 @@ function createSidebarProps(overrides?: {
     isAuthSubmitting: false,
     onOpenLogin: vi.fn(),
     onLogout: vi.fn(async () => undefined),
-    conversations: [],
+    conversations: defaultConversations,
     activeConversationId: null,
     onSelectConversation: vi.fn(async () => undefined),
     onStartNewConversation: vi.fn(async () => undefined),
@@ -42,73 +56,39 @@ function createSidebarProps(overrides?: {
           workspaceLabel: 'CodingX',
           runtimeTarget: 'local',
           lastOpenedAt: Date.now(),
-          activeConversationId: '2001',
-          conversations: [
-            {
-              id: '2001',
-              title: '查询内容',
-              status: 'ACTIVE',
-              lastMessageAt: '2026-05-19 09:00:00',
-              lastRunId: '5001',
-            },
-          ],
+          activeConversationId: 'conversation-1',
+          conversations: defaultConversations,
         },
       ],
     activeWorkspacePartitionKey: 'local::d:/code/codingx',
-    workspaceLabel: 'CodingX',
     onSelectWorkspacePath: vi.fn(async () => undefined),
-    onPickRepositoryDirectory: vi.fn(async () => undefined),
   };
 }
 
-describe('Sidebar workspace tree', () => {
-  it('应展示工作空间入口与目录按钮', () => {
+describe('Sidebar conversation collapse behavior', () => {
+  it('默认仅显示 5 条并展示展开按钮', () => {
     render(<Sidebar {...createSidebarProps()} />);
 
-    expect(screen.getByText('工作空间')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '选择本地仓库目录' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '新增工作空间' })).toBeInTheDocument();
-    expect(screen.getByText('当前工作空间')).toBeInTheDocument();
+    expect(screen.getByText('会话 1')).toBeInTheDocument();
+    expect(screen.getByText('会话 5')).toBeInTheDocument();
+    expect(screen.queryByText('会话 6')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '展开显示' })).toBeInTheDocument();
   });
 
-  it('应渲染工作空间分组中的会话', () => {
-    render(
-      <Sidebar
-        {...createSidebarProps({
-          workspaceGroups: [
-            {
-              partitionKey: 'local::d:/code/codingx',
-              workspacePath: 'D:/code/CodingX',
-              workspaceLabel: 'CodingX',
-              runtimeTarget: 'local',
-              lastOpenedAt: Date.now(),
-              activeConversationId: '2001',
-              conversations: [
-                {
-                  id: '2001',
-                  title: '查询内容',
-                  status: 'ACTIVE',
-                  lastMessageAt: '2026-05-19 09:00:00',
-                  lastRunId: '5001',
-                },
-                {
-                  id: '2002',
-                  title: '文件分析',
-                  status: 'ACTIVE',
-                  lastMessageAt: '2026-05-19 08:30:00',
-                  lastRunId: '5002',
-                },
-              ],
-            },
-          ],
-        })}
-      />,
-    );
+  it('点击展开后每次追加 5 条，并可收起回 5 条', () => {
+    render(<Sidebar {...createSidebarProps()} />);
 
-    expect(screen.getByText('查询内容')).toBeInTheDocument();
-    expect(screen.getByText('文件分析')).toBeInTheDocument();
-    expect(screen.getByText('查询内容')).toBeInTheDocument();
-    expect(screen.getByText('文件分析')).toBeInTheDocument();
-    expect(screen.getByText('当前工作空间')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '展开显示' }));
+    expect(screen.getByText('会话 10')).toBeInTheDocument();
+    expect(screen.queryByText('会话 11')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '展开显示' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '展开显示' }));
+    expect(screen.getByText('会话 11')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '收起显示' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '收起显示' }));
+    expect(screen.queryByText('会话 6')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '展开显示' })).toBeInTheDocument();
   });
 });

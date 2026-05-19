@@ -10,13 +10,17 @@ import {
   MoreHorizontal,
   PencilLine,
   Trash2,
-  FolderOpen,
 } from 'lucide-react';
 import { ViewType } from '../App';
 import { AuthSession } from '../types/auth';
 import ProfileMenu from './sidebar/ProfileMenu';
 import LoginEntry from './sidebar/LoginEntry';
 import { ConversationItem, WorkspaceConversationGroup } from '../views/chat/types';
+
+/**
+ * 约定侧边栏会话列表每次展开的条目数，保证交互节奏稳定。
+ */
+const CONVERSATION_PAGE_SIZE = 5;
 
 /**
  * 定义 Sidebar 组件需要的输入属性。
@@ -41,9 +45,9 @@ interface SidebarProps {
   onDeleteConversation: (conversationId: string) => Promise<void>;
   workspaceGroups: WorkspaceConversationGroup[];
   activeWorkspacePartitionKey: string | null;
-  workspaceLabel: string;
+  workspaceLabel?: string;
   onSelectWorkspacePath: (workspacePath: string | null) => Promise<void>;
-  onPickRepositoryDirectory: () => Promise<void>;
+  onPickRepositoryDirectory?: () => Promise<void>;
 }
 
 /**
@@ -69,9 +73,9 @@ export default function Sidebar({
   onDeleteConversation,
   workspaceGroups,
   activeWorkspacePartitionKey,
-  workspaceLabel,
+  workspaceLabel: _workspaceLabel,
   onSelectWorkspacePath,
-  onPickRepositoryDirectory,
+  onPickRepositoryDirectory: _onPickRepositoryDirectory,
 }: SidebarProps) {
   const NavItem = ({
     id,
@@ -122,7 +126,8 @@ export default function Sidebar({
           isDesktopCollapsed ? 'translate-x-4 opacity-0' : 'translate-x-0 opacity-100'
         }`}
       >
-        <div className="mb-6 flex items-center justify-between px-6">
+        {/* 顶部品牌区补充上内边距，避免在桌面端视觉上贴顶。 */}
+        <div className="mb-6 flex items-center justify-between px-6 pt-5">
           <div className="mb-1 flex items-center gap-3">
             <div className="flex h-8 w-8 items-center justify-center rounded bg-foreground">
               <SquareTerminal size={18} className="text-background" />
@@ -156,23 +161,6 @@ export default function Sidebar({
           <NavItem id="experts" label="专家团队" icon={Brain} />
           <NavItem id="automation" label="自动化" icon={Bot} />
         </nav>
-
-        <div className="flex items-center justify-between px-5 pb-2">
-          <div>
-            <div className="font-mono text-[10px] uppercase tracking-widest text-muted">
-              工作空间
-            </div>
-            <div className="mt-1 text-sm font-semibold text-foreground">{workspaceLabel}</div>
-          </div>
-          <button
-            type="button"
-            aria-label="选择本地仓库目录"
-            onClick={() => void onPickRepositoryDirectory()}
-            className="flex h-9 w-9 items-center justify-center rounded-xl border border-border bg-surface-container text-muted transition-colors hover:text-foreground"
-          >
-            <FolderOpen size={16} />
-          </button>
-        </div>
 
         <div className="flex-1 overflow-y-auto pb-4">
           {authSession ? (
@@ -229,9 +217,9 @@ function ConversationHistory({
 }) {
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [hoveredActionId, setHoveredActionId] = useState<string | null>(null);
+  const [expandedCountMap, setExpandedCountMap] = useState<Record<string, number>>({});
   const menuRef = useRef<HTMLDivElement | null>(null);
   const touchTimerRef = useRef<number | null>(null);
-  const activeGroup = workspaceGroups.find((group) => group.partitionKey === activeWorkspacePartitionKey);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -257,36 +245,48 @@ function ConversationHistory({
     }
   };
 
+  /**
+   * 追加当前工作空间可见会话条数，每次固定增加 5 条。
+   * @param partitionKey 工作空间分区键。
+   * @param totalConversations 当前分区会话总数。
+   */
+  const handleExpandConversations = (partitionKey: string, totalConversations: number) => {
+    setExpandedCountMap((previousMap) => {
+      const previousCount = previousMap[partitionKey] ?? CONVERSATION_PAGE_SIZE;
+      const nextCount = Math.min(totalConversations, previousCount + CONVERSATION_PAGE_SIZE);
+      return {
+        ...previousMap,
+        [partitionKey]: nextCount,
+      };
+    });
+  };
+
+  /**
+   * 收起当前工作空间会话列表，回到默认展示 5 条。
+   * @param partitionKey 工作空间分区键。
+   */
+  const handleCollapseConversations = (partitionKey: string) => {
+    setExpandedCountMap((previousMap) => ({
+      ...previousMap,
+      [partitionKey]: CONVERSATION_PAGE_SIZE,
+    }));
+  };
+
   return (
     <>
-      <div className="px-3 pb-3">
-        <div className="rounded-2xl border border-border bg-surface-container px-4 py-3">
-          <div className="text-[11px] uppercase tracking-[0.24em] text-muted">当前工作空间</div>
-          <div className="mt-1 text-sm font-medium text-foreground">
-            {activeGroup?.workspaceLabel ?? '云端工作空间'}
-          </div>
-          <div className="mt-3 flex items-center gap-2">
-            <button
-              type="button"
-              className="rounded-lg border border-border bg-surface px-3 py-1.5 text-xs text-foreground transition-colors hover:border-border-active"
-              onClick={() => void onSelectWorkspacePath(null)}
-            >
-              查看全部
-            </button>
-            <button
-              type="button"
-              className="rounded-lg border border-border bg-surface px-3 py-1.5 text-xs text-foreground transition-colors hover:border-border-active"
-              onClick={() => void onPickRepositoryDirectory()}
-            >
-              新增工作空间
-            </button>
-          </div>
-        </div>
-      </div>
       {workspaceGroups.length ? (
         <div className="space-y-4 px-3">
           {workspaceGroups.map((group) => {
             const isActiveGroup = group.partitionKey === activeWorkspacePartitionKey;
+            const totalConversations = group.conversations.length;
+            const visibleConversationCount = Math.min(
+              totalConversations,
+              expandedCountMap[group.partitionKey] ?? CONVERSATION_PAGE_SIZE,
+            );
+            const visibleConversations = group.conversations.slice(0, visibleConversationCount);
+            const hasMoreConversations = visibleConversationCount < totalConversations;
+            const canCollapseConversations =
+              totalConversations > CONVERSATION_PAGE_SIZE && !hasMoreConversations;
             return (
               <section
                 key={group.partitionKey}
@@ -311,8 +311,8 @@ function ConversationHistory({
                 </button>
 
                 <div className="mt-3 space-y-[6px]">
-                  {group.conversations.length ? (
-                    group.conversations.map((conversation) => {
+                  {visibleConversations.length ? (
+                    visibleConversations.map((conversation) => {
                       const isActive = conversation.id === activeConversationId;
                       const isMenuOpen = openMenuId === conversation.id;
                       return (
@@ -408,6 +408,26 @@ function ConversationHistory({
                       暂无会话
                     </div>
                   )}
+                  {hasMoreConversations ? (
+                    <button
+                      type="button"
+                      aria-label="展开显示"
+                      onClick={() => handleExpandConversations(group.partitionKey, totalConversations)}
+                      className="w-full cursor-pointer rounded-xl border border-border bg-surface px-3 py-2 text-left text-sm font-medium text-muted transition-colors hover:bg-surface-container hover:text-foreground"
+                    >
+                      展开显示
+                    </button>
+                  ) : null}
+                  {canCollapseConversations ? (
+                    <button
+                      type="button"
+                      aria-label="收起显示"
+                      onClick={() => handleCollapseConversations(group.partitionKey)}
+                      className="w-full cursor-pointer rounded-xl border border-border bg-surface px-3 py-2 text-left text-sm font-medium text-muted transition-colors hover:bg-surface-container hover:text-foreground"
+                    >
+                      收起显示
+                    </button>
+                  ) : null}
                 </div>
               </section>
             );

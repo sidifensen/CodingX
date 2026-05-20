@@ -183,7 +183,7 @@ public class AdminChatSkillService {
             .sortNo(existing == null ? 0 : existing.getSortNo())
             .storageKey(storageKey)
             .packageStorageFormat(STORAGE_FORMAT_DIRECTORY)
-            .packageFileName(resolveUploadedFileName(file, files))
+            .packageFileName(resolveDirectoryPackageFileName(file, files, normalizedSkillCode))
             .packageSize(packageSize)
             .packageChecksum(packageChecksum)
             .uploadedBy(loginUserId)
@@ -433,14 +433,41 @@ public class AdminChatSkillService {
             .toList();
     }
 
-    private String resolveUploadedFileName(MultipartFile file, List<MultipartFile> files) {
+    /**
+     * 统一生成目录化存储场景的 package_file_name。
+     * 业务意图：该字段用于展示当前包形态，目录化后不应再保留 zip/skill 后缀。
+     */
+    private String resolveDirectoryPackageFileName(MultipartFile file, List<MultipartFile> files, String normalizedSkillCode) {
         if (file != null && !file.isEmpty()) {
-            return StrUtil.blankToDefault(file.getOriginalFilename(), "unknown.skill");
+            String originalFileName = StrUtil.blankToDefault(file.getOriginalFilename(), "unknown.skill");
+            String normalizedFileName = stripArchiveExtension(originalFileName);
+            if (StrUtil.isBlank(normalizedFileName)) {
+                return StrUtil.blankToDefault(normalizedSkillCode, "skill-package");
+            }
+            return normalizedFileName;
         }
         if (CollUtil.isNotEmpty(files)) {
             return "folder-upload";
         }
-        return "unknown.skill";
+        return StrUtil.blankToDefault(normalizedSkillCode, "skill-package");
+    }
+
+    /**
+     * 去除 zip/skill 扩展名，避免目录化记录仍表现为压缩包。
+     */
+    private String stripArchiveExtension(String fileName) {
+        String normalizedFileName = StrUtil.trim(fileName);
+        if (StrUtil.isBlank(normalizedFileName)) {
+            return "";
+        }
+        String lowerCaseFileName = normalizedFileName.toLowerCase(Locale.ROOT);
+        if (lowerCaseFileName.endsWith(".zip")) {
+            return normalizedFileName.substring(0, normalizedFileName.length() - 4);
+        }
+        if (lowerCaseFileName.endsWith(".skill")) {
+            return normalizedFileName.substring(0, normalizedFileName.length() - 6);
+        }
+        return normalizedFileName;
     }
 
     private String calculateDirectoryChecksum(List<UploadedSkillFile> files) {
@@ -572,6 +599,7 @@ public class AdminChatSkillService {
         ChatSkill migratedSkill = legacySkill.toBuilder()
             .storageKey(newStorageKey)
             .packageStorageFormat(STORAGE_FORMAT_DIRECTORY)
+            .packageFileName(resolveMigratedDirectoryPackageFileName(legacySkill))
             .packageSize(packageSize)
             .packageChecksum(packageChecksum)
             .updatedAt(now)
@@ -584,6 +612,25 @@ public class AdminChatSkillService {
             throw new BusinessException("CHAT_SKILL_PACKAGE_MIGRATE_DELETE_FAILED", "历史技能包清理失败");
         }
         return migratedSkill;
+    }
+
+    /**
+     * 历史 zip 迁移后同步修正 package_file_name，避免页面仍显示压缩包后缀。
+     */
+    private String resolveMigratedDirectoryPackageFileName(ChatSkill legacySkill) {
+        String currentFileName = StrUtil.trim(legacySkill.getPackageFileName());
+        if (StrUtil.isNotBlank(currentFileName)) {
+            String strippedFileName = stripArchiveExtension(currentFileName);
+            if (StrUtil.isNotBlank(strippedFileName)) {
+                return strippedFileName;
+            }
+        }
+        String storageKeyName = StrUtil.subAfter(StrUtil.blankToDefault(legacySkill.getStorageKey(), ""), "/", true);
+        String strippedStorageKeyName = stripArchiveExtension(storageKeyName);
+        if (StrUtil.isNotBlank(strippedStorageKeyName)) {
+            return strippedStorageKeyName;
+        }
+        return StrUtil.blankToDefault(StrUtil.trim(legacySkill.getSkillCode()), "skill-package");
     }
 
     private List<RustFsSkillPackageClient.SkillObjectMetadata> listSkillDirectory(ChatSkill skill) {

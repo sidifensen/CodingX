@@ -97,6 +97,7 @@ class AdminChatSkillServiceTest {
             assertEquals("处理 PDF 文档", saved.getDescription());
             assertEquals("uploaded", saved.getSourceType());
             assertEquals("directory", saved.getPackageStorageFormat());
+            assertEquals("pdf-processing", saved.getPackageFileName());
             verify(chatSkillRepository).save(any(ChatSkill.class));
         }
     }
@@ -169,6 +170,7 @@ class AdminChatSkillServiceTest {
             .displayName("meeting-notes")
             .storageKey("chat-skills/packages/meeting-notes.zip")
             .packageStorageFormat("zip")
+            .packageFileName("meeting-notes.zip")
             .createdAt(LocalDateTime.now())
             .updatedAt(LocalDateTime.now())
             .deleted(0)
@@ -197,7 +199,10 @@ class AdminChatSkillServiceTest {
         assertTrue(entries.stream().anyMatch(entry -> entry.directory() && "templates".equals(entry.path())));
         assertTrue(entries.stream().anyMatch(entry -> !entry.directory() && "SKILL.md".equals(entry.path())));
         verify(rustFsSkillPackageClient).deleteObject("chat-skills/packages/meeting-notes.zip");
-        verify(chatSkillRepository).save(any(ChatSkill.class));
+        verify(chatSkillRepository).save(org.mockito.ArgumentMatchers.argThat(skill ->
+            "meeting-notes".equals(skill.getPackageFileName())
+                && "directory".equals(skill.getPackageStorageFormat())
+        ));
     }
 
     /**
@@ -260,6 +265,7 @@ class AdminChatSkillServiceTest {
             .sourceType("uploaded")
             .storageKey("chat-skills/packages/legacy-skill.zip")
             .packageStorageFormat("zip")
+            .packageFileName("legacy-skill.zip")
             .createdAt(LocalDateTime.now())
             .updatedAt(LocalDateTime.now())
             .deleted(0)
@@ -282,6 +288,7 @@ class AdminChatSkillServiceTest {
             .sourceType("built-in")
             .storageKey("chat-skills/packages/builtin-legacy.skill")
             .packageStorageFormat("zip")
+            .packageFileName("builtin-legacy.skill")
             .createdAt(LocalDateTime.now())
             .updatedAt(LocalDateTime.now())
             .deleted(0)

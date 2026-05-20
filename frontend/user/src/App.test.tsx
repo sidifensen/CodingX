@@ -1394,14 +1394,14 @@ describe('App', () => {
   it('应支持通过内容区按钮折叠和展开左侧边栏', async () => {
     render(<App />);
 
-    const sidebarLabel = screen.getByText('我的空间');
-    expect(sidebarLabel).toBeInTheDocument();
+    const sidebar = screen.getByRole('complementary');
+    expect(within(sidebar).getByText('MCP 管理')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: '折叠左侧边栏' }));
-    expect(sidebarLabel.closest('aside')).toHaveAttribute('aria-hidden', 'true');
+    expect(sidebar).toHaveAttribute('aria-hidden', 'true');
 
     fireEvent.click(screen.getByRole('button', { name: '展开左侧边栏' }));
-    expect(sidebarLabel.closest('aside')).toHaveAttribute('aria-hidden', 'false');
+    expect(sidebar).toHaveAttribute('aria-hidden', 'false');
   });
 
   /**
@@ -1410,11 +1410,12 @@ describe('App', () => {
   it('应在折叠左侧边栏时保留侧栏内容节点', async () => {
     render(<App />);
 
-    const sidebarLabel = screen.getByText('我的空间');
+    await screen.findByText('MCP 管理');
+    const sidebar = screen.getByRole('complementary');
     fireEvent.click(screen.getByRole('button', { name: '折叠左侧边栏' }));
 
-    expect(sidebarLabel).toBeInTheDocument();
-    expect(sidebarLabel.closest('aside')).toHaveAttribute('aria-hidden', 'true');
+    expect(within(sidebar).getByText('MCP 管理')).toBeInTheDocument();
+    expect(sidebar).toHaveAttribute('aria-hidden', 'true');
   });
 
   /**

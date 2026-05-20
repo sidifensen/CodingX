@@ -901,7 +901,63 @@ describe('ChatView', () => {
     expect(screen.getByTestId('input-rich-preview')).toBeInTheDocument();
     expect(screen.getByTestId('selected-skill-chip-sales_query')).toBeInTheDocument();
     expect(screen.getByTestId('selected-skill-chip-icon-sales_query')).toBeInTheDocument();
-    expect(screen.getByText('@sales_query')).toHaveClass('invisible');
+    expect(screen.getByTestId('input-rich-preview')).toContainElement(
+      screen.getByText('@sales_query', { selector: 'span.invisible.whitespace-pre' }),
+    );
+  });
+
+  /**
+   * 技能气泡应提供显式删除按钮，点击后直接移除文本标记并同步取消技能选择。
+   */
+  it('应支持点击技能气泡删除按钮移除技能标记', async () => {
+    const setInputValue = vi.fn();
+    const setSelectedSkillCodes = vi.fn();
+
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          inputValue: '@sales_query 帮我分析一下',
+          selectedSkillCodes: ['sales_query'],
+          setInputValue,
+          setSelectedSkillCodes,
+        })}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId('remove-selected-skill-chip-sales_query'));
+
+    expect(setInputValue).toHaveBeenCalledWith('帮我分析一下');
+    expect(setSelectedSkillCodes).toHaveBeenCalledWith([]);
+  });
+
+  /**
+   * 当光标位于技能标记后方时，按 Backspace 应一次删除整枚技能标记。
+   */
+  it('应在技能标记后按退格键时整枚删除技能标记', async () => {
+    const setInputValue = vi.fn();
+    const setSelectedSkillCodes = vi.fn();
+
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          inputValue: '@sales_query',
+          selectedSkillCodes: ['sales_query'],
+          setInputValue,
+          setSelectedSkillCodes,
+        })}
+      />,
+    );
+
+    const textarea = screen.getByPlaceholderText('输入问题，或先选择技能/MCP...') as HTMLTextAreaElement;
+    textarea.setSelectionRange('@sales_query'.length, '@sales_query'.length);
+    fireEvent.keyDown(textarea, { key: 'Backspace' });
+
+    expect(setInputValue).toHaveBeenCalledWith('');
+    expect(setSelectedSkillCodes).toHaveBeenCalledWith([]);
   });
 
   /**

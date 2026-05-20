@@ -165,8 +165,8 @@ export default function ChatView({
     (rawInput: string) => {
       const nextSkillCodes: string[] = [];
       const seenSkillCodes = new Set<string>();
-      for (const match of rawInput.matchAll(/@([a-zA-Z0-9_-]+)/g)) {
-        const skillCode = match[1];
+      for (const token of extractSkillTokens(rawInput)) {
+        const skillCode = token.skillCode;
         if (!availableSkillCodeSet.has(skillCode) || seenSkillCodes.has(skillCode)) {
           continue;
         }
@@ -253,6 +253,31 @@ export default function ChatView({
   );
 
   /**
+   * 按技能编码移除输入文本里的全部技能标记，并保持输入值与技能选择状态一致。
+   * @param skillCode 待移除技能编码。
+   */
+  const removeSkillTokenFromInput = React.useCallback(
+    (skillCode: string) => {
+      const nextInput = removeSkillTokenByCode(inputValue, skillCode);
+      if (nextInput === inputValue) {
+        return;
+      }
+      setInputValue(nextInput);
+      syncSelectedSkillCodesFromInput(nextInput);
+      window.requestAnimationFrame(() => {
+        const textarea = chatInputRef.current;
+        if (!textarea) {
+          return;
+        }
+        const nextCaret = Math.min(nextInput.length, textarea.selectionStart ?? nextInput.length);
+        textarea.focus();
+        textarea.setSelectionRange(nextCaret, nextCaret);
+      });
+    },
+    [inputValue, setInputValue, syncSelectedSkillCodesFromInput],
+  );
+
+  /**
    * 切换技能选中状态：支持多选，已选中再次点击可取消。
    * @param skillCode 被选择技能编码。
    */
@@ -264,12 +289,7 @@ export default function ChatView({
       let nextInput = currentInput;
 
       if (isSkillAlreadySelected) {
-        const escapedSkillCode = skillCode.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        const removeTokenPattern = new RegExp(`(?:^|\\s)@${escapedSkillCode}(?=\\s|$)`, 'g');
-        nextInput = currentInput
-          .replace(removeTokenPattern, ' ')
-          .replace(/[ \t]{2,}/g, ' ')
-          .trimStart();
+        nextInput = removeSkillTokenByCode(currentInput, skillCode);
       } else if (skillSelectorSource === 'slash') {
         // 步骤：斜杠只作为技能检索触发器，选中后替换为可编辑技能文本标记。
         const remainingText = currentInput.replace(/^\s*\/[^\s]*\s*/, '');
@@ -998,20 +1018,37 @@ export default function ChatView({
                               segment.type === 'skill' ? (
                                 <span
                                   key={`${segment.skillCode}-${segment.start}-${index}`}
-                                  className="relative inline-flex align-baseline"
+                                  className="relative inline-flex max-w-full align-baseline"
                                 >
-                                  {/* 步骤：保留原始 token 宽度占位，确保 textarea 光标位置与预览层严格对齐。 */}
+                                  {/* 步骤：保留 token 原始宽度作为占位，确保 textarea 光标位置与技能气泡末尾对齐。 */}
                                   <span className="invisible whitespace-pre">{segment.rawToken}</span>
                                   <span
                                     data-testid={`selected-skill-chip-${segment.skillCode}`}
-                                    className="absolute left-0 top-0 inline-flex h-6 max-w-[220px] items-center gap-1 rounded-md border border-border/70 bg-surface-container/70 px-2 text-xs font-normal text-foreground"
+                                    className="pointer-events-auto absolute inset-y-0 left-0 right-0 inline-flex h-6 items-center rounded-md border border-border/70 bg-surface-container/82 px-1.5 text-[12px] font-normal text-foreground"
                                   >
                                     <Sparkles
                                       size={12}
                                       data-testid={`selected-skill-chip-icon-${segment.skillCode}`}
-                                      className="shrink-0 text-muted"
+                                      className="mr-1 shrink-0 text-muted"
                                     />
-                                    <span className="truncate">{segment.displayName}</span>
+                                    <span className="truncate">{segment.rawToken}</span>
+                                    <button
+                                      type="button"
+                                      aria-label={`删除技能 ${segment.displayName}`}
+                                      data-testid={`remove-selected-skill-chip-${segment.skillCode}`}
+                                      onMouseDown={(event) => {
+                                        // 阻止按钮抢走 textarea 焦点，保持输入连续性。
+                                        event.preventDefault();
+                                      }}
+                                      onClick={(event) => {
+                                        event.preventDefault();
+                                        event.stopPropagation();
+                                        removeSkillTokenFromInput(segment.skillCode);
+                                      }}
+                                      className="ml-1 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-muted transition-colors hover:bg-surface hover:text-foreground"
+                                    >
+                                      <X size={10} />
+                                    </button>
                                   </span>
                                 </span>
                               ) : (
@@ -1031,6 +1068,37 @@ export default function ChatView({
                             syncSelectedSkillCodesFromInput(nextInput);
                           }}
                           onKeyDown={(event) => {
+                            if (
+                              event.key === 'Backspace' &&
+                              !event.shiftKey &&
+                              !event.ctrlKey &&
+                              !event.altKey &&
+                              !event.metaKey
+                            ) {
+                              const tokenRemovalResult = removeSkillTokenBeforeCaret(
+                                event.currentTarget.value,
+                                event.currentTarget.selectionStart ?? 0,
+                                event.currentTarget.selectionEnd ?? 0,
+                                availableSkillCodeSet,
+                              );
+                              if (tokenRemovalResult) {
+                                event.preventDefault();
+                                setInputValue(tokenRemovalResult.nextInput);
+                                syncSelectedSkillCodesFromInput(tokenRemovalResult.nextInput);
+                                window.requestAnimationFrame(() => {
+                                  const textarea = chatInputRef.current;
+                                  if (!textarea) {
+                                    return;
+                                  }
+                                  textarea.focus();
+                                  textarea.setSelectionRange(
+                                    tokenRemovalResult.nextCaretPosition,
+                                    tokenRemovalResult.nextCaretPosition,
+                                  );
+                                });
+                                return;
+                              }
+                            }
                             if (event.key === 'Enter' && !event.shiftKey) {
                               event.preventDefault();
                               void submitCurrentInput();
@@ -1954,6 +2022,18 @@ type InputPreviewSegment =
       end: number;
     };
 
+type SkillTokenRange = {
+  rawToken: string;
+  skillCode: string;
+  start: number;
+  end: number;
+};
+
+type SkillTokenRemovalResult = {
+  nextInput: string;
+  nextCaretPosition: number;
+};
+
 /**
  * 将输入文本切分为“普通文本片段 + 技能标记片段”，供输入区气泡预览层渲染。
  * @param rawInput 原始输入文本。
@@ -2006,6 +2086,85 @@ function tokenizeInputForPreview(
     });
   }
   return segments;
+}
+
+/**
+ * 提取输入文本中的技能 token 位置信息，供气泡渲染与删除逻辑复用。
+ * @param rawInput 原始输入文本。
+ * @returns token 列表，包含编码与字符区间。
+ */
+function extractSkillTokens(rawInput: string): SkillTokenRange[] {
+  if (!rawInput) {
+    return [];
+  }
+  const tokens: SkillTokenRange[] = [];
+  const tokenPattern = /@([a-zA-Z0-9_-]+)/g;
+  for (const match of rawInput.matchAll(tokenPattern)) {
+    const fullToken = match[0];
+    const tokenStart = match.index ?? -1;
+    if (tokenStart < 0) {
+      continue;
+    }
+    tokens.push({
+      rawToken: fullToken,
+      skillCode: match[1],
+      start: tokenStart,
+      end: tokenStart + fullToken.length,
+    });
+  }
+  return tokens;
+}
+
+/**
+ * 统一移除指定技能编码的文本 token，并清理多余空白，保持自然输入文案。
+ * @param rawInput 原始输入文本。
+ * @param skillCode 技能编码。
+ * @returns 删除后的输入文本。
+ */
+function removeSkillTokenByCode(rawInput: string, skillCode: string): string {
+  if (!rawInput.trim()) {
+    return rawInput;
+  }
+  const escapedSkillCode = skillCode.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const removeTokenPattern = new RegExp(`(?:^|\\s)@${escapedSkillCode}(?=\\s|$)`, 'g');
+  return rawInput.replace(removeTokenPattern, ' ').replace(/[ \t]{2,}/g, ' ').trimStart();
+}
+
+/**
+ * 处理 Backspace 一键删除技能 token：当光标位于 token 后，删除整枚 token。
+ * @param rawInput 当前输入文本。
+ * @param selectionStart 光标起点。
+ * @param selectionEnd 光标终点。
+ * @param availableSkillCodeSet 当前可识别技能集合。
+ * @returns 命中可删 token 时返回新输入与新光标位置，否则返回 null。
+ */
+function removeSkillTokenBeforeCaret(
+  rawInput: string,
+  selectionStart: number,
+  selectionEnd: number,
+  availableSkillCodeSet: Set<string>,
+): SkillTokenRemovalResult | null {
+  if (selectionStart !== selectionEnd || selectionStart <= 0) {
+    return null;
+  }
+  const effectiveCaret = /\s/.test(rawInput.charAt(selectionStart - 1))
+    ? selectionStart - 1
+    : selectionStart;
+  if (effectiveCaret <= 0) {
+    return null;
+  }
+  const targetToken = extractSkillTokens(rawInput).find(
+    (token) => token.end === effectiveCaret && availableSkillCodeSet.has(token.skillCode),
+  );
+  if (!targetToken) {
+    return null;
+  }
+  const beforeToken = rawInput.slice(0, targetToken.start);
+  const afterToken = rawInput.slice(targetToken.end);
+  const nextInput = `${beforeToken}${afterToken}`.replace(/[ \t]{2,}/g, ' ').trimStart();
+  const removedPrefixLength = beforeToken.length;
+  const nextCaretPosition = Math.min(removedPrefixLength, nextInput.length);
+  return { nextInput, nextCaretPosition };
 }
 
 /**

@@ -945,7 +945,6 @@ describe('ChatView', () => {
 
     expect(screen.getByTestId('input-rich-preview')).toBeInTheDocument();
     expect(screen.getByTestId('selected-skill-chip-sales_query')).toBeInTheDocument();
-    expect(screen.getByTestId('selected-skill-chip-icon-sales_query')).toBeInTheDocument();
     expect(screen.getByTestId('input-rich-preview')).toContainElement(
       screen.getByText('@sales_query', { selector: 'span.invisible.whitespace-pre' }),
     );
@@ -1705,3 +1704,4 @@ function createWorkspace(overrides?: Partial<ChatWorkspaceController>): ChatWork
     ...overrides,
   };
 }
+

@@ -1031,14 +1031,9 @@ export default function ChatView({
                                   <span className="invisible whitespace-pre">{segment.rawToken}</span>
                                   <span
                                     data-testid={`selected-skill-chip-${segment.skillCode}`}
-                                    className="pointer-events-auto absolute inset-y-0 left-0 inline-flex h-6 min-w-full items-center rounded-md border border-border/70 bg-surface-container/82 px-1.5 text-[12px] font-normal text-foreground"
+                                    className="pointer-events-auto absolute inset-y-0 left-0 right-0 inline-flex h-6 items-center overflow-hidden rounded-md border border-border/70 bg-surface-container/82 px-1.5 text-[12px] font-normal text-foreground"
                                   >
-                                    <Sparkles
-                                      size={12}
-                                      data-testid={`selected-skill-chip-icon-${segment.skillCode}`}
-                                      className="mr-1 shrink-0 text-muted"
-                                    />
-                                    <span className="whitespace-nowrap">{segment.rawToken}</span>
+                                    <span className="min-w-0 truncate">{segment.rawToken}</span>
                                     <button
                                       type="button"
                                       aria-label={`删除技能 ${segment.displayName}`}
@@ -1052,7 +1047,7 @@ export default function ChatView({
                                         event.stopPropagation();
                                         removeSkillTokenFromInput(segment.skillCode);
                                       }}
-                                      className="ml-1 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-muted transition-colors hover:bg-surface hover:text-foreground"
+                                      className="ml-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-muted transition-colors hover:bg-surface hover:text-foreground"
                                     >
                                       <X size={10} />
                                     </button>
@@ -2336,4 +2331,5 @@ function ConfirmDialog({
     </div>
   );
 }
+
 

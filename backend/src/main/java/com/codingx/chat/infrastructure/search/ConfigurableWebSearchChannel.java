@@ -7,7 +7,7 @@ import cn.hutool.json.JSONUtil;
 import com.codingx.chat.application.service.SearchChannel;
 import com.codingx.chat.application.service.SearchReferenceCandidate;
 import com.codingx.chat.application.service.SearchRequestContext;
-import com.codingx.config.RuntimeProperties;
+import com.codingx.chat.application.service.RuntimeSettingService;
 import java.io.IOException;
 import java.net.URI;
 import java.util.ArrayList;
@@ -31,7 +31,7 @@ public class ConfigurableWebSearchChannel implements SearchChannel {
     private static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
 
     private final OkHttpClient okHttpClient;
-    private final RuntimeProperties runtimeProperties;
+    private final RuntimeSettingService runtimeSettingService;
 
     @Override
     public String getName() {
@@ -45,12 +45,10 @@ public class ConfigurableWebSearchChannel implements SearchChannel {
 
     @Override
     public boolean isEnabled(SearchRequestContext context) {
-        RuntimeProperties.WebSearchProperties webSearch = runtimeProperties.getWebSearch();
-        return webSearch != null
-            && webSearch.isEnabled()
-            && StrUtil.isNotBlank(webSearch.getApiKey())
-            && StrUtil.isNotBlank(webSearch.getBaseUrl())
-            && StrUtil.isNotBlank(webSearch.getProvider());
+        return runtimeSettingService.webSearchEnabled()
+            && StrUtil.isNotBlank(runtimeSettingService.webSearchApiKey())
+            && StrUtil.isNotBlank(runtimeSettingService.webSearchBaseUrl())
+            && StrUtil.isNotBlank(runtimeSettingService.webSearchProvider());
     }
 
     @Override
@@ -97,15 +95,14 @@ public class ConfigurableWebSearchChannel implements SearchChannel {
      * @return HTTP 请求。
      */
     private Request buildSerperRequest(SearchRequestContext context) {
-        RuntimeProperties.WebSearchProperties webSearch = runtimeProperties.getWebSearch();
         JSONObject payload = JSONUtil.createObj()
             .set("q", context.question())
-            .set("gl", StrUtil.blankToDefault(webSearch.getCountry(), "cn"))
-            .set("hl", StrUtil.blankToDefault(webSearch.getLanguage(), "zh-cn"))
-            .set("num", Math.max(1, Math.min(10, webSearch.getMaxResults())));
+            .set("gl", StrUtil.blankToDefault(runtimeSettingService.webSearchCountry(), "cn"))
+            .set("hl", StrUtil.blankToDefault(runtimeSettingService.webSearchLanguage(), "zh-cn"))
+            .set("num", Math.max(1, Math.min(10, runtimeSettingService.webSearchMaxResults())));
         return new Request.Builder()
-            .url(webSearch.getBaseUrl())
-            .header("X-API-KEY", webSearch.getApiKey())
+            .url(runtimeSettingService.webSearchBaseUrl())
+            .header("X-API-KEY", runtimeSettingService.webSearchApiKey())
             .header("Content-Type", "application/json")
             .post(RequestBody.create(payload.toString(), JSON))
             .build();
@@ -117,17 +114,16 @@ public class ConfigurableWebSearchChannel implements SearchChannel {
      * @return HTTP 请求。
      */
     private Request buildTavilyRequest(SearchRequestContext context) {
-        RuntimeProperties.WebSearchProperties webSearch = runtimeProperties.getWebSearch();
         JSONObject payload = JSONUtil.createObj()
             .set("query", context.question())
-            .set("max_results", Math.max(1, Math.min(10, webSearch.getMaxResults())))
+            .set("max_results", Math.max(1, Math.min(10, runtimeSettingService.webSearchMaxResults())))
             .set("topic", "general")
             .set("search_depth", "basic")
             .set("include_answer", false)
             .set("include_images", false);
         return new Request.Builder()
-            .url(webSearch.getBaseUrl())
-            .header("Authorization", "Bearer " + webSearch.getApiKey())
+            .url(runtimeSettingService.webSearchBaseUrl())
+            .header("Authorization", "Bearer " + runtimeSettingService.webSearchApiKey())
             .header("Content-Type", "application/json")
             .post(RequestBody.create(payload.toString(), JSON))
             .build();
@@ -218,6 +214,6 @@ public class ConfigurableWebSearchChannel implements SearchChannel {
      * @return provider 编码。
      */
     private String normalizedProvider() {
-        return StrUtil.blankToDefault(runtimeProperties.getWebSearch().getProvider(), "").trim().toLowerCase();
+        return StrUtil.blankToDefault(runtimeSettingService.webSearchProvider(), "").trim().toLowerCase();
     }
 }

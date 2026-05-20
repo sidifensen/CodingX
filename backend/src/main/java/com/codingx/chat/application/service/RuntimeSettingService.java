@@ -214,6 +214,75 @@ public class RuntimeSettingService {
     }
 
     /**
+     * 获取真实联网搜索开关。
+     * @return 是否启用联网搜索。
+     */
+    public boolean webSearchEnabled() {
+        RuntimeProperties.WebSearchProperties fallback = runtimeProperties.getWebSearch();
+        return getBoolean("web_search.enabled", fallback != null && fallback.isEnabled());
+    }
+
+    /**
+     * 获取联网搜索 provider 编码。
+     * @return provider 编码。
+     */
+    public String webSearchProvider() {
+        RuntimeProperties.WebSearchProperties fallback = runtimeProperties.getWebSearch();
+        String fallbackValue = fallback == null ? "serper" : fallback.getProvider();
+        return getString("web_search.provider", fallbackValue);
+    }
+
+    /**
+     * 获取联网搜索接口地址。
+     * @return 接口地址。
+     */
+    public String webSearchBaseUrl() {
+        RuntimeProperties.WebSearchProperties fallback = runtimeProperties.getWebSearch();
+        String fallbackValue = fallback == null ? "" : fallback.getBaseUrl();
+        return getString("web_search.base_url", fallbackValue);
+    }
+
+    /**
+     * 获取联网搜索 API Key。
+     * @return API Key。
+     */
+    public String webSearchApiKey() {
+        RuntimeProperties.WebSearchProperties fallback = runtimeProperties.getWebSearch();
+        String fallbackValue = fallback == null ? "" : fallback.getApiKey();
+        return getString("web_search.api_key", fallbackValue);
+    }
+
+    /**
+     * 获取联网搜索最大候选数。
+     * @return 最大候选数。
+     */
+    public int webSearchMaxResults() {
+        RuntimeProperties.WebSearchProperties fallback = runtimeProperties.getWebSearch();
+        int fallbackValue = fallback == null ? 5 : fallback.getMaxResults();
+        return getInt("web_search.max_results", fallbackValue);
+    }
+
+    /**
+     * 获取联网搜索语言代码。
+     * @return 语言代码。
+     */
+    public String webSearchLanguage() {
+        RuntimeProperties.WebSearchProperties fallback = runtimeProperties.getWebSearch();
+        String fallbackValue = fallback == null ? "zh-cn" : fallback.getLanguage();
+        return getString("web_search.language", fallbackValue);
+    }
+
+    /**
+     * 获取联网搜索地区代码。
+     * @return 地区代码。
+     */
+    public String webSearchCountry() {
+        RuntimeProperties.WebSearchProperties fallback = runtimeProperties.getWebSearch();
+        String fallbackValue = fallback == null ? "cn" : fallback.getCountry();
+        return getString("web_search.country", fallbackValue);
+    }
+
+    /**
      * 获取搜索最大并发子问题数。
      * @return 并发子问题上限。
      */
@@ -354,4 +423,3 @@ public class RuntimeSettingService {
         return new BusinessException("SETTING_VALUE_INVALID", "配置 " + key + " 值 " + value + " 不是合法 " + type + " 类型");
     }
 }
-

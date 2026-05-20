@@ -2,10 +2,10 @@ package com.codingx.chat.infrastructure.search;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.mockito.Mockito.when;
 
 import com.codingx.chat.application.service.SearchReferenceCandidate;
 import com.codingx.chat.application.service.SearchRequestContext;
-import com.codingx.config.RuntimeProperties;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
 import java.io.OutputStream;
@@ -16,6 +16,7 @@ import java.util.concurrent.TimeUnit;
 import okhttp3.OkHttpClient;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
 
 /**
  * 验证可配置联网搜索通道会按 provider 协议请求并归一化返回结果。
@@ -36,14 +37,17 @@ class ConfigurableWebSearchChannelTest {
      */
     @Test
     void isEnabledReturnsFalseWhenApiKeyIsBlank() {
-        RuntimeProperties runtimeProperties = new RuntimeProperties();
-        runtimeProperties.getWebSearch().setEnabled(true);
-        runtimeProperties.getWebSearch().setProvider("serper");
-        runtimeProperties.getWebSearch().setBaseUrl("https://google.serper.dev/search");
+        com.codingx.chat.application.service.RuntimeSettingService runtimeSettingService = Mockito.mock(
+            com.codingx.chat.application.service.RuntimeSettingService.class
+        );
+        when(runtimeSettingService.webSearchEnabled()).thenReturn(true);
+        when(runtimeSettingService.webSearchProvider()).thenReturn("serper");
+        when(runtimeSettingService.webSearchBaseUrl()).thenReturn("https://google.serper.dev/search");
+        when(runtimeSettingService.webSearchApiKey()).thenReturn("");
 
         ConfigurableWebSearchChannel channel = new ConfigurableWebSearchChannel(
             new OkHttpClient.Builder().readTimeout(5, TimeUnit.SECONDS).build(),
-            runtimeProperties
+            runtimeSettingService
         );
 
         assertFalse(channel.isEnabled(new SearchRequestContext("Spring Boot SSE")));
@@ -80,13 +84,13 @@ class ConfigurableWebSearchChannelTest {
         });
         httpServer.start();
 
-        RuntimeProperties runtimeProperties = buildRuntimeProperties(
+        com.codingx.chat.application.service.RuntimeSettingService runtimeSettingService = buildRuntimeSettingService(
             "serper",
             "http://127.0.0.1:" + httpServer.getAddress().getPort() + "/serper/search"
         );
         ConfigurableWebSearchChannel channel = new ConfigurableWebSearchChannel(
             new OkHttpClient.Builder().readTimeout(5, TimeUnit.SECONDS).build(),
-            runtimeProperties
+            runtimeSettingService
         );
 
         List<SearchReferenceCandidate> candidates = channel.search(new SearchRequestContext("Spring Boot SSE"));
@@ -125,13 +129,13 @@ class ConfigurableWebSearchChannelTest {
         });
         httpServer.start();
 
-        RuntimeProperties runtimeProperties = buildRuntimeProperties(
+        com.codingx.chat.application.service.RuntimeSettingService runtimeSettingService = buildRuntimeSettingService(
             "tavily",
             "http://127.0.0.1:" + httpServer.getAddress().getPort() + "/tavily/search"
         );
         ConfigurableWebSearchChannel channel = new ConfigurableWebSearchChannel(
             new OkHttpClient.Builder().readTimeout(5, TimeUnit.SECONDS).build(),
-            runtimeProperties
+            runtimeSettingService
         );
 
         List<SearchReferenceCandidate> candidates = channel.search(new SearchRequestContext("Qwen 最新更新"));
@@ -147,16 +151,18 @@ class ConfigurableWebSearchChannelTest {
      * @param baseUrl 搜索接口地址。
      * @return 运行时配置。
      */
-    private RuntimeProperties buildRuntimeProperties(String provider, String baseUrl) {
-        RuntimeProperties runtimeProperties = new RuntimeProperties();
-        runtimeProperties.getWebSearch().setEnabled(true);
-        runtimeProperties.getWebSearch().setProvider(provider);
-        runtimeProperties.getWebSearch().setBaseUrl(baseUrl);
-        runtimeProperties.getWebSearch().setApiKey("test-key");
-        runtimeProperties.getWebSearch().setMaxResults(5);
-        runtimeProperties.getWebSearch().setLanguage("zh-cn");
-        runtimeProperties.getWebSearch().setCountry("cn");
-        return runtimeProperties;
+    private com.codingx.chat.application.service.RuntimeSettingService buildRuntimeSettingService(String provider, String baseUrl) {
+        com.codingx.chat.application.service.RuntimeSettingService runtimeSettingService = Mockito.mock(
+            com.codingx.chat.application.service.RuntimeSettingService.class
+        );
+        when(runtimeSettingService.webSearchEnabled()).thenReturn(true);
+        when(runtimeSettingService.webSearchProvider()).thenReturn(provider);
+        when(runtimeSettingService.webSearchBaseUrl()).thenReturn(baseUrl);
+        when(runtimeSettingService.webSearchApiKey()).thenReturn("test-key");
+        when(runtimeSettingService.webSearchMaxResults()).thenReturn(5);
+        when(runtimeSettingService.webSearchLanguage()).thenReturn("zh-cn");
+        when(runtimeSettingService.webSearchCountry()).thenReturn("cn");
+        return runtimeSettingService;
     }
 
     /**

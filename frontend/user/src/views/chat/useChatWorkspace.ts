@@ -6,7 +6,9 @@ import {
   ActiveStreamState,
   ArtifactItem,
   ChatAttachmentItem,
+  ChatExpertItem,
   ChatSkillItem,
+  CurrentExpertItem,
   CurrentMcpItem,
   CurrentSkillItem,
   ChatMessageItem,
@@ -94,6 +96,9 @@ export function useChatWorkspace(
   const [references, setReferences] = useState<ReferenceItem[]>([]);
   const [artifacts, setArtifacts] = useState<ArtifactItem[]>([]);
   const [sampleQuestions, setSampleQuestions] = useState<SampleQuestionItem[]>([]);
+  const [availableExperts, setAvailableExperts] = useState<ChatExpertItem[]>([]);
+  const [currentExperts, setCurrentExperts] = useState<CurrentExpertItem[]>([]);
+  const [selectedExpertCode, setSelectedExpertCode] = useState<string | null>(null);
   const [availableSkills, setAvailableSkills] = useState<ChatSkillItem[]>([]);
   const [currentSkills, setCurrentSkills] = useState<CurrentSkillItem[]>([]);
   const [selectedSkillCodes, setSelectedSkillCodesState] = useState<string[]>([]);
@@ -234,17 +239,23 @@ export function useChatWorkspace(
     }
     setIsBootstrapping(true);
     try {
-      const [nextConversations, nextSampleQuestions, nextSkills, nextMcps] = await Promise.all([
+      const [nextConversations, nextSampleQuestions, nextExperts, nextSkills, nextMcps] = await Promise.all([
         loadConversations(token),
         ChatApi.listSampleQuestions(token),
+        ChatApi.listExperts(token),
         ChatApi.listSkills(token),
         ChatApi.listMcps(token),
       ]);
       setSampleQuestions(nextSampleQuestions);
+      setAvailableExperts(nextExperts);
       setAvailableSkills(nextSkills);
-      setSelectedSkillCodes([]);
       setAvailableMcps(nextMcps);
-      setSelectedMcpCodes(nextMcps.map((item) => item.mcpCode));
+      if (selectedSkillCodes.length === 0) {
+        setSelectedSkillCodes([]);
+      }
+      if (selectedMcpCodes.length === 0) {
+        setSelectedMcpCodes(nextMcps.map((item) => item.mcpCode));
+      }
       setMcpConnected(nextMcps.length > 0);
       setWorkspaceGroups(listWorkspaceGroups(activeRuntimeTarget));
       if (activeConversationId) {
@@ -424,6 +435,7 @@ export function useChatWorkspace(
       nextSteps,
       nextReferences,
       nextArtifacts,
+      nextCurrentExperts,
       nextCurrentSkills,
       nextCurrentMcps,
     ] = await Promise.all([
@@ -431,6 +443,7 @@ export function useChatWorkspace(
       ChatApi.listSteps(token, conversationId),
       ChatApi.listReferences(token, conversationId),
       ChatApi.listArtifacts(token, conversationId),
+      ChatApi.listCurrentExperts(token, conversationId),
       ChatApi.listCurrentSkills(token, conversationId),
       ChatApi.listCurrentMcps(token, conversationId),
     ]);
@@ -438,6 +451,7 @@ export function useChatWorkspace(
     setExecutionSteps(nextSteps);
     setReferences(nextReferences);
     setArtifacts(nextArtifacts);
+    setCurrentExperts(nextCurrentExperts);
     setCurrentSkills(nextCurrentSkills);
     setCurrentMcps(nextCurrentMcps);
     const conversationList = sourceConversations ?? conversations;
@@ -453,6 +467,7 @@ export function useChatWorkspace(
       executionSteps: nextSteps,
       references: nextReferences,
       artifacts: nextArtifacts,
+      currentExperts: nextCurrentExperts,
       currentSkills: nextCurrentSkills,
       currentMcps: nextCurrentMcps,
     });
@@ -525,6 +540,7 @@ export function useChatWorkspace(
       executionSteps,
       references,
       artifacts,
+      currentExperts,
       currentSkills,
       currentMcps,
     });
@@ -539,6 +555,7 @@ export function useChatWorkspace(
           mcpConnected,
           selectedMcpCodes,
           selectedSkillCodes,
+          selectedExpertCode,
           workspacePath,
           attachmentIds,
         ),
@@ -730,6 +747,9 @@ export function useChatWorkspace(
     setConversations([]);
     clearConversationPlayback();
     setSampleQuestions([]);
+    setAvailableExperts([]);
+    setCurrentExperts([]);
+    setSelectedExpertCode(null);
     setAvailableSkills([]);
     setCurrentSkills([]);
     setSelectedSkillCodes([]);
@@ -980,6 +1000,9 @@ export function useChatWorkspace(
     references,
     artifacts,
     sampleQuestions,
+    availableExperts,
+    selectedExpertCode,
+    currentExperts,
     availableSkills,
     currentSkills,
     selectedSkillCodes,
@@ -995,6 +1018,7 @@ export function useChatWorkspace(
     pendingAttachments,
     isBootstrapping,
     setInputValue,
+    setSelectedExpertCode,
     addPendingAttachments,
     removePendingAttachment,
     clearPendingAttachments,
@@ -1073,6 +1097,7 @@ export function useChatWorkspace(
     setExecutionSteps([]);
     setReferences([]);
     setArtifacts([]);
+    setCurrentExperts([]);
     setCurrentSkills([]);
     setCurrentMcps([]);
   }
@@ -1086,14 +1111,15 @@ export function useChatWorkspace(
   function persistConversationState(
     conversationId: string | null,
     conversationList: ConversationItem[],
-    record: {
-      messages: ChatMessageItem[];
-      executionSteps: ExecutionStepItem[];
-      references: ReferenceItem[];
-      artifacts: ArtifactItem[];
-      currentSkills: CurrentSkillItem[];
-      currentMcps: CurrentMcpItem[];
-    },
+      record: {
+        messages: ChatMessageItem[];
+        executionSteps: ExecutionStepItem[];
+        references: ReferenceItem[];
+        artifacts: ArtifactItem[];
+        currentExperts: CurrentExpertItem[];
+        currentSkills: CurrentSkillItem[];
+        currentMcps: CurrentMcpItem[];
+      },
   ) {
     if (!activeWorkspacePartitionKey) {
       return;
@@ -1135,6 +1161,7 @@ export function useChatWorkspace(
     setExecutionSteps(record.executionSteps);
     setReferences(record.references);
     setArtifacts(record.artifacts);
+    setCurrentExperts(record.currentExperts ?? []);
     setCurrentSkills(record.currentSkills);
     setCurrentMcps(record.currentMcps);
   }
@@ -1316,13 +1343,27 @@ export function buildStreamRequestUrl(
   mcpConnected: boolean,
   selectedMcpCodes: string[],
   selectedSkillCodes: string[],
-  repositoryPath?: string | null,
-  attachmentIds?: string[],
+  repositoryPathOrSelectedExpertCode?: string | null,
+  attachmentIdsOrRepositoryPath?: string[] | string | null,
+  maybeAttachmentIds?: string[],
+  maybeSelectedExpertCode?: string | null,
 ) {
   const skillMessageParseResult = parseSkillMessage(question);
   const searchParams = new URLSearchParams({
     question: skillMessageParseResult.question,
   });
+  let repositoryPath: string | null | undefined;
+  let attachmentIds: string[] | undefined;
+  let selectedExpertCode: string | null | undefined;
+  if (Array.isArray(attachmentIdsOrRepositoryPath)) {
+    repositoryPath = repositoryPathOrSelectedExpertCode;
+    attachmentIds = attachmentIdsOrRepositoryPath;
+    selectedExpertCode = maybeSelectedExpertCode;
+  } else {
+    repositoryPath = attachmentIdsOrRepositoryPath;
+    attachmentIds = maybeAttachmentIds;
+    selectedExpertCode = repositoryPathOrSelectedExpertCode;
+  }
   if (conversationId != null) {
     searchParams.set('conversationId', String(conversationId));
   }
@@ -1337,6 +1378,9 @@ export function buildStreamRequestUrl(
   }
   if (selectedSkillCodes.length > 0) {
     searchParams.set('skillCodes', selectedSkillCodes.join(','));
+  }
+  if (selectedExpertCode && selectedExpertCode.trim().length > 0) {
+    searchParams.set('expertCode', selectedExpertCode);
   }
   if (repositoryPath && repositoryPath.trim().length > 0) {
     searchParams.set('repositoryPath', repositoryPath);

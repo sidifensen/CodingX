@@ -3,9 +3,11 @@ import { ApiResponseParser, ApiUnauthorizedError } from '../../api/apiResponse';
 import {
   ArtifactItem,
   ChatAttachmentItem,
+  ChatExpertItem,
   ChatSkillItem,
   ChatMessageItem,
   ConversationItem,
+  CurrentExpertItem,
   CurrentMcpItem,
   CurrentSkillItem,
   ExecutionStepItem,
@@ -144,6 +146,27 @@ export class ChatApi {
   }
 
   /**
+   * 加载指定会话当前运行绑定的专家列表。
+   * @param token 当前登录令牌。
+   * @param conversationId 会话标识。
+   * @returns 当前专家列表。
+   */
+  static async listCurrentExperts(
+    token: string,
+    conversationId: string,
+  ): Promise<CurrentExpertItem[]> {
+    const envelope = await this.request<CurrentExpertItem[]>(
+      `/api/chat/conversations/${conversationId}/current-experts`,
+      token,
+    );
+    return envelope.data.map((item) => ({
+      ...item,
+      id: String(item.id ?? ''),
+      expertCode: String(item.expertCode ?? ''),
+    }));
+  }
+
+  /**
    * 加载首页欢迎区示例问题。
    * @param token 当前登录令牌。
    * @returns 示例问题列表。
@@ -181,6 +204,20 @@ export class ChatApi {
       ...item,
       id: String(item.id ?? ''),
       skillCode: String(item.skillCode ?? ''),
+    }));
+  }
+
+  /**
+   * 加载用户侧可选专家列表。
+   * @param token 当前登录令牌。
+   * @returns 专家列表。
+   */
+  static async listExperts(token: string): Promise<ChatExpertItem[]> {
+    const envelope = await this.request<ChatExpertItem[]>('/api/chat/experts', token);
+    return envelope.data.map((item) => ({
+      ...item,
+      id: String(item.id ?? ''),
+      expertCode: String(item.expertCode ?? ''),
     }));
   }
 

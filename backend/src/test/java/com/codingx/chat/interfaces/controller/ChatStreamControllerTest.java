@@ -17,6 +17,8 @@ import com.codingx.chat.domain.model.ChatConversation;
 import com.codingx.chat.domain.model.ChatConversationStatus;
 import com.codingx.chat.domain.model.ChatMessage;
 import com.codingx.chat.infrastructure.stream.ChatSseRegistry;
+import com.codingx.expert.domain.model.ChatExpert;
+import com.codingx.expert.domain.repository.ChatExpertRepository;
 import com.codingx.mcp.domain.model.ChatMcp;
 import com.codingx.mcp.domain.repository.ChatMcpRepository;
 import com.codingx.skill.domain.repository.ChatSkillRepository;
@@ -67,6 +69,12 @@ class ChatStreamControllerTest {
     private ChatSkillRepository chatSkillRepository;
 
     /**
+     * 专家仓储依赖。
+     */
+    @Mock
+    private ChatExpertRepository chatExpertRepository;
+
+    /**
      * 被测控制器。
      */
     @InjectMocks
@@ -101,6 +109,7 @@ class ChatStreamControllerTest {
                     && map.get("deepThinking").equals(true)
                     && map.get("mcpCodes").equals(List.of("sales_query"))
                     && map.get("skillCodes").equals(List.of())
+                    && map.get("expertCode") == null
                     && map.get("attachmentIds").equals(List.of())
                     && map.containsKey("taskId"))
             );
@@ -110,6 +119,7 @@ class ChatStreamControllerTest {
                     && command.deepThinking()
                     && command.mcpCodes().equals(List.of("sales_query"))
                     && command.skillCodes().isEmpty()
+                    && command.expertCode() == null
                     && command.attachmentIds().isEmpty()),
                 eq(1001L)
             );
@@ -145,6 +155,7 @@ class ChatStreamControllerTest {
                     && map.get("deepThinking").equals(false)
                     && map.get("mcpCodes").equals(List.of("sales_query"))
                     && map.get("skillCodes").equals(List.of())
+                    && map.get("expertCode") == null
                     && map.get("attachmentIds").equals(List.of())
                     && map.containsKey("taskId"))
             );
@@ -154,6 +165,7 @@ class ChatStreamControllerTest {
                     && !command.deepThinking()
                     && command.mcpCodes().equals(List.of("sales_query"))
                     && command.skillCodes().isEmpty()
+                    && command.expertCode() == null
                     && command.attachmentIds().isEmpty()),
                 eq(1001L)
             );
@@ -187,7 +199,8 @@ class ChatStreamControllerTest {
                 eq("meta"),
                 argThat(payload -> payload instanceof java.util.Map<?, ?> map
                     && map.get("mcpCodes").equals(List.of("sales_query"))
-                    && map.get("skillCodes").equals(List.of("ticket_query", "sales_query")))
+                    && map.get("skillCodes").equals(List.of("ticket_query", "sales_query"))
+                    && map.get("expertCode") == null)
             );
             verify(chatStreamExecutionService).dispatch(
                 argThat(command -> command.conversationId().equals(3001L)
@@ -195,6 +208,7 @@ class ChatStreamControllerTest {
                     && !command.deepThinking()
                     && command.mcpCodes().equals(List.of("sales_query"))
                     && command.skillCodes().equals(List.of("ticket_query", "sales_query"))
+                    && command.expertCode() == null
                     && command.attachmentIds().isEmpty()),
                 eq(1001L)
             );
@@ -222,6 +236,7 @@ class ChatStreamControllerTest {
                 "sales_query",
                 "ticket_query,sales_query",
                 null,
+                null,
                 """
                 [
                   {
@@ -247,12 +262,14 @@ class ChatStreamControllerTest {
                 eq(3501L),
                 eq("meta"),
                 argThat(payload -> payload instanceof java.util.Map<?, ?> map
-                    && map.get("skillCodes").equals(List.of("agent-browser", "ticket_query", "sales_query")))
+                    && map.get("skillCodes").equals(List.of("agent-browser", "ticket_query", "sales_query"))
+                    && map.get("expertCode") == null)
             );
             verify(chatStreamExecutionService).dispatch(
                 argThat(command -> command.conversationId().equals(3501L)
                     && command.content().equals("请分析最近工单趋势")
                     && command.skillCodes().equals(List.of("agent-browser", "ticket_query", "sales_query"))
+                    && command.expertCode() == null
                     && command.attachmentIds().isEmpty()),
                 eq(1001L)
             );
@@ -324,12 +341,14 @@ class ChatStreamControllerTest {
                 eq(5001L),
                 eq("meta"),
                 argThat(payload -> payload instanceof java.util.Map<?, ?> map
-                    && map.get("skillCodes").equals(List.of("agent-browser")))
+                    && map.get("skillCodes").equals(List.of("agent-browser"))
+                    && map.get("expertCode") == null)
             );
             verify(chatStreamExecutionService).dispatch(
                 argThat(command -> command.conversationId().equals(5001L)
                     && command.content().equals("请分析最近订单趋势")
                     && command.skillCodes().equals(List.of("agent-browser"))
+                    && command.expertCode() == null
                     && command.attachmentIds().isEmpty()),
                 eq(1001L)
             );
@@ -364,6 +383,7 @@ class ChatStreamControllerTest {
                 argThat(command -> command.conversationId().equals(6001L)
                     && command.content().equals("请分析代码")
                     && command.repositoryPath().equals("D:/code/codingx")
+                    && command.expertCode() == null
                     && command.attachmentIds().isEmpty()),
                 eq(1001L)
             );
@@ -392,6 +412,7 @@ class ChatStreamControllerTest {
                 null,
                 null,
                 null,
+                null,
                 "9001,9002,9002,invalid"
             );
 
@@ -405,7 +426,57 @@ class ChatStreamControllerTest {
             verify(chatStreamExecutionService).dispatch(
                 argThat(command -> command.conversationId().equals(7001L)
                     && command.content().equals("请结合图片分析")
+                    && command.expertCode() == null
                     && command.attachmentIds().equals(List.of(9001L, 9002L))),
+                eq(1001L)
+            );
+        }
+    }
+
+    /**
+     * 显式传入 expertCode 时，应透传到 meta 事件与消息命令，供运行时注入专家提示词。
+     */
+    @Test
+    void streamChatPassesExpertCodeToCommand() {
+        SseEmitter emitter = new SseEmitter(0L);
+        whenRegisterReturns(emitter);
+        when(chatConversationApplicationService.listMessages(8001L, 1001L)).thenReturn(List.of(
+            ChatMessage.userMessage(8001L, "历史消息")
+        ));
+        when(chatExpertRepository.findByExpertCode("solution-architect")).thenReturn(
+            ChatExpert.builder()
+                .id(8301L)
+                .expertCode("solution-architect")
+                .displayName("解决方案架构师")
+                .enabled(1)
+                .build()
+        );
+        try (MockedStatic<StpUtil> mocked = Mockito.mockStatic(StpUtil.class)) {
+            mocked.when(StpUtil::getLoginIdAsLong).thenReturn(1001L);
+
+            SseEmitter actual = chatStreamController.streamChat(
+                "请给我方案",
+                8001L,
+                null,
+                false,
+                null,
+                null,
+                "solution-architect",
+                null,
+                null,
+                null
+            );
+
+            assertEquals(emitter, actual);
+            verify(chatSseRegistry).publish(
+                eq(8001L),
+                eq("meta"),
+                argThat(payload -> payload instanceof java.util.Map<?, ?> map
+                    && "solution-architect".equals(map.get("expertCode")))
+            );
+            verify(chatStreamExecutionService).dispatch(
+                argThat(command -> command.conversationId().equals(8001L)
+                    && "solution-architect".equals(command.expertCode())),
                 eq(1001L)
             );
         }

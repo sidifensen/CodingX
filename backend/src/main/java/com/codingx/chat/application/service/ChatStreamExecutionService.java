@@ -6,6 +6,7 @@ import com.codingx.chat.domain.model.ChatExecutionRun;
 import com.codingx.chat.domain.model.ChatTraceRun;
 import com.codingx.chat.domain.repository.ChatConversationRepository;
 import com.codingx.chat.domain.repository.ChatExecutionRunRepository;
+import com.codingx.expert.domain.repository.ChatExpertRepository;
 import com.codingx.skill.domain.repository.ChatSkillRepository;
 import com.codingx.mcp.domain.repository.ChatMcpRepository;
 import com.codingx.tool.application.service.ChatToolExecutionContext;
@@ -31,6 +32,7 @@ public class ChatStreamExecutionService {
     private final ChatExecutionRunRepository chatExecutionRunRepository;
     private final ChatMcpRepository chatMcpRepository;
     private final ChatSkillRepository chatSkillRepository;
+    private final ChatExpertRepository chatExpertRepository;
     private final ChatConversationRepository chatConversationRepository;
     private final ChatWorkspaceBindingService chatWorkspaceBindingService;
     private final ExecutorService executor;
@@ -49,6 +51,7 @@ public class ChatStreamExecutionService {
         ChatExecutionRunRepository chatExecutionRunRepository,
         ChatMcpRepository chatMcpRepository,
         ChatSkillRepository chatSkillRepository,
+        ChatExpertRepository chatExpertRepository,
         ChatConversationRepository chatConversationRepository,
         ChatWorkspaceBindingService chatWorkspaceBindingService,
         @Qualifier("chatStreamExecutor")
@@ -60,6 +63,7 @@ public class ChatStreamExecutionService {
         this.chatExecutionRunRepository = chatExecutionRunRepository;
         this.chatMcpRepository = chatMcpRepository;
         this.chatSkillRepository = chatSkillRepository;
+        this.chatExpertRepository = chatExpertRepository;
         this.chatConversationRepository = chatConversationRepository;
         this.chatWorkspaceBindingService = chatWorkspaceBindingService;
         this.executor = executor;
@@ -85,6 +89,7 @@ public class ChatStreamExecutionService {
         // 步骤：派发入口固定先写入本次 MCP 与技能绑定，保证工作区“当前能力上下文”可在回放接口中稳定读取。
         chatMcpRepository.bindTaskMcps(runId, command.mcpCodes());
         chatSkillRepository.bindTaskSkills(runId, command.skillCodes());
+        chatExpertRepository.bindTaskExpert(runId, command.expertCode());
         com.codingx.chat.domain.model.ChatTraceRun traceRun = conversationTraceRecordService.startTrace("chat-entry", command.conversationId(), userId);
         AtomicReference<Future<?>> futureRef = new AtomicReference<>();
         chatRuntimeGuardService.registerCancellation(command.conversationId(), runId, () -> {

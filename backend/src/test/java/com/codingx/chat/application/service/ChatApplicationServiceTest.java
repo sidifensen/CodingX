@@ -23,6 +23,7 @@ import com.codingx.chat.domain.repository.ChatMessageRepository;
 import com.codingx.chat.domain.service.AiChatClient;
 import com.codingx.chat.domain.service.ChatStreamPublisher;
 import com.codingx.common.exception.ForbiddenException;
+import com.codingx.expert.application.service.ChatExpertContextService;
 import com.codingx.mcp.domain.repository.ChatMcpRepository;
 import com.codingx.skill.application.service.ChatSkillContextService;
 import java.util.ArrayList;
@@ -121,6 +122,9 @@ class ChatApplicationServiceTest {
 
     @Mock
     private ChatSkillContextService chatSkillContextService;
+
+    @Mock
+    private ChatExpertContextService chatExpertContextService;
 
     /**
      * ChatRuntimeGuardService 依赖。
@@ -334,7 +338,7 @@ class ChatApplicationServiceTest {
         }).when(aiChatClient).streamChat(any(), org.mockito.ArgumentMatchers.anyBoolean(), any());
 
         chatApplicationService.sendMessage(
-            new SendChatMessageCommand(1L, "Hi", false, List.of(), List.of(), null, List.of(5001L)),
+            new SendChatMessageCommand(1L, "Hi", false, List.of(), List.of(), null, null, List.of(5001L)),
             1002L
         );
 
@@ -386,7 +390,7 @@ class ChatApplicationServiceTest {
         }).when(aiChatClient).streamChat(any(), org.mockito.ArgumentMatchers.anyBoolean(), any());
 
         chatApplicationService.sendMessage(
-            new SendChatMessageCommand(1L, "Hi", false, List.of(), List.of("sales_query"), null, List.of()),
+            new SendChatMessageCommand(1L, "Hi", false, List.of(), List.of("sales_query"), null, null, List.of()),
             1002L
         );
 

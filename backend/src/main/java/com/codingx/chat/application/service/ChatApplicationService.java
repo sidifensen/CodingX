@@ -16,6 +16,7 @@ import com.codingx.chat.domain.repository.ChatMessageRepository;
 import com.codingx.chat.domain.service.AiChatClient;
 import com.codingx.chat.domain.service.ChatStreamPublisher;
 import com.codingx.common.exception.ForbiddenException;
+import com.codingx.expert.application.service.ChatExpertContextService;
 import com.codingx.mcp.application.service.ChatMcpExecutionService;
 import com.codingx.mcp.application.service.ChatMcpToolResult;
 import com.codingx.mcp.domain.model.ChatMcp;
@@ -134,6 +135,7 @@ public class ChatApplicationService {
     private final ExecutorService searchExecutor;
     private final RuntimeSettingService runtimeSettingService;
     private final ChatSkillContextService chatSkillContextService;
+    private final ChatExpertContextService chatExpertContextService;
 
     /**
      * 发送 sendMessage 处理的消息或请求。
@@ -323,7 +325,8 @@ public class ChatApplicationService {
             conversationSummaryService.buildModelHistory(command.conversationId(), history),
             intentDecision,
             command.conversationId(),
-            command.skillCodes()
+            command.skillCodes(),
+            command.expertCode()
         );
         tokenCounterService.estimateConversationTokens(aiHistory);
         final Long activeRunId = runId;
@@ -505,18 +508,26 @@ public class ChatApplicationService {
         List<ChatMessage> history,
         ConversationIntentDecision intentDecision,
         Long conversationId,
-        List<String> selectedSkillCodes
+        List<String> selectedSkillCodes,
+        String selectedExpertCode
     ) {
         String systemPrompt = resolveSystemPromptFromIntent(intentDecision);
+        String expertContext = chatExpertContextService.buildExpertContext(selectedExpertCode);
         String skillContext = chatSkillContextService.buildSkillContext(selectedSkillCodes);
-        if (StrUtil.isBlank(systemPrompt) && StrUtil.isBlank(skillContext)) {
+        if (StrUtil.isBlank(systemPrompt) && StrUtil.isBlank(expertContext) && StrUtil.isBlank(skillContext)) {
             return history;
         }
-        String composedSystemPrompt = StrUtil.isBlank(skillContext)
-            ? systemPrompt
-            : (StrUtil.isBlank(systemPrompt)
-                ? skillContext
-                : systemPrompt + "\n\n" + skillContext);
+        List<String> promptSegments = new ArrayList<>();
+        if (StrUtil.isNotBlank(systemPrompt)) {
+            promptSegments.add(systemPrompt);
+        }
+        if (StrUtil.isNotBlank(expertContext)) {
+            promptSegments.add(expertContext);
+        }
+        if (StrUtil.isNotBlank(skillContext)) {
+            promptSegments.add(skillContext);
+        }
+        String composedSystemPrompt = String.join("\n\n", promptSegments);
         List<ChatMessage> aiHistory = new ArrayList<>();
         aiHistory.add(ChatMessage.create(
             cn.hutool.core.util.IdUtil.getSnowflakeNextId(),

@@ -174,6 +174,43 @@ describe('ChatApi', () => {
   });
 
   /**
+   * 专家列表请求应命中用户侧专家接口并携带鉴权头。
+   */
+  it('应携带 satoken 加载专家列表', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          success: true,
+          code: 'OK',
+          message: 'success',
+          data: [
+            {
+              id: 8301,
+              expertCode: 'solution-architect',
+              displayName: '解决方案架构师',
+              description: '擅长业务澄清、系统分层与落地架构取舍',
+            },
+          ],
+        }),
+        { status: 200 },
+      ),
+    );
+
+    const result = await ChatApi.listExperts('token-123');
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      '/api/chat/experts',
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          satoken: 'token-123',
+        }),
+      }),
+    );
+    expect(result[0].expertCode).toBe('solution-architect');
+    expect(result[0].displayName).toBe('解决方案架构师');
+  });
+
+  /**
    * 会话重命名应通过专用接口提交新标题。
    */
   it('应通过专用接口提交会话重命名', async () => {
@@ -298,6 +335,43 @@ describe('ChatApi', () => {
     );
     expect(result[0].id).toBe('7001');
     expect(result[0].mcpCode).toBe('sales_query');
+  });
+
+  /**
+   * 当前专家列表请求应命中会话级 current-experts 接口并返回字符串化标识。
+   */
+  it('应加载会话当前专家列表', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          success: true,
+          code: 'OK',
+          message: 'success',
+          data: [
+            {
+              id: 8301,
+              expertCode: 'solution-architect',
+              displayName: '解决方案架构师',
+              category: '研发架构',
+            },
+          ],
+        }),
+        { status: 200 },
+      ),
+    );
+
+    const result = await ChatApi.listCurrentExperts('token-123', '2055114974648864768');
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      '/api/chat/conversations/2055114974648864768/current-experts',
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          satoken: 'token-123',
+        }),
+      }),
+    );
+    expect(result[0].id).toBe('8301');
+    expect(result[0].expertCode).toBe('solution-architect');
   });
 
   /**

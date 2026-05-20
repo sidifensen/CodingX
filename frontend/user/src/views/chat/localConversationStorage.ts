@@ -2,6 +2,7 @@ import {
   ArtifactItem,
   ChatMessageItem,
   ConversationItem,
+  CurrentExpertItem,
   CurrentMcpItem,
   CurrentSkillItem,
   ExecutionStepItem,
@@ -24,6 +25,7 @@ export interface LocalConversationRecord {
   executionSteps: ExecutionStepItem[];
   references: ReferenceItem[];
   artifacts: ArtifactItem[];
+  currentExperts: CurrentExpertItem[];
   currentSkills: CurrentSkillItem[];
   currentMcps: CurrentMcpItem[];
 }
@@ -331,6 +333,7 @@ export function markWorkspaceConversationOwnership(
       executionSteps: currentRecord?.executionSteps ?? [],
       references: currentRecord?.references ?? [],
       artifacts: currentRecord?.artifacts ?? [],
+      currentExperts: currentRecord?.currentExperts ?? [],
       currentSkills: currentRecord?.currentSkills ?? [],
       currentMcps: currentRecord?.currentMcps ?? [],
     };
@@ -387,6 +390,7 @@ function hasPersistedConversationData(record: LocalConversationRecord) {
     record.executionSteps.length > 0 ||
     record.references.length > 0 ||
     record.artifacts.length > 0 ||
+    record.currentExperts.length > 0 ||
     record.currentSkills.length > 0 ||
     record.currentMcps.length > 0
   );

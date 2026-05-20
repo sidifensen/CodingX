@@ -13,6 +13,7 @@ import com.codingx.chat.domain.model.ChatExecutionRun;
 import com.codingx.chat.domain.model.ChatTraceRun;
 import com.codingx.chat.domain.repository.ChatConversationRepository;
 import com.codingx.chat.domain.repository.ChatExecutionRunRepository;
+import com.codingx.expert.domain.repository.ChatExpertRepository;
 import com.codingx.mcp.domain.repository.ChatMcpRepository;
 import com.codingx.skill.domain.repository.ChatSkillRepository;
 import java.util.concurrent.CountDownLatch;
@@ -70,6 +71,9 @@ class ChatStreamExecutionServiceTest {
     private ChatMcpRepository chatMcpRepository;
 
     @Mock
+    private ChatExpertRepository chatExpertRepository;
+
+    @Mock
     private ChatWorkspaceBindingService chatWorkspaceBindingService;
 
     @Mock
@@ -98,6 +102,7 @@ class ChatStreamExecutionServiceTest {
             chatExecutionRunRepository,
             chatMcpRepository,
             chatSkillRepository,
+            chatExpertRepository,
             chatConversationRepository,
             chatWorkspaceBindingService,
             executorService
@@ -106,7 +111,7 @@ class ChatStreamExecutionServiceTest {
             started.countDown();
             release.await(3, TimeUnit.SECONDS);
             return null;
-        }).when(chatApplicationService).sendMessage(new SendChatMessageCommand(1001L, "你好", false, java.util.List.of(), java.util.List.of(), null, java.util.List.of()), 2001L);
+        }).when(chatApplicationService).sendMessage(new SendChatMessageCommand(1001L, "你好", false, java.util.List.of(), java.util.List.of(), null, null, java.util.List.of()), 2001L);
 
         long startAt = System.nanoTime();
         service.dispatch(new SendChatMessageCommand(1001L, "你好", false), 2001L);
@@ -117,10 +122,11 @@ class ChatStreamExecutionServiceTest {
         verify(conversationTraceRecordService).startTrace("chat-entry", 1001L, 2001L);
         verify(chatMcpRepository).bindTaskMcps(any(Long.class), eq(java.util.List.of()));
         verify(chatSkillRepository).bindTaskSkills(any(Long.class), eq(java.util.List.of()));
+        verify(chatExpertRepository).bindTaskExpert(any(Long.class), eq(null));
         verify(chatRuntimeGuardService).registerCancellation(eq(1001L), any(Long.class), any(Runnable.class));
 
         release.countDown();
-        verify(chatApplicationService, org.mockito.Mockito.timeout(1000)).sendMessage(new SendChatMessageCommand(1001L, "你好", false, java.util.List.of(), java.util.List.of(), null, java.util.List.of()), 2001L);
+        verify(chatApplicationService, org.mockito.Mockito.timeout(1000)).sendMessage(new SendChatMessageCommand(1001L, "你好", false, java.util.List.of(), java.util.List.of(), null, null, java.util.List.of()), 2001L);
         verify(chatRuntimeGuardService, org.mockito.Mockito.timeout(1000))
             .completeConversation(eq(1001L), any(Long.class));
     }
@@ -139,6 +145,7 @@ class ChatStreamExecutionServiceTest {
             chatExecutionRunRepository,
             chatMcpRepository,
             chatSkillRepository,
+            chatExpertRepository,
             chatConversationRepository,
             chatWorkspaceBindingService,
             executorService
@@ -151,7 +158,7 @@ class ChatStreamExecutionServiceTest {
                     captured.countDown();
                 }
                 return null;
-            }).when(chatApplicationService).sendMessage(new SendChatMessageCommand(1001L, "你好", false, java.util.List.of(), java.util.List.of(), null, java.util.List.of()), 2001L);
+            }).when(chatApplicationService).sendMessage(new SendChatMessageCommand(1001L, "你好", false, java.util.List.of(), java.util.List.of(), null, null, java.util.List.of()), 2001L);
 
             service.dispatch(new SendChatMessageCommand(1001L, "你好", false), 2001L);
         }
@@ -159,6 +166,7 @@ class ChatStreamExecutionServiceTest {
         assertTrue(captured.await(1, TimeUnit.SECONDS), "background task should receive forwarded login id");
         verify(chatMcpRepository).bindTaskMcps(any(Long.class), eq(java.util.List.of()));
         verify(chatSkillRepository).bindTaskSkills(any(Long.class), eq(java.util.List.of()));
+        verify(chatExpertRepository).bindTaskExpert(any(Long.class), eq(null));
     }
 
     /**
@@ -177,6 +185,7 @@ class ChatStreamExecutionServiceTest {
             chatExecutionRunRepository,
             chatMcpRepository,
             chatSkillRepository,
+            chatExpertRepository,
             chatConversationRepository,
             chatWorkspaceBindingService,
             executorService
@@ -190,7 +199,7 @@ class ChatStreamExecutionServiceTest {
             observedRunId.set(ChatExecutionContext.currentRunId().orElse(null));
             captured.countDown();
             return null;
-        }).when(chatApplicationService).sendMessage(new SendChatMessageCommand(1001L, "你好", false, java.util.List.of(), java.util.List.of(), null, java.util.List.of()), 2001L);
+        }).when(chatApplicationService).sendMessage(new SendChatMessageCommand(1001L, "你好", false, java.util.List.of(), java.util.List.of(), null, null, java.util.List.of()), 2001L);
 
         service.dispatch(new SendChatMessageCommand(1001L, "你好", false), 2001L);
 
@@ -198,6 +207,7 @@ class ChatStreamExecutionServiceTest {
         assertEquals(savedRunId.get(), observedRunId.get(), "background task should reuse dispatch run id");
         verify(chatMcpRepository).bindTaskMcps(savedRunId.get(), java.util.List.of());
         verify(chatSkillRepository).bindTaskSkills(savedRunId.get(), java.util.List.of());
+        verify(chatExpertRepository).bindTaskExpert(savedRunId.get(), null);
     }
 
     /**
@@ -214,6 +224,7 @@ class ChatStreamExecutionServiceTest {
             chatExecutionRunRepository,
             chatMcpRepository,
             chatSkillRepository,
+            chatExpertRepository,
             chatConversationRepository,
             chatWorkspaceBindingService,
             executorService
@@ -225,7 +236,7 @@ class ChatStreamExecutionServiceTest {
             observedTraceId.set(ConversationTraceContext.current() != null ? ConversationTraceContext.current().getTraceId() : null);
             captured.countDown();
             return null;
-        }).when(chatApplicationService).sendMessage(new SendChatMessageCommand(1001L, "你好", false, java.util.List.of(), java.util.List.of(), null, java.util.List.of()), 2001L);
+        }).when(chatApplicationService).sendMessage(new SendChatMessageCommand(1001L, "你好", false, java.util.List.of(), java.util.List.of(), null, null, java.util.List.of()), 2001L);
 
         service.dispatch(new SendChatMessageCommand(1001L, "你好", false), 2001L);
 
@@ -233,6 +244,7 @@ class ChatStreamExecutionServiceTest {
         assertEquals("trace-1", observedTraceId.get());
         verify(chatMcpRepository).bindTaskMcps(any(Long.class), eq(java.util.List.of()));
         verify(chatSkillRepository).bindTaskSkills(any(Long.class), eq(java.util.List.of()));
+        verify(chatExpertRepository).bindTaskExpert(any(Long.class), eq(null));
     }
 
     /**
@@ -250,6 +262,7 @@ class ChatStreamExecutionServiceTest {
             chatExecutionRunRepository,
             chatMcpRepository,
             chatSkillRepository,
+            chatExpertRepository,
             chatConversationRepository,
             chatWorkspaceBindingService,
             executorService
@@ -267,7 +280,7 @@ class ChatStreamExecutionServiceTest {
             return null;
         }).when(chatExecutionRunRepository).save(any(ChatExecutionRun.class));
         org.mockito.Mockito.doThrow(new IllegalStateException("boom"))
-            .when(chatApplicationService).sendMessage(new SendChatMessageCommand(1001L, "你好", false, java.util.List.of(), java.util.List.of(), null, java.util.List.of()), 2001L);
+            .when(chatApplicationService).sendMessage(new SendChatMessageCommand(1001L, "你好", false, java.util.List.of(), java.util.List.of(), null, null, java.util.List.of()), 2001L);
 
         service.dispatch(new SendChatMessageCommand(1001L, "你好", false), 2001L);
 
@@ -276,6 +289,7 @@ class ChatStreamExecutionServiceTest {
         verify(conversationTraceRecordService).finishTrace("trace-error", runIdRef.get(), "ERROR", "boom");
         verify(chatMcpRepository).bindTaskMcps(any(Long.class), eq(java.util.List.of()));
         verify(chatSkillRepository).bindTaskSkills(any(Long.class), eq(java.util.List.of()));
+        verify(chatExpertRepository).bindTaskExpert(any(Long.class), eq(null));
     }
 
     /**
@@ -292,6 +306,7 @@ class ChatStreamExecutionServiceTest {
             chatExecutionRunRepository,
             chatMcpRepository,
             chatSkillRepository,
+            chatExpertRepository,
             chatConversationRepository,
             chatWorkspaceBindingService,
             executorService
@@ -318,5 +333,54 @@ class ChatStreamExecutionServiceTest {
         assertTrue(captured.await(1, TimeUnit.SECONDS), "background task should start with explicit selections");
         verify(chatMcpRepository).bindTaskMcps(any(Long.class), eq(java.util.List.of("sales_query")));
         verify(chatSkillRepository).bindTaskSkills(any(Long.class), eq(java.util.List.of("ticket_query")));
+        verify(chatExpertRepository).bindTaskExpert(any(Long.class), eq(null));
+    }
+
+    /**
+     * 派发入口应把消息级专家绑定同时写入，确保工作台可回放“当前专家”。
+     * @throws Exception 等待后台线程执行时抛出。
+     */
+    @Test
+    void dispatchBindsExpertSelection() throws Exception {
+        CountDownLatch captured = new CountDownLatch(1);
+        ChatStreamExecutionService service = new ChatStreamExecutionService(
+            chatApplicationService,
+            chatRuntimeGuardService,
+            conversationTraceRecordService,
+            chatExecutionRunRepository,
+            chatMcpRepository,
+            chatSkillRepository,
+            chatExpertRepository,
+            chatConversationRepository,
+            chatWorkspaceBindingService,
+            executorService
+        );
+        org.mockito.Mockito.doAnswer(invocation -> {
+            captured.countDown();
+            return null;
+        }).when(chatApplicationService).sendMessage(new SendChatMessageCommand(
+            1001L,
+            "你好",
+            false,
+            java.util.List.of(),
+            java.util.List.of(),
+            "solution-architect",
+            null,
+            java.util.List.of()
+        ), 2001L);
+
+        service.dispatch(new SendChatMessageCommand(
+            1001L,
+            "你好",
+            false,
+            java.util.List.of(),
+            java.util.List.of(),
+            "solution-architect",
+            null,
+            java.util.List.of()
+        ), 2001L);
+
+        assertTrue(captured.await(1, TimeUnit.SECONDS), "background task should start with expert selection");
+        verify(chatExpertRepository).bindTaskExpert(any(Long.class), eq("solution-architect"));
     }
 }

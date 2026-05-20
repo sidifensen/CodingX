@@ -140,6 +140,35 @@ export interface CurrentSkillItem {
 }
 
 /**
+ * 描述用户可选专家项。
+ */
+export interface ChatExpertItem {
+  id: string;
+  expertCode: string;
+  displayName: string;
+  description?: string;
+  category?: string;
+  tagsJson?: string;
+  avatarUrl?: string;
+  presetQuestion?: string;
+  systemPrompt?: string;
+  enabled?: number;
+  sortNo?: number;
+}
+
+/**
+ * 描述会话当前运行绑定的专家项。
+ */
+export interface CurrentExpertItem {
+  id: string;
+  expertCode: string;
+  displayName: string;
+  description?: string;
+  category?: string;
+  presetQuestion?: string;
+}
+
+/**
  * 描述用户可选 MCP 项。
  */
 export interface McpItem {
@@ -232,6 +261,9 @@ export interface ChatWorkspaceController {
   references: ReferenceItem[];
   artifacts: ArtifactItem[];
   sampleQuestions: SampleQuestionItem[];
+  availableExperts: ChatExpertItem[];
+  selectedExpertCode: string | null;
+  currentExperts: CurrentExpertItem[];
   availableSkills: ChatSkillItem[];
   selectedSkillCodes: string[];
   currentSkills: CurrentSkillItem[];
@@ -247,6 +279,7 @@ export interface ChatWorkspaceController {
   pendingAttachments: PendingAttachmentItem[];
   isBootstrapping: boolean;
   setInputValue: (value: string) => void;
+  setSelectedExpertCode: (expertCode: string | null) => void;
   addPendingAttachments: (files: File[]) => Promise<void>;
   removePendingAttachment: (clientId: string) => void;
   clearPendingAttachments: () => void;

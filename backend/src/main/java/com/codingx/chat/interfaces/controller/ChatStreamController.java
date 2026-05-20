@@ -8,6 +8,8 @@ import com.codingx.chat.application.service.ChatStreamExecutionService;
 import com.codingx.chat.domain.model.ChatConversation;
 import com.codingx.skill.domain.repository.ChatSkillRepository;
 import com.codingx.chat.infrastructure.stream.ChatSseRegistry;
+import com.codingx.expert.domain.model.ChatExpert;
+import com.codingx.expert.domain.repository.ChatExpertRepository;
 import com.codingx.mcp.domain.model.ChatMcp;
 import com.codingx.mcp.domain.repository.ChatMcpRepository;
 import java.util.List;
@@ -50,6 +52,7 @@ public class ChatStreamController {
      */
     private final ChatMcpRepository chatMcpRepository;
     private final ChatSkillRepository chatSkillRepository;
+    private final ChatExpertRepository chatExpertRepository;
 
     /**
      * 建立单次 SSE 聊天入口，并在同一请求内完成注册与消息发送。
@@ -67,6 +70,7 @@ public class ChatStreamController {
         @RequestParam(required = false) Boolean deepThinking,
         @RequestParam(required = false) String mcpCodes,
         @RequestParam(required = false) String skillCodes,
+        @RequestParam(required = false) String expertCode,
         @RequestParam(required = false) String repositoryPath,
         @RequestParam(required = false) String messages,
         @RequestParam(required = false) String attachmentIds
@@ -80,17 +84,19 @@ public class ChatStreamController {
         StructuredMessageParseResult structuredMessageParseResult = resolveStructuredMessages(messages);
         String actualQuestion = StrUtil.blankToDefault(structuredMessageParseResult.content(), question);
         List<String> selectedSkillCodes = resolveSkillCodes(skillCodes, structuredMessageParseResult.skillCodes());
+        String selectedExpertCode = resolveExpertCode(expertCode);
         List<Long> selectedAttachmentIds = resolveAttachmentIds(attachmentIds);
         SseEmitter emitter = chatSseRegistry.register(actualConversationId);
         Long taskId = cn.hutool.core.util.IdUtil.getSnowflakeNextId();
-        chatSseRegistry.publish(actualConversationId, "meta", Map.of(
-            "conversationId", actualConversationId,
-            "deepThinking", deepThinkingEnabled,
-            "taskId", taskId,
-            "mcpCodes", selectedMcpCodes,
-            "skillCodes", selectedSkillCodes,
-            "attachmentIds", selectedAttachmentIds
-        ));
+        java.util.Map<String, Object> metaPayload = new java.util.LinkedHashMap<>();
+        metaPayload.put("conversationId", actualConversationId);
+        metaPayload.put("deepThinking", deepThinkingEnabled);
+        metaPayload.put("taskId", taskId);
+        metaPayload.put("mcpCodes", selectedMcpCodes);
+        metaPayload.put("skillCodes", selectedSkillCodes);
+        metaPayload.put("expertCode", selectedExpertCode);
+        metaPayload.put("attachmentIds", selectedAttachmentIds);
+        chatSseRegistry.publish(actualConversationId, "meta", metaPayload);
         chatStreamExecutionService.dispatch(
             new SendChatMessageCommand(
                 actualConversationId,
@@ -98,6 +104,7 @@ public class ChatStreamController {
                 deepThinkingEnabled,
                 selectedMcpCodes,
                 selectedSkillCodes,
+                selectedExpertCode,
                 StrUtil.trimToNull(repositoryPath),
                 selectedAttachmentIds
             ),
@@ -114,7 +121,7 @@ public class ChatStreamController {
      * @return SSE emitter。
      */
     public SseEmitter streamChat(String question, Long conversationId, Boolean deepThinking) {
-        return streamChat(question, conversationId, null, deepThinking, null, null, null, null, null);
+        return streamChat(question, conversationId, null, deepThinking, null, null, null, null, null, null);
     }
 
     /**
@@ -133,7 +140,7 @@ public class ChatStreamController {
         String mcpCodes,
         String skillCodes
     ) {
-        return streamChat(question, conversationId, null, deepThinking, mcpCodes, skillCodes, null, null, null);
+        return streamChat(question, conversationId, null, deepThinking, mcpCodes, skillCodes, null, null, null, null);
     }
 
     /**
@@ -154,7 +161,7 @@ public class ChatStreamController {
         String skillCodes,
         String messages
     ) {
-        return streamChat(question, conversationId, null, deepThinking, mcpCodes, skillCodes, null, messages, null);
+        return streamChat(question, conversationId, null, deepThinking, mcpCodes, skillCodes, null, null, messages, null);
     }
 
     /**
@@ -177,7 +184,7 @@ public class ChatStreamController {
         String repositoryPath,
         String messages
     ) {
-        return streamChat(question, conversationId, null, deepThinking, mcpCodes, skillCodes, repositoryPath, messages, null);
+        return streamChat(question, conversationId, null, deepThinking, mcpCodes, skillCodes, null, repositoryPath, messages, null);
     }
 
     /**
@@ -257,6 +264,23 @@ public class ChatStreamController {
                 .collect(Collectors.toList());
         }
         return List.of();
+    }
+
+    /**
+     * 解析专家编码：仅允许启用专家进入运行态，非法编码直接忽略，避免脏数据污染上下文。
+     * @param expertCodeParam 查询参数字符串。
+     * @return 规范化专家编码。
+     */
+    private String resolveExpertCode(String expertCodeParam) {
+        String normalizedExpertCode = StrUtil.trimToNull(expertCodeParam);
+        if (normalizedExpertCode == null) {
+            return null;
+        }
+        ChatExpert expert = chatExpertRepository.findByExpertCode(normalizedExpertCode);
+        if (expert == null || expert.getEnabled() == null || expert.getEnabled() != 1) {
+            return null;
+        }
+        return expert.getExpertCode();
     }
 
     /**

@@ -8,6 +8,7 @@ const navItems = [
   { path: '/users', icon: 'group', label: '用户管理' },
   { path: '/tasks', icon: 'assignment', label: '会话管理' },
   { path: '/skills', icon: 'extension', label: '技能管理' },
+  { path: '/experts', icon: 'psychology', label: '专家管理' },
   { path: '/tools', icon: 'build_circle', label: '工具管理' },
   { path: '/mcp', icon: 'terminal', label: 'MCP管理' },
   { path: '/traces', icon: 'account_tree', label: 'Trace管理' },

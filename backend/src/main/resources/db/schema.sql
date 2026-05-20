@@ -717,6 +717,38 @@ COMMENT ON COLUMN skill.created_at IS '创建时间';
 COMMENT ON COLUMN skill.updated_at IS '更新时间';
 COMMENT ON COLUMN skill.deleted IS '是否删除 0正常 1删除';
 
+CREATE TABLE IF NOT EXISTS expert (
+    id BIGINT PRIMARY KEY,
+    expert_code VARCHAR(128) NOT NULL UNIQUE,
+    display_name VARCHAR(255) NOT NULL,
+    description TEXT,
+    category VARCHAR(128),
+    tags_json TEXT,
+    avatar_url VARCHAR(512),
+    preset_question VARCHAR(512),
+    system_prompt TEXT NOT NULL,
+    enabled SMALLINT NOT NULL DEFAULT 1,
+    sort_no INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted SMALLINT NOT NULL DEFAULT 0
+);
+COMMENT ON TABLE expert IS '聊天专家配置表';
+COMMENT ON COLUMN expert.id IS '专家主键ID';
+COMMENT ON COLUMN expert.expert_code IS '专家编码';
+COMMENT ON COLUMN expert.display_name IS '专家名称';
+COMMENT ON COLUMN expert.description IS '专家描述';
+COMMENT ON COLUMN expert.category IS '专家分类';
+COMMENT ON COLUMN expert.tags_json IS '专家标签JSON';
+COMMENT ON COLUMN expert.avatar_url IS '专家头像地址';
+COMMENT ON COLUMN expert.preset_question IS '默认示例问题';
+COMMENT ON COLUMN expert.system_prompt IS '专家提示词';
+COMMENT ON COLUMN expert.enabled IS '是否启用 1启用 0禁用';
+COMMENT ON COLUMN expert.sort_no IS '排序字段';
+COMMENT ON COLUMN expert.created_at IS '创建时间';
+COMMENT ON COLUMN expert.updated_at IS '更新时间';
+COMMENT ON COLUMN expert.deleted IS '是否删除 0正常 1删除';
+
 CREATE TABLE IF NOT EXISTS task_mcp (
     id BIGINT PRIMARY KEY,
     task_id BIGINT NOT NULL,
@@ -740,6 +772,18 @@ COMMENT ON COLUMN task_skill.id IS '主键ID';
 COMMENT ON COLUMN task_skill.task_id IS '任务ID';
 COMMENT ON COLUMN task_skill.skill_code IS '技能编码';
 COMMENT ON COLUMN task_skill.created_at IS '创建时间';
+
+CREATE TABLE IF NOT EXISTS task_expert (
+    id BIGINT PRIMARY KEY,
+    task_id BIGINT NOT NULL,
+    expert_code VARCHAR(128) NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+COMMENT ON TABLE task_expert IS '任务专家绑定表';
+COMMENT ON COLUMN task_expert.id IS '主键ID';
+COMMENT ON COLUMN task_expert.task_id IS '任务ID';
+COMMENT ON COLUMN task_expert.expert_code IS '专家编码';
+COMMENT ON COLUMN task_expert.created_at IS '创建时间';
 
 CREATE INDEX IF NOT EXISTS idx_task_created_by ON task (created_by, created_at DESC);
 CREATE UNIQUE INDEX IF NOT EXISTS uk_sys_user_email ON sys_user (email) WHERE email IS NOT NULL;
@@ -774,7 +818,10 @@ CREATE INDEX IF NOT EXISTS idx_mcp_enabled_sort ON mcp (enabled, sort_no ASC);
 CREATE INDEX IF NOT EXISTS idx_tool_enabled_sort ON tool (enabled, sort_no ASC);
 CREATE INDEX IF NOT EXISTS idx_skill_enabled_sort ON skill (enabled, sort_no ASC);
 CREATE INDEX IF NOT EXISTS idx_skill_uploaded_at ON skill (uploaded_at DESC);
+CREATE INDEX IF NOT EXISTS idx_expert_enabled_sort ON expert (enabled, sort_no ASC);
 CREATE INDEX IF NOT EXISTS idx_task_mcp_task ON task_mcp (task_id, created_at ASC);
 CREATE INDEX IF NOT EXISTS idx_task_mcp_mcp_code ON task_mcp (mcp_code);
 CREATE INDEX IF NOT EXISTS idx_task_skill_task ON task_skill (task_id, created_at ASC);
 CREATE INDEX IF NOT EXISTS idx_task_skill_skill_code ON task_skill (skill_code);
+CREATE INDEX IF NOT EXISTS idx_task_expert_task ON task_expert (task_id, created_at ASC);
+CREATE INDEX IF NOT EXISTS idx_task_expert_code ON task_expert (expert_code);

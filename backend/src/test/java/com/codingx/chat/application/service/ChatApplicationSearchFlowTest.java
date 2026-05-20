@@ -17,6 +17,7 @@ import com.codingx.chat.domain.repository.ChatIntentNodeRepository;
 import com.codingx.chat.domain.repository.ChatMessageRepository;
 import com.codingx.chat.domain.service.AiChatClient;
 import com.codingx.chat.domain.service.ChatStreamPublisher;
+import com.codingx.expert.application.service.ChatExpertContextService;
 import com.codingx.mcp.domain.repository.ChatMcpRepository;
 import com.codingx.skill.application.service.ChatSkillContextService;
 import java.util.ArrayList;
@@ -58,6 +59,7 @@ class ChatApplicationSearchFlowTest {
     @Mock private ChatMcpRepository chatMcpRepository;
     @Mock private ChatAttachmentService chatAttachmentService;
     @Mock private ChatSkillContextService chatSkillContextService;
+    @Mock private ChatExpertContextService chatExpertContextService;
     @Mock private RuntimeSettingService runtimeSettingService;
     private final ExecutorService searchExecutor = Executors.newSingleThreadExecutor();
 
@@ -88,6 +90,7 @@ class ChatApplicationSearchFlowTest {
         when(conversationIntentService.route("请搜索 Spring Boot SSE", false)).thenReturn(
             new ConversationIntentDecision("search.web", ConversationIntentAction.SEARCH, null)
         );
+        when(chatExpertContextService.buildExpertContext(any())).thenReturn("");
         when(chatSkillContextService.buildSkillContext(any())).thenReturn("");
         when(chatIntentNodeRepository.findByIntentCode("search.web")).thenReturn(null);
         when(webSearchExecutionService.search("请搜索 Spring Boot SSE")).thenReturn(List.of(
@@ -129,6 +132,7 @@ class ChatApplicationSearchFlowTest {
         when(conversationIntentService.route("介绍 OA 系统和保险系统", false)).thenReturn(
             new ConversationIntentDecision("biz-oa-intro", ConversationIntentAction.SEARCH, null)
         );
+        when(chatExpertContextService.buildExpertContext(any())).thenReturn("");
         when(chatSkillContextService.buildSkillContext(any())).thenReturn("");
         when(chatIntentNodeRepository.findByIntentCode("biz-oa-intro")).thenReturn(null);
         when(webSearchExecutionService.search("介绍 OA 系统")).thenReturn(List.of(

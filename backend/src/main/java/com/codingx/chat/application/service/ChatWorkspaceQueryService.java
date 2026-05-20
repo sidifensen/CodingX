@@ -4,6 +4,8 @@ import com.codingx.chat.domain.model.ChatExecutionRun;
 import com.codingx.chat.domain.model.ChatExecutionStep;
 import com.codingx.chat.domain.model.ChatMessageArtifact;
 import com.codingx.chat.domain.model.ChatMessageReference;
+import com.codingx.expert.domain.model.ChatExpert;
+import com.codingx.expert.domain.repository.ChatExpertRepository;
 import com.codingx.skill.domain.model.ChatSkill;
 import com.codingx.chat.domain.repository.ChatExecutionRunRepository;
 import com.codingx.chat.domain.repository.ChatExecutionStepRepository;
@@ -30,6 +32,7 @@ public class ChatWorkspaceQueryService {
     private final ChatMessageArtifactRepository chatMessageArtifactRepository;
     private final ChatMcpRepository chatMcpRepository;
     private final ChatSkillRepository chatSkillRepository;
+    private final ChatExpertRepository chatExpertRepository;
 
     /**
      * 返回当前会话最新一条运行记录对应的执行步骤列表。
@@ -85,6 +88,17 @@ public class ChatWorkspaceQueryService {
         return latestRun(conversationId)
             // 历史运行记录可能未补齐 taskId；此时回退 runId，兼容旧数据与单测构造。
             .map(run -> chatMcpRepository.findByTaskId(run.getTaskId() == null ? run.getId() : run.getTaskId()))
+            .orElse(List.of());
+    }
+
+    /**
+     * 返回当前会话最新运行任务绑定的专家列表，供工作区展示“当前专家”。
+     * @param conversationId 会话标识。
+     * @return 专家列表。
+     */
+    public List<ChatExpert> listCurrentExperts(Long conversationId) {
+        return latestRun(conversationId)
+            .map(run -> chatExpertRepository.findByTaskId(run.getTaskId() == null ? run.getId() : run.getTaskId()))
             .orElse(List.of());
     }
 

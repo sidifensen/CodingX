@@ -15,7 +15,7 @@ describe('App', () => {
       const url = String(input);
       if (
         url.startsWith('/api/chat/conversations/') &&
-        (url.endsWith('/current-skills') || url.endsWith('/current-mcps'))
+        (url.endsWith('/current-skills') || url.endsWith('/current-mcps') || url.endsWith('/current-experts'))
       ) {
         return new Response(
           JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
@@ -62,6 +62,24 @@ describe('App', () => {
         );
       }
       if (url === '/api/chat/skills') {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (url === '/api/chat/experts') {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (url === '/api/chat/experts') {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (url === '/api/chat/experts') {
         return new Response(
           JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
           { status: 200 },
@@ -219,7 +237,7 @@ describe('App', () => {
       const url = String(input);
       if (
         url.startsWith('/api/chat/conversations/') &&
-        (url.endsWith('/current-skills') || url.endsWith('/current-mcps'))
+        (url.endsWith('/current-skills') || url.endsWith('/current-mcps') || url.endsWith('/current-experts'))
       ) {
         return new Response(
           JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
@@ -267,6 +285,12 @@ describe('App', () => {
           { status: 200 },
         );
       }
+      if (url === '/api/chat/experts') {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
       if (
         (url.startsWith('/api/chat/conversations/') && url.endsWith('/messages')) ||
         (url.startsWith('/api/chat/conversations/') && url.endsWith('/steps')) ||
@@ -307,7 +331,7 @@ describe('App', () => {
       const url = String(input);
       if (
         url.startsWith('/api/chat/conversations/') &&
-        (url.endsWith('/current-skills') || url.endsWith('/current-mcps'))
+        (url.endsWith('/current-skills') || url.endsWith('/current-mcps') || url.endsWith('/current-experts'))
       ) {
         return new Response(
           JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
@@ -358,6 +382,12 @@ describe('App', () => {
         );
       }
       if (url === '/api/chat/skills') {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (url === '/api/chat/experts') {
         return new Response(
           JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
           { status: 200 },
@@ -414,7 +444,7 @@ describe('App', () => {
       const url = String(input);
       if (
         url.startsWith('/api/chat/conversations/') &&
-        (url.endsWith('/current-skills') || url.endsWith('/current-mcps'))
+        (url.endsWith('/current-skills') || url.endsWith('/current-mcps') || url.endsWith('/current-experts'))
       ) {
         return new Response(
           JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
@@ -447,6 +477,12 @@ describe('App', () => {
         );
       }
       if (url === '/api/chat/skills') {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (url === '/api/chat/experts') {
         return new Response(
           JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
           { status: 200 },
@@ -505,7 +541,7 @@ describe('App', () => {
       const url = String(input);
       if (
         url.startsWith('/api/chat/conversations/') &&
-        (url.endsWith('/current-skills') || url.endsWith('/current-mcps'))
+        (url.endsWith('/current-skills') || url.endsWith('/current-mcps') || url.endsWith('/current-experts'))
       ) {
         return new Response(
           JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
@@ -560,6 +596,12 @@ describe('App', () => {
         );
       }
       if (url === '/api/chat/skills') {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (url === '/api/chat/experts') {
         return new Response(
           JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
           { status: 200 },
@@ -622,7 +664,7 @@ describe('App', () => {
       const url = String(input);
       if (
         url.startsWith('/api/chat/conversations/') &&
-        (url.endsWith('/current-skills') || url.endsWith('/current-mcps'))
+        (url.endsWith('/current-skills') || url.endsWith('/current-mcps') || url.endsWith('/current-experts'))
       ) {
         return new Response(
           JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
@@ -677,6 +719,12 @@ describe('App', () => {
         );
       }
       if (url === '/api/chat/skills') {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (url === '/api/chat/experts') {
         return new Response(
           JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
           { status: 200 },
@@ -823,7 +871,7 @@ describe('App', () => {
       const url = String(input);
       if (
         url.startsWith('/api/chat/conversations/') &&
-        (url.endsWith('/current-skills') || url.endsWith('/current-mcps'))
+        (url.endsWith('/current-skills') || url.endsWith('/current-mcps') || url.endsWith('/current-experts'))
       ) {
         return new Response(
           JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
@@ -878,6 +926,12 @@ describe('App', () => {
         );
       }
       if (url === '/api/chat/skills') {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (url === '/api/chat/experts') {
         return new Response(
           JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
           { status: 200 },
@@ -1155,7 +1209,7 @@ describe('App', () => {
       const url = String(input);
       if (
         url.startsWith('/api/chat/conversations/') &&
-        (url.endsWith('/current-skills') || url.endsWith('/current-mcps'))
+        (url.endsWith('/current-skills') || url.endsWith('/current-mcps') || url.endsWith('/current-experts'))
       ) {
         return new Response(
           JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
@@ -1217,6 +1271,12 @@ describe('App', () => {
         );
       }
       if (url === '/api/chat/skills') {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (url === '/api/chat/experts') {
         return new Response(
           JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
           { status: 200 },
@@ -1310,7 +1370,7 @@ describe('App', () => {
       const url = String(input);
       if (
         url.startsWith('/api/chat/conversations/') &&
-        (url.endsWith('/current-skills') || url.endsWith('/current-mcps'))
+        (url.endsWith('/current-skills') || url.endsWith('/current-mcps') || url.endsWith('/current-experts'))
       ) {
         return new Response(
           JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
@@ -1377,6 +1437,12 @@ describe('App', () => {
           { status: 200 },
         );
       }
+      if (url === '/api/chat/experts') {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
       if (
         url === '/api/chat/conversations/2055114974648864768/messages' ||
         url === '/api/chat/conversations/2055114974648864768/steps' ||
@@ -1424,7 +1490,7 @@ describe('App', () => {
       const url = String(input);
       if (
         url.startsWith('/api/chat/conversations/') &&
-        (url.endsWith('/current-skills') || url.endsWith('/current-mcps'))
+        (url.endsWith('/current-skills') || url.endsWith('/current-mcps') || url.endsWith('/current-experts'))
       ) {
         return new Response(
           JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
@@ -1479,6 +1545,12 @@ describe('App', () => {
         );
       }
       if (url === '/api/chat/skills') {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (url === '/api/chat/experts') {
         return new Response(
           JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
           { status: 200 },

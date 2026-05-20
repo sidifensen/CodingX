@@ -15,6 +15,7 @@ import {
   X,
   FileText,
   Globe2,
+  Brain,
   Sparkles,
   PanelRightClose,
   PanelRightOpen,
@@ -73,6 +74,9 @@ export default function ChatView({
     references,
     artifacts,
     sampleQuestions,
+    availableExperts,
+    selectedExpertCode,
+    currentExperts,
     availableSkills,
     selectedSkillCodes,
     availableMcps,
@@ -85,6 +89,7 @@ export default function ChatView({
     pendingAttachments,
     isBootstrapping,
     setInputValue,
+    setSelectedExpertCode,
     addPendingAttachments,
     removePendingAttachment,
     clearPendingAttachments,
@@ -102,16 +107,19 @@ export default function ChatView({
     deleteConversation,
     setActiveWorkspacePath,
   } = workspace;
+  const safeAvailableExperts = availableExperts ?? [];
+  const safeCurrentExperts = currentExperts ?? [];
   const latestMessageAnchorRef = React.useRef<HTMLDivElement | null>(null);
   const chatScrollRegionRef = React.useRef<HTMLDivElement | null>(null);
   const shouldFollowLatestMessageRef = React.useRef(true);
   // 步骤：右侧工作区默认折叠，仅在存在真实回放内容时自动展开一次，后续允许用户手动控制。
   const [isWorkspacePanelCollapsed, setIsWorkspacePanelCollapsed] = React.useState(true);
-  const [activeSelectorMode, setActiveSelectorMode] = React.useState<'mcp' | 'skill' | null>(null);
+  const [activeSelectorMode, setActiveSelectorMode] = React.useState<'mcp' | 'skill' | 'expert' | null>(null);
   const [activeRuntimeWorkspaceMenu, setActiveRuntimeWorkspaceMenu] = React.useState<
     'runtime' | 'workspace' | null
   >(null);
   const [skillSearchKeyword, setSkillSearchKeyword] = React.useState('');
+  const [expertSearchKeyword, setExpertSearchKeyword] = React.useState('');
   const [skillSelectorSource, setSkillSelectorSource] = React.useState<'button' | 'slash' | null>(
     null,
   );
@@ -142,6 +150,27 @@ export default function ChatView({
       return displayName.includes(normalizedKeyword) || skillCode.includes(normalizedKeyword);
     });
   }, [availableSkills, skillSearchKeyword]);
+
+  /**
+   * 过滤专家列表，支持名称与编码模糊检索。
+   * @returns 过滤后的专家列表。
+   */
+  const filteredExperts = React.useMemo(() => {
+    const normalizedKeyword = expertSearchKeyword.trim().toLowerCase();
+    if (!normalizedKeyword) {
+      return safeAvailableExperts;
+    }
+    return safeAvailableExperts.filter((expert) => {
+      const displayName = (expert.displayName ?? '').toLowerCase();
+      const expertCode = (expert.expertCode ?? '').toLowerCase();
+      const description = (expert.description ?? '').toLowerCase();
+      return (
+        displayName.includes(normalizedKeyword) ||
+        expertCode.includes(normalizedKeyword) ||
+        description.includes(normalizedKeyword)
+      );
+    });
+  }, [expertSearchKeyword, safeAvailableExperts]);
 
   /**
    * 建立可识别技能编码集合，用于从输入文本中反向解析技能选择。
@@ -362,6 +391,11 @@ export default function ChatView({
     ];
   }, [workspaceGroups, activeRuntimeTarget, workspacePath, workspaceLabel, activeConversationId]);
 
+  const selectedExpert = React.useMemo(
+    () => safeAvailableExperts.find((expert) => expert.expertCode === selectedExpertCode) ?? null,
+    [safeAvailableExperts, selectedExpertCode],
+  );
+
   /**
    * 监听输入框斜杠触发技能检索，支持“输入 / 即打开技能列表”。
    */
@@ -544,7 +578,8 @@ export default function ChatView({
   const hasWorkspaceContent =
     executionSteps.length > 0 ||
     references.length > 0 ||
-    artifacts.length > 0;
+    artifacts.length > 0 ||
+    safeCurrentExperts.length > 0;
   // 步骤：右侧栏保留挂载以支持宽度过渡动画，面板内容在收起后不再渲染。
   const isWorkspacePanelVisible = showWorkspacePanel && !isWorkspacePanelCollapsed;
 
@@ -590,6 +625,24 @@ export default function ChatView({
       event.target.value = '';
     },
     [addPendingAttachments],
+  );
+
+  /**
+   * 选择专家后立即写入当前工作区，并在存在示例问题时预填输入框。
+   * @param expertCode 专家编码。
+   */
+  const selectExpert = React.useCallback(
+    (expertCode: string | null) => {
+      setSelectedExpertCode(expertCode);
+      if (!expertCode) {
+        return;
+      }
+      const matchedExpert = safeAvailableExperts.find((expert) => expert.expertCode === expertCode);
+      if (matchedExpert?.presetQuestion?.trim()) {
+        setInputValue(matchedExpert.presetQuestion.trim());
+      }
+    },
+    [safeAvailableExperts, setInputValue, setSelectedExpertCode],
   );
 
   return (
@@ -830,7 +883,11 @@ export default function ChatView({
                   {isSelectorPanelOpen ? (
                     <div
                       data-testid={
-                        activeSelectorMode === 'mcp' ? 'mcp-selector-panel' : 'skill-selector-panel'
+                        activeSelectorMode === 'mcp'
+                          ? 'mcp-selector-panel'
+                          : activeSelectorMode === 'expert'
+                            ? 'expert-selector-panel'
+                            : 'skill-selector-panel'
                       }
                       // 步骤：弹层宽度在桌面端收敛为中等尺寸，移动端仍自适应屏宽，避免视觉占用过大。
                       className="absolute bottom-[calc(100%+10px)] left-0 z-30 w-[calc(100vw-2.5rem)] max-w-[480px] rounded-2xl border border-border bg-surface px-2 py-2 shadow-[0_18px_44px_rgba(0,0,0,0.25)] md:w-[480px]"
@@ -842,6 +899,16 @@ export default function ChatView({
                             value={skillSearchKeyword}
                             onChange={(event) => setSkillSearchKeyword(event.target.value)}
                             placeholder="搜索技能"
+                            className="h-8 w-full rounded-lg border border-border bg-surface-container px-3 text-xs text-foreground outline-none placeholder:text-muted"
+                          />
+                        </div>
+                      ) : activeSelectorMode === 'expert' ? (
+                        <div className="mb-2 px-1">
+                          <input
+                            type="text"
+                            value={expertSearchKeyword}
+                            onChange={(event) => setExpertSearchKeyword(event.target.value)}
+                            placeholder="搜索专家"
                             className="h-8 w-full rounded-lg border border-border bg-surface-container px-3 text-xs text-foreground outline-none placeholder:text-muted"
                           />
                         </div>
@@ -895,6 +962,46 @@ export default function ChatView({
                               </button>
                             );
                           })
+                        ) : activeSelectorMode === 'expert' ? (
+                          filteredExperts.length ? (
+                            filteredExperts.map((expert) => {
+                              const isSelected = selectedExpertCode === expert.expertCode;
+                              return (
+                                <button
+                                  key={expert.expertCode}
+                                  type="button"
+                                  aria-label={`选择专家 ${expert.displayName}`}
+                                  onClick={() => selectExpert(expert.expertCode)}
+                                  className={`mb-1 flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm transition-colors last:mb-0 ${
+                                    isSelected
+                                      ? 'bg-surface-container text-foreground'
+                                      : 'text-muted hover:bg-surface-container hover:text-foreground'
+                                  }`}
+                                >
+                                  <span className="min-w-0">
+                                    <span className="flex items-center gap-1.5">
+                                      <Brain size={13} className="shrink-0 text-muted" />
+                                      <span className="block truncate text-foreground">
+                                        {expert.displayName}
+                                      </span>
+                                    </span>
+                                    <span className="mt-1 block truncate font-mono text-[11px] text-muted">
+                                      /{expert.expertCode}
+                                    </span>
+                                  </span>
+                                  {isSelected ? (
+                                    <span className="rounded-full border border-border px-2 py-0.5 text-[10px] text-muted">
+                                      已选中
+                                    </span>
+                                  ) : null}
+                                </button>
+                              );
+                            })
+                          ) : (
+                            <div className="rounded-xl bg-surface-container px-3 py-2 text-sm text-muted">
+                              未匹配到专家
+                            </div>
+                          )
                         ) : filteredSkills.length ? (
                           filteredSkills.map((skill) => {
                             const isSelected = selectedSkillCodes.includes(skill.skillCode);
@@ -994,6 +1101,28 @@ export default function ChatView({
                       <ChevronDown
                         size={12}
                         className={`transition-transform ${activeSelectorMode === 'skill' ? 'rotate-180' : ''}`}
+                      />
+                    </button>
+                    <button
+                      type="button"
+                      aria-label="打开专家列表"
+                      aria-expanded={activeSelectorMode === 'expert'}
+                      onClick={() => {
+                        if (activeSelectorMode === 'expert') {
+                          setActiveSelectorMode(null);
+                          return;
+                        }
+                        setActiveSelectorMode('expert');
+                        setSkillSelectorSource(null);
+                        setExpertSearchKeyword('');
+                      }}
+                      className="inline-flex h-7 max-w-[180px] items-center gap-1 rounded-full border border-border bg-surface-container px-3 text-xs text-foreground transition-[box-shadow,border-color,background-color] duration-200 hover:border-border-active hover:bg-surface hover:shadow-[0_8px_18px_rgba(0,0,0,0.16)]"
+                    >
+                      <Brain size={12} className="text-muted" />
+                      <span className="truncate">{selectedExpert?.displayName ?? '专家'}</span>
+                      <ChevronDown
+                        size={12}
+                        className={`transition-transform ${activeSelectorMode === 'expert' ? 'rotate-180' : ''}`}
                       />
                     </button>
                   </div>
@@ -1521,6 +1650,27 @@ export default function ChatView({
                   ))
                 ) : (
                   <EmptyBlock text="当前会话暂无产物回放" />
+                )}
+              </Panel>
+
+              <Panel title="当前专家" icon={Brain}>
+                {safeCurrentExperts.length ? (
+                  safeCurrentExperts.map((expert) => (
+                    <div
+                      key={expert.expertCode}
+                      className="rounded-2xl border border-border bg-surface-container px-4 py-3"
+                    >
+                      <div className="text-sm font-medium text-foreground">{expert.displayName}</div>
+                      <div className="mt-2 text-[12px] uppercase tracking-[0.2em] text-muted">
+                        {expert.category || expert.expertCode}
+                      </div>
+                      {expert.description ? (
+                        <div className="mt-3 text-sm leading-6 text-muted">{expert.description}</div>
+                      ) : null}
+                    </div>
+                  ))
+                ) : (
+                  <EmptyBlock text="当前会话暂无专家回放" />
                 )}
               </Panel>
 

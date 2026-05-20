@@ -53,6 +53,12 @@ describe('useChatWorkspace', () => {
           { status: 200 },
         );
       }
+      if (url === '/api/chat/experts') {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
       if (url === '/api/chat/mcps') {
         return new Response(
           JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
@@ -155,6 +161,12 @@ describe('useChatWorkspace', () => {
           { status: 200 },
         );
       }
+      if (url === '/api/chat/experts') {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
       if (url === '/api/chat/mcps') {
         return new Response(
           JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
@@ -195,6 +207,12 @@ describe('useChatWorkspace', () => {
               { id: 7101, skillCode: 'sales_query', displayName: '销售查询', category: '销售' },
             ],
           }),
+          { status: 200 },
+        );
+      }
+      if (url === '/api/chat/conversations/2001/current-experts') {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
           { status: 200 },
         );
       }
@@ -275,7 +293,19 @@ describe('useChatWorkspace', () => {
           { status: 200 },
         );
       }
+      if (url === '/api/chat/experts') {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
       if (url === '/api/chat/skills') {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (url === '/api/chat/experts') {
         return new Response(
           JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
           { status: 200 },
@@ -560,7 +590,19 @@ describe('useChatWorkspace', () => {
           { status: 200 },
         );
       }
+      if (url === '/api/chat/experts') {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
       if (url === '/api/chat/skills') {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (url === '/api/chat/experts') {
         return new Response(
           JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
           { status: 200 },
@@ -578,7 +620,8 @@ describe('useChatWorkspace', () => {
         url.endsWith('/references') ||
         url.endsWith('/artifacts') ||
         url.endsWith('/current-skills') ||
-        url.endsWith('/current-mcps')
+        url.endsWith('/current-mcps') ||
+        url.endsWith('/current-experts')
       ) {
         return new Response(
           JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
@@ -674,7 +717,19 @@ describe('useChatWorkspace', () => {
           { status: 200 },
         );
       }
+      if (url === '/api/chat/experts') {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
       if (url === '/api/chat/skills') {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (url === '/api/chat/experts') {
         return new Response(
           JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
           { status: 200 },
@@ -692,7 +747,8 @@ describe('useChatWorkspace', () => {
         url === '/api/chat/conversations/5001/references' ||
         url === '/api/chat/conversations/5001/artifacts' ||
         url === '/api/chat/conversations/5001/current-skills' ||
-        url === '/api/chat/conversations/5001/current-mcps'
+        url === '/api/chat/conversations/5001/current-mcps' ||
+        url === '/api/chat/conversations/5001/current-experts'
       ) {
         return new Response(
           JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
@@ -775,6 +831,7 @@ describe('useChatWorkspace', () => {
       }
       if (
         url === '/api/chat/sample-questions' ||
+        url === '/api/chat/experts' ||
         url === '/api/chat/skills' ||
         url === '/api/chat/mcps' ||
         url === '/api/chat/conversations/2001/messages' ||
@@ -783,12 +840,14 @@ describe('useChatWorkspace', () => {
         url === '/api/chat/conversations/2001/artifacts' ||
         url === '/api/chat/conversations/2001/current-skills' ||
         url === '/api/chat/conversations/2001/current-mcps' ||
+        url === '/api/chat/conversations/2001/current-experts' ||
         url === '/api/chat/conversations/pending-conversation/messages' ||
         url === '/api/chat/conversations/pending-conversation/steps' ||
         url === '/api/chat/conversations/pending-conversation/references' ||
         url === '/api/chat/conversations/pending-conversation/artifacts' ||
         url === '/api/chat/conversations/pending-conversation/current-skills' ||
-        url === '/api/chat/conversations/pending-conversation/current-mcps'
+        url === '/api/chat/conversations/pending-conversation/current-mcps' ||
+        url === '/api/chat/conversations/pending-conversation/current-experts'
       ) {
         return new Response(
           JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
@@ -1000,7 +1059,19 @@ describe('useChatWorkspace', () => {
           { status: 200 },
         );
       }
+      if (url === '/api/chat/experts') {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
       if (url === '/api/chat/skills') {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (url === '/api/chat/experts') {
         return new Response(
           JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
           { status: 200 },
@@ -1018,7 +1089,8 @@ describe('useChatWorkspace', () => {
         url === '/api/chat/conversations/2001/references' ||
         url === '/api/chat/conversations/2001/artifacts' ||
         url === '/api/chat/conversations/2001/current-skills' ||
-        url === '/api/chat/conversations/2001/current-mcps'
+        url === '/api/chat/conversations/2001/current-mcps' ||
+        url === '/api/chat/conversations/2001/current-experts'
       ) {
         return new Response(
           JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),

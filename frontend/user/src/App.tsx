@@ -268,7 +268,13 @@ export default function App() {
               )}
               {activeView === 'automation' && <AutomationView key="automation" />}
               {activeView === 'skills' && <SkillsView key="skills" />}
-              {activeView === 'experts' && <ExpertsView key="experts" />}
+              {activeView === 'experts' && (
+                <ExpertsView
+                  key="experts"
+                  workspace={chatWorkspace}
+                  onSelectExpert={() => setActiveView('chat')}
+                />
+              )}
             </AnimatePresence>
           </div>
         </main>

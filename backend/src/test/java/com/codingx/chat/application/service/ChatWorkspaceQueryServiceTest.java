@@ -7,6 +7,8 @@ import com.codingx.chat.domain.model.ChatExecutionRun;
 import com.codingx.chat.domain.model.ChatExecutionStep;
 import com.codingx.chat.domain.model.ChatMessageArtifact;
 import com.codingx.chat.domain.model.ChatMessageReference;
+import com.codingx.expert.domain.model.ChatExpert;
+import com.codingx.expert.domain.repository.ChatExpertRepository;
 import com.codingx.skill.domain.model.ChatSkill;
 import com.codingx.mcp.domain.model.ChatMcp;
 import com.codingx.chat.domain.repository.ChatExecutionRunRepository;
@@ -35,6 +37,7 @@ class ChatWorkspaceQueryServiceTest {
     @Mock private ChatMessageArtifactRepository chatMessageArtifactRepository;
     @Mock private ChatMcpRepository chatMcpRepository;
     @Mock private ChatSkillRepository chatSkillRepository;
+    @Mock private ChatExpertRepository chatExpertRepository;
 
     @InjectMocks
     private ChatWorkspaceQueryService chatWorkspaceQueryService;
@@ -123,6 +126,24 @@ class ChatWorkspaceQueryServiceTest {
 
         assertEquals(1, mcps.size());
         assertEquals("sales_query", mcps.getFirst().getMcpCode());
+    }
+
+    /**
+     * 当前会话存在任务专家绑定时应返回专家列表供工作区展示。
+     */
+    @Test
+    void listCurrentExpertsReturnsBoundExpertsFromLatestTask() {
+        when(chatExecutionRunRepository.findByConversationId(2001L)).thenReturn(List.of(
+            run(5002L, LocalDateTime.of(2026, 5, 15, 10, 5))
+        ));
+        when(chatExpertRepository.findByTaskId(5002L)).thenReturn(List.of(
+            ChatExpert.builder().id(1L).expertCode("solution-architect").displayName("解决方案架构师").category("研发架构").enabled(1).sortNo(1).build()
+        ));
+
+        List<ChatExpert> experts = chatWorkspaceQueryService.listCurrentExperts(2001L);
+
+        assertEquals(1, experts.size());
+        assertEquals("solution-architect", experts.getFirst().getExpertCode());
     }
 
     /**

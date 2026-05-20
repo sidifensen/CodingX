@@ -202,7 +202,10 @@ describe('ChatView', () => {
           references: [],
           artifacts: [],
           inputValue: '',
-          sampleQuestions: [
+          availableExperts: [],
+    selectedExpertCode: null,
+    currentExperts: [],
+    sampleQuestions: [
             {
               id: '9001',
               questionText: '真实示例：帮我分析本周销售数据',
@@ -1936,6 +1939,7 @@ function createWorkspace(overrides?: Partial<ChatWorkspaceController>): ChatWork
     pendingAttachments: [],
     isBootstrapping: false,
     setInputValue: vi.fn(),
+    setSelectedExpertCode: vi.fn(),
     addPendingAttachments: vi.fn().mockResolvedValue(undefined),
     removePendingAttachment: vi.fn(),
     clearPendingAttachments: vi.fn(),

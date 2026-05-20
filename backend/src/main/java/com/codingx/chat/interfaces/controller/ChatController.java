@@ -128,6 +128,7 @@ public class ChatController {
                 selectedMcpCodes,
                 selectedSkillCodes,
                 null,
+                null,
                 request.attachmentIds() == null ? List.of() : request.attachmentIds()
             ),
             StpUtil.getLoginIdAsLong()

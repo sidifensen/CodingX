@@ -4,6 +4,7 @@ import com.codingx.chat.application.service.ChatWorkspaceQueryService;
 import com.codingx.chat.domain.model.ChatExecutionStep;
 import com.codingx.chat.domain.model.ChatMessageArtifact;
 import com.codingx.chat.domain.model.ChatMessageReference;
+import com.codingx.expert.domain.model.ChatExpert;
 import com.codingx.skill.domain.model.ChatSkill;
 import com.codingx.common.model.ApiResponse;
 import com.codingx.mcp.domain.model.ChatMcp;
@@ -47,5 +48,10 @@ public class ChatWorkspaceController {
     @GetMapping("/{conversationId}/current-mcps")
     public ApiResponse<List<ChatMcp>> listCurrentMcps(@PathVariable Long conversationId) {
         return ApiResponse.success(chatWorkspaceQueryService.listCurrentMcps(conversationId));
+    }
+
+    @GetMapping("/{conversationId}/current-experts")
+    public ApiResponse<List<ChatExpert>> listCurrentExperts(@PathVariable Long conversationId) {
+        return ApiResponse.success(chatWorkspaceQueryService.listCurrentExperts(conversationId));
     }
 }

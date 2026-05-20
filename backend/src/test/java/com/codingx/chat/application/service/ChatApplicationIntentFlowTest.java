@@ -20,6 +20,7 @@ import com.codingx.chat.domain.repository.ChatIntentNodeRepository;
 import com.codingx.chat.domain.repository.ChatMessageRepository;
 import com.codingx.chat.domain.service.AiChatClient;
 import com.codingx.chat.domain.service.ChatStreamPublisher;
+import com.codingx.expert.application.service.ChatExpertContextService;
 import com.codingx.mcp.domain.repository.ChatMcpRepository;
 import com.codingx.skill.application.service.ChatSkillContextService;
 import java.util.ArrayList;
@@ -88,6 +89,9 @@ class ChatApplicationIntentFlowTest {
     @Mock
     private ChatSkillContextService chatSkillContextService;
 
+    @Mock
+    private ChatExpertContextService chatExpertContextService;
+
     @InjectMocks
     private ChatApplicationService chatApplicationService;
 
@@ -138,6 +142,7 @@ class ChatApplicationIntentFlowTest {
         when(conversationIntentService.route("你是谁", false)).thenReturn(
             new ConversationIntentDecision("sys-about-bot", ConversationIntentAction.DIRECT, null)
         );
+        when(chatExpertContextService.buildExpertContext(any())).thenReturn("");
         when(chatSkillContextService.buildSkillContext(any())).thenReturn("");
         when(chatIntentNodeRepository.findByIntentCode("sys-about-bot")).thenReturn(
             ChatIntentNode.builder()

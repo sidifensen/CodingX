@@ -290,6 +290,25 @@ export interface AdminSkillPackageMigrationSummary {
   failures: AdminSkillPackageMigrationFailure[];
 }
 
+export interface AdminExpert {
+  id?: string | number;
+  expertCode: string;
+  displayName: string;
+  description?: string;
+  category?: string;
+  tagsJson?: string;
+  avatarUrl?: string;
+  presetQuestion?: string;
+  systemPrompt?: string;
+  enabled?: number;
+  sortNo?: number;
+}
+
+export interface AdminExpertQuery {
+  current?: number;
+  size?: number;
+}
+
 export interface AdminChatTool {
   id?: string | number;
   toolCode: string;
@@ -684,6 +703,33 @@ export class AdminChatApi {
 
   static async listMcpConfigs(): Promise<AdminMcpConfig[]> {
     return this.request<AdminMcpConfig[]>('/api/admin/mcps');
+  }
+
+  static async listExperts(query: AdminExpertQuery = {}): Promise<AdminPageResult<AdminExpert>> {
+    const searchParams = new URLSearchParams();
+    searchParams.set('current', String(query.current ?? 1));
+    searchParams.set('size', String(query.size ?? 10));
+    return this.request<AdminPageResult<AdminExpert>>(`/api/admin/experts?${searchParams.toString()}`);
+  }
+
+  static async createExpert(payload: AdminExpert): Promise<AdminExpert> {
+    return this.request<AdminExpert>('/api/admin/experts', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  static async updateExpert(id: string | number, payload: AdminExpert): Promise<AdminExpert> {
+    return this.request<AdminExpert>(`/api/admin/experts/${encodeURIComponent(String(id))}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  static async deleteExpert(id: string | number): Promise<void> {
+    await this.request<void>(`/api/admin/experts/${encodeURIComponent(String(id))}`, {
+      method: 'DELETE',
+    });
   }
 
   static async createMcpConfig(payload: AdminMcpConfig): Promise<AdminMcpConfig> {

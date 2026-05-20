@@ -1063,6 +1063,50 @@ describe('ChatView', () => {
   });
 
   /**
+   * 中断后继续输入普通文本时，不应把全部可用技能写回选中状态。
+   */
+  it('应在普通文本输入时保持技能选择为空', async () => {
+    const setSelectedSkillCodes = vi.fn();
+    const setInputValue = vi.fn();
+
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          isStreaming: false,
+          inputValue: '',
+          selectedSkillCodes: [],
+          availableSkills: [
+            {
+              id: '7101',
+              skillCode: 'sales_query',
+              displayName: '销售查询',
+              description: '查询销售汇总、排名、趋势与明细',
+              category: '销售',
+            },
+            {
+              id: '7102',
+              skillCode: 'ticket_query',
+              displayName: '工单查询',
+              description: '查询工单状态、列表、优先级与解决率',
+              category: '工单',
+            },
+          ],
+          setSelectedSkillCodes,
+          setInputValue,
+        })}
+      />,
+    );
+
+    const textarea = screen.getByPlaceholderText('输入问题，或先选择技能/MCP...');
+    fireEvent.change(textarea, { target: { value: '只问一个普通问题' } });
+
+    expect(setInputValue).toHaveBeenCalledWith('只问一个普通问题');
+    expect(setSelectedSkillCodes).not.toHaveBeenCalledWith(['sales_query', 'ticket_query']);
+  });
+
+  /**
    * 当光标位于技能标记后方时，按 Backspace 应一次删除整枚技能标记。
    */
   it('应在技能标记后按退格键时整枚删除技能标记', async () => {

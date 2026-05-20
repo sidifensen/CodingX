@@ -98,7 +98,8 @@ class AdminChatConversationControllerTest {
                     null,
                     LocalDateTime.of(2026, 5, 16, 10, 2, 0),
                     List.of(),
-                    List.of()
+                    List.of(),
+                    null
                 )))
                 .build()
         );

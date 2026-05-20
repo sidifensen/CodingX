@@ -6,7 +6,6 @@ import com.codingx.chat.application.command.SendChatMessageCommand;
 import com.codingx.chat.application.service.ChatConversationApplicationService;
 import com.codingx.chat.application.service.ChatStreamExecutionService;
 import com.codingx.chat.domain.model.ChatConversation;
-import com.codingx.skill.domain.model.ChatSkill;
 import com.codingx.skill.domain.repository.ChatSkillRepository;
 import com.codingx.chat.infrastructure.stream.ChatSseRegistry;
 import com.codingx.mcp.domain.model.ChatMcp;
@@ -228,7 +227,8 @@ public class ChatStreamController {
     }
 
     /**
-     * 解析技能编码：优先合并结构化消息与显式参数；两者都缺失时回退到已启用技能全量列表。
+     * 解析技能编码：优先合并结构化消息与显式参数；两者都缺失时返回空列表。
+     * 关键约束：仅在前端显式选择技能时注入，避免默认全量技能污染对话上下文。
      * @param skillCodesParam 查询参数字符串。
      * @param parsedSkillCodes 结构化消息解析出的技能编码。
      * @return 规范化技能编码列表。
@@ -252,10 +252,7 @@ public class ChatStreamController {
                 .distinct()
                 .collect(Collectors.toList());
         }
-        return chatSkillRepository.findAllEnabled().stream()
-            .map(ChatSkill::getSkillCode)
-            .filter(StrUtil::isNotBlank)
-            .toList();
+        return List.of();
     }
 
     /**

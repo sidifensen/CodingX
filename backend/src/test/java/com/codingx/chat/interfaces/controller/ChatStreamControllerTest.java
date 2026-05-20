@@ -16,7 +16,6 @@ import com.codingx.chat.application.service.ChatStreamExecutionService;
 import com.codingx.chat.domain.model.ChatConversation;
 import com.codingx.chat.domain.model.ChatConversationStatus;
 import com.codingx.chat.domain.model.ChatMessage;
-import com.codingx.skill.domain.model.ChatSkill;
 import com.codingx.chat.infrastructure.stream.ChatSseRegistry;
 import com.codingx.mcp.domain.model.ChatMcp;
 import com.codingx.mcp.domain.repository.ChatMcpRepository;
@@ -75,6 +74,7 @@ class ChatStreamControllerTest {
 
     /**
      * 单次 SSE 入口应先注册 emitter，再触发应用服务发送消息。
+     * 关键约束：未显式选择技能时不应自动回填“全量启用技能”，避免上下文被动膨胀。
      */
     @Test
     void streamChatRegistersEmitterAndDispatchesMessage() {
@@ -82,9 +82,6 @@ class ChatStreamControllerTest {
         whenRegisterReturns(emitter);
         when(chatMcpRepository.findAllEnabled()).thenReturn(List.of(
             ChatMcp.builder().id(1L).mcpCode("sales_query").displayName("销售查询").category("销售").enabled(1).sortNo(1).build()
-        ));
-        when(chatSkillRepository.findAllEnabled()).thenReturn(List.of(
-            ChatSkill.builder().id(2L).skillCode("ticket_query").displayName("工单查询").category("工单").enabled(1).sortNo(1).build()
         ));
         when(chatConversationApplicationService.listMessages(1L, 1001L)).thenReturn(List.of(
             ChatMessage.userMessage(1L, "历史消息")
@@ -103,7 +100,7 @@ class ChatStreamControllerTest {
                     && map.get("conversationId").equals(1L)
                     && map.get("deepThinking").equals(true)
                     && map.get("mcpCodes").equals(List.of("sales_query"))
-                    && map.get("skillCodes").equals(List.of("ticket_query"))
+                    && map.get("skillCodes").equals(List.of())
                     && map.get("attachmentIds").equals(List.of())
                     && map.containsKey("taskId"))
             );
@@ -112,7 +109,7 @@ class ChatStreamControllerTest {
                     && command.content().equals("你好")
                     && command.deepThinking()
                     && command.mcpCodes().equals(List.of("sales_query"))
-                    && command.skillCodes().equals(List.of("ticket_query"))
+                    && command.skillCodes().isEmpty()
                     && command.attachmentIds().isEmpty()),
                 eq(1001L)
             );
@@ -121,6 +118,7 @@ class ChatStreamControllerTest {
 
     /**
      * 空 conversationId 时应创建新的会话流入口。
+     * 关键约束：默认新会话不自动挂载技能，仅在前端显式选择后生效。
      */
     @Test
     void streamChatSupportsNewConversationBootstrap() {
@@ -128,9 +126,6 @@ class ChatStreamControllerTest {
         whenRegisterReturns(emitter);
         when(chatMcpRepository.findAllEnabled()).thenReturn(List.of(
             ChatMcp.builder().id(1L).mcpCode("sales_query").displayName("销售查询").category("销售").enabled(1).sortNo(1).build()
-        ));
-        when(chatSkillRepository.findAllEnabled()).thenReturn(List.of(
-            ChatSkill.builder().id(2L).skillCode("ticket_query").displayName("工单查询").category("工单").enabled(1).sortNo(1).build()
         ));
         ChatConversation conversation = ChatConversation.create(2001L, "New Conversation", 1001L, ChatConversationStatus.ACTIVE);
         when(chatConversationApplicationService.createConversation(any(CreateConversationCommand.class), any(Long.class))).thenReturn(conversation);
@@ -149,7 +144,7 @@ class ChatStreamControllerTest {
                     && map.get("conversationId").equals(2001L)
                     && map.get("deepThinking").equals(false)
                     && map.get("mcpCodes").equals(List.of("sales_query"))
-                    && map.get("skillCodes").equals(List.of("ticket_query"))
+                    && map.get("skillCodes").equals(List.of())
                     && map.get("attachmentIds").equals(List.of())
                     && map.containsKey("taskId"))
             );
@@ -158,7 +153,7 @@ class ChatStreamControllerTest {
                     && command.content().equals("新的问题")
                     && !command.deepThinking()
                     && command.mcpCodes().equals(List.of("sales_query"))
-                    && command.skillCodes().equals(List.of("ticket_query"))
+                    && command.skillCodes().isEmpty()
                     && command.attachmentIds().isEmpty()),
                 eq(1001L)
             );

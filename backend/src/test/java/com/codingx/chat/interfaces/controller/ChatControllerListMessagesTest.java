@@ -11,6 +11,7 @@ import com.codingx.chat.application.service.ChatAttachmentService;
 import com.codingx.chat.application.service.ChatConversationApplicationService;
 import com.codingx.chat.application.service.ChatReactionService;
 import com.codingx.chat.application.service.ChatRuntimeGuardService;
+import com.codingx.chat.domain.repository.ChatMessageFeedbackRepository;
 import com.codingx.chat.domain.model.ChatAttachment;
 import com.codingx.chat.domain.model.ChatMessage;
 import com.codingx.chat.domain.model.ChatMessageStatus;
@@ -49,6 +50,9 @@ class ChatControllerListMessagesTest {
 
     @Mock
     private ChatReactionService chatReactionService;
+
+    @Mock
+    private ChatMessageFeedbackRepository chatMessageFeedbackRepository;
 
     @Mock
     private ChatSkillRepository chatSkillRepository;

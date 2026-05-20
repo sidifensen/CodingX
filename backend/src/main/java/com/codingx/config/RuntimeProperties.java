@@ -68,4 +68,51 @@ public class RuntimeProperties {
      * 代码检索工具单文件最大扫描大小（字节）。
      */
     private long codeSearchMaxFileSizeBytes = 1024 * 1024L;
+
+    /**
+     * 联网搜索通道配置，默认关闭，避免开发环境误发外部检索请求。
+     */
+    private WebSearchProperties webSearch = new WebSearchProperties();
+
+    /**
+     * 定义联网搜索 provider 的基础配置。
+     */
+    @Data
+    public static class WebSearchProperties {
+
+        /**
+         * 是否启用真实联网搜索。
+         */
+        private boolean enabled = false;
+
+        /**
+         * 搜索 provider 编码，目前支持 serper 与 tavily。
+         */
+        private String provider = "serper";
+
+        /**
+         * 搜索接口地址。
+         */
+        private String baseUrl = "";
+
+        /**
+         * 搜索服务 API Key。
+         */
+        private String apiKey = "";
+
+        /**
+         * 单次请求最大结果数。
+         */
+        private int maxResults = 5;
+
+        /**
+         * 搜索语言代码。
+         */
+        private String language = "zh-cn";
+
+        /**
+         * 搜索地区代码。
+         */
+        private String country = "cn";
+    }
 }

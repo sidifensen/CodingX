@@ -157,6 +157,14 @@ app:
     code-search-max-results: ${APP_RUNTIME_CODE_SEARCH_MAX_RESULTS:20} # 代码检索最大结果数
     # 代码检索工具单文件最大扫描大小（字节），避免读取超大构建产物。
     code-search-max-file-size-bytes: ${APP_RUNTIME_CODE_SEARCH_MAX_FILE_SIZE_BYTES:1048576} # 代码检索单文件最大字节数
+    web-search:
+      enabled: ${APP_RUNTIME_WEB_SEARCH_ENABLED:false} # 是否启用真实联网搜索通道
+      provider: ${APP_RUNTIME_WEB_SEARCH_PROVIDER:serper} # 搜索 provider，当前支持 serper / tavily
+      base-url: ${APP_RUNTIME_WEB_SEARCH_BASE_URL:https://google.serper.dev/search} # 搜索接口地址
+      api-key: ${APP_RUNTIME_WEB_SEARCH_API_KEY:} # 搜索 provider API Key
+      max-results: ${APP_RUNTIME_WEB_SEARCH_MAX_RESULTS:5} # 单次联网搜索最大候选数
+      language: ${APP_RUNTIME_WEB_SEARCH_LANGUAGE:zh-cn} # 搜索语言代码
+      country: ${APP_RUNTIME_WEB_SEARCH_COUNTRY:cn} # 搜索地区代码
   chat:
     memory:
       summary-enabled: ${CHAT_MEMORY_SUMMARY_ENABLED:true} # 是否启用聊天摘要

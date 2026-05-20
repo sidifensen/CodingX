@@ -39,49 +39,6 @@ public class ChatAiConfig {
     }
 
     /**
-     * 提供一个本地 mock 搜索 provider，确保搜索型链路在默认环境可运行。
-     * @return mock 搜索通道。
-     */
-    @Bean
-    public com.codingx.chat.application.service.SearchChannel mockWebSearchChannel() {
-        return new com.codingx.chat.application.service.SearchChannel() {
-            @Override
-            public String getName() {
-                return "mock-web";
-            }
-
-            @Override
-            public int getPriority() {
-                return 10;
-            }
-
-            @Override
-            public List<com.codingx.chat.application.service.SearchReferenceCandidate> search(com.codingx.chat.application.service.SearchRequestContext context) {
-                String question = context.question();
-                if (question != null && question.contains("Spring Boot SSE")) {
-                    return List.of(new com.codingx.chat.application.service.SearchReferenceCandidate(
-                        "Spring Boot SSE 最佳实践",
-                        "https://docs.spring.io",
-                        "Spring",
-                        "SSE 最佳实践摘要",
-                        0.85D
-                    ));
-                }
-                if (question != null && question.contains("OA 系统")) {
-                    return List.of(new com.codingx.chat.application.service.SearchReferenceCandidate(
-                        "OA 系统介绍",
-                        "https://example.com/oa",
-                        "Example",
-                        "OA 系统资料摘要",
-                        0.72D
-                    ));
-                }
-                return List.of();
-            }
-        };
-    }
-
-    /**
      * 默认去重后处理器，避免相同 URL 来源重复展示。
      * @return 去重后处理器。
      */

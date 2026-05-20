@@ -128,6 +128,8 @@ export function useChatWorkspace(
   const streamStateRef = useRef<ActiveStreamState | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const streamMcpCallsRef = useRef<Record<string, McpCallItem[]>>({});
+  const streamSessionSeedRef = useRef(0);
+  const activeStreamSessionIdRef = useRef<number | null>(null);
 
   /**
    * 统一更新 MCP 选择列表，支持直接赋值与函数式更新。
@@ -152,6 +154,23 @@ export function useChatWorkspace(
     }
     setSelectedSkillCodesState(nextValue);
   };
+
+  /**
+   * 生成单调递增的流会话编号，用于拦截过期流的状态回写。
+   * @returns 新流会话编号。
+   */
+  const createStreamSessionId = () => {
+    streamSessionSeedRef.current += 1;
+    return streamSessionSeedRef.current;
+  };
+
+  /**
+   * 判断当前回调是否仍属于激活中的流会话，避免旧流覆盖新流状态。
+   * @param streamSessionId 流会话编号。
+   * @returns 是否为当前激活会话。
+   */
+  const isActiveStreamSession = (streamSessionId: number) =>
+    activeStreamSessionIdRef.current === streamSessionId;
 
   /**
    * 当前工作空间分区刷新后，重新读取对应快照，保证切换目录时左侧与主区同步。
@@ -248,6 +267,7 @@ export function useChatWorkspace(
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
     }
+    activeStreamSessionIdRef.current = null;
     streamStateRef.current = null;
     setIsStreaming(false);
     setIsCancelling(false);
@@ -282,6 +302,7 @@ export function useChatWorkspace(
       await bindWorkspacePath(normalizedWorkspacePath);
     }
     const nextPartitionKey = buildWorkspacePartitionKey(runtimeTarget, normalizedWorkspacePath);
+    activeStreamSessionIdRef.current = null;
     const nextSnapshot = readWorkspaceSnapshot(nextPartitionKey);
     setActiveRuntimeTargetState(runtimeTarget);
     setWorkspacePath(normalizedWorkspacePath);
@@ -438,8 +459,11 @@ export function useChatWorkspace(
     }
     const attachmentIds = uploadedAttachments.map((attachment) => attachment.id);
     setIsStreaming(true);
+    const streamSessionId = createStreamSessionId();
+    activeStreamSessionIdRef.current = streamSessionId;
     abortControllerRef.current?.abort();
-    abortControllerRef.current = new AbortController();
+    const streamAbortController = new AbortController();
+    abortControllerRef.current = streamAbortController;
 
     const optimisticConversationId = activeConversationId ?? 'pending-conversation';
     const optimisticMessageId = `optimistic-user-${Date.now()}`;
@@ -495,13 +519,16 @@ export function useChatWorkspace(
           headers: {
             satoken: token,
           },
-          signal: abortControllerRef.current.signal,
+          signal: streamAbortController.signal,
         },
       );
       await ChatApi.assertStreamAuthorized(response);
       setInputValue('');
       clearPendingAttachments();
-      await consumeSseStream(response, optimisticAssistantId);
+      await consumeSseStream(response, optimisticAssistantId, streamSessionId);
+      if (!isActiveStreamSession(streamSessionId)) {
+        return;
+      }
       const nextConversations = await loadConversations(token);
       const nextConversationId = streamStateRef.current?.conversationId ?? activeConversationId;
       if (nextConversationId) {
@@ -513,7 +540,20 @@ export function useChatWorkspace(
       }
       setWorkspaceGroups(listWorkspaceGroups(activeRuntimeTarget));
     } catch (error) {
+      if (!isActiveStreamSession(streamSessionId)) {
+        return;
+      }
       if (error instanceof DOMException && error.name === 'AbortError') {
+        setMessages((previousMessages) =>
+          previousMessages.map((message) =>
+            message.id === optimisticAssistantId
+              ? {
+                  ...message,
+                  status: 'cancelled',
+                }
+              : message,
+          ),
+        );
         setStreamError('已停止当前生成');
       } else if (error instanceof ChatApi.UnauthorizedError) {
         onUnauthorizedRef.current?.();
@@ -522,8 +562,13 @@ export function useChatWorkspace(
       }
     } finally {
       delete streamMcpCallsRef.current[optimisticAssistantId];
-      setIsStreaming(false);
-      abortControllerRef.current = null;
+      if (abortControllerRef.current === streamAbortController) {
+        abortControllerRef.current = null;
+      }
+      if (isActiveStreamSession(streamSessionId)) {
+        activeStreamSessionIdRef.current = null;
+        setIsStreaming(false);
+      }
     }
   };
 
@@ -531,16 +576,39 @@ export function useChatWorkspace(
    * 对当前会话发起取消请求。
    */
   const cancelCurrentStream = async () => {
+    const runningConversationId = streamStateRef.current?.conversationId ?? activeConversationId;
+    if (!isStreaming && !abortControllerRef.current) {
+      return;
+    }
+    activeStreamSessionIdRef.current = null;
+    const activeMessageId = streamStateRef.current?.activeMessageId;
+    if (activeMessageId) {
+      setMessages((previousMessages) =>
+        previousMessages.map((message) =>
+          message.id === activeMessageId
+            ? {
+                ...message,
+                status: 'cancelled',
+              }
+            : message,
+        ),
+      );
+    }
+    abortControllerRef.current?.abort();
+    abortControllerRef.current = null;
+    setIsStreaming(false);
+    setStreamError('已停止当前生成');
     const token = currentToken();
-    if (!token || !activeConversationId) {
+    if (
+      !token ||
+      !runningConversationId ||
+      runningConversationId === 'pending-conversation'
+    ) {
       return;
     }
     setIsCancelling(true);
     try {
-      abortControllerRef.current?.abort();
-      await ChatApi.cancelConversation(token, activeConversationId);
-      setIsStreaming(false);
-      await selectConversation(activeConversationId);
+      await ChatApi.cancelConversation(token, runningConversationId);
     } finally {
       setIsCancelling(false);
     }
@@ -565,6 +633,7 @@ export function useChatWorkspace(
     }
 
     abortControllerRef.current = null;
+    activeStreamSessionIdRef.current = null;
     streamStateRef.current = null;
     setIsStreaming(false);
     setIsCancelling(false);
@@ -630,6 +699,7 @@ export function useChatWorkspace(
    */
   const resetWorkspace = () => {
     abortControllerRef.current?.abort();
+    activeStreamSessionIdRef.current = null;
     setConversations([]);
     clearConversationPlayback();
     setSampleQuestions([]);
@@ -654,8 +724,13 @@ export function useChatWorkspace(
    * 增量消费后端 SSE，并把关键事件同步到前端三栏状态。
    * @param response fetch 返回的 SSE 响应。
    * @param optimisticAssistantId 当前流式助手消息标识。
+   * @param streamSessionId 当前流会话编号。
    */
-  const consumeSseStream = async (response: Response, optimisticAssistantId: string) => {
+  const consumeSseStream = async (
+    response: Response,
+    optimisticAssistantId: string,
+    streamSessionId: number,
+  ) => {
     const reader = response.body?.getReader();
     if (!reader) {
       return;
@@ -668,7 +743,7 @@ export function useChatWorkspace(
       if (done) {
         const { events } = extractSseEvents(`${buffer}\n\n`);
         for (const event of events) {
-          applySseEvent(event.event, event.data, optimisticAssistantId);
+          applySseEvent(event.event, event.data, optimisticAssistantId, streamSessionId);
         }
         break;
       }
@@ -676,7 +751,7 @@ export function useChatWorkspace(
       const { events, remainder } = extractSseEvents(buffer);
       buffer = remainder;
       for (const event of events) {
-        applySseEvent(event.event, event.data, optimisticAssistantId);
+        applySseEvent(event.event, event.data, optimisticAssistantId, streamSessionId);
       }
     }
   };
@@ -686,8 +761,17 @@ export function useChatWorkspace(
    * @param eventName 事件名。
    * @param payload 事件载荷。
    * @param optimisticAssistantId 当前流式助手消息标识。
+   * @param streamSessionId 当前流会话编号。
    */
-  const applySseEvent = (eventName: string, payload: unknown, optimisticAssistantId: string) => {
+  const applySseEvent = (
+    eventName: string,
+    payload: unknown,
+    optimisticAssistantId: string,
+    streamSessionId: number,
+  ) => {
+    if (!isActiveStreamSession(streamSessionId)) {
+      return;
+    }
     if (eventName === 'meta' && isRecord(payload)) {
       const conversationId = String(payload.conversationId ?? '');
       if (conversationId) {
@@ -994,8 +1078,10 @@ export function useChatWorkspace(
       conversationList,
       record,
     );
-    // 业务约束：会话一旦在当前工作空间产生真实回放，需要从历史分组移除，避免重复展示。
-    removeConversationFromHistoryGroup(activeRuntimeTarget, conversationId);
+    // 业务约束：仅本地工作空间在会话持久化后从历史分组移除；云端会话统一保留在历史分组。
+    if (activeRuntimeTarget === 'local') {
+      removeConversationFromHistoryGroup(activeRuntimeTarget, conversationId);
+    }
     upsertWorkspaceSnapshot(activeRuntimeTarget, workspacePath, {
       conversations: conversationList,
       activeConversationId: conversationId,

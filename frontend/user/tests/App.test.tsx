@@ -1268,7 +1268,7 @@ describe('App', () => {
   it('应支持通过内容区按钮折叠和展开左侧边栏', async () => {
     render(<App />);
 
-    const sidebarLabel = screen.getByText('我的空间');
+    const sidebarLabel = screen.getByText('MCP 管理');
     expect(sidebarLabel).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: '折叠左侧边栏' }));
@@ -1284,7 +1284,7 @@ describe('App', () => {
   it('应在折叠左侧边栏时保留侧栏内容节点', async () => {
     render(<App />);
 
-    const sidebarLabel = screen.getByText('我的空间');
+    const sidebarLabel = screen.getByText('MCP 管理');
     fireEvent.click(screen.getByRole('button', { name: '折叠左侧边栏' }));
 
     expect(sidebarLabel).toBeInTheDocument();

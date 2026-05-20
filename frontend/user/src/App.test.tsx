@@ -67,6 +67,17 @@ describe('App', () => {
           { status: 200 },
         );
       }
+      if (
+        url === '/api/chat/conversations/2055114974648864768/current-skills' ||
+        url === '/api/chat/conversations/2055114974648864768/current-mcps' ||
+        url === '/api/chat/conversations/2055120756043943936/current-skills' ||
+        url === '/api/chat/conversations/2055120756043943936/current-mcps'
+      ) {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
       throw new Error(`Unhandled fetch in App test: ${url}`);
     });
   };
@@ -757,6 +768,52 @@ describe('App', () => {
               },
             },
           },
+          'cloud::__history__': {
+            workspacePath: null,
+            workspaceLabel: '历史会话',
+            runtimeTarget: 'cloud',
+            lastOpenedAt: Date.now(),
+            activeConversationId: '2001',
+            conversations: [
+              {
+                id: '2001',
+                title: 'Default Demo Conversation',
+                status: 'ACTIVE',
+                lastMessageAt: '2026-05-15 00:36:58',
+                lastRunId: '5002',
+              },
+            ],
+            conversationRecords: {
+              '2001': {
+                owned: true,
+                messages: [
+                  {
+                    id: '101',
+                    conversationId: '2001',
+                    runId: '5002',
+                    role: 'USER',
+                    content: '请搜索 Spring Boot SSE 最佳实践',
+                    status: 'COMPLETED',
+                    createdAt: '2026-05-15 00:36:58',
+                  },
+                  {
+                    id: '102',
+                    conversationId: '2001',
+                    runId: '5002',
+                    role: 'ASSISTANT',
+                    content: '旧会话回答',
+                    status: 'COMPLETED',
+                    createdAt: '2026-05-15 00:37:11',
+                  },
+                ],
+                executionSteps: [],
+                references: [],
+                artifacts: [],
+                currentSkills: [],
+                currentMcps: [],
+              },
+            },
+          },
         },
       }),
     );
@@ -925,6 +982,8 @@ describe('App', () => {
 
     render(<App />);
 
+    const defaultConversationTitle = await screen.findByText('Default Demo Conversation');
+    fireEvent.click(defaultConversationTitle.closest('button')!);
     await screen.findByText('旧会话回答');
     fireEvent.click(screen.getByRole('button', { name: '新建对话' }));
 
@@ -966,6 +1025,69 @@ describe('App', () => {
           'cloud::__no_workspace__': {
             workspacePath: null,
             workspaceLabel: '云端工作空间',
+            runtimeTarget: 'cloud',
+            lastOpenedAt: Date.now(),
+            activeConversationId: '2055114974648864768',
+            conversations: [
+              {
+                id: '2055114974648864768',
+                title: '第一个真实会话',
+                status: 'ACTIVE',
+                lastMessageAt: '2026-05-15 09:36:58',
+                lastRunId: '5001',
+              },
+              {
+                id: '2055120756043943936',
+                title: '第二个真实会话',
+                status: 'ACTIVE',
+                lastMessageAt: '2026-05-15 09:56:58',
+                lastRunId: '5002',
+              },
+            ],
+            conversationRecords: {
+              '2055114974648864768': {
+                owned: true,
+                messages: [
+                  {
+                    id: '101',
+                    conversationId: '2055114974648864768',
+                    runId: '5001',
+                    role: 'ASSISTANT',
+                    content: '这是第一个会话的回答',
+                    status: 'COMPLETED',
+                    createdAt: '2026-05-15 09:37:11',
+                  },
+                ],
+                executionSteps: [],
+                references: [],
+                artifacts: [],
+                currentSkills: [],
+                currentMcps: [],
+              },
+              '2055120756043943936': {
+                owned: true,
+                messages: [
+                  {
+                    id: '201',
+                    conversationId: '2055120756043943936',
+                    runId: '5002',
+                    role: 'ASSISTANT',
+                    content: '这是第二个会话的回答',
+                    status: 'COMPLETED',
+                    createdAt: '2026-05-15 09:57:11',
+                  },
+                ],
+                executionSteps: [],
+                references: [],
+                artifacts: [],
+                currentSkills: [],
+                currentMcps: [],
+              },
+            },
+          },
+          'cloud::__history__': {
+            workspacePath: null,
+            workspaceLabel: '历史会话',
             runtimeTarget: 'cloud',
             lastOpenedAt: Date.now(),
             activeConversationId: '2055114974648864768',
@@ -1160,8 +1282,7 @@ describe('App', () => {
 
     render(<App />);
 
-    expect(await screen.findByText('这是第一个会话的回答')).toBeInTheDocument();
-    fireEvent.click(screen.getAllByRole('button', { name: /第二个真实会话/ })[0]);
+    fireEvent.click((await screen.findAllByRole('button', { name: /第一个真实会话/ }))[0]);
 
     expect(await screen.findByText('这是第二个会话的回答')).toBeInTheDocument();
     expect(screen.queryByText('这是第一个会话的回答')).not.toBeInTheDocument();

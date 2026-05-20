@@ -217,6 +217,15 @@ export function listWorkspaceGroups(
           ? snapshot.conversationRecords
           : {},
     }))
+    // 业务约束：云端环境会话统一放入“历史会话”，侧栏不再展示“云端工作空间”分组入口。
+    .filter(
+      (group) =>
+        !(
+          group.runtimeTarget === 'cloud' &&
+          group.groupType === 'workspace' &&
+          group.partitionKey === buildWorkspacePartitionKey('cloud', null)
+        ),
+    )
     .filter((group) => (runtimeTarget ? group.runtimeTarget === runtimeTarget : true))
     .sort((left, right) => {
       const leftIsHistory = left.groupType === 'history';

@@ -628,6 +628,115 @@ describe('useChatWorkspace', () => {
   });
 
   /**
+   * 云端运行环境下，会话应统一归入“历史会话”分组，不应进入“云端工作空间”分组。
+   */
+  it('云端会话应只出现在历史会话分组且不存在云端工作空间分组', async () => {
+    window.localStorage.setItem(
+      'codingx.auth.session',
+      JSON.stringify({
+        token: 'token-123',
+        userId: '1002',
+        username: 'user',
+        displayName: 'CodingX User',
+        userType: 'USER',
+      }),
+    );
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === '/api/chat/conversations') {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            code: 'OK',
+            message: 'success',
+            data: [
+              {
+                id: '5001',
+                title: '云端历史会话A',
+                status: 'ACTIVE',
+                lastRunId: '9001',
+              },
+              {
+                id: '5002',
+                title: '云端历史会话B',
+                status: 'ACTIVE',
+                lastRunId: '9002',
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      if (url === '/api/chat/sample-questions') {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (url === '/api/chat/skills') {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (url === '/api/chat/mcps') {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (
+        url === '/api/chat/conversations/5001/messages' ||
+        url === '/api/chat/conversations/5001/steps' ||
+        url === '/api/chat/conversations/5001/references' ||
+        url === '/api/chat/conversations/5001/artifacts' ||
+        url === '/api/chat/conversations/5001/current-skills' ||
+        url === '/api/chat/conversations/5001/current-mcps'
+      ) {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      throw new Error(`Unhandled fetch in cloud history grouping test: ${url}`);
+    });
+
+    const { result } = renderHook(() => useChatWorkspace(true));
+
+    await waitFor(() => {
+      expect(result.current.isBootstrapping).toBe(false);
+    });
+
+    expect(result.current.workspaceLabel).toBe('云端工作空间');
+    expect(result.current.conversations.map((item) => item.id)).toEqual([]);
+
+    const cloudWorkspaceGroup = result.current.workspaceGroups.find(
+      (group) => group.workspaceLabel === '云端工作空间' && group.runtimeTarget === 'cloud',
+    );
+    expect(cloudWorkspaceGroup).toBeUndefined();
+
+    const historyGroup = result.current.workspaceGroups.find(
+      (group) => group.workspaceLabel === '历史会话' && group.runtimeTarget === 'cloud',
+    );
+    expect(historyGroup?.conversations.map((item) => item.id)).toEqual(['5001', '5002']);
+
+    await act(async () => {
+      await result.current.selectConversationInWorkspace('5001', {
+        partitionKey: 'cloud::__history__',
+        runtimeTarget: 'cloud',
+        workspacePath: null,
+        groupType: 'history',
+      });
+    });
+
+    const historyGroupAfterSelect = result.current.workspaceGroups.find(
+      (group) => group.workspaceLabel === '历史会话' && group.runtimeTarget === 'cloud',
+    );
+    expect(historyGroupAfterSelect?.conversations.map((item) => item.id)).toEqual(['5001', '5002']);
+  });
+
+  /**
    * 技能输入应被序列化为结构化技能消息，避免将技能标记直接作为普通问题文本发送。
    */
   it('应在构建流请求时按技能类型生成结构化消息', () => {
@@ -720,5 +829,169 @@ describe('useChatWorkspace', () => {
         },
       },
     ]);
+  });
+
+  /**
+   * 停止后应立即终止当前流并保持已生成片段，避免旧流继续覆盖或清空消息。
+   */
+  it('应在停止生成后保留部分回答并标记为取消', async () => {
+    window.localStorage.setItem(
+      'codingx.auth.session',
+      JSON.stringify({
+        token: 'token-123',
+        userId: '1002',
+        username: 'user',
+        displayName: 'CodingX User',
+        userType: 'USER',
+      }),
+    );
+
+    const readQueue: Array<{
+      resolve: (value: ReadableStreamReadResult<Uint8Array>) => void;
+      reject: (reason?: unknown) => void;
+    }> = [];
+    const encodedMeta = new TextEncoder().encode('event:meta\ndata:{"conversationId":"2001"}\n\n');
+    const encodedDelta = new TextEncoder().encode(
+      'event:message\ndata:{"type":"response","delta":"第一段"}\n\n',
+    );
+    const mockReader = {
+      read: vi.fn(() => {
+        return new Promise<ReadableStreamReadResult<Uint8Array>>((resolve, reject) => {
+          readQueue.push({ resolve, reject });
+        });
+      }),
+    };
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url === '/api/chat/conversations') {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            code: 'OK',
+            message: 'success',
+            data: [
+              {
+                id: '2001',
+                title: 'Default Demo Conversation',
+                status: 'ACTIVE',
+                lastRunId: '5002',
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      if (url === '/api/chat/sample-questions') {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (url === '/api/chat/skills') {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (url === '/api/chat/mcps') {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (
+        url === '/api/chat/conversations/2001/messages' ||
+        url === '/api/chat/conversations/2001/steps' ||
+        url === '/api/chat/conversations/2001/references' ||
+        url === '/api/chat/conversations/2001/artifacts' ||
+        url === '/api/chat/conversations/2001/current-skills' ||
+        url === '/api/chat/conversations/2001/current-mcps'
+      ) {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (url.includes('/api/chat/stream')) {
+        init?.signal?.addEventListener(
+          'abort',
+          () => {
+            readQueue.splice(0).forEach((pending) =>
+              pending.reject(new DOMException('Aborted', 'AbortError')),
+            );
+          },
+          { once: true },
+        );
+        return {
+          ok: true,
+          status: 200,
+          body: {
+            getReader: () => mockReader,
+          },
+        } as unknown as Response;
+      }
+      if (url === '/api/chat/conversations/2001/cancel') {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: null }),
+          { status: 200 },
+        );
+      }
+      throw new Error(`Unhandled fetch in cancel stream test: ${url}`);
+    });
+
+    const { result } = renderHook(() => useChatWorkspace(true));
+
+    await waitFor(() => {
+      expect(result.current.isBootstrapping).toBe(false);
+    });
+
+    await act(async () => {
+      result.current.setInputValue('你好');
+    });
+    await waitFor(() => {
+      expect(result.current.inputValue).toBe('你好');
+    });
+
+    const submitPromise = result.current.submitMessage();
+
+    await waitFor(() => {
+      expect(result.current.isStreaming).toBe(true);
+      expect(readQueue.length).toBeGreaterThan(0);
+    });
+
+    await act(async () => {
+      const firstRead = readQueue.shift();
+      firstRead?.resolve({ done: false, value: encodedMeta });
+    });
+
+    await act(async () => {
+      const secondRead = readQueue.shift();
+      secondRead?.resolve({ done: false, value: encodedDelta });
+    });
+
+    await waitFor(() => {
+      const assistantMessage = result.current.messages.find((item) => item.role === 'ASSISTANT');
+      expect(assistantMessage?.content).toBe('第一段');
+      expect(assistantMessage?.status).toBe('streaming');
+    });
+
+    await act(async () => {
+      await result.current.cancelCurrentStream();
+    });
+
+    await waitFor(() => {
+      expect(mockReader.read).toHaveBeenCalled();
+    });
+
+    await waitFor(() => {
+      expect(result.current.isStreaming).toBe(false);
+      expect(result.current.streamError).toBe('已停止当前生成');
+      const assistantMessage = result.current.messages.find((item) => item.role === 'ASSISTANT');
+      expect(assistantMessage?.content).toBe('第一段');
+      expect(assistantMessage?.status).toBe('cancelled');
+    });
+
+    await submitPromise;
   });
 });

@@ -816,6 +816,11 @@ export default function ChatView({
           className="absolute bottom-0 left-0 right-0 bg-background/88 px-4 pb-6 pt-4 backdrop-blur-xl md:px-8"
         >
           <div className="mx-auto max-w-4xl">
+            {streamError ? (
+              <div className="mb-3 rounded-2xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+                {streamError}
+              </div>
+            ) : null}
             <form
               onSubmit={(event) => void handleSubmit(event)}
               className="rounded-[24px] border border-border bg-surface shadow-[0_20px_64px_rgba(0,0,0,0.12)]"

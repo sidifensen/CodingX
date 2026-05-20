@@ -737,6 +737,114 @@ describe('useChatWorkspace', () => {
   });
 
   /**
+   * 本地运行环境下，只要已绑定本地目录（即便 workspaceId 为空）也应允许发送，
+   * 避免桌面端尚未拿到 workspaceId 时“发送无响应”。
+   */
+  it('应在本地目录已绑定但workspaceId为空时仍允许发送消息', async () => {
+    window.localStorage.setItem(
+      'codingx.auth.session',
+      JSON.stringify({
+        token: 'token-123',
+        userId: '1002',
+        username: 'user',
+        displayName: 'CodingX User',
+        userType: 'USER',
+      }),
+    );
+
+    const streamFetchMock = vi.fn();
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === '/api/chat/conversations') {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            code: 'OK',
+            message: 'success',
+            data: [
+              {
+                id: '2001',
+                title: 'Default Demo Conversation',
+                status: 'ACTIVE',
+                lastRunId: '5002',
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      if (
+        url === '/api/chat/sample-questions' ||
+        url === '/api/chat/skills' ||
+        url === '/api/chat/mcps' ||
+        url === '/api/chat/conversations/2001/messages' ||
+        url === '/api/chat/conversations/2001/steps' ||
+        url === '/api/chat/conversations/2001/references' ||
+        url === '/api/chat/conversations/2001/artifacts' ||
+        url === '/api/chat/conversations/2001/current-skills' ||
+        url === '/api/chat/conversations/2001/current-mcps' ||
+        url === '/api/chat/conversations/pending-conversation/messages' ||
+        url === '/api/chat/conversations/pending-conversation/steps' ||
+        url === '/api/chat/conversations/pending-conversation/references' ||
+        url === '/api/chat/conversations/pending-conversation/artifacts' ||
+        url === '/api/chat/conversations/pending-conversation/current-skills' ||
+        url === '/api/chat/conversations/pending-conversation/current-mcps'
+      ) {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (url.includes('/api/chat/stream')) {
+        streamFetchMock(url);
+        return new Response('', { status: 200 });
+      }
+      throw new Error(`Unhandled fetch in local workspace fallback send test: ${url}`);
+    });
+
+    const hostContext = {
+      hostType: 'desktop',
+      executionTargets: ['local'] as const,
+      capabilities: {
+        localFiles: true,
+        localFolderPicker: true,
+        shell: true,
+        browserAutomation: false,
+        desktopNotifications: false,
+        officeInterop: false,
+        localMcp: true,
+        windowControls: true,
+      },
+      localResource: {
+        boundRepositoryPath: 'D:/code/CodingX',
+        permissionGranted: true,
+      },
+    };
+
+    const { result } = renderHook(() =>
+      useChatWorkspace(true, {
+        hostContext,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(result.current.isBootstrapping).toBe(false);
+    });
+
+    await act(async () => {
+      result.current.setInputValue('请继续分析这个项目');
+    });
+    await act(async () => {
+      await result.current.submitMessage();
+    });
+
+    expect(streamFetchMock).toHaveBeenCalledTimes(1);
+    expect(streamFetchMock.mock.calls[0][0]).toContain('/api/chat/stream?');
+    expect(streamFetchMock.mock.calls[0][0]).toContain('repositoryPath=D%3A%2Fcode%2FCodingX');
+    expect(result.current.streamError).toBe('');
+  });
+
+  /**
    * 技能输入应被序列化为结构化技能消息，避免将技能标记直接作为普通问题文本发送。
    */
   it('应在构建流请求时按技能类型生成结构化消息', () => {

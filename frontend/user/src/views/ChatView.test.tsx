@@ -102,6 +102,28 @@ describe('ChatView', () => {
   });
 
   /**
+   * 新建对话空态下若发送失败，仍应展示错误提示，避免用户误判为发送按钮失效。
+   */
+  it('应在新建对话空态展示发送错误提示', async () => {
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          activeConversationId: null,
+          messages: [],
+          executionSteps: [],
+          references: [],
+          artifacts: [],
+          streamError: '请选择本地工作空间后再发送消息',
+        })}
+      />,
+    );
+
+    expect(screen.getByText('请选择本地工作空间后再发送消息')).toBeInTheDocument();
+  });
+
+  /**
    * 输入区应支持切换深度思考开关，避免功能只停留在后端参数。
    */
   it('应支持切换深度思考开关', async () => {

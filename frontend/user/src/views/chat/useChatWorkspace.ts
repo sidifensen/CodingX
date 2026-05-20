@@ -468,7 +468,11 @@ export function useChatWorkspace(
       return;
     }
     setStreamError('');
-    if (activeRuntimeTarget === 'local' && !workspaceId) {
+    // 关键约束：本地模式下只要存在 workspaceId 或已绑定目录任一条件，就允许发送，避免目录已绑定但 ID 延迟回写时误拦截。
+    const hasLocalWorkspaceContext =
+      (workspaceId != null && workspaceId.trim().length > 0) ||
+      (workspacePath != null && workspacePath.trim().length > 0);
+    if (activeRuntimeTarget === 'local' && !hasLocalWorkspaceContext) {
       setStreamError('请选择本地工作空间后再发送消息');
       return;
     }

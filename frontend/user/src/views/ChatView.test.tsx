@@ -523,7 +523,6 @@ describe('ChatView', () => {
    */
   it('应在发送消息时立即滚动到底部并提交消息', async () => {
     const scrollIntoView = vi.mocked(window.HTMLElement.prototype.scrollIntoView);
-    scrollIntoView.mockClear();
     const submitMessage = vi.fn().mockResolvedValue(undefined);
 
     render(

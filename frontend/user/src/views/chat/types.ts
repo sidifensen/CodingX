@@ -203,6 +203,16 @@ export interface WorkspaceConversationGroup {
 }
 
 /**
+ * 描述侧边栏会话选择时携带的分组上下文，确保会话总是在所属空间内打开。
+ */
+export interface WorkspaceConversationSelectionContext {
+  partitionKey: string;
+  runtimeTarget: 'cloud' | 'local';
+  workspacePath: string | null;
+  groupType?: 'workspace' | 'history';
+}
+
+/**
  * 统一描述聊天工作区对页面和侧边栏暴露的状态与动作。
  */
 export interface ChatWorkspaceController {
@@ -250,6 +260,10 @@ export interface ChatWorkspaceController {
   selectConversation: (
     conversationId: string,
     sourceConversations?: ConversationItem[],
+  ) => Promise<void>;
+  selectConversationInWorkspace: (
+    conversationId: string,
+    selectionContext: WorkspaceConversationSelectionContext,
   ) => Promise<void>;
   startNewConversation: () => Promise<void>;
   renameConversation: (conversationId: string, title: string) => Promise<void>;

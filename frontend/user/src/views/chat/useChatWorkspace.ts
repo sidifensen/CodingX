@@ -25,6 +25,7 @@ import {
   buildWorkspaceHistoryPartitionKey,
   buildWorkspacePartitionKey,
   filterUnassignedConversations,
+  isWorkspaceHistoryPartitionKey,
   getWorkspaceLabel,
   findWorkspacePartitionByConversationId,
   listWorkspaceGroups,
@@ -300,7 +301,11 @@ export function useChatWorkspace(
         : getDefaultWorkspaceLabel(runtimeTarget),
     });
     setWorkspaceGroups(listWorkspaceGroups(runtimeTarget));
-    await startNewConversation();
+    // 空间切换后优先恢复该空间已有会话；仅无会话时保留新建空态。
+    const nextActiveConversationId = nextSnapshot.activeConversationId;
+    if (nextActiveConversationId) {
+      await restoreWorkspaceSnapshot(nextPartitionKey, nextActiveConversationId);
+    }
   };
 
   /**
@@ -315,6 +320,38 @@ export function useChatWorkspace(
       return;
     }
     await switchWorkspacePartition('local', nextWorkspacePath, true);
+  };
+
+  /**
+   * 在指定工作空间上下文中打开会话，确保“先切空间再选会话”，避免跨空间串线。
+   * @param conversationId 会话标识。
+   * @param selectionContext 侧栏会话携带的空间上下文。
+   */
+  const selectConversationInWorkspace = async (
+    conversationId: string,
+    selectionContext: {
+      partitionKey: string;
+      runtimeTarget: 'cloud' | 'local';
+      workspacePath: string | null;
+      groupType?: 'workspace' | 'history';
+    },
+  ) => {
+    if (selectionContext.groupType === 'history' || isWorkspaceHistoryPartitionKey(selectionContext.partitionKey)) {
+      await selectConversation(conversationId, conversations);
+      return;
+    }
+    const isSamePartition =
+      activeRuntimeTarget === selectionContext.runtimeTarget &&
+      buildWorkspacePartitionKey(activeRuntimeTarget, workspacePath ?? null) === selectionContext.partitionKey;
+    if (!isSamePartition) {
+      await switchWorkspacePartition(
+        selectionContext.runtimeTarget,
+        selectionContext.runtimeTarget === 'local' ? selectionContext.workspacePath : null,
+        false,
+      );
+    }
+    const latestSnapshot = readWorkspaceSnapshot(selectionContext.partitionKey);
+    await selectConversation(conversationId, latestSnapshot.conversations);
   };
 
   /**
@@ -860,6 +897,7 @@ export function useChatWorkspace(
     submitMessage,
     cancelCurrentStream,
     selectConversation,
+    selectConversationInWorkspace,
     startNewConversation,
     renameConversation,
     deleteConversation,

@@ -1130,6 +1130,7 @@ export default function ChatView({
             <div
               ref={runtimeWorkspaceLayerRef}
               data-testid="chat-runtime-workspace-switcher"
+              // 空间切换条在新建态与会话态均保持可见，保证用户可随时切换对话空间。
               className="mt-3 flex items-center gap-3 px-1 text-sm text-foreground"
             >
               <div className="relative">

@@ -18,7 +18,11 @@ import { ViewType } from '../App';
 import { AuthSession } from '../types/auth';
 import ProfileMenu from './sidebar/ProfileMenu';
 import LoginEntry from './sidebar/LoginEntry';
-import { ConversationItem, WorkspaceConversationGroup } from '../views/chat/types';
+import {
+  ConversationItem,
+  WorkspaceConversationGroup,
+  WorkspaceConversationSelectionContext,
+} from '../views/chat/types';
 
 /**
  * 约定侧边栏会话列表每次展开的条目数，保证交互节奏稳定。
@@ -42,7 +46,10 @@ interface SidebarProps {
   onLogout: () => Promise<void>;
   conversations: ConversationItem[];
   activeConversationId: string | null;
-  onSelectConversation: (conversationId: string) => Promise<void>;
+  onSelectConversation: (
+    conversationId: string,
+    selectionContext: WorkspaceConversationSelectionContext,
+  ) => Promise<void>;
   onStartNewConversation: () => Promise<void>;
   onRenameConversation: (conversationId: string, title: string) => Promise<void>;
   onDeleteConversation: (conversationId: string) => Promise<void>;
@@ -213,7 +220,10 @@ function ConversationHistory({
   activeWorkspacePartitionKey: string | null;
   conversations: ConversationItem[];
   activeConversationId: string | null;
-  onSelectConversation: (conversationId: string) => Promise<void>;
+  onSelectConversation: (
+    conversationId: string,
+    selectionContext: WorkspaceConversationSelectionContext,
+  ) => Promise<void>;
   onRenameConversation: (conversationId: string, title: string) => Promise<void>;
   onDeleteConversation: (conversationId: string) => Promise<void>;
   onSelectWorkspacePath: (workspacePath: string | null) => Promise<void>;
@@ -318,7 +328,10 @@ function ConversationHistory({
                   type="button"
                   aria-label={`${isGroupCollapsed ? '展开' : '折叠'}工作空间 ${group.workspaceLabel} 会话`}
                   onClick={() => {
-                    void onSelectWorkspacePath(group.workspacePath);
+                    // 历史分组不绑定具体目录，点击分组头仅折叠/展开，避免触发无效路径切换。
+                    if (group.groupType !== 'history') {
+                      void onSelectWorkspacePath(group.workspacePath);
+                    }
                     handleToggleGroupCollapse(group.partitionKey);
                   }}
                   className="flex w-full cursor-pointer items-start justify-between gap-3 rounded-md py-0.5 text-left transition-colors hover:bg-surface-container active:bg-surface-container-high"
@@ -381,7 +394,14 @@ function ConversationHistory({
                                 {/* 让会话标题与工作空间标题文字起点对齐，并增强选中态可辨识度。 */}
                                 <button
                                   type="button"
-                                  onClick={() => void onSelectConversation(conversation.id)}
+                                  onClick={() =>
+                                    void onSelectConversation(conversation.id, {
+                                      partitionKey: group.partitionKey,
+                                      runtimeTarget: group.runtimeTarget,
+                                      workspacePath: group.workspacePath,
+                                      groupType: group.groupType,
+                                    })
+                                  }
                                   className={`min-w-0 flex-1 cursor-pointer pl-3 text-left ${
                                     isActive ? 'text-foreground' : 'text-muted hover:text-foreground'
                                   }`}

@@ -161,4 +161,52 @@ describe('Sidebar conversation collapse behavior', () => {
     expect(expandButton.className).not.toContain('w-full');
     expect(expandButton.className).not.toContain('border');
   });
+
+  it('点击会话时应回传会话所属分组上下文，避免跨空间串线', () => {
+    const props = createSidebarProps();
+    render(<Sidebar {...props} />);
+
+    fireEvent.click(screen.getByRole('button', { name: '会话 1' }));
+
+    expect(props.onSelectConversation).toHaveBeenCalledWith(
+      'conversation-1',
+      expect.objectContaining({
+        partitionKey: 'local::d:/code/codingx',
+        runtimeTarget: 'local',
+        workspacePath: 'D:/code/CodingX',
+      }),
+    );
+  });
+
+  it('点击历史分组头只折叠展开，不应触发空间路径切换', () => {
+    const historyOnlyConversations = Array.from({ length: 2 }, (_, i) => createConversation(i + 1));
+    const props = createSidebarProps({
+      workspaceGroups: [
+        {
+          partitionKey: 'local::d:/code/codingx',
+          workspacePath: 'D:/code/CodingX',
+          workspaceLabel: 'CodingX',
+          runtimeTarget: 'local',
+          lastOpenedAt: Date.now(),
+          activeConversationId: 'conversation-1',
+          conversations: historyOnlyConversations,
+        },
+        {
+          partitionKey: 'local::__history__',
+          workspacePath: null,
+          workspaceLabel: '历史会话',
+          runtimeTarget: 'local',
+          groupType: 'history',
+          lastOpenedAt: Date.now() - 1000,
+          activeConversationId: null,
+          conversations: historyOnlyConversations,
+        },
+      ],
+    });
+
+    render(<Sidebar {...props} />);
+    fireEvent.click(screen.getByRole('button', { name: '折叠工作空间 历史会话 会话' }));
+
+    expect(props.onSelectWorkspacePath).not.toHaveBeenCalledWith(null);
+  });
 });

@@ -2,6 +2,7 @@ import { render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import Sidebar from '@/components/Sidebar';
 import { HostContext } from '@/host/types';
+import { WorkspaceConversationSelectionContext } from '@/views/chat/types';
 
 /**
  * 构建 Sidebar 测试所需的最小属性集。
@@ -23,10 +24,18 @@ function createSidebarProps(overrides?: {
     onLogout: vi.fn(async () => undefined),
     conversations: [],
     activeConversationId: null,
-    onSelectConversation: vi.fn(async () => undefined),
+    onSelectConversation: vi.fn(
+      async (
+        _conversationId: string,
+        _selectionContext: WorkspaceConversationSelectionContext,
+      ) => undefined,
+    ),
     onStartNewConversation: vi.fn(async () => undefined),
     onRenameConversation: vi.fn(async () => undefined),
     onDeleteConversation: vi.fn(async () => undefined),
+    workspaceGroups: [],
+    activeWorkspacePartitionKey: null,
+    onSelectWorkspacePath: vi.fn(async () => undefined),
     hostContext: overrides?.hostContext,
     isHostContextLoading: false,
     hostContextError: '',

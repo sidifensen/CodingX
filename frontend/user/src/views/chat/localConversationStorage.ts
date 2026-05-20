@@ -218,7 +218,20 @@ export function listWorkspaceGroups(
           : {},
     }))
     .filter((group) => (runtimeTarget ? group.runtimeTarget === runtimeTarget : true))
-    .sort((left, right) => right.lastOpenedAt - left.lastOpenedAt);
+    .sort((left, right) => {
+      const leftIsHistory = left.groupType === 'history';
+      const rightIsHistory = right.groupType === 'history';
+      // 先固定“工作空间分组在前、历史分组在后”，避免访问时间波动导致分组位置抖动。
+      if (leftIsHistory !== rightIsHistory) {
+        return leftIsHistory ? 1 : -1;
+      }
+      // 同级分组按标签名稳定排序，确保点击/刷新后渲染顺序可预测。
+      const labelCompare = left.workspaceLabel.localeCompare(right.workspaceLabel, 'zh-Hans-CN');
+      if (labelCompare !== 0) {
+        return labelCompare;
+      }
+      return left.partitionKey.localeCompare(right.partitionKey, 'zh-Hans-CN');
+    });
 }
 
 /**

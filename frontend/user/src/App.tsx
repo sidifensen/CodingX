@@ -14,6 +14,7 @@ import DesktopTitleBar from './components/DesktopTitleBar';
 import { useAuth } from './hooks/useAuth';
 import { useChatWorkspace } from './views/chat/useChatWorkspace';
 import { useHostContext } from './host/useHostContext';
+import { WorkspaceConversationSelectionContext } from './views/chat/types';
 
 /**
  * 定义应用支持的主视图类型。
@@ -129,9 +130,13 @@ export default function App() {
    * 统一处理侧边栏点击真实会话后的主区切换。
    * @param conversationId 被点击的会话标识。
    */
-  const handleConversationSelect = async (conversationId: string) => {
+  const handleConversationSelect = async (
+    conversationId: string,
+    selectionContext: WorkspaceConversationSelectionContext,
+  ) => {
     setActiveView('chat');
-    await chatWorkspace.selectConversation(conversationId, chatWorkspace.conversations);
+    // 先切到会话所属空间，再加载目标会话，避免不同空间会话互相串线。
+    await chatWorkspace.selectConversationInWorkspace(conversationId, selectionContext);
   };
 
   /**

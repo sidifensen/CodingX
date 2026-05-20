@@ -519,6 +519,46 @@ describe('ChatView', () => {
   });
 
   /**
+   * 发送消息时应先贴底，再进入后续提交流程，避免回答首帧被底部输入区遮挡。
+   */
+  it('应在发送消息时立即滚动到底部并提交消息', async () => {
+    const scrollIntoView = vi.mocked(window.HTMLElement.prototype.scrollIntoView);
+    scrollIntoView.mockClear();
+    const submitMessage = vi.fn().mockResolvedValue(undefined);
+
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          activeConversationId: '2001',
+          messages: [
+            {
+              id: '701',
+              conversationId: '2001',
+              role: 'USER',
+              content: '先看这一段历史消息',
+              status: 'COMPLETED',
+            },
+          ],
+          executionSteps: [],
+          references: [],
+          artifacts: [],
+          inputValue: '请继续生成下一段内容',
+          submitMessage,
+        })}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '发送消息' }));
+
+    await waitFor(() => {
+      expect(submitMessage).toHaveBeenCalledTimes(1);
+    });
+    expect(scrollIntoView).toHaveBeenCalled();
+  });
+
+  /**
    * 流式生成时每次新内容到达都应继续跟随滚动到底部，保证页面随着消息增长而下移。
    */
   it('应在流式消息增长时持续滚动到最新内容', async () => {

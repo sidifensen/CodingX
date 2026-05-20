@@ -424,11 +424,19 @@ export default function ChatView({
   );
 
   /**
-   * 每次消息更新前先采集当前滚动位置，确保后续自动滚动判断基于用户最新滚动意图。
+   * 统一滚动到底部锚点，供发送动作和消息增量跟随复用。
    */
-  React.useEffect(() => {
-    syncFollowLatestMessageState(chatScrollRegionRef.current);
-  }, [messages, syncFollowLatestMessageState]);
+  const scrollToLatestMessage = React.useCallback(() => {
+    if (typeof latestMessageAnchorRef.current?.scrollIntoView === 'function') {
+      latestMessageAnchorRef.current.scrollIntoView({ block: 'end' });
+      return;
+    }
+    const scrollRegion = chatScrollRegionRef.current;
+    if (!scrollRegion) {
+      return;
+    }
+    scrollRegion.scrollTop = scrollRegion.scrollHeight;
+  }, []);
 
   React.useEffect(() => {
     if (!messages.length) {
@@ -437,10 +445,8 @@ export default function ChatView({
     if (!shouldFollowLatestMessageRef.current) {
       return;
     }
-    if (typeof latestMessageAnchorRef.current?.scrollIntoView === 'function') {
-      latestMessageAnchorRef.current.scrollIntoView({ block: 'end' });
-    }
-  }, [messages]);
+    scrollToLatestMessage();
+  }, [messages, scrollToLatestMessage]);
 
   /**
    * 动态测量底部输入栏高度，并同步到消息滚动区底部留白。
@@ -508,6 +514,9 @@ export default function ChatView({
       onRequireLogin();
       return;
     }
+    // 业务意图：用户主动发送消息代表希望查看最新内容，先贴底并恢复自动跟随。
+    shouldFollowLatestMessageRef.current = true;
+    scrollToLatestMessage();
     await submitMessage();
   };
 

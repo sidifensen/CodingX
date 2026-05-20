@@ -326,6 +326,7 @@ public class ChatApplicationService {
             command.skillCodes()
         );
         tokenCounterService.estimateConversationTokens(aiHistory);
+        final Long activeRunId = runId;
         try {
             aiChatClient.streamChat(aiHistory, command.deepThinking(), new AiChatClient.StreamHandler() {
                 @Override
@@ -336,7 +337,7 @@ public class ChatApplicationService {
 
                 @Override
                 public void onDelta(String delta) {
-                    if (chatRuntimeGuardService.isCancelled(command.conversationId())) {
+                    if (chatRuntimeGuardService.isCancelled(command.conversationId(), activeRunId)) {
                         return;
                     }
                     builder.append(delta);
@@ -345,7 +346,7 @@ public class ChatApplicationService {
 
                 @Override
                 public void onThinkingDelta(String delta) {
-                    if (chatRuntimeGuardService.isCancelled(command.conversationId())) {
+                    if (chatRuntimeGuardService.isCancelled(command.conversationId(), activeRunId)) {
                         return;
                     }
                     thinkingBuilder.append(delta);
@@ -360,7 +361,7 @@ public class ChatApplicationService {
                 }
             });
         } catch (RuntimeException exception) {
-            if (chatRuntimeGuardService.isCancelled(command.conversationId())) {
+            if (chatRuntimeGuardService.isCancelled(command.conversationId(), activeRunId)) {
                 ChatMessage cancelledMessage = ChatMessage.assistantMessage(
                     command.conversationId(),
                     StrUtil.blankToDefault(builder.toString(), "已取消"),
@@ -379,7 +380,7 @@ public class ChatApplicationService {
             }
             throw exception;
         }
-        if (chatRuntimeGuardService.isCancelled(command.conversationId())) {
+        if (chatRuntimeGuardService.isCancelled(command.conversationId(), activeRunId)) {
             ChatMessage cancelledMessage = ChatMessage.assistantMessage(
                 command.conversationId(),
                 StrUtil.blankToDefault(builder.toString(), "已取消"),

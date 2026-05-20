@@ -112,9 +112,12 @@ class ChatStreamExecutionServiceTest {
         verify(conversationTraceRecordService).startTrace("chat-entry", 1001L, 2001L);
         verify(chatMcpRepository).bindTaskMcps(any(Long.class), eq(java.util.List.of()));
         verify(chatSkillRepository).bindTaskSkills(any(Long.class), eq(java.util.List.of()));
+        verify(chatRuntimeGuardService).registerCancellation(eq(1001L), any(Long.class), any(Runnable.class));
 
         release.countDown();
         verify(chatApplicationService, org.mockito.Mockito.timeout(1000)).sendMessage(new SendChatMessageCommand(1001L, "你好", false, java.util.List.of(), java.util.List.of(), null, java.util.List.of()), 2001L);
+        verify(chatRuntimeGuardService, org.mockito.Mockito.timeout(1000))
+            .completeConversation(eq(1001L), any(Long.class));
     }
 
     /**

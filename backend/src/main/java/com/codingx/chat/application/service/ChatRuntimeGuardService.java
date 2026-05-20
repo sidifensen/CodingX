@@ -51,12 +51,32 @@ public class ChatRuntimeGuardService {
     }
 
     /**
+     * 注册指定运行实例的取消句柄。
+     * @param conversationId 会话标识。
+     * @param runId 运行标识。
+     * @param cancelAction 取消动作。
+     */
+    public void registerCancellation(Long conversationId, Long runId, Runnable cancelAction) {
+        chatRunControlService.register(conversationId, runId, cancelAction);
+    }
+
+    /**
      * 判断指定会话是否已收到取消信号。
      * @param conversationId 会话标识。
      * @return 是否已取消。
      */
     public boolean isCancelled(Long conversationId) {
         return chatRunControlService.isCancelled(conversationId);
+    }
+
+    /**
+     * 判断指定运行实例是否已取消或过期。
+     * @param conversationId 会话标识。
+     * @param runId 运行标识。
+     * @return 是否已取消或过期。
+     */
+    public boolean isCancelled(Long conversationId, Long runId) {
+        return chatRunControlService.isCancelled(conversationId, runId);
     }
 
     /**
@@ -77,5 +97,15 @@ public class ChatRuntimeGuardService {
     public void completeConversation(Long conversationId) {
         conversationQueueGate.release(conversationId);
         chatRunControlService.complete(conversationId);
+    }
+
+    /**
+     * 指定运行实例完成后释放门控与取消句柄，避免旧 run 误清理新 run。
+     * @param conversationId 会话标识。
+     * @param runId 运行标识。
+     */
+    public void completeConversation(Long conversationId, Long runId) {
+        conversationQueueGate.release(conversationId);
+        chatRunControlService.complete(conversationId, runId);
     }
 }

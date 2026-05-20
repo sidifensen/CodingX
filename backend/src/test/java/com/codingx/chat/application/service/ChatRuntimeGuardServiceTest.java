@@ -3,6 +3,7 @@ package com.codingx.chat.application.service;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.eq;
 
 import com.codingx.chat.domain.service.ChatStreamPublisher;
 import com.codingx.chat.infrastructure.runtime.ChatRunControlService;
@@ -66,5 +67,27 @@ class ChatRuntimeGuardServiceTest {
         chatRuntimeGuardService.cancelConversation(1001L);
 
         verify(chatStreamPublisher).publishCancelled(1001L);
+    }
+
+    /**
+     * run 级完成时应调用 run 级清理，避免旧 run 抢先清理新 run 句柄。
+     */
+    @Test
+    void completeConversationWithRunIdUsesRunScopedCleanup() {
+        chatRuntimeGuardService.completeConversation(1001L, 9001L);
+
+        verify(conversationQueueGate).release(1001L);
+        verify(chatRunControlService).complete(1001L, 9001L);
+    }
+
+    /**
+     * run 级取消判断应透传到运行控制服务。
+     */
+    @Test
+    void isCancelledWithRunIdDelegatesToRunControlService() {
+        when(chatRunControlService.isCancelled(1001L, 9001L)).thenReturn(true);
+
+        org.junit.jupiter.api.Assertions.assertTrue(chatRuntimeGuardService.isCancelled(1001L, 9001L));
+        verify(chatRunControlService).isCancelled(1001L, 9001L);
     }
 }

@@ -83,7 +83,7 @@ public class ChatStreamExecutionService {
         chatSkillRepository.bindTaskSkills(runId, command.skillCodes());
         com.codingx.chat.domain.model.ChatTraceRun traceRun = conversationTraceRecordService.startTrace("chat-entry", command.conversationId(), userId);
         AtomicReference<Future<?>> futureRef = new AtomicReference<>();
-        chatRuntimeGuardService.registerCancellation(command.conversationId(), () -> {
+        chatRuntimeGuardService.registerCancellation(command.conversationId(), runId, () -> {
             Future<?> future = futureRef.get();
             if (future != null) {
                 future.cancel(true);
@@ -99,7 +99,7 @@ public class ChatStreamExecutionService {
                 markRunFailed(runId, command.conversationId(), throwable);
                 throw throwable;
             } finally {
-                chatRuntimeGuardService.completeConversation(command.conversationId());
+                chatRuntimeGuardService.completeConversation(command.conversationId(), runId);
                 ChatExecutionContext.clear();
                 ConversationTraceContext.clear();
                 ChatToolExecutionContext.clear();

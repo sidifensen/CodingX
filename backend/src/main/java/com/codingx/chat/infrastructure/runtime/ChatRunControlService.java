@@ -27,8 +27,19 @@ public class ChatRunControlService {
      * @param cancelAction 取消动作。
      */
     public void register(Long conversationId, Runnable cancelAction) {
+        register(conversationId, conversationId, cancelAction);
+    }
+
+    /**
+     * 注册某个会话运行实例的取消动作。
+     * 关键约束：同一会话开启新 run 后，旧 run 必须视为“过期”并停止回写。
+     * @param conversationId 会话标识。
+     * @param runId 本次运行标识。
+     * @param cancelAction 取消动作。
+     */
+    public void register(Long conversationId, Long runId, Runnable cancelAction) {
         chatRuntimeStateStore.markActive(conversationId);
-        sessions.put(conversationId, new ChatRunSession(cancelAction));
+        sessions.put(conversationId, new ChatRunSession(runId, cancelAction));
     }
 
     /**
@@ -65,12 +76,44 @@ public class ChatRunControlService {
     }
 
     /**
+     * 判断指定 run 是否已被取消或已过期。
+     * @param conversationId 会话标识。
+     * @param runId 运行标识。
+     * @return 当前 run 是否不可继续写回。
+     */
+    public boolean isCancelled(Long conversationId, Long runId) {
+        ChatRunSession session = sessions.get(conversationId);
+        if (session == null) {
+            return chatRuntimeStateStore.isCancelled(conversationId);
+        }
+        if (!session.matchesRun(runId)) {
+            return true;
+        }
+        return session.cancelled();
+    }
+
+    /**
      * 正常完成后主动释放取消句柄。
      * @param conversationId 会话标识。
      */
     public void complete(Long conversationId) {
+        complete(conversationId, conversationId);
+    }
+
+    /**
+     * 指定 run 正常完成后释放取消句柄。
+     * @param conversationId 会话标识。
+     * @param runId 运行标识。
+     * @return 是否完成了当前激活 run 的清理。
+     */
+    public boolean complete(Long conversationId, Long runId) {
+        ChatRunSession session = sessions.get(conversationId);
+        if (session == null || !session.matchesRun(runId)) {
+            return false;
+        }
         sessions.remove(conversationId);
         chatRuntimeStateStore.clear(conversationId);
+        return true;
     }
 
     /**
@@ -78,10 +121,12 @@ public class ChatRunControlService {
      */
     private static final class ChatRunSession {
 
+        private final Long runId;
         private final Runnable cancelAction;
         private volatile boolean cancelled;
 
-        private ChatRunSession(Runnable cancelAction) {
+        private ChatRunSession(Long runId, Runnable cancelAction) {
+            this.runId = runId;
             this.cancelAction = cancelAction;
         }
 
@@ -92,6 +137,10 @@ public class ChatRunControlService {
 
         private boolean cancelled() {
             return cancelled;
+        }
+
+        private boolean matchesRun(Long targetRunId) {
+            return runId != null && runId.equals(targetRunId);
         }
     }
 }

@@ -250,7 +250,8 @@ class ChatApplicationServiceTest {
         when(chatIntentNodeRepository.findByIntentCode("chat.normal")).thenReturn(null);
         when(chatSkillContextService.buildSkillContext(any())).thenReturn("");
         AtomicInteger cancelChecks = new AtomicInteger();
-        when(chatRuntimeGuardService.isCancelled(1L)).thenAnswer(invocation -> cancelChecks.incrementAndGet() > 1);
+        when(chatRuntimeGuardService.isCancelled(eq(1L), any(Long.class)))
+            .thenAnswer(invocation -> cancelChecks.incrementAndGet() > 1);
         doAnswer(invocation -> {
             AiChatClient.StreamHandler handler = invocation.getArgument(2);
             handler.onDelta("partial");
@@ -284,7 +285,7 @@ class ChatApplicationServiceTest {
         when(conversationIntentService.route("Hi", false)).thenReturn(new ConversationIntentDecision("chat.normal", ConversationIntentAction.DIRECT, null));
         when(chatIntentNodeRepository.findByIntentCode("chat.normal")).thenReturn(null);
         when(chatSkillContextService.buildSkillContext(any())).thenReturn("");
-        when(chatRuntimeGuardService.isCancelled(1L)).thenReturn(true);
+        when(chatRuntimeGuardService.isCancelled(eq(1L), any(Long.class))).thenReturn(true);
         doAnswer(invocation -> {
             throw new IllegalStateException("interrupted");
         }).when(aiChatClient).streamChat(any(), org.mockito.ArgumentMatchers.anyBoolean(), any());

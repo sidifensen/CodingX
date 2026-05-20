@@ -1,4 +1,4 @@
-package com.codingx.chat.interfaces.controller;
+package com.codingx.admin.interfaces.controller;
 
 import com.codingx.chat.application.service.AdminChatSettingsService;
 import com.codingx.chat.domain.model.ChatRuntimeSetting;

@@ -1,4 +1,4 @@
-package com.codingx.tool.interfaces.controller;
+package com.codingx.admin.interfaces.controller;
 
 import com.codingx.tool.application.service.AdminChatToolService;
 import com.codingx.tool.application.service.AdminChatToolService.ToolHealthView;

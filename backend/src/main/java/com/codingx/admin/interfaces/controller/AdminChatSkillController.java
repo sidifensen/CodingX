@@ -1,4 +1,4 @@
-package com.codingx.skill.interfaces.controller;
+package com.codingx.admin.interfaces.controller;
 
 import com.codingx.skill.application.service.AdminChatSkillService;
 import com.codingx.skill.domain.model.ChatSkill;

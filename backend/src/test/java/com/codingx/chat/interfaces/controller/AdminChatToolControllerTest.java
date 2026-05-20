@@ -15,7 +15,7 @@ import com.codingx.tool.application.service.AdminChatToolService;
 import com.codingx.tool.application.service.AdminChatToolService.ToolHealthView;
 import com.codingx.tool.application.service.AdminChatToolService.ToolInvokeView;
 import com.codingx.tool.domain.model.ChatTool;
-import com.codingx.tool.interfaces.controller.AdminChatToolController;
+import com.codingx.admin.interfaces.controller.AdminChatToolController;
 import com.codingx.config.GlobalExceptionHandler;
 import java.util.List;
 import java.util.Map;

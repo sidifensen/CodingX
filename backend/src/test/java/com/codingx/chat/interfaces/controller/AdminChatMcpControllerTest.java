@@ -8,7 +8,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.codingx.mcp.application.service.AdminChatMcpService;
 import com.codingx.mcp.application.service.AdminChatMcpService.McpToolHealthView;
-import com.codingx.mcp.interfaces.controller.AdminChatMcpController;
+import com.codingx.admin.interfaces.controller.AdminChatMcpController;
 import com.codingx.config.GlobalExceptionHandler;
 import java.util.List;
 import org.junit.jupiter.api.Test;

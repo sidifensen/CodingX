@@ -1,4 +1,4 @@
-package com.codingx.auth.interfaces.controller;
+package com.codingx.admin.interfaces.controller;
 
 import com.codingx.auth.application.service.AdminUserManagementService;
 import com.codingx.auth.application.service.AdminUserPageView;

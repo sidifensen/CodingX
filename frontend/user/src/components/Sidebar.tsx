@@ -106,7 +106,7 @@ export default function Sidebar({
           else setActiveView(id);
           setIsMobileMenuOpen(false);
         }}
-        className={`flex w-full cursor-pointer items-center gap-3 px-4 py-3 transition-all duration-200 active:scale-95 ${
+        className={`flex w-full cursor-pointer items-center gap-3 px-4 py-2 transition-all duration-200 active:scale-95 ${
           isActive && !isNew
             ? 'rounded-full border border-border bg-surface-container-high text-foreground shadow-sm'
             : isNew
@@ -137,7 +137,7 @@ export default function Sidebar({
         }`}
       >
         {/* 顶部品牌区补充上内边距，避免在桌面端视觉上贴顶。 */}
-        <div className="mb-6 flex items-center justify-between px-6 pt-5">
+        <div className="mb-4 flex items-center justify-between px-6 pt-5">
           <div className="mb-1 flex items-center gap-3">
             <div className="flex h-8 w-8 items-center justify-center rounded bg-foreground">
               <SquareTerminal size={18} className="text-background" />
@@ -149,23 +149,20 @@ export default function Sidebar({
           <Search size={22} className="text-foreground md:hidden" />
         </div>
 
-        <div className="mb-4 px-5">
+        <div className="mb-2 px-5">
           <button
             onClick={() => {
               void onStartNewConversation();
               setIsMobileMenuOpen(false);
             }}
-            className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-2xl border border-border bg-background py-3.5 text-[15px] font-bold text-foreground shadow-sm transition-all hover:bg-surface-high active:scale-95"
+            className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-2xl border border-border bg-background py-2 text-[14px] font-bold text-foreground shadow-sm transition-all hover:bg-surface-high active:scale-95"
           >
-            <PlusCircle size={20} className="text-muted" />
+            <PlusCircle size={18} className="text-muted" />
             新建对话
           </button>
         </div>
 
-        <div className="mb-2 px-5 font-mono text-[10px] uppercase tracking-widest text-muted">
-          我的空间
-        </div>
-        <nav className="mb-6 space-y-1 px-3">
+        <nav className="mb-0 space-y-0.5 px-3">
           <NavItem id="mcp" label="MCP 管理" icon={PlugZap} />
           <NavItem id="skills" label="技能与套件" icon={Zap} />
           <NavItem id="experts" label="专家团队" icon={Brain} />
@@ -309,7 +306,7 @@ function ConversationHistory({
   return (
     <>
       {workspaceGroups.length ? (
-        <div className="space-y-4 px-3">
+        <div className="space-y-2 px-3">
           {workspaceGroups.map((group) => {
             const totalConversations = group.conversations.length;
             const visibleConversationCount = Math.min(
@@ -334,12 +331,12 @@ function ConversationHistory({
                     }
                     handleToggleGroupCollapse(group.partitionKey);
                   }}
-                  className="flex w-full cursor-pointer items-start justify-between gap-3 rounded-md py-0.5 text-left transition-colors hover:bg-surface-container active:bg-surface-container-high"
+                  className="flex min-h-10 w-full cursor-pointer items-center justify-between gap-3 rounded-md py-1.5 text-left transition-colors hover:bg-surface-container active:bg-surface-container-high"
                 >
                   <div className="min-w-0 flex flex-1 items-center gap-2">
                     <RuntimeIcon
                       size={14}
-                      className="shrink-0 text-muted"
+                      className="ml-1 shrink-0 text-muted"
                       data-testid={`workspace-runtime-icon-${group.runtimeTarget}`}
                       aria-hidden="true"
                     />
@@ -362,17 +359,17 @@ function ConversationHistory({
                   </div>
                 </button>
 
-                {/* 使用 grid-rows 过渡折叠高度，避免列表展开/收起时突兀跳变。 */}
+                {/* 使用 grid-rows 过渡折叠高度，避免列表展开/收起时突兀跳变，并保持分组头与首条会话的纵向间距更紧凑。 */}
                 <div
                   className={`grid transition-[grid-template-rows,opacity,margin-top] duration-250 ease-out ${
                     isGroupCollapsed
                       ? 'mt-0 grid-rows-[0fr] opacity-0 pointer-events-none'
-                      : 'mt-3 grid-rows-[1fr] opacity-100'
+                      : 'mt-1 grid-rows-[1fr] opacity-100'
                   }`}
                   aria-hidden={isGroupCollapsed}
                 >
                   <div className="min-h-0 overflow-hidden">
-                    <div className="space-y-[6px]">
+                    <div className="space-y-1">
                       {visibleConversations.length ? (
                         visibleConversations.map((conversation) => {
                           const isActive = conversation.id === activeConversationId;
@@ -385,7 +382,7 @@ function ConversationHistory({
                               onMouseLeave={() => setHoveredActionId(null)}
                             >
                               <div
-                                className={`group flex cursor-pointer items-center justify-between gap-3 rounded-xl border px-3.5 py-2.5 transition-[border-color,background-color,box-shadow] duration-200 ${
+                                className={`group flex cursor-pointer items-center justify-between gap-3 rounded-xl border px-3 py-1.5 transition-[border-color,background-color,box-shadow] duration-200 ${
                                   isActive
                                     ? 'border-border-selected bg-surface-selected shadow-sm'
                                     : 'border-transparent hover:border-border-active hover:bg-surface-container-high active:border-border-active active:bg-surface-container-high'
@@ -510,7 +507,6 @@ function ConversationHistory({
       ) : (
         <div className="px-5 text-sm text-muted">暂无工作空间</div>
       )}
-      {!conversations.length ? <div className="px-5 pt-4 text-sm text-muted">暂无真实会话</div> : null}
     </>
   );
 }

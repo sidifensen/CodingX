@@ -1,4 +1,5 @@
 package com.codingx.chat.interfaces.controller;
+import com.codingx.admin.interfaces.controller.AdminChatIntentController;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;

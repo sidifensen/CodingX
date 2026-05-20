@@ -1,4 +1,4 @@
-package com.codingx.chat.interfaces.controller;
+package com.codingx.admin.interfaces.controller;
 
 import com.codingx.chat.application.service.AdminChatConversationService;
 import com.codingx.chat.interfaces.response.AdminChatConversationDetailResponse;

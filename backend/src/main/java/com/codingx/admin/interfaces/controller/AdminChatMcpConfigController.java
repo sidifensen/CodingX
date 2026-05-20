@@ -1,4 +1,4 @@
-package com.codingx.mcp.interfaces.controller;
+package com.codingx.admin.interfaces.controller;
 
 import com.codingx.common.model.ApiResponse;
 import com.codingx.mcp.application.service.AdminChatMcpConfigService;

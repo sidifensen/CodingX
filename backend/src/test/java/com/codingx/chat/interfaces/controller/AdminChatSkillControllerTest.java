@@ -16,7 +16,7 @@ import com.codingx.chat.interfaces.response.PageResult;
 import com.codingx.config.GlobalExceptionHandler;
 import com.codingx.skill.application.service.AdminChatSkillService;
 import com.codingx.skill.domain.model.ChatSkill;
-import com.codingx.skill.interfaces.controller.AdminChatSkillController;
+import com.codingx.admin.interfaces.controller.AdminChatSkillController;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -260,8 +260,8 @@ class AdminChatSkillControllerTest {
     void migrateSkillPackagesReturnsSummary() throws Exception {
         when(adminChatSkillService.migrateUploadedSkillPackages())
             .thenReturn(new AdminChatSkillService.SkillPackageMigrationSummary(
+                3,
                 2,
-                1,
                 1,
                 List.of(new AdminChatSkillService.SkillPackageMigrationFailure(7101L, "legacy-skill", "测试失败"))
             ));
@@ -269,8 +269,8 @@ class AdminChatSkillControllerTest {
         mockMvc().perform(post("/api/admin/skills/migrate-packages"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.success").value(true))
-            .andExpect(jsonPath("$.data.total").value(2))
-            .andExpect(jsonPath("$.data.migrated").value(1))
+            .andExpect(jsonPath("$.data.total").value(3))
+            .andExpect(jsonPath("$.data.migrated").value(2))
             .andExpect(jsonPath("$.data.skipped").value(1))
             .andExpect(jsonPath("$.data.failures[0].skillCode").value("legacy-skill"));
     }

@@ -35,17 +35,18 @@ export default function ProfileMenu({
     setIsProfileOpen(false);
   };
 
+  // 进一步压缩左下角入口高度：去除按钮内边距，仅保留文本和图标的最小占位。
   return (
-    <div className="mt-auto px-4 pb-2 pt-4 relative w-full">
+    <div className="relative mt-auto w-full px-4 pb-2 pt-1">
       <button
         type="button"
         onClick={() => setIsProfileOpen((previousValue) => !previousValue)}
-        className="flex w-full items-center gap-3 text-muted px-4 py-3 hover:bg-surface hover:text-foreground transition-all duration-200 rounded-lg cursor-pointer text-left"
+        className="flex w-full cursor-pointer items-center gap-2 rounded-lg px-2 py-1 text-left text-muted transition-all duration-200 hover:bg-surface hover:text-foreground"
       >
-        <User size={20} />
+        <User size={16} />
         <div className="min-w-0">
-          <div className="text-sm truncate text-foreground">{displayName}</div>
-          <div className="text-xs text-muted">个人中心</div>
+          <div className="truncate text-sm leading-5 text-foreground">{displayName}</div>
+          <div className="text-xs leading-3.5 text-muted">个人中心</div>
         </div>
       </button>
 

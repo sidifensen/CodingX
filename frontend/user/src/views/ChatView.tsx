@@ -527,6 +527,10 @@ export default function ChatView({
     activeConversationId != null && !messages.length && !isBootstrapping;
   // 步骤：首页只保留欢迎内容和输入框，右侧执行回放仅在真实会话上下文中展示。
   const showWorkspacePanel = !showLandingState;
+  // 业务约束：底部运行环境/工作空间切换仅在新建对话页显示，历史会话页不再重复渲染。
+  const showRuntimeWorkspaceSwitcher = showLandingState;
+  // 业务约束：云端环境下不展示“云端工作空间”下拉，避免出现无意义的同名选项。
+  const showWorkspaceDropdownInSwitcher = showRuntimeWorkspaceSwitcher && activeRuntimeTarget === 'local';
   // 步骤：仅当步骤、来源或产物任一存在时，才认为右侧栏具备真实回放内容。
   const hasWorkspaceContent =
     executionSteps.length > 0 ||
@@ -719,7 +723,7 @@ export default function ChatView({
                       className={`min-w-0 max-w-3xl px-1 py-1 ${
                         isAssistant
                           ? 'text-foreground'
-                          : 'rounded-[20px] bg-foreground px-4 py-2 text-background'
+                          : 'rounded-[20px] bg-background px-4 py-2 text-foreground'
                       }`}
                     >
                       {isAssistant ? (
@@ -748,6 +752,7 @@ export default function ChatView({
                             messageId={message.id}
                             conversationId={message.conversationId}
                             content={messageContent}
+                            userVote={message.userVote}
                           />
                         </>
                       ) : (
@@ -1248,140 +1253,141 @@ export default function ChatView({
                 </div>
               </div>
             </form>
-            <div
-              ref={runtimeWorkspaceLayerRef}
-              data-testid="chat-runtime-workspace-switcher"
-              // 空间切换条在新建态与会话态均保持可见，保证用户可随时切换对话空间。
-              className="mt-3 flex items-center gap-3 px-1 text-sm text-foreground"
-            >
-              <div className="relative">
-                <button
-                  type="button"
-                  aria-label="打开运行环境列表"
-                  aria-expanded={activeRuntimeWorkspaceMenu === 'runtime'}
-                  onClick={() =>
-                    setActiveRuntimeWorkspaceMenu((current) => (current === 'runtime' ? null : 'runtime'))
-                  }
-                  className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-sm transition-colors hover:bg-surface-container"
-                >
-                  <ActiveRuntimeIcon
-                    size={14}
-                    data-testid={`runtime-active-icon-${activeRuntimeTarget}`}
-                    className="shrink-0 text-muted"
-                  />
-                  <span>{runtimeDisplayLabel}</span>
-                  <ChevronDown
-                    size={14}
-                    className={`transition-transform ${
-                      activeRuntimeWorkspaceMenu === 'runtime' ? 'rotate-180' : ''
-                    }`}
-                  />
-                </button>
-                {activeRuntimeWorkspaceMenu === 'runtime' ? (
-                  <div className="absolute bottom-[calc(100%+8px)] left-0 z-40 w-[170px] rounded-xl border border-border bg-surface p-1.5 shadow-[0_18px_44px_rgba(0,0,0,0.25)]">
-                    {runtimeTargets.map((runtimeTarget) => {
-                      const isActiveRuntime = runtimeTarget === activeRuntimeTarget;
-                      const runtimeLabel = runtimeTarget === 'local' ? '本地' : '云端';
-                      const RuntimeOptionIcon = runtimeTarget === 'local' ? Monitor : Cloud;
-                      return (
-                        <button
-                          key={runtimeTarget}
-                          type="button"
-                          aria-label={`切换运行环境 ${runtimeLabel}`}
-                          onClick={() => {
-                            void setActiveRuntimeTarget(runtimeTarget);
-                            setActiveRuntimeWorkspaceMenu(null);
-                          }}
-                          className={`mb-1 flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm transition-colors last:mb-0 ${
-                            isActiveRuntime
-                              ? 'bg-surface-container text-foreground'
-                              : 'text-muted hover:bg-surface-container hover:text-foreground'
-                          }`}
-                        >
-                          <span className="inline-flex items-center gap-1.5">
-                            <RuntimeOptionIcon
-                              size={14}
-                              data-testid={`runtime-option-icon-${runtimeTarget}`}
-                              className={isActiveRuntime ? 'text-foreground' : 'text-muted'}
-                            />
-                            {runtimeLabel}
-                          </span>
-                          {isActiveRuntime ? <CheckCircle2 size={14} className="text-foreground" /> : null}
-                        </button>
-                      );
-                    })}
-                  </div>
-                ) : null}
-              </div>
-              <div className="relative min-w-0">
-                <button
-                  type="button"
-                  aria-label="打开工作空间列表"
-                  aria-expanded={activeRuntimeWorkspaceMenu === 'workspace'}
-                  onClick={() =>
-                    setActiveRuntimeWorkspaceMenu((current) => (current === 'workspace' ? null : 'workspace'))
-                  }
-                  className="inline-flex max-w-[320px] items-center gap-1.5 rounded-lg px-2 py-1 text-sm transition-colors hover:bg-surface-container"
-                >
-                  <FolderOpen size={14} className="shrink-0 text-muted" />
-                  <span className="truncate">{workspaceLabel}</span>
-                  <ChevronDown
-                    size={14}
-                    className={`shrink-0 transition-transform ${
-                      activeRuntimeWorkspaceMenu === 'workspace' ? 'rotate-180' : ''
-                    }`}
-                  />
-                </button>
-                {activeRuntimeWorkspaceMenu === 'workspace' ? (
-                  <div className="absolute bottom-[calc(100%+8px)] left-0 z-40 w-[260px] rounded-xl border border-border bg-surface p-1.5 shadow-[0_18px_44px_rgba(0,0,0,0.25)]">
-                    <div className="max-h-60 overflow-y-auto">
-                      {workspaceSwitcherOptions.map((group) => {
-                        const isActiveWorkspace = group.partitionKey === activeWorkspacePartitionKey;
-                        const optionLabel =
-                          group.runtimeTarget === 'local' ? group.workspaceLabel : '云端工作空间';
+            {showRuntimeWorkspaceSwitcher ? (
+              <div
+                ref={runtimeWorkspaceLayerRef}
+                data-testid="chat-runtime-workspace-switcher"
+                // 业务意图：仅在新建对话页保留环境切换入口，避免历史会话页底部信息噪声。
+                className="mt-3 flex items-center gap-3 px-1 text-sm text-foreground"
+              >
+                <div className="relative">
+                  <button
+                    type="button"
+                    aria-label="打开运行环境列表"
+                    aria-expanded={activeRuntimeWorkspaceMenu === 'runtime'}
+                    onClick={() =>
+                      setActiveRuntimeWorkspaceMenu((current) => (current === 'runtime' ? null : 'runtime'))
+                    }
+                    className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-sm transition-colors hover:bg-surface-container"
+                  >
+                    <ActiveRuntimeIcon
+                      size={14}
+                      data-testid={`runtime-active-icon-${activeRuntimeTarget}`}
+                      className="shrink-0 text-muted"
+                    />
+                    <span>{runtimeDisplayLabel}</span>
+                    <ChevronDown
+                      size={14}
+                      className={`transition-transform ${
+                        activeRuntimeWorkspaceMenu === 'runtime' ? 'rotate-180' : ''
+                      }`}
+                    />
+                  </button>
+                  {activeRuntimeWorkspaceMenu === 'runtime' ? (
+                    <div className="absolute bottom-[calc(100%+8px)] left-0 z-40 w-[170px] rounded-xl border border-border bg-surface p-1.5 shadow-[0_18px_44px_rgba(0,0,0,0.25)]">
+                      {runtimeTargets.map((runtimeTarget) => {
+                        const isActiveRuntime = runtimeTarget === activeRuntimeTarget;
+                        const runtimeLabel = runtimeTarget === 'local' ? '本地' : '云端';
+                        const RuntimeOptionIcon = runtimeTarget === 'local' ? Monitor : Cloud;
                         return (
                           <button
-                            key={group.partitionKey}
+                            key={runtimeTarget}
                             type="button"
-                            aria-label={`切换工作空间 ${optionLabel}`}
+                            aria-label={`切换运行环境 ${runtimeLabel}`}
                             onClick={() => {
-                              if (group.runtimeTarget === 'local') {
-                                void setActiveWorkspacePath(group.workspacePath ?? null);
-                              } else {
-                                void setActiveRuntimeTarget('cloud');
-                              }
+                              void setActiveRuntimeTarget(runtimeTarget);
                               setActiveRuntimeWorkspaceMenu(null);
                             }}
                             className={`mb-1 flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm transition-colors last:mb-0 ${
-                              isActiveWorkspace
+                              isActiveRuntime
                                 ? 'bg-surface-container text-foreground'
                                 : 'text-muted hover:bg-surface-container hover:text-foreground'
                             }`}
                           >
-                            <span className="truncate">{optionLabel}</span>
-                            {isActiveWorkspace ? <CheckCircle2 size={14} className="text-foreground" /> : null}
+                            <span className="inline-flex items-center gap-1.5">
+                              <RuntimeOptionIcon
+                                size={14}
+                                data-testid={`runtime-option-icon-${runtimeTarget}`}
+                                className={isActiveRuntime ? 'text-foreground' : 'text-muted'}
+                              />
+                              {runtimeLabel}
+                            </span>
+                            {isActiveRuntime ? <CheckCircle2 size={14} className="text-foreground" /> : null}
                           </button>
                         );
                       })}
                     </div>
-                    {activeRuntimeTarget === 'local' ? (
-                      <button
-                        type="button"
-                        aria-label="选择新的本地工作空间"
-                        onClick={() => {
-                          void pickRepositoryDirectory();
-                          setActiveRuntimeWorkspaceMenu(null);
-                        }}
-                        className="mt-1.5 flex w-full items-center justify-center gap-1.5 rounded-lg border border-border px-2 py-2 text-xs text-muted transition-colors hover:text-foreground"
-                      >
-                        <FolderOpen size={13} />
-                        选择新的本地目录
-                      </button>
+                  ) : null}
+                </div>
+                {showWorkspaceDropdownInSwitcher ? (
+                  <div className="relative min-w-0">
+                    <button
+                      type="button"
+                      aria-label="打开工作空间列表"
+                      aria-expanded={activeRuntimeWorkspaceMenu === 'workspace'}
+                      onClick={() =>
+                        setActiveRuntimeWorkspaceMenu((current) =>
+                          current === 'workspace' ? null : 'workspace',
+                        )
+                      }
+                      className="inline-flex max-w-[320px] items-center gap-1.5 rounded-lg px-2 py-1 text-sm transition-colors hover:bg-surface-container"
+                    >
+                      <FolderOpen size={14} className="shrink-0 text-muted" />
+                      <span className="truncate">{workspaceLabel}</span>
+                      <ChevronDown
+                        size={14}
+                        className={`shrink-0 transition-transform ${
+                          activeRuntimeWorkspaceMenu === 'workspace' ? 'rotate-180' : ''
+                        }`}
+                      />
+                    </button>
+                    {activeRuntimeWorkspaceMenu === 'workspace' ? (
+                      <div className="absolute bottom-[calc(100%+8px)] left-0 z-40 w-[260px] rounded-xl border border-border bg-surface p-1.5 shadow-[0_18px_44px_rgba(0,0,0,0.25)]">
+                        <div className="max-h-60 overflow-y-auto">
+                          {workspaceSwitcherOptions.map((group) => {
+                            const isActiveWorkspace = group.partitionKey === activeWorkspacePartitionKey;
+                            const optionLabel = group.workspaceLabel;
+                            return (
+                              <button
+                                key={group.partitionKey}
+                                type="button"
+                                aria-label={`切换工作空间 ${optionLabel}`}
+                                onClick={() => {
+                                  void setActiveWorkspacePath(group.workspacePath ?? null);
+                                  setActiveRuntimeWorkspaceMenu(null);
+                                }}
+                                className={`mb-1 flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm transition-colors last:mb-0 ${
+                                  isActiveWorkspace
+                                    ? 'bg-surface-container text-foreground'
+                                    : 'text-muted hover:bg-surface-container hover:text-foreground'
+                                }`}
+                              >
+                                <span className="truncate">{optionLabel}</span>
+                                {isActiveWorkspace ? (
+                                  <CheckCircle2 size={14} className="text-foreground" />
+                                ) : null}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <button
+                          type="button"
+                          aria-label="选择新的本地工作空间"
+                          onClick={() => {
+                            void pickRepositoryDirectory();
+                            setActiveRuntimeWorkspaceMenu(null);
+                          }}
+                          className="mt-1.5 flex w-full items-center justify-center gap-1.5 rounded-lg border border-border px-2 py-2 text-xs text-muted transition-colors hover:text-foreground"
+                        >
+                          <FolderOpen size={13} />
+                          选择新的本地目录
+                        </button>
+                      </div>
                     ) : null}
                   </div>
                 ) : null}
               </div>
-            </div>
+            ) : null}
           </div>
         </div>
       </section>
@@ -1837,14 +1843,19 @@ function AssistantMessageActions({
   messageId,
   conversationId,
   content,
+  userVote,
 }: {
   messageId: string;
   conversationId: string;
   content: string;
+  userVote?: number | null;
 }) {
   const [isMenuOpen, setIsMenuOpen] = React.useState(false);
   const [copiedMode, setCopiedMode] = React.useState<CopyMode | null>(null);
-  const [reaction, setReaction] = React.useState<MessageReaction>(null);
+  // 业务约束：初始化时从 userVote 恢复已投票状态，保证刷新后仍显示之前的投票结果。
+  const [reaction, setReaction] = React.useState<MessageReaction>(
+    userVote === 1 ? 'up' : userVote === -1 ? 'down' : null,
+  );
   const [reactionError, setReactionError] = React.useState('');
   const menuContainerRef = React.useRef<HTMLDivElement | null>(null);
 

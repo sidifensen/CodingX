@@ -1191,7 +1191,18 @@ describe('ChatView', () => {
    */
   it('应在输入框下方渲染环境与工作空间切换行并移除旧状态栏', async () => {
     render(
-      <ChatView isAuthenticated={true} onRequireLogin={vi.fn()} workspace={createWorkspace()} />,
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          activeConversationId: null,
+          messages: [],
+          executionSteps: [],
+          references: [],
+          artifacts: [],
+          inputValue: '',
+        })}
+      />,
     );
 
     const switcher = screen.getByTestId('chat-runtime-workspace-switcher');
@@ -1210,7 +1221,18 @@ describe('ChatView', () => {
    */
   it('应为运行环境按钮及选项渲染云端和本地图标', async () => {
     render(
-      <ChatView isAuthenticated={true} onRequireLogin={vi.fn()} workspace={createWorkspace()} />,
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          activeConversationId: null,
+          messages: [],
+          executionSteps: [],
+          references: [],
+          artifacts: [],
+          inputValue: '',
+        })}
+      />,
     );
 
     fireEvent.click(screen.getByRole('button', { name: '打开运行环境列表' }));
@@ -1230,6 +1252,12 @@ describe('ChatView', () => {
         onRequireLogin={vi.fn()}
         workspace={createWorkspace({
           activeRuntimeTarget: 'local',
+          activeConversationId: null,
+          messages: [],
+          executionSteps: [],
+          references: [],
+          artifacts: [],
+          inputValue: '',
           setActiveRuntimeTarget,
         })}
       />,
@@ -1251,6 +1279,12 @@ describe('ChatView', () => {
         isAuthenticated={true}
         onRequireLogin={vi.fn()}
         workspace={createWorkspace({
+          activeConversationId: null,
+          messages: [],
+          executionSteps: [],
+          references: [],
+          artifacts: [],
+          inputValue: '',
           setActiveWorkspacePath,
           workspaceGroups: [
             {
@@ -1289,6 +1323,47 @@ describe('ChatView', () => {
     fireEvent.click(screen.getByRole('button', { name: '切换工作空间 DesignSystem' }));
 
     expect(setActiveWorkspacePath).toHaveBeenCalledWith('D:/code/DesignSystem');
+  });
+
+  /**
+   * 历史会话页不应展示底部环境/工作空间切换，避免与会话上下文重复。
+   */
+  it('应在历史会话页隐藏底部环境与工作空间切换', async () => {
+    render(
+      <ChatView isAuthenticated={true} onRequireLogin={vi.fn()} workspace={createWorkspace()} />,
+    );
+
+    expect(screen.queryByTestId('chat-runtime-workspace-switcher')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '打开运行环境列表' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '打开工作空间列表' })).not.toBeInTheDocument();
+  });
+
+  /**
+   * 新对话页切到云端运行环境时，不应再展示“云端工作空间”下拉入口。
+   */
+  it('应在云端环境隐藏工作空间下拉入口', async () => {
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          activeRuntimeTarget: 'cloud',
+          activeConversationId: null,
+          messages: [],
+          executionSteps: [],
+          references: [],
+          artifacts: [],
+          inputValue: '',
+          workspaceLabel: '云端工作空间',
+          activeWorkspacePartitionKey: 'cloud::__no_workspace__',
+          workspacePath: null,
+        })}
+      />,
+    );
+
+    expect(screen.getByTestId('chat-runtime-workspace-switcher')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '打开运行环境列表' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '打开工作空间列表' })).not.toBeInTheDocument();
   });
 
   /**

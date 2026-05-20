@@ -43,7 +43,7 @@ class ChatConversationRepositoryImplTest {
      */
     @Test
     void saveMapsLastMessageAtAndLastRunId() throws Exception {
-        ChatConversation conversation = ChatConversation.create(1L, "Runtime", 1001L, ChatConversationStatus.ACTIVE);
+        ChatConversation conversation = ChatConversation.create(1L, "Runtime", 1001L, 3001L, ChatConversationStatus.ACTIVE);
         LocalDateTime lastMessageAt = LocalDateTime.of(2026, 5, 14, 20, 15, 30);
         setField(conversation, "lastMessageAt", lastMessageAt);
         setField(conversation, "lastRunId", 9001L);
@@ -54,6 +54,7 @@ class ChatConversationRepositoryImplTest {
         ArgumentCaptor<ChatConversationDO> captor = ArgumentCaptor.forClass(ChatConversationDO.class);
         verify(chatConversationMapper).insert(captor.capture());
         assertEquals(lastMessageAt, captor.getValue().getLastMessageAt());
+        assertEquals(3001L, captor.getValue().getWorkspaceId());
         assertEquals(9001L, readField(captor.getValue(), "lastRunId"));
     }
 
@@ -68,6 +69,7 @@ class ChatConversationRepositoryImplTest {
         dataObject.setId(1L);
         dataObject.setTitle("Runtime");
         dataObject.setCreatedBy(1001L);
+        dataObject.setWorkspaceId(3002L);
         dataObject.setStatus(ChatConversationStatus.ACTIVE.name());
         dataObject.setDeleted(0);
         dataObject.setLastMessageAt(lastMessageAt);
@@ -79,6 +81,7 @@ class ChatConversationRepositoryImplTest {
         ChatConversation conversation = chatConversationRepository.requireById(1L);
 
         assertEquals(lastMessageAt, readField(conversation, "lastMessageAt"));
+        assertEquals(3002L, conversation.getWorkspaceId());
         assertEquals(9002L, readField(conversation, "lastRunId"));
         assertEquals(LocalDateTime.of(2026, 5, 14, 21, 0, 0), readField(conversation, "createdAt"));
         assertEquals(LocalDateTime.of(2026, 5, 14, 21, 5, 0), readField(conversation, "updatedAt"));
@@ -105,6 +108,26 @@ class ChatConversationRepositoryImplTest {
         assertEquals("报销会话", records.getFirst().getTitle());
         assertEquals(LocalDateTime.of(2026, 5, 18, 9, 0, 0), readField(records.getFirst(), "createdAt"));
         assertEquals(LocalDateTime.of(2026, 5, 18, 9, 5, 0), readField(records.getFirst(), "updatedAt"));
+    }
+
+    /**
+     * 用户会话列表查询应附带 workspaceId 过滤条件，避免跨工作空间串会话。
+     */
+    @Test
+    void findByCreatedByAndWorkspaceIdFiltersByWorkspace() {
+        ChatConversationDO dataObject = new ChatConversationDO();
+        dataObject.setId(3L);
+        dataObject.setTitle("空间会话");
+        dataObject.setCreatedBy(1002L);
+        dataObject.setWorkspaceId(3001L);
+        dataObject.setStatus(ChatConversationStatus.ACTIVE.name());
+        dataObject.setDeleted(0);
+        when(chatConversationMapper.selectList(any())).thenReturn(List.of(dataObject));
+
+        List<ChatConversation> records = chatConversationRepository.findByCreatedByAndWorkspaceId(1002L, 3001L);
+
+        assertEquals(1, records.size());
+        assertEquals(3001L, records.getFirst().getWorkspaceId());
     }
 
     /**

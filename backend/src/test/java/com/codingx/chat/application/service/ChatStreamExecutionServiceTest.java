@@ -11,6 +11,7 @@ import static org.mockito.Mockito.when;
 import com.codingx.chat.application.command.SendChatMessageCommand;
 import com.codingx.chat.domain.model.ChatExecutionRun;
 import com.codingx.chat.domain.model.ChatTraceRun;
+import com.codingx.chat.domain.repository.ChatConversationRepository;
 import com.codingx.chat.domain.repository.ChatExecutionRunRepository;
 import com.codingx.mcp.domain.repository.ChatMcpRepository;
 import com.codingx.skill.domain.repository.ChatSkillRepository;
@@ -71,6 +72,9 @@ class ChatStreamExecutionServiceTest {
     @Mock
     private ChatWorkspaceBindingService chatWorkspaceBindingService;
 
+    @Mock
+    private ChatConversationRepository chatConversationRepository;
+
     /**
      * 释放测试线程池，避免用例之间残留后台线程。
      */
@@ -94,6 +98,7 @@ class ChatStreamExecutionServiceTest {
             chatExecutionRunRepository,
             chatMcpRepository,
             chatSkillRepository,
+            chatConversationRepository,
             chatWorkspaceBindingService,
             executorService
         );
@@ -134,6 +139,7 @@ class ChatStreamExecutionServiceTest {
             chatExecutionRunRepository,
             chatMcpRepository,
             chatSkillRepository,
+            chatConversationRepository,
             chatWorkspaceBindingService,
             executorService
         );
@@ -171,6 +177,7 @@ class ChatStreamExecutionServiceTest {
             chatExecutionRunRepository,
             chatMcpRepository,
             chatSkillRepository,
+            chatConversationRepository,
             chatWorkspaceBindingService,
             executorService
         );
@@ -207,6 +214,7 @@ class ChatStreamExecutionServiceTest {
             chatExecutionRunRepository,
             chatMcpRepository,
             chatSkillRepository,
+            chatConversationRepository,
             chatWorkspaceBindingService,
             executorService
         );
@@ -242,6 +250,7 @@ class ChatStreamExecutionServiceTest {
             chatExecutionRunRepository,
             chatMcpRepository,
             chatSkillRepository,
+            chatConversationRepository,
             chatWorkspaceBindingService,
             executorService
         );
@@ -283,6 +292,7 @@ class ChatStreamExecutionServiceTest {
             chatExecutionRunRepository,
             chatMcpRepository,
             chatSkillRepository,
+            chatConversationRepository,
             chatWorkspaceBindingService,
             executorService
         );

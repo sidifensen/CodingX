@@ -9,9 +9,13 @@ let mainWindow: BrowserWindow | null = null;
 
 const hostState: {
   boundRepositoryPath: string | null;
+  workspaceId: string | null;
+  workspaceName: string | null;
   permissionGranted: boolean;
 } = {
   boundRepositoryPath: null,
+  workspaceId: null,
+  workspaceName: null,
   permissionGranted: false,
 };
 
@@ -61,6 +65,8 @@ function buildHostContext(): HostContext {
     },
     localResource: {
       boundRepositoryPath: hostState.boundRepositoryPath,
+      workspaceId: hostState.workspaceId,
+      workspaceName: hostState.workspaceName,
       permissionGranted: hostState.permissionGranted,
     },
   };
@@ -237,8 +243,10 @@ function registerIpcHandlers() {
     return granted;
   });
 
-  ipcMain.handle('host:bind-repository-path', async (_event, targetPath: string) => {
+  ipcMain.handle('host:bind-repository-path', async (_event, targetPath: string, workspaceContext?: { workspaceId?: string; workspaceName?: string }) => {
     hostState.boundRepositoryPath = targetPath;
+    hostState.workspaceId = workspaceContext?.workspaceId ?? null;
+    hostState.workspaceName = workspaceContext?.workspaceName ?? null;
     return buildHostContext();
   });
 

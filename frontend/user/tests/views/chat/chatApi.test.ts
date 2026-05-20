@@ -44,6 +44,31 @@ describe('ChatApi', () => {
     expect(result[0].title).toBe('Default Demo Conversation');
   });
 
+  it('应在会话列表请求中携带 workspaceId', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          success: true,
+          code: 'OK',
+          message: 'success',
+          data: [],
+        }),
+        { status: 200 },
+      ),
+    );
+
+    await ChatApi.listConversations('token-123', '3001');
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      '/api/chat/conversations?workspaceId=3001',
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          satoken: 'token-123',
+        }),
+      }),
+    );
+  });
+
   /**
    * 大整数会话标识必须按字符串原样传递，避免前端 Number 精度丢失导致查不到会话。
    */

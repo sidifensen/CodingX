@@ -16,6 +16,8 @@ export interface HostContext {
   };
   localResource?: {
     boundRepositoryPath: string | null;
+    workspaceId?: string | null;
+    workspaceName?: string | null;
     permissionGranted: boolean;
   };
 }
@@ -65,7 +67,10 @@ export interface CodingxHostBridge {
   invokeDesktopMenuAction: (action: DesktopMenuAction) => Promise<void>;
   onWindowStateChanged: (listener: (state: HostWindowState) => void) => (() => void);
   pickRepositoryDirectory: () => Promise<string | null>;
-  bindRepositoryPath: (path: string) => Promise<HostContext>;
+  bindRepositoryPath: (
+    path: string,
+    workspaceContext?: { workspaceId?: string; workspaceName?: string }
+  ) => Promise<HostContext>;
   requestFileAccess: (path: string) => Promise<boolean>;
   listDirectory: (path: string) => Promise<LocalDirectoryEntry[]>;
 }

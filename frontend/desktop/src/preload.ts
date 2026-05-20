@@ -24,7 +24,10 @@ contextBridge.exposeInMainWorld('codingxHost', {
     };
   },
   pickRepositoryDirectory: (): Promise<string | null> => ipcRenderer.invoke('host:pick-repository-directory'),
-  bindRepositoryPath: (path: string): Promise<HostContext> => ipcRenderer.invoke('host:bind-repository-path', path),
+  bindRepositoryPath: (
+    path: string,
+    workspaceContext?: { workspaceId?: string; workspaceName?: string }
+  ): Promise<HostContext> => ipcRenderer.invoke('host:bind-repository-path', path, workspaceContext),
   requestFileAccess: (path: string): Promise<boolean> => ipcRenderer.invoke('host:request-file-access', path),
   listDirectory: (path: string): Promise<LocalDirectoryEntry[]> => ipcRenderer.invoke('host:list-directory', path),
 });

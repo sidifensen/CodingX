@@ -83,6 +83,7 @@ export function useChatWorkspace(
     null,
   );
   const [workspacePath, setWorkspacePath] = useState<string | null>(null);
+  const [workspaceId, setWorkspaceId] = useState<string | null>(null);
   const [workspaceLabel, setWorkspaceLabel] = useState(
     getDefaultWorkspaceLabel(activeRuntimeTarget),
   );
@@ -186,9 +187,12 @@ export function useChatWorkspace(
     // 业务约束：云端环境不绑定本地目录，避免与本地工作空间混淆。
     const nextWorkspacePath =
       activeRuntimeTarget === 'local' ? hostContext?.localResource?.boundRepositoryPath ?? null : null;
+    const nextWorkspaceId =
+      activeRuntimeTarget === 'local' ? hostContext?.localResource?.workspaceId ?? null : null;
     const nextPartitionKey = buildWorkspacePartitionKey(activeRuntimeTarget, nextWorkspacePath);
     const nextSnapshot = readWorkspaceSnapshot(nextPartitionKey);
     setWorkspacePath(nextWorkspacePath);
+    setWorkspaceId(nextWorkspaceId);
     setWorkspaceLabel(
       nextWorkspacePath
         ? getWorkspaceLabel(nextWorkspacePath)
@@ -294,18 +298,22 @@ export function useChatWorkspace(
     shouldBindDesktopPath: boolean,
   ) => {
     const normalizedWorkspacePath = nextWorkspacePath ? nextWorkspacePath.trim() : null;
+    let normalizedWorkspaceId =
+      runtimeTarget === 'local' ? hostContext?.localResource?.workspaceId ?? null : null;
     if (
       shouldBindDesktopPath &&
       normalizedWorkspacePath &&
       hostContext?.hostType === 'desktop'
     ) {
       await bindWorkspacePath(normalizedWorkspacePath);
+      normalizedWorkspaceId = null;
     }
     const nextPartitionKey = buildWorkspacePartitionKey(runtimeTarget, normalizedWorkspacePath);
     activeStreamSessionIdRef.current = null;
     const nextSnapshot = readWorkspaceSnapshot(nextPartitionKey);
     setActiveRuntimeTargetState(runtimeTarget);
     setWorkspacePath(normalizedWorkspacePath);
+    setWorkspaceId(normalizedWorkspaceId);
     setWorkspaceLabel(
       normalizedWorkspacePath
         ? getWorkspaceLabel(normalizedWorkspacePath)
@@ -341,6 +349,11 @@ export function useChatWorkspace(
       return;
     }
     await switchWorkspacePartition('local', nextWorkspacePath, true);
+    setWorkspaceId(null);
+    const token = currentToken();
+    if (token) {
+      await loadConversations(token);
+    }
   };
 
   /**
@@ -384,6 +397,11 @@ export function useChatWorkspace(
       return;
     }
     await switchWorkspacePartition('local', selectedPath, false);
+    setWorkspaceId(null);
+    const token = currentToken();
+    if (token) {
+      await loadConversations(token);
+    }
   };
 
   /**
@@ -450,6 +468,10 @@ export function useChatWorkspace(
       return;
     }
     setStreamError('');
+    if (activeRuntimeTarget === 'local' && !workspaceId) {
+      setStreamError('请选择本地工作空间后再发送消息');
+      return;
+    }
     let uploadedAttachments: ChatAttachmentItem[] = [];
     try {
       uploadedAttachments = await uploadPendingAttachments(token, activeConversationId);
@@ -508,6 +530,7 @@ export function useChatWorkspace(
         buildStreamRequestUrl(
           question,
           activeConversationId,
+          workspaceId,
           deepThinkingEnabled,
           mcpConnected,
           selectedMcpCodes,
@@ -1005,7 +1028,7 @@ export function useChatWorkspace(
    * @returns 最新会话列表。
    */
   async function loadConversations(token: string) {
-    const remoteConversations = await ChatApi.listConversations(token);
+    const remoteConversations = await ChatApi.listConversations(token, workspaceId);
     const fallbackWorkspacePath = workspacePath ?? null;
     const nextWorkspaceConversations = resolveWorkspaceConversations(
       activeRuntimeTarget,
@@ -1284,6 +1307,7 @@ export function useChatWorkspace(
 export function buildStreamRequestUrl(
   question: string,
   conversationId: string | null,
+  workspaceId: string | null,
   deepThinkingEnabled: boolean,
   mcpConnected: boolean,
   selectedMcpCodes: string[],
@@ -1297,6 +1321,9 @@ export function buildStreamRequestUrl(
   });
   if (conversationId != null) {
     searchParams.set('conversationId', String(conversationId));
+  }
+  if (workspaceId != null && workspaceId.trim().length > 0) {
+    searchParams.set('workspaceId', workspaceId);
   }
   if (deepThinkingEnabled) {
     searchParams.set('deepThinking', 'true');

@@ -743,6 +743,7 @@ describe('useChatWorkspace', () => {
     const requestUrl = buildStreamRequestUrl(
       '@sales_query 请分析订单趋势',
       '2001',
+      '3001',
       false,
       true,
       ['sales_query'],
@@ -753,6 +754,7 @@ describe('useChatWorkspace', () => {
     const searchParams = new URLSearchParams(requestUrl.split('?')[1] ?? '');
 
     expect(searchParams.get('question')).toBe('请分析订单趋势');
+    expect(searchParams.get('workspaceId')).toBe('3001');
     expect(searchParams.get('skillCodes')).toBe('sales_query');
     expect(searchParams.get('attachmentIds')).toBe('9001,9002');
     const messagePayload = JSON.parse(searchParams.get('messages') ?? '[]');
@@ -786,6 +788,7 @@ describe('useChatWorkspace', () => {
     const requestUrl = buildStreamRequestUrl(
       '@agent-browser @ticket_query 请总结今天的工单趋势',
       '2001',
+      '3001',
       false,
       false,
       [],
@@ -793,6 +796,7 @@ describe('useChatWorkspace', () => {
     );
     const searchParams = new URLSearchParams(requestUrl.split('?')[1] ?? '');
     expect(searchParams.get('question')).toBe('请总结今天的工单趋势');
+    expect(searchParams.get('workspaceId')).toBe('3001');
     expect(searchParams.get('skillCodes')).toBe('sales_query,ticket_query');
     const messagePayload = JSON.parse(searchParams.get('messages') ?? '[]');
     expect(messagePayload).toEqual([

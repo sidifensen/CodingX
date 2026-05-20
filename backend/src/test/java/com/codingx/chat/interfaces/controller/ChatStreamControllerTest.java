@@ -135,7 +135,7 @@ class ChatStreamControllerTest {
             SseEmitter actual = chatStreamController.streamChat("新的问题", null, null);
 
             assertNotNull(actual);
-            verify(chatConversationApplicationService).createConversation(new CreateConversationCommand(null), 1001L);
+            verify(chatConversationApplicationService).createConversation(new CreateConversationCommand(null, null), 1001L);
             verify(chatSseRegistry).register(2001L);
             verify(chatSseRegistry).publish(
                 eq(2001L),
@@ -217,6 +217,7 @@ class ChatStreamControllerTest {
             SseEmitter actual = chatStreamController.streamChat(
                 "@agent-browser 请分析",
                 3501L,
+                null,
                 false,
                 "sales_query",
                 "ticket_query,sales_query",
@@ -385,6 +386,7 @@ class ChatStreamControllerTest {
             SseEmitter actual = chatStreamController.streamChat(
                 "请结合图片分析",
                 7001L,
+                null,
                 false,
                 null,
                 null,

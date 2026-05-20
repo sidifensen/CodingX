@@ -8,6 +8,7 @@ import com.codingx.chat.domain.model.ChatMessage;
 import com.codingx.chat.domain.repository.ChatConversationRepository;
 import com.codingx.chat.domain.repository.ChatMessageRepository;
 import com.codingx.common.exception.ForbiddenException;
+import com.codingx.workspace.domain.repository.WorkspaceRepository;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -28,6 +29,10 @@ public class ChatConversationApplicationService {
      * ChatMessageRepository 依赖。
      */
     private final ChatMessageRepository chatMessageRepository;
+    /**
+     * WorkspaceRepository 依赖。
+     */
+    private final WorkspaceRepository workspaceRepository;
 
     /**
      * 创建 createConversation 所需数据并返回结果。
@@ -36,11 +41,15 @@ public class ChatConversationApplicationService {
      * @return 输入参数。
      */
     public ChatConversation createConversation(CreateConversationCommand command, Long userId) {
+        if (command.workspaceId() != null) {
+            workspaceRepository.ensureExists(command.workspaceId());
+        }
         String title = StrUtil.blankToDefault(command.title(), "New Conversation");
         ChatConversation conversation = ChatConversation.create(
             IdUtil.getSnowflakeNextId(),
             title,
             userId,
+            command.workspaceId(),
             ChatConversationStatus.ACTIVE
         );
         chatConversationRepository.save(conversation);
@@ -52,8 +61,11 @@ public class ChatConversationApplicationService {
      * @param userId 输入参数。
      * @return 输入参数。
      */
-    public List<ChatConversation> listConversations(Long userId) {
-        return chatConversationRepository.findByCreatedBy(userId);
+    public List<ChatConversation> listConversations(Long userId, Long workspaceId) {
+        if (workspaceId != null) {
+            workspaceRepository.ensureExists(workspaceId);
+        }
+        return chatConversationRepository.findByCreatedByAndWorkspaceId(userId, workspaceId);
     }
 
     /**

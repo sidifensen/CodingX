@@ -7,6 +7,7 @@ import jakarta.validation.constraints.NotBlank;
  * @param repositoryPath 本地仓库绝对路径。
  */
 public record BindRepositoryPathRequest(
-    @NotBlank(message = "repositoryPath 不能为空") String repositoryPath
+    @NotBlank(message = "repositoryPath 不能为空") String repositoryPath,
+    Long workspaceId
 ) {
 }

@@ -45,6 +45,34 @@ describe('ChatApi', () => {
   });
 
   /**
+   * 会话列表应在本地工作空间场景携带 workspaceId 参数。
+   */
+  it('应在会话列表请求中携带 workspaceId', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          success: true,
+          code: 'OK',
+          message: 'success',
+          data: [],
+        }),
+        { status: 200 },
+      ),
+    );
+
+    await ChatApi.listConversations('token-123', '3001');
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      '/api/chat/conversations?workspaceId=3001',
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          satoken: 'token-123',
+        }),
+      }),
+    );
+  });
+
+  /**
    * 大整数会话标识必须按字符串原样传递，避免前端 Number 精度丢失导致查不到会话。
    */
   it('应原样使用字符串会话标识加载消息', async () => {
@@ -284,6 +312,8 @@ describe('ChatApi', () => {
           message: 'workspace bound',
           data: {
             repositoryPath: 'D:/code/codingx',
+            workspaceId: '3001',
+            workspaceName: 'codingx',
           },
         }),
         { status: 200 },
@@ -303,7 +333,10 @@ describe('ChatApi', () => {
       }),
     );
     expect(result.repositoryPath).toBe('D:/code/codingx');
+    expect(result.workspaceId).toBe('3001');
+    expect(result.workspaceName).toBe('codingx');
   });
+
 
   /**
    * 上传附件应使用 multipart/form-data，并命中附件上传接口。

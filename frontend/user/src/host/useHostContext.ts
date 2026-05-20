@@ -33,9 +33,10 @@ export function useHostContext() {
       return;
     }
     try {
-      await ChatApi.bindWorkspaceRepository(token, repositoryPath);
+      return await ChatApi.bindWorkspaceRepository(token, repositoryPath);
     } catch (error) {
       setWorkspaceErrorMessage(error instanceof Error ? error.message : '同步工作空间失败');
+      return null;
     }
   }, []);
 
@@ -78,8 +79,11 @@ export function useHostContext() {
       if (!granted) {
         throw new Error('未授予本地文件访问权限');
       }
-      const nextContext = await bridge.bindRepositoryPath(selectedPath);
-      await syncWorkspaceBinding(selectedPath);
+      const bindingResult = await syncWorkspaceBinding(selectedPath);
+      const nextContext = await bridge.bindRepositoryPath(selectedPath, {
+        workspaceId: bindingResult?.workspaceId,
+        workspaceName: bindingResult?.workspaceName,
+      });
       window.localStorage.setItem('codingx.host.context', JSON.stringify(nextContext));
       setHostContext(nextContext);
       return selectedPath;
@@ -97,8 +101,11 @@ export function useHostContext() {
     async (repositoryPath: string) => {
       setErrorMessage('');
       try {
-        const nextContext = await bridge.bindRepositoryPath(repositoryPath);
-        await syncWorkspaceBinding(repositoryPath);
+        const bindingResult = await syncWorkspaceBinding(repositoryPath);
+        const nextContext = await bridge.bindRepositoryPath(repositoryPath, {
+          workspaceId: bindingResult?.workspaceId,
+          workspaceName: bindingResult?.workspaceName,
+        });
         window.localStorage.setItem('codingx.host.context', JSON.stringify(nextContext));
         setHostContext(nextContext);
       } catch (error) {

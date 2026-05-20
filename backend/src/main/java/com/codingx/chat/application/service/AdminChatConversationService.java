@@ -144,7 +144,8 @@ public class AdminChatConversationService {
             message.getErrorMessage(),
             message.getCreatedAt(),
             attachments,
-            skillCodes
+            skillCodes,
+            null
         );
     }
 

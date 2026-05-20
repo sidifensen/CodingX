@@ -32,7 +32,7 @@ public interface ChatConversationRepository {
      * @param userId 输入参数。
      * @return 输入参数。
      */
-    List<ChatConversation> findByCreatedBy(Long userId);
+    List<ChatConversation> findByCreatedByAndWorkspaceId(Long userId, Long workspaceId);
 
     /**
      * 供管理端按关键字查询会话列表，返回全量会话记录。

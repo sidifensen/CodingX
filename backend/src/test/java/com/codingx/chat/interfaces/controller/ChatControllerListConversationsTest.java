@@ -65,12 +65,12 @@ class ChatControllerListConversationsTest {
     void listConversationsReturnsLastRunId() throws Exception {
         ChatConversation conversation = ChatConversation.create(2001L, "Default Demo Conversation", 1002L, ChatConversationStatus.ACTIVE);
         conversation.restoreRuntimeState(LocalDateTime.of(2026, 5, 15, 0, 36, 58), 2054964195115945984L);
-        when(chatConversationApplicationService.listConversations(1002L)).thenReturn(List.of(conversation));
+        when(chatConversationApplicationService.listConversations(1002L, 3001L)).thenReturn(List.of(conversation));
 
         try (MockedStatic<StpUtil> mocked = Mockito.mockStatic(StpUtil.class)) {
             mocked.when(StpUtil::getLoginIdAsLong).thenReturn(1002L);
 
-            mockMvc().perform(get("/api/chat/conversations"))
+            mockMvc().perform(get("/api/chat/conversations").param("workspaceId", "3001"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data[0].id").value("2001"))
@@ -85,12 +85,12 @@ class ChatControllerListConversationsTest {
     void listConversationsSerializesLongIdentifiersAsStrings() throws Exception {
         ChatConversation conversation = ChatConversation.create(2055114974648864768L, "历史会话", 1002L, ChatConversationStatus.ACTIVE);
         conversation.restoreRuntimeState(LocalDateTime.of(2026, 5, 15, 10, 36, 58), 2055114974682419200L);
-        when(chatConversationApplicationService.listConversations(1002L)).thenReturn(List.of(conversation));
+        when(chatConversationApplicationService.listConversations(1002L, 3001L)).thenReturn(List.of(conversation));
 
         try (MockedStatic<StpUtil> mocked = Mockito.mockStatic(StpUtil.class)) {
             mocked.when(StpUtil::getLoginIdAsLong).thenReturn(1002L);
 
-            mockMvc().perform(get("/api/chat/conversations"))
+            mockMvc().perform(get("/api/chat/conversations").param("workspaceId", "3001"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data[0].id").value("2055114974648864768"))
                 .andExpect(jsonPath("$.data[0].lastRunId").value("2055114974682419200"));

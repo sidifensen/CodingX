@@ -32,6 +32,11 @@ public class ChatConversation {
     private Long createdBy;
 
     /**
+     * 所属工作空间标识。
+     */
+    private Long workspaceId;
+
+    /**
      * 当前状态值。
      */
     private ChatConversationStatus status;
@@ -64,7 +69,7 @@ public class ChatConversation {
      * @param status 输入参数。
      * @return 输入参数。
      */
-    public static ChatConversation create(Long id, String title, Long createdBy, ChatConversationStatus status) {
+    public static ChatConversation create(Long id, String title, Long createdBy, Long workspaceId, ChatConversationStatus status) {
         if (id == null || createdBy == null || status == null || StrUtil.isBlank(title)) {
             throw new IllegalArgumentException("Conversation fields are required");
         }
@@ -72,8 +77,21 @@ public class ChatConversation {
             .id(id)
             .title(title)
             .createdBy(createdBy)
+            .workspaceId(workspaceId)
             .status(status)
             .build();
+    }
+
+    /**
+     * 兼容旧调用方，默认不绑定工作空间。
+     * @param id 输入参数。
+     * @param title 输入参数。
+     * @param createdBy 输入参数。
+     * @param status 输入参数。
+     * @return 输入参数。
+     */
+    public static ChatConversation create(Long id, String title, Long createdBy, ChatConversationStatus status) {
+        return create(id, title, createdBy, null, status);
     }
 
     /**

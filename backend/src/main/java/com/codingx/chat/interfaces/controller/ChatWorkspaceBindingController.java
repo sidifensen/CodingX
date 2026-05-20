@@ -29,10 +29,17 @@ public class ChatWorkspaceBindingController {
      */
     @PostMapping("/bind-repository")
     public ApiResponse<Map<String, String>> bindRepository(@Valid @RequestBody BindRepositoryPathRequest request) {
-        String normalizedPath = StrUtil.blankToDefault(
-            chatWorkspaceBindingService.bindRepositoryPathForCurrentUser(request.repositoryPath()),
+        ChatWorkspaceBindingService.WorkspaceBindingResult bindingResult = chatWorkspaceBindingService.bindRepositoryPathForCurrentUser(
             request.repositoryPath()
         );
-        return ApiResponse.success(Map.of("repositoryPath", normalizedPath));
+        String normalizedPath = StrUtil.blankToDefault(
+            bindingResult.repositoryPath(),
+            request.repositoryPath()
+        );
+        return ApiResponse.success(Map.of(
+            "repositoryPath", normalizedPath,
+            "workspaceId", String.valueOf(bindingResult.workspaceId()),
+            "workspaceName", StrUtil.blankToDefault(bindingResult.workspaceName(), "")
+        ));
     }
 }

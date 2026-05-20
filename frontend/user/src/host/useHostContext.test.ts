@@ -73,12 +73,14 @@ describe('useHostContext', () => {
       },
       localResource: {
         boundRepositoryPath: 'D:/code/codingx',
+        workspaceId: '3001',
+        workspaceName: 'codingx',
         permissionGranted: true,
       },
     });
     const bindSpy = vi
       .spyOn(ChatApi, 'bindWorkspaceRepository')
-      .mockResolvedValue({ repositoryPath: 'D:/code/codingx' });
+      .mockResolvedValue({ repositoryPath: 'D:/code/codingx', workspaceId: '3001', workspaceName: 'codingx' });
 
     const { result } = renderHook(() => useHostContext());
 
@@ -87,5 +89,9 @@ describe('useHostContext', () => {
     });
 
     expect(bindSpy).toHaveBeenCalledWith('token-123', 'D:/code/codingx');
+    expect(bridgeMock.bindRepositoryPath).toHaveBeenCalledWith('D:/code/codingx', {
+      workspaceId: '3001',
+      workspaceName: 'codingx',
+    });
   });
 });

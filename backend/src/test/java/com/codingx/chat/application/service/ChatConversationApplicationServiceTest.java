@@ -12,6 +12,7 @@ import com.codingx.chat.domain.model.ChatMessageStatus;
 import com.codingx.chat.domain.repository.ChatConversationRepository;
 import com.codingx.chat.domain.repository.ChatMessageRepository;
 import com.codingx.common.exception.ForbiddenException;
+import com.codingx.workspace.domain.repository.WorkspaceRepository;
 import java.time.LocalDateTime;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -37,6 +38,11 @@ class ChatConversationApplicationServiceTest {
      */
     @Mock
     private ChatMessageRepository chatMessageRepository;
+    /**
+     * WorkspaceRepository 依赖。
+     */
+    @Mock
+    private WorkspaceRepository workspaceRepository;
 
     /**
      * ChatConversationApplicationService 依赖。
@@ -51,11 +57,13 @@ class ChatConversationApplicationServiceTest {
     void createConversationDefaultsBlankTitle() {
 
         ChatConversation conversation = chatConversationApplicationService.createConversation(
-            new CreateConversationCommand(" "),
+            new CreateConversationCommand(" ", 3001L),
             1002L
 
         );
         assertEquals("New Conversation", conversation.getTitle());
+        assertEquals(3001L, conversation.getWorkspaceId());
+        verify(workspaceRepository).ensureExists(3001L);
         verify(chatConversationRepository).save(conversation);
     }
 
@@ -125,5 +133,20 @@ class ChatConversationApplicationServiceTest {
         chatConversationApplicationService.deleteConversation(1L, 1002L);
 
         verify(chatConversationRepository).deleteById(1L);
+    }
+
+    /**
+     * 会话列表应按工作空间过滤，避免不同工作空间会话互相串线。
+     */
+    @Test
+    void listConversationsUsesWorkspaceScope() {
+        ChatConversation conversation = ChatConversation.create(1L, "会话A", 1002L, 3001L, ChatConversationStatus.ACTIVE);
+        when(chatConversationRepository.findByCreatedByAndWorkspaceId(1002L, 3001L)).thenReturn(List.of(conversation));
+
+        List<ChatConversation> result = chatConversationApplicationService.listConversations(1002L, 3001L);
+
+        assertEquals(1, result.size());
+        verify(workspaceRepository).ensureExists(3001L);
+        verify(chatConversationRepository).findByCreatedByAndWorkspaceId(1002L, 3001L);
     }
 }

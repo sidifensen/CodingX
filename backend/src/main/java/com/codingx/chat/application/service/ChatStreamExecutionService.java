@@ -4,6 +4,7 @@ import cn.hutool.core.util.StrUtil;
 import com.codingx.chat.application.command.SendChatMessageCommand;
 import com.codingx.chat.domain.model.ChatExecutionRun;
 import com.codingx.chat.domain.model.ChatTraceRun;
+import com.codingx.chat.domain.repository.ChatConversationRepository;
 import com.codingx.chat.domain.repository.ChatExecutionRunRepository;
 import com.codingx.skill.domain.repository.ChatSkillRepository;
 import com.codingx.mcp.domain.repository.ChatMcpRepository;
@@ -30,6 +31,7 @@ public class ChatStreamExecutionService {
     private final ChatExecutionRunRepository chatExecutionRunRepository;
     private final ChatMcpRepository chatMcpRepository;
     private final ChatSkillRepository chatSkillRepository;
+    private final ChatConversationRepository chatConversationRepository;
     private final ChatWorkspaceBindingService chatWorkspaceBindingService;
     private final ExecutorService executor;
 
@@ -47,6 +49,7 @@ public class ChatStreamExecutionService {
         ChatExecutionRunRepository chatExecutionRunRepository,
         ChatMcpRepository chatMcpRepository,
         ChatSkillRepository chatSkillRepository,
+        ChatConversationRepository chatConversationRepository,
         ChatWorkspaceBindingService chatWorkspaceBindingService,
         @Qualifier("chatStreamExecutor")
         ExecutorService executor
@@ -57,6 +60,7 @@ public class ChatStreamExecutionService {
         this.chatExecutionRunRepository = chatExecutionRunRepository;
         this.chatMcpRepository = chatMcpRepository;
         this.chatSkillRepository = chatSkillRepository;
+        this.chatConversationRepository = chatConversationRepository;
         this.chatWorkspaceBindingService = chatWorkspaceBindingService;
         this.executor = executor;
     }
@@ -120,6 +124,24 @@ public class ChatStreamExecutionService {
                 return;
             } catch (Exception ignored) {
                 // repositoryPath 非法时回退用户默认绑定，避免单次异常参数阻断对话链路。
+            }
+        }
+        Optional<com.codingx.chat.domain.model.ChatConversation> conversationOptional =
+            java.util.Optional.ofNullable(command.conversationId())
+                .flatMap(conversationId -> {
+                    try {
+                        return java.util.Optional.of(chatConversationRepository.requireById(conversationId));
+                    } catch (Exception ignored) {
+                        return java.util.Optional.empty();
+                    }
+                });
+        if (conversationOptional.isPresent() && conversationOptional.get().getWorkspaceId() != null) {
+            Optional<Path> workspacePath = chatWorkspaceBindingService.findRepositoryPathByWorkspaceId(
+                conversationOptional.get().getWorkspaceId()
+            );
+            if (workspacePath.isPresent()) {
+                ChatToolExecutionContext.bindToolWorkingDirectory(workspacePath.get());
+                return;
             }
         }
         Optional<Path> boundRepositoryPath = chatWorkspaceBindingService.findRepositoryPathByUserId(userId);

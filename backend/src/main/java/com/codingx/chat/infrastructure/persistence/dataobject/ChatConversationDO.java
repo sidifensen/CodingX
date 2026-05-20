@@ -14,6 +14,7 @@ public class ChatConversationDO {
     @TableId("id") private Long id;
     @TableField("title") private String title;
     @TableField("created_by") private Long createdBy;
+    @TableField("workspace_id") private Long workspaceId;
     @TableField("status") private String status;
     @TableField("last_message_at") private LocalDateTime lastMessageAt;
     @TableField("last_run_id") private Long lastRunId;

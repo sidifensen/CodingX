@@ -28,6 +28,7 @@ export interface ChatMessageItem {
   model?: string;
   errorMessage?: string;
   createdAt?: string;
+  userVote?: number | null; // 当前用户对该消息的投票值（1 点赞，-1 点踩，null/undefined 表示未投票）
 }
 
 /**

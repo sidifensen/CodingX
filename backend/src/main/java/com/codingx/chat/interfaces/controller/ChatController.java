@@ -11,6 +11,8 @@ import com.codingx.chat.application.service.ChatRuntimeGuardService;
 import com.codingx.chat.domain.model.ChatAttachment;
 import com.codingx.chat.domain.model.ChatConversation;
 import com.codingx.chat.domain.model.ChatMessage;
+import com.codingx.chat.domain.model.ChatMessageFeedback;
+import com.codingx.chat.domain.repository.ChatMessageFeedbackRepository;
 import com.codingx.skill.domain.model.ChatSkill;
 import com.codingx.skill.domain.repository.ChatSkillRepository;
 import com.codingx.chat.interfaces.request.ChatMessageFeedbackRequest;
@@ -33,6 +35,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.RequestParam;
 
 /**
  * 负责处理 ChatController 的 HTTP 请求并调用应用服务。
@@ -62,6 +65,7 @@ public class ChatController {
      * ChatReactionService 依赖。
      */
     private final ChatReactionService chatReactionService;
+    private final ChatMessageFeedbackRepository chatMessageFeedbackRepository;
     private final ChatMcpRepository chatMcpRepository;
     private final ChatSkillRepository chatSkillRepository;
 
@@ -73,7 +77,7 @@ public class ChatController {
     @PostMapping
     public ApiResponse<ChatConversationResponse> createConversation(@RequestBody CreateConversationRequest request) {
         ChatConversation conversation = chatConversationApplicationService.createConversation(
-            new CreateConversationCommand(request.title()),
+            new CreateConversationCommand(request.title(), request.workspaceId()),
             StpUtil.getLoginIdAsLong()
         );
         return ApiResponse.success(toConversationResponse(conversation));
@@ -84,8 +88,8 @@ public class ChatController {
      * @return 输入参数。
      */
     @GetMapping
-    public ApiResponse<List<ChatConversationResponse>> listConversations() {
-        return ApiResponse.success(chatConversationApplicationService.listConversations(StpUtil.getLoginIdAsLong())
+    public ApiResponse<List<ChatConversationResponse>> listConversations(@RequestParam(required = false) Long workspaceId) {
+        return ApiResponse.success(chatConversationApplicationService.listConversations(StpUtil.getLoginIdAsLong(), workspaceId)
             .stream().map(this::toConversationResponse).toList());
     }
 
@@ -209,6 +213,10 @@ public class ChatController {
                 .filter(StrUtil::isNotBlank)
                 .distinct()
                 .toList();
+        // 查询当前用户对该消息的投票状态，用于前端渲染已点赞/点踩状态。
+        Integer userVote = chatMessageFeedbackRepository.findByMessageIdAndUserId(message.getId(), StpUtil.getLoginIdAsLong())
+            .map(ChatMessageFeedback::getVote)
+            .orElse(null);
         return new ChatMessageResponse(
             message.getId(),
             message.getConversationId(),
@@ -222,7 +230,8 @@ public class ChatController {
             message.getErrorMessage(),
             message.getCreatedAt(),
             attachments,
-            skillCodes
+            skillCodes,
+            userVote
         );
     }
 

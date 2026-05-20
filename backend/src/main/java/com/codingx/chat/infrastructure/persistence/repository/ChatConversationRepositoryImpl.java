@@ -72,11 +72,18 @@ public class ChatConversationRepositoryImpl implements ChatConversationRepositor
      * @return 输入参数。
      */
     @Override
-    public List<ChatConversation> findByCreatedBy(Long userId) {
-        return chatConversationMapper.selectList(new LambdaQueryWrapper<ChatConversationDO>()
-                .eq(ChatConversationDO::getCreatedBy, userId)
-                .eq(ChatConversationDO::getDeleted, 0)
-                .orderByDesc(ChatConversationDO::getUpdatedAt))
+    public List<ChatConversation> findByCreatedByAndWorkspaceId(Long userId, Long workspaceId) {
+        LambdaQueryWrapper<ChatConversationDO> queryWrapper = new LambdaQueryWrapper<ChatConversationDO>()
+            .eq(ChatConversationDO::getCreatedBy, userId)
+            .eq(ChatConversationDO::getDeleted, 0)
+            .orderByDesc(ChatConversationDO::getUpdatedAt);
+        if (workspaceId == null) {
+            // 兼容云端或历史会话，按空工作空间分区读取，避免 workspace_id = null 命中异常。
+            queryWrapper.isNull(ChatConversationDO::getWorkspaceId);
+        } else {
+            queryWrapper.eq(ChatConversationDO::getWorkspaceId, workspaceId);
+        }
+        return chatConversationMapper.selectList(queryWrapper)
             .stream()
             .map(this::toDomain)
             .toList();
@@ -135,6 +142,7 @@ public class ChatConversationRepositoryImpl implements ChatConversationRepositor
             dataObject.getId(),
             dataObject.getTitle(),
             dataObject.getCreatedBy(),
+            dataObject.getWorkspaceId(),
             ChatConversationStatus.valueOf(dataObject.getStatus())
         );
         conversation.restoreRuntimeState(dataObject.getLastMessageAt(), dataObject.getLastRunId());
@@ -152,6 +160,7 @@ public class ChatConversationRepositoryImpl implements ChatConversationRepositor
         dataObject.setId(conversation.getId());
         dataObject.setTitle(conversation.getTitle());
         dataObject.setCreatedBy(conversation.getCreatedBy());
+        dataObject.setWorkspaceId(conversation.getWorkspaceId());
         dataObject.setStatus(conversation.getStatus().name());
         dataObject.setLastMessageAt(conversation.getLastMessageAt());
         dataObject.setLastRunId(conversation.getLastRunId());

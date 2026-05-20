@@ -136,6 +136,7 @@ CREATE TABLE IF NOT EXISTS chat_conversation (
     id BIGINT PRIMARY KEY,
     title VARCHAR(255) NOT NULL,
     created_by BIGINT NOT NULL,
+    workspace_id BIGINT,
     status VARCHAR(32) NOT NULL,
     last_message_at TIMESTAMP,
     last_run_id BIGINT,
@@ -147,6 +148,7 @@ COMMENT ON TABLE chat_conversation IS '会话表，存储用户与助手的对�
 COMMENT ON COLUMN chat_conversation.id IS '会话主键 ID';
 COMMENT ON COLUMN chat_conversation.title IS '会话标题';
 COMMENT ON COLUMN chat_conversation.created_by IS '会话创建人用户 ID';
+COMMENT ON COLUMN chat_conversation.workspace_id IS '所属工作空间 ID';
 COMMENT ON COLUMN chat_conversation.status IS '会话状态';
 COMMENT ON COLUMN chat_conversation.last_message_at IS '最近一条消息产生时间';
 COMMENT ON COLUMN chat_conversation.last_run_id IS '最近一次执行记录 ID';
@@ -745,6 +747,7 @@ CREATE INDEX IF NOT EXISTS idx_task_status ON task (status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_task_event_task_seq ON task_event (task_id, sequence_no ASC);
 CREATE INDEX IF NOT EXISTS idx_task_artifact_task ON task_artifact (task_id, created_at ASC);
 CREATE INDEX IF NOT EXISTS idx_chat_conversation_user ON chat_conversation (created_by, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_chat_conversation_workspace_user ON chat_conversation (created_by, workspace_id, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_chat_message_conversation ON chat_message (conversation_id, created_at ASC);
 CREATE INDEX IF NOT EXISTS idx_chat_conversation_summary_conv_user ON chat_conversation_summary (conversation_id, user_id, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_chat_message_feedback_message_user ON chat_message_feedback (message_id, user_id);

@@ -28,8 +28,16 @@ export class ChatApi {
    * @param token 当前登录令牌。
    * @returns 会话列表。
    */
-  static async listConversations(token: string): Promise<ConversationItem[]> {
-    const envelope = await this.request<ConversationItem[]>('/api/chat/conversations', token);
+  static async listConversations(token: string, workspaceId?: string | null): Promise<ConversationItem[]> {
+    const searchParams = new URLSearchParams();
+    if (workspaceId && workspaceId.trim().length > 0) {
+      searchParams.set('workspaceId', workspaceId);
+    }
+    const queryString = searchParams.toString();
+    const envelope = await this.request<ConversationItem[]>(
+      queryString ? `/api/chat/conversations?${queryString}` : '/api/chat/conversations',
+      token
+    );
     return envelope.data.map((item) => ({
       ...item,
       lastRunId: item.lastRunId,
@@ -236,8 +244,8 @@ export class ChatApi {
   static async bindWorkspaceRepository(
     token: string,
     repositoryPath: string,
-  ): Promise<{ repositoryPath: string }> {
-    const envelope = await this.request<{ repositoryPath: string }>(
+  ): Promise<{ repositoryPath: string; workspaceId: string; workspaceName: string }> {
+    const envelope = await this.request<{ repositoryPath: string; workspaceId: string; workspaceName: string }>(
       '/api/chat/workspace/bind-repository',
       token,
       {

@@ -20,6 +20,7 @@ public record ChatMessageResponse(
     String errorMessage, // 错误信息。
     LocalDateTime createdAt, // 创建时间。
     List<ChatAttachmentResponse> attachments, // 关联附件。
-    List<String> skillCodes // 本条消息所属运行绑定的技能编码。
+    List<String> skillCodes, // 本条消息所属运行绑定的技能编码。
+    Integer userVote // 当前用户对该消息的投票值（1 点赞，-1 点踩，null 表示未投票）。
 ) {
 }

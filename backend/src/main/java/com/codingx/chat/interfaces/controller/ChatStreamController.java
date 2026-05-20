@@ -63,6 +63,7 @@ public class ChatStreamController {
     public SseEmitter streamChat(
         @RequestParam String question,
         @RequestParam(required = false) Long conversationId,
+        @RequestParam(required = false) Long workspaceId,
         @RequestParam(required = false) Boolean deepThinking,
         @RequestParam(required = false) String mcpCodes,
         @RequestParam(required = false) String skillCodes,
@@ -72,7 +73,7 @@ public class ChatStreamController {
     ) {
         StpUtil.checkLogin();
         Long userId = StpUtil.getLoginIdAsLong();
-        Long actualConversationId = resolveConversationId(conversationId, userId);
+        Long actualConversationId = resolveConversationId(conversationId, workspaceId, userId);
         boolean deepThinkingEnabled = Boolean.TRUE.equals(deepThinking);
         // 步骤：同一入口同时支持 MCP 与技能绑定，分别解析后传入运行时，避免语义混淆。
         List<String> selectedMcpCodes = resolveMcpCodes(mcpCodes);
@@ -113,7 +114,7 @@ public class ChatStreamController {
      * @return SSE emitter。
      */
     public SseEmitter streamChat(String question, Long conversationId, Boolean deepThinking) {
-        return streamChat(question, conversationId, deepThinking, null, null, null, null, null);
+        return streamChat(question, conversationId, null, deepThinking, null, null, null, null, null);
     }
 
     /**
@@ -132,7 +133,7 @@ public class ChatStreamController {
         String mcpCodes,
         String skillCodes
     ) {
-        return streamChat(question, conversationId, deepThinking, mcpCodes, skillCodes, null, null, null);
+        return streamChat(question, conversationId, null, deepThinking, mcpCodes, skillCodes, null, null, null);
     }
 
     /**
@@ -153,7 +154,7 @@ public class ChatStreamController {
         String skillCodes,
         String messages
     ) {
-        return streamChat(question, conversationId, deepThinking, mcpCodes, skillCodes, null, messages, null);
+        return streamChat(question, conversationId, null, deepThinking, mcpCodes, skillCodes, null, messages, null);
     }
 
     /**
@@ -176,7 +177,7 @@ public class ChatStreamController {
         String repositoryPath,
         String messages
     ) {
-        return streamChat(question, conversationId, deepThinking, mcpCodes, skillCodes, repositoryPath, messages, null);
+        return streamChat(question, conversationId, null, deepThinking, mcpCodes, skillCodes, repositoryPath, messages, null);
     }
 
     /**
@@ -197,13 +198,16 @@ public class ChatStreamController {
      * @param userId 当前用户标识。
      * @return 最终会话标识。
      */
-    private Long resolveConversationId(Long conversationId, Long userId) {
+    private Long resolveConversationId(Long conversationId, Long workspaceId, Long userId) {
         if (conversationId != null) {
             // 步骤：复用既有会话时先做 owner 校验，避免越权订阅或发送到他人会话。
             chatConversationApplicationService.listMessages(conversationId, userId);
             return conversationId;
         }
-        ChatConversation conversation = chatConversationApplicationService.createConversation(new CreateConversationCommand(null), userId);
+        ChatConversation conversation = chatConversationApplicationService.createConversation(
+            new CreateConversationCommand(null, workspaceId),
+            userId
+        );
         return conversation.getId();
     }
 

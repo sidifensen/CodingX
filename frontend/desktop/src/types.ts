@@ -13,6 +13,8 @@ export interface HostContext {
   };
   localResource: {
     boundRepositoryPath: string | null;
+    workspaceId?: string | null;
+    workspaceName?: string | null;
     permissionGranted: boolean;
   };
 }

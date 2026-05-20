@@ -36,6 +36,12 @@ class ChatWorkspaceBindingControllerTest {
      */
     @Test
     void bindRepositoryPathShouldReturnBoundPath() throws Exception {
+        org.mockito.Mockito.when(chatWorkspaceBindingService.bindRepositoryPathForCurrentUser("D:/code/codingx"))
+            .thenReturn(new com.codingx.chat.application.service.ChatWorkspaceBindingService.WorkspaceBindingResult(
+                3001L,
+                "D:/code/codingx",
+                "codingx"
+            ));
         mockMvc().perform(post("/api/chat/workspace/bind-repository")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
@@ -45,7 +51,9 @@ class ChatWorkspaceBindingControllerTest {
                     """))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.success").value(true))
-            .andExpect(jsonPath("$.data.repositoryPath").value("D:/code/codingx"));
+            .andExpect(jsonPath("$.data.repositoryPath").value("D:/code/codingx"))
+            .andExpect(jsonPath("$.data.workspaceId").value("3001"))
+            .andExpect(jsonPath("$.data.workspaceName").value("codingx"));
 
         verify(chatWorkspaceBindingService).bindRepositoryPathForCurrentUser(eq("D:/code/codingx"));
     }
@@ -56,4 +64,3 @@ class ChatWorkspaceBindingControllerTest {
             .build();
     }
 }
-

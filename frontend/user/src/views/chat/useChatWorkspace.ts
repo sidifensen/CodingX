@@ -1234,7 +1234,7 @@ export function buildStreamRequestUrl(
 }
 
 /**
- * 解析技能命令输入，生成结构化消息并返回纯文本问题。
+ * 解析技能命令输入，提取连续前缀 @skill 并生成结构化消息，返回去除命令后的纯文本问题。
  * @param rawQuestion 原始输入。
  * @returns 解析结果。
  */
@@ -1242,36 +1242,42 @@ function parseSkillMessage(rawQuestion: string): {
   question: string;
   structuredMessages: Array<Record<string, unknown>>;
 } {
-  const question = rawQuestion.trim();
-  const skillMatch = question.match(/^@([a-zA-Z0-9_-]+)\s*(.*)$/);
-  if (!skillMatch) {
-    return { question, structuredMessages: [] };
+  let remainingQuestion = rawQuestion.trim();
+  const parsedSkillCodes: string[] = [];
+  while (true) {
+    const skillMatch = remainingQuestion.match(/^@([a-zA-Z0-9_-]+)\s*(.*)$/);
+    if (!skillMatch) {
+      break;
+    }
+    const skillCode = skillMatch[1];
+    parsedSkillCodes.push(skillCode);
+    remainingQuestion = (skillMatch[2] ?? '').trim();
   }
-  const skillCode = skillMatch[1];
-  const textContent = (skillMatch[2] ?? '').trim();
-  const structuredMessages: Array<Record<string, unknown>> = [
-    {
-      type: 'slash_command',
-      data: {
-        id: `^/${skillCode}/SKILL.md`,
-        command: skillCode,
-        command_type: 'skill',
-        parameters: {
-          argCount: 0,
-          hasArgumentsVar: false,
-          parameterValues: {},
-        },
+  if (parsedSkillCodes.length === 0) {
+    return { question: remainingQuestion, structuredMessages: [] };
+  }
+  const normalizedSkillCodes = Array.from(new Set(parsedSkillCodes));
+  const structuredMessages: Array<Record<string, unknown>> = normalizedSkillCodes.map((skillCode) => ({
+    type: 'slash_command',
+    data: {
+      id: `^/${skillCode}/SKILL.md`,
+      command: skillCode,
+      command_type: 'skill',
+      parameters: {
+        argCount: 0,
+        hasArgumentsVar: false,
+        parameterValues: {},
       },
     },
-    {
-      type: 'text',
-      data: {
-        content: textContent,
-      },
+  }));
+  structuredMessages.push({
+    type: 'text',
+    data: {
+      content: remainingQuestion,
     },
-  ];
+  });
   return {
-    question: textContent,
+    question: remainingQuestion,
     structuredMessages,
   };
 }

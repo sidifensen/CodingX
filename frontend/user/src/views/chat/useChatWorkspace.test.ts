@@ -669,4 +669,56 @@ describe('useChatWorkspace', () => {
       },
     ]);
   });
+
+  /**
+   * 当输入包含多个前缀 @skill 且用户已多选技能时，应保留所有结构化技能命令并透传显式 skillCodes 参数。
+   */
+  it('应在多技能前缀场景保留结构化技能并透传显式技能列表', () => {
+    const requestUrl = buildStreamRequestUrl(
+      '@agent-browser @ticket_query 请总结今天的工单趋势',
+      '2001',
+      false,
+      false,
+      [],
+      ['sales_query', 'ticket_query'],
+    );
+    const searchParams = new URLSearchParams(requestUrl.split('?')[1] ?? '');
+    expect(searchParams.get('question')).toBe('请总结今天的工单趋势');
+    expect(searchParams.get('skillCodes')).toBe('sales_query,ticket_query');
+    const messagePayload = JSON.parse(searchParams.get('messages') ?? '[]');
+    expect(messagePayload).toEqual([
+      {
+        type: 'slash_command',
+        data: {
+          id: '^/agent-browser/SKILL.md',
+          command: 'agent-browser',
+          command_type: 'skill',
+          parameters: {
+            argCount: 0,
+            hasArgumentsVar: false,
+            parameterValues: {},
+          },
+        },
+      },
+      {
+        type: 'slash_command',
+        data: {
+          id: '^/ticket_query/SKILL.md',
+          command: 'ticket_query',
+          command_type: 'skill',
+          parameters: {
+            argCount: 0,
+            hasArgumentsVar: false,
+            parameterValues: {},
+          },
+        },
+      },
+      {
+        type: 'text',
+        data: {
+          content: '请总结今天的工单趋势',
+        },
+      },
+    ]);
+  });
 });

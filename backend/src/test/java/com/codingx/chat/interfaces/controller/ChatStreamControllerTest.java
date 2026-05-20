@@ -207,6 +207,63 @@ class ChatStreamControllerTest {
     }
 
     /**
+     * 同时传入结构化技能命令与显式 skillCodes 时，应合并两者并按出现顺序去重，避免前端多选技能被覆盖。
+     */
+    @Test
+    void streamChatMergesStructuredAndExplicitSkillCodes() {
+        SseEmitter emitter = new SseEmitter(0L);
+        whenRegisterReturns(emitter);
+        when(chatConversationApplicationService.listMessages(3501L, 1001L)).thenReturn(List.of(
+            ChatMessage.userMessage(3501L, "历史消息")
+        ));
+        try (MockedStatic<StpUtil> mocked = Mockito.mockStatic(StpUtil.class)) {
+            mocked.when(StpUtil::getLoginIdAsLong).thenReturn(1001L);
+
+            SseEmitter actual = chatStreamController.streamChat(
+                "@agent-browser 请分析",
+                3501L,
+                false,
+                "sales_query",
+                "ticket_query,sales_query",
+                null,
+                """
+                [
+                  {
+                    "type":"slash_command",
+                    "data":{
+                      "id":"^/agent-browser/SKILL.md",
+                      "command":"agent-browser",
+                      "command_type":"skill",
+                      "parameters":{"argCount":0,"hasArgumentsVar":false,"parameterValues":{}}
+                    }
+                  },
+                  {
+                    "type":"text",
+                    "data":{"content":"请分析最近工单趋势"}
+                  }
+                ]
+                """,
+                null
+            );
+
+            assertEquals(emitter, actual);
+            verify(chatSseRegistry).publish(
+                eq(3501L),
+                eq("meta"),
+                argThat(payload -> payload instanceof java.util.Map<?, ?> map
+                    && map.get("skillCodes").equals(List.of("agent-browser", "ticket_query", "sales_query")))
+            );
+            verify(chatStreamExecutionService).dispatch(
+                argThat(command -> command.conversationId().equals(3501L)
+                    && command.content().equals("请分析最近工单趋势")
+                    && command.skillCodes().equals(List.of("agent-browser", "ticket_query", "sales_query"))
+                    && command.attachmentIds().isEmpty()),
+                eq(1001L)
+            );
+        }
+    }
+
+    /**
      * 兼容订阅接口也必须校验 owner，避免越权监听他人会话。
      */
     @Test

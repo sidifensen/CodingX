@@ -13,6 +13,7 @@ import com.codingx.mcp.domain.model.ChatMcp;
 import com.codingx.mcp.domain.repository.ChatMcpRepository;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Stream;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -227,16 +228,25 @@ public class ChatStreamController {
     }
 
     /**
-     * 解析显式技能编码，未传时回退到已启用技能全量列表，保证对话运行时可稳定绑定技能上下文。
+     * 解析技能编码：优先合并结构化消息与显式参数；两者都缺失时回退到已启用技能全量列表。
      * @param skillCodesParam 查询参数字符串。
+     * @param parsedSkillCodes 结构化消息解析出的技能编码。
      * @return 规范化技能编码列表。
      */
     private List<String> resolveSkillCodes(String skillCodesParam, List<String> parsedSkillCodes) {
-        if (parsedSkillCodes != null && !parsedSkillCodes.isEmpty()) {
-            return parsedSkillCodes;
-        }
+        List<String> explicitSkillCodes = null;
         if (skillCodesParam != null) {
-            return StrUtil.splitTrim(skillCodesParam, ',').stream()
+            explicitSkillCodes = StrUtil.splitTrim(skillCodesParam, ',').stream()
+                .map(String::trim)
+                .filter(StrUtil::isNotBlank)
+                .distinct()
+                .collect(Collectors.toList());
+        }
+        if ((parsedSkillCodes != null && !parsedSkillCodes.isEmpty()) || explicitSkillCodes != null) {
+            return Stream.concat(
+                    parsedSkillCodes == null ? Stream.empty() : parsedSkillCodes.stream(),
+                    explicitSkillCodes == null ? Stream.empty() : explicitSkillCodes.stream()
+                )
                 .map(String::trim)
                 .filter(StrUtil::isNotBlank)
                 .distinct()

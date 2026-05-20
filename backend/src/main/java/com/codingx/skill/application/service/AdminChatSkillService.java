@@ -159,6 +159,13 @@ public class AdminChatSkillService {
         UploadedSkillFile manifestFile = requireRootSkillManifest(uploadedFiles);
         SkillManifest manifest = parseSkillManifest(new String(manifestFile.bytes(), StandardCharsets.UTF_8));
         String normalizedSkillCode = normalizeSkillCode(manifest.name());
+        long packageSize = uploadedFiles.stream().mapToLong(item -> item.bytes().length).sum();
+        String packageChecksum = calculateDirectoryChecksum(uploadedFiles);
+
+        ChatSkill existing = chatSkillRepository.findBySkillCode(normalizedSkillCode);
+        if (existing != null && StrUtil.equals(existing.getPackageChecksum(), packageChecksum)) {
+            throw new BusinessException("CHAT_SKILL_UPLOAD_DUPLICATE", "技能包内容未变化，请勿重复上传");
+        }
 
         String storageKey;
         try {
@@ -168,10 +175,7 @@ public class AdminChatSkillService {
         }
 
         Long loginUserId = StpUtil.getLoginIdAsLong();
-        ChatSkill existing = chatSkillRepository.findBySkillCode(normalizedSkillCode);
         LocalDateTime now = LocalDateTime.now();
-        long packageSize = uploadedFiles.stream().mapToLong(item -> item.bytes().length).sum();
-        String packageChecksum = calculateDirectoryChecksum(uploadedFiles);
 
         ChatSkill persisted = (existing == null ? ChatSkill.builder().id(IdUtil.getSnowflakeNextId()) : existing.toBuilder())
             .skillCode(normalizedSkillCode)

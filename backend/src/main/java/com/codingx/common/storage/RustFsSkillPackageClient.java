@@ -78,6 +78,8 @@ public class RustFsSkillPackageClient {
         List<SkillFileObject> sortedFiles = fileObjects.stream()
             .sorted(Comparator.comparing(SkillFileObject::path))
             .toList();
+        // 固定目录前缀时，上传前先清空旧对象，避免删除文件后残留脏数据。
+        deleteDirectory(directoryPrefix);
         for (SkillFileObject fileObject : sortedFiles) {
             String normalizedPath = normalizeRelativePath(fileObject.path());
             String key = directoryPrefix + "/" + normalizedPath;
@@ -149,6 +151,34 @@ public class RustFsSkillPackageClient {
     }
 
     /**
+     * 删除目录前缀下的全部对象。
+     * @param directoryPrefix 技能目录前缀。
+     */
+    public void deleteDirectory(String directoryPrefix) {
+        ensureBucketExists();
+        String normalizedPrefix = normalizeDirectoryPrefix(directoryPrefix);
+        String queryPrefix = normalizedPrefix + "/";
+        String continuationToken = null;
+        boolean truncated;
+        do {
+            ListObjectsV2Request request = ListObjectsV2Request.builder()
+                .bucket(bucketName)
+                .prefix(queryPrefix)
+                .continuationToken(continuationToken)
+                .build();
+            ListObjectsV2Response response = rustFsS3Client.listObjectsV2(request);
+            for (S3Object object : response.contents()) {
+                String objectKey = object.key();
+                if (StrUtil.startWith(objectKey, queryPrefix) && !StrUtil.endWith(objectKey, "/")) {
+                    deleteObject(objectKey);
+                }
+            }
+            truncated = Boolean.TRUE.equals(response.isTruncated());
+            continuationToken = response.nextContinuationToken();
+        } while (truncated);
+    }
+
+    /**
      * 按目录前缀与相对路径读取单个文件内容。
      * @param directoryPrefix 技能目录前缀。
      * @param relativePath 文件相对路径。
@@ -194,8 +224,7 @@ public class RustFsSkillPackageClient {
             sanitizedName = "skill-package";
         }
         String prefix = StrUtil.removeSuffix(StrUtil.blankToDefault(skillPrefix, "chat-skills/packages"), "/");
-        long now = System.currentTimeMillis();
-        return prefix + "/" + sanitizedName + "-" + now;
+        return prefix + "/" + sanitizedName;
     }
 
     private String sanitizeObjectName(String rawName) {

@@ -589,6 +589,92 @@ describe('ChatView', () => {
   });
 
   /**
+   * 用户手动上滑查看历史内容后，流式追加不应强制把滚动位置拉回到底部。
+   */
+  it('应在用户离开底部后暂停流式自动跟随滚动', async () => {
+    const scrollIntoView = vi.mocked(window.HTMLElement.prototype.scrollIntoView);
+    const { rerender } = render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          messages: [
+            {
+              id: '401',
+              conversationId: '2001',
+              role: 'USER',
+              content: '请继续补充',
+              status: 'COMPLETED',
+            },
+            {
+              id: '402',
+              conversationId: '2001',
+              role: 'ASSISTANT',
+              content: '第一段',
+              status: 'streaming',
+            },
+          ],
+          executionSteps: [],
+          references: [],
+          artifacts: [],
+          isStreaming: true,
+        })}
+      />,
+    );
+
+    const scrollRegion = screen.getByTestId('chat-scroll-region');
+    Object.defineProperty(scrollRegion, 'scrollHeight', {
+      configurable: true,
+      value: 1000,
+    });
+    Object.defineProperty(scrollRegion, 'clientHeight', {
+      configurable: true,
+      value: 600,
+    });
+    Object.defineProperty(scrollRegion, 'scrollTop', {
+      configurable: true,
+      writable: true,
+      value: 120,
+    });
+    // 业务意图：模拟用户主动上滑离开底部（距离底部约 280px），后续流式更新不应抢夺滚动焦点。
+    fireEvent.scroll(scrollRegion);
+    scrollIntoView.mockClear();
+
+    rerender(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          messages: [
+            {
+              id: '401',
+              conversationId: '2001',
+              role: 'USER',
+              content: '请继续补充',
+              status: 'COMPLETED',
+            },
+            {
+              id: '402',
+              conversationId: '2001',
+              role: 'ASSISTANT',
+              content: '第一段\n第二段',
+              status: 'streaming',
+            },
+          ],
+          executionSteps: [],
+          references: [],
+          artifacts: [],
+          isStreaming: true,
+        })}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(scrollIntoView).not.toHaveBeenCalled();
+    });
+  });
+
+  /**
    * 真实会话页应支持通过内容区右上角按钮折叠与展开右侧工作区。
    */
   it('应支持折叠和展开右侧工作区面板', async () => {

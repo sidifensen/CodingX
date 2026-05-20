@@ -54,6 +54,8 @@ export default function ChatView({
   onRequireLogin,
   workspace,
 }: ChatViewProps) {
+  // 关键约束：只有用户仍停留在消息尾部附近时才自动跟随，避免流式生成期间抢夺用户手动上滑。
+  const AUTO_SCROLL_BOTTOM_THRESHOLD = 48;
   // 步骤：基准底部留白用于兜底，避免在首帧测量前消息末尾与输入区发生重叠。
   const CHAT_INPUT_BASE_SAFE_BOTTOM = 160;
   // 步骤：在输入区高度基础上再补偿额外空隙，确保最后一条消息与操作栏保持可读间距。
@@ -101,6 +103,8 @@ export default function ChatView({
     setActiveWorkspacePath,
   } = workspace;
   const latestMessageAnchorRef = React.useRef<HTMLDivElement | null>(null);
+  const chatScrollRegionRef = React.useRef<HTMLDivElement | null>(null);
+  const shouldFollowLatestMessageRef = React.useRef(true);
   // 步骤：右侧工作区默认折叠，仅在存在真实回放内容时自动展开一次，后续允许用户手动控制。
   const [isWorkspacePanelCollapsed, setIsWorkspacePanelCollapsed] = React.useState(true);
   const [activeSelectorMode, setActiveSelectorMode] = React.useState<'mcp' | 'skill' | null>(null);
@@ -384,8 +388,53 @@ export default function ChatView({
     syncSelectedSkillCodesFromInput(inputValue);
   }, [inputValue, syncSelectedSkillCodesFromInput]);
 
+  /**
+   * 判断滚动容器是否贴近底部。贴近底部时允许自动跟随最新消息，否则暂停自动滚动。
+   * @param scrollElement 消息滚动容器。
+   * @returns 是否在底部阈值范围内。
+   */
+  const isScrollNearBottom = React.useCallback((scrollElement: HTMLDivElement) => {
+    const distanceToBottom =
+      scrollElement.scrollHeight - (scrollElement.scrollTop + scrollElement.clientHeight);
+    return distanceToBottom <= AUTO_SCROLL_BOTTOM_THRESHOLD;
+  }, []);
+
+  /**
+   * 记录用户当前是否仍希望“跟随输出”；用户上滑后暂停，回到底部后自动恢复。
+   * @param scrollElement 消息滚动容器。
+   */
+  const syncFollowLatestMessageState = React.useCallback(
+    (scrollElement: HTMLDivElement | null) => {
+      if (!scrollElement) {
+        return;
+      }
+      shouldFollowLatestMessageRef.current = isScrollNearBottom(scrollElement);
+    },
+    [isScrollNearBottom],
+  );
+
+  /**
+   * 响应用户滚动操作，实时更新是否继续自动跟随最新消息。
+   */
+  const handleChatScroll = React.useCallback(
+    (event: React.UIEvent<HTMLDivElement>) => {
+      syncFollowLatestMessageState(event.currentTarget);
+    },
+    [syncFollowLatestMessageState],
+  );
+
+  /**
+   * 每次消息更新前先采集当前滚动位置，确保后续自动滚动判断基于用户最新滚动意图。
+   */
+  React.useEffect(() => {
+    syncFollowLatestMessageState(chatScrollRegionRef.current);
+  }, [messages, syncFollowLatestMessageState]);
+
   React.useEffect(() => {
     if (!messages.length) {
+      return;
+    }
+    if (!shouldFollowLatestMessageRef.current) {
       return;
     }
     if (typeof latestMessageAnchorRef.current?.scrollIntoView === 'function') {
@@ -561,8 +610,10 @@ export default function ChatView({
           )}
         </div>
         <div
+          ref={chatScrollRegionRef}
           data-testid="chat-scroll-region"
           className="chat-scroll-region relative flex-1 overflow-y-auto px-4 pt-6 md:px-8 md:pt-20"
+          onScroll={handleChatScroll}
           style={{
             paddingBottom: `${chatInputSafeBottom}px`,
             scrollPaddingTop: '96px',

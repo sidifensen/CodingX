@@ -201,6 +201,14 @@ public class ChatController {
         List<ChatAttachmentResponse> attachments = chatAttachmentService.listByMessageId(message.getId()).stream()
             .map(this::toAttachmentResponse)
             .toList();
+        // 业务约束：消息气泡回放依赖技能编码，按 runId 读取当次绑定技能避免生成完成后丢失。
+        List<String> skillCodes = message.getRunId() == null
+            ? List.of()
+            : chatSkillRepository.findByTaskId(message.getRunId()).stream()
+                .map(ChatSkill::getSkillCode)
+                .filter(StrUtil::isNotBlank)
+                .distinct()
+                .toList();
         return new ChatMessageResponse(
             message.getId(),
             message.getConversationId(),
@@ -213,7 +221,8 @@ public class ChatController {
             message.getModel(),
             message.getErrorMessage(),
             message.getCreatedAt(),
-            attachments
+            attachments,
+            skillCodes
         );
     }
 

@@ -14,6 +14,7 @@ import com.codingx.chat.application.service.ChatRuntimeGuardService;
 import com.codingx.chat.domain.model.ChatAttachment;
 import com.codingx.chat.domain.model.ChatMessage;
 import com.codingx.chat.domain.model.ChatMessageStatus;
+import com.codingx.skill.domain.model.ChatSkill;
 import com.codingx.skill.domain.repository.ChatSkillRepository;
 import com.codingx.config.GlobalExceptionHandler;
 import com.codingx.mcp.domain.repository.ChatMcpRepository;
@@ -74,6 +75,13 @@ class ChatControllerListMessagesTest {
             null
         ).attachRun(2055117498822955008L);
         when(chatConversationApplicationService.listMessages(2055114974648864768L, 1002L)).thenReturn(List.of(assistantMessage));
+        when(chatSkillRepository.findByTaskId(2055117498822955008L)).thenReturn(List.of(
+            ChatSkill.builder()
+                .id(7101L)
+                .skillCode("sales_query")
+                .displayName("销售查询")
+                .build()
+        ));
         when(chatAttachmentService.listByMessageId(2055117513431715840L)).thenReturn(List.of(
             ChatAttachment.builder()
                 .id(2055117513431715999L)
@@ -100,6 +108,7 @@ class ChatControllerListMessagesTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data[0].id").value("2055117513431715840"))
                 .andExpect(jsonPath("$.data[0].conversationId").value("2055114974648864768"))
+                .andExpect(jsonPath("$.data[0].skillCodes[0]").value("sales_query"))
                 .andExpect(jsonPath("$.data[0].attachments[0].id").value("2055117513431715999"));
         }
     }

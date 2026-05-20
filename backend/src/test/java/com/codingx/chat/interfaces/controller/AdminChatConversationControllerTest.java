@@ -1,4 +1,5 @@
 package com.codingx.chat.interfaces.controller;
+import com.codingx.admin.interfaces.controller.AdminChatConversationController;
 
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -96,6 +97,7 @@ class AdminChatConversationControllerTest {
                     null,
                     null,
                     LocalDateTime.of(2026, 5, 16, 10, 2, 0),
+                    List.of(),
                     List.of()
                 )))
                 .build()

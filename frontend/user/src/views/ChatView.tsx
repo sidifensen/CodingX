@@ -701,6 +701,13 @@ export default function ChatView({
                         </>
                       ) : (
                         <>
+                          {message.skillCodes && message.skillCodes.length > 0 ? (
+                            <MessageSkillChips
+                              messageId={message.id}
+                              skillCodes={message.skillCodes}
+                              skillNameMap={availableSkillNameMap}
+                            />
+                          ) : null}
                           {message.attachments && message.attachments.length > 0 ? (
                             <MessageAttachmentList
                               attachments={message.attachments}
@@ -2000,6 +2007,41 @@ function MessageAttachmentList({
             <File size={13} className="text-muted" />
             <span className="truncate">{attachment.fileName}</span>
           </a>
+        );
+      })}
+    </div>
+  );
+}
+
+/**
+ * 渲染消息内技能气泡，保证历史回放时技能绑定信息可见且不依赖正文是否保留 @token。
+ */
+function MessageSkillChips({
+  messageId,
+  skillCodes,
+  skillNameMap,
+}: {
+  messageId: string;
+  skillCodes: string[];
+  skillNameMap: Map<string, string>;
+}) {
+  if (skillCodes.length === 0) {
+    return null;
+  }
+  return (
+    <div className="mb-2 flex flex-wrap gap-1.5">
+      {skillCodes.map((skillCode) => {
+        const displayName = skillNameMap.get(skillCode) ?? skillCode;
+        return (
+          <span
+            key={`${messageId}-${skillCode}`}
+            data-testid={`message-skill-chip-${messageId}-${skillCode}`}
+            className="inline-flex items-center rounded-md border border-border/70 bg-surface-container/82 px-2 py-0.5 text-[12px] text-foreground"
+            title={displayName}
+          >
+            <Sparkles size={12} className="mr-1 shrink-0 text-muted" />
+            <span className="whitespace-nowrap">@{skillCode}</span>
+          </span>
         );
       })}
     </div>

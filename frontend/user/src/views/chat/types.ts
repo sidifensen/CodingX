@@ -18,6 +18,7 @@ export interface ChatMessageItem {
   runId?: string;
   role: 'USER' | 'ASSISTANT' | 'SYSTEM';
   content: string;
+  skillCodes?: string[];
   attachments?: ChatAttachmentItem[];
   thinkingContent?: string;
   thinkingDuration?: number;

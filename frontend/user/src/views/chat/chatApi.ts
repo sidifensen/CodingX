@@ -49,6 +49,7 @@ export class ChatApi {
     );
     return envelope.data.map((item) => ({
       ...item,
+      skillCodes: (item.skillCodes ?? []).map((skillCode) => String(skillCode ?? '')).filter(Boolean),
       attachments: (item.attachments ?? []).map((attachment) => this.normalizeAttachment(attachment)),
     }));
   }

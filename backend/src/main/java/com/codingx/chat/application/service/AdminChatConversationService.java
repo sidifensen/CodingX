@@ -1,10 +1,13 @@
 package com.codingx.chat.application.service;
 
+import cn.hutool.core.util.StrUtil;
 import com.codingx.chat.domain.model.ChatConversation;
 import com.codingx.chat.domain.model.ChatConversationStatus;
 import com.codingx.chat.domain.model.ChatMessage;
 import com.codingx.chat.domain.repository.ChatConversationRepository;
 import com.codingx.chat.domain.repository.ChatMessageRepository;
+import com.codingx.skill.domain.model.ChatSkill;
+import com.codingx.skill.domain.repository.ChatSkillRepository;
 import com.codingx.chat.interfaces.response.AdminChatConversationDetailResponse;
 import com.codingx.chat.interfaces.response.AdminChatConversationListItemResponse;
 import com.codingx.chat.interfaces.response.ChatAttachmentResponse;
@@ -25,6 +28,7 @@ public class AdminChatConversationService {
     private final ChatConversationRepository chatConversationRepository;
     private final ChatMessageRepository chatMessageRepository;
     private final ChatAttachmentService chatAttachmentService;
+    private final ChatSkillRepository chatSkillRepository;
 
     /**
      * 分页查询会话列表，支持标题/ID 关键字过滤。
@@ -119,6 +123,14 @@ public class AdminChatConversationService {
                 attachment.getCreatedAt()
             ))
             .toList();
+        // 管理端详情需与用户端一致返回消息技能绑定，便于排查“技能显示丢失”问题。
+        List<String> skillCodes = message.getRunId() == null
+            ? List.of()
+            : chatSkillRepository.findByTaskId(message.getRunId()).stream()
+                .map(ChatSkill::getSkillCode)
+                .filter(StrUtil::isNotBlank)
+                .distinct()
+                .toList();
         return new ChatMessageResponse(
             message.getId(),
             message.getConversationId(),
@@ -131,7 +143,8 @@ public class AdminChatConversationService {
             message.getModel(),
             message.getErrorMessage(),
             message.getCreatedAt(),
-            attachments
+            attachments,
+            skillCodes
         );
     }
 

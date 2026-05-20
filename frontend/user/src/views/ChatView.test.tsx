@@ -260,6 +260,51 @@ describe('ChatView', () => {
   });
 
   /**
+   * 用户消息绑定技能时，应在消息气泡内保留技能气泡展示，避免流式结束后技能信息消失。
+   */
+  it('应在用户消息气泡内展示技能气泡', async () => {
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          availableSkills: [
+            {
+              id: '9901',
+              skillCode: 'codebase-migrate',
+              displayName: '代码迁移',
+              description: '批量迁移仓库代码',
+              category: '工程',
+            },
+          ],
+          messages: [
+            {
+              id: '311',
+              conversationId: '2001',
+              role: 'USER',
+              content: '这是什么',
+              status: 'COMPLETED',
+              skillCodes: ['codebase-migrate'],
+            } as any,
+            {
+              id: '312',
+              conversationId: '2001',
+              role: 'ASSISTANT',
+              content: '这是技能说明。',
+              status: 'COMPLETED',
+            },
+          ],
+          executionSteps: [],
+          references: [],
+          artifacts: [],
+        })}
+      />,
+    );
+
+    expect(screen.getByTestId('message-skill-chip-311-codebase-migrate')).toBeInTheDocument();
+  });
+
+  /**
    * 消息滚动区需要固定底部安全留白，避免滚动条到底后仍可继续被压缩。
    */
   it('应按输入区高度动态设置消息滚动区底部留白', async () => {

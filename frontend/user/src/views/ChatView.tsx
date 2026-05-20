@@ -1005,13 +1005,13 @@ export default function ChatView({
                       {/* 步骤：输入文本即技能载体，技能标记直接写入文本，支持任意光标位置编辑与删除。 */}
                       <div
                         data-testid="input-inline-content-flow"
-                        className="relative min-h-8 w-full text-[14px] leading-6 text-foreground"
+                        className="relative min-h-8 w-full text-[14px] leading-6 tracking-normal text-foreground"
                       >
                         <div
                           ref={inputPreviewRef}
                           data-testid="input-rich-preview"
                           aria-hidden="true"
-                          className="pointer-events-none absolute inset-0 overflow-hidden py-1 whitespace-pre-wrap break-words text-[14px] leading-6 text-foreground"
+                          className="pointer-events-none absolute inset-0 overflow-hidden py-1 whitespace-pre-wrap break-words text-[14px] leading-6 tracking-normal text-foreground"
                         >
                           {inputPreviewSegments.length > 0 ? (
                             inputPreviewSegments.map((segment, index) =>
@@ -1024,14 +1024,14 @@ export default function ChatView({
                                   <span className="invisible whitespace-pre">{segment.rawToken}</span>
                                   <span
                                     data-testid={`selected-skill-chip-${segment.skillCode}`}
-                                    className="pointer-events-auto absolute inset-y-0 left-0 right-0 inline-flex h-6 items-center rounded-md border border-border/70 bg-surface-container/82 px-1.5 text-[12px] font-normal text-foreground"
+                                    className="pointer-events-auto absolute inset-y-0 left-0 inline-flex h-6 min-w-full items-center rounded-md border border-border/70 bg-surface-container/82 px-1.5 text-[12px] font-normal text-foreground"
                                   >
                                     <Sparkles
                                       size={12}
                                       data-testid={`selected-skill-chip-icon-${segment.skillCode}`}
                                       className="mr-1 shrink-0 text-muted"
                                     />
-                                    <span className="truncate">{segment.rawToken}</span>
+                                    <span className="whitespace-nowrap">{segment.rawToken}</span>
                                     <button
                                       type="button"
                                       aria-label={`删除技能 ${segment.displayName}`}
@@ -1118,7 +1118,7 @@ export default function ChatView({
                           rows={1}
                           placeholder="输入问题，或先选择技能/MCP..."
                           // 步骤：输入仍由 textarea 驱动编辑，显示层负责把技能标记渲染为气泡样式。
-                          className={`min-h-8 w-full min-w-0 resize-none overflow-x-hidden bg-transparent py-1 text-[14px] leading-6 outline-none placeholder:overflow-hidden placeholder:whitespace-nowrap placeholder:text-muted ${
+                          className={`min-h-8 w-full min-w-0 resize-none overflow-x-hidden bg-transparent py-1 text-[14px] leading-6 tracking-normal [font-family:inherit] outline-none placeholder:overflow-hidden placeholder:whitespace-nowrap placeholder:text-muted ${
                             inputValue ? 'text-transparent caret-foreground selection:bg-border-active/35 selection:text-transparent' : 'text-foreground'
                           }`}
                         />

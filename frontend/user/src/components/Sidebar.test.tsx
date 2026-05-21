@@ -240,4 +240,33 @@ describe('Sidebar conversation collapse behavior', () => {
 
     expect(props.onSelectWorkspacePath).not.toHaveBeenCalledWith(null);
   });
+
+  it('分组标题右侧应提供新建按钮并携带分组上下文', () => {
+    const props = createSidebarProps();
+    render(<Sidebar {...props} />);
+
+    const createButton = screen.getByRole('button', { name: '在工作空间 CodingX 新建对话' });
+    fireEvent.click(createButton);
+
+    expect(props.onStartNewConversation).toHaveBeenCalledWith({
+      partitionKey: 'local::d:/code/codingx',
+      runtimeTarget: 'local',
+      workspacePath: 'D:/code/CodingX',
+      groupType: undefined,
+    });
+    expect(props.onSelectWorkspacePath).not.toHaveBeenCalled();
+  });
+
+  it('会话菜单应使用fixed高层级浮层，避免被侧栏滚动容器裁剪', () => {
+    // 业务意图：通过 Portal + fixed 固定在视口层，避免菜单被侧栏 overflow 裁剪成“半截”。
+    const props = createSidebarProps();
+    render(<Sidebar {...props} />);
+
+    fireEvent.click(screen.getByRole('button', { name: '打开会话菜单 会话 1' }));
+
+    const renameButton = screen.getByRole('button', { name: '重命名对话' });
+    const menuPanel = renameButton.closest('div');
+    expect(menuPanel).toHaveClass('fixed');
+    expect(menuPanel).toHaveClass('z-[130]');
+  });
 });

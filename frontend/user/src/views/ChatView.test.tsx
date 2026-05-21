@@ -1000,6 +1000,51 @@ describe('ChatView', () => {
   });
 
   /**
+   * 斜杠触发技能面板后切换到 MCP 时，应保持 MCP 面板可见，避免被自动逻辑抢回技能面板。
+   */
+  it('应在斜杠输入场景支持从技能面板切换到MCP面板', async () => {
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          inputValue: '/sale',
+        })}
+      />,
+    );
+
+    expect(screen.getByTestId('skill-selector-panel')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '打开MCP列表' }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('mcp-selector-panel')).toBeInTheDocument();
+      expect(screen.queryByTestId('skill-selector-panel')).not.toBeInTheDocument();
+    });
+  });
+
+  /**
+   * 斜杠触发技能面板后再次点击技能按钮，应允许正常关闭，避免面板锁死。
+   */
+  it('应在斜杠输入场景支持关闭技能面板', async () => {
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          inputValue: '/sale',
+        })}
+      />,
+    );
+
+    expect(screen.getByTestId('skill-selector-panel')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '打开技能列表' }));
+
+    await waitFor(() => {
+      expect(screen.queryByTestId('skill-selector-panel')).not.toBeInTheDocument();
+    });
+  });
+
+  /**
    * 选择技能后应把技能文本标记插入输入内容，支持在正文中自然混排。
    */
   it('应在选择技能后写入可编辑技能文本标记', async () => {

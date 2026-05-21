@@ -50,9 +50,10 @@ public class WorkspaceDO {
     private String runtimeTarget;
 
     /**
-     * 空间类型标识，cloud 表示云端空间，local 表示本地目录绑定空间。
+     * 空间类型的兼容内存字段。
+     * 业务语义已经统一由 runtime_target 承载，这里仅保留给上层对象复用，不再映射数据库列。
      */
-    @TableField("workspace_type")
+    @TableField(exist = false)
     private String workspaceType;
 
     /**

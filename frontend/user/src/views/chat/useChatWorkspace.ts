@@ -25,6 +25,7 @@ import {
   SampleQuestionItem,
   StreamQueueState,
   UseChatWorkspaceOptions,
+  WorkspaceConversationCreateContext,
   WorkspaceConversationGroup,
 } from './types';
 import {
@@ -788,7 +789,9 @@ export function useChatWorkspace(
   /**
    * 切换到“新建对话”空态，并确保下一次发送不再复用旧会话标识。
    */
-  const startNewConversation = async () => {
+  const startNewConversation = async (
+    createContext?: WorkspaceConversationCreateContext,
+  ) => {
     const token = currentToken();
     const runningConversationId = streamStateRef.current?.conversationId ?? activeConversationId;
 
@@ -811,6 +814,25 @@ export function useChatWorkspace(
     hideStreamQueueState();
     setStreamError('');
     setInputValue('');
+
+    /**
+     * 侧栏从指定分组触发“新建”时，先切换到目标环境/工作空间，再重置会话空态。
+     */
+    if (createContext) {
+      const targetWorkspacePath =
+        createContext.runtimeTarget === 'local' ? createContext.workspacePath ?? null : null;
+      const targetPartitionKey = buildWorkspacePartitionKey(
+        createContext.runtimeTarget,
+        targetWorkspacePath,
+      );
+      const isSamePartition =
+        activeRuntimeTarget === createContext.runtimeTarget &&
+        activeWorkspacePartitionKey === targetPartitionKey;
+      if (!isSamePartition) {
+        await switchWorkspacePartition(createContext.runtimeTarget, targetWorkspacePath, false);
+      }
+    }
+
     clearConversationPlayback();
   };
 

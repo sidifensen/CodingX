@@ -6,6 +6,7 @@ import com.codingx.chat.domain.model.ChatExecutionRun;
 import com.codingx.chat.domain.model.ChatTraceRun;
 import com.codingx.chat.domain.repository.ChatConversationRepository;
 import com.codingx.chat.domain.repository.ChatExecutionRunRepository;
+import com.codingx.common.exception.ConflictException;
 import com.codingx.expert.domain.repository.ChatExpertRepository;
 import com.codingx.skill.domain.repository.ChatSkillRepository;
 import com.codingx.mcp.domain.repository.ChatMcpRepository;
@@ -105,12 +106,11 @@ public class ChatStreamExecutionService {
                 ConversationTraceContext.bind(traceRun);
                 bindToolWorkingDirectory(command, userId);
                 chatApplicationService.sendMessage(command, userId);
+            } catch (ConflictException exception) {
+                markRunRejected(runId, command.conversationId(), exception.getMessage());
+                throw exception;
             } catch (IllegalStateException exception) {
-                if (exception.getMessage() != null && exception.getMessage().startsWith("Conversation rejected:")) {
-                    markRunRejected(runId, command.conversationId(), exception.getMessage());
-                } else {
-                    markRunFailed(runId, command.conversationId(), exception);
-                }
+                markRunFailed(runId, command.conversationId(), exception);
                 throw exception;
             } catch (Throwable throwable) {
                 markRunFailed(runId, command.conversationId(), throwable);

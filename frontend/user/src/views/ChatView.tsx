@@ -124,6 +124,7 @@ export default function ChatView({
   const [skillSelectorSource, setSkillSelectorSource] = React.useState<'button' | 'slash' | null>(
     null,
   );
+  const skillSelectorSourceRef = React.useRef<'button' | 'slash' | null>(null);
   const selectorLayerRef = React.useRef<HTMLDivElement | null>(null);
   const runtimeWorkspaceLayerRef = React.useRef<HTMLDivElement | null>(null);
   const chatInputRef = React.useRef<HTMLTextAreaElement | null>(null);
@@ -398,13 +399,21 @@ export default function ChatView({
   );
 
   /**
+   * 维护技能选择器触发来源的最新值，供仅依赖输入变化的 effect 读取。
+   */
+  React.useEffect(() => {
+    skillSelectorSourceRef.current = skillSelectorSource;
+  }, [skillSelectorSource]);
+
+  /**
    * 监听输入框斜杠触发技能检索，支持“输入 / 即打开技能列表”。
+   * 关键约束：仅在输入变化时触发，避免用户手动切换 MCP/技能后被自动逻辑抢回。
    */
   React.useEffect(() => {
     const normalizedInput = inputValue.trimStart();
     if (!normalizedInput.startsWith('/')) {
-      if (skillSelectorSource === 'slash') {
-        setActiveSelectorMode(null);
+      if (skillSelectorSourceRef.current === 'slash') {
+        setActiveSelectorMode((current) => (current === 'skill' ? null : current));
         setSkillSelectorSource(null);
         setSkillSearchKeyword('');
       }
@@ -414,7 +423,7 @@ export default function ChatView({
     setActiveSelectorMode('skill');
     setSkillSelectorSource('slash');
     setSkillSearchKeyword(slashKeyword);
-  }, [inputValue, skillSelectorSource]);
+  }, [inputValue]);
 
   /**
    * 兜底同步：当输入值由外部写入（示例问题、回放填充）时，同步修正技能选择状态。

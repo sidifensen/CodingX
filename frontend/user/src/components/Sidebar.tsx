@@ -4,6 +4,7 @@ import {
   SquareTerminal,
   Search,
   PlusCircle,
+  Plus,
   PlugZap,
   Zap,
   Brain,
@@ -22,6 +23,7 @@ import ProfileMenu from './sidebar/ProfileMenu';
 import LoginEntry from './sidebar/LoginEntry';
 import {
   ConversationItem,
+  WorkspaceConversationCreateContext,
   WorkspaceConversationGroup,
   WorkspaceConversationSelectionContext,
 } from '../views/chat/types';
@@ -56,7 +58,9 @@ interface SidebarProps {
     conversationId: string,
     selectionContext: WorkspaceConversationSelectionContext,
   ) => Promise<void>;
-  onStartNewConversation: () => Promise<void>;
+  onStartNewConversation: (
+    createContext?: WorkspaceConversationCreateContext,
+  ) => Promise<void>;
   onRenameConversation: (conversationId: string, title: string) => Promise<void>;
   onDeleteConversation: (conversationId: string) => Promise<void>;
   workspaceGroups: WorkspaceConversationGroup[];
@@ -183,6 +187,7 @@ export default function Sidebar({
               conversations={conversations}
               activeConversationId={activeConversationId}
               onSelectConversation={onSelectConversation}
+              onStartNewConversation={onStartNewConversation}
               onRenameConversation={onRenameConversation}
               onDeleteConversation={onDeleteConversation}
               onSelectWorkspacePath={onSelectWorkspacePath}
@@ -215,6 +220,7 @@ function ConversationHistory({
   conversations,
   activeConversationId,
   onSelectConversation,
+  onStartNewConversation,
   onRenameConversation,
   onDeleteConversation,
   onSelectWorkspacePath,
@@ -226,6 +232,9 @@ function ConversationHistory({
   onSelectConversation: (
     conversationId: string,
     selectionContext: WorkspaceConversationSelectionContext,
+  ) => Promise<void>;
+  onStartNewConversation: (
+    createContext?: WorkspaceConversationCreateContext,
   ) => Promise<void>;
   onRenameConversation: (conversationId: string, title: string) => Promise<void>;
   onDeleteConversation: (conversationId: string) => Promise<void>;
@@ -385,19 +394,19 @@ function ConversationHistory({
             const RuntimeIcon = getWorkspaceRuntimeIcon(group.runtimeTarget, group.groupType);
             return (
               <section key={group.partitionKey}>
-                <button
-                  type="button"
-                  aria-label={`${isGroupCollapsed ? '展开' : '折叠'}工作空间 ${group.workspaceLabel} 会话`}
-                  onClick={() => {
-                    // 历史分组不绑定具体目录，点击分组头仅折叠/展开，避免触发无效路径切换。
-                    if (group.groupType !== 'history') {
-                      void onSelectWorkspacePath(group.workspacePath);
-                    }
-                    handleToggleGroupCollapse(group.partitionKey);
-                  }}
-                  className="flex min-h-10 w-full cursor-pointer items-center justify-between gap-3 rounded-md py-1.5 text-left transition-colors hover:bg-surface-container active:bg-surface-container-high"
-                >
-                  <div className="min-w-0 flex flex-1 items-center gap-2">
+                <div className="flex min-h-10 w-full items-center justify-between gap-3 py-1.5">
+                  <button
+                    type="button"
+                    aria-label={`${isGroupCollapsed ? '展开' : '折叠'}工作空间 ${group.workspaceLabel} 会话`}
+                    onClick={() => {
+                      // 历史分组不绑定具体目录，点击分组头仅折叠/展开，避免触发无效路径切换。
+                      if (group.groupType !== 'history') {
+                        void onSelectWorkspacePath(group.workspacePath);
+                      }
+                      handleToggleGroupCollapse(group.partitionKey);
+                    }}
+                    className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-md px-0 py-0 text-left transition-colors hover:bg-surface-container active:bg-surface-container-high"
+                  >
                     <RuntimeIcon
                       size={14}
                       className="ml-1 shrink-0 text-muted"
@@ -408,11 +417,9 @@ function ConversationHistory({
                       }
                       aria-hidden="true"
                     />
-                    <div className="truncate text-sm font-semibold text-foreground">
+                    <span className="truncate text-sm font-semibold text-foreground">
                       {group.workspaceLabel}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
+                    </span>
                     <span
                       className="rounded-md p-1 text-muted transition-colors hover:bg-surface-container hover:text-foreground"
                       aria-hidden="true"
@@ -424,8 +431,23 @@ function ConversationHistory({
                         }`}
                       />
                     </span>
-                  </div>
-                </button>
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`在工作空间 ${group.workspaceLabel} 新建对话`}
+                    onClick={() =>
+                      void onStartNewConversation({
+                        partitionKey: group.partitionKey,
+                        runtimeTarget: group.runtimeTarget,
+                        workspacePath: group.workspacePath,
+                        groupType: group.groupType,
+                      })
+                    }
+                    className="mr-1 inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-md text-muted transition-colors hover:bg-surface-container hover:text-foreground"
+                  >
+                    <Plus size={15} />
+                  </button>
+                </div>
 
                 {/* 使用 grid-rows 过渡折叠高度，避免列表展开/收起时突兀跳变，并保持分组头与首条会话的纵向间距更紧凑。 */}
                 <div

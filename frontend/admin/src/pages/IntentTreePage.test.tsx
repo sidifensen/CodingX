@@ -28,7 +28,7 @@ const intentTreeFixture = [
     parentCode: '',
     name: '企业知识',
     description: '企业制度与流程',
-    intentType: 'kb',
+    intentType: 'search',
     kind: 0,
     level: 0,
     enabled: 1,
@@ -87,7 +87,7 @@ describe('IntentTreePage', () => {
 
     expect(within(treePanel).getByText('企业知识')).toBeInTheDocument();
     expect(within(treePanel).getByText('DOMAIN')).toBeInTheDocument();
-    expect(within(treePanel).getByText('KB')).toBeInTheDocument();
+    expect(within(treePanel).getByText('SEARCH')).toBeInTheDocument();
     expect(within(detailPanel).getByText('ROOT')).toBeInTheDocument();
     expect(within(detailPanel).getByText('corp_docs')).toBeInTheDocument();
     expect(within(detailPanel).getByText('企业有哪些报销制度？')).toBeInTheDocument();

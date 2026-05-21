@@ -75,6 +75,82 @@ describe('useChatWorkspace', () => {
   });
 
   /**
+   * 首次进入且 URL 未指定会话时应停留首页，避免自动跳转到最新会话破坏新建态体验。
+   */
+  it('应在首次进入且未指定conversationId时保持首页不自动选中会话', async () => {
+    window.localStorage.setItem(
+      'codingx.auth.session',
+      JSON.stringify({
+        token: 'token-123',
+        userId: '1002',
+        username: 'user',
+        displayName: 'CodingX User',
+        userType: 'USER',
+      }),
+    );
+    window.history.replaceState(window.history.state, '', 'http://localhost/');
+
+    const requestUrls: string[] = [];
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      requestUrls.push(url);
+      if (url === '/api/chat/conversations') {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            code: 'OK',
+            message: 'success',
+            data: [
+              {
+                id: '6001',
+                title: '最新会话',
+                status: 'ACTIVE',
+                lastRunId: '9101',
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      if (
+        url === '/api/chat/sample-questions' ||
+        url === '/api/chat/skills' ||
+        url === '/api/chat/mcps'
+      ) {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (
+        url === '/api/chat/conversations/6001/messages' ||
+        url === '/api/chat/conversations/6001/steps' ||
+        url === '/api/chat/conversations/6001/references' ||
+        url === '/api/chat/conversations/6001/artifacts' ||
+        url === '/api/chat/conversations/6001/current-skills' ||
+        url === '/api/chat/conversations/6001/current-mcps'
+      ) {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      throw new Error(`Unhandled fetch in homepage bootstrap test: ${url}`);
+    });
+
+    const { result } = renderHook(() => useChatWorkspace(true));
+
+    await waitFor(() => {
+      expect(result.current.isBootstrapping).toBe(false);
+    });
+
+    expect(result.current.activeConversationId).toBeNull();
+    expect(result.current.messages).toEqual([]);
+    expect(window.location.search).not.toContain('conversationId=');
+    expect(requestUrls).not.toContain('/api/chat/conversations/6001/messages');
+  });
+
+  /**
    * 选中历史会话时应同步加载当前技能与当前 MCP 绑定，供右栏展示会话上下文。
    */
   it('应在选中会话时加载当前技能与当前MCP', async () => {

@@ -300,6 +300,11 @@ export interface WorkspaceConversationSelectionContext {
 }
 
 /**
+ * 描述侧边栏“新建会话”时携带的空间上下文，用于在创建前先切到目标环境和工作空间。
+ */
+export type WorkspaceConversationCreateContext = WorkspaceConversationSelectionContext;
+
+/**
  * 统一描述聊天工作区对页面和侧边栏暴露的状态与动作。
  */
 export interface ChatWorkspaceController {
@@ -357,7 +362,9 @@ export interface ChatWorkspaceController {
     conversationId: string,
     selectionContext: WorkspaceConversationSelectionContext,
   ) => Promise<void>;
-  startNewConversation: () => Promise<void>;
+  startNewConversation: (
+    createContext?: WorkspaceConversationCreateContext,
+  ) => Promise<void>;
   renameConversation: (conversationId: string, title: string) => Promise<void>;
   deleteConversation: (conversationId: string) => Promise<void>;
   renameDialog: {

@@ -8,18 +8,18 @@ ALTER TABLE chat_intent_node
     ADD COLUMN IF NOT EXISTS prompt_snippet TEXT,
     ADD COLUMN IF NOT EXISTS sort_order INTEGER NOT NULL DEFAULT 0;
 
-COMMENT ON COLUMN chat_intent_node.kb_id IS '关联知识库ID';
+COMMENT ON COLUMN chat_intent_node.kb_id IS '搜索域标识';
 COMMENT ON COLUMN chat_intent_node.level IS '层级 0：DOMAIN 1：CATEGORY 2：TOPIC';
 COMMENT ON COLUMN chat_intent_node.examples IS '示例问题JSON';
-COMMENT ON COLUMN chat_intent_node.collection_name IS '知识库集合名称';
+COMMENT ON COLUMN chat_intent_node.collection_name IS '搜索集合标识';
 COMMENT ON COLUMN chat_intent_node.top_k IS '检索返回数量';
-COMMENT ON COLUMN chat_intent_node.kind IS '类型 0：KB 1：SYSTEM 2：MCP';
+COMMENT ON COLUMN chat_intent_node.kind IS '类型 0：SEARCH 1：SYSTEM 2：MCP';
 COMMENT ON COLUMN chat_intent_node.prompt_snippet IS '提示词摘要';
 COMMENT ON COLUMN chat_intent_node.sort_order IS '管理端排序字段';
 
 UPDATE chat_intent_node
 SET kind = CASE intent_type
-        WHEN 'kb' THEN 0
+        WHEN 'search' THEN 0
         WHEN 'system' THEN 1
         WHEN 'mcp' THEN 2
         ELSE kind

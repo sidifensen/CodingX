@@ -24,6 +24,35 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class ConversationIntentResolver {
 
+    /**
+     * 联网搜索显式意图关键词，命中后优先把问题路由到 SEARCH 叶子节点。
+     */
+    private static final List<String> SEARCH_INTENT_KEYWORDS = List.of(
+        "联网搜索",
+        "上网搜索",
+        "在线搜索",
+        "帮我查",
+        "查一下",
+        "最新",
+        "实时",
+        "新闻",
+        "今天",
+        "最近",
+        "版本",
+        "汇率",
+        "股价"
+    );
+
+    /**
+     * 新闻资讯关键词，用于优先命中 search-news 节点。
+     */
+    private static final List<String> SEARCH_NEWS_KEYWORDS = List.of("新闻", "资讯", "热点", "发布", "快讯");
+
+    /**
+     * 事实查询关键词，用于优先命中 search-facts 节点。
+     */
+    private static final List<String> SEARCH_FACT_KEYWORDS = List.of("是什么", "哪一年", "定义", "原理", "含义", "解释");
+
     private final PromptTemplateLoader promptTemplateLoader;
     private final AiPromptExecutionService aiPromptExecutionService;
 
@@ -186,17 +215,132 @@ public class ConversationIntentResolver {
     private List<ConversationIntentCandidate> heuristicCandidates(String question, List<ChatIntentNode> leafNodes, Map<String, List<String>> examplesByCode) {
         String normalizedQuestion = normalizeText(question);
         List<ConversationIntentCandidate> candidates = new ArrayList<>();
+        boolean explicitSearchIntent = containsAnyKeyword(normalizedQuestion, SEARCH_INTENT_KEYWORDS);
+        boolean newsLikeQuestion = containsAnyKeyword(normalizedQuestion, SEARCH_NEWS_KEYWORDS);
+        boolean factsLikeQuestion = containsAnyKeyword(normalizedQuestion, SEARCH_FACT_KEYWORDS);
         for (ChatIntentNode node : leafNodes) {
-            if (!"system".equalsIgnoreCase(node.getIntentType()) && !"mcp".equalsIgnoreCase(node.getIntentType())) {
+            String intentType = StrUtil.blankToDefault(node.getIntentType(), "");
+            if ("search".equalsIgnoreCase(intentType)) {
+                double searchScore = resolveSearchHeuristicScore(
+                    explicitSearchIntent,
+                    newsLikeQuestion,
+                    factsLikeQuestion,
+                    normalizedQuestion,
+                    node,
+                    examplesByCode.getOrDefault(node.getIntentCode(), List.of())
+                );
+                if (searchScore > 0D) {
+                    candidates.add(new ConversationIntentCandidate(node, searchScore));
+                }
                 continue;
             }
-            double score = resolveHeuristicScore(normalizedQuestion, node, examplesByCode.getOrDefault(node.getIntentCode(), List.of()));
-            if (score > 0D) {
-                candidates.add(new ConversationIntentCandidate(node, score));
+            if ("system".equalsIgnoreCase(intentType) || "mcp".equalsIgnoreCase(intentType)) {
+                double score = resolveHeuristicScore(normalizedQuestion, node, examplesByCode.getOrDefault(node.getIntentCode(), List.of()));
+                if (score > 0D) {
+                    candidates.add(new ConversationIntentCandidate(node, score));
+                }
             }
         }
         candidates.sort(Comparator.comparingDouble(ConversationIntentCandidate::score).reversed());
         return candidates;
+    }
+
+    /**
+     * 对 SEARCH 节点执行轻量启发式打分，避免“明确联网搜索”问法被误判为普通对话。
+     * @param explicitSearchIntent 是否出现显式搜索意图词。
+     * @param newsLikeQuestion 是否为新闻资讯型问法。
+     * @param factsLikeQuestion 是否为事实解释型问法。
+     * @param normalizedQuestion 标准化后的问题。
+     * @param node 当前候选节点。
+     * @param examples 当前节点示例。
+     * @return 匹配分数；未命中返回 0。
+     */
+    private double resolveSearchHeuristicScore(
+        boolean explicitSearchIntent,
+        boolean newsLikeQuestion,
+        boolean factsLikeQuestion,
+        String normalizedQuestion,
+        ChatIntentNode node,
+        List<String> examples
+    ) {
+        double baseScore = resolveHeuristicScore(normalizedQuestion, node, examples);
+        String normalizedName = normalizeText(node.getName());
+        String normalizedCode = normalizeText(node.getIntentCode());
+        if (explicitSearchIntent) {
+            if (isGeneralSearchNode(normalizedName, normalizedCode)) {
+                return Math.max(baseScore, 0.96D);
+            }
+            if (isNewsSearchNode(normalizedName, normalizedCode)) {
+                return Math.max(baseScore, newsLikeQuestion ? 0.95D : 0.78D);
+            }
+            if (isFactsSearchNode(normalizedName, normalizedCode)) {
+                return Math.max(baseScore, factsLikeQuestion ? 0.95D : 0.76D);
+            }
+            return Math.max(baseScore, 0.74D);
+        }
+        if (newsLikeQuestion && isNewsSearchNode(normalizedName, normalizedCode)) {
+            return Math.max(baseScore, 0.90D);
+        }
+        if (factsLikeQuestion && isFactsSearchNode(normalizedName, normalizedCode)) {
+            return Math.max(baseScore, 0.88D);
+        }
+        return baseScore;
+    }
+
+    /**
+     * 判断节点是否通用搜索类。
+     * @param normalizedName 标准化名称。
+     * @param normalizedCode 标准化编码。
+     * @return 是否通用搜索节点。
+     */
+    private boolean isGeneralSearchNode(String normalizedName, String normalizedCode) {
+        return normalizedName.contains("通用")
+            || normalizedName.contains("联网搜索")
+            || normalizedCode.contains("searchgeneral")
+            || "search".equals(normalizedCode);
+    }
+
+    /**
+     * 判断节点是否新闻搜索类。
+     * @param normalizedName 标准化名称。
+     * @param normalizedCode 标准化编码。
+     * @return 是否新闻节点。
+     */
+    private boolean isNewsSearchNode(String normalizedName, String normalizedCode) {
+        return normalizedName.contains("新闻")
+            || normalizedName.contains("资讯")
+            || normalizedCode.contains("news");
+    }
+
+    /**
+     * 判断节点是否事实查询类。
+     * @param normalizedName 标准化名称。
+     * @param normalizedCode 标准化编码。
+     * @return 是否事实节点。
+     */
+    private boolean isFactsSearchNode(String normalizedName, String normalizedCode) {
+        return normalizedName.contains("事实")
+            || normalizedName.contains("百科")
+            || normalizedCode.contains("facts");
+    }
+
+    /**
+     * 检查问题是否包含任一关键词（标准化后匹配）。
+     * @param normalizedQuestion 标准化问题。
+     * @param keywords 关键词集合。
+     * @return 是否命中任一关键词。
+     */
+    private boolean containsAnyKeyword(String normalizedQuestion, List<String> keywords) {
+        for (String keyword : keywords) {
+            String normalizedKeyword = normalizeText(keyword);
+            if (StrUtil.isBlank(normalizedKeyword)) {
+                continue;
+            }
+            if (normalizedQuestion.contains(normalizedKeyword)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

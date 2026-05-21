@@ -14,7 +14,10 @@ import DesktopTitleBar from './components/DesktopTitleBar';
 import { useAuth } from './hooks/useAuth';
 import { useChatWorkspace } from './views/chat/useChatWorkspace';
 import { useHostContext } from './host/useHostContext';
-import { WorkspaceConversationSelectionContext } from './views/chat/types';
+import {
+  WorkspaceConversationCreateContext,
+  WorkspaceConversationSelectionContext,
+} from './views/chat/types';
 
 /**
  * 定义应用支持的主视图类型。
@@ -142,9 +145,11 @@ export default function App() {
   /**
    * 统一处理侧边栏“新建对话”动作，回到聊天首页空态。
    */
-  const handleStartNewConversation = async () => {
+  const handleStartNewConversation = async (
+    createContext?: WorkspaceConversationCreateContext,
+  ) => {
     setActiveView('chat');
-    await chatWorkspace.startNewConversation();
+    await chatWorkspace.startNewConversation(createContext);
   };
 
   /**

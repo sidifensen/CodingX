@@ -11,7 +11,7 @@ const LEVEL_OPTIONS = [
 ];
 
 const KIND_OPTIONS = [
-  { value: 0, label: 'KB', description: '知识库检索' },
+  { value: 0, label: 'SEARCH', description: '联网检索' },
   { value: 1, label: 'SYSTEM', description: '系统交互' },
   { value: 2, label: 'MCP', description: '工具调用' },
 ];
@@ -25,7 +25,7 @@ interface IntentFormState {
   parentCode: string;
   level: string;
   kind: string;
-  kbId: string;
+  searchScopeId: string;
   collectionName: string;
   topK: string;
   sortOrder: string;
@@ -49,7 +49,7 @@ const emptyForm: IntentFormState = {
   parentCode: ROOT_PARENT,
   level: '0',
   kind: '0',
-  kbId: '',
+  searchScopeId: '',
   collectionName: '',
   topK: '',
   sortOrder: '0',
@@ -82,7 +82,7 @@ function resolveIntentType(kind: number): string {
   if (kind === 1) {
     return 'system';
   }
-  return 'kb';
+  return 'search';
 }
 
 function resolveLevelLabel(value?: number): string {
@@ -205,7 +205,7 @@ function defaultFormFromNode(node: AdminIntentNode): IntentFormState {
     parentCode: node.parentCode || ROOT_PARENT,
     level: String(node.level ?? 0),
     kind: String(kind),
-    kbId: node.kbId ?? '',
+    searchScopeId: node.kbId ?? '',
     collectionName: node.collectionName ?? '',
     topK: node.topK ? String(node.topK) : '',
     sortOrder: String(node.sortOrder ?? node.sortNo ?? 0),
@@ -251,7 +251,8 @@ function buildPayload(form: IntentFormState, editingNode?: AdminIntentNode | nul
     parentCode,
     description: form.description.trim() || undefined,
     intentType: resolveIntentType(kind),
-    kbId: kind === 0 ? form.kbId.trim() || undefined : undefined,
+    // 仍复用 kbId 字段承载“搜索域标识”，确保历史表结构兼容。
+    kbId: kind === 0 ? form.searchScopeId.trim() || undefined : undefined,
     collectionName: kind === 0 ? form.collectionName.trim() || undefined : undefined,
     topK: toOptionalNumber(form.topK),
     kind,
@@ -936,10 +937,10 @@ function IntentNodeDialog({
               {kind === 0 ? (
                 <>
                   <TextField
-                    id="intent-node-kb"
-                    label="知识库ID"
-                    value={form.kbId}
-                    onChange={(value) => updateField('kbId', value)}
+                    id="intent-node-search-scope"
+                    label="搜索域标识"
+                    value={form.searchScopeId}
+                    onChange={(value) => updateField('searchScopeId', value)}
                   />
                   <TextField
                     id="intent-node-collection"

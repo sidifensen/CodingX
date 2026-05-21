@@ -2,6 +2,7 @@ package com.codingx.chat.application.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.codingx.chat.domain.model.ChatIntentExample;
@@ -54,5 +55,28 @@ class ConversationIntentResolverTest {
 
         assertEquals(List.of("search-web-oa-intro", "search.web"), candidates.stream().map(candidate -> candidate.node().getIntentCode()).toList());
         assertEquals(0.91D, candidates.getFirst().score());
+    }
+
+    /**
+     * 显式“联网搜索”问法应优先命中 SEARCH 节点，不再回落到 LLM 分类链路。
+     */
+    @Test
+    void resolveCandidatesPrefersSearchHeuristicForExplicitWebSearchQuery() {
+        List<ChatIntentNode> nodes = List.of(
+            ChatIntentNode.builder().intentCode("search").name("联网搜索").intentType("search").enabled(1).sortNo(1).build(),
+            ChatIntentNode.builder().intentCode("search-news").parentCode("search").name("新闻资讯").intentType("search").enabled(1).sortNo(2).build(),
+            ChatIntentNode.builder().intentCode("search-facts").parentCode("search").name("事实查询").intentType("search").enabled(1).sortNo(3).build(),
+            ChatIntentNode.builder().intentCode("search-general").parentCode("search").name("通用检索").intentType("search").enabled(1).sortNo(4).build(),
+            ChatIntentNode.builder().intentCode("sys-about-bot").name("关于助手").intentType("system").enabled(1).sortNo(10).build()
+        );
+
+        List<ConversationIntentCandidate> candidates = conversationIntentResolver.resolveCandidates(
+            "请联网搜索最新 Java 版本",
+            nodes,
+            List.of()
+        );
+
+        assertEquals("search-general", candidates.getFirst().node().getIntentCode());
+        verifyNoInteractions(promptTemplateLoader, aiPromptExecutionService);
     }
 }

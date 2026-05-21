@@ -233,4 +233,47 @@ describe('AdminChatApi unauthorized handling', () => {
     expect(requestUrl).toContain('/api/admin/skills/7110/package/file-content?');
     expect(requestUrl).toContain('path=templates%2Fprompt.txt');
   });
+
+  /**
+   * 聊天运行时观测接口应返回队列与线程池双视图。
+   */
+  it('requests chat runtime dashboard snapshot', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          success: true,
+          code: 'OK',
+          message: 'success',
+          data: {
+            queue: {
+              mode: 'redis',
+              maxConcurrent: 2,
+              activeCount: 1,
+              waitingCount: 3,
+              availablePermits: 1,
+            },
+            executor: {
+              streamActiveCount: 1,
+              streamPoolSize: 2,
+              streamQueueSize: 3,
+              streamQueueRemainingCapacity: 253,
+              searchActiveCount: 2,
+              searchPoolSize: 4,
+              searchQueueSize: 0,
+              searchQueueRemainingCapacity: 256,
+            },
+          },
+        }),
+        { status: 200 },
+      ),
+    );
+
+    const result = await AdminChatApi.getRuntimeDashboard();
+
+    expect(result.queue.mode).toBe('redis');
+    expect(result.queue.waitingCount).toBe(3);
+    expect(result.executor.streamQueueSize).toBe(3);
+    expect(result.executor.searchPoolSize).toBe(4);
+    expect(String(fetchMock.mock.calls[0][0])).toContain('/api/admin/chat/runtime');
+  });
 });

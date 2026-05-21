@@ -1,6 +1,7 @@
 package com.codingx.chat.application.service;
 
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.eq;
@@ -50,11 +51,23 @@ class ChatRuntimeGuardServiceTest {
      */
     @Test
     void ensureAcceptedPublishesRejectWhenQueueGateDenies() {
-        when(conversationQueueGate.tryAcquire(1001L)).thenReturn(QueueAcquireResult.rejected("busy"));
+        when(conversationQueueGate.tryAcquire(eq(1001L), any())).thenReturn(QueueAcquireResult.rejected("busy"));
 
         assertThrows(IllegalStateException.class, () -> chatRuntimeGuardService.ensureAccepted(1001L));
 
         verify(chatStreamPublisher).publishRejected(1001L, "busy");
+    }
+
+    /**
+     * 获取执行资格成功后应推送 queue-accepted，通知前端关闭排队提示。
+     */
+    @Test
+    void ensureAcceptedPublishesQueueAcceptedWhenGranted() {
+        when(conversationQueueGate.tryAcquire(eq(1001L), any())).thenReturn(QueueAcquireResult.granted());
+
+        chatRuntimeGuardService.ensureAccepted(1001L);
+
+        verify(chatStreamPublisher).publishQueueAccepted(1001L);
     }
 
     /**

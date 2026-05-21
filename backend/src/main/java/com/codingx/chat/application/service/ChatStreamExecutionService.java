@@ -82,6 +82,7 @@ public class ChatStreamExecutionService {
             .conversationId(command.conversationId())
             .taskId(runId)
             .status("RUNNING")
+            .queueStatus("WAITING")
             .startedAt(now)
             .createdAt(now)
             .updatedAt(now)
@@ -104,6 +105,13 @@ public class ChatStreamExecutionService {
                 ConversationTraceContext.bind(traceRun);
                 bindToolWorkingDirectory(command, userId);
                 chatApplicationService.sendMessage(command, userId);
+            } catch (IllegalStateException exception) {
+                if (exception.getMessage() != null && exception.getMessage().startsWith("Conversation rejected:")) {
+                    markRunRejected(runId, command.conversationId(), exception.getMessage());
+                } else {
+                    markRunFailed(runId, command.conversationId(), exception);
+                }
+                throw exception;
             } catch (Throwable throwable) {
                 markRunFailed(runId, command.conversationId(), throwable);
                 throw throwable;
@@ -166,6 +174,7 @@ public class ChatStreamExecutionService {
             .conversationId(conversationId)
             .taskId(runId)
             .status("ERROR")
+            .queueStatus("FAILED")
             .errorMessage(throwable.getMessage())
             .finishedAt(now)
             .updatedAt(now)
@@ -173,6 +182,30 @@ public class ChatStreamExecutionService {
         ChatTraceRun traceRun = ConversationTraceContext.current();
         if (traceRun != null) {
             conversationTraceRecordService.finishTrace(traceRun.getTraceId(), runId, "ERROR", throwable.getMessage());
+        }
+    }
+
+    /**
+     * 当门控拒绝会话时，以 REJECTED 状态收口运行记录，避免误记为系统异常。
+     * @param runId 运行标识。
+     * @param conversationId 会话标识。
+     * @param message 拒绝原因。
+     */
+    private void markRunRejected(Long runId, Long conversationId, String message) {
+        LocalDateTime now = LocalDateTime.now();
+        chatExecutionRunRepository.save(ChatExecutionRun.builder()
+            .id(runId)
+            .conversationId(conversationId)
+            .taskId(runId)
+            .status("REJECTED")
+            .queueStatus("REJECTED")
+            .errorMessage(message)
+            .finishedAt(now)
+            .updatedAt(now)
+            .build());
+        ChatTraceRun traceRun = ConversationTraceContext.current();
+        if (traceRun != null) {
+            conversationTraceRecordService.finishTrace(traceRun.getTraceId(), runId, "REJECTED", message);
         }
     }
 }

@@ -20,6 +20,7 @@ import {
   PendingAttachmentItem,
   ReferenceItem,
   SampleQuestionItem,
+  StreamQueueState,
   UseChatWorkspaceOptions,
   WorkspaceConversationGroup,
 } from './types';
@@ -109,6 +110,7 @@ export function useChatWorkspace(
   const [isStreaming, setIsStreaming] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
   const [deepThinkingEnabled, setDeepThinkingEnabled] = useState(false);
+  const [streamQueueState, setStreamQueueState] = useState<StreamQueueState | null>(null);
   const [streamError, setStreamError] = useState('');
   const [inputValue, setInputValue] = useState('');
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachmentItem[]>([]);
@@ -287,6 +289,7 @@ export function useChatWorkspace(
     setIsStreaming(false);
     setIsCancelling(false);
     setStreamError('');
+    setStreamQueueState(null);
     setInputValue('');
     clearPendingAttachments();
     if (runtimeTarget === 'cloud') {
@@ -642,6 +645,7 @@ export function useChatWorkspace(
     abortControllerRef.current = null;
     setIsStreaming(false);
     setStreamError('已停止当前生成');
+    setStreamQueueState(null);
     const token = currentToken();
     if (
       !token ||
@@ -681,6 +685,7 @@ export function useChatWorkspace(
     streamStateRef.current = null;
     setIsStreaming(false);
     setIsCancelling(false);
+    setStreamQueueState(null);
     setStreamError('');
     setInputValue('');
     clearConversationPlayback();
@@ -759,6 +764,7 @@ export function useChatWorkspace(
     setMcpConnected(false);
     setIsStreaming(false);
     setIsCancelling(false);
+    setStreamQueueState(null);
     setStreamError('');
     setInputValue('');
     clearPendingAttachments();
@@ -828,6 +834,41 @@ export function useChatWorkspace(
         };
         setActiveConversationId(conversationId);
       }
+      setStreamQueueState(null);
+      return;
+    }
+
+    if (eventName === 'queued' && isRecord(payload)) {
+      const position = Math.max(1, Number(payload.position ?? 1));
+      setStreamQueueState({
+        position,
+        message: `请求排队中，前方还有 ${position} 个会话`,
+      });
+      setStreamError('');
+      return;
+    }
+
+    if (eventName === 'queue-accepted') {
+      setStreamQueueState(null);
+      return;
+    }
+
+    if (eventName === 'reject' && isRecord(payload)) {
+      const reason = String(payload.reason ?? '').trim();
+      const resolvedMessage = resolveQueueRejectMessage(reason);
+      setStreamQueueState(null);
+      setStreamError(resolvedMessage);
+      setMessages((previousMessages) =>
+        previousMessages.map((message) =>
+          message.id === optimisticAssistantId
+            ? {
+                ...message,
+                status: 'error',
+                errorMessage: resolvedMessage,
+              }
+            : message,
+        ),
+      );
       return;
     }
 
@@ -942,6 +983,7 @@ export function useChatWorkspace(
     }
 
     if (eventName === 'finish' && isRecord(payload)) {
+      setStreamQueueState(null);
       setMessages((previousMessages) =>
         previousMessages.map((message) =>
           message.id === optimisticAssistantId
@@ -957,6 +999,7 @@ export function useChatWorkspace(
     }
 
     if (eventName === 'cancel') {
+      setStreamQueueState(null);
       setMessages((previousMessages) =>
         previousMessages.map((message) =>
           message.id === optimisticAssistantId
@@ -971,6 +1014,7 @@ export function useChatWorkspace(
     }
 
     if (eventName === 'error' && isRecord(payload)) {
+      setStreamQueueState(null);
       setMessages((previousMessages) =>
         previousMessages.map((message) =>
           message.id === optimisticAssistantId
@@ -1013,6 +1057,7 @@ export function useChatWorkspace(
     isStreaming,
     isCancelling,
     deepThinkingEnabled,
+    streamQueueState,
     streamError,
     inputValue,
     pendingAttachments,
@@ -1450,6 +1495,21 @@ function parseSkillMessage(rawQuestion: string): {
  */
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
+}
+
+/**
+ * 将后端 reject reason 映射为可直接展示给用户的中文提示。
+ * @param reason 后端拒绝原因编码。
+ * @returns 前端提示文案。
+ */
+function resolveQueueRejectMessage(reason: string): string {
+  if (reason.toLowerCase() === 'busy') {
+    return '当前会话并发已满，请稍后重试';
+  }
+  if (!reason) {
+    return '当前会话暂不可执行，请稍后重试';
+  }
+  return reason;
 }
 
 /**

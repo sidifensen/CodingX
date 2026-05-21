@@ -68,6 +68,15 @@ springdoc:
     path: /swagger-ui.html # Swagger UI 页面路径
 
 app:
+  chat:
+    executor:
+      stream-core-pool-size: ${APP_CHAT_EXECUTOR_STREAM_CORE_POOL_SIZE:2} # 聊天入口线程池核心线程数
+      stream-max-pool-size: ${APP_CHAT_EXECUTOR_STREAM_MAX_POOL_SIZE:8} # 聊天入口线程池最大线程数
+      stream-queue-capacity: ${APP_CHAT_EXECUTOR_STREAM_QUEUE_CAPACITY:256} # 聊天入口线程池队列容量
+      search-core-pool-size: ${APP_CHAT_EXECUTOR_SEARCH_CORE_POOL_SIZE:4} # 搜索线程池核心线程数
+      search-max-pool-size: ${APP_CHAT_EXECUTOR_SEARCH_MAX_POOL_SIZE:8} # 搜索线程池最大线程数
+      search-queue-capacity: ${APP_CHAT_EXECUTOR_SEARCH_QUEUE_CAPACITY:256} # 搜索线程池队列容量
+      keep-alive-seconds: ${APP_CHAT_EXECUTOR_KEEP_ALIVE_SECONDS:60} # 线程空闲保活秒数
   security:
     cors:
       allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5002,http://localhost:5003} # CORS 允许的源列表
@@ -159,8 +168,8 @@ app:
     code-search-max-file-size-bytes: ${APP_RUNTIME_CODE_SEARCH_MAX_FILE_SIZE_BYTES:1048576} # 代码检索单文件最大字节数
     web-search:
       enabled: ${APP_RUNTIME_WEB_SEARCH_ENABLED:false} # 是否启用真实联网搜索通道
-      provider: ${APP_RUNTIME_WEB_SEARCH_PROVIDER:serper} # 搜索 provider，当前支持 serper / tavily
-      base-url: ${APP_RUNTIME_WEB_SEARCH_BASE_URL:https://google.serper.dev/search} # 搜索接口地址
+      provider: ${APP_RUNTIME_WEB_SEARCH_PROVIDER:bing} # 搜索 provider，当前支持 bing / serper / tavily
+      base-url: ${APP_RUNTIME_WEB_SEARCH_BASE_URL:https://api.bing.microsoft.com/v7.0/search} # 搜索接口地址
       api-key: ${APP_RUNTIME_WEB_SEARCH_API_KEY:} # 搜索 provider API Key
       max-results: ${APP_RUNTIME_WEB_SEARCH_MAX_RESULTS:5} # 单次联网搜索最大候选数
       language: ${APP_RUNTIME_WEB_SEARCH_LANGUAGE:zh-cn} # 搜索语言代码

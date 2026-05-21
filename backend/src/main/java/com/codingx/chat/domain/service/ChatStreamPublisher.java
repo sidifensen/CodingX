@@ -75,6 +75,19 @@ public interface ChatStreamPublisher {
     void publishRejected(Long conversationId, String reason);
 
     /**
+     * 发布排队中事件，供前端展示队列位置与等待提示。
+     * @param conversationId 会话标识。
+     * @param position 当前排队位置（从1开始）。
+     */
+    void publishQueued(Long conversationId, int position);
+
+    /**
+     * 发布已获取执行资格事件，通知前端关闭排队提示。
+     * @param conversationId 会话标识。
+     */
+    void publishQueueAccepted(Long conversationId);
+
+    /**
      * 发布 publishError 处理的更新内容。
      * @param conversationId 输入参数。
      * @param message 输入参数。

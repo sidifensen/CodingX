@@ -41,6 +41,7 @@ class ConversationQueueGateTest {
 
         assertFalse(rejected.allowed());
         assertEquals("busy", rejected.reason());
+        assertEquals(null, rejected.queuePosition());
     }
 
     /**
@@ -160,6 +161,22 @@ class ConversationQueueGateTest {
         ConversationQueueGate gate = new ConversationQueueGate(true, 1, 500L, 50L, 300L, redissonClient);
         assertTrue(gate.tryAcquire(1001L).allowed());
         assertTrue(gate.renew(1001L));
+    }
+
+    /**
+     * 进程内门控并发已满时应回传排队占位，便于前端展示明确提示。
+     */
+    @Test
+    void inMemoryAcquireReportsQueuePositionWhenBusy() {
+        ConversationQueueGate gate = new ConversationQueueGate(1);
+        assertTrue(gate.tryAcquire(1001L).allowed());
+        int[] positionHolder = new int[] {0};
+
+        QueueAcquireResult result = gate.tryAcquire(1002L, position -> positionHolder[0] = position);
+
+        assertFalse(result.allowed());
+        assertEquals("busy", result.reason());
+        assertEquals(1, positionHolder[0]);
     }
 
     /**

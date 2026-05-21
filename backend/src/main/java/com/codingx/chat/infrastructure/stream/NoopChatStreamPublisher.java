@@ -72,6 +72,14 @@ public class NoopChatStreamPublisher implements ChatStreamPublisher {
     public void publishRejected(Long conversationId, String reason) {
     }
 
+    @Override
+    public void publishQueued(Long conversationId, int position) {
+    }
+
+    @Override
+    public void publishQueueAccepted(Long conversationId) {
+    }
+
     /**
      * 发布 publishError 处理的更新内容。
      * @param conversationId 输入参数。

@@ -1,5 +1,6 @@
 package com.codingx.chat.interfaces.controller;
 import com.codingx.admin.interfaces.controller.AdminChatConversationController;
+import com.codingx.admin.interfaces.controller.AdminChatRuntimeDashboardController;
 
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -7,6 +8,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.codingx.chat.application.service.AdminChatConversationService;
+import com.codingx.chat.application.service.AdminChatRuntimeDashboardService;
+import com.codingx.chat.application.service.AdminChatRuntimeDashboardView;
+import com.codingx.chat.application.service.ChatRuntimeExecutorDashboardView;
+import com.codingx.chat.application.service.ChatRuntimeQueueDashboardView;
 import com.codingx.chat.domain.model.ChatConversationStatus;
 import com.codingx.chat.domain.model.ChatMessageRole;
 import com.codingx.chat.domain.model.ChatMessageStatus;
@@ -36,6 +41,12 @@ class AdminChatConversationControllerTest {
 
     @InjectMocks
     private AdminChatConversationController adminChatConversationController;
+
+    @Mock
+    private AdminChatRuntimeDashboardService adminChatRuntimeDashboardService;
+
+    @InjectMocks
+    private AdminChatRuntimeDashboardController adminChatRuntimeDashboardController;
 
     /**
      * 分页列表接口应返回 records/total/current/size/pages 结构。
@@ -109,6 +120,30 @@ class AdminChatConversationControllerTest {
             .andExpect(jsonPath("$.success").value(true))
             .andExpect(jsonPath("$.data.id").value(2001))
             .andExpect(jsonPath("$.data.messages[0].content").value("怎么报销？"));
+    }
+
+    /**
+     * 运行时观测接口应返回队列与线程池双视图。
+     */
+    @Test
+    void getRuntimeDashboardReturnsQueueAndExecutorPayload() throws Exception {
+        when(adminChatRuntimeDashboardService.getRuntimeDashboard()).thenReturn(
+            new AdminChatRuntimeDashboardView(
+                new ChatRuntimeQueueDashboardView("redis", 2, 1, 3, 1),
+                new ChatRuntimeExecutorDashboardView(1, 2, 3, 253, 2, 4, 0, 256)
+            )
+        );
+
+        MockMvcBuilders.standaloneSetup(adminChatRuntimeDashboardController)
+            .setControllerAdvice(new GlobalExceptionHandler())
+            .build()
+            .perform(get("/api/admin/chat/runtime"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.success").value(true))
+            .andExpect(jsonPath("$.data.queue.mode").value("redis"))
+            .andExpect(jsonPath("$.data.queue.waitingCount").value(3))
+            .andExpect(jsonPath("$.data.executor.streamQueueSize").value(3))
+            .andExpect(jsonPath("$.data.executor.searchPoolSize").value(4));
     }
 
     /**

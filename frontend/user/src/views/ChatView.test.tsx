@@ -124,6 +124,27 @@ describe('ChatView', () => {
   });
 
   /**
+   * 排队中应展示独立提示条，且不影响原错误提示区域语义。
+   */
+  it('应展示排队提示条', async () => {
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          streamQueueState: {
+            position: 3,
+            message: '请求排队中，前方还有 3 个会话',
+          },
+          streamError: '',
+        })}
+      />,
+    );
+
+    expect(screen.getByText('请求排队中，前方还有 3 个会话')).toBeInTheDocument();
+  });
+
+  /**
    * 输入区应支持切换深度思考开关，避免功能只停留在后端参数。
    */
   it('应支持切换深度思考开关', async () => {
@@ -1934,6 +1955,7 @@ function createWorkspace(overrides?: Partial<ChatWorkspaceController>): ChatWork
     isStreaming: false,
     isCancelling: false,
     deepThinkingEnabled: false,
+    streamQueueState: null,
     streamError: '',
     inputValue: '请搜索 Spring Boot SSE 最佳实践',
     pendingAttachments: [],

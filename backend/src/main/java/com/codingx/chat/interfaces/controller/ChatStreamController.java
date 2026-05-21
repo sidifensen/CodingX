@@ -12,6 +12,7 @@ import com.codingx.expert.domain.model.ChatExpert;
 import com.codingx.expert.domain.repository.ChatExpertRepository;
 import com.codingx.mcp.domain.model.ChatMcp;
 import com.codingx.mcp.domain.repository.ChatMcpRepository;
+import com.codingx.common.idempotent.IdempotentSubmit;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Stream;
@@ -63,6 +64,13 @@ public class ChatStreamController {
      * @return SSE emitter。
      */
     @GetMapping("/stream")
+    @IdempotentSubmit(
+        key = "T(cn.dev33.satoken.stp.StpUtil).getLoginIdAsLong() + ':' + (#conversationId == null ? 'new' : #conversationId)",
+        message = "当前会话处理中，请稍后再发起新的对话",
+        code = "CHAT_STREAM_DUPLICATE",
+        waitTimeMs = 0,
+        leaseTimeMs = 30000
+    )
     public SseEmitter streamChat(
         @RequestParam String question,
         @RequestParam(required = false) Long conversationId,

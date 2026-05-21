@@ -30,6 +30,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ForkJoinPool;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 
 /**
@@ -132,6 +133,7 @@ public class ChatApplicationService {
     private final ConversationTraceRecordService conversationTraceRecordService;
     private final com.codingx.common.support.ai.TokenCounterService tokenCounterService;
     private final com.codingx.common.support.ai.LlmResponseCleaner llmResponseCleaner;
+    @Qualifier("searchExecutor")
     private final ExecutorService searchExecutor;
     private final RuntimeSettingService runtimeSettingService;
     private final ChatSkillContextService chatSkillContextService;
@@ -472,6 +474,7 @@ public class ChatApplicationService {
             .taskId(runId)
             .intentCode(intentCode)
             .status(status.name())
+            .queueStatus("ACQUIRED")
             .searchEnabled(searchEnabled)
             .artifactEnabled(artifactEnabled)
             .errorMessage(errorMessage)

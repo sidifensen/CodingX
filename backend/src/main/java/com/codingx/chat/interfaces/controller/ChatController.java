@@ -23,6 +23,7 @@ import com.codingx.chat.interfaces.response.ChatAttachmentResponse;
 import com.codingx.chat.interfaces.response.ChatConversationResponse;
 import com.codingx.chat.interfaces.response.ChatMessageResponse;
 import com.codingx.common.model.ApiResponse;
+import com.codingx.common.idempotent.IdempotentSubmit;
 import com.codingx.mcp.domain.model.ChatMcp;
 import com.codingx.mcp.domain.repository.ChatMcpRepository;
 import jakarta.validation.Valid;
@@ -111,6 +112,13 @@ public class ChatController {
      * @return 输入参数。
      */
     @PostMapping("/{conversationId}/messages")
+    @IdempotentSubmit(
+        key = "T(cn.dev33.satoken.stp.StpUtil).getLoginIdAsLong() + ':' + #conversationId",
+        message = "当前会话处理中，请稍后再发送",
+        code = "CHAT_MESSAGE_DUPLICATE",
+        waitTimeMs = 0,
+        leaseTimeMs = 30000
+    )
     public ApiResponse<Void> sendMessage(@PathVariable Long conversationId, @Valid @RequestBody SendChatMessageRequest request) {
         List<String> selectedSkillCodes = chatSkillRepository.findAllEnabled().stream()
             .map(ChatSkill::getSkillCode)

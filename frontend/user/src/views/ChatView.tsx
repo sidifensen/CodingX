@@ -84,6 +84,7 @@ export default function ChatView({
     isStreaming,
     isCancelling,
     deepThinkingEnabled,
+    streamQueueState,
     streamError,
     inputValue,
     pendingAttachments,
@@ -872,6 +873,11 @@ export default function ChatView({
             {streamError ? (
               <div className="mb-3 rounded-2xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
                 {streamError}
+              </div>
+            ) : null}
+            {streamQueueState ? (
+              <div className="mb-3 rounded-2xl border border-amber-500/40 bg-amber-500/12 px-4 py-3 text-sm text-amber-200">
+                {streamQueueState.message}
               </div>
             ) : null}
             <form

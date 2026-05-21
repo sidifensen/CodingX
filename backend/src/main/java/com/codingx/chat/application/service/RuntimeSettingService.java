@@ -5,6 +5,7 @@ import com.codingx.chat.domain.model.ChatRuntimeSetting;
 import com.codingx.chat.domain.repository.ChatRuntimeSettingRepository;
 import com.codingx.common.exception.BusinessException;
 import com.codingx.config.AiProperties;
+import com.codingx.config.ChatExecutorRuntimeProperties;
 import com.codingx.config.ChatMemoryProperties;
 import com.codingx.config.RuntimeProperties;
 import jakarta.annotation.PostConstruct;
@@ -30,6 +31,7 @@ public class RuntimeSettingService {
 
     private final ChatRuntimeSettingRepository chatRuntimeSettingRepository;
     private final RuntimeProperties runtimeProperties;
+    private final ChatExecutorRuntimeProperties chatExecutorRuntimeProperties;
     private final ChatMemoryProperties chatMemoryProperties;
     private final AiProperties aiProperties;
     private final Map<String, ChatRuntimeSetting> cache = new ConcurrentHashMap<>();
@@ -397,6 +399,62 @@ public class RuntimeSettingService {
     public String aiDeepThinkingModel() {
         String fallback = aiProperties.getChat() == null ? null : aiProperties.getChat().getDeepThinkingModel();
         return getString("ai.chat.deep_thinking_model", fallback);
+    }
+
+    /**
+     * 获取聊天入口线程池核心线程数。
+     * @return 核心线程数。
+     */
+    public int chatExecutorStreamCorePoolSize() {
+        return getInt("chat.executor.stream_core_pool_size", chatExecutorRuntimeProperties.getStreamCorePoolSize());
+    }
+
+    /**
+     * 获取聊天入口线程池最大线程数。
+     * @return 最大线程数。
+     */
+    public int chatExecutorStreamMaxPoolSize() {
+        return getInt("chat.executor.stream_max_pool_size", chatExecutorRuntimeProperties.getStreamMaxPoolSize());
+    }
+
+    /**
+     * 获取聊天入口线程池队列容量。
+     * @return 队列容量。
+     */
+    public int chatExecutorStreamQueueCapacity() {
+        return getInt("chat.executor.stream_queue_capacity", chatExecutorRuntimeProperties.getStreamQueueCapacity());
+    }
+
+    /**
+     * 获取搜索线程池核心线程数。
+     * @return 核心线程数。
+     */
+    public int chatExecutorSearchCorePoolSize() {
+        return getInt("chat.executor.search_core_pool_size", chatExecutorRuntimeProperties.getSearchCorePoolSize());
+    }
+
+    /**
+     * 获取搜索线程池最大线程数。
+     * @return 最大线程数。
+     */
+    public int chatExecutorSearchMaxPoolSize() {
+        return getInt("chat.executor.search_max_pool_size", chatExecutorRuntimeProperties.getSearchMaxPoolSize());
+    }
+
+    /**
+     * 获取搜索线程池队列容量。
+     * @return 队列容量。
+     */
+    public int chatExecutorSearchQueueCapacity() {
+        return getInt("chat.executor.search_queue_capacity", chatExecutorRuntimeProperties.getSearchQueueCapacity());
+    }
+
+    /**
+     * 获取聊天线程池保活秒数。
+     * @return 保活秒数。
+     */
+    public long chatExecutorKeepAliveSeconds() {
+        return getLong("chat.executor.keep_alive_seconds", chatExecutorRuntimeProperties.getKeepAliveSeconds());
     }
 
     /**

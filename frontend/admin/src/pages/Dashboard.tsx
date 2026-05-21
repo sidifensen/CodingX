@@ -1,12 +1,18 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { AdminChatApi, AdminDashboardView } from '../api/adminChatApi';
+import {
+  AdminChatApi,
+  AdminChatRuntimeDashboardView,
+  AdminDashboardView,
+} from '../api/adminChatApi';
 
 export function Dashboard() {
   const [dashboard, setDashboard] = React.useState<AdminDashboardView | null>(null);
+  const [runtimeDashboard, setRuntimeDashboard] = React.useState<AdminChatRuntimeDashboardView | null>(null);
 
   React.useEffect(() => {
     void AdminChatApi.getDashboard().then(setDashboard);
+    void AdminChatApi.getRuntimeDashboard().then(setRuntimeDashboard);
   }, []);
 
   return (
@@ -130,6 +136,61 @@ export function Dashboard() {
                 </div>
                 <span className="font-medium text-ink">系统配置</span>
               </Link>
+            </div>
+          </section>
+
+          <section>
+            <h3 className="font-title-md text-title-md text-ink mb-md flex items-center gap-xs">
+              <span className="material-symbols-outlined text-secondary">monitoring</span>
+              聊天运行时观测
+            </h3>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-md">
+              <div className="rounded-xl border border-border-hairline bg-surface-container-lowest p-lg">
+                <div className="flex items-center justify-between mb-sm">
+                  <span className="font-label-caps text-label-caps text-secondary uppercase tracking-widest">队列门控</span>
+                  <span className="rounded-full border border-border-hairline px-2 py-0.5 text-[11px] text-secondary">
+                    {runtimeDashboard?.queue.mode ?? '-'}
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-sm text-sm">
+                  <div className="rounded-lg bg-surface-container px-3 py-2">
+                    <div className="text-secondary text-[12px]">最大并发</div>
+                    <div className="text-ink font-semibold">{runtimeDashboard?.queue.maxConcurrent ?? '-'}</div>
+                  </div>
+                  <div className="rounded-lg bg-surface-container px-3 py-2">
+                    <div className="text-secondary text-[12px]">活跃执行</div>
+                    <div className="text-ink font-semibold">{runtimeDashboard?.queue.activeCount ?? '-'}</div>
+                  </div>
+                  <div className="rounded-lg bg-surface-container px-3 py-2">
+                    <div className="text-secondary text-[12px]">排队数量</div>
+                    <div className="text-ink font-semibold">{runtimeDashboard?.queue.waitingCount ?? '-'}</div>
+                  </div>
+                  <div className="rounded-lg bg-surface-container px-3 py-2">
+                    <div className="text-secondary text-[12px]">可用许可</div>
+                    <div className="text-ink font-semibold">{runtimeDashboard?.queue.availablePermits ?? '-'}</div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-border-hairline bg-surface-container-lowest p-lg">
+                <div className="mb-sm">
+                  <span className="font-label-caps text-label-caps text-secondary uppercase tracking-widest">线程池状态</span>
+                </div>
+                <div className="space-y-sm text-sm">
+                  <div className="rounded-lg border border-border-hairline px-3 py-2">
+                    <div className="font-medium text-ink mb-1">chatStreamExecutor</div>
+                    <div className="text-secondary">
+                      活跃 {runtimeDashboard?.executor.streamActiveCount ?? '-'} / 池 {runtimeDashboard?.executor.streamPoolSize ?? '-'} / 队列 {runtimeDashboard?.executor.streamQueueSize ?? '-'} / 剩余 {runtimeDashboard?.executor.streamQueueRemainingCapacity ?? '-'}
+                    </div>
+                  </div>
+                  <div className="rounded-lg border border-border-hairline px-3 py-2">
+                    <div className="font-medium text-ink mb-1">searchExecutor</div>
+                    <div className="text-secondary">
+                      活跃 {runtimeDashboard?.executor.searchActiveCount ?? '-'} / 池 {runtimeDashboard?.executor.searchPoolSize ?? '-'} / 队列 {runtimeDashboard?.executor.searchQueueSize ?? '-'} / 剩余 {runtimeDashboard?.executor.searchQueueRemainingCapacity ?? '-'}
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
           </section>
 

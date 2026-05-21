@@ -5,7 +5,8 @@ package com.codingx.chat.infrastructure.runtime;
  */
 public record QueueAcquireResult(
     boolean allowed,
-    String reason
+    String reason,
+    Integer queuePosition
 ) {
 
     /**
@@ -13,7 +14,7 @@ public record QueueAcquireResult(
      * @return 成功结果。
      */
     public static QueueAcquireResult granted() {
-        return new QueueAcquireResult(true, null);
+        return new QueueAcquireResult(true, null, null);
     }
 
     /**
@@ -22,6 +23,15 @@ public record QueueAcquireResult(
      * @return 拒绝结果。
      */
     public static QueueAcquireResult rejected(String reason) {
-        return new QueueAcquireResult(false, reason);
+        return new QueueAcquireResult(false, reason, null);
+    }
+
+    /**
+     * 创建排队中结果。
+     * @param position 当前队列位置（从1开始）。
+     * @return 排队结果。
+     */
+    public static QueueAcquireResult queued(int position) {
+        return new QueueAcquireResult(false, "queued", Math.max(1, position));
     }
 }

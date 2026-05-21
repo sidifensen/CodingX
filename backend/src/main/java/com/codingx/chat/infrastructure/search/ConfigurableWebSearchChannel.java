@@ -66,6 +66,7 @@ public class ConfigurableWebSearchChannel implements SearchChannel {
             String body = response.body().string();
             JSONObject root = JSONUtil.parseObj(body);
             return switch (normalizedProvider()) {
+                case "bing" -> parseBingResults(root);
                 case "tavily" -> parseTavilyResults(root);
                 case "serper" -> parseSerperResults(root);
                 default -> List.of();
@@ -83,10 +84,35 @@ public class ConfigurableWebSearchChannel implements SearchChannel {
      */
     private Request buildRequest(SearchRequestContext context) {
         return switch (normalizedProvider()) {
+            case "bing" -> buildBingRequest(context);
             case "tavily" -> buildTavilyRequest(context);
             case "serper" -> buildSerperRequest(context);
             default -> throw new IllegalStateException("Unsupported web search provider: " + normalizedProvider());
         };
+    }
+
+    /**
+     * 构造 Bing Web Search 请求。
+     * @param context 搜索上下文。
+     * @return HTTP 请求。
+     */
+    private Request buildBingRequest(SearchRequestContext context) {
+        HttpUrl baseUrl = HttpUrl.parse(runtimeSettingService.webSearchBaseUrl());
+        if (baseUrl == null) {
+            throw new IllegalStateException("Invalid Bing search base URL");
+        }
+        HttpUrl url = baseUrl.newBuilder()
+            .addQueryParameter("q", context.question())
+            .addQueryParameter("count", String.valueOf(Math.max(1, Math.min(50, runtimeSettingService.webSearchMaxResults()))))
+            .addQueryParameter("mkt", buildBingMarket())
+            .addQueryParameter("responseFilter", "Webpages")
+            .build();
+        return new Request.Builder()
+            .url(url)
+            .header("Ocp-Apim-Subscription-Key", runtimeSettingService.webSearchApiKey())
+            .header("Accept", "application/json")
+            .get()
+            .build();
     }
 
     /**
@@ -195,6 +221,44 @@ public class ConfigurableWebSearchChannel implements SearchChannel {
     }
 
     /**
+     * 解析 Bing 返回的 webPages 结果。
+     * @param root 响应根节点。
+     * @return 标准化来源候选。
+     */
+    private List<SearchReferenceCandidate> parseBingResults(JSONObject root) {
+        JSONObject webPages = root.getJSONObject("webPages");
+        if (webPages == null) {
+            return List.of();
+        }
+        JSONArray values = webPages.getJSONArray("value");
+        if (values == null || values.isEmpty()) {
+            return List.of();
+        }
+        List<SearchReferenceCandidate> candidates = new ArrayList<>();
+        int total = values.size();
+        int index = 0;
+        for (Object item : values) {
+            index++;
+            if (!(item instanceof JSONObject result)) {
+                continue;
+            }
+            String url = result.getStr("url");
+            String title = result.getStr("name");
+            if (StrUtil.hasBlank(url, title)) {
+                continue;
+            }
+            candidates.add(new SearchReferenceCandidate(
+                title,
+                url,
+                extractSiteName(url),
+                StrUtil.blankToDefault(result.getStr("snippet"), ""),
+                Math.max(0.01D, (double) (total - index + 1) / total)
+            ));
+        }
+        return candidates;
+    }
+
+    /**
      * 统一提取 URL host 作为站点名，避免 provider 字段不一致。
      * @param url 来源地址。
      * @return 站点 host，解析失败时回退空字符串。
@@ -215,5 +279,15 @@ public class ConfigurableWebSearchChannel implements SearchChannel {
      */
     private String normalizedProvider() {
         return StrUtil.blankToDefault(runtimeSettingService.webSearchProvider(), "").trim().toLowerCase();
+    }
+
+    /**
+     * Bing 需要 mkt 参数，而现有配置拆成 language/country，这里做最小映射。
+     * @return Bing 市场代码。
+     */
+    private String buildBingMarket() {
+        String language = StrUtil.blankToDefault(runtimeSettingService.webSearchLanguage(), "zh-cn");
+        String country = StrUtil.blankToDefault(runtimeSettingService.webSearchCountry(), "cn");
+        return language + "-" + country.toUpperCase();
     }
 }

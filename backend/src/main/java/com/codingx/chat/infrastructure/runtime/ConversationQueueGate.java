@@ -5,6 +5,7 @@ import com.codingx.chat.application.service.RuntimeSettingService;
 import jakarta.annotation.PreDestroy;
 import java.util.Map;
 import java.util.Objects;
+import java.util.function.IntConsumer;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -159,12 +160,22 @@ public class ConversationQueueGate {
      * @return 获取结果。
      */
     public QueueAcquireResult tryAcquire(Long conversationId) {
+        return tryAcquire(conversationId, null);
+    }
+
+    /**
+     * 尝试为指定会话获取执行资格，并在排队期间回调当前位置。
+     * @param conversationId 会话标识。
+     * @param queuePositionConsumer 排队位置回调，可为空。
+     * @return 获取结果。
+     */
+    public QueueAcquireResult tryAcquire(Long conversationId, IntConsumer queuePositionConsumer) {
         if (!useRedisQueueGate || redissonClient == null) {
             synchronized (inMemoryMonitor) {
-                return tryAcquireInMemory(conversationId);
+                return tryAcquireInMemory(conversationId, queuePositionConsumer);
             }
         }
-        return tryAcquireWithRedisson(conversationId);
+        return tryAcquireWithRedisson(conversationId, queuePositionConsumer);
     }
 
     /**
@@ -217,6 +228,38 @@ public class ConversationQueueGate {
     }
 
     /**
+     * 返回当前队列运行时快照，供管理端展示并发与排队指标。
+     * @return 队列快照。
+     */
+    public ConversationQueueSnapshot snapshot() {
+        if (!useRedisQueueGate || redissonClient == null) {
+            synchronized (inMemoryMonitor) {
+                int activeCount = activeConversations.size();
+                int waitingCount = 0;
+                return new ConversationQueueSnapshot(
+                    "memory",
+                    maxConcurrent,
+                    activeCount,
+                    waitingCount,
+                    Math.max(0, maxConcurrent - activeCount)
+                );
+            }
+        }
+        RPermitExpirableSemaphore semaphore = redissonClient.getPermitExpirableSemaphore(SEMAPHORE_NAME);
+        semaphore.trySetPermits(maxConcurrent);
+        int availablePermits = Math.max(0, semaphore.availablePermits());
+        int activeCount = Math.max(0, maxConcurrent - availablePermits);
+        int waitingCount = Math.max(0, redissonClient.getScoredSortedSet(QUEUE_KEY).size());
+        return new ConversationQueueSnapshot(
+            "redis",
+            maxConcurrent,
+            activeCount,
+            waitingCount,
+            availablePermits
+        );
+    }
+
+    /**
      * 生命周期结束时关闭续租调度器，避免后台线程泄漏。
      */
     @PreDestroy
@@ -229,11 +272,14 @@ public class ConversationQueueGate {
      * @param conversationId 会话标识。
      * @return 获取结果。
      */
-    private QueueAcquireResult tryAcquireInMemory(Long conversationId) {
+    private QueueAcquireResult tryAcquireInMemory(Long conversationId, IntConsumer queuePositionConsumer) {
         if (activeConversations.containsKey(conversationId)) {
             return QueueAcquireResult.granted();
         }
         if (activeConversations.size() >= maxConcurrent) {
+            if (queuePositionConsumer != null) {
+                queuePositionConsumer.accept(1);
+            }
             return QueueAcquireResult.rejected("busy");
         }
         activeConversations.put(conversationId, Boolean.TRUE);
@@ -245,7 +291,7 @@ public class ConversationQueueGate {
      * @param conversationId 会话标识。
      * @return 获取结果。
      */
-    private QueueAcquireResult tryAcquireWithRedisson(Long conversationId) {
+    private QueueAcquireResult tryAcquireWithRedisson(Long conversationId, IntConsumer queuePositionConsumer) {
         String requestMember = member(conversationId);
         RScoredSortedSet<String> queue = redissonClient.getScoredSortedSet(QUEUE_KEY);
         RPermitExpirableSemaphore semaphore = redissonClient.getPermitExpirableSemaphore(SEMAPHORE_NAME);
@@ -259,6 +305,9 @@ public class ConversationQueueGate {
 
         while (System.currentTimeMillis() < deadline) {
             Integer rank = queue.rank(requestMember);
+            if (rank != null && queuePositionConsumer != null) {
+                queuePositionConsumer.accept(rank + 1);
+            }
             if (rank != null && rank < maxConcurrent) {
                 String permitId = acquirePermit(semaphore);
                 if (permitId != null) {

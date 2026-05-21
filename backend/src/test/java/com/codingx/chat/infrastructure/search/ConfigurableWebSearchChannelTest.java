@@ -146,6 +146,57 @@ class ConfigurableWebSearchChannelTest {
     }
 
     /**
+     * Bing 返回的 webPages 结果应被映射为标准来源候选，并保留排名顺序分数。
+     */
+    @Test
+    void searchParsesBingResponse() throws Exception {
+        httpServer = HttpServer.create(new InetSocketAddress(0), 0);
+        httpServer.createContext("/bing/search", exchange -> {
+            exchange.getResponseHeaders().add("Content-Type", "application/json; charset=utf-8");
+            exchange.sendResponseHeaders(200, 0);
+            try (OutputStream outputStream = exchange.getResponseBody()) {
+                writeBody(outputStream, """
+                    {
+                      "webPages": {
+                        "value": [
+                          {
+                            "name": "Bing Result One",
+                            "url": "https://learn.microsoft.com/bing/result-one",
+                            "snippet": "First result snippet."
+                          },
+                          {
+                            "name": "Bing Result Two",
+                            "url": "https://example.com/bing-two",
+                            "snippet": "Second result snippet."
+                          }
+                        ]
+                      }
+                    }
+                    """);
+            }
+        });
+        httpServer.start();
+
+        com.codingx.chat.application.service.RuntimeSettingService runtimeSettingService = buildRuntimeSettingService(
+            "bing",
+            "http://127.0.0.1:" + httpServer.getAddress().getPort() + "/bing/search"
+        );
+        ConfigurableWebSearchChannel channel = new ConfigurableWebSearchChannel(
+            new OkHttpClient.Builder().readTimeout(5, TimeUnit.SECONDS).build(),
+            runtimeSettingService
+        );
+
+        List<SearchReferenceCandidate> candidates = channel.search(new SearchRequestContext("Bing Web Search API"));
+
+        assertEquals(2, candidates.size());
+        assertEquals("Bing Result One", candidates.get(0).title());
+        assertEquals("learn.microsoft.com", candidates.get(0).siteName());
+        assertEquals(1.0D, candidates.get(0).score());
+        assertEquals("Bing Result Two", candidates.get(1).title());
+        assertEquals(0.5D, candidates.get(1).score());
+    }
+
+    /**
      * 构造最小运行时搜索配置，便于复用。
      * @param provider provider 编码。
      * @param baseUrl 搜索接口地址。

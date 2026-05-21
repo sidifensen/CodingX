@@ -216,6 +216,39 @@ export interface AdminDashboardView {
   sampleQuestionCount: number;
 }
 
+/**
+ * 聊天运行时队列观测视图。
+ */
+export interface AdminChatRuntimeQueueView {
+  mode: string;
+  maxConcurrent: number;
+  activeCount: number;
+  waitingCount: number;
+  availablePermits: number;
+}
+
+/**
+ * 聊天运行时线程池观测视图。
+ */
+export interface AdminChatRuntimeExecutorView {
+  streamActiveCount: number;
+  streamPoolSize: number;
+  streamQueueSize: number;
+  streamQueueRemainingCapacity: number;
+  searchActiveCount: number;
+  searchPoolSize: number;
+  searchQueueSize: number;
+  searchQueueRemainingCapacity: number;
+}
+
+/**
+ * 聊天运行时总览视图。
+ */
+export interface AdminChatRuntimeDashboardView {
+  queue: AdminChatRuntimeQueueView;
+  executor: AdminChatRuntimeExecutorView;
+}
+
 export interface AdminMcpToolView {
   toolId: string;
   displayName: string;
@@ -593,6 +626,13 @@ export class AdminChatApi {
 
   static async getDashboard(): Promise<AdminDashboardView> {
     return this.request<AdminDashboardView>('/api/admin/chat/dashboard');
+  }
+
+  /**
+   * 获取聊天运行时观测面板数据。
+   */
+  static async getRuntimeDashboard(): Promise<AdminChatRuntimeDashboardView> {
+    return this.request<AdminChatRuntimeDashboardView>('/api/admin/chat/runtime');
   }
 
   static async listMcpTools(): Promise<AdminMcpToolView[]> {

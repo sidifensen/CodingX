@@ -3,6 +3,7 @@ package com.codingx.chat.application.service;
 import com.codingx.chat.domain.service.ChatStreamPublisher;
 import com.codingx.chat.infrastructure.runtime.ChatRunControlService;
 import com.codingx.chat.infrastructure.runtime.ConversationQueueGate;
+import com.codingx.chat.infrastructure.runtime.ConversationQueueSnapshot;
 import com.codingx.chat.infrastructure.runtime.QueueAcquireResult;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -34,11 +35,14 @@ public class ChatRuntimeGuardService {
      * @param conversationId 会话标识。
      */
     public void ensureAccepted(Long conversationId) {
-        QueueAcquireResult result = conversationQueueGate.tryAcquire(conversationId);
-        if (!result.allowed()) {
+        QueueAcquireResult result = conversationQueueGate.tryAcquire(conversationId, position ->
+            chatStreamPublisher.publishQueued(conversationId, position)
+        );
+        if (!result.allowed() && !"queued".equalsIgnoreCase(result.reason())) {
             chatStreamPublisher.publishRejected(conversationId, result.reason());
             throw new IllegalStateException("Conversation rejected: " + result.reason());
         }
+        chatStreamPublisher.publishQueueAccepted(conversationId);
     }
 
     /**
@@ -107,5 +111,13 @@ public class ChatRuntimeGuardService {
     public void completeConversation(Long conversationId, Long runId) {
         conversationQueueGate.release(conversationId);
         chatRunControlService.complete(conversationId, runId);
+    }
+
+    /**
+     * 返回当前队列快照，供管理端展示运行时并发状态。
+     * @return 队列快照。
+     */
+    public ConversationQueueSnapshot snapshot() {
+        return conversationQueueGate.snapshot();
     }
 }

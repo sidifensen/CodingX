@@ -3,6 +3,7 @@ package com.codingx.config;
 import cn.dev33.satoken.exception.NotLoginException;
 import com.codingx.common.error.ErrorMessageCatalog;
 import com.codingx.common.exception.BusinessException;
+import com.codingx.common.exception.ConflictException;
 import com.codingx.common.exception.ForbiddenException;
 import com.codingx.common.exception.NotFoundException;
 import com.codingx.common.exception.UnauthorizedException;
@@ -47,6 +48,17 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(BusinessException.class)
     public ResponseEntity<ApiResponse<Void>> handleBusiness(BusinessException exception, HttpServletRequest request) {
         return buildResponse(HttpStatus.BAD_REQUEST, exception.getCode(), exception.getMessage(), exception, request, false);
+    }
+
+    /**
+     * 处理请求冲突异常，统一返回 409。
+     * @param exception 冲突异常。
+     * @param request 当前请求。
+     * @return 标准错误响应。
+     */
+    @ExceptionHandler(ConflictException.class)
+    public ResponseEntity<ApiResponse<Void>> handleConflict(ConflictException exception, HttpServletRequest request) {
+        return buildResponse(HttpStatus.CONFLICT, exception.getCode(), exception.getMessage(), exception, request, false);
     }
 
     /**

@@ -220,6 +220,14 @@ export interface StreamMetaPayload {
 }
 
 /**
+ * 描述当前流式会话的排队状态，用于前端展示排队提示条。
+ */
+export interface StreamQueueState {
+  position: number;
+  message: string;
+}
+
+/**
  * 描述左侧工作空间树中的单个分组项。
  */
 export interface WorkspaceConversationGroup {
@@ -274,6 +282,7 @@ export interface ChatWorkspaceController {
   isStreaming: boolean;
   isCancelling: boolean;
   deepThinkingEnabled: boolean;
+  streamQueueState: StreamQueueState | null;
   streamError: string;
   inputValue: string;
   pendingAttachments: PendingAttachmentItem[];

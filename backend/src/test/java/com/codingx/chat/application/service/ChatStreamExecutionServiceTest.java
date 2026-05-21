@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -290,6 +291,48 @@ class ChatStreamExecutionServiceTest {
         verify(chatMcpRepository).bindTaskMcps(any(Long.class), eq(java.util.List.of()));
         verify(chatSkillRepository).bindTaskSkills(any(Long.class), eq(java.util.List.of()));
         verify(chatExpertRepository).bindTaskExpert(any(Long.class), eq(null));
+    }
+
+    /**
+     * 当会话被门控拒绝时应记录 REJECTED，避免误记为系统异常。
+     * @throws Exception 等待后台线程执行时抛出。
+     */
+    @Test
+    void dispatchMarksRunRejectedWhenRuntimeGuardRejectsConversation() throws Exception {
+        CountDownLatch captured = new CountDownLatch(1);
+        AtomicReference<Long> runIdRef = new AtomicReference<>();
+        ChatStreamExecutionService service = new ChatStreamExecutionService(
+            chatApplicationService,
+            chatRuntimeGuardService,
+            conversationTraceRecordService,
+            chatExecutionRunRepository,
+            chatMcpRepository,
+            chatSkillRepository,
+            chatExpertRepository,
+            chatConversationRepository,
+            chatWorkspaceBindingService,
+            executorService
+        );
+        ChatTraceRun traceRun = ChatTraceRun.builder().traceId("trace-rejected").traceName("chat-entry").build();
+        when(conversationTraceRecordService.startTrace("chat-entry", 1001L, 2001L)).thenReturn(traceRun);
+        org.mockito.Mockito.doAnswer(invocation -> {
+            ChatExecutionRun run = invocation.getArgument(0);
+            if ("RUNNING".equals(run.getStatus())) {
+                runIdRef.set(run.getId());
+            }
+            if ("REJECTED".equals(run.getStatus())) {
+                captured.countDown();
+            }
+            return null;
+        }).when(chatExecutionRunRepository).save(any(ChatExecutionRun.class));
+        org.mockito.Mockito.doThrow(new IllegalStateException("Conversation rejected: busy"))
+            .when(chatApplicationService).sendMessage(new SendChatMessageCommand(1001L, "你好", false, java.util.List.of(), java.util.List.of(), null, null, java.util.List.of()), 2001L);
+
+        service.dispatch(new SendChatMessageCommand(1001L, "你好", false), 2001L);
+
+        assertTrue(captured.await(1, TimeUnit.SECONDS), "rejected run should be updated to REJECTED");
+        verify(chatExecutionRunRepository, timeout(1000).atLeast(2)).save(any(ChatExecutionRun.class));
+        verify(conversationTraceRecordService).finishTrace("trace-rejected", runIdRef.get(), "REJECTED", "Conversation rejected: busy");
     }
 
     /**

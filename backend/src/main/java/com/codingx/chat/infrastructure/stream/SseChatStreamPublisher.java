@@ -98,6 +98,19 @@ public class SseChatStreamPublisher implements ChatStreamPublisher {
         chatSseRegistry.complete(conversationId);
     }
 
+    @Override
+    public void publishQueued(Long conversationId, int position) {
+        chatSseRegistry.publish(conversationId, "queued", Map.of(
+            "conversationId", conversationId,
+            "position", Math.max(1, position)
+        ));
+    }
+
+    @Override
+    public void publishQueueAccepted(Long conversationId) {
+        chatSseRegistry.publish(conversationId, "queue-accepted", Map.of("conversationId", conversationId));
+    }
+
     /**
      * 发布 publishError 处理的更新内容。
      * @param conversationId 输入参数。

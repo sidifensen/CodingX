@@ -16,7 +16,7 @@ import org.springframework.stereotype.Service;
 public class DocumentArtifactService {
 
     private final ChatMessageArtifactRepository chatMessageArtifactRepository;
-    private final com.codingx.chat.domain.service.ChatStreamPublisher chatStreamPublisher;
+    private final com.codingx.chat.domain.port.ChatStreamPublisher chatStreamPublisher;
     private final FileStorageService fileStorageService;
 
     /**
@@ -55,3 +55,4 @@ public class DocumentArtifactService {
         ));
     }
 }
+

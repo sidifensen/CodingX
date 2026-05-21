@@ -1,4 +1,4 @@
-package com.codingx.chat.domain.service;
+package com.codingx.chat.domain.port;
 import com.codingx.chat.domain.model.ChatMessage;
 import java.util.List;
 
@@ -67,3 +67,4 @@ public interface AiChatClient {
         }
     }
 }
+

@@ -7,7 +7,7 @@ import static org.mockito.Mockito.when;
 import com.codingx.chat.application.service.ChatAttachmentService;
 import com.codingx.chat.domain.model.ChatAttachment;
 import com.codingx.chat.domain.model.ChatMessage;
-import com.codingx.chat.domain.service.AiChatClient;
+import com.codingx.chat.domain.port.AiChatClient;
 import com.codingx.config.AiProperties;
 import com.codingx.common.support.ai.AiConversationRequest;
 import com.codingx.common.support.ai.AiModelDispatchService;
@@ -112,3 +112,4 @@ class RoutingAiChatClientTest {
         return properties;
     }
 }
+

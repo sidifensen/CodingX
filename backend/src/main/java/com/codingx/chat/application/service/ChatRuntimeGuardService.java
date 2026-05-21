@@ -1,6 +1,6 @@
 package com.codingx.chat.application.service;
 
-import com.codingx.chat.domain.service.ChatStreamPublisher;
+import com.codingx.chat.domain.port.ChatStreamPublisher;
 import com.codingx.chat.infrastructure.runtime.ChatRunControlService;
 import com.codingx.chat.infrastructure.runtime.ConversationQueueGate;
 import com.codingx.chat.infrastructure.runtime.ConversationQueueSnapshot;
@@ -121,3 +121,4 @@ public class ChatRuntimeGuardService {
         return conversationQueueGate.snapshot();
     }
 }
+

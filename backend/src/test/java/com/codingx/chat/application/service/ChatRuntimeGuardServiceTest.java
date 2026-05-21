@@ -6,7 +6,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.eq;
 
-import com.codingx.chat.domain.service.ChatStreamPublisher;
+import com.codingx.chat.domain.port.ChatStreamPublisher;
 import com.codingx.chat.infrastructure.runtime.ChatRunControlService;
 import com.codingx.chat.infrastructure.runtime.ConversationQueueGate;
 import com.codingx.chat.infrastructure.runtime.QueueAcquireResult;
@@ -104,3 +104,4 @@ class ChatRuntimeGuardServiceTest {
         verify(chatRunControlService).isCancelled(1001L, 9001L);
     }
 }
+

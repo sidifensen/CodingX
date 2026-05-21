@@ -2,7 +2,7 @@ package com.codingx.chat.application.service;
 
 import com.codingx.chat.domain.model.ChatConversation;
 import com.codingx.chat.domain.model.ChatMessage;
-import com.codingx.chat.domain.service.AiChatClient;
+import com.codingx.chat.domain.port.AiChatClient;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -32,3 +32,4 @@ public class ConversationTitleService {
         return aiChatClient.generateTitle(messages);
     }
 }
+

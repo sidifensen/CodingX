@@ -4,7 +4,7 @@ import static org.mockito.Mockito.verify;
 
 import com.codingx.chat.domain.model.ChatMessageReference;
 import com.codingx.chat.domain.repository.ChatMessageReferenceRepository;
-import com.codingx.chat.domain.service.ChatStreamPublisher;
+import com.codingx.chat.domain.port.ChatStreamPublisher;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -42,3 +42,4 @@ class SearchReferenceCollectorTest {
         verify(chatStreamPublisher).publishReference(org.mockito.ArgumentMatchers.eq(3001L), org.mockito.ArgumentMatchers.any());
     }
 }
+

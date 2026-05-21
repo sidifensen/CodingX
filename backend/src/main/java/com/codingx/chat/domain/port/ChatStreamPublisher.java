@@ -1,4 +1,4 @@
-package com.codingx.chat.domain.service;
+package com.codingx.chat.domain.port;
 
 /**
  * 定义 ChatStreamPublisher 的领域服务契约。
@@ -94,3 +94,4 @@ public interface ChatStreamPublisher {
      */
     void publishError(Long conversationId, String message);
 }
+

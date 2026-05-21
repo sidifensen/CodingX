@@ -17,7 +17,7 @@ import org.springframework.stereotype.Service;
 public class SearchReferenceCollector {
 
     private final ChatMessageReferenceRepository chatMessageReferenceRepository;
-    private final com.codingx.chat.domain.service.ChatStreamPublisher chatStreamPublisher;
+    private final com.codingx.chat.domain.port.ChatStreamPublisher chatStreamPublisher;
 
     /**
      * 将搜索结果落库为参考来源记录。
@@ -59,3 +59,4 @@ public class SearchReferenceCollector {
         }
     }
 }
+

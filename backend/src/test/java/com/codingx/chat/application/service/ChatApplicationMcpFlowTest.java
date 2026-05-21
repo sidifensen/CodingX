@@ -16,8 +16,8 @@ import com.codingx.chat.domain.repository.ChatExecutionRunRepository;
 import com.codingx.chat.domain.repository.ChatExecutionStepRepository;
 import com.codingx.chat.domain.repository.ChatIntentNodeRepository;
 import com.codingx.chat.domain.repository.ChatMessageRepository;
-import com.codingx.chat.domain.service.AiChatClient;
-import com.codingx.chat.domain.service.ChatStreamPublisher;
+import com.codingx.chat.domain.port.AiChatClient;
+import com.codingx.chat.domain.port.ChatStreamPublisher;
 import com.codingx.mcp.application.service.ChatMcpExecutionService;
 import com.codingx.mcp.application.service.ChatMcpToolResult;
 import com.codingx.mcp.domain.repository.ChatMcpRepository;
@@ -139,3 +139,4 @@ class ChatApplicationMcpFlowTest {
         ChatExecutionContext.clear();
     }
 }
+

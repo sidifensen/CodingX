@@ -1,5 +1,5 @@
 package com.codingx.chat.infrastructure.stream;
-import com.codingx.chat.domain.service.ChatStreamPublisher;
+import com.codingx.chat.domain.port.ChatStreamPublisher;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Primary;
@@ -123,3 +123,4 @@ public class SseChatStreamPublisher implements ChatStreamPublisher {
         chatSseRegistry.complete(conversationId);
     }
 }
+

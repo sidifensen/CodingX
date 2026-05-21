@@ -1,7 +1,7 @@
 package com.codingx.chat.infrastructure.ai;
 
 import com.codingx.chat.domain.model.ChatMessage;
-import com.codingx.chat.domain.service.AiChatClient;
+import com.codingx.chat.domain.port.AiChatClient;
 import com.codingx.chat.domain.model.ChatAttachment;
 import com.codingx.chat.application.service.ChatAttachmentService;
 import com.codingx.common.support.ai.AiConversationRequest;
@@ -80,4 +80,5 @@ public class RoutingAiChatClient implements AiChatClient {
             .toList();
     }
 }
+
 

@@ -6,7 +6,7 @@ import static org.mockito.Mockito.verify;
 
 import com.codingx.chat.domain.model.ChatMessageArtifact;
 import com.codingx.chat.domain.repository.ChatMessageArtifactRepository;
-import com.codingx.chat.domain.service.ChatStreamPublisher;
+import com.codingx.chat.domain.port.ChatStreamPublisher;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -49,3 +49,4 @@ class DocumentArtifactServiceTest {
         assertEquals("storage/docx/3001-search-report.docx", captor.getValue().getStoragePath());
     }
 }
+

@@ -1,5 +1,5 @@
 package com.codingx.chat.infrastructure.stream;
-import com.codingx.chat.domain.service.ChatStreamPublisher;
+import com.codingx.chat.domain.port.ChatStreamPublisher;
 import org.springframework.stereotype.Component;
 
 /**
@@ -89,3 +89,4 @@ public class NoopChatStreamPublisher implements ChatStreamPublisher {
     public void publishError(Long conversationId, String message) {
     }
 }
+

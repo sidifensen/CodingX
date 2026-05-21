@@ -6,7 +6,7 @@ import static org.mockito.Mockito.when;
 import com.codingx.chat.domain.model.ChatConversation;
 import com.codingx.chat.domain.model.ChatConversationStatus;
 import com.codingx.chat.domain.model.ChatMessage;
-import com.codingx.chat.domain.service.AiChatClient;
+import com.codingx.chat.domain.port.AiChatClient;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -46,3 +46,4 @@ class ConversationTitleServiceTest {
         assertEquals("AI搜索重构计划", title);
     }
 }
+

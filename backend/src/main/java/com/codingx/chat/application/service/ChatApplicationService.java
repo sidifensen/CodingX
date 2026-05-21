@@ -34,102 +34,42 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 
 /**
- * 负责协调 ChatApplicationService 的应用流程，串联领域对象与基础设施服务。
+ * 聊天主流程应用服务。
+ * 职责边界：
+ * 1. 编排一次用户消息从鉴权、意图路由、工具执行到模型输出的完整链路
+ * 2. 仅负责流程协调，不承载仓储实现细节与模型底层协议
+ * 3. 确保所有出口（成功、失败、取消）都完成执行结果落库与 Trace 收口
  */
 @Service
 @RequiredArgsConstructor
 public class ChatApplicationService {
 
-    /**
-     * ChatConversationRepository 依赖。
-     */
+    // 会话与消息持久化
     private final ChatConversationRepository chatConversationRepository;
-
-    /**
-     * ChatMessageRepository 依赖。
-     */
     private final ChatMessageRepository chatMessageRepository;
-
-    /**
-     * ChatExecutionStepRepository 依赖。
-     */
     private final ChatExecutionStepRepository chatExecutionStepRepository;
-
-    /**
-     * ChatExecutionRunRepository 依赖。
-     */
     private final ChatExecutionRunRepository chatExecutionRunRepository;
 
-    /**
-     * AiChatClient 依赖。
-     */
+    // 模型流式输出与运行时控制
     private final AiChatClient aiChatClient;
-
-    /**
-     * ChatStreamPublisher 依赖。
-     */
     private final ChatStreamPublisher chatStreamPublisher;
-
-    /**
-     * ChatRuntimeGuardService 依赖。
-     */
     private final ChatRuntimeGuardService chatRuntimeGuardService;
 
-    /**
-     * ConversationTitleService 依赖。
-     */
+    // 意图决策与提示词编排
     private final ConversationTitleService conversationTitleService;
-
-    /**
-     * ConversationSummaryService 依赖。
-     */
     private final ConversationSummaryService conversationSummaryService;
-
-    /**
-     * ConversationRewriteService 依赖。
-     */
     private final ConversationRewriteService conversationRewriteService;
-
-    /**
-     * ConversationIntentService 依赖。
-     */
     private final ConversationIntentService conversationIntentService;
-
-    /**
-     * Prompt 资产加载器依赖。
-     */
     private final PromptTemplateLoader promptTemplateLoader;
 
-    /**
-     * MCP 执行服务依赖。
-     */
+    // 工具链与扩展上下文
     private final ChatMcpExecutionService chatMcpExecutionService;
     private final ChatMcpRepository chatMcpRepository;
     private final ChatAttachmentService chatAttachmentService;
-
-    /**
-     * 意图节点仓储依赖。
-     */
     private final com.codingx.chat.domain.repository.ChatIntentNodeRepository chatIntentNodeRepository;
-
-    /**
-     * WebSearchExecutionService 依赖。
-     */
     private final WebSearchExecutionService webSearchExecutionService;
-
-    /**
-     * SearchReferenceCollector 依赖。
-     */
     private final SearchReferenceCollector searchReferenceCollector;
-
-    /**
-     * DocumentArtifactService 依赖。
-     */
     private final DocumentArtifactService documentArtifactService;
-
-    /**
-     * Trace 收口服务依赖。
-     */
     private final ConversationTraceRecordService conversationTraceRecordService;
     private final com.codingx.common.support.ai.TokenCounterService tokenCounterService;
     private final com.codingx.common.support.ai.LlmResponseCleaner llmResponseCleaner;
@@ -140,9 +80,14 @@ public class ChatApplicationService {
     private final ChatExpertContextService chatExpertContextService;
 
     /**
-     * 发送 sendMessage 处理的消息或请求。
-     * @param command 输入参数。
-     * @param userId 输入参数。
+     * 处理用户发送消息主流程。
+     * 关键约束：
+     * 1. 必须先校验会话归属，再执行后续流程，避免越权访问
+     * 2. 所有分支都要绑定 runId，并写入执行结果与 Trace 终态，避免运行态悬挂
+     * 3. 命中澄清、直答、MCP 限制等短路分支时立即返回，不进入模型流式调用
+     *
+     * @param command 发送请求，包含消息内容、附件、MCP 选择及技能上下文
+     * @param userId 当前用户标识，用于会话权限校验
      */
     public void sendMessage(SendChatMessageCommand command, Long userId) {
         if (StrUtil.isBlank(command.content())) {

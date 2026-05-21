@@ -13,6 +13,18 @@
 
 ## DDD 架构理解
 
-- 典型调用链路：`interfaces -> application -> domain`
-- `infrastructure` 负责技术实现（如持久化、外部服务、消息流），用于实现 `domain/application` 定义的接口能力
-- 建议约束：`interfaces` 不直接访问 `domain` 细节；`domain` 不依赖 `infrastructure`
+- 依赖关系：`interfaces -> application -> domain`
+- `infrastructure` 负责技术实现，并实现 `application/domain` 定义的接口
+
+```text
+interfaces  ->  application  ->  domain
+                    ^             ^
+                    |             |
+             infrastructure -------
+```
+
+- `interfaces`：处理 HTTP 请求与响应，只调用 `application`
+- `application`：编排用例流程，调用 `domain` 模型与仓储接口
+- `domain`：承载核心业务规则，不依赖外层技术实现
+- `infrastructure`：持久化、外部服务、消息流等技术细节实现
+- `chat` 模块的分组落位规则见 [Chat 模块目录说明](src/main/java/com/codingx/chat/README.md)

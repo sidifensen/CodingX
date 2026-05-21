@@ -224,13 +224,11 @@ export function listWorkspaceGroups(
           ? snapshot.conversationRecords
           : {},
     }))
-    // 业务约束：云端会话统一保留在默认云端分组，不再单独渲染云端历史分区。
-    .filter((group) => !(group.runtimeTarget === 'cloud' && group.groupType === 'history'))
     .filter((group) => (runtimeTarget ? group.runtimeTarget === runtimeTarget : true))
     .sort((left, right) => {
       const leftIsHistory = left.groupType === 'history';
       const rightIsHistory = right.groupType === 'history';
-      // 先固定“工作空间分组在前、历史分组在后”，避免访问时间波动导致分组位置抖动。
+      // 保持“工作空间在前、历史分组在后”的稳定顺序，避免刷新/切换时视觉跳动。
       if (leftIsHistory !== rightIsHistory) {
         return leftIsHistory ? 1 : -1;
       }
@@ -365,139 +363,16 @@ function readStore(): LocalWorkspaceConversationStore {
         snapshots: {},
       };
     }
-    return normalizeCloudWorkspaceSnapshots({
+    return {
       version: 1,
       snapshots: parsedStore.snapshots,
-    });
+    };
   } catch {
     return {
       version: 1,
       snapshots: {},
     };
   }
-}
-
-/**
- * 将云端历史分区自动并回默认云端分组，避免刷新后会话落到隐藏分区里。
- * @param store 原始快照仓库。
- * @returns 归一化后的快照仓库。
- */
-function normalizeCloudWorkspaceSnapshots(
-  store: LocalWorkspaceConversationStore,
-): LocalWorkspaceConversationStore {
-  const cloudWorkspacePartitionKey = buildWorkspacePartitionKey('cloud', null);
-  const cloudHistoryPartitionKey = buildWorkspaceHistoryPartitionKey('cloud');
-  const cloudHistorySnapshot = store.snapshots[cloudHistoryPartitionKey];
-  if (!cloudHistorySnapshot) {
-    return store;
-  }
-
-  const cloudWorkspaceSnapshot = store.snapshots[cloudWorkspacePartitionKey] ?? EMPTY_SNAPSHOT;
-  const mergedConversations = mergeConversationLists(
-    Array.isArray(cloudWorkspaceSnapshot.conversations) ? cloudWorkspaceSnapshot.conversations : [],
-    Array.isArray(cloudHistorySnapshot.conversations) ? cloudHistorySnapshot.conversations : [],
-  );
-  const mergedConversationRecords = mergeConversationRecordMap(
-    cloudWorkspaceSnapshot.conversationRecords ?? {},
-    cloudHistorySnapshot.conversationRecords ?? {},
-  );
-  const normalizedStore: LocalWorkspaceConversationStore = {
-    version: 1,
-    snapshots: {
-      ...store.snapshots,
-      [cloudWorkspacePartitionKey]: {
-        workspacePath: null,
-        workspaceLabel:
-          cloudWorkspaceSnapshot.workspaceLabel &&
-          cloudWorkspaceSnapshot.workspaceLabel !== EMPTY_SNAPSHOT.workspaceLabel &&
-          cloudWorkspaceSnapshot.workspaceLabel !== WORKSPACE_HISTORY_LABEL
-            ? cloudWorkspaceSnapshot.workspaceLabel
-            : getWorkspaceLabel(null),
-        runtimeTarget: 'cloud',
-        lastOpenedAt: Math.max(
-          cloudWorkspaceSnapshot.lastOpenedAt ?? 0,
-          cloudHistorySnapshot.lastOpenedAt ?? 0,
-        ),
-        activeConversationId:
-          cloudWorkspaceSnapshot.activeConversationId ??
-          cloudHistorySnapshot.activeConversationId ??
-          mergedConversations[0]?.id ??
-          null,
-        conversations: mergedConversations,
-        conversationRecords: mergedConversationRecords,
-      },
-    },
-  };
-  delete normalizedStore.snapshots[cloudHistoryPartitionKey];
-  window.localStorage.setItem(
-    LOCAL_WORKSPACE_CONVERSATION_STORE_KEY,
-    JSON.stringify(normalizedStore),
-  );
-  return normalizedStore;
-}
-
-/**
- * 按会话 ID 去重合并会话列表，保持默认分组里的原始顺序优先。
- * @param primary 默认分组会话列表。
- * @param secondary 历史分组会话列表。
- * @returns 合并后的会话列表。
- */
-function mergeConversationLists(primary: ConversationItem[], secondary: ConversationItem[]) {
-  const mergedConversations = [...primary];
-  const existingIds = new Set(primary.map((conversation) => conversation.id));
-  for (const conversation of secondary) {
-    if (existingIds.has(conversation.id)) {
-      continue;
-    }
-    mergedConversations.push(conversation);
-  }
-  return mergedConversations;
-}
-
-/**
- * 合并单条会话记录时优先保留默认分组中已有的真实内容，避免迁移时丢失回放数据。
- * @param primary 默认分组记录。
- * @param secondary 历史分组记录。
- * @returns 合并后的记录。
- */
-function mergeConversationRecord(
-  primary?: LocalConversationRecord,
-  secondary?: LocalConversationRecord,
-): LocalConversationRecord {
-  return {
-    owned: primary?.owned ?? secondary?.owned,
-    messages: primary?.messages?.length ? primary.messages : secondary?.messages ?? [],
-    executionSteps:
-      primary?.executionSteps?.length ? primary.executionSteps : secondary?.executionSteps ?? [],
-    references: primary?.references?.length ? primary.references : secondary?.references ?? [],
-    artifacts: primary?.artifacts?.length ? primary.artifacts : secondary?.artifacts ?? [],
-    currentExperts:
-      primary?.currentExperts?.length ? primary.currentExperts : secondary?.currentExperts ?? [],
-    currentSkills:
-      primary?.currentSkills?.length ? primary.currentSkills : secondary?.currentSkills ?? [],
-    currentMcps: primary?.currentMcps?.length ? primary.currentMcps : secondary?.currentMcps ?? [],
-  };
-}
-
-/**
- * 按会话主键合并记录映射，保留两侧已有的回放内容。
- * @param primary 默认分组记录映射。
- * @param secondary 历史分组记录映射。
- * @returns 合并后的记录映射。
- */
-function mergeConversationRecordMap(
-  primary: Record<string, LocalConversationRecord>,
-  secondary: Record<string, LocalConversationRecord>,
-) {
-  const mergedConversationIds = new Set([...Object.keys(primary), ...Object.keys(secondary)]);
-  const mergedRecords: Record<string, LocalConversationRecord> = {};
-  for (const conversationId of mergedConversationIds) {
-    mergedRecords[conversationId] = mergeConversationRecord(
-      primary[conversationId],
-      secondary[conversationId],
-    );
-  }
-  return mergedRecords;
 }
 
 /**

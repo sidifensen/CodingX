@@ -746,7 +746,9 @@ describe('App', () => {
 
     render(<App />);
 
-    expect(await screen.findByText('Spring Boot SSE 最佳实践')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getAllByText('Spring Boot SSE 最佳实践').length).toBeGreaterThan(0);
+    });
     expect(screen.queryByText('量子力学是什么')).not.toBeInTheDocument();
     expect(screen.queryByText('Lumina战略方向: 深色模式设...')).not.toBeInTheDocument();
   });
@@ -773,7 +775,7 @@ describe('App', () => {
         snapshots: {
           'cloud::__no_workspace__': {
             workspacePath: null,
-            workspaceLabel: '云端工作空间',
+            workspaceLabel: '历史记录',
             runtimeTarget: 'cloud',
             lastOpenedAt: Date.now(),
             activeConversationId: '2001',
@@ -819,7 +821,7 @@ describe('App', () => {
           },
           'cloud::__history__': {
             workspacePath: null,
-            workspaceLabel: '历史会话',
+            workspaceLabel: '历史记录',
             runtimeTarget: 'cloud',
             lastOpenedAt: Date.now(),
             activeConversationId: '2001',
@@ -1080,7 +1082,7 @@ describe('App', () => {
         snapshots: {
           'cloud::__no_workspace__': {
             workspacePath: null,
-            workspaceLabel: '云端工作空间',
+            workspaceLabel: '历史记录',
             runtimeTarget: 'cloud',
             lastOpenedAt: Date.now(),
             activeConversationId: '2055114974648864768',
@@ -1143,7 +1145,7 @@ describe('App', () => {
           },
           'cloud::__history__': {
             workspacePath: null,
-            workspaceLabel: '历史会话',
+            workspaceLabel: '历史记录',
             runtimeTarget: 'cloud',
             lastOpenedAt: Date.now(),
             activeConversationId: '2055114974648864768',
@@ -1470,9 +1472,11 @@ describe('App', () => {
 
     render(<App />);
 
-    expect(await screen.findByText('两个小时前的会话')).toBeInTheDocument();
-    expect(screen.getByText('2 小时前')).toBeInTheDocument();
-    expect(screen.getByText('3 天前')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getAllByText('两个小时前的会话').length).toBeGreaterThan(0);
+    });
+    expect(screen.getAllByText('2 小时前').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('3 天前').length).toBeGreaterThan(0);
     expect(screen.queryByText('今天')).not.toBeInTheDocument();
     expect(screen.queryByText('最近七天')).not.toBeInTheDocument();
     expect(screen.queryByText('更早')).not.toBeInTheDocument();
@@ -1579,15 +1583,19 @@ describe('App', () => {
 
     render(<App />);
 
-    await screen.findByText('可操作会话');
-    const menuButton = screen.getByRole('button', { name: '打开会话菜单 可操作会话' });
+    await waitFor(() => {
+      expect(screen.getAllByText('可操作会话').length).toBeGreaterThan(0);
+    });
+    const menuButton = screen.getAllByRole('button', { name: '打开会话菜单 可操作会话' })[0];
     fireEvent.mouseEnter(menuButton.parentElement as HTMLElement);
     expect(menuButton).toHaveStyle({ opacity: '1' });
     expect(screen.queryByRole('button', { name: '重命名对话' })).not.toBeInTheDocument();
     fireEvent.click(menuButton);
 
-    expect(await screen.findByRole('button', { name: '重命名对话' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '删除对话' })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getAllByRole('button', { name: '重命名对话' }).length).toBeGreaterThan(0);
+    });
+    expect(screen.getAllByRole('button', { name: '删除对话' }).length).toBeGreaterThan(0);
   });
 
   /**

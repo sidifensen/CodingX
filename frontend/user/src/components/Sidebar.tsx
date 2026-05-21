@@ -462,7 +462,10 @@ function ConversationHistory({
                     <div className="space-y-1">
                       {visibleConversations.length ? (
                         visibleConversations.map((conversation) => {
-                          const isActive = conversation.id === activeConversationId;
+                          // 关键约束：会话高亮必须同时命中“当前分区 + 当前会话”，避免同 ID 跨分组双高亮。
+                          const isActive =
+                            group.partitionKey === activeWorkspacePartitionKey &&
+                            conversation.id === activeConversationId;
                           const isMenuOpen = openMenuId === conversation.id;
                           return (
                             <div

@@ -209,6 +209,40 @@ describe('Sidebar conversation collapse behavior', () => {
     );
   });
 
+  it('相同会话ID出现在不同分组时仅激活当前分区会话，避免双高亮', () => {
+    const duplicatedConversation = createConversation(1);
+    const props = createSidebarProps({
+      workspaceGroups: [
+        {
+          partitionKey: 'local::d:/code/codingx',
+          workspacePath: 'D:/code/CodingX',
+          workspaceLabel: 'CodingX',
+          runtimeTarget: 'local',
+          lastOpenedAt: Date.now(),
+          activeConversationId: 'conversation-1',
+          conversations: [duplicatedConversation],
+        },
+        {
+          partitionKey: 'cloud::__history__',
+          workspacePath: null,
+          workspaceLabel: '历史记录',
+          runtimeTarget: 'cloud',
+          groupType: 'history',
+          lastOpenedAt: Date.now() - 1000,
+          activeConversationId: null,
+          conversations: [duplicatedConversation],
+        },
+      ],
+    });
+    props.activeConversationId = 'conversation-1';
+    props.activeWorkspacePartitionKey = 'local::d:/code/codingx';
+
+    render(<Sidebar {...props} />);
+
+    const selectedRows = document.querySelectorAll('.border-border-selected');
+    expect(selectedRows).toHaveLength(1);
+  });
+
   it('点击历史分组头只折叠展开，不应触发空间路径切换', () => {
     const historyOnlyConversations = Array.from({ length: 2 }, (_, i) => createConversation(i + 1));
     const props = createSidebarProps({

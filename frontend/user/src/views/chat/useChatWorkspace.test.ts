@@ -81,6 +81,74 @@ describe('useChatWorkspace', () => {
   });
 
   /**
+   * MCP 列表包含不可用项时，应默认只选中可用项，并阻止手动写入不可用编码。
+   */
+  it('应在工作区状态中过滤不可用MCP', async () => {
+    window.localStorage.setItem(
+      'codingx.auth.session',
+      JSON.stringify({
+        token: 'token-123',
+        userId: '1002',
+        username: 'user',
+        displayName: 'CodingX User',
+        userType: 'USER',
+      }),
+    );
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === '/api/chat/conversations') {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (url === '/api/chat/sample-questions') {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (url === '/api/chat/skills' || url === '/api/chat/experts') {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (url === '/api/chat/mcps') {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            code: 'OK',
+            message: 'success',
+            data: [
+              { id: 7001, mcpCode: 'sales_query', displayName: '销售查询', enabled: 1, available: true },
+              { id: 7002, mcpCode: 'weather_query', displayName: '天气查询', enabled: 1, available: false },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      throw new Error(`Unhandled fetch in unavailable mcp filter test: ${url}`);
+    });
+
+    const { result } = renderHook(() => useChatWorkspace(true));
+
+    await waitFor(() => {
+      expect(result.current.isBootstrapping).toBe(false);
+    });
+
+    expect(result.current.availableMcps).toHaveLength(2);
+    expect(result.current.selectedMcpCodes).toEqual(['sales_query']);
+    expect(result.current.mcpConnected).toBe(true);
+
+    await act(async () => {
+      result.current.setSelectedMcpCodes(['sales_query', 'weather_query']);
+    });
+    expect(result.current.selectedMcpCodes).toEqual(['sales_query']);
+  });
+
+  /**
    * 首次进入且 URL 未指定会话时应停留首页，避免自动跳转到最新会话破坏新建态体验。
    */
   it('应在首次进入且未指定conversationId时保持首页不自动选中会话', async () => {
@@ -313,19 +381,28 @@ describe('useChatWorkspace', () => {
     await waitFor(() => {
       expect(result.current.isBootstrapping).toBe(false);
     });
+    await act(async () => {
+      await result.current.selectConversationInWorkspace('2001', {
+        partitionKey: 'cloud::__no_workspace__',
+        runtimeTarget: 'cloud',
+        workspacePath: null,
+      });
+    });
 
-    expect(result.current.currentSkills).toEqual([
-      expect.objectContaining({ skillCode: 'sales_query', displayName: '销售查询' }),
-    ]);
-    expect(result.current.currentMcps).toEqual([
-      expect.objectContaining({ mcpCode: 'sales_query', displayName: '销售查询' }),
-    ]);
+    await waitFor(() => {
+      expect(result.current.currentSkills).toEqual([
+        expect.objectContaining({ skillCode: 'sales_query', displayName: '销售查询' }),
+      ]);
+      expect(result.current.currentMcps).toEqual([
+        expect.objectContaining({ mcpCode: 'sales_query', displayName: '销售查询' }),
+      ]);
+    });
   });
 
   /**
-   * 切换本地工作空间后，后端返回的跨工作空间会话应进入“历史记录”分组，不应污染当前工作空间。
+   * 切换本地工作空间后，当前空间会话应保留在本分组，同时保留本地历史分组入口。
    */
-  it('应将未归属当前工作空间的会话归入历史记录分组', async () => {
+  it('应在本地工作空间分组中保留当前空间会话并展示本地历史分组', async () => {
     window.localStorage.setItem(
       'codingx.auth.session',
       JSON.stringify({
@@ -438,6 +515,12 @@ describe('useChatWorkspace', () => {
           { status: 200 },
         );
       }
+      if (url === '/api/chat/conversations/3001/current-experts') {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
       if (url === '/api/chat/conversations/3001/current-mcps') {
         return new Response(
           JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
@@ -487,6 +570,12 @@ describe('useChatWorkspace', () => {
           { status: 200 },
         );
       }
+      if (url === '/api/chat/conversations/3002/current-experts') {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
       if (url === '/api/chat/conversations/3002/current-mcps') {
         return new Response(
           JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
@@ -528,12 +617,10 @@ describe('useChatWorkspace', () => {
     });
 
     expect(result.current.workspaceLabel).toBe('workspace-a');
-    expect(result.current.conversations.map((item) => item.id)).toEqual([]);
-    expect(result.current.workspaceGroups.some((group) => group.workspaceLabel === '历史记录')).toBe(true);
-    const initialHistoryGroup = result.current.workspaceGroups.find(
-      (group) => group.workspaceLabel === '历史记录',
-    );
-    expect(initialHistoryGroup?.conversations.map((item) => item.id)).toEqual(['3001', '3002']);
+    expect(result.current.conversations.map((item) => item.id)).toEqual(['3001', '3002']);
+    expect(
+      result.current.workspaceGroups.some((group) => group.partitionKey === 'local::__history__'),
+    ).toBe(true);
 
     await act(async () => {
       await result.current.setActiveWorkspacePath('D:/code/test');
@@ -543,9 +630,10 @@ describe('useChatWorkspace', () => {
       expect(result.current.workspaceLabel).toBe('test');
     });
 
-    expect(result.current.conversations).toEqual([]);
-    const historyGroup = result.current.workspaceGroups.find((group) => group.workspaceLabel === '历史记录');
-    expect(historyGroup?.conversations.map((item) => item.id)).toEqual(['3001', '3002']);
+    expect(result.current.conversations.map((item) => item.id)).toEqual(['3001', '3002']);
+    expect(
+      result.current.workspaceGroups.some((group) => group.partitionKey === 'local::__history__'),
+    ).toBe(true);
   });
 
   it('切换到已有历史记录的工作空间时应恢复该空间会话，不应强制新建', async () => {
@@ -737,21 +825,34 @@ describe('useChatWorkspace', () => {
     await waitFor(() => {
       expect(result.current.isBootstrapping).toBe(false);
     });
-    expect(result.current.activeConversationId).toBe('3001');
+    await waitFor(() => {
+      expect(result.current.activeConversationId).toBe('3001');
+    });
     expect(result.current.workspaceLabel).toBe('space-a');
+    await act(async () => {
+      await result.current.selectConversationInWorkspace('4001', {
+        partitionKey: 'local::d:/code/space-b',
+        runtimeTarget: 'local',
+        workspacePath: 'D:/code/space-b',
+      });
+    });
+    expect(result.current.workspaceLabel).toBe('space-b');
+    expect(result.current.activeConversationId).toBeNull();
 
     await act(async () => {
       await result.current.setActiveWorkspacePath('D:/code/space-b');
     });
 
-    expect(result.current.activeConversationId).toBe('4001');
+    await waitFor(() => {
+      expect(result.current.activeConversationId).toBeNull();
+    });
     expect(result.current.workspaceLabel).toBe('space-b');
   });
 
   /**
-   * 云端运行环境下，会话应直接进入默认云端分组，刷新后不应再落到历史分组里。
+   * 云端运行环境下，默认云端分组与云端历史分组应并行展示。
    */
-  it('云端会话应只出现在默认云端分组且不存在历史记录分组', async () => {
+  it('云端会话应同时展示默认云端分组与云端历史分组', async () => {
     window.localStorage.setItem(
       'codingx.auth.session',
       JSON.stringify({
@@ -881,15 +982,15 @@ describe('useChatWorkspace', () => {
     expect(result.current.conversations.map((item) => item.id)).toEqual(['5001', '5002']);
 
     const cloudWorkspaceGroup = result.current.workspaceGroups.find(
-      (group) => group.workspaceLabel === '历史记录' && group.runtimeTarget === 'cloud',
+      (group) => group.partitionKey === 'cloud::__no_workspace__',
     );
     expect(cloudWorkspaceGroup?.groupType).toBe('workspace');
     expect(cloudWorkspaceGroup?.conversations.map((item) => item.id)).toEqual(['5001', '5002']);
-
     const historyGroup = result.current.workspaceGroups.find(
       (group) => group.groupType === 'history' && group.runtimeTarget === 'cloud',
     );
-    expect(historyGroup).toBeUndefined();
+    expect(historyGroup?.partitionKey).toBe('cloud::__history__');
+    expect(historyGroup?.conversations.map((item) => item.id)).toEqual(['5001', '5002']);
 
     await act(async () => {
       await result.current.selectConversationInWorkspace('5001', {
@@ -902,7 +1003,7 @@ describe('useChatWorkspace', () => {
     const historyGroupAfterSelect = result.current.workspaceGroups.find(
       (group) => group.groupType === 'history' && group.runtimeTarget === 'cloud',
     );
-    expect(historyGroupAfterSelect).toBeUndefined();
+    expect(historyGroupAfterSelect?.partitionKey).toBe('cloud::__history__');
   });
 
   /**
@@ -1366,6 +1467,207 @@ describe('useChatWorkspace', () => {
   });
 
   /**
+   * 发送流式消息过程中，宿主上下文对象刷新（引用变化但实际数据不变）不应清空当前会话。
+   */
+  it('应在发送中忽略无效宿主上下文引用刷新，避免回到首页', async () => {
+    window.localStorage.setItem(
+      'codingx.auth.session',
+      JSON.stringify({
+        token: 'token-123',
+        userId: '1002',
+        username: 'user',
+        displayName: 'CodingX User',
+        userType: 'USER',
+      }),
+    );
+
+    const readQueue: Array<{
+      resolve: (value: ReadableStreamReadResult<Uint8Array>) => void;
+      reject: (reason?: unknown) => void;
+    }> = [];
+    const metaEvent = new TextEncoder().encode('event:meta\ndata:{"conversationId":"2001"}\n\n');
+    const partialMessageEvent = new TextEncoder().encode(
+      'event:message\ndata:{"type":"response","delta":"第一段回答"}\n\n',
+    );
+    const finishEvent = new TextEncoder().encode('event:finish\ndata:{"content":"完成回答"}\n\n');
+    const mockReader = {
+      read: vi.fn(() => {
+        return new Promise<ReadableStreamReadResult<Uint8Array>>((resolve, reject) => {
+          readQueue.push({ resolve, reject });
+        });
+      }),
+    };
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === '/api/chat/conversations') {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            code: 'OK',
+            message: 'success',
+            data: [
+              {
+                id: '2001',
+                title: 'Default Demo Conversation',
+                status: 'ACTIVE',
+                lastRunId: '5002',
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      if (
+        url === '/api/chat/sample-questions' ||
+        url === '/api/chat/experts' ||
+        url === '/api/chat/skills' ||
+        url === '/api/chat/mcps' ||
+        url === '/api/chat/conversations/2001/messages' ||
+        url === '/api/chat/conversations/2001/steps' ||
+        url === '/api/chat/conversations/2001/references' ||
+        url === '/api/chat/conversations/2001/artifacts' ||
+        url === '/api/chat/conversations/2001/current-skills' ||
+        url === '/api/chat/conversations/2001/current-mcps' ||
+        url === '/api/chat/conversations/2001/current-experts'
+      ) {
+        if (url === '/api/chat/conversations/2001/messages') {
+          return new Response(
+            JSON.stringify({
+              success: true,
+              code: 'OK',
+              message: 'success',
+              data: [
+                {
+                  id: 'assistant-2001',
+                  conversationId: '2001',
+                  role: 'ASSISTANT',
+                  content: '完成回答',
+                  status: 'COMPLETED',
+                },
+              ],
+            }),
+            { status: 200 },
+          );
+        }
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (url.includes('/api/chat/stream')) {
+        return {
+          ok: true,
+          status: 200,
+          body: {
+            getReader: () => mockReader,
+          },
+        } as unknown as Response;
+      }
+      throw new Error(`Unhandled fetch in host context refresh test: ${url}`);
+    });
+
+    const baseHostContext = {
+      hostType: 'desktop' as const,
+      executionTargets: ['cloud', 'local'] as const,
+      capabilities: {
+        localFiles: true,
+        localFolderPicker: true,
+        shell: true,
+        browserAutomation: false,
+        desktopNotifications: false,
+        officeInterop: false,
+        localMcp: true,
+        windowControls: true,
+      },
+      localResource: {
+        boundRepositoryPath: 'D:/code/CodingX',
+        permissionGranted: true,
+      },
+    };
+
+    const { result, rerender } = renderHook(
+      ({ hostContext }) =>
+        useChatWorkspace(true, {
+          hostContext,
+        }),
+      {
+        initialProps: { hostContext: baseHostContext },
+      },
+    );
+
+    expect(result.current.runtimeTargets).toEqual(['cloud', 'local']);
+
+    await waitFor(() => {
+      expect(result.current.isBootstrapping).toBe(false);
+    });
+
+    await act(async () => {
+      await result.current.selectConversation('2001', [
+        {
+          id: '2001',
+          title: 'Default Demo Conversation',
+          status: 'ACTIVE',
+          lastRunId: '5002',
+        },
+      ]);
+      result.current.setInputValue('继续回答');
+    });
+
+    const submitPromise = result.current.submitMessage();
+
+    await waitFor(() => {
+      expect(result.current.isStreaming).toBe(true);
+      expect(readQueue.length).toBeGreaterThan(0);
+    });
+
+    await act(async () => {
+      readQueue.shift()?.resolve({ done: false, value: metaEvent });
+    });
+    await act(async () => {
+      readQueue.shift()?.resolve({ done: false, value: partialMessageEvent });
+    });
+    await waitFor(() => {
+      expect(result.current.activeConversationId).toBe('2001');
+      const assistantMessage = result.current.messages.find((item) => item.role === 'ASSISTANT');
+      expect(assistantMessage?.content?.length).toBeGreaterThan(0);
+    });
+
+    await act(async () => {
+      rerender({
+        hostContext: {
+          ...baseHostContext,
+          executionTargets: [...baseHostContext.executionTargets],
+          capabilities: {
+            ...baseHostContext.capabilities,
+          },
+          localResource: {
+            ...baseHostContext.localResource,
+          },
+        },
+      });
+    });
+
+    expect(result.current.isStreaming).toBe(true);
+    expect(result.current.messages.length).toBeGreaterThan(0);
+    expect(result.current.runtimeTargets).toEqual(['cloud', 'local']);
+    expect(result.current.activeConversationId).toBe('2001');
+
+    await act(async () => {
+      readQueue.shift()?.resolve({ done: false, value: finishEvent });
+    });
+    await act(async () => {
+      readQueue.shift()?.resolve({ done: true, value: undefined });
+    });
+    await act(async () => {
+      await submitPromise;
+    });
+
+    expect(result.current.activeConversationId).toBe('2001');
+    expect(new URL(window.location.href).searchParams.get('conversationId')).toBe('2001');
+  });
+
+  /**
    * 从侧栏分组触发“新建对话”时，应先切换到对应环境和工作空间，再进入新会话空态。
    */
   it('应在按分组上下文新建会话时切换到目标环境和工作空间', async () => {
@@ -1547,6 +1849,195 @@ describe('useChatWorkspace', () => {
       expect(result.current.activeConversationId).toBeNull();
       expect(result.current.messages).toEqual([]);
     });
+  });
+
+  /**
+   * 从首页切换本地工作空间时应保持新会话空态，不应先短暂选中旧会话再清空，避免页面抽搐。
+   */
+  it('应在切换本地工作空间后保持新建态且不触发历史会话高亮', async () => {
+    window.localStorage.setItem(
+      'codingx.auth.session',
+      JSON.stringify({
+        token: 'token-123',
+        userId: '1002',
+        username: 'user',
+        displayName: 'CodingX User',
+        userType: 'USER',
+      }),
+    );
+
+    window.localStorage.setItem(
+      'codingx.chat.workspace.conversations.v1',
+      JSON.stringify({
+        version: 1,
+        snapshots: {
+          'local::d:/code/workspace-a': {
+            workspacePath: 'D:/code/workspace-a',
+            workspaceLabel: 'workspace-a',
+            runtimeTarget: 'local',
+            lastOpenedAt: Date.now(),
+            activeConversationId: '3001',
+            conversations: [
+              {
+                id: '3001',
+                title: 'A 会话',
+                status: 'ACTIVE',
+                lastRunId: '7001',
+              },
+            ],
+            conversationRecords: {
+              '3001': {
+                owned: true,
+                messages: [],
+                executionSteps: [],
+                references: [],
+                artifacts: [],
+                currentExperts: [],
+                currentSkills: [],
+                currentMcps: [],
+              },
+            },
+          },
+          'local::d:/code/workspace-b': {
+            workspacePath: 'D:/code/workspace-b',
+            workspaceLabel: 'workspace-b',
+            runtimeTarget: 'local',
+            lastOpenedAt: Date.now() - 1000,
+            activeConversationId: '4001',
+            conversations: [
+              {
+                id: '4001',
+                title: 'B 会话',
+                status: 'ACTIVE',
+                lastRunId: '8001',
+              },
+            ],
+            conversationRecords: {
+              '4001': {
+                owned: true,
+                messages: [],
+                executionSteps: [],
+                references: [],
+                artifacts: [],
+                currentExperts: [],
+                currentSkills: [],
+                currentMcps: [],
+              },
+            },
+          },
+        },
+      }),
+    );
+
+    const requestUrls: string[] = [];
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      requestUrls.push(url);
+      if (
+        url === '/api/chat/conversations?workspaceId=3001' ||
+        url === '/api/chat/conversations?workspaceId=3002'
+      ) {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            code: 'OK',
+            message: 'success',
+            data: [],
+          }),
+          { status: 200 },
+        );
+      }
+      if (
+        url === '/api/chat/sample-questions' ||
+        url === '/api/chat/experts' ||
+        url === '/api/chat/skills' ||
+        url === '/api/chat/mcps'
+      ) {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (
+        url === '/api/chat/conversations/3001/messages' ||
+        url === '/api/chat/conversations/3001/steps' ||
+        url === '/api/chat/conversations/3001/references' ||
+        url === '/api/chat/conversations/3001/artifacts' ||
+        url === '/api/chat/conversations/3001/current-skills' ||
+        url === '/api/chat/conversations/3001/current-mcps' ||
+        url === '/api/chat/conversations/3001/current-experts' ||
+        url === '/api/chat/conversations/4001/messages' ||
+        url === '/api/chat/conversations/4001/steps' ||
+        url === '/api/chat/conversations/4001/references' ||
+        url === '/api/chat/conversations/4001/artifacts' ||
+        url === '/api/chat/conversations/4001/current-skills' ||
+        url === '/api/chat/conversations/4001/current-mcps' ||
+        url === '/api/chat/conversations/4001/current-experts'
+      ) {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      throw new Error(`Unhandled fetch in workspace switch no-flicker test: ${url}`);
+    });
+
+    const bindWorkspacePath = vi
+      .fn()
+      .mockResolvedValueOnce({
+        repositoryPath: 'D:/code/workspace-a',
+        workspaceId: '3001',
+        workspaceName: 'workspace-a',
+      })
+      .mockResolvedValueOnce({
+        repositoryPath: 'D:/code/workspace-b',
+        workspaceId: '3002',
+        workspaceName: 'workspace-b',
+      });
+    const hostContext = {
+      hostType: 'desktop',
+      executionTargets: ['local'] as const,
+      capabilities: {
+        localFiles: true,
+        localFolderPicker: true,
+        shell: true,
+        browserAutomation: false,
+        desktopNotifications: false,
+        officeInterop: false,
+        localMcp: true,
+        windowControls: true,
+      },
+      localResource: {
+        boundRepositoryPath: 'D:/code/workspace-a',
+        workspaceId: '3001',
+        permissionGranted: true,
+      },
+    };
+    const { result } = renderHook(() =>
+      useChatWorkspace(true, {
+        hostContext,
+        bindWorkspacePath,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(result.current.isBootstrapping).toBe(false);
+    });
+
+    await act(async () => {
+      await result.current.startNewConversation();
+    });
+    expect(result.current.activeConversationId).toBeNull();
+
+    await act(async () => {
+      await result.current.setActiveWorkspacePath('D:/code/workspace-b');
+    });
+
+    expect(result.current.workspacePath).toBe('D:/code/workspace-b');
+    expect(result.current.workspaceLabel).toBe('workspace-b');
+    expect(result.current.activeConversationId).toBeNull();
+    expect(requestUrls.some((url) => url.includes('/api/chat/conversations/3001/messages'))).toBe(false);
+    expect(requestUrls.some((url) => url.includes('/api/chat/conversations/4001/messages'))).toBe(false);
   });
 
   /**
@@ -2257,6 +2748,9 @@ describe('useChatWorkspace', () => {
     const mcpStartEvent = new TextEncoder().encode(
       'event:mcp-call\ndata:{"callId":"call-1","phase":"start","toolId":"weather_query","displayName":"天气查询","params":{"city":"北京"},"startedAt":"2026-05-21T22:05:00"}\n\n',
     );
+    const mcpProgressEvent = new TextEncoder().encode(
+      'event:mcp-call\ndata:{"callId":"call-1","phase":"progress","toolId":"weather_query","displayName":"天气查询","progressText":"正在查询天气服务"}\n\n',
+    );
     const mcpCompleteEvent = new TextEncoder().encode(
       'event:mcp-call\ndata:{"callId":"call-1","phase":"complete","toolId":"weather_query","displayName":"天气查询","rawResult":{"text":"北京今日晴"},"resultMetadata":{"source":"open-meteo"},"finishedAt":"2026-05-21T22:05:01"}\n\n',
     );
@@ -2353,6 +2847,19 @@ describe('useChatWorkspace', () => {
     });
 
     await act(async () => {
+      readQueue.shift()?.resolve({ done: false, value: mcpProgressEvent });
+    });
+    await waitFor(() => {
+      const assistantMessage = result.current.messages.find((item) => item.role === 'ASSISTANT');
+      const calls = ((assistantMessage?.mcpCalls ?? []) as Array<Record<string, unknown>>);
+      expect(calls).toHaveLength(1);
+      expect(calls[0].callId).toBe('call-1');
+      expect(calls[0].phase).toBe('progress');
+      expect(calls[0].status).toBe('running');
+      expect(calls[0].progressText).toBe('正在查询天气服务');
+    });
+
+    await act(async () => {
       readQueue.shift()?.resolve({ done: false, value: mcpCompleteEvent });
     });
     await waitFor(() => {
@@ -2406,6 +2913,9 @@ describe('useChatWorkspace', () => {
     );
     const mcpStartEvent = new TextEncoder().encode(
       'event:mcp-call\ndata:{"callId":"call-1","phase":"start","toolId":"weather_query","displayName":"天气查询","params":{"city":"北京"},"startedAt":"2026-05-21T22:05:00"}\n\n',
+    );
+    const mcpProgressEvent = new TextEncoder().encode(
+      'event:mcp-call\ndata:{"callId":"call-1","phase":"progress","toolId":"weather_query","displayName":"天气查询","progressText":"正在查询天气服务"}\n\n',
     );
     const mcpCompleteEvent = new TextEncoder().encode(
       'event:mcp-call\ndata:{"callId":"call-1","phase":"complete","toolId":"weather_query","displayName":"天气查询","rawResult":{"text":"北京今日晴"},"resultMetadata":{"source":"open-meteo"},"finishedAt":"2026-05-21T22:05:01"}\n\n',
@@ -2567,6 +3077,9 @@ describe('useChatWorkspace', () => {
       readQueue.shift()?.resolve({ done: false, value: mcpStartEvent });
     });
     await act(async () => {
+      readQueue.shift()?.resolve({ done: false, value: mcpProgressEvent });
+    });
+    await act(async () => {
       readQueue.shift()?.resolve({ done: false, value: mcpCompleteEvent });
     });
     await act(async () => {
@@ -2585,6 +3098,7 @@ describe('useChatWorkspace', () => {
     expect(latestAssistantMessage?.mcpCalls?.length).toBe(1);
     expect(latestAssistantMessage?.mcpCalls?.[0].callId).toBe('call-1');
     expect(latestAssistantMessage?.mcpCalls?.[0].status).toBe('completed');
+    expect(latestAssistantMessage?.mcpCalls?.[0].phase).toBe('complete');
     expect(latestAssistantMessage?.searchProgress?.status).toBe('completed');
     expect(latestAssistantMessage?.searchProgress?.items).toHaveLength(1);
     expect(latestAssistantMessage?.searchProgress?.items[0].title).toBe('OpenAI API 最新文档');

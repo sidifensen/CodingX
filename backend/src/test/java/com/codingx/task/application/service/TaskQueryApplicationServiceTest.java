@@ -3,6 +3,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.when;
 import com.codingx.common.exception.ForbiddenException;
+import com.codingx.common.error.ErrorMessageCatalog;
 import com.codingx.task.domain.model.RuntimeType;
 import com.codingx.task.domain.model.Task;
 import com.codingx.task.domain.repository.TaskRepository;
@@ -56,7 +57,7 @@ class TaskQueryApplicationServiceTest {
             () -> taskQueryApplicationService.getTask(1L, 2001L)
 
         );
-        assertEquals("You cannot access this task", exception.getMessage());
+        assertEquals(ErrorMessageCatalog.TASK_FORBIDDEN_ACCESS, exception.getMessage());
     }
 
     /**

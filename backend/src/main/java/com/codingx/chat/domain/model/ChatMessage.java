@@ -1,6 +1,7 @@
 package com.codingx.chat.domain.model;
 import cn.hutool.core.util.IdUtil;
 import cn.hutool.core.util.StrUtil;
+import com.codingx.common.error.ErrorMessageCatalog;
 import java.time.LocalDateTime;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
@@ -135,7 +136,7 @@ public class ChatMessage {
      */
     public static ChatMessage create(Long id, Long conversationId, ChatMessageRole role, String content, ChatMessageStatus status, String provider, String model, String errorMessage) {
         if (id == null || conversationId == null || role == null || status == null || StrUtil.isBlank(content)) {
-            throw new IllegalArgumentException("Message fields are required");
+            throw new IllegalArgumentException(ErrorMessageCatalog.CHAT_MESSAGE_FIELDS_REQUIRED);
         }
         LocalDateTime now = LocalDateTime.now();
         return ChatMessage.builder()

@@ -6,6 +6,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import com.codingx.common.exception.ForbiddenException;
 import com.codingx.common.exception.NotFoundException;
+import com.codingx.common.error.ErrorMessageCatalog;
 import com.codingx.runtime.domain.service.TaskRuntimeExecutor;
 import com.codingx.task.application.command.CreateTaskCommand;
 import com.codingx.task.application.command.StartTaskCommand;
@@ -89,7 +90,7 @@ class TaskCommandApplicationServiceTest {
             () -> taskCommandApplicationService.startTask(new StartTaskCommand(1L, 2001L))
 
         );
-        assertEquals("You cannot operate this task", exception.getMessage());
+        assertEquals(ErrorMessageCatalog.TASK_FORBIDDEN_OPERATE, exception.getMessage());
     }
 
     /**
@@ -99,12 +100,12 @@ class TaskCommandApplicationServiceTest {
     void createTaskValidatesWorkspaceExists() {
 
         CreateTaskCommand command = new CreateTaskCommand("Build backend", "phase 2", RuntimeType.MOCK, 3001L, java.util.List.of("conversation-core"));
-        doThrow(new NotFoundException("Workspace not found")).when(workspaceRepository).ensureExists(3001L);
+        doThrow(new NotFoundException(ErrorMessageCatalog.WORKSPACE_NOT_FOUND)).when(workspaceRepository).ensureExists(3001L);
         NotFoundException exception = assertThrows(
             NotFoundException.class,
             () -> taskCommandApplicationService.createTask(command, 1002L)
 
         );
-        assertEquals("Workspace not found", exception.getMessage());
+        assertEquals(ErrorMessageCatalog.WORKSPACE_NOT_FOUND, exception.getMessage());
     }
 }

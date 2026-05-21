@@ -15,6 +15,7 @@ import com.codingx.auth.domain.service.PasswordHasher;
 import com.codingx.auth.interfaces.request.AdminUserCreateRequest;
 import com.codingx.common.exception.ForbiddenException;
 import com.codingx.common.exception.NotFoundException;
+import com.codingx.workspace.infrastructure.repository.WorkspaceRepositoryImpl;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -39,6 +40,9 @@ class AdminUserManagementServiceTest {
 
     @Mock
     private PasswordHasher passwordHasher;
+
+    @Mock
+    private WorkspaceRepositoryImpl workspaceRepository;
 
     @InjectMocks
     private AdminUserManagementService adminUserManagementService;
@@ -144,6 +148,7 @@ class AdminUserManagementServiceTest {
 
         ArgumentCaptor<User> userCaptor = ArgumentCaptor.forClass(User.class);
         verify(userRepository).save(userCaptor.capture());
+        verify(workspaceRepository).ensureDefaultCloudWorkspace(userCaptor.getValue().getId(), "新用户");
         assertEquals("hashed-123456", userCaptor.getValue().getPasswordHash());
         assertEquals(UserStatus.PENDING, userCaptor.getValue().getStatus());
     }

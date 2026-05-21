@@ -7,10 +7,12 @@ import com.codingx.chat.application.service.ChatApplicationService;
 import com.codingx.chat.application.service.ChatConversationApplicationService;
 import com.codingx.chat.application.service.ChatReactionService;
 import com.codingx.chat.application.service.ChatRuntimeGuardService;
+import com.codingx.common.error.ErrorMessageCatalog;
 import com.codingx.skill.domain.repository.ChatSkillRepository;
 import com.codingx.chat.interfaces.request.ChatMessageFeedbackRequest;
 import com.codingx.common.model.ApiResponse;
 import com.codingx.mcp.domain.repository.ChatMcpRepository;
+import com.codingx.workspace.infrastructure.repository.WorkspaceRepositoryImpl;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -47,6 +49,9 @@ class ChatReactionControllerTest {
     @Mock
     private ChatSkillRepository chatSkillRepository;
 
+    @Mock
+    private WorkspaceRepositoryImpl workspaceRepositoryImpl;
+
     /**
      * 被测控制器。
      */
@@ -65,7 +70,7 @@ class ChatReactionControllerTest {
             ApiResponse<Void> response = chatController.submitReaction(101L, request);
 
             assertEquals(true, response.success());
-            assertEquals("feedback submitted", response.message());
+            assertEquals(ErrorMessageCatalog.CHAT_FEEDBACK_SUBMITTED, response.message());
             verify(chatReactionService).submitReaction(101L, 201L, 1001L, 1, "good", "clear");
         }
     }

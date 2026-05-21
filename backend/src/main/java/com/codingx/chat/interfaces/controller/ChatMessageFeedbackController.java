@@ -3,6 +3,7 @@ package com.codingx.chat.interfaces.controller;
 import cn.dev33.satoken.stp.StpUtil;
 import com.codingx.chat.application.service.ChatReactionService;
 import com.codingx.chat.interfaces.request.ChatMessageFeedbackRequest;
+import com.codingx.common.error.ErrorMessageCatalog;
 import com.codingx.common.model.ApiResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -31,6 +32,6 @@ public class ChatMessageFeedbackController {
     @PostMapping("/{messageId}/feedback")
     public ApiResponse<Void> submitReaction(@PathVariable Long messageId, @Valid @RequestBody ChatMessageFeedbackRequest request) {
         chatReactionService.submitReaction(messageId, request.conversationId(), StpUtil.getLoginIdAsLong(), request.vote(), request.reason(), request.comment());
-        return ApiResponse.successMessage("feedback submitted");
+        return ApiResponse.successMessage(ErrorMessageCatalog.CHAT_FEEDBACK_SUBMITTED);
     }
 }

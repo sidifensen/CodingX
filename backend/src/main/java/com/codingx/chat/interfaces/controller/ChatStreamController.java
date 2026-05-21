@@ -219,6 +219,7 @@ public class ChatStreamController {
             chatConversationApplicationService.listMessages(conversationId, userId);
             return conversationId;
         }
+        // 新建会话时透传 workspaceId：为空走默认云端空间，不为空绑定本地空间。
         ChatConversation conversation = chatConversationApplicationService.createConversation(
             new CreateConversationCommand(null, workspaceId),
             userId

@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import com.codingx.chat.domain.model.ChatMessage;
+import com.codingx.common.error.ErrorMessageCatalog;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
@@ -41,6 +42,6 @@ class AiConversationRequestTest {
             .stream(true)
             .build());
 
-        assertEquals("AI conversation messages are required", exception.getMessage());
+        assertEquals(ErrorMessageCatalog.AI_CONVERSATION_MESSAGES_REQUIRED, exception.getMessage());
     }
 }

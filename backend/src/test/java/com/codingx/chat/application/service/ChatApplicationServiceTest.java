@@ -22,6 +22,7 @@ import com.codingx.chat.domain.repository.ChatIntentNodeRepository;
 import com.codingx.chat.domain.repository.ChatMessageRepository;
 import com.codingx.chat.domain.port.AiChatClient;
 import com.codingx.chat.domain.port.ChatStreamPublisher;
+import com.codingx.common.error.ErrorMessageCatalog;
 import com.codingx.common.exception.ForbiddenException;
 import com.codingx.expert.application.service.ChatExpertContextService;
 import com.codingx.mcp.domain.repository.ChatMcpRepository;
@@ -211,7 +212,7 @@ class ChatApplicationServiceTest {
             () -> chatApplicationService.sendMessage(new SendChatMessageCommand(1L, "Hi", false), 2001L)
 
         );
-        assertEquals("You cannot access this conversation", exception.getMessage());
+        assertEquals(ErrorMessageCatalog.CHAT_CONVERSATION_FORBIDDEN, exception.getMessage());
         ChatExecutionContext.clear();
     }
 

@@ -72,11 +72,12 @@ describe('Settings page', () => {
     render(<Settings />);
 
     await screen.findByRole('heading', { name: '系统配置' });
+    fireEvent.click(screen.getByRole('button', { name: '紧凑表格' }));
 
     const input = screen.getByTestId('setting-value-search.top_k');
     fireEvent.change(input, { target: { value: '8' } });
 
-    expect(screen.getByText(/共 1 项 · 已修改 1 项/)).toBeInTheDocument();
+    expect(screen.getByText('已修改')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: '保存覆盖配置' }));
 

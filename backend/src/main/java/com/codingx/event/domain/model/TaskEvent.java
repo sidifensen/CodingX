@@ -1,6 +1,7 @@
 package com.codingx.event.domain.model;
 import cn.hutool.core.util.IdUtil;
 import cn.hutool.core.util.StrUtil;
+import com.codingx.common.error.ErrorMessageCatalog;
 import java.time.LocalDateTime;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
@@ -69,7 +70,7 @@ public class TaskEvent {
      */
     public static TaskEvent create(Long taskId, String eventType, Long sequenceNo, String title, String content, String metadataJson) {
         if (taskId == null || sequenceNo == null || StrUtil.hasBlank(eventType, title)) {
-            throw new IllegalArgumentException("Task event fields are required");
+            throw new IllegalArgumentException(ErrorMessageCatalog.TASK_EVENT_FIELDS_REQUIRED);
         }
         return TaskEvent.builder()
             .id(IdUtil.getSnowflakeNextId())

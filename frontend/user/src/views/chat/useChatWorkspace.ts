@@ -41,6 +41,7 @@ import {
 
 const DEFAULT_CLOUD_WORKSPACE_LABEL = '云端工作空间';
 const DEFAULT_LOCAL_WORKSPACE_LABEL = '本地工作空间';
+const CONVERSATION_ID_QUERY_KEY = 'conversationId';
 
 /**
  * 根据运行环境返回默认工作空间标题，避免本地/云端标签混淆。
@@ -58,6 +59,11 @@ export function useChatWorkspace(
   isAuthenticated: boolean,
   options?: UseChatWorkspaceOptions,
 ) {
+  const initialUrlConversationIdRef = useRef<string | null>(null);
+  const hasHydratedInitialConversationRef = useRef(false);
+  if (initialUrlConversationIdRef.current == null && typeof window !== 'undefined') {
+    initialUrlConversationIdRef.current = readConversationIdFromUrl();
+  }
   const onUnauthorizedRef = useRef(options?.onUnauthorized);
   onUnauthorizedRef.current = options?.onUnauthorized;
   const hostContext = options?.hostContext ?? null;
@@ -207,12 +213,11 @@ export function useChatWorkspace(
     );
     setActiveWorkspacePartitionKey(nextPartitionKey);
     setConversations(nextSnapshot.conversations);
-    setActiveConversationId(nextSnapshot.activeConversationId);
     setWorkspaceGroups(listWorkspaceGroups(activeRuntimeTarget));
-    if (nextSnapshot.activeConversationId && nextSnapshot.conversations.length > 0) {
+    if (nextSnapshot.activeConversationId) {
       void restoreWorkspaceSnapshot(nextPartitionKey, nextSnapshot.activeConversationId);
     } else {
-      clearConversationPlayback();
+      clearConversationPlayback(true);
     }
   }, [hostContext, runtimeTargets, activeRuntimeTarget]);
 
@@ -260,12 +265,41 @@ export function useChatWorkspace(
       }
       setMcpConnected(nextMcps.length > 0);
       setWorkspaceGroups(listWorkspaceGroups(activeRuntimeTarget));
-      if (activeConversationId) {
+      const preferredConversationId = resolvePreferredConversationId(nextConversations);
+      const snapshotActiveConversationId = activeWorkspacePartitionKey
+        ? readWorkspaceSnapshot(activeWorkspacePartitionKey).activeConversationId
+        : null;
+      if (preferredConversationId) {
+        hasHydratedInitialConversationRef.current = true;
+        if (hasPersistedConversationRecord(preferredConversationId)) {
+          // URL 命中本地快照时优先恢复缓存，避免接口空回放覆盖已有消息。
+          if (activeWorkspacePartitionKey) {
+            await restoreWorkspaceSnapshot(activeWorkspacePartitionKey, preferredConversationId);
+          }
+        } else {
+          await selectConversation(preferredConversationId, nextConversations, undefined, false);
+        }
+      } else if (
+        snapshotActiveConversationId &&
+        hasPersistedConversationRecord(snapshotActiveConversationId)
+      ) {
+        // 关键约束：当快照中已有可回放记录时，优先恢复快照，避免并发初始化把缓存消息覆盖为空列表。
+        hasHydratedInitialConversationRef.current = true;
+        if (activeWorkspacePartitionKey) {
+          await restoreWorkspaceSnapshot(activeWorkspacePartitionKey, snapshotActiveConversationId);
+        }
+      } else if (activeConversationId && hasPersistedConversationRecord(activeConversationId)) {
+        // 刷新恢复命中本地快照时优先保留回放，避免列表为空或远端延迟时把页面清空。
+        hasHydratedInitialConversationRef.current = true;
+      } else if (activeConversationId) {
         await selectConversation(activeConversationId, nextConversations);
       } else if (nextConversations[0]?.id) {
         await selectConversation(nextConversations[0].id, nextConversations);
       } else {
-        clearConversationPlayback();
+        clearConversationPlayback(true);
+      }
+      if (!hasHydratedInitialConversationRef.current) {
+        hasHydratedInitialConversationRef.current = true;
       }
     } finally {
       setIsBootstrapping(false);
@@ -335,7 +369,7 @@ export function useChatWorkspace(
     );
     setActiveWorkspacePartitionKey(nextPartitionKey);
     setConversations(nextSnapshot.conversations);
-    clearConversationPlayback();
+    clearConversationPlayback(true);
     upsertWorkspaceSnapshot(runtimeTarget, normalizedWorkspacePath, {
       conversations: nextSnapshot.conversations,
       activeConversationId: null,
@@ -427,12 +461,17 @@ export function useChatWorkspace(
     conversationId: string,
     sourceConversations?: ConversationItem[],
     latestAssistantMcpCalls?: McpCallItem[],
+    syncUrl = true,
   ) => {
     const token = currentToken();
     if (!token) {
       return;
     }
     setActiveConversationId(conversationId);
+    if (syncUrl) {
+      // 仅用户显式切换会话时更新 URL，初始化恢复阶段由独立分支控制，避免误覆盖初始参数。
+      writeConversationIdToUrl(conversationId);
+    }
     const [
       nextMessages,
       nextSteps,
@@ -833,6 +872,8 @@ export function useChatWorkspace(
           activeMessageId: optimisticAssistantId,
         };
         setActiveConversationId(conversationId);
+        // 业务约束：流式过程中一旦后端分配了新会话 ID，需立刻写入 URL 以支持刷新恢复。
+        writeConversationIdToUrl(conversationId);
       }
       setStreamQueueState(null);
       return;
@@ -1127,7 +1168,9 @@ export function useChatWorkspace(
       activeConversationId &&
       !nextWorkspaceConversations.some((conversation) => conversation.id === activeConversationId)
     ) {
-      setActiveConversationId(nextWorkspaceConversations[0]?.id ?? null);
+      const nextConversationId = nextWorkspaceConversations[0]?.id ?? null;
+      setActiveConversationId(nextConversationId);
+      writeConversationIdToUrl(nextConversationId);
     }
     setWorkspaceGroups(listWorkspaceGroups(activeRuntimeTarget));
     return nextWorkspaceConversations;
@@ -1136,8 +1179,11 @@ export function useChatWorkspace(
   /**
    * 清空当前主区与右栏回放状态，但保留左侧真实会话历史。
    */
-  function clearConversationPlayback() {
+  function clearConversationPlayback(keepUrl = false) {
     setActiveConversationId(null);
+    if (!keepUrl) {
+      writeConversationIdToUrl(null);
+    }
     setMessages([]);
     setExecutionSteps([]);
     setReferences([]);
@@ -1196,9 +1242,11 @@ export function useChatWorkspace(
     const snapshot = readWorkspaceSnapshot(partitionKey);
     setConversations(snapshot.conversations);
     setWorkspaceGroups(listWorkspaceGroups(activeRuntimeTarget));
+    // 刷新恢复链路保持 URL 与当前会话一致，确保分享链接和硬刷新都能恢复到同一会话。
+    writeConversationIdToUrl(conversationId);
     const record = snapshot.conversationRecords[conversationId];
     if (!record) {
-      await selectConversation(conversationId, snapshot.conversations);
+      await selectConversation(conversationId, snapshot.conversations, undefined, false);
       return;
     }
     setActiveConversationId(conversationId);
@@ -1209,6 +1257,78 @@ export function useChatWorkspace(
     setCurrentExperts(record.currentExperts ?? []);
     setCurrentSkills(record.currentSkills);
     setCurrentMcps(record.currentMcps);
+  }
+
+  /**
+   * 解析地址栏中的会话参数，用于刷新后按链接恢复目标会话。
+   * @returns 会话标识，不存在时返回 null。
+   */
+  function readConversationIdFromUrl() {
+    const searchParams = new URLSearchParams(window.location.search);
+    const rawConversationId = searchParams.get(CONVERSATION_ID_QUERY_KEY);
+    if (!rawConversationId) {
+      return null;
+    }
+    const normalizedConversationId = rawConversationId.trim();
+    return normalizedConversationId.length > 0 ? normalizedConversationId : null;
+  }
+
+  /**
+   * 将当前会话写回地址栏，供刷新恢复与会话链接分享复用。
+   * @param conversationId 会话标识；为空时移除参数。
+   */
+  function writeConversationIdToUrl(conversationId: string | null) {
+    const nextUrl = new URL(window.location.href);
+    if (conversationId && conversationId.trim().length > 0) {
+      nextUrl.searchParams.set(CONVERSATION_ID_QUERY_KEY, conversationId);
+    } else {
+      nextUrl.searchParams.delete(CONVERSATION_ID_QUERY_KEY);
+    }
+    window.history.replaceState(window.history.state, '', nextUrl.toString());
+  }
+
+  /**
+   * 计算初始化阶段应优先恢复的会话，优先 URL 参数，其次本地快照，再兜底最新会话。
+   * @param nextConversations 最新会话列表。
+   * @returns 会话标识或 null。
+   */
+  function resolvePreferredConversationId(nextConversations: ConversationItem[]) {
+    if (!hasHydratedInitialConversationRef.current) {
+      const initialConversationId = initialUrlConversationIdRef.current;
+      const matchedByConversationList = nextConversations.some(
+        (conversation) => conversation.id === initialConversationId,
+      );
+      const matchedBySnapshotRecord = hasPersistedConversationRecord(initialConversationId);
+      if (initialConversationId && (matchedByConversationList || matchedBySnapshotRecord)) {
+        return initialConversationId;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * 判断当前分区是否存在可回放的会话记录，避免初始化阶段误触发不必要的接口回放。
+   * @param conversationId 会话标识。
+   * @returns 是否存在对应快照记录。
+   */
+  function hasPersistedConversationRecord(conversationId: string | null) {
+    if (!conversationId || !activeWorkspacePartitionKey) {
+      return false;
+    }
+    const snapshot = readWorkspaceSnapshot(activeWorkspacePartitionKey);
+    const record = snapshot.conversationRecords[conversationId];
+    if (!record) {
+      return false;
+    }
+    return (
+      record.messages.length > 0 ||
+      record.executionSteps.length > 0 ||
+      record.references.length > 0 ||
+      record.artifacts.length > 0 ||
+      record.currentExperts.length > 0 ||
+      record.currentSkills.length > 0 ||
+      record.currentMcps.length > 0
+    );
   }
 
   /**

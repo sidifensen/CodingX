@@ -1,5 +1,6 @@
 package com.codingx.task.domain.model;
 import cn.hutool.core.util.StrUtil;
+import com.codingx.common.error.ErrorMessageCatalog;
 import java.time.LocalDateTime;
 import java.util.List;
 import lombok.AccessLevel;
@@ -104,10 +105,10 @@ public class Task {
      */
     public static Task create(Long id, String title, String description, RuntimeType runtimeType, Long workspaceId, Long createdBy, List<String> skillCodes) {
         if (id == null || createdBy == null) {
-            throw new IllegalArgumentException("Task id and createdBy are required");
+            throw new IllegalArgumentException(ErrorMessageCatalog.TASK_ID_AND_CREATOR_REQUIRED);
         }
         if (StrUtil.isBlank(title) || runtimeType == null) {
-            throw new IllegalArgumentException("Task title and runtime type are required");
+            throw new IllegalArgumentException(ErrorMessageCatalog.TASK_TITLE_AND_RUNTIME_TYPE_REQUIRED);
         }
         return Task.builder()
             .id(id)
@@ -125,7 +126,7 @@ public class Task {
      * 启动 start 处理的流程。
      */
     public void start() {
-        ensureStatus(TaskStatus.CREATED, "Only created tasks can start");
+        ensureStatus(TaskStatus.CREATED, ErrorMessageCatalog.TASK_ONLY_CREATED_CAN_START);
         this.status = TaskStatus.RUNNING;
         this.startedAt = LocalDateTime.now();
         this.errorMessage = null;
@@ -136,7 +137,7 @@ public class Task {
      * @param summary 输入参数。
      */
     public void complete(String summary) {
-        ensureStatus(TaskStatus.RUNNING, "Only running tasks can complete");
+        ensureStatus(TaskStatus.RUNNING, ErrorMessageCatalog.TASK_ONLY_RUNNING_CAN_COMPLETE);
         this.status = TaskStatus.SUCCEEDED;
         this.summary = summary;
         this.finishedAt = LocalDateTime.now();
@@ -148,9 +149,9 @@ public class Task {
      * @param errorMessage 输入参数。
      */
     public void fail(String errorMessage) {
-        ensureStatus(TaskStatus.RUNNING, "Only running tasks can fail");
+        ensureStatus(TaskStatus.RUNNING, ErrorMessageCatalog.TASK_ONLY_RUNNING_CAN_FAIL);
         this.status = TaskStatus.FAILED;
-        this.errorMessage = StrUtil.blankToDefault(errorMessage, "Unknown error");
+        this.errorMessage = StrUtil.blankToDefault(errorMessage, ErrorMessageCatalog.TASK_UNKNOWN_ERROR);
         this.finishedAt = LocalDateTime.now();
     }
 

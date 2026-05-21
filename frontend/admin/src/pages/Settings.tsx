@@ -17,8 +17,8 @@ interface CategoryOverview {
 }
 
 const VIEW_MODE_META: Array<{ mode: SettingsViewMode; label: string }> = [
-  { mode: 'cards', label: '分组卡片' },
   { mode: 'navigator', label: '目录导航' },
+  { mode: 'cards', label: '分组卡片' },
   { mode: 'compact', label: '紧凑表格' },
 ];
 
@@ -40,7 +40,8 @@ export function Settings() {
   const [loading, setLoading] = React.useState(true);
   const [errorMessage, setErrorMessage] = React.useState<string | null>(null);
   const [successMessage, setSuccessMessage] = React.useState<string | null>(null);
-  const [viewMode, setViewMode] = React.useState<SettingsViewMode>('cards');
+  // 默认进入目录导航视图，并与顶部切换按钮首项顺序保持一致。
+  const [viewMode, setViewMode] = React.useState<SettingsViewMode>('navigator');
   const [searchKeyword, setSearchKeyword] = React.useState('');
   const [expandedCategories, setExpandedCategories] = React.useState<Record<string, boolean>>({});
   const [activeCategory, setActiveCategory] = React.useState<string>('');

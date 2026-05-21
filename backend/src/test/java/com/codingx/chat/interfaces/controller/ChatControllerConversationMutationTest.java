@@ -11,9 +11,11 @@ import com.codingx.chat.application.service.ChatReactionService;
 import com.codingx.chat.application.service.ChatRuntimeGuardService;
 import com.codingx.chat.domain.model.ChatConversation;
 import com.codingx.chat.domain.model.ChatConversationStatus;
+import com.codingx.common.error.ErrorMessageCatalog;
 import com.codingx.skill.domain.repository.ChatSkillRepository;
 import com.codingx.common.model.ApiResponse;
 import com.codingx.mcp.domain.repository.ChatMcpRepository;
+import com.codingx.workspace.infrastructure.repository.WorkspaceRepositoryImpl;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -49,6 +51,9 @@ class ChatControllerConversationMutationTest {
     @Mock
     private ChatMcpRepository chatMcpRepository;
 
+    @Mock
+    private WorkspaceRepositoryImpl workspaceRepositoryImpl;
+
     @InjectMocks
     private ChatController chatController;
 
@@ -63,7 +68,7 @@ class ChatControllerConversationMutationTest {
             ApiResponse<Void> response = chatController.renameConversation(2001L, new com.codingx.chat.interfaces.request.RenameConversationRequest("新的标题"));
 
             assertEquals(true, response.success());
-            assertEquals("conversation renamed", response.message());
+            assertEquals(ErrorMessageCatalog.CHAT_CONVERSATION_RENAMED, response.message());
             verify(chatConversationApplicationService).updateConversationTitle(2001L, "新的标题", 1002L);
         }
     }
@@ -79,7 +84,7 @@ class ChatControllerConversationMutationTest {
             ApiResponse<Void> response = chatController.deleteConversation(2001L);
 
             assertEquals(true, response.success());
-            assertEquals("conversation deleted", response.message());
+            assertEquals(ErrorMessageCatalog.CHAT_CONVERSATION_DELETED, response.message());
             verify(chatConversationApplicationService).deleteConversation(2001L, 1002L);
         }
     }

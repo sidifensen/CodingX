@@ -1,5 +1,6 @@
 package com.codingx.chat.domain.model;
 import cn.hutool.core.util.StrUtil;
+import com.codingx.common.error.ErrorMessageCatalog;
 import java.time.LocalDateTime;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
@@ -71,7 +72,7 @@ public class ChatConversation {
      */
     public static ChatConversation create(Long id, String title, Long createdBy, Long workspaceId, ChatConversationStatus status) {
         if (id == null || createdBy == null || status == null || StrUtil.isBlank(title)) {
-            throw new IllegalArgumentException("Conversation fields are required");
+            throw new IllegalArgumentException(ErrorMessageCatalog.CHAT_CONVERSATION_FIELDS_REQUIRED);
         }
         return ChatConversation.builder()
             .id(id)

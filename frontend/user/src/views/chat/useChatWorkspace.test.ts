@@ -793,6 +793,122 @@ describe('useChatWorkspace', () => {
   });
 
   /**
+   * 刷新时若快照仅有 activeConversationId 且会话列表为空，也应按会话 ID 回放，不应回退到首页空态。
+   */
+  it('应在快照会话列表为空但存在activeConversationId时仍恢复会话', async () => {
+    window.localStorage.setItem(
+      'codingx.auth.session',
+      JSON.stringify({
+        token: 'token-123',
+        userId: '1002',
+        username: 'user',
+        displayName: 'CodingX User',
+        userType: 'USER',
+      }),
+    );
+    window.localStorage.setItem(
+      'codingx.chat.workspace.conversations.v1',
+      JSON.stringify({
+        version: 1,
+        snapshots: {
+          'cloud::__no_workspace__': {
+            workspacePath: null,
+            workspaceLabel: '云端工作空间',
+            runtimeTarget: 'cloud',
+            lastOpenedAt: Date.now(),
+            activeConversationId: '5001',
+            conversations: [],
+            conversationRecords: {
+              '5001': {
+                owned: true,
+                messages: [
+                  {
+                    id: '9101',
+                    conversationId: '5001',
+                    role: 'ASSISTANT',
+                    content: '来自缓存的会话内容',
+                    status: 'COMPLETED',
+                  },
+                ],
+                executionSteps: [],
+                references: [],
+                artifacts: [],
+                currentSkills: [],
+                currentMcps: [],
+              },
+            },
+          },
+          'cloud::__history__': {
+            workspacePath: null,
+            workspaceLabel: '历史会话',
+            runtimeTarget: 'cloud',
+            lastOpenedAt: Date.now(),
+            activeConversationId: null,
+            conversations: [
+              {
+                id: '5001',
+                title: '仅历史分组可见的会话',
+                status: 'ACTIVE',
+                lastRunId: '9001',
+              },
+            ],
+            conversationRecords: {},
+          },
+        },
+      }),
+    );
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === '/api/chat/conversations') {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            code: 'OK',
+            message: 'success',
+            data: [
+              {
+                id: '5001',
+                title: '仅历史分组可见的会话',
+                status: 'ACTIVE',
+                lastRunId: '9001',
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      if (
+        url === '/api/chat/sample-questions' ||
+        url === '/api/chat/experts' ||
+        url === '/api/chat/skills' ||
+        url === '/api/chat/mcps' ||
+        url === '/api/chat/conversations/5001/messages' ||
+        url === '/api/chat/conversations/5001/steps' ||
+        url === '/api/chat/conversations/5001/references' ||
+        url === '/api/chat/conversations/5001/artifacts' ||
+        url === '/api/chat/conversations/5001/current-skills' ||
+        url === '/api/chat/conversations/5001/current-mcps' ||
+        url === '/api/chat/conversations/5001/current-experts'
+      ) {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      throw new Error(`Unhandled fetch in active-id-only restore test: ${url}`);
+    });
+
+    const { result } = renderHook(() => useChatWorkspace(true));
+
+    await waitFor(() => {
+      expect(result.current.isBootstrapping).toBe(false);
+    });
+    expect(result.current.activeConversationId).toBe('5001');
+    expect(result.current.messages.some((message) => message.content === '来自缓存的会话内容')).toBe(true);
+  });
+
+  /**
    * 本地运行环境下，只要已绑定本地目录（即便 workspaceId 为空）也应允许发送，
    * 避免桌面端尚未拿到 workspaceId 时“发送无响应”。
    */

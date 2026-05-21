@@ -7,6 +7,7 @@ import com.codingx.chat.domain.model.ChatConversation;
 import com.codingx.chat.domain.model.ChatConversationStatus;
 import com.codingx.chat.domain.model.ChatMessage;
 import com.codingx.chat.domain.port.AiChatClient;
+import com.codingx.common.error.ErrorMessageCatalog;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -37,7 +38,12 @@ class ConversationTitleServiceTest {
      */
     @Test
     void generateTitleUsesFirstUserMessage() {
-        ChatConversation conversation = ChatConversation.create(1L, "New Conversation", 1001L, ChatConversationStatus.ACTIVE);
+        ChatConversation conversation = ChatConversation.create(
+            1L,
+            ErrorMessageCatalog.CHAT_CONVERSATION_DEFAULT_TITLE,
+            1001L,
+            ChatConversationStatus.ACTIVE
+        );
         List<ChatMessage> messages = List.of(ChatMessage.userMessage(1L, "帮我整理一份 AI 搜索重构计划"));
         when(aiChatClient.generateTitle(messages)).thenReturn("AI搜索重构计划");
 

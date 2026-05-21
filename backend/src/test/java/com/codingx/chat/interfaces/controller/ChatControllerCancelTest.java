@@ -7,9 +7,11 @@ import com.codingx.chat.application.service.ChatApplicationService;
 import com.codingx.chat.application.service.ChatAttachmentService;
 import com.codingx.chat.application.service.ChatConversationApplicationService;
 import com.codingx.chat.application.service.ChatRuntimeGuardService;
+import com.codingx.common.error.ErrorMessageCatalog;
 import com.codingx.skill.domain.repository.ChatSkillRepository;
 import com.codingx.common.model.ApiResponse;
 import com.codingx.mcp.domain.repository.ChatMcpRepository;
+import com.codingx.workspace.infrastructure.repository.WorkspaceRepositoryImpl;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -52,6 +54,9 @@ class ChatControllerCancelTest {
     @Mock
     private ChatMcpRepository chatMcpRepository;
 
+    @Mock
+    private WorkspaceRepositoryImpl workspaceRepositoryImpl;
+
     /**
      * 被测控制器。
      */
@@ -66,7 +71,7 @@ class ChatControllerCancelTest {
         ApiResponse<Void> response = chatController.cancelConversation(1001L);
 
         assertEquals(true, response.success());
-        assertEquals("cancel requested", response.message());
+        assertEquals(ErrorMessageCatalog.CHAT_CANCEL_REQUESTED, response.message());
         verify(chatRuntimeGuardService).cancelConversation(1001L);
     }
 }

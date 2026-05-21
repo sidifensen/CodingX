@@ -22,12 +22,16 @@ import com.codingx.chat.interfaces.request.SendChatMessageRequest;
 import com.codingx.chat.interfaces.response.ChatAttachmentResponse;
 import com.codingx.chat.interfaces.response.ChatConversationResponse;
 import com.codingx.chat.interfaces.response.ChatMessageResponse;
+import com.codingx.common.error.ErrorMessageCatalog;
 import com.codingx.common.model.ApiResponse;
 import com.codingx.common.idempotent.IdempotentSubmit;
 import com.codingx.mcp.domain.model.ChatMcp;
 import com.codingx.mcp.domain.repository.ChatMcpRepository;
+import com.codingx.workspace.infrastructure.persistence.dataobject.WorkspaceDO;
+import com.codingx.workspace.infrastructure.repository.WorkspaceRepositoryImpl;
 import jakarta.validation.Valid;
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -69,6 +73,7 @@ public class ChatController {
     private final ChatMessageFeedbackRepository chatMessageFeedbackRepository;
     private final ChatMcpRepository chatMcpRepository;
     private final ChatSkillRepository chatSkillRepository;
+    private final WorkspaceRepositoryImpl workspaceRepositoryImpl;
 
     /**
      * 创建 createConversation 所需数据并返回结果。
@@ -141,7 +146,7 @@ public class ChatController {
             ),
             StpUtil.getLoginIdAsLong()
         );
-        return ApiResponse.successMessage("message processed");
+        return ApiResponse.successMessage(ErrorMessageCatalog.CHAT_MESSAGE_PROCESSED);
     }
 
     /**
@@ -153,7 +158,7 @@ public class ChatController {
     @org.springframework.web.bind.annotation.PatchMapping("/{conversationId}")
     public ApiResponse<Void> renameConversation(@PathVariable Long conversationId, @Valid @RequestBody RenameConversationRequest request) {
         chatConversationApplicationService.updateConversationTitle(conversationId, request.title(), StpUtil.getLoginIdAsLong());
-        return ApiResponse.successMessage("conversation renamed");
+        return ApiResponse.successMessage(ErrorMessageCatalog.CHAT_CONVERSATION_RENAMED);
     }
 
     /**
@@ -164,7 +169,7 @@ public class ChatController {
     @org.springframework.web.bind.annotation.DeleteMapping("/{conversationId}")
     public ApiResponse<Void> deleteConversation(@PathVariable Long conversationId) {
         chatConversationApplicationService.deleteConversation(conversationId, StpUtil.getLoginIdAsLong());
-        return ApiResponse.successMessage("conversation deleted");
+        return ApiResponse.successMessage(ErrorMessageCatalog.CHAT_CONVERSATION_DELETED);
     }
 
     /**
@@ -175,7 +180,7 @@ public class ChatController {
     @PostMapping("/{conversationId}/cancel")
     public ApiResponse<Void> cancelConversation(@PathVariable Long conversationId) {
         chatRuntimeGuardService.cancelConversation(conversationId);
-        return ApiResponse.successMessage("cancel requested");
+        return ApiResponse.successMessage(ErrorMessageCatalog.CHAT_CANCEL_REQUESTED);
     }
 
     /**
@@ -187,7 +192,7 @@ public class ChatController {
     @PostMapping("/messages/{messageId}/feedback")
     public ApiResponse<Void> submitReaction(@PathVariable Long messageId, @Valid @RequestBody ChatMessageFeedbackRequest request) {
         chatReactionService.submitReaction(messageId, request.conversationId(), StpUtil.getLoginIdAsLong(), request.vote(), request.reason(), request.comment());
-        return ApiResponse.successMessage("feedback submitted");
+        return ApiResponse.successMessage(ErrorMessageCatalog.CHAT_FEEDBACK_SUBMITTED);
     }
 
     /**
@@ -196,13 +201,34 @@ public class ChatController {
      * @return 输入参数。
      */
     private ChatConversationResponse toConversationResponse(ChatConversation conversation) {
+        Long userId = StpUtil.getLoginIdAsLong();
+        Optional<WorkspaceDO> workspaceOptional = workspaceRepositoryImpl.findOwnedWorkspaceById(conversation.getWorkspaceId(), userId);
+        WorkspaceDO workspace = workspaceOptional.orElse(null);
         return new ChatConversationResponse(
             conversation.getId(),
             conversation.getTitle(),
             conversation.getStatus(),
             conversation.getLastMessageAt(),
-            conversation.getLastRunId()
+            conversation.getLastRunId(),
+            conversation.getWorkspaceId(),
+            workspace == null ? null : workspace.getName(),
+            resolveWorkspaceType(workspace)
         );
+    }
+
+    /**
+     * 解析会话空间类型，前端据此区分云端与本地会话展示分组。
+     * @param workspace 工作空间记录。
+     * @return 空间类型，缺失时默认 CLOUD。
+     */
+    private ChatConversationResponse.WorkspaceType resolveWorkspaceType(WorkspaceDO workspace) {
+        if (workspace == null) {
+            return ChatConversationResponse.WorkspaceType.CLOUD;
+        }
+        if (WorkspaceRepositoryImpl.RUNTIME_TARGET_CLOUD.equalsIgnoreCase(StrUtil.blankToDefault(workspace.getRuntimeTarget(), ""))) {
+            return ChatConversationResponse.WorkspaceType.CLOUD;
+        }
+        return ChatConversationResponse.WorkspaceType.LOCAL;
     }
 
     /**

@@ -35,9 +35,9 @@ export default function ProfileMenu({
     setIsProfileOpen(false);
   };
 
-  // 进一步压缩左下角入口高度：去除按钮内边距，仅保留文本和图标的最小占位。
+  // 进一步压缩左下角入口高度，同时增加底部留白，避免入口贴边。
   return (
-    <div className="relative mt-auto w-full px-4 pb-2 pt-1">
+    <div className="relative mt-auto w-full px-4 pb-4 pt-1">
       <button
         type="button"
         onClick={() => setIsProfileOpen((previousValue) => !previousValue)}

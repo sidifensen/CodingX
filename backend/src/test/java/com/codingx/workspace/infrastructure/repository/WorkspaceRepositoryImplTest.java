@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.when;
 
+import com.codingx.common.error.ErrorMessageCatalog;
 import com.codingx.common.exception.NotFoundException;
 import com.codingx.workspace.infrastructure.persistence.dataobject.WorkspaceDO;
 import com.codingx.workspace.infrastructure.persistence.mapper.WorkspaceMapper;
@@ -47,6 +48,6 @@ class WorkspaceRepositoryImplTest {
         when(workspaceMapper.selectOne(org.mockito.ArgumentMatchers.any())).thenReturn(null);
 
         NotFoundException exception = assertThrows(NotFoundException.class, () -> workspaceRepository.ensureExists(3001L));
-        assertEquals("Workspace not found", exception.getMessage());
+        assertEquals(ErrorMessageCatalog.WORKSPACE_NOT_FOUND, exception.getMessage());
     }
 }

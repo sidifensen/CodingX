@@ -50,6 +50,12 @@ public class WorkspaceDO {
     private String runtimeTarget;
 
     /**
+     * 空间类型标识，cloud 表示云端空间，local 表示本地目录绑定空间。
+     */
+    @TableField("workspace_type")
+    private String workspaceType;
+
+    /**
      * 创建人用户标识。
      */
     @TableField("created_by")

@@ -173,6 +173,44 @@ class ChatStreamControllerTest {
     }
 
     /**
+     * 新建会话入口透传 workspaceId 时，控制器应把该归属传入创建命令，避免本地会话落入默认云端空间。
+     */
+    @Test
+    void streamChatUsesWorkspaceIdWhenCreatingConversation() {
+        SseEmitter emitter = new SseEmitter(0L);
+        whenRegisterReturns(emitter);
+        when(chatMcpRepository.findAllEnabled()).thenReturn(List.of(
+            ChatMcp.builder().id(1L).mcpCode("sales_query").displayName("销售查询").category("销售").enabled(1).sortNo(1).build()
+        ));
+        ChatConversation conversation = ChatConversation.create(9001L, "本地会话", 1001L, 6001L, ChatConversationStatus.ACTIVE);
+        when(chatConversationApplicationService.createConversation(any(CreateConversationCommand.class), any(Long.class))).thenReturn(conversation);
+        try (MockedStatic<StpUtil> mocked = Mockito.mockStatic(StpUtil.class)) {
+            mocked.when(StpUtil::getLoginIdAsLong).thenReturn(1001L);
+
+            SseEmitter actual = chatStreamController.streamChat(
+                "分析本地仓库",
+                null,
+                6001L,
+                false,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null
+            );
+
+            assertEquals(emitter, actual);
+            verify(chatConversationApplicationService).createConversation(new CreateConversationCommand(null, 6001L), 1001L);
+            verify(chatSseRegistry).register(9001L);
+            verify(chatStreamExecutionService).dispatch(
+                argThat(command -> command.conversationId().equals(9001L) && command.content().equals("分析本地仓库")),
+                eq(1001L)
+            );
+        }
+    }
+
+    /**
      * 显式传入 skillCodes 时，应优先使用前端指定列表，不回退默认启用项。
      */
     @Test

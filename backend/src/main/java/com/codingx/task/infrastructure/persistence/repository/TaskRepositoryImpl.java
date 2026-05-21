@@ -1,5 +1,6 @@
 package com.codingx.task.infrastructure.persistence.repository;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.codingx.common.error.ErrorMessageCatalog;
 import com.codingx.common.exception.NotFoundException;
 import com.codingx.task.domain.model.RuntimeType;
 import com.codingx.task.domain.model.Task;
@@ -55,7 +56,7 @@ public class TaskRepositoryImpl implements TaskRepository {
      */
     @Override
     public Task requireById(Long taskId) {
-        return findById(taskId).orElseThrow(() -> new NotFoundException("Task not found"));
+        return findById(taskId).orElseThrow(() -> new NotFoundException(ErrorMessageCatalog.TASK_NOT_FOUND));
     }
 
     /**

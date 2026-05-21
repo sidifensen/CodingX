@@ -6,6 +6,7 @@ import com.codingx.chat.domain.model.ChatConversationStatus;
 import com.codingx.chat.domain.repository.ChatConversationRepository;
 import com.codingx.chat.infrastructure.persistence.dataobject.ChatConversationDO;
 import com.codingx.chat.infrastructure.persistence.mapper.ChatConversationMapper;
+import com.codingx.common.error.ErrorMessageCatalog;
 import com.codingx.common.exception.NotFoundException;
 import java.util.List;
 import java.util.Optional;
@@ -33,7 +34,7 @@ public class ChatConversationRepositoryImpl implements ChatConversationRepositor
     public ChatConversation requireById(Long conversationId) {
         ChatConversationDO dataObject = chatConversationMapper.selectById(conversationId);
         if (dataObject == null || Integer.valueOf(1).equals(dataObject.getDeleted())) {
-            throw new NotFoundException("Conversation not found");
+            throw new NotFoundException(ErrorMessageCatalog.CHAT_CONVERSATION_NOT_FOUND);
         }
         return toDomain(dataObject);
     }

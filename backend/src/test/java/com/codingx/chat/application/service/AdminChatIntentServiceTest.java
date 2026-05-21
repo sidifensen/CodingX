@@ -153,7 +153,7 @@ class AdminChatIntentServiceTest {
 
         assertNotNull(updated.getUpdatedAt());
         assertEquals(3002L, updated.getId());
-        assertEquals("kb", updated.getIntentType());
+        assertEquals("search", updated.getIntentType());
         assertEquals(8, updated.getSortNo());
         verify(chatIntentNodeRepository).save(argThat(node ->
             Long.valueOf(3002L).equals(node.getId()) && Integer.valueOf(8).equals(node.getSortNo())

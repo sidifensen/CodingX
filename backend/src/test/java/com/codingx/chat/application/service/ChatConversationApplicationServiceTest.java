@@ -11,7 +11,10 @@ import com.codingx.chat.domain.model.ChatMessageRole;
 import com.codingx.chat.domain.model.ChatMessageStatus;
 import com.codingx.chat.domain.repository.ChatConversationRepository;
 import com.codingx.chat.domain.repository.ChatMessageRepository;
+import com.codingx.common.error.ErrorMessageCatalog;
 import com.codingx.common.exception.ForbiddenException;
+import com.codingx.workspace.infrastructure.persistence.dataobject.WorkspaceDO;
+import com.codingx.workspace.infrastructure.repository.WorkspaceRepositoryImpl;
 import com.codingx.workspace.domain.repository.WorkspaceRepository;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -44,6 +47,9 @@ class ChatConversationApplicationServiceTest {
     @Mock
     private WorkspaceRepository workspaceRepository;
 
+    @Mock
+    private WorkspaceRepositoryImpl workspaceRepositoryImpl;
+
     /**
      * ChatConversationApplicationService 依赖。
      */
@@ -56,14 +62,40 @@ class ChatConversationApplicationServiceTest {
     @Test
     void createConversationDefaultsBlankTitle() {
 
+        WorkspaceDO workspace = new WorkspaceDO();
+        workspace.setId(3001L);
+        workspace.setRuntimeTarget("local");
+        workspace.setName("codingx");
+        when(workspaceRepositoryImpl.requireOwnedWorkspace(3001L, 1002L)).thenReturn(workspace);
         ChatConversation conversation = chatConversationApplicationService.createConversation(
             new CreateConversationCommand(" ", 3001L),
             1002L
 
         );
-        assertEquals("New Conversation", conversation.getTitle());
+        assertEquals(ErrorMessageCatalog.CHAT_CONVERSATION_DEFAULT_TITLE, conversation.getTitle());
         assertEquals(3001L, conversation.getWorkspaceId());
-        verify(workspaceRepository).ensureExists(3001L);
+        verify(workspaceRepositoryImpl).requireOwnedWorkspace(3001L, 1002L);
+        verify(chatConversationRepository).save(conversation);
+    }
+
+    /**
+     * 未传 workspaceId 时应自动归入用户默认云端空间，避免会话落在 null 分区。
+     */
+    @Test
+    void createConversationUsesDefaultCloudWorkspaceWhenWorkspaceIdMissing() {
+        WorkspaceDO cloudWorkspace = new WorkspaceDO();
+        cloudWorkspace.setId(8001L);
+        cloudWorkspace.setRuntimeTarget("cloud");
+        cloudWorkspace.setName("默认云端空间");
+        when(workspaceRepositoryImpl.ensureDefaultCloudWorkspace(1002L, null)).thenReturn(cloudWorkspace);
+
+        ChatConversation conversation = chatConversationApplicationService.createConversation(
+            new CreateConversationCommand("我的会话", null),
+            1002L
+        );
+
+        assertEquals(8001L, conversation.getWorkspaceId());
+        verify(workspaceRepositoryImpl).ensureDefaultCloudWorkspace(1002L, null);
         verify(chatConversationRepository).save(conversation);
     }
 
@@ -105,7 +137,7 @@ class ChatConversationApplicationServiceTest {
             () -> chatConversationApplicationService.listMessages(1L, 2001L)
 
         );
-        assertEquals("You cannot access this conversation", exception.getMessage());
+        assertEquals(ErrorMessageCatalog.CHAT_CONVERSATION_FORBIDDEN, exception.getMessage());
     }
 
     /**
@@ -141,12 +173,17 @@ class ChatConversationApplicationServiceTest {
     @Test
     void listConversationsUsesWorkspaceScope() {
         ChatConversation conversation = ChatConversation.create(1L, "会话A", 1002L, 3001L, ChatConversationStatus.ACTIVE);
+        WorkspaceDO workspace = new WorkspaceDO();
+        workspace.setId(3001L);
+        workspace.setRuntimeTarget("local");
+        workspace.setName("codingx");
+        when(workspaceRepositoryImpl.requireOwnedWorkspace(3001L, 1002L)).thenReturn(workspace);
         when(chatConversationRepository.findByCreatedByAndWorkspaceId(1002L, 3001L)).thenReturn(List.of(conversation));
 
         List<ChatConversation> result = chatConversationApplicationService.listConversations(1002L, 3001L);
 
         assertEquals(1, result.size());
-        verify(workspaceRepository).ensureExists(3001L);
+        verify(workspaceRepositoryImpl).requireOwnedWorkspace(3001L, 1002L);
         verify(chatConversationRepository).findByCreatedByAndWorkspaceId(1002L, 3001L);
     }
 }

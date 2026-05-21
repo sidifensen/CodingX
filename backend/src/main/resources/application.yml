@@ -77,6 +77,11 @@ app:
       search-max-pool-size: ${APP_CHAT_EXECUTOR_SEARCH_MAX_POOL_SIZE:8} # 搜索线程池最大线程数
       search-queue-capacity: ${APP_CHAT_EXECUTOR_SEARCH_QUEUE_CAPACITY:256} # 搜索线程池队列容量
       keep-alive-seconds: ${APP_CHAT_EXECUTOR_KEEP_ALIVE_SECONDS:60} # 线程空闲保活秒数
+    memory:
+      summary-enabled: ${CHAT_MEMORY_SUMMARY_ENABLED:true} # 是否启用聊天摘要
+      summary-trigger-messages: ${CHAT_MEMORY_SUMMARY_TRIGGER_MESSAGES:12} # 触发摘要的消息数量阈值
+      history-keep-turns: ${CHAT_MEMORY_HISTORY_KEEP_TURNS:6} # 保留的历史对话轮次
+      summary-max-characters: ${CHAT_MEMORY_SUMMARY_MAX_CHARACTERS:4000} # 摘要最大字符数
   security:
     cors:
       allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5002,http://localhost:5003} # CORS 允许的源列表
@@ -148,24 +153,15 @@ app:
   runtime:
     mock-step-delay-ms: ${MOCK_STEP_DELAY_MS:300} # 模拟步骤延迟（毫秒），用于测试环境
     mock-fail-keyword: ${MOCK_FAIL_KEYWORD:fail} # 模拟失败关键字，消息包含此关键字时模拟失败
-    # 聊天并发门控配置：默认关闭 Redis 队列门控，按单机门控运行。
-    use-redis-queue-gate: ${APP_RUNTIME_USE_REDIS_QUEUE_GATE:false} # 是否启用 Redis 队列门控
-    # 全局最大并发，超出后进入队列等待。
-    queue-max-concurrent: ${APP_RUNTIME_QUEUE_MAX_CONCURRENT:2} # 最大并发数
-    # 排队最长等待时间，超时后返回 busy。
-    queue-acquire-timeout-ms: ${APP_RUNTIME_QUEUE_ACQUIRE_TIMEOUT_MS:3000} # 排队获取超时时间（毫秒）
-    # 排队轮询基础间隔，结合通知唤醒减少额外空转。
-    queue-poll-interval-ms: ${APP_RUNTIME_QUEUE_POLL_INTERVAL_MS:200} # 排队轮询间隔（毫秒）
-    # 执行资格租约时长，避免异常退出造成永久占位。
-    queue-lease-seconds: ${APP_RUNTIME_QUEUE_LEASE_SECONDS:300} # 租约有效期（秒）
-    # 活跃会话续租间隔，必须小于租约时长。
-    queue-lease-renew-interval-ms: ${APP_RUNTIME_QUEUE_LEASE_RENEW_INTERVAL_MS:10000} # 续租间隔（毫秒）
-    # 代码检索工具默认扫描根目录；未配置时自动回退到项目根。
-    code-search-root: ${APP_RUNTIME_CODE_SEARCH_ROOT:} # 代码检索根目录，为空时使用项目根目录
-    # 代码检索工具单次最大返回命中条数。
-    code-search-max-results: ${APP_RUNTIME_CODE_SEARCH_MAX_RESULTS:20} # 代码检索最大结果数
-    # 代码检索工具单文件最大扫描大小（字节），避免读取超大构建产物。
-    code-search-max-file-size-bytes: ${APP_RUNTIME_CODE_SEARCH_MAX_FILE_SIZE_BYTES:1048576} # 代码检索单文件最大字节数
+    use-redis-queue-gate: ${APP_RUNTIME_USE_REDIS_QUEUE_GATE:false} # 是否启用 Redis 队列门控，默认关闭并按单机门控运行
+    queue-max-concurrent: ${APP_RUNTIME_QUEUE_MAX_CONCURRENT:2} # 最大并发数，超出后进入队列等待
+    queue-acquire-timeout-ms: ${APP_RUNTIME_QUEUE_ACQUIRE_TIMEOUT_MS:3000} # 排队获取超时时间（毫秒），超时后返回 busy
+    queue-poll-interval-ms: ${APP_RUNTIME_QUEUE_POLL_INTERVAL_MS:200} # 排队轮询间隔（毫秒），结合通知唤醒减少额外空转
+    queue-lease-seconds: ${APP_RUNTIME_QUEUE_LEASE_SECONDS:300} # 租约有效期（秒），避免异常退出造成永久占位
+    queue-lease-renew-interval-ms: ${APP_RUNTIME_QUEUE_LEASE_RENEW_INTERVAL_MS:10000} # 续租间隔（毫秒），必须小于租约时长
+    code-search-root: ${APP_RUNTIME_CODE_SEARCH_ROOT:} # 代码检索根目录，未配置时自动回退到项目根
+    code-search-max-results: ${APP_RUNTIME_CODE_SEARCH_MAX_RESULTS:20} # 代码检索最大结果数，单次最大返回命中条数
+    code-search-max-file-size-bytes: ${APP_RUNTIME_CODE_SEARCH_MAX_FILE_SIZE_BYTES:1048576} # 代码检索单文件最大字节数，避免读取超大构建产物
     web-search:
       enabled: ${APP_RUNTIME_WEB_SEARCH_ENABLED:false} # 是否启用真实联网搜索通道
       provider: ${APP_RUNTIME_WEB_SEARCH_PROVIDER:bing} # 搜索 provider，当前支持 bing / serper / tavily
@@ -174,13 +170,6 @@ app:
       max-results: ${APP_RUNTIME_WEB_SEARCH_MAX_RESULTS:5} # 单次联网搜索最大候选数
       language: ${APP_RUNTIME_WEB_SEARCH_LANGUAGE:zh-cn} # 搜索语言代码
       country: ${APP_RUNTIME_WEB_SEARCH_COUNTRY:cn} # 搜索地区代码
-  chat:
-    memory:
-      summary-enabled: ${CHAT_MEMORY_SUMMARY_ENABLED:true} # 是否启用聊天摘要
-      summary-trigger-messages: ${CHAT_MEMORY_SUMMARY_TRIGGER_MESSAGES:12} # 触发摘要的消息数量阈值
-      history-keep-turns: ${CHAT_MEMORY_HISTORY_KEEP_TURNS:6} # 保留的历史对话轮次
-      summary-max-characters: ${CHAT_MEMORY_SUMMARY_MAX_CHARACTERS:4000} # 摘要最大字符数
-
 rustfs:
   endpoint: ${RUSTFS_ENDPOINT:http://localhost:9000} # RustFS 服务端点地址
   access-key: ${RUSTFS_ACCESS_KEY:rustfsadmin} # RustFS 访问密钥

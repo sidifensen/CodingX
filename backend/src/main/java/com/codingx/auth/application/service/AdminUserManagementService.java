@@ -14,6 +14,7 @@ import com.codingx.common.error.ErrorMessageCatalog;
 import com.codingx.common.exception.BusinessException;
 import com.codingx.common.exception.ForbiddenException;
 import com.codingx.common.exception.NotFoundException;
+import com.codingx.workspace.infrastructure.repository.WorkspaceRepositoryImpl;
 import java.time.LocalDateTime;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -28,6 +29,7 @@ public class AdminUserManagementService {
     private final UserRepository userRepository;
     private final AuthSessionGateway authSessionGateway;
     private final PasswordHasher passwordHasher;
+    private final WorkspaceRepositoryImpl workspaceRepository;
 
     /**
      * 分页查询用户。
@@ -81,6 +83,8 @@ public class AdminUserManagementService {
             .updatedAt(now)
             .build();
         userRepository.save(user);
+        // 用户创建后立即补齐默认云端空间，确保后续“无 workspaceId 会话”有稳定归属。
+        workspaceRepository.ensureDefaultCloudWorkspace(user.getId(), user.getDisplayName());
         return user;
     }
 

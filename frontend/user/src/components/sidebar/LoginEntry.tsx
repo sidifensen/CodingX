@@ -12,9 +12,9 @@ interface LoginEntryProps {
  * 渲染左下角登录入口。
  */
 export default function LoginEntry({ onClick }: LoginEntryProps) {
-  // 进一步压缩登录入口高度：去除按钮内边距，仅保留文字与图标的必要占位。
+  // 进一步压缩登录入口高度，同时增加底部留白，避免左下角入口贴边。
   return (
-    <div className="relative mt-auto w-full px-4 pb-2 pt-1">
+    <div className="relative mt-auto w-full px-4 pb-4 pt-1">
       <button
         type="button"
         aria-label="侧边栏登录入口"

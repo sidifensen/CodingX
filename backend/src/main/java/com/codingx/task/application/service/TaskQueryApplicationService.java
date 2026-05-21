@@ -1,4 +1,5 @@
 package com.codingx.task.application.service;
+import com.codingx.common.error.ErrorMessageCatalog;
 import com.codingx.common.exception.ForbiddenException;
 import com.codingx.task.domain.model.Task;
 import com.codingx.task.domain.repository.TaskRepository;
@@ -36,7 +37,7 @@ public class TaskQueryApplicationService {
     public Task getTask(Long taskId, Long currentUserId) {
         Task task = taskRepository.requireById(taskId);
         if (!task.getCreatedBy().equals(currentUserId)) {
-            throw new ForbiddenException("You cannot access this task");
+            throw new ForbiddenException(ErrorMessageCatalog.TASK_FORBIDDEN_ACCESS);
         }
         return task;
     }

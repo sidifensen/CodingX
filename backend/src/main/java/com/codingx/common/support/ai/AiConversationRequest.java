@@ -3,6 +3,7 @@ package com.codingx.common.support.ai;
 import cn.hutool.core.collection.CollUtil;
 import com.codingx.chat.domain.model.ChatAttachment;
 import com.codingx.chat.domain.model.ChatMessage;
+import com.codingx.common.error.ErrorMessageCatalog;
 import java.util.List;
 import lombok.Builder;
 
@@ -23,7 +24,7 @@ public record AiConversationRequest(
      */
     public AiConversationRequest {
         if (CollUtil.isEmpty(messages)) {
-            throw new IllegalArgumentException("AI conversation messages are required");
+            throw new IllegalArgumentException(ErrorMessageCatalog.AI_CONVERSATION_MESSAGES_REQUIRED);
         }
     }
 }

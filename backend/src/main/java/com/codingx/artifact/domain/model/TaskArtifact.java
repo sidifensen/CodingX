@@ -1,6 +1,7 @@
 package com.codingx.artifact.domain.model;
 import cn.hutool.core.util.IdUtil;
 import cn.hutool.core.util.StrUtil;
+import com.codingx.common.error.ErrorMessageCatalog;
 import java.time.LocalDateTime;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
@@ -63,7 +64,7 @@ public class TaskArtifact {
      */
     public static TaskArtifact create(Long taskId, String artifactType, String name, String content, String storagePath) {
         if (taskId == null || StrUtil.hasBlank(artifactType, name)) {
-            throw new IllegalArgumentException("Task artifact fields are required");
+            throw new IllegalArgumentException(ErrorMessageCatalog.TASK_ARTIFACT_FIELDS_REQUIRED);
         }
         return TaskArtifact.builder()
             .id(IdUtil.getSnowflakeNextId())

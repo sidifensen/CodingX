@@ -7,6 +7,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import cn.dev33.satoken.stp.StpUtil;
 import com.codingx.chat.application.service.ChatReactionService;
+import com.codingx.common.error.ErrorMessageCatalog;
 import com.codingx.config.GlobalExceptionHandler;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -51,7 +52,7 @@ class ChatMessageFeedbackControllerTest {
                         """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
-                .andExpect(jsonPath("$.message").value("feedback submitted"))
+                .andExpect(jsonPath("$.message").value(ErrorMessageCatalog.CHAT_FEEDBACK_SUBMITTED))
                 .andExpect(jsonPath("$.data").doesNotExist());
 
             verify(chatReactionService).submitReaction(101L, 2001L, 1002L, 1, "helpful", "good");

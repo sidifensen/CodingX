@@ -3,16 +3,10 @@ package com.codingx.common.idempotent;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
-import org.springframework.context.annotation.Primary;
-import org.springframework.stereotype.Component;
 
 /**
  * 进程内幂等锁实现，作为无 Redisson 环境下的降级方案。
  */
-@Component
-@Primary
-@ConditionalOnMissingBean(RedissonIdempotentLockProvider.class)
 public class InMemoryIdempotentLockProvider implements IdempotentLockProvider {
 
     private final ConcurrentHashMap<String, ReentrantLock> lockMap = new ConcurrentHashMap<>();

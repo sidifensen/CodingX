@@ -39,7 +39,7 @@ class ConversationIntentServiceTest {
      */
     @Test
     void routeReturnsSearchActionForKnowledgeIntent() {
-        ChatIntentNode node = ChatIntentNode.builder().intentCode("biz-oa-intro").parentCode("biz-oa").name("系统介绍").intentType("kb").enabled(1).build();
+        ChatIntentNode node = ChatIntentNode.builder().intentCode("search-web-news").parentCode("search-web").name("新闻资讯").intentType("search").enabled(1).build();
         when(chatIntentNodeRepository.findEnabledNodes()).thenReturn(List.of(node));
         when(conversationIntentResolver.resolveCandidates("请介绍一下 OA 系统", List.of(node), List.of()))
             .thenReturn(List.of(new ConversationIntentCandidate(node, 0.91D)));
@@ -49,7 +49,7 @@ class ConversationIntentServiceTest {
         ConversationIntentDecision decision = conversationIntentService.route("请介绍一下 OA 系统");
 
         assertEquals(ConversationIntentAction.SEARCH, decision.action());
-        assertEquals("biz-oa-intro", decision.intentCode());
+        assertEquals("search-web-news", decision.intentCode());
     }
 
     /**
@@ -76,8 +76,8 @@ class ConversationIntentServiceTest {
      */
     @Test
     void routeReturnsClarifyActionWhenGuidancePromptExists() {
-        ChatIntentNode oa = ChatIntentNode.builder().intentCode("biz-oa-intro").parentCode("biz-oa").name("系统介绍").intentType("kb").enabled(1).build();
-        ChatIntentNode ins = ChatIntentNode.builder().intentCode("biz-ins-intro").parentCode("biz-ins").name("系统介绍").intentType("kb").enabled(1).build();
+        ChatIntentNode oa = ChatIntentNode.builder().intentCode("search-web-news").parentCode("search-web").name("系统介绍").intentType("search").enabled(1).build();
+        ChatIntentNode ins = ChatIntentNode.builder().intentCode("search-web-encyclopedia").parentCode("search-web").name("系统介绍").intentType("search").enabled(1).build();
         List<ConversationIntentCandidate> candidates = List.of(
             new ConversationIntentCandidate(oa, 0.91D),
             new ConversationIntentCandidate(ins, 0.88D)

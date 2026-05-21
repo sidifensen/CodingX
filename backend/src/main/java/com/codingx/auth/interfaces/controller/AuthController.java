@@ -6,6 +6,7 @@ import com.codingx.auth.domain.model.User;
 import com.codingx.auth.interfaces.request.LoginRequest;
 import com.codingx.auth.interfaces.response.LoginResponse;
 import com.codingx.auth.interfaces.response.MeResponse;
+import com.codingx.common.error.ErrorMessageCatalog;
 import com.codingx.common.model.ApiResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -52,7 +53,7 @@ public class AuthController {
     @PostMapping("/logout")
     public ApiResponse<Void> logout() {
         authApplicationService.logoutCurrent();
-        return ApiResponse.successMessage("logged out");
+        return ApiResponse.successMessage(ErrorMessageCatalog.AUTH_LOGOUT_SUCCESS);
     }
 
     /**

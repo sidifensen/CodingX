@@ -755,6 +755,7 @@ describe('App', () => {
    * 验证点击新建对话后会回到欢迎页，并让下一次发送走新会话链路。
    */
   it('应在点击新建对话后回到欢迎页并以无旧会话参数发送消息', async () => {
+    window.history.replaceState({}, '', '/?conversationId=2001');
     window.localStorage.setItem(
       'codingx.auth.session',
       JSON.stringify({
@@ -1043,6 +1044,7 @@ describe('App', () => {
 
     expect(await screen.findByText('你好，我是 CodingX')).toBeInTheDocument();
     expect(screen.queryByText('旧会话回答')).not.toBeInTheDocument();
+    expect(new URL(window.location.href).searchParams.get('conversationId')).toBeNull();
 
     fireEvent.change(screen.getByPlaceholderText('输入问题，或先选择技能/MCP...'), {
       target: { value: '请搜索新的会话问题' },
@@ -1347,6 +1349,11 @@ describe('App', () => {
       expect(
         screen.queryByText('这是第二个会话的回答') || screen.queryByText('当前会话暂无消息'),
       ).toBeTruthy();
+    });
+    await waitFor(() => {
+      expect(new URL(window.location.href).searchParams.get('conversationId')).toBe(
+        '2055120756043943936',
+      );
     });
   });
 

@@ -1,5 +1,6 @@
 package com.codingx.task.interfaces.controller;
 import cn.dev33.satoken.stp.StpUtil;
+import com.codingx.common.error.ErrorMessageCatalog;
 import com.codingx.common.model.ApiResponse;
 import com.codingx.task.application.command.CreateTaskCommand;
 import com.codingx.task.application.command.StartTaskCommand;
@@ -59,7 +60,7 @@ public class TaskController {
     @PostMapping("/{taskId}/start")
     public ApiResponse<Void> startTask(@PathVariable Long taskId) {
         taskCommandApplicationService.startTask(new StartTaskCommand(taskId, StpUtil.getLoginIdAsLong()));
-        return ApiResponse.successMessage("task started");
+        return ApiResponse.successMessage(ErrorMessageCatalog.TASK_STARTED);
     }
 
     /**

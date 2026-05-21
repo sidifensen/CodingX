@@ -1,6 +1,7 @@
 package com.codingx.task.application.service;
 import cn.hutool.core.lang.Assert;
 import cn.hutool.core.util.IdUtil;
+import com.codingx.common.error.ErrorMessageCatalog;
 import com.codingx.common.exception.ForbiddenException;
 import com.codingx.runtime.domain.service.TaskRuntimeExecutor;
 import com.codingx.task.application.command.CreateTaskCommand;
@@ -64,7 +65,7 @@ public class TaskCommandApplicationService {
     public void startTask(StartTaskCommand command) {
         Task task = taskRepository.requireById(command.taskId());
         if (!task.getCreatedBy().equals(command.operatorId())) {
-            throw new ForbiddenException("You cannot operate this task");
+            throw new ForbiddenException(ErrorMessageCatalog.TASK_FORBIDDEN_OPERATE);
         }
         task.start();
         taskRepository.save(task);

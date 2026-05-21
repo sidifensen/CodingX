@@ -29,8 +29,8 @@ class ConversationIntentGuidanceServiceTest {
         java.nio.file.Files.writeString(promptDir.resolve("guidance-prompt.st"), "关于{topic_name}，候选如下：\n{options}");
         java.nio.file.Files.writeString(promptDir.resolve("guidance-ambiguity-check.st"), "check");
         ConversationIntentGuidanceService service = new ConversationIntentGuidanceService(new PromptTemplateLoader(promptDir), aiPromptExecutionService);
-        ChatIntentNode oa = ChatIntentNode.builder().intentCode("biz-oa-intro").parentCode("biz-oa").name("系统介绍").intentType("kb").build();
-        ChatIntentNode ins = ChatIntentNode.builder().intentCode("biz-ins-intro").parentCode("biz-ins").name("系统介绍").intentType("kb").build();
+        ChatIntentNode oa = ChatIntentNode.builder().intentCode("search-web-oa-intro").parentCode("search-web-oa").name("系统介绍").intentType("search").build();
+        ChatIntentNode ins = ChatIntentNode.builder().intentCode("search-web-ins-intro").parentCode("search-web-ins").name("系统介绍").intentType("search").build();
 
         String prompt = service.buildGuidancePrompt(
             "系统介绍是什么",
@@ -39,13 +39,13 @@ class ConversationIntentGuidanceServiceTest {
                 new ConversationIntentCandidate(ins, 0.67D)
             ),
             List.of(
-                ChatIntentNode.builder().intentCode("biz-oa").parentCode("biz").name("OA系统").intentType("kb").build(),
-                ChatIntentNode.builder().intentCode("biz-ins").parentCode("biz").name("保险系统").intentType("kb").build(),
-                ChatIntentNode.builder().intentCode("biz").name("业务系统").intentType("kb").build()
+                ChatIntentNode.builder().intentCode("search-web-oa").parentCode("search-web").name("OA系统").intentType("search").build(),
+                ChatIntentNode.builder().intentCode("search-web-ins").parentCode("search-web").name("保险系统").intentType("search").build(),
+                ChatIntentNode.builder().intentCode("search-web").name("联网搜索").intentType("search").build()
             )
         );
 
-        assertEquals("关于系统介绍，候选如下：\n1) 业务系统 > OA系统 > 系统介绍\n2) 业务系统 > 保险系统 > 系统介绍", prompt);
+        assertEquals("关于系统介绍，候选如下：\n1) 联网搜索 > OA系统 > 系统介绍\n2) 联网搜索 > 保险系统 > 系统介绍", prompt);
     }
 
     /**
@@ -57,7 +57,7 @@ class ConversationIntentGuidanceServiceTest {
         java.nio.file.Files.writeString(promptDir.resolve("guidance-prompt.st"), "关于{topic_name}，候选如下：\n{options}");
         java.nio.file.Files.writeString(promptDir.resolve("guidance-ambiguity-check.st"), "check");
         ConversationIntentGuidanceService service = new ConversationIntentGuidanceService(new PromptTemplateLoader(promptDir), aiPromptExecutionService);
-        ChatIntentNode node = ChatIntentNode.builder().intentCode("group-it").parentCode("group").name("IT支持").intentType("kb").build();
+        ChatIntentNode node = ChatIntentNode.builder().intentCode("search-web-it").parentCode("search-web").name("IT支持").intentType("search").build();
 
         String prompt = service.buildGuidancePrompt("VPN 连不上怎么办", List.of(new ConversationIntentCandidate(node, 0.92D)), List.of());
 

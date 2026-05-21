@@ -13,6 +13,8 @@ import com.codingx.chat.application.service.ChatReactionService;
 import com.codingx.chat.application.service.ChatRuntimeGuardService;
 import com.codingx.chat.domain.model.ChatConversation;
 import com.codingx.chat.domain.model.ChatConversationStatus;
+import com.codingx.workspace.infrastructure.persistence.dataobject.WorkspaceDO;
+import com.codingx.workspace.infrastructure.repository.WorkspaceRepositoryImpl;
 import com.codingx.skill.domain.repository.ChatSkillRepository;
 import com.codingx.config.GlobalExceptionHandler;
 import com.codingx.mcp.domain.repository.ChatMcpRepository;
@@ -55,6 +57,9 @@ class ChatControllerListConversationsTest {
     @Mock
     private ChatMcpRepository chatMcpRepository;
 
+    @Mock
+    private WorkspaceRepositoryImpl workspaceRepositoryImpl;
+
     @InjectMocks
     private ChatController chatController;
 
@@ -63,9 +68,14 @@ class ChatControllerListConversationsTest {
      */
     @Test
     void listConversationsReturnsLastRunId() throws Exception {
-        ChatConversation conversation = ChatConversation.create(2001L, "Default Demo Conversation", 1002L, ChatConversationStatus.ACTIVE);
+        ChatConversation conversation = ChatConversation.create(2001L, "Default Demo Conversation", 1002L, 3001L, ChatConversationStatus.ACTIVE);
         conversation.restoreRuntimeState(LocalDateTime.of(2026, 5, 15, 0, 36, 58), 2054964195115945984L);
         when(chatConversationApplicationService.listConversations(1002L, 3001L)).thenReturn(List.of(conversation));
+        WorkspaceDO workspace = new WorkspaceDO();
+        workspace.setId(3001L);
+        workspace.setName("CodingX");
+        workspace.setRuntimeTarget(WorkspaceRepositoryImpl.RUNTIME_TARGET_LOCAL);
+        when(workspaceRepositoryImpl.findOwnedWorkspaceById(3001L, 1002L)).thenReturn(java.util.Optional.of(workspace));
 
         try (MockedStatic<StpUtil> mocked = Mockito.mockStatic(StpUtil.class)) {
             mocked.when(StpUtil::getLoginIdAsLong).thenReturn(1002L);
@@ -74,7 +84,9 @@ class ChatControllerListConversationsTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data[0].id").value("2001"))
-                .andExpect(jsonPath("$.data[0].lastRunId").value("2054964195115945984"));
+                .andExpect(jsonPath("$.data[0].lastRunId").value("2054964195115945984"))
+                .andExpect(jsonPath("$.data[0].workspaceId").value("3001"))
+                .andExpect(jsonPath("$.data[0].workspaceType").value("LOCAL"));
         }
     }
 
@@ -83,7 +95,7 @@ class ChatControllerListConversationsTest {
      */
     @Test
     void listConversationsSerializesLongIdentifiersAsStrings() throws Exception {
-        ChatConversation conversation = ChatConversation.create(2055114974648864768L, "历史会话", 1002L, ChatConversationStatus.ACTIVE);
+        ChatConversation conversation = ChatConversation.create(2055114974648864768L, "历史会话", 1002L, 7001L, ChatConversationStatus.ACTIVE);
         conversation.restoreRuntimeState(LocalDateTime.of(2026, 5, 15, 10, 36, 58), 2055114974682419200L);
         when(chatConversationApplicationService.listConversations(1002L, 3001L)).thenReturn(List.of(conversation));
 
@@ -93,7 +105,8 @@ class ChatControllerListConversationsTest {
             mockMvc().perform(get("/api/chat/conversations").param("workspaceId", "3001"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data[0].id").value("2055114974648864768"))
-                .andExpect(jsonPath("$.data[0].lastRunId").value("2055114974682419200"));
+                .andExpect(jsonPath("$.data[0].lastRunId").value("2055114974682419200"))
+                .andExpect(jsonPath("$.data[0].workspaceId").value("7001"));
         }
     }
 

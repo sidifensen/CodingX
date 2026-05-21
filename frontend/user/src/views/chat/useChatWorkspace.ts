@@ -18,6 +18,8 @@ import {
   ExecutionStepItem,
   McpCallItem,
   McpItem,
+  MessageSearchProgress,
+  MessageSearchProgressItem,
   PendingAttachmentItem,
   ReferenceItem,
   SampleQuestionItem,
@@ -519,8 +521,31 @@ export function useChatWorkspace(
       // 仅用户显式切换会话时更新 URL，初始化恢复阶段由独立分支控制，避免误覆盖初始参数。
       writeConversationIdToUrl(conversationId);
     }
+    // 关键约束：刷新恢复时优先渲染消息主区，避免右栏慢接口阻塞首屏可读内容。
+    setExecutionSteps([]);
+    setReferences([]);
+    setArtifacts([]);
+    setCurrentExperts([]);
+    setCurrentSkills([]);
+    setCurrentMcps([]);
+    const nextMessagesPromise = ChatApi.listMessages(token, conversationId);
+    const nextStepsPromise = ChatApi.listSteps(token, conversationId);
+    const nextReferencesPromise = ChatApi.listReferences(token, conversationId);
+    const nextArtifactsPromise = ChatApi.listArtifacts(token, conversationId);
+    const nextCurrentExpertsPromise = ChatApi.listCurrentExperts(token, conversationId);
+    const nextCurrentSkillsPromise = ChatApi.listCurrentSkills(token, conversationId);
+    const nextCurrentMcpsPromise = ChatApi.listCurrentMcps(token, conversationId);
+
+    const nextMessages = await nextMessagesPromise;
+    const nextReplayMessages = patchLatestAssistantReplayPanels(nextMessages, {
+      latestAssistantMcpCalls,
+      previousMessages: messages,
+      executionSteps: [],
+      references: [],
+    });
+    setMessages(nextReplayMessages);
+
     const [
-      nextMessages,
       nextSteps,
       nextReferences,
       nextArtifacts,
@@ -528,15 +553,20 @@ export function useChatWorkspace(
       nextCurrentSkills,
       nextCurrentMcps,
     ] = await Promise.all([
-      ChatApi.listMessages(token, conversationId),
-      ChatApi.listSteps(token, conversationId),
-      ChatApi.listReferences(token, conversationId),
-      ChatApi.listArtifacts(token, conversationId),
-      ChatApi.listCurrentExperts(token, conversationId),
-      ChatApi.listCurrentSkills(token, conversationId),
-      ChatApi.listCurrentMcps(token, conversationId),
+      nextStepsPromise,
+      nextReferencesPromise,
+      nextArtifactsPromise,
+      nextCurrentExpertsPromise,
+      nextCurrentSkillsPromise,
+      nextCurrentMcpsPromise,
     ]);
-    setMessages(patchLatestAssistantMcpCalls(nextMessages, latestAssistantMcpCalls));
+    const nextReplayMessagesWithPanels = patchLatestAssistantReplayPanels(nextMessages, {
+      latestAssistantMcpCalls,
+      previousMessages: nextReplayMessages,
+      executionSteps: nextSteps,
+      references: nextReferences,
+    });
+    setMessages(nextReplayMessagesWithPanels);
     setExecutionSteps(nextSteps);
     setReferences(nextReferences);
     setArtifacts(nextArtifacts);
@@ -545,14 +575,15 @@ export function useChatWorkspace(
     setCurrentMcps(nextCurrentMcps);
     const conversationList = sourceConversations ?? conversations;
     const selectedConversation = conversationList.find((item) => item.id === conversationId);
-    if (selectedConversation?.lastRunId && nextMessages.length > 0) {
+    if (selectedConversation?.lastRunId && nextReplayMessagesWithPanels.length > 0) {
       streamStateRef.current = {
         conversationId,
-        activeMessageId: nextMessages[nextMessages.length - 1].id,
+        activeMessageId:
+          nextReplayMessagesWithPanels[nextReplayMessagesWithPanels.length - 1].id,
       };
     }
     persistConversationState(conversationId, conversationList, {
-      messages: nextMessages,
+      messages: nextReplayMessagesWithPanels,
       executionSteps: nextSteps,
       references: nextReferences,
       artifacts: nextArtifacts,
@@ -1394,14 +1425,28 @@ export function useChatWorkspace(
       await selectConversation(conversationId, snapshot.conversations, undefined, false);
       return;
     }
+    const replayMessages = patchLatestAssistantReplayPanels(record.messages, {
+      previousMessages: messages,
+      executionSteps: record.executionSteps,
+      references: record.references,
+    });
     setActiveConversationId(conversationId);
-    setMessages(record.messages);
+    setMessages(replayMessages);
     setExecutionSteps(record.executionSteps);
     setReferences(record.references);
     setArtifacts(record.artifacts);
     setCurrentExperts(record.currentExperts ?? []);
     setCurrentSkills(record.currentSkills);
     setCurrentMcps(record.currentMcps);
+    persistConversationState(conversationId, snapshot.conversations, {
+      messages: replayMessages,
+      executionSteps: record.executionSteps,
+      references: record.references,
+      artifacts: record.artifacts,
+      currentExperts: record.currentExperts ?? [],
+      currentSkills: record.currentSkills,
+      currentMcps: record.currentMcps,
+    });
   }
 
   /**
@@ -1941,6 +1986,171 @@ function patchLatestAssistantMcpCalls(
       ? {
           ...message,
           mcpCalls: latestAssistantMcpCalls,
+        }
+      : message,
+  );
+}
+
+/**
+ * 仅保留与“联网搜索”语义相关的来源条目，避免普通来源误触发搜索进度面板。
+ * @param references 来源回放列表。
+ * @returns 搜索进度条目列表。
+ */
+function buildSearchProgressItemsFromReferences(
+  references: ReferenceItem[],
+): MessageSearchProgressItem[] {
+  if (references.length === 0) {
+    return [];
+  }
+  return references
+    .filter((reference) => {
+      const normalizedSourceType = String(reference.sourceType ?? '').trim().toLowerCase();
+      return normalizedSourceType.length === 0 || normalizedSourceType.includes('search');
+    })
+    .map((reference) => ({
+      id: reference.id,
+      title: reference.title,
+      url: reference.url,
+      siteName: reference.siteName,
+    }));
+}
+
+/**
+ * 基于步骤与来源回放兜底重建搜索进度，保证刷新或历史回放后消息内面板稳定存在。
+ * @param executionSteps 步骤回放列表。
+ * @param references 来源回放列表。
+ * @returns 搜索进度，若无搜索语义返回 undefined。
+ */
+function deriveSearchProgressFromReplay(
+  executionSteps: ExecutionStepItem[],
+  references: ReferenceItem[],
+): MessageSearchProgress | undefined {
+  const hasSearchStep = executionSteps.some((step) => isSearchStepType(step.stepType));
+  const searchItems = buildSearchProgressItemsFromReferences(references);
+  if (!hasSearchStep && searchItems.length === 0) {
+    return undefined;
+  }
+  const hasRunningSearchStep = executionSteps.some((step) =>
+    isSearchStepType(step.stepType) && String(step.stepStatus ?? '').trim().toUpperCase() !== 'COMPLETED',
+  );
+  return {
+    status: hasRunningSearchStep ? 'running' : 'completed',
+    items: searchItems,
+  };
+}
+
+/**
+ * 判断执行步骤是否属于 MCP 工具执行阶段，兼容历史数据中的标题兜底命名。
+ * @param step 执行步骤。
+ * @returns 是否为 MCP 工具步骤。
+ */
+function isMcpStep(step: ExecutionStepItem): boolean {
+  const normalizedStepType = String(step.stepType ?? '').trim().toLowerCase();
+  const normalizedStepTitle = String(step.stepTitle ?? '').trim().toLowerCase();
+  return normalizedStepType.includes('mcp') || normalizedStepTitle.includes('mcp');
+}
+
+/**
+ * 从步骤回放兜底生成 MCP 调用面板数据，保障历史会话在缺失消息级字段时仍可展示。
+ * @param executionSteps 执行步骤列表。
+ * @returns 生成的 MCP 调用列表。
+ */
+function deriveMcpCallsFromSteps(executionSteps: ExecutionStepItem[]): McpCallItem[] {
+  return executionSteps
+    .filter((step) => isMcpStep(step))
+    .map((step) => {
+      const normalizedStepStatus = String(step.stepStatus ?? '').trim().toUpperCase();
+      const stepContent = step.content ?? '';
+      return {
+        callId: `replay-step-${step.id}`,
+        toolId: String(step.stepType ?? 'mcp_tool'),
+        displayName: step.stepTitle || 'MCP 调用',
+        input: '',
+        content: stepContent,
+        rawResult: stepContent || undefined,
+        phase: normalizedStepStatus === 'COMPLETED' ? 'complete' : 'start',
+        status: normalizedStepStatus === 'COMPLETED' ? 'completed' : 'running',
+      } satisfies McpCallItem;
+    });
+}
+
+/**
+ * 从当前消息列表中读取末条助手消息的面板字段，用于会话回放时兜底补齐。
+ * @param messages 消息列表。
+ * @returns 面板字段快照。
+ */
+function readLatestAssistantPanelState(messages: ChatMessageItem[]): {
+  mcpCalls?: McpCallItem[];
+  searchProgress?: MessageSearchProgress;
+} {
+  const latestAssistantMessage = [...messages]
+    .reverse()
+    .find((message) => message.role === 'ASSISTANT');
+  if (!latestAssistantMessage) {
+    return {};
+  }
+  return {
+    mcpCalls: latestAssistantMessage.mcpCalls,
+    searchProgress: latestAssistantMessage.searchProgress,
+  };
+}
+
+/**
+ * 在会话重载时回填末条助手消息的 MCP/搜索面板字段，避免流式字段被接口空值覆盖。
+ * @param messages 回放消息。
+ * @param options 回填上下文。
+ * @returns 合并后的消息列表。
+ */
+function patchLatestAssistantReplayPanels(
+  messages: ChatMessageItem[],
+  options: {
+    latestAssistantMcpCalls?: McpCallItem[];
+    previousMessages?: ChatMessageItem[];
+    executionSteps: ExecutionStepItem[];
+    references: ReferenceItem[];
+  },
+): ChatMessageItem[] {
+  const latestAssistantMcpCalls =
+    options.latestAssistantMcpCalls && options.latestAssistantMcpCalls.length > 0
+      ? options.latestAssistantMcpCalls
+      : undefined;
+  const replayMessages = patchLatestAssistantMcpCalls(messages, latestAssistantMcpCalls);
+  const latestAssistantIndex = [...replayMessages]
+    .map((message, index) => ({ message, index }))
+    .reverse()
+    .find((item) => item.message.role === 'ASSISTANT')?.index;
+  if (latestAssistantIndex == null) {
+    return replayMessages;
+  }
+  const latestAssistantMessage = replayMessages[latestAssistantIndex];
+  const previousPanelState = readLatestAssistantPanelState(options.previousMessages ?? []);
+  const derivedMcpCalls = deriveMcpCallsFromSteps(options.executionSteps);
+  const nextMcpCalls =
+    latestAssistantMessage.mcpCalls && latestAssistantMessage.mcpCalls.length > 0
+      ? latestAssistantMessage.mcpCalls
+      : previousPanelState.mcpCalls && previousPanelState.mcpCalls.length > 0
+        ? previousPanelState.mcpCalls
+        : derivedMcpCalls.length > 0
+          ? derivedMcpCalls
+          : undefined;
+  const replaySearchProgress = deriveSearchProgressFromReplay(options.executionSteps, options.references);
+  const nextSearchProgress =
+    latestAssistantMessage.searchProgress ??
+    previousPanelState.searchProgress ??
+    replaySearchProgress;
+  const shouldPatch =
+    (nextMcpCalls && nextMcpCalls.length > 0) !=
+      ((latestAssistantMessage.mcpCalls?.length ?? 0) > 0) ||
+    nextSearchProgress !== latestAssistantMessage.searchProgress;
+  if (!shouldPatch) {
+    return replayMessages;
+  }
+  return replayMessages.map((message, index) =>
+    index === latestAssistantIndex
+      ? {
+          ...message,
+          mcpCalls: nextMcpCalls,
+          searchProgress: nextSearchProgress,
         }
       : message,
   );

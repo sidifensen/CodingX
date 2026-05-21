@@ -1622,12 +1622,10 @@ export default function ChatView({
                       className="block rounded-2xl border border-border bg-surface-container px-4 py-3 transition-colors hover:border-border-active"
                     >
                       <div className="text-sm font-medium text-foreground">{reference.title}</div>
-                      {reference.siteName ? (
-                        <div className="mt-2 text-[12px] text-muted">{reference.siteName}</div>
-                      ) : null}
-                      {reference.snippet ? (
-                        <div className="mt-3 text-sm leading-6 text-muted">{reference.snippet}</div>
-                      ) : null}
+                      {/* 右侧来源回放只保留标题和地址，避免长摘要挤占面板空间。 */}
+                      <div className="mt-2 break-all text-[12px] text-muted">
+                        {reference.url || '地址未知'}
+                      </div>
                     </a>
                   ))
                 ) : (
@@ -1800,7 +1798,9 @@ function McpCallPanel({
   const [displayStatus, setDisplayStatus] = React.useState<'running' | 'completed' | 'error'>(
     targetStatus,
   );
-  const runningStartedAtRef = React.useRef<number | null>(targetStatus === 'running' ? Date.now() : null);
+  const runningStartedAtRef = React.useRef<number | null>(
+    targetStatus === 'running' ? Date.now() : null,
+  );
   const contentId = `mcp-call-content-panel-${messageId}`;
   const isRunning = displayStatus === 'running';
   const isError = displayStatus === 'error';
@@ -1880,8 +1880,9 @@ function McpCallPanel({
       <div
         id={contentId}
         className={`overflow-hidden transition-all duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] ${
+          // 业务意图：MCP 面板展开时完整展示结果，避免固定高度导致长结果被截断。
           isExpanded
-            ? 'mt-3 max-h-[640px] max-w-full translate-y-0 opacity-100'
+            ? 'mt-3 max-h-none max-w-full translate-y-0 opacity-100'
             : 'mt-0 max-h-0 max-w-0 -translate-y-1 opacity-0 pointer-events-none'
         }`}
       >
@@ -2048,8 +2049,9 @@ function SearchProgressPanel({
       <div
         id={contentId}
         className={`overflow-hidden transition-all duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] ${
+          // 业务意图：搜索面板展开时按内容完整展示，减少二级滚动带来的阅读割裂。
           isExpanded
-            ? 'mt-3 max-h-[640px] max-w-full translate-y-0 opacity-100'
+            ? 'mt-3 max-h-none max-w-full translate-y-0 opacity-100'
             : 'mt-0 max-h-0 max-w-0 -translate-y-1 opacity-0 pointer-events-none'
         }`}
       >

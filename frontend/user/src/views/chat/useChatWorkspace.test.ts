@@ -1,4 +1,4 @@
-﻿import { act, renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import { buildStreamRequestUrl, useChatWorkspace } from './useChatWorkspace';
 
 /**
@@ -941,6 +941,120 @@ describe('useChatWorkspace', () => {
     });
     expect(result.current.activeConversationId).toBe('5001');
     expect(result.current.messages.some((message) => message.content === '来自缓存的会话内容')).toBe(true);
+  });
+
+  /**
+   * 刷新恢复会话时，消息应优先展示，不应被步骤/来源/产物等右栏回放接口阻塞。
+   */
+  it('刷新恢复会话时应优先渲染消息，不被右栏回放接口阻塞', async () => {
+    window.localStorage.setItem(
+      'codingx.auth.session',
+      JSON.stringify({
+        token: 'token-123',
+        userId: '1002',
+        username: 'user',
+        displayName: 'CodingX User',
+        userType: 'USER',
+      }),
+    );
+
+    let resolveStepsRequest: ((response: Response) => void) | null = null;
+    const pendingStepsResponse = new Promise<Response>((resolve) => {
+      resolveStepsRequest = resolve;
+    });
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === '/api/chat/conversations') {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            code: 'OK',
+            message: 'success',
+            data: [
+              {
+                id: '2001',
+                title: '刷新恢复测试会话',
+                status: 'ACTIVE',
+                lastRunId: '5002',
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      if (
+        url === '/api/chat/sample-questions' ||
+        url === '/api/chat/experts' ||
+        url === '/api/chat/skills' ||
+        url === '/api/chat/mcps'
+      ) {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (url === '/api/chat/conversations/2001/messages') {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            code: 'OK',
+            message: 'success',
+            data: [
+              {
+                id: '9101',
+                conversationId: '2001',
+                role: 'ASSISTANT',
+                content: '消息接口已返回',
+                status: 'COMPLETED',
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      if (url === '/api/chat/conversations/2001/steps') {
+        return pendingStepsResponse;
+      }
+      if (
+        url === '/api/chat/conversations/2001/references' ||
+        url === '/api/chat/conversations/2001/artifacts' ||
+        url === '/api/chat/conversations/2001/current-skills' ||
+        url === '/api/chat/conversations/2001/current-mcps' ||
+        url === '/api/chat/conversations/2001/current-experts'
+      ) {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      throw new Error(`Unhandled fetch in refresh-priority-message test: ${url}`);
+    });
+
+    const { result } = renderHook(() => useChatWorkspace(true));
+
+    await waitFor(() => {
+      expect(result.current.activeConversationId).toBe('2001');
+    });
+    await waitFor(
+      () => {
+        expect(result.current.messages.some((message) => message.content === '消息接口已返回')).toBe(true);
+      },
+      { timeout: 300 },
+    );
+    expect(result.current.isBootstrapping).toBe(true);
+
+    expect(resolveStepsRequest).not.toBeNull();
+    resolveStepsRequest?.(
+      new Response(
+        JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+        { status: 200 },
+      ),
+    );
+
+    await waitFor(() => {
+      expect(result.current.isBootstrapping).toBe(false);
+    });
   });
 
   /**
@@ -1998,6 +2112,228 @@ describe('useChatWorkspace', () => {
     await act(async () => {
       await submitPromise;
     });
+  });
+
+  /**
+   * 流式结束后即使后端消息回放未返回 MCP/搜索字段，也应保留并持久化当前会话面板数据。
+   */
+  it('应在流式回放后保留MCP调用与搜索进度并写入本地快照', async () => {
+    window.localStorage.setItem(
+      'codingx.auth.session',
+      JSON.stringify({
+        token: 'token-123',
+        userId: '1002',
+        username: 'user',
+        displayName: 'CodingX User',
+        userType: 'USER',
+      }),
+    );
+
+    const readQueue: Array<{
+      resolve: (value: ReadableStreamReadResult<Uint8Array>) => void;
+      reject: (reason?: unknown) => void;
+    }> = [];
+    const metaEvent = new TextEncoder().encode('event:meta\ndata:{"conversationId":"2001"}\n\n');
+    const searchStepEvent = new TextEncoder().encode(
+      'event:step\ndata:{"id":"step-1","runId":"5002","stepType":"search","stepTitle":"搜索资料","stepStatus":"COMPLETED","sequenceNo":1}\n\n',
+    );
+    const referenceEvent = new TextEncoder().encode(
+      'event:reference\ndata:{"id":"ref-1","runId":"5002","conversationId":"2001","title":"OpenAI API 最新文档","url":"https://platform.openai.com","siteName":"OpenAI","rankNo":1}\n\n',
+    );
+    const mcpStartEvent = new TextEncoder().encode(
+      'event:mcp-call\ndata:{"callId":"call-1","phase":"start","toolId":"weather_query","displayName":"天气查询","params":{"city":"北京"},"startedAt":"2026-05-21T22:05:00"}\n\n',
+    );
+    const mcpCompleteEvent = new TextEncoder().encode(
+      'event:mcp-call\ndata:{"callId":"call-1","phase":"complete","toolId":"weather_query","displayName":"天气查询","rawResult":{"text":"北京今日晴"},"resultMetadata":{"source":"open-meteo"},"finishedAt":"2026-05-21T22:05:01"}\n\n',
+    );
+    const finishEvent = new TextEncoder().encode('event:finish\ndata:{"content":"检索完成"}\n\n');
+    const mockReader = {
+      read: vi.fn(() => {
+        return new Promise<ReadableStreamReadResult<Uint8Array>>((resolve, reject) => {
+          readQueue.push({ resolve, reject });
+        });
+      }),
+    };
+    let listConversationCallCount = 0;
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === '/api/chat/conversations') {
+        listConversationCallCount += 1;
+        return new Response(
+          JSON.stringify({
+            success: true,
+            code: 'OK',
+            message: 'success',
+            data:
+              listConversationCallCount > 1
+                ? [
+                    {
+                        id: '2001',
+                        title: 'Default Demo Conversation',
+                        status: 'ACTIVE',
+                        lastRunId: '5002',
+                      },
+                  ]
+                : [],
+          }),
+          { status: 200 },
+        );
+      }
+      if (
+        url === '/api/chat/sample-questions' ||
+        url === '/api/chat/experts' ||
+        url === '/api/chat/skills' ||
+        url === '/api/chat/mcps'
+      ) {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (url === '/api/chat/conversations/2001/messages') {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            code: 'OK',
+            message: 'success',
+            data: [
+              {
+                id: 'assistant-2001',
+                conversationId: '2001',
+                role: 'ASSISTANT',
+                content: '检索完成',
+                status: 'COMPLETED',
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      if (url === '/api/chat/conversations/2001/steps') {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            code: 'OK',
+            message: 'success',
+            data: [
+              {
+                id: 'step-1',
+                runId: '5002',
+                stepType: 'search',
+                stepTitle: '搜索资料',
+                stepStatus: 'COMPLETED',
+                sequenceNo: 1,
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      if (url === '/api/chat/conversations/2001/references') {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            code: 'OK',
+            message: 'success',
+            data: [
+              {
+                id: 'ref-1',
+                runId: '5002',
+                conversationId: '2001',
+                title: 'OpenAI API 最新文档',
+                url: 'https://platform.openai.com',
+                siteName: 'OpenAI',
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      if (
+        url === '/api/chat/conversations/2001/artifacts' ||
+        url === '/api/chat/conversations/2001/current-skills' ||
+        url === '/api/chat/conversations/2001/current-mcps' ||
+        url === '/api/chat/conversations/2001/current-experts'
+      ) {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (url.includes('/api/chat/stream')) {
+        return {
+          ok: true,
+          status: 200,
+          body: {
+            getReader: () => mockReader,
+          },
+        } as unknown as Response;
+      }
+      throw new Error(`Unhandled fetch in replay persistence test: ${url}`);
+    });
+
+    const { result } = renderHook(() => useChatWorkspace(true));
+
+    await waitFor(() => {
+      expect(result.current.isBootstrapping).toBe(false);
+    });
+
+    await act(async () => {
+      result.current.setInputValue('请帮我联网搜索北京天气');
+    });
+    const submitPromise = result.current.submitMessage();
+
+    await waitFor(() => {
+      expect(result.current.isStreaming).toBe(true);
+      expect(readQueue.length).toBeGreaterThan(0);
+    });
+
+    await act(async () => {
+      readQueue.shift()?.resolve({ done: false, value: metaEvent });
+    });
+    await act(async () => {
+      readQueue.shift()?.resolve({ done: false, value: searchStepEvent });
+    });
+    await act(async () => {
+      readQueue.shift()?.resolve({ done: false, value: referenceEvent });
+    });
+    await act(async () => {
+      readQueue.shift()?.resolve({ done: false, value: mcpStartEvent });
+    });
+    await act(async () => {
+      readQueue.shift()?.resolve({ done: false, value: mcpCompleteEvent });
+    });
+    await act(async () => {
+      readQueue.shift()?.resolve({ done: false, value: finishEvent });
+    });
+    await act(async () => {
+      readQueue.shift()?.resolve({ done: true, value: undefined });
+    });
+    await act(async () => {
+      await submitPromise;
+    });
+
+    const latestAssistantMessage = [...result.current.messages]
+      .reverse()
+      .find((item) => item.role === 'ASSISTANT');
+    expect(latestAssistantMessage?.mcpCalls?.length).toBe(1);
+    expect(latestAssistantMessage?.mcpCalls?.[0].callId).toBe('call-1');
+    expect(latestAssistantMessage?.mcpCalls?.[0].status).toBe('completed');
+    expect(latestAssistantMessage?.searchProgress?.status).toBe('completed');
+    expect(latestAssistantMessage?.searchProgress?.items).toHaveLength(1);
+    expect(latestAssistantMessage?.searchProgress?.items[0].title).toBe('OpenAI API 最新文档');
+
+    const snapshotStore = JSON.parse(
+      window.localStorage.getItem('codingx.chat.workspace.conversations.v1') ?? '{}',
+    );
+    const persistedMessages =
+      snapshotStore?.snapshots?.['cloud::__no_workspace__']?.conversationRecords?.['2001']?.messages ?? [];
+    const persistedAssistantMessage = [...persistedMessages]
+      .reverse()
+      .find((item: Record<string, unknown>) => item.role === 'ASSISTANT');
+    expect(persistedAssistantMessage?.mcpCalls?.length).toBe(1);
+    expect(persistedAssistantMessage?.searchProgress?.status).toBe('completed');
   });
 
   /**

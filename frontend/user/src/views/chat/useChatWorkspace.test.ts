@@ -1554,10 +1554,12 @@ describe('useChatWorkspace', () => {
     await act(async () => {
       readQueue.shift()?.resolve({ done: false, value: queuedEvent });
     });
+    // 队列提示采用延迟展示：短暂抖动不应立即渲染，避免用户看到“闪一下”的黄色条。
+    expect(result.current.streamQueueState).toBeNull();
     await waitFor(() => {
       expect(result.current.streamQueueState?.position).toBe(2);
       expect(result.current.streamQueueState?.message).toContain('前方还有 2 个会话');
-    });
+    }, { timeout: 1200 });
 
     await act(async () => {
       readQueue.shift()?.resolve({ done: false, value: acceptedEvent });
@@ -1565,6 +1567,128 @@ describe('useChatWorkspace', () => {
     await waitFor(() => {
       expect(result.current.streamQueueState).toBeNull();
     });
+
+    await act(async () => {
+      readQueue.shift()?.resolve({ done: false, value: finishEvent });
+    });
+    await act(async () => {
+      readQueue.shift()?.resolve({ done: true, value: undefined });
+    });
+    await submitPromise;
+  });
+
+  /**
+   * queued 后若很快收到 queue-accepted，不应展示排队提示闪烁。
+   */
+  it('应在queued快速被accepted覆盖时不展示排队提示', async () => {
+    window.localStorage.setItem(
+      'codingx.auth.session',
+      JSON.stringify({
+        token: 'token-123',
+        userId: '1002',
+        username: 'user',
+        displayName: 'CodingX User',
+        userType: 'USER',
+      }),
+    );
+
+    const readQueue: Array<{
+      resolve: (value: ReadableStreamReadResult<Uint8Array>) => void;
+      reject: (reason?: unknown) => void;
+    }> = [];
+    const queuedEvent = new TextEncoder().encode('event:queued\ndata:{"position":1}\n\n');
+    const acceptedEvent = new TextEncoder().encode('event:queue-accepted\ndata:{"conversationId":"2001"}\n\n');
+    const finishEvent = new TextEncoder().encode('event:finish\ndata:{"content":"完成"}\n\n');
+    const mockReader = {
+      read: vi.fn(() => {
+        return new Promise<ReadableStreamReadResult<Uint8Array>>((resolve, reject) => {
+          readQueue.push({ resolve, reject });
+        });
+      }),
+    };
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (
+        url === '/api/chat/conversations' ||
+        url === '/api/chat/sample-questions' ||
+        url === '/api/chat/experts' ||
+        url === '/api/chat/skills' ||
+        url === '/api/chat/mcps' ||
+        url === '/api/chat/conversations/2001/messages' ||
+        url === '/api/chat/conversations/2001/steps' ||
+        url === '/api/chat/conversations/2001/references' ||
+        url === '/api/chat/conversations/2001/artifacts' ||
+        url === '/api/chat/conversations/2001/current-skills' ||
+        url === '/api/chat/conversations/2001/current-mcps' ||
+        url === '/api/chat/conversations/2001/current-experts' ||
+        url === '/api/chat/conversations/pending-conversation/messages' ||
+        url === '/api/chat/conversations/pending-conversation/steps' ||
+        url === '/api/chat/conversations/pending-conversation/references' ||
+        url === '/api/chat/conversations/pending-conversation/artifacts' ||
+        url === '/api/chat/conversations/pending-conversation/current-skills' ||
+        url === '/api/chat/conversations/pending-conversation/current-mcps' ||
+        url === '/api/chat/conversations/pending-conversation/current-experts'
+      ) {
+        if (url === '/api/chat/conversations') {
+          return new Response(
+            JSON.stringify({
+              success: true,
+              code: 'OK',
+              message: 'success',
+              data: [
+                {
+                  id: '2001',
+                  title: 'Default Demo Conversation',
+                  status: 'ACTIVE',
+                  lastRunId: '5002',
+                },
+              ],
+            }),
+            { status: 200 },
+          );
+        }
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (url.includes('/api/chat/stream')) {
+        return {
+          ok: true,
+          status: 200,
+          body: {
+            getReader: () => mockReader,
+          },
+        } as unknown as Response;
+      }
+      throw new Error(`Unhandled fetch in queue flash test: ${url}`);
+    });
+
+    const { result } = renderHook(() => useChatWorkspace(true));
+
+    await waitFor(() => {
+      expect(result.current.isBootstrapping).toBe(false);
+    });
+
+    await act(async () => {
+      result.current.setInputValue('你好');
+    });
+    const submitPromise = result.current.submitMessage();
+
+    await waitFor(() => {
+      expect(result.current.isStreaming).toBe(true);
+      expect(readQueue.length).toBeGreaterThan(0);
+    });
+
+    await act(async () => {
+      readQueue.shift()?.resolve({ done: false, value: queuedEvent });
+    });
+    await act(async () => {
+      readQueue.shift()?.resolve({ done: false, value: acceptedEvent });
+    });
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    expect(result.current.streamQueueState).toBeNull();
 
     await act(async () => {
       readQueue.shift()?.resolve({ done: false, value: finishEvent });
@@ -1723,6 +1847,150 @@ describe('useChatWorkspace', () => {
     await waitFor(() => {
       const assistantMessage = result.current.messages.find((item) => item.role === 'ASSISTANT');
       expect(assistantMessage?.searchProgress?.status).toBe('completed');
+    });
+    await act(async () => {
+      readQueue.shift()?.resolve({ done: true, value: undefined });
+    });
+    await act(async () => {
+      await submitPromise;
+    });
+  });
+
+  /**
+   * MCP 两阶段事件应按 callId 合并为同一条调用记录，开始即展示运行态，完成后更新原始结果。
+   */
+  it('应按callId合并mcp调用开始与完成事件', async () => {
+    window.localStorage.setItem(
+      'codingx.auth.session',
+      JSON.stringify({
+        token: 'token-123',
+        userId: '1002',
+        username: 'user',
+        displayName: 'CodingX User',
+        userType: 'USER',
+      }),
+    );
+
+    const readQueue: Array<{
+      resolve: (value: ReadableStreamReadResult<Uint8Array>) => void;
+      reject: (reason?: unknown) => void;
+    }> = [];
+    const metaEvent = new TextEncoder().encode('event:meta\ndata:{"conversationId":"2001"}\n\n');
+    const mcpStartEvent = new TextEncoder().encode(
+      'event:mcp-call\ndata:{"callId":"call-1","phase":"start","toolId":"weather_query","displayName":"天气查询","params":{"city":"北京"},"startedAt":"2026-05-21T22:05:00"}\n\n',
+    );
+    const mcpCompleteEvent = new TextEncoder().encode(
+      'event:mcp-call\ndata:{"callId":"call-1","phase":"complete","toolId":"weather_query","displayName":"天气查询","rawResult":{"text":"北京今日晴"},"resultMetadata":{"source":"open-meteo"},"finishedAt":"2026-05-21T22:05:01"}\n\n',
+    );
+    const finishEvent = new TextEncoder().encode('event:finish\ndata:{"content":"调用完成"}\n\n');
+    const mockReader = {
+      read: vi.fn(() => {
+        return new Promise<ReadableStreamReadResult<Uint8Array>>((resolve, reject) => {
+          readQueue.push({ resolve, reject });
+        });
+      }),
+    };
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (
+        url === '/api/chat/conversations' ||
+        url === '/api/chat/sample-questions' ||
+        url === '/api/chat/experts' ||
+        url === '/api/chat/skills' ||
+        url === '/api/chat/mcps' ||
+        url === '/api/chat/conversations/2001/messages' ||
+        url === '/api/chat/conversations/2001/steps' ||
+        url === '/api/chat/conversations/2001/references' ||
+        url === '/api/chat/conversations/2001/artifacts' ||
+        url === '/api/chat/conversations/2001/current-skills' ||
+        url === '/api/chat/conversations/2001/current-mcps' ||
+        url === '/api/chat/conversations/2001/current-experts'
+      ) {
+        if (url === '/api/chat/conversations') {
+          return new Response(
+            JSON.stringify({
+              success: true,
+              code: 'OK',
+              message: 'success',
+              data: [
+                {
+                  id: '2001',
+                  title: 'Default Demo Conversation',
+                  status: 'ACTIVE',
+                  lastRunId: '5002',
+                },
+              ],
+            }),
+            { status: 200 },
+          );
+        }
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (url.includes('/api/chat/stream')) {
+        return {
+          ok: true,
+          status: 200,
+          body: {
+            getReader: () => mockReader,
+          },
+        } as unknown as Response;
+      }
+      throw new Error(`Unhandled fetch in mcp call merge test: ${url}`);
+    });
+
+    const { result } = renderHook(() => useChatWorkspace(true));
+
+    await waitFor(() => {
+      expect(result.current.isBootstrapping).toBe(false);
+    });
+    await act(async () => {
+      result.current.setInputValue('请查北京天气');
+    });
+    const submitPromise = result.current.submitMessage();
+
+    await waitFor(() => {
+      expect(result.current.isStreaming).toBe(true);
+      expect(readQueue.length).toBeGreaterThan(0);
+    });
+
+    await act(async () => {
+      readQueue.shift()?.resolve({ done: false, value: metaEvent });
+    });
+    await waitFor(() => {
+      expect(readQueue.length).toBeGreaterThan(0);
+    });
+    await act(async () => {
+      readQueue.shift()?.resolve({ done: false, value: mcpStartEvent });
+    });
+    await waitFor(() => {
+      const assistantMessage = result.current.messages.find((item) => item.role === 'ASSISTANT');
+      const calls = ((assistantMessage?.mcpCalls ?? []) as Array<Record<string, unknown>>);
+      expect(calls).toHaveLength(1);
+      expect(calls[0].callId).toBe('call-1');
+      expect(calls[0].status).toBe('running');
+    });
+
+    await act(async () => {
+      readQueue.shift()?.resolve({ done: false, value: mcpCompleteEvent });
+    });
+    await waitFor(() => {
+      const assistantMessage = result.current.messages.find((item) => item.role === 'ASSISTANT');
+      const calls = ((assistantMessage?.mcpCalls ?? []) as Array<Record<string, unknown>>);
+      expect(calls).toHaveLength(1);
+      expect(calls[0].callId).toBe('call-1');
+      expect(calls[0].status).toBe('completed');
+      expect(calls[0].rawResult).toEqual({ text: '北京今日晴' });
+    });
+
+    await act(async () => {
+      readQueue.shift()?.resolve({ done: false, value: finishEvent });
+    });
+    await waitFor(() => {
+      expect(readQueue.length).toBeGreaterThan(0);
     });
     await act(async () => {
       readQueue.shift()?.resolve({ done: true, value: undefined });

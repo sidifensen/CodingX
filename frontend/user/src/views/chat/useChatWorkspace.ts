@@ -43,6 +43,7 @@ import {
 const DEFAULT_CLOUD_WORKSPACE_LABEL = '历史记录';
 const DEFAULT_LOCAL_WORKSPACE_LABEL = '历史记录';
 const CONVERSATION_ID_QUERY_KEY = 'conversationId';
+const STREAM_QUEUE_BANNER_DELAY_MS = 250;
 
 /**
  * 根据运行环境返回默认工作空间标题，避免本地/云端标签混淆。
@@ -145,6 +146,41 @@ export function useChatWorkspace(
   const streamMcpCallsRef = useRef<Record<string, McpCallItem[]>>({});
   const streamSessionSeedRef = useRef(0);
   const activeStreamSessionIdRef = useRef<number | null>(null);
+  const streamQueueTimerRef = useRef<number | null>(null);
+
+  /**
+   * 清理排队提示延迟任务，防止旧流事件在新流阶段误触发提示。
+   */
+  const clearStreamQueueTimer = () => {
+    if (streamQueueTimerRef.current == null) {
+      return;
+    }
+    window.clearTimeout(streamQueueTimerRef.current);
+    streamQueueTimerRef.current = null;
+  };
+
+  /**
+   * 立即隐藏排队提示并取消延迟任务。
+   */
+  const hideStreamQueueState = () => {
+    clearStreamQueueTimer();
+    setStreamQueueState(null);
+  };
+
+  /**
+   * 延迟展示排队提示，避免 queued 紧接 queue-accepted 时出现黄色提示闪烁。
+   * @param position 当前排队位置。
+   */
+  const scheduleStreamQueueState = (position: number) => {
+    clearStreamQueueTimer();
+    streamQueueTimerRef.current = window.setTimeout(() => {
+      streamQueueTimerRef.current = null;
+      setStreamQueueState({
+        position,
+        message: `请求排队中，前方还有 ${position} 个会话`,
+      });
+    }, STREAM_QUEUE_BANNER_DELAY_MS);
+  };
 
   /**
    * 统一更新 MCP 选择列表，支持直接赋值与函数式更新。
@@ -239,6 +275,12 @@ export function useChatWorkspace(
     void bootstrapWorkspace();
   }, [isAuthenticated, activeWorkspacePartitionKey]);
 
+  useEffect(() => {
+    return () => {
+      clearStreamQueueTimer();
+    };
+  }, []);
+
   /**
    * 加载初始会话列表并默认选中最近会话。
    */
@@ -326,7 +368,7 @@ export function useChatWorkspace(
     setIsStreaming(false);
     setIsCancelling(false);
     setStreamError('');
-    setStreamQueueState(null);
+    hideStreamQueueState();
     setInputValue('');
     clearPendingAttachments();
     if (runtimeTarget === 'cloud') {
@@ -695,7 +737,7 @@ export function useChatWorkspace(
     abortControllerRef.current = null;
     setIsStreaming(false);
     setStreamError('已停止当前生成');
-    setStreamQueueState(null);
+    hideStreamQueueState();
     const token = currentToken();
     if (
       !token ||
@@ -735,7 +777,7 @@ export function useChatWorkspace(
     streamStateRef.current = null;
     setIsStreaming(false);
     setIsCancelling(false);
-    setStreamQueueState(null);
+    hideStreamQueueState();
     setStreamError('');
     setInputValue('');
     clearConversationPlayback();
@@ -814,7 +856,7 @@ export function useChatWorkspace(
     setMcpConnected(false);
     setIsStreaming(false);
     setIsCancelling(false);
-    setStreamQueueState(null);
+    hideStreamQueueState();
     setStreamError('');
     setInputValue('');
     clearPendingAttachments();
@@ -886,29 +928,26 @@ export function useChatWorkspace(
         // 业务约束：流式过程中一旦后端分配了新会话 ID，需立刻写入 URL 以支持刷新恢复。
         writeConversationIdToUrl(conversationId);
       }
-      setStreamQueueState(null);
+      hideStreamQueueState();
       return;
     }
 
     if (eventName === 'queued' && isRecord(payload)) {
       const position = Math.max(1, Number(payload.position ?? 1));
-      setStreamQueueState({
-        position,
-        message: `请求排队中，前方还有 ${position} 个会话`,
-      });
+      scheduleStreamQueueState(position);
       setStreamError('');
       return;
     }
 
     if (eventName === 'queue-accepted') {
-      setStreamQueueState(null);
+      hideStreamQueueState();
       return;
     }
 
     if (eventName === 'reject' && isRecord(payload)) {
       const reason = String(payload.reason ?? '').trim();
       const resolvedMessage = resolveQueueRejectMessage(reason);
-      setStreamQueueState(null);
+      hideStreamQueueState();
       setStreamError(resolvedMessage);
       setMessages((previousMessages) =>
         previousMessages.map((message) =>
@@ -961,23 +1000,43 @@ export function useChatWorkspace(
     }
 
     if (eventName === 'mcp-call' && isRecord(payload)) {
+      const phase = resolveMcpCallPhase(payload.phase);
+      const status = resolveMcpCallStatus(phase);
+      const callId = normalizeOptionalString(payload.callId);
+      const params = normalizeMcpCallParams(payload.params);
+      const rawResult = payload.rawResult ?? payload.content;
+      const resultMetadata =
+        isRecord(payload.resultMetadata)
+          ? payload.resultMetadata
+          : isRecord(payload.metadata)
+            ? payload.metadata
+            : undefined;
       const call: McpCallItem = {
+        callId,
         toolId: String(payload.toolId ?? ''),
         displayName: String(payload.displayName ?? payload.toolId ?? ''),
         input: String(payload.input ?? ''),
         content: String(payload.content ?? ''),
         metadata: isRecord(payload.metadata) ? payload.metadata : undefined,
+        phase,
+        status,
+        params,
+        rawResult,
+        resultMetadata,
+        startedAt: normalizeOptionalString(payload.startedAt),
+        finishedAt: normalizeOptionalString(payload.finishedAt),
+        errorMessage: normalizeOptionalString(payload.errorMessage),
       };
-      streamMcpCallsRef.current[optimisticAssistantId] = [
-        ...(streamMcpCallsRef.current[optimisticAssistantId] ?? []),
+      streamMcpCallsRef.current[optimisticAssistantId] = mergeMcpCallsById(
+        streamMcpCallsRef.current[optimisticAssistantId] ?? [],
         call,
-      ];
+      );
       setMessages((previousMessages) =>
         previousMessages.map((message) =>
           message.id === optimisticAssistantId
             ? {
                 ...message,
-                mcpCalls: [...(message.mcpCalls ?? []), call],
+                mcpCalls: mergeMcpCallsById(message.mcpCalls ?? [], call),
               }
             : message,
         ),
@@ -1079,7 +1138,7 @@ export function useChatWorkspace(
     }
 
     if (eventName === 'finish' && isRecord(payload)) {
-      setStreamQueueState(null);
+      hideStreamQueueState();
       setMessages((previousMessages) =>
         previousMessages.map((message) =>
           message.id === optimisticAssistantId
@@ -1101,7 +1160,7 @@ export function useChatWorkspace(
     }
 
     if (eventName === 'cancel') {
-      setStreamQueueState(null);
+      hideStreamQueueState();
       setMessages((previousMessages) =>
         previousMessages.map((message) =>
           message.id === optimisticAssistantId
@@ -1122,7 +1181,7 @@ export function useChatWorkspace(
     }
 
     if (eventName === 'error' && isRecord(payload)) {
-      setStreamQueueState(null);
+      hideStreamQueueState();
       setMessages((previousMessages) =>
         previousMessages.map((message) =>
           message.id === optimisticAssistantId
@@ -1756,6 +1815,92 @@ function upsertById<T extends { id: string }>(items: T[], nextItem: T): T[] {
     return [...items, nextItem];
   }
   return items.map((item) => (item.id === nextItem.id ? nextItem : item));
+}
+
+/**
+ * 归一化 MCP 调用阶段，未知值按 complete 兜底，保证旧事件可展示。
+ * @param phaseValue 原始阶段字段。
+ * @returns 标准化阶段。
+ */
+function resolveMcpCallPhase(phaseValue: unknown): 'start' | 'complete' | 'error' {
+  const normalizedPhaseValue = typeof phaseValue === 'string' ? phaseValue.trim().toLowerCase() : '';
+  if (normalizedPhaseValue === 'start') {
+    return 'start';
+  }
+  if (normalizedPhaseValue === 'error') {
+    return 'error';
+  }
+  return 'complete';
+}
+
+/**
+ * 将 MCP 调用阶段映射为面板状态，供前端直接展示调用进度。
+ * @param phase 标准化阶段。
+ * @returns 调用状态。
+ */
+function resolveMcpCallStatus(phase: 'start' | 'complete' | 'error'): 'running' | 'completed' | 'error' {
+  if (phase === 'start') {
+    return 'running';
+  }
+  if (phase === 'error') {
+    return 'error';
+  }
+  return 'completed';
+}
+
+/**
+ * 归一化可选字符串，空值统一返回 undefined，避免脏字段污染面板展示。
+ * @param value 原始值。
+ * @returns 归一化字符串。
+ */
+function normalizeOptionalString(value: unknown): string | undefined {
+  if (typeof value !== 'string') {
+    return undefined;
+  }
+  const normalizedValue = value.trim();
+  return normalizedValue.length > 0 ? normalizedValue : undefined;
+}
+
+/**
+ * 解析 MCP 参数字段，仅保留对象或非空字符串，保障面板可读性。
+ * @param paramsValue 原始参数字段。
+ * @returns 归一化参数。
+ */
+function normalizeMcpCallParams(
+  paramsValue: unknown,
+): Record<string, unknown> | string | undefined {
+  if (isRecord(paramsValue)) {
+    return paramsValue;
+  }
+  if (typeof paramsValue === 'string') {
+    const normalizedValue = paramsValue.trim();
+    return normalizedValue.length > 0 ? normalizedValue : undefined;
+  }
+  return undefined;
+}
+
+/**
+ * 按 callId 合并 MCP 调用记录，保证 start/complete 事件更新同一条卡片。
+ * @param calls 当前调用列表。
+ * @param nextCall 待写入调用记录。
+ * @returns 合并后的调用列表。
+ */
+function mergeMcpCallsById(calls: McpCallItem[], nextCall: McpCallItem): McpCallItem[] {
+  if (!nextCall.callId) {
+    return [...calls, nextCall];
+  }
+  const existingIndex = calls.findIndex((call) => call.callId === nextCall.callId);
+  if (existingIndex < 0) {
+    return [...calls, nextCall];
+  }
+  return calls.map((call, index) =>
+    index === existingIndex
+      ? {
+          ...call,
+          ...nextCall,
+        }
+      : call,
+  );
 }
 
 /**

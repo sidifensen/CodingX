@@ -1747,6 +1747,52 @@ describe('ChatView', () => {
   });
 
   /**
+   * MCP 调用项应展示参数、原始结果与元数据，避免仅复述对话输入输出。
+   */
+  it('应在MCP调用面板展示参数与原始结果字段', async () => {
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          messages: [
+            {
+              id: '861',
+              conversationId: '2001',
+              role: 'ASSISTANT',
+              content: '已完成天气查询',
+              mcpCalls: [
+                {
+                  toolId: 'weather_query',
+                  displayName: '天气查询',
+                  input: '北京天气',
+                  content: '北京今日晴',
+                  params: { city: '北京', date: '2026-05-21' },
+                  rawResult: { text: '北京今日晴', temp: 28.6 },
+                  resultMetadata: { source: 'open-meteo' },
+                } as any,
+              ],
+              status: 'COMPLETED',
+            },
+          ],
+          executionSteps: [],
+          references: [],
+          artifacts: [],
+        })}
+      />,
+    );
+
+    expect(screen.getByTestId('mcp-call-panel-861')).toBeInTheDocument();
+    expect(screen.getByText('参数')).toBeInTheDocument();
+    expect(screen.getByText('原始结果')).toBeInTheDocument();
+    expect(screen.getByText('元数据')).toBeInTheDocument();
+    expect(screen.getByText((text) => text.includes('"city"') && text.includes('北京'))).toBeInTheDocument();
+    expect(
+      screen.getByText((text) => text.includes('"source"') && text.includes('open-meteo')),
+    ).toBeInTheDocument();
+  });
+
+  /**
    * MCP 调用状态在流结束后应至少短暂停留“调用中”，避免状态闪现导致用户难以感知。
    */
   it('应在流结束后维持MCP调用中状态最短可见时长', async () => {

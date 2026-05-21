@@ -233,6 +233,23 @@ public class ChatApplicationService {
                 chatStreamPublisher.publishAssistantCompleted(command.conversationId(), assistantMessage.getContent(), conversation.getTitle());
                 return;
             }
+            Long mcpCallId = cn.hutool.core.util.IdUtil.getSnowflakeNextId();
+            java.time.LocalDateTime mcpStartedAt = java.time.LocalDateTime.now();
+            Map<String, Object> mcpParams = new LinkedHashMap<>();
+            mcpParams.put("question", rewrittenQuestion);
+            if (StrUtil.isNotBlank(intentDecision.intentCode())) {
+                mcpParams.put("intentCode", intentDecision.intentCode());
+            }
+            Map<String, Object> mcpStartPayload = new LinkedHashMap<>();
+            mcpStartPayload.put("callId", String.valueOf(mcpCallId));
+            mcpStartPayload.put("phase", "start");
+            mcpStartPayload.put("toolId", intentNode.getMcpToolId());
+            mcpStartPayload.put("displayName", resolveMcpDisplayName(intentNode.getMcpToolId()));
+            mcpStartPayload.put("params", mcpParams);
+            mcpStartPayload.put("startedAt", mcpStartedAt.toString());
+            // 兼容旧前端字段：即便在开始阶段也保持 input 可回显。
+            mcpStartPayload.put("input", rewrittenQuestion);
+            chatStreamPublisher.publishMcpCall(command.conversationId(), mcpStartPayload);
             ChatMcpToolResult toolResult = chatMcpExecutionService.execute(intentNode.getMcpToolId(), rewrittenQuestion);
             ChatExecutionStep mcpStep = ChatExecutionStep.builder()
                 .id(cn.hutool.core.util.IdUtil.getSnowflakeNextId())
@@ -255,13 +272,20 @@ public class ChatApplicationService {
                 "sequenceNo", mcpStep.getSequenceNo(),
                 "content", mcpStep.getContent()
             ));
-            chatStreamPublisher.publishMcpCall(command.conversationId(), Map.of(
-                "toolId", toolResult.toolId(),
-                "displayName", resolveMcpDisplayName(toolResult.toolId()),
-                "input", rewrittenQuestion,
-                "content", toolResult.content(),
-                "metadata", toolResult.metadata() == null ? Map.of() : toolResult.metadata()
-            ));
+            Map<String, Object> mcpCompletePayload = new LinkedHashMap<>();
+            mcpCompletePayload.put("callId", String.valueOf(mcpCallId));
+            mcpCompletePayload.put("phase", "complete");
+            mcpCompletePayload.put("toolId", toolResult.toolId());
+            mcpCompletePayload.put("displayName", resolveMcpDisplayName(toolResult.toolId()));
+            mcpCompletePayload.put("params", mcpParams);
+            mcpCompletePayload.put("rawResult", toolResult.content());
+            mcpCompletePayload.put("resultMetadata", toolResult.metadata() == null ? Map.of() : toolResult.metadata());
+            mcpCompletePayload.put("finishedAt", java.time.LocalDateTime.now().toString());
+            // 兼容旧前端字段：继续保留 input/content/metadata。
+            mcpCompletePayload.put("input", rewrittenQuestion);
+            mcpCompletePayload.put("content", toolResult.content());
+            mcpCompletePayload.put("metadata", toolResult.metadata() == null ? Map.of() : toolResult.metadata());
+            chatStreamPublisher.publishMcpCall(command.conversationId(), mcpCompletePayload);
             ChatMessage assistantMessage = ChatMessage.assistantMessage(
                 command.conversationId(),
                 toolResult.content(),

@@ -1601,9 +1601,6 @@ export default function ChatView({
                       className="rounded-2xl border border-border bg-surface-container px-4 py-3"
                     >
                       <div className="text-sm font-medium text-foreground">{step.stepTitle}</div>
-                      <div className="mt-2 text-[12px] uppercase tracking-[0.2em] text-muted">
-                        {step.stepStatus}
-                      </div>
                       {step.content ? (
                         <div className="mt-3 text-sm leading-6 text-muted">{step.content}</div>
                       ) : null}
@@ -1646,9 +1643,6 @@ export default function ChatView({
                       className="rounded-2xl border border-border bg-surface-container px-4 py-3"
                     >
                       <div className="text-sm font-medium text-foreground">{artifact.name}</div>
-                      <div className="mt-2 text-[12px] uppercase tracking-[0.2em] text-muted">
-                        {artifact.artifactType}
-                      </div>
                       {artifact.contentPreview ? (
                         <div className="mt-3 text-sm leading-6 text-muted">
                           {artifact.contentPreview}
@@ -1795,22 +1789,34 @@ function McpCallPanel({
   // 步骤：调用状态至少保留短暂可见时长，避免“调用中”在完成瞬间闪烁造成不可感知。
   const MCP_CALL_RUNNING_MIN_VISIBLE_MS = 1000;
   const [isExpanded, setIsExpanded] = React.useState(true);
-  const [displayStatus, setDisplayStatus] = React.useState<'running' | 'completed'>(
-    messageStatus === 'streaming' ? 'running' : 'completed',
+  const hasRunningCall = calls.some((call) => call.status === 'running' || call.phase === 'start');
+  const hasErrorCall = calls.some((call) => call.status === 'error' || call.phase === 'error');
+  const targetStatus: 'running' | 'completed' | 'error' =
+    hasRunningCall || messageStatus === 'streaming'
+      ? 'running'
+      : hasErrorCall
+        ? 'error'
+        : 'completed';
+  const [displayStatus, setDisplayStatus] = React.useState<'running' | 'completed' | 'error'>(
+    targetStatus,
   );
-  const runningStartedAtRef = React.useRef<number | null>(
-    messageStatus === 'streaming' ? Date.now() : null,
-  );
+  const runningStartedAtRef = React.useRef<number | null>(targetStatus === 'running' ? Date.now() : null);
   const contentId = `mcp-call-content-panel-${messageId}`;
   const isRunning = displayStatus === 'running';
+  const isError = displayStatus === 'error';
 
   React.useEffect(() => {
     // 步骤：基于消息流状态驱动调用徽标，并在完成后维持最小时长再切到“调用完成”。
-    if (messageStatus === 'streaming') {
+    if (targetStatus === 'running') {
       if (runningStartedAtRef.current == null) {
         runningStartedAtRef.current = Date.now();
       }
       setDisplayStatus('running');
+      return;
+    }
+    if (targetStatus === 'error') {
+      runningStartedAtRef.current = null;
+      setDisplayStatus('error');
       return;
     }
     const runningStartedAt = runningStartedAtRef.current;
@@ -1830,7 +1836,7 @@ function McpCallPanel({
       setDisplayStatus('completed');
     }, remaining);
     return () => window.clearTimeout(timer);
-  }, [messageStatus]);
+  }, [targetStatus]);
 
   return (
     <section
@@ -1849,10 +1855,12 @@ function McpCallPanel({
           className={`rounded-full border px-2 py-0.5 text-[11px] ${
             isRunning
               ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
-              : 'border-border bg-surface text-muted'
+              : isError
+                ? 'border-red-500/30 bg-red-500/10 text-red-300'
+                : 'border-border bg-surface text-muted'
           }`}
         >
-          {isRunning ? '调用中' : '调用完成'}
+          {isRunning ? '调用中' : isError ? '调用异常' : '调用完成'}
         </span>
         <button
           type="button"
@@ -1884,36 +1892,79 @@ function McpCallPanel({
               data-testid={`mcp-call-item-${messageId}-${index}`}
               className="rounded-xl border border-border bg-surface px-3 py-2.5"
             >
-              <div className="flex items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="truncate text-sm font-medium text-foreground">
-                    {call.displayName || call.toolId}
-                  </div>
-                  <div className="mt-1 font-mono text-[11px] text-muted">/{call.toolId}</div>
-                </div>
-              </div>
-              {call.input ? (
-                <div className="mt-2 rounded-lg bg-surface-container px-2.5 py-2">
-                  <div className="text-[11px] uppercase tracking-[0.16em] text-muted">输入</div>
-                  <div className="mt-1 whitespace-pre-wrap text-xs leading-5 text-foreground">
-                    {call.input}
-                  </div>
-                </div>
-              ) : null}
-              {call.content ? (
-                <div className="mt-2 rounded-lg bg-surface-container px-2.5 py-2">
-                  <div className="text-[11px] uppercase tracking-[0.16em] text-muted">返回</div>
-                  <div className="mt-1 whitespace-pre-wrap text-xs leading-5 text-foreground">
-                    {call.content}
-                  </div>
-                </div>
-              ) : null}
+              {/*
+                业务意图：优先展示 MCP 真实参数与原始结果，避免与用户提问/助手回答内容重复。
+              */}
+              {(() => {
+                const parameterText = formatStructuredPayload(call.params ?? call.input);
+                const rawResultText = formatStructuredPayload(call.rawResult ?? call.content);
+                const metadataText = formatStructuredPayload(call.resultMetadata ?? call.metadata);
+                return (
+                  <>
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-medium text-foreground">
+                          {call.displayName || call.toolId}
+                        </div>
+                        <div className="mt-1 font-mono text-[11px] text-muted">/{call.toolId}</div>
+                      </div>
+                    </div>
+                    {parameterText ? (
+                      <div className="mt-2 rounded-lg bg-surface-container px-2.5 py-2">
+                        <div className="text-[11px] uppercase tracking-[0.16em] text-muted">参数</div>
+                        <pre className="mt-1 whitespace-pre-wrap text-xs leading-5 text-foreground">
+                          {parameterText}
+                        </pre>
+                      </div>
+                    ) : null}
+                    {rawResultText ? (
+                      <div className="mt-2 rounded-lg bg-surface-container px-2.5 py-2">
+                        <div className="text-[11px] uppercase tracking-[0.16em] text-muted">
+                          原始结果
+                        </div>
+                        <pre className="mt-1 whitespace-pre-wrap text-xs leading-5 text-foreground">
+                          {rawResultText}
+                        </pre>
+                      </div>
+                    ) : null}
+                    {metadataText ? (
+                      <div className="mt-2 rounded-lg bg-surface-container px-2.5 py-2">
+                        <div className="text-[11px] uppercase tracking-[0.16em] text-muted">
+                          元数据
+                        </div>
+                        <pre className="mt-1 whitespace-pre-wrap text-xs leading-5 text-foreground">
+                          {metadataText}
+                        </pre>
+                      </div>
+                    ) : null}
+                  </>
+                );
+              })()}
             </article>
           ))}
         </div>
       </div>
     </section>
   );
+}
+
+/**
+ * 把结构化对象格式化为可读 JSON，字符串保持原样，供 MCP 参数/结果展示复用。
+ * @param value 原始字段值。
+ * @returns 可展示文本。
+ */
+function formatStructuredPayload(value: unknown): string {
+  if (value == null) {
+    return '';
+  }
+  if (typeof value === 'string') {
+    return value;
+  }
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
 }
 
 /**

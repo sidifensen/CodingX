@@ -215,11 +215,38 @@ export interface CurrentMcpItem {
  * 描述一次 MCP 调用信息，供消息区折叠面板展示。
  */
 export interface McpCallItem {
+  /**
+   * 单次 MCP 调用标识，用于把 start/complete 两阶段事件合并为同一条记录。
+   */
+  callId?: string;
   toolId: string;
   displayName: string;
   input: string;
   content: string;
   metadata?: Record<string, unknown>;
+  /**
+   * 调用阶段，来自后端 SSE 事件。
+   */
+  phase?: 'start' | 'complete' | 'error';
+  /**
+   * 调用状态，供前端面板直接驱动“调用中/完成/异常”。
+   */
+  status?: 'running' | 'completed' | 'error';
+  /**
+   * MCP 调用参数，优先展示真实结构化入参。
+   */
+  params?: Record<string, unknown> | string;
+  /**
+   * MCP 原始返回结果，优先展示工具原始输出。
+   */
+  rawResult?: unknown;
+  /**
+   * 调用完成态返回的元数据。
+   */
+  resultMetadata?: Record<string, unknown>;
+  startedAt?: string;
+  finishedAt?: string;
+  errorMessage?: string;
 }
 
 /**

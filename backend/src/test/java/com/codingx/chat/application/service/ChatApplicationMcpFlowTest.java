@@ -3,6 +3,7 @@ package com.codingx.chat.application.service;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.atLeast;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -23,6 +24,7 @@ import com.codingx.mcp.application.service.ChatMcpToolResult;
 import com.codingx.mcp.domain.repository.ChatMcpRepository;
 import com.codingx.skill.application.service.ChatSkillContextService;
 import java.util.ArrayList;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -92,6 +94,23 @@ class ChatApplicationMcpFlowTest {
         chatApplicationService.sendMessage(new SendChatMessageCommand(1L, "销售总额是多少", false, java.util.List.of("sales_query")), 1002L);
 
         verify(chatMcpExecutionService).execute("sales_query", "销售总额是多少");
+        // 新契约：MCP 调用需先上报 start，再上报 complete，且两次都携带 callId。
+        verify(chatStreamPublisher, atLeast(1)).publishMcpCall(eq(1L), org.mockito.ArgumentMatchers.argThat(payload -> {
+            if (!(payload instanceof Map<?, ?> map)) {
+                return false;
+            }
+            return "start".equals(map.get("phase"))
+                && map.get("callId") != null
+                && map.containsKey("params");
+        }));
+        verify(chatStreamPublisher, atLeast(1)).publishMcpCall(eq(1L), org.mockito.ArgumentMatchers.argThat(payload -> {
+            if (!(payload instanceof Map<?, ?> map)) {
+                return false;
+            }
+            return "complete".equals(map.get("phase"))
+                && map.get("callId") != null
+                && map.containsKey("rawResult");
+        }));
         verify(chatStreamPublisher).publishAssistantCompleted(1L, "销售总额为 1280 万元，本月环比增长 8%。", "销售数据统计");
         ArgumentCaptor<ChatMessage> captor = ArgumentCaptor.forClass(ChatMessage.class);
         verify(chatMessageRepository, org.mockito.Mockito.times(2)).save(captor.capture());
@@ -139,4 +158,5 @@ class ChatApplicationMcpFlowTest {
         ChatExecutionContext.clear();
     }
 }
+
 

@@ -38,14 +38,14 @@ class AdminChatMcpControllerTest {
     void listMcpToolsReturnsToolRows() throws Exception {
         when(adminChatMcpService.listTools()).thenReturn(List.of(
             McpToolHealthView.builder()
-                .toolId("sales_query")
-                .displayName("销售查询")
-                .category("销售")
+                .toolId("weather_query")
+                .displayName("天气查询")
+                .category("天气")
                 .source("内置后端")
                 .status("healthy")
                 .statusLabel("可用")
-                .description("查询销售汇总、排名、趋势与明细")
-                .sampleQuestion("本月华东销售总额是多少")
+                .description("查询当前天气与未来预报")
+                .sampleQuestion("北京今天天气怎么样")
                 .build(),
             McpToolHealthView.builder()
                 .toolId("code_search")
@@ -62,8 +62,8 @@ class AdminChatMcpControllerTest {
         mockMvc().perform(get("/api/admin/mcps/tools"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.success").value(true))
-            .andExpect(jsonPath("$.data[0].toolId").value("sales_query"))
-            .andExpect(jsonPath("$.data[0].displayName").value("销售查询"))
+            .andExpect(jsonPath("$.data[0].toolId").value("weather_query"))
+            .andExpect(jsonPath("$.data[0].displayName").value("天气查询"))
             .andExpect(jsonPath("$.data[0].status").value("healthy"))
             .andExpect(jsonPath("$.data[0].statusLabel").value("可用"))
             .andExpect(jsonPath("$.data[1].toolId").value("code_search"));

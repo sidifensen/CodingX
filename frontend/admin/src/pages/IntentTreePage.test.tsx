@@ -175,4 +175,16 @@ describe('IntentTreePage', () => {
     expect(await within(dialog).findByText('MCP 类型必须填写 MCP 工具ID')).toBeInTheDocument();
     await waitFor(() => expect(AdminChatApi.createIntent).not.toHaveBeenCalled());
   });
+
+  it('renders delete confirm dialog via body portal to avoid layout clipping by page containers', async () => {
+    render(<IntentTreePage />);
+
+    await screen.findByRole('region', { name: '意图树结构' });
+    fireEvent.click(screen.getByRole('button', { name: '删除节点' }));
+
+    const pageShell = screen.getByTestId('intent-tree-page-shell');
+    const overlay = await screen.findByTestId('intent-delete-dialog-overlay');
+    expect(pageShell.contains(overlay)).toBe(false);
+    expect(overlay.parentElement).toBe(document.body);
+  });
 });

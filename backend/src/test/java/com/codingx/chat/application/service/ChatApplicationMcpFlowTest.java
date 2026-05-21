@@ -75,25 +75,35 @@ class ChatApplicationMcpFlowTest {
         when(chatMessageRepository.findByConversationId(1L)).thenReturn(new ArrayList<>());
         when(chatAttachmentService.requireOwnedAttachments(any(), eq(1L), eq(1002L))).thenReturn(java.util.List.of());
         when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
-            new ConversationRewriteResult("销售总额是多少", false, java.util.List.of("销售总额是多少"))
+            new ConversationRewriteResult("北京今天天气怎么样", false, java.util.List.of("北京今天天气怎么样"))
         );
-        when(conversationIntentService.route("销售总额是多少", true)).thenReturn(
-            new ConversationIntentDecision("sales-data", ConversationIntentAction.MCP, null)
+        when(conversationIntentService.route("北京今天天气怎么样", true)).thenReturn(
+            new ConversationIntentDecision("weather-data", ConversationIntentAction.MCP, null)
         );
-        when(chatIntentNodeRepository.findByIntentCode("sales-data")).thenReturn(
-            ChatIntentNode.builder().intentCode("sales-data").mcpToolId("sales_query").intentType("mcp").build()
+        when(chatIntentNodeRepository.findByIntentCode("weather-data")).thenReturn(
+            ChatIntentNode.builder().intentCode("weather-data").mcpToolId("weather_query").intentType("mcp").build()
         );
-        when(chatMcpRepository.findByMcpCode("sales_query")).thenReturn(
-            com.codingx.mcp.domain.model.ChatMcp.builder().mcpCode("sales_query").displayName("销售查询").enabled(1).build()
+        when(chatMcpRepository.findByMcpCode("weather_query")).thenReturn(
+            com.codingx.mcp.domain.model.ChatMcp.builder().mcpCode("weather_query").displayName("天气查询").enabled(1).build()
         );
-        when(chatMcpExecutionService.execute("sales_query", "销售总额是多少")).thenReturn(
-            new ChatMcpToolResult("sales_query", "销售总额为 1280 万元，本月环比增长 8%。", java.util.Map.of())
-        );
-        when(conversationTitleService.generateTitle(any(), any())).thenReturn("销售数据统计");
+        when(chatMcpExecutionService.execute(
+            eq("weather_query"),
+            eq("北京今天天气怎么样"),
+            any(com.codingx.mcp.application.service.ChatMcpProgressListener.class)
+        )).thenAnswer(invocation -> {
+            com.codingx.mcp.application.service.ChatMcpProgressListener listener = invocation.getArgument(2);
+            listener.onProgress("mock-progress", "正在查询天气数据", java.util.Map.of("source", "mock"));
+            return new ChatMcpToolResult("weather_query", "北京今日晴，当前温度 26.5°C。", java.util.Map.of());
+        });
+        when(conversationTitleService.generateTitle(any(), any())).thenReturn("天气查询");
 
-        chatApplicationService.sendMessage(new SendChatMessageCommand(1L, "销售总额是多少", false, java.util.List.of("sales_query")), 1002L);
+        chatApplicationService.sendMessage(new SendChatMessageCommand(1L, "北京今天天气怎么样", false, java.util.List.of("weather_query")), 1002L);
 
-        verify(chatMcpExecutionService).execute("sales_query", "销售总额是多少");
+        verify(chatMcpExecutionService).execute(
+            eq("weather_query"),
+            eq("北京今天天气怎么样"),
+            any(com.codingx.mcp.application.service.ChatMcpProgressListener.class)
+        );
         // 新契约：MCP 调用需先上报 start，再上报 complete，且两次都携带 callId。
         verify(chatStreamPublisher, atLeast(1)).publishMcpCall(eq(1L), org.mockito.ArgumentMatchers.argThat(payload -> {
             if (!(payload instanceof Map<?, ?> map)) {
@@ -107,14 +117,22 @@ class ChatApplicationMcpFlowTest {
             if (!(payload instanceof Map<?, ?> map)) {
                 return false;
             }
+            return "progress".equals(map.get("phase"))
+                && map.get("callId") != null
+                && map.containsKey("progressText");
+        }));
+        verify(chatStreamPublisher, atLeast(1)).publishMcpCall(eq(1L), org.mockito.ArgumentMatchers.argThat(payload -> {
+            if (!(payload instanceof Map<?, ?> map)) {
+                return false;
+            }
             return "complete".equals(map.get("phase"))
                 && map.get("callId") != null
                 && map.containsKey("rawResult");
         }));
-        verify(chatStreamPublisher).publishAssistantCompleted(1L, "销售总额为 1280 万元，本月环比增长 8%。", "销售数据统计");
+        verify(chatStreamPublisher).publishAssistantCompleted(1L, "北京今日晴，当前温度 26.5°C。", "天气查询");
         ArgumentCaptor<ChatMessage> captor = ArgumentCaptor.forClass(ChatMessage.class);
         verify(chatMessageRepository, org.mockito.Mockito.times(2)).save(captor.capture());
-        assertEquals("销售总额为 1280 万元，本月环比增长 8%。", captor.getAllValues().get(1).getContent());
+        assertEquals("北京今日晴，当前温度 26.5°C。", captor.getAllValues().get(1).getContent());
         org.mockito.Mockito.verifyNoInteractions(aiChatClient);
         ChatExecutionContext.clear();
     }
@@ -142,9 +160,11 @@ class ChatApplicationMcpFlowTest {
         when(chatMcpRepository.findByMcpCode("code_search")).thenReturn(
             com.codingx.mcp.domain.model.ChatMcp.builder().mcpCode("code_search").displayName("代码检索").enabled(1).build()
         );
-        when(chatMcpExecutionService.execute("code_search", "查找 ChatController 的 sendMessage 方法")).thenReturn(
-            new ChatMcpToolResult("code_search", "命中 ChatController.java:95", java.util.Map.of())
-        );
+        when(chatMcpExecutionService.execute(
+            eq("code_search"),
+            eq("查找 ChatController 的 sendMessage 方法"),
+            any(com.codingx.mcp.application.service.ChatMcpProgressListener.class)
+        )).thenReturn(new ChatMcpToolResult("code_search", "命中 ChatController.java:95", java.util.Map.of()));
         when(conversationTitleService.generateTitle(any(), any())).thenReturn("代码定位");
 
         chatApplicationService.sendMessage(
@@ -152,7 +172,11 @@ class ChatApplicationMcpFlowTest {
             1002L
         );
 
-        verify(chatMcpExecutionService).execute("code_search", "查找 ChatController 的 sendMessage 方法");
+        verify(chatMcpExecutionService).execute(
+            eq("code_search"),
+            eq("查找 ChatController 的 sendMessage 方法"),
+            any(com.codingx.mcp.application.service.ChatMcpProgressListener.class)
+        );
         verify(chatStreamPublisher).publishAssistantCompleted(2L, "命中 ChatController.java:95", "代码定位");
         org.mockito.Mockito.verifyNoInteractions(aiChatClient);
         ChatExecutionContext.clear();

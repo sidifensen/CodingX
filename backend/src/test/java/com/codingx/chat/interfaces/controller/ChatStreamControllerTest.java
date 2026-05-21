@@ -13,6 +13,7 @@ import cn.dev33.satoken.stp.StpUtil;
 import com.codingx.chat.application.command.CreateConversationCommand;
 import com.codingx.chat.application.service.ChatConversationApplicationService;
 import com.codingx.chat.application.service.ChatStreamExecutionService;
+import com.codingx.mcp.application.service.ChatMcpQueryService;
 import com.codingx.chat.domain.model.ChatConversation;
 import com.codingx.chat.domain.model.ChatConversationStatus;
 import com.codingx.chat.domain.model.ChatMessage;
@@ -61,6 +62,8 @@ class ChatStreamControllerTest {
      */
     @Mock
     private ChatMcpRepository chatMcpRepository;
+    @Mock
+    private ChatMcpQueryService chatMcpQueryService;
 
     /**
      * 技能仓储依赖。
@@ -88,8 +91,8 @@ class ChatStreamControllerTest {
     void streamChatRegistersEmitterAndDispatchesMessage() {
         SseEmitter emitter = new SseEmitter(0L);
         whenRegisterReturns(emitter);
-        when(chatMcpRepository.findAllEnabled()).thenReturn(List.of(
-            ChatMcp.builder().id(1L).mcpCode("sales_query").displayName("销售查询").category("销售").enabled(1).sortNo(1).build()
+        when(chatMcpQueryService.listEnabledMcps()).thenReturn(List.of(
+            ChatMcp.builder().id(1L).mcpCode("weather_query").displayName("天气查询").category("天气").enabled(1).available(true).sortNo(1).build()
         ));
         when(chatConversationApplicationService.listMessages(1L, 1001L)).thenReturn(List.of(
             ChatMessage.userMessage(1L, "历史消息")
@@ -107,7 +110,7 @@ class ChatStreamControllerTest {
                 argThat(payload -> payload instanceof java.util.Map<?, ?> map
                     && map.get("conversationId").equals(1L)
                     && map.get("deepThinking").equals(true)
-                    && map.get("mcpCodes").equals(List.of("sales_query"))
+                    && map.get("mcpCodes").equals(List.of("weather_query"))
                     && map.get("skillCodes").equals(List.of())
                     && map.get("expertCode") == null
                     && map.get("attachmentIds").equals(List.of())
@@ -117,7 +120,7 @@ class ChatStreamControllerTest {
                 argThat(command -> command.conversationId().equals(1L)
                     && command.content().equals("你好")
                     && command.deepThinking()
-                    && command.mcpCodes().equals(List.of("sales_query"))
+                    && command.mcpCodes().equals(List.of("weather_query"))
                     && command.skillCodes().isEmpty()
                     && command.expertCode() == null
                     && command.attachmentIds().isEmpty()),
@@ -134,8 +137,8 @@ class ChatStreamControllerTest {
     void streamChatSupportsNewConversationBootstrap() {
         SseEmitter emitter = new SseEmitter(0L);
         whenRegisterReturns(emitter);
-        when(chatMcpRepository.findAllEnabled()).thenReturn(List.of(
-            ChatMcp.builder().id(1L).mcpCode("sales_query").displayName("销售查询").category("销售").enabled(1).sortNo(1).build()
+        when(chatMcpQueryService.listEnabledMcps()).thenReturn(List.of(
+            ChatMcp.builder().id(1L).mcpCode("weather_query").displayName("天气查询").category("天气").enabled(1).available(true).sortNo(1).build()
         ));
         ChatConversation conversation = ChatConversation.create(2001L, "New Conversation", 1001L, ChatConversationStatus.ACTIVE);
         when(chatConversationApplicationService.createConversation(any(CreateConversationCommand.class), any(Long.class))).thenReturn(conversation);
@@ -153,7 +156,7 @@ class ChatStreamControllerTest {
                 argThat(payload -> payload instanceof java.util.Map<?, ?> map
                     && map.get("conversationId").equals(2001L)
                     && map.get("deepThinking").equals(false)
-                    && map.get("mcpCodes").equals(List.of("sales_query"))
+                    && map.get("mcpCodes").equals(List.of("weather_query"))
                     && map.get("skillCodes").equals(List.of())
                     && map.get("expertCode") == null
                     && map.get("attachmentIds").equals(List.of())
@@ -163,7 +166,7 @@ class ChatStreamControllerTest {
                 argThat(command -> command.conversationId().equals(2001L)
                     && command.content().equals("新的问题")
                     && !command.deepThinking()
-                    && command.mcpCodes().equals(List.of("sales_query"))
+                    && command.mcpCodes().equals(List.of("weather_query"))
                     && command.skillCodes().isEmpty()
                     && command.expertCode() == null
                     && command.attachmentIds().isEmpty()),
@@ -179,8 +182,8 @@ class ChatStreamControllerTest {
     void streamChatUsesWorkspaceIdWhenCreatingConversation() {
         SseEmitter emitter = new SseEmitter(0L);
         whenRegisterReturns(emitter);
-        when(chatMcpRepository.findAllEnabled()).thenReturn(List.of(
-            ChatMcp.builder().id(1L).mcpCode("sales_query").displayName("销售查询").category("销售").enabled(1).sortNo(1).build()
+        when(chatMcpQueryService.listEnabledMcps()).thenReturn(List.of(
+            ChatMcp.builder().id(1L).mcpCode("weather_query").displayName("天气查询").category("天气").enabled(1).available(true).sortNo(1).build()
         ));
         ChatConversation conversation = ChatConversation.create(9001L, "本地会话", 1001L, 6001L, ChatConversationStatus.ACTIVE);
         when(chatConversationApplicationService.createConversation(any(CreateConversationCommand.class), any(Long.class))).thenReturn(conversation);
@@ -224,11 +227,11 @@ class ChatStreamControllerTest {
             mocked.when(StpUtil::getLoginIdAsLong).thenReturn(1001L);
 
             SseEmitter actual = chatStreamController.streamChat(
-                "查询销售",
+                "查询天气",
                 3001L,
                 false,
-                "sales_query",
-                "ticket_query,sales_query"
+                "weather_query",
+                "agent-browser,weather_query"
             );
 
             assertEquals(emitter, actual);
@@ -236,16 +239,16 @@ class ChatStreamControllerTest {
                 eq(3001L),
                 eq("meta"),
                 argThat(payload -> payload instanceof java.util.Map<?, ?> map
-                    && map.get("mcpCodes").equals(List.of("sales_query"))
-                    && map.get("skillCodes").equals(List.of("ticket_query", "sales_query"))
+                    && map.get("mcpCodes").equals(List.of("weather_query"))
+                    && map.get("skillCodes").equals(List.of("agent-browser", "weather_query"))
                     && map.get("expertCode") == null)
             );
             verify(chatStreamExecutionService).dispatch(
                 argThat(command -> command.conversationId().equals(3001L)
-                    && command.content().equals("查询销售")
+                    && command.content().equals("查询天气")
                     && !command.deepThinking()
-                    && command.mcpCodes().equals(List.of("sales_query"))
-                    && command.skillCodes().equals(List.of("ticket_query", "sales_query"))
+                    && command.mcpCodes().equals(List.of("weather_query"))
+                    && command.skillCodes().equals(List.of("agent-browser", "weather_query"))
                     && command.expertCode() == null
                     && command.attachmentIds().isEmpty()),
                 eq(1001L)
@@ -271,8 +274,8 @@ class ChatStreamControllerTest {
                 3501L,
                 null,
                 false,
-                "sales_query",
-                "ticket_query,sales_query",
+                "weather_query",
+                "agent-browser,weather_query",
                 null,
                 null,
                 """
@@ -288,7 +291,7 @@ class ChatStreamControllerTest {
                   },
                   {
                     "type":"text",
-                    "data":{"content":"请分析最近工单趋势"}
+                    "data":{"content":"请分析最近天气趋势"}
                   }
                 ]
                 """,
@@ -300,13 +303,13 @@ class ChatStreamControllerTest {
                 eq(3501L),
                 eq("meta"),
                 argThat(payload -> payload instanceof java.util.Map<?, ?> map
-                    && map.get("skillCodes").equals(List.of("agent-browser", "ticket_query", "sales_query"))
+                    && map.get("skillCodes").equals(List.of("agent-browser", "weather_query"))
                     && map.get("expertCode") == null)
             );
             verify(chatStreamExecutionService).dispatch(
                 argThat(command -> command.conversationId().equals(3501L)
-                    && command.content().equals("请分析最近工单趋势")
-                    && command.skillCodes().equals(List.of("agent-browser", "ticket_query", "sales_query"))
+                    && command.content().equals("请分析最近天气趋势")
+                    && command.skillCodes().equals(List.of("agent-browser", "weather_query"))
                     && command.expertCode() == null
                     && command.attachmentIds().isEmpty()),
                 eq(1001L)
@@ -350,7 +353,7 @@ class ChatStreamControllerTest {
             mocked.when(StpUtil::getLoginIdAsLong).thenReturn(1001L);
 
             SseEmitter actual = chatStreamController.streamChat(
-                "@sales_query 这段文本不应生效",
+                "@weather_query 这段文本不应生效",
                 5001L,
                 false,
                 null,

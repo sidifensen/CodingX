@@ -10,8 +10,8 @@ import com.codingx.skill.domain.repository.ChatSkillRepository;
 import com.codingx.chat.infrastructure.stream.ChatSseRegistry;
 import com.codingx.expert.domain.model.ChatExpert;
 import com.codingx.expert.domain.repository.ChatExpertRepository;
+import com.codingx.mcp.application.service.ChatMcpQueryService;
 import com.codingx.mcp.domain.model.ChatMcp;
-import com.codingx.mcp.domain.repository.ChatMcpRepository;
 import com.codingx.common.idempotent.IdempotentSubmit;
 import java.util.List;
 import java.util.Map;
@@ -51,7 +51,7 @@ public class ChatStreamController {
     /**
      * 技能配置仓储依赖。
      */
-    private final ChatMcpRepository chatMcpRepository;
+    private final ChatMcpQueryService chatMcpQueryService;
     private final ChatSkillRepository chatSkillRepository;
     private final ChatExpertRepository chatExpertRepository;
 
@@ -240,7 +240,8 @@ public class ChatStreamController {
                 .distinct()
                 .collect(Collectors.toList());
         }
-        return chatMcpRepository.findAllEnabled().stream()
+        return chatMcpQueryService.listEnabledMcps().stream()
+            .filter(mcp -> mcp.getAvailable() == null || Boolean.TRUE.equals(mcp.getAvailable()))
             .map(ChatMcp::getMcpCode)
             .filter(StrUtil::isNotBlank)
             .toList();

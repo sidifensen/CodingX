@@ -78,10 +78,10 @@ class AdminChatIntentServiceTest {
      */
     @Test
     void saveDerivesKindFromIntentType() {
-        when(chatIntentNodeRepository.existsByIntentCode(eq("sales-data"), isNull())).thenReturn(false);
+        when(chatIntentNodeRepository.existsByIntentCode(eq("weather-data"), isNull())).thenReturn(false);
 
         ChatIntentNode saved = adminChatIntentService.save(
-            ChatIntentNode.builder().intentCode("sales-data").name("销售数据").intentType("mcp").sortNo(7).build()
+            ChatIntentNode.builder().intentCode("weather-data").name("天气数据").intentType("mcp").sortNo(7).build()
         );
 
         assertEquals(2, saved.getKind());

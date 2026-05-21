@@ -386,11 +386,11 @@ class ChatApplicationServiceTest {
         when(conversationSummaryService.buildModelHistory(any(), any())).thenAnswer(invocation -> invocation.getArgument(1));
         when(conversationIntentService.route("Hi", false)).thenReturn(new ConversationIntentDecision("chat.normal", ConversationIntentAction.DIRECT, null));
         when(chatIntentNodeRepository.findByIntentCode("chat.normal")).thenReturn(null);
-        when(chatSkillContextService.buildSkillContext(List.of("sales_query"))).thenReturn("""
+        when(chatSkillContextService.buildSkillContext(List.of("weather_query"))).thenReturn("""
             以下是当前消息已选择技能的说明文档，请优先按这些技能约束回答。
-            ## /sales_query（销售查询）
+            ## /weather_query（天气查询）
             ---
-            name: sales_query
+            name: weather_query
             ---
             """);
         when(llmResponseCleaner.clean(any())).thenAnswer(invocation -> invocation.getArgument(0));
@@ -401,7 +401,7 @@ class ChatApplicationServiceTest {
             ChatMessage systemMessage = aiHistory.getFirst();
             assertEquals(ChatMessageRole.SYSTEM, systemMessage.getRole());
             org.junit.jupiter.api.Assertions.assertTrue(
-                systemMessage.getContent().contains("/sales_query"),
+                systemMessage.getContent().contains("/weather_query"),
                 "系统提示应包含技能上下文"
             );
             AiChatClient.StreamHandler handler = invocation.getArgument(2);
@@ -411,11 +411,11 @@ class ChatApplicationServiceTest {
         }).when(aiChatClient).streamChat(any(), org.mockito.ArgumentMatchers.anyBoolean(), any());
 
         chatApplicationService.sendMessage(
-            new SendChatMessageCommand(1L, "Hi", false, List.of(), List.of("sales_query"), null, null, List.of()),
+            new SendChatMessageCommand(1L, "Hi", false, List.of(), List.of("weather_query"), null, null, List.of()),
             1002L
         );
 
-        verify(chatSkillContextService).buildSkillContext(List.of("sales_query"));
+        verify(chatSkillContextService).buildSkillContext(List.of("weather_query"));
         verify(chatStreamPublisher).publishAssistantCompleted(1L, "技能已生效", "技能对话");
         ChatExecutionContext.clear();
     }

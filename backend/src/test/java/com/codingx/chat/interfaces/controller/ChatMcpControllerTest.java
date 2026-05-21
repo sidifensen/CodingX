@@ -38,10 +38,11 @@ class ChatMcpControllerTest {
         when(chatMcpQueryService.listEnabledMcps()).thenReturn(List.of(
             ChatMcp.builder()
                 .id(8101L)
-                .mcpCode("sales_query")
-                .displayName("销售查询")
-                .category("销售")
+                .mcpCode("weather_query")
+                .displayName("天气查询")
+                .category("天气")
                 .enabled(1)
+                .available(true)
                 .sortNo(1)
                 .build()
         ));
@@ -49,8 +50,9 @@ class ChatMcpControllerTest {
         mockMvc().perform(get("/api/mcps"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.success").value(true))
-            .andExpect(jsonPath("$.data[0].mcpCode").value("sales_query"))
-            .andExpect(jsonPath("$.data[0].displayName").value("销售查询"));
+            .andExpect(jsonPath("$.data[0].mcpCode").value("weather_query"))
+            .andExpect(jsonPath("$.data[0].displayName").value("天气查询"))
+            .andExpect(jsonPath("$.data[0].available").value(true));
     }
 
     /**
@@ -61,10 +63,11 @@ class ChatMcpControllerTest {
         when(chatMcpQueryService.listEnabledMcps()).thenReturn(List.of(
             ChatMcp.builder()
                 .id(8101L)
-                .mcpCode("sales_query")
-                .displayName("销售查询")
-                .category("销售")
+                .mcpCode("weather_query")
+                .displayName("天气查询")
+                .category("天气")
                 .enabled(1)
+                .available(true)
                 .sortNo(1)
                 .build()
         ));
@@ -72,8 +75,9 @@ class ChatMcpControllerTest {
         mockMvc().perform(get("/api/chat/mcps"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.success").value(true))
-            .andExpect(jsonPath("$.data[0].mcpCode").value("sales_query"))
-            .andExpect(jsonPath("$.data[0].displayName").value("销售查询"));
+            .andExpect(jsonPath("$.data[0].mcpCode").value("weather_query"))
+            .andExpect(jsonPath("$.data[0].displayName").value("天气查询"))
+            .andExpect(jsonPath("$.data[0].available").value(true));
     }
 
     /**

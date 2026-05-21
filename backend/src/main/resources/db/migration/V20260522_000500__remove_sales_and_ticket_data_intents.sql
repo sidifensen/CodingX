@@ -1,4 +1,4 @@
--- 下线销售数据与客户工单查询意图，并级联下线其子意图，避免运行时继续命中历史链路。
+-- 下线销售与工单查询意图，并级联下线其子意图；后续由物理清理迁移彻底移除历史数据。
 WITH RECURSIVE target AS (
     SELECT intent_code
     FROM chat_intent_node

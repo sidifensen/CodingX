@@ -11,6 +11,7 @@ import com.codingx.chat.application.service.ChatAttachmentService;
 import com.codingx.chat.application.service.ChatConversationApplicationService;
 import com.codingx.chat.application.service.ChatReactionService;
 import com.codingx.chat.application.service.ChatRuntimeGuardService;
+import com.codingx.mcp.application.service.ChatMcpQueryService;
 import com.codingx.chat.domain.model.ChatConversation;
 import com.codingx.chat.domain.model.ChatConversationStatus;
 import com.codingx.workspace.infrastructure.persistence.dataobject.WorkspaceDO;
@@ -56,6 +57,8 @@ class ChatControllerListConversationsTest {
 
     @Mock
     private ChatMcpRepository chatMcpRepository;
+    @Mock
+    private ChatMcpQueryService chatMcpQueryService;
 
     @Mock
     private WorkspaceRepositoryImpl workspaceRepositoryImpl;

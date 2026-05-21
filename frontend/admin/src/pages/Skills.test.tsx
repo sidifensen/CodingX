@@ -25,21 +25,21 @@ vi.mock('../api/adminChatApi', () => ({
 const skillFixture = [
   {
     id: 7101,
-    skillCode: 'sales_query',
-    displayName: '销售查询',
-    description: '查询销售汇总、排名、趋势与明细',
-    category: '销售',
+    skillCode: 'weather_query',
+    displayName: '天气查询',
+    description: '查询天气汇总、排名、趋势与明细',
+    category: '天气',
     sourceType: 'uploaded',
     enabled: 1,
     sortNo: 1,
-    storageKey: 'chat-skills/packages/sales-query.zip',
+    storageKey: 'chat-skills/packages/weather-query.zip',
   },
   {
     id: 7102,
-    skillCode: 'ticket_query',
-    displayName: '工单查询',
-    description: '查询工单状态、列表、优先级与解决率',
-    category: '工单',
+    skillCode: 'code_search',
+    displayName: '代码检索',
+    description: '查询研发状态、列表、优先级与解决率',
+    category: '研发',
     sourceType: 'built-in',
     enabled: 1,
     sortNo: 2,
@@ -105,12 +105,12 @@ describe('Skills page', () => {
       expect(AdminChatApi.listSkills).toHaveBeenCalledWith(expect.objectContaining({ current: 1, size: 10 }));
     });
 
-    expect(screen.getByText('销售查询')).toBeInTheDocument();
-    expect(screen.getByText('工单查询')).toBeInTheDocument();
-    expect(screen.getByText('/sales_query')).toBeInTheDocument();
-    expect(screen.getByText('/ticket_query')).toBeInTheDocument();
-    expect(screen.getByText('销售')).toBeInTheDocument();
-    expect(screen.getByText('工单')).toBeInTheDocument();
+    expect(screen.getByText('天气查询')).toBeInTheDocument();
+    expect(screen.getByText('代码检索')).toBeInTheDocument();
+    expect(screen.getByText('/weather_query')).toBeInTheDocument();
+    expect(screen.getByText('/code_search')).toBeInTheDocument();
+    expect(screen.getByText('天气')).toBeInTheDocument();
+    expect(screen.getByText('研发')).toBeInTheDocument();
     expect(screen.getByText('第 1 / 3 页，共 22 条')).toBeInTheDocument();
   });
 
@@ -136,7 +136,7 @@ describe('Skills page', () => {
       current: 1,
       pages: 3,
     });
-    expect(await screen.findByText('/sales_query')).toBeInTheDocument();
+    expect(await screen.findByText('/weather_query')).toBeInTheDocument();
   });
 
   /**
@@ -171,7 +171,7 @@ describe('Skills page', () => {
       } as any);
 
     render(<Skills />);
-    await screen.findByText('/sales_query');
+    await screen.findByText('/weather_query');
     fireEvent.click(screen.getByRole('button', { name: '第 2 页' }));
 
     await waitFor(() => {
@@ -184,7 +184,7 @@ describe('Skills page', () => {
    */
   it('supports create skill in skills page', async () => {
     render(<Skills />);
-    await screen.findByText('/sales_query');
+    await screen.findByText('/weather_query');
 
     fireEvent.click(screen.getByRole('button', { name: '创建新技能' }));
     const dialog = await screen.findByRole('dialog', { name: '新增技能' });
@@ -213,20 +213,20 @@ describe('Skills page', () => {
   it('supports edit skill in skills page', async () => {
     render(<Skills />);
 
-    const editButton = await screen.findByRole('button', { name: '编辑技能 sales_query' });
+    const editButton = await screen.findByRole('button', { name: '编辑技能 weather_query' });
     fireEvent.click(editButton);
 
     const dialog = await screen.findByRole('dialog', { name: '编辑技能' });
     expect(within(dialog).getByLabelText('技能编码')).toBeDisabled();
-    fireEvent.change(within(dialog).getByLabelText('技能名称'), { target: { value: '销售查询增强版' } });
+    fireEvent.change(within(dialog).getByLabelText('技能名称'), { target: { value: '天气查询增强版' } });
     fireEvent.click(within(dialog).getByRole('button', { name: '保存修改' }));
 
     await waitFor(() => {
       expect(AdminChatApi.updateSkill).toHaveBeenCalledWith(
         7101,
         expect.objectContaining({
-          skillCode: 'sales_query',
-          displayName: '销售查询增强版',
+          skillCode: 'weather_query',
+          displayName: '天气查询增强版',
         }),
       );
     });
@@ -240,7 +240,7 @@ describe('Skills page', () => {
    */
   it('supports upload skill package in skills page', async () => {
     render(<Skills />);
-    await screen.findByText('/sales_query');
+    await screen.findByText('/weather_query');
 
     fireEvent.click(screen.getByRole('button', { name: '上传技能包' }));
     const dialog = await screen.findByRole('dialog', { name: '上传技能包' });
@@ -263,7 +263,7 @@ describe('Skills page', () => {
    */
   it('supports upload skill folder in skills page', async () => {
     render(<Skills />);
-    await screen.findByText('/sales_query');
+    await screen.findByText('/weather_query');
 
     fireEvent.click(screen.getByRole('button', { name: '上传技能包' }));
     const dialog = await screen.findByRole('dialog', { name: '上传技能包' });
@@ -284,7 +284,7 @@ describe('Skills page', () => {
    */
   it('supports migrate legacy skill packages in upload dialog', async () => {
     render(<Skills />);
-    await screen.findByText('/sales_query');
+    await screen.findByText('/weather_query');
 
     fireEvent.click(screen.getByRole('button', { name: '上传技能包' }));
     const dialog = await screen.findByRole('dialog', { name: '上传技能包' });
@@ -301,14 +301,14 @@ describe('Skills page', () => {
    */
   it('supports list view and package preview explorer', async () => {
     render(<Skills />);
-    await screen.findByText('/sales_query');
+    await screen.findByText('/weather_query');
 
     fireEvent.click(screen.getByRole('button', { name: '列表视图' }));
     expect(screen.getByText('编码')).toBeInTheDocument();
     expect(screen.getByText('状态')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: '资源预览 sales_query' }));
-    const dialog = await screen.findByRole('dialog', { name: '技能包资源预览 sales_query' });
+    fireEvent.click(screen.getByRole('button', { name: '资源预览 weather_query' }));
+    const dialog = await screen.findByRole('dialog', { name: '技能包资源预览 weather_query' });
     expect(within(dialog).getByText('文件目录')).toBeInTheDocument();
 
     await waitFor(() => {
@@ -322,3 +322,4 @@ describe('Skills page', () => {
     expect(within(dialog).getByText('# Skill Manifest')).toBeInTheDocument();
   });
 });
+

@@ -6,6 +6,7 @@ import com.codingx.chat.application.command.SendChatMessageCommand;
 import com.codingx.chat.application.service.ChatApplicationService;
 import com.codingx.chat.application.service.ChatAttachmentService;
 import com.codingx.chat.application.service.ChatConversationApplicationService;
+import com.codingx.mcp.application.service.ChatMcpQueryService;
 import com.codingx.chat.application.service.ChatReactionService;
 import com.codingx.chat.application.service.ChatRuntimeGuardService;
 import com.codingx.chat.domain.model.ChatAttachment;
@@ -13,6 +14,7 @@ import com.codingx.chat.domain.model.ChatConversation;
 import com.codingx.chat.domain.model.ChatMessage;
 import com.codingx.chat.domain.model.ChatMessageFeedback;
 import com.codingx.chat.domain.repository.ChatMessageFeedbackRepository;
+import com.codingx.mcp.domain.model.ChatMcp;
 import com.codingx.skill.domain.model.ChatSkill;
 import com.codingx.skill.domain.repository.ChatSkillRepository;
 import com.codingx.chat.interfaces.request.ChatMessageFeedbackRequest;
@@ -25,8 +27,6 @@ import com.codingx.chat.interfaces.response.ChatMessageResponse;
 import com.codingx.common.error.ErrorMessageCatalog;
 import com.codingx.common.model.ApiResponse;
 import com.codingx.common.idempotent.IdempotentSubmit;
-import com.codingx.mcp.domain.model.ChatMcp;
-import com.codingx.mcp.domain.repository.ChatMcpRepository;
 import com.codingx.workspace.infrastructure.persistence.dataobject.WorkspaceDO;
 import com.codingx.workspace.infrastructure.repository.WorkspaceRepositoryImpl;
 import jakarta.validation.Valid;
@@ -71,7 +71,7 @@ public class ChatController {
      */
     private final ChatReactionService chatReactionService;
     private final ChatMessageFeedbackRepository chatMessageFeedbackRepository;
-    private final ChatMcpRepository chatMcpRepository;
+    private final ChatMcpQueryService chatMcpQueryService;
     private final ChatSkillRepository chatSkillRepository;
     private final WorkspaceRepositoryImpl workspaceRepositoryImpl;
 
@@ -129,7 +129,8 @@ public class ChatController {
             .map(ChatSkill::getSkillCode)
             .filter(StrUtil::isNotBlank)
             .collect(Collectors.toList());
-        List<String> selectedMcpCodes = chatMcpRepository.findAllEnabled().stream()
+        List<String> selectedMcpCodes = chatMcpQueryService.listEnabledMcps().stream()
+            .filter(mcp -> mcp.getAvailable() == null || Boolean.TRUE.equals(mcp.getAvailable()))
             .map(ChatMcp::getMcpCode)
             .filter(StrUtil::isNotBlank)
             .collect(Collectors.toList());

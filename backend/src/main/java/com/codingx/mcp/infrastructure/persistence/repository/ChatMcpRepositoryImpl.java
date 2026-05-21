@@ -182,6 +182,8 @@ public class ChatMcpRepositoryImpl implements ChatMcpRepository {
             .category(dataObject.getCategory())
             .sourceType(dataObject.getSourceType())
             .enabled(dataObject.getEnabled())
+            // 运行态可用性由查询服务基于执行器注册动态补充，仓储层默认置空。
+            .available(null)
             .sortNo(dataObject.getSortNo())
             .createdAt(dataObject.getCreatedAt())
             .updatedAt(dataObject.getUpdatedAt())

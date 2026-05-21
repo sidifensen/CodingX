@@ -7,6 +7,7 @@ import com.codingx.chat.application.service.ChatApplicationService;
 import com.codingx.chat.application.service.ChatAttachmentService;
 import com.codingx.chat.application.service.ChatConversationApplicationService;
 import com.codingx.chat.application.service.ChatRuntimeGuardService;
+import com.codingx.mcp.application.service.ChatMcpQueryService;
 import com.codingx.common.error.ErrorMessageCatalog;
 import com.codingx.skill.domain.repository.ChatSkillRepository;
 import com.codingx.common.model.ApiResponse;
@@ -53,6 +54,8 @@ class ChatControllerCancelTest {
 
     @Mock
     private ChatMcpRepository chatMcpRepository;
+    @Mock
+    private ChatMcpQueryService chatMcpQueryService;
 
     @Mock
     private WorkspaceRepositoryImpl workspaceRepositoryImpl;

@@ -11,6 +11,8 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -77,13 +79,22 @@ class WeatherMcpToolExecutorTest {
                     return baseUrl + "/forecast";
                 }
             };
+            List<String> progressEvents = new ArrayList<>();
 
-            ChatMcpToolResult result = executor.execute("北京今天天气怎么样");
+            ChatMcpToolResult result = executor.execute(
+                "北京今天天气怎么样",
+                (stage, message, detail) -> progressEvents.add(stage + ":" + message)
+            );
 
             assertEquals("weather_query", result.toolId());
             assertTrue(result.content().contains("北京"));
             assertTrue(result.content().contains("当前温度: 26.5°C"));
             assertTrue(result.content().contains("数据源: Open-Meteo"));
+            assertTrue(progressEvents.stream().anyMatch(item -> item.startsWith("parse-question:")));
+            assertTrue(progressEvents.stream().anyMatch(item -> item.startsWith("resolve-coordinates:")));
+            assertTrue(progressEvents.stream().anyMatch(item -> item.startsWith("query-forecast:")));
+            assertTrue(progressEvents.stream().anyMatch(item -> item.startsWith("build-result:")));
+            assertTrue(progressEvents.stream().anyMatch(item -> item.startsWith("completed:")));
         } finally {
             server.stop(0);
         }

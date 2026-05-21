@@ -20,6 +20,7 @@ import com.codingx.common.error.ErrorMessageCatalog;
 import com.codingx.common.exception.ForbiddenException;
 import com.codingx.expert.application.service.ChatExpertContextService;
 import com.codingx.mcp.application.service.ChatMcpExecutionService;
+import com.codingx.mcp.application.service.ChatMcpProgressListener;
 import com.codingx.mcp.application.service.ChatMcpToolResult;
 import com.codingx.mcp.domain.model.ChatMcp;
 import com.codingx.mcp.domain.repository.ChatMcpRepository;
@@ -250,7 +251,26 @@ public class ChatApplicationService {
             // 兼容旧前端字段：即便在开始阶段也保持 input 可回显。
             mcpStartPayload.put("input", rewrittenQuestion);
             chatStreamPublisher.publishMcpCall(command.conversationId(), mcpStartPayload);
-            ChatMcpToolResult toolResult = chatMcpExecutionService.execute(intentNode.getMcpToolId(), rewrittenQuestion);
+            ChatMcpProgressListener progressListener = (stage, message, detail) -> {
+                Map<String, Object> mcpProgressPayload = new LinkedHashMap<>();
+                mcpProgressPayload.put("callId", String.valueOf(mcpCallId));
+                mcpProgressPayload.put("phase", "progress");
+                mcpProgressPayload.put("toolId", intentNode.getMcpToolId());
+                mcpProgressPayload.put("displayName", resolveMcpDisplayName(intentNode.getMcpToolId()));
+                mcpProgressPayload.put("params", mcpParams);
+                mcpProgressPayload.put("progressStage", stage);
+                mcpProgressPayload.put("progressText", message);
+                mcpProgressPayload.put("progressDetail", detail == null ? Map.of() : detail);
+                mcpProgressPayload.put("updatedAt", java.time.LocalDateTime.now().toString());
+                // 兼容旧前端字段，保留 input 以便回显本次提问。
+                mcpProgressPayload.put("input", rewrittenQuestion);
+                chatStreamPublisher.publishMcpCall(command.conversationId(), mcpProgressPayload);
+            };
+            ChatMcpToolResult toolResult = chatMcpExecutionService.execute(
+                intentNode.getMcpToolId(),
+                rewrittenQuestion,
+                progressListener
+            );
             ChatExecutionStep mcpStep = ChatExecutionStep.builder()
                 .id(cn.hutool.core.util.IdUtil.getSnowflakeNextId())
                 .runId(runId)

@@ -11,6 +11,7 @@ import com.codingx.chat.application.service.ChatAttachmentService;
 import com.codingx.chat.application.service.ChatConversationApplicationService;
 import com.codingx.chat.application.service.ChatReactionService;
 import com.codingx.chat.application.service.ChatRuntimeGuardService;
+import com.codingx.mcp.application.service.ChatMcpQueryService;
 import com.codingx.chat.domain.model.ChatConversation;
 import com.codingx.chat.domain.model.ChatConversationStatus;
 import com.codingx.chat.interfaces.request.SendChatMessageRequest;
@@ -53,6 +54,8 @@ class ChatControllerConversationMutationTest {
 
     @Mock
     private ChatMcpRepository chatMcpRepository;
+    @Mock
+    private ChatMcpQueryService chatMcpQueryService;
 
     @Mock
     private WorkspaceRepositoryImpl workspaceRepositoryImpl;
@@ -124,7 +127,7 @@ class ChatControllerConversationMutationTest {
     @Test
     void sendMessageReleasesConversationGuardAfterSyncProcessing() {
         when(chatSkillRepository.findAllEnabled()).thenReturn(java.util.List.of());
-        when(chatMcpRepository.findAllEnabled()).thenReturn(java.util.List.of());
+        when(chatMcpQueryService.listEnabledMcps()).thenReturn(java.util.List.of());
         try (MockedStatic<cn.dev33.satoken.stp.StpUtil> mocked = Mockito.mockStatic(cn.dev33.satoken.stp.StpUtil.class)) {
             mocked.when(cn.dev33.satoken.stp.StpUtil::getLoginIdAsLong).thenReturn(1002L);
 
@@ -155,7 +158,7 @@ class ChatControllerConversationMutationTest {
     @Test
     void sendMessageReleasesConversationGuardWhenSyncProcessingFails() {
         when(chatSkillRepository.findAllEnabled()).thenReturn(java.util.List.of());
-        when(chatMcpRepository.findAllEnabled()).thenReturn(java.util.List.of());
+        when(chatMcpQueryService.listEnabledMcps()).thenReturn(java.util.List.of());
         doThrow(new IllegalStateException("boom")).when(chatApplicationService).sendMessage(
             new com.codingx.chat.application.command.SendChatMessageCommand(
                 2001L,

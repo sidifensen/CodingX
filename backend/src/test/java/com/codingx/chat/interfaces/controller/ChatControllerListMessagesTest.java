@@ -11,6 +11,7 @@ import com.codingx.chat.application.service.ChatAttachmentService;
 import com.codingx.chat.application.service.ChatConversationApplicationService;
 import com.codingx.chat.application.service.ChatReactionService;
 import com.codingx.chat.application.service.ChatRuntimeGuardService;
+import com.codingx.mcp.application.service.ChatMcpQueryService;
 import com.codingx.chat.domain.repository.ChatMessageFeedbackRepository;
 import com.codingx.chat.domain.model.ChatAttachment;
 import com.codingx.chat.domain.model.ChatMessage;
@@ -59,6 +60,8 @@ class ChatControllerListMessagesTest {
 
     @Mock
     private ChatMcpRepository chatMcpRepository;
+    @Mock
+    private ChatMcpQueryService chatMcpQueryService;
 
     @InjectMocks
     private ChatController chatController;
@@ -82,8 +85,8 @@ class ChatControllerListMessagesTest {
         when(chatSkillRepository.findByTaskId(2055117498822955008L)).thenReturn(List.of(
             ChatSkill.builder()
                 .id(7101L)
-                .skillCode("sales_query")
-                .displayName("销售查询")
+                .skillCode("weather_query")
+                .displayName("天气查询")
                 .build()
         ));
         when(chatAttachmentService.listByMessageId(2055117513431715840L)).thenReturn(List.of(
@@ -112,7 +115,7 @@ class ChatControllerListMessagesTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data[0].id").value("2055117513431715840"))
                 .andExpect(jsonPath("$.data[0].conversationId").value("2055114974648864768"))
-                .andExpect(jsonPath("$.data[0].skillCodes[0]").value("sales_query"))
+                .andExpect(jsonPath("$.data[0].skillCodes[0]").value("weather_query"))
                 .andExpect(jsonPath("$.data[0].attachments[0].id").value("2055117513431715999"));
         }
     }

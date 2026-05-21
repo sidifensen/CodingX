@@ -119,13 +119,13 @@ class ChatWorkspaceQueryServiceTest {
             run(5002L, LocalDateTime.of(2026, 5, 15, 10, 5))
         ));
         when(chatMcpRepository.findByTaskId(5002L)).thenReturn(List.of(
-            ChatMcp.builder().id(1L).mcpCode("sales_query").displayName("销售查询").category("销售").enabled(1).sortNo(1).build()
+            ChatMcp.builder().id(1L).mcpCode("weather_query").displayName("天气查询").category("天气").enabled(1).sortNo(1).build()
         ));
 
         List<ChatMcp> mcps = chatWorkspaceQueryService.listCurrentMcps(2001L);
 
         assertEquals(1, mcps.size());
-        assertEquals("sales_query", mcps.getFirst().getMcpCode());
+        assertEquals("weather_query", mcps.getFirst().getMcpCode());
     }
 
     /**

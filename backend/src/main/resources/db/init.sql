@@ -98,8 +98,6 @@ VALUES
 
 **示例**：
 {"param_1": "value", "param_2": 123, "param_3": true}', NULL, 1, 12, 12, 0),
-    (3301, 'sales', NULL, '销售汇总数据统计', NULL, 'mcp', 2, NULL, 0, '[]', NULL, NULL, NULL, NULL, NULL, NULL, 1, 13, 13, 0),
-    (3303, 'ticket', NULL, '客户工单服务管理', NULL, 'mcp', 2, NULL, 0, '[]', NULL, NULL, NULL, NULL, NULL, NULL, 1, 15, 15, 0),
     (3305, 'weather', NULL, '天气信息查询服务', NULL, 'mcp', 2, NULL, 0, '[]', NULL, NULL, NULL, NULL, NULL, NULL, 1, 17, 17, 0),
     (3306, 'weather-data', 'weather', '天气查询', '城市天气信息查询，如：当前天气、天气预报、温度、湿度、风力、空气质量等', 'mcp', 2, NULL, 1, '["北京今天天气怎么样？","上海明天会下雨吗？","广州未来三天天气预报","杭州现在多少度？","成都这周天气如何？","深圳空气质量怎么样？"]', NULL, NULL, '', 'weather_query', '# 角色
 你是工具参数提取器，任务是从用户问题中提取工具定义所需的参数，并以 JSON 格式输出。
@@ -265,8 +263,6 @@ SET
 INSERT INTO mcp (id, mcp_code, display_name, description, category, source_type, enabled, sort_no, deleted)
 VALUES
     (7100, 'code_search', '代码检索', '按关键词检索代码文件、行号与命中片段', '研发', 'built-in', 1, 0, 0),
-    (7101, 'sales_query', '销售查询', '查询销售汇总、排名、趋势与明细', '销售', 'built-in', 1, 1, 0),
-    (7102, 'ticket_query', '工单查询', '查询工单状态、列表、优先级与解决率', '工单', 'built-in', 1, 2, 0),
     (7103, 'weather_query', '天气查询', '查询当前天气与未来预报', '天气', 'built-in', 1, 3, 0)
 ON CONFLICT (mcp_code) DO UPDATE
 SET

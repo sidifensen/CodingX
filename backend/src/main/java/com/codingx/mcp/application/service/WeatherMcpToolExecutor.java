@@ -63,14 +63,59 @@ public class WeatherMcpToolExecutor implements ChatMcpToolExecutor {
      */
     @Override
     public ChatMcpToolResult execute(String question) {
+        return execute(question, ChatMcpProgressListener.noop());
+    }
+
+    /**
+     * 按问题提取城市与查询类型并返回天气结果，同时上报真实阶段进度。
+     *
+     * @param question 用户问题。
+     * @param progressListener 进度回调。
+     * @return 工具结果。
+     */
+    @Override
+    public ChatMcpToolResult execute(String question, ChatMcpProgressListener progressListener) {
         String safeQuestion = StrUtil.blankToDefault(question, "");
         WeatherQueryContext context = parseQuestion(safeQuestion);
+        emitProgress(
+            progressListener,
+            "parse-question",
+            "正在解析天气查询条件",
+            Map.of(
+                "queryType", context.queryType(),
+                "days", context.days()
+            )
+        );
         if (StrUtil.isBlank(context.city())) {
             return new ChatMcpToolResult(toolId(), "请提供城市名称", Map.of("error", true));
         }
         try {
+            emitProgress(
+                progressListener,
+                "resolve-coordinates",
+                "正在查询城市坐标",
+                Map.of("queryCity", context.city())
+            );
             GeocodeResult geocodeResult = resolveCoordinates(context.city());
+            emitProgress(
+                progressListener,
+                "query-forecast",
+                "正在拉取天气数据",
+                Map.of(
+                    "city", geocodeResult.displayCity(),
+                    "days", context.days()
+                )
+            );
             ForecastResult forecastResult = queryForecast(geocodeResult.latitude(), geocodeResult.longitude(), context.days());
+            emitProgress(
+                progressListener,
+                "build-result",
+                "正在整理天气结果",
+                Map.of(
+                    "city", geocodeResult.displayCity(),
+                    "queryType", context.queryType()
+                )
+            );
             String content = "forecast".equals(context.queryType())
                 ? buildForecastResult(geocodeResult.displayCity(), forecastResult.dailyRows(), context.days())
                 : buildCurrentResult(geocodeResult.displayCity(), forecastResult.current(), forecastResult.today());
@@ -85,6 +130,15 @@ public class WeatherMcpToolExecutor implements ChatMcpToolExecutor {
             metadata.put("source", "open-meteo");
             metadata.put("sourceApi", List.of(OPEN_METEO_GEOCODING, OPEN_METEO_FORECAST));
             metadata.put("resolvedName", geocodeResult.fullName());
+            emitProgress(
+                progressListener,
+                "completed",
+                "天气数据整理完成",
+                Map.of(
+                    "city", geocodeResult.displayCity(),
+                    "timezone", forecastResult.timezone()
+                )
+            );
             return new ChatMcpToolResult(toolId(), content, metadata);
         } catch (Exception exception) {
             Map<String, Object> metadata = new LinkedHashMap<>();
@@ -92,6 +146,15 @@ public class WeatherMcpToolExecutor implements ChatMcpToolExecutor {
             metadata.put("queryType", context.queryType());
             metadata.put("days", context.days());
             metadata.put("error", true);
+            emitProgress(
+                progressListener,
+                "failed",
+                "天气查询失败，正在返回降级结果",
+                Map.of(
+                    "city", context.city(),
+                    "queryType", context.queryType()
+                )
+            );
             // 记录外部天气接口失败根因，便于线上定位“统一降级文案”背后的真实异常。
             log.warn(
                 "天气工具调用失败，question={}, city={}, queryType={}, days={}",

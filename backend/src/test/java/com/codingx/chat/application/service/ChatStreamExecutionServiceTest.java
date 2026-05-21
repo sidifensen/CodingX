@@ -363,21 +363,21 @@ class ChatStreamExecutionServiceTest {
             1001L,
             "你好",
             false,
-            java.util.List.of("sales_query"),
-            java.util.List.of("ticket_query")
+            java.util.List.of("weather_query"),
+            java.util.List.of("agent-browser")
         ), 2001L);
 
         service.dispatch(new SendChatMessageCommand(
             1001L,
             "你好",
             false,
-            java.util.List.of("sales_query"),
-            java.util.List.of("ticket_query")
+            java.util.List.of("weather_query"),
+            java.util.List.of("agent-browser")
         ), 2001L);
 
         assertTrue(captured.await(1, TimeUnit.SECONDS), "background task should start with explicit selections");
-        verify(chatMcpRepository).bindTaskMcps(any(Long.class), eq(java.util.List.of("sales_query")));
-        verify(chatSkillRepository).bindTaskSkills(any(Long.class), eq(java.util.List.of("ticket_query")));
+        verify(chatMcpRepository).bindTaskMcps(any(Long.class), eq(java.util.List.of("weather_query")));
+        verify(chatSkillRepository).bindTaskSkills(any(Long.class), eq(java.util.List.of("agent-browser")));
         verify(chatExpertRepository).bindTaskExpert(any(Long.class), eq(null));
     }
 

@@ -23,6 +23,11 @@ public class ChatMcp {
     private String category;
     private String sourceType;
     private Integer enabled;
+    /**
+     * 用户侧运行时可用状态（非持久化字段）。
+     * true 表示当前服务实例存在对应执行器，可被用户开启。
+     */
+    private Boolean available;
     private Integer sortNo;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;

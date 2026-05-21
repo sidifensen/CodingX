@@ -140,8 +140,6 @@ public class AdminChatMcpService {
      */
     private String sampleQuestionFor(String toolId) {
         return switch (toolId) {
-            case "sales_query" -> "本月华东销售总额是多少";
-            case "ticket_query" -> "列出紧急工单列表";
             case "weather_query" -> "北京今天天气怎么样";
             case "code_search" -> "请查找 ChatController 中 sendMessage 的实现";
             default -> "请返回当前工具状态";

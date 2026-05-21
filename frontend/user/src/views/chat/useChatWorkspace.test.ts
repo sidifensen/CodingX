@@ -81,6 +81,82 @@ describe('useChatWorkspace', () => {
   });
 
   /**
+   * 首次进入且 URL 未指定会话时应停留首页，避免自动跳转到最新会话破坏新建态体验。
+   */
+  it('应在首次进入且未指定conversationId时保持首页不自动选中会话', async () => {
+    window.localStorage.setItem(
+      'codingx.auth.session',
+      JSON.stringify({
+        token: 'token-123',
+        userId: '1002',
+        username: 'user',
+        displayName: 'CodingX User',
+        userType: 'USER',
+      }),
+    );
+    window.history.replaceState(window.history.state, '', '/');
+
+    const requestUrls: string[] = [];
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      requestUrls.push(url);
+      if (url === '/api/chat/conversations') {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            code: 'OK',
+            message: 'success',
+            data: [
+              {
+                id: '6001',
+                title: '最新会话',
+                status: 'ACTIVE',
+                lastRunId: '9101',
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      if (
+        url === '/api/chat/sample-questions' ||
+        url === '/api/chat/skills' ||
+        url === '/api/chat/mcps'
+      ) {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (
+        url === '/api/chat/conversations/6001/messages' ||
+        url === '/api/chat/conversations/6001/steps' ||
+        url === '/api/chat/conversations/6001/references' ||
+        url === '/api/chat/conversations/6001/artifacts' ||
+        url === '/api/chat/conversations/6001/current-skills' ||
+        url === '/api/chat/conversations/6001/current-mcps'
+      ) {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      throw new Error(`Unhandled fetch in homepage bootstrap test: ${url}`);
+    });
+
+    const { result } = renderHook(() => useChatWorkspace(true));
+
+    await waitFor(() => {
+      expect(result.current.isBootstrapping).toBe(false);
+    });
+
+    expect(result.current.activeConversationId).toBeNull();
+    expect(result.current.messages).toEqual([]);
+    expect(window.location.search).not.toContain('conversationId=');
+    expect(requestUrls).not.toContain('/api/chat/conversations/6001/messages');
+  });
+
+  /**
    * 选中历史记录时应同步加载当前技能与当前 MCP 绑定，供右栏展示会话上下文。
    */
   it('应在选中会话时加载当前技能与当前MCP', async () => {
@@ -1283,6 +1359,174 @@ describe('useChatWorkspace', () => {
 
     expect(streamFetchMock).toHaveBeenCalledTimes(1);
     expect(streamFetchMock.mock.calls[0][0]).toContain('workspaceId=3002');
+  });
+
+  /**
+   * 从侧栏分组触发“新建对话”时，应先切换到对应环境和工作空间，再进入新会话空态。
+   */
+  it('应在按分组上下文新建会话时切换到目标环境和工作空间', async () => {
+    window.localStorage.setItem(
+      'codingx.auth.session',
+      JSON.stringify({
+        token: 'token-123',
+        userId: '1002',
+        username: 'user',
+        displayName: 'CodingX User',
+        userType: 'USER',
+      }),
+    );
+    window.localStorage.setItem(
+      'codingx.chat.workspace.conversations.v1',
+      JSON.stringify({
+        version: 1,
+        snapshots: {
+          'cloud::__no_workspace__': {
+            workspacePath: null,
+            workspaceLabel: '历史记录',
+            runtimeTarget: 'cloud',
+            lastOpenedAt: Date.now(),
+            activeConversationId: '2001',
+            conversations: [
+              {
+                id: '2001',
+                title: '云端会话',
+                status: 'ACTIVE',
+                lastRunId: '5002',
+              },
+            ],
+            conversationRecords: {
+              '2001': {
+                owned: true,
+                messages: [],
+                executionSteps: [],
+                references: [],
+                artifacts: [],
+                currentExperts: [],
+                currentSkills: [],
+                currentMcps: [],
+              },
+            },
+          },
+          'local::d:/code/workspace-b': {
+            workspacePath: 'D:/code/workspace-b',
+            workspaceLabel: 'workspace-b',
+            runtimeTarget: 'local',
+            lastOpenedAt: Date.now(),
+            activeConversationId: '4001',
+            conversations: [
+              {
+                id: '4001',
+                title: '本地会话',
+                status: 'ACTIVE',
+                lastRunId: '8001',
+              },
+            ],
+            conversationRecords: {
+              '4001': {
+                owned: true,
+                messages: [
+                  {
+                    id: '9101',
+                    conversationId: '4001',
+                    role: 'ASSISTANT',
+                    content: '本地缓存消息',
+                    status: 'COMPLETED',
+                  },
+                ],
+                executionSteps: [],
+                references: [],
+                artifacts: [],
+                currentExperts: [],
+                currentSkills: [],
+                currentMcps: [],
+              },
+            },
+          },
+        },
+      }),
+    );
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (
+        url === '/api/chat/conversations' ||
+        url === '/api/chat/sample-questions' ||
+        url === '/api/chat/experts' ||
+        url === '/api/chat/skills' ||
+        url === '/api/chat/mcps'
+      ) {
+        if (url === '/api/chat/conversations') {
+          return new Response(
+            JSON.stringify({
+              success: true,
+              code: 'OK',
+              message: 'success',
+              data: [
+                {
+                  id: '2001',
+                  title: '云端会话',
+                  status: 'ACTIVE',
+                  lastRunId: '5002',
+                },
+              ],
+            }),
+            { status: 200 },
+          );
+        }
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      throw new Error(`Unhandled fetch in contextual new conversation test: ${url}`);
+    });
+
+    const hostContext = {
+      hostType: 'desktop',
+      executionTargets: ['cloud', 'local'] as const,
+      capabilities: {
+        localFiles: true,
+        localFolderPicker: true,
+        shell: true,
+        browserAutomation: false,
+        desktopNotifications: false,
+        officeInterop: false,
+        localMcp: true,
+        windowControls: true,
+      },
+      localResource: {
+        boundRepositoryPath: 'D:/code/workspace-a',
+        workspaceId: '3001',
+        permissionGranted: true,
+      },
+    };
+
+    const { result } = renderHook(() =>
+      useChatWorkspace(true, {
+        hostContext,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(result.current.isBootstrapping).toBe(false);
+    });
+    expect(result.current.activeRuntimeTarget).toBe('cloud');
+
+    await act(async () => {
+      await result.current.startNewConversation({
+        partitionKey: 'local::d:/code/workspace-b',
+        runtimeTarget: 'local',
+        workspacePath: 'D:/code/workspace-b',
+      });
+    });
+
+    await waitFor(() => {
+      expect(result.current.activeRuntimeTarget).toBe('local');
+      expect(result.current.workspacePath).toBe('D:/code/workspace-b');
+      expect(result.current.workspaceLabel).toBe('workspace-b');
+      expect(result.current.activeConversationId).toBeNull();
+      expect(result.current.messages).toEqual([]);
+    });
   });
 
   /**

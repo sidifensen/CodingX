@@ -88,7 +88,7 @@ describe('useChatWorkspace', () => {
         userType: 'USER',
       }),
     );
-    window.history.replaceState(window.history.state, '', 'http://localhost/');
+    window.history.replaceState(window.history.state, '', '/');
 
     const requestUrls: string[] = [];
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {

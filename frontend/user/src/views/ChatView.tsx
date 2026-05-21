@@ -804,6 +804,12 @@ export default function ChatView({
                               messageStatus={message.status}
                             />
                           ) : null}
+                          {message.searchProgress ? (
+                            <SearchProgressPanel
+                              messageId={message.id}
+                              progress={message.searchProgress}
+                            />
+                          ) : null}
                           {message.attachments && message.attachments.length > 0 ? (
                             <MessageAttachmentList
                               attachments={message.attachments}
@@ -1905,6 +1911,127 @@ function McpCallPanel({
             </article>
           ))}
         </div>
+      </div>
+    </section>
+  );
+}
+
+/**
+ * 在助手消息中展示联网检索进度，避免长耗时检索期间用户无反馈。
+ */
+function SearchProgressPanel({
+  messageId,
+  progress,
+}: {
+  messageId: string;
+  progress: NonNullable<ChatWorkspaceController['messages'][number]['searchProgress']>;
+}) {
+  const [isExpanded, setIsExpanded] = React.useState(true);
+  const contentId = `search-progress-content-panel-${messageId}`;
+  const normalizedStatus =
+    progress.status === 'running'
+      ? 'running'
+      : progress.status === 'completed'
+        ? 'completed'
+        : progress.status === 'cancelled'
+          ? 'cancelled'
+          : 'error';
+  const statusLabel =
+    normalizedStatus === 'running'
+      ? '搜索中'
+      : normalizedStatus === 'completed'
+        ? '搜索完成'
+        : normalizedStatus === 'cancelled'
+          ? '已停止'
+          : '搜索异常';
+  const countLabel =
+    normalizedStatus === 'running'
+      ? `已检索 ${progress.items.length} 个网站`
+      : `共检索 ${progress.items.length} 个网站`;
+
+  return (
+    <section
+      data-testid={`search-progress-panel-${messageId}`}
+      className={`mb-3 rounded-2xl border border-border bg-surface-container text-sm text-muted transition-[width,padding] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] ${
+        isExpanded ? 'w-full px-4 py-3' : 'w-fit px-3 py-2'
+      }`}
+    >
+      <div className="flex flex-wrap items-center gap-2.5 font-medium text-foreground">
+        <span>联网搜索</span>
+        <span
+          data-testid={`search-progress-count-${messageId}`}
+          className="rounded-full border border-border bg-surface px-2 py-0.5 text-[11px] text-muted"
+        >
+          {progress.items.length}
+        </span>
+        <span
+          data-testid={`search-progress-status-${messageId}`}
+          className={`rounded-full border px-2 py-0.5 text-[11px] ${
+            normalizedStatus === 'running'
+              ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+              : normalizedStatus === 'error'
+                ? 'border-red-500/30 bg-red-500/10 text-red-300'
+                : normalizedStatus === 'cancelled'
+                  ? 'border-amber-500/30 bg-amber-500/10 text-amber-300'
+                  : 'border-border bg-surface text-muted'
+          }`}
+        >
+          {statusLabel}
+        </span>
+        <span className="text-xs text-muted">{countLabel}</span>
+        <button
+          type="button"
+          data-testid={`search-progress-toggle-button-${messageId}`}
+          aria-expanded={isExpanded}
+          aria-controls={contentId}
+          aria-label={isExpanded ? '折叠联网搜索详情' : '展开联网搜索详情'}
+          onClick={() => setIsExpanded((current) => !current)}
+          className="ml-auto flex h-7 w-7 items-center justify-center rounded-full border border-border bg-surface text-muted transition-colors hover:text-foreground"
+        >
+          <ChevronDown
+            size={15}
+            className={`transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}
+          />
+        </button>
+      </div>
+      <div
+        id={contentId}
+        className={`overflow-hidden transition-all duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] ${
+          isExpanded
+            ? 'mt-3 max-h-[640px] max-w-full translate-y-0 opacity-100'
+            : 'mt-0 max-h-0 max-w-0 -translate-y-1 opacity-0 pointer-events-none'
+        }`}
+      >
+        {progress.items.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-border bg-surface px-3 py-2 text-xs text-muted">
+            正在等待检索结果...
+          </div>
+        ) : (
+          <ol className="space-y-2">
+            {progress.items.map((item, index) => (
+              <li
+                key={item.id}
+                data-testid={`search-progress-item-${messageId}-${index}`}
+                className="rounded-xl border border-border bg-surface px-3 py-2"
+              >
+                <div className="flex items-start gap-2 text-xs leading-5 text-muted">
+                  <span className="inline-flex min-w-[24px] justify-center rounded-full border border-border bg-surface-container px-1 py-0.5 font-mono text-[11px]">
+                    {index + 1}
+                  </span>
+                  <div className="min-w-0">
+                    <div className="truncate text-sm text-foreground">
+                      {item.title || item.siteName || '未命名网页'}
+                    </div>
+                    <div className="mt-1 flex flex-wrap gap-x-2 gap-y-1 text-[11px] text-muted">
+                      {item.siteName ? <span>{item.siteName}</span> : null}
+                      {item.url ? <span className="truncate">{item.url}</span> : null}
+                    </div>
+                  </div>
+                </div>
+              </li>
+            ))}
+          </ol>
+        )}
       </div>
     </section>
   );

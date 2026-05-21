@@ -1576,6 +1576,163 @@ describe('useChatWorkspace', () => {
   });
 
   /**
+   * 联网搜索事件应把来源条目实时写入当前助手消息，驱动消息内进度面板递增显示。
+   */
+  it('应在reference事件中递增更新助手消息搜索进度', async () => {
+    window.localStorage.setItem(
+      'codingx.auth.session',
+      JSON.stringify({
+        token: 'token-123',
+        userId: '1002',
+        username: 'user',
+        displayName: 'CodingX User',
+        userType: 'USER',
+      }),
+    );
+
+    const readQueue: Array<{
+      resolve: (value: ReadableStreamReadResult<Uint8Array>) => void;
+      reject: (reason?: unknown) => void;
+    }> = [];
+    const metaEvent = new TextEncoder().encode('event:meta\ndata:{"conversationId":"2001"}\n\n');
+    const searchStepEvent = new TextEncoder().encode(
+      'event:step\ndata:{"id":"step-1","runId":"5002","stepType":"search","stepTitle":"搜索资料","stepStatus":"COMPLETED","sequenceNo":1}\n\n',
+    );
+    const referenceOneEvent = new TextEncoder().encode(
+      'event:reference\ndata:{"id":"ref-1","runId":"5002","conversationId":"2001","title":"OpenAI API 最新文档","url":"https://platform.openai.com","siteName":"OpenAI","rankNo":1}\n\n',
+    );
+    const referenceTwoEvent = new TextEncoder().encode(
+      'event:reference\ndata:{"id":"ref-2","runId":"5002","conversationId":"2001","title":"Bing Search API 文档","url":"https://learn.microsoft.com","siteName":"Microsoft Learn","rankNo":2}\n\n',
+    );
+    const finishEvent = new TextEncoder().encode('event:finish\ndata:{"content":"检索完成"}\n\n');
+    const mockReader = {
+      read: vi.fn(() => {
+        return new Promise<ReadableStreamReadResult<Uint8Array>>((resolve, reject) => {
+          readQueue.push({ resolve, reject });
+        });
+      }),
+    };
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (
+        url === '/api/chat/conversations' ||
+        url === '/api/chat/sample-questions' ||
+        url === '/api/chat/experts' ||
+        url === '/api/chat/skills' ||
+        url === '/api/chat/mcps'
+      ) {
+        if (url === '/api/chat/conversations') {
+          return new Response(
+            JSON.stringify({
+              success: true,
+              code: 'OK',
+              message: 'success',
+              data: [
+                {
+                  id: '2001',
+                  title: 'Default Demo Conversation',
+                  status: 'ACTIVE',
+                  lastRunId: '5002',
+                },
+              ],
+            }),
+            { status: 200 },
+          );
+        }
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (
+        url.endsWith('/messages') ||
+        url.endsWith('/steps') ||
+        url.endsWith('/references') ||
+        url.endsWith('/artifacts') ||
+        url.endsWith('/current-skills') ||
+        url.endsWith('/current-mcps') ||
+        url.endsWith('/current-experts')
+      ) {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (url.includes('/api/chat/stream')) {
+        return {
+          ok: true,
+          status: 200,
+          body: {
+            getReader: () => mockReader,
+          },
+        } as unknown as Response;
+      }
+      throw new Error(`Unhandled fetch in search progress sse test: ${url}`);
+    });
+
+    const { result } = renderHook(() => useChatWorkspace(true));
+
+    await waitFor(() => {
+      expect(result.current.isBootstrapping).toBe(false);
+    });
+
+    await act(async () => {
+      result.current.setInputValue('请搜索最新 API 信息');
+    });
+    const submitPromise = result.current.submitMessage();
+
+    await waitFor(() => {
+      expect(result.current.isStreaming).toBe(true);
+      expect(readQueue.length).toBeGreaterThan(0);
+    });
+
+    await act(async () => {
+      readQueue.shift()?.resolve({ done: false, value: metaEvent });
+    });
+    await act(async () => {
+      readQueue.shift()?.resolve({ done: false, value: searchStepEvent });
+    });
+    await waitFor(() => {
+      const assistantMessage = result.current.messages.find((item) => item.role === 'ASSISTANT');
+      expect(assistantMessage?.searchProgress?.status).toBe('running');
+      expect(assistantMessage?.searchProgress?.items).toHaveLength(0);
+    });
+
+    await act(async () => {
+      readQueue.shift()?.resolve({ done: false, value: referenceOneEvent });
+    });
+    await waitFor(() => {
+      const assistantMessage = result.current.messages.find((item) => item.role === 'ASSISTANT');
+      expect(assistantMessage?.searchProgress?.items).toHaveLength(1);
+      expect(assistantMessage?.searchProgress?.items[0].title).toBe('OpenAI API 最新文档');
+    });
+
+    await act(async () => {
+      readQueue.shift()?.resolve({ done: false, value: referenceTwoEvent });
+    });
+    await waitFor(() => {
+      const assistantMessage = result.current.messages.find((item) => item.role === 'ASSISTANT');
+      expect(assistantMessage?.searchProgress?.items).toHaveLength(2);
+      expect(assistantMessage?.searchProgress?.items[1].title).toBe('Bing Search API 文档');
+    });
+
+    await act(async () => {
+      readQueue.shift()?.resolve({ done: false, value: finishEvent });
+    });
+    await waitFor(() => {
+      const assistantMessage = result.current.messages.find((item) => item.role === 'ASSISTANT');
+      expect(assistantMessage?.searchProgress?.status).toBe('completed');
+    });
+    await act(async () => {
+      readQueue.shift()?.resolve({ done: true, value: undefined });
+    });
+    await act(async () => {
+      await submitPromise;
+    });
+  });
+
+  /**
    * 收到 reject 事件时应把后端拒绝语义映射到 streamError。
    */
   it('应在reject事件中展示后端拒绝文案', async () => {

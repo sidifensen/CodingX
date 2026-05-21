@@ -641,6 +641,12 @@ export function useChatWorkspace(
               ? {
                   ...message,
                   status: 'cancelled',
+                  searchProgress: message.searchProgress
+                    ? {
+                        ...message.searchProgress,
+                        status: 'cancelled',
+                      }
+                    : undefined,
                 }
               : message,
           ),
@@ -911,6 +917,12 @@ export function useChatWorkspace(
                 ...message,
                 status: 'error',
                 errorMessage: resolvedMessage,
+                searchProgress: message.searchProgress
+                  ? {
+                      ...message.searchProgress,
+                      status: 'error',
+                    }
+                  : undefined,
               }
             : message,
         ),
@@ -974,33 +986,71 @@ export function useChatWorkspace(
     }
 
     if (eventName === 'step' && isRecord(payload)) {
+      const stepType = String(payload.stepType ?? '');
       setExecutionSteps((previousSteps) =>
         upsertById(previousSteps, {
           id: String(payload.id ?? ''),
           runId: String(payload.runId ?? ''),
-          stepType: String(payload.stepType ?? ''),
+          stepType,
           stepTitle: String(payload.stepTitle ?? ''),
           stepStatus: String(payload.stepStatus ?? ''),
           sequenceNo: Number(payload.sequenceNo ?? 0),
           content: typeof payload.content === 'string' ? payload.content : undefined,
         }),
       );
+      if (isSearchStepType(stepType)) {
+        // 业务意图：只要进入搜索步骤就立即展示进度面板，哪怕此时还没有返回任何来源条目。
+        setMessages((previousMessages) =>
+          previousMessages.map((message) =>
+            message.id === optimisticAssistantId
+              ? {
+                  ...message,
+                  searchProgress: {
+                    status: 'running',
+                    items: message.searchProgress?.items ?? [],
+                  },
+                }
+              : message,
+          ),
+        );
+      }
       return;
     }
 
     if (eventName === 'reference' && isRecord(payload)) {
+      const nextReference = {
+        id: String(payload.id ?? ''),
+        runId: String(payload.runId ?? ''),
+        messageId: payload.messageId == null ? undefined : String(payload.messageId),
+        conversationId: String(payload.conversationId ?? ''),
+        sourceType: typeof payload.sourceType === 'string' ? payload.sourceType : undefined,
+        title: String(payload.title ?? ''),
+        url: typeof payload.url === 'string' ? payload.url : undefined,
+        siteName: typeof payload.siteName === 'string' ? payload.siteName : undefined,
+        snippet: typeof payload.snippet === 'string' ? payload.snippet : undefined,
+        rankNo: payload.rankNo == null ? undefined : Number(payload.rankNo),
+      };
       setReferences((previousReferences) =>
-        upsertById(previousReferences, {
-          id: String(payload.id ?? ''),
-          runId: String(payload.runId ?? ''),
-          messageId: payload.messageId == null ? undefined : String(payload.messageId),
-          conversationId: String(payload.conversationId ?? ''),
-          sourceType: typeof payload.sourceType === 'string' ? payload.sourceType : undefined,
-          title: String(payload.title ?? ''),
-          url: typeof payload.url === 'string' ? payload.url : undefined,
-          siteName: typeof payload.siteName === 'string' ? payload.siteName : undefined,
-          snippet: typeof payload.snippet === 'string' ? payload.snippet : undefined,
-          rankNo: payload.rankNo == null ? undefined : Number(payload.rankNo),
+        upsertById(previousReferences, nextReference),
+      );
+      // 关键约束：搜索来源在流式阶段逐条到达，需同步追加到助手消息内以驱动“1/2/3...”实时进度反馈。
+      setMessages((previousMessages) =>
+        previousMessages.map((message) => {
+          if (message.id !== optimisticAssistantId) {
+            return message;
+          }
+          return {
+            ...message,
+            searchProgress: {
+              status: 'running',
+              items: upsertById(message.searchProgress?.items ?? [], {
+                id: nextReference.id,
+                title: nextReference.title,
+                url: nextReference.url,
+                siteName: nextReference.siteName,
+              }),
+            },
+          };
         }),
       );
       return;
@@ -1037,6 +1087,12 @@ export function useChatWorkspace(
                 ...message,
                 content: String(payload.content ?? message.content),
                 status: 'done',
+                searchProgress: message.searchProgress
+                  ? {
+                      ...message.searchProgress,
+                      status: 'completed',
+                    }
+                  : undefined,
               }
             : message,
         ),
@@ -1052,6 +1108,12 @@ export function useChatWorkspace(
             ? {
                 ...message,
                 status: 'cancelled',
+                searchProgress: message.searchProgress
+                  ? {
+                      ...message.searchProgress,
+                      status: 'cancelled',
+                    }
+                  : undefined,
               }
             : message,
         ),
@@ -1068,6 +1130,12 @@ export function useChatWorkspace(
                 ...message,
                 status: 'error',
                 errorMessage: String(payload.message ?? UserErrorMessages.CHAT_REQUEST_FAILED),
+                searchProgress: message.searchProgress
+                  ? {
+                      ...message.searchProgress,
+                      status: 'error',
+                    }
+                  : undefined,
               }
             : message,
         ),
@@ -1688,6 +1756,15 @@ function upsertById<T extends { id: string }>(items: T[], nextItem: T): T[] {
     return [...items, nextItem];
   }
   return items.map((item) => (item.id === nextItem.id ? nextItem : item));
+}
+
+/**
+ * 判断执行步骤是否属于联网搜索阶段，兼容大小写和未来扩展命名。
+ * @param stepType 后端返回的步骤类型。
+ * @returns 是否应触发搜索进度面板。
+ */
+function isSearchStepType(stepType: string): boolean {
+  return stepType.trim().toLowerCase().includes('search');
 }
 
 /**

@@ -306,9 +306,6 @@ public class ConversationQueueGate {
 
         while (System.currentTimeMillis() < deadline) {
             Integer rank = queue.rank(requestMember);
-            if (rank != null && queuePositionConsumer != null) {
-                queuePositionConsumer.accept(rank + 1);
-            }
             if (rank != null && rank < maxConcurrent) {
                 String permitId = acquirePermit(semaphore);
                 if (permitId != null) {
@@ -317,6 +314,10 @@ public class ConversationQueueGate {
                     publishQueueNotify();
                     return QueueAcquireResult.granted();
                 }
+            }
+            if (rank != null && queuePositionConsumer != null) {
+                // 仅在当前轮次未能获取许可、需要继续等待时回传排队位置，避免前端出现瞬时排队闪烁。
+                queuePositionConsumer.accept(rank + 1);
             }
             waitForSignalOrTimeout(queuePollIntervalMs);
         }

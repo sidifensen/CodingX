@@ -19,6 +19,7 @@ import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 import org.redisson.api.RPermitExpirableSemaphore;
 import org.redisson.api.RScoredSortedSet;
@@ -162,6 +163,34 @@ class ConversationQueueGateTest {
         ConversationQueueGate gate = new ConversationQueueGate(true, 1, 500L, 50L, 300L, redissonClient);
         assertTrue(gate.tryAcquire(1001L).allowed());
         assertTrue(gate.renew(1001L));
+    }
+
+    /**
+     * Redis 模式下若请求首轮即可获取许可，不应回调排队位置，避免前端出现瞬时排队闪烁。
+     */
+    @Test
+    void redisImmediateAcquireShouldNotReportQueuePosition() throws Exception {
+        RedissonClient redissonClient = mock(RedissonClient.class);
+        @SuppressWarnings("unchecked")
+        RScoredSortedSet<String> queue = mock(RScoredSortedSet.class);
+        RPermitExpirableSemaphore semaphore = mock(RPermitExpirableSemaphore.class);
+        RTopic topic = mock(RTopic.class);
+        AtomicInteger queuePositionCallbackCount = new AtomicInteger(0);
+
+        when(redissonClient.<String>getScoredSortedSet(anyString())).thenReturn(queue);
+        when(redissonClient.getPermitExpirableSemaphore(anyString())).thenReturn(semaphore);
+        when(redissonClient.getTopic(anyString())).thenReturn(topic);
+        when(semaphore.trySetPermits(anyInt())).thenReturn(false);
+        when(queue.add(anyDouble(), anyString())).thenReturn(true);
+        when(queue.rank("1001")).thenReturn(0);
+        when(semaphore.tryAcquire(anyLong(), anyLong(), any(TimeUnit.class))).thenReturn("permit-1001");
+        when(topic.publish(anyString())).thenReturn(1L);
+
+        ConversationQueueGate gate = new ConversationQueueGate(true, 1, 500L, 50L, 300L, redissonClient);
+        QueueAcquireResult result = gate.tryAcquire(1001L, position -> queuePositionCallbackCount.incrementAndGet());
+
+        assertTrue(result.allowed());
+        assertEquals(0, queuePositionCallbackCount.get());
     }
 
     /**

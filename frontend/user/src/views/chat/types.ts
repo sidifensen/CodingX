@@ -25,12 +25,31 @@ export interface ChatMessageItem {
   thinkingContent?: string;
   thinkingDuration?: number;
   mcpCalls?: McpCallItem[];
+  searchProgress?: MessageSearchProgress;
   status: string;
   provider?: string;
   model?: string;
   errorMessage?: string;
   createdAt?: string;
   userVote?: number | null; // 当前用户对该消息的投票值（1 点赞，-1 点踩，null/undefined 表示未投票）
+}
+
+/**
+ * 描述助手消息中的联网搜索进度，支持在流式阶段实时回显已检索站点。
+ */
+export interface MessageSearchProgress {
+  status: 'running' | 'completed' | 'cancelled' | 'error';
+  items: MessageSearchProgressItem[];
+}
+
+/**
+ * 描述单条联网检索结果在消息内进度面板中的展示字段。
+ */
+export interface MessageSearchProgressItem {
+  id: string;
+  title: string;
+  url?: string;
+  siteName?: string;
 }
 
 /**

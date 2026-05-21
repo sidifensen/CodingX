@@ -1813,6 +1813,60 @@ describe('ChatView', () => {
   });
 
   /**
+   * 助手消息在联网搜索期间应展示内嵌进度面板，并实时回显已检索站点。
+   */
+  it('应在助手消息中渲染联网搜索进度面板', async () => {
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          messages: [
+            {
+              id: '951',
+              conversationId: '2001',
+              role: 'ASSISTANT',
+              content: '正在汇总检索结果',
+              status: 'streaming',
+              searchProgress: {
+                status: 'running',
+                items: [
+                  {
+                    id: 'ref-1',
+                    title: 'OpenAI API 最新变更',
+                    siteName: 'OpenAI',
+                    url: 'https://platform.openai.com',
+                  },
+                  {
+                    id: 'ref-2',
+                    title: 'Bing Search API 文档',
+                    siteName: 'Microsoft Learn',
+                    url: 'https://learn.microsoft.com',
+                  },
+                ],
+              },
+            },
+          ],
+          executionSteps: [],
+          references: [],
+          artifacts: [],
+        })}
+      />,
+    );
+
+    expect(screen.getByTestId('search-progress-panel-951')).toBeInTheDocument();
+    expect(screen.getByTestId('search-progress-status-951')).toHaveTextContent('搜索中');
+    expect(screen.getByTestId('search-progress-count-951')).toHaveTextContent('2');
+    expect(screen.getByText('OpenAI API 最新变更')).toBeInTheDocument();
+    expect(screen.getByText('Bing Search API 文档')).toBeInTheDocument();
+
+    const toggleButton = screen.getByTestId('search-progress-toggle-button-951');
+    expect(toggleButton).toHaveAttribute('aria-expanded', 'true');
+    fireEvent.click(toggleButton);
+    expect(toggleButton).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  /**
    * 重命名弹窗应使用固定定位和高层级，避免被侧栏或主区遮挡。
    */
   it('重命名弹窗应使用fixed高层级容器', () => {

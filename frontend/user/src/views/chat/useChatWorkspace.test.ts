@@ -671,9 +671,9 @@ describe('useChatWorkspace', () => {
   });
 
   /**
-   * 云端运行环境下，会话应统一归入“历史会话”分组，不应进入“云端工作空间”分组。
+   * 云端运行环境下，会话应直接进入默认云端分组，刷新后不应再落到历史分组里。
    */
-  it('云端会话应只出现在历史会话分组且不存在云端工作空间分组', async () => {
+  it('云端会话应只出现在默认云端分组且不存在历史会话分组', async () => {
     window.localStorage.setItem(
       'codingx.auth.session',
       JSON.stringify({
@@ -682,6 +682,41 @@ describe('useChatWorkspace', () => {
         username: 'user',
         displayName: 'CodingX User',
         userType: 'USER',
+      }),
+    );
+    window.localStorage.setItem(
+      'codingx.chat.workspace.conversations.v1',
+      JSON.stringify({
+        version: 1,
+        snapshots: {
+          'cloud::__history__': {
+            workspacePath: null,
+            workspaceLabel: '历史会话',
+            runtimeTarget: 'cloud',
+            lastOpenedAt: Date.now(),
+            activeConversationId: '5001',
+            conversations: [
+              {
+                id: '5001',
+                title: '云端历史会话A',
+                status: 'ACTIVE',
+                lastRunId: '9001',
+              },
+            ],
+            conversationRecords: {
+              '5001': {
+                owned: true,
+                messages: [],
+                executionSteps: [],
+                references: [],
+                artifacts: [],
+                currentExperts: [],
+                currentSkills: [],
+                currentMcps: [],
+              },
+            },
+          },
+        },
       }),
     );
 
@@ -765,31 +800,31 @@ describe('useChatWorkspace', () => {
     });
 
     expect(result.current.workspaceLabel).toBe('云端工作空间');
-    expect(result.current.conversations.map((item) => item.id)).toEqual([]);
+    expect(result.current.conversations.map((item) => item.id)).toEqual(['5001', '5002']);
 
     const cloudWorkspaceGroup = result.current.workspaceGroups.find(
       (group) => group.workspaceLabel === '云端工作空间' && group.runtimeTarget === 'cloud',
     );
-    expect(cloudWorkspaceGroup).toBeUndefined();
+    expect(cloudWorkspaceGroup?.groupType).toBe('workspace');
+    expect(cloudWorkspaceGroup?.conversations.map((item) => item.id)).toEqual(['5001', '5002']);
 
     const historyGroup = result.current.workspaceGroups.find(
       (group) => group.workspaceLabel === '历史会话' && group.runtimeTarget === 'cloud',
     );
-    expect(historyGroup?.conversations.map((item) => item.id)).toEqual(['5001', '5002']);
+    expect(historyGroup).toBeUndefined();
 
     await act(async () => {
       await result.current.selectConversationInWorkspace('5001', {
-        partitionKey: 'cloud::__history__',
+        partitionKey: 'cloud::__no_workspace__',
         runtimeTarget: 'cloud',
         workspacePath: null,
-        groupType: 'history',
       });
     });
 
     const historyGroupAfterSelect = result.current.workspaceGroups.find(
       (group) => group.workspaceLabel === '历史会话' && group.runtimeTarget === 'cloud',
     );
-    expect(historyGroupAfterSelect?.conversations.map((item) => item.id)).toEqual(['5001', '5002']);
+    expect(historyGroupAfterSelect).toBeUndefined();
   });
 
   /**

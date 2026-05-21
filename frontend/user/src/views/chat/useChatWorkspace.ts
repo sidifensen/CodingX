@@ -1144,6 +1144,18 @@ export function useChatWorkspace(
   async function loadConversations(token: string) {
     const remoteConversations = await ChatApi.listConversations(token, workspaceId);
     const fallbackWorkspacePath = workspacePath ?? null;
+    if (activeRuntimeTarget === 'cloud') {
+      setConversations(remoteConversations);
+      upsertWorkspaceSnapshot(activeRuntimeTarget, fallbackWorkspacePath, {
+        conversations: remoteConversations,
+        activeConversationId: activeConversationId ?? remoteConversations[0]?.id ?? null,
+        workspaceLabel: fallbackWorkspacePath
+          ? getWorkspaceLabel(fallbackWorkspacePath)
+          : getDefaultWorkspaceLabel(activeRuntimeTarget),
+      });
+      setWorkspaceGroups(listWorkspaceGroups(activeRuntimeTarget));
+      return remoteConversations;
+    }
     const nextWorkspaceConversations = resolveWorkspaceConversations(
       activeRuntimeTarget,
       fallbackWorkspacePath,
@@ -1279,8 +1291,9 @@ export function useChatWorkspace(
    */
   function writeConversationIdToUrl(conversationId: string | null) {
     const nextUrl = new URL(window.location.href);
-    if (conversationId && conversationId.trim().length > 0) {
-      nextUrl.searchParams.set(CONVERSATION_ID_QUERY_KEY, conversationId);
+    const normalizedConversationId = conversationId == null ? '' : String(conversationId);
+    if (normalizedConversationId.trim().length > 0) {
+      nextUrl.searchParams.set(CONVERSATION_ID_QUERY_KEY, normalizedConversationId);
     } else {
       nextUrl.searchParams.delete(CONVERSATION_ID_QUERY_KEY);
     }
@@ -1325,9 +1338,9 @@ export function useChatWorkspace(
       record.executionSteps.length > 0 ||
       record.references.length > 0 ||
       record.artifacts.length > 0 ||
-      record.currentExperts.length > 0 ||
-      record.currentSkills.length > 0 ||
-      record.currentMcps.length > 0
+      (record.currentExperts?.length ?? 0) > 0 ||
+      (record.currentSkills?.length ?? 0) > 0 ||
+      (record.currentMcps?.length ?? 0) > 0
     );
   }
 

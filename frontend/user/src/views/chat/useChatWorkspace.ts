@@ -2020,7 +2020,12 @@ function buildSearchProgressItemsFromReferences(
   return references
     .filter((reference) => {
       const normalizedSourceType = String(reference.sourceType ?? '').trim().toLowerCase();
-      return normalizedSourceType.length === 0 || normalizedSourceType.includes('search');
+      // 关键约束：后端联网搜索来源当前使用 sourceType=web，回放时需视为搜索来源，否则刷新后会丢失进度条目。
+      return (
+        normalizedSourceType.length === 0 ||
+        normalizedSourceType.includes('search') ||
+        normalizedSourceType === 'web'
+      );
     })
     .map((reference) => ({
       id: reference.id,

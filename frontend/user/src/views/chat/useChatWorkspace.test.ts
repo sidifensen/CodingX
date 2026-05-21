@@ -2505,6 +2505,7 @@ describe('useChatWorkspace', () => {
                 id: 'ref-1',
                 runId: '5002',
                 conversationId: '2001',
+                sourceType: 'web',
                 title: 'OpenAI API 最新文档',
                 url: 'https://platform.openai.com',
                 siteName: 'OpenAI',
@@ -2587,6 +2588,7 @@ describe('useChatWorkspace', () => {
     expect(latestAssistantMessage?.searchProgress?.status).toBe('completed');
     expect(latestAssistantMessage?.searchProgress?.items).toHaveLength(1);
     expect(latestAssistantMessage?.searchProgress?.items[0].title).toBe('OpenAI API 最新文档');
+    expect(latestAssistantMessage?.searchProgress?.items[0].siteName).toBe('OpenAI');
 
     const snapshotStore = JSON.parse(
       window.localStorage.getItem('codingx.chat.workspace.conversations.v1') ?? '{}',

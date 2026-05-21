@@ -15,7 +15,7 @@ COMMENT ON COLUMN workspace.name IS '工作空间名称';
 COMMENT ON COLUMN workspace.repository_url IS '关联代码仓库地址';
 COMMENT ON COLUMN workspace.branch_name IS '工作空间对应的代码分支名称';
 COMMENT ON COLUMN workspace.working_directory IS '本地工作目录路径';
-COMMENT ON COLUMN workspace.runtime_target IS '运行目标类型，例如 Web、MCP 或 Electron';
+COMMENT ON COLUMN workspace.runtime_target IS '运行目标类型，仅支持 cloud 或 local';
 COMMENT ON COLUMN workspace.created_by IS '创建人用户 ID';
 COMMENT ON COLUMN workspace.created_at IS '记录创建时间';
 COMMENT ON COLUMN workspace.updated_at IS '记录最后更新时间';

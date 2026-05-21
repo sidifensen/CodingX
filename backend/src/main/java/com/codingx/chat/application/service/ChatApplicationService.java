@@ -44,39 +44,61 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class ChatApplicationService {
 
-    // 会话与消息持久化
+    /** 会话聚合仓储，负责读取与更新会话主状态（归属、标题、最后活跃时间等） */
     private final ChatConversationRepository chatConversationRepository;
+    /** 消息仓储，负责会话消息历史读写与按会话回放 */
     private final ChatMessageRepository chatMessageRepository;
+    /** 执行步骤仓储，记录搜索/MCP 等中间步骤供前端步骤面板展示 */
     private final ChatExecutionStepRepository chatExecutionStepRepository;
+    /** 执行运行仓储，落库每次请求的最终状态、意图与错误信息 */
     private final ChatExecutionRunRepository chatExecutionRunRepository;
 
-    // 模型流式输出与运行时控制
+    /** 模型客户端，负责发起 LLM 流式对话并回调增量输出 */
     private final AiChatClient aiChatClient;
+    /** 流事件发布器，向前端推送用户消息、步骤事件与模型增量内容 */
     private final ChatStreamPublisher chatStreamPublisher;
+    /** 运行态守卫，控制会话是否可执行并处理取消态判断 */
     private final ChatRuntimeGuardService chatRuntimeGuardService;
 
-    // 意图决策与提示词编排
+    /** 会话标题服务，基于上下文生成或刷新会话标题 */
     private final ConversationTitleService conversationTitleService;
+    /** 会话摘要服务，构建模型输入历史并按需刷新会话摘要 */
     private final ConversationSummaryService conversationSummaryService;
+    /** 问题改写服务，对用户问题做重写与拆分以提升检索/意图命中率 */
     private final ConversationRewriteService conversationRewriteService;
+    /** 意图路由服务，决定澄清、直答、搜索、MCP 等执行分支 */
     private final ConversationIntentService conversationIntentService;
+    /** 提示词模板加载器，读取系统级基础 Prompt 资产 */
     private final PromptTemplateLoader promptTemplateLoader;
 
-    // 工具链与扩展上下文
+    /** MCP 执行服务，调用已配置工具并返回结构化工具结果 */
     private final ChatMcpExecutionService chatMcpExecutionService;
+    /** MCP 配置仓储，读取工具启用状态与展示信息 */
     private final ChatMcpRepository chatMcpRepository;
+    /** 附件服务，校验附件归属并绑定到当前消息 */
     private final ChatAttachmentService chatAttachmentService;
+    /** 意图节点仓储，读取意图节点配置（类型、Prompt、MCP 工具映射） */
     private final com.codingx.chat.domain.repository.ChatIntentNodeRepository chatIntentNodeRepository;
+    /** Web 搜索执行服务，执行外部检索并返回候选来源 */
     private final WebSearchExecutionService webSearchExecutionService;
+    /** 搜索引用收集器，汇总去重来源并写入运行上下文 */
     private final SearchReferenceCollector searchReferenceCollector;
+    /** 文档产物服务，基于搜索结果生成可下载文档产物 */
     private final DocumentArtifactService documentArtifactService;
+    /** Trace 收口服务，确保运行链路最终状态被正确收敛 */
     private final ConversationTraceRecordService conversationTraceRecordService;
+    /** Token 估算服务，用于统计模型输入规模并支撑运行观测 */
     private final com.codingx.common.support.ai.TokenCounterService tokenCounterService;
+    /** LLM 输出清洗器，规整模型文本以避免脏数据落库与回显 */
     private final com.codingx.common.support.ai.LlmResponseCleaner llmResponseCleaner;
+    /** 搜索并发执行器，控制多子问题检索的线程池策略 */
     @Qualifier("searchExecutor")
     private final ExecutorService searchExecutor;
+    /** 运行时配置服务，提供并发上限等动态参数 */
     private final RuntimeSettingService runtimeSettingService;
+    /** 技能上下文服务，将选中技能拼装为模型可消费上下文 */
     private final ChatSkillContextService chatSkillContextService;
+    /** 专家上下文服务，将选中专家设定拼装为模型可消费上下文 */
     private final ChatExpertContextService chatExpertContextService;
 
     /**

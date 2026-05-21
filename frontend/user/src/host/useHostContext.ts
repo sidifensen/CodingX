@@ -108,8 +108,10 @@ export function useHostContext() {
         });
         window.localStorage.setItem('codingx.host.context', JSON.stringify(nextContext));
         setHostContext(nextContext);
+        return bindingResult ?? null;
       } catch (error) {
         setErrorMessage(error instanceof Error ? error.message : '切换工作空间失败');
+        return null;
       }
     },
     [bridge, syncWorkspaceBinding],

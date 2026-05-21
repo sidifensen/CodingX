@@ -1,7 +1,6 @@
 package com.codingx.workspace.infrastructure.repository;
 
 import cn.hutool.core.util.IdUtil;
-import cn.hutool.core.util.StrUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.codingx.common.error.ErrorMessageCatalog;
 import com.codingx.common.exception.NotFoundException;
@@ -33,7 +32,7 @@ public class WorkspaceRepositoryImpl implements WorkspaceRepository {
     /**
      * 默认云端空间名称常量，保证多入口创建时展示语义一致。
      */
-    public static final String DEFAULT_CLOUD_WORKSPACE_NAME = "默认云端空间";
+    public static final String DEFAULT_CLOUD_WORKSPACE_NAME = "历史记录";
 
     private final WorkspaceMapper workspaceMapper;
 
@@ -106,7 +105,7 @@ public class WorkspaceRepositoryImpl implements WorkspaceRepository {
         workspace.setId(IdUtil.getSnowflakeNextId());
         workspace.setName(resolveDefaultCloudWorkspaceName(preferredName));
         workspace.setRuntimeTarget(RUNTIME_TARGET_CLOUD);
-        workspace.setWorkspaceType("cloud");
+        // 业务语义已统一由 runtime_target 承载，避免再依赖旧的 workspace_type 列。
         workspace.setCreatedBy(userId);
         workspace.setCreatedAt(now);
         workspace.setUpdatedAt(now);
@@ -148,7 +147,6 @@ public class WorkspaceRepositoryImpl implements WorkspaceRepository {
         return workspaceMapper.selectOne(new LambdaQueryWrapper<WorkspaceDO>()
             .eq(WorkspaceDO::getCreatedBy, userId)
             .eq(WorkspaceDO::getRuntimeTarget, RUNTIME_TARGET_CLOUD)
-            .eq(WorkspaceDO::getWorkspaceType, "cloud")
             .isNull(WorkspaceDO::getWorkingDirectory)
             .eq(WorkspaceDO::getDeleted, 0)
             .last("limit 1"));
@@ -160,6 +158,6 @@ public class WorkspaceRepositoryImpl implements WorkspaceRepository {
      * @return 工作空间名称。
      */
     private String resolveDefaultCloudWorkspaceName(String preferredName) {
-        return StrUtil.blankToDefault(StrUtil.trimToNull(preferredName), DEFAULT_CLOUD_WORKSPACE_NAME);
+        return DEFAULT_CLOUD_WORKSPACE_NAME;
     }
 }

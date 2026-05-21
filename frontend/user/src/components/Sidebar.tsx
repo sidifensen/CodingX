@@ -13,6 +13,7 @@ import {
   ChevronDown,
   Cloud,
   Folder,
+  History,
 } from 'lucide-react';
 import { ViewType } from '../App';
 import { AuthSession } from '../types/auth';
@@ -299,7 +300,13 @@ function ConversationHistory({
    * @param runtimeTarget 运行环境类型。
    * @returns 对应的图标组件。
    */
-  const getWorkspaceRuntimeIcon = (runtimeTarget: WorkspaceConversationGroup['runtimeTarget']) => {
+  const getWorkspaceRuntimeIcon = (
+    runtimeTarget: WorkspaceConversationGroup['runtimeTarget'],
+    groupType: WorkspaceConversationGroup['groupType'],
+  ) => {
+    if (groupType === 'history') {
+      return History;
+    }
     return runtimeTarget === 'local' ? Folder : Cloud;
   };
 
@@ -318,7 +325,7 @@ function ConversationHistory({
             const canCollapseConversations =
               totalConversations > CONVERSATION_PAGE_SIZE && !hasMoreConversations;
             const isGroupCollapsed = Boolean(collapsedGroupMap[group.partitionKey]);
-            const RuntimeIcon = getWorkspaceRuntimeIcon(group.runtimeTarget);
+            const RuntimeIcon = getWorkspaceRuntimeIcon(group.runtimeTarget, group.groupType);
             return (
               <section key={group.partitionKey}>
                 <button
@@ -337,7 +344,11 @@ function ConversationHistory({
                     <RuntimeIcon
                       size={14}
                       className="ml-1 shrink-0 text-muted"
-                      data-testid={`workspace-runtime-icon-${group.runtimeTarget}`}
+                      data-testid={
+                        group.groupType === 'history'
+                          ? 'workspace-runtime-icon-history'
+                          : `workspace-runtime-icon-${group.runtimeTarget}`
+                      }
                       aria-hidden="true"
                     />
                     <div className="truncate text-sm font-semibold text-foreground">

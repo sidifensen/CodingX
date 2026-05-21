@@ -117,7 +117,7 @@ describe('Sidebar conversation collapse behavior', () => {
         {
           partitionKey: 'cloud::__no_workspace__',
           workspacePath: null,
-          workspaceLabel: '云端工作空间',
+          workspaceLabel: '历史记录',
           runtimeTarget: 'cloud',
           lastOpenedAt: Date.now(),
           activeConversationId: 'conversation-1',
@@ -141,6 +141,37 @@ describe('Sidebar conversation collapse behavior', () => {
     expect(screen.getByTestId('workspace-runtime-icon-local')).toBeInTheDocument();
     expect(screen.queryByText('云端')).not.toBeInTheDocument();
     expect(screen.queryByText('D:/code/CodingX')).not.toBeInTheDocument();
+  });
+
+  it('历史分组应固定使用历史图标，不应复用本地工作空间图标', () => {
+    const props = createSidebarProps({
+      workspaceGroups: [
+        {
+          partitionKey: 'local::d:/code/codingx',
+          workspacePath: 'D:/code/CodingX',
+          workspaceLabel: 'CodingX',
+          runtimeTarget: 'local',
+          lastOpenedAt: Date.now(),
+          activeConversationId: 'conversation-1',
+          conversations: [createConversation(1)],
+        },
+        {
+          partitionKey: 'local::__history__',
+          workspacePath: null,
+          workspaceLabel: '历史记录',
+          runtimeTarget: 'local',
+          groupType: 'history',
+          lastOpenedAt: Date.now() - 1000,
+          activeConversationId: null,
+          conversations: [createConversation(2)],
+        },
+      ],
+    });
+
+    render(<Sidebar {...props} />);
+
+    expect(screen.getAllByTestId('workspace-runtime-icon-local').length).toBeGreaterThan(0);
+    expect(screen.getByTestId('workspace-runtime-icon-history')).toBeInTheDocument();
   });
 
   it('会话项 hover 态应具备高亮边框背景，展开按钮应为无边框紧凑样式', () => {
@@ -194,7 +225,7 @@ describe('Sidebar conversation collapse behavior', () => {
         {
           partitionKey: 'local::__history__',
           workspacePath: null,
-          workspaceLabel: '历史会话',
+          workspaceLabel: '历史记录',
           runtimeTarget: 'local',
           groupType: 'history',
           lastOpenedAt: Date.now() - 1000,
@@ -205,7 +236,7 @@ describe('Sidebar conversation collapse behavior', () => {
     });
 
     render(<Sidebar {...props} />);
-    fireEvent.click(screen.getByRole('button', { name: '折叠工作空间 历史会话 会话' }));
+    fireEvent.click(screen.getByRole('button', { name: '折叠工作空间 历史记录 会话' }));
 
     expect(props.onSelectWorkspacePath).not.toHaveBeenCalledWith(null);
   });

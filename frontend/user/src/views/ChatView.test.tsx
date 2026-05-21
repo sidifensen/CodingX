@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+﻿import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import ChatView from './ChatView';
 import { ChatWorkspaceController } from './chat/types';
 
@@ -124,6 +124,28 @@ describe('ChatView', () => {
   });
 
   /**
+   * 输入框上方不应重复渲染流式错误提示，避免与消息区提示重复占位。
+   */
+  it('应只在消息区渲染一条流式错误提示', async () => {
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          activeConversationId: null,
+          messages: [],
+          executionSteps: [],
+          references: [],
+          artifacts: [],
+          streamError: '请选择本地工作空间后再发送消息',
+        })}
+      />,
+    );
+
+    expect(screen.getAllByText('请选择本地工作空间后再发送消息')).toHaveLength(1);
+  });
+
+  /**
    * 排队中应展示独立提示条，且不影响原错误提示区域语义。
    */
   it('应展示排队提示条', async () => {
@@ -245,7 +267,7 @@ describe('ChatView', () => {
   });
 
   /**
-   * 已选中历史会话但消息为空时，不应回退到新建页空态。
+   * 已选中历史记录但消息为空时，不应回退到新建页空态。
    */
   it('应在选中空会话时展示会话空态而不是新建页', async () => {
     render(
@@ -1375,7 +1397,7 @@ describe('ChatView', () => {
             {
               partitionKey: 'cloud::__no_workspace__',
               workspacePath: null,
-              workspaceLabel: '云端工作空间',
+              workspaceLabel: '历史记录',
               runtimeTarget: 'cloud',
               lastOpenedAt: 1716101111000,
               activeConversationId: null,
@@ -1411,9 +1433,9 @@ describe('ChatView', () => {
   });
 
   /**
-   * 历史会话页不应展示底部环境/工作空间切换，避免与会话上下文重复。
+   * 历史记录页不应展示底部环境/工作空间切换，避免与会话上下文重复。
    */
-  it('应在历史会话页隐藏底部环境与工作空间切换', async () => {
+  it('应在历史记录页隐藏底部环境与工作空间切换', async () => {
     render(
       <ChatView isAuthenticated={true} onRequireLogin={vi.fn()} workspace={createWorkspace()} />,
     );
@@ -1424,7 +1446,7 @@ describe('ChatView', () => {
   });
 
   /**
-   * 新对话页切到云端运行环境时，不应再展示“云端工作空间”下拉入口。
+   * 新对话页切到云端运行环境时，不应再展示“历史记录”下拉入口。
    */
   it('应在云端环境隐藏工作空间下拉入口', async () => {
     render(
@@ -1439,7 +1461,7 @@ describe('ChatView', () => {
           references: [],
           artifacts: [],
           inputValue: '',
-          workspaceLabel: '云端工作空间',
+          workspaceLabel: '历史记录',
           activeWorkspacePartitionKey: 'cloud::__no_workspace__',
           workspacePath: null,
         })}
@@ -1789,6 +1811,32 @@ describe('ChatView', () => {
       vi.useRealTimers();
     }
   });
+
+  /**
+   * 重命名弹窗应使用固定定位和高层级，避免被侧栏或主区遮挡。
+   */
+  it('重命名弹窗应使用fixed高层级容器', () => {
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          renameDialog: {
+            conversationId: '2001',
+            initialTitle: '默认标题',
+            isOpen: true,
+            open: vi.fn(),
+            close: vi.fn(),
+          },
+        })}
+      />,
+    );
+
+    const panel = screen.getByText('重命名对话').closest('div');
+    const overlay = panel?.parentElement;
+    expect(overlay).toHaveClass('fixed');
+    expect(overlay).toHaveClass('z-[120]');
+  });
 });
 
 /**
@@ -1811,7 +1859,7 @@ function createWorkspace(overrides?: Partial<ChatWorkspaceController>): ChatWork
       {
         partitionKey: 'cloud::__no_workspace__',
         workspacePath: null,
-        workspaceLabel: '云端工作空间',
+        workspaceLabel: '历史记录',
         runtimeTarget: 'cloud',
         lastOpenedAt: 1716101111000,
         activeConversationId: null,
@@ -1996,4 +2044,5 @@ function createWorkspace(overrides?: Partial<ChatWorkspaceController>): ChatWork
     ...overrides,
   };
 }
+
 

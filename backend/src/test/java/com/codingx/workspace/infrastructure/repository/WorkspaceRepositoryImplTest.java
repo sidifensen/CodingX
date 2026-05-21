@@ -1,8 +1,13 @@
 package com.codingx.workspace.infrastructure.repository;
 
-import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.codingx.common.error.ErrorMessageCatalog;
@@ -11,6 +16,7 @@ import com.codingx.workspace.infrastructure.persistence.dataobject.WorkspaceDO;
 import com.codingx.workspace.infrastructure.persistence.mapper.WorkspaceMapper;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -49,5 +55,28 @@ class WorkspaceRepositoryImplTest {
 
         NotFoundException exception = assertThrows(NotFoundException.class, () -> workspaceRepository.ensureExists(3001L));
         assertEquals(ErrorMessageCatalog.WORKSPACE_NOT_FOUND, exception.getMessage());
+    }
+
+    /**
+     * 创建默认云端工作空间时只应依赖 runtime_target，不应再回写旧 workspace_type 列。
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void ensureDefaultCloudWorkspaceUsesRuntimeTargetOnly() {
+        when(workspaceMapper.selectOne(any())).thenReturn(null);
+        doReturn(1).when(workspaceMapper).insert(any(WorkspaceDO.class));
+
+        WorkspaceDO workspace = workspaceRepository.ensureDefaultCloudWorkspace(1001L, "CodingX Admin");
+
+        verify(workspaceMapper).selectOne(any());
+        ArgumentCaptor<WorkspaceDO> workspaceCaptor = ArgumentCaptor.forClass(WorkspaceDO.class);
+        verify(workspaceMapper).insert(workspaceCaptor.capture());
+
+        WorkspaceDO inserted = workspaceCaptor.getValue();
+        assertEquals("cloud", inserted.getRuntimeTarget());
+        assertNull(inserted.getWorkspaceType());
+        assertEquals("历史记录", inserted.getName());
+        assertEquals(1001L, inserted.getCreatedBy());
+        assertEquals(workspace.getId(), inserted.getId());
     }
 }

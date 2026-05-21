@@ -1,6 +1,7 @@
 package com.codingx.chat.infrastructure.persistence.repository;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.mockito.ArgumentMatchers.any;
@@ -9,6 +10,8 @@ import com.codingx.chat.domain.model.ChatConversation;
 import com.codingx.chat.domain.model.ChatConversationStatus;
 import com.codingx.chat.infrastructure.persistence.dataobject.ChatConversationDO;
 import com.codingx.chat.infrastructure.persistence.mapper.ChatConversationMapper;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.enums.SqlKeyword;
 import java.lang.reflect.Field;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -128,6 +131,27 @@ class ChatConversationRepositoryImplTest {
 
         assertEquals(1, records.size());
         assertEquals(3001L, records.getFirst().getWorkspaceId());
+    }
+
+    /**
+     * workspaceId 为空时不应额外追加 workspace 条件，确保调用方可自行按前端空间语义分组。
+     */
+    @SuppressWarnings("unchecked")
+    @Test
+    void findByCreatedByAndWorkspaceIdDoesNotForceWorkspaceFilterWhenWorkspaceIdMissing() {
+        when(chatConversationMapper.selectList(any())).thenReturn(List.of());
+
+        chatConversationRepository.findByCreatedByAndWorkspaceId(1002L, null);
+
+        ArgumentCaptor<LambdaQueryWrapper<ChatConversationDO>> captor =
+            ArgumentCaptor.forClass((Class<LambdaQueryWrapper<ChatConversationDO>>) (Class<?>) LambdaQueryWrapper.class);
+        verify(chatConversationMapper).selectList(captor.capture());
+        boolean containsIsNullWorkspaceFilter = captor.getValue()
+            .getExpression()
+            .getNormal()
+            .stream()
+            .anyMatch(segment -> segment == SqlKeyword.IS_NULL);
+        assertFalse(containsIsNullWorkspaceFilter);
     }
 
     /**

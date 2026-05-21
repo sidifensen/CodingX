@@ -1,4 +1,4 @@
-import { act, renderHook, waitFor } from '@testing-library/react';
+﻿import { act, renderHook, waitFor } from '@testing-library/react';
 import { buildStreamRequestUrl, useChatWorkspace } from './useChatWorkspace';
 
 /**
@@ -81,7 +81,7 @@ describe('useChatWorkspace', () => {
   });
 
   /**
-   * 选中历史会话时应同步加载当前技能与当前 MCP 绑定，供右栏展示会话上下文。
+   * 选中历史记录时应同步加载当前技能与当前 MCP 绑定，供右栏展示会话上下文。
    */
   it('应在选中会话时加载当前技能与当前MCP', async () => {
     window.localStorage.setItem(
@@ -101,7 +101,7 @@ describe('useChatWorkspace', () => {
         snapshots: {
           'cloud::__no_workspace__': {
             workspacePath: null,
-            workspaceLabel: '云端工作空间',
+            workspaceLabel: '历史记录',
             runtimeTarget: 'cloud',
             lastOpenedAt: Date.now(),
             activeConversationId: '2001',
@@ -245,9 +245,9 @@ describe('useChatWorkspace', () => {
   });
 
   /**
-   * 切换本地工作空间后，后端返回的跨工作空间会话应进入“历史会话”分组，不应污染当前工作空间。
+   * 切换本地工作空间后，后端返回的跨工作空间会话应进入“历史记录”分组，不应污染当前工作空间。
    */
-  it('应将未归属当前工作空间的会话归入历史会话分组', async () => {
+  it('应将未归属当前工作空间的会话归入历史记录分组', async () => {
     window.localStorage.setItem(
       'codingx.auth.session',
       JSON.stringify({
@@ -268,7 +268,7 @@ describe('useChatWorkspace', () => {
       },
       {
         id: '3002',
-        title: '跨工作空间历史会话',
+        title: '跨工作空间历史记录',
         status: 'ACTIVE',
         lastRunId: '7002',
       },
@@ -377,7 +377,7 @@ describe('useChatWorkspace', () => {
                 id: '9002',
                 conversationId: '3002',
                 role: 'USER',
-                content: '这是 test 工作空间外的历史会话',
+                content: '这是 test 工作空间外的历史记录',
                 status: 'COMPLETED',
               },
             ],
@@ -451,9 +451,9 @@ describe('useChatWorkspace', () => {
 
     expect(result.current.workspaceLabel).toBe('workspace-a');
     expect(result.current.conversations.map((item) => item.id)).toEqual([]);
-    expect(result.current.workspaceGroups.some((group) => group.workspaceLabel === '历史会话')).toBe(true);
+    expect(result.current.workspaceGroups.some((group) => group.workspaceLabel === '历史记录')).toBe(true);
     const initialHistoryGroup = result.current.workspaceGroups.find(
-      (group) => group.workspaceLabel === '历史会话',
+      (group) => group.workspaceLabel === '历史记录',
     );
     expect(initialHistoryGroup?.conversations.map((item) => item.id)).toEqual(['3001', '3002']);
 
@@ -466,11 +466,11 @@ describe('useChatWorkspace', () => {
     });
 
     expect(result.current.conversations).toEqual([]);
-    const historyGroup = result.current.workspaceGroups.find((group) => group.workspaceLabel === '历史会话');
+    const historyGroup = result.current.workspaceGroups.find((group) => group.workspaceLabel === '历史记录');
     expect(historyGroup?.conversations.map((item) => item.id)).toEqual(['3001', '3002']);
   });
 
-  it('切换到已有历史会话的工作空间时应恢复该空间会话，不应强制新建', async () => {
+  it('切换到已有历史记录的工作空间时应恢复该空间会话，不应强制新建', async () => {
     window.localStorage.setItem(
       'codingx.auth.session',
       JSON.stringify({
@@ -673,7 +673,7 @@ describe('useChatWorkspace', () => {
   /**
    * 云端运行环境下，会话应直接进入默认云端分组，刷新后不应再落到历史分组里。
    */
-  it('云端会话应只出现在默认云端分组且不存在历史会话分组', async () => {
+  it('云端会话应只出现在默认云端分组且不存在历史记录分组', async () => {
     window.localStorage.setItem(
       'codingx.auth.session',
       JSON.stringify({
@@ -691,14 +691,14 @@ describe('useChatWorkspace', () => {
         snapshots: {
           'cloud::__history__': {
             workspacePath: null,
-            workspaceLabel: '历史会话',
+            workspaceLabel: '历史记录',
             runtimeTarget: 'cloud',
             lastOpenedAt: Date.now(),
             activeConversationId: '5001',
             conversations: [
               {
                 id: '5001',
-                title: '云端历史会话A',
+                title: '云端历史记录A',
                 status: 'ACTIVE',
                 lastRunId: '9001',
               },
@@ -731,13 +731,13 @@ describe('useChatWorkspace', () => {
             data: [
               {
                 id: '5001',
-                title: '云端历史会话A',
+                title: '云端历史记录A',
                 status: 'ACTIVE',
                 lastRunId: '9001',
               },
               {
                 id: '5002',
-                title: '云端历史会话B',
+                title: '云端历史记录B',
                 status: 'ACTIVE',
                 lastRunId: '9002',
               },
@@ -799,17 +799,17 @@ describe('useChatWorkspace', () => {
       expect(result.current.isBootstrapping).toBe(false);
     });
 
-    expect(result.current.workspaceLabel).toBe('云端工作空间');
+    expect(result.current.workspaceLabel).toBe('历史记录');
     expect(result.current.conversations.map((item) => item.id)).toEqual(['5001', '5002']);
 
     const cloudWorkspaceGroup = result.current.workspaceGroups.find(
-      (group) => group.workspaceLabel === '云端工作空间' && group.runtimeTarget === 'cloud',
+      (group) => group.workspaceLabel === '历史记录' && group.runtimeTarget === 'cloud',
     );
     expect(cloudWorkspaceGroup?.groupType).toBe('workspace');
     expect(cloudWorkspaceGroup?.conversations.map((item) => item.id)).toEqual(['5001', '5002']);
 
     const historyGroup = result.current.workspaceGroups.find(
-      (group) => group.workspaceLabel === '历史会话' && group.runtimeTarget === 'cloud',
+      (group) => group.groupType === 'history' && group.runtimeTarget === 'cloud',
     );
     expect(historyGroup).toBeUndefined();
 
@@ -822,7 +822,7 @@ describe('useChatWorkspace', () => {
     });
 
     const historyGroupAfterSelect = result.current.workspaceGroups.find(
-      (group) => group.workspaceLabel === '历史会话' && group.runtimeTarget === 'cloud',
+      (group) => group.groupType === 'history' && group.runtimeTarget === 'cloud',
     );
     expect(historyGroupAfterSelect).toBeUndefined();
   });
@@ -848,7 +848,7 @@ describe('useChatWorkspace', () => {
         snapshots: {
           'cloud::__no_workspace__': {
             workspacePath: null,
-            workspaceLabel: '云端工作空间',
+            workspaceLabel: '历史记录',
             runtimeTarget: 'cloud',
             lastOpenedAt: Date.now(),
             activeConversationId: '5001',
@@ -875,7 +875,7 @@ describe('useChatWorkspace', () => {
           },
           'cloud::__history__': {
             workspacePath: null,
-            workspaceLabel: '历史会话',
+            workspaceLabel: '历史记录',
             runtimeTarget: 'cloud',
             lastOpenedAt: Date.now(),
             activeConversationId: null,
@@ -1052,6 +1052,123 @@ describe('useChatWorkspace', () => {
     expect(streamFetchMock.mock.calls[0][0]).toContain('/api/chat/stream?');
     expect(streamFetchMock.mock.calls[0][0]).toContain('repositoryPath=D%3A%2Fcode%2FCodingX');
     expect(result.current.streamError).toBe('');
+  });
+
+  /**
+   * 切换本地工作空间后应立即使用绑定返回的 workspaceId 发流，避免会话误落到默认云端空间。
+   */
+  it('应在切换本地工作空间后使用最新workspaceId发送流请求', async () => {
+    window.localStorage.setItem(
+      'codingx.auth.session',
+      JSON.stringify({
+        token: 'token-123',
+        userId: '1002',
+        username: 'user',
+        displayName: 'CodingX User',
+        userType: 'USER',
+      }),
+    );
+
+    const streamFetchMock = vi.fn();
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.startsWith('/api/chat/conversations')) {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            code: 'OK',
+            message: 'success',
+            data: [
+              {
+                id: '2001',
+                title: 'Default Demo Conversation',
+                status: 'ACTIVE',
+                lastRunId: '5002',
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      if (
+        url === '/api/chat/sample-questions' ||
+        url === '/api/chat/experts' ||
+        url === '/api/chat/skills' ||
+        url === '/api/chat/mcps' ||
+        url === '/api/chat/conversations/2001/messages' ||
+        url === '/api/chat/conversations/2001/steps' ||
+        url === '/api/chat/conversations/2001/references' ||
+        url === '/api/chat/conversations/2001/artifacts' ||
+        url === '/api/chat/conversations/2001/current-skills' ||
+        url === '/api/chat/conversations/2001/current-mcps' ||
+        url === '/api/chat/conversations/2001/current-experts'
+      ) {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (url.includes('/api/chat/stream')) {
+        streamFetchMock(url);
+        return new Response('', { status: 200 });
+      }
+      throw new Error(`Unhandled fetch in local workspace id update test: ${url}`);
+    });
+
+    const hostContext = {
+      hostType: 'desktop',
+      executionTargets: ['local'] as const,
+      capabilities: {
+        localFiles: true,
+        localFolderPicker: true,
+        shell: true,
+        browserAutomation: false,
+        desktopNotifications: false,
+        officeInterop: false,
+        localMcp: true,
+        windowControls: true,
+      },
+      localResource: {
+        boundRepositoryPath: 'D:/code/workspace-a',
+        workspaceId: '3001',
+        permissionGranted: true,
+      },
+    };
+
+    const bindWorkspacePath = vi.fn().mockResolvedValue({
+      repositoryPath: 'D:/code/workspace-b',
+      workspaceId: '3002',
+      workspaceName: 'workspace-b',
+    });
+
+    const { result } = renderHook(() =>
+      useChatWorkspace(true, {
+        hostContext,
+        bindWorkspacePath,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(result.current.isBootstrapping).toBe(false);
+    });
+
+    await act(async () => {
+      await result.current.setActiveWorkspacePath('D:/code/workspace-b');
+    });
+
+    await waitFor(() => {
+      expect(bindWorkspacePath).toHaveBeenCalledWith('D:/code/workspace-b');
+    });
+
+    await act(async () => {
+      result.current.setInputValue('请继续分析 workspace-b');
+    });
+    await act(async () => {
+      await result.current.submitMessage();
+    });
+
+    expect(streamFetchMock).toHaveBeenCalledTimes(1);
+    expect(streamFetchMock.mock.calls[0][0]).toContain('workspaceId=3002');
   });
 
   /**
@@ -1554,3 +1671,4 @@ describe('useChatWorkspace', () => {
     await submitPromise;
   });
 });
+

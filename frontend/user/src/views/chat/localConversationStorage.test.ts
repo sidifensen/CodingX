@@ -46,7 +46,7 @@ describe('localConversationStorage', () => {
    */
   it('云端分组应合并历史会话并保留默认云端分组', () => {
     upsertWorkspaceSnapshot('cloud', null, {
-      workspaceLabel: '云端工作空间',
+      workspaceLabel: '历史记录',
       conversations: [{ id: '5001', title: '云端会话', status: 'ACTIVE', lastRunId: '9001' }],
       activeConversationId: '5001',
     });
@@ -56,7 +56,7 @@ describe('localConversationStorage', () => {
 
     const cloudGroups = listWorkspaceGroups('cloud');
     expect(cloudGroups).toHaveLength(1);
-    expect(cloudGroups[0].workspaceLabel).toBe('云端工作空间');
+    expect(cloudGroups[0].workspaceLabel).toBe('历史记录');
     expect(cloudGroups[0].groupType).toBe('workspace');
     expect(cloudGroups[0].conversations.map((conversation) => conversation.id)).toEqual(['5001', '5002']);
   });
@@ -74,7 +74,7 @@ describe('localConversationStorage', () => {
         snapshots: {
           [defaultPartitionKey]: {
             workspacePath: null,
-            workspaceLabel: '云端工作空间',
+            workspaceLabel: '历史记录',
             runtimeTarget: 'cloud',
             lastOpenedAt: 100,
             activeConversationId: null,
@@ -90,7 +90,7 @@ describe('localConversationStorage', () => {
           },
           [historyPartitionKey]: {
             workspacePath: null,
-            workspaceLabel: '历史会话',
+            workspaceLabel: '历史记录',
             runtimeTarget: 'cloud',
             lastOpenedAt: 200,
             activeConversationId: '5002',

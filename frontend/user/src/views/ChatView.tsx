@@ -383,7 +383,7 @@ export default function ChatView({
         partitionKey: 'fallback-workspace-option',
         workspacePath: activeRuntimeTarget === 'local' ? workspacePath ?? null : null,
         workspaceLabel:
-          workspaceLabel || (activeRuntimeTarget === 'local' ? '本地工作空间' : '云端工作空间'),
+          workspaceLabel || '历史记录',
         runtimeTarget: activeRuntimeTarget,
         lastOpenedAt: 0,
         activeConversationId: activeConversationId ?? null,
@@ -855,13 +855,14 @@ export default function ChatView({
                   </div>
                 );
               })}
-              {streamError ? (
-                <div className="rounded-2xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
-                  {streamError}
-                </div>
-              ) : null}
             </div>
           )}
+          {streamError ? (
+            // 步骤：统一在消息滚动区尾部渲染一条错误提示，避免输入框上方与消息区重复提示。
+            <div className="mx-auto mt-6 w-full max-w-4xl rounded-2xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+              {streamError}
+            </div>
+          ) : null}
         </div>
 
         <div
@@ -870,11 +871,6 @@ export default function ChatView({
           className="absolute bottom-0 left-0 right-0 bg-background/88 px-4 pb-6 pt-4 backdrop-blur-xl md:px-8"
         >
           <div className="mx-auto max-w-4xl">
-            {streamError ? (
-              <div className="mb-3 rounded-2xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
-                {streamError}
-              </div>
-            ) : null}
             {streamQueueState ? (
               <div className="mb-3 rounded-2xl border border-amber-500/40 bg-amber-500/12 px-4 py-3 text-sm text-amber-200">
                 {streamQueueState.message}
@@ -2491,7 +2487,12 @@ function InlineDialog({
   const [value, setValue] = React.useState(defaultValue);
 
   return (
-    <div className="absolute inset-0 z-40 flex items-center justify-center bg-background/35 backdrop-blur-sm">
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={title}
+      className="fixed inset-0 z-[120] flex items-center justify-center bg-background/35 backdrop-blur-sm"
+    >
       <div className="w-full max-w-md rounded-2xl border border-border bg-surface-container p-5 shadow-[0_24px_64px_rgba(0,0,0,0.26)]">
         <h3 className="text-base font-semibold text-foreground">{title}</h3>
         <input
@@ -2539,7 +2540,12 @@ function ConfirmDialog({
   onConfirm: () => Promise<void>;
 }) {
   return (
-    <div className="absolute inset-0 z-40 flex items-center justify-center bg-background/35 backdrop-blur-sm">
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={title}
+      className="fixed inset-0 z-[120] flex items-center justify-center bg-background/35 backdrop-blur-sm"
+    >
       <div className="w-full max-w-sm rounded-2xl border border-border bg-surface-container p-5 shadow-[0_24px_64px_rgba(0,0,0,0.26)]">
         <h3 className="text-base font-semibold text-foreground">{title}</h3>
         <p className="mt-3 text-sm leading-6 text-muted">{description}</p>

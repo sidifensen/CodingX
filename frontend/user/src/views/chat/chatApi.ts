@@ -41,8 +41,13 @@ export class ChatApi {
       token
     );
     return envelope.data.map((item) => ({
-      ...item,
-      lastRunId: item.lastRunId,
+      id: String(item.id ?? ''),
+      title: String(item.title ?? ''),
+      status: String(item.status ?? ''),
+      lastMessageAt: item.lastMessageAt,
+      lastRunId: item.lastRunId == null ? undefined : String(item.lastRunId),
+      workspaceId: item.workspaceId == null ? null : String(item.workspaceId),
+      workspaceType: item.workspaceType,
     }));
   }
 

@@ -78,10 +78,7 @@ public class ChatConversationRepositoryImpl implements ChatConversationRepositor
             .eq(ChatConversationDO::getCreatedBy, userId)
             .eq(ChatConversationDO::getDeleted, 0)
             .orderByDesc(ChatConversationDO::getUpdatedAt);
-        if (workspaceId == null) {
-            // 兼容云端或历史会话，按空工作空间分区读取，避免 workspace_id = null 命中异常。
-            queryWrapper.isNull(ChatConversationDO::getWorkspaceId);
-        } else {
+        if (workspaceId != null) {
             queryWrapper.eq(ChatConversationDO::getWorkspaceId, workspaceId);
         }
         return chatConversationMapper.selectList(queryWrapper)

@@ -39,8 +39,8 @@ import {
   upsertWorkspaceSnapshot,
 } from './localConversationStorage';
 
-const DEFAULT_CLOUD_WORKSPACE_LABEL = '云端工作空间';
-const DEFAULT_LOCAL_WORKSPACE_LABEL = '本地工作空间';
+const DEFAULT_CLOUD_WORKSPACE_LABEL = '历史记录';
+const DEFAULT_LOCAL_WORKSPACE_LABEL = '历史记录';
 const CONVERSATION_ID_QUERY_KEY = 'conversationId';
 
 /**
@@ -70,7 +70,7 @@ export function useChatWorkspace(
   const bindWorkspacePath =
     options?.bindWorkspacePath ??
     (async () => {
-      return;
+      return null;
     });
   const openRepositoryPicker =
     options?.pickRepositoryDirectory ??
@@ -201,7 +201,9 @@ export function useChatWorkspace(
     const nextWorkspacePath =
       activeRuntimeTarget === 'local' ? hostContext?.localResource?.boundRepositoryPath ?? null : null;
     const nextWorkspaceId =
-      activeRuntimeTarget === 'local' ? hostContext?.localResource?.workspaceId ?? null : null;
+      activeRuntimeTarget === 'local'
+        ? normalizeWorkspaceId(hostContext?.localResource?.workspaceId)
+        : null;
     const nextPartitionKey = buildWorkspacePartitionKey(activeRuntimeTarget, nextWorkspacePath);
     const nextSnapshot = readWorkspaceSnapshot(nextPartitionKey);
     setWorkspacePath(nextWorkspacePath);
@@ -347,14 +349,17 @@ export function useChatWorkspace(
   ) => {
     const normalizedWorkspacePath = nextWorkspacePath ? nextWorkspacePath.trim() : null;
     let normalizedWorkspaceId =
-      runtimeTarget === 'local' ? hostContext?.localResource?.workspaceId ?? null : null;
+      runtimeTarget === 'local'
+        ? normalizeWorkspaceId(hostContext?.localResource?.workspaceId)
+        : null;
     if (
       shouldBindDesktopPath &&
       normalizedWorkspacePath &&
       hostContext?.hostType === 'desktop'
     ) {
-      await bindWorkspacePath(normalizedWorkspacePath);
-      normalizedWorkspaceId = null;
+      const bindingResult = await bindWorkspacePath(normalizedWorkspacePath);
+      normalizedWorkspaceId =
+        normalizeWorkspaceId(bindingResult?.workspaceId) ?? normalizedWorkspaceId;
     }
     const nextPartitionKey = buildWorkspacePartitionKey(runtimeTarget, normalizedWorkspacePath);
     activeStreamSessionIdRef.current = null;
@@ -383,6 +388,7 @@ export function useChatWorkspace(
     if (nextActiveConversationId) {
       await restoreWorkspaceSnapshot(nextPartitionKey, nextActiveConversationId);
     }
+    return normalizedWorkspaceId;
   };
 
   /**
@@ -396,11 +402,10 @@ export function useChatWorkspace(
     if ((nextWorkspacePath ?? null) === (workspacePath ?? null)) {
       return;
     }
-    await switchWorkspacePartition('local', nextWorkspacePath, true);
-    setWorkspaceId(null);
+    const nextWorkspaceId = await switchWorkspacePartition('local', nextWorkspacePath, true);
     const token = currentToken();
     if (token) {
-      await loadConversations(token);
+      await loadConversations(token, nextWorkspaceId);
     }
   };
 
@@ -444,11 +449,10 @@ export function useChatWorkspace(
     if (!selectedPath) {
       return;
     }
-    await switchWorkspacePartition('local', selectedPath, false);
-    setWorkspaceId(null);
+    const nextWorkspaceId = await switchWorkspacePartition('local', selectedPath, true);
     const token = currentToken();
     if (token) {
-      await loadConversations(token);
+      await loadConversations(token, nextWorkspaceId);
     }
   };
 
@@ -1141,8 +1145,8 @@ export function useChatWorkspace(
    * @param token 当前登录令牌。
    * @returns 最新会话列表。
    */
-  async function loadConversations(token: string) {
-    const remoteConversations = await ChatApi.listConversations(token, workspaceId);
+  async function loadConversations(token: string, effectiveWorkspaceId: string | null = workspaceId) {
+    const remoteConversations = await ChatApi.listConversations(token, effectiveWorkspaceId);
     const fallbackWorkspacePath = workspacePath ?? null;
     if (activeRuntimeTarget === 'cloud') {
       setConversations(remoteConversations);
@@ -1159,6 +1163,7 @@ export function useChatWorkspace(
     const nextWorkspaceConversations = resolveWorkspaceConversations(
       activeRuntimeTarget,
       fallbackWorkspacePath,
+      effectiveWorkspaceId,
       remoteConversations,
     );
     markWorkspaceConversationOwnership(
@@ -1354,8 +1359,23 @@ export function useChatWorkspace(
   function resolveWorkspaceConversations(
     runtimeTarget: 'cloud' | 'local',
     currentWorkspacePath: string | null,
+    currentWorkspaceId: string | null,
     remoteConversations: ConversationItem[],
   ) {
+    const normalizedWorkspaceId = normalizeWorkspaceId(currentWorkspaceId);
+    if (runtimeTarget === 'local' && normalizedWorkspaceId) {
+      const hasWorkspaceIdData = remoteConversations.some(
+        (conversation) => normalizeWorkspaceId(conversation.workspaceId) != null,
+      );
+      if (!hasWorkspaceIdData) {
+        // 当后端响应未回填 workspaceId 字段时，兜底信任“按 workspaceId 查询”返回结果，避免列表被误过滤为空。
+        return remoteConversations;
+      }
+      return remoteConversations.filter(
+        (conversation) =>
+          normalizeWorkspaceId(conversation.workspaceId) === normalizedWorkspaceId,
+      );
+    }
     const currentPartitionKey = buildWorkspacePartitionKey(runtimeTarget, currentWorkspacePath);
     return remoteConversations.filter(
       (conversation) => findWorkspacePartitionByConversationId(conversation.id) === currentPartitionKey,
@@ -1441,7 +1461,7 @@ export function useChatWorkspace(
    * @param conversationId 当前会话标识。
    * @returns 上传后的附件信息。
    */
-  async function uploadPendingAttachments(
+async function uploadPendingAttachments(
     token: string,
     conversationId: string | null,
   ): Promise<ChatAttachmentItem[]> {
@@ -1505,6 +1525,16 @@ export function useChatWorkspace(
       .filter((attachment): attachment is ChatAttachmentItem => attachment != null);
     return [...stableUploaded, ...uploadedItems];
   }
+}
+
+/**
+ * 统一归一化 workspaceId，避免空串和空白值误判为有效空间标识。
+ * @param workspaceId 原始 workspaceId。
+ * @returns 归一化后的标识，缺失时返回 null。
+ */
+function normalizeWorkspaceId(workspaceId: string | null | undefined) {
+  const normalizedWorkspaceId = workspaceId == null ? '' : String(workspaceId).trim();
+  return normalizedWorkspaceId.length > 0 ? normalizedWorkspaceId : null;
 }
 
 /**

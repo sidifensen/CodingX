@@ -7,6 +7,8 @@ export interface ConversationItem {
   status: string;
   lastMessageAt?: string;
   lastRunId?: string;
+  workspaceId?: string | null;
+  workspaceType?: 'CLOUD' | 'LOCAL' | string;
 }
 
 /**
@@ -335,5 +337,16 @@ export interface UseChatWorkspaceOptions {
   onUnauthorized?: () => void;
   hostContext?: import('../../host/types').HostContext | null;
   pickRepositoryDirectory?: () => Promise<string | null>;
-  bindWorkspacePath?: (workspacePath: string) => Promise<void>;
+  bindWorkspacePath?: (
+    workspacePath: string,
+  ) => Promise<WorkspaceBindingSyncResult | null | void>;
+}
+
+/**
+ * 描述桌面端目录绑定后返回的工作空间上下文，供前端立即同步 workspaceId。
+ */
+export interface WorkspaceBindingSyncResult {
+  workspaceId?: string | null;
+  workspaceName?: string | null;
+  repositoryPath?: string | null;
 }

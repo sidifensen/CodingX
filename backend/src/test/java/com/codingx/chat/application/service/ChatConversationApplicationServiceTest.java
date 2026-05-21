@@ -86,7 +86,7 @@ class ChatConversationApplicationServiceTest {
         WorkspaceDO cloudWorkspace = new WorkspaceDO();
         cloudWorkspace.setId(8001L);
         cloudWorkspace.setRuntimeTarget("cloud");
-        cloudWorkspace.setName("默认云端空间");
+        cloudWorkspace.setName("历史记录");
         when(workspaceRepositoryImpl.ensureDefaultCloudWorkspace(1002L, null)).thenReturn(cloudWorkspace);
 
         ChatConversation conversation = chatConversationApplicationService.createConversation(

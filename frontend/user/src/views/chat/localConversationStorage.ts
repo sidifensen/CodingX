@@ -14,7 +14,7 @@ import {
  */
 const LOCAL_WORKSPACE_CONVERSATION_STORE_KEY = 'codingx.chat.workspace.conversations.v1';
 const WORKSPACE_HISTORY_PARTITION_SUFFIX = '__history__';
-const WORKSPACE_HISTORY_LABEL = '历史会话';
+const WORKSPACE_HISTORY_LABEL = '历史记录';
 
 /**
  * 统一表示单个会话在本地缓存中的完整回放数据。
@@ -106,7 +106,7 @@ export function isWorkspaceHistoryPartitionKey(partitionKey: string) {
 export function getWorkspaceLabel(workspacePath: string | null) {
   const normalizedPath = (workspacePath ?? '').replace(/\\/g, '/').replace(/\/+$/g, '');
   if (!normalizedPath) {
-    return '云端工作空间';
+    return WORKSPACE_HISTORY_LABEL;
   }
   const segments = normalizedPath.split('/').filter(Boolean);
   return segments.length ? segments[segments.length - 1] : normalizedPath;

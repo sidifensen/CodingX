@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   SquareTerminal,
   Search,
@@ -29,6 +30,10 @@ import {
  * 约定侧边栏会话列表每次展开的条目数，保证交互节奏稳定。
  */
 const CONVERSATION_PAGE_SIZE = 5;
+const CONVERSATION_MENU_WIDTH = 176;
+const CONVERSATION_MENU_OFFSET = 8;
+const CONVERSATION_MENU_SAFE_PADDING = 12;
+const CONVERSATION_MENU_ESTIMATED_HEIGHT = 108;
 
 /**
  * 定义 Sidebar 组件需要的输入属性。
@@ -230,18 +235,70 @@ function ConversationHistory({
   const [hoveredActionId, setHoveredActionId] = useState<string | null>(null);
   const [expandedCountMap, setExpandedCountMap] = useState<Record<string, number>>({});
   const [collapsedGroupMap, setCollapsedGroupMap] = useState<Record<string, boolean>>({});
-  const menuRef = useRef<HTMLDivElement | null>(null);
+  const menuLayerRef = useRef<HTMLDivElement | null>(null);
+  const menuTriggerRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   const touchTimerRef = useRef<number | null>(null);
+  const [menuPosition, setMenuPosition] = useState<{ top: number; left: number } | null>(null);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (!menuRef.current?.contains(event.target as Node)) {
-        setOpenMenuId(null);
+      const target = event.target as Node;
+      if (menuLayerRef.current?.contains(target)) {
+        return;
       }
+      const activeTrigger = openMenuId ? menuTriggerRefs.current[openMenuId] : null;
+      if (activeTrigger?.contains(target)) {
+        return;
+      }
+      setOpenMenuId(null);
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
+  }, [openMenuId]);
+
+  /**
+   * 将会话菜单锚定到触发按钮，并对视口边缘进行安全收敛，避免被裁剪或超出屏幕。
+   */
+  const syncConversationMenuPosition = React.useCallback(() => {
+    if (!openMenuId) {
+      setMenuPosition(null);
+      return;
+    }
+    const trigger = menuTriggerRefs.current[openMenuId];
+    if (!trigger) {
+      setMenuPosition(null);
+      return;
+    }
+    const triggerRect = trigger.getBoundingClientRect();
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    const preferredLeft = triggerRect.right - CONVERSATION_MENU_WIDTH;
+    const minLeft = CONVERSATION_MENU_SAFE_PADDING;
+    const maxLeft = viewportWidth - CONVERSATION_MENU_SAFE_PADDING - CONVERSATION_MENU_WIDTH;
+    const preferredTop = triggerRect.bottom + CONVERSATION_MENU_OFFSET;
+    const minTop = CONVERSATION_MENU_SAFE_PADDING;
+    const maxTop =
+      viewportHeight - CONVERSATION_MENU_SAFE_PADDING - CONVERSATION_MENU_ESTIMATED_HEIGHT;
+    setMenuPosition({
+      left: Math.max(minLeft, Math.min(preferredLeft, maxLeft)),
+      top: Math.max(minTop, Math.min(preferredTop, maxTop)),
+    });
+  }, [openMenuId]);
+
+  useEffect(() => {
+    if (!openMenuId) {
+      return undefined;
+    }
+    syncConversationMenuPosition();
+    // 关键约束：菜单使用 portal 挂载到 body 后，需要监听全局滚动/窗口缩放实时重算锚点。
+    const updatePosition = () => syncConversationMenuPosition();
+    window.addEventListener('resize', updatePosition);
+    window.addEventListener('scroll', updatePosition, true);
+    return () => {
+      window.removeEventListener('resize', updatePosition);
+      window.removeEventListener('scroll', updatePosition, true);
+    };
+  }, [openMenuId, syncConversationMenuPosition]);
 
   const startLongPress = (conversationId: string) => {
     clearLongPress();
@@ -389,7 +446,6 @@ function ConversationHistory({
                             <div
                               key={conversation.id}
                               className="relative"
-                              ref={isMenuOpen ? menuRef : null}
                               onMouseLeave={() => setHoveredActionId(null)}
                             >
                               <div
@@ -441,6 +497,9 @@ function ConversationHistory({
                                     type="button"
                                     aria-label={`打开会话菜单 ${conversation.title}`}
                                     onClick={() => setOpenMenuId(isMenuOpen ? null : conversation.id)}
+                                    ref={(element) => {
+                                      menuTriggerRefs.current[conversation.id] = element;
+                                    }}
                                     className={`absolute right-0 cursor-pointer rounded-md p-1 text-muted transition-opacity hover:text-foreground ${
                                       hoveredActionId === conversation.id || isMenuOpen
                                         ? 'opacity-100'
@@ -453,32 +512,41 @@ function ConversationHistory({
                               </div>
 
                               {isMenuOpen ? (
-                                <div className="absolute right-0 top-[calc(100%+6px)] z-20 w-44 rounded-xl border border-border bg-surface-container p-2 shadow-[0_16px_40px_rgba(0,0,0,0.24)]">
-                                  <button
-                                    type="button"
-                                    aria-label="重命名对话"
-                                    onClick={() => {
-                                      void onRenameConversation(conversation.id, conversation.title);
-                                      setOpenMenuId(null);
-                                    }}
-                                    className="flex w-full cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-left text-sm text-foreground transition-colors hover:bg-surface-high"
-                                  >
-                                    <PencilLine size={16} />
-                                    重命名对话
-                                  </button>
-                                  <button
-                                    type="button"
-                                    aria-label="删除对话"
-                                    onClick={() => {
-                                      void onDeleteConversation(conversation.id);
-                                      setOpenMenuId(null);
-                                    }}
-                                    className="mt-1 flex w-full cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-left text-sm text-[#ff5b57] transition-colors hover:bg-[#ff5b57]/10"
-                                  >
-                                    <Trash2 size={16} />
-                                    删除对话
-                                  </button>
-                                </div>
+                                menuPosition
+                                  ? createPortal(
+                                      <div
+                                        ref={menuLayerRef}
+                                        className="fixed z-[130] w-44 rounded-xl border border-border bg-surface-container p-2 shadow-[0_16px_40px_rgba(0,0,0,0.24)]"
+                                        style={{ top: `${menuPosition.top}px`, left: `${menuPosition.left}px` }}
+                                      >
+                                        <button
+                                          type="button"
+                                          aria-label="重命名对话"
+                                          onClick={() => {
+                                            void onRenameConversation(conversation.id, conversation.title);
+                                            setOpenMenuId(null);
+                                          }}
+                                          className="flex w-full cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-left text-sm text-foreground transition-colors hover:bg-surface-high"
+                                        >
+                                          <PencilLine size={16} />
+                                          重命名对话
+                                        </button>
+                                        <button
+                                          type="button"
+                                          aria-label="删除对话"
+                                          onClick={() => {
+                                            void onDeleteConversation(conversation.id);
+                                            setOpenMenuId(null);
+                                          }}
+                                          className="mt-1 flex w-full cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-left text-sm text-[#ff5b57] transition-colors hover:bg-[#ff5b57]/10"
+                                        >
+                                          <Trash2 size={16} />
+                                          删除对话
+                                        </button>
+                                      </div>,
+                                      document.body,
+                                    )
+                                  : null
                               ) : null}
                             </div>
                           );

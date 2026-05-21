@@ -261,11 +261,8 @@ export function useChatWorkspace(
     setActiveWorkspacePartitionKey(nextPartitionKey);
     setConversations(nextSnapshot.conversations);
     setWorkspaceGroups(listWorkspaceGroups(activeRuntimeTarget));
-    if (nextSnapshot.activeConversationId) {
-      void restoreWorkspaceSnapshot(nextPartitionKey, nextSnapshot.activeConversationId);
-    } else {
-      clearConversationPlayback(true);
-    }
+    // 业务意图：默认进入用户端时始终停留首页，不按本地快照自动恢复历史会话。
+    clearConversationPlayback(true);
   }, [hostContext, runtimeTargets, activeRuntimeTarget]);
 
   useEffect(() => {
@@ -319,9 +316,6 @@ export function useChatWorkspace(
       setMcpConnected(nextMcps.length > 0);
       setWorkspaceGroups(listWorkspaceGroups(activeRuntimeTarget));
       const preferredConversationId = resolvePreferredConversationId(nextConversations);
-      const snapshotActiveConversationId = activeWorkspacePartitionKey
-        ? readWorkspaceSnapshot(activeWorkspacePartitionKey).activeConversationId
-        : null;
       if (preferredConversationId) {
         hasHydratedInitialConversationRef.current = true;
         if (hasPersistedConversationRecord(preferredConversationId)) {
@@ -332,20 +326,6 @@ export function useChatWorkspace(
         } else {
           await selectConversation(preferredConversationId, nextConversations, undefined, false);
         }
-      } else if (
-        snapshotActiveConversationId &&
-        hasPersistedConversationRecord(snapshotActiveConversationId)
-      ) {
-        // 关键约束：当快照中已有可回放记录时，优先恢复快照，避免并发初始化把缓存消息覆盖为空列表。
-        hasHydratedInitialConversationRef.current = true;
-        if (activeWorkspacePartitionKey) {
-          await restoreWorkspaceSnapshot(activeWorkspacePartitionKey, snapshotActiveConversationId);
-        }
-      } else if (activeConversationId && hasPersistedConversationRecord(activeConversationId)) {
-        // 刷新恢复命中本地快照时优先保留回放，避免列表为空或远端延迟时把页面清空。
-        hasHydratedInitialConversationRef.current = true;
-      } else if (activeConversationId) {
-        await selectConversation(activeConversationId, nextConversations);
       } else {
         // 业务意图：首次进入且无显式会话上下文时停留首页，不自动跳转到最新会话。
         clearConversationPlayback(true);
@@ -1514,7 +1494,7 @@ export function useChatWorkspace(
   }
 
   /**
-   * 计算初始化阶段应优先恢复的会话，优先 URL 参数，其次本地快照，再兜底最新会话。
+   * 计算初始化阶段应优先恢复的会话，仅在 URL 显式指定时恢复对应会话。
    * @param nextConversations 最新会话列表。
    * @returns 会话标识或 null。
    */

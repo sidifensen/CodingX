@@ -24,10 +24,10 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class AdminChatIntentService {
 
-    private static final int KIND_KB = 0;
+    private static final int KIND_SEARCH = 0;
     private static final int KIND_SYSTEM = 1;
     private static final int KIND_MCP = 2;
-    private static final String TYPE_KB = "kb";
+    private static final String TYPE_SEARCH = "search";
     private static final String TYPE_SYSTEM = "system";
     private static final String TYPE_MCP = "mcp";
 
@@ -199,12 +199,12 @@ public class AdminChatIntentService {
             String normalizedIntentType = intentType.trim().toLowerCase();
             return new KindType(kindFromIntentType(normalizedIntentType), normalizedIntentType);
         }
-        return new KindType(KIND_KB, TYPE_KB);
+        return new KindType(KIND_SEARCH, TYPE_SEARCH);
     }
 
     private String intentTypeFromKind(Integer kind) {
         return switch (kind) {
-            case KIND_KB -> TYPE_KB;
+            case KIND_SEARCH -> TYPE_SEARCH;
             case KIND_SYSTEM -> TYPE_SYSTEM;
             case KIND_MCP -> TYPE_MCP;
             default -> throw new BusinessException("CHAT_INTENT_INVALID_KIND", "意图类型不支持");
@@ -213,7 +213,7 @@ public class AdminChatIntentService {
 
     private Integer kindFromIntentType(String intentType) {
         return switch (intentType) {
-            case TYPE_KB -> KIND_KB;
+            case TYPE_SEARCH -> KIND_SEARCH;
             case TYPE_SYSTEM -> KIND_SYSTEM;
             case TYPE_MCP -> KIND_MCP;
             default -> throw new BusinessException("CHAT_INTENT_INVALID_KIND", "意图类型不支持");

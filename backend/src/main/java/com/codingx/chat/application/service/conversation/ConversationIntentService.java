@@ -61,7 +61,11 @@ public class ConversationIntentService {
             }
             return new ConversationIntentDecision(topNode.getIntentCode(), ConversationIntentAction.MCP, null);
         }
-        return new ConversationIntentDecision(topNode.getIntentCode(), ConversationIntentAction.SEARCH, null);
+        if ("search".equalsIgnoreCase(topNode.getIntentType())) {
+            return new ConversationIntentDecision(topNode.getIntentCode(), ConversationIntentAction.SEARCH, null);
+        }
+        // 非法或未知类型回退为 DIRECT，避免把错误配置误导到联网搜索链路。
+        return new ConversationIntentDecision(topNode.getIntentCode(), ConversationIntentAction.DIRECT, null);
     }
 
     /**

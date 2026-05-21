@@ -101,7 +101,7 @@ public class ConversationIntentResolver {
             builder.append("- id=").append(node.getIntentCode()).append("\n");
             builder.append("  path=").append(resolveFullPath(node, nodeByCode)).append("\n");
             builder.append("  description=").append(StrUtil.blankToDefault(node.getDescription(), "")).append("\n");
-            builder.append("  type=").append(StrUtil.blankToDefault(node.getIntentType(), "kb").toUpperCase()).append("\n");
+            builder.append("  type=").append(StrUtil.blankToDefault(node.getIntentType(), "search").toUpperCase()).append("\n");
             List<String> nodeExamples = examplesByCode.getOrDefault(node.getIntentCode(), List.of());
             if (!nodeExamples.isEmpty()) {
                 builder.append("  examples=").append(String.join(" / ", nodeExamples)).append("\n");

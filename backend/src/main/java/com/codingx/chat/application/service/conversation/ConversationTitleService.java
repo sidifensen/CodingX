@@ -3,6 +3,7 @@ package com.codingx.chat.application.service;
 import com.codingx.chat.domain.model.ChatConversation;
 import com.codingx.chat.domain.model.ChatMessage;
 import com.codingx.chat.domain.port.AiChatClient;
+import com.codingx.common.error.ErrorMessageCatalog;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -26,7 +27,7 @@ public class ConversationTitleService {
      * @return 标题文本。
      */
     public String generateTitle(ChatConversation conversation, List<ChatMessage> messages) {
-        if (!"New Conversation".equals(conversation.getTitle())) {
+        if (!ErrorMessageCatalog.CHAT_CONVERSATION_DEFAULT_TITLE.equals(conversation.getTitle())) {
             return conversation.getTitle();
         }
         return aiChatClient.generateTitle(messages);

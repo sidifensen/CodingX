@@ -5,6 +5,7 @@ import com.codingx.chat.domain.model.ChatTraceNode;
 import com.codingx.chat.domain.model.ChatTraceRun;
 import com.codingx.chat.domain.repository.ChatTraceNodeRepository;
 import com.codingx.chat.domain.repository.ChatTraceRunRepository;
+import com.codingx.common.error.ErrorMessageCatalog;
 import java.time.LocalDateTime;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -63,7 +64,7 @@ public class ConversationTraceRecordService {
     public void finishTrace(String traceId, Long taskId, String status, String errorMessage) {
         LocalDateTime now = LocalDateTime.now();
         ChatTraceRun traceRun = chatTraceRunRepository.findByTraceId(traceId)
-            .orElseThrow(() -> new IllegalArgumentException("Trace not found"));
+            .orElseThrow(() -> new IllegalArgumentException(ErrorMessageCatalog.CHAT_TRACE_NOT_FOUND));
         LocalDateTime startedAt = traceRun.getStartedAt() != null ? traceRun.getStartedAt() : now;
         chatTraceRunRepository.save(traceRun.toBuilder()
             .taskId(taskId)
@@ -101,7 +102,7 @@ public class ConversationTraceRecordService {
     public ChatTraceNode startNode(String nodeName, String nodeType, String className, String methodName, LocalDateTime startedAt) {
         ChatTraceRun traceRun = ConversationTraceContext.current();
         if (traceRun == null) {
-            throw new IllegalStateException("Trace context is not available");
+            throw new IllegalStateException(ErrorMessageCatalog.CHAT_TRACE_CONTEXT_NOT_AVAILABLE);
         }
         ChatTraceNode traceNode = ChatTraceNode.builder()
             .id(IdUtil.getSnowflakeNextId())

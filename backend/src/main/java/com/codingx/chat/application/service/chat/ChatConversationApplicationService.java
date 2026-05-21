@@ -7,8 +7,11 @@ import com.codingx.chat.domain.model.ChatConversationStatus;
 import com.codingx.chat.domain.model.ChatMessage;
 import com.codingx.chat.domain.repository.ChatConversationRepository;
 import com.codingx.chat.domain.repository.ChatMessageRepository;
+import com.codingx.common.error.ErrorMessageCatalog;
 import com.codingx.common.exception.ForbiddenException;
 import com.codingx.workspace.domain.repository.WorkspaceRepository;
+import com.codingx.workspace.infrastructure.persistence.dataobject.WorkspaceDO;
+import com.codingx.workspace.infrastructure.repository.WorkspaceRepositoryImpl;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -33,6 +36,10 @@ public class ChatConversationApplicationService {
      * WorkspaceRepository 依赖。
      */
     private final WorkspaceRepository workspaceRepository;
+    /**
+     * WorkspaceRepositoryImpl 依赖，负责默认云端空间与用户归属校验。
+     */
+    private final WorkspaceRepositoryImpl workspaceRepositoryImpl;
 
     /**
      * 创建 createConversation 所需数据并返回结果。
@@ -41,15 +48,13 @@ public class ChatConversationApplicationService {
      * @return 输入参数。
      */
     public ChatConversation createConversation(CreateConversationCommand command, Long userId) {
-        if (command.workspaceId() != null) {
-            workspaceRepository.ensureExists(command.workspaceId());
-        }
-        String title = StrUtil.blankToDefault(command.title(), "New Conversation");
+        Long actualWorkspaceId = resolveWorkspaceId(command.workspaceId(), userId);
+        String title = StrUtil.blankToDefault(command.title(), ErrorMessageCatalog.CHAT_CONVERSATION_DEFAULT_TITLE);
         ChatConversation conversation = ChatConversation.create(
             IdUtil.getSnowflakeNextId(),
             title,
             userId,
-            command.workspaceId(),
+            actualWorkspaceId,
             ChatConversationStatus.ACTIVE
         );
         chatConversationRepository.save(conversation);
@@ -63,7 +68,7 @@ public class ChatConversationApplicationService {
      */
     public List<ChatConversation> listConversations(Long userId, Long workspaceId) {
         if (workspaceId != null) {
-            workspaceRepository.ensureExists(workspaceId);
+            workspaceRepositoryImpl.requireOwnedWorkspace(workspaceId, userId);
         }
         return chatConversationRepository.findByCreatedByAndWorkspaceId(userId, workspaceId);
     }
@@ -77,7 +82,7 @@ public class ChatConversationApplicationService {
     public List<ChatMessage> listMessages(Long conversationId, Long userId) {
         ChatConversation conversation = chatConversationRepository.requireById(conversationId);
         if (!conversation.getCreatedBy().equals(userId)) {
-            throw new ForbiddenException("You cannot access this conversation");
+            throw new ForbiddenException(ErrorMessageCatalog.CHAT_CONVERSATION_FORBIDDEN);
         }
         return chatMessageRepository.findByConversationId(conversationId);
     }
@@ -91,7 +96,7 @@ public class ChatConversationApplicationService {
     public void updateConversationTitle(Long conversationId, String title, Long userId) {
         ChatConversation conversation = chatConversationRepository.requireById(conversationId);
         if (!conversation.getCreatedBy().equals(userId)) {
-            throw new ForbiddenException("You cannot access this conversation");
+            throw new ForbiddenException(ErrorMessageCatalog.CHAT_CONVERSATION_FORBIDDEN);
         }
         conversation.rename(title);
         chatConversationRepository.save(conversation);
@@ -105,8 +110,23 @@ public class ChatConversationApplicationService {
     public void deleteConversation(Long conversationId, Long userId) {
         ChatConversation conversation = chatConversationRepository.requireById(conversationId);
         if (!conversation.getCreatedBy().equals(userId)) {
-            throw new ForbiddenException("You cannot access this conversation");
+            throw new ForbiddenException(ErrorMessageCatalog.CHAT_CONVERSATION_FORBIDDEN);
         }
         chatConversationRepository.deleteById(conversationId);
+    }
+
+    /**
+     * 解析会话归属工作空间：未显式指定时自动绑定默认云端空间，显式指定时校验用户归属。
+     * @param requestedWorkspaceId 请求中传入的工作空间标识。
+     * @param userId 当前用户标识。
+     * @return 会话最终归属的工作空间标识。
+     */
+    private Long resolveWorkspaceId(Long requestedWorkspaceId, Long userId) {
+        if (requestedWorkspaceId != null) {
+            WorkspaceDO workspace = workspaceRepositoryImpl.requireOwnedWorkspace(requestedWorkspaceId, userId);
+            return workspace.getId();
+        }
+        WorkspaceDO cloudWorkspace = workspaceRepositoryImpl.ensureDefaultCloudWorkspace(userId, null);
+        return cloudWorkspace.getId();
     }
 }

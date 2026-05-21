@@ -1,5 +1,6 @@
 package com.codingx.chat.application.service;
 
+import com.codingx.common.error.ErrorMessageCatalog;
 import com.codingx.chat.domain.repository.ChatTraceNodeRepository;
 import com.codingx.chat.domain.repository.ChatTraceRunRepository;
 import lombok.RequiredArgsConstructor;
@@ -22,7 +23,7 @@ public class ConversationTraceQueryService {
      */
     public ConversationTraceView getTrace(String traceId) {
         return new ConversationTraceView(
-            chatTraceRunRepository.findByTraceId(traceId).orElseThrow(() -> new IllegalArgumentException("Trace not found")),
+            chatTraceRunRepository.findByTraceId(traceId).orElseThrow(() -> new IllegalArgumentException(ErrorMessageCatalog.CHAT_TRACE_NOT_FOUND)),
             chatTraceNodeRepository.findByTraceId(traceId)
         );
     }

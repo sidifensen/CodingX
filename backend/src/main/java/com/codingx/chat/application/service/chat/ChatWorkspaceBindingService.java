@@ -7,6 +7,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.codingx.common.exception.BusinessException;
 import com.codingx.workspace.infrastructure.persistence.dataobject.WorkspaceDO;
 import com.codingx.workspace.infrastructure.persistence.mapper.WorkspaceMapper;
+import com.codingx.workspace.infrastructure.repository.WorkspaceRepositoryImpl;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
@@ -84,9 +85,11 @@ public class ChatWorkspaceBindingService {
      */
     private WorkspaceDO findOrCreateWorkspace(Long userId, Path normalizedPath) {
         String workingDirectory = normalizedPath.toString().replace('\\', '/');
+        // 本地目录绑定必须写入可复用的“本地空间”记录，后续会话按 workspaceId 稳定归属。
         WorkspaceDO existing = workspaceMapper.selectOne(new LambdaQueryWrapper<WorkspaceDO>()
             .eq(WorkspaceDO::getCreatedBy, userId)
             .eq(WorkspaceDO::getWorkingDirectory, workingDirectory)
+            .eq(WorkspaceDO::getWorkspaceType, "local")
             .eq(WorkspaceDO::getDeleted, 0)
             .last("LIMIT 1"));
         if (existing != null) {
@@ -96,7 +99,8 @@ public class ChatWorkspaceBindingService {
         workspace.setId(IdUtil.getSnowflakeNextId());
         workspace.setName(normalizedPath.getFileName() == null ? workingDirectory : normalizedPath.getFileName().toString());
         workspace.setWorkingDirectory(workingDirectory);
-        workspace.setRuntimeTarget("electron");
+        workspace.setRuntimeTarget(WorkspaceRepositoryImpl.RUNTIME_TARGET_LOCAL);
+        workspace.setWorkspaceType("local");
         workspace.setCreatedBy(userId);
         workspace.setCreatedAt(LocalDateTime.now());
         workspace.setUpdatedAt(LocalDateTime.now());

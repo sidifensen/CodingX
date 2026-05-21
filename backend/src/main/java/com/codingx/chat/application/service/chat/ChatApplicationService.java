@@ -15,6 +15,7 @@ import com.codingx.chat.domain.repository.ChatExecutionStepRepository;
 import com.codingx.chat.domain.repository.ChatMessageRepository;
 import com.codingx.chat.domain.port.AiChatClient;
 import com.codingx.chat.domain.port.ChatStreamPublisher;
+import com.codingx.common.error.ErrorMessageCatalog;
 import com.codingx.common.exception.ForbiddenException;
 import com.codingx.expert.application.service.ChatExpertContextService;
 import com.codingx.mcp.application.service.ChatMcpExecutionService;
@@ -113,12 +114,12 @@ public class ChatApplicationService {
      */
     public void sendMessage(SendChatMessageCommand command, Long userId) {
         if (StrUtil.isBlank(command.content())) {
-            throw new IllegalArgumentException("Message content is required");
+            throw new IllegalArgumentException(ErrorMessageCatalog.CHAT_MESSAGE_CONTENT_REQUIRED);
         }
         Long runId = currentRunId(command.conversationId());
         ChatConversation conversation = chatConversationRepository.requireById(command.conversationId());
         if (!conversation.getCreatedBy().equals(userId)) {
-            throw new ForbiddenException("You cannot access this conversation");
+            throw new ForbiddenException(ErrorMessageCatalog.CHAT_CONVERSATION_FORBIDDEN);
         }
         chatRuntimeGuardService.ensureAccepted(command.conversationId());
         List<ChatMessage> history = new ArrayList<>(chatMessageRepository.findByConversationId(command.conversationId()));
@@ -206,7 +207,9 @@ public class ChatApplicationService {
         if (intentDecision.action() == ConversationIntentAction.MCP) {
             com.codingx.chat.domain.model.ChatIntentNode intentNode = chatIntentNodeRepository.findByIntentCode(intentDecision.intentCode());
             if (intentNode == null || StrUtil.isBlank(intentNode.getMcpToolId())) {
-                throw new IllegalStateException("MCP tool config is missing for intent: " + intentDecision.intentCode());
+                throw new IllegalStateException(
+                    ErrorMessageCatalog.CHAT_MCP_TOOL_CONFIG_MISSING + "，意图编码: " + intentDecision.intentCode()
+                );
             }
             if (!isMcpEnabledForCurrentMessage(intentNode.getMcpToolId(), command.mcpCodes())) {
                 ChatMessage assistantMessage = ChatMessage.assistantMessage(
@@ -373,7 +376,7 @@ public class ChatApplicationService {
 
             ChatMessage failedMessage = ChatMessage.assistantMessage(
                 command.conversationId(),
-                StrUtil.blankToDefault(llmResponseCleaner.clean(builder.toString()), "AI response failed"),
+                StrUtil.blankToDefault(llmResponseCleaner.clean(builder.toString()), ErrorMessageCatalog.CHAT_AI_RESPONSE_FAILED),
                 ChatMessageStatus.FAILED,
                 selectedProvider[0],
                 selectedModel[0],

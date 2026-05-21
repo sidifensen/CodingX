@@ -120,6 +120,7 @@ describe('useChatWorkspace', () => {
       }
       if (
         url === '/api/chat/sample-questions' ||
+        url === '/api/chat/experts' ||
         url === '/api/chat/skills' ||
         url === '/api/chat/mcps'
       ) {
@@ -133,6 +134,7 @@ describe('useChatWorkspace', () => {
         url === '/api/chat/conversations/6001/steps' ||
         url === '/api/chat/conversations/6001/references' ||
         url === '/api/chat/conversations/6001/artifacts' ||
+        url === '/api/chat/conversations/6001/current-experts' ||
         url === '/api/chat/conversations/6001/current-skills' ||
         url === '/api/chat/conversations/6001/current-mcps'
       ) {
@@ -1033,6 +1035,8 @@ describe('useChatWorkspace', () => {
         userType: 'USER',
       }),
     );
+    // 显式带上会话参数，模拟“刷新恢复指定会话”而非“默认首页自动跳转”场景。
+    window.history.replaceState(window.history.state, '', '/?conversationId=2001');
 
     let resolveStepsRequest: ((response: Response) => void) | null = null;
     const pendingStepsResponse = new Promise<Response>((resolve) => {
@@ -1450,12 +1454,14 @@ describe('useChatWorkspace', () => {
       const url = String(input);
       if (
         url === '/api/chat/conversations' ||
+        url === '/api/chat/conversations?workspaceId=3001' ||
+        url === '/api/chat/conversations?workspaceId=3002' ||
         url === '/api/chat/sample-questions' ||
         url === '/api/chat/experts' ||
         url === '/api/chat/skills' ||
         url === '/api/chat/mcps'
       ) {
-        if (url === '/api/chat/conversations') {
+        if (url === '/api/chat/conversations' || url === '/api/chat/conversations?workspaceId=3001') {
           return new Response(
             JSON.stringify({
               success: true,
@@ -1473,6 +1479,20 @@ describe('useChatWorkspace', () => {
             { status: 200 },
           );
         }
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (
+        url === '/api/chat/conversations/2001/messages' ||
+        url === '/api/chat/conversations/2001/steps' ||
+        url === '/api/chat/conversations/2001/references' ||
+        url === '/api/chat/conversations/2001/artifacts' ||
+        url === '/api/chat/conversations/2001/current-skills' ||
+        url === '/api/chat/conversations/2001/current-mcps' ||
+        url === '/api/chat/conversations/2001/current-experts'
+      ) {
         return new Response(
           JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
           { status: 200 },
@@ -1496,7 +1516,7 @@ describe('useChatWorkspace', () => {
       },
       localResource: {
         boundRepositoryPath: 'D:/code/workspace-a',
-        workspaceId: '3001',
+        workspaceId: '3002',
         permissionGranted: true,
       },
     };

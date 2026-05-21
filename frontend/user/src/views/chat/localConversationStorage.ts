@@ -165,6 +165,9 @@ export function upsertWorkspaceSnapshot(
 ): { partitionKey: string; snapshot: LocalWorkspaceConversationSnapshot } {
   const partitionKey = buildWorkspacePartitionKey(runtimeTarget, workspacePath);
   const currentSnapshot = readWorkspaceSnapshot(partitionKey);
+  const hasActiveConversationOverride =
+    partialSnapshot != null &&
+    Object.prototype.hasOwnProperty.call(partialSnapshot, 'activeConversationId');
   const snapshot: LocalWorkspaceConversationSnapshot = {
     workspacePath: workspacePath ?? currentSnapshot.workspacePath ?? null,
     workspaceLabel:
@@ -173,8 +176,10 @@ export function upsertWorkspaceSnapshot(
       getWorkspaceLabel(workspacePath),
     runtimeTarget,
     lastOpenedAt: Date.now(),
-    activeConversationId:
-      partialSnapshot?.activeConversationId ?? currentSnapshot.activeConversationId ?? null,
+    // 允许调用方显式写入 null（例如“新建会话”场景清空激活会话），避免被 ?? 回退到旧值。
+    activeConversationId: hasActiveConversationOverride
+      ? (partialSnapshot?.activeConversationId ?? null)
+      : (currentSnapshot.activeConversationId ?? null),
     conversations: partialSnapshot?.conversations ?? currentSnapshot.conversations ?? [],
     conversationRecords:
       partialSnapshot?.conversationRecords ?? currentSnapshot.conversationRecords ?? {},

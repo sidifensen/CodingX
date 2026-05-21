@@ -114,6 +114,7 @@ describe('useChatWorkspace', () => {
       }
       if (
         url === '/api/chat/sample-questions' ||
+        url === '/api/chat/experts' ||
         url === '/api/chat/skills' ||
         url === '/api/chat/mcps'
       ) {
@@ -127,6 +128,7 @@ describe('useChatWorkspace', () => {
         url === '/api/chat/conversations/6001/steps' ||
         url === '/api/chat/conversations/6001/references' ||
         url === '/api/chat/conversations/6001/artifacts' ||
+        url === '/api/chat/conversations/6001/current-experts' ||
         url === '/api/chat/conversations/6001/current-skills' ||
         url === '/api/chat/conversations/6001/current-mcps'
       ) {

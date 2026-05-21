@@ -150,6 +150,7 @@ export function useChatWorkspace(
   const streamSessionSeedRef = useRef(0);
   const activeStreamSessionIdRef = useRef<number | null>(null);
   const streamQueueTimerRef = useRef<number | null>(null);
+  const skipNextRuntimeSyncRef = useRef(false);
 
   /**
    * 清理排队提示延迟任务，防止旧流事件在新流阶段误触发提示。
@@ -230,6 +231,10 @@ export function useChatWorkspace(
    * 当前工作空间分区刷新后，重新读取对应快照，保证切换目录时左侧与主区同步。
    */
   useEffect(() => {
+    if (skipNextRuntimeSyncRef.current) {
+      skipNextRuntimeSyncRef.current = false;
+      return;
+    }
     if (!runtimeTargets.length) {
       return;
     }
@@ -285,7 +290,7 @@ export function useChatWorkspace(
   }, []);
 
   /**
-   * 加载初始会话列表并默认选中最近会话。
+   * 加载初始会话列表并恢复显式指定会话，默认保持首页新建态。
    */
   const bootstrapWorkspace = async () => {
     const token = currentToken();
@@ -341,9 +346,8 @@ export function useChatWorkspace(
         hasHydratedInitialConversationRef.current = true;
       } else if (activeConversationId) {
         await selectConversation(activeConversationId, nextConversations);
-      } else if (nextConversations[0]?.id) {
-        await selectConversation(nextConversations[0].id, nextConversations);
       } else {
+        // 业务意图：首次进入且无显式会话上下文时停留首页，不自动跳转到最新会话。
         clearConversationPlayback(true);
       }
       if (!hasHydratedInitialConversationRef.current) {
@@ -387,11 +391,13 @@ export function useChatWorkspace(
    * @param runtimeTarget 目标运行环境。
    * @param nextWorkspacePath 目标工作空间路径。
    * @param shouldBindDesktopPath 是否写回桌面宿主绑定目录。
+   * @param shouldRestoreConversation 是否恢复目标分区最后一次会话。
    */
   const switchWorkspacePartition = async (
     runtimeTarget: 'cloud' | 'local',
     nextWorkspacePath: string | null,
     shouldBindDesktopPath: boolean,
+    shouldRestoreConversation = true,
   ) => {
     const normalizedWorkspacePath = nextWorkspacePath ? nextWorkspacePath.trim() : null;
     let normalizedWorkspaceId =
@@ -409,6 +415,8 @@ export function useChatWorkspace(
     }
     const nextPartitionKey = buildWorkspacePartitionKey(runtimeTarget, normalizedWorkspacePath);
     activeStreamSessionIdRef.current = null;
+    // 用户显式切换空间后优先采用本次选择，避免宿主上下文异步回写前被旧值覆盖。
+    skipNextRuntimeSyncRef.current = true;
     const nextSnapshot = readWorkspaceSnapshot(nextPartitionKey);
     setActiveRuntimeTargetState(runtimeTarget);
     setWorkspacePath(normalizedWorkspacePath);
@@ -429,9 +437,9 @@ export function useChatWorkspace(
         : getDefaultWorkspaceLabel(runtimeTarget),
     });
     setWorkspaceGroups(listWorkspaceGroups(runtimeTarget));
-    // 空间切换后优先恢复该空间已有会话；仅无会话时保留新建空态。
+    // 空间切换后默认恢复该空间已有会话；新建会话场景会显式关闭恢复，避免误带旧上下文。
     const nextActiveConversationId = nextSnapshot.activeConversationId;
-    if (nextActiveConversationId) {
+    if (shouldRestoreConversation && nextActiveConversationId) {
       await restoreWorkspaceSnapshot(nextPartitionKey, nextActiveConversationId);
     }
     return normalizedWorkspaceId;
@@ -829,7 +837,12 @@ export function useChatWorkspace(
         activeRuntimeTarget === createContext.runtimeTarget &&
         activeWorkspacePartitionKey === targetPartitionKey;
       if (!isSamePartition) {
-        await switchWorkspacePartition(createContext.runtimeTarget, targetWorkspacePath, false);
+        await switchWorkspacePartition(
+          createContext.runtimeTarget,
+          targetWorkspacePath,
+          false,
+          false,
+        );
       }
     }
 

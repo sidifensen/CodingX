@@ -1,5 +1,6 @@
 package com.codingx.chat.application.service;
 import cn.hutool.core.util.StrUtil;
+import cn.hutool.core.date.DateUtil;
 import com.codingx.chat.application.command.SendChatMessageCommand;
 import com.codingx.chat.domain.model.ChatConversation;
 import com.codingx.chat.domain.model.ChatExecutionStep;
@@ -141,6 +142,7 @@ public class ChatApplicationService {
                 .toList(),
             command.content()
         );
+        List<SearchReferenceCandidate> searchReferences = List.of();
         String rewrittenQuestion = rewriteResult.rewrite();
         boolean mcpEnabled = command.mcpCodes() != null && !command.mcpCodes().isEmpty();
         ConversationIntentDecision intentDecision = conversationIntentService.route(rewrittenQuestion, mcpEnabled);
@@ -280,12 +282,12 @@ public class ChatApplicationService {
             return;
         }
         if (intentDecision.action() == ConversationIntentAction.SEARCH) {
-            List<SearchReferenceCandidate> references = executeSearchQuestions(
+            searchReferences = executeSearchQuestions(
                 rewriteResult.shouldSplit() ? rewriteResult.subQuestions() : List.of(rewrittenQuestion),
                 runId,
                 command.conversationId()
             );
-            searchReferenceCollector.collect(runId, userMessage.getId(), command.conversationId(), references);
+            searchReferenceCollector.collect(runId, userMessage.getId(), command.conversationId(), searchReferences);
             documentArtifactService.createDocxArtifact(runId, userMessage.getId(), command.conversationId(), "搜索结果整理中");
         }
         StringBuilder builder = new StringBuilder();
@@ -298,7 +300,8 @@ public class ChatApplicationService {
             intentDecision,
             command.conversationId(),
             command.skillCodes(),
-            command.expertCode()
+            command.expertCode(),
+            searchReferences
         );
         tokenCounterService.estimateConversationTokens(aiHistory);
         final Long activeRunId = runId;
@@ -482,17 +485,27 @@ public class ChatApplicationService {
         ConversationIntentDecision intentDecision,
         Long conversationId,
         List<String> selectedSkillCodes,
-        String selectedExpertCode
+        String selectedExpertCode,
+        List<SearchReferenceCandidate> searchReferences
     ) {
         String systemPrompt = resolveSystemPromptFromIntent(intentDecision);
         String expertContext = chatExpertContextService.buildExpertContext(selectedExpertCode);
         String skillContext = chatSkillContextService.buildSkillContext(selectedSkillCodes);
-        if (StrUtil.isBlank(systemPrompt) && StrUtil.isBlank(expertContext) && StrUtil.isBlank(skillContext)) {
+        String searchEvidenceContext = buildSearchEvidenceContext(intentDecision, searchReferences);
+        if (
+            StrUtil.isBlank(systemPrompt)
+            && StrUtil.isBlank(expertContext)
+            && StrUtil.isBlank(skillContext)
+            && StrUtil.isBlank(searchEvidenceContext)
+        ) {
             return history;
         }
         List<String> promptSegments = new ArrayList<>();
         if (StrUtil.isNotBlank(systemPrompt)) {
             promptSegments.add(systemPrompt);
+        }
+        if (StrUtil.isNotBlank(searchEvidenceContext)) {
+            promptSegments.add(searchEvidenceContext);
         }
         if (StrUtil.isNotBlank(expertContext)) {
             promptSegments.add(expertContext);
@@ -514,6 +527,64 @@ public class ChatApplicationService {
         ));
         aiHistory.addAll(history);
         return aiHistory;
+    }
+
+    /**
+     * 把联网检索候选转换成系统证据上下文，确保模型优先基于实时来源作答。
+     * @param intentDecision 意图决策。
+     * @param references 搜索来源候选。
+     * @return 可注入模型 System 消息的证据上下文。
+     */
+    private String buildSearchEvidenceContext(
+        ConversationIntentDecision intentDecision,
+        List<SearchReferenceCandidate> references
+    ) {
+        if (intentDecision.action() != ConversationIntentAction.SEARCH || references == null || references.isEmpty()) {
+            return "";
+        }
+        StringBuilder contextBuilder = new StringBuilder();
+        contextBuilder.append("# 联网检索证据\n");
+        contextBuilder.append("当前日期：").append(DateUtil.today()).append('\n');
+        contextBuilder.append("回答约束：\n");
+        contextBuilder.append("1. 你只能依据下方检索证据回答，不得引用训练记忆中的旧时间、旧版本或旧结论\n");
+        contextBuilder.append("2. 当联网证据与模型记忆冲突时，必须以联网证据为准\n");
+        contextBuilder.append("3. 优先采用来源可靠且信息更新的条目；若证据冲突，说明冲突并给出更可信来源\n");
+        contextBuilder.append("4. 若证据不足以得出结论，必须明确回答“当前检索证据不足，无法确认”\n");
+        contextBuilder.append("5. 最终回答每个关键结论都必须带引用编号，如 [R1]、[R2]\n");
+        contextBuilder.append("检索结果：\n");
+        int rank = 1;
+        for (SearchReferenceCandidate reference : references) {
+            contextBuilder.append(rank++).append(". ");
+            contextBuilder.append("标题：").append(normalizeEvidenceText(reference.title(), 120));
+            if (StrUtil.isNotBlank(reference.siteName())) {
+                contextBuilder.append("；站点：").append(normalizeEvidenceText(reference.siteName(), 80));
+            }
+            if (StrUtil.isNotBlank(reference.url())) {
+                contextBuilder.append("；链接：").append(normalizeEvidenceText(reference.url(), 300));
+            }
+            if (StrUtil.isNotBlank(reference.snippet())) {
+                contextBuilder.append("；摘要：").append(normalizeEvidenceText(reference.snippet(), 220));
+            }
+            contextBuilder.append('\n');
+        }
+        return contextBuilder.toString().trim();
+    }
+
+    /**
+     * 规整搜索证据文本，避免换行和超长内容污染系统提示。
+     * @param text 原始文本。
+     * @param maxLength 最大长度。
+     * @return 规整后文本。
+     */
+    private String normalizeEvidenceText(String text, int maxLength) {
+        String normalized = StrUtil.blankToDefault(text, "")
+            .replace('\r', ' ')
+            .replace('\n', ' ')
+            .trim();
+        if (normalized.length() <= maxLength) {
+            return normalized;
+        }
+        return StrUtil.sub(normalized, 0, maxLength);
     }
 
     /**

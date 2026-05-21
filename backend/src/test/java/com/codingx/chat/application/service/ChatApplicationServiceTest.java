@@ -18,11 +18,13 @@ import com.codingx.chat.domain.model.ChatMessageRole;
 import com.codingx.chat.domain.model.ChatMessageStatus;
 import com.codingx.chat.domain.repository.ChatConversationRepository;
 import com.codingx.chat.domain.repository.ChatExecutionRunRepository;
+import com.codingx.chat.domain.repository.ChatExecutionStepRepository;
 import com.codingx.chat.domain.repository.ChatIntentNodeRepository;
 import com.codingx.chat.domain.repository.ChatMessageRepository;
 import com.codingx.chat.domain.port.AiChatClient;
 import com.codingx.chat.domain.port.ChatStreamPublisher;
 import com.codingx.common.error.ErrorMessageCatalog;
+import com.codingx.common.exception.ConflictException;
 import com.codingx.common.exception.ForbiddenException;
 import com.codingx.expert.application.service.ChatExpertContextService;
 import com.codingx.mcp.domain.repository.ChatMcpRepository;
@@ -60,6 +62,9 @@ class ChatApplicationServiceTest {
      */
     @Mock
     private ChatExecutionRunRepository chatExecutionRunRepository;
+
+    @Mock
+    private ChatExecutionStepRepository chatExecutionStepRepository;
 
     /**
      * AiChatClient 依赖。
@@ -126,6 +131,21 @@ class ChatApplicationServiceTest {
 
     @Mock
     private ChatExpertContextService chatExpertContextService;
+
+    @Mock
+    private WebSearchExecutionService webSearchExecutionService;
+
+    @Mock
+    private SearchReferenceCollector searchReferenceCollector;
+
+    @Mock
+    private DocumentArtifactService documentArtifactService;
+
+    @Mock
+    private ConversationTraceRecordService conversationTraceRecordService;
+
+    @Mock
+    private RuntimeSettingService runtimeSettingService;
 
     /**
      * ChatRuntimeGuardService 依赖。
@@ -224,15 +244,15 @@ class ChatApplicationServiceTest {
         bindRunContext();
         ChatConversation conversation = ChatConversation.create(1L, "Default", 1002L, ChatConversationStatus.ACTIVE);
         when(chatConversationRepository.requireById(1L)).thenReturn(conversation);
-        org.mockito.Mockito.doThrow(new IllegalStateException("Conversation rejected: busy"))
+        org.mockito.Mockito.doThrow(new ConflictException(ErrorMessageCatalog.CHAT_QUEUE_BUSY))
             .when(chatRuntimeGuardService).ensureAccepted(1L);
 
-        IllegalStateException exception = assertThrows(
-            IllegalStateException.class,
+        ConflictException exception = assertThrows(
+            ConflictException.class,
             () -> chatApplicationService.sendMessage(new SendChatMessageCommand(1L, "Hi", false), 1002L)
         );
 
-        assertEquals("Conversation rejected: busy", exception.getMessage());
+        assertEquals(ErrorMessageCatalog.CHAT_QUEUE_BUSY, exception.getMessage());
         org.mockito.Mockito.verifyNoInteractions(aiChatClient);
         ChatExecutionContext.clear();
     }
@@ -397,6 +417,69 @@ class ChatApplicationServiceTest {
 
         verify(chatSkillContextService).buildSkillContext(List.of("sales_query"));
         verify(chatStreamPublisher).publishAssistantCompleted(1L, "技能已生效", "技能对话");
+        ChatExecutionContext.clear();
+    }
+
+    /**
+     * 命中 SEARCH 意图时应把联网证据注入系统提示，避免模型仅依赖旧记忆回答。
+     */
+    @Test
+    void sendMessageInjectsSearchEvidenceIntoSystemPrompt() {
+        bindRunContext();
+        ChatConversation conversation = ChatConversation.create(1L, "Default", 1002L, ChatConversationStatus.ACTIVE);
+        when(chatConversationRepository.requireById(1L)).thenReturn(conversation);
+        when(chatMessageRepository.findByConversationId(1L)).thenReturn(new ArrayList<>());
+        when(chatAttachmentService.requireOwnedAttachments(any(), eq(1L), eq(1002L))).thenReturn(List.of());
+        when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+            new ConversationRewriteResult("请联网搜索最新 Java 版本", false, List.of("请联网搜索最新 Java 版本"))
+        );
+        when(conversationIntentService.route("请联网搜索最新 Java 版本", false)).thenReturn(
+            new ConversationIntentDecision("search-general", ConversationIntentAction.SEARCH, null)
+        );
+        when(runtimeSettingService.searchMaxParallelQuestions()).thenReturn(1);
+        doAnswer(invocation -> {
+            Runnable runnable = invocation.getArgument(0);
+            runnable.run();
+            return null;
+        }).when(searchExecutor).execute(any(Runnable.class));
+        when(webSearchExecutionService.search("请联网搜索最新 Java 版本")).thenReturn(List.of(
+            new SearchReferenceCandidate(
+                "Java 24 发布说明",
+                "https://example.com/java24",
+                "Oracle",
+                "Java 24 已正式发布，包含新特性更新",
+                0.98D
+            )
+        ));
+        when(conversationSummaryService.buildModelHistory(any(), any())).thenAnswer(invocation -> invocation.getArgument(1));
+        when(llmResponseCleaner.clean(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(chatSkillContextService.buildSkillContext(any())).thenReturn("");
+        when(chatExpertContextService.buildExpertContext(any())).thenReturn("");
+        when(conversationTitleService.generateTitle(any(), any())).thenReturn("联网搜索结果");
+        doAnswer(invocation -> {
+            @SuppressWarnings("unchecked")
+            List<ChatMessage> aiHistory = invocation.getArgument(0, List.class);
+            ChatMessage systemMessage = aiHistory.getFirst();
+            assertEquals(ChatMessageRole.SYSTEM, systemMessage.getRole());
+            org.junit.jupiter.api.Assertions.assertTrue(
+                systemMessage.getContent().contains("联网检索证据"),
+                "系统提示应注入联网证据段落"
+            );
+            org.junit.jupiter.api.Assertions.assertTrue(
+                systemMessage.getContent().contains("Java 24 发布说明"),
+                "系统提示应包含搜索返回标题"
+            );
+            AiChatClient.StreamHandler handler = invocation.getArgument(2);
+            handler.onDelta("截至当前检索，Java 24 已发布");
+            handler.onComplete();
+            return null;
+        }).when(aiChatClient).streamChat(any(), eq(false), any());
+
+        chatApplicationService.sendMessage(new SendChatMessageCommand(1L, "请联网搜索最新 Java 版本", false), 1002L);
+
+        verify(searchReferenceCollector).collect(eq(9001001L), any(Long.class), eq(1L), any());
+        verify(documentArtifactService).createDocxArtifact(eq(9001001L), any(Long.class), eq(1L), eq("搜索结果整理中"));
+        verify(chatStreamPublisher).publishAssistantCompleted(1L, "截至当前检索，Java 24 已发布", "联网搜索结果");
         ChatExecutionContext.clear();
     }
 }

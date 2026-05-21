@@ -1,7 +1,7 @@
 package com.codingx.admin.interfaces.controller;
 
-import com.codingx.chat.application.service.AdminChatTraceService;
-import com.codingx.chat.application.service.AdminTraceRunPageResultView;
+import com.codingx.admin.application.service.AdminChatTraceService;
+import com.codingx.admin.application.service.AdminTraceRunPageResultView;
 import com.codingx.chat.application.service.ConversationTraceView;
 import com.codingx.common.model.ApiResponse;
 import lombok.RequiredArgsConstructor;

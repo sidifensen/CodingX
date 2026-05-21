@@ -6,7 +6,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.codingx.chat.application.service.AdminChatFeedbackService;
+import com.codingx.admin.application.service.AdminChatFeedbackService;
 import com.codingx.chat.interfaces.response.AdminChatMessageFeedbackDetailResponse;
 import com.codingx.chat.interfaces.response.AdminChatMessageFeedbackListItemResponse;
 import com.codingx.chat.interfaces.response.AdminChatMessageReferenceResponse;

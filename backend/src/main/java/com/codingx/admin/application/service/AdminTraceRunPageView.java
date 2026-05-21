@@ -1,9 +1,10 @@
-package com.codingx.chat.application.service;
+package com.codingx.admin.application.service;
 
+import com.codingx.chat.domain.model.ChatTraceRun;
 import java.util.List;
 
 /**
- * 定义管理端 Trace 列表分页响应载体，记录项已补齐 username 信息。
+ * 定义管理端 Trace 列表分页视图，统一分页字段契约并承载运行记录。
  *
  * @param records 当前页记录。
  * @param total 总记录数。
@@ -11,8 +12,8 @@ import java.util.List;
  * @param current 当前页码（从 1 开始）。
  * @param pages 总页数。
  */
-public record AdminTraceRunPageResultView(
-    List<AdminTraceRunListItemView> records,
+public record AdminTraceRunPageView(
+    List<ChatTraceRun> records,
     long total,
     long size,
     long current,

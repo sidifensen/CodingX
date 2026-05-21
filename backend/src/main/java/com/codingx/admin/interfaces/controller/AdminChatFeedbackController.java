@@ -1,6 +1,6 @@
 package com.codingx.admin.interfaces.controller;
 
-import com.codingx.chat.application.service.AdminChatFeedbackService;
+import com.codingx.admin.application.service.AdminChatFeedbackService;
 import com.codingx.chat.interfaces.response.AdminChatMessageFeedbackDetailResponse;
 import com.codingx.chat.interfaces.response.AdminChatMessageFeedbackListItemResponse;
 import com.codingx.chat.interfaces.response.AdminChatMessageReferenceResponse;

@@ -12,7 +12,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.codingx.chat.application.service.AdminChatQueryTermMappingService;
+import com.codingx.admin.application.service.AdminChatQueryTermMappingService;
 import com.codingx.chat.interfaces.request.QueryTermMappingCreateRequest;
 import com.codingx.chat.interfaces.request.QueryTermMappingUpdateRequest;
 import com.codingx.chat.interfaces.response.PageResult;

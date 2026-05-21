@@ -12,7 +12,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.codingx.chat.application.service.AdminChatIntentService;
+import com.codingx.admin.application.service.AdminChatIntentService;
 import com.codingx.chat.domain.model.ChatIntentNode;
 import com.codingx.config.GlobalExceptionHandler;
 import java.util.List;
@@ -48,8 +48,8 @@ class AdminChatIntentControllerTest {
                 .intentCode("group")
                 .name("集团信息化")
                 .kind(0)
-                .intentType("kb")
-                .children(List.of(ChatIntentNode.builder().id(3002L).intentCode("group-hr").name("人事").kind(0).intentType("kb").build()))
+                .intentType("search")
+                .children(List.of(ChatIntentNode.builder().id(3002L).intentCode("group-hr").name("人事").kind(0).intentType("search").build()))
                 .build()
         ));
 
@@ -58,7 +58,7 @@ class AdminChatIntentControllerTest {
             .andExpect(jsonPath("$.success").value(true))
             .andExpect(jsonPath("$.data[0].intentCode").value("group"))
             .andExpect(jsonPath("$.data[0].kind").value(0))
-            .andExpect(jsonPath("$.data[0].intentType").value("kb"))
+            .andExpect(jsonPath("$.data[0].intentType").value("search"))
             .andExpect(jsonPath("$.data[0].children[0].intentCode").value("group-hr"));
     }
 
@@ -87,7 +87,7 @@ class AdminChatIntentControllerTest {
     @Test
     void putUpdatesIntentNodeByPathId() throws Exception {
         when(adminChatIntentService.update(eq(3002L), any(ChatIntentNode.class))).thenReturn(
-            ChatIntentNode.builder().id(3002L).intentCode("group-hr").name("人力资源").kind(0).intentType("kb").build()
+            ChatIntentNode.builder().id(3002L).intentCode("group-hr").name("人力资源").kind(0).intentType("search").build()
         );
 
         mockMvc().perform(put("/api/admin/chat/intents/3002")

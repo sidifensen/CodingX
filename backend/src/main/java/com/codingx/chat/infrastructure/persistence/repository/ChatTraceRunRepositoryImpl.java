@@ -2,7 +2,7 @@ package com.codingx.chat.infrastructure.persistence.repository;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
-import com.codingx.chat.application.service.AdminTraceRunPageView;
+import com.codingx.admin.application.service.AdminTraceRunPageView;
 import com.codingx.chat.domain.model.ChatTraceRun;
 import com.codingx.chat.domain.repository.ChatTraceRunRepository;
 import com.codingx.chat.infrastructure.persistence.dataobject.ChatTraceRunDO;

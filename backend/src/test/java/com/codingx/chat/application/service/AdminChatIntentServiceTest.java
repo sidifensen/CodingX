@@ -11,6 +11,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.codingx.admin.application.service.AdminChatIntentService;
 import com.codingx.chat.domain.model.ChatIntentNode;
 import com.codingx.chat.domain.repository.ChatIntentNodeRepository;
 import com.codingx.common.exception.BusinessException;
@@ -39,7 +40,7 @@ class AdminChatIntentServiceTest {
     @Test
     void listTreeBuildsChildren() {
         when(chatIntentNodeRepository.findAllNodes()).thenReturn(List.of(
-            ChatIntentNode.builder().id(1L).intentCode("root").name("根节点").kind(0).intentType("kb").sortOrder(1).sortNo(1).build(),
+            ChatIntentNode.builder().id(1L).intentCode("root").name("根节点").kind(0).intentType("search").sortOrder(1).sortNo(1).build(),
             ChatIntentNode.builder().id(3L).intentCode("child-b").parentCode("root").name("子节点B").kind(2).intentType("mcp").sortOrder(3).sortNo(3).build(),
             ChatIntentNode.builder().id(2L).intentCode("child-a").parentCode("root").name("子节点A").kind(1).intentType("system").sortOrder(2).sortNo(2).build()
         ));

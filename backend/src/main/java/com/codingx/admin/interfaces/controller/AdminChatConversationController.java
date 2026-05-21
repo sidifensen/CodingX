@@ -1,6 +1,6 @@
 package com.codingx.admin.interfaces.controller;
 
-import com.codingx.chat.application.service.AdminChatConversationService;
+import com.codingx.admin.application.service.AdminChatConversationService;
 import com.codingx.chat.interfaces.response.AdminChatConversationDetailResponse;
 import com.codingx.chat.interfaces.response.AdminChatConversationListItemResponse;
 import com.codingx.chat.interfaces.response.PageResult;

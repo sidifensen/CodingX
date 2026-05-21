@@ -7,9 +7,9 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.codingx.chat.application.service.AdminChatConversationService;
-import com.codingx.chat.application.service.AdminChatRuntimeDashboardService;
-import com.codingx.chat.application.service.AdminChatRuntimeDashboardView;
+import com.codingx.admin.application.service.AdminChatConversationService;
+import com.codingx.admin.application.service.AdminChatRuntimeDashboardService;
+import com.codingx.admin.application.service.AdminChatRuntimeDashboardView;
 import com.codingx.chat.application.service.ChatRuntimeExecutorDashboardView;
 import com.codingx.chat.application.service.ChatRuntimeQueueDashboardView;
 import com.codingx.chat.domain.model.ChatConversationStatus;

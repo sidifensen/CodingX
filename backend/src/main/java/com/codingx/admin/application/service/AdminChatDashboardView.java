@@ -1,4 +1,4 @@
-package com.codingx.chat.application.service;
+package com.codingx.admin.application.service;
 
 /**
  * 定义管理端 Dashboard 聚合视图。

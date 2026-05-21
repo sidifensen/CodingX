@@ -1,7 +1,8 @@
-package com.codingx.chat.application.service;
+package com.codingx.admin.application.service;
 
 import cn.hutool.core.util.IdUtil;
 import cn.hutool.core.util.StrUtil;
+import com.codingx.chat.application.service.ConversationQueryTermMappingCacheManager;
 import com.codingx.chat.domain.model.ChatQueryTermMapping;
 import com.codingx.chat.domain.repository.ChatQueryTermMappingRepository;
 import com.codingx.chat.interfaces.request.QueryTermMappingCreateRequest;

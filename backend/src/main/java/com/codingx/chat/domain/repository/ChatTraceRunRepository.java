@@ -36,5 +36,5 @@ public interface ChatTraceRunRepository {
      * @param traceId 链路标识过滤条件，空值表示不过滤。
      * @return 分页结果。
      */
-    com.codingx.chat.application.service.AdminTraceRunPageView pageByFilters(int current, int size, String traceId);
+    com.codingx.admin.application.service.AdminTraceRunPageView pageByFilters(int current, int size, String traceId);
 }

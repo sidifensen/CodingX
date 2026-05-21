@@ -1,4 +1,4 @@
-package com.codingx.chat.application.service;
+package com.codingx.admin.application.service;
 
 import cn.hutool.core.util.StrUtil;
 import com.codingx.chat.domain.model.ChatConversation;

@@ -1,6 +1,6 @@
 package com.codingx.admin.interfaces.controller;
 
-import com.codingx.chat.application.service.AdminChatSettingsService;
+import com.codingx.admin.application.service.AdminChatSettingsService;
 import com.codingx.chat.domain.model.ChatRuntimeSetting;
 import com.codingx.common.model.ApiResponse;
 import java.util.List;

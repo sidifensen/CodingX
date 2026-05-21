@@ -1,7 +1,8 @@
-package com.codingx.chat.application.service;
+package com.codingx.admin.application.service;
 
 import cn.hutool.core.util.StrUtil;
 import com.codingx.auth.domain.repository.UserRepository;
+import com.codingx.chat.application.service.ConversationTraceView;
 import com.codingx.chat.domain.model.ChatTraceRun;
 import com.codingx.chat.domain.repository.ChatTraceNodeRepository;
 import com.codingx.chat.domain.repository.ChatTraceRunRepository;

@@ -1,7 +1,8 @@
-package com.codingx.chat.application.service;
+package com.codingx.admin.application.service;
 
 import cn.hutool.core.util.IdUtil;
 import cn.hutool.core.util.StrUtil;
+import com.codingx.chat.application.service.RuntimeSettingService;
 import com.codingx.chat.domain.model.ChatRuntimeSetting;
 import com.codingx.chat.domain.repository.ChatRuntimeSettingRepository;
 import com.codingx.common.exception.BusinessException;

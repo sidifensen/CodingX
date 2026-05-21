@@ -1,6 +1,6 @@
 package com.codingx.admin.interfaces.controller;
 
-import com.codingx.chat.application.service.AdminChatQueryTermMappingService;
+import com.codingx.admin.application.service.AdminChatQueryTermMappingService;
 import com.codingx.chat.interfaces.request.QueryTermMappingCreateRequest;
 import com.codingx.chat.interfaces.request.QueryTermMappingUpdateRequest;
 import com.codingx.chat.interfaces.response.PageResult;

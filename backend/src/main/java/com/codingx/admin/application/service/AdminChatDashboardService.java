@@ -1,4 +1,4 @@
-package com.codingx.chat.application.service;
+package com.codingx.admin.application.service;
 
 import com.codingx.chat.domain.repository.ChatIntentNodeRepository;
 import com.codingx.chat.domain.repository.ChatQueryTermMappingRepository;

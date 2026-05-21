@@ -1,7 +1,7 @@
 package com.codingx.admin.interfaces.controller;
 
-import com.codingx.chat.application.service.AdminChatRuntimeDashboardService;
-import com.codingx.chat.application.service.AdminChatRuntimeDashboardView;
+import com.codingx.admin.application.service.AdminChatRuntimeDashboardService;
+import com.codingx.admin.application.service.AdminChatRuntimeDashboardView;
 import com.codingx.common.model.ApiResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;

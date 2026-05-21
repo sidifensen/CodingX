@@ -1,4 +1,7 @@
-package com.codingx.chat.application.service;
+package com.codingx.admin.application.service;
+
+import com.codingx.chat.application.service.ChatRuntimeExecutorDashboardView;
+import com.codingx.chat.application.service.ChatRuntimeQueueDashboardView;
 
 /**
  * 聊天运行时观测视图。

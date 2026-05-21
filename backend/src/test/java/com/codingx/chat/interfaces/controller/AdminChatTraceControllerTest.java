@@ -6,10 +6,10 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.codingx.chat.application.service.AdminChatTraceService;
+import com.codingx.admin.application.service.AdminChatTraceService;
 import com.codingx.chat.application.service.ConversationTraceView;
-import com.codingx.chat.application.service.AdminTraceRunListItemView;
-import com.codingx.chat.application.service.AdminTraceRunPageResultView;
+import com.codingx.admin.application.service.AdminTraceRunListItemView;
+import com.codingx.admin.application.service.AdminTraceRunPageResultView;
 import com.codingx.chat.domain.model.ChatTraceNode;
 import com.codingx.chat.domain.model.ChatTraceRun;
 import com.codingx.config.GlobalExceptionHandler;

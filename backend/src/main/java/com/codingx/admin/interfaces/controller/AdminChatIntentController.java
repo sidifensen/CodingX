@@ -1,6 +1,6 @@
 package com.codingx.admin.interfaces.controller;
 
-import com.codingx.chat.application.service.AdminChatIntentService;
+import com.codingx.admin.application.service.AdminChatIntentService;
 import com.codingx.chat.domain.model.ChatIntentNode;
 import com.codingx.common.model.ApiResponse;
 import java.util.List;

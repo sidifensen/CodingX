@@ -2,6 +2,7 @@ package com.codingx.chat.application.service;
 
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.eq;
@@ -10,6 +11,8 @@ import com.codingx.chat.domain.port.ChatStreamPublisher;
 import com.codingx.chat.infrastructure.runtime.ChatRunControlService;
 import com.codingx.chat.infrastructure.runtime.ConversationQueueGate;
 import com.codingx.chat.infrastructure.runtime.QueueAcquireResult;
+import com.codingx.common.error.ErrorMessageCatalog;
+import com.codingx.common.exception.ConflictException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -51,11 +54,12 @@ class ChatRuntimeGuardServiceTest {
      */
     @Test
     void ensureAcceptedPublishesRejectWhenQueueGateDenies() {
-        when(conversationQueueGate.tryAcquire(eq(1001L), any())).thenReturn(QueueAcquireResult.rejected("busy"));
+        when(conversationQueueGate.tryAcquire(eq(1001L), any())).thenReturn(QueueAcquireResult.rejected(ErrorMessageCatalog.CHAT_QUEUE_BUSY));
 
-        assertThrows(IllegalStateException.class, () -> chatRuntimeGuardService.ensureAccepted(1001L));
+        ConflictException exception = assertThrows(ConflictException.class, () -> chatRuntimeGuardService.ensureAccepted(1001L));
 
-        verify(chatStreamPublisher).publishRejected(1001L, "busy");
+        assertEquals(ErrorMessageCatalog.CHAT_QUEUE_BUSY, exception.getMessage());
+        verify(chatStreamPublisher).publishRejected(1001L, ErrorMessageCatalog.CHAT_QUEUE_BUSY);
     }
 
     /**

@@ -41,7 +41,7 @@ public class TaskCommandApplicationService {
      * @return 输入参数。
      */
     public Task createTask(CreateTaskCommand command, Long createdBy) {
-        Assert.notNull(command, "Create task command is required");
+        Assert.notNull(command, ErrorMessageCatalog.TASK_COMMAND_REQUIRED);
         if (command.workspaceId() != null) {
             workspaceRepository.ensureExists(command.workspaceId());
         }

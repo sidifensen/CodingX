@@ -8,6 +8,7 @@ import cn.hutool.http.HttpStatus;
 import cn.hutool.json.JSONArray;
 import cn.hutool.json.JSONObject;
 import cn.hutool.json.JSONUtil;
+import com.codingx.common.error.ErrorMessageCatalog;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.LinkedHashMap;
@@ -293,12 +294,12 @@ public class WeatherMcpToolExecutor implements ChatMcpToolExecutor {
             .timeout(5000)
             .execute();
         if (response.getStatus() != HttpStatus.HTTP_OK) {
-            throw new IllegalStateException("天气地理编码服务调用失败");
+            throw new IllegalStateException(ErrorMessageCatalog.WEATHER_GEOCODING_REQUEST_FAILED);
         }
         JSONObject body = JSONUtil.parseObj(response.body());
         JSONArray results = body.getJSONArray("results");
         if (results == null || results.isEmpty()) {
-            throw new IllegalStateException("未找到该城市的天气坐标");
+            throw new IllegalStateException(ErrorMessageCatalog.WEATHER_COORDINATE_NOT_FOUND);
         }
         JSONObject first = results.getJSONObject(0);
         double latitude = first.getDouble("latitude", 0D);
@@ -332,13 +333,13 @@ public class WeatherMcpToolExecutor implements ChatMcpToolExecutor {
             .timeout(5000)
             .execute();
         if (response.getStatus() != HttpStatus.HTTP_OK) {
-            throw new IllegalStateException("天气预报服务调用失败");
+            throw new IllegalStateException(ErrorMessageCatalog.WEATHER_FORECAST_REQUEST_FAILED);
         }
         JSONObject body = JSONUtil.parseObj(response.body());
         JSONObject currentNode = body.getJSONObject("current");
         JSONObject dailyNode = body.getJSONObject("daily");
         if (currentNode == null || dailyNode == null) {
-            throw new IllegalStateException("天气服务返回结构异常");
+            throw new IllegalStateException(ErrorMessageCatalog.WEATHER_RESPONSE_INVALID);
         }
         CurrentWeatherData current = new CurrentWeatherData(
             parseDate(currentNode.getStr("time")),
@@ -357,10 +358,10 @@ public class WeatherMcpToolExecutor implements ChatMcpToolExecutor {
         JSONArray windArray = dailyNode.getJSONArray("wind_speed_10m_max");
         int length = Objects.requireNonNullElse(timeArray, new JSONArray()).size();
         if (length == 0) {
-            throw new IllegalStateException("天气预报为空");
+            throw new IllegalStateException(ErrorMessageCatalog.WEATHER_FORECAST_EMPTY);
         }
         if (weatherCodeArray == null || maxArray == null || minArray == null || precipitationArray == null || windArray == null) {
-            throw new IllegalStateException("天气预报字段缺失");
+            throw new IllegalStateException(ErrorMessageCatalog.WEATHER_FORECAST_FIELD_MISSING);
         }
         List<DailyWeatherData> dailyRows = new java.util.ArrayList<>();
         for (int i = 0; i < length; i++) {

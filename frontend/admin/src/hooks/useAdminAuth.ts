@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AuthApi } from '../api/authApi';
 import { subscribeAdminAuthExpired } from '../auth/authEvents';
+import { AdminErrorMessages } from '../constants/errorMessages';
 import { AdminAuthSession, AdminLoginFormPayload } from '../types/auth';
 import { AuthStorage } from '../utils/authStorage';
 
@@ -19,7 +20,7 @@ export function useAdminAuth() {
    * @param message 后端返回的错误文案，缺失时使用统一兜底提示。
    */
   const handleAuthExpired = useCallback((message?: string) => {
-    const normalizedMessage = message?.trim() || '登录已失效，请重新登录';
+    const normalizedMessage = message?.trim() || AdminErrorMessages.AUTH_SESSION_EXPIRED;
 
     // 步骤：会话失效处理允许重复进入，但所有路径都走同一清理分支，避免状态分叉。
     AuthStorage.clearSession();
@@ -56,7 +57,7 @@ export function useAdminAuth() {
         if (!isMounted) {
           return;
         }
-        const message = error instanceof Error ? error.message : '登录已失效，请重新登录';
+        const message = error instanceof Error ? error.message : AdminErrorMessages.AUTH_SESSION_EXPIRED;
         handleAuthExpired(message);
       } finally {
         if (isMounted) {
@@ -88,7 +89,7 @@ export function useAdminAuth() {
    */
   const login = async (payload: AdminLoginFormPayload): Promise<void> => {
     if (!payload.username.trim() || !payload.password.trim()) {
-      setErrorMessage('请输入账号和密码');
+      setErrorMessage(AdminErrorMessages.AUTH_CREDENTIALS_REQUIRED);
       return;
     }
 
@@ -107,7 +108,7 @@ export function useAdminAuth() {
         } catch {
           // 步骤：非管理员场景下退出失败不阻断主错误抛出，避免覆盖权限提示。
         }
-        throw new Error('仅管理员账号可登录管理端');
+        throw new Error(AdminErrorMessages.AUTH_ADMIN_ONLY);
       }
 
       const nextSession: AdminAuthSession = {
@@ -122,7 +123,7 @@ export function useAdminAuth() {
       hasHandledAuthExpiredRef.current = false;
       setSession(nextSession);
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : '登录失败，请稍后重试');
+      setErrorMessage(error instanceof Error ? error.message : AdminErrorMessages.AUTH_LOGIN_FAILED_RETRY);
       throw error;
     } finally {
       setIsSubmitting(false);

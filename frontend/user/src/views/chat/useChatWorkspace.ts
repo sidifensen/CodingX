@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AuthStorage } from '../../utils/authStorage';
+import { UserErrorMessages } from '../../constants/errorMessages';
 import { ChatApi } from './chatApi';
 import { extractSseEvents } from './sse';
 import {
@@ -541,7 +542,7 @@ export function useChatWorkspace(
     try {
       uploadedAttachments = await uploadPendingAttachments(token, activeConversationId);
     } catch (error) {
-      setStreamError(error instanceof Error ? error.message : '附件上传失败');
+      setStreamError(error instanceof Error ? error.message : UserErrorMessages.CHAT_ATTACHMENT_UPLOAD_FAILED);
       return;
     }
     const attachmentIds = uploadedAttachments.map((attachment) => attachment.id);
@@ -648,7 +649,7 @@ export function useChatWorkspace(
       } else if (error instanceof ChatApi.UnauthorizedError) {
         onUnauthorizedRef.current?.();
       } else {
-        setStreamError(error instanceof Error ? error.message : '聊天请求失败');
+        setStreamError(error instanceof Error ? error.message : UserErrorMessages.CHAT_REQUEST_FAILED);
       }
     } finally {
       delete streamMcpCallsRef.current[optimisticAssistantId];
@@ -1066,7 +1067,7 @@ export function useChatWorkspace(
             ? {
                 ...message,
                 status: 'error',
-                errorMessage: String(payload.message ?? '聊天请求失败'),
+                errorMessage: String(payload.message ?? UserErrorMessages.CHAT_REQUEST_FAILED),
               }
             : message,
         ),
@@ -1512,7 +1513,7 @@ async function uploadPendingAttachments(
               ? {
                   ...item,
                   uploadStatus: 'failed',
-                  uploadError: error instanceof Error ? error.message : '附件上传失败',
+                  uploadError: error instanceof Error ? error.message : UserErrorMessages.CHAT_ATTACHMENT_UPLOAD_FAILED,
                 }
               : item,
           ),
@@ -1667,10 +1668,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  */
 function resolveQueueRejectMessage(reason: string): string {
   if (reason.toLowerCase() === 'busy') {
-    return '当前会话并发已满，请稍后重试';
+    return UserErrorMessages.CHAT_QUEUE_BUSY;
   }
   if (!reason) {
-    return '当前会话暂不可执行，请稍后重试';
+    return UserErrorMessages.CHAT_QUEUE_UNAVAILABLE;
   }
   return reason;
 }

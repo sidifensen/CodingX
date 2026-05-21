@@ -1,5 +1,6 @@
 import { ApiResponseParser } from './apiResponse';
 import { publishAdminAuthExpired } from '../auth/authEvents';
+import { AdminErrorMessages } from '../constants/errorMessages';
 import { AuthStorage } from '../utils/authStorage';
 
 export interface AdminTraceRun {
@@ -843,12 +844,12 @@ export class AdminChatApi {
       ...init,
       headers,
     });
-    const envelope = await ApiResponseParser.parseEnvelope<T>(response, '管理端请求失败');
+    const envelope = await ApiResponseParser.parseEnvelope<T>(response, AdminErrorMessages.API_REQUEST_FAILED);
     if (isUnauthorizedResponse(response, envelope)) {
       // 步骤：统一派发会话失效事件，让认证层集中处理“清会话 + 提示 + 跳登录页”。
-      publishAdminAuthExpired(envelope.message || '登录已失效，请重新登录');
+      publishAdminAuthExpired(envelope.message || AdminErrorMessages.AUTH_SESSION_EXPIRED);
     }
-    ApiResponseParser.assertSuccess(response, envelope, '管理端请求失败');
+    ApiResponseParser.assertSuccess(response, envelope, AdminErrorMessages.API_REQUEST_FAILED);
     return envelope.data;
   }
 }

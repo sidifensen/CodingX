@@ -13,6 +13,7 @@ import com.codingx.chat.interfaces.response.AdminChatMessageFeedbackDetailRespon
 import com.codingx.chat.interfaces.response.AdminChatMessageFeedbackListItemResponse;
 import com.codingx.chat.interfaces.response.AdminChatMessageReferenceResponse;
 import com.codingx.chat.interfaces.response.PageResult;
+import com.codingx.common.error.ErrorMessageCatalog;
 import com.codingx.common.exception.NotFoundException;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -57,7 +58,7 @@ public class AdminChatFeedbackService {
     public AdminChatMessageFeedbackDetailResponse getFeedbackDetail(Long feedbackId) {
         ChatMessageFeedback feedback = requireFeedback(feedbackId);
         ChatMessage message = chatMessageRepository.findById(feedback.getMessageId())
-            .orElseThrow(() -> new NotFoundException("反馈关联消息不存在"));
+            .orElseThrow(() -> new NotFoundException(ErrorMessageCatalog.CHAT_FEEDBACK_MESSAGE_NOT_FOUND));
         ChatConversation conversation = chatConversationRepository.findById(feedback.getConversationId())
             .orElse(null);
         return AdminChatMessageFeedbackDetailResponse.builder()
@@ -90,7 +91,7 @@ public class AdminChatFeedbackService {
 
     private ChatMessageFeedback requireFeedback(Long feedbackId) {
         return chatMessageFeedbackRepository.findById(feedbackId)
-            .orElseThrow(() -> new NotFoundException("反馈记录不存在"));
+            .orElseThrow(() -> new NotFoundException(ErrorMessageCatalog.CHAT_FEEDBACK_NOT_FOUND));
     }
 
     private AdminChatMessageFeedbackListItemResponse toListItem(ChatMessageFeedback feedback) {

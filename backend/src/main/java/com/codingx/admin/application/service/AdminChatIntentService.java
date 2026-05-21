@@ -4,6 +4,7 @@ import cn.hutool.core.util.IdUtil;
 import cn.hutool.core.util.StrUtil;
 import com.codingx.chat.domain.model.ChatIntentNode;
 import com.codingx.chat.domain.repository.ChatIntentNodeRepository;
+import com.codingx.common.error.ErrorMessageCatalog;
 import com.codingx.common.exception.BusinessException;
 import com.codingx.common.exception.NotFoundException;
 import java.time.LocalDateTime;
@@ -96,7 +97,7 @@ public class AdminChatIntentService {
     public ChatIntentNode update(Long id, ChatIntentNode node) {
         ChatIntentNode existing = chatIntentNodeRepository.findById(id);
         if (existing == null) {
-            throw new NotFoundException("意图节点不存在");
+            throw new NotFoundException(ErrorMessageCatalog.CHAT_INTENT_NOT_FOUND);
         }
         ChatIntentNode incoming = requireNode(node);
         ChatIntentNode request = incoming.toBuilder()
@@ -123,10 +124,10 @@ public class AdminChatIntentService {
     public void delete(Long id) {
         ChatIntentNode existing = chatIntentNodeRepository.findById(id);
         if (existing == null) {
-            throw new NotFoundException("意图节点不存在");
+            throw new NotFoundException(ErrorMessageCatalog.CHAT_INTENT_NOT_FOUND);
         }
         if (chatIntentNodeRepository.hasChildren(existing.getIntentCode())) {
-            throw new BusinessException("CHAT_INTENT_HAS_CHILDREN", "该意图存在子节点，不能删除");
+            throw new BusinessException("CHAT_INTENT_HAS_CHILDREN", ErrorMessageCatalog.CHAT_INTENT_HAS_CHILDREN);
         }
         chatIntentNodeRepository.softDeleteById(id);
     }
@@ -178,16 +179,16 @@ public class AdminChatIntentService {
 
     private void validateRequired(ChatIntentNode node) {
         if (StrUtil.isBlank(node.getIntentCode())) {
-            throw new BusinessException("CHAT_INTENT_INVALID", "意图编码不能为空");
+            throw new BusinessException("CHAT_INTENT_INVALID", ErrorMessageCatalog.CHAT_INTENT_CODE_REQUIRED);
         }
         if (StrUtil.isBlank(node.getName())) {
-            throw new BusinessException("CHAT_INTENT_INVALID", "意图名称不能为空");
+            throw new BusinessException("CHAT_INTENT_INVALID", ErrorMessageCatalog.CHAT_INTENT_NAME_REQUIRED);
         }
     }
 
     private void rejectDuplicateIntentCode(String intentCode, Long excludedId) {
         if (chatIntentNodeRepository.existsByIntentCode(intentCode, excludedId)) {
-            throw new BusinessException("CHAT_INTENT_DUPLICATE_CODE", "意图编码已存在");
+            throw new BusinessException("CHAT_INTENT_DUPLICATE_CODE", ErrorMessageCatalog.CHAT_INTENT_DUPLICATE_CODE);
         }
     }
 
@@ -207,7 +208,7 @@ public class AdminChatIntentService {
             case KIND_SEARCH -> TYPE_SEARCH;
             case KIND_SYSTEM -> TYPE_SYSTEM;
             case KIND_MCP -> TYPE_MCP;
-            default -> throw new BusinessException("CHAT_INTENT_INVALID_KIND", "意图类型不支持");
+            default -> throw new BusinessException("CHAT_INTENT_INVALID_KIND", ErrorMessageCatalog.CHAT_INTENT_KIND_UNSUPPORTED);
         };
     }
 
@@ -216,7 +217,7 @@ public class AdminChatIntentService {
             case TYPE_SEARCH -> KIND_SEARCH;
             case TYPE_SYSTEM -> KIND_SYSTEM;
             case TYPE_MCP -> KIND_MCP;
-            default -> throw new BusinessException("CHAT_INTENT_INVALID_KIND", "意图类型不支持");
+            default -> throw new BusinessException("CHAT_INTENT_INVALID_KIND", ErrorMessageCatalog.CHAT_INTENT_KIND_UNSUPPORTED);
         };
     }
 
@@ -252,7 +253,7 @@ public class AdminChatIntentService {
 
     private ChatIntentNode requireNode(ChatIntentNode node) {
         if (node == null) {
-            throw new BusinessException("CHAT_INTENT_INVALID", "意图节点不能为空");
+            throw new BusinessException("CHAT_INTENT_INVALID", ErrorMessageCatalog.CHAT_INTENT_NODE_REQUIRED);
         }
         return node;
     }

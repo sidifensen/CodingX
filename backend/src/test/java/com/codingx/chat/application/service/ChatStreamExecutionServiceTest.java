@@ -14,6 +14,8 @@ import com.codingx.chat.domain.model.ChatExecutionRun;
 import com.codingx.chat.domain.model.ChatTraceRun;
 import com.codingx.chat.domain.repository.ChatConversationRepository;
 import com.codingx.chat.domain.repository.ChatExecutionRunRepository;
+import com.codingx.common.error.ErrorMessageCatalog;
+import com.codingx.common.exception.ConflictException;
 import com.codingx.expert.domain.repository.ChatExpertRepository;
 import com.codingx.mcp.domain.repository.ChatMcpRepository;
 import com.codingx.skill.domain.repository.ChatSkillRepository;
@@ -325,14 +327,14 @@ class ChatStreamExecutionServiceTest {
             }
             return null;
         }).when(chatExecutionRunRepository).save(any(ChatExecutionRun.class));
-        org.mockito.Mockito.doThrow(new IllegalStateException("Conversation rejected: busy"))
+        org.mockito.Mockito.doThrow(new ConflictException(ErrorMessageCatalog.CHAT_QUEUE_BUSY))
             .when(chatApplicationService).sendMessage(new SendChatMessageCommand(1001L, "你好", false, java.util.List.of(), java.util.List.of(), null, null, java.util.List.of()), 2001L);
 
         service.dispatch(new SendChatMessageCommand(1001L, "你好", false), 2001L);
 
         assertTrue(captured.await(1, TimeUnit.SECONDS), "rejected run should be updated to REJECTED");
         verify(chatExecutionRunRepository, timeout(1000).atLeast(2)).save(any(ChatExecutionRun.class));
-        verify(conversationTraceRecordService).finishTrace("trace-rejected", runIdRef.get(), "REJECTED", "Conversation rejected: busy");
+        verify(conversationTraceRecordService).finishTrace("trace-rejected", runIdRef.get(), "REJECTED", ErrorMessageCatalog.CHAT_QUEUE_BUSY);
     }
 
     /**

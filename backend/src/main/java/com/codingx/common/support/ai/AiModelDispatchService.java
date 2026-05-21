@@ -1,6 +1,7 @@
 package com.codingx.common.support.ai;
 
 import cn.hutool.core.collection.CollUtil;
+import com.codingx.common.error.ErrorMessageCatalog;
 import com.codingx.config.AiProperties;
 import com.codingx.config.DynamicAiRoutingProperties;
 import java.util.ArrayList;
@@ -109,7 +110,10 @@ public class AiModelDispatchService {
             }
             if (session == null) {
                 healthRegistry.markFailure(modelId);
-                lastError = new IllegalStateException(providerClient.provider() + "/" + target.candidate().getModel() + " returned null stream session");
+                lastError = new IllegalStateException(
+                    providerClient.provider() + "/" + target.candidate().getModel()
+                        + ErrorMessageCatalog.AI_STREAM_SESSION_NULL_SUFFIX
+                );
                 continue;
             }
 
@@ -129,17 +133,17 @@ public class AiModelDispatchService {
                 } catch (CompletionException completionException) {
                     healthRegistry.markFailure(modelId);
                     Throwable cause = completionException.getCause() == null ? completionException : completionException.getCause();
-                    throw new IllegalStateException("AI stream failed after first token", cause);
+                    throw new IllegalStateException(ErrorMessageCatalog.AI_STREAM_FAILED_AFTER_FIRST_TOKEN, cause);
                 }
                 healthRegistry.markSuccess(modelId);
                 return;
             } catch (InterruptedException exception) {
                 Thread.currentThread().interrupt();
                 session.cancel();
-                throw new IllegalStateException("AI routing interrupted", exception);
+                throw new IllegalStateException(ErrorMessageCatalog.AI_ROUTING_INTERRUPTED, exception);
             }
         }
-        IllegalStateException exception = new IllegalStateException("No available AI provider could complete the request");
+        IllegalStateException exception = new IllegalStateException(ErrorMessageCatalog.AI_NO_AVAILABLE_PROVIDER);
         if (lastError != null) {
             exception.initCause(lastError);
         }
@@ -165,10 +169,16 @@ public class AiModelDispatchService {
     private Throwable errorForResult(FirstTokenAwaiter.Result result, String provider, String model) {
         return switch (result.getType()) {
             case ERROR -> result.getError() == null
-                ? new IllegalStateException(provider + "/" + model + " failed before first token")
+                ? new IllegalStateException(
+                    provider + "/" + model + ErrorMessageCatalog.AI_STREAM_FAILED_BEFORE_FIRST_TOKEN_SUFFIX
+                )
                 : result.getError();
-            case TIMEOUT -> new IllegalStateException(provider + "/" + model + " timed out before first token");
-            case NO_CONTENT -> new IllegalStateException(provider + "/" + model + " completed without content");
+            case TIMEOUT -> new IllegalStateException(
+                provider + "/" + model + ErrorMessageCatalog.AI_STREAM_TIMEOUT_BEFORE_FIRST_TOKEN_SUFFIX
+            );
+            case NO_CONTENT -> new IllegalStateException(
+                provider + "/" + model + ErrorMessageCatalog.AI_STREAM_COMPLETED_WITHOUT_CONTENT_SUFFIX
+            );
             case SUCCESS -> null;
         };
     }

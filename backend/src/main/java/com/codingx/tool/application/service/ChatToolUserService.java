@@ -4,6 +4,7 @@ import cn.dev33.satoken.stp.StpUtil;
 import cn.hutool.core.util.StrUtil;
 import cn.hutool.json.JSONObject;
 import cn.hutool.json.JSONUtil;
+import com.codingx.common.error.ErrorMessageCatalog;
 import com.codingx.common.exception.BusinessException;
 import com.codingx.tool.domain.model.ChatTool;
 import com.codingx.tool.domain.repository.ChatToolRepository;
@@ -85,7 +86,7 @@ public class ChatToolUserService {
      */
     private void ensureToolWhitelisted(String normalizedToolCode) {
         if (!USER_ALLOWED_TOOL_CODES.contains(normalizedToolCode)) {
-            throw new BusinessException("CHAT_TOOL_NOT_ALLOWED", "当前工具不允许用户态调用");
+            throw new BusinessException("CHAT_TOOL_NOT_ALLOWED", ErrorMessageCatalog.CHAT_TOOL_NOT_ALLOWED);
         }
     }
 
@@ -96,7 +97,7 @@ public class ChatToolUserService {
     private void ensureToolEnabled(String normalizedToolCode) {
         ChatTool chatTool = chatToolRepository.findByToolCode(normalizedToolCode);
         if (chatTool == null || chatTool.getEnabled() == null || chatTool.getEnabled() != 1) {
-            throw new BusinessException("CHAT_TOOL_DISABLED", "工具已禁用，无法调用");
+            throw new BusinessException("CHAT_TOOL_DISABLED", ErrorMessageCatalog.CHAT_TOOL_DISABLED);
         }
     }
 
@@ -111,7 +112,10 @@ public class ChatToolUserService {
             return;
         }
         if (!confirmHighRisk) {
-            throw new BusinessException("CHAT_TOOL_HIGH_RISK_CONFIRM_REQUIRED", "检测到高风险操作，请确认后再执行");
+            throw new BusinessException(
+                "CHAT_TOOL_HIGH_RISK_CONFIRM_REQUIRED",
+                ErrorMessageCatalog.CHAT_TOOL_HIGH_RISK_CONFIRM_REQUIRED
+            );
         }
     }
 

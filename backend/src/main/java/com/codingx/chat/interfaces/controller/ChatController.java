@@ -133,19 +133,24 @@ public class ChatController {
             .map(ChatMcp::getMcpCode)
             .filter(StrUtil::isNotBlank)
             .collect(Collectors.toList());
-        chatApplicationService.sendMessage(
-            new SendChatMessageCommand(
-                conversationId,
-                request.content(),
-                false,
-                selectedMcpCodes,
-                selectedSkillCodes,
-                null,
-                null,
-                request.attachmentIds() == null ? List.of() : request.attachmentIds()
-            ),
-            StpUtil.getLoginIdAsLong()
-        );
+        // 同步入口需要显式收口门控，避免异常或成功路径遗漏释放导致后续请求被误判 busy。
+        try {
+            chatApplicationService.sendMessage(
+                new SendChatMessageCommand(
+                    conversationId,
+                    request.content(),
+                    false,
+                    selectedMcpCodes,
+                    selectedSkillCodes,
+                    null,
+                    null,
+                    request.attachmentIds() == null ? List.of() : request.attachmentIds()
+                ),
+                StpUtil.getLoginIdAsLong()
+            );
+        } finally {
+            chatRuntimeGuardService.completeConversation(conversationId);
+        }
         return ApiResponse.successMessage(ErrorMessageCatalog.CHAT_MESSAGE_PROCESSED);
     }
 

@@ -5,6 +5,7 @@ import cn.hutool.core.util.StrUtil;
 import com.codingx.chat.application.service.RuntimeSettingService;
 import com.codingx.chat.domain.model.ChatRuntimeSetting;
 import com.codingx.chat.domain.repository.ChatRuntimeSettingRepository;
+import com.codingx.common.error.ErrorMessageCatalog;
 import com.codingx.common.exception.BusinessException;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -47,16 +48,16 @@ public class AdminChatSettingsService {
      */
     private void validate(ChatRuntimeSetting setting) {
         if (setting == null) {
-            throw new BusinessException("SETTING_INVALID", "配置不能为空");
+            throw new BusinessException("SETTING_INVALID", ErrorMessageCatalog.CHAT_SETTING_REQUIRED);
         }
         if (StrUtil.isBlank(setting.getSettingKey())) {
-            throw new BusinessException("SETTING_INVALID", "配置键不能为空");
+            throw new BusinessException("SETTING_INVALID", ErrorMessageCatalog.CHAT_SETTING_KEY_REQUIRED);
         }
         if (StrUtil.isBlank(setting.getValueType())) {
-            throw new BusinessException("SETTING_INVALID", "值类型不能为空");
+            throw new BusinessException("SETTING_INVALID", ErrorMessageCatalog.CHAT_SETTING_VALUE_TYPE_REQUIRED);
         }
         if (setting.getSettingValue() == null) {
-            throw new BusinessException("SETTING_INVALID", "配置值不能为空");
+            throw new BusinessException("SETTING_INVALID", ErrorMessageCatalog.CHAT_SETTING_VALUE_REQUIRED);
         }
     }
 }

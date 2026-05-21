@@ -1,8 +1,10 @@
 package com.codingx.auth.infrastructure.security;
+
 import cn.dev33.satoken.stp.StpUtil;
 import cn.hutool.core.util.StrUtil;
 import com.codingx.auth.domain.model.User;
 import com.codingx.auth.domain.service.AuthSessionGateway;
+import com.codingx.common.error.ErrorMessageCatalog;
 import com.codingx.common.exception.UnauthorizedException;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.stereotype.Component;
@@ -46,7 +48,7 @@ public class SaTokenSessionGateway implements AuthSessionGateway {
         try {
             return StpUtil.getLoginIdAsLong();
         } catch (Exception exception) {
-            throw new UnauthorizedException("Not logged in");
+            throw new UnauthorizedException(ErrorMessageCatalog.AUTH_NOT_LOGGED_IN);
         }
     }
 

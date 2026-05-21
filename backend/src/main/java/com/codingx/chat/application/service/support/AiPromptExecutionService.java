@@ -5,6 +5,7 @@ import cn.hutool.core.util.StrUtil;
 import com.codingx.chat.domain.model.ChatMessage;
 import com.codingx.chat.domain.model.ChatMessageRole;
 import com.codingx.chat.domain.model.ChatMessageStatus;
+import com.codingx.common.error.ErrorMessageCatalog;
 import com.codingx.common.support.ai.AiConversationRequest;
 import com.codingx.common.support.ai.AiModelDispatchService;
 import com.codingx.common.support.ai.AiStreamHandler;
@@ -54,7 +55,7 @@ public class AiPromptExecutionService {
             }
         );
         if (streamError[0] != null) {
-            throw new IllegalStateException("Prompt execution failed", streamError[0]);
+            throw new IllegalStateException(ErrorMessageCatalog.CHAT_PROMPT_EXECUTION_FAILED, streamError[0]);
         }
         return builder.toString();
     }

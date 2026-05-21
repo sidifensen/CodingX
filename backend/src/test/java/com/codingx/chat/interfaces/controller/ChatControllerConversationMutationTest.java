@@ -1,6 +1,8 @@
 package com.codingx.chat.interfaces.controller;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -11,6 +13,7 @@ import com.codingx.chat.application.service.ChatReactionService;
 import com.codingx.chat.application.service.ChatRuntimeGuardService;
 import com.codingx.chat.domain.model.ChatConversation;
 import com.codingx.chat.domain.model.ChatConversationStatus;
+import com.codingx.chat.interfaces.request.SendChatMessageRequest;
 import com.codingx.common.error.ErrorMessageCatalog;
 import com.codingx.skill.domain.repository.ChatSkillRepository;
 import com.codingx.common.model.ApiResponse;
@@ -112,6 +115,69 @@ class ChatControllerConversationMutationTest {
                 new com.codingx.chat.application.command.CreateConversationCommand("新会话", 3001L),
                 1002L
             );
+        }
+    }
+
+    /**
+     * 同步发送消息完成后应释放会话门控，避免并发槽位被同步入口长期占用。
+     */
+    @Test
+    void sendMessageReleasesConversationGuardAfterSyncProcessing() {
+        when(chatSkillRepository.findAllEnabled()).thenReturn(java.util.List.of());
+        when(chatMcpRepository.findAllEnabled()).thenReturn(java.util.List.of());
+        try (MockedStatic<cn.dev33.satoken.stp.StpUtil> mocked = Mockito.mockStatic(cn.dev33.satoken.stp.StpUtil.class)) {
+            mocked.when(cn.dev33.satoken.stp.StpUtil::getLoginIdAsLong).thenReturn(1002L);
+
+            ApiResponse<Void> response = chatController.sendMessage(2001L, new SendChatMessageRequest("请搜索最新 Java 版本", null));
+
+            assertEquals(true, response.success());
+            assertEquals(ErrorMessageCatalog.CHAT_MESSAGE_PROCESSED, response.message());
+            verify(chatApplicationService).sendMessage(
+                new com.codingx.chat.application.command.SendChatMessageCommand(
+                    2001L,
+                    "请搜索最新 Java 版本",
+                    false,
+                    java.util.List.of(),
+                    java.util.List.of(),
+                    null,
+                    null,
+                    java.util.List.of()
+                ),
+                1002L
+            );
+            verify(chatRuntimeGuardService).completeConversation(2001L);
+        }
+    }
+
+    /**
+     * 同步发送消息抛错时也应释放会话门控，避免异常路径造成后续请求被误判 busy。
+     */
+    @Test
+    void sendMessageReleasesConversationGuardWhenSyncProcessingFails() {
+        when(chatSkillRepository.findAllEnabled()).thenReturn(java.util.List.of());
+        when(chatMcpRepository.findAllEnabled()).thenReturn(java.util.List.of());
+        doThrow(new IllegalStateException("boom")).when(chatApplicationService).sendMessage(
+            new com.codingx.chat.application.command.SendChatMessageCommand(
+                2001L,
+                "请搜索最新 Java 版本",
+                false,
+                java.util.List.of(),
+                java.util.List.of(),
+                null,
+                null,
+                java.util.List.of()
+            ),
+            1002L
+        );
+        try (MockedStatic<cn.dev33.satoken.stp.StpUtil> mocked = Mockito.mockStatic(cn.dev33.satoken.stp.StpUtil.class)) {
+            mocked.when(cn.dev33.satoken.stp.StpUtil::getLoginIdAsLong).thenReturn(1002L);
+
+            assertThrows(
+                IllegalStateException.class,
+                () -> chatController.sendMessage(2001L, new SendChatMessageRequest("请搜索最新 Java 版本", null))
+            );
+
+            verify(chatRuntimeGuardService).completeConversation(2001L);
         }
     }
 }

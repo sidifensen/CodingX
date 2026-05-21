@@ -3,6 +3,7 @@ package com.codingx.chat.application.service;
 import cn.hutool.core.util.StrUtil;
 import com.codingx.chat.domain.model.ChatRuntimeSetting;
 import com.codingx.chat.domain.repository.ChatRuntimeSettingRepository;
+import com.codingx.common.error.ErrorMessageCatalog;
 import com.codingx.common.exception.BusinessException;
 import com.codingx.config.AiProperties;
 import com.codingx.config.ChatExecutorRuntimeProperties;
@@ -478,6 +479,11 @@ public class RuntimeSettingService {
      * @return 业务异常。
      */
     private BusinessException invalidValue(String key, String value, String type) {
-        return new BusinessException("SETTING_VALUE_INVALID", "配置 " + key + " 值 " + value + " 不是合法 " + type + " 类型");
+        return new BusinessException(
+            "SETTING_VALUE_INVALID",
+            ErrorMessageCatalog.CHAT_SETTING_VALUE_INVALID_PREFIX + key
+                + ErrorMessageCatalog.CHAT_SETTING_VALUE_INVALID_INFIX + value
+                + ErrorMessageCatalog.CHAT_SETTING_VALUE_INVALID_SUFFIX + type + " 类型"
+        );
     }
 }

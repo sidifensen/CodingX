@@ -4,6 +4,7 @@ import cn.hutool.core.util.IdUtil;
 import cn.hutool.core.util.StrUtil;
 import com.codingx.tool.domain.model.ChatTool;
 import com.codingx.tool.domain.repository.ChatToolRepository;
+import com.codingx.common.error.ErrorMessageCatalog;
 import com.codingx.common.exception.BusinessException;
 import com.codingx.common.exception.NotFoundException;
 import java.time.LocalDateTime;
@@ -47,7 +48,7 @@ public class AdminChatToolService {
         validateRequired(request);
         String normalizedToolCode = request.getToolCode().trim();
         if (chatToolRepository.existsByToolCode(normalizedToolCode, null)) {
-            throw new BusinessException("CHAT_TOOL_DUPLICATE_CODE", "工具编码已存在");
+            throw new BusinessException("CHAT_TOOL_DUPLICATE_CODE", ErrorMessageCatalog.CHAT_TOOL_DUPLICATE_CODE);
         }
         LocalDateTime now = LocalDateTime.now();
         ChatTool persisted = request.toBuilder()
@@ -74,12 +75,12 @@ public class AdminChatToolService {
     public ChatTool update(Long id, ChatTool request) {
         ChatTool existing = chatToolRepository.findById(id);
         if (existing == null) {
-            throw new NotFoundException("工具配置不存在");
+            throw new NotFoundException(ErrorMessageCatalog.CHAT_TOOL_CONFIG_NOT_FOUND);
         }
         validateRequired(request);
         String normalizedToolCode = request.getToolCode().trim();
         if (chatToolRepository.existsByToolCode(normalizedToolCode, id)) {
-            throw new BusinessException("CHAT_TOOL_DUPLICATE_CODE", "工具编码已存在");
+            throw new BusinessException("CHAT_TOOL_DUPLICATE_CODE", ErrorMessageCatalog.CHAT_TOOL_DUPLICATE_CODE);
         }
         ChatTool persisted = request.toBuilder()
             .id(id)
@@ -103,7 +104,7 @@ public class AdminChatToolService {
     public void delete(Long id) {
         ChatTool existing = chatToolRepository.findById(id);
         if (existing == null) {
-            throw new NotFoundException("工具配置不存在");
+            throw new NotFoundException(ErrorMessageCatalog.CHAT_TOOL_CONFIG_NOT_FOUND);
         }
         chatToolRepository.softDeleteById(id);
     }
@@ -178,7 +179,7 @@ public class AdminChatToolService {
     public ToolInvokeView invokeTool(String toolCode, String question) {
         ChatTool configuredTool = requireConfiguredTool(toolCode);
         if (!isEnabled(configuredTool)) {
-            throw new BusinessException("CHAT_TOOL_DISABLED", "工具已禁用，无法调用");
+            throw new BusinessException("CHAT_TOOL_DISABLED", ErrorMessageCatalog.CHAT_TOOL_DISABLED);
         }
         long startedAt = System.currentTimeMillis();
         String normalizedCode = normalizeToolCode(configuredTool.getToolCode());
@@ -238,13 +239,13 @@ public class AdminChatToolService {
 
     private void validateRequired(ChatTool request) {
         if (request == null) {
-            throw new BusinessException("CHAT_TOOL_INVALID", "工具配置不能为空");
+            throw new BusinessException("CHAT_TOOL_INVALID", ErrorMessageCatalog.CHAT_TOOL_CONFIG_REQUIRED);
         }
         if (StrUtil.isBlank(request.getToolCode())) {
-            throw new BusinessException("CHAT_TOOL_INVALID", "工具编码不能为空");
+            throw new BusinessException("CHAT_TOOL_INVALID", ErrorMessageCatalog.CHAT_TOOL_CODE_REQUIRED);
         }
         if (StrUtil.isBlank(request.getDisplayName())) {
-            throw new BusinessException("CHAT_TOOL_INVALID", "工具名称不能为空");
+            throw new BusinessException("CHAT_TOOL_INVALID", ErrorMessageCatalog.CHAT_TOOL_NAME_REQUIRED);
         }
     }
 
@@ -256,7 +257,7 @@ public class AdminChatToolService {
     private ChatTool requireConfiguredTool(String toolCode) {
         ChatTool tool = chatToolRepository.findByToolCode(StrUtil.trimToEmpty(toolCode));
         if (tool == null) {
-            throw new NotFoundException("工具配置不存在");
+            throw new NotFoundException(ErrorMessageCatalog.CHAT_TOOL_CONFIG_NOT_FOUND);
         }
         return tool;
     }

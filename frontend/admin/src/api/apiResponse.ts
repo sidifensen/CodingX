@@ -1,4 +1,5 @@
 import { ApiResponseEnvelope } from '../types/auth';
+import { AdminErrorMessages } from '../constants/errorMessages';
 
 /**
  * 统一解析后端响应并提取错误信息，确保管理端优先展示后端返回的中文文案。
@@ -16,7 +17,7 @@ export class ApiResponseParser {
       return {
         success: false,
         code: 'EMPTY_RESPONSE',
-        message: '服务返回空响应，请检查后端服务状态',
+        message: AdminErrorMessages.API_EMPTY_RESPONSE,
         data: null as T,
       };
     }

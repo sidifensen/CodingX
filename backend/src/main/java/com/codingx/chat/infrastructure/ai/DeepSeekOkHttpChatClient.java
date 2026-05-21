@@ -2,6 +2,7 @@ package com.codingx.chat.infrastructure.ai;
 import cn.hutool.core.util.StrUtil;
 import com.codingx.chat.domain.model.ChatMessage;
 import com.codingx.config.AiProperties;
+import com.codingx.common.error.ErrorMessageCatalog;
 import com.codingx.common.support.ai.AiConversationRequest;
 import com.codingx.common.support.ai.AiModelTarget;
 import com.codingx.common.support.ai.AiProviderClient;
@@ -57,7 +58,7 @@ public class DeepSeekOkHttpChatClient implements AiProviderClient {
     @Override
     public AiStreamSession streamChat(AiConversationRequest request, AiModelTarget target, AiStreamHandler handler) {
         if (StrUtil.isBlank(resolveApiKey(target))) {
-            handler.onContentDelta("AI API key is not configured.");
+            handler.onContentDelta(ErrorMessageCatalog.AI_API_KEY_NOT_CONFIGURED);
             handler.onComplete();
             return new AiStreamSession(() -> {}, CompletableFuture.completedFuture(null));
         }
@@ -74,11 +75,11 @@ public class DeepSeekOkHttpChatClient implements AiProviderClient {
             try (Response response = okHttpClient.newCall(httpRequest).execute()) {
                 if (!response.isSuccessful()) {
                     String body = response.body() != null ? response.body().string() : "";
-                    throw new IllegalStateException("AI request failed: HTTP " + response.code() + " " + body);
+                    throw new IllegalStateException(ErrorMessageCatalog.AI_REQUEST_FAILED + "：HTTP " + response.code() + " " + body);
                 }
                 ResponseBody responseBodyValue = response.body();
                 if (responseBodyValue == null) {
-                    throw new IllegalStateException("AI response body is empty");
+                    throw new IllegalStateException(ErrorMessageCatalog.AI_RESPONSE_BODY_EMPTY);
                 }
                 BufferedSource source = responseBodyValue.source();
                 StringBuilder chunkBuffer = new StringBuilder();
@@ -155,7 +156,7 @@ public class DeepSeekOkHttpChatClient implements AiProviderClient {
     private String resolveChatCompletionsUrl(AiModelTarget target) {
         HttpUrl baseUrl = HttpUrl.parse(StrUtil.removeSuffix(resolveBaseUrl(target), "/"));
         if (baseUrl == null) {
-            throw new IllegalStateException("Invalid AI base URL");
+            throw new IllegalStateException(ErrorMessageCatalog.AI_BASE_URL_INVALID);
         }
         return baseUrl.newBuilder().addPathSegment("chat").addPathSegment("completions").build().toString();
     }

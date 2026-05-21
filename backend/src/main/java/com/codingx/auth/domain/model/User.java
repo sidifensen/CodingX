@@ -1,5 +1,6 @@
 package com.codingx.auth.domain.model;
 import cn.hutool.core.util.StrUtil;
+import com.codingx.common.error.ErrorMessageCatalog;
 import java.time.LocalDateTime;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
@@ -93,10 +94,10 @@ public class User {
      */
     public static User create(Long id, String username, String displayName, String passwordHash, UserType userType, UserStatus status) {
         if (id == null) {
-            throw new IllegalArgumentException("User id must not be null");
+            throw new IllegalArgumentException(ErrorMessageCatalog.AUTH_USER_ID_REQUIRED);
         }
         if (StrUtil.hasBlank(username, displayName, passwordHash) || userType == null || status == null) {
-            throw new IllegalArgumentException("User fields must not be blank");
+            throw new IllegalArgumentException(ErrorMessageCatalog.AUTH_USER_FIELDS_REQUIRED);
         }
         return User.builder()
             .id(id)
@@ -117,7 +118,7 @@ public class User {
      */
     public void updateProfile(String displayName, String email, String phone, String avatarUrl) {
         if (StrUtil.isBlank(displayName)) {
-            throw new IllegalArgumentException("用户展示名称不能为空");
+            throw new IllegalArgumentException(ErrorMessageCatalog.AUTH_USER_DISPLAY_NAME_REQUIRED);
         }
         this.displayName = displayName;
         this.email = StrUtil.trimToNull(email);
@@ -132,7 +133,7 @@ public class User {
      */
     public void updateStatus(UserStatus status) {
         if (status == null) {
-            throw new IllegalArgumentException("用户状态不能为空");
+            throw new IllegalArgumentException(ErrorMessageCatalog.AUTH_USER_STATUS_REQUIRED);
         }
         this.status = status;
         this.updatedAt = LocalDateTime.now();
@@ -144,7 +145,7 @@ public class User {
      */
     public void updatePasswordHash(String passwordHash) {
         if (StrUtil.isBlank(passwordHash)) {
-            throw new IllegalArgumentException("密码哈希不能为空");
+            throw new IllegalArgumentException(ErrorMessageCatalog.AUTH_USER_PASSWORD_HASH_REQUIRED);
         }
         this.passwordHash = passwordHash;
         this.updatedAt = LocalDateTime.now();
@@ -166,7 +167,7 @@ public class User {
      */
     public void ensureActive() {
         if (status != UserStatus.ACTIVE) {
-            throw new IllegalArgumentException("User is disabled");
+            throw new IllegalArgumentException(ErrorMessageCatalog.AUTH_USER_DISABLED);
         }
     }
 }

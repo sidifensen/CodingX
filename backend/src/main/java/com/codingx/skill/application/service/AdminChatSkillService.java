@@ -8,6 +8,7 @@ import cn.hutool.core.util.IdUtil;
 import cn.hutool.core.util.StrUtil;
 import cn.hutool.crypto.digest.DigestUtil;
 import com.codingx.chat.interfaces.response.PageResult;
+import com.codingx.common.error.ErrorMessageCatalog;
 import com.codingx.common.exception.BusinessException;
 import com.codingx.common.exception.NotFoundException;
 import com.codingx.skill.domain.model.ChatSkill;
@@ -74,7 +75,7 @@ public class AdminChatSkillService {
         validateRequired(request);
         String normalizedSkillCode = request.getSkillCode().trim();
         if (chatSkillRepository.existsBySkillCode(normalizedSkillCode, null)) {
-            throw new BusinessException("CHAT_SKILL_DUPLICATE_CODE", "技能编码已存在");
+            throw new BusinessException("CHAT_SKILL_DUPLICATE_CODE", ErrorMessageCatalog.CHAT_SKILL_DUPLICATE_CODE);
         }
         LocalDateTime now = LocalDateTime.now();
         ChatSkill persisted = request.toBuilder()
@@ -102,12 +103,12 @@ public class AdminChatSkillService {
     public ChatSkill update(Long id, ChatSkill request) {
         ChatSkill existing = chatSkillRepository.findById(id);
         if (existing == null) {
-            throw new NotFoundException("技能不存在");
+            throw new NotFoundException(ErrorMessageCatalog.CHAT_SKILL_NOT_FOUND);
         }
         validateRequired(request);
         String normalizedSkillCode = request.getSkillCode().trim();
         if (chatSkillRepository.existsBySkillCode(normalizedSkillCode, id)) {
-            throw new BusinessException("CHAT_SKILL_DUPLICATE_CODE", "技能编码已存在");
+            throw new BusinessException("CHAT_SKILL_DUPLICATE_CODE", ErrorMessageCatalog.CHAT_SKILL_DUPLICATE_CODE);
         }
         ChatSkill persisted = request.toBuilder()
             .id(id)
@@ -132,7 +133,7 @@ public class AdminChatSkillService {
     public void delete(Long id) {
         ChatSkill existing = chatSkillRepository.findById(id);
         if (existing == null) {
-            throw new NotFoundException("技能不存在");
+            throw new NotFoundException(ErrorMessageCatalog.CHAT_SKILL_NOT_FOUND);
         }
         chatSkillRepository.softDeleteById(id);
     }
@@ -164,14 +165,14 @@ public class AdminChatSkillService {
 
         ChatSkill existing = chatSkillRepository.findBySkillCode(normalizedSkillCode);
         if (existing != null && StrUtil.equals(existing.getPackageChecksum(), packageChecksum)) {
-            throw new BusinessException("CHAT_SKILL_UPLOAD_DUPLICATE", "技能包内容未变化，请勿重复上传");
+            throw new BusinessException("CHAT_SKILL_UPLOAD_DUPLICATE", ErrorMessageCatalog.CHAT_SKILL_UPLOAD_DUPLICATE);
         }
 
         String storageKey;
         try {
             storageKey = rustFsSkillPackageClient.uploadDirectory(toStorageFiles(uploadedFiles), normalizedSkillCode);
         } catch (Exception exception) {
-            throw new BusinessException("CHAT_SKILL_UPLOAD_FAILED", "技能包上传失败");
+            throw new BusinessException("CHAT_SKILL_UPLOAD_FAILED", ErrorMessageCatalog.CHAT_SKILL_UPLOAD_FAILED);
         }
 
         Long loginUserId = StpUtil.getLoginIdAsLong();
@@ -239,16 +240,16 @@ public class AdminChatSkillService {
         ChatSkill skill = migrateLegacyPackageIfRequired(requireSkillById(id));
         String normalizedPath = normalizeArchivePath(path);
         if (StrUtil.isBlank(normalizedPath)) {
-            throw new BusinessException("CHAT_SKILL_PACKAGE_INVALID_PATH", "文件路径不能为空");
+            throw new BusinessException("CHAT_SKILL_PACKAGE_INVALID_PATH", ErrorMessageCatalog.CHAT_SKILL_PACKAGE_PATH_REQUIRED);
         }
         byte[] entryBytes;
         try {
             entryBytes = rustFsSkillPackageClient.downloadDirectoryFile(skill.getStorageKey(), normalizedPath);
         } catch (Exception exception) {
-            throw new NotFoundException("技能包文件不存在");
+            throw new NotFoundException(ErrorMessageCatalog.CHAT_SKILL_PACKAGE_FILE_NOT_FOUND);
         }
         if (looksLikeBinary(entryBytes)) {
-            throw new BusinessException("CHAT_SKILL_PACKAGE_BINARY_FILE", "该文件为二进制文件，暂不支持在线预览");
+            throw new BusinessException("CHAT_SKILL_PACKAGE_BINARY_FILE", ErrorMessageCatalog.CHAT_SKILL_PACKAGE_BINARY_FILE);
         }
         boolean truncated = entryBytes.length > MAX_PREVIEW_BYTES;
         int previewLength = Math.min(entryBytes.length, MAX_PREVIEW_BYTES);
@@ -293,13 +294,13 @@ public class AdminChatSkillService {
 
     private void validateRequired(ChatSkill request) {
         if (request == null) {
-            throw new BusinessException("CHAT_SKILL_INVALID", "技能信息不能为空");
+            throw new BusinessException("CHAT_SKILL_INVALID", ErrorMessageCatalog.CHAT_SKILL_REQUIRED);
         }
         if (StrUtil.isBlank(request.getSkillCode())) {
-            throw new BusinessException("CHAT_SKILL_INVALID", "技能编码不能为空");
+            throw new BusinessException("CHAT_SKILL_INVALID", ErrorMessageCatalog.CHAT_SKILL_CODE_REQUIRED);
         }
         if (StrUtil.isBlank(request.getDisplayName())) {
-            throw new BusinessException("CHAT_SKILL_INVALID", "技能名称不能为空");
+            throw new BusinessException("CHAT_SKILL_INVALID", ErrorMessageCatalog.CHAT_SKILL_NAME_REQUIRED);
         }
     }
 
@@ -312,10 +313,10 @@ public class AdminChatSkillService {
         boolean hasFolderFiles = CollUtil.isNotEmpty(folderFiles);
 
         if (hasSingleFile && hasFolderFiles) {
-            throw new BusinessException("CHAT_SKILL_UPLOAD_INVALID", "请仅选择一种上传方式");
+            throw new BusinessException("CHAT_SKILL_UPLOAD_INVALID", ErrorMessageCatalog.CHAT_SKILL_UPLOAD_MODE_CONFLICT);
         }
         if (!hasSingleFile && !hasFolderFiles) {
-            throw new BusinessException("CHAT_SKILL_UPLOAD_INVALID", "请上传技能包文件");
+            throw new BusinessException("CHAT_SKILL_UPLOAD_INVALID", ErrorMessageCatalog.CHAT_SKILL_UPLOAD_FILE_REQUIRED);
         }
 
         if (hasSingleFile) {
@@ -323,7 +324,7 @@ public class AdminChatSkillService {
             try {
                 return normalizeUploadedSkillFiles(readZipEntries(file.getBytes()));
             } catch (IOException exception) {
-                throw new BusinessException("CHAT_SKILL_UPLOAD_FAILED", "技能包读取失败");
+                throw new BusinessException("CHAT_SKILL_UPLOAD_FAILED", ErrorMessageCatalog.CHAT_SKILL_UPLOAD_READ_FAILED);
             }
         }
 
@@ -336,7 +337,7 @@ public class AdminChatSkillService {
             try {
                 directoryFiles.add(new UploadedSkillFile(relativePath, multipartFile.getBytes(), multipartFile.getContentType()));
             } catch (IOException exception) {
-                throw new BusinessException("CHAT_SKILL_UPLOAD_FAILED", "技能目录文件读取失败");
+                throw new BusinessException("CHAT_SKILL_UPLOAD_FAILED", ErrorMessageCatalog.CHAT_SKILL_UPLOAD_DIRECTORY_READ_FAILED);
             }
         }
         return normalizeUploadedSkillFiles(directoryFiles);
@@ -345,7 +346,7 @@ public class AdminChatSkillService {
     private void validateArchiveUploadFile(MultipartFile file) {
         String filename = StrUtil.blankToDefault(file.getOriginalFilename(), "").toLowerCase(Locale.ROOT);
         if (!(filename.endsWith(".zip") || filename.endsWith(".skill"))) {
-            throw new BusinessException("CHAT_SKILL_UPLOAD_INVALID", "仅支持 zip 或 skill 文件");
+            throw new BusinessException("CHAT_SKILL_UPLOAD_INVALID", ErrorMessageCatalog.CHAT_SKILL_UPLOAD_ARCHIVE_ONLY);
         }
     }
 
@@ -354,7 +355,7 @@ public class AdminChatSkillService {
      */
     private List<UploadedSkillFile> normalizeUploadedSkillFiles(List<UploadedSkillFile> rawFiles) {
         if (CollUtil.isEmpty(rawFiles)) {
-            throw new BusinessException("CHAT_SKILL_UPLOAD_INVALID", "技能包缺少文件内容");
+            throw new BusinessException("CHAT_SKILL_UPLOAD_INVALID", ErrorMessageCatalog.CHAT_SKILL_UPLOAD_EMPTY_CONTENT);
         }
 
         List<UploadedSkillFile> flattenedFiles = collapseSingleRootDirectory(rawFiles);
@@ -366,13 +367,13 @@ public class AdminChatSkillService {
             }
             String uniqueKey = normalizedPath.toLowerCase(Locale.ROOT);
             if (deduplicatedFiles.containsKey(uniqueKey)) {
-                throw new BusinessException("CHAT_SKILL_UPLOAD_INVALID", "技能包存在重复文件路径: " + normalizedPath);
+                throw new BusinessException("CHAT_SKILL_UPLOAD_INVALID", ErrorMessageCatalog.CHAT_SKILL_UPLOAD_DUPLICATE_PATH_PREFIX + normalizedPath);
             }
             deduplicatedFiles.put(uniqueKey, new UploadedSkillFile(normalizedPath, file.bytes(), file.contentType()));
         }
 
         if (deduplicatedFiles.isEmpty()) {
-            throw new BusinessException("CHAT_SKILL_UPLOAD_INVALID", "技能包缺少可用文件");
+            throw new BusinessException("CHAT_SKILL_UPLOAD_INVALID", ErrorMessageCatalog.CHAT_SKILL_UPLOAD_NO_USABLE_FILE);
         }
         return new ArrayList<>(deduplicatedFiles.values());
     }
@@ -394,7 +395,7 @@ public class AdminChatSkillService {
                 files.add(new UploadedSkillFile(normalizedPath, bytes, null));
             }
         } catch (IOException exception) {
-            throw new BusinessException("CHAT_SKILL_UPLOAD_INVALID", "技能包不是有效压缩文件");
+            throw new BusinessException("CHAT_SKILL_UPLOAD_INVALID", ErrorMessageCatalog.CHAT_SKILL_UPLOAD_INVALID_ARCHIVE);
         }
         return files;
     }
@@ -428,7 +429,7 @@ public class AdminChatSkillService {
         return files.stream()
             .filter(file -> StrUtil.equalsIgnoreCase(file.path(), ROOT_SKILL_MANIFEST))
             .findFirst()
-            .orElseThrow(() -> new BusinessException("CHAT_SKILL_UPLOAD_INVALID", "技能包缺少根目录 SKILL.md"));
+            .orElseThrow(() -> new BusinessException("CHAT_SKILL_UPLOAD_INVALID", ErrorMessageCatalog.CHAT_SKILL_UPLOAD_ROOT_MANIFEST_REQUIRED));
     }
 
     private List<RustFsSkillPackageClient.SkillFileObject> toStorageFiles(List<UploadedSkillFile> files) {
@@ -488,11 +489,11 @@ public class AdminChatSkillService {
 
     private SkillManifest parseSkillManifest(String markdown) {
         if (StrUtil.isBlank(markdown) || !markdown.startsWith("---")) {
-            throw new BusinessException("CHAT_SKILL_UPLOAD_INVALID", "SKILL.md 缺少 YAML 元信息");
+            throw new BusinessException("CHAT_SKILL_UPLOAD_INVALID", ErrorMessageCatalog.CHAT_SKILL_MANIFEST_YAML_REQUIRED);
         }
         String[] segments = markdown.split("---", 3);
         if (segments.length < 3) {
-            throw new BusinessException("CHAT_SKILL_UPLOAD_INVALID", "SKILL.md YAML 元信息格式不正确");
+            throw new BusinessException("CHAT_SKILL_UPLOAD_INVALID", ErrorMessageCatalog.CHAT_SKILL_MANIFEST_YAML_INVALID);
         }
         String yamlBlock = segments[1];
         String name = null;
@@ -515,7 +516,7 @@ public class AdminChatSkillService {
             }
         }
         if (StrUtil.isBlank(name)) {
-            throw new BusinessException("CHAT_SKILL_UPLOAD_INVALID", "SKILL.md 缺少 name 字段");
+            throw new BusinessException("CHAT_SKILL_UPLOAD_INVALID", ErrorMessageCatalog.CHAT_SKILL_MANIFEST_NAME_REQUIRED);
         }
         return new SkillManifest(name, description);
     }
@@ -545,10 +546,10 @@ public class AdminChatSkillService {
     private ChatSkill requireSkillById(Long id) {
         ChatSkill skill = chatSkillRepository.findById(id);
         if (skill == null) {
-            throw new NotFoundException("技能不存在");
+            throw new NotFoundException(ErrorMessageCatalog.CHAT_SKILL_NOT_FOUND);
         }
         if (StrUtil.isBlank(skill.getStorageKey())) {
-            throw new BusinessException("CHAT_SKILL_PACKAGE_NOT_FOUND", "该技能没有可预览的技能包");
+            throw new BusinessException("CHAT_SKILL_PACKAGE_NOT_FOUND", ErrorMessageCatalog.CHAT_SKILL_PACKAGE_NOT_FOUND);
         }
         return skill;
     }
@@ -583,7 +584,7 @@ public class AdminChatSkillService {
         try {
             archiveBytes = rustFsSkillPackageClient.download(legacySkill.getStorageKey());
         } catch (Exception exception) {
-            throw new BusinessException("CHAT_SKILL_PACKAGE_DOWNLOAD_FAILED", "技能包下载失败");
+            throw new BusinessException("CHAT_SKILL_PACKAGE_DOWNLOAD_FAILED", ErrorMessageCatalog.CHAT_SKILL_PACKAGE_DOWNLOAD_FAILED);
         }
 
         List<UploadedSkillFile> uploadedFiles = normalizeUploadedSkillFiles(readZipEntries(archiveBytes));
@@ -593,7 +594,7 @@ public class AdminChatSkillService {
         try {
             newStorageKey = rustFsSkillPackageClient.uploadDirectory(toStorageFiles(uploadedFiles), legacySkill.getSkillCode());
         } catch (Exception exception) {
-            throw new BusinessException("CHAT_SKILL_UPLOAD_FAILED", "技能包迁移上传失败");
+            throw new BusinessException("CHAT_SKILL_UPLOAD_FAILED", ErrorMessageCatalog.CHAT_SKILL_PACKAGE_MIGRATE_UPLOAD_FAILED);
         }
 
         long packageSize = uploadedFiles.stream().mapToLong(item -> item.bytes().length).sum();
@@ -613,7 +614,7 @@ public class AdminChatSkillService {
         try {
             rustFsSkillPackageClient.deleteObject(legacySkill.getStorageKey());
         } catch (Exception exception) {
-            throw new BusinessException("CHAT_SKILL_PACKAGE_MIGRATE_DELETE_FAILED", "历史技能包清理失败");
+            throw new BusinessException("CHAT_SKILL_PACKAGE_MIGRATE_DELETE_FAILED", ErrorMessageCatalog.CHAT_SKILL_PACKAGE_MIGRATE_DELETE_FAILED);
         }
         return migratedSkill;
     }
@@ -641,7 +642,7 @@ public class AdminChatSkillService {
         try {
             return rustFsSkillPackageClient.listDirectory(skill.getStorageKey());
         } catch (Exception exception) {
-            throw new BusinessException("CHAT_SKILL_PACKAGE_PARSE_FAILED", "技能包目录解析失败");
+            throw new BusinessException("CHAT_SKILL_PACKAGE_PARSE_FAILED", ErrorMessageCatalog.CHAT_SKILL_PACKAGE_PARSE_FAILED);
         }
     }
 
@@ -675,7 +676,7 @@ public class AdminChatSkillService {
         for (String segment : segments) {
             String sanitizedSegment = StrUtil.trim(segment);
             if (StrUtil.isBlank(sanitizedSegment) || StrUtil.equals(sanitizedSegment, ".") || StrUtil.equals(sanitizedSegment, "..")) {
-                throw new BusinessException("CHAT_SKILL_UPLOAD_INVALID", "技能包路径非法");
+                throw new BusinessException("CHAT_SKILL_UPLOAD_INVALID", ErrorMessageCatalog.CHAT_SKILL_UPLOAD_PATH_INVALID);
             }
             sanitizedSegments.add(sanitizedSegment);
         }

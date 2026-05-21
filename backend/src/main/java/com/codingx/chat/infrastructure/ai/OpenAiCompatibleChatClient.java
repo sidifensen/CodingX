@@ -8,6 +8,7 @@ import com.codingx.chat.domain.model.ChatAttachment;
 import com.codingx.chat.domain.model.ChatMessage;
 import com.codingx.chat.domain.model.ChatMessageRole;
 import com.codingx.chat.application.service.ChatAttachmentService;
+import com.codingx.common.error.ErrorMessageCatalog;
 import com.codingx.common.support.ai.AiConversationRequest;
 import com.codingx.common.support.ai.AiModelTarget;
 import com.codingx.common.support.ai.AiProviderClient;
@@ -52,10 +53,10 @@ public class OpenAiCompatibleChatClient implements AiProviderClient {
     public AiStreamSession streamChat(AiConversationRequest request, AiModelTarget target, AiStreamHandler handler) {
         String providerName = target.candidate().getProvider();
         if (!supportsProvider(providerName)) {
-            throw new IllegalStateException("Unsupported provider: " + providerName);
+            throw new IllegalStateException(ErrorMessageCatalog.AI_PROVIDER_UNSUPPORTED + "：" + providerName);
         }
         if (StrUtil.isBlank(resolveApiKey(target))) {
-            throw new IllegalStateException("AI API key is not configured for provider: " + providerName);
+            throw new IllegalStateException(ErrorMessageCatalog.AI_API_KEY_NOT_CONFIGURED + "：" + providerName);
         }
         JSONObject requestBody = buildRequestBody(request, target);
         AtomicBoolean cancelled = new AtomicBoolean(false);
@@ -70,11 +71,11 @@ public class OpenAiCompatibleChatClient implements AiProviderClient {
             try (Response response = okHttpClient.newCall(httpRequest).execute()) {
                 if (!response.isSuccessful()) {
                     String body = response.body() != null ? response.body().string() : "";
-                    throw new IllegalStateException("AI request failed: HTTP " + response.code() + " " + body);
+                    throw new IllegalStateException(ErrorMessageCatalog.AI_REQUEST_FAILED + "：HTTP " + response.code() + " " + body);
                 }
                 ResponseBody responseBody = response.body();
                 if (responseBody == null) {
-                    throw new IllegalStateException("AI response body is empty");
+                    throw new IllegalStateException(ErrorMessageCatalog.AI_RESPONSE_BODY_EMPTY);
                 }
                 BufferedSource source = responseBody.source();
                 StringBuilder chunkBuffer = new StringBuilder();
@@ -196,15 +197,15 @@ public class OpenAiCompatibleChatClient implements AiProviderClient {
     private String resolveChatCompletionsUrl(AiModelTarget target) {
         HttpUrl baseUrl = HttpUrl.parse(StrUtil.removeSuffix(target.provider().getBaseUrl(), "/"));
         if (baseUrl == null) {
-            throw new IllegalStateException("Invalid AI base URL for provider: " + target.candidate().getProvider());
+            throw new IllegalStateException(ErrorMessageCatalog.AI_BASE_URL_INVALID + "：" + target.candidate().getProvider());
         }
         String endpoint = resolveChatEndpoint(target.provider().getEndpoints());
         if (StrUtil.isBlank(endpoint)) {
-            throw new IllegalStateException("Chat endpoint is not configured for provider: " + target.candidate().getProvider());
+            throw new IllegalStateException(ErrorMessageCatalog.AI_CHAT_ENDPOINT_NOT_CONFIGURED + "：" + target.candidate().getProvider());
         }
         HttpUrl endpointUrl = HttpUrl.parse(StrUtil.removeSuffix(target.provider().getBaseUrl(), "/") + endpoint);
         if (endpointUrl == null) {
-            throw new IllegalStateException("Invalid AI chat endpoint for provider: " + target.candidate().getProvider());
+            throw new IllegalStateException(ErrorMessageCatalog.AI_CHAT_ENDPOINT_INVALID + "：" + target.candidate().getProvider());
         }
         return endpointUrl.toString();
     }

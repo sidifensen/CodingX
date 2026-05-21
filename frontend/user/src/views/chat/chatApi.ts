@@ -1,5 +1,6 @@
 import { ApiResponseEnvelope } from '../../types/auth';
 import { ApiResponseParser, ApiUnauthorizedError } from '../../api/apiResponse';
+import { UserErrorMessages } from '../../constants/errorMessages';
 import {
   ArtifactItem,
   ChatAttachmentItem,
@@ -322,8 +323,11 @@ export class ChatApi {
       },
       body: formData,
     });
-    const envelope = await ApiResponseParser.parseEnvelope<ChatAttachmentItem>(response, '附件上传失败');
-    ApiResponseParser.assertSuccess(response, envelope, '附件上传失败');
+    const envelope = await ApiResponseParser.parseEnvelope<ChatAttachmentItem>(
+      response,
+      UserErrorMessages.CHAT_ATTACHMENT_UPLOAD_FAILED,
+    );
+    ApiResponseParser.assertSuccess(response, envelope, UserErrorMessages.CHAT_ATTACHMENT_UPLOAD_FAILED);
     return this.normalizeAttachment(envelope.data);
   }
 
@@ -365,8 +369,8 @@ export class ChatApi {
         ...init?.headers,
       },
     });
-    const envelope = await ApiResponseParser.parseEnvelope<T>(response, '聊天请求失败');
-    ApiResponseParser.assertSuccess(response, envelope, '聊天请求失败');
+    const envelope = await ApiResponseParser.parseEnvelope<T>(response, UserErrorMessages.CHAT_REQUEST_FAILED);
+    ApiResponseParser.assertSuccess(response, envelope, UserErrorMessages.CHAT_REQUEST_FAILED);
     return envelope;
   }
 
@@ -378,14 +382,14 @@ export class ChatApi {
     if (response.ok) {
       return;
     }
-    const envelope = await ApiResponseParser.parseEnvelope<null>(response, '聊天请求失败');
+    const envelope = await ApiResponseParser.parseEnvelope<null>(response, UserErrorMessages.CHAT_REQUEST_FAILED);
     if (ApiResponseParser.isUnauthorized(response, envelope)) {
       throw new ApiUnauthorizedError(
-        envelope.message || '登录已失效，请重新登录',
+        envelope.message || UserErrorMessages.AUTH_SESSION_EXPIRED,
         response.status,
         envelope.code ?? '',
       );
     }
-    throw new Error(envelope.message || '聊天请求失败');
+    throw new Error(envelope.message || UserErrorMessages.CHAT_REQUEST_FAILED);
   }
 }

@@ -18,6 +18,7 @@ import com.codingx.skill.domain.model.ChatSkill;
 import com.codingx.tool.domain.model.ChatTool;
 import com.codingx.skill.domain.repository.ChatSkillRepository;
 import com.codingx.tool.domain.repository.ChatToolRepository;
+import com.codingx.common.error.ErrorMessageCatalog;
 import com.codingx.common.exception.BusinessException;
 import com.codingx.mcp.domain.model.ChatMcp;
 import com.codingx.mcp.domain.repository.ChatMcpRepository;
@@ -113,7 +114,7 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
             case "spawn_agents_on_csv" -> executeSpawnAgentsOnCsv(input);
             case "report_agent_job_result" -> executeReportAgentJobResult(input);
             case "test_sync_tool" -> executeTestSyncTool(input);
-            default -> throw new BusinessException("CHAT_TOOL_NOT_SUPPORTED", "工具暂不支持");
+            default -> throw new BusinessException("CHAT_TOOL_NOT_SUPPORTED", ErrorMessageCatalog.CHAT_TOOL_UNSUPPORTED);
         };
     }
 
@@ -123,7 +124,7 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
     private ChatToolExecutionResult executeShellCommand(ToolInput input) {
         String command = extractCommand(input);
         if (StrUtil.isBlank(command)) {
-            throw new BusinessException("CHAT_TOOL_INVALID_COMMAND", "请提供 command");
+            throw new BusinessException("CHAT_TOOL_INVALID_COMMAND", ErrorMessageCatalog.CHAT_TOOL_COMMAND_REQUIRED);
         }
         long timeoutMs = normalizeTimeout(input.object().getLong("timeoutMs", 10000L));
         CommandExecution execution = runCommand(command, timeoutMs);
@@ -146,7 +147,7 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
     private ChatToolExecutionResult executeExecCommand(ToolInput input) {
         String command = extractCommand(input);
         if (StrUtil.isBlank(command)) {
-            throw new BusinessException("CHAT_TOOL_INVALID_COMMAND", "请提供 command");
+            throw new BusinessException("CHAT_TOOL_INVALID_COMMAND", ErrorMessageCatalog.CHAT_TOOL_COMMAND_REQUIRED);
         }
         try {
             Process process = new ProcessBuilder(resolveShellCommand(command))
@@ -175,7 +176,10 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
                 metadata
             );
         } catch (Exception exception) {
-            throw new BusinessException("CHAT_TOOL_EXEC_COMMAND_FAILED", "启动命令失败: " + exception.getMessage());
+            throw new BusinessException(
+                "CHAT_TOOL_EXEC_COMMAND_FAILED",
+                ErrorMessageCatalog.CHAT_TOOL_EXEC_COMMAND_START_FAILED_PREFIX + exception.getMessage()
+            );
         }
     }
 
@@ -185,15 +189,15 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
     private ChatToolExecutionResult executeWriteStdin(ToolInput input) {
         String sessionId = prefer(input.object().getStr("sessionId"), ReUtil.get("sessionId[:=]\\s*([\\w-]+)", input.raw(), 1));
         if (StrUtil.isBlank(sessionId)) {
-            throw new BusinessException("CHAT_TOOL_SESSION_REQUIRED", "请提供 sessionId");
+            throw new BusinessException("CHAT_TOOL_SESSION_REQUIRED", ErrorMessageCatalog.CHAT_TOOL_SESSION_ID_REQUIRED);
         }
         CommandSession session = commandSessions.get(sessionId);
         if (session == null) {
-            throw new BusinessException("CHAT_TOOL_SESSION_NOT_FOUND", "命令会话不存在");
+            throw new BusinessException("CHAT_TOOL_SESSION_NOT_FOUND", ErrorMessageCatalog.CHAT_TOOL_SESSION_NOT_FOUND);
         }
         String text = prefer(input.object().getStr("text"), ReUtil.get("text[:=]\\s*(.+)", input.raw(), 1));
         if (StrUtil.isBlank(text)) {
-            throw new BusinessException("CHAT_TOOL_TEXT_REQUIRED", "请提供 text");
+            throw new BusinessException("CHAT_TOOL_TEXT_REQUIRED", ErrorMessageCatalog.CHAT_TOOL_TEXT_REQUIRED);
         }
         try {
             session.writer().write(text);
@@ -212,7 +216,10 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
                 metadata
             );
         } catch (Exception exception) {
-            throw new BusinessException("CHAT_TOOL_WRITE_STDIN_FAILED", "写入标准输入失败: " + exception.getMessage());
+            throw new BusinessException(
+                "CHAT_TOOL_WRITE_STDIN_FAILED",
+                ErrorMessageCatalog.CHAT_TOOL_STDIN_WRITE_FAILED_PREFIX + exception.getMessage()
+            );
         }
     }
 
@@ -222,7 +229,7 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
     private ChatToolExecutionResult executeApplyPatch(ToolInput input) {
         String patchText = prefer(input.object().getStr("patch"), extractPatchBlock(input.raw()));
         if (StrUtil.isBlank(patchText)) {
-            throw new BusinessException("CHAT_TOOL_PATCH_REQUIRED", "请提供 patch 内容");
+            throw new BusinessException("CHAT_TOOL_PATCH_REQUIRED", ErrorMessageCatalog.CHAT_TOOL_PATCH_REQUIRED);
         }
         Path workingDirectory = resolveToolWorkingDirectory();
         long startedAt = System.currentTimeMillis();
@@ -247,7 +254,10 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
         } catch (BusinessException exception) {
             throw exception;
         } catch (Exception exception) {
-            throw new BusinessException("CHAT_TOOL_APPLY_PATCH_FAILED", "Patch 应用失败: " + exception.getMessage());
+            throw new BusinessException(
+                "CHAT_TOOL_APPLY_PATCH_FAILED",
+                ErrorMessageCatalog.CHAT_TOOL_PATCH_APPLY_FAILED_PREFIX + exception.getMessage()
+            );
         }
     }
 
@@ -283,7 +293,7 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
             if (checkExecution.exitCode() != 0) {
                 throw new BusinessException(
                     "CHAT_TOOL_APPLY_PATCH_FAILED",
-                    StrUtil.blankToDefault(checkExecution.output(), "Patch 校验失败")
+                    StrUtil.blankToDefault(checkExecution.output(), ErrorMessageCatalog.CHAT_TOOL_PATCH_CHECK_FAILED)
                 );
             }
             CommandExecution applyExecution = runCommand(
@@ -294,13 +304,16 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
             if (applyExecution.exitCode() != 0) {
                 throw new BusinessException(
                     "CHAT_TOOL_APPLY_PATCH_FAILED",
-                    StrUtil.blankToDefault(applyExecution.output(), "Patch 应用失败")
+                    StrUtil.blankToDefault(applyExecution.output(), ErrorMessageCatalog.CHAT_TOOL_PATCH_APPLY_FAILED)
                 );
             }
         } catch (BusinessException exception) {
             throw exception;
         } catch (Exception exception) {
-            throw new BusinessException("CHAT_TOOL_APPLY_PATCH_FAILED", "Patch 应用失败: " + exception.getMessage());
+            throw new BusinessException(
+                "CHAT_TOOL_APPLY_PATCH_FAILED",
+                ErrorMessageCatalog.CHAT_TOOL_PATCH_APPLY_FAILED_PREFIX + exception.getMessage()
+            );
         } finally {
             if (tempPatch != null) {
                 FileUtil.del(tempPatch.toFile());
@@ -320,7 +333,7 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
             lineIndex++;
         }
         if (lineIndex >= lines.length) {
-            throw new BusinessException("CHAT_TOOL_APPLY_PATCH_FAILED", "Patch 缺少 Begin 标记");
+            throw new BusinessException("CHAT_TOOL_APPLY_PATCH_FAILED", ErrorMessageCatalog.CHAT_TOOL_PATCH_BEGIN_MISSING);
         }
         lineIndex++;
         while (lineIndex < lines.length) {
@@ -364,7 +377,7 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
             }
             lineIndex++;
         }
-        throw new BusinessException("CHAT_TOOL_APPLY_PATCH_FAILED", "Patch 缺少 End 标记");
+        throw new BusinessException("CHAT_TOOL_APPLY_PATCH_FAILED", ErrorMessageCatalog.CHAT_TOOL_PATCH_END_MISSING);
     }
 
     /**
@@ -377,7 +390,10 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
     private void applyCodexUpdateFile(Path workingDirectory, String filePath, String moveToPath, List<String> updateLines) {
         Path sourcePath = resolvePatchTargetPath(workingDirectory, filePath);
         if (!Files.exists(sourcePath) || !Files.isRegularFile(sourcePath)) {
-            throw new BusinessException("CHAT_TOOL_APPLY_PATCH_FAILED", "待更新文件不存在: " + filePath);
+            throw new BusinessException(
+                "CHAT_TOOL_APPLY_PATCH_FAILED",
+                ErrorMessageCatalog.CHAT_TOOL_PATCH_TARGET_NOT_FOUND_PREFIX + filePath
+            );
         }
         try {
             String originalContent = normalizeLineEnding(Files.readString(sourcePath, StandardCharsets.UTF_8));
@@ -393,7 +409,10 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
         } catch (BusinessException exception) {
             throw exception;
         } catch (Exception exception) {
-            throw new BusinessException("CHAT_TOOL_APPLY_PATCH_FAILED", "更新文件失败: " + exception.getMessage());
+            throw new BusinessException(
+                "CHAT_TOOL_APPLY_PATCH_FAILED",
+                ErrorMessageCatalog.CHAT_TOOL_PATCH_UPDATE_FAILED_PREFIX + exception.getMessage()
+            );
         }
     }
 
@@ -421,7 +440,10 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
             }
             Files.writeString(targetPath, content, StandardCharsets.UTF_8);
         } catch (Exception exception) {
-            throw new BusinessException("CHAT_TOOL_APPLY_PATCH_FAILED", "新增文件失败: " + exception.getMessage());
+            throw new BusinessException(
+                "CHAT_TOOL_APPLY_PATCH_FAILED",
+                ErrorMessageCatalog.CHAT_TOOL_PATCH_ADD_FAILED_PREFIX + exception.getMessage()
+            );
         }
     }
 
@@ -443,7 +465,10 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
             }
             int index = updatedContent.indexOf(oldFragment);
             if (index < 0) {
-                throw new BusinessException("CHAT_TOOL_APPLY_PATCH_FAILED", "Patch 上下文不匹配，无法定位修改位置");
+                throw new BusinessException(
+                    "CHAT_TOOL_APPLY_PATCH_FAILED",
+                    ErrorMessageCatalog.CHAT_TOOL_PATCH_CONTEXT_MISMATCH
+                );
             }
             updatedContent = updatedContent.substring(0, index)
                 + newFragment
@@ -527,7 +552,7 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
     private Path resolvePatchTargetPath(Path workingDirectory, String relativePath) {
         Path resolvedPath = workingDirectory.resolve(relativePath).toAbsolutePath().normalize();
         if (!resolvedPath.startsWith(workingDirectory.toAbsolutePath().normalize())) {
-            throw new BusinessException("CHAT_TOOL_APPLY_PATCH_FAILED", "Patch 路径越界，已拒绝执行");
+            throw new BusinessException("CHAT_TOOL_APPLY_PATCH_FAILED", ErrorMessageCatalog.CHAT_TOOL_PATCH_PATH_OUT_OF_BOUND);
         }
         return resolvedPath;
     }
@@ -575,7 +600,7 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
     private ChatToolExecutionResult executeReadMcpResource(ToolInput input) {
         String uri = prefer(input.object().getStr("uri"), findFirstUri(input.raw()));
         if (StrUtil.isBlank(uri)) {
-            throw new BusinessException("CHAT_TOOL_URI_REQUIRED", "请提供 uri");
+            throw new BusinessException("CHAT_TOOL_URI_REQUIRED", ErrorMessageCatalog.CHAT_TOOL_URI_REQUIRED);
         }
         Object data;
         if (StrUtil.equalsIgnoreCase(uri, "mcp://configs")) {
@@ -591,10 +616,10 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
         } else if (StrUtil.startWithIgnoreCase(uri, "tool://configs/")) {
             data = chatToolRepository.findByToolCode(uri.substring("tool://configs/".length()));
         } else {
-            throw new BusinessException("CHAT_TOOL_URI_UNSUPPORTED", "不支持的资源 URI");
+            throw new BusinessException("CHAT_TOOL_URI_UNSUPPORTED", ErrorMessageCatalog.CHAT_TOOL_URI_UNSUPPORTED);
         }
         if (data == null) {
-            throw new BusinessException("CHAT_TOOL_RESOURCE_NOT_FOUND", "资源不存在");
+            throw new BusinessException("CHAT_TOOL_RESOURCE_NOT_FOUND", ErrorMessageCatalog.CHAT_TOOL_RESOURCE_NOT_FOUND);
         }
         return new ChatToolExecutionResult(
             "read_mcp_resource",
@@ -610,7 +635,7 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
         String planId = StrUtil.blankToDefault(input.object().getStr("planId"), "default");
         List<PlanStep> steps = parsePlanSteps(input);
         if (CollUtil.isEmpty(steps)) {
-            throw new BusinessException("CHAT_TOOL_PLAN_EMPTY", "请提供至少一个步骤");
+            throw new BusinessException("CHAT_TOOL_PLAN_EMPTY", ErrorMessageCatalog.CHAT_TOOL_PLAN_STEP_REQUIRED);
         }
         plans.put(planId, steps);
         return new ChatToolExecutionResult(
@@ -647,16 +672,16 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
     private ChatToolExecutionResult executeViewImage(ToolInput input) {
         String pathText = prefer(input.object().getStr("path"), findImagePath(input.raw()));
         if (StrUtil.isBlank(pathText)) {
-            throw new BusinessException("CHAT_TOOL_IMAGE_PATH_REQUIRED", "请提供图片绝对路径");
+            throw new BusinessException("CHAT_TOOL_IMAGE_PATH_REQUIRED", ErrorMessageCatalog.CHAT_TOOL_IMAGE_PATH_REQUIRED);
         }
         Path path = Path.of(pathText);
         if (!Files.exists(path) || !Files.isRegularFile(path)) {
-            throw new BusinessException("CHAT_TOOL_IMAGE_NOT_FOUND", "图片不存在");
+            throw new BusinessException("CHAT_TOOL_IMAGE_NOT_FOUND", ErrorMessageCatalog.CHAT_TOOL_IMAGE_NOT_FOUND);
         }
         try {
             BufferedImage image = ImageIO.read(path.toFile());
             if (image == null) {
-                throw new BusinessException("CHAT_TOOL_IMAGE_INVALID", "文件不是可读图片");
+                throw new BusinessException("CHAT_TOOL_IMAGE_INVALID", ErrorMessageCatalog.CHAT_TOOL_IMAGE_INVALID);
             }
             Map<String, Object> metadata = new LinkedHashMap<>();
             metadata.put("path", path.toAbsolutePath().toString());
@@ -672,7 +697,10 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
         } catch (BusinessException exception) {
             throw exception;
         } catch (Exception exception) {
-            throw new BusinessException("CHAT_TOOL_VIEW_IMAGE_FAILED", "读取图片失败: " + exception.getMessage());
+            throw new BusinessException(
+                "CHAT_TOOL_VIEW_IMAGE_FAILED",
+                ErrorMessageCatalog.CHAT_TOOL_IMAGE_READ_FAILED_PREFIX + exception.getMessage()
+            );
         }
     }
 
@@ -702,11 +730,11 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
             agentId = ReUtil.get("(agent-[\\w]+)", input.raw(), 1);
         }
         if (StrUtil.isBlank(agentId)) {
-            throw new BusinessException("CHAT_TOOL_AGENT_ID_REQUIRED", "请提供 agentId");
+            throw new BusinessException("CHAT_TOOL_AGENT_ID_REQUIRED", ErrorMessageCatalog.CHAT_TOOL_AGENT_ID_REQUIRED);
         }
         AgentSession session = agentSessions.get(agentId);
         if (session == null) {
-            throw new BusinessException("CHAT_TOOL_AGENT_NOT_FOUND", "子代理不存在");
+            throw new BusinessException("CHAT_TOOL_AGENT_NOT_FOUND", ErrorMessageCatalog.CHAT_TOOL_AGENT_NOT_FOUND);
         }
         String message = StrUtil.blankToDefault(input.object().getStr("message"), input.raw());
         session.messages().add("input: " + message);
@@ -725,11 +753,11 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
     private ChatToolExecutionResult executeWaitAgent(ToolInput input) {
         String agentId = StrUtil.blankToDefault(input.object().getStr("agentId"), ReUtil.get("(agent-[\\w]+)", input.raw(), 1));
         if (StrUtil.isBlank(agentId)) {
-            throw new BusinessException("CHAT_TOOL_AGENT_ID_REQUIRED", "请提供 agentId");
+            throw new BusinessException("CHAT_TOOL_AGENT_ID_REQUIRED", ErrorMessageCatalog.CHAT_TOOL_AGENT_ID_REQUIRED);
         }
         AgentSession session = agentSessions.get(agentId);
         if (session == null) {
-            throw new BusinessException("CHAT_TOOL_AGENT_NOT_FOUND", "子代理不存在");
+            throw new BusinessException("CHAT_TOOL_AGENT_NOT_FOUND", ErrorMessageCatalog.CHAT_TOOL_AGENT_NOT_FOUND);
         }
         session.status("completed");
         session.completedAt(LocalDateTime.now());
@@ -752,11 +780,11 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
     private ChatToolExecutionResult executeCloseAgent(ToolInput input) {
         String agentId = StrUtil.blankToDefault(input.object().getStr("agentId"), ReUtil.get("(agent-[\\w]+)", input.raw(), 1));
         if (StrUtil.isBlank(agentId)) {
-            throw new BusinessException("CHAT_TOOL_AGENT_ID_REQUIRED", "请提供 agentId");
+            throw new BusinessException("CHAT_TOOL_AGENT_ID_REQUIRED", ErrorMessageCatalog.CHAT_TOOL_AGENT_ID_REQUIRED);
         }
         AgentSession session = agentSessions.get(agentId);
         if (session == null) {
-            throw new BusinessException("CHAT_TOOL_AGENT_NOT_FOUND", "子代理不存在");
+            throw new BusinessException("CHAT_TOOL_AGENT_NOT_FOUND", ErrorMessageCatalog.CHAT_TOOL_AGENT_NOT_FOUND);
         }
         session.status("closed");
         session.completedAt(LocalDateTime.now());
@@ -773,11 +801,11 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
     private ChatToolExecutionResult executeResumeAgent(ToolInput input) {
         String agentId = StrUtil.blankToDefault(input.object().getStr("agentId"), ReUtil.get("(agent-[\\w]+)", input.raw(), 1));
         if (StrUtil.isBlank(agentId)) {
-            throw new BusinessException("CHAT_TOOL_AGENT_ID_REQUIRED", "请提供 agentId");
+            throw new BusinessException("CHAT_TOOL_AGENT_ID_REQUIRED", ErrorMessageCatalog.CHAT_TOOL_AGENT_ID_REQUIRED);
         }
         AgentSession session = agentSessions.get(agentId);
         if (session == null) {
-            throw new BusinessException("CHAT_TOOL_AGENT_NOT_FOUND", "子代理不存在");
+            throw new BusinessException("CHAT_TOOL_AGENT_NOT_FOUND", ErrorMessageCatalog.CHAT_TOOL_AGENT_NOT_FOUND);
         }
         session.status("running");
         session.messages().add("resume: 会话已恢复");
@@ -828,7 +856,7 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
     private ChatToolExecutionResult executeRequestPermissions(ToolInput input) {
         String command = extractCommand(input);
         if (StrUtil.isBlank(command)) {
-            throw new BusinessException("CHAT_TOOL_INVALID_COMMAND", "请提供 command");
+            throw new BusinessException("CHAT_TOOL_INVALID_COMMAND", ErrorMessageCatalog.CHAT_TOOL_COMMAND_REQUIRED);
         }
         String level = detectRiskLevel(command);
         Map<String, Object> request = new LinkedHashMap<>();
@@ -851,7 +879,7 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
         String goalId = StrUtil.blankToDefault(input.object().getStr("goalId"), "default");
         GoalState goalState = goals.get(goalId);
         if (goalState == null) {
-            throw new BusinessException("CHAT_TOOL_GOAL_NOT_FOUND", "目标不存在");
+            throw new BusinessException("CHAT_TOOL_GOAL_NOT_FOUND", ErrorMessageCatalog.CHAT_TOOL_GOAL_NOT_FOUND);
         }
         return new ChatToolExecutionResult("get_goal", "目标读取成功", Map.of("goal", goalState));
     }
@@ -875,7 +903,7 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
         String goalId = StrUtil.blankToDefault(input.object().getStr("goalId"), "default");
         GoalState existing = goals.get(goalId);
         if (existing == null) {
-            throw new BusinessException("CHAT_TOOL_GOAL_NOT_FOUND", "目标不存在");
+            throw new BusinessException("CHAT_TOOL_GOAL_NOT_FOUND", ErrorMessageCatalog.CHAT_TOOL_GOAL_NOT_FOUND);
         }
         String title = StrUtil.blankToDefault(input.object().getStr("title"), existing.title());
         String description = StrUtil.blankToDefault(input.object().getStr("description"), existing.description());
@@ -891,11 +919,11 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
     private ChatToolExecutionResult executeFollowupTask(ToolInput input) {
         String agentId = StrUtil.blankToDefault(input.object().getStr("agentId"), ReUtil.get("(agent-[\\w]+)", input.raw(), 1));
         if (StrUtil.isBlank(agentId)) {
-            throw new BusinessException("CHAT_TOOL_AGENT_ID_REQUIRED", "请提供 agentId");
+            throw new BusinessException("CHAT_TOOL_AGENT_ID_REQUIRED", ErrorMessageCatalog.CHAT_TOOL_AGENT_ID_REQUIRED);
         }
         AgentSession session = agentSessions.get(agentId);
         if (session == null) {
-            throw new BusinessException("CHAT_TOOL_AGENT_NOT_FOUND", "子代理不存在");
+            throw new BusinessException("CHAT_TOOL_AGENT_NOT_FOUND", ErrorMessageCatalog.CHAT_TOOL_AGENT_NOT_FOUND);
         }
         String task = StrUtil.blankToDefault(input.object().getStr("task"), input.raw());
         session.messages().add("followup: " + task);
@@ -933,11 +961,11 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
     private ChatToolExecutionResult executeSpawnAgentsOnCsv(ToolInput input) {
         String csvPath = StrUtil.blankToDefault(input.object().getStr("csvPath"), findCsvPath(input.raw()));
         if (StrUtil.isBlank(csvPath)) {
-            throw new BusinessException("CHAT_TOOL_CSV_REQUIRED", "请提供 csvPath");
+            throw new BusinessException("CHAT_TOOL_CSV_REQUIRED", ErrorMessageCatalog.CHAT_TOOL_CSV_PATH_REQUIRED);
         }
         Path path = Path.of(csvPath);
         if (!Files.exists(path)) {
-            throw new BusinessException("CHAT_TOOL_CSV_NOT_FOUND", "CSV 文件不存在");
+            throw new BusinessException("CHAT_TOOL_CSV_NOT_FOUND", ErrorMessageCatalog.CHAT_TOOL_CSV_NOT_FOUND);
         }
         List<Map<String, Object>> created = new ArrayList<>();
         try {
@@ -958,7 +986,10 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
                 created.add(Map.of("agentId", agentId, "row", row.getOriginalLineNumber(), "seed", firstColumn));
             }
         } catch (Exception exception) {
-            throw new BusinessException("CHAT_TOOL_CSV_PARSE_FAILED", "CSV 解析失败: " + exception.getMessage());
+            throw new BusinessException(
+                "CHAT_TOOL_CSV_PARSE_FAILED",
+                ErrorMessageCatalog.CHAT_TOOL_CSV_PARSE_FAILED_PREFIX + exception.getMessage()
+            );
         }
         return new ChatToolExecutionResult(
             "spawn_agents_on_csv",
@@ -1119,7 +1150,10 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
             String output = buildCommandOutput(stdout, stderr, exitCode);
             return new CommandExecution(output, exitCode, false, System.currentTimeMillis() - start);
         } catch (Exception exception) {
-            throw new BusinessException("CHAT_TOOL_COMMAND_FAILED", "命令执行失败: " + exception.getMessage());
+            throw new BusinessException(
+                "CHAT_TOOL_COMMAND_FAILED",
+                ErrorMessageCatalog.CHAT_TOOL_COMMAND_EXECUTE_FAILED_PREFIX + exception.getMessage()
+            );
         }
     }
 

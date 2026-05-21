@@ -1,5 +1,6 @@
 package com.codingx.chat.application.service;
 
+import com.codingx.common.error.ErrorMessageCatalog;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -50,11 +51,11 @@ public class PromptTemplateLoader {
             }
             Resource resource = resourceLoader.getResource("classpath:prompt/" + templateName + ".st");
             if (!resource.exists()) {
-                throw new IllegalStateException("Prompt template not found: " + templateName);
+                throw new IllegalStateException(ErrorMessageCatalog.CHAT_PROMPT_TEMPLATE_NOT_FOUND + "：" + templateName);
             }
             return new String(resource.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
         } catch (IOException exception) {
-            throw new IllegalStateException("Prompt template not found: " + templateName, exception);
+            throw new IllegalStateException(ErrorMessageCatalog.CHAT_PROMPT_TEMPLATE_NOT_FOUND + "：" + templateName, exception);
         }
     }
 

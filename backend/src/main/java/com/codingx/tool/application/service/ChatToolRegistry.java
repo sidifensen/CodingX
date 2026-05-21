@@ -1,6 +1,7 @@
 package com.codingx.tool.application.service;
 
 import cn.hutool.core.util.StrUtil;
+import com.codingx.common.error.ErrorMessageCatalog;
 import com.codingx.common.exception.BusinessException;
 import jakarta.annotation.PostConstruct;
 import java.util.ArrayList;
@@ -37,7 +38,9 @@ public class ChatToolRegistry {
                     continue;
                 }
                 if (executorByCode.containsKey(normalizedCode)) {
-                    throw new IllegalStateException("chat_tool duplicate executor: " + normalizedCode);
+                    throw new IllegalStateException(
+                        ErrorMessageCatalog.CHAT_TOOL_DUPLICATE_EXECUTOR_PREFIX + normalizedCode
+                    );
                 }
                 executorByCode.put(normalizedCode, executor);
             }
@@ -53,7 +56,7 @@ public class ChatToolRegistry {
         String normalizedCode = normalizeCode(toolCode);
         ChatToolExecutor executor = executorByCode.get(normalizedCode);
         if (executor == null) {
-            throw new BusinessException("CHAT_TOOL_EXECUTOR_NOT_FOUND", "工具未接入执行器");
+            throw new BusinessException("CHAT_TOOL_EXECUTOR_NOT_FOUND", ErrorMessageCatalog.CHAT_TOOL_EXECUTOR_NOT_FOUND);
         }
         return executor;
     }

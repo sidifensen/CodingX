@@ -1,5 +1,6 @@
 package com.codingx.mcp.application.service;
 
+import com.codingx.common.error.ErrorMessageCatalog;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
@@ -22,7 +23,7 @@ public class ChatMcpToolRegistry {
         return executors.stream()
             .filter(executor -> executor.toolId().equals(toolId))
             .findFirst()
-            .orElseThrow(() -> new IllegalArgumentException("MCP tool not found: " + toolId));
+            .orElseThrow(() -> new IllegalArgumentException(ErrorMessageCatalog.CHAT_MCP_TOOL_NOT_FOUND_PREFIX + toolId));
     }
 
     /**

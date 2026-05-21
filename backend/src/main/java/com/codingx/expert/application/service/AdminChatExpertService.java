@@ -3,6 +3,7 @@ package com.codingx.expert.application.service;
 import cn.hutool.core.util.IdUtil;
 import cn.hutool.core.util.StrUtil;
 import com.codingx.chat.interfaces.response.PageResult;
+import com.codingx.common.error.ErrorMessageCatalog;
 import com.codingx.common.exception.BusinessException;
 import com.codingx.common.exception.NotFoundException;
 import com.codingx.expert.domain.model.ChatExpert;
@@ -39,7 +40,7 @@ public class AdminChatExpertService {
         validateRequired(request);
         String normalizedExpertCode = request.getExpertCode().trim();
         if (chatExpertRepository.existsByExpertCode(normalizedExpertCode, null)) {
-            throw new BusinessException("CHAT_EXPERT_DUPLICATE_CODE", "专家编码已存在");
+            throw new BusinessException("CHAT_EXPERT_DUPLICATE_CODE", ErrorMessageCatalog.CHAT_EXPERT_DUPLICATE_CODE);
         }
         LocalDateTime now = LocalDateTime.now();
         ChatExpert persisted = request.toBuilder()
@@ -65,12 +66,12 @@ public class AdminChatExpertService {
     public ChatExpert update(Long id, ChatExpert request) {
         ChatExpert existing = chatExpertRepository.findById(id);
         if (existing == null) {
-            throw new NotFoundException("专家不存在");
+            throw new NotFoundException(ErrorMessageCatalog.CHAT_EXPERT_NOT_FOUND);
         }
         validateRequired(request);
         String normalizedExpertCode = request.getExpertCode().trim();
         if (chatExpertRepository.existsByExpertCode(normalizedExpertCode, id)) {
-            throw new BusinessException("CHAT_EXPERT_DUPLICATE_CODE", "专家编码已存在");
+            throw new BusinessException("CHAT_EXPERT_DUPLICATE_CODE", ErrorMessageCatalog.CHAT_EXPERT_DUPLICATE_CODE);
         }
         ChatExpert persisted = request.toBuilder()
             .id(id)
@@ -93,23 +94,23 @@ public class AdminChatExpertService {
     public void delete(Long id) {
         ChatExpert existing = chatExpertRepository.findById(id);
         if (existing == null) {
-            throw new NotFoundException("专家不存在");
+            throw new NotFoundException(ErrorMessageCatalog.CHAT_EXPERT_NOT_FOUND);
         }
         chatExpertRepository.softDeleteById(id);
     }
 
     private void validateRequired(ChatExpert request) {
         if (request == null) {
-            throw new BusinessException("CHAT_EXPERT_INVALID", "专家信息不能为空");
+            throw new BusinessException("CHAT_EXPERT_INVALID", ErrorMessageCatalog.CHAT_EXPERT_REQUIRED);
         }
         if (StrUtil.isBlank(request.getExpertCode())) {
-            throw new BusinessException("CHAT_EXPERT_INVALID", "专家编码不能为空");
+            throw new BusinessException("CHAT_EXPERT_INVALID", ErrorMessageCatalog.CHAT_EXPERT_CODE_REQUIRED);
         }
         if (StrUtil.isBlank(request.getDisplayName())) {
-            throw new BusinessException("CHAT_EXPERT_INVALID", "专家名称不能为空");
+            throw new BusinessException("CHAT_EXPERT_INVALID", ErrorMessageCatalog.CHAT_EXPERT_NAME_REQUIRED);
         }
         if (StrUtil.isBlank(request.getSystemPrompt())) {
-            throw new BusinessException("CHAT_EXPERT_INVALID", "专家提示词不能为空");
+            throw new BusinessException("CHAT_EXPERT_INVALID", ErrorMessageCatalog.CHAT_EXPERT_PROMPT_REQUIRED);
         }
     }
 }

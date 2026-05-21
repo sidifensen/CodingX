@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.codingx.chat.domain.model.ChatMessage;
+import com.codingx.common.error.ErrorMessageCatalog;
 import com.codingx.config.AiProperties;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -82,7 +83,7 @@ class AiModelDispatchServiceTest {
         IllegalStateException exception = assertThrows(IllegalStateException.class, () -> service.streamChat(request, new AiStreamHandler() {
         }));
 
-        assertEquals("No available AI provider could complete the request", exception.getMessage());
+        assertEquals(ErrorMessageCatalog.AI_NO_AVAILABLE_PROVIDER, exception.getMessage());
     }
 
     /**

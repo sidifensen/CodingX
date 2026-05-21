@@ -6,6 +6,7 @@ import com.codingx.chat.domain.model.ChatTraceRun;
 import com.codingx.chat.domain.repository.ChatTraceNodeRepository;
 import com.codingx.chat.domain.repository.ChatTraceRunRepository;
 import com.codingx.common.error.ErrorMessageCatalog;
+import com.codingx.common.exception.NotFoundException;
 import java.time.LocalDateTime;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -64,7 +65,7 @@ public class ConversationTraceRecordService {
     public void finishTrace(String traceId, Long taskId, String status, String errorMessage) {
         LocalDateTime now = LocalDateTime.now();
         ChatTraceRun traceRun = chatTraceRunRepository.findByTraceId(traceId)
-            .orElseThrow(() -> new IllegalArgumentException(ErrorMessageCatalog.CHAT_TRACE_NOT_FOUND));
+            .orElseThrow(() -> new NotFoundException(ErrorMessageCatalog.CHAT_TRACE_NOT_FOUND));
         LocalDateTime startedAt = traceRun.getStartedAt() != null ? traceRun.getStartedAt() : now;
         chatTraceRunRepository.save(traceRun.toBuilder()
             .taskId(taskId)

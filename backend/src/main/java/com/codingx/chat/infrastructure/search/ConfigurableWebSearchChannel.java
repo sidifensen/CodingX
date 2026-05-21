@@ -8,6 +8,7 @@ import com.codingx.chat.application.service.SearchChannel;
 import com.codingx.chat.application.service.SearchReferenceCandidate;
 import com.codingx.chat.application.service.SearchRequestContext;
 import com.codingx.chat.application.service.RuntimeSettingService;
+import com.codingx.common.error.ErrorMessageCatalog;
 import java.io.IOException;
 import java.net.URI;
 import java.util.ArrayList;
@@ -87,7 +88,7 @@ public class ConfigurableWebSearchChannel implements SearchChannel {
             case "bing" -> buildBingRequest(context);
             case "tavily" -> buildTavilyRequest(context);
             case "serper" -> buildSerperRequest(context);
-            default -> throw new IllegalStateException("Unsupported web search provider: " + normalizedProvider());
+            default -> throw new IllegalStateException(ErrorMessageCatalog.WEB_SEARCH_PROVIDER_UNSUPPORTED + "：" + normalizedProvider());
         };
     }
 
@@ -99,7 +100,7 @@ public class ConfigurableWebSearchChannel implements SearchChannel {
     private Request buildBingRequest(SearchRequestContext context) {
         HttpUrl baseUrl = HttpUrl.parse(runtimeSettingService.webSearchBaseUrl());
         if (baseUrl == null) {
-            throw new IllegalStateException("Invalid Bing search base URL");
+            throw new IllegalStateException(ErrorMessageCatalog.WEB_SEARCH_BASE_URL_INVALID);
         }
         HttpUrl url = baseUrl.newBuilder()
             .addQueryParameter("q", context.question())

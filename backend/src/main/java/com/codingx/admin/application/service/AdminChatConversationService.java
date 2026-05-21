@@ -14,6 +14,7 @@ import com.codingx.chat.interfaces.response.AdminChatConversationListItemRespons
 import com.codingx.chat.interfaces.response.ChatAttachmentResponse;
 import com.codingx.chat.interfaces.response.ChatMessageResponse;
 import com.codingx.chat.interfaces.response.PageResult;
+import com.codingx.common.error.ErrorMessageCatalog;
 import com.codingx.common.exception.NotFoundException;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -65,7 +66,7 @@ public class AdminChatConversationService {
      */
     public AdminChatConversationDetailResponse getConversationDetail(Long conversationId) {
         ChatConversation conversation = chatConversationRepository.findById(conversationId)
-            .orElseThrow(() -> new NotFoundException("会话不存在"));
+            .orElseThrow(() -> new NotFoundException(ErrorMessageCatalog.CHAT_CONVERSATION_NOT_FOUND));
         List<ChatMessageResponse> messages = chatMessageRepository.findByConversationId(conversationId).stream()
             .map(this::toMessageResponse)
             .toList();

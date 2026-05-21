@@ -9,6 +9,7 @@ import com.codingx.chat.interfaces.request.QueryTermMappingCreateRequest;
 import com.codingx.chat.interfaces.request.QueryTermMappingUpdateRequest;
 import com.codingx.chat.interfaces.response.PageResult;
 import com.codingx.chat.interfaces.response.QueryTermMappingResponse;
+import com.codingx.common.error.ErrorMessageCatalog;
 import com.codingx.common.exception.BusinessException;
 import com.codingx.common.exception.NotFoundException;
 import java.time.LocalDateTime;
@@ -52,7 +53,7 @@ public class AdminChatQueryTermMappingService {
     public QueryTermMappingResponse queryById(Long id) {
         ChatQueryTermMapping mapping = chatQueryTermMappingRepository.findById(id);
         if (mapping == null) {
-            throw new NotFoundException("映射规则不存在");
+            throw new NotFoundException(ErrorMessageCatalog.CHAT_QUERY_TERM_MAPPING_NOT_FOUND);
         }
         return toResponse(mapping);
     }
@@ -91,7 +92,7 @@ public class AdminChatQueryTermMappingService {
     public QueryTermMappingResponse update(Long id, QueryTermMappingUpdateRequest request) {
         ChatQueryTermMapping existing = chatQueryTermMappingRepository.findById(id);
         if (existing == null) {
-            throw new NotFoundException("映射规则不存在");
+            throw new NotFoundException(ErrorMessageCatalog.CHAT_QUERY_TERM_MAPPING_NOT_FOUND);
         }
         validateRequired(request.sourceTerm(), request.targetTerm());
         ChatQueryTermMapping persisted = existing.toBuilder()
@@ -114,7 +115,7 @@ public class AdminChatQueryTermMappingService {
      */
     public void delete(Long id) {
         if (chatQueryTermMappingRepository.findById(id) == null) {
-            throw new NotFoundException("映射规则不存在");
+            throw new NotFoundException(ErrorMessageCatalog.CHAT_QUERY_TERM_MAPPING_NOT_FOUND);
         }
         chatQueryTermMappingRepository.softDeleteById(id);
         conversationQueryTermMappingCacheManager.clear();
@@ -154,10 +155,10 @@ public class AdminChatQueryTermMappingService {
 
     private void validateRequired(String sourceTerm, String targetTerm) {
         if (StrUtil.isBlank(sourceTerm)) {
-            throw new BusinessException("CHAT_QUERY_TERM_MAPPING_INVALID", "原始词不能为空");
+            throw new BusinessException("CHAT_QUERY_TERM_MAPPING_INVALID", ErrorMessageCatalog.CHAT_QUERY_TERM_MAPPING_SOURCE_REQUIRED);
         }
         if (StrUtil.isBlank(targetTerm)) {
-            throw new BusinessException("CHAT_QUERY_TERM_MAPPING_INVALID", "目标词不能为空");
+            throw new BusinessException("CHAT_QUERY_TERM_MAPPING_INVALID", ErrorMessageCatalog.CHAT_QUERY_TERM_MAPPING_TARGET_REQUIRED);
         }
     }
 

@@ -1,5 +1,6 @@
 package com.codingx.common.idempotent;
 
+import com.codingx.common.error.ErrorMessageCatalog;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
@@ -37,7 +38,7 @@ public class InMemoryIdempotentLockProvider implements IdempotentLockProvider {
                 return delegate.tryLock(waitTimeMs, TimeUnit.MILLISECONDS);
             } catch (InterruptedException exception) {
                 Thread.currentThread().interrupt();
-                throw new IllegalStateException("幂等锁获取被中断", exception);
+                throw new IllegalStateException(ErrorMessageCatalog.IDEMPOTENT_LOCK_INTERRUPTED, exception);
             }
         }
 

@@ -1,5 +1,6 @@
 package com.codingx.mcp.application.service;
 
+import com.codingx.common.error.ErrorMessageCatalog;
 import com.codingx.common.exception.BusinessException;
 import com.codingx.mcp.domain.model.ChatMcp;
 import com.codingx.mcp.domain.repository.ChatMcpRepository;
@@ -51,7 +52,7 @@ public class AdminChatMcpService {
         long startedAt = System.currentTimeMillis();
         ChatMcp configuredMcp = chatMcpRepository.findByMcpCode(toolId);
         if (configuredMcp == null || configuredMcp.getDeleted() != null && configuredMcp.getDeleted() == 1) {
-            throw new BusinessException("CHAT_MCP_NOT_FOUND", "MCP 配置不存在");
+            throw new BusinessException("CHAT_MCP_NOT_FOUND", ErrorMessageCatalog.CHAT_MCP_CONFIG_NOT_FOUND);
         }
         ChatMcpToolExecutor executor = chatMcpToolRegistry.require(toolId);
         String message;
@@ -62,7 +63,7 @@ public class AdminChatMcpService {
             String sampleQuestion = sampleQuestionFor(toolId);
             ChatMcpToolResult result = executor.execute(sampleQuestion);
             if (result == null || result.content() == null || result.content().isBlank()) {
-                throw new BusinessException("CHAT_MCP_EMPTY_RESPONSE", "工具返回空结果");
+                throw new BusinessException("CHAT_MCP_EMPTY_RESPONSE", ErrorMessageCatalog.CHAT_MCP_EMPTY_RESPONSE);
             }
             ok = true;
             status = "healthy";

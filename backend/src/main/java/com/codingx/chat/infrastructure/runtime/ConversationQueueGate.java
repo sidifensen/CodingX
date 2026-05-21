@@ -2,6 +2,7 @@ package com.codingx.chat.infrastructure.runtime;
 
 import com.codingx.config.RuntimeProperties;
 import com.codingx.chat.application.service.RuntimeSettingService;
+import com.codingx.common.error.ErrorMessageCatalog;
 import jakarta.annotation.PreDestroy;
 import java.util.Map;
 import java.util.Objects;
@@ -280,7 +281,7 @@ public class ConversationQueueGate {
             if (queuePositionConsumer != null) {
                 queuePositionConsumer.accept(1);
             }
-            return QueueAcquireResult.rejected("busy");
+            return QueueAcquireResult.rejected(ErrorMessageCatalog.CHAT_QUEUE_BUSY);
         }
         activeConversations.put(conversationId, Boolean.TRUE);
         return QueueAcquireResult.granted();
@@ -320,7 +321,7 @@ public class ConversationQueueGate {
             waitForSignalOrTimeout(queuePollIntervalMs);
         }
         queue.remove(requestMember);
-        return QueueAcquireResult.rejected("busy");
+        return QueueAcquireResult.rejected(ErrorMessageCatalog.CHAT_QUEUE_BUSY);
     }
 
     /**
@@ -333,7 +334,7 @@ public class ConversationQueueGate {
             return semaphore.tryAcquire(0, queueLeaseSeconds, TimeUnit.SECONDS);
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
-            throw new IllegalStateException("Interrupted while acquiring queue permit", exception);
+            throw new IllegalStateException(ErrorMessageCatalog.CHAT_QUEUE_ACQUIRE_INTERRUPTED, exception);
         } catch (RuntimeException exception) {
             log.warn("获取队列许可失败，将在下一轮重试", exception);
             return null;
@@ -374,7 +375,7 @@ public class ConversationQueueGate {
             Thread.sleep(millis);
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
-            throw new IllegalStateException("Interrupted while waiting for queue permit", exception);
+            throw new IllegalStateException(ErrorMessageCatalog.CHAT_QUEUE_WAIT_INTERRUPTED, exception);
         }
     }
 

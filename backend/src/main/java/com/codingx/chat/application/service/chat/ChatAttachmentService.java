@@ -8,6 +8,7 @@ import com.codingx.chat.domain.model.ChatAttachment;
 import com.codingx.chat.domain.model.ChatConversation;
 import com.codingx.chat.domain.repository.ChatAttachmentRepository;
 import com.codingx.chat.domain.repository.ChatConversationRepository;
+import com.codingx.common.error.ErrorMessageCatalog;
 import com.codingx.common.exception.BusinessException;
 import com.codingx.common.exception.ForbiddenException;
 import com.codingx.common.exception.NotFoundException;
@@ -63,7 +64,7 @@ public class ChatAttachmentService {
         try {
             bytes = file.getBytes();
         } catch (Exception exception) {
-            throw new BusinessException("CHAT_ATTACHMENT_READ_FAILED", "上传文件读取失败");
+            throw new BusinessException("CHAT_ATTACHMENT_READ_FAILED", ErrorMessageCatalog.CHAT_ATTACHMENT_READ_FAILED);
         }
         String storageKey = rustFsChatAttachmentClient.upload(bytes, fileName, mimeType);
         LocalDateTime now = LocalDateTime.now();
@@ -99,9 +100,9 @@ public class ChatAttachmentService {
     public ChatAttachment requireOwnedAttachment(Long attachmentId) {
         Long userId = StpUtil.getLoginIdAsLong();
         ChatAttachment attachment = chatAttachmentRepository.findById(attachmentId)
-            .orElseThrow(() -> new NotFoundException("附件不存在"));
+            .orElseThrow(() -> new NotFoundException(ErrorMessageCatalog.CHAT_ATTACHMENT_NOT_FOUND));
         if (!userId.equals(attachment.getUploadedBy())) {
-            throw new ForbiddenException("你无权访问该附件");
+            throw new ForbiddenException(ErrorMessageCatalog.CHAT_ATTACHMENT_FORBIDDEN_ACCESS);
         }
         return attachment;
     }
@@ -126,21 +127,21 @@ public class ChatAttachmentService {
         }
         List<ChatAttachment> attachments = chatAttachmentRepository.findByIds(normalizedIds);
         if (attachments.size() != normalizedIds.size()) {
-            throw new NotFoundException("部分附件不存在");
+            throw new NotFoundException(ErrorMessageCatalog.CHAT_ATTACHMENT_PARTIAL_NOT_FOUND);
         }
         Set<Long> requestedIdSet = new HashSet<>(normalizedIds);
         for (ChatAttachment attachment : attachments) {
             if (!requestedIdSet.contains(attachment.getId())) {
-                throw new NotFoundException("部分附件不存在");
+                throw new NotFoundException(ErrorMessageCatalog.CHAT_ATTACHMENT_PARTIAL_NOT_FOUND);
             }
             if (!userId.equals(attachment.getUploadedBy())) {
-                throw new ForbiddenException("你无权使用该附件");
+                throw new ForbiddenException(ErrorMessageCatalog.CHAT_ATTACHMENT_FORBIDDEN_USE);
             }
             if (attachment.getMessageId() != null) {
-                throw new BusinessException("CHAT_ATTACHMENT_ALREADY_USED", "附件已被其他消息使用");
+                throw new BusinessException("CHAT_ATTACHMENT_ALREADY_USED", ErrorMessageCatalog.CHAT_ATTACHMENT_ALREADY_USED);
             }
             if (attachment.getConversationId() != null && !attachment.getConversationId().equals(conversationId)) {
-                throw new BusinessException("CHAT_ATTACHMENT_CONVERSATION_MISMATCH", "附件不属于当前会话");
+                throw new BusinessException("CHAT_ATTACHMENT_CONVERSATION_MISMATCH", ErrorMessageCatalog.CHAT_ATTACHMENT_CONVERSATION_MISMATCH);
             }
         }
         return attachments;
@@ -182,24 +183,24 @@ public class ChatAttachmentService {
         try {
             return rustFsChatAttachmentClient.download(attachment.getStorageKey());
         } catch (Exception exception) {
-            throw new BusinessException("CHAT_ATTACHMENT_DOWNLOAD_FAILED", "附件下载失败");
+            throw new BusinessException("CHAT_ATTACHMENT_DOWNLOAD_FAILED", ErrorMessageCatalog.CHAT_ATTACHMENT_DOWNLOAD_FAILED);
         }
     }
 
     private void validateUploadFile(MultipartFile file) {
         if (file == null || file.isEmpty()) {
-            throw new BusinessException("CHAT_ATTACHMENT_EMPTY", "请先选择上传文件");
+            throw new BusinessException("CHAT_ATTACHMENT_EMPTY", ErrorMessageCatalog.CHAT_ATTACHMENT_EMPTY);
         }
         if (file.getSize() > MAX_FILE_SIZE) {
-            throw new BusinessException("CHAT_ATTACHMENT_TOO_LARGE", "上传文件大小不能超过 20MB");
+            throw new BusinessException("CHAT_ATTACHMENT_TOO_LARGE", ErrorMessageCatalog.CHAT_ATTACHMENT_TOO_LARGE);
         }
         String fileName = StrUtil.blankToDefault(file.getOriginalFilename(), "attachment.bin");
         String fileExt = StrUtil.blankToDefault(FileUtil.extName(fileName), "").toLowerCase(Locale.ROOT);
         if (StrUtil.isBlank(fileExt) || !ALLOWED_EXTENSIONS.contains(fileExt)) {
-            throw new BusinessException("CHAT_ATTACHMENT_TYPE_NOT_ALLOWED", "当前文件格式暂不支持解析");
+            throw new BusinessException("CHAT_ATTACHMENT_TYPE_NOT_ALLOWED", ErrorMessageCatalog.CHAT_ATTACHMENT_TYPE_NOT_ALLOWED);
         }
         if (isAudioOrVideo(fileExt)) {
-            throw new BusinessException("CHAT_ATTACHMENT_TYPE_NOT_ALLOWED", "暂不支持音频和视频文件");
+            throw new BusinessException("CHAT_ATTACHMENT_TYPE_NOT_ALLOWED", ErrorMessageCatalog.CHAT_ATTACHMENT_AUDIO_VIDEO_NOT_SUPPORTED);
         }
     }
 
@@ -213,7 +214,7 @@ public class ChatAttachmentService {
     private void assertConversationOwner(Long conversationId, Long userId) {
         ChatConversation conversation = chatConversationRepository.requireById(conversationId);
         if (!userId.equals(conversation.getCreatedBy())) {
-            throw new ForbiddenException("你无权访问该会话");
+            throw new ForbiddenException(ErrorMessageCatalog.CHAT_CONVERSATION_FORBIDDEN);
         }
     }
 }

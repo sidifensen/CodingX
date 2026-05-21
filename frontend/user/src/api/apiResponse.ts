@@ -1,4 +1,5 @@
 import { ApiResponseEnvelope } from '../types/auth';
+import { UserErrorMessages } from '../constants/errorMessages';
 
 /**
  * 标记后端鉴权失败（未登录/登录失效）的统一异常类型。
@@ -34,7 +35,7 @@ export class ApiResponseParser {
       return {
         success: false,
         code: 'EMPTY_RESPONSE',
-        message: '服务返回空响应，请检查后端服务状态',
+        message: UserErrorMessages.API_EMPTY_RESPONSE,
         data: null as T,
       };
     }

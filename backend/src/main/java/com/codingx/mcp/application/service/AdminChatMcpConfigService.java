@@ -2,6 +2,7 @@ package com.codingx.mcp.application.service;
 
 import cn.hutool.core.util.IdUtil;
 import cn.hutool.core.util.StrUtil;
+import com.codingx.common.error.ErrorMessageCatalog;
 import com.codingx.common.exception.BusinessException;
 import com.codingx.common.exception.NotFoundException;
 import com.codingx.mcp.domain.model.ChatMcp;
@@ -37,7 +38,7 @@ public class AdminChatMcpConfigService {
         validateRequired(request);
         String normalizedMcpCode = request.getMcpCode().trim();
         if (chatMcpRepository.existsByMcpCode(normalizedMcpCode, null)) {
-            throw new BusinessException("CHAT_MCP_DUPLICATE_CODE", "MCP 编码已存在");
+            throw new BusinessException("CHAT_MCP_DUPLICATE_CODE", ErrorMessageCatalog.CHAT_MCP_DUPLICATE_CODE);
         }
         LocalDateTime now = LocalDateTime.now();
         ChatMcp persisted = request.toBuilder()
@@ -64,12 +65,12 @@ public class AdminChatMcpConfigService {
     public ChatMcp update(Long id, ChatMcp request) {
         ChatMcp existing = chatMcpRepository.findById(id);
         if (existing == null) {
-            throw new NotFoundException("MCP 配置不存在");
+            throw new NotFoundException(ErrorMessageCatalog.CHAT_MCP_CONFIG_NOT_FOUND);
         }
         validateRequired(request);
         String normalizedMcpCode = request.getMcpCode().trim();
         if (chatMcpRepository.existsByMcpCode(normalizedMcpCode, id)) {
-            throw new BusinessException("CHAT_MCP_DUPLICATE_CODE", "MCP 编码已存在");
+            throw new BusinessException("CHAT_MCP_DUPLICATE_CODE", ErrorMessageCatalog.CHAT_MCP_DUPLICATE_CODE);
         }
         ChatMcp persisted = request.toBuilder()
             .id(id)
@@ -93,20 +94,20 @@ public class AdminChatMcpConfigService {
     public void delete(Long id) {
         ChatMcp existing = chatMcpRepository.findById(id);
         if (existing == null) {
-            throw new NotFoundException("MCP 配置不存在");
+            throw new NotFoundException(ErrorMessageCatalog.CHAT_MCP_CONFIG_NOT_FOUND);
         }
         chatMcpRepository.softDeleteById(id);
     }
 
     private void validateRequired(ChatMcp request) {
         if (request == null) {
-            throw new BusinessException("CHAT_MCP_INVALID", "MCP 配置不能为空");
+            throw new BusinessException("CHAT_MCP_INVALID", ErrorMessageCatalog.CHAT_MCP_CONFIG_REQUIRED);
         }
         if (StrUtil.isBlank(request.getMcpCode())) {
-            throw new BusinessException("CHAT_MCP_INVALID", "MCP 编码不能为空");
+            throw new BusinessException("CHAT_MCP_INVALID", ErrorMessageCatalog.CHAT_MCP_CODE_REQUIRED);
         }
         if (StrUtil.isBlank(request.getDisplayName())) {
-            throw new BusinessException("CHAT_MCP_INVALID", "MCP 名称不能为空");
+            throw new BusinessException("CHAT_MCP_INVALID", ErrorMessageCatalog.CHAT_MCP_NAME_REQUIRED);
         }
     }
 }

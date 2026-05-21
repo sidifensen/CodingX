@@ -14,6 +14,7 @@ import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.codingx.common.error.ErrorMessageCatalog;
 import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
@@ -40,7 +41,7 @@ class ConversationQueueGateTest {
         QueueAcquireResult rejected = gate.tryAcquire(1002L);
 
         assertFalse(rejected.allowed());
-        assertEquals("busy", rejected.reason());
+        assertEquals(ErrorMessageCatalog.CHAT_QUEUE_BUSY, rejected.reason());
         assertEquals(null, rejected.queuePosition());
     }
 
@@ -175,7 +176,7 @@ class ConversationQueueGateTest {
         QueueAcquireResult result = gate.tryAcquire(1002L, position -> positionHolder[0] = position);
 
         assertFalse(result.allowed());
-        assertEquals("busy", result.reason());
+        assertEquals(ErrorMessageCatalog.CHAT_QUEUE_BUSY, result.reason());
         assertEquals(1, positionHolder[0]);
     }
 

@@ -1,5 +1,6 @@
 package com.codingx.chat.domain.port;
 import com.codingx.chat.domain.model.ChatMessage;
+import com.codingx.common.error.ErrorMessageCatalog;
 import java.util.List;
 
 /**
@@ -25,7 +26,7 @@ public interface AiChatClient {
             .filter(message -> message.getRole() == com.codingx.chat.domain.model.ChatMessageRole.USER)
             .findFirst()
             .map(ChatMessage::getContent)
-            .orElse("New Conversation");
+            .orElse(ErrorMessageCatalog.CHAT_CONVERSATION_DEFAULT_TITLE);
     }
 
     /**

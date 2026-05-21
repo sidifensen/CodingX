@@ -1,4 +1,5 @@
 import { AdminLoginFormPayload, LoginResponseData, MeResponseData } from '../types/auth';
+import { AdminErrorMessages } from '../constants/errorMessages';
 import { ApiResponseParser } from './apiResponse';
 
 /**
@@ -19,8 +20,11 @@ export class AuthApi {
       body: JSON.stringify(payload),
     });
 
-    const envelope = await ApiResponseParser.parseEnvelope<LoginResponseData>(response, '登录失败，请检查账号或密码');
-    ApiResponseParser.assertSuccess(response, envelope, '登录失败，请检查账号或密码');
+    const envelope = await ApiResponseParser.parseEnvelope<LoginResponseData>(
+      response,
+      AdminErrorMessages.AUTH_LOGIN_FAILED_CHECK_CREDENTIALS,
+    );
+    ApiResponseParser.assertSuccess(response, envelope, AdminErrorMessages.AUTH_LOGIN_FAILED_CHECK_CREDENTIALS);
     return envelope.data;
   }
 
@@ -36,8 +40,8 @@ export class AuthApi {
       },
     });
 
-    const envelope = await ApiResponseParser.parseEnvelope<null>(response, '退出登录失败');
-    ApiResponseParser.assertSuccess(response, envelope, '退出登录失败');
+    const envelope = await ApiResponseParser.parseEnvelope<null>(response, AdminErrorMessages.AUTH_LOGOUT_FAILED);
+    ApiResponseParser.assertSuccess(response, envelope, AdminErrorMessages.AUTH_LOGOUT_FAILED);
   }
 
   /**
@@ -53,8 +57,11 @@ export class AuthApi {
       },
     });
 
-    const envelope = await ApiResponseParser.parseEnvelope<MeResponseData>(response, '登录已失效，请重新登录');
-    ApiResponseParser.assertSuccess(response, envelope, '登录已失效，请重新登录');
+    const envelope = await ApiResponseParser.parseEnvelope<MeResponseData>(
+      response,
+      AdminErrorMessages.AUTH_SESSION_EXPIRED,
+    );
+    ApiResponseParser.assertSuccess(response, envelope, AdminErrorMessages.AUTH_SESSION_EXPIRED);
     return envelope.data;
   }
 }

@@ -1,6 +1,7 @@
 package com.codingx.common.storage;
 
 import cn.hutool.core.util.StrUtil;
+import com.codingx.common.error.ErrorMessageCatalog;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -72,7 +73,7 @@ public class RustFsSkillPackageClient {
     public String uploadDirectory(List<SkillFileObject> fileObjects, String preferredDirectoryName) {
         ensureBucketExists();
         if (fileObjects == null || fileObjects.isEmpty()) {
-            throw new IllegalArgumentException("技能文件列表不能为空");
+            throw new IllegalArgumentException(ErrorMessageCatalog.CHAT_SKILL_FILE_LIST_REQUIRED);
         }
         String directoryPrefix = buildDirectoryPrefix(preferredDirectoryName);
         List<SkillFileObject> sortedFiles = fileObjects.stream()
@@ -250,10 +251,10 @@ public class RustFsSkillPackageClient {
         normalized = StrUtil.removePrefix(normalized, "/");
         normalized = StrUtil.removeSuffix(normalized, "/");
         if (StrUtil.isBlank(normalized)) {
-            throw new IllegalArgumentException("目录前缀不能为空");
+            throw new IllegalArgumentException(ErrorMessageCatalog.CHAT_SKILL_DIRECTORY_PREFIX_REQUIRED);
         }
         if (normalized.contains("..")) {
-            throw new IllegalArgumentException("目录前缀非法");
+            throw new IllegalArgumentException(ErrorMessageCatalog.CHAT_SKILL_DIRECTORY_PREFIX_INVALID);
         }
         return normalized;
     }
@@ -268,10 +269,10 @@ public class RustFsSkillPackageClient {
         normalized = StrUtil.removePrefix(normalized, "/");
         normalized = StrUtil.removeSuffix(normalized, "/");
         if (StrUtil.isBlank(normalized)) {
-            throw new IllegalArgumentException("文件路径不能为空");
+            throw new IllegalArgumentException(ErrorMessageCatalog.CHAT_SKILL_FILE_PATH_REQUIRED);
         }
         if (normalized.contains("..")) {
-            throw new IllegalArgumentException("文件路径非法");
+            throw new IllegalArgumentException(ErrorMessageCatalog.CHAT_SKILL_FILE_PATH_INVALID);
         }
         return normalized;
     }

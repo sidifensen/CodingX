@@ -3,6 +3,7 @@ package com.codingx.chat.application.service;
 import com.codingx.common.error.ErrorMessageCatalog;
 import com.codingx.chat.domain.repository.ChatTraceNodeRepository;
 import com.codingx.chat.domain.repository.ChatTraceRunRepository;
+import com.codingx.common.exception.NotFoundException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -23,7 +24,7 @@ public class ConversationTraceQueryService {
      */
     public ConversationTraceView getTrace(String traceId) {
         return new ConversationTraceView(
-            chatTraceRunRepository.findByTraceId(traceId).orElseThrow(() -> new IllegalArgumentException(ErrorMessageCatalog.CHAT_TRACE_NOT_FOUND)),
+            chatTraceRunRepository.findByTraceId(traceId).orElseThrow(() -> new NotFoundException(ErrorMessageCatalog.CHAT_TRACE_NOT_FOUND)),
             chatTraceNodeRepository.findByTraceId(traceId)
         );
     }

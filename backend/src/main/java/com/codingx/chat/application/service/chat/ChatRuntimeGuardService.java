@@ -1,5 +1,7 @@
 package com.codingx.chat.application.service;
 
+import com.codingx.common.error.ErrorMessageCatalog;
+import com.codingx.common.exception.ConflictException;
 import com.codingx.chat.domain.port.ChatStreamPublisher;
 import com.codingx.chat.infrastructure.runtime.ChatRunControlService;
 import com.codingx.chat.infrastructure.runtime.ConversationQueueGate;
@@ -40,7 +42,7 @@ public class ChatRuntimeGuardService {
         );
         if (!result.allowed() && !"queued".equalsIgnoreCase(result.reason())) {
             chatStreamPublisher.publishRejected(conversationId, result.reason());
-            throw new IllegalStateException("Conversation rejected: " + result.reason());
+            throw new ConflictException(ErrorMessageCatalog.CHAT_QUEUE_BUSY);
         }
         chatStreamPublisher.publishQueueAccepted(conversationId);
     }

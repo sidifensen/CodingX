@@ -4,6 +4,7 @@ import cn.dev33.satoken.stp.StpUtil;
 import cn.hutool.core.util.IdUtil;
 import cn.hutool.core.util.StrUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.codingx.common.error.ErrorMessageCatalog;
 import com.codingx.common.exception.BusinessException;
 import com.codingx.workspace.infrastructure.persistence.dataobject.WorkspaceDO;
 import com.codingx.workspace.infrastructure.persistence.mapper.WorkspaceMapper;
@@ -65,14 +66,14 @@ public class ChatWorkspaceBindingService {
      */
     private Path normalizeAndValidateRepositoryPath(String repositoryPath) {
         if (StrUtil.isBlank(repositoryPath)) {
-            throw new BusinessException("CHAT_WORKSPACE_PATH_REQUIRED", "仓库路径不能为空");
+            throw new BusinessException("CHAT_WORKSPACE_PATH_REQUIRED", ErrorMessageCatalog.CHAT_WORKSPACE_PATH_REQUIRED);
         }
         Path normalizedPath = Path.of(repositoryPath).toAbsolutePath().normalize();
         if (!Files.exists(normalizedPath)) {
-            throw new BusinessException("CHAT_WORKSPACE_PATH_NOT_FOUND", "仓库路径不存在");
+            throw new BusinessException("CHAT_WORKSPACE_PATH_NOT_FOUND", ErrorMessageCatalog.CHAT_WORKSPACE_PATH_NOT_FOUND);
         }
         if (!Files.isDirectory(normalizedPath)) {
-            throw new BusinessException("CHAT_WORKSPACE_PATH_INVALID", "仓库路径必须是目录");
+            throw new BusinessException("CHAT_WORKSPACE_PATH_INVALID", ErrorMessageCatalog.CHAT_WORKSPACE_PATH_INVALID_DIRECTORY);
         }
         return normalizedPath;
     }
@@ -89,7 +90,8 @@ public class ChatWorkspaceBindingService {
         WorkspaceDO existing = workspaceMapper.selectOne(new LambdaQueryWrapper<WorkspaceDO>()
             .eq(WorkspaceDO::getCreatedBy, userId)
             .eq(WorkspaceDO::getWorkingDirectory, workingDirectory)
-            .eq(WorkspaceDO::getWorkspaceType, "local")
+            // 旧 workspace_type 列已下线，运行目标统一用 runtime_target 表达。
+            .eq(WorkspaceDO::getRuntimeTarget, WorkspaceRepositoryImpl.RUNTIME_TARGET_LOCAL)
             .eq(WorkspaceDO::getDeleted, 0)
             .last("LIMIT 1"));
         if (existing != null) {
@@ -100,7 +102,6 @@ public class ChatWorkspaceBindingService {
         workspace.setName(normalizedPath.getFileName() == null ? workingDirectory : normalizedPath.getFileName().toString());
         workspace.setWorkingDirectory(workingDirectory);
         workspace.setRuntimeTarget(WorkspaceRepositoryImpl.RUNTIME_TARGET_LOCAL);
-        workspace.setWorkspaceType("local");
         workspace.setCreatedBy(userId);
         workspace.setCreatedAt(LocalDateTime.now());
         workspace.setUpdatedAt(LocalDateTime.now());

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { AuthApi } from '../api/authApi';
+import { UserErrorMessages } from '../constants/errorMessages';
 import { LoginFormPayload, AuthSession } from '../types/auth';
 import { AuthStorage } from '../utils/authStorage';
 
@@ -61,7 +62,7 @@ export function useAuth() {
   const login = async (payload: LoginFormPayload): Promise<void> => {
     // 步骤：输入校验，缺少账号或密码时直接返回错误提示。
     if (!payload.username.trim() || !payload.password.trim()) {
-      setErrorMessage('请输入账号和密码');
+      setErrorMessage(UserErrorMessages.AUTH_CREDENTIALS_REQUIRED);
       return;
     }
 
@@ -85,7 +86,7 @@ export function useAuth() {
       setSession(nextSession);
     } catch (error) {
       // 步骤：将接口异常转换为用户可读提示，避免抛出未捕获错误。
-      setErrorMessage(error instanceof Error ? error.message : '登录失败，请稍后重试');
+      setErrorMessage(error instanceof Error ? error.message : UserErrorMessages.AUTH_LOGIN_FAILED_RETRY);
       throw error;
     } finally {
       // 步骤：请求结束后恢复可提交状态。

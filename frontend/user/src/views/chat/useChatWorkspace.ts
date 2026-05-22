@@ -391,6 +391,14 @@ export function useChatWorkspace(
       ? getWorkspaceLabel(nextWorkspacePath)
       : getDefaultWorkspaceLabel(activeRuntimeTarget);
     const nextSnapshot = readWorkspaceSnapshot(nextPartitionKey);
+    if (activeStreamSessionIdRef.current != null || abortControllerRef.current != null || isStreaming) {
+      // 关键约束：流式生成期间仅允许用户显式切换分区，宿主被动上下文刷新不得打断当前会话。
+      // 否则会导致消息区被清空但输入栏仍显示生成中，形成“内容消失”的错位体验。
+      if (!isSamePartition) {
+        refreshWorkspaceGroups('all');
+        return;
+      }
+    }
     setWorkspacePath(nextWorkspacePath);
     setWorkspaceId(nextWorkspaceId);
     setWorkspaceLabel(nextWorkspaceLabel);
@@ -414,6 +422,7 @@ export function useChatWorkspace(
     runtimeTargets,
     activeRuntimeTarget,
     activeWorkspacePartitionKey,
+    isStreaming,
   ]);
 
   useEffect(() => {

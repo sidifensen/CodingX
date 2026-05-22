@@ -1847,6 +1847,279 @@ describe('useChatWorkspace', () => {
   });
 
   /**
+   * 流式生成期间若宿主被动刷新到其他本地分区，不应打断当前会话。
+   * 否则会出现消息区被清空但输入栏仍显示“停止中”的错位状态。
+   */
+  it('应在流式生成期间忽略宿主被动分区切换并保持当前消息', async () => {
+    window.localStorage.setItem(
+      'codingx.auth.session',
+      JSON.stringify({
+        token: 'token-123',
+        userId: '1002',
+        username: 'user',
+        displayName: 'CodingX User',
+        userType: 'USER',
+      }),
+    );
+    window.localStorage.setItem(
+      'codingx.chat.workspace.conversations.v1',
+      JSON.stringify({
+        version: 1,
+        snapshots: {
+          'local::d:/code/workspace-a': {
+            workspacePath: 'D:/code/workspace-a',
+            workspaceLabel: 'workspace-a',
+            runtimeTarget: 'local',
+            lastOpenedAt: Date.now(),
+            activeConversationId: '2001',
+            conversations: [
+              {
+                id: '2001',
+                title: 'A 会话',
+                status: 'ACTIVE',
+                lastRunId: '5002',
+                workspaceId: '3001',
+              },
+            ],
+            conversationRecords: {
+              '2001': {
+                owned: true,
+                messages: [
+                  {
+                    id: 'assistant-2001',
+                    conversationId: '2001',
+                    role: 'ASSISTANT',
+                    content: '历史消息',
+                    status: 'COMPLETED',
+                  },
+                ],
+                executionSteps: [],
+                references: [],
+                artifacts: [],
+                currentExperts: [],
+                currentSkills: [],
+                currentMcps: [],
+              },
+            },
+          },
+          'local::d:/code/workspace-b': {
+            workspacePath: 'D:/code/workspace-b',
+            workspaceLabel: 'workspace-b',
+            runtimeTarget: 'local',
+            lastOpenedAt: Date.now() - 1000,
+            activeConversationId: null,
+            conversations: [],
+            conversationRecords: {},
+          },
+          'local::__no_workspace__': {
+            workspacePath: null,
+            workspaceLabel: '历史记录',
+            runtimeTarget: 'local',
+            lastOpenedAt: Date.now() - 2000,
+            activeConversationId: null,
+            conversations: [],
+            conversationRecords: {},
+          },
+        },
+      }),
+    );
+
+    const readQueue: Array<{
+      resolve: (value: ReadableStreamReadResult<Uint8Array>) => void;
+      reject: (reason?: unknown) => void;
+    }> = [];
+    const metaEvent = new TextEncoder().encode('event:meta\ndata:{"conversationId":"2001"}\n\n');
+    const partialMessageEvent = new TextEncoder().encode(
+      'event:message\ndata:{"type":"response","delta":"流式增量"}\n\n',
+    );
+    const finishEvent = new TextEncoder().encode(
+      'event:finish\ndata:{"conversationId":"2001","content":"流式完成"}\n\n',
+    );
+    const mockReader = {
+      read: vi.fn(() => {
+        return new Promise<ReadableStreamReadResult<Uint8Array>>((resolve, reject) => {
+          readQueue.push({ resolve, reject });
+        });
+      }),
+    };
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === '/api/chat/conversations?workspaceId=3001') {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            code: 'OK',
+            message: 'success',
+            data: [
+              {
+                id: '2001',
+                title: 'A 会话',
+                status: 'ACTIVE',
+                lastRunId: '5002',
+                workspaceId: '3001',
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      if (url === '/api/chat/conversations?workspaceId=3002') {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            code: 'OK',
+            message: 'success',
+            data: [],
+          }),
+          { status: 200 },
+        );
+      }
+      if (
+        url === '/api/chat/sample-questions' ||
+        url === '/api/chat/experts' ||
+        url === '/api/chat/skills' ||
+        url === '/api/chat/mcps' ||
+        url === '/api/chat/conversations/2001/messages' ||
+        url === '/api/chat/conversations/2001/steps' ||
+        url === '/api/chat/conversations/2001/references' ||
+        url === '/api/chat/conversations/2001/artifacts' ||
+        url === '/api/chat/conversations/2001/current-skills' ||
+        url === '/api/chat/conversations/2001/current-mcps' ||
+        url === '/api/chat/conversations/2001/current-experts'
+      ) {
+        if (url === '/api/chat/conversations/2001/messages') {
+          return new Response(
+            JSON.stringify({
+              success: true,
+              code: 'OK',
+              message: 'success',
+              data: [
+                {
+                  id: 'assistant-2001',
+                  conversationId: '2001',
+                  role: 'ASSISTANT',
+                  content: '历史消息',
+                  status: 'COMPLETED',
+                },
+              ],
+            }),
+            { status: 200 },
+          );
+        }
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (url.includes('/api/chat/stream')) {
+        return {
+          ok: true,
+          status: 200,
+          body: {
+            getReader: () => mockReader,
+          },
+        } as unknown as Response;
+      }
+      throw new Error(`Unhandled fetch in streaming host partition switch test: ${url}`);
+    });
+
+    const baseHostContext = {
+      hostType: 'desktop' as const,
+      executionTargets: ['local'] as const,
+      capabilities: {
+        localFiles: true,
+        localFolderPicker: true,
+        shell: true,
+        browserAutomation: false,
+        desktopNotifications: false,
+        officeInterop: false,
+        localMcp: true,
+        windowControls: true,
+      },
+      localResource: {
+        boundRepositoryPath: 'D:/code/workspace-a',
+        workspaceId: '3001',
+        permissionGranted: true,
+      },
+    };
+
+    const { result, rerender } = renderHook(
+      ({ hostContext }) =>
+        useChatWorkspace(true, {
+          hostContext,
+        }),
+      {
+        initialProps: { hostContext: baseHostContext },
+      },
+    );
+
+    await waitFor(() => {
+      expect(result.current.isBootstrapping).toBe(false);
+      expect(result.current.activeConversationId).toBe('2001');
+    });
+
+    await act(async () => {
+      result.current.setInputValue('继续回答');
+    });
+    const submitPromise = result.current.submitMessage();
+
+    await waitFor(() => {
+      expect(result.current.isStreaming).toBe(true);
+      expect(readQueue.length).toBeGreaterThan(0);
+    });
+
+    await act(async () => {
+      readQueue.shift()?.resolve({ done: false, value: metaEvent });
+    });
+    await act(async () => {
+      readQueue.shift()?.resolve({ done: false, value: partialMessageEvent });
+    });
+
+    await waitFor(() => {
+      const hasStreamingDelta = result.current.messages.some(
+        (item) => item.role === 'ASSISTANT' && item.content.includes('流式增量'),
+      );
+      expect(hasStreamingDelta).toBe(true);
+    });
+
+    await act(async () => {
+      rerender({
+        hostContext: {
+          ...baseHostContext,
+          executionTargets: [...baseHostContext.executionTargets],
+          capabilities: {
+            ...baseHostContext.capabilities,
+          },
+          localResource: {
+            ...baseHostContext.localResource,
+            boundRepositoryPath: 'D:/code/workspace-b',
+            workspaceId: '3002',
+          },
+        },
+      });
+    });
+
+    expect(result.current.isStreaming).toBe(true);
+    expect(result.current.activeConversationId).toBe('2001');
+    expect(result.current.workspacePath).toBe('D:/code/workspace-a');
+    expect(result.current.messages.length).toBeGreaterThan(0);
+
+    await act(async () => {
+      readQueue.shift()?.resolve({ done: false, value: finishEvent });
+    });
+    await act(async () => {
+      readQueue.shift()?.resolve({ done: true, value: undefined });
+    });
+    await act(async () => {
+      await submitPromise;
+    });
+
+    expect(result.current.isStreaming).toBe(false);
+    expect(result.current.activeConversationId).toBe('2001');
+  });
+
+  /**
    * 宿主仅刷新上下文引用且分区未变化时，不应清空当前会话回放，避免首页闪回与侧栏空态闪烁。
    */
   it('应在同分区宿主上下文刷新时保持当前会话与消息不变', async () => {

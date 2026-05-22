@@ -192,16 +192,38 @@ public class WeatherMcpToolExecutor implements ChatMcpToolExecutor {
             return null;
         }
         // 城市与时间词分组提取，避免把“北京今天/上海未来三天”误识别为城市名。
-        String directCity = ReUtil.get(
-            "([\\p{IsHan}]{2,8}?)(?:市|区|县|州|盟)?(?:今天|明天|后天|未来\\d+天|未来[一二三四五六七八九十两]+天)?(?:天气|气温|温度|预报)",
+        String directCity = normalizeCityKeyword(ReUtil.get(
+            "([\\p{IsHan}]{2,8}?)(?:市|区|县|州|盟)?(?:今天|明天|后天|未来\\d+天|未来[一二三四五六七八九十两]+天)?(?:的)?(?:天气|气温|温度|预报)",
             question,
             1
-        );
+        ));
         if (StrUtil.isNotBlank(directCity)) {
             return directCity;
         }
-        String fallbackCity = ReUtil.get("(北京|上海|广州|深圳|杭州|成都|武汉|南京|西安|重庆|长沙|天津|苏州|郑州|青岛|大连|厦门|昆明|哈尔滨|三亚)", question, 1);
-        return StrUtil.isBlank(fallbackCity) ? null : fallbackCity.trim();
+        String fallbackCity = normalizeCityKeyword(ReUtil.get(
+            "(北京|上海|广州|深圳|杭州|成都|武汉|南京|西安|重庆|长沙|天津|苏州|郑州|青岛|大连|厦门|昆明|哈尔滨|三亚)",
+            question,
+            1
+        ));
+        return StrUtil.isBlank(fallbackCity) ? null : fallbackCity;
+    }
+
+    /**
+     * 规范化城市关键词，移除口语助词等非地理实体尾缀。
+     *
+     * @param city 原始城市文本。
+     * @return 规范化后的城市关键词。
+     */
+    private String normalizeCityKeyword(String city) {
+        String normalized = StrUtil.trim(city);
+        if (StrUtil.isBlank(normalized)) {
+            return normalized;
+        }
+        // 兼容“北京的天气”这类口语表达，避免把助词“的”带入地理编码查询。
+        while (StrUtil.endWith(normalized, "的")) {
+            normalized = StrUtil.removeSuffix(normalized, "的");
+        }
+        return normalized;
     }
 
     /**

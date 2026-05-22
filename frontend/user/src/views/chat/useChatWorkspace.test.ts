@@ -3266,6 +3266,200 @@ describe('useChatWorkspace', () => {
   });
 
   /**
+   * 思考、搜索与 MCP 事件应被折叠为用户态过程节点，而不是把长文本或原始工具信息直接暴露到主区。
+   */
+  it('应把流式过程事件映射为用户态过程节点', async () => {
+    window.localStorage.setItem(
+      'codingx.auth.session',
+      JSON.stringify({
+        token: 'token-123',
+        userId: '1002',
+        username: 'user',
+        displayName: 'CodingX User',
+        userType: 'USER',
+      }),
+    );
+
+    const readQueue: Array<{
+      resolve: (value: ReadableStreamReadResult<Uint8Array>) => void;
+      reject: (reason?: unknown) => void;
+    }> = [];
+    const metaEvent = new TextEncoder().encode('event:meta\ndata:{"conversationId":"2001"}\n\n');
+    const thinkingEvent = new TextEncoder().encode(
+      'event:thinking\ndata:{"type":"thinking","delta":"这里是一大段模型思考原文，不应该原样进入主区时间轴。"}\n\n',
+    );
+    const searchStepEvent = new TextEncoder().encode(
+      'event:step\ndata:{"id":"step-1","runId":"5002","stepType":"search","stepTitle":"搜索资料","stepStatus":"RUNNING","sequenceNo":1}\n\n',
+    );
+    const referenceEventOne = new TextEncoder().encode(
+      'event:reference\ndata:{"id":"ref-1","runId":"5002","conversationId":"2001","title":"OpenAI API 最新文档","url":"https://platform.openai.com","siteName":"OpenAI","rankNo":1}\n\n',
+    );
+    const referenceEventTwo = new TextEncoder().encode(
+      'event:reference\ndata:{"id":"ref-2","runId":"5002","conversationId":"2001","title":"Bing Search API 文档","url":"https://learn.microsoft.com","siteName":"Microsoft Learn","rankNo":2}\n\n',
+    );
+    const mcpStartEvent = new TextEncoder().encode(
+      'event:mcp-call\ndata:{"callId":"call-1","phase":"start","toolId":"weather_query","displayName":"天气查询","params":{"city":"北京"}}\n\n',
+    );
+    const mcpCompleteEvent = new TextEncoder().encode(
+      'event:mcp-call\ndata:{"callId":"call-1","phase":"complete","toolId":"weather_query","displayName":"天气查询","rawResult":{"text":"北京今日晴"}}\n\n',
+    );
+    const finishEvent = new TextEncoder().encode('event:finish\ndata:{"content":"整理完成"}\n\n');
+    const mockReader = {
+      read: vi.fn(() => {
+        return new Promise<ReadableStreamReadResult<Uint8Array>>((resolve, reject) => {
+          readQueue.push({ resolve, reject });
+        });
+      }),
+    };
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (
+        url === '/api/chat/conversations' ||
+        url === '/api/chat/sample-questions' ||
+        url === '/api/chat/experts' ||
+        url === '/api/chat/skills' ||
+        url === '/api/chat/mcps' ||
+        url === '/api/chat/conversations/2001/messages' ||
+        url === '/api/chat/conversations/2001/steps' ||
+        url === '/api/chat/conversations/2001/references' ||
+        url === '/api/chat/conversations/2001/artifacts' ||
+        url === '/api/chat/conversations/2001/current-skills' ||
+        url === '/api/chat/conversations/2001/current-mcps' ||
+        url === '/api/chat/conversations/2001/current-experts'
+      ) {
+        if (url === '/api/chat/conversations') {
+          return new Response(
+            JSON.stringify({
+              success: true,
+              code: 'OK',
+              message: 'success',
+              data: [
+                {
+                  id: '2001',
+                  title: 'Default Demo Conversation',
+                  status: 'ACTIVE',
+                  lastRunId: '5002',
+                },
+              ],
+            }),
+            { status: 200 },
+          );
+        }
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (url.includes('/api/chat/stream')) {
+        return {
+          ok: true,
+          status: 200,
+          body: {
+            getReader: () => mockReader,
+          },
+        } as unknown as Response;
+      }
+      throw new Error(`Unhandled fetch in process timeline mapping test: ${url}`);
+    });
+
+    const { result } = renderHook(() => useChatWorkspace(true));
+
+    await waitFor(() => {
+      expect(result.current.isBootstrapping).toBe(false);
+    });
+    await act(async () => {
+      result.current.setInputValue('请帮我查一下北京天气和相关资料');
+    });
+    const submitPromise = result.current.submitMessage();
+
+    await waitFor(() => {
+      expect(result.current.isStreaming).toBe(true);
+      expect(readQueue.length).toBeGreaterThan(0);
+    });
+
+    await act(async () => {
+      readQueue.shift()?.resolve({ done: false, value: metaEvent });
+    });
+    await waitFor(() => {
+      expect(readQueue.length).toBeGreaterThan(0);
+    });
+
+    await act(async () => {
+      readQueue.shift()?.resolve({ done: false, value: thinkingEvent });
+    });
+    await waitFor(() => {
+      const assistantMessage = result.current.messages.find((item) => item.role === 'ASSISTANT');
+      const timeline = ((assistantMessage as any)?.processTimeline ?? []) as Array<Record<string, unknown>>;
+      expect(timeline.some((item) => item.text === '正在思考')).toBe(true);
+      expect(timeline.some((item) => String(item.text).includes('模型思考原文'))).toBe(false);
+    });
+
+    await act(async () => {
+      readQueue.shift()?.resolve({ done: false, value: searchStepEvent });
+    });
+    await waitFor(() => {
+      expect(readQueue.length).toBeGreaterThan(0);
+    });
+    await act(async () => {
+      readQueue.shift()?.resolve({ done: false, value: referenceEventOne });
+    });
+    await waitFor(() => {
+      expect(readQueue.length).toBeGreaterThan(0);
+    });
+    await act(async () => {
+      readQueue.shift()?.resolve({ done: false, value: referenceEventTwo });
+    });
+    await waitFor(() => {
+      const assistantMessage = result.current.messages.find((item) => item.role === 'ASSISTANT');
+      const timeline = ((assistantMessage as any)?.processTimeline ?? []) as Array<Record<string, unknown>>;
+      expect(timeline.some((item) => item.text === '已搜索 2 个网页')).toBe(true);
+    });
+
+    await act(async () => {
+      readQueue.shift()?.resolve({ done: false, value: mcpStartEvent });
+    });
+    await waitFor(() => {
+      const assistantMessage = result.current.messages.find((item) => item.role === 'ASSISTANT');
+      const timeline = ((assistantMessage as any)?.processTimeline ?? []) as Array<Record<string, unknown>>;
+      expect(timeline.some((item) => item.text === '正在获取实时数据')).toBe(true);
+    });
+
+    await act(async () => {
+      readQueue.shift()?.resolve({ done: false, value: mcpCompleteEvent });
+    });
+    await waitFor(() => {
+      const assistantMessage = result.current.messages.find((item) => item.role === 'ASSISTANT');
+      const timeline = ((assistantMessage as any)?.processTimeline ?? []) as Array<Record<string, unknown>>;
+      expect(timeline.some((item) => item.text === '已获取数据，正在整理')).toBe(true);
+    });
+
+    await act(async () => {
+      readQueue.shift()?.resolve({ done: false, value: finishEvent });
+    });
+    await waitFor(() => {
+      const assistantMessage = result.current.messages.find((item) => item.role === 'ASSISTANT');
+      const timeline = ((assistantMessage as any)?.processTimeline ?? []) as Array<Record<string, unknown>>;
+      expect(timeline).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ text: '正在思考' }),
+          expect.objectContaining({ text: '已搜索 2 个网页' }),
+          expect.objectContaining({ text: '已获取数据，正在整理' }),
+        ]),
+      );
+    });
+    await waitFor(() => {
+      expect(readQueue.length).toBeGreaterThan(0);
+    });
+    await act(async () => {
+      readQueue.shift()?.resolve({ done: true, value: undefined });
+    });
+    await act(async () => {
+      await submitPromise;
+    });
+  });
+
+  /**
    * 流式结束后即使后端消息回放未返回 MCP/搜索字段，也应保留并持久化当前会话面板数据。
    */
   it('应在流式回放后保留MCP调用与搜索进度并写入本地快照', async () => {

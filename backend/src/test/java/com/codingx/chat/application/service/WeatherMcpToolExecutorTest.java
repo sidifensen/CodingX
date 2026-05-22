@@ -209,6 +209,159 @@ class WeatherMcpToolExecutorTest {
     }
 
     /**
+     * 对包含上下文噪音的问句应提取真实城市，而不是把整段前缀误识别为城市名。
+     */
+    @Test
+    void executeExtractsCityFromNoisyNaturalLanguageQuestion() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        try {
+            server.createContext("/geocoding", exchange -> {
+                String decodedQuery = decodeQuery(exchange.getRequestURI().getRawQuery());
+                if (decodedQuery.contains("name=北京&") || decodedQuery.endsWith("name=北京")) {
+                    respondJson(
+                        exchange,
+                        """
+                        {
+                          "results": [
+                            {"name":"北京","admin1":"北京","country":"中国","latitude":39.9042,"longitude":116.4074}
+                          ]
+                        }
+                        """
+                    );
+                    return;
+                }
+                respondJson(exchange, "{\"results\":[]}");
+            });
+            server.createContext("/forecast", exchange -> {
+                respondJson(
+                    exchange,
+                    """
+                    {
+                      "timezone":"Asia/Shanghai",
+                      "utc_offset_seconds":28800,
+                      "current":{
+                        "time":"2026-05-16T10:00",
+                        "temperature_2m":26.5,
+                        "apparent_temperature":27.0,
+                        "weather_code":1,
+                        "wind_speed_10m":12.3
+                      },
+                      "daily":{
+                        "time":["2026-05-16","2026-05-17","2026-05-18"],
+                        "weather_code":[1,2,61],
+                        "temperature_2m_max":[28.0,29.5,24.1],
+                        "temperature_2m_min":[19.2,20.1,17.8],
+                        "precipitation_probability_max":[10,20,80],
+                        "wind_speed_10m_max":[18.1,16.2,20.4]
+                      }
+                    }
+                    """
+                );
+            });
+            server.start();
+
+            String baseUrl = "http://127.0.0.1:" + server.getAddress().getPort();
+            WeatherMcpToolExecutor executor = new WeatherMcpToolExecutor() {
+                @Override
+                protected String geocodingEndpoint() {
+                    return baseUrl + "/geocoding";
+                }
+
+                @Override
+                protected String forecastEndpoint() {
+                    return baseUrl + "/forecast";
+                }
+            };
+
+            ChatMcpToolResult result = executor.execute("我在北京，天气怎么样");
+
+            assertEquals("weather_query", result.toolId());
+            assertTrue(result.content().contains("【北京 今日天气】"), "应从自然语言中提取真实城市北京");
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    /**
+     * 当 AI 参数抽取可用时，应优先采用 AI 抽取结果而不是规则猜测结果。
+     */
+    @Test
+    void executePrefersAiExtractedCityBeforeRegexFallback() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        try {
+            server.createContext("/geocoding", exchange -> {
+                String decodedQuery = decodeQuery(exchange.getRequestURI().getRawQuery());
+                if (decodedQuery.contains("name=北京&") || decodedQuery.endsWith("name=北京")) {
+                    respondJson(
+                        exchange,
+                        """
+                        {
+                          "results": [
+                            {"name":"北京","admin1":"北京","country":"中国","latitude":39.9042,"longitude":116.4074}
+                          ]
+                        }
+                        """
+                    );
+                    return;
+                }
+                respondJson(exchange, "{\"results\":[]}");
+            });
+            server.createContext("/forecast", exchange -> {
+                respondJson(
+                    exchange,
+                    """
+                    {
+                      "timezone":"Asia/Shanghai",
+                      "utc_offset_seconds":28800,
+                      "current":{
+                        "time":"2026-05-16T10:00",
+                        "temperature_2m":26.5,
+                        "apparent_temperature":27.0,
+                        "weather_code":1,
+                        "wind_speed_10m":12.3
+                      },
+                      "daily":{
+                        "time":["2026-05-16","2026-05-17","2026-05-18"],
+                        "weather_code":[1,2,61],
+                        "temperature_2m_max":[28.0,29.5,24.1],
+                        "temperature_2m_min":[19.2,20.1,17.8],
+                        "precipitation_probability_max":[10,20,80],
+                        "wind_speed_10m_max":[18.1,16.2,20.4]
+                      }
+                    }
+                    """
+                );
+            });
+            server.start();
+
+            String baseUrl = "http://127.0.0.1:" + server.getAddress().getPort();
+            WeatherMcpToolExecutor executor = new WeatherMcpToolExecutor() {
+                @Override
+                protected String geocodingEndpoint() {
+                    return baseUrl + "/geocoding";
+                }
+
+                @Override
+                protected String forecastEndpoint() {
+                    return baseUrl + "/forecast";
+                }
+
+                @Override
+                protected String extractCityByAi(String question) {
+                    return "北京";
+                }
+            };
+
+            ChatMcpToolResult result = executor.execute("帮我查一下我在北京附近的天气如何");
+
+            assertEquals("weather_query", result.toolId());
+            assertTrue(result.content().contains("【北京 今日天气】"), "AI 已给出城市时应直接使用 AI 抽取结果");
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    /**
      * 响应 JSON 文本给测试 HTTP 服务器。
      * @param exchange HTTP 请求上下文。
      * @param body 响应 JSON。

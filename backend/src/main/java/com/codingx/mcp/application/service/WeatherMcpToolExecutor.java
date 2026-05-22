@@ -8,6 +8,8 @@ import cn.hutool.http.HttpStatus;
 import cn.hutool.json.JSONArray;
 import cn.hutool.json.JSONObject;
 import cn.hutool.json.JSONUtil;
+import com.codingx.chat.application.service.AiPromptExecutionService;
+import com.codingx.chat.application.service.PromptTemplateLoader;
 import com.codingx.common.error.ErrorMessageCatalog;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
@@ -16,6 +18,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 /**
@@ -31,8 +34,13 @@ public class WeatherMcpToolExecutor implements ChatMcpToolExecutor {
      * 工具唯一标识。
      */
     private static final String TOOL_ID = "weather_query";
+    private static final String CITY_EXTRACT_TEMPLATE = "weather-city-extract";
     private static final String OPEN_METEO_GEOCODING = "https://geocoding-api.open-meteo.com/v1/search";
     private static final String OPEN_METEO_FORECAST = "https://api.open-meteo.com/v1/forecast";
+    @Autowired(required = false)
+    private PromptTemplateLoader promptTemplateLoader;
+    @Autowired(required = false)
+    private AiPromptExecutionService aiPromptExecutionService;
 
     /**
      * 暴露地理编码地址，便于测试注入替身接口。
@@ -191,6 +199,10 @@ public class WeatherMcpToolExecutor implements ChatMcpToolExecutor {
         if (StrUtil.isBlank(question)) {
             return null;
         }
+        String aiCity = normalizeCityKeyword(extractCityByAi(question));
+        if (StrUtil.isNotBlank(aiCity)) {
+            return aiCity;
+        }
         // 城市与时间词分组提取，避免把“北京今天/上海未来三天”误识别为城市名。
         String directCity = normalizeCityKeyword(ReUtil.get(
             "([\\p{IsHan}]{2,8}?)(?:市|区|县|州|盟)?(?:今天|明天|后天|未来\\d+天|未来[一二三四五六七八九十两]+天)?(?:的)?(?:天气|气温|温度|预报)",
@@ -209,6 +221,52 @@ public class WeatherMcpToolExecutor implements ChatMcpToolExecutor {
     }
 
     /**
+     * 借助 LLM 从自然语言问题中抽取城市，作为规则匹配前的主路径。
+     *
+     * @param question 用户问题。
+     * @return 模型抽取到的城市；抽取失败返回 null。
+     */
+    protected String extractCityByAi(String question) {
+        if (StrUtil.isBlank(question) || promptTemplateLoader == null || aiPromptExecutionService == null) {
+            return null;
+        }
+        try {
+            String prompt = promptTemplateLoader.load(CITY_EXTRACT_TEMPLATE);
+            String raw = aiPromptExecutionService.complete(prompt, question);
+            return parseCityFromAiPayload(raw);
+        } catch (Exception exception) {
+            // AI 参数抽取失败时必须自动降级到规则兜底，避免影响主链路可用性。
+            log.debug("天气城市 AI 抽取失败，回退规则解析，question={}", question, exception);
+            return null;
+        }
+    }
+
+    /**
+     * 解析 AI 返回的 JSON，提取 city 字段。
+     *
+     * @param raw 模型原始输出。
+     * @return 城市名；解析失败返回 null。
+     */
+    private String parseCityFromAiPayload(String raw) {
+        if (StrUtil.isBlank(raw)) {
+            return null;
+        }
+        try {
+            return JSONUtil.parseObj(raw).getStr("city");
+        } catch (Exception primaryException) {
+            String jsonFragment = ReUtil.get("(?s)\\{.*?\\}", raw, 0);
+            if (StrUtil.isBlank(jsonFragment)) {
+                return null;
+            }
+            try {
+                return JSONUtil.parseObj(jsonFragment).getStr("city");
+            } catch (Exception secondaryException) {
+                return null;
+            }
+        }
+    }
+
+    /**
      * 规范化城市关键词，移除口语助词等非地理实体尾缀。
      *
      * @param city 原始城市文本。
@@ -219,7 +277,7 @@ public class WeatherMcpToolExecutor implements ChatMcpToolExecutor {
         if (StrUtil.isBlank(normalized)) {
             return normalized;
         }
-        // 兼容“北京的天气”这类口语表达，避免把助词“的”带入地理编码查询。
+        // 兼容口语表达中尾部助词，避免污染地理编码查询入参。
         while (StrUtil.endWith(normalized, "的")) {
             normalized = StrUtil.removeSuffix(normalized, "的");
         }

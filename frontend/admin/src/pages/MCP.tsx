@@ -619,7 +619,8 @@ function DeleteMcpDialog({
   onCancel: () => void;
   onConfirm: () => Promise<void>;
 }) {
-  // 关键约束：删除确认弹窗通过 Portal 挂载到 body，避免受页面容器 transform/overflow 影响而出现宽度压缩。
+  // 关键约束：删除确认弹窗通过 Portal 挂载到 body，避免受页面容器 transform/overflow 影响；
+  // 同时显式使用 rem 宽度，避免 max-w-md 在当前主题下被解析为 spacing-md(16px) 导致弹窗变窄。
   return createPortal(
     <div
       data-testid="mcp-delete-dialog-overlay"
@@ -629,7 +630,7 @@ function DeleteMcpDialog({
         role="dialog"
         aria-modal="true"
         aria-label="删除MCP配置"
-        className="w-full max-w-md rounded-2xl border border-border-hairline bg-surface-container-lowest p-lg shadow-2xl"
+        className="w-full max-w-[28rem] rounded-2xl border border-border-hairline bg-surface-container-lowest p-lg shadow-2xl"
       >
         <h3 className="font-title-md text-title-md text-ink">删除MCP配置</h3>
         <p className="mt-sm text-body-sm text-secondary">

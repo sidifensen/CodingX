@@ -398,9 +398,10 @@ function ResetPasswordDialog({
   onChange: (value: string) => void;
   onSubmit: () => void;
 }) {
+  // 关键约束：显式使用 rem 宽度，避免 max-w-lg 在当前主题下被 spacing token 覆盖成 24px。
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/45 px-md py-lg">
-      <div role="dialog" aria-modal="true" aria-label="重置用户密码" className="w-full max-w-lg rounded-2xl border border-border-hairline bg-surface-container-lowest shadow-2xl">
+      <div role="dialog" aria-modal="true" aria-label="重置用户密码" className="w-full max-w-[32rem] rounded-2xl border border-border-hairline bg-surface-container-lowest shadow-2xl">
         <div className="flex items-start justify-between gap-md border-b border-border-hairline px-lg py-md">
           <div>
             <h3 className="font-title-md text-title-md text-ink">重置用户密码</h3>

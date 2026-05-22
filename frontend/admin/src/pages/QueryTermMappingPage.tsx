@@ -524,6 +524,7 @@ function DeleteMappingDialog({
   onCancel: () => void;
   onConfirm: () => void;
 }) {
+  // 关键约束：显式使用 rem 宽度，避免 max-w-md 在当前主题下被 spacing token 覆盖成 16px。
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/45 px-md">
       <div
@@ -531,7 +532,7 @@ function DeleteMappingDialog({
         aria-modal="true"
         aria-label="删除映射规则"
         data-testid="mapping-delete-dialog"
-        className="w-full max-w-md rounded-2xl border border-border-hairline bg-surface-container-lowest p-lg shadow-2xl"
+        className="w-full max-w-[28rem] rounded-2xl border border-border-hairline bg-surface-container-lowest p-lg shadow-2xl"
       >
         <h3 className="font-title-md text-title-md text-ink">确认删除</h3>
         <p className="mt-sm text-body-sm text-secondary">

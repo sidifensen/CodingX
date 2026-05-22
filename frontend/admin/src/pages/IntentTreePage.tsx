@@ -1160,6 +1160,7 @@ function DeleteConfirmDialog({
   onConfirm: () => void;
 }) {
   // 关键约束：删除确认弹窗通过 Portal 挂载到 body，避免受页面动画容器 transform/overflow 影响导致遮罩宽度异常。
+  // 关键约束：显式使用 rem 宽度，避免 max-w-md 在当前主题下被 spacing token 覆盖成 16px。
   return createPortal(
     <div
       data-testid="intent-delete-dialog-overlay"
@@ -1169,7 +1170,7 @@ function DeleteConfirmDialog({
         role="dialog"
         aria-modal="true"
         aria-labelledby="delete-intent-dialog-title"
-        className="w-full max-w-md rounded-2xl border border-border-hairline bg-surface-container-lowest p-lg shadow-2xl"
+        className="w-full max-w-[28rem] rounded-2xl border border-border-hairline bg-surface-container-lowest p-lg shadow-2xl"
       >
         <h3 id="delete-intent-dialog-title" className="font-title-md text-title-md text-ink">
           删除意图节点

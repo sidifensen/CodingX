@@ -23,10 +23,30 @@ export default function McpView({
   setMcpConnected,
 }: McpViewProps) {
   /**
+   * 判断 MCP 是否允许在用户侧启用。
+   * 约束：只要后端显式标记禁用或不可用，就必须禁止切换。
+   * @param mcp MCP 项。
+   * @returns 是否可启用。
+   */
+  const isMcpSelectable = (mcp: McpItem) => {
+    if (mcp.enabled === 0) {
+      return false;
+    }
+    if (mcp.available === false) {
+      return false;
+    }
+    return true;
+  };
+
+  /**
    * 切换单个 MCP 启用状态，保证页面与聊天输入区共享同一份状态。
    * @param mcpCode MCP 编码。
+   * @param selectable 当前 MCP 是否可切换。
    */
-  const toggleMcp = (mcpCode: string) => {
+  const toggleMcp = (mcpCode: string, selectable: boolean) => {
+    if (!selectable) {
+      return;
+    }
     setSelectedMcpCodes((previous) =>
       previous.includes(mcpCode)
         ? previous.filter((item) => item !== mcpCode)
@@ -82,6 +102,7 @@ export default function McpView({
           ) : (
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
               {availableMcps.map((mcp) => {
+                const selectable = isMcpSelectable(mcp);
                 const checked = selectedMcpCodes.includes(mcp.mcpCode);
                 return (
                   <button
@@ -89,9 +110,13 @@ export default function McpView({
                     type="button"
                     aria-label={`切换MCP ${mcp.displayName}`}
                     aria-pressed={checked}
-                    onClick={() => toggleMcp(mcp.mcpCode)}
+                    aria-disabled={!selectable}
+                    disabled={!selectable}
+                    onClick={() => toggleMcp(mcp.mcpCode, selectable)}
                     className={`flex items-start justify-between rounded-xl border p-4 text-left transition-colors ${
-                      checked
+                      !selectable
+                        ? 'cursor-not-allowed border-border bg-surface-container/70 opacity-60'
+                        : checked
                         ? 'border-border-active bg-surface-container-high'
                         : 'border-border bg-surface-container hover:border-border-active'
                     }`}
@@ -107,6 +132,11 @@ export default function McpView({
                       {mcp.description ? (
                         <span className="mt-2 block text-xs leading-5 text-muted">
                           {mcp.description}
+                        </span>
+                      ) : null}
+                      {!selectable ? (
+                        <span className="mt-2 inline-flex rounded-full border border-border px-2 py-0.5 text-[10px] text-muted">
+                          不可用
                         </span>
                       ) : null}
                     </span>

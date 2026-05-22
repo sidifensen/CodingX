@@ -269,6 +269,7 @@ function WaterfallRow({
     : row.statusToneClassName === 'bg-status-pending'
       ? 'bg-status-pending'
       : 'bg-status-running';
+  const branchDepth = Math.min(Math.max(row.depthValue, 0), 6);
 
   return (
     <div
@@ -278,7 +279,26 @@ function WaterfallRow({
         isSelected ? 'bg-surface-container-low ring-1 ring-inset ring-border-strong' : '',
       )}
     >
-      <div className="min-w-0 flex items-center gap-xs" style={{ paddingLeft: `${Math.min(row.depthValue, 6) * 16}px` }}>
+      <div className="min-w-0 flex items-center gap-xs">
+        {branchDepth > 0 ? (
+          // 使用按层级重复的“竖线 + 末级折线”来模拟 trace 树结构折线。
+          <div className="flex shrink-0 self-stretch items-stretch">
+            {Array.from({ length: branchDepth }).map((_, index) => {
+              const isLast = index === branchDepth - 1;
+              return (
+                <span
+                  key={`trace-branch-${row.key}-${index}`}
+                  className={clsx(
+                    'w-4 border-border-hairline',
+                    'border-l',
+                    isLast ? 'border-b' : '',
+                  )}
+                  style={isLast ? { marginTop: '-10px' } : undefined}
+                />
+              );
+            })}
+          </div>
+        ) : null}
         <span className={clsx('h-2 w-2 rounded-full shrink-0', statusDotClassName)} />
         <span className="truncate text-ink" title={row.title}>
           {row.displayTitle}

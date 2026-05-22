@@ -198,6 +198,16 @@ export interface McpItem {
   displayName: string;
   description?: string;
   category?: string;
+  /**
+   * 管理端配置启用状态：1 启用，0 禁用。
+   * 约束：用户端若收到 0，必须禁止用户手动开启该 MCP。
+   */
+  enabled?: number;
+  /**
+   * MCP 当前是否可用（例如执行器已注册且健康探测通过）。
+   * 约束：显式为 false 时，前端只能展示为不可选状态。
+   */
+  available?: boolean;
 }
 
 /**
@@ -227,11 +237,17 @@ export interface McpCallItem {
   /**
    * 调用阶段，来自后端 SSE 事件。
    */
-  phase?: 'start' | 'complete' | 'error';
+  phase?: 'start' | 'progress' | 'complete' | 'error';
   /**
    * 调用状态，供前端面板直接驱动“调用中/完成/异常”。
    */
   status?: 'running' | 'completed' | 'error';
+  /**
+   * 工具阶段进度标识与文案，用于真实进度展示。
+   */
+  progressStage?: string;
+  progressText?: string;
+  progressDetail?: Record<string, unknown>;
   /**
    * MCP 调用参数，优先展示真实结构化入参。
    */

@@ -1,5 +1,6 @@
 import React from 'react';
 import clsx from 'clsx';
+import { createPortal } from 'react-dom';
 
 import { AdminChatApi, AdminMcpConfig, AdminMcpToolView } from '../api/adminChatApi';
 import { DataTableCard } from '../components/DataTableCard';
@@ -618,8 +619,12 @@ function DeleteMcpDialog({
   onCancel: () => void;
   onConfirm: () => Promise<void>;
 }) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/45 px-md">
+  // 关键约束：删除确认弹窗通过 Portal 挂载到 body，避免受页面容器 transform/overflow 影响而出现宽度压缩。
+  return createPortal(
+    <div
+      data-testid="mcp-delete-dialog-overlay"
+      className="fixed inset-0 z-[1200] flex items-center justify-center bg-ink/45 px-md"
+    >
       <div
         role="dialog"
         aria-modal="true"
@@ -647,7 +652,8 @@ function DeleteMcpDialog({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

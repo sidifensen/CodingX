@@ -792,18 +792,18 @@ describe('ChatView', () => {
     const workspaceHeading = screen.getByText('执行回放');
     expect(workspaceHeading).toBeInTheDocument();
 
+    fireEvent.click(screen.getByRole('button', { name: '展开右侧工作区' }));
+    expect(workspaceHeading.closest('aside')).toHaveAttribute('aria-hidden', 'false');
+
     fireEvent.click(screen.getByRole('button', { name: '折叠右侧工作区' }));
     expect(workspaceHeading).toBeInTheDocument();
     expect(workspaceHeading.closest('aside')).toHaveAttribute('aria-hidden', 'true');
-
-    fireEvent.click(screen.getByRole('button', { name: '展开右侧工作区' }));
-    expect(workspaceHeading.closest('aside')).toHaveAttribute('aria-hidden', 'false');
   });
 
   /**
-   * 右侧回放区默认为折叠，仅当存在步骤、来源或产物时自动展开。
+   * 右侧回放区应保持默认折叠，存在回放内容时也需用户手动展开。
    */
-  it('应在右侧无回放内容时默认折叠并在有内容时自动展开', async () => {
+  it('应在右侧有无回放内容时都默认折叠', async () => {
     const { rerender } = render(
       <ChatView
         isAuthenticated={true}
@@ -842,8 +842,8 @@ describe('ChatView', () => {
       />,
     );
 
-    expect(workspaceHeading.closest('aside')).toHaveAttribute('aria-hidden', 'false');
-    expect(screen.getByRole('button', { name: '折叠右侧工作区' })).toBeInTheDocument();
+    expect(workspaceHeading.closest('aside')).toHaveAttribute('aria-hidden', 'true');
+    expect(screen.getByRole('button', { name: '展开右侧工作区' })).toBeInTheDocument();
   });
 
   /**
@@ -943,6 +943,54 @@ describe('ChatView', () => {
     expect(setSelectedMcpCodes).toHaveBeenCalled();
     const updater = setSelectedMcpCodes.mock.calls[0][0] as (codes: string[]) => string[];
     expect(updater(['sales_query'])).toEqual(['sales_query', 'ticket_query']);
+  });
+
+  /**
+   * MCP 列表中不可用项必须禁用且不可触发选中，避免误把不可执行工具加入会话上下文。
+   */
+  it('应禁止通过MCP列表选择不可用MCP', async () => {
+    const setSelectedMcpCodes = vi.fn();
+    const setMcpConnected = vi.fn();
+
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          setSelectedMcpCodes,
+          setMcpConnected,
+          availableMcps: [
+            {
+              id: '7001',
+              mcpCode: 'sales_query',
+              displayName: '销售查询',
+              description: '联网检索信息并生成摘要',
+              category: '检索',
+            },
+            {
+              id: '7003',
+              mcpCode: 'weather_query',
+              displayName: '天气查询',
+              description: '天气服务未接入',
+              category: '检索',
+              available: false,
+            },
+          ],
+        })}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '打开MCP列表' }));
+    const unavailableOption = screen.getByRole('button', { name: '选择MCP 天气查询' });
+    expect(unavailableOption).toBeDisabled();
+    expect(unavailableOption).toHaveAttribute('aria-disabled', 'true');
+    expect(screen.getByRole('switch', { name: '切换MCP 天气查询' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
+    fireEvent.click(unavailableOption);
+    expect(setSelectedMcpCodes).not.toHaveBeenCalled();
+    expect(setMcpConnected).not.toHaveBeenCalled();
   });
 
   /**
@@ -1779,8 +1827,12 @@ describe('ChatView', () => {
     );
 
     const panel = screen.getByTestId('mcp-call-panel-801');
+    const panelTitle = screen.getByText('MCP 调用');
     expect(panel).toBeInTheDocument();
-    expect(screen.getByText('MCP 调用')).toBeInTheDocument();
+    expect(panel).toHaveClass('px-4');
+    expect(panel).toHaveClass('py-3');
+    expect(panelTitle).toBeInTheDocument();
+    expect(panelTitle).toHaveClass('shrink-0');
     expect(screen.getByText('天气查询')).toBeInTheDocument();
     expect(screen.getByText('北京今天天气怎么样')).toBeInTheDocument();
     expect(screen.getByTestId('mcp-call-status-801')).toHaveTextContent('调用完成');
@@ -1789,6 +1841,8 @@ describe('ChatView', () => {
     expect(toggleButton).toHaveAttribute('aria-expanded', 'true');
     fireEvent.click(toggleButton);
     expect(toggleButton).toHaveAttribute('aria-expanded', 'false');
+    expect(panel).toHaveClass('px-4');
+    expect(panel).toHaveClass('py-3');
   });
 
   /**

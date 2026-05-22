@@ -74,6 +74,31 @@ function mergeConversationListById(primary: ConversationItem[], secondary: Conve
   return mergedConversations;
 }
 
+/**
+ * 将会话插入到列表头部；若已存在则提升到头部并合并字段。
+ * @param conversations 原始会话列表。
+ * @param nextConversation 目标会话。
+ * @returns 新会话列表。
+ */
+function upsertConversationToTop(
+  conversations: ConversationItem[],
+  nextConversation: ConversationItem,
+) {
+  const existingConversation = conversations.find(
+    (conversation) => conversation.id === nextConversation.id,
+  );
+  const normalizedConversation = existingConversation
+    ? {
+        ...existingConversation,
+        ...nextConversation,
+      }
+    : nextConversation;
+  return [
+    normalizedConversation,
+    ...conversations.filter((conversation) => conversation.id !== normalizedConversation.id),
+  ];
+}
+
 type WorkspaceGroupQueryMode = 'runtime-only' | 'all';
 
 /**
@@ -292,18 +317,28 @@ export function useChatWorkspace(
    * 当后端通过 meta 下发新会话 ID 时，立即写入当前分区会话列表，避免列表依赖后续刷新才出现。
    * @param conversationId 会话标识。
    */
-  const upsertConversationFromStreamMeta = (conversationId: string) => {
+  const upsertConversationFromStreamMeta = (conversationId: string, conversationTitle?: string) => {
     if (!conversationId) {
       return;
     }
     const existingConversation = conversations.find((conversation) => conversation.id === conversationId);
     const nextConversation: ConversationItem =
-      existingConversation ?? {
-        id: conversationId,
-        title: '新会话',
-        status: 'ACTIVE',
-      };
-    const nextConversations = mergeConversationListById(conversations, [nextConversation]);
+      existingConversation
+        ? {
+            ...existingConversation,
+            title: conversationTitle && conversationTitle.trim().length > 0
+              ? conversationTitle
+              : existingConversation.title,
+          }
+        : {
+            id: conversationId,
+            title:
+              conversationTitle && conversationTitle.trim().length > 0
+                ? conversationTitle
+                : '新会话',
+            status: 'ACTIVE',
+          };
+    const nextConversations = upsertConversationToTop(conversations, nextConversation);
     setConversations(nextConversations);
     upsertWorkspaceSnapshot(activeRuntimeTarget, workspacePath ?? null, {
       conversations: nextConversations,
@@ -741,9 +776,16 @@ export function useChatWorkspace(
    * 提交聊天请求并在本地模拟最小流式状态，随后从后端回放最新数据。
    */
   const submitMessage = async () => {
-    const token = currentToken();
     const question = inputValue.trim();
-    if (!token || !question) {
+    if (!question) {
+      return;
+    }
+    const token = currentToken();
+    // 关键约束：当页面内存态仍显示已登录但本地 token 已丢失时，不能静默吞掉发送动作。
+    // 这里统一给出“登录失效”提示并触发未授权回调，确保用户能看到明确反馈并回到登录流程。
+    if (!token) {
+      setStreamError(UserErrorMessages.AUTH_SESSION_EXPIRED);
+      onUnauthorizedRef.current?.();
       return;
     }
     setStreamError('');
@@ -1351,6 +1393,19 @@ export function useChatWorkspace(
     }
 
     if (eventName === 'finish' && isRecord(payload)) {
+      const finishConversationId = String(payload.conversationId ?? '').trim();
+      if (finishConversationId) {
+        const finishTitle = typeof payload.title === 'string' ? payload.title : undefined;
+        // 关键约束：即使后端未先下发 meta，也要在 finish 阶段收敛到真实会话 ID，
+        // 避免后续回放请求继续命中 pending-conversation 导致左侧历史延迟或丢失。
+        streamStateRef.current = {
+          conversationId: finishConversationId,
+          activeMessageId: optimisticAssistantId,
+        };
+        setActiveConversationId(finishConversationId);
+        upsertConversationFromStreamMeta(finishConversationId, finishTitle);
+        writeConversationIdToUrl(finishConversationId);
+      }
       hideStreamQueueState();
       // 业务约束：finish 事件表示模型输出已完成，需立刻恢复输入区发送态，避免“停止”按钮滞留。
       setIsStreaming(false);

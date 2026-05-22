@@ -211,6 +211,45 @@ describe('ChatApi', () => {
   });
 
   /**
+   * MCP 列表请求应解析 enabled/available 字段，供前端禁用不可用项。
+   */
+  it('应解析MCP可用状态字段', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          success: true,
+          code: 'OK',
+          message: 'success',
+          data: [
+            {
+              id: 7001,
+              mcpCode: 'sales_query',
+              displayName: '销售查询',
+              enabled: 1,
+              available: true,
+            },
+            {
+              id: 7002,
+              mcpCode: 'weather_query',
+              displayName: '天气查询',
+              enabled: 1,
+              available: false,
+            },
+          ],
+        }),
+        { status: 200 },
+      ),
+    );
+
+    const result = await ChatApi.listMcps('token-123');
+
+    expect(result[0].enabled).toBe(1);
+    expect(result[0].available).toBe(true);
+    expect(result[1].enabled).toBe(1);
+    expect(result[1].available).toBe(false);
+  });
+
+  /**
    * 会话重命名应通过专用接口提交新标题。
    */
   it('应通过专用接口提交会话重命名', async () => {

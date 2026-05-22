@@ -3850,5 +3850,142 @@ describe('useChatWorkspace', () => {
 
     await submitPromise;
   });
+
+  /**
+   * 即使会话列表接口延迟返回，finish 事件到达后也应立即在左侧出现新会话，避免“回答结束后还要等 1-2 秒”。
+   */
+  it('应在finish事件后立即将新会话写入当前会话列表', async () => {
+    window.localStorage.setItem(
+      'codingx.auth.session',
+      JSON.stringify({
+        token: 'token-123',
+        userId: '1002',
+        username: 'user',
+        displayName: 'CodingX User',
+        userType: 'USER',
+      }),
+    );
+
+    const readQueue: Array<{
+      resolve: (value: ReadableStreamReadResult<Uint8Array>) => void;
+      reject: (reason?: unknown) => void;
+    }> = [];
+    const finishEvent = new TextEncoder().encode(
+      'event:finish\ndata:{"conversationId":"9901","content":"ok","title":"完成后立即出现"}\n\n',
+    );
+    const mockReader = {
+      read: vi.fn(() => {
+        return new Promise<ReadableStreamReadResult<Uint8Array>>((resolve, reject) => {
+          readQueue.push({ resolve, reject });
+        });
+      }),
+    };
+
+    let resolveConversationsAfterDone: ((response: Response) => void) | null = null;
+    const conversationsAfterDone = new Promise<Response>((resolve) => {
+      resolveConversationsAfterDone = resolve;
+    });
+    let conversationsRequestCount = 0;
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === '/api/chat/conversations') {
+        conversationsRequestCount += 1;
+        if (conversationsRequestCount === 1) {
+          return new Response(
+            JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+            { status: 200 },
+          );
+        }
+        return conversationsAfterDone;
+      }
+      if (
+        url === '/api/chat/sample-questions' ||
+        url === '/api/chat/experts' ||
+        url === '/api/chat/skills' ||
+        url === '/api/chat/mcps' ||
+        url === '/api/chat/conversations/pending-conversation/messages' ||
+        url === '/api/chat/conversations/pending-conversation/steps' ||
+        url === '/api/chat/conversations/pending-conversation/references' ||
+        url === '/api/chat/conversations/pending-conversation/artifacts' ||
+        url === '/api/chat/conversations/pending-conversation/current-skills' ||
+        url === '/api/chat/conversations/pending-conversation/current-mcps' ||
+        url === '/api/chat/conversations/pending-conversation/current-experts' ||
+        url === '/api/chat/conversations/9901/messages' ||
+        url === '/api/chat/conversations/9901/steps' ||
+        url === '/api/chat/conversations/9901/references' ||
+        url === '/api/chat/conversations/9901/artifacts' ||
+        url === '/api/chat/conversations/9901/current-skills' ||
+        url === '/api/chat/conversations/9901/current-mcps' ||
+        url === '/api/chat/conversations/9901/current-experts'
+      ) {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (url.includes('/api/chat/stream')) {
+        return {
+          ok: true,
+          status: 200,
+          body: {
+            getReader: () => mockReader,
+          },
+        } as unknown as Response;
+      }
+      throw new Error(`Unhandled fetch in finish-conversation-list test: ${url}`);
+    });
+
+    const { result } = renderHook(() => useChatWorkspace(true));
+
+    await waitFor(() => {
+      expect(result.current.isBootstrapping).toBe(false);
+    });
+
+    await act(async () => {
+      result.current.setInputValue('只发finish');
+    });
+    const submitPromise = result.current.submitMessage();
+
+    await waitFor(() => {
+      expect(result.current.isStreaming).toBe(true);
+      expect(readQueue.length).toBeGreaterThan(0);
+    });
+
+    await act(async () => {
+      readQueue.shift()?.resolve({ done: false, value: finishEvent });
+    });
+
+    await waitFor(() => {
+      expect(result.current.activeConversationId).toBe('9901');
+      expect(result.current.conversations.some((conversation) => conversation.id === '9901')).toBe(true);
+      expect(result.current.conversations[0]?.title).toBe('完成后立即出现');
+    });
+
+    await act(async () => {
+      readQueue.shift()?.resolve({ done: true, value: undefined });
+    });
+
+    resolveConversationsAfterDone?.(
+      new Response(
+        JSON.stringify({
+          success: true,
+          code: 'OK',
+          message: 'success',
+          data: [
+            {
+              id: '9901',
+              title: '完成后立即出现',
+              status: 'ACTIVE',
+              lastRunId: '9201',
+            },
+          ],
+        }),
+        { status: 200 },
+      ),
+    );
+
+    await submitPromise;
+  });
 });
 

@@ -100,6 +100,15 @@
     margin-bottom: 180px;
   }
 
+  /* 右侧执行回放滚动区提升可操作性：单独加宽滚动条，并保持亮暗主题一致。 */
+  .workspace-replay-scroll-region::-webkit-scrollbar {
+    width: 8px;
+  }
+
+  .workspace-replay-scroll-region::-webkit-scrollbar-thumb {
+    border-radius: 6px;
+  }
+
   /* 统一助手消息操作栏样式，保证亮暗主题下复制和反馈按钮可辨识。 */
   .chat-message-action-button {
     display: inline-flex;

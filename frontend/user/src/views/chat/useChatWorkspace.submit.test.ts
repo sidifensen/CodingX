@@ -111,4 +111,45 @@ describe('useChatWorkspace submit behavior', () => {
       await submitPromise;
     });
   });
+
+  /**
+   * token 丢失时不应静默失败，应提示登录失效并触发未授权回调，避免用户误判“发送键无响应”。
+   */
+  it('应在token缺失时提示登录失效并触发未授权回调', async () => {
+    const onUnauthorized = vi.fn();
+    window.localStorage.removeItem('codingx.auth.session');
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (
+        url === '/api/chat/conversations' ||
+        url === '/api/chat/sample-questions' ||
+        url === '/api/chat/experts' ||
+        url === '/api/chat/skills' ||
+        url === '/api/chat/mcps'
+      ) {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      throw new Error(`Unhandled fetch in submit missing token test: ${url}`);
+    });
+
+    const { result } = renderHook(() => useChatWorkspace(true, { onUnauthorized }));
+    await waitFor(() => {
+      expect(result.current.isBootstrapping).toBe(false);
+    });
+
+    await act(async () => {
+      result.current.setInputValue('你好');
+    });
+
+    await act(async () => {
+      await result.current.submitMessage();
+    });
+
+    expect(result.current.streamError).toBe('登录已失效，请重新登录');
+    expect(onUnauthorized).toHaveBeenCalledTimes(1);
+    expect(result.current.isStreaming).toBe(false);
+  });
 });

@@ -33,8 +33,8 @@ describe('TraceDetailPage', () => {
           id: '1',
           traceId: 'trace-1',
           nodeId: 'n1',
-          parentNodeId: null,
-          depth: 0,
+          parentNodeId: 'root-node',
+          depth: 1,
           nodeType: 'INTENT',
           nodeName: 'intent-resolve',
           status: 'SUCCESS',
@@ -88,5 +88,7 @@ describe('TraceDetailPage', () => {
     expect(screen.getByText('Node Id')).toBeInTheDocument();
     expect(screen.getByText('n1')).toBeInTheDocument();
     expect(screen.getByText('extraDataJson')).toBeInTheDocument();
+    const rowNodeName = screen.getAllByText('意图识别')[0];
+    expect(rowNodeName.closest('div')?.querySelector('.border-l')).not.toBeNull();
   });
 });

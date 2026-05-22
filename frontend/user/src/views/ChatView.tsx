@@ -32,6 +32,7 @@ import { ChatApi } from './chat/chatApi';
 import {
   ChatAttachmentItem,
   ChatWorkspaceController,
+  McpItem,
   McpCallItem,
   PendingAttachmentItem,
 } from './chat/types';
@@ -113,7 +114,7 @@ export default function ChatView({
   const latestMessageAnchorRef = React.useRef<HTMLDivElement | null>(null);
   const chatScrollRegionRef = React.useRef<HTMLDivElement | null>(null);
   const shouldFollowLatestMessageRef = React.useRef(true);
-  // 步骤：右侧工作区默认折叠，仅在存在真实回放内容时自动展开一次，后续允许用户手动控制。
+  // 步骤：右侧工作区默认折叠，是否展开完全由用户手动控制。
   const [isWorkspacePanelCollapsed, setIsWorkspacePanelCollapsed] = React.useState(true);
   const [activeSelectorMode, setActiveSelectorMode] = React.useState<'mcp' | 'skill' | 'expert' | null>(null);
   const [activeRuntimeWorkspaceMenu, setActiveRuntimeWorkspaceMenu] = React.useState<
@@ -136,6 +137,22 @@ export default function ChatView({
     src: string;
     alt: string;
   } | null>(null);
+
+  /**
+   * 判断 MCP 是否允许用户在当前会话手动开启。
+   * 约束：后端显式禁用/不可用时，前端只允许展示，不允许点击切换。
+   * @param mcp MCP 配置项。
+   * @returns 是否可切换。
+   */
+  const isMcpSelectable = React.useCallback((mcp: McpItem) => {
+    if (mcp.enabled === 0) {
+      return false;
+    }
+    if (mcp.available === false) {
+      return false;
+    }
+    return true;
+  }, []);
 
   /**
    * 过滤技能列表，支持名称与编码模糊检索。
@@ -273,9 +290,13 @@ export default function ChatView({
   /**
    * 切换 MCP 启用状态，允许在弹层内直接管理本次会话可调用 MCP。
    * @param mcpCode 被切换 MCP 编码。
+   * @param selectable 当前 MCP 是否可切换。
    */
   const toggleMcpSelection = React.useCallback(
-    (mcpCode: string) => {
+    (mcpCode: string, selectable: boolean) => {
+      if (!selectable) {
+        return;
+      }
       setSelectedMcpCodes((previous) => {
         if (previous.includes(mcpCode)) {
           return previous.filter((item) => item !== mcpCode);
@@ -573,8 +594,8 @@ export default function ChatView({
     await submitCurrentInput();
   };
 
-  // 步骤：仅当没有选中任何真实会话时才展示“新建对话”首页；避免空历史会话被误判为未跳转。
-  const showLandingState = activeConversationId == null && !messages.length && !isBootstrapping;
+  // 步骤：首页欢迎区应优先渲染，避免初始化接口慢时出现长时间空白屏。
+  const showLandingState = activeConversationId == null && !messages.length;
   // 步骤：选中了历史会话但暂无消息时，显示会话级空态而不是回到首页。
   const showConversationEmptyState =
     activeConversationId != null && !messages.length && !isBootstrapping;
@@ -584,20 +605,8 @@ export default function ChatView({
   const showRuntimeWorkspaceSwitcher = showLandingState;
   // 业务约束：云端环境下不展示“云端工作空间”下拉，避免出现无意义的同名选项。
   const showWorkspaceDropdownInSwitcher = showRuntimeWorkspaceSwitcher && activeRuntimeTarget === 'local';
-  // 步骤：仅当步骤、来源或产物任一存在时，才认为右侧栏具备真实回放内容。
-  const hasWorkspaceContent =
-    executionSteps.length > 0 ||
-    references.length > 0 ||
-    artifacts.length > 0 ||
-    safeCurrentExperts.length > 0;
   // 步骤：右侧栏保留挂载以支持宽度过渡动画，面板内容在收起后不再渲染。
   const isWorkspacePanelVisible = showWorkspacePanel && !isWorkspacePanelCollapsed;
-
-  React.useEffect(() => {
-    if (hasWorkspaceContent) {
-      setIsWorkspacePanelCollapsed(false);
-    }
-  }, [hasWorkspaceContent]);
 
   /**
    * 粘贴图片或文件时直接加入待发送附件队列。
@@ -934,14 +943,19 @@ export default function ChatView({
                         {activeSelectorMode === 'mcp' ? (
                           availableMcps.map((mcp) => {
                             const isSelected = selectedMcpCodes.includes(mcp.mcpCode);
+                            const selectable = isMcpSelectable(mcp);
                             return (
                               <button
                                 key={mcp.mcpCode}
                                 type="button"
                                 aria-label={`选择MCP ${mcp.displayName}`}
-                                onClick={() => toggleMcpSelection(mcp.mcpCode)}
+                                aria-disabled={!selectable}
+                                disabled={!selectable}
+                                onClick={() => toggleMcpSelection(mcp.mcpCode, selectable)}
                                 className={`mb-1 flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm transition-colors last:mb-0 ${
-                                  isSelected
+                                  !selectable
+                                    ? 'cursor-not-allowed bg-surface-container/65 text-muted opacity-60'
+                                    : isSelected
                                     ? 'bg-surface-container text-foreground'
                                     : 'text-muted hover:bg-surface-container hover:text-foreground'
                                 }`}
@@ -953,25 +967,31 @@ export default function ChatView({
                                   <span className="mt-1 block truncate font-mono text-[11px] text-muted">
                                     /{mcp.mcpCode}
                                   </span>
+                                  {!selectable ? (
+                                    <span className="mt-1 block text-[10px] text-muted">不可用</span>
+                                  ) : null}
                                 </span>
                                 <span className="inline-flex items-center gap-2">
                                   <span className="sr-only">
-                                    {isSelected ? '已启用' : '未启用'}
+                                    {!selectable ? '不可用' : isSelected ? '已启用' : '未启用'}
                                   </span>
                                   <span
                                     role="switch"
                                     aria-label={`切换MCP ${mcp.displayName}`}
-                                    aria-checked={isSelected}
+                                    aria-checked={selectable && isSelected}
+                                    aria-disabled={!selectable}
                                     data-testid={`mcp-switch-${mcp.mcpCode}`}
                                     className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full border transition-colors ${
-                                      isSelected
+                                      selectable && isSelected
                                         ? 'border-foreground bg-foreground/90'
                                         : 'border-border bg-surface-high'
                                     }`}
                                   >
                                     <span
                                       className={`inline-block h-4 w-4 rounded-full bg-background shadow-sm transition-transform ${
-                                        isSelected ? 'translate-x-[18px]' : 'translate-x-[1px]'
+                                        selectable && isSelected
+                                          ? 'translate-x-[18px]'
+                                          : 'translate-x-[1px]'
                                       }`}
                                     />
                                   </span>
@@ -1601,7 +1621,7 @@ export default function ChatView({
               </p>
               <h3 className="mt-2 text-lg font-semibold text-foreground">执行回放</h3>
             </div>
-            <div className="flex-1 overflow-y-auto px-4 py-4">
+            <div className="workspace-replay-scroll-region flex-1 overflow-y-auto px-4 py-4">
               <Panel title="执行步骤" icon={CheckCircle2}>
                 {executionSteps.length ? (
                   executionSteps.map((step) => (
@@ -1850,18 +1870,19 @@ function McpCallPanel({
   return (
     <section
       data-testid={`mcp-call-panel-${messageId}`}
+      // 步骤：折叠态保持与展开态一致的内边距，避免标题在宽度过渡时产生视觉收缩。
       className={`mb-3 rounded-2xl border border-border bg-surface-container text-sm text-muted transition-[width,padding] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] ${
-        isExpanded ? 'w-full px-4 py-3' : 'w-fit px-3 py-2'
+        isExpanded ? 'w-full px-4 py-3' : 'w-fit px-4 py-3'
       }`}
     >
       <div className="flex items-center gap-3 font-medium text-foreground">
-        <span>MCP 调用</span>
-        <span className="rounded-full border border-border bg-surface px-2 py-0.5 text-[11px] text-muted">
+        <span className="shrink-0 whitespace-nowrap">MCP 调用</span>
+        <span className="shrink-0 rounded-full border border-border bg-surface px-2 py-0.5 text-[11px] text-muted">
           {calls.length}
         </span>
         <span
           data-testid={`mcp-call-status-${messageId}`}
-          className={`rounded-full border px-2 py-0.5 text-[11px] ${
+          className={`shrink-0 rounded-full border px-2 py-0.5 text-[11px] ${
             isRunning
               ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
               : isError
@@ -1878,7 +1899,7 @@ function McpCallPanel({
           aria-controls={contentId}
           aria-label={isExpanded ? '折叠MCP调用详情' : '展开MCP调用详情'}
           onClick={() => setIsExpanded((current) => !current)}
-          className="flex h-7 w-7 items-center justify-center rounded-full border border-border bg-surface text-muted transition-colors hover:text-foreground"
+          className="shrink-0 flex h-7 w-7 items-center justify-center rounded-full border border-border bg-surface text-muted transition-colors hover:text-foreground"
         >
           <ChevronDown
             size={15}
@@ -1888,8 +1909,9 @@ function McpCallPanel({
       </div>
       <div
         id={contentId}
-        className={`overflow-hidden transition-all duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] ${
+        className={`overflow-hidden transition-[margin,max-height,opacity,transform] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] ${
           // 业务意图：MCP 面板展开时完整展示结果，避免固定高度导致长结果被截断。
+          // 关键约束：max-width 不参与过渡，收起时立即置零，避免容器宽度在中间态被内容宽度“卡住”。
           isExpanded
             ? 'mt-3 max-h-none max-w-full translate-y-0 opacity-100'
             : 'mt-0 max-h-0 max-w-0 -translate-y-1 opacity-0 pointer-events-none'
@@ -1909,6 +1931,7 @@ function McpCallPanel({
                 const parameterText = formatStructuredPayload(call.params ?? call.input);
                 const rawResultText = formatStructuredPayload(call.rawResult ?? call.content);
                 const metadataText = formatStructuredPayload(call.resultMetadata ?? call.metadata);
+                const progressText = formatStructuredPayload(call.progressText ?? call.progressDetail);
                 return (
                   <>
                     <div className="flex items-center justify-between gap-3">
@@ -1924,6 +1947,16 @@ function McpCallPanel({
                         <div className="text-[11px] uppercase tracking-[0.16em] text-muted">参数</div>
                         <pre className="mt-1 whitespace-pre-wrap text-xs leading-5 text-foreground">
                           {parameterText}
+                        </pre>
+                      </div>
+                    ) : null}
+                    {progressText && call.status === 'running' ? (
+                      <div className="mt-2 rounded-lg bg-surface-container px-2.5 py-2">
+                        <div className="text-[11px] uppercase tracking-[0.16em] text-muted">
+                          进度
+                        </div>
+                        <pre className="mt-1 whitespace-pre-wrap text-xs leading-5 text-foreground">
+                          {progressText}
                         </pre>
                       </div>
                     ) : null}

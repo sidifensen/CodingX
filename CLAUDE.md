@@ -1,13 +1,11 @@
 ## Git提交信息规范
 
-- 提交信息必须使用中文。
-- 提交信息必须带前缀和模块名，格式为：`<前缀>(<模块名>): <中文说明>`
-- 允许的前缀：`feat`、`fix`、`docs`、`refactor`、`test`、`chore`
-- 模块名必须使用英文，可选值：`admin`、`artifact`、`auth`、`chat`、`config`、`event`、`expert`、`mcp`、`runtime`、`skill`、`task`、`tool`、`workspace`、`admin-frontend`、`desktop`、`user-frontend`
-- 示例：`feat(chat): 完善意图解析与聊天工作区绑定能力`、`fix(auth): 修复登录会话过期问题`
-- 完成任务后，默认由助手协助执行提交（`git add` + `git commit`）；
-- 非简单任务（尤其是大功能开发、或前后端同时改动）在完成后必须自动提交，不需要用户额外提醒；
-- 简单任务豁免范围内的小改动默认不提交代码；仅当用户明确要求提交时才执行 `git add` + `git commit`；
+- 格式：`<前缀>(<模块名>): <中文说明>`
+- 前缀：`feat`、`fix`、`docs`、`refactor`、`test`、`chore`
+- 模块名使用当前项目已有模块英文名
+- 示例：`feat(chat): 完善意图解析与聊天工作区绑定能力`
+- 完成任务后，默认执行提交（`git add` + `git -commit`）
+- 简单任务豁免范围内的小改动默认不提交代码
 
 > **强制要求：除符合简单任务豁免规则外，开发前必须遵循以下 superpowers-plus 流程，禁止跳过。**
 

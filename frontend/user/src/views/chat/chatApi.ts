@@ -196,6 +196,16 @@ export class ChatApi {
       ...item,
       id: String(item.id),
       mcpCode: String(item.mcpCode ?? ''),
+      enabled:
+        item.enabled == null
+          ? undefined
+          : Number(item.enabled) === 0
+            ? 0
+            : 1,
+      available:
+        item.available == null
+          ? undefined
+          : Boolean(item.available),
     }));
   }
 

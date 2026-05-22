@@ -38,7 +38,6 @@ import {
   markWorkspaceConversationOwnership,
   readWorkspaceSnapshot,
   saveConversationRecordToWorkspace,
-  upsertWorkspaceHistorySnapshot,
   upsertWorkspaceSnapshot,
 } from './localConversationStorage';
 
@@ -108,6 +107,10 @@ export function useChatWorkspace(
   const onUnauthorizedRef = useRef(options?.onUnauthorized);
   onUnauthorizedRef.current = options?.onUnauthorized;
   const hostContext = options?.hostContext ?? null;
+  const hostType = hostContext?.hostType ?? 'web';
+  const hostBoundRepositoryPath = hostContext?.localResource?.boundRepositoryPath ?? null;
+  const hostWorkspaceId = normalizeWorkspaceId(hostContext?.localResource?.workspaceId);
+  const executionTargetsSignature = hostContext?.executionTargets?.join('|') ?? '';
   const bindWorkspacePath =
     options?.bindWorkspacePath ??
     (async () => {
@@ -123,8 +126,9 @@ export function useChatWorkspace(
       hostContext?.executionTargets && hostContext.executionTargets.length
         ? hostContext.executionTargets
         : ['cloud'],
-    [hostContext?.executionTargets],
+    [executionTargetsSignature],
   );
+  const runtimeTargetsSignature = useMemo(() => runtimeTargets.join('|'), [runtimeTargets]);
   const [activeRuntimeTarget, setActiveRuntimeTargetState] = useState<'cloud' | 'local'>(
     runtimeTargets[0] ?? 'cloud',
   );
@@ -317,7 +321,8 @@ export function useChatWorkspace(
    * @param mode 过滤模式。
    */
   const refreshWorkspaceGroups = (mode: WorkspaceGroupQueryMode = 'runtime-only') => {
-    const shouldShowAllWorkspaceGroups = hostContext?.hostType === 'desktop' && mode === 'all';
+    const shouldShowAllWorkspaceGroups = hostType === 'desktop' && mode === 'all';
+    // 关键约束：侧栏分组始终基于本地快照重建，避免会话刷新的短窗口期出现“暂无会话”闪烁。
     if (shouldShowAllWorkspaceGroups) {
       setWorkspaceGroups(listWorkspaceGroups());
       return;
@@ -342,20 +347,23 @@ export function useChatWorkspace(
     }
     // 业务约束：云端环境不绑定本地目录，避免与本地工作空间混淆。
     const nextWorkspacePath =
-      activeRuntimeTarget === 'local' ? hostContext?.localResource?.boundRepositoryPath ?? null : null;
+      activeRuntimeTarget === 'local' ? hostBoundRepositoryPath : null;
     const nextWorkspaceId =
-      activeRuntimeTarget === 'local'
-        ? normalizeWorkspaceId(hostContext?.localResource?.workspaceId)
-        : null;
+      activeRuntimeTarget === 'local' ? hostWorkspaceId : null;
     const nextPartitionKey = buildWorkspacePartitionKey(activeRuntimeTarget, nextWorkspacePath);
+    const isSamePartition = nextPartitionKey === activeWorkspacePartitionKey;
+    const nextWorkspaceLabel = nextWorkspacePath
+      ? getWorkspaceLabel(nextWorkspacePath)
+      : getDefaultWorkspaceLabel(activeRuntimeTarget);
     const nextSnapshot = readWorkspaceSnapshot(nextPartitionKey);
     setWorkspacePath(nextWorkspacePath);
     setWorkspaceId(nextWorkspaceId);
-    setWorkspaceLabel(
-      nextWorkspacePath
-        ? getWorkspaceLabel(nextWorkspacePath)
-        : getDefaultWorkspaceLabel(activeRuntimeTarget),
-    );
+    setWorkspaceLabel(nextWorkspaceLabel);
+    // 关键约束：宿主仅刷新引用且语义未变化时不重置会话，避免发送中闪回首页与侧栏闪空。
+    if (isSamePartition) {
+      refreshWorkspaceGroups('all');
+      return;
+    }
     setActiveWorkspacePartitionKey(nextPartitionKey);
     setConversations(nextSnapshot.conversations);
     refreshWorkspaceGroups('all');
@@ -363,7 +371,15 @@ export function useChatWorkspace(
     if (!nextSnapshot.activeConversationId) {
       clearConversationPlayback(true);
     }
-  }, [hostContext, runtimeTargets, activeRuntimeTarget]);
+  }, [
+    hostType,
+    hostBoundRepositoryPath,
+    hostWorkspaceId,
+    runtimeTargetsSignature,
+    runtimeTargets,
+    activeRuntimeTarget,
+    activeWorkspacePartitionKey,
+  ]);
 
   useEffect(() => {
     refreshWorkspaceGroups('all');
@@ -1475,7 +1491,6 @@ export function useChatWorkspace(
           ? getWorkspaceLabel(fallbackWorkspacePath)
           : getDefaultWorkspaceLabel(activeRuntimeTarget),
       });
-      upsertWorkspaceHistorySnapshot('cloud', filterUnassignedConversations(remoteConversations));
       refreshWorkspaceGroups('all');
       return remoteConversations;
     }
@@ -1491,6 +1506,11 @@ export function useChatWorkspace(
       nextWorkspaceConversations.map((conversation) => conversation.id),
     );
     const nextHistoryConversations = filterUnassignedConversations(remoteConversations);
+    const localDefaultSnapshot = readWorkspaceSnapshot(buildWorkspacePartitionKey('local', null));
+    const mergedLocalDefaultConversations = mergeConversationListById(
+      localDefaultSnapshot.conversations,
+      nextHistoryConversations,
+    );
     setConversations(nextWorkspaceConversations);
     upsertWorkspaceSnapshot(activeRuntimeTarget, fallbackWorkspacePath, {
       conversations: nextWorkspaceConversations,
@@ -1502,7 +1522,12 @@ export function useChatWorkspace(
         ? getWorkspaceLabel(fallbackWorkspacePath)
         : getDefaultWorkspaceLabel(activeRuntimeTarget),
     });
-    upsertWorkspaceHistorySnapshot('local', nextHistoryConversations);
+    upsertWorkspaceSnapshot('local', null, {
+      conversations: mergedLocalDefaultConversations,
+      activeConversationId: localDefaultSnapshot.activeConversationId ?? null,
+      workspaceLabel: getDefaultWorkspaceLabel('local'),
+      conversationRecords: localDefaultSnapshot.conversationRecords,
+    });
     if (
       activeConversationId &&
       !nextWorkspaceConversations.some((conversation) => conversation.id === activeConversationId)

@@ -400,9 +400,9 @@ describe('useChatWorkspace', () => {
   });
 
   /**
-   * 切换本地工作空间后，当前空间会话应保留在本分组，同时保留本地历史分组入口。
+   * 切换本地工作空间后，当前空间会话应保留在本分组；历史分区应并入默认本地分组。
    */
-  it('应在本地工作空间分组中保留当前空间会话并展示本地历史分组', async () => {
+  it('应在本地工作空间分组中保留当前空间会话，不再渲染独立历史分组', async () => {
     window.localStorage.setItem(
       'codingx.auth.session',
       JSON.stringify({
@@ -614,13 +614,17 @@ describe('useChatWorkspace', () => {
 
     await waitFor(() => {
       expect(result.current.isBootstrapping).toBe(false);
+      expect(
+        result.current.workspaceGroups.some((group) => group.partitionKey === 'local::__history__'),
+      ).toBe(false);
     });
+    const localDefaultGroup = result.current.workspaceGroups.find(
+      (group) => group.partitionKey === 'local::__no_workspace__',
+    );
+    expect(localDefaultGroup?.workspaceLabel).toBe('历史记录');
 
     expect(result.current.workspaceLabel).toBe('workspace-a');
     expect(result.current.conversations.map((item) => item.id)).toEqual(['3001', '3002']);
-    expect(
-      result.current.workspaceGroups.some((group) => group.partitionKey === 'local::__history__'),
-    ).toBe(true);
 
     await act(async () => {
       await result.current.setActiveWorkspacePath('D:/code/test');
@@ -631,9 +635,11 @@ describe('useChatWorkspace', () => {
     });
 
     expect(result.current.conversations.map((item) => item.id)).toEqual(['3001', '3002']);
-    expect(
-      result.current.workspaceGroups.some((group) => group.partitionKey === 'local::__history__'),
-    ).toBe(true);
+    await waitFor(() => {
+      expect(
+        result.current.workspaceGroups.some((group) => group.partitionKey === 'local::__history__'),
+      ).toBe(false);
+    });
   });
 
   it('切换到已有历史记录的工作空间时应恢复该空间会话，不应强制新建', async () => {
@@ -850,9 +856,9 @@ describe('useChatWorkspace', () => {
   });
 
   /**
-   * 云端运行环境下，默认云端分组与云端历史分组应并行展示。
+   * 云端运行环境下，历史分区应并入默认云端分组，不再单独渲染历史分组。
    */
-  it('云端会话应同时展示默认云端分组与云端历史分组', async () => {
+  it('云端会话应仅保留默认云端分组，不再单独渲染历史分组', async () => {
     window.localStorage.setItem(
       'codingx.auth.session',
       JSON.stringify({
@@ -976,6 +982,11 @@ describe('useChatWorkspace', () => {
 
     await waitFor(() => {
       expect(result.current.isBootstrapping).toBe(false);
+      expect(
+        result.current.workspaceGroups.some(
+          (group) => group.groupType === 'history' && group.runtimeTarget === 'cloud',
+        ),
+      ).toBe(false);
     });
 
     expect(result.current.workspaceLabel).toBe('历史记录');
@@ -989,8 +1000,7 @@ describe('useChatWorkspace', () => {
     const historyGroup = result.current.workspaceGroups.find(
       (group) => group.groupType === 'history' && group.runtimeTarget === 'cloud',
     );
-    expect(historyGroup?.partitionKey).toBe('cloud::__history__');
-    expect(historyGroup?.conversations.map((item) => item.id)).toEqual(['5001', '5002']);
+    expect(historyGroup).toBeUndefined();
 
     await act(async () => {
       await result.current.selectConversationInWorkspace('5001', {
@@ -1003,7 +1013,7 @@ describe('useChatWorkspace', () => {
     const historyGroupAfterSelect = result.current.workspaceGroups.find(
       (group) => group.groupType === 'history' && group.runtimeTarget === 'cloud',
     );
-    expect(historyGroupAfterSelect?.partitionKey).toBe('cloud::__history__');
+    expect(historyGroupAfterSelect).toBeUndefined();
   });
 
   /**
@@ -1665,6 +1675,207 @@ describe('useChatWorkspace', () => {
 
     expect(result.current.activeConversationId).toBe('2001');
     expect(new URL(window.location.href).searchParams.get('conversationId')).toBe('2001');
+  });
+
+  /**
+   * 宿主仅刷新上下文引用且分区未变化时，不应清空当前会话回放，避免首页闪回与侧栏空态闪烁。
+   */
+  it('应在同分区宿主上下文刷新时保持当前会话与消息不变', async () => {
+    window.localStorage.setItem(
+      'codingx.auth.session',
+      JSON.stringify({
+        token: 'token-123',
+        userId: '1002',
+        username: 'user',
+        displayName: 'CodingX User',
+        userType: 'USER',
+      }),
+    );
+    window.localStorage.setItem(
+      'codingx.chat.workspace.conversations.v1',
+      JSON.stringify({
+        version: 1,
+        snapshots: {
+          'local::d:/code/codingx': {
+            workspacePath: 'D:/code/CodingX',
+            workspaceLabel: 'CodingX',
+            runtimeTarget: 'local',
+            lastOpenedAt: Date.now(),
+            activeConversationId: '2001',
+            conversations: [
+              {
+                id: '2001',
+                title: '会话 2001',
+                status: 'ACTIVE',
+                lastRunId: '5002',
+              },
+            ],
+            conversationRecords: {
+              '2001': {
+                owned: true,
+                messages: [
+                  {
+                    id: 'assistant-2001',
+                    conversationId: '2001',
+                    role: 'ASSISTANT',
+                    content: '这是一条已存在的消息',
+                    status: 'COMPLETED',
+                  },
+                ],
+                executionSteps: [],
+                references: [],
+                artifacts: [],
+                currentExperts: [],
+                currentSkills: [],
+                currentMcps: [],
+              },
+            },
+          },
+          'local::__no_workspace__': {
+            workspacePath: null,
+            workspaceLabel: '历史记录',
+            runtimeTarget: 'local',
+            lastOpenedAt: Date.now() - 1000,
+            activeConversationId: null,
+            conversations: [],
+            conversationRecords: {},
+          },
+        },
+      }),
+    );
+
+    const requestUrls: string[] = [];
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      requestUrls.push(url);
+      if (url === '/api/chat/conversations?workspaceId=3001') {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            code: 'OK',
+            message: 'success',
+            data: [
+              {
+                id: '2001',
+                title: '会话 2001',
+                status: 'ACTIVE',
+                lastRunId: '5002',
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      if (
+        url === '/api/chat/sample-questions' ||
+        url === '/api/chat/experts' ||
+        url === '/api/chat/skills' ||
+        url === '/api/chat/mcps'
+      ) {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (
+        url === '/api/chat/conversations/2001/messages' ||
+        url === '/api/chat/conversations/2001/steps' ||
+        url === '/api/chat/conversations/2001/references' ||
+        url === '/api/chat/conversations/2001/artifacts' ||
+        url === '/api/chat/conversations/2001/current-skills' ||
+        url === '/api/chat/conversations/2001/current-mcps' ||
+        url === '/api/chat/conversations/2001/current-experts'
+      ) {
+        if (url === '/api/chat/conversations/2001/messages') {
+          return new Response(
+            JSON.stringify({
+              success: true,
+              code: 'OK',
+              message: 'success',
+              data: [
+                {
+                  id: 'assistant-2001',
+                  conversationId: '2001',
+                  role: 'ASSISTANT',
+                  content: '这是一条已存在的消息',
+                  status: 'COMPLETED',
+                },
+              ],
+            }),
+            { status: 200 },
+          );
+        }
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      throw new Error(`Unhandled fetch in same-partition host context refresh test: ${url}`);
+    });
+
+    const baseHostContext = {
+      hostType: 'desktop' as const,
+      executionTargets: ['local'] as const,
+      capabilities: {
+        localFiles: true,
+        localFolderPicker: true,
+        shell: true,
+        browserAutomation: false,
+        desktopNotifications: false,
+        officeInterop: false,
+        localMcp: true,
+        windowControls: true,
+      },
+      localResource: {
+        boundRepositoryPath: 'D:/code/CodingX',
+        workspaceId: '3001',
+        permissionGranted: true,
+      },
+    };
+
+    const { result, rerender } = renderHook(
+      ({ hostContext }) =>
+        useChatWorkspace(true, {
+          hostContext,
+        }),
+      {
+        initialProps: { hostContext: baseHostContext },
+      },
+    );
+
+    await waitFor(() => {
+      expect(result.current.isBootstrapping).toBe(false);
+      expect(result.current.activeRuntimeTarget).toBe('local');
+      expect(result.current.activeConversationId).toBe('2001');
+      expect(result.current.messages.length).toBe(1);
+    });
+    const messageReplayRequestCountBeforeRerender = requestUrls.filter(
+      (url) => url === '/api/chat/conversations/2001/messages',
+    ).length;
+
+    await act(async () => {
+      rerender({
+        hostContext: {
+          ...baseHostContext,
+          executionTargets: [...baseHostContext.executionTargets],
+          capabilities: {
+            ...baseHostContext.capabilities,
+          },
+          localResource: {
+            ...baseHostContext.localResource,
+          },
+        },
+      });
+    });
+
+    expect(result.current.activeConversationId).toBe('2001');
+    expect(result.current.messages).toHaveLength(1);
+    expect(result.current.messages[0]?.content).toBe('这是一条已存在的消息');
+    expect(result.current.workspacePath).toBe('D:/code/CodingX');
+    // 宿主刷新仅同步上下文，不应追加会话回放请求。
+    expect(
+      requestUrls.filter((url) => url === '/api/chat/conversations/2001/messages').length,
+    ).toBe(messageReplayRequestCountBeforeRerender);
   });
 
   /**

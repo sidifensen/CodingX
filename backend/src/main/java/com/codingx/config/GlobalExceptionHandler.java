@@ -18,6 +18,7 @@ import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.servlet.NoHandlerFoundException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
@@ -123,6 +124,27 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiResponse<Void>> handleValidation(Exception exception, HttpServletRequest request) {
         String validationMessage = extractValidationMessage(exception);
         return buildResponse(HttpStatus.BAD_REQUEST, "VALIDATION_ERROR", validationMessage, exception, request, false);
+    }
+
+    /**
+     * 处理上传体积超限异常，统一透出业务错误码和中文提示，避免前端看到容器层英文错误。
+     * @param exception 上传超限异常。
+     * @param request 当前请求。
+     * @return 标准错误响应。
+     */
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ResponseEntity<ApiResponse<Void>> handleMaxUploadSizeExceeded(
+        MaxUploadSizeExceededException exception,
+        HttpServletRequest request
+    ) {
+        return buildResponse(
+            HttpStatus.BAD_REQUEST,
+            "CHAT_ATTACHMENT_TOO_LARGE",
+            ErrorMessageCatalog.CHAT_ATTACHMENT_TOO_LARGE,
+            exception,
+            request,
+            false
+        );
     }
 
     /**

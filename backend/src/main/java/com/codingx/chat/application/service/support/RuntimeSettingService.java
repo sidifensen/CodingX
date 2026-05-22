@@ -358,6 +358,14 @@ public class RuntimeSettingService {
     }
 
     /**
+     * 获取聊天附件上传单文件最大字节数。
+     * @return 最大字节数。
+     */
+    public long chatAttachmentMaxFileSizeBytes() {
+        return getLong("chat.attachment.max_file_size_bytes", runtimeProperties.getUploadMaxFileSizeBytes());
+    }
+
+    /**
      * 获取模型路由连续失败阈值。
      * @return 连续失败阈值。
      */

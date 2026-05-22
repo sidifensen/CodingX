@@ -594,7 +594,7 @@ public final class ErrorMessageCatalog {
     /**
      * 附件过大提示。
      */
-    public static final String CHAT_ATTACHMENT_TOO_LARGE = "上传文件大小不能超过 20MB";
+    public static final String CHAT_ATTACHMENT_TOO_LARGE = "上传文件大小不能超过 10MB";
 
     /**
      * 附件类型不支持提示。

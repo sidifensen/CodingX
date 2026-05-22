@@ -3,6 +3,7 @@ package com.codingx.chat.application.service;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
@@ -12,6 +13,7 @@ import cn.dev33.satoken.stp.StpUtil;
 import com.codingx.chat.domain.model.ChatAttachment;
 import com.codingx.chat.domain.repository.ChatAttachmentRepository;
 import com.codingx.chat.domain.repository.ChatConversationRepository;
+import com.codingx.common.exception.BusinessException;
 import com.codingx.common.storage.RustFsChatAttachmentClient;
 import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
@@ -21,6 +23,7 @@ import org.apache.pdfbox.pdmodel.PDPageContentStream;
 import org.apache.pdfbox.pdmodel.font.Standard14Fonts;
 import org.apache.pdfbox.pdmodel.font.PDType1Font;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
@@ -45,8 +48,17 @@ class ChatAttachmentServiceTest {
     @Mock
     private RustFsChatAttachmentClient rustFsChatAttachmentClient;
 
+    @Mock
+    private RuntimeSettingService runtimeSettingService;
+
     @InjectMocks
     private ChatAttachmentService chatAttachmentService;
+
+    @BeforeEach
+    void setUp() {
+        // 默认按 10MB 限制附件上传，避免测试受配置空值影响。
+        when(runtimeSettingService.chatAttachmentMaxFileSizeBytes()).thenReturn(10L * 1024L * 1024L);
+    }
 
     /**
      * 上传纯文本文件时应写入归一化摘要，避免空白符噪音进入模型提示。
@@ -97,6 +109,27 @@ class ChatAttachmentServiceTest {
             assertNotNull(savedAttachment.getContentSummary());
             assertTrue(savedAttachment.getContentSummary().contains("Java"));
             assertTrue(savedAttachment.getContentSummary().contains("Spring"));
+        }
+    }
+
+    /**
+     * 附件上传大小超过 10MB 时应直接拒绝，避免写入对象存储后才失败。
+     */
+    @Test
+    void uploadRejectsFileLargerThanTenMb() {
+        try (MockedStatic<StpUtil> mockedStatic = Mockito.mockStatic(StpUtil.class)) {
+            mockedStatic.when(StpUtil::getLoginIdAsLong).thenReturn(1002L);
+            byte[] overSizeBytes = new byte[11 * 1024 * 1024];
+            MockMultipartFile multipartFile = new MockMultipartFile(
+                "file",
+                "large.txt",
+                "text/plain",
+                overSizeBytes
+            );
+
+            BusinessException exception = assertThrows(BusinessException.class, () -> chatAttachmentService.upload(multipartFile, null));
+            assertEquals("CHAT_ATTACHMENT_TOO_LARGE", exception.getCode());
+            assertEquals("上传文件大小不能超过 10MB", exception.getMessage());
         }
     }
 

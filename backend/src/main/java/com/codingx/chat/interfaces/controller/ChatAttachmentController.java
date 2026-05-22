@@ -1,6 +1,7 @@
 package com.codingx.chat.interfaces.controller;
 
 import com.codingx.chat.application.service.ChatAttachmentService;
+import com.codingx.chat.application.service.RuntimeSettingService;
 import com.codingx.chat.domain.model.ChatAttachment;
 import com.codingx.chat.interfaces.response.ChatAttachmentResponse;
 import com.codingx.common.model.ApiResponse;
@@ -26,6 +27,7 @@ import org.springframework.web.multipart.MultipartFile;
 public class ChatAttachmentController {
 
     private final ChatAttachmentService chatAttachmentService;
+    private final RuntimeSettingService runtimeSettingService;
 
     /**
      * 上传单个附件，返回附件元数据。
@@ -65,8 +67,9 @@ public class ChatAttachmentController {
      */
     @GetMapping("/upload-capabilities")
     public ApiResponse<Map<String, Object>> capabilities() {
+        long maxFileSizeBytes = runtimeSettingService.chatAttachmentMaxFileSizeBytes();
         return ApiResponse.success(Map.of(
-            "maxFileSizeBytes", 20L * 1024L * 1024L,
+            "maxFileSizeBytes", maxFileSizeBytes,
             "maxFileCount", 9L
         ));
     }

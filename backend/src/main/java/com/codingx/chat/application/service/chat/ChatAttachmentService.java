@@ -33,7 +33,6 @@ import org.springframework.web.multipart.MultipartFile;
 @RequiredArgsConstructor
 public class ChatAttachmentService {
 
-    private static final long MAX_FILE_SIZE = 20L * 1024L * 1024L;
     private static final int ATTACHMENT_TEXT_SUMMARY_MAX_LENGTH = 1600;
     private static final Set<String> TEXT_SUMMARY_EXTENSIONS = Set.of(
         "txt", "md", "rtf", "html", "xml",
@@ -54,6 +53,7 @@ public class ChatAttachmentService {
     private final ChatAttachmentRepository chatAttachmentRepository;
     private final ChatConversationRepository chatConversationRepository;
     private final RustFsChatAttachmentClient rustFsChatAttachmentClient;
+    private final RuntimeSettingService runtimeSettingService;
 
     /**
      * 上传聊天附件并持久化元数据。
@@ -203,7 +203,8 @@ public class ChatAttachmentService {
         if (file == null || file.isEmpty()) {
             throw new BusinessException("CHAT_ATTACHMENT_EMPTY", ErrorMessageCatalog.CHAT_ATTACHMENT_EMPTY);
         }
-        if (file.getSize() > MAX_FILE_SIZE) {
+        long maxFileSize = runtimeSettingService.chatAttachmentMaxFileSizeBytes();
+        if (file.getSize() > maxFileSize) {
             throw new BusinessException("CHAT_ATTACHMENT_TOO_LARGE", ErrorMessageCatalog.CHAT_ATTACHMENT_TOO_LARGE);
         }
         String fileName = StrUtil.blankToDefault(file.getOriginalFilename(), "attachment.bin");

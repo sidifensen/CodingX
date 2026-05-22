@@ -1,6 +1,10 @@
 spring:
   config:
     import: optional:file:.env[.properties],optional:file:backend/.env[.properties] # 导入外部配置文件，支持 .env 属性文件
+  servlet:
+    multipart:
+      max-file-size: ${SPRING_SERVLET_MULTIPART_MAX_FILE_SIZE:128MB} # Servlet 层单文件上传硬上限，避免默认 1MB 提前拦截
+      max-request-size: ${SPRING_SERVLET_MULTIPART_MAX_REQUEST_SIZE:130MB} # Servlet 层单请求上传硬上限，需覆盖 multipart 边界开销
   application:
     name: codingx-backend # 应用名称
   sql:
@@ -162,6 +166,7 @@ app:
     code-search-root: ${APP_RUNTIME_CODE_SEARCH_ROOT:} # 代码检索根目录，未配置时自动回退到项目根
     code-search-max-results: ${APP_RUNTIME_CODE_SEARCH_MAX_RESULTS:20} # 代码检索最大结果数，单次最大返回命中条数
     code-search-max-file-size-bytes: ${APP_RUNTIME_CODE_SEARCH_MAX_FILE_SIZE_BYTES:1048576} # 代码检索单文件最大字节数，避免读取超大构建产物
+    upload-max-file-size-bytes: ${APP_RUNTIME_UPLOAD_MAX_FILE_SIZE_BYTES:10485760} # 聊天附件上传单文件最大字节数，默认 10MB
     web-search:
       enabled: ${APP_RUNTIME_WEB_SEARCH_ENABLED:false} # 是否启用真实联网搜索通道
       provider: ${APP_RUNTIME_WEB_SEARCH_PROVIDER:bing} # 搜索 provider，当前支持 bing / serper / tavily

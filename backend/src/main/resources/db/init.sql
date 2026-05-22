@@ -230,6 +230,7 @@ VALUES
     (7040, 'code_search.root', '', 'STRING', 'code_search', '代码检索根目录', 10, TRUE, 0),
     (7041, 'code_search.max_results', '20', 'INTEGER', 'code_search', '代码检索最大返回命中数', 20, TRUE, 0),
     (7042, 'code_search.max_file_size_bytes', '1048576', 'LONG', 'code_search', '代码检索单文件最大扫描字节数', 30, TRUE, 0),
+    (7067, 'chat.attachment.max_file_size_bytes', '10485760', 'LONG', 'chat.attachment', '聊天附件上传单文件最大字节数', 10, FALSE, 0),
     (7043, 'web_search.enabled', 'false', 'BOOLEAN', 'search', '是否启用真实联网搜索', 50, FALSE, 0),
     (7044, 'web_search.provider', 'bing', 'STRING', 'search', '联网搜索提供方编码', 60, FALSE, 0),
     (7045, 'web_search.base_url', 'https://api.bing.microsoft.com/v7.0/search', 'STRING', 'search', '联网搜索接口地址', 70, FALSE, 0),

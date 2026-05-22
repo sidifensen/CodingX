@@ -11,6 +11,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.codingx.chat.application.service.ChatAttachmentService;
+import com.codingx.chat.application.service.RuntimeSettingService;
 import com.codingx.chat.domain.model.ChatAttachment;
 import com.codingx.config.GlobalExceptionHandler;
 import java.time.LocalDateTime;
@@ -31,6 +32,9 @@ class ChatAttachmentControllerTest {
 
     @Mock
     private ChatAttachmentService chatAttachmentService;
+
+    @Mock
+    private RuntimeSettingService runtimeSettingService;
 
     @InjectMocks
     private ChatAttachmentController chatAttachmentController;
@@ -68,6 +72,19 @@ class ChatAttachmentControllerTest {
             .andExpect(content().bytes(new byte[] {9, 8, 7}));
 
         verify(chatAttachmentService).requireOwnedAttachment(3001L);
+    }
+
+    /**
+     * 上传能力接口应返回 10MB 上限，保证前端提示与后端真实限制一致。
+     */
+    @Test
+    void capabilitiesReturnsTenMbLimit() throws Exception {
+        when(runtimeSettingService.chatAttachmentMaxFileSizeBytes()).thenReturn(10L * 1024L * 1024L);
+        mockMvc().perform(get("/api/chat/attachments/upload-capabilities"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.success").value(true))
+            .andExpect(jsonPath("$.data.maxFileSizeBytes").value(10L * 1024L * 1024L))
+            .andExpect(jsonPath("$.data.maxFileCount").value(9));
     }
 
     private MockMvc mockMvc() {

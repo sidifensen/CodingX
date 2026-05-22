@@ -70,6 +70,11 @@ public class RuntimeProperties {
     private long codeSearchMaxFileSizeBytes = 1024 * 1024L;
 
     /**
+     * 聊天附件上传单文件最大字节数，由业务层进行二次校验。
+     */
+    private long uploadMaxFileSizeBytes = 10L * 1024L * 1024L;
+
+    /**
      * 联网搜索通道配置，默认关闭，避免开发环境误发外部检索请求。
      */
     private WebSearchProperties webSearch = new WebSearchProperties();

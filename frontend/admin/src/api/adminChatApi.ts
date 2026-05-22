@@ -31,6 +31,7 @@ export interface AdminTraceNode {
   status: string;
   errorMessage?: string;
   durationMs?: number;
+  extraDataJson?: string;
   startedAt?: string;
   finishedAt?: string;
 }

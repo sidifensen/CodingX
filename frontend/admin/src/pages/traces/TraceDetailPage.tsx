@@ -2,12 +2,15 @@ import React from 'react';
 import { Link, useParams } from 'react-router-dom';
 import clsx from 'clsx';
 
-import { AdminChatApi, type AdminTraceDetail } from '../../api/adminChatApi';
+import { AdminChatApi, type AdminTraceDetail, type AdminTraceNode } from '../../api/adminChatApi';
 import {
   clamp,
   formatDateTime,
   formatDuration,
+  nodeTypeBadgeClassName,
+  nodeTypeLabel,
   normalizeStatus,
+  prettifyNodeName,
   resolveNodeDuration,
   statusBadgeClassName,
   statusLabel,
@@ -32,6 +35,7 @@ export function TraceDetailPage() {
   const requestIdRef = React.useRef(0);
   const [detail, setDetail] = React.useState<AdminTraceDetail | null>(null);
   const [loading, setLoading] = React.useState(false);
+  const [activeNodeKey, setActiveNodeKey] = React.useState<string | null>(null);
 
   const loadDetail = React.useCallback(async (nextTraceId: string) => {
     if (!nextTraceId) return;
@@ -55,14 +59,17 @@ export function TraceDetailPage() {
     if (!traceId) {
       setDetail(null);
       setLoading(false);
+      setActiveNodeKey(null);
       return;
     }
+    setActiveNodeKey(null);
     void loadDetail(traceId);
   }, [loadDetail, traceId]);
 
   const selectedRun = detail?.traceRun || null;
 
   const timeline = React.useMemo(() => {
+    // 节点时序计算统一转为毫秒时间轴，确保缺失 duration/结束时间时也可稳定绘制瀑布图。
     const nodes = detail?.nodes || [];
     if (!nodes.length) {
       return { totalWindowMs: 0, rows: [] as Array<ReturnType<typeof buildTimelineRow>> };
@@ -107,6 +114,11 @@ export function TraceDetailPage() {
     const avgDuration = total > 0 ? Math.round(durations.reduce((sum, value) => sum + value, 0) / total) : 0;
     return { total, failed, success, running, avgDuration };
   }, [detail?.nodes]);
+
+  const activeRow = React.useMemo(
+    () => timeline.rows.find((row) => row.key === activeNodeKey) || null,
+    [activeNodeKey, timeline.rows],
+  );
 
   if (loading) {
     return (
@@ -217,30 +229,70 @@ export function TraceDetailPage() {
             </div>
             <div className="divide-y divide-border-hairline">
               {timeline.rows.map((row) => (
-                <WaterfallRow key={row.key} row={row} />
+                <WaterfallRow
+                  key={row.key}
+                  row={row}
+                  isSelected={activeNodeKey === row.key}
+                  onSelect={() => {
+                    setActiveNodeKey((current) => (current === row.key ? null : row.key));
+                  }}
+                />
               ))}
             </div>
           </div>
         )}
       </section>
+
+      {activeRow ? (
+        <NodeDetailPanel
+          row={activeRow}
+          onClose={() => setActiveNodeKey(null)}
+        />
+      ) : null}
     </div>
   );
 }
 
 type WaterfallTimelineRow = ReturnType<typeof buildTimelineRow>;
 
-function WaterfallRow({ row }: { row: WaterfallTimelineRow }) {
+function WaterfallRow({
+  row,
+  isSelected,
+  onSelect,
+}: {
+  row: WaterfallTimelineRow;
+  isSelected: boolean;
+  onSelect: () => void;
+}) {
+  const statusDotClassName = row.statusToneClassName === 'bg-status-failed'
+    ? 'bg-status-failed'
+    : row.statusToneClassName === 'bg-status-pending'
+      ? 'bg-status-pending'
+      : 'bg-status-running';
+
   return (
-    <div className="grid grid-cols-[minmax(180px,1fr)_120px_2fr_100px] gap-md px-lg py-sm hover:bg-surface-container-low transition-colors">
+    <div
+      onClick={onSelect}
+      className={clsx(
+        'grid cursor-pointer grid-cols-[minmax(180px,1fr)_120px_2fr_100px] gap-md px-lg py-sm transition-colors hover:bg-surface-container-low',
+        isSelected ? 'bg-surface-container-low ring-1 ring-inset ring-border-strong' : '',
+      )}
+    >
       <div className="min-w-0 flex items-center gap-xs" style={{ paddingLeft: `${Math.min(row.depthValue, 6) * 16}px` }}>
-        <span className="h-2 w-2 rounded-full bg-status-running shrink-0" />
+        <span className={clsx('h-2 w-2 rounded-full shrink-0', statusDotClassName)} />
         <span className="truncate text-ink" title={row.title}>
-          {row.title}
+          {row.displayTitle}
         </span>
       </div>
       <div className="flex items-center">
-        <span className="rounded bg-surface-container-low px-2 py-0.5 text-[12px] text-secondary truncate" title={row.nodeType}>
-          {row.nodeType}
+        <span
+          className={clsx(
+            'inline-flex rounded-full border px-2 py-0.5 text-[12px] font-medium truncate',
+            nodeTypeBadgeClassName(row.nodeType),
+          )}
+          title={row.nodeType}
+        >
+          {row.displayNodeType}
         </span>
       </div>
       <div className="flex items-center">
@@ -266,6 +318,99 @@ function WaterfallRow({ row }: { row: WaterfallTimelineRow }) {
         <p className="font-medium text-ink">{formatDuration(row.resolvedDurationMs)}</p>
         <p className="text-[10px] text-secondary">@{formatDuration(row.offsetMs)}</p>
       </div>
+    </div>
+  );
+}
+
+function NodeDetailPanel({
+  row,
+  onClose,
+}: {
+  row: WaterfallTimelineRow;
+  onClose: () => void;
+}) {
+  // 详情面板固定读取行内快照，避免刷新后 active key 失效导致渲染闪烁。
+  const node = row.sourceNode;
+  const hasError = ['error', 'failed'].includes(normalizeStatus(node.status));
+
+  return (
+    <section className="rounded-xl border border-border-hairline bg-surface-container-lowest overflow-hidden">
+      <div className="flex items-center justify-between border-b border-border-hairline px-lg py-md">
+        <div className="min-w-0">
+          <h3 className="font-title-md text-title-md text-ink">节点详情</h3>
+          <div className="mt-1 flex items-center gap-xs">
+            <span className="truncate text-secondary" title={row.displayTitle}>{row.displayTitle}</span>
+            <span className={clsx(
+              'inline-flex rounded-full border px-2 py-0.5 text-[12px] font-semibold',
+              statusBadgeClassName(node.status),
+            )}
+            >
+              {statusLabel(node.status)}
+            </span>
+            <span className={clsx(
+              'inline-flex rounded-full border px-2 py-0.5 text-[12px] font-medium',
+              nodeTypeBadgeClassName(node.nodeType),
+            )}
+            >
+              {row.displayNodeType}
+            </span>
+          </div>
+        </div>
+        <button
+          type="button"
+          className="inline-flex h-8 items-center justify-center rounded-md border border-border-hairline px-sm text-secondary hover:bg-surface-container-low hover:text-ink"
+          onClick={onClose}
+        >
+          关闭
+        </button>
+      </div>
+      <div className="space-y-md px-lg py-md">
+        <div className="grid grid-cols-1 gap-sm text-[12px] text-secondary md:grid-cols-2">
+          <DetailField label="Node Id" value={node.nodeId || '-'} mono />
+          <DetailField label="Parent Node Id" value={node.parentNodeId || '-'} mono />
+          <DetailField label="深度" value={String(node.depth ?? 0)} />
+          <DetailField label="耗时" value={formatDuration(resolveNodeDuration(node))} highlight />
+          <DetailField label="开始时间" value={formatDateTime(node.startedAt)} />
+          <DetailField label="结束时间" value={formatDateTime(node.finishedAt)} />
+          <DetailField label="类" value={node.className || '-'} mono />
+          <DetailField label="方法" value={node.methodName || '-'} mono />
+        </div>
+        {hasError && node.errorMessage ? (
+          <div className="rounded-lg border border-status-failed-border bg-status-failed-bg px-md py-sm text-status-failed">
+            <p className="font-semibold">错误信息</p>
+            <p className="mt-1 break-all whitespace-pre-wrap">{node.errorMessage}</p>
+          </div>
+        ) : null}
+        {node.extraDataJson ? (
+          <div>
+            <p className="text-[12px] text-secondary">extraDataJson</p>
+            <pre className="mt-1 max-h-[220px] overflow-auto rounded-lg border border-border-hairline bg-surface-container-low px-md py-sm text-[12px] text-ink">
+              {prettyJson(node.extraDataJson)}
+            </pre>
+          </div>
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
+function DetailField({
+  label,
+  value,
+  mono = false,
+  highlight = false,
+}: {
+  label: string;
+  value: string;
+  mono?: boolean;
+  highlight?: boolean;
+}) {
+  return (
+    <div className="flex items-center gap-xs min-w-0">
+      <span className="shrink-0">{label}</span>
+      <span className={clsx('truncate text-ink', mono ? 'font-data-mono' : '', highlight ? 'font-semibold text-primary' : '')}>
+        {value}
+      </span>
     </div>
   );
 }
@@ -300,11 +445,19 @@ function MetricItem({ label, value, className }: { label: string; value: string;
 function buildTimelineRow(
   node: {
     id: string;
+    traceId: string;
     nodeId?: string;
     nodeName: string;
     methodName?: string;
     nodeType?: string;
     status?: string;
+    parentNodeId?: string | null;
+    depth?: number;
+    className?: string;
+    errorMessage?: string;
+    extraDataJson?: string;
+    startedAt?: string;
+    finishedAt?: string;
     depthValue: number;
     resolvedDurationMs: number;
     startTs: number;
@@ -325,15 +478,47 @@ function buildTimelineRow(
     : normalizedStatus === 'running'
       ? 'bg-status-pending'
       : 'bg-status-running';
+
+  const displayNodeType = nodeTypeLabel(node.nodeType);
+  const displayTitle = prettifyNodeName(node.nodeName || node.methodName || node.nodeId || node.id);
+  const sourceNode: AdminTraceNode = {
+    id: node.id,
+    traceId: node.traceId,
+    nodeId: node.nodeId,
+    parentNodeId: node.parentNodeId,
+    depth: node.depth,
+    nodeType: node.nodeType || '',
+    nodeName: node.nodeName,
+    className: node.className,
+    methodName: node.methodName,
+    status: node.status || '',
+    errorMessage: node.errorMessage,
+    durationMs: node.resolvedDurationMs,
+    extraDataJson: node.extraDataJson,
+    startedAt: node.startedAt,
+    finishedAt: node.finishedAt,
+  };
+
   return {
     key: node.nodeId || node.id,
     title: node.nodeName || node.methodName || node.nodeId || node.id,
+    displayTitle,
     nodeType: node.nodeType || '-',
+    displayNodeType,
     depthValue: node.depthValue,
     resolvedDurationMs: node.resolvedDurationMs,
     offsetMs,
     leftPercent,
     widthPercent,
     statusToneClassName,
+    sourceNode,
   };
+}
+
+function prettyJson(raw: string): string {
+  try {
+    return JSON.stringify(JSON.parse(raw), null, 2);
+  } catch {
+    return raw;
+  }
 }

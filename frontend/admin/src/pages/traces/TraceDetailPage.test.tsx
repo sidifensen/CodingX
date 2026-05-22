@@ -1,6 +1,6 @@
 import '@testing-library/jest-dom/vitest';
 
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 
@@ -39,6 +39,9 @@ describe('TraceDetailPage', () => {
           nodeName: 'intent-resolve',
           status: 'SUCCESS',
           durationMs: 2650,
+          className: 'com.codingx.chat.application.service.conversation.ConversationIntentResolver',
+          methodName: 'resolve',
+          extraDataJson: '{"intent":"chat","confidence":0.99}',
           startedAt: '2026-05-16T18:00:01',
           finishedAt: '2026-05-16T18:00:03',
         },
@@ -66,7 +69,24 @@ describe('TraceDetailPage', () => {
     expect(screen.getAllByText('节点')).toHaveLength(2);
     expect(screen.getByText('成功')).toBeInTheDocument();
     expect(screen.getByText('平均耗时')).toBeInTheDocument();
-    expect(screen.getByText('intent-resolve')).toBeInTheDocument();
+    expect(screen.getByText('意图识别')).toBeInTheDocument();
     expect(AdminChatApi.getTrace).toHaveBeenCalledWith('trace-1');
+  });
+
+  it('opens node detail panel after clicking a timeline row', async () => {
+    render(
+      <MemoryRouter initialEntries={['/traces/trace-1']}>
+        <Routes>
+          <Route path="/traces/:traceId" element={<TraceDetailPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(await screen.findByText('意图识别'));
+
+    expect(await screen.findByText('节点详情')).toBeInTheDocument();
+    expect(screen.getByText('Node Id')).toBeInTheDocument();
+    expect(screen.getByText('n1')).toBeInTheDocument();
+    expect(screen.getByText('extraDataJson')).toBeInTheDocument();
   });
 });

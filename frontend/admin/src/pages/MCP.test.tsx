@@ -180,6 +180,15 @@ describe('MCP page', () => {
     });
   });
 
+  it('renders delete dialog via body portal to avoid layout clipping by page containers', async () => {
+    render(<MCP />);
+
+    fireEvent.click(await screen.findByRole('button', { name: '删除配置 weather_query' }));
+    const overlay = await screen.findByTestId('mcp-delete-dialog-overlay');
+
+    expect(overlay.parentElement).toBe(document.body);
+  });
+
   it('opens in-page dialog to show ping result instead of browser alert', async () => {
     render(<MCP />);
     await screen.findByText('/weather_query');

@@ -1,6 +1,6 @@
 import '@testing-library/jest-dom/vitest';
 
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 
@@ -89,6 +89,6 @@ describe('TraceDetailPage', () => {
     expect(screen.getByText('n1')).toBeInTheDocument();
     expect(screen.getByText('extraDataJson')).toBeInTheDocument();
     const rowNodeName = screen.getAllByText('意图识别')[0];
-    expect(rowNodeName.closest('div')?.querySelector('.border-l')).not.toBeNull();
+    expect(within(rowNodeName.closest('div') as HTMLElement).getByTestId('trace-tree-branch')).toBeInTheDocument();
   });
 });

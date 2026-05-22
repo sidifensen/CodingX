@@ -7,6 +7,7 @@ import static org.mockito.Mockito.when;
 import com.codingx.chat.domain.model.ChatTraceNode;
 import com.codingx.chat.domain.model.ChatTraceRun;
 import java.time.LocalDateTime;
+import java.util.ArrayDeque;
 import org.aspectj.lang.Aspects;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
@@ -39,7 +40,9 @@ class ConversationTraceAspectTest {
             .createdAt(LocalDateTime.now())
             .build();
         when(traceRecordService.startNode(any(), any(), any(), any(), any())).thenReturn(traceNode);
-        ConversationTraceContext.bind(ChatTraceRun.builder().traceId("trace-1").traceName("chat-entry").build());
+        ArrayDeque<String> nodeStackSnapshot = new ArrayDeque<>();
+        nodeStackSnapshot.push("root-node-1");
+        ConversationTraceContext.bind(ChatTraceRun.builder().traceId("trace-1").traceName("chat-entry").build(), nodeStackSnapshot);
 
         proxy.run();
 

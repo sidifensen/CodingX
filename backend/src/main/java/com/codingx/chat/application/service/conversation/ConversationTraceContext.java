@@ -44,6 +44,20 @@ public final class ConversationTraceContext {
     }
 
     /**
+     * 显式绑定既有根 Trace 与节点栈快照，用于异步线程恢复父子节点层级。
+     * @param traceRun 根 Trace。
+     * @param nodeStackSnapshot 节点栈快照，栈顶应为当前节点。
+     */
+    public static void bind(ChatTraceRun traceRun, Deque<String> nodeStackSnapshot) {
+        CURRENT.set(traceRun);
+        Deque<String> nextStack = new ArrayDeque<>();
+        if (nodeStackSnapshot != null && !nodeStackSnapshot.isEmpty()) {
+            nextStack.addAll(nodeStackSnapshot);
+        }
+        NODE_STACK.set(nextStack);
+    }
+
+    /**
      * 返回当前线程绑定的根 Trace。
      * @return 当前 Trace。
      */
@@ -90,5 +104,13 @@ public final class ConversationTraceContext {
      */
     public static int currentDepth() {
         return NODE_STACK.get().size();
+    }
+
+    /**
+     * 快照当前节点栈，供线程池任务提交时深拷贝父子层级上下文。
+     * @return 节点栈副本。
+     */
+    public static Deque<String> snapshotNodeStack() {
+        return new ArrayDeque<>(NODE_STACK.get());
     }
 }

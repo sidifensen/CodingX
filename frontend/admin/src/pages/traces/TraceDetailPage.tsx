@@ -98,7 +98,34 @@ export function TraceDetailPage() {
     const rows = normalized
       .sort((a, b) => a.startTs - b.startTs || a.depthValue - b.depthValue)
       .map((node) => buildTimelineRow(node, baseStart, windowDuration));
-    return { totalWindowMs: windowDuration, rows };
+    const rowsWithSiblingInfo = rows.map((row, index) => {
+      const hasNextSibling = rows.slice(index + 1).some((nextRow) => (
+        nextRow.depthValue === row.depthValue
+        && (nextRow.sourceNode.parentNodeId || '') === (row.sourceNode.parentNodeId || '')
+      ));
+      return {
+        ...row,
+        hasNextSibling,
+      };
+    });
+
+    const stack: Array<{ hasNextSibling: boolean }> = [];
+    const rowsWithTreeGuide = rowsWithSiblingInfo.map((row) => {
+      while (stack.length > row.depthValue) {
+        stack.pop();
+      }
+      const ancestorContinueFlags: boolean[] = [];
+      for (let level = 1; level <= row.depthValue - 1; level += 1) {
+        ancestorContinueFlags.push(stack[level]?.hasNextSibling ?? false);
+      }
+      const enhanced = {
+        ...row,
+        ancestorContinueFlags,
+      };
+      stack[row.depthValue] = { hasNextSibling: row.hasNextSibling };
+      return enhanced;
+    });
+    return { totalWindowMs: windowDuration, rows: rowsWithTreeGuide };
   }, [detail?.nodes, selectedRun?.durationMs]);
 
   const stats = React.useMemo(() => {
@@ -281,21 +308,42 @@ function WaterfallRow({
     >
       <div className="min-w-0 flex items-center gap-xs">
         {branchDepth > 0 ? (
-          // 使用按层级重复的“竖线 + 末级折线”来模拟 trace 树结构折线。
-          <div className="flex shrink-0 self-stretch items-stretch">
+          // 按可视深度绘制祖先延续线与当前折线，保证层级关系与 ragent 的折线结构一致。
+          <div className="relative h-8 shrink-0" style={{ width: `${branchDepth * 16}px` }} data-testid="trace-tree-branch">
             {Array.from({ length: branchDepth }).map((_, index) => {
+              const x = index * 16 + 8;
               const isLast = index === branchDepth - 1;
-              return (
-                <span
-                  key={`trace-branch-${row.key}-${index}`}
-                  className={clsx(
-                    'w-4 border-border-hairline',
-                    'border-l',
-                    isLast ? 'border-b' : '',
-                  )}
-                  style={isLast ? { marginTop: '-10px' } : undefined}
-                />
-              );
+              const shouldDrawAncestor = !isLast && Boolean(row.ancestorContinueFlags[index]);
+              if (shouldDrawAncestor) {
+                return (
+                  <span
+                    key={`trace-ancestor-line-${row.key}-${index}`}
+                    className="absolute top-0 bottom-0 w-px bg-border-strong"
+                    style={{ left: `${x}px` }}
+                  />
+                );
+              }
+              if (isLast) {
+                return (
+                  <React.Fragment key={`trace-current-branch-${row.key}-${index}`}>
+                    <span
+                      className="absolute top-0 h-1/2 w-px bg-border-strong"
+                      style={{ left: `${x}px` }}
+                    />
+                    {row.hasNextSibling ? (
+                      <span
+                        className="absolute bottom-0 h-1/2 w-px bg-border-strong"
+                        style={{ left: `${x}px` }}
+                      />
+                    ) : null}
+                    <span
+                      className="absolute h-px bg-border-strong"
+                      style={{ left: `${x}px`, top: '50%', width: '12px' }}
+                    />
+                  </React.Fragment>
+                );
+              }
+              return null;
             })}
           </div>
         ) : null}

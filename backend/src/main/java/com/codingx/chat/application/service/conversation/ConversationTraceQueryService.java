@@ -25,7 +25,7 @@ public class ConversationTraceQueryService {
     public ConversationTraceView getTrace(String traceId) {
         return new ConversationTraceView(
             chatTraceRunRepository.findByTraceId(traceId).orElseThrow(() -> new NotFoundException(ErrorMessageCatalog.CHAT_TRACE_NOT_FOUND)),
-            chatTraceNodeRepository.findByTraceId(traceId)
+            TraceNodeHierarchyNormalizer.normalize(chatTraceNodeRepository.findByTraceId(traceId))
         );
     }
 }

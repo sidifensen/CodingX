@@ -3,6 +3,7 @@ package com.codingx.admin.application.service;
 import cn.hutool.core.util.StrUtil;
 import com.codingx.auth.domain.repository.UserRepository;
 import com.codingx.chat.application.service.ConversationTraceView;
+import com.codingx.chat.application.service.TraceNodeHierarchyNormalizer;
 import com.codingx.chat.domain.model.ChatTraceRun;
 import com.codingx.chat.domain.repository.ChatTraceNodeRepository;
 import com.codingx.chat.domain.repository.ChatTraceRunRepository;
@@ -26,7 +27,7 @@ public class AdminChatTraceService {
     public ConversationTraceView getTrace(String traceId) {
         return new ConversationTraceView(
             chatTraceRunRepository.findByTraceId(traceId).orElseThrow(() -> new NotFoundException(ErrorMessageCatalog.CHAT_TRACE_NOT_FOUND)),
-            chatTraceNodeRepository.findByTraceId(traceId)
+            TraceNodeHierarchyNormalizer.normalize(chatTraceNodeRepository.findByTraceId(traceId))
         );
     }
 

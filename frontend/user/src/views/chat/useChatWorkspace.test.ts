@@ -1133,6 +1133,175 @@ describe('useChatWorkspace', () => {
   });
 
   /**
+   * 刷新命中 URL 会话参数且本地存在可回放快照时，应优先恢复快照，
+   * 不应被 conversations 列表接口慢响应阻塞到首页空态。
+   */
+  it('应在会话列表接口慢响应时仍优先恢复URL指定会话的本地快照', async () => {
+    window.localStorage.setItem(
+      'codingx.auth.session',
+      JSON.stringify({
+        token: 'token-123',
+        userId: '1002',
+        username: 'user',
+        displayName: 'CodingX User',
+        userType: 'USER',
+      }),
+    );
+    window.history.replaceState(window.history.state, '', '/?conversationId=2001');
+    window.localStorage.setItem(
+      'codingx.chat.workspace.conversations.v1',
+      JSON.stringify({
+        version: 1,
+        snapshots: {
+          'cloud::__no_workspace__': {
+            workspacePath: null,
+            workspaceLabel: '历史记录',
+            runtimeTarget: 'cloud',
+            lastOpenedAt: Date.now(),
+            activeConversationId: '2001',
+            conversations: [
+              {
+                id: '2001',
+                title: '刷新恢复测试会话',
+                status: 'ACTIVE',
+                lastRunId: '5002',
+              },
+            ],
+            conversationRecords: {
+              '2001': {
+                owned: true,
+                messages: [
+                  {
+                    id: '9201',
+                    conversationId: '2001',
+                    role: 'ASSISTANT',
+                    content: '应立即恢复的本地快照消息',
+                    status: 'COMPLETED',
+                  },
+                ],
+                executionSteps: [],
+                references: [],
+                artifacts: [],
+                currentSkills: [],
+                currentMcps: [],
+              },
+            },
+          },
+        },
+      }),
+    );
+
+    let resolveConversationsRequest: ((response: Response) => void) | null = null;
+    const pendingConversationsResponse = new Promise<Response>((resolve) => {
+      resolveConversationsRequest = resolve;
+    });
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === '/api/chat/conversations') {
+        return pendingConversationsResponse;
+      }
+      if (
+        url === '/api/chat/sample-questions' ||
+        url === '/api/chat/experts' ||
+        url === '/api/chat/skills' ||
+        url === '/api/chat/mcps'
+      ) {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      throw new Error(`Unhandled fetch in delayed conversations restore test: ${url}`);
+    });
+
+    const { result } = renderHook(() => useChatWorkspace(true));
+
+    await waitFor(
+      () => {
+        expect(result.current.activeConversationId).toBe('2001');
+        expect(
+          result.current.messages.some((message) => message.content === '应立即恢复的本地快照消息'),
+        ).toBe(true);
+      },
+      { timeout: 300 },
+    );
+
+    expect(resolveConversationsRequest).not.toBeNull();
+    resolveConversationsRequest?.(
+      new Response(
+        JSON.stringify({
+          success: true,
+          code: 'OK',
+          message: 'success',
+          data: [
+            {
+              id: '2001',
+              title: '刷新恢复测试会话',
+              status: 'ACTIVE',
+              lastRunId: '5002',
+            },
+          ],
+        }),
+        { status: 200 },
+      ),
+    );
+
+    await waitFor(() => {
+      expect(result.current.isBootstrapping).toBe(false);
+    });
+  });
+
+  /**
+   * 本地存在 token 且认证校验尚未返回时，不应把工作区直接重置为未登录态，
+   * 否则会提前清空 conversationId，导致刷新恢复链路中断。
+   */
+  it('应在认证校验未完成但本地有token时保留URL会话参数并继续初始化', async () => {
+    window.localStorage.setItem(
+      'codingx.auth.session',
+      JSON.stringify({
+        token: 'token-123',
+        userId: '1002',
+        username: 'user',
+        displayName: 'CodingX User',
+        userType: 'USER',
+      }),
+    );
+    window.history.replaceState(window.history.state, '', '/?conversationId=2001');
+
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === '/api/chat/conversations') {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (
+        url === '/api/chat/sample-questions' ||
+        url === '/api/chat/experts' ||
+        url === '/api/chat/skills' ||
+        url === '/api/chat/mcps'
+      ) {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      throw new Error(`Unhandled fetch in pending-auth bootstrap test: ${url}`);
+    });
+
+    const { result } = renderHook(() => useChatWorkspace(false));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith('/api/chat/conversations', expect.any(Object));
+    });
+    expect(new URL(window.location.href).searchParams.get('conversationId')).toBe('2001');
+    await waitFor(() => {
+      expect(result.current.isBootstrapping).toBe(false);
+    });
+  });
+
+  /**
    * 刷新恢复会话时，消息应优先展示，不应被步骤/来源/产物等右栏回放接口阻塞。
    */
   it('刷新恢复会话时应优先渲染消息，不被右栏回放接口阻塞', async () => {

@@ -386,7 +386,10 @@ export function useChatWorkspace(
   }, [activeRuntimeTarget]);
 
   useEffect(() => {
-    if (!isAuthenticated) {
+    const hasPersistedToken = currentToken() != null;
+    // 关键约束：登录态校验尚未返回但本地仍有 token 时，不能提前按“未登录”重置，
+    // 否则会清空 URL 会话参数并打断刷新恢复链路。
+    if (!isAuthenticated && !hasPersistedToken) {
       resetWorkspace();
       return;
     }
@@ -420,10 +423,19 @@ export function useChatWorkspace(
       const nextExpertsPromise = ChatApi.listExperts(token);
       const nextSkillsPromise = ChatApi.listSkills(token);
       const nextMcpsPromise = ChatApi.listMcps(token);
+      const preferredConversationIdFromSnapshot = resolvePreferredConversationIdFromSnapshot();
+      const didHydrateConversationFromSnapshot = Boolean(preferredConversationIdFromSnapshot);
+      if (preferredConversationIdFromSnapshot && activeWorkspacePartitionKey) {
+        hasHydratedInitialConversationRef.current = true;
+        // 刷新命中 URL 会话时优先恢复本地快照，避免慢接口期间闪回首页空态。
+        await restoreWorkspaceSnapshot(activeWorkspacePartitionKey, preferredConversationIdFromSnapshot);
+      }
 
       const nextConversations = await nextConversationsPromise;
       refreshWorkspaceGroups('all');
-      const preferredConversationId = resolvePreferredConversationId(nextConversations);
+      const preferredConversationId = didHydrateConversationFromSnapshot
+        ? null
+        : resolvePreferredConversationId(nextConversations);
       if (preferredConversationId) {
         hasHydratedInitialConversationRef.current = true;
         if (hasPersistedConversationRecord(preferredConversationId)) {
@@ -434,7 +446,7 @@ export function useChatWorkspace(
         } else {
           await selectConversation(preferredConversationId, nextConversations, undefined, false);
         }
-      } else if (!shouldKeepLandingState) {
+      } else if (!shouldKeepLandingState && !didHydrateConversationFromSnapshot) {
         // 业务意图：首次进入且无显式会话上下文时停留首页，不自动跳转到最新会话。
         clearConversationPlayback(true);
       }
@@ -469,6 +481,12 @@ export function useChatWorkspace(
       if (!hasHydratedInitialConversationRef.current) {
         hasHydratedInitialConversationRef.current = true;
       }
+    } catch (error) {
+      if (error instanceof ChatApi.UnauthorizedError) {
+        onUnauthorizedRef.current?.();
+        return;
+      }
+      throw error;
     } finally {
       setIsBootstrapping(false);
     }
@@ -1691,6 +1709,25 @@ export function useChatWorkspace(
       }
     }
     return null;
+  }
+
+  /**
+   * 在远端会话列表返回前，尝试基于本地快照预恢复会话，减少刷新期间首页闪烁。
+   * @returns 快照中可恢复的会话标识。
+   */
+  function resolvePreferredConversationIdFromSnapshot() {
+    if (hasHydratedInitialConversationRef.current || !activeWorkspacePartitionKey) {
+      return null;
+    }
+    const snapshot = readWorkspaceSnapshot(activeWorkspacePartitionKey);
+    const initialConversationId = initialUrlConversationIdRef.current;
+    if (!initialConversationId) {
+      return null;
+    }
+    return snapshot.conversationRecords[initialConversationId] != null ||
+      snapshot.conversations.some((conversation) => conversation.id === initialConversationId)
+      ? initialConversationId
+      : null;
   }
 
   /**

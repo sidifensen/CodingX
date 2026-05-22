@@ -56,6 +56,25 @@ function getDefaultWorkspaceLabel(runtimeTarget: 'cloud' | 'local') {
   return runtimeTarget === 'local' ? DEFAULT_LOCAL_WORKSPACE_LABEL : DEFAULT_CLOUD_WORKSPACE_LABEL;
 }
 
+/**
+ * 按会话 ID 去重合并列表，保留已有顺序并将新增项追加到末尾。
+ * @param primary 主列表。
+ * @param secondary 待合并列表。
+ * @returns 合并后的会话列表。
+ */
+function mergeConversationListById(primary: ConversationItem[], secondary: ConversationItem[]) {
+  const mergedConversations = [...primary];
+  const existingConversationIds = new Set(primary.map((conversation) => conversation.id));
+  for (const conversation of secondary) {
+    if (existingConversationIds.has(conversation.id)) {
+      continue;
+    }
+    existingConversationIds.add(conversation.id);
+    mergedConversations.push(conversation);
+  }
+  return mergedConversations;
+}
+
 type WorkspaceGroupQueryMode = 'runtime-only' | 'all';
 
 /**
@@ -264,6 +283,34 @@ export function useChatWorkspace(
    */
   const isActiveStreamSession = (streamSessionId: number) =>
     activeStreamSessionIdRef.current === streamSessionId;
+
+  /**
+   * 当后端通过 meta 下发新会话 ID 时，立即写入当前分区会话列表，避免列表依赖后续刷新才出现。
+   * @param conversationId 会话标识。
+   */
+  const upsertConversationFromStreamMeta = (conversationId: string) => {
+    if (!conversationId) {
+      return;
+    }
+    const existingConversation = conversations.find((conversation) => conversation.id === conversationId);
+    const nextConversation: ConversationItem =
+      existingConversation ?? {
+        id: conversationId,
+        title: '新会话',
+        status: 'ACTIVE',
+      };
+    const nextConversations = mergeConversationListById(conversations, [nextConversation]);
+    setConversations(nextConversations);
+    upsertWorkspaceSnapshot(activeRuntimeTarget, workspacePath ?? null, {
+      conversations: nextConversations,
+      activeConversationId: conversationId,
+      workspaceLabel:
+        workspacePath != null
+          ? getWorkspaceLabel(workspacePath)
+          : getDefaultWorkspaceLabel(activeRuntimeTarget),
+    });
+    refreshWorkspaceGroups('all');
+  };
 
   /**
    * 统一刷新左侧分组数据：桌面端展示云端历史 + 本地历史 + 本地工作空间，网页端保持当前环境过滤。
@@ -1053,6 +1100,7 @@ export function useChatWorkspace(
           activeMessageId: optimisticAssistantId,
         };
         setActiveConversationId(conversationId);
+        upsertConversationFromStreamMeta(conversationId);
         // 业务约束：流式过程中一旦后端分配了新会话 ID，需立刻写入 URL 以支持刷新恢复。
         writeConversationIdToUrl(conversationId);
       }
@@ -1270,6 +1318,8 @@ export function useChatWorkspace(
 
     if (eventName === 'finish' && isRecord(payload)) {
       hideStreamQueueState();
+      // 业务约束：finish 事件表示模型输出已完成，需立刻恢复输入区发送态，避免“停止”按钮滞留。
+      setIsStreaming(false);
       setMessages((previousMessages) =>
         previousMessages.map((message) =>
           message.id === optimisticAssistantId

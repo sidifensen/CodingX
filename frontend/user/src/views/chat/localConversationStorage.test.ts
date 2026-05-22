@@ -42,9 +42,9 @@ describe('localConversationStorage', () => {
   });
 
   /**
-   * 云端历史、本地历史与本地工作空间应并行展示，避免历史分组被合并或隐藏。
+   * 历史分区应并回默认分组，仅保留默认入口与真实工作空间分组。
    */
-  it('应同时展示云端历史记录、本地历史记录与本地工作空间', () => {
+  it('应将历史分区并入默认分组并保留本地工作空间入口', () => {
     upsertWorkspaceSnapshot('cloud', null, {
       workspaceLabel: '历史记录',
       conversations: [{ id: '5001', title: '云端会话', status: 'ACTIVE', lastRunId: '9001' }],
@@ -63,22 +63,16 @@ describe('localConversationStorage', () => {
     ]);
 
     const allGroups = listWorkspaceGroups();
-    expect(
-      allGroups.some(
-        (group) =>
-          group.partitionKey === 'cloud::__history__' &&
-          group.groupType === 'history' &&
-          group.workspaceLabel === '历史记录',
-      ),
-    ).toBe(true);
-    expect(
-      allGroups.some(
-        (group) =>
-          group.partitionKey === 'local::__history__' &&
-          group.groupType === 'history' &&
-          group.workspaceLabel === '历史记录',
-      ),
-    ).toBe(true);
+    expect(allGroups.some((group) => group.partitionKey === 'cloud::__history__')).toBe(false);
+    expect(allGroups.some((group) => group.partitionKey === 'local::__history__')).toBe(false);
+    const cloudDefaultGroup = allGroups.find((group) => group.partitionKey === 'cloud::__no_workspace__');
+    expect(cloudDefaultGroup?.workspaceLabel).toBe('历史记录');
+    expect(cloudDefaultGroup?.groupType).toBe('workspace');
+    expect(cloudDefaultGroup?.conversations.map((conversation) => conversation.id)).toEqual(['5001', '5002']);
+    const localDefaultGroup = allGroups.find((group) => group.partitionKey === 'local::__no_workspace__');
+    expect(localDefaultGroup?.workspaceLabel).toBe('历史记录');
+    expect(localDefaultGroup?.groupType).toBe('workspace');
+    expect(localDefaultGroup?.conversations.map((conversation) => conversation.id)).toEqual(['6002']);
     expect(
       allGroups.some(
         (group) =>
@@ -90,9 +84,9 @@ describe('localConversationStorage', () => {
   });
 
   /**
-   * 刷新后历史分区应保持独立存在，避免被自动合并到默认分组导致侧栏缺项。
+   * 刷新后云端历史分区应自动并入默认云端分组，避免历史键残留导致重复入口。
    */
-  it('刷新后应保留云端历史分区，不应自动清理', () => {
+  it('刷新后应合并云端历史分区并清理历史键', () => {
     const defaultPartitionKey = buildWorkspacePartitionKey('cloud', null);
     const historyPartitionKey = buildWorkspaceHistoryPartitionKey('cloud');
     window.localStorage.setItem(
@@ -148,17 +142,10 @@ describe('localConversationStorage', () => {
     );
 
     const cloudGroups = listWorkspaceGroups('cloud');
-    expect(cloudGroups.map((group) => group.partitionKey)).toEqual([
-      defaultPartitionKey,
-      historyPartitionKey,
-    ]);
-    const historyGroup = cloudGroups.find((group) => group.partitionKey === historyPartitionKey);
-    expect(historyGroup?.groupType).toBe('history');
-    expect(historyGroup?.conversations.map((conversation) => conversation.id)).toEqual(['5002']);
-    expect(readWorkspaceSnapshot(historyPartitionKey).conversations.map((conversation) => conversation.id)).toEqual([
-      '5002',
-    ]);
-    expect(window.localStorage.getItem('codingx.chat.workspace.conversations.v1')).toContain(
+    expect(cloudGroups.map((group) => group.partitionKey)).toEqual([defaultPartitionKey]);
+    expect(cloudGroups[0].conversations.map((conversation) => conversation.id)).toEqual(['5001', '5002']);
+    expect(readWorkspaceSnapshot(historyPartitionKey).conversations).toEqual([]);
+    expect(window.localStorage.getItem('codingx.chat.workspace.conversations.v1')).not.toContain(
       historyPartitionKey,
     );
   });

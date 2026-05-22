@@ -15,6 +15,8 @@ import {
 const LOCAL_WORKSPACE_CONVERSATION_STORE_KEY = 'codingx.chat.workspace.conversations.v1';
 const WORKSPACE_HISTORY_PARTITION_SUFFIX = '__history__';
 const WORKSPACE_HISTORY_LABEL = '历史记录';
+const CLOUD_DEFAULT_WORKSPACE_LABEL = '历史记录';
+const LOCAL_DEFAULT_WORKSPACE_LABEL = '历史记录';
 
 /**
  * 统一表示单个会话在本地缓存中的完整回放数据。
@@ -106,10 +108,19 @@ export function isWorkspaceHistoryPartitionKey(partitionKey: string) {
 export function getWorkspaceLabel(workspacePath: string | null) {
   const normalizedPath = (workspacePath ?? '').replace(/\\/g, '/').replace(/\/+$/g, '');
   if (!normalizedPath) {
-    return WORKSPACE_HISTORY_LABEL;
+    return CLOUD_DEFAULT_WORKSPACE_LABEL;
   }
   const segments = normalizedPath.split('/').filter(Boolean);
   return segments.length ? segments[segments.length - 1] : normalizedPath;
+}
+
+/**
+ * 根据运行环境返回默认分区标题，避免默认分区标签来源不一致。
+ * @param runtimeTarget 运行环境。
+ * @returns 默认分区标题。
+ */
+function getDefaultWorkspaceLabel(runtimeTarget: 'cloud' | 'local') {
+  return runtimeTarget === 'local' ? LOCAL_DEFAULT_WORKSPACE_LABEL : CLOUD_DEFAULT_WORKSPACE_LABEL;
 }
 
 /**
@@ -224,14 +235,10 @@ export function listWorkspaceGroups(
           ? snapshot.conversationRecords
           : {},
     }))
+    // 历史分组仅用于兼容旧数据迁移，不在左侧渲染，避免重复出现“历史记录”。
+    .filter((group) => group.groupType !== 'history')
     .filter((group) => (runtimeTarget ? group.runtimeTarget === runtimeTarget : true))
     .sort((left, right) => {
-      const leftIsHistory = left.groupType === 'history';
-      const rightIsHistory = right.groupType === 'history';
-      // 保持“工作空间在前、历史分组在后”的稳定顺序，避免刷新/切换时视觉跳动。
-      if (leftIsHistory !== rightIsHistory) {
-        return leftIsHistory ? 1 : -1;
-      }
       // 同级分组按标签名稳定排序，确保点击/刷新后渲染顺序可预测。
       const labelCompare = left.workspaceLabel.localeCompare(right.workspaceLabel, 'zh-Hans-CN');
       if (labelCompare !== 0) {
@@ -363,16 +370,132 @@ function readStore(): LocalWorkspaceConversationStore {
         snapshots: {},
       };
     }
-    return {
+    return normalizeWorkspaceSnapshots({
       version: 1,
       snapshots: parsedStore.snapshots,
-    };
+    });
   } catch {
     return {
       version: 1,
       snapshots: {},
     };
   }
+}
+
+/**
+ * 归一化快照仓库，兼容旧版独立历史分区并将其并回默认分区。
+ * @param store 原始快照仓库。
+ * @returns 归一化后的快照仓库。
+ */
+function normalizeWorkspaceSnapshots(store: LocalWorkspaceConversationStore): LocalWorkspaceConversationStore {
+  const normalizedSnapshots = { ...store.snapshots };
+  mergeHistoryPartitionIntoDefaultGroup(normalizedSnapshots, 'local');
+  mergeHistoryPartitionIntoDefaultGroup(normalizedSnapshots, 'cloud');
+  const normalizedStore: LocalWorkspaceConversationStore = {
+    version: 1,
+    snapshots: normalizedSnapshots,
+  };
+  const normalizedSerialized = JSON.stringify(normalizedStore);
+  const rawSerialized = JSON.stringify(store);
+  if (normalizedSerialized !== rawSerialized) {
+    window.localStorage.setItem(LOCAL_WORKSPACE_CONVERSATION_STORE_KEY, normalizedSerialized);
+  }
+  return normalizedStore;
+}
+
+/**
+ * 将历史分区并入默认分区并清理历史键，保证左侧不会重复渲染历史记录入口。
+ * @param snapshots 快照集合。
+ * @param runtimeTarget 运行环境。
+ */
+function mergeHistoryPartitionIntoDefaultGroup(
+  snapshots: Record<string, LocalWorkspaceConversationSnapshot>,
+  runtimeTarget: 'cloud' | 'local',
+) {
+  const defaultPartitionKey = buildWorkspacePartitionKey(runtimeTarget, null);
+  const historyPartitionKey = buildWorkspaceHistoryPartitionKey(runtimeTarget);
+  const defaultWorkspaceLabel = getDefaultWorkspaceLabel(runtimeTarget);
+  const defaultSnapshot = snapshots[defaultPartitionKey];
+  const historySnapshot = snapshots[historyPartitionKey];
+  const effectiveDefaultSnapshot: LocalWorkspaceConversationSnapshot = defaultSnapshot
+    ? {
+        ...defaultSnapshot,
+        workspacePath: null,
+        workspaceLabel: defaultWorkspaceLabel,
+        runtimeTarget,
+      }
+    : {
+        ...EMPTY_SNAPSHOT,
+        workspacePath: null,
+        workspaceLabel: defaultWorkspaceLabel,
+        runtimeTarget,
+      };
+
+  if (!historySnapshot) {
+    snapshots[defaultPartitionKey] = effectiveDefaultSnapshot;
+    return;
+  }
+
+  const mergedConversations = mergeConversationLists(
+    Array.isArray(effectiveDefaultSnapshot.conversations) ? effectiveDefaultSnapshot.conversations : [],
+    Array.isArray(historySnapshot.conversations) ? historySnapshot.conversations : [],
+  );
+  const mergedConversationRecords = mergeConversationRecordMap(
+    effectiveDefaultSnapshot.conversationRecords ?? {},
+    historySnapshot.conversationRecords ?? {},
+  );
+
+  snapshots[defaultPartitionKey] = {
+    ...effectiveDefaultSnapshot,
+    lastOpenedAt: Math.max(effectiveDefaultSnapshot.lastOpenedAt ?? 0, historySnapshot.lastOpenedAt ?? 0),
+    activeConversationId:
+      effectiveDefaultSnapshot.activeConversationId ??
+      historySnapshot.activeConversationId ??
+      mergedConversations[0]?.id ??
+      null,
+    conversations: mergedConversations,
+    conversationRecords: mergedConversationRecords,
+  };
+  delete snapshots[historyPartitionKey];
+}
+
+/**
+ * 合并会话列表并按会话 ID 去重，优先保留主列表已存在项。
+ * @param primary 主列表。
+ * @param secondary 次列表。
+ * @returns 合并后列表。
+ */
+function mergeConversationLists(primary: ConversationItem[], secondary: ConversationItem[]) {
+  const mergedConversations = [...primary];
+  const existingConversationIds = new Set(primary.map((conversation) => conversation.id));
+  for (const conversation of secondary) {
+    if (existingConversationIds.has(conversation.id)) {
+      continue;
+    }
+    existingConversationIds.add(conversation.id);
+    mergedConversations.push(conversation);
+  }
+  return mergedConversations;
+}
+
+/**
+ * 合并会话记录映射，优先保留主分区已有记录。
+ * @param primary 主分区记录。
+ * @param secondary 次分区记录。
+ * @returns 合并后记录映射。
+ */
+function mergeConversationRecordMap(
+  primary: Record<string, LocalConversationRecord>,
+  secondary: Record<string, LocalConversationRecord>,
+) {
+  const mergedConversationRecords = { ...primary };
+  for (const [conversationId, record] of Object.entries(secondary)) {
+    if (mergedConversationRecords[conversationId]) {
+      continue;
+    }
+    mergedConversationRecords[conversationId] = record;
+  }
+  return mergedConversationRecords;
 }
 
 /**

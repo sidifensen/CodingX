@@ -22,10 +22,6 @@ export interface ChatMessageItem {
   content: string;
   skillCodes?: string[];
   attachments?: ChatAttachmentItem[];
-  /**
-   * 用户态过程时间轴节点，主区只消费该字段，不直接暴露原始工具细节。
-   */
-  processTimeline?: ChatProcessTimelineItem[];
   thinkingContent?: string;
   thinkingDuration?: number;
   mcpCalls?: McpCallItem[];
@@ -54,16 +50,6 @@ export interface MessageSearchProgressItem {
   title: string;
   url?: string;
   siteName?: string;
-}
-
-/**
- * 描述助手消息主区使用的用户态过程节点，统一承载思考、搜索与实时数据获取阶段。
- */
-export interface ChatProcessTimelineItem {
-  id: string;
-  kind: 'status' | 'search' | 'tool';
-  text: string;
-  state: 'running' | 'completed' | 'error';
 }
 
 /**

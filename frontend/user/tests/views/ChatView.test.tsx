@@ -305,9 +305,9 @@ describe('ChatView', () => {
   });
 
   /**
-   * 助手消息应优先展示用户态过程时间轴，而不是原样暴露思考长文或工具详情。
+   * 助手消息存在思考内容时，应展示可展开的思考区块。
    */
-  it('应渲染用户态过程时间轴并隐藏原始思考与工具详情标题', async () => {
+  it('应渲染助手思考内容区块', async () => {
     render(
       <ChatView
         isAuthenticated={true}
@@ -320,21 +320,8 @@ describe('ChatView', () => {
               role: 'ASSISTANT',
               content: '最终回答',
               thinkingContent: '先分析问题，再组织答案。',
-              mcpCalls: [
-                {
-                  toolId: 'weather_query',
-                  displayName: '天气查询',
-                  input: '北京天气',
-                  content: '北京今日晴',
-                },
-              ],
-              processTimeline: [
-                { id: 'timeline-1', kind: 'status', text: '正在思考', state: 'completed' },
-                { id: 'timeline-2', kind: 'search', text: '已搜索 2 个网页', state: 'completed' },
-                { id: 'timeline-3', kind: 'tool', text: '已获取数据，正在整理', state: 'completed' },
-              ],
               status: 'COMPLETED',
-            } as any,
+            },
           ],
           executionSteps: [],
           references: [],
@@ -343,20 +330,48 @@ describe('ChatView', () => {
       />,
     );
 
-    expect(screen.getByTestId('process-timeline-701')).toBeInTheDocument();
-    expect(screen.getByText('正在思考')).toBeInTheDocument();
-    expect(screen.getByText('已搜索 2 个网页')).toBeInTheDocument();
-    expect(screen.getByText('已获取数据，正在整理')).toBeInTheDocument();
-    expect(screen.queryByText('思考过程')).not.toBeInTheDocument();
-    expect(screen.queryByText('MCP 调用')).not.toBeInTheDocument();
-    expect(screen.queryByText('参数')).not.toBeInTheDocument();
-    expect(screen.queryByText('原始结果')).not.toBeInTheDocument();
+    expect(screen.getByText('思考过程')).toBeInTheDocument();
+    expect(screen.getByText('先分析问题，再组织答案。')).toBeInTheDocument();
+    expect(screen.getByTestId('thinking-toggle-button-701')).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    );
   });
 
   /**
-   * 过程时间轴应位于最终回答之前，保持“过程在上，答案在下”的阅读顺序。
+   * 思考区块标题右侧应提供显式箭头控件，避免折叠状态只能依赖浏览器默认标记。
    */
-  it('应将过程时间轴放在最终回答之前渲染', async () => {
+  it('应在思考区块标题右侧渲染箭头控件', async () => {
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          messages: [
+            {
+              id: '702',
+              conversationId: '2001',
+              role: 'ASSISTANT',
+              content: '最终回答',
+              thinkingContent: '先分析问题，再组织答案。',
+              status: 'COMPLETED',
+            },
+          ],
+          executionSteps: [],
+          references: [],
+          artifacts: [],
+        })}
+      />,
+    );
+
+    expect(screen.getByTestId('thinking-summary-702')).toBeInTheDocument();
+    expect(screen.getByTestId('thinking-toggle-icon-702')).toBeInTheDocument();
+  });
+
+  /**
+   * 思考区块应支持展开与折叠动画状态切换，且默认保持展开。
+   */
+  it('应支持思考区块默认展开并在点击后切换动画状态', async () => {
     render(
       <ChatView
         isAuthenticated={true}
@@ -368,11 +383,9 @@ describe('ChatView', () => {
               conversationId: '2001',
               role: 'ASSISTANT',
               content: '最终回答',
-              processTimeline: [
-                { id: 'timeline-1', kind: 'status', text: '正在整理答案', state: 'running' },
-              ],
-              status: 'streaming',
-            } as any,
+              thinkingContent: '这是思考内容。',
+              status: 'COMPLETED',
+            },
           ],
           executionSteps: [],
           references: [],
@@ -381,9 +394,27 @@ describe('ChatView', () => {
       />,
     );
 
-    const timeline = screen.getByTestId('process-timeline-703');
-    const answer = screen.getByText('最终回答');
-    expect(timeline.compareDocumentPosition(answer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const toggleButton = screen.getByTestId('thinking-toggle-button-703');
+    const content = screen.getByTestId('thinking-content-703');
+    const panel = screen.getByTestId('thinking-panel-703');
+
+    expect(toggleButton).toHaveAttribute('aria-expanded', 'true');
+    expect(panel).toHaveClass('w-full');
+    expect(content).toHaveClass('max-h-[640px]');
+    expect(content).toHaveClass('opacity-100');
+
+    fireEvent.click(toggleButton);
+    expect(toggleButton).toHaveAttribute('aria-expanded', 'false');
+    expect(panel).toHaveClass('w-fit');
+    expect(content).toHaveClass('max-h-0');
+    expect(content).toHaveClass('max-w-0');
+    expect(content).toHaveClass('opacity-0');
+
+    fireEvent.click(toggleButton);
+    expect(toggleButton).toHaveAttribute('aria-expanded', 'true');
+    expect(panel).toHaveClass('w-full');
+    expect(content).toHaveClass('max-h-[640px]');
+    expect(content).toHaveClass('opacity-100');
   });
 
   /**
@@ -1066,9 +1097,9 @@ describe('ChatView', () => {
   });
 
   /**
-   * 搜索与实时数据过程应统一进入时间轴，而不是分别渲染独立大面板。
+   * 助手消息存在 MCP 调用时，应展示可折叠的 MCP 调用信息面板。
    */
-  it('应在助手消息中用时间轴展示搜索与实时数据过程', async () => {
+  it('应渲染并支持折叠MCP调用面板', async () => {
     render(
       <ChatView
         isAuthenticated={true}
@@ -1076,35 +1107,23 @@ describe('ChatView', () => {
         workspace={createWorkspace({
           messages: [
             {
-              id: '951',
+              id: '801',
               conversationId: '2001',
               role: 'ASSISTANT',
-              content: '正在汇总检索结果',
-              status: 'streaming',
-              searchProgress: {
-                status: 'running',
-                items: [
-                  {
-                    id: 'ref-1',
-                    title: 'OpenAI API 最新变更',
-                    siteName: 'OpenAI',
-                    url: 'https://platform.openai.com',
-                  },
-                ],
-              },
+              content: '已完成天气查询',
               mcpCalls: [
                 {
                   toolId: 'weather_query',
                   displayName: '天气查询',
-                  input: '北京天气',
-                  content: '处理中',
+                  input: '北京今天天气怎么样',
+                  content: '北京今日晴，最高 28°C',
+                  metadata: {
+                    source: 'open-meteo',
+                  },
                 },
               ],
-              processTimeline: [
-                { id: 'timeline-1', kind: 'search', text: '已搜索 1 个网页', state: 'completed' },
-                { id: 'timeline-2', kind: 'tool', text: '正在获取实时数据', state: 'running' },
-              ],
-            } as any,
+              status: 'COMPLETED',
+            },
           ],
           executionSteps: [],
           references: [],
@@ -1113,10 +1132,89 @@ describe('ChatView', () => {
       />,
     );
 
-    expect(screen.getByTestId('process-timeline-951')).toBeInTheDocument();
-    expect(screen.getByText('已搜索 1 个网页')).toBeInTheDocument();
-    expect(screen.getByText('正在获取实时数据')).toBeInTheDocument();
-    expect(screen.queryByText('MCP 调用')).not.toBeInTheDocument();
+    const panel = screen.getByTestId('mcp-call-panel-801');
+    const panelTitle = screen.getByText('MCP 调用');
+    expect(panel).toBeInTheDocument();
+    expect(panel).toHaveClass('px-4');
+    expect(panel).toHaveClass('py-3');
+    expect(panelTitle).toBeInTheDocument();
+    expect(panelTitle).toHaveClass('shrink-0');
+    expect(screen.getByText('天气查询')).toBeInTheDocument();
+    expect(screen.getByText('北京今天天气怎么样')).toBeInTheDocument();
+    expect(screen.getByTestId('mcp-call-status-801')).toHaveTextContent('调用完成');
+
+    const toggleButton = screen.getByTestId('mcp-call-toggle-button-801');
+    expect(toggleButton).toHaveAttribute('aria-expanded', 'true');
+    fireEvent.click(toggleButton);
+    expect(toggleButton).toHaveAttribute('aria-expanded', 'false');
+    expect(panel).toHaveClass('px-4');
+    expect(panel).toHaveClass('py-3');
+  });
+
+  /**
+   * MCP 调用状态在流结束后应至少短暂停留“调用中”，避免状态闪现导致用户难以感知。
+   */
+  it('应在流结束后维持MCP调用中状态最短可见时长', async () => {
+    vi.useFakeTimers();
+    try {
+      const streamingWorkspace = createWorkspace({
+        messages: [
+          {
+            id: '901',
+            conversationId: '2001',
+            role: 'ASSISTANT',
+            content: '处理中',
+            mcpCalls: [
+              {
+                toolId: 'weather_query',
+                displayName: '天气查询',
+                input: '美国天气',
+                content: '处理中',
+              },
+            ],
+            status: 'streaming',
+          },
+        ],
+        executionSteps: [],
+        references: [],
+        artifacts: [],
+      });
+      const { rerender } = render(
+        <ChatView
+          isAuthenticated={true}
+          onRequireLogin={vi.fn()}
+          workspace={streamingWorkspace}
+        />,
+      );
+
+      expect(screen.getByTestId('mcp-call-status-901')).toHaveTextContent('调用中');
+
+      const completedWorkspace = {
+        ...streamingWorkspace,
+        messages: [
+          {
+            ...streamingWorkspace.messages[0],
+            content: '已完成',
+            status: 'COMPLETED',
+          },
+        ],
+      };
+      rerender(
+        <ChatView
+          isAuthenticated={true}
+          onRequireLogin={vi.fn()}
+          workspace={completedWorkspace}
+        />,
+      );
+
+      expect(screen.getByTestId('mcp-call-status-901')).toHaveTextContent('调用中');
+      act(() => {
+        vi.advanceTimersByTime(1000);
+      });
+      expect(screen.getByTestId('mcp-call-status-901')).toHaveTextContent('调用完成');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

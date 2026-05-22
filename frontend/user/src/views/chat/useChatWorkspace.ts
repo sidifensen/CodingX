@@ -8,7 +8,6 @@ import {
   ArtifactItem,
   ChatAttachmentItem,
   ChatExpertItem,
-  ChatProcessTimelineItem,
   ChatSkillItem,
   CurrentExpertItem,
   CurrentMcpItem,
@@ -845,7 +844,6 @@ export function useChatWorkspace(
         conversationId: optimisticConversationId,
         role: 'ASSISTANT',
         content: '',
-        processTimeline: [],
         status: 'streaming',
       },
     ];
@@ -909,7 +907,6 @@ export function useChatWorkspace(
             message.id === optimisticAssistantId
               ? {
                   ...message,
-                  processTimeline: settleProcessTimelineItems(message.processTimeline, 'completed'),
                   status: 'cancelled',
                   searchProgress: message.searchProgress
                     ? {
@@ -925,25 +922,6 @@ export function useChatWorkspace(
       } else if (error instanceof ChatApi.UnauthorizedError) {
         onUnauthorizedRef.current?.();
       } else {
-        setMessages((previousMessages) =>
-          previousMessages.map((message) =>
-            message.id === optimisticAssistantId
-              ? {
-                  ...message,
-                  status: 'error',
-                  errorMessage:
-                    error instanceof Error ? error.message : UserErrorMessages.CHAT_REQUEST_FAILED,
-                  processTimeline: settleProcessTimelineItems(message.processTimeline, 'error'),
-                  searchProgress: message.searchProgress
-                    ? {
-                        ...message.searchProgress,
-                        status: 'error',
-                      }
-                    : undefined,
-                }
-              : message,
-          ),
-        );
         setStreamError(error instanceof Error ? error.message : UserErrorMessages.CHAT_REQUEST_FAILED);
       }
     } finally {
@@ -971,10 +949,9 @@ export function useChatWorkspace(
     if (activeMessageId) {
       setMessages((previousMessages) =>
         previousMessages.map((message) =>
-            message.id === activeMessageId
-              ? {
+          message.id === activeMessageId
+            ? {
                 ...message,
-                processTimeline: settleProcessTimelineItems(message.processTimeline, 'completed'),
                 status: 'cancelled',
               }
             : message,
@@ -1231,7 +1208,6 @@ export function useChatWorkspace(
                 ...message,
                 status: 'error',
                 errorMessage: resolvedMessage,
-                processTimeline: settleProcessTimelineItems(message.processTimeline, 'error'),
                 searchProgress: message.searchProgress
                   ? {
                       ...message.searchProgress,
@@ -1267,12 +1243,6 @@ export function useChatWorkspace(
           message.id === optimisticAssistantId
             ? {
                 ...message,
-                processTimeline: upsertProcessTimelineItem(message.processTimeline ?? [], {
-                  id: `${optimisticAssistantId}-thinking`,
-                  kind: 'status',
-                  text: '正在思考',
-                  state: 'running',
-                }),
                 thinkingContent: `${message.thinkingContent ?? ''}${delta}`,
               }
             : message,
@@ -1322,12 +1292,6 @@ export function useChatWorkspace(
             ? {
                 ...message,
                 mcpCalls: mergeMcpCallsById(message.mcpCalls ?? [], call),
-                processTimeline: upsertProcessTimelineItem(message.processTimeline ?? [], {
-                  id: `tool-${call.callId ?? call.toolId ?? 'default'}`,
-                  kind: 'tool',
-                  text: buildToolProcessText(call),
-                  state: resolveToolProcessState(call),
-                }),
               }
             : message,
         ),
@@ -1355,12 +1319,6 @@ export function useChatWorkspace(
             message.id === optimisticAssistantId
               ? {
                   ...message,
-                  processTimeline: upsertProcessTimelineItem(message.processTimeline ?? [], {
-                    id: `${optimisticAssistantId}-search`,
-                    kind: 'search',
-                    text: '正在搜索相关资料',
-                    state: 'running',
-                  }),
                   searchProgress: {
                     status: 'running',
                     items: message.searchProgress?.items ?? [],
@@ -1395,25 +1353,17 @@ export function useChatWorkspace(
           if (message.id !== optimisticAssistantId) {
             return message;
           }
-          const nextSearchItems = upsertById(message.searchProgress?.items ?? [], {
-            id: nextReference.id,
-            title: nextReference.title,
-            url: nextReference.url,
-            siteName: nextReference.siteName,
-          });
-          const nextSearchProgress: MessageSearchProgress = {
-            status: 'running',
-            items: nextSearchItems,
-          };
           return {
             ...message,
-            processTimeline: upsertProcessTimelineItem(message.processTimeline ?? [], {
-              id: `${optimisticAssistantId}-search`,
-              kind: 'search',
-              text: buildSearchProcessText(nextSearchProgress),
-              state: resolveSearchProcessState(nextSearchProgress.status),
-            }),
-            searchProgress: nextSearchProgress,
+            searchProgress: {
+              status: 'running',
+              items: upsertById(message.searchProgress?.items ?? [], {
+                id: nextReference.id,
+                title: nextReference.title,
+                url: nextReference.url,
+                siteName: nextReference.siteName,
+              }),
+            },
           };
         }),
       );
@@ -1465,10 +1415,6 @@ export function useChatWorkspace(
             ? {
                 ...message,
                 content: String(payload.content ?? message.content),
-                processTimeline: settleProcessTimelineItems(
-                  message.processTimeline,
-                  'completed',
-                ),
                 status: 'done',
                 searchProgress: message.searchProgress
                   ? {
@@ -1490,7 +1436,6 @@ export function useChatWorkspace(
           message.id === optimisticAssistantId
             ? {
                 ...message,
-                processTimeline: settleProcessTimelineItems(message.processTimeline, 'completed'),
                 status: 'cancelled',
                 searchProgress: message.searchProgress
                   ? {
@@ -1514,7 +1459,6 @@ export function useChatWorkspace(
                 ...message,
                 status: 'error',
                 errorMessage: String(payload.message ?? UserErrorMessages.CHAT_REQUEST_FAILED),
-                processTimeline: settleProcessTimelineItems(message.processTimeline, 'error'),
                 searchProgress: message.searchProgress
                   ? {
                       ...message.searchProgress,
@@ -2220,104 +2164,6 @@ function upsertById<T extends { id: string }>(items: T[], nextItem: T): T[] {
 }
 
 /**
- * 按节点标识更新或插入用户态过程节点，保证主区始终按阶段顺序展示一条稳定时间轴。
- * @param items 旧过程节点。
- * @param nextItem 新节点。
- * @returns 合并后的过程节点。
- */
-function upsertProcessTimelineItem(
-  items: ChatProcessTimelineItem[],
-  nextItem: ChatProcessTimelineItem,
-): ChatProcessTimelineItem[] {
-  return upsertById(items, nextItem);
-}
-
-/**
- * 把搜索进度结构映射成用户可读短句，避免主区直接暴露来源列表面板。
- * @param progress 搜索进度。
- * @returns 用户态搜索文案。
- */
-function buildSearchProcessText(progress: MessageSearchProgress): string {
-  if (progress.items.length > 0) {
-    return `已搜索 ${progress.items.length} 个网页`;
-  }
-  if (progress.status === 'error') {
-    return '搜索资料失败';
-  }
-  return '正在搜索相关资料';
-}
-
-/**
- * 将搜索进度状态映射为过程节点状态。
- * @param status 搜索状态。
- * @returns 过程节点状态。
- */
-function resolveSearchProcessState(
-  status: MessageSearchProgress['status'],
-): ChatProcessTimelineItem['state'] {
-  if (status === 'error') {
-    return 'error';
-  }
-  if (status === 'completed') {
-    return 'completed';
-  }
-  return 'running';
-}
-
-/**
- * 将单次 MCP 调用映射为用户态实时数据节点文案。
- * @param call MCP 调用。
- * @returns 用户态文案。
- */
-function buildToolProcessText(call: McpCallItem): string {
-  if (call.status === 'error' || call.phase === 'error') {
-    return '获取实时数据失败';
-  }
-  if (call.status === 'completed' || call.phase === 'complete') {
-    return '已获取数据，正在整理';
-  }
-  return '正在获取实时数据';
-}
-
-/**
- * 把一次 MCP 调用映射为用户态过程节点状态。
- * @param call MCP 调用。
- * @returns 过程节点状态。
- */
-function resolveToolProcessState(call: McpCallItem): ChatProcessTimelineItem['state'] {
-  if (call.status === 'error' || call.phase === 'error') {
-    return 'error';
-  }
-  if (call.status === 'completed' || call.phase === 'complete') {
-    return 'completed';
-  }
-  return 'running';
-}
-
-/**
- * 将消息中的运行中过程节点统一收敛为目标状态，避免流结束后仍停留在“进行中”。
- * @param items 过程节点列表。
- * @param nextState 目标状态。
- * @returns 收敛后的过程节点。
- */
-function settleProcessTimelineItems(
-  items: ChatProcessTimelineItem[] | undefined,
-  nextState: ChatProcessTimelineItem['state'],
-): ChatProcessTimelineItem[] | undefined {
-  if (!items || items.length === 0) {
-    return items;
-  }
-  return items.map((item) =>
-    item.state === 'running'
-      ? {
-          ...item,
-          state: nextState,
-        }
-      : item,
-  );
-}
-
-/**
  * 归一化 MCP 调用阶段，未知值按 complete 兜底，保证旧事件可展示。
  * @param phaseValue 原始阶段字段。
  * @returns 标准化阶段。
@@ -2540,52 +2386,6 @@ function deriveMcpCallsFromSteps(executionSteps: ExecutionStepItem[]): McpCallIt
 }
 
 /**
- * 基于消息现有字段兜底生成用户态过程时间轴，保证旧回放数据也能落到统一展示模型。
- * @param message 助手消息。
- * @param options 兜底使用的搜索与 MCP 字段。
- * @returns 过程时间轴；无过程信息时返回 undefined。
- */
-function deriveProcessTimelineFromMessage(
-  message: ChatMessageItem,
-  options?: {
-    mcpCalls?: McpCallItem[];
-    searchProgress?: MessageSearchProgress;
-  },
-): ChatProcessTimelineItem[] | undefined {
-  if (message.processTimeline && message.processTimeline.length > 0) {
-    return message.processTimeline;
-  }
-  const timeline: ChatProcessTimelineItem[] = [];
-  if (message.thinkingContent && message.thinkingContent.trim().length > 0) {
-    timeline.push({
-      id: `${message.id}-thinking`,
-      kind: 'status',
-      text: '正在思考',
-      state: message.status === 'error' ? 'error' : message.status === 'streaming' ? 'running' : 'completed',
-    });
-  }
-  const searchProgress = options?.searchProgress ?? message.searchProgress;
-  if (searchProgress) {
-    timeline.push({
-      id: `${message.id}-search`,
-      kind: 'search',
-      text: buildSearchProcessText(searchProgress),
-      state: resolveSearchProcessState(searchProgress.status),
-    });
-  }
-  const mcpCalls = options?.mcpCalls ?? message.mcpCalls;
-  mcpCalls?.forEach((call, index) => {
-    timeline.push({
-      id: `tool-${call.callId ?? call.toolId ?? index}`,
-      kind: 'tool',
-      text: buildToolProcessText(call),
-      state: resolveToolProcessState(call),
-    });
-  });
-  return timeline.length > 0 ? timeline : undefined;
-}
-
-/**
  * 从当前消息列表中读取末条助手消息的面板字段，用于会话回放时兜底补齐。
  * @param messages 消息列表。
  * @returns 面板字段快照。
@@ -2593,7 +2393,6 @@ function deriveProcessTimelineFromMessage(
 function readLatestAssistantPanelState(messages: ChatMessageItem[]): {
   mcpCalls?: McpCallItem[];
   searchProgress?: MessageSearchProgress;
-  processTimeline?: ChatProcessTimelineItem[];
 } {
   const latestAssistantMessage = [...messages]
     .reverse()
@@ -2604,7 +2403,6 @@ function readLatestAssistantPanelState(messages: ChatMessageItem[]): {
   return {
     mcpCalls: latestAssistantMessage.mcpCalls,
     searchProgress: latestAssistantMessage.searchProgress,
-    processTimeline: latestAssistantMessage.processTimeline,
   };
 }
 
@@ -2651,17 +2449,10 @@ function patchLatestAssistantReplayPanels(
     latestAssistantMessage.searchProgress ??
     previousPanelState.searchProgress ??
     replaySearchProgress;
-  const nextProcessTimeline =
-    deriveProcessTimelineFromMessage(latestAssistantMessage, {
-      mcpCalls: nextMcpCalls,
-      searchProgress: nextSearchProgress,
-    }) ??
-    previousPanelState.processTimeline;
   const shouldPatch =
     (nextMcpCalls && nextMcpCalls.length > 0) !=
       ((latestAssistantMessage.mcpCalls?.length ?? 0) > 0) ||
-    nextSearchProgress !== latestAssistantMessage.searchProgress ||
-    nextProcessTimeline !== latestAssistantMessage.processTimeline;
+    nextSearchProgress !== latestAssistantMessage.searchProgress;
   if (!shouldPatch) {
     return replayMessages;
   }
@@ -2670,7 +2461,6 @@ function patchLatestAssistantReplayPanels(
       ? {
           ...message,
           mcpCalls: nextMcpCalls,
-          processTimeline: nextProcessTimeline,
           searchProgress: nextSearchProgress,
         }
       : message,

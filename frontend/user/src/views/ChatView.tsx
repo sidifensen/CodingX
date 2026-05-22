@@ -31,7 +31,6 @@ import { AuthStorage } from '../utils/authStorage';
 import { ChatApi } from './chat/chatApi';
 import {
   ChatAttachmentItem,
-  ChatProcessTimelineItem,
   ChatWorkspaceController,
   McpItem,
   McpCallItem,
@@ -795,7 +794,6 @@ export default function ChatView({
                 const isLatestMessage = message.id === messages[messages.length - 1]?.id;
                 const messageContent =
                   message.content || (message.status === 'streaming' ? '正在生成回答...' : '');
-                const processTimeline = isAssistant ? buildDisplayProcessTimeline(message) : [];
                 return (
                   <div
                     key={message.id}
@@ -811,8 +809,24 @@ export default function ChatView({
                     >
                       {isAssistant ? (
                         <>
-                          {processTimeline.length > 0 ? (
-                            <ProcessTimeline messageId={message.id} items={processTimeline} />
+                          {message.thinkingContent ? (
+                            <ThinkingPanel
+                              messageId={message.id}
+                              content={message.thinkingContent}
+                            />
+                          ) : null}
+                          {message.mcpCalls && message.mcpCalls.length > 0 ? (
+                            <McpCallPanel
+                              messageId={message.id}
+                              calls={message.mcpCalls}
+                              messageStatus={message.status}
+                            />
+                          ) : null}
+                          {message.searchProgress ? (
+                            <SearchProgressPanel
+                              messageId={message.id}
+                              progress={message.searchProgress}
+                            />
                           ) : null}
                           {message.attachments && message.attachments.length > 0 ? (
                             <MessageAttachmentList
@@ -1730,198 +1744,394 @@ export default function ChatView({
 }
 
 /**
- * 把消息中的原始过程字段收敛为主区可用的用户态时间轴节点。
- * @param message 聊天消息。
- * @returns 用于主区展示的过程节点列表。
+ * 渲染助手“思考过程”折叠面板，默认展开并通过过渡类提供展开/收起动画。
  */
-function buildDisplayProcessTimeline(
-  message: ChatWorkspaceController['messages'][number],
-): ChatProcessTimelineItem[] {
-  if (message.processTimeline && message.processTimeline.length > 0) {
-    return message.processTimeline;
-  }
-  const timeline: ChatProcessTimelineItem[] = [];
-  if (message.thinkingContent && message.thinkingContent.trim().length > 0) {
-    timeline.push({
-      id: `${message.id}-thinking`,
-      kind: 'status',
-      text: '正在思考',
-      state: resolveProcessTimelineState(message.status),
-    });
-  }
-  if (message.searchProgress) {
-    timeline.push({
-      id: `${message.id}-search`,
-      kind: 'search',
-      text: buildSearchTimelineText(message.searchProgress),
-      state: resolveSearchTimelineState(message.searchProgress.status),
-    });
-  }
-  message.mcpCalls?.forEach((call, index) => {
-    timeline.push({
-      id: `tool-${call.callId ?? call.toolId ?? index}`,
-      kind: 'tool',
-      text: buildToolTimelineText(call),
-      state: resolveToolTimelineState(call),
-    });
-  });
-  return timeline;
-}
+function ThinkingPanel({ messageId, content }: { messageId: string; content: string }) {
+  // 步骤：思考面板在首次渲染时默认展开，减少用户额外点击成本。
+  const [isExpanded, setIsExpanded] = React.useState(true);
+  const contentId = `thinking-content-panel-${messageId}`;
 
-/**
- * 将消息状态映射为过程节点状态。
- * @param messageStatus 消息状态。
- * @returns 过程节点状态。
- */
-function resolveProcessTimelineState(messageStatus: string): ChatProcessTimelineItem['state'] {
-  const normalizedStatus = messageStatus.trim().toLowerCase();
-  if (normalizedStatus === 'error') {
-    return 'error';
-  }
-  if (normalizedStatus === 'streaming') {
-    return 'running';
-  }
-  return 'completed';
-}
-
-/**
- * 生成搜索阶段的用户态短文案。
- * @param progress 搜索进度。
- * @returns 文案。
- */
-function buildSearchTimelineText(
-  progress: NonNullable<ChatWorkspaceController['messages'][number]['searchProgress']>,
-): string {
-  if (progress.items.length > 0) {
-    return `已搜索 ${progress.items.length} 个网页`;
-  }
-  if (progress.status === 'error') {
-    return '搜索资料失败';
-  }
-  return '正在搜索相关资料';
-}
-
-/**
- * 将搜索状态映射为时间轴节点状态。
- * @param status 搜索状态。
- * @returns 节点状态。
- */
-function resolveSearchTimelineState(
-  status: NonNullable<ChatWorkspaceController['messages'][number]['searchProgress']>['status'],
-): ChatProcessTimelineItem['state'] {
-  if (status === 'error') {
-    return 'error';
-  }
-  if (status === 'completed') {
-    return 'completed';
-  }
-  return 'running';
-}
-
-/**
- * 生成实时数据阶段的用户态短文案。
- * @param call MCP 调用。
- * @returns 文案。
- */
-function buildToolTimelineText(call: McpCallItem): string {
-  if (call.status === 'error' || call.phase === 'error') {
-    return '获取实时数据失败';
-  }
-  if (call.status === 'completed' || call.phase === 'complete') {
-    return '已获取数据，正在整理';
-  }
-  return '正在获取实时数据';
-}
-
-/**
- * 将 MCP 调用状态映射为时间轴节点状态。
- * @param call MCP 调用。
- * @returns 节点状态。
- */
-function resolveToolTimelineState(call: McpCallItem): ChatProcessTimelineItem['state'] {
-  if (call.status === 'error' || call.phase === 'error') {
-    return 'error';
-  }
-  if (call.status === 'completed' || call.phase === 'complete') {
-    return 'completed';
-  }
-  return 'running';
-}
-
-/**
- * 渲染主区用户态过程时间轴，统一承载思考、搜索与实时数据阶段。
- */
-function ProcessTimeline({
-  messageId,
-  items,
-}: {
-  messageId: string;
-  items: ChatProcessTimelineItem[];
-}) {
   return (
     <section
-      data-testid={`process-timeline-${messageId}`}
-      className="mb-3 rounded-2xl border border-border bg-surface-container/80 px-4 py-3"
+      data-testid={`thinking-panel-${messageId}`}
+      // 步骤：折叠态改为自适应宽度胶囊，且展开/折叠保持同一内边距，避免标题产生位移抖动。
+      className={`mb-3 rounded-2xl border border-border bg-surface-container text-sm text-muted transition-[width,padding] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] ${
+        isExpanded ? 'w-full px-4 py-3' : 'w-fit px-4 py-3'
+      }`}
     >
-      <ol className="space-y-2">
-        {items.map((item, index) => {
-          const LeadingIcon =
-            item.kind === 'search'
-              ? Search
-              : item.kind === 'tool'
-                ? WandSparkles
-                : Brain;
-          const StatusIcon =
-            item.state === 'error'
-              ? CircleStop
-              : item.state === 'completed'
-                ? CheckCircle2
-                : null;
-          const statusLabel =
-            item.state === 'error'
-              ? '异常'
-              : item.state === 'completed'
-                ? '完成'
-                : '进行中';
-          return (
-            <li
-              key={item.id}
-              data-testid={`process-timeline-item-${messageId}-${index}`}
-              className="flex items-start gap-3 rounded-xl border border-border/70 bg-surface/75 px-3 py-2.5"
-            >
-              <span
-                className={`mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border ${
-                  item.state === 'error'
-                    ? 'border-red-500/25 bg-red-500/10 text-red-300'
-                    : item.state === 'completed'
-                      ? 'border-border bg-surface-container text-foreground'
-                      : 'border-emerald-500/25 bg-emerald-500/10 text-emerald-300'
-                }`}
-              >
-                <LeadingIcon size={15} />
-              </span>
-              <div className="min-w-0 flex-1">
-                <div className="text-sm leading-6 text-foreground">{item.text}</div>
-              </div>
-              <span
-                className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] ${
-                  item.state === 'error'
-                    ? 'border-red-500/25 bg-red-500/10 text-red-300'
-                    : item.state === 'completed'
-                      ? 'border-border bg-surface text-muted'
-                      : 'border-emerald-500/25 bg-emerald-500/10 text-emerald-300'
-                }`}
-              >
-                {StatusIcon ? <StatusIcon size={12} /> : null}
-                <span>{statusLabel}</span>
-              </span>
-            </li>
-          );
-        })}
-      </ol>
+      <div
+        data-testid={`thinking-summary-${messageId}`}
+        className="flex items-center gap-3 font-medium text-foreground"
+      >
+        <span>思考过程</span>
+        <button
+          type="button"
+          data-testid={`thinking-toggle-button-${messageId}`}
+          aria-expanded={isExpanded}
+          aria-controls={contentId}
+          aria-label={isExpanded ? '折叠思考过程' : '展开思考过程'}
+          onClick={() => setIsExpanded((current) => !current)}
+          className="flex h-7 w-7 items-center justify-center rounded-full border border-border bg-surface text-muted transition-colors hover:text-foreground"
+        >
+          <span
+            data-testid={`thinking-toggle-icon-${messageId}`}
+            aria-hidden="true"
+            className="flex h-7 w-7 items-center justify-center"
+          >
+            <ChevronDown
+              size={15}
+              className={`transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}
+            />
+          </span>
+        </button>
+      </div>
+      <div
+        id={contentId}
+        data-testid={`thinking-content-${messageId}`}
+        // 步骤：内容区保持挂载，通过高度/透明度过渡实现展开与折叠动画，避免闪烁和重排跳变。
+        className={`overflow-hidden transition-all duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] ${
+          isExpanded
+            ? 'mt-3 max-h-[640px] max-w-full translate-y-0 opacity-100'
+            : 'mt-0 max-h-0 max-w-0 -translate-y-1 opacity-0 pointer-events-none'
+        }`}
+      >
+        <div className="whitespace-pre-wrap leading-6">{content}</div>
+      </div>
     </section>
   );
 }
+
+/**
+ * 渲染助手消息中的 MCP 调用折叠面板，展示工具、入参与返回片段。
+ */
+function McpCallPanel({
+  messageId,
+  calls,
+  messageStatus,
+}: {
+  messageId: string;
+  calls: McpCallItem[];
+  messageStatus: string;
+}) {
+  // 步骤：调用状态至少保留短暂可见时长，避免“调用中”在完成瞬间闪烁造成不可感知。
+  const MCP_CALL_RUNNING_MIN_VISIBLE_MS = 1000;
+  const [isExpanded, setIsExpanded] = React.useState(true);
+  const hasRunningCall = calls.some((call) => call.status === 'running' || call.phase === 'start');
+  const hasErrorCall = calls.some((call) => call.status === 'error' || call.phase === 'error');
+  const targetStatus: 'running' | 'completed' | 'error' =
+    hasRunningCall || messageStatus === 'streaming'
+      ? 'running'
+      : hasErrorCall
+        ? 'error'
+        : 'completed';
+  const [displayStatus, setDisplayStatus] = React.useState<'running' | 'completed' | 'error'>(
+    targetStatus,
+  );
+  const runningStartedAtRef = React.useRef<number | null>(
+    targetStatus === 'running' ? Date.now() : null,
+  );
+  const contentId = `mcp-call-content-panel-${messageId}`;
+  const isRunning = displayStatus === 'running';
+  const isError = displayStatus === 'error';
+
+  React.useEffect(() => {
+    // 步骤：基于消息流状态驱动调用徽标，并在完成后维持最小时长再切到“调用完成”。
+    if (targetStatus === 'running') {
+      if (runningStartedAtRef.current == null) {
+        runningStartedAtRef.current = Date.now();
+      }
+      setDisplayStatus('running');
+      return;
+    }
+    if (targetStatus === 'error') {
+      runningStartedAtRef.current = null;
+      setDisplayStatus('error');
+      return;
+    }
+    const runningStartedAt = runningStartedAtRef.current;
+    if (runningStartedAt == null) {
+      setDisplayStatus('completed');
+      return;
+    }
+    const elapsed = Date.now() - runningStartedAt;
+    const remaining = Math.max(0, MCP_CALL_RUNNING_MIN_VISIBLE_MS - elapsed);
+    if (remaining === 0) {
+      runningStartedAtRef.current = null;
+      setDisplayStatus('completed');
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      runningStartedAtRef.current = null;
+      setDisplayStatus('completed');
+    }, remaining);
+    return () => window.clearTimeout(timer);
+  }, [targetStatus]);
+
+  return (
+    <section
+      data-testid={`mcp-call-panel-${messageId}`}
+      // 步骤：折叠态保持与展开态一致的内边距，避免标题在宽度过渡时产生视觉收缩。
+      className={`mb-3 rounded-2xl border border-border bg-surface-container text-sm text-muted transition-[width,padding] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] ${
+        isExpanded ? 'w-full px-4 py-3' : 'w-fit px-4 py-3'
+      }`}
+    >
+      <div className="flex items-center gap-3 font-medium text-foreground">
+        <span className="shrink-0 whitespace-nowrap">MCP 调用</span>
+        <span className="shrink-0 rounded-full border border-border bg-surface px-2 py-0.5 text-[11px] text-muted">
+          {calls.length}
+        </span>
+        <span
+          data-testid={`mcp-call-status-${messageId}`}
+          className={`shrink-0 rounded-full border px-2 py-0.5 text-[11px] ${
+            isRunning
+              ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+              : isError
+                ? 'border-red-500/30 bg-red-500/10 text-red-300'
+                : 'border-border bg-surface text-muted'
+          }`}
+        >
+          {isRunning ? '调用中' : isError ? '调用异常' : '调用完成'}
+        </span>
+        <button
+          type="button"
+          data-testid={`mcp-call-toggle-button-${messageId}`}
+          aria-expanded={isExpanded}
+          aria-controls={contentId}
+          aria-label={isExpanded ? '折叠MCP调用详情' : '展开MCP调用详情'}
+          onClick={() => setIsExpanded((current) => !current)}
+          className="shrink-0 flex h-7 w-7 items-center justify-center rounded-full border border-border bg-surface text-muted transition-colors hover:text-foreground"
+        >
+          <ChevronDown
+            size={15}
+            className={`transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}
+          />
+        </button>
+      </div>
+      <div
+        id={contentId}
+        className={`overflow-hidden transition-[margin,max-height,opacity,transform] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] ${
+          // 业务意图：MCP 面板展开时完整展示结果，避免固定高度导致长结果被截断。
+          // 关键约束：max-width 不参与过渡，收起时立即置零，避免容器宽度在中间态被内容宽度“卡住”。
+          isExpanded
+            ? 'mt-3 max-h-none max-w-full translate-y-0 opacity-100'
+            : 'mt-0 max-h-0 max-w-0 -translate-y-1 opacity-0 pointer-events-none'
+        }`}
+      >
+        <div className="space-y-3">
+          {calls.map((call, index) => (
+            <article
+              key={`${call.toolId}-${index}`}
+              data-testid={`mcp-call-item-${messageId}-${index}`}
+              className="rounded-xl border border-border bg-surface px-3 py-2.5"
+            >
+              {/*
+                业务意图：优先展示 MCP 真实参数与原始结果，避免与用户提问/助手回答内容重复。
+              */}
+              {(() => {
+                const parameterText = formatStructuredPayload(call.params ?? call.input);
+                const rawResultText = formatStructuredPayload(call.rawResult ?? call.content);
+                const metadataText = formatStructuredPayload(call.resultMetadata ?? call.metadata);
+                const progressText = formatStructuredPayload(call.progressText ?? call.progressDetail);
+                return (
+                  <>
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-medium text-foreground">
+                          {call.displayName || call.toolId}
+                        </div>
+                        <div className="mt-1 font-mono text-[11px] text-muted">/{call.toolId}</div>
+                      </div>
+                    </div>
+                    {parameterText ? (
+                      <div className="mt-2 rounded-lg bg-surface-container px-2.5 py-2">
+                        <div className="text-[11px] uppercase tracking-[0.16em] text-muted">参数</div>
+                        <pre className="mt-1 whitespace-pre-wrap text-xs leading-5 text-foreground">
+                          {parameterText}
+                        </pre>
+                      </div>
+                    ) : null}
+                    {progressText && call.status === 'running' ? (
+                      <div className="mt-2 rounded-lg bg-surface-container px-2.5 py-2">
+                        <div className="text-[11px] uppercase tracking-[0.16em] text-muted">
+                          进度
+                        </div>
+                        <pre className="mt-1 whitespace-pre-wrap text-xs leading-5 text-foreground">
+                          {progressText}
+                        </pre>
+                      </div>
+                    ) : null}
+                    {rawResultText ? (
+                      <div className="mt-2 rounded-lg bg-surface-container px-2.5 py-2">
+                        <div className="text-[11px] uppercase tracking-[0.16em] text-muted">
+                          原始结果
+                        </div>
+                        <pre className="mt-1 whitespace-pre-wrap text-xs leading-5 text-foreground">
+                          {rawResultText}
+                        </pre>
+                      </div>
+                    ) : null}
+                    {metadataText ? (
+                      <div className="mt-2 rounded-lg bg-surface-container px-2.5 py-2">
+                        <div className="text-[11px] uppercase tracking-[0.16em] text-muted">
+                          元数据
+                        </div>
+                        <pre className="mt-1 whitespace-pre-wrap text-xs leading-5 text-foreground">
+                          {metadataText}
+                        </pre>
+                      </div>
+                    ) : null}
+                  </>
+                );
+              })()}
+            </article>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/**
+ * 把结构化对象格式化为可读 JSON，字符串保持原样，供 MCP 参数/结果展示复用。
+ * @param value 原始字段值。
+ * @returns 可展示文本。
+ */
+function formatStructuredPayload(value: unknown): string {
+  if (value == null) {
+    return '';
+  }
+  if (typeof value === 'string') {
+    return value;
+  }
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
+}
+
+/**
+ * 在助手消息中展示联网检索进度，避免长耗时检索期间用户无反馈。
+ */
+function SearchProgressPanel({
+  messageId,
+  progress,
+}: {
+  messageId: string;
+  progress: NonNullable<ChatWorkspaceController['messages'][number]['searchProgress']>;
+}) {
+  const [isExpanded, setIsExpanded] = React.useState(true);
+  const contentId = `search-progress-content-panel-${messageId}`;
+  const normalizedStatus =
+    progress.status === 'running'
+      ? 'running'
+      : progress.status === 'completed'
+        ? 'completed'
+        : progress.status === 'cancelled'
+          ? 'cancelled'
+          : 'error';
+  const statusLabel =
+    normalizedStatus === 'running'
+      ? '搜索中'
+      : normalizedStatus === 'completed'
+        ? '搜索完成'
+        : normalizedStatus === 'cancelled'
+          ? '已停止'
+          : '搜索异常';
+  const countLabel =
+    normalizedStatus === 'running'
+      ? `已检索 ${progress.items.length} 个网站`
+      : `共检索 ${progress.items.length} 个网站`;
+
+  return (
+    <section
+      data-testid={`search-progress-panel-${messageId}`}
+      className={`mb-3 rounded-2xl border border-border bg-surface-container text-sm text-muted transition-[width,padding] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] ${
+        isExpanded ? 'w-full px-4 py-3' : 'w-fit px-3 py-2'
+      }`}
+    >
+      <div className="flex flex-wrap items-center gap-2.5 font-medium text-foreground">
+        <span>联网搜索</span>
+        <span
+          data-testid={`search-progress-count-${messageId}`}
+          className="rounded-full border border-border bg-surface px-2 py-0.5 text-[11px] text-muted"
+        >
+          {progress.items.length}
+        </span>
+        <span
+          data-testid={`search-progress-status-${messageId}`}
+          className={`rounded-full border px-2 py-0.5 text-[11px] ${
+            normalizedStatus === 'running'
+              ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+              : normalizedStatus === 'error'
+                ? 'border-red-500/30 bg-red-500/10 text-red-300'
+                : normalizedStatus === 'cancelled'
+                  ? 'border-amber-500/30 bg-amber-500/10 text-amber-300'
+                  : 'border-border bg-surface text-muted'
+          }`}
+        >
+          {statusLabel}
+        </span>
+        <span className="text-xs text-muted">{countLabel}</span>
+        <button
+          type="button"
+          data-testid={`search-progress-toggle-button-${messageId}`}
+          aria-expanded={isExpanded}
+          aria-controls={contentId}
+          aria-label={isExpanded ? '折叠联网搜索详情' : '展开联网搜索详情'}
+          onClick={() => setIsExpanded((current) => !current)}
+          className="ml-auto flex h-7 w-7 items-center justify-center rounded-full border border-border bg-surface text-muted transition-colors hover:text-foreground"
+        >
+          <ChevronDown
+            size={15}
+            className={`transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}
+          />
+        </button>
+      </div>
+      <div
+        id={contentId}
+        className={`overflow-hidden transition-all duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] ${
+          // 业务意图：搜索面板展开时按内容完整展示，减少二级滚动带来的阅读割裂。
+          isExpanded
+            ? 'mt-3 max-h-none max-w-full translate-y-0 opacity-100'
+            : 'mt-0 max-h-0 max-w-0 -translate-y-1 opacity-0 pointer-events-none'
+        }`}
+      >
+        {progress.items.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-border bg-surface px-3 py-2 text-xs text-muted">
+            正在等待检索结果...
+          </div>
+        ) : (
+          <ol className="space-y-2">
+            {progress.items.map((item, index) => (
+              <li
+                key={item.id}
+                data-testid={`search-progress-item-${messageId}-${index}`}
+                className="rounded-xl border border-border bg-surface px-3 py-2"
+              >
+                <div className="flex items-start gap-2 text-xs leading-5 text-muted">
+                  <span className="inline-flex min-w-[24px] justify-center rounded-full border border-border bg-surface-container px-1 py-0.5 font-mono text-[11px]">
+                    {index + 1}
+                  </span>
+                  <div className="min-w-0">
+                    <div className="truncate text-sm text-foreground">
+                      {item.title || item.siteName || '未命名网页'}
+                    </div>
+                    <div className="mt-1 flex flex-wrap gap-x-2 gap-y-1 text-[11px] text-muted">
+                      {item.siteName ? <span>{item.siteName}</span> : null}
+                      {item.url ? <span className="truncate">{item.url}</span> : null}
+                    </div>
+                  </div>
+                </div>
+              </li>
+            ))}
+          </ol>
+        )}
+      </div>
+    </section>
+  );
+}
+
 /**
  * 使用 Markdown 渲染助手消息，保证标题、列表、代码块等富文本结构按预期展示。
  */
@@ -2581,6 +2791,5 @@ function ConfirmDialog({
     </div>
   );
 }
-
 
 

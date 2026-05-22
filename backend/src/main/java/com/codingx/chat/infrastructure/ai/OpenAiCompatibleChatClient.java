@@ -167,6 +167,12 @@ public class OpenAiCompatibleChatClient implements AiProviderClient {
                     .set("type", "text")
                     .set("text", message.getContent()));
             }
+            String textAttachmentContext = buildTextAttachmentContext(messageAttachments);
+            if (StrUtil.isNotBlank(textAttachmentContext)) {
+                contentItems.add(JSONUtil.createObj()
+                    .set("type", "text")
+                    .set("text", textAttachmentContext));
+            }
             for (ChatAttachment attachment : messageAttachments) {
                 if (!"image".equalsIgnoreCase(attachment.getAttachmentType())) {
                     continue;
@@ -187,6 +193,35 @@ public class OpenAiCompatibleChatClient implements AiProviderClient {
         return JSONUtil.createObj()
             .set("role", message.getRole().name().toLowerCase())
             .set("content", message.getContent());
+    }
+
+    /**
+     * 将非图片附件摘要拼接为文本上下文，确保文档上传后模型可读到核心内容。
+     * @param messageAttachments 用户消息绑定的附件列表。
+     * @return 可注入模型的文本上下文。
+     */
+    private String buildTextAttachmentContext(java.util.List<ChatAttachment> messageAttachments) {
+        StringBuilder contextBuilder = new StringBuilder();
+        for (ChatAttachment attachment : messageAttachments) {
+            if ("image".equalsIgnoreCase(attachment.getAttachmentType())) {
+                continue;
+            }
+            String summary = StrUtil.trimToNull(attachment.getContentSummary());
+            if (summary == null) {
+                continue;
+            }
+            if (contextBuilder.length() == 0) {
+                contextBuilder.append("以下是用户上传文件的文本摘要，请结合摘要回答：\n");
+            }
+            contextBuilder
+                .append("- 文件：")
+                .append(StrUtil.blankToDefault(attachment.getFileName(), "未命名文件"))
+                .append('\n')
+                .append("  摘要：")
+                .append(summary)
+                .append('\n');
+        }
+        return StrUtil.trimToNull(contextBuilder.toString());
     }
 
     /**

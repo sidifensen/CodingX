@@ -2,6 +2,7 @@ package com.codingx.chat.application.service;
 
 import cn.dev33.satoken.stp.StpUtil;
 import cn.hutool.core.io.FileUtil;
+import cn.hutool.core.util.CharsetUtil;
 import cn.hutool.core.util.IdUtil;
 import cn.hutool.core.util.StrUtil;
 import com.codingx.chat.domain.model.ChatAttachment;
@@ -19,6 +20,9 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
+import org.apache.pdfbox.Loader;
+import org.apache.pdfbox.pdmodel.PDDocument;
+import org.apache.pdfbox.text.PDFTextStripper;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -30,6 +34,13 @@ import org.springframework.web.multipart.MultipartFile;
 public class ChatAttachmentService {
 
     private static final long MAX_FILE_SIZE = 20L * 1024L * 1024L;
+    private static final int ATTACHMENT_TEXT_SUMMARY_MAX_LENGTH = 1600;
+    private static final Set<String> TEXT_SUMMARY_EXTENSIONS = Set.of(
+        "txt", "md", "rtf", "html", "xml",
+        "csv", "tsv", "json", "yaml", "yml", "sql",
+        "java", "py", "js", "ts", "c", "cpp", "go", "rs", "sh", "bat", "ps1",
+        "log"
+    );
     private static final Set<String> ALLOWED_EXTENSIONS = Set.of(
         "pdf", "txt", "md", "rtf", "html", "xml",
         "doc", "docx", "ppt", "pptx", "xls", "xlsx", "odt", "odp", "ods",
@@ -79,6 +90,7 @@ public class ChatAttachmentService {
             .fileSize(file.getSize())
             .storageKey(storageKey)
             .previewUrl("/api/chat/attachments/" + IdUtil.fastSimpleUUID())
+            .contentSummary(extractAttachmentTextSummary(fileExt, bytes))
             .status("UPLOADED")
             .createdAt(now)
             .updatedAt(now)
@@ -216,6 +228,58 @@ public class ChatAttachmentService {
         if (!userId.equals(conversation.getCreatedBy())) {
             throw new ForbiddenException(ErrorMessageCatalog.CHAT_CONVERSATION_FORBIDDEN);
         }
+    }
+
+    /**
+     * 提取可直接注入模型提示的文本摘要，避免纯文档附件在非视觉模型场景下完全不可见。
+     * @param fileExt 文件扩展名。
+     * @param bytes 文件字节。
+     * @return 限长后的文本摘要。
+     */
+    private String extractAttachmentTextSummary(String fileExt, byte[] bytes) {
+        if (bytes == null || bytes.length == 0) {
+            return null;
+        }
+        String rawText = null;
+        if (TEXT_SUMMARY_EXTENSIONS.contains(fileExt)) {
+            rawText = StrUtil.trimToEmpty(new String(bytes, CharsetUtil.CHARSET_UTF_8));
+        } else if ("pdf".equalsIgnoreCase(fileExt)) {
+            rawText = extractPdfText(bytes);
+        }
+        if (StrUtil.isBlank(rawText)) {
+            return null;
+        }
+        return normalizeSummaryText(rawText);
+    }
+
+    /**
+     * 使用 PDF 解析器抽取正文，保证简历等 PDF 文件可进入模型上下文。
+     * @param bytes PDF 文件字节。
+     * @return 抽取结果，失败时返回空串。
+     */
+    private String extractPdfText(byte[] bytes) {
+        try (PDDocument document = Loader.loadPDF(bytes)) {
+            PDFTextStripper pdfTextStripper = new PDFTextStripper();
+            return StrUtil.trimToEmpty(pdfTextStripper.getText(document));
+        } catch (Exception exception) {
+            return "";
+        }
+    }
+
+    /**
+     * 统一归一化摘要文本，清理空白符并执行限长，避免污染模型输入上下文。
+     * @param rawText 原始文本。
+     * @return 归一化摘要。
+     */
+    private String normalizeSummaryText(String rawText) {
+        if (StrUtil.isBlank(rawText)) {
+            return null;
+        }
+        String normalizedText = rawText.replace("\u0000", "").replaceAll("\\s+", " ").trim();
+        if (StrUtil.isBlank(normalizedText)) {
+            return null;
+        }
+        return StrUtil.maxLength(normalizedText, ATTACHMENT_TEXT_SUMMARY_MAX_LENGTH);
     }
 }
 

@@ -85,6 +85,11 @@
             <version>${okhttp.version}</version>
         </dependency>
         <dependency>
+            <groupId>org.apache.pdfbox</groupId>
+            <artifactId>pdfbox</artifactId>
+            <version>3.0.7</version>
+        </dependency>
+        <dependency>
             <groupId>software.amazon.awssdk</groupId>
             <artifactId>s3</artifactId>
             <version>2.26.21</version>

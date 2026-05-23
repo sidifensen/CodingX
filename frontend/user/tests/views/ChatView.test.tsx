@@ -56,9 +56,9 @@ describe('ChatView', () => {
   });
 
   /**
-   * 已登录时应展示主区消息与消息内过程时间线，且不再展示右栏执行回放。
+   * 已登录时应展示主区消息与消息内过程链路，且不再展示右栏执行回放。
    */
-  it('应渲染消息与消息内过程时间线且不再展示右栏执行回放', async () => {
+  it('应渲染消息内过程链路且不再展示右栏执行回放', async () => {
     render(
       <ChatView isAuthenticated={true} onRequireLogin={vi.fn()} workspace={createWorkspace()} />,
     );
@@ -66,10 +66,12 @@ describe('ChatView', () => {
     expect((await screen.findAllByText('请搜索 Spring Boot SSE 最佳实践')).length).toBeGreaterThan(
       0,
     );
-    expect(screen.getByText('分析问题')).toBeInTheDocument();
+    const tracePanel = screen.getByTestId('process-trace-panel-102');
+    expect(tracePanel).toBeInTheDocument();
+    expect(screen.queryByText('过程时间线')).not.toBeInTheDocument();
+    expect(tracePanel).toHaveTextContent('深度思考');
     expect(screen.getByText('调用网页搜索')).toBeInTheDocument();
     expect(screen.getByText('已获取结果')).toBeInTheDocument();
-    expect(screen.getByText('整理结论')).toBeInTheDocument();
     expect(screen.queryByText('执行回放')).not.toBeInTheDocument();
   });
 
@@ -419,9 +421,9 @@ describe('ChatView', () => {
   });
 
   /**
-   * 助手消息存在过程时间线时，应展示分析、工具、结果与整理卡片，而不是单独的思考区块。
+   * 助手消息存在过程链路时，应用 WorkBuddy 式内联段落展示，而不是卡片墙。
    */
-  it('应在助手消息中渲染过程时间线卡片', async () => {
+  it('应在助手消息中渲染内联过程链路', async () => {
     render(
       <ChatView
         isAuthenticated={true}
@@ -485,17 +487,22 @@ describe('ChatView', () => {
       />,
     );
 
-    expect(screen.getByText('分析问题')).toBeInTheDocument();
+    const tracePanel = screen.getByTestId('process-trace-panel-701');
+    expect(tracePanel).toBeInTheDocument();
+    expect(tracePanel).not.toHaveTextContent('过程时间线');
+    expect(tracePanel).toHaveTextContent('深度思考');
+    expect(screen.getByText('先判断这个问题是否需要实时信息。')).toBeInTheDocument();
     expect(screen.getByText('调用网页搜索')).toBeInTheDocument();
     expect(screen.getByText('已获取结果')).toBeInTheDocument();
-    expect(screen.getByText('整理结论')).toBeInTheDocument();
+    expect(tracePanel).not.toHaveTextContent('正在根据检索结果整理最终回答。');
+    expect(tracePanel).not.toHaveTextContent('已完成');
     expect(screen.queryByText('思考过程')).not.toBeInTheDocument();
   });
 
   /**
-   * 过程卡片存在细节时应提供显式展开按钮。
+   * 过程明细存在时应提供轻量展开按钮。
    */
-  it('应在过程卡片标题右侧渲染展开控件', async () => {
+  it('应在过程工具行中渲染展开控件', async () => {
     render(
       <ChatView
         isAuthenticated={true}
@@ -532,13 +539,13 @@ describe('ChatView', () => {
       />,
     );
 
-    expect(screen.getByTestId('process-card-toggle-button-tool-call-702')).toBeInTheDocument();
+    expect(screen.getByTestId('process-tool-group-toggle-702')).toBeInTheDocument();
   });
 
   /**
-   * 过程卡片细节默认折叠，点击后应展开，再次点击后应收起。
+   * 过程细节默认折叠，点击后应展开，再次点击后应收起。
    */
-  it('应支持过程卡片默认折叠并在点击后切换展开状态', async () => {
+  it('应支持过程细节默认折叠并在点击后切换展开状态', async () => {
     render(
       <ChatView
         isAuthenticated={true}
@@ -575,7 +582,7 @@ describe('ChatView', () => {
       />,
     );
 
-    const toggleButton = screen.getByTestId('process-card-toggle-button-tool-result-703');
+    const toggleButton = screen.getByTestId('process-tool-group-toggle-703');
 
     expect(toggleButton).toHaveAttribute('aria-expanded', 'false');
     expect(screen.queryByText('这是过程卡片结果。')).not.toBeInTheDocument();
@@ -587,6 +594,49 @@ describe('ChatView', () => {
     fireEvent.click(toggleButton);
     expect(toggleButton).toHaveAttribute('aria-expanded', 'false');
     expect(screen.queryByText('这是过程卡片结果。')).not.toBeInTheDocument();
+  });
+
+  /**
+   * 长分析摘要必须自然换行，避免在单行区域内循环闪动。
+   */
+  it('应让长分析过程自然多行展示', async () => {
+    const longSummary =
+      '用户要求对 Qwen 和 GLM 最新模型做实时对比，需要先确认发布时间、模型定位、上下文长度、工具调用能力和适用场景，再决定是否继续检索官方来源。';
+
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          messages: [
+            {
+              id: '704',
+              conversationId: '2001',
+              role: 'ASSISTANT',
+              content: '最终回答',
+              processCards: [
+                {
+                  id: 'analysis-704',
+                  type: 'analysis',
+                  title: '分析问题',
+                  summary: longSummary,
+                  status: 'running',
+                },
+              ],
+              status: 'streaming',
+            } as any,
+          ],
+          executionSteps: [],
+          references: [],
+          artifacts: [],
+        })}
+      />,
+    );
+
+    const analysisText = screen.getByTestId('process-analysis-text-704');
+    expect(analysisText).toHaveTextContent(longSummary);
+    expect(analysisText).toHaveClass('whitespace-pre-wrap');
+    expect(analysisText).toHaveClass('[overflow-wrap:anywhere]');
   });
 
   /**
@@ -1856,9 +1906,9 @@ describe('ChatView', () => {
   });
 
   /**
-   * 助手消息存在工具过程卡片时，应展示可折叠的工具时间线卡片。
+   * 助手消息存在工具过程时，应展示可折叠的内联工具组。
    */
-  it('应渲染并支持折叠工具过程卡片', async () => {
+  it('应渲染并支持折叠工具过程组', async () => {
     render(
       <ChatView
         isAuthenticated={true}
@@ -1895,13 +1945,14 @@ describe('ChatView', () => {
       />,
     );
 
-    const panel = screen.getByTestId('process-timeline-panel-801');
+    const panel = screen.getByTestId('process-trace-panel-801');
     expect(panel).toBeInTheDocument();
     expect(screen.getByText('调用天气查询')).toBeInTheDocument();
+    expect(panel).not.toHaveClass('rounded-3xl');
     // 业务意图：工具参数默认折叠，先确认详情不直接外露，再通过展开按钮验证内容可见。
     expect(screen.queryByText('北京今天天气怎么样')).not.toBeInTheDocument();
 
-    const toggleButton = screen.getByTestId('process-card-toggle-button-tool-call-801');
+    const toggleButton = screen.getByTestId('process-tool-group-toggle-801');
     expect(toggleButton).toHaveAttribute('aria-expanded', 'false');
     fireEvent.click(toggleButton);
     expect(toggleButton).toHaveAttribute('aria-expanded', 'true');
@@ -1909,9 +1960,9 @@ describe('ChatView', () => {
   });
 
   /**
-   * 工具参数与结果应在过程时间线中默认折叠，展开后才显示具体内容。
+   * 工具参数与结果应在内联工具组中默认折叠，展开后才显示具体内容。
    */
-  it('应在过程时间线中默认折叠参数与结果并支持展开', async () => {
+  it('应在内联工具组中默认折叠参数与结果并支持展开', async () => {
     render(
       <ChatView
         isAuthenticated={true}
@@ -1965,17 +2016,15 @@ describe('ChatView', () => {
     expect(screen.queryByText('{"city":"北京","date":"2026-05-21"}')).not.toBeInTheDocument();
     expect(screen.queryByText('{"text":"北京今日晴","temp":28.6}')).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByTestId('process-card-toggle-button-tool-call-861'));
+    fireEvent.click(screen.getByTestId('process-tool-group-toggle-861'));
     expect(screen.getByText('{"city":"北京","date":"2026-05-21"}')).toBeInTheDocument();
-
-    fireEvent.click(screen.getByTestId('process-card-toggle-button-tool-result-861'));
     expect(screen.getByText('{"text":"北京今日晴","temp":28.6}')).toBeInTheDocument();
   });
 
   /**
-   * 助手消息在联网搜索期间应以过程卡片展示搜索进行中与搜索结果。
+   * 助手消息在联网搜索期间应以内联工具组展示搜索进行中与搜索结果。
    */
-  it('应在助手消息中渲染搜索过程时间线卡片', async () => {
+  it('应在助手消息中渲染搜索过程工具组', async () => {
     render(
       <ChatView
         isAuthenticated={true}
@@ -2019,18 +2068,18 @@ describe('ChatView', () => {
       />,
     );
 
-    expect(screen.getByTestId('process-timeline-panel-951')).toBeInTheDocument();
+    expect(screen.getByTestId('process-trace-panel-951')).toBeInTheDocument();
     expect(screen.getByText('调用网页搜索')).toBeInTheDocument();
     expect(screen.getByText('已获取结果')).toBeInTheDocument();
-    // 业务意图：搜索结果细节也默认收起，必须先展开结果卡片再断言具体结果文本。
+    // 业务意图：搜索结果细节也默认收起，必须先展开工具组再断言具体结果文本。
     expect(screen.queryByText('OpenAI API 最新变更')).not.toBeInTheDocument();
     expect(screen.queryByText('Bing Search API 文档')).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByTestId('process-card-toggle-button-tool-result-search-951'));
+    fireEvent.click(screen.getByTestId('process-tool-group-toggle-951'));
 
-    const resultCard = screen.getByTestId('process-card-tool-result-search-951');
-    expect(resultCard).toHaveTextContent('OpenAI API 最新变更');
-    expect(resultCard).toHaveTextContent('Bing Search API 文档');
+    const toolGroup = screen.getByTestId('process-tool-group-951');
+    expect(toolGroup).toHaveTextContent('OpenAI API 最新变更');
+    expect(toolGroup).toHaveTextContent('Bing Search API 文档');
   });
 
   /**

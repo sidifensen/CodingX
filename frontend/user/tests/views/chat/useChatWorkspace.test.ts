@@ -3498,8 +3498,10 @@ describe('useChatWorkspace', () => {
       expect(calls[0].callId).toBe('call-1');
       expect(calls[0].status).toBe('running');
       const processCards = ((assistantMessage as Record<string, unknown> | undefined)?.processCards ?? []) as Array<Record<string, unknown>>;
-      expect(processCards.some((card) => card.type === 'analysis')).toBe(true);
-      expect(processCards.some((card) => card.type === 'tool_call')).toBe(true);
+      expect(processCards.map((card) => card.title)).toEqual(
+        expect.arrayContaining(['分析问题', '调用天气查询']),
+      );
+      expect(processCards.some((card) => card.summary === '正在查询天气服务')).toBe(false);
     });
 
     await act(async () => {
@@ -3513,6 +3515,9 @@ describe('useChatWorkspace', () => {
       expect(calls[0].phase).toBe('progress');
       expect(calls[0].status).toBe('running');
       expect(calls[0].progressText).toBe('正在查询天气服务');
+      const processCards = ((assistantMessage as Record<string, unknown> | undefined)?.processCards ?? []) as Array<Record<string, unknown>>;
+      const toolCallCard = processCards.find((card) => card.type === 'tool_call');
+      expect(toolCallCard?.summary).toBe('正在查询天气服务');
     });
 
     await act(async () => {
@@ -3526,8 +3531,10 @@ describe('useChatWorkspace', () => {
       expect(calls[0].status).toBe('completed');
       expect(calls[0].rawResult).toEqual({ text: '北京今日晴' });
       const processCards = ((assistantMessage as Record<string, unknown> | undefined)?.processCards ?? []) as Array<Record<string, unknown>>;
-      expect(processCards.some((card) => card.type === 'tool_result')).toBe(true);
-      expect(processCards.some((card) => card.type === 'synthesis')).toBe(true);
+      expect(processCards.map((card) => card.title)).toEqual(
+        expect.arrayContaining(['调用天气查询', '已获取结果']),
+      );
+      expect(processCards.some((card) => String(card.summary).includes('整理最终回答'))).toBe(false);
     });
 
     await act(async () => {
@@ -3763,10 +3770,10 @@ describe('useChatWorkspace', () => {
     expect(latestAssistantMessage?.searchProgress?.items[0].title).toBe('OpenAI API 最新文档');
     expect(latestAssistantMessage?.searchProgress?.items[0].siteName).toBe('OpenAI');
     const processCards = ((latestAssistantMessage as Record<string, unknown> | undefined)?.processCards ?? []) as Array<Record<string, unknown>>;
-    expect(processCards.some((card) => card.type === 'analysis')).toBe(true);
-    expect(processCards.some((card) => card.type === 'tool_call')).toBe(true);
-    expect(processCards.some((card) => card.type === 'tool_result')).toBe(true);
-    expect(processCards.some((card) => card.type === 'synthesis')).toBe(true);
+    expect(processCards.map((card) => card.title)).toEqual(
+      expect.arrayContaining(['分析问题', '调用天气查询', '已获取结果']),
+    );
+    expect(processCards.some((card) => String(card.summary).includes('已恢复历史'))).toBe(false);
 
     const snapshotStore = JSON.parse(
       window.localStorage.getItem('codingx.chat.workspace.conversations.v1') ?? '{}',
@@ -3778,7 +3785,7 @@ describe('useChatWorkspace', () => {
       .find((item: Record<string, unknown>) => item.role === 'ASSISTANT');
     expect(persistedAssistantMessage?.mcpCalls?.length).toBe(1);
     expect(persistedAssistantMessage?.searchProgress?.status).toBe('completed');
-    expect(Array.isArray(persistedAssistantMessage?.processCards)).toBe(true);
+    expect((persistedAssistantMessage?.processCards ?? []).length).toBeGreaterThanOrEqual(3);
   });
 
   /**
@@ -4273,4 +4280,3 @@ describe('useChatWorkspace', () => {
     await submitPromise;
   });
 });
-

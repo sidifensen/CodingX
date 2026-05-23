@@ -62,7 +62,7 @@ export interface ProcessCardDetailItem {
 }
 
 /**
- * 描述主消息区中统一的过程时间线卡片。
+ * 描述主消息区中统一的过程链路节点。
  */
 export interface ProcessCardItem {
   id: string;

@@ -67,7 +67,7 @@ export default defineConfig({
     environment: 'jsdom',
     globals: true,
     css: true,
-    include: ['src/**/*.test.ts', 'src/**/*.test.tsx'],
+    include: ['tests/**/*.test.ts', 'tests/**/*.test.tsx'],
   },
   // 步骤：为暂存区文件提供统一检查入口。
   staged: {

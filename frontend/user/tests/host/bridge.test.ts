@@ -31,6 +31,8 @@ describe('resolveHostBridge', () => {
         },
         localResource: {
           boundRepositoryPath: 'D:/code/CodingX',
+          workspaceId: '3001',
+          workspaceName: 'CodingX',
           permissionGranted: true,
         },
       }),
@@ -50,6 +52,8 @@ describe('resolveHostBridge', () => {
         },
         localResource: {
           boundRepositoryPath: 'D:/code/CodingX',
+          workspaceId: '3001',
+          workspaceName: 'CodingX',
           permissionGranted: true,
         },
       }),
@@ -67,6 +71,7 @@ describe('resolveHostBridge', () => {
         isFullScreen: false,
       }),
       closeWindow: async () => undefined,
+      invokeDesktopMenuAction: async () => undefined,
       onWindowStateChanged: () => () => undefined,
     };
 

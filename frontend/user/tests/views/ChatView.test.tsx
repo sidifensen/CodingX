@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+﻿import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import ChatView from '@/views/ChatView';
 import { ChatWorkspaceController } from '@/views/chat/types';
 
@@ -7,6 +7,8 @@ import { ChatWorkspaceController } from '@/views/chat/types';
  */
 describe('ChatView', () => {
   beforeEach(() => {
+    window.URL.createObjectURL = vi.fn(() => 'blob:mock-preview');
+    window.URL.revokeObjectURL = vi.fn();
     Object.defineProperty(window.HTMLElement.prototype, 'scrollIntoView', {
       configurable: true,
       value: vi.fn(),
@@ -54,9 +56,9 @@ describe('ChatView', () => {
   });
 
   /**
-   * 已登录时应展示主区消息与右栏回放数据。
+   * 已登录时应展示主区消息与消息内过程时间线，且不再展示右栏执行回放。
    */
-  it('应渲染消息与工作区回放', async () => {
+  it('应渲染消息与消息内过程时间线且不再展示右栏执行回放', async () => {
     render(
       <ChatView isAuthenticated={true} onRequireLogin={vi.fn()} workspace={createWorkspace()} />,
     );
@@ -64,11 +66,11 @@ describe('ChatView', () => {
     expect((await screen.findAllByText('请搜索 Spring Boot SSE 最佳实践')).length).toBeGreaterThan(
       0,
     );
-    expect(screen.getByText('搜索资料')).toBeInTheDocument();
-    expect(screen.getByText('Spring Boot SSE 最佳实践')).toBeInTheDocument();
-    expect(screen.getByText('search-report.docx')).toBeInTheDocument();
-    expect(screen.queryByText('当前技能')).not.toBeInTheDocument();
-    expect(screen.queryByText('当前 MCP')).not.toBeInTheDocument();
+    expect(screen.getByText('分析问题')).toBeInTheDocument();
+    expect(screen.getByText('调用网页搜索')).toBeInTheDocument();
+    expect(screen.getByText('已获取结果')).toBeInTheDocument();
+    expect(screen.getByText('整理结论')).toBeInTheDocument();
+    expect(screen.queryByText('执行回放')).not.toBeInTheDocument();
   });
 
   /**
@@ -97,6 +99,71 @@ describe('ChatView', () => {
     await waitFor(() => {
       expect(submitMessage).toHaveBeenCalledTimes(1);
     });
+  });
+
+  /**
+   * 新建对话空态下若发送失败，仍应展示错误提示，避免用户误判为发送按钮失效。
+   */
+  it('应在新建对话空态展示发送错误提示', async () => {
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          activeConversationId: null,
+          messages: [],
+          executionSteps: [],
+          references: [],
+          artifacts: [],
+          streamError: '请选择本地工作空间后再发送消息',
+        })}
+      />,
+    );
+
+    expect(screen.getByText('请选择本地工作空间后再发送消息')).toBeInTheDocument();
+  });
+
+  /**
+   * 输入框上方不应重复渲染流式错误提示，避免与消息区提示重复占位。
+   */
+  it('应只在消息区渲染一条流式错误提示', async () => {
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          activeConversationId: null,
+          messages: [],
+          executionSteps: [],
+          references: [],
+          artifacts: [],
+          streamError: '请选择本地工作空间后再发送消息',
+        })}
+      />,
+    );
+
+    expect(screen.getAllByText('请选择本地工作空间后再发送消息')).toHaveLength(1);
+  });
+
+  /**
+   * 排队中应展示独立提示条，且不影响原错误提示区域语义。
+   */
+  it('应展示排队提示条', async () => {
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          streamQueueState: {
+            position: 3,
+            message: '请求排队中，前方还有 3 个会话',
+          },
+          streamError: '',
+        })}
+      />,
+    );
+
+    expect(screen.getByText('请求排队中，前方还有 3 个会话')).toBeInTheDocument();
   });
 
   /**
@@ -178,7 +245,10 @@ describe('ChatView', () => {
           references: [],
           artifacts: [],
           inputValue: '',
-          sampleQuestions: [
+          availableExperts: [],
+    selectedExpertCode: null,
+    currentExperts: [],
+    sampleQuestions: [
             {
               id: '9001',
               questionText: '真实示例：帮我分析本周销售数据',
@@ -197,7 +267,7 @@ describe('ChatView', () => {
   });
 
   /**
-   * 已选中历史会话但消息为空时，不应回退到新建页空态。
+   * 已选中历史记录但消息为空时，不应回退到新建页空态，也不应保留右侧工作区切换按钮。
    */
   it('应在选中空会话时展示会话空态而不是新建页', async () => {
     render(
@@ -217,9 +287,8 @@ describe('ChatView', () => {
     expect(screen.queryByText('你好，我是 CodingX')).not.toBeInTheDocument();
     expect(screen.getByText('当前会话暂无消息')).toBeInTheDocument();
     expect(screen.queryByText('反馈')).not.toBeInTheDocument();
-    const workspaceHeading = screen.getByText('执行回放');
-    expect(workspaceHeading.closest('aside')).toHaveAttribute('aria-hidden', 'true');
-    expect(screen.getByRole('button', { name: '展开右侧工作区' })).toBeInTheDocument();
+    expect(screen.queryByText('执行回放')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '展开右侧工作区' })).not.toBeInTheDocument();
   });
 
   /**
@@ -255,6 +324,51 @@ describe('ChatView', () => {
     expect(userMessage).toHaveClass('px-4');
     expect(userMessage).toHaveClass('py-2');
     expect(userMessageText).toHaveClass('leading-6');
+  });
+
+  /**
+   * 用户消息绑定技能时，应在消息气泡内保留技能气泡展示，避免流式结束后技能信息消失。
+   */
+  it('应在用户消息气泡内展示技能气泡', async () => {
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          availableSkills: [
+            {
+              id: '9901',
+              skillCode: 'codebase-migrate',
+              displayName: '代码迁移',
+              description: '批量迁移仓库代码',
+              category: '工程',
+            },
+          ],
+          messages: [
+            {
+              id: '311',
+              conversationId: '2001',
+              role: 'USER',
+              content: '这是什么',
+              status: 'COMPLETED',
+              skillCodes: ['codebase-migrate'],
+            } as any,
+            {
+              id: '312',
+              conversationId: '2001',
+              role: 'ASSISTANT',
+              content: '这是技能说明。',
+              status: 'COMPLETED',
+            },
+          ],
+          executionSteps: [],
+          references: [],
+          artifacts: [],
+        })}
+      />,
+    );
+
+    expect(screen.getByTestId('message-skill-chip-311-codebase-migrate')).toBeInTheDocument();
   });
 
   /**
@@ -305,9 +419,9 @@ describe('ChatView', () => {
   });
 
   /**
-   * 助手消息存在思考内容时，应展示可展开的思考区块。
+   * 助手消息存在过程时间线时，应展示分析、工具、结果与整理卡片，而不是单独的思考区块。
    */
-  it('应渲染助手思考内容区块', async () => {
+  it('应在助手消息中渲染过程时间线卡片', async () => {
     render(
       <ChatView
         isAuthenticated={true}
@@ -319,9 +433,50 @@ describe('ChatView', () => {
               conversationId: '2001',
               role: 'ASSISTANT',
               content: '最终回答',
-              thinkingContent: '先分析问题，再组织答案。',
+              processCards: [
+                {
+                  id: 'analysis-1',
+                  type: 'analysis',
+                  title: '分析问题',
+                  summary: '先判断这个问题是否需要实时信息。',
+                  status: 'completed',
+                },
+                {
+                  id: 'tool-call-1',
+                  type: 'tool_call',
+                  title: '调用网页搜索',
+                  summary: '正在检索 Google 官方发布页。',
+                  status: 'running',
+                  details: [
+                    {
+                      label: '参数',
+                      content: '{\"q\":\"Gemini latest model\"}',
+                    },
+                  ],
+                },
+                {
+                  id: 'tool-result-1',
+                  type: 'tool_result',
+                  title: '已获取结果',
+                  summary: '找到官方来源，正在比对正式发布型号。',
+                  status: 'completed',
+                  details: [
+                    {
+                      label: '结果',
+                      content: '命中 Google I/O keynote 和 Gemini models overview',
+                    },
+                  ],
+                },
+                {
+                  id: 'synthesis-1',
+                  type: 'synthesis',
+                  title: '整理结论',
+                  summary: '正在根据检索结果整理最终回答。',
+                  status: 'running',
+                },
+              ],
               status: 'COMPLETED',
-            },
+            } as any,
           ],
           executionSteps: [],
           references: [],
@@ -330,18 +485,17 @@ describe('ChatView', () => {
       />,
     );
 
-    expect(screen.getByText('思考过程')).toBeInTheDocument();
-    expect(screen.getByText('先分析问题，再组织答案。')).toBeInTheDocument();
-    expect(screen.getByTestId('thinking-toggle-button-701')).toHaveAttribute(
-      'aria-expanded',
-      'true',
-    );
+    expect(screen.getByText('分析问题')).toBeInTheDocument();
+    expect(screen.getByText('调用网页搜索')).toBeInTheDocument();
+    expect(screen.getByText('已获取结果')).toBeInTheDocument();
+    expect(screen.getByText('整理结论')).toBeInTheDocument();
+    expect(screen.queryByText('思考过程')).not.toBeInTheDocument();
   });
 
   /**
-   * 思考区块标题右侧应提供显式箭头控件，避免折叠状态只能依赖浏览器默认标记。
+   * 过程卡片存在细节时应提供显式展开按钮。
    */
-  it('应在思考区块标题右侧渲染箭头控件', async () => {
+  it('应在过程卡片标题右侧渲染展开控件', async () => {
     render(
       <ChatView
         isAuthenticated={true}
@@ -353,9 +507,23 @@ describe('ChatView', () => {
               conversationId: '2001',
               role: 'ASSISTANT',
               content: '最终回答',
-              thinkingContent: '先分析问题，再组织答案。',
+              processCards: [
+                {
+                  id: 'tool-call-702',
+                  type: 'tool_call',
+                  title: '调用网页搜索',
+                  summary: '正在检索官方资料。',
+                  status: 'running',
+                  details: [
+                    {
+                      label: '参数',
+                      content: '{\"q\":\"Gemini latest model\"}',
+                    },
+                  ],
+                },
+              ],
               status: 'COMPLETED',
-            },
+            } as any,
           ],
           executionSteps: [],
           references: [],
@@ -364,14 +532,13 @@ describe('ChatView', () => {
       />,
     );
 
-    expect(screen.getByTestId('thinking-summary-702')).toBeInTheDocument();
-    expect(screen.getByTestId('thinking-toggle-icon-702')).toBeInTheDocument();
+    expect(screen.getByTestId('process-card-toggle-button-tool-call-702')).toBeInTheDocument();
   });
 
   /**
-   * 思考区块应支持展开与折叠动画状态切换，且默认保持展开。
+   * 过程卡片细节默认折叠，点击后应展开，再次点击后应收起。
    */
-  it('应支持思考区块默认展开并在点击后切换动画状态', async () => {
+  it('应支持过程卡片默认折叠并在点击后切换展开状态', async () => {
     render(
       <ChatView
         isAuthenticated={true}
@@ -383,9 +550,23 @@ describe('ChatView', () => {
               conversationId: '2001',
               role: 'ASSISTANT',
               content: '最终回答',
-              thinkingContent: '这是思考内容。',
+              processCards: [
+                {
+                  id: 'tool-result-703',
+                  type: 'tool_result',
+                  title: '已获取结果',
+                  summary: '已获得搜索结果。',
+                  status: 'completed',
+                  details: [
+                    {
+                      label: '结果',
+                      content: '这是过程卡片结果。',
+                    },
+                  ],
+                },
+              ],
               status: 'COMPLETED',
-            },
+            } as any,
           ],
           executionSteps: [],
           references: [],
@@ -394,27 +575,18 @@ describe('ChatView', () => {
       />,
     );
 
-    const toggleButton = screen.getByTestId('thinking-toggle-button-703');
-    const content = screen.getByTestId('thinking-content-703');
-    const panel = screen.getByTestId('thinking-panel-703');
+    const toggleButton = screen.getByTestId('process-card-toggle-button-tool-result-703');
 
+    expect(toggleButton).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByText('这是过程卡片结果。')).not.toBeInTheDocument();
+
+    fireEvent.click(toggleButton);
     expect(toggleButton).toHaveAttribute('aria-expanded', 'true');
-    expect(panel).toHaveClass('w-full');
-    expect(content).toHaveClass('max-h-[640px]');
-    expect(content).toHaveClass('opacity-100');
+    expect(screen.getByText('这是过程卡片结果。')).toBeInTheDocument();
 
     fireEvent.click(toggleButton);
     expect(toggleButton).toHaveAttribute('aria-expanded', 'false');
-    expect(panel).toHaveClass('w-fit');
-    expect(content).toHaveClass('max-h-0');
-    expect(content).toHaveClass('max-w-0');
-    expect(content).toHaveClass('opacity-0');
-
-    fireEvent.click(toggleButton);
-    expect(toggleButton).toHaveAttribute('aria-expanded', 'true');
-    expect(panel).toHaveClass('w-full');
-    expect(content).toHaveClass('max-h-[640px]');
-    expect(content).toHaveClass('opacity-100');
+    expect(screen.queryByText('这是过程卡片结果。')).not.toBeInTheDocument();
   });
 
   /**
@@ -465,6 +637,45 @@ describe('ChatView', () => {
     await waitFor(() => {
       expect(scrollIntoView).toHaveBeenCalled();
     });
+  });
+
+  /**
+   * 发送消息时应先贴底，再进入后续提交流程，避免回答首帧被底部输入区遮挡。
+   */
+  it('应在发送消息时立即滚动到底部并提交消息', async () => {
+    const scrollIntoView = vi.mocked(window.HTMLElement.prototype.scrollIntoView);
+    const submitMessage = vi.fn().mockResolvedValue(undefined);
+
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          activeConversationId: '2001',
+          messages: [
+            {
+              id: '701',
+              conversationId: '2001',
+              role: 'USER',
+              content: '先看这一段历史消息',
+              status: 'COMPLETED',
+            },
+          ],
+          executionSteps: [],
+          references: [],
+          artifacts: [],
+          inputValue: '请继续生成下一段内容',
+          submitMessage,
+        })}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '发送消息' }));
+
+    await waitFor(() => {
+      expect(submitMessage).toHaveBeenCalledTimes(1);
+    });
+    expect(scrollIntoView).toHaveBeenCalled();
   });
 
   /**
@@ -538,68 +749,101 @@ describe('ChatView', () => {
   });
 
   /**
-   * 真实会话页应支持通过内容区右上角按钮折叠与展开右侧工作区。
+   * 用户手动上滑查看历史内容后，流式追加不应强制把滚动位置拉回到底部。
    */
-  it('应支持折叠和展开右侧工作区面板', async () => {
-    render(
-      <ChatView isAuthenticated={true} onRequireLogin={vi.fn()} workspace={createWorkspace()} />,
-    );
-
-    const workspaceHeading = screen.getByText('执行回放');
-    expect(workspaceHeading).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('button', { name: '展开右侧工作区' }));
-    expect(workspaceHeading.closest('aside')).toHaveAttribute('aria-hidden', 'false');
-
-    fireEvent.click(screen.getByRole('button', { name: '折叠右侧工作区' }));
-    expect(workspaceHeading).toBeInTheDocument();
-    expect(workspaceHeading.closest('aside')).toHaveAttribute('aria-hidden', 'true');
-  });
-
-  /**
-   * 右侧回放区应保持默认折叠，存在回放内容时也需用户手动展开。
-   */
-  it('应在右侧有无回放内容时都默认折叠', async () => {
+  it('应在用户离开底部后暂停流式自动跟随滚动', async () => {
+    const scrollIntoView = vi.mocked(window.HTMLElement.prototype.scrollIntoView);
     const { rerender } = render(
       <ChatView
         isAuthenticated={true}
         onRequireLogin={vi.fn()}
         workspace={createWorkspace({
+          messages: [
+            {
+              id: '401',
+              conversationId: '2001',
+              role: 'USER',
+              content: '请继续补充',
+              status: 'COMPLETED',
+            },
+            {
+              id: '402',
+              conversationId: '2001',
+              role: 'ASSISTANT',
+              content: '第一段',
+              status: 'streaming',
+            },
+          ],
           executionSteps: [],
           references: [],
           artifacts: [],
+          isStreaming: true,
         })}
       />,
     );
 
-    const workspaceHeading = screen.getByText('执行回放');
-    expect(workspaceHeading.closest('aside')).toHaveAttribute('aria-hidden', 'true');
-    expect(screen.getByRole('button', { name: '展开右侧工作区' })).toBeInTheDocument();
+    const scrollRegion = screen.getByTestId('chat-scroll-region');
+    Object.defineProperty(scrollRegion, 'scrollHeight', {
+      configurable: true,
+      value: 1000,
+    });
+    Object.defineProperty(scrollRegion, 'clientHeight', {
+      configurable: true,
+      value: 600,
+    });
+    Object.defineProperty(scrollRegion, 'scrollTop', {
+      configurable: true,
+      writable: true,
+      value: 120,
+    });
+    // 业务意图：模拟用户主动上滑离开底部（距离底部约 280px），后续流式更新不应抢夺滚动焦点。
+    fireEvent.scroll(scrollRegion);
+    scrollIntoView.mockClear();
 
     rerender(
       <ChatView
         isAuthenticated={true}
         onRequireLogin={vi.fn()}
         workspace={createWorkspace({
-          executionSteps: [
+          messages: [
             {
-              id: '9',
-              runId: '5009',
-              stepType: 'search',
-              stepTitle: '生成新步骤',
-              stepStatus: 'COMPLETED',
-              sequenceNo: 1,
-              content: '新的步骤内容',
+              id: '401',
+              conversationId: '2001',
+              role: 'USER',
+              content: '请继续补充',
+              status: 'COMPLETED',
+            },
+            {
+              id: '402',
+              conversationId: '2001',
+              role: 'ASSISTANT',
+              content: '第一段\n第二段',
+              status: 'streaming',
             },
           ],
+          executionSteps: [],
           references: [],
           artifacts: [],
+          isStreaming: true,
         })}
       />,
     );
 
-    expect(workspaceHeading.closest('aside')).toHaveAttribute('aria-hidden', 'true');
-    expect(screen.getByRole('button', { name: '展开右侧工作区' })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(scrollIntoView).not.toHaveBeenCalled();
+    });
+  });
+
+  /**
+   * 聊天页不再展示右侧工作区折叠入口。
+   */
+  it('不应再渲染右侧工作区折叠入口', async () => {
+    render(
+      <ChatView isAuthenticated={true} onRequireLogin={vi.fn()} workspace={createWorkspace()} />,
+    );
+
+    expect(screen.queryByRole('button', { name: '展开右侧工作区' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '折叠右侧工作区' })).not.toBeInTheDocument();
   });
 
   /**
@@ -662,7 +906,12 @@ describe('ChatView', () => {
       <ChatView isAuthenticated={true} onRequireLogin={vi.fn()} workspace={createWorkspace()} />,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: '打开MCP列表' }));
+    const mcpTriggerButton = screen.getByRole('button', { name: '打开MCP列表' });
+    // 交互约束：MCP 按钮保留颜色/阴影反馈，但不应出现上浮抖动。
+    expect(mcpTriggerButton.className).not.toContain('hover:-translate-y-0.5');
+    expect(screen.getByTestId('mcp-trigger-chevron')).toBeInTheDocument();
+
+    fireEvent.click(mcpTriggerButton);
 
     const selectorPanel = screen.getByTestId('mcp-selector-panel');
     expect(selectorPanel).toBeInTheDocument();
@@ -694,6 +943,54 @@ describe('ChatView', () => {
     expect(setSelectedMcpCodes).toHaveBeenCalled();
     const updater = setSelectedMcpCodes.mock.calls[0][0] as (codes: string[]) => string[];
     expect(updater(['sales_query'])).toEqual(['sales_query', 'ticket_query']);
+  });
+
+  /**
+   * MCP 列表中不可用项必须禁用且不可触发选中，避免误把不可执行工具加入会话上下文。
+   */
+  it('应禁止通过MCP列表选择不可用MCP', async () => {
+    const setSelectedMcpCodes = vi.fn();
+    const setMcpConnected = vi.fn();
+
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          setSelectedMcpCodes,
+          setMcpConnected,
+          availableMcps: [
+            {
+              id: '7001',
+              mcpCode: 'sales_query',
+              displayName: '销售查询',
+              description: '联网检索信息并生成摘要',
+              category: '检索',
+            },
+            {
+              id: '7003',
+              mcpCode: 'weather_query',
+              displayName: '天气查询',
+              description: '天气服务未接入',
+              category: '检索',
+              available: false,
+            },
+          ],
+        })}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '打开MCP列表' }));
+    const unavailableOption = screen.getByRole('button', { name: '选择MCP 天气查询' });
+    expect(unavailableOption).toBeDisabled();
+    expect(unavailableOption).toHaveAttribute('aria-disabled', 'true');
+    expect(screen.getByRole('switch', { name: '切换MCP 天气查询' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
+    fireEvent.click(unavailableOption);
+    expect(setSelectedMcpCodes).not.toHaveBeenCalled();
+    expect(setMcpConnected).not.toHaveBeenCalled();
   });
 
   /**
@@ -748,6 +1045,51 @@ describe('ChatView', () => {
 
     expect(screen.getByTestId('skill-selector-panel')).toBeInTheDocument();
     expect(screen.getByPlaceholderText('搜索技能')).toHaveValue('sale');
+  });
+
+  /**
+   * 斜杠触发技能面板后切换到 MCP 时，应保持 MCP 面板可见，避免被自动逻辑抢回技能面板。
+   */
+  it('应在斜杠输入场景支持从技能面板切换到MCP面板', async () => {
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          inputValue: '/sale',
+        })}
+      />,
+    );
+
+    expect(screen.getByTestId('skill-selector-panel')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '打开MCP列表' }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('mcp-selector-panel')).toBeInTheDocument();
+      expect(screen.queryByTestId('skill-selector-panel')).not.toBeInTheDocument();
+    });
+  });
+
+  /**
+   * 斜杠触发技能面板后再次点击技能按钮，应允许正常关闭，避免面板锁死。
+   */
+  it('应在斜杠输入场景支持关闭技能面板', async () => {
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          inputValue: '/sale',
+        })}
+      />,
+    );
+
+    expect(screen.getByTestId('skill-selector-panel')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '打开技能列表' }));
+
+    await waitFor(() => {
+      expect(screen.queryByTestId('skill-selector-panel')).not.toBeInTheDocument();
+    });
   });
 
   /**
@@ -889,8 +1231,107 @@ describe('ChatView', () => {
 
     expect(screen.getByTestId('input-rich-preview')).toBeInTheDocument();
     expect(screen.getByTestId('selected-skill-chip-sales_query')).toBeInTheDocument();
-    expect(screen.getByTestId('selected-skill-chip-icon-sales_query')).toBeInTheDocument();
-    expect(screen.getByText('@sales_query')).toHaveClass('invisible');
+    expect(screen.getByTestId('input-rich-preview')).toContainElement(
+      screen.getByText('@sales_query', { selector: 'span.invisible.whitespace-pre' }),
+    );
+  });
+
+  /**
+   * 技能气泡应提供显式删除按钮，点击后直接移除文本标记并同步取消技能选择。
+   */
+  it('应支持点击技能气泡删除按钮移除技能标记', async () => {
+    const setInputValue = vi.fn();
+    const setSelectedSkillCodes = vi.fn();
+
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          inputValue: '@sales_query 帮我分析一下',
+          selectedSkillCodes: ['sales_query'],
+          setInputValue,
+          setSelectedSkillCodes,
+        })}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId('remove-selected-skill-chip-sales_query'));
+
+    expect(setInputValue).toHaveBeenCalledWith('帮我分析一下');
+    expect(setSelectedSkillCodes).toHaveBeenCalledWith([]);
+  });
+
+  /**
+   * 中断后继续输入普通文本时，不应把全部可用技能写回选中状态。
+   */
+  it('应在普通文本输入时保持技能选择为空', async () => {
+    const setSelectedSkillCodes = vi.fn();
+    const setInputValue = vi.fn();
+
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          isStreaming: false,
+          inputValue: '',
+          selectedSkillCodes: [],
+          availableSkills: [
+            {
+              id: '7101',
+              skillCode: 'sales_query',
+              displayName: '销售查询',
+              description: '查询销售汇总、排名、趋势与明细',
+              category: '销售',
+            },
+            {
+              id: '7102',
+              skillCode: 'ticket_query',
+              displayName: '工单查询',
+              description: '查询工单状态、列表、优先级与解决率',
+              category: '工单',
+            },
+          ],
+          setSelectedSkillCodes,
+          setInputValue,
+        })}
+      />,
+    );
+
+    const textarea = screen.getByPlaceholderText('输入问题，或先选择技能/MCP...');
+    fireEvent.change(textarea, { target: { value: '只问一个普通问题' } });
+
+    expect(setInputValue).toHaveBeenCalledWith('只问一个普通问题');
+    expect(setSelectedSkillCodes).not.toHaveBeenCalledWith(['sales_query', 'ticket_query']);
+  });
+
+  /**
+   * 当光标位于技能标记后方时，按 Backspace 应一次删除整枚技能标记。
+   */
+  it('应在技能标记后按退格键时整枚删除技能标记', async () => {
+    const setInputValue = vi.fn();
+    const setSelectedSkillCodes = vi.fn();
+
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          inputValue: '@sales_query',
+          selectedSkillCodes: ['sales_query'],
+          setInputValue,
+          setSelectedSkillCodes,
+        })}
+      />,
+    );
+
+    const textarea = screen.getByPlaceholderText('输入问题，或先选择技能/MCP...') as HTMLTextAreaElement;
+    textarea.setSelectionRange('@sales_query'.length, '@sales_query'.length);
+    fireEvent.keyDown(textarea, { key: 'Backspace' });
+
+    expect(setInputValue).toHaveBeenCalledWith('');
+    expect(setSelectedSkillCodes).toHaveBeenCalledWith([]);
   });
 
   /**
@@ -946,6 +1387,186 @@ describe('ChatView', () => {
   });
 
   /**
+   * 环境与工作空间切换应独立于输入框容器，避免占用输入框内部高度。
+   */
+  it('应在输入框下方渲染环境与工作空间切换行并移除旧状态栏', async () => {
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          activeConversationId: null,
+          messages: [],
+          executionSteps: [],
+          references: [],
+          artifacts: [],
+          inputValue: '',
+        })}
+      />,
+    );
+
+    const switcher = screen.getByTestId('chat-runtime-workspace-switcher');
+    const inputForm = screen.getByRole('button', { name: '发送消息' }).closest('form');
+    expect(switcher).toBeInTheDocument();
+    expect(inputForm).not.toContainElement(switcher);
+    expect(screen.queryByTestId('chat-workspace-bar')).not.toBeInTheDocument();
+    expect(screen.queryByText('当前环境')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '打开运行环境列表' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '打开工作空间列表' })).toBeInTheDocument();
+    expect(screen.getByTestId('runtime-active-icon-local')).toBeInTheDocument();
+  });
+
+  /**
+   * 运行环境切换器主按钮与下拉选项应渲染语义图标，便于快速区分云端与本地。
+   */
+  it('应为运行环境按钮及选项渲染云端和本地图标', async () => {
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          activeConversationId: null,
+          messages: [],
+          executionSteps: [],
+          references: [],
+          artifacts: [],
+          inputValue: '',
+        })}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '打开运行环境列表' }));
+
+    expect(screen.getByTestId('runtime-option-icon-cloud')).toBeInTheDocument();
+    expect(screen.getByTestId('runtime-option-icon-local')).toBeInTheDocument();
+  });
+
+  /**
+   * 环境切换应通过下拉列表触发统一运行环境切换动作。
+   */
+  it('应支持通过下拉列表切换运行环境', async () => {
+    const setActiveRuntimeTarget = vi.fn().mockResolvedValue(undefined);
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          activeRuntimeTarget: 'local',
+          activeConversationId: null,
+          messages: [],
+          executionSteps: [],
+          references: [],
+          artifacts: [],
+          inputValue: '',
+          setActiveRuntimeTarget,
+        })}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '打开运行环境列表' }));
+    fireEvent.click(screen.getByRole('button', { name: '切换运行环境 云端' }));
+
+    expect(setActiveRuntimeTarget).toHaveBeenCalledWith('cloud');
+  });
+
+  /**
+   * 工作空间切换应通过下拉列表选择目标目录，而不是仅保留按钮触发。
+   */
+  it('应支持通过下拉列表切换工作空间', async () => {
+    const setActiveWorkspacePath = vi.fn().mockResolvedValue(undefined);
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          activeConversationId: null,
+          messages: [],
+          executionSteps: [],
+          references: [],
+          artifacts: [],
+          inputValue: '',
+          setActiveWorkspacePath,
+          workspaceGroups: [
+            {
+              partitionKey: 'cloud::__no_workspace__',
+              workspacePath: null,
+              workspaceLabel: '历史记录',
+              runtimeTarget: 'cloud',
+              lastOpenedAt: 1716101111000,
+              activeConversationId: null,
+              conversations: [],
+            },
+            {
+              partitionKey: 'local::d:/code/codingx',
+              workspacePath: 'D:/code/CodingX',
+              workspaceLabel: 'CodingX',
+              runtimeTarget: 'local',
+              lastOpenedAt: 1716102222000,
+              activeConversationId: '2001',
+              conversations: [],
+            },
+            {
+              partitionKey: 'local::d:/code/designsystem',
+              workspacePath: 'D:/code/DesignSystem',
+              workspaceLabel: 'DesignSystem',
+              runtimeTarget: 'local',
+              lastOpenedAt: 1716103333000,
+              activeConversationId: null,
+              conversations: [],
+            },
+          ],
+        })}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '打开工作空间列表' }));
+    fireEvent.click(screen.getByRole('button', { name: '切换工作空间 DesignSystem' }));
+
+    expect(setActiveWorkspacePath).toHaveBeenCalledWith('D:/code/DesignSystem');
+  });
+
+  /**
+   * 历史记录页不应展示底部环境/工作空间切换，避免与会话上下文重复。
+   */
+  it('应在历史记录页隐藏底部环境与工作空间切换', async () => {
+    render(
+      <ChatView isAuthenticated={true} onRequireLogin={vi.fn()} workspace={createWorkspace()} />,
+    );
+
+    expect(screen.queryByTestId('chat-runtime-workspace-switcher')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '打开运行环境列表' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '打开工作空间列表' })).not.toBeInTheDocument();
+  });
+
+  /**
+   * 新对话页切到云端运行环境时，不应再展示“历史记录”下拉入口。
+   */
+  it('应在云端环境隐藏工作空间下拉入口', async () => {
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          activeRuntimeTarget: 'cloud',
+          activeConversationId: null,
+          messages: [],
+          executionSteps: [],
+          references: [],
+          artifacts: [],
+          inputValue: '',
+          workspaceLabel: '历史记录',
+          activeWorkspacePartitionKey: 'cloud::__no_workspace__',
+          workspacePath: null,
+        })}
+      />,
+    );
+
+    expect(screen.getByTestId('chat-runtime-workspace-switcher')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '打开运行环境列表' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '打开工作空间列表' })).not.toBeInTheDocument();
+  });
+
+  /**
    * MCP 与技能应共用同一个浮层区域，并且浮层在输入区上方弹出，不应挤压输入区。
    */
   it('应在输入区上方复用同一个选择浮层', async () => {
@@ -960,6 +1581,110 @@ describe('ChatView', () => {
     fireEvent.click(screen.getByRole('button', { name: '打开MCP列表' }));
     expect(screen.getByTestId('mcp-selector-panel')).toBeInTheDocument();
     expect(screen.queryByTestId('skill-selector-panel')).not.toBeInTheDocument();
+  });
+
+  /**
+   * 专家列表中的已选项再次点击时应取消选中，保持与技能多选的切换交互一致。
+   */
+  it('应支持再次点击已选专家以取消选中', async () => {
+    const setSelectedExpertCode = vi.fn();
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          availableExperts: [
+            {
+              id: '8101',
+              expertCode: 'bi-analyst',
+              displayName: 'BI 报表专家',
+              description: '分析经营看板并给出指标建议',
+              category: '数据分析',
+            },
+          ],
+          selectedExpertCode: 'bi-analyst',
+          setSelectedExpertCode,
+        })}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '打开专家列表' }));
+    fireEvent.click(screen.getByRole('button', { name: '选择专家 BI 报表专家' }));
+
+    expect(setSelectedExpertCode).toHaveBeenCalledWith(null);
+  });
+
+  /**
+   * 输入区应展示待发送附件缩略图，并支持打开预览弹窗与移除附件。
+   */
+  it('应支持待发送图片预览与删除', async () => {
+    const removePendingAttachment = vi.fn();
+
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          pendingAttachments: [
+            {
+              clientId: 'pending-1',
+              file: new File(['mock'], 'demo.png', { type: 'image/png' }),
+              previewUrl: 'blob:demo-preview',
+              uploadStatus: 'pending',
+            },
+          ],
+          removePendingAttachment,
+        })}
+      />,
+    );
+
+    expect(screen.getByTestId('pending-attachment-list')).toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText('预览图片 demo.png'));
+    expect(screen.getByRole('dialog', { name: '图片预览弹窗' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByLabelText('删除附件 demo.png'));
+    expect(removePendingAttachment).toHaveBeenCalledWith('pending-1');
+  });
+
+  /**
+   * 消息中图片附件应渲染为缩略图，点击后可打开预览弹窗。
+   */
+  it('应在消息内渲染附件并支持预览', async () => {
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          messages: [
+            {
+              id: '301',
+              conversationId: '2001',
+              role: 'USER',
+              content: '请看这张图',
+              status: 'COMPLETED',
+              attachments: [
+                {
+                  id: '9001',
+                  conversationId: '2001',
+                  messageId: '301',
+                  attachmentType: 'image',
+                  fileName: 'evidence.png',
+                  fileSize: 2048,
+                  previewUrl: '/api/chat/attachments/9001/content',
+                  status: 'UPLOADED',
+                },
+              ],
+            },
+          ],
+          executionSteps: [],
+          references: [],
+          artifacts: [],
+        })}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId('message-image-attachment-9001'));
+    expect(screen.getByRole('dialog', { name: '图片预览弹窗' })).toBeInTheDocument();
   });
 
   /**
@@ -1081,6 +1806,40 @@ describe('ChatView', () => {
   });
 
   /**
+   * 乐观助手消息尚未落库时不应提交反馈，避免请求携带临时消息 ID 触发后端类型转换异常。
+   */
+  it('应禁止对乐观助手消息提交反馈', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          messages: [
+            {
+              id: 'optimistic-assistant-1779529346520',
+              conversationId: '2001',
+              role: 'ASSISTANT',
+              content: '正在生成回答...',
+              status: 'streaming',
+            },
+          ],
+        })}
+      />,
+    );
+
+    const upButton = screen.getByTestId('thumbs-up-optimistic-assistant-1779529346520');
+    expect(upButton).toBeDisabled();
+
+    fireEvent.click(upButton);
+
+    await waitFor(() => {
+      expect(fetchSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  /**
    * 复制按钮与箭头应属于同一组合，避免视觉断层。
    */
   it('复制按钮和下拉按钮应位于同一复制操作组', async () => {
@@ -1097,9 +1856,9 @@ describe('ChatView', () => {
   });
 
   /**
-   * 助手消息存在 MCP 调用时，应展示可折叠的 MCP 调用信息面板。
+   * 助手消息存在工具过程卡片时，应展示可折叠的工具时间线卡片。
    */
-  it('应渲染并支持折叠MCP调用面板', async () => {
+  it('应渲染并支持折叠工具过程卡片', async () => {
     render(
       <ChatView
         isAuthenticated={true}
@@ -1111,19 +1870,23 @@ describe('ChatView', () => {
               conversationId: '2001',
               role: 'ASSISTANT',
               content: '已完成天气查询',
-              mcpCalls: [
+              processCards: [
                 {
-                  toolId: 'weather_query',
-                  displayName: '天气查询',
-                  input: '北京今天天气怎么样',
-                  content: '北京今日晴，最高 28°C',
-                  metadata: {
-                    source: 'open-meteo',
-                  },
+                  id: 'tool-call-801',
+                  type: 'tool_call',
+                  title: '调用天气查询',
+                  summary: '正在请求天气工具。',
+                  status: 'completed',
+                  details: [
+                    {
+                      label: '参数',
+                      content: '北京今天天气怎么样',
+                    },
+                  ],
                 },
               ],
               status: 'COMPLETED',
-            },
+            } as any,
           ],
           executionSteps: [],
           references: [],
@@ -1132,89 +1895,201 @@ describe('ChatView', () => {
       />,
     );
 
-    const panel = screen.getByTestId('mcp-call-panel-801');
-    const panelTitle = screen.getByText('MCP 调用');
+    const panel = screen.getByTestId('process-timeline-panel-801');
     expect(panel).toBeInTheDocument();
-    expect(panel).toHaveClass('px-4');
-    expect(panel).toHaveClass('py-3');
-    expect(panelTitle).toBeInTheDocument();
-    expect(panelTitle).toHaveClass('shrink-0');
-    expect(screen.getByText('天气查询')).toBeInTheDocument();
-    expect(screen.getByText('北京今天天气怎么样')).toBeInTheDocument();
-    expect(screen.getByTestId('mcp-call-status-801')).toHaveTextContent('调用完成');
+    expect(screen.getByText('调用天气查询')).toBeInTheDocument();
+    // 业务意图：工具参数默认折叠，先确认详情不直接外露，再通过展开按钮验证内容可见。
+    expect(screen.queryByText('北京今天天气怎么样')).not.toBeInTheDocument();
 
-    const toggleButton = screen.getByTestId('mcp-call-toggle-button-801');
-    expect(toggleButton).toHaveAttribute('aria-expanded', 'true');
-    fireEvent.click(toggleButton);
+    const toggleButton = screen.getByTestId('process-card-toggle-button-tool-call-801');
     expect(toggleButton).toHaveAttribute('aria-expanded', 'false');
-    expect(panel).toHaveClass('px-4');
-    expect(panel).toHaveClass('py-3');
+    fireEvent.click(toggleButton);
+    expect(toggleButton).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByText('北京今天天气怎么样')).toBeInTheDocument();
   });
 
   /**
-   * MCP 调用状态在流结束后应至少短暂停留“调用中”，避免状态闪现导致用户难以感知。
+   * 工具参数与结果应在过程时间线中默认折叠，展开后才显示具体内容。
    */
-  it('应在流结束后维持MCP调用中状态最短可见时长', async () => {
-    vi.useFakeTimers();
-    try {
-      const streamingWorkspace = createWorkspace({
-        messages: [
-          {
-            id: '901',
+  it('应在过程时间线中默认折叠参数与结果并支持展开', async () => {
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          messages: [
+            {
+              id: '861',
+              conversationId: '2001',
+              role: 'ASSISTANT',
+              content: '已完成天气查询',
+              processCards: [
+                {
+                  id: 'tool-call-861',
+                  type: 'tool_call',
+                  title: '调用天气查询',
+                  summary: '正在请求天气工具。',
+                  status: 'completed',
+                  details: [
+                    {
+                      label: '参数',
+                      content: '{\"city\":\"北京\",\"date\":\"2026-05-21\"}',
+                    },
+                  ],
+                },
+                {
+                  id: 'tool-result-861',
+                  type: 'tool_result',
+                  title: '已获取结果',
+                  summary: '北京今日晴，最高 28.6°C。',
+                  status: 'completed',
+                  details: [
+                    {
+                      label: '结果',
+                      content: '{\"text\":\"北京今日晴\",\"temp\":28.6}',
+                    },
+                  ],
+                },
+              ],
+              status: 'COMPLETED',
+            } as any,
+          ],
+          executionSteps: [],
+          references: [],
+          artifacts: [],
+        })}
+      />,
+    );
+
+    expect(screen.getByText('调用天气查询')).toBeInTheDocument();
+    expect(screen.queryByText('{"city":"北京","date":"2026-05-21"}')).not.toBeInTheDocument();
+    expect(screen.queryByText('{"text":"北京今日晴","temp":28.6}')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('process-card-toggle-button-tool-call-861'));
+    expect(screen.getByText('{"city":"北京","date":"2026-05-21"}')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('process-card-toggle-button-tool-result-861'));
+    expect(screen.getByText('{"text":"北京今日晴","temp":28.6}')).toBeInTheDocument();
+  });
+
+  /**
+   * 助手消息在联网搜索期间应以过程卡片展示搜索进行中与搜索结果。
+   */
+  it('应在助手消息中渲染搜索过程时间线卡片', async () => {
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          messages: [
+            {
+              id: '951',
+              conversationId: '2001',
+              role: 'ASSISTANT',
+              content: '正在汇总检索结果',
+              status: 'streaming',
+              processCards: [
+                {
+                  id: 'tool-call-search-951',
+                  type: 'tool_call',
+                  title: '调用网页搜索',
+                  summary: '正在检索 2 个来源站点。',
+                  status: 'running',
+                },
+                {
+                  id: 'tool-result-search-951',
+                  type: 'tool_result',
+                  title: '已获取结果',
+                  summary: '已获取 2 条搜索结果。',
+                  status: 'completed',
+                  details: [
+                    {
+                      label: '结果',
+                      content: 'OpenAI API 最新变更\nBing Search API 文档',
+                    },
+                  ],
+                },
+              ],
+            } as any,
+          ],
+          executionSteps: [],
+          references: [],
+          artifacts: [],
+        })}
+      />,
+    );
+
+    expect(screen.getByTestId('process-timeline-panel-951')).toBeInTheDocument();
+    expect(screen.getByText('调用网页搜索')).toBeInTheDocument();
+    expect(screen.getByText('已获取结果')).toBeInTheDocument();
+    // 业务意图：搜索结果细节也默认收起，必须先展开结果卡片再断言具体结果文本。
+    expect(screen.queryByText('OpenAI API 最新变更')).not.toBeInTheDocument();
+    expect(screen.queryByText('Bing Search API 文档')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('process-card-toggle-button-tool-result-search-951'));
+
+    const resultCard = screen.getByTestId('process-card-tool-result-search-951');
+    expect(resultCard).toHaveTextContent('OpenAI API 最新变更');
+    expect(resultCard).toHaveTextContent('Bing Search API 文档');
+  });
+
+  /**
+   * 重命名弹窗应使用固定定位和高层级，避免被侧栏或主区遮挡。
+   */
+  it('重命名弹窗应使用fixed高层级容器', () => {
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          renameDialog: {
             conversationId: '2001',
-            role: 'ASSISTANT',
-            content: '处理中',
-            mcpCalls: [
-              {
-                toolId: 'weather_query',
-                displayName: '天气查询',
-                input: '美国天气',
-                content: '处理中',
-              },
-            ],
-            status: 'streaming',
+            initialTitle: '默认标题',
+            isOpen: true,
+            open: vi.fn(),
+            close: vi.fn(),
           },
-        ],
-        executionSteps: [],
-        references: [],
-        artifacts: [],
-      });
-      const { rerender } = render(
-        <ChatView
-          isAuthenticated={true}
-          onRequireLogin={vi.fn()}
-          workspace={streamingWorkspace}
-        />,
-      );
+        })}
+      />,
+    );
 
-      expect(screen.getByTestId('mcp-call-status-901')).toHaveTextContent('调用中');
+    const panel = screen.getByText('重命名对话').closest('div');
+    const overlay = panel?.parentElement;
+    expect(overlay).toHaveClass('fixed');
+    expect(overlay).toHaveClass('z-[120]');
+  });
 
-      const completedWorkspace = {
-        ...streamingWorkspace,
-        messages: [
-          {
-            ...streamingWorkspace.messages[0],
-            content: '已完成',
-            status: 'COMPLETED',
+  /**
+   * 重命名失败时应保留弹窗并展示后端错误，避免用户误判为确认按钮无响应。
+   */
+  it('应在重命名失败时展示错误并保持弹窗打开', async () => {
+    const renameConversation = vi.fn().mockRejectedValue(new Error('会话标题不能为空'));
+    const closeRenameDialog = vi.fn();
+
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          renameConversation,
+          renameDialog: {
+            conversationId: '2001',
+            initialTitle: '默认标题',
+            isOpen: true,
+            open: vi.fn(),
+            close: closeRenameDialog,
           },
-        ],
-      };
-      rerender(
-        <ChatView
-          isAuthenticated={true}
-          onRequireLogin={vi.fn()}
-          workspace={completedWorkspace}
-        />,
-      );
+        })}
+      />,
+    );
 
-      expect(screen.getByTestId('mcp-call-status-901')).toHaveTextContent('调用中');
-      act(() => {
-        vi.advanceTimersByTime(1000);
-      });
-      expect(screen.getByTestId('mcp-call-status-901')).toHaveTextContent('调用完成');
-    } finally {
-      vi.useRealTimers();
-    }
+    fireEvent.click(screen.getByRole('button', { name: '确认' }));
+
+    await waitFor(() => {
+      expect(renameConversation).toHaveBeenCalledWith('2001', '默认标题');
+    });
+    expect(await screen.findByRole('alert')).toHaveTextContent('会话标题不能为空');
+    expect(closeRenameDialog).not.toHaveBeenCalled();
   });
 });
 
@@ -1223,6 +2098,32 @@ describe('ChatView', () => {
  */
 function createWorkspace(overrides?: Partial<ChatWorkspaceController>): ChatWorkspaceController {
   return {
+    runtimeTargets: ['cloud', 'local'],
+    activeRuntimeTarget: 'local',
+    workspaceGroups: [
+      {
+        partitionKey: 'local::d:/code/codingx',
+        workspacePath: 'D:/code/CodingX',
+        workspaceLabel: 'CodingX',
+        runtimeTarget: 'local',
+        lastOpenedAt: 1716102222000,
+        activeConversationId: '2001',
+        conversations: [],
+      },
+      {
+        partitionKey: 'cloud::__no_workspace__',
+        workspacePath: null,
+        workspaceLabel: '历史记录',
+        runtimeTarget: 'cloud',
+        lastOpenedAt: 1716101111000,
+        activeConversationId: null,
+        conversations: [],
+      },
+    ],
+    activeWorkspacePartitionKey: 'local::d:/code/codingx',
+    workspacePath: 'D:/code/CodingX',
+    workspaceLabel: 'CodingX',
+    workspaceRuntimeTarget: 'local',
     conversations: [
       {
         id: '2001',
@@ -1249,6 +2150,48 @@ function createWorkspace(overrides?: Partial<ChatWorkspaceController>): ChatWork
         runId: '5002',
         role: 'ASSISTANT',
         content: '我来为您总结 Spring Boot SSE 最佳实践。',
+        processCards: [
+          {
+            id: 'analysis-default',
+            type: 'analysis',
+            title: '分析问题',
+            summary: '正在判断需要检索哪些实时资料。',
+            status: 'completed',
+          },
+          {
+            id: 'tool-call-default',
+            type: 'tool_call',
+            title: '调用网页搜索',
+            summary: '正在检索 Spring Boot SSE 最佳实践。',
+            status: 'completed',
+            details: [
+              {
+                label: '参数',
+                content: '请搜索 Spring Boot SSE 最佳实践',
+              },
+            ],
+          },
+          {
+            id: 'tool-result-default',
+            type: 'tool_result',
+            title: '已获取结果',
+            summary: '已找到官方文档和相关文章。',
+            status: 'completed',
+            details: [
+              {
+                label: '结果',
+                content: 'Spring Boot SSE 最佳实践',
+              },
+            ],
+          },
+          {
+            id: 'synthesis-default',
+            type: 'synthesis',
+            title: '整理结论',
+            summary: '正在根据检索结果整理最终回答。',
+            status: 'completed',
+          },
+        ],
         status: 'COMPLETED',
         createdAt: '2026-05-15 00:37:11',
       },
@@ -1356,17 +2299,27 @@ function createWorkspace(overrides?: Partial<ChatWorkspaceController>): ChatWork
     isStreaming: false,
     isCancelling: false,
     deepThinkingEnabled: false,
+    streamQueueState: null,
     streamError: '',
     inputValue: '请搜索 Spring Boot SSE 最佳实践',
+    pendingAttachments: [],
     isBootstrapping: false,
     setInputValue: vi.fn(),
+    setSelectedExpertCode: vi.fn(),
+    addPendingAttachments: vi.fn().mockResolvedValue(undefined),
+    removePendingAttachment: vi.fn(),
+    clearPendingAttachments: vi.fn(),
     setDeepThinkingEnabled: vi.fn(),
     setSelectedSkillCodes: vi.fn(),
     setSelectedMcpCodes: vi.fn(),
     setMcpConnected: vi.fn(),
+    setActiveRuntimeTarget: vi.fn().mockResolvedValue(undefined),
+    pickRepositoryDirectory: vi.fn().mockResolvedValue(undefined),
+    setActiveWorkspacePath: vi.fn().mockResolvedValue(undefined),
     submitMessage: vi.fn().mockResolvedValue(undefined),
     cancelCurrentStream: vi.fn().mockResolvedValue(undefined),
     selectConversation: vi.fn().mockResolvedValue(undefined),
+    selectConversationInWorkspace: vi.fn().mockResolvedValue(undefined),
     startNewConversation: vi.fn().mockResolvedValue(undefined),
     renameConversation: vi.fn().mockResolvedValue(undefined),
     deleteConversation: vi.fn().mockResolvedValue(undefined),

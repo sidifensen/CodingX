@@ -37,6 +37,39 @@ describe('McpView', () => {
   });
 
   /**
+   * 不可用 MCP 必须禁用切换，避免用户误开启不可执行工具。
+   */
+  it('应禁止切换不可用MCP', () => {
+    const setSelectedMcpCodes = vi.fn();
+    const setMcpConnected = vi.fn();
+
+    render(
+      <McpView
+        availableMcps={[
+          {
+            id: '9002',
+            mcpCode: 'weather_query',
+            displayName: '天气查询',
+            description: '查询天气',
+            category: '业务',
+            available: false,
+          },
+        ]}
+        selectedMcpCodes={[]}
+        mcpConnected={true}
+        setSelectedMcpCodes={setSelectedMcpCodes}
+        setMcpConnected={setMcpConnected}
+      />,
+    );
+
+    const button = screen.getByRole('button', { name: '切换MCP 天气查询' });
+    expect(button).toBeDisabled();
+    expect(button).toHaveAttribute('aria-disabled', 'true');
+    fireEvent.click(button);
+    expect(setSelectedMcpCodes).not.toHaveBeenCalled();
+  });
+
+  /**
    * 总连接开关应支持切换。
    */
   it('应支持切换MCP总连接状态', () => {

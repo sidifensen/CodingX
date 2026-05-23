@@ -61,8 +61,8 @@ export default defineConfig({
     environment: 'jsdom',
     globals: true,
     css: true,
-    setupFiles: ['./src/tests/setup.ts'],
-    include: ['src/**/*.test.ts', 'src/**/*.test.tsx'],
+    setupFiles: ['./tests/setup.ts'],
+    include: ['tests/**/*.test.ts', 'tests/**/*.test.tsx'],
   },
   // 步骤：为暂存区文件提供统一检查入口，复用 Vite+ 一体化能力。
   staged: {

@@ -1,8 +1,11 @@
 package com.codingx.chat.infrastructure.ai;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import cn.hutool.json.JSONObject;
+import cn.hutool.json.JSONUtil;
 import com.codingx.chat.domain.model.ChatMessage;
 import com.codingx.config.AiProperties;
 import com.codingx.common.support.ai.AiConversationRequest;
@@ -20,6 +23,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import okhttp3.OkHttpClient;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -92,6 +96,41 @@ class DeepSeekOkHttpChatClientTest {
 
         assertEquals(List.of("Hello", " world"), new ArrayList<>(deltas));
         assertTrue(doneLatch.await(100, TimeUnit.MILLISECONDS), "completion event should be emitted after [DONE]");
+    }
+
+    /**
+     * 未暴露模型工具时请求体不应带 tools:null，避免兼容 provider 对 null 数组字段解析失败。
+     */
+    @Test
+    void streamChatOmitsToolsFieldWhenNoToolSpecsAreVisible() throws Exception {
+        AtomicReference<String> requestBody = new AtomicReference<>("");
+        httpServer = HttpServer.create(new InetSocketAddress(0), 0);
+        httpServer.createContext("/chat/completions", exchange -> {
+            requestBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+            exchange.getResponseHeaders().add("Content-Type", "text/event-stream; charset=utf-8");
+            exchange.sendResponseHeaders(200, 0);
+            try (OutputStream outputStream = exchange.getResponseBody()) {
+                writeChunk(outputStream, """
+                    data: {"choices":[{"delta":{"content":"ok"}}]}
+
+                    data: [DONE]
+
+                    """);
+            }
+        });
+        httpServer.start();
+
+        DeepSeekOkHttpChatClient client = new DeepSeekOkHttpChatClient(
+            new OkHttpClient.Builder().readTimeout(5, TimeUnit.SECONDS).build(),
+            buildAiProperties(httpServer.getAddress().getPort()),
+            new OpenAiStyleStreamParser()
+        );
+
+        client.streamChat(buildRequest(), buildTarget(httpServer.getAddress().getPort()), new AiStreamHandler() {
+        }).completion().get(2, TimeUnit.SECONDS);
+
+        JSONObject sentBody = JSONUtil.parseObj(requestBody.get());
+        assertFalse(sentBody.containsKey("tools"), "空工具列表应省略 tools 字段");
     }
 
     /**

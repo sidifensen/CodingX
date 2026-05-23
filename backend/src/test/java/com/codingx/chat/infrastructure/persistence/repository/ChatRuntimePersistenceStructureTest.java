@@ -7,6 +7,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.baomidou.mybatisplus.annotation.TableName;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import org.apache.ibatis.annotations.Mapper;
 import org.junit.jupiter.api.Test;
@@ -40,6 +43,25 @@ class ChatRuntimePersistenceStructureTest {
         for (String expectedField : List.of("kbId", "level", "examples", "collectionName", "topK", "kind", "promptSnippet", "sortOrder")) {
             assertTrue(fieldNames.contains(expectedField), "Missing ChatIntentNodeDO field: " + expectedField);
         }
+    }
+
+    /**
+     * Codex 工具运行时迁移必须区分本地可执行工具和暂未适配工具，避免管理端展示假可用。
+     *
+     * @throws Exception 迁移脚本缺失或内容不符合约定时抛出。
+     */
+    @Test
+    void codexLocalToolRuntimeMigrationMarksUnsupportedToolsDisabled() throws Exception {
+        Path migration = Path.of("src/main/resources/db/migration/V20260523_190340__align_codex_local_tool_runtime.sql");
+        assertTrue(Files.exists(migration), "缺少 Codex 本地工具运行时迁移脚本");
+        String sql = Files.readString(migration, StandardCharsets.UTF_8);
+
+        assertTrue(sql.contains("shell_command"), "迁移脚本应保留本地可执行 shell_command");
+        assertTrue(sql.contains("apply_patch"), "迁移脚本应保留本地可执行 apply_patch");
+        assertTrue(sql.contains("spawn_agent"), "迁移脚本应显式处理暂未适配 spawn_agent");
+        assertTrue(sql.contains("暂未适配"), "迁移脚本描述必须让管理端可区分未适配工具");
+        assertTrue(sql.contains("enabled = 0") || sql.contains("enabled=0"), "未适配工具必须禁用");
+        assertTrue(sql.contains("COMMENT ON TABLE tool"), "数据库结构变更脚本必须包含表注释语句");
     }
 
     /**

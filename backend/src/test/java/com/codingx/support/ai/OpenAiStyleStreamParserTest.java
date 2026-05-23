@@ -3,6 +3,7 @@ package com.codingx.common.support.ai;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.codingx.common.support.ai.AiToolCall;
 import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -121,5 +122,74 @@ class OpenAiStyleStreamParserTest {
         });
 
         assertEquals(List.of("thinking:分析中", "content:答案"), events);
+    }
+
+    /**
+     * OpenAI 兼容流返回 tool_calls 增量时，解析器应还原工具名与参数，供后端执行本地工具。
+     */
+    @Test
+    void parseExtractsToolCallDelta() {
+        String rawStream = """
+            data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"id\":\"call-1\",\"type\":\"function\",\"function\":{\"name\":\"shell_command\",\"arguments\":\"{\\\"command\\\":\"}}]}}]}
+            data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"\\\"Get-ChildItem\\\"}\"}}]}}]}
+            data: [DONE]
+            """;
+        OpenAiStyleStreamParser parser = new OpenAiStyleStreamParser();
+        List<AiToolCall> toolCalls = new ArrayList<>();
+
+        parser.parse(rawStream, new OpenAiStyleStreamParser.StreamConsumer() {
+            @Override
+            public void onToolCall(AiToolCall toolCall) {
+                toolCalls.add(toolCall);
+            }
+        });
+
+        assertEquals(1, toolCalls.size());
+        assertEquals("call-1", toolCalls.getFirst().callId());
+        assertEquals("shell_command", toolCalls.getFirst().toolCode());
+        assertEquals("{\"command\":\"Get-ChildItem\"}", toolCalls.getFirst().arguments());
+    }
+
+    /**
+     * 同一个解析器 Bean 会被多个 provider 流共享，工具参数累积必须按流隔离，不能串到另一个请求。
+     */
+    @Test
+    void parseChunkKeepsToolCallStateIsolatedPerStreamBuffer() {
+        OpenAiStyleStreamParser parser = new OpenAiStyleStreamParser();
+        StringBuilder firstStream = new StringBuilder();
+        StringBuilder secondStream = new StringBuilder();
+        List<AiToolCall> secondStreamToolCalls = new ArrayList<>();
+
+        parser.parseChunk(
+            "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"id\":\"call-a\",\"function\":{\"name\":\"shell_command\",\"arguments\":\"{\\\"command\\\":\"}}]}}]}\n",
+            firstStream,
+            new OpenAiStyleStreamParser.StreamConsumer() {
+            }
+        );
+        parser.parseChunk(
+            "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"id\":\"call-b\",\"function\":{\"name\":\"test_sync_tool\",\"arguments\":\"{\\\"message\\\":\\\"ok\\\"}\"}}]}}]}\n",
+            secondStream,
+            new OpenAiStyleStreamParser.StreamConsumer() {
+                @Override
+                public void onToolCall(AiToolCall toolCall) {
+                    secondStreamToolCalls.add(toolCall);
+                }
+            }
+        );
+        parser.parseChunk(
+            "data: [DONE]\n",
+            secondStream,
+            new OpenAiStyleStreamParser.StreamConsumer() {
+                @Override
+                public void onToolCall(AiToolCall toolCall) {
+                    secondStreamToolCalls.add(toolCall);
+                }
+            }
+        );
+
+        assertEquals(1, secondStreamToolCalls.size());
+        assertEquals("call-b", secondStreamToolCalls.getFirst().callId());
+        assertEquals("test_sync_tool", secondStreamToolCalls.getFirst().toolCode());
+        assertEquals("{\"message\":\"ok\"}", secondStreamToolCalls.getFirst().arguments());
     }
 }

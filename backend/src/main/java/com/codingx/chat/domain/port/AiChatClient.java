@@ -1,6 +1,8 @@
 package com.codingx.chat.domain.port;
 import com.codingx.chat.domain.model.ChatMessage;
 import com.codingx.common.error.ErrorMessageCatalog;
+import com.codingx.common.support.ai.AiToolCall;
+import com.codingx.tool.application.service.ChatToolSpec;
 import java.util.List;
 
 /**
@@ -15,6 +17,24 @@ public interface AiChatClient {
      * @param handler 输入参数。
      */
     void streamChat(List<ChatMessage> history, boolean deepThinking, StreamHandler handler);
+
+    /**
+     * 以可调用工具模式处理对话。
+     * 默认回退普通流式接口，便于暂未适配工具调用的 provider 保持兼容。
+     *
+     * @param history 输入消息历史。
+     * @param deepThinking 是否开启深度思考。
+     * @param tools 当前模型可见工具 schema。
+     * @param handler 支持工具调用事件的流处理器。
+     */
+    default void streamChatWithTools(
+        List<ChatMessage> history,
+        boolean deepThinking,
+        List<ChatToolSpec> tools,
+        ToolAwareStreamHandler handler
+    ) {
+        streamChat(history, deepThinking, handler);
+    }
 
     /**
      * 基于会话消息生成简短标题。
@@ -65,6 +85,19 @@ public interface AiChatClient {
          * @param throwable 输入参数。
          */
         default void onError(Throwable throwable) {
+        }
+    }
+
+    /**
+     * 扩展普通流式处理器，接收模型请求执行的本地工具调用。
+     */
+    interface ToolAwareStreamHandler extends StreamHandler {
+
+        /**
+         * 接收模型工具调用请求。
+         * @param toolCall 工具调用。
+         */
+        default void onToolCall(AiToolCall toolCall) {
         }
     }
 }

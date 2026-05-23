@@ -4,7 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 在首包确认前缓冲 thinking/content/complete 事件，避免 fallback 时泄漏半截脏流。
+ * 在首包确认前缓冲 thinking/content/tool/complete 事件，避免 fallback 时泄漏半截脏流。
  */
 public class FirstTokenBufferingHandler implements AiStreamHandler {
 
@@ -34,6 +34,12 @@ public class FirstTokenBufferingHandler implements AiStreamHandler {
     public void onContentDelta(String delta) {
         awaiter.markContent();
         bufferOrDispatch(BufferedEvent.content(delta));
+    }
+
+    @Override
+    public void onToolCall(AiToolCall toolCall) {
+        awaiter.markContent();
+        bufferOrDispatch(BufferedEvent.toolCall(toolCall));
     }
 
     @Override
@@ -94,6 +100,7 @@ public class FirstTokenBufferingHandler implements AiStreamHandler {
         switch (event.type()) {
             case THINKING -> delegate.onThinkingDelta(event.delta());
             case CONTENT -> delegate.onContentDelta(event.delta());
+            case TOOL_CALL -> delegate.onToolCall(event.toolCall());
             case COMPLETE -> delegate.onComplete();
             case ERROR -> delegate.onError(event.error());
         }
@@ -103,23 +110,28 @@ public class FirstTokenBufferingHandler implements AiStreamHandler {
      * 缓冲事件。
      * @param type 事件类型。
      * @param delta 事件内容。
+     * @param toolCall 工具调用。
      */
-    private record BufferedEvent(Type type, String delta, Throwable error) {
+    private record BufferedEvent(Type type, String delta, AiToolCall toolCall, Throwable error) {
 
         private static BufferedEvent thinking(String delta) {
-            return new BufferedEvent(Type.THINKING, delta, null);
+            return new BufferedEvent(Type.THINKING, delta, null, null);
         }
 
         private static BufferedEvent content(String delta) {
-            return new BufferedEvent(Type.CONTENT, delta, null);
+            return new BufferedEvent(Type.CONTENT, delta, null, null);
+        }
+
+        private static BufferedEvent toolCall(AiToolCall toolCall) {
+            return new BufferedEvent(Type.TOOL_CALL, null, toolCall, null);
         }
 
         private static BufferedEvent complete() {
-            return new BufferedEvent(Type.COMPLETE, null, null);
+            return new BufferedEvent(Type.COMPLETE, null, null, null);
         }
 
         private static BufferedEvent error(Throwable error) {
-            return new BufferedEvent(Type.ERROR, null, error);
+            return new BufferedEvent(Type.ERROR, null, null, error);
         }
     }
 
@@ -129,6 +141,7 @@ public class FirstTokenBufferingHandler implements AiStreamHandler {
     private enum Type {
         THINKING,
         CONTENT,
+        TOOL_CALL,
         COMPLETE,
         ERROR
     }

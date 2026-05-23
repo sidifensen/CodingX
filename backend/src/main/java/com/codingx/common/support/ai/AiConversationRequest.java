@@ -4,6 +4,7 @@ import cn.hutool.core.collection.CollUtil;
 import com.codingx.chat.domain.model.ChatAttachment;
 import com.codingx.chat.domain.model.ChatMessage;
 import com.codingx.common.error.ErrorMessageCatalog;
+import com.codingx.tool.application.service.ChatToolSpec;
 import java.util.List;
 import lombok.Builder;
 
@@ -14,6 +15,7 @@ import lombok.Builder;
 public record AiConversationRequest(
     List<ChatMessage> messages,
     List<ChatAttachment> attachments,
+    List<ChatToolSpec> tools,
     String preferredModel,
     boolean stream,
     boolean thinkingEnabled

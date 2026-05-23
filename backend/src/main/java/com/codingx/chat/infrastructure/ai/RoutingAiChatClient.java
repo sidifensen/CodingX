@@ -7,6 +7,8 @@ import com.codingx.chat.application.service.ChatAttachmentService;
 import com.codingx.common.support.ai.AiConversationRequest;
 import com.codingx.common.support.ai.AiModelDispatchService;
 import com.codingx.common.support.ai.AiStreamHandler;
+import com.codingx.common.support.ai.AiToolCall;
+import com.codingx.tool.application.service.ChatToolSpec;
 import java.util.List;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Component;
@@ -35,9 +37,20 @@ public class RoutingAiChatClient implements AiChatClient {
 
     @Override
     public void streamChat(List<ChatMessage> history, boolean deepThinking, StreamHandler handler) {
+        streamChatWithTools(history, deepThinking, List.of(), adaptToolAwareHandler(handler));
+    }
+
+    @Override
+    public void streamChatWithTools(
+        List<ChatMessage> history,
+        boolean deepThinking,
+        List<ChatToolSpec> tools,
+        ToolAwareStreamHandler handler
+    ) {
         AiConversationRequest request = AiConversationRequest.builder()
             .messages(history)
             .attachments(resolveAttachments(history))
+            .tools(tools == null ? List.of() : tools)
             .stream(true)
             .thinkingEnabled(deepThinking)
             .build();
@@ -58,6 +71,11 @@ public class RoutingAiChatClient implements AiChatClient {
             }
 
             @Override
+            public void onToolCall(AiToolCall toolCall) {
+                handler.onToolCall(toolCall);
+            }
+
+            @Override
             public void onComplete() {
                 handler.onComplete();
             }
@@ -67,6 +85,40 @@ public class RoutingAiChatClient implements AiChatClient {
                 handler.onError(throwable);
             }
         });
+    }
+
+    /**
+     * 将旧式 StreamHandler 包装成工具感知处理器，旧调用方会自然忽略工具事件。
+     * @param handler 旧式处理器。
+     * @return 工具感知处理器。
+     */
+    private ToolAwareStreamHandler adaptToolAwareHandler(StreamHandler handler) {
+        return new ToolAwareStreamHandler() {
+            @Override
+            public void onMetadata(String provider, String model) {
+                handler.onMetadata(provider, model);
+            }
+
+            @Override
+            public void onDelta(String delta) {
+                handler.onDelta(delta);
+            }
+
+            @Override
+            public void onThinkingDelta(String delta) {
+                handler.onThinkingDelta(delta);
+            }
+
+            @Override
+            public void onComplete() {
+                handler.onComplete();
+            }
+
+            @Override
+            public void onError(Throwable throwable) {
+                handler.onError(throwable);
+            }
+        };
     }
 
     /**

@@ -1,9 +1,11 @@
 package com.codingx.common.support.ai;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -76,5 +78,32 @@ class FirstTokenBufferingHandlerTest {
 
         assertEquals(List.of(), deltas);
         assertEquals(List.of(), errors);
+    }
+
+    /**
+     * 模型可能首包只返回 tool_call；这也是有效输出，fallback 等待器不能误判为无内容。
+     *
+     * @throws Exception 等待首事件失败时抛出。
+     */
+    @Test
+    void treatsToolCallAsFirstContentEventAndReplaysAfterCommit() throws Exception {
+        FirstTokenAwaiter awaiter = new FirstTokenAwaiter();
+        List<AiToolCall> toolCalls = new ArrayList<>();
+        FirstTokenBufferingHandler handler = new FirstTokenBufferingHandler(new AiStreamHandler() {
+            @Override
+            public void onToolCall(AiToolCall toolCall) {
+                toolCalls.add(toolCall);
+            }
+        }, awaiter);
+
+        handler.onToolCall(new AiToolCall("call-1", "shell_command", "{\"command\":\"Get-ChildItem\"}"));
+
+        assertTrue(awaiter.await(10, TimeUnit.MILLISECONDS).isSuccess());
+        assertEquals(List.of(), toolCalls);
+
+        handler.commit();
+
+        assertEquals(1, toolCalls.size());
+        assertEquals("shell_command", toolCalls.getFirst().toolCode());
     }
 }

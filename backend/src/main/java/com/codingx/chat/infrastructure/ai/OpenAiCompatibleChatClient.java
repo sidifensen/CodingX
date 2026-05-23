@@ -78,7 +78,7 @@ public class OpenAiCompatibleChatClient implements AiProviderClient {
                     throw new IllegalStateException(ErrorMessageCatalog.AI_RESPONSE_BODY_EMPTY);
                 }
                 BufferedSource source = responseBody.source();
-                StringBuilder chunkBuffer = new StringBuilder();
+                OpenAiStyleStreamParser.StreamState streamState = openAiStyleStreamParser.newStreamState();
                 OpenAiStyleStreamParser.StreamConsumer streamConsumer = new OpenAiStyleStreamParser.StreamConsumer() {
                     @Override
                     public void onContentDelta(String delta) {
@@ -100,15 +100,22 @@ public class OpenAiCompatibleChatClient implements AiProviderClient {
                             handler.onComplete();
                         }
                     }
+
+                    @Override
+                    public void onToolCall(com.codingx.common.support.ai.AiToolCall toolCall) {
+                        if (!cancelled.get()) {
+                            handler.onToolCall(toolCall);
+                        }
+                    }
                 };
                 while (!cancelled.get()) {
                     String line = source.readUtf8Line();
                     if (line == null) {
                         break;
                     }
-                    openAiStyleStreamParser.parseChunk(line + "\n", chunkBuffer, streamConsumer);
+                    openAiStyleStreamParser.parseChunk(line + "\n", streamState, streamConsumer);
                 }
-                openAiStyleStreamParser.flush(chunkBuffer, streamConsumer);
+                openAiStyleStreamParser.flush(streamState, streamConsumer);
                 completion.complete(null);
             } catch (IOException exception) {
                 if (!cancelled.get()) {
@@ -142,11 +149,30 @@ public class OpenAiCompatibleChatClient implements AiProviderClient {
             .set("messages", request.messages().stream()
                 .map(message -> toMessagePayload(message, request.attachments()))
                 .collect(Collectors.toList()));
+        if (request.tools() != null && !request.tools().isEmpty()) {
+            body.set("tools", request.tools().stream()
+                .map(this::toToolPayload)
+                .collect(Collectors.toList()));
+        }
         if (request.thinkingEnabled()) {
             // 百炼和兼容 provider 需要显式开关才会在流式响应中返回 reasoning_content。
             body.set("enable_thinking", true);
         }
         return body;
+    }
+
+    /**
+     * 将本地工具 schema 转换为 OpenAI function tool 格式。
+     * @param toolSpec 本地工具定义。
+     * @return OpenAI 请求体工具对象。
+     */
+    private Object toToolPayload(com.codingx.tool.application.service.ChatToolSpec toolSpec) {
+        return JSONUtil.createObj()
+            .set("type", "function")
+            .set("function", JSONUtil.createObj()
+                .set("name", toolSpec.name())
+                .set("description", toolSpec.description())
+                .set("parameters", toolSpec.parameters()));
     }
 
     /**

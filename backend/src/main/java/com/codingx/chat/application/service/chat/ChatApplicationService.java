@@ -18,6 +18,7 @@ import com.codingx.chat.domain.port.AiChatClient;
 import com.codingx.chat.domain.port.ChatStreamPublisher;
 import com.codingx.common.error.ErrorMessageCatalog;
 import com.codingx.common.exception.ForbiddenException;
+import com.codingx.common.support.ai.AiToolCall;
 import com.codingx.expert.application.service.ChatExpertContextService;
 import com.codingx.mcp.application.service.ChatMcpExecutionService;
 import com.codingx.mcp.application.service.ChatMcpProgressListener;
@@ -25,10 +26,18 @@ import com.codingx.mcp.application.service.ChatMcpToolResult;
 import com.codingx.mcp.domain.model.ChatMcp;
 import com.codingx.mcp.domain.repository.ChatMcpRepository;
 import com.codingx.skill.application.service.ChatSkillContextService;
+import com.codingx.tool.application.service.ChatToolExecutionContext;
+import com.codingx.tool.application.service.ChatToolExecutionResult;
+import com.codingx.tool.application.service.ChatToolExecutionService;
+import com.codingx.tool.application.service.ChatToolSpec;
+import com.codingx.tool.application.service.ChatToolSpecService;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ForkJoinPool;
@@ -103,6 +112,12 @@ public class ChatApplicationService {
     private final ChatSkillContextService chatSkillContextService;
     /** 专家上下文服务，将选中专家设定拼装为模型可消费上下文 */
     private final ChatExpertContextService chatExpertContextService;
+    /** 工具 schema 服务，提供模型可见的真实本地工具集合 */
+    private final ChatToolSpecService chatToolSpecService;
+    /** 工具执行服务，承接模型发起的本地工具调用 */
+    private final ChatToolExecutionService chatToolExecutionService;
+    /** 会话 workspace 绑定服务，负责把本地空间映射为真实仓库目录 */
+    private final ChatWorkspaceBindingService chatWorkspaceBindingService;
 
     /**
      * 处理用户发送消息主流程。
@@ -342,38 +357,17 @@ public class ChatApplicationService {
         tokenCounterService.estimateConversationTokens(aiHistory);
         final Long activeRunId = runId;
         try {
-            aiChatClient.streamChat(aiHistory, command.deepThinking(), new AiChatClient.StreamHandler() {
-                @Override
-                public void onMetadata(String provider, String model) {
-                    selectedProvider[0] = provider;
-                    selectedModel[0] = model;
-                }
-
-                @Override
-                public void onDelta(String delta) {
-                    if (chatRuntimeGuardService.isCancelled(command.conversationId(), activeRunId)) {
-                        return;
-                    }
-                    builder.append(delta);
-                    chatStreamPublisher.publishAssistantDelta(command.conversationId(), delta);
-                }
-
-                @Override
-                public void onThinkingDelta(String delta) {
-                    if (chatRuntimeGuardService.isCancelled(command.conversationId(), activeRunId)) {
-                        return;
-                    }
-                    thinkingBuilder.append(delta);
-                    chatStreamPublisher.publishAssistantThinkingDelta(command.conversationId(), delta);
-                }
-                @Override
-                public void onComplete() {
-                }
-                @Override
-                public void onError(Throwable throwable) {
-                    streamError[0] = throwable;
-                }
-            });
+            runAiToolAwareLoop(
+                command,
+                runId,
+                aiHistory,
+                builder,
+                thinkingBuilder,
+                streamError,
+                selectedProvider,
+                selectedModel,
+                activeRunId
+            );
         } catch (RuntimeException exception) {
             if (chatRuntimeGuardService.isCancelled(command.conversationId(), activeRunId)) {
                 ChatMessage cancelledMessage = ChatMessage.assistantMessage(
@@ -462,6 +456,244 @@ public class ChatApplicationService {
 
     private Long currentRunId(Long conversationId) {
         return ChatExecutionContext.currentRunId().orElse(conversationId);
+    }
+
+    /**
+     * 执行模型对话并处理模型自主发起的本地工具调用。
+     * @param command 当前用户请求。
+     * @param runId 运行标识。
+     * @param initialAiHistory 初始模型历史。
+     * @param builder 最终正文缓冲区。
+     * @param thinkingBuilder 思考内容缓冲区。
+     * @param streamError 流式异常容器。
+     * @param selectedProvider 实际 provider 输出容器。
+     * @param selectedModel 实际模型输出容器。
+     * @param activeRunId 当前运行标识。
+     */
+    private void runAiToolAwareLoop(
+        SendChatMessageCommand command,
+        Long runId,
+        List<ChatMessage> initialAiHistory,
+        StringBuilder builder,
+        StringBuilder thinkingBuilder,
+        Throwable[] streamError,
+        String[] selectedProvider,
+        String[] selectedModel,
+        Long activeRunId
+    ) {
+        List<ChatToolSpec> toolSpecs = chatToolSpecService == null
+            ? List.of()
+            : Optional.ofNullable(chatToolSpecService.listModelVisibleToolSpecs()).orElse(List.of());
+        List<ChatMessage> currentHistory = new ArrayList<>(initialAiHistory);
+        if (toolSpecs.isEmpty()) {
+            // 业务约束：没有模型可见工具时必须走普通流式契约，兼容未适配工具调用的 provider 与旧测试桩。
+            aiChatClient.streamChat(currentHistory, command.deepThinking(), buildStreamHandler(
+                command,
+                builder,
+                thinkingBuilder,
+                streamError,
+                selectedProvider,
+                selectedModel,
+                activeRunId,
+                null
+            ));
+            return;
+        }
+        int maxToolRounds = 3;
+        for (int round = 0; round < maxToolRounds; round++) {
+            List<AiToolCall> toolCalls = new ArrayList<>();
+            aiChatClient.streamChatWithTools(currentHistory, command.deepThinking(), toolSpecs, buildStreamHandler(
+                command,
+                builder,
+                thinkingBuilder,
+                streamError,
+                selectedProvider,
+                selectedModel,
+                activeRunId,
+                toolCalls
+            ));
+            if (streamError[0] != null || toolCalls.isEmpty()) {
+                return;
+            }
+            builder.setLength(0);
+            thinkingBuilder.setLength(0);
+            for (AiToolCall toolCall : toolCalls) {
+                ChatToolExecutionResult toolResult;
+                try {
+                    toolResult = executeModelToolCall(command, runId, toolCall);
+                } catch (RuntimeException exception) {
+                    streamError[0] = exception;
+                    return;
+                }
+                currentHistory.add(ChatMessage.create(
+                    cn.hutool.core.util.IdUtil.getSnowflakeNextId(),
+                    command.conversationId(),
+                    ChatMessageRole.SYSTEM,
+                    buildLocalToolEvidenceContext(toolResult),
+                    ChatMessageStatus.COMPLETED,
+                    null,
+                    null,
+                    null
+                ).attachRun(runId));
+            }
+        }
+        streamError[0] = new IllegalStateException("本地工具调用轮次超过上限，请收敛工具调用后重试");
+    }
+
+    /**
+     * 构建统一流处理器，普通流式和工具调用流式共享增量、思考与异常处理。
+     * @param command 当前用户请求。
+     * @param builder 正文缓冲区。
+     * @param thinkingBuilder 思考缓冲区。
+     * @param streamError 流异常容器。
+     * @param selectedProvider provider 输出容器。
+     * @param selectedModel 模型输出容器。
+     * @param activeRunId 当前运行标识。
+     * @param toolCalls 工具调用收集器；为空时表示普通流式模式。
+     * @return 可传给模型客户端的流处理器。
+     */
+    private AiChatClient.ToolAwareStreamHandler buildStreamHandler(
+        SendChatMessageCommand command,
+        StringBuilder builder,
+        StringBuilder thinkingBuilder,
+        Throwable[] streamError,
+        String[] selectedProvider,
+        String[] selectedModel,
+        Long activeRunId,
+        List<AiToolCall> toolCalls
+    ) {
+        return new AiChatClient.ToolAwareStreamHandler() {
+            @Override
+            public void onMetadata(String provider, String model) {
+                selectedProvider[0] = provider;
+                selectedModel[0] = model;
+            }
+
+            @Override
+            public void onDelta(String delta) {
+                if (chatRuntimeGuardService.isCancelled(command.conversationId(), activeRunId)) {
+                    return;
+                }
+                builder.append(delta);
+                chatStreamPublisher.publishAssistantDelta(command.conversationId(), delta);
+            }
+
+            @Override
+            public void onThinkingDelta(String delta) {
+                if (chatRuntimeGuardService.isCancelled(command.conversationId(), activeRunId)) {
+                    return;
+                }
+                thinkingBuilder.append(delta);
+                chatStreamPublisher.publishAssistantThinkingDelta(command.conversationId(), delta);
+            }
+
+            @Override
+            public void onToolCall(AiToolCall toolCall) {
+                if (toolCalls != null) {
+                    toolCalls.add(toolCall);
+                }
+            }
+
+            @Override
+            public void onComplete() {
+            }
+
+            @Override
+            public void onError(Throwable throwable) {
+                streamError[0] = throwable;
+            }
+        };
+    }
+
+    /**
+     * 在当前本地 workspace 中执行模型请求的工具。
+     * @param command 当前消息命令。
+     * @param runId 运行标识。
+     * @param toolCall 模型工具调用。
+     * @return 工具执行结果。
+     */
+    private ChatToolExecutionResult executeModelToolCall(SendChatMessageCommand command, Long runId, AiToolCall toolCall) {
+        Path workspacePath = resolveToolWorkingDirectory(command);
+        if (workspacePath != null) {
+            ChatToolExecutionContext.bindToolWorkingDirectory(workspacePath);
+        }
+        try {
+            ChatToolExecutionResult toolResult = chatToolExecutionService.execute(toolCall.toolCode(), toolCall.arguments());
+            ChatExecutionStep toolStep = ChatExecutionStep.builder()
+                .id(cn.hutool.core.util.IdUtil.getSnowflakeNextId())
+                .runId(runId)
+                .stepType("tool")
+                .stepTitle("执行本地工具 " + toolCall.toolCode())
+                .stepStatus("COMPLETED")
+                .sequenceNo(1L)
+                .content(toolResult.content())
+                .createdAt(java.time.LocalDateTime.now())
+                .updatedAt(java.time.LocalDateTime.now())
+                .build();
+            chatExecutionStepRepository.save(toolStep);
+            chatStreamPublisher.publishStep(command.conversationId(), Map.of(
+                "id", toolStep.getId(),
+                "runId", toolStep.getRunId(),
+                "stepType", toolStep.getStepType(),
+                "stepTitle", toolStep.getStepTitle(),
+                "stepStatus", toolStep.getStepStatus(),
+                "sequenceNo", toolStep.getSequenceNo(),
+                "content", toolStep.getContent()
+            ));
+            return toolResult;
+        } finally {
+            ChatToolExecutionContext.clear();
+        }
+    }
+
+    /**
+     * 解析本次工具调用应使用的工作目录。
+     * @param command 当前消息命令。
+     * @return 可用工作目录，缺失时返回 null。
+     */
+    private Path resolveToolWorkingDirectory(SendChatMessageCommand command) {
+        if (StrUtil.isNotBlank(command.repositoryPath())) {
+            Path explicitPath = normalizeExistingDirectory(command.repositoryPath());
+            if (explicitPath != null) {
+                return explicitPath;
+            }
+        }
+        ChatConversation conversation = chatConversationRepository.requireById(command.conversationId());
+        if (conversation.getWorkspaceId() == null || chatWorkspaceBindingService == null) {
+            return null;
+        }
+        Optional<Path> workspacePath = chatWorkspaceBindingService.findRepositoryPathByWorkspaceId(conversation.getWorkspaceId());
+        return workspacePath.map(Path::toAbsolutePath).map(Path::normalize).orElse(null);
+    }
+
+    /**
+     * 将路径规范化为存在的目录；非法路径只表示不能绑定工具目录，不应中断模型回答链路。
+     * @param pathText 原始路径文本。
+     * @return 规范化目录，非法时返回 null。
+     */
+    private Path normalizeExistingDirectory(String pathText) {
+        Path path = Path.of(pathText).toAbsolutePath().normalize();
+        if (!Files.exists(path) || !Files.isDirectory(path)) {
+            return null;
+        }
+        return path;
+    }
+
+    /**
+     * 将本地工具结果转换为下一轮模型可消费证据。
+     * @param toolResult 工具执行结果。
+     * @return 系统证据文本。
+     */
+    private String buildLocalToolEvidenceContext(ChatToolExecutionResult toolResult) {
+        StringBuilder contextBuilder = new StringBuilder();
+        contextBuilder.append("# 本地工具执行结果\n");
+        contextBuilder.append("工具标识：").append(StrUtil.blankToDefault(toolResult.toolCode(), "unknown")).append('\n');
+        contextBuilder.append("工具输出：").append(normalizeEvidenceText(toolResult.content(), 4000)).append('\n');
+        if (toolResult.metadata() != null && !toolResult.metadata().isEmpty()) {
+            contextBuilder.append("工具元数据：")
+                .append(normalizeEvidenceText(cn.hutool.json.JSONUtil.toJsonStr(toolResult.metadata()), 2000));
+        }
+        return contextBuilder.toString().trim();
     }
 
     private void recordExecutionOutcome(

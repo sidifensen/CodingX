@@ -82,7 +82,7 @@ public class DeepSeekOkHttpChatClient implements AiProviderClient {
                     throw new IllegalStateException(ErrorMessageCatalog.AI_RESPONSE_BODY_EMPTY);
                 }
                 BufferedSource source = responseBodyValue.source();
-                StringBuilder chunkBuffer = new StringBuilder();
+                OpenAiStyleStreamParser.StreamState streamState = openAiStyleStreamParser.newStreamState();
                 OpenAiStyleStreamParser.StreamConsumer streamConsumer = new OpenAiStyleStreamParser.StreamConsumer() {
                     @Override
                     public void onContentDelta(String delta) {
@@ -104,15 +104,22 @@ public class DeepSeekOkHttpChatClient implements AiProviderClient {
                             handler.onComplete();
                         }
                     }
+
+                    @Override
+                    public void onToolCall(com.codingx.common.support.ai.AiToolCall toolCall) {
+                        if (!cancelled.get()) {
+                            handler.onToolCall(toolCall);
+                        }
+                    }
                 };
                 while (!cancelled.get()) {
                     String line = source.readUtf8Line();
                     if (line == null) {
                         break;
                     }
-                    openAiStyleStreamParser.parseChunk(line + "\n", chunkBuffer, streamConsumer);
+                    openAiStyleStreamParser.parseChunk(line + "\n", streamState, streamConsumer);
                 }
-                openAiStyleStreamParser.flush(chunkBuffer, streamConsumer);
+                openAiStyleStreamParser.flush(streamState, streamConsumer);
                 completion.complete(null);
             } catch (IOException exception) {
                 if (!cancelled.get()) {
@@ -135,7 +142,24 @@ public class DeepSeekOkHttpChatClient implements AiProviderClient {
             .set("stream", request.stream())
             .set("messages", request.messages().stream()
                 .map(this::toMessagePayload)
-                .collect(Collectors.toList()));
+                .collect(Collectors.toList()))
+            .set("tools", request.tools() == null || request.tools().isEmpty()
+                ? null
+                : request.tools().stream().map(this::toToolPayload).collect(Collectors.toList()));
+    }
+
+    /**
+     * 将本地工具 schema 转换为 OpenAI function tool 格式。
+     * @param toolSpec 本地工具定义。
+     * @return OpenAI 请求体工具对象。
+     */
+    private Object toToolPayload(com.codingx.tool.application.service.ChatToolSpec toolSpec) {
+        return JSONUtil.createObj()
+            .set("type", "function")
+            .set("function", JSONUtil.createObj()
+                .set("name", toolSpec.name())
+                .set("description", toolSpec.description())
+                .set("parameters", toolSpec.parameters()));
     }
 
     /**

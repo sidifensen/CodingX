@@ -1,0 +1,147 @@
+package com.codingx.tool.application.service;
+
+import cn.hutool.core.util.StrUtil;
+import com.codingx.tool.domain.model.ChatTool;
+import com.codingx.tool.domain.repository.ChatToolRepository;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Service;
+
+/**
+ * 将后端真实可执行工具转换为模型可见 schema。
+ * 关键约束：数据库配置只决定展示与启用态，最终是否暴露必须以 Java 执行器注册表为准。
+ */
+@Service
+@RequiredArgsConstructor
+public class ChatToolSpecService {
+
+    private static final List<String> MODEL_VISIBLE_LOCAL_TOOLS = List.of(
+        "shell_command",
+        "exec_command",
+        "write_stdin",
+        "apply_patch",
+        "update_plan",
+        "view_image",
+        "tool_search",
+        "test_sync_tool"
+    );
+
+    private final ChatToolRepository chatToolRepository;
+    private final ChatToolRegistry chatToolRegistry;
+
+    /**
+     * 列出当前可暴露给模型的本地工具 schema。
+     * @return 工具 schema 列表。
+     */
+    public List<ChatToolSpec> listModelVisibleToolSpecs() {
+        return chatToolRepository.findAll().stream()
+            .filter(this::isEnabled)
+            .filter(tool -> MODEL_VISIBLE_LOCAL_TOOLS.contains(normalizeToolCode(tool.getToolCode())))
+            .filter(tool -> chatToolRegistry.hasExecutor(tool.getToolCode()))
+            .sorted(Comparator.comparing(ChatTool::getSortNo, Comparator.nullsLast(Comparator.naturalOrder()))
+                .thenComparing(ChatTool::getToolCode, Comparator.nullsLast(String::compareToIgnoreCase)))
+            .map(this::toSpec)
+            .toList();
+    }
+
+    /**
+     * 将工具配置转换为 OpenAI function 参数 schema。
+     * @param tool 工具配置。
+     * @return 模型工具定义。
+     */
+    private ChatToolSpec toSpec(ChatTool tool) {
+        String toolCode = normalizeToolCode(tool.getToolCode());
+        return new ChatToolSpec(
+            toolCode,
+            StrUtil.blankToDefault(tool.getDescription(), tool.getDisplayName()),
+            parametersFor(toolCode)
+        );
+    }
+
+    /**
+     * 按工具编码生成参数 schema；复杂工具只保留必要字段，降低模型误用概率。
+     * @param toolCode 工具编码。
+     * @return JSON Schema。
+     */
+    private Map<String, Object> parametersFor(String toolCode) {
+        return switch (toolCode) {
+            case "shell_command" -> objectSchema(
+                Map.of(
+                    "command", stringSchema("要在当前本地工作区执行的命令"),
+                    "timeoutMs", numberSchema("命令超时时间，单位毫秒，最大 60000")
+                ),
+                List.of("command")
+            );
+            case "exec_command" -> objectSchema(
+                Map.of("command", stringSchema("要启动的后台命令")),
+                List.of("command")
+            );
+            case "write_stdin" -> objectSchema(
+                Map.of(
+                    "sessionId", stringSchema("exec_command 返回的命令会话 ID"),
+                    "text", stringSchema("要写入标准输入的文本")
+                ),
+                List.of("sessionId", "text")
+            );
+            case "apply_patch" -> objectSchema(
+                Map.of("patch", stringSchema("Codex Begin Patch 或标准 unified diff 补丁文本")),
+                List.of("patch")
+            );
+            case "view_image" -> objectSchema(
+                Map.of("path", stringSchema("本地图片绝对路径")),
+                List.of("path")
+            );
+            case "tool_search" -> objectSchema(
+                Map.of("keyword", stringSchema("用于检索工具配置的关键词")),
+                List.of("keyword")
+            );
+            case "update_plan" -> objectSchema(
+                Map.of(
+                    "planId", stringSchema("计划标识，缺省为 default"),
+                    "steps", Map.of(
+                        "type", "array",
+                        "description", "计划步骤列表",
+                        "items", objectSchema(
+                            Map.of(
+                                "step", stringSchema("步骤名称"),
+                                "status", stringSchema("pending、in_progress 或 completed")
+                            ),
+                            List.of("step", "status")
+                        )
+                    )
+                ),
+                List.of("steps")
+            );
+            default -> objectSchema(Map.of("input", stringSchema("工具输入文本")), List.of());
+        };
+    }
+
+    private Map<String, Object> objectSchema(Map<String, Object> properties, List<String> required) {
+        Map<String, Object> schema = new LinkedHashMap<>();
+        schema.put("type", "object");
+        schema.put("properties", new LinkedHashMap<>(properties));
+        schema.put("required", required);
+        schema.put("additionalProperties", false);
+        return schema;
+    }
+
+    private Map<String, Object> stringSchema(String description) {
+        return Map.of("type", "string", "description", description);
+    }
+
+    private Map<String, Object> numberSchema(String description) {
+        return Map.of("type", "number", "description", description);
+    }
+
+    private boolean isEnabled(ChatTool tool) {
+        return tool != null && tool.getEnabled() != null && tool.getEnabled() == 1;
+    }
+
+    private String normalizeToolCode(String toolCode) {
+        return StrUtil.trimToEmpty(toolCode).toLowerCase(Locale.ROOT);
+    }
+}

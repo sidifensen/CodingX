@@ -28,6 +28,13 @@ public interface AiStreamHandler {
     }
 
     /**
+     * 推送模型请求执行的工具调用。
+     * @param toolCall 工具调用。
+     */
+    default void onToolCall(AiToolCall toolCall) {
+    }
+
+    /**
      * 推送流式完成事件。
      */
     default void onComplete() {

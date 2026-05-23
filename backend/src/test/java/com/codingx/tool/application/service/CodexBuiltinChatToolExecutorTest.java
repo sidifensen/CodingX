@@ -2,15 +2,22 @@ package com.codingx.tool.application.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.when;
 
 import com.codingx.mcp.domain.repository.ChatMcpRepository;
+import com.codingx.common.exception.BusinessException;
 import com.codingx.skill.domain.repository.ChatSkillRepository;
+import com.codingx.tool.domain.model.ChatTool;
 import com.codingx.tool.domain.repository.ChatToolRepository;
+import java.awt.image.BufferedImage;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
+import javax.imageio.ImageIO;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -87,6 +94,189 @@ class CodexBuiltinChatToolExecutorTest {
             assertTrue(String.valueOf(result.metadata().get("diffPreview")).contains("line-2-updated"));
         } finally {
             ChatToolExecutionContext.clear();
+        }
+    }
+
+    /**
+     * shell_command 必须在当前工具上下文绑定的工作目录执行，避免误改后端进程目录。
+     *
+     * @param tempDir 测试临时目录。
+     * @throws Exception 执行失败时抛出。
+     */
+    @Test
+    void shellCommandShouldRunInsideBoundWorkspace(@TempDir Path tempDir) throws Exception {
+        Path projectRoot = tempDir.resolve("workspace");
+        Files.createDirectories(projectRoot);
+        ChatToolExecutionContext.bindToolWorkingDirectory(projectRoot);
+        try {
+            ChatToolExecutionResult result = codexBuiltinChatToolExecutor.execute(
+                "shell_command",
+                "{\"command\":\"Set-Content -Path tool-created.txt -Value local-tool\",\"timeoutMs\":10000}"
+            );
+
+            assertTrue(Files.exists(projectRoot.resolve("tool-created.txt")));
+            assertEquals(projectRoot.toAbsolutePath().normalize().toString(), result.metadata().get("workingDirectory"));
+            assertEquals(0, result.metadata().get("exitCode"));
+        } finally {
+            ChatToolExecutionContext.clear();
+        }
+    }
+
+    /**
+     * shell_command 的 timeout 必须约束整个进程生命周期，不能被同步读取输出阻塞绕过。
+     *
+     * @param tempDir 测试临时目录。
+     */
+    @Test
+    void shellCommandShouldStopProcessWhenTimeoutIsReached(@TempDir Path tempDir) {
+        ChatToolExecutionContext.bindToolWorkingDirectory(tempDir);
+        try {
+            long startedAt = System.currentTimeMillis();
+
+            ChatToolExecutionResult result = codexBuiltinChatToolExecutor.execute(
+                "shell_command",
+                "{\"command\":\"Start-Sleep -Seconds 3\",\"timeoutMs\":200}"
+            );
+
+            assertEquals(Boolean.TRUE, result.metadata().get("timedOut"));
+            assertTrue(System.currentTimeMillis() - startedAt < 2500L);
+        } finally {
+            ChatToolExecutionContext.clear();
+        }
+    }
+
+    /**
+     * exec_command 与 write_stdin 组合应能真实驱动本地交互进程，并回收进程输出。
+     *
+     * @param tempDir 测试临时目录。
+     * @throws Exception 执行失败时抛出。
+     */
+    @Test
+    void execCommandAndWriteStdinShouldDriveInteractiveLocalProcess(@TempDir Path tempDir) throws Exception {
+        ChatToolExecutionContext.bindToolWorkingDirectory(tempDir);
+        try {
+            ChatToolExecutionResult execResult = codexBuiltinChatToolExecutor.execute(
+                "exec_command",
+                "{\"command\":\"$line = [Console]::In.ReadLine(); Set-Content -Path interactive.txt -Value $line\"}"
+            );
+            String sessionId = String.valueOf(execResult.metadata().get("sessionId"));
+
+            ChatToolExecutionResult stdinResult = codexBuiltinChatToolExecutor.execute(
+                "write_stdin",
+                "{\"sessionId\":\"" + sessionId + "\",\"text\":\"from-stdin\",\"waitMs\":3000}"
+            );
+
+            assertEquals("write_stdin", stdinResult.toolCode());
+            assertEquals(Boolean.FALSE, stdinResult.metadata().get("alive"));
+            Path outputFile = tempDir.resolve("interactive.txt");
+            for (int attempt = 0; attempt < 50 && !Files.exists(outputFile); attempt++) {
+                Thread.sleep(100L);
+            }
+            assertEquals("from-stdin", Files.readString(outputFile).trim());
+        } finally {
+            ChatToolExecutionContext.clear();
+        }
+    }
+
+    /**
+     * update_plan 是模型可见的进程内状态工具，应返回结构化步骤供后续轮次理解进度。
+     */
+    @Test
+    void updatePlanShouldPersistStructuredSteps() {
+        ChatToolExecutionResult result = codexBuiltinChatToolExecutor.execute(
+            "update_plan",
+            "{\"planId\":\"tool-test\",\"steps\":[{\"step\":\"验证工具\",\"status\":\"in_progress\"}]}"
+        );
+
+        assertEquals("update_plan", result.toolCode());
+        assertTrue(result.content().contains("1 个步骤"));
+        assertEquals("tool-test", result.metadata().get("planId"));
+        assertTrue(String.valueOf(result.metadata().get("steps")).contains("验证工具"));
+    }
+
+    /**
+     * view_image 应真实读取本地图片尺寸，而不是只返回数据库配置。
+     *
+     * @param tempDir 测试临时目录。
+     * @throws Exception 执行失败时抛出。
+     */
+    @Test
+    void viewImageShouldReadLocalImageMetadata(@TempDir Path tempDir) throws Exception {
+        Path imagePath = tempDir.resolve("sample.png");
+        BufferedImage image = new BufferedImage(3, 2, BufferedImage.TYPE_INT_RGB);
+        ImageIO.write(image, "png", imagePath.toFile());
+
+        ChatToolExecutionResult result = codexBuiltinChatToolExecutor.execute(
+            "view_image",
+            "{\"path\":\"" + imagePath.toString().replace("\\", "\\\\") + "\"}"
+        );
+
+        assertEquals("view_image", result.toolCode());
+        assertEquals(3, result.metadata().get("width"));
+        assertEquals(2, result.metadata().get("height"));
+    }
+
+    /**
+     * tool_search 应检索真实工具仓储中的配置，供模型发现可用工具。
+     */
+    @Test
+    void toolSearchShouldReturnRepositoryBackedToolConfigs() {
+        when(chatToolRepository.findAll()).thenReturn(List.of(
+            ChatTool.builder()
+                .toolCode("shell_command")
+                .displayName("Shell 命令")
+                .description("在本地工作区执行命令")
+                .category("codex")
+                .build()
+        ));
+
+        ChatToolExecutionResult result = codexBuiltinChatToolExecutor.execute(
+            "tool_search",
+            "{\"keyword\":\"Shell\"}"
+        );
+
+        assertEquals("tool_search", result.toolCode());
+        assertTrue(result.content().contains("1 个"));
+        @SuppressWarnings("unchecked")
+        List<ChatTool> results = (List<ChatTool>) result.metadata().get("results");
+        assertEquals("shell_command", results.getFirst().getToolCode());
+    }
+
+    /**
+     * test_sync_tool 用作工具链连通性探针，应回显模型输入并返回工具总数。
+     */
+    @Test
+    void testSyncToolShouldEchoInputForConnectivityCheck() {
+        ChatToolExecutionResult result = codexBuiltinChatToolExecutor.execute(
+            "test_sync_tool",
+            "{\"message\":\"ping\"}"
+        );
+
+        assertEquals("test_sync_tool", result.toolCode());
+        assertTrue(result.content().contains("调用成功"));
+        assertEquals("{\"message\":\"ping\"}", result.metadata().get("echo"));
+        assertTrue(((Number) result.metadata().get("toolCount")).intValue() > 0);
+    }
+
+    /**
+     * 未接入真实 Codex session 的多代理工具不能再返回假成功，避免误导模型继续依赖不可用结果。
+     */
+    @Test
+    void unsupportedCodexSessionToolShouldReturnUnavailableError() {
+        List<String> unsupportedToolCodes = List.of(
+            "list_mcp_resources", "list_mcp_resource_templates", "read_mcp_resource",
+            "request_user_input", "spawn_agent", "send_input", "send_message", "wait_agent", "close_agent",
+            "resume_agent", "request_plugin_install", "request_permissions", "get_goal", "create_goal",
+            "update_goal", "followup_task", "list_agents", "spawn_agents_on_csv", "report_agent_job_result"
+        );
+
+        for (String toolCode : unsupportedToolCodes) {
+            BusinessException exception = assertThrows(
+                BusinessException.class,
+                () -> codexBuiltinChatToolExecutor.execute(toolCode, "{\"message\":\"分析代码\"}")
+            );
+
+            assertTrue(exception.getMessage().contains("暂未接入真实 Codex 运行时"), toolCode);
         }
     }
 }

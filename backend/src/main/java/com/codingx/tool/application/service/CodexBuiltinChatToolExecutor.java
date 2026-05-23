@@ -77,6 +77,12 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
     private final List<Map<String, Object>> pluginInstallRequests = new CopyOnWriteArrayList<>();
     private final List<Map<String, Object>> permissionRequests = new CopyOnWriteArrayList<>();
     private final List<Map<String, Object>> jobReports = new CopyOnWriteArrayList<>();
+    private static final List<String> UNSUPPORTED_CODEX_RUNTIME_TOOLS = List.of(
+        "list_mcp_resources", "list_mcp_resource_templates", "read_mcp_resource",
+        "request_user_input", "spawn_agent", "send_input", "send_message", "wait_agent", "close_agent",
+        "resume_agent", "request_plugin_install", "request_permissions", "get_goal", "create_goal",
+        "update_goal", "followup_task", "list_agents", "spawn_agents_on_csv", "report_agent_job_result"
+    );
 
     @Override
     public List<String> toolCodes() {
@@ -87,6 +93,9 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
     public ChatToolExecutionResult execute(String toolCode, String question) {
         String normalizedCode = normalizeToolCode(toolCode);
         ToolInput input = parseInput(question);
+        if (UNSUPPORTED_CODEX_RUNTIME_TOOLS.contains(normalizedCode)) {
+            throw unsupportedCodexRuntimeTool(normalizedCode);
+        }
         return switch (normalizedCode) {
             case "shell_command" -> executeShellCommand(input);
             case "exec_command" -> executeExecCommand(input);
@@ -127,13 +136,15 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
             throw new BusinessException("CHAT_TOOL_INVALID_COMMAND", ErrorMessageCatalog.CHAT_TOOL_COMMAND_REQUIRED);
         }
         long timeoutMs = normalizeTimeout(input.object().getLong("timeoutMs", 10000L));
-        CommandExecution execution = runCommand(command, timeoutMs);
+        Path workingDirectory = resolveToolWorkingDirectory();
+        CommandExecution execution = runCommand(command, timeoutMs, workingDirectory);
         Map<String, Object> metadata = new LinkedHashMap<>();
         metadata.put("command", command);
         metadata.put("timeoutMs", timeoutMs);
         metadata.put("exitCode", execution.exitCode());
         metadata.put("timedOut", execution.timedOut());
         metadata.put("durationMs", execution.durationMs());
+        metadata.put("workingDirectory", workingDirectory.toString());
         return new ChatToolExecutionResult(
             "shell_command",
             execution.output(),
@@ -170,6 +181,7 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
             metadata.put("command", command);
             metadata.put("status", "running");
             metadata.put("createdAt", DATE_TIME_FORMATTER.format(session.createdAt()));
+            metadata.put("workingDirectory", resolveToolWorkingDirectory().toString());
             return new ChatToolExecutionResult(
                 "exec_command",
                 "命令已启动，可通过 write_stdin 写入交互输入",
@@ -203,6 +215,7 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
             session.writer().write(text);
             session.writer().newLine();
             session.writer().flush();
+            waitForInteractiveCommandIfRequested(session, normalizeWaitMs(input.object().getLong("waitMs", 0L)));
             Map<String, Object> metadata = new LinkedHashMap<>();
             metadata.put("sessionId", sessionId);
             metadata.put("alive", session.process().isAlive());
@@ -1117,6 +1130,18 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
         return Math.min(timeoutMs, 60000L);
     }
 
+    /**
+     * 规范化交互命令等待时间，避免一次 stdin 写入长期占用聊天线程。
+     * @param waitMs 原始等待时间。
+     * @return 有界等待时间。
+     */
+    private long normalizeWaitMs(Long waitMs) {
+        if (waitMs == null || waitMs <= 0) {
+            return 0L;
+        }
+        return Math.min(waitMs, 10000L);
+    }
+
     private CommandExecution runCommand(String command, long timeoutMs) {
         return runCommand(command, timeoutMs, resolveToolWorkingDirectory());
     }
@@ -1134,26 +1159,88 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
             Process process = new ProcessBuilder(resolveShellCommand(command))
                 .directory(workingDirectory.toFile())
                 .start();
-            String stdout = readStream(process.getInputStream());
-            String stderr = readStream(process.getErrorStream());
+            StringBuilder stdoutBuffer = new StringBuilder();
+            StringBuilder stderrBuffer = new StringBuilder();
+            Thread stdoutReader = startProcessOutputReader(process.getInputStream(), stdoutBuffer);
+            Thread stderrReader = startProcessOutputReader(process.getErrorStream(), stderrBuffer);
             boolean finished = process.waitFor(timeoutMs, TimeUnit.MILLISECONDS);
             if (!finished) {
                 process.destroyForcibly();
+                process.waitFor(1, TimeUnit.SECONDS);
+                joinReader(stdoutReader);
+                joinReader(stderrReader);
                 return new CommandExecution(
-                    "命令执行超时",
+                    buildTimedOutOutput(snapshotOutput(stdoutBuffer), snapshotOutput(stderrBuffer)),
                     -1,
                     true,
                     System.currentTimeMillis() - start
                 );
             }
+            joinReader(stdoutReader);
+            joinReader(stderrReader);
             int exitCode = process.exitValue();
-            String output = buildCommandOutput(stdout, stderr, exitCode);
+            String output = buildCommandOutput(snapshotOutput(stdoutBuffer), snapshotOutput(stderrBuffer), exitCode);
             return new CommandExecution(output, exitCode, false, System.currentTimeMillis() - start);
         } catch (Exception exception) {
             throw new BusinessException(
                 "CHAT_TOOL_COMMAND_FAILED",
                 ErrorMessageCatalog.CHAT_TOOL_COMMAND_EXECUTE_FAILED_PREFIX + exception.getMessage()
             );
+        }
+    }
+
+    /**
+     * 按调用方要求等待交互命令退出，便于模型在写入 stdin 后拿到稳定的完成状态。
+     * @param session 命令会话。
+     * @param waitMs 等待毫秒数。
+     */
+    private void waitForInteractiveCommandIfRequested(CommandSession session, long waitMs) {
+        if (waitMs <= 0 || !session.process().isAlive()) {
+            return;
+        }
+        try {
+            // waitMs 表示本次写入需要等待命令收口；Windows PowerShell 交互读入在收到 EOF 后才会稳定退出。
+            session.writer().close();
+            session.process().waitFor(waitMs, TimeUnit.MILLISECONDS);
+            if (!session.process().isAlive()) {
+                commandSessions.remove(session.sessionId());
+            }
+        } catch (Exception ignored) {
+            // 等待失败不影响本次写入结果，调用方仍可根据 alive 与输出继续轮询。
+        }
+    }
+
+    /**
+     * 并发读取进程输出，确保长时间无输出的命令仍能被 waitFor 超时控制住。
+     * @param inputStream 进程输出流。
+     * @param outputBuffer 输出缓冲区。
+     * @return 输出读取线程。
+     */
+    private Thread startProcessOutputReader(InputStream inputStream, StringBuilder outputBuffer) {
+        return Thread.startVirtualThread(() -> {
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream, StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    synchronized (outputBuffer) {
+                        outputBuffer.append(line).append('\n');
+                        trimBuffer(outputBuffer);
+                    }
+                }
+            } catch (Exception ignored) {
+                // 进程被超时终止时输出流会被关闭，已有输出仍保留在缓冲区。
+            }
+        });
+    }
+
+    /**
+     * 等待输出读取线程短暂收口，避免正常退出后丢失最后几行输出。
+     * @param reader 输出读取线程。
+     */
+    private void joinReader(Thread reader) {
+        try {
+            reader.join(1000L);
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
         }
     }
 
@@ -1274,6 +1361,23 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
         return StrUtil.maxLength(builder.toString().trim(), MAX_BUFFER_LENGTH);
     }
 
+    /**
+     * 组装超时命令输出，尽量保留超时前已经产生的 stdout/stderr 便于排查。
+     * @param stdout 超时前标准输出。
+     * @param stderr 超时前错误输出。
+     * @return 命令输出摘要。
+     */
+    private String buildTimedOutOutput(String stdout, String stderr) {
+        StringBuilder builder = new StringBuilder("命令执行超时");
+        if (StrUtil.isNotBlank(stdout)) {
+            builder.append("\nstdout:\n").append(stdout);
+        }
+        if (StrUtil.isNotBlank(stderr)) {
+            builder.append("\nstderr:\n").append(stderr);
+        }
+        return StrUtil.maxLength(builder.toString().trim(), MAX_BUFFER_LENGTH);
+    }
+
     private String detectRiskLevel(String command) {
         String normalized = StrUtil.trimToEmpty(command).toLowerCase(Locale.ROOT);
         List<String> highRiskTokens = List.of(
@@ -1289,6 +1393,18 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
 
     private String prefer(String first, String second) {
         return StrUtil.isNotBlank(first) ? first : StrUtil.blankToDefault(second, "");
+    }
+
+    /**
+     * 对依赖真实 Codex session 的工具返回明确不可用错误，避免用内存假状态误导模型。
+     * @param toolCode 工具编码。
+     * @return 业务异常。
+     */
+    private BusinessException unsupportedCodexRuntimeTool(String toolCode) {
+        return new BusinessException(
+            "CHAT_TOOL_CODEX_RUNTIME_UNAVAILABLE",
+            toolCode + " 暂未接入真实 Codex 运行时，不能在 Java 后端返回假成功"
+        );
     }
 
     /**

@@ -3379,6 +3379,113 @@ describe('useChatWorkspace', () => {
   });
 
   /**
+   * 多段 thinking 增量应合并成稳定摘要，不能只显示最新片段导致文案像跑马灯一样滚动。
+   */
+  it('应累积thinking增量生成分析过程摘要', async () => {
+    window.localStorage.setItem(
+      'codingx.auth.session',
+      JSON.stringify({
+        token: 'token-123',
+        userId: '1002',
+        username: 'user',
+        displayName: 'CodingX User',
+        userType: 'USER',
+      }),
+    );
+
+    const readQueue: Array<{
+      resolve: (value: ReadableStreamReadResult<Uint8Array>) => void;
+      reject: (reason?: unknown) => void;
+    }> = [];
+    const thinkingOneEvent = new TextEncoder().encode(
+      'event:thinking\ndata:{"type":"thinking","delta":"先判断问题是否需要实时信息。"}\n\n',
+    );
+    const thinkingTwoEvent = new TextEncoder().encode(
+      'event:thinking\ndata:{"type":"thinking","delta":"再决定调用搜索工具补充证据。"}\n\n',
+    );
+    const finishEvent = new TextEncoder().encode('event:finish\ndata:{"content":"分析完成"}\n\n');
+    const mockReader = {
+      read: vi.fn(() => {
+        return new Promise<ReadableStreamReadResult<Uint8Array>>((resolve, reject) => {
+          readQueue.push({ resolve, reject });
+        });
+      }),
+    };
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (
+        url === '/api/chat/conversations' ||
+        url === '/api/chat/sample-questions' ||
+        url === '/api/chat/experts' ||
+        url === '/api/chat/skills' ||
+        url === '/api/chat/mcps' ||
+        url === '/api/chat/conversations/pending-conversation/messages' ||
+        url === '/api/chat/conversations/pending-conversation/steps' ||
+        url === '/api/chat/conversations/pending-conversation/references' ||
+        url === '/api/chat/conversations/pending-conversation/artifacts' ||
+        url === '/api/chat/conversations/pending-conversation/current-experts' ||
+        url === '/api/chat/conversations/pending-conversation/current-skills' ||
+        url === '/api/chat/conversations/pending-conversation/current-mcps'
+      ) {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (url.includes('/api/chat/stream')) {
+        return {
+          ok: true,
+          status: 200,
+          body: {
+            getReader: () => mockReader,
+          },
+        } as unknown as Response;
+      }
+      throw new Error(`Unhandled fetch in thinking accumulation test: ${url}`);
+    });
+
+    const { result } = renderHook(() => useChatWorkspace(true));
+
+    await waitFor(() => {
+      expect(result.current.isBootstrapping).toBe(false);
+    });
+    await act(async () => {
+      result.current.setInputValue('qwen和glm最新的模型是什么');
+    });
+    const submitPromise = result.current.submitMessage();
+
+    await waitFor(() => {
+      expect(result.current.isStreaming).toBe(true);
+      expect(readQueue.length).toBeGreaterThan(0);
+    });
+    await act(async () => {
+      readQueue.shift()?.resolve({ done: false, value: thinkingOneEvent });
+    });
+    await act(async () => {
+      readQueue.shift()?.resolve({ done: false, value: thinkingTwoEvent });
+    });
+
+    await waitFor(() => {
+      const assistantMessage = result.current.messages.find((item) => item.role === 'ASSISTANT');
+      const processCards = ((assistantMessage as Record<string, unknown> | undefined)?.processCards ?? []) as Array<Record<string, unknown>>;
+      const thinkingCard = processCards.find((card) => card.id === 'analysis-thinking');
+      expect(thinkingCard?.summary).toContain('先判断问题是否需要实时信息');
+      expect(thinkingCard?.summary).toContain('再决定调用搜索工具补充证据');
+    });
+
+    await act(async () => {
+      readQueue.shift()?.resolve({ done: false, value: finishEvent });
+    });
+    await act(async () => {
+      readQueue.shift()?.resolve({ done: true, value: undefined });
+    });
+    await act(async () => {
+      await submitPromise;
+    });
+  });
+
+  /**
    * MCP 两阶段事件应按 callId 合并为同一条调用记录，开始即展示运行态，完成后更新原始结果。
    */
   it('应按callId合并mcp调用开始与完成事件', async () => {
@@ -3786,6 +3893,244 @@ describe('useChatWorkspace', () => {
     expect(persistedAssistantMessage?.mcpCalls?.length).toBe(1);
     expect(persistedAssistantMessage?.searchProgress?.status).toBe('completed');
     expect((persistedAssistantMessage?.processCards ?? []).length).toBeGreaterThanOrEqual(3);
+  });
+
+  /**
+   * 流式结束后的接口回放不能把本地已形成的多条搜索子问题过程压缩成单条历史搜索兜底过程。
+   */
+  it('应在流式回放后保留多条搜索子问题过程', async () => {
+    window.localStorage.setItem(
+      'codingx.auth.session',
+      JSON.stringify({
+        token: 'token-123',
+        userId: '1002',
+        username: 'user',
+        displayName: 'CodingX User',
+        userType: 'USER',
+      }),
+    );
+
+    const readQueue: Array<{
+      resolve: (value: ReadableStreamReadResult<Uint8Array>) => void;
+      reject: (reason?: unknown) => void;
+    }> = [];
+    const metaEvent = new TextEncoder().encode('event:meta\ndata:{"conversationId":"2002"}\n\n');
+    const searchStepOneEvent = new TextEncoder().encode(
+      'event:step\ndata:{"id":"search-qwen","runId":"5003","stepType":"search","stepTitle":"搜索子问题 1","stepStatus":"COMPLETED","sequenceNo":1,"content":"Qwen最新发布的模型是什么"}\n\n',
+    );
+    const searchStepTwoEvent = new TextEncoder().encode(
+      'event:step\ndata:{"id":"search-glm","runId":"5003","stepType":"search","stepTitle":"搜索子问题 2","stepStatus":"COMPLETED","sequenceNo":2,"content":"GLM最新发布的模型是什么"}\n\n',
+    );
+    const searchStepThreeEvent = new TextEncoder().encode(
+      'event:step\ndata:{"id":"search-diff","runId":"5003","stepType":"search","stepTitle":"搜索子问题 3","stepStatus":"COMPLETED","sequenceNo":3,"content":"Qwen和GLM最新模型的区别"}\n\n',
+    );
+    const referenceEvent = new TextEncoder().encode(
+      'event:reference\ndata:{"id":"ref-qwen-glm","runId":"5003","conversationId":"2002","title":"Qwen3 Code Plus & 智谱GLM4.7 模型基础功能对比","url":"https://example.com/models","siteName":"博客园","rankNo":1}\n\n',
+    );
+    const finishEvent = new TextEncoder().encode('event:finish\ndata:{"content":"检索完成"}\n\n');
+    const mockReader = {
+      read: vi.fn(() => {
+        return new Promise<ReadableStreamReadResult<Uint8Array>>((resolve, reject) => {
+          readQueue.push({ resolve, reject });
+        });
+      }),
+    };
+    let listConversationCallCount = 0;
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === '/api/chat/conversations') {
+        listConversationCallCount += 1;
+        return new Response(
+          JSON.stringify({
+            success: true,
+            code: 'OK',
+            message: 'success',
+            data:
+              listConversationCallCount > 1
+                ? [
+                    {
+                      id: '2002',
+                      title: 'qwen和glm最新模型',
+                      status: 'ACTIVE',
+                      lastRunId: '5003',
+                    },
+                  ]
+                : [],
+          }),
+          { status: 200 },
+        );
+      }
+      if (
+        url === '/api/chat/sample-questions' ||
+        url === '/api/chat/experts' ||
+        url === '/api/chat/skills' ||
+        url === '/api/chat/mcps'
+      ) {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (url === '/api/chat/conversations/2002/messages') {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            code: 'OK',
+            message: 'success',
+            data: [
+              {
+                id: 'assistant-2002',
+                conversationId: '2002',
+                role: 'ASSISTANT',
+                content: '检索完成',
+                status: 'COMPLETED',
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      if (url === '/api/chat/conversations/2002/steps') {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            code: 'OK',
+            message: 'success',
+            data: [
+              {
+                id: 'search-qwen',
+                runId: '5003',
+                stepType: 'search',
+                stepTitle: '搜索子问题 1',
+                stepStatus: 'COMPLETED',
+                sequenceNo: 1,
+                content: 'Qwen最新发布的模型是什么',
+              },
+              {
+                id: 'search-glm',
+                runId: '5003',
+                stepType: 'search',
+                stepTitle: '搜索子问题 2',
+                stepStatus: 'COMPLETED',
+                sequenceNo: 2,
+                content: 'GLM最新发布的模型是什么',
+              },
+              {
+                id: 'search-diff',
+                runId: '5003',
+                stepType: 'search',
+                stepTitle: '搜索子问题 3',
+                stepStatus: 'COMPLETED',
+                sequenceNo: 3,
+                content: 'Qwen和GLM最新模型的区别',
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      if (url === '/api/chat/conversations/2002/references') {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            code: 'OK',
+            message: 'success',
+            data: [
+              {
+                id: 'ref-qwen-glm',
+                runId: '5003',
+                conversationId: '2002',
+                sourceType: 'web',
+                title: 'Qwen3 Code Plus & 智谱GLM4.7 模型基础功能对比',
+                url: 'https://example.com/models',
+                siteName: '博客园',
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      if (
+        url === '/api/chat/conversations/2002/artifacts' ||
+        url === '/api/chat/conversations/2002/current-skills' ||
+        url === '/api/chat/conversations/2002/current-mcps' ||
+        url === '/api/chat/conversations/2002/current-experts'
+      ) {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (url.includes('/api/chat/stream')) {
+        return {
+          ok: true,
+          status: 200,
+          body: {
+            getReader: () => mockReader,
+          },
+        } as unknown as Response;
+      }
+      throw new Error(`Unhandled fetch in search replay persistence test: ${url}`);
+    });
+
+    const { result } = renderHook(() => useChatWorkspace(true));
+
+    await waitFor(() => {
+      expect(result.current.isBootstrapping).toBe(false);
+    });
+    await act(async () => {
+      result.current.setInputValue('qwen和glm最新的模型是什么,帮我对比一下有什么区别');
+    });
+    const submitPromise = result.current.submitMessage();
+
+    await waitFor(() => {
+      expect(result.current.isStreaming).toBe(true);
+      expect(readQueue.length).toBeGreaterThan(0);
+    });
+    for (const event of [
+      metaEvent,
+      searchStepOneEvent,
+      searchStepTwoEvent,
+      searchStepThreeEvent,
+      referenceEvent,
+      finishEvent,
+    ]) {
+      await act(async () => {
+        readQueue.shift()?.resolve({ done: false, value: event });
+      });
+    }
+    await act(async () => {
+      readQueue.shift()?.resolve({ done: true, value: undefined });
+    });
+    await act(async () => {
+      await submitPromise;
+    });
+
+    const latestAssistantMessage = [...result.current.messages]
+      .reverse()
+      .find((item) => item.role === 'ASSISTANT');
+    const processCards = ((latestAssistantMessage as Record<string, unknown> | undefined)?.processCards ?? []) as Array<Record<string, unknown>>;
+    const searchToolCards = processCards.filter((card) => card.type === 'tool_call' && card.toolId === 'search');
+    expect(searchToolCards.map((card) => card.summary)).toEqual(
+      expect.arrayContaining([
+        'Qwen最新发布的模型是什么',
+        'GLM最新发布的模型是什么',
+        'Qwen和GLM最新模型的区别',
+      ]),
+    );
+    expect(searchToolCards).toHaveLength(3);
+
+    const snapshotStore = JSON.parse(
+      window.localStorage.getItem('codingx.chat.workspace.conversations.v1') ?? '{}',
+    );
+    const persistedMessages =
+      snapshotStore?.snapshots?.['cloud::__no_workspace__']?.conversationRecords?.['2002']?.messages ?? [];
+    const persistedAssistantMessage = [...persistedMessages]
+      .reverse()
+      .find((item: Record<string, unknown>) => item.role === 'ASSISTANT');
+    const persistedProcessCards = (persistedAssistantMessage?.processCards ?? []) as Array<Record<string, unknown>>;
+    expect(persistedProcessCards.filter((card) => card.type === 'tool_call' && card.toolId === 'search')).toHaveLength(3);
   });
 
   /**

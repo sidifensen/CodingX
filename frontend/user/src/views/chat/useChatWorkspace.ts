@@ -1254,14 +1254,17 @@ export function useChatWorkspace(
       setMessages((previousMessages) =>
         previousMessages.map((message) =>
           message.id === optimisticAssistantId
-            ? {
-                ...message,
-                thinkingContent: `${message.thinkingContent ?? ''}${delta}`,
-                processCards: upsertProcessCard(
-                  message.processCards ?? [],
-                  buildAnalysisProcessCard('analysis-thinking', delta),
-                ),
-              }
+            ? (() => {
+                const nextThinkingContent = `${message.thinkingContent ?? ''}${delta}`;
+                return {
+                  ...message,
+                  thinkingContent: nextThinkingContent,
+                  processCards: upsertProcessCard(
+                    message.processCards ?? [],
+                    buildAnalysisProcessCard('analysis-thinking', nextThinkingContent),
+                  ),
+                };
+              })()
             : message,
         ),
       );
@@ -1350,6 +1353,10 @@ export function useChatWorkspace(
                         typeof payload.content === 'string' && payload.content.trim().length > 0
                           ? payload.content
                           : '正在检索实时资料。',
+                      status:
+                        String(payload.stepStatus ?? '').trim().toUpperCase() === 'COMPLETED'
+                          ? 'completed'
+                          : 'running',
                     }),
                   ),
                 }
@@ -2319,13 +2326,14 @@ function buildSearchToolCallCard(options: {
   id: string;
   title: string;
   summary: string;
+  status?: ProcessCardItem['status'];
 }): ProcessCardItem {
   return {
     id: `process-${options.id}`,
     type: 'tool_call',
     title: options.title || '调用网页搜索',
     summary: options.summary || '正在检索实时资料。',
-    status: 'running',
+    status: options.status ?? 'running',
     toolId: 'search',
     displayName: '网页搜索',
   };
@@ -2853,6 +2861,7 @@ function deriveProcessCardsFromReplay(options: {
   if (options.message.role !== 'ASSISTANT') {
     return undefined;
   }
+  const searchSteps = options.executionSteps.filter((step) => isSearchStepType(step.stepType));
   processCards.push({
     id: 'replay-analysis',
     type: 'analysis',
@@ -2896,16 +2905,26 @@ function deriveProcessCardsFromReplay(options: {
       });
     }
   }
-  if ((options.searchProgress?.items.length ?? 0) > 0 && !processCards.some((card) => card.toolId === 'search')) {
-    processCards.push({
-      id: 'replay-search-call',
-      type: 'tool_call',
-      title: '调用网页搜索',
-      summary: '根据历史搜索步骤继续展示已检索来源。',
-      status: 'completed',
-      toolId: 'search',
-      displayName: '网页搜索',
-    });
+  if (!processCards.some((card) => card.toolId === 'search')) {
+    for (const step of searchSteps) {
+      processCards.push({
+        id: `replay-search-call-${step.id}`,
+        type: 'tool_call',
+        title: step.stepTitle || '调用网页搜索',
+        summary:
+          step.content && step.content.trim().length > 0
+            ? step.content
+            : step.stepTitle || '根据历史搜索步骤继续展示已检索来源。',
+        status:
+          String(step.stepStatus ?? '').trim().toUpperCase() === 'COMPLETED'
+            ? 'completed'
+            : 'running',
+        toolId: 'search',
+        displayName: '网页搜索',
+      });
+    }
+  }
+  if ((options.searchProgress?.items.length ?? 0) > 0 && !processCards.some((card) => card.type === 'tool_result' && card.toolId === 'search')) {
     processCards.push({
       id: 'replay-search-result',
       type: 'tool_result',

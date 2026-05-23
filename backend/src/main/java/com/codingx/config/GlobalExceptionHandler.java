@@ -16,6 +16,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.validation.BindException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
@@ -124,6 +125,20 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiResponse<Void>> handleValidation(Exception exception, HttpServletRequest request) {
         String validationMessage = extractValidationMessage(exception);
         return buildResponse(HttpStatus.BAD_REQUEST, "VALIDATION_ERROR", validationMessage, exception, request, false);
+    }
+
+    /**
+     * 处理路径参数类型转换异常，统一返回 400，避免临时字符串 ID 触发 500 系统异常。
+     * @param exception 参数类型不匹配异常。
+     * @param request 当前请求。
+     * @return 标准错误响应。
+     */
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<ApiResponse<Void>> handleTypeMismatch(
+        MethodArgumentTypeMismatchException exception,
+        HttpServletRequest request
+    ) {
+        return buildResponse(HttpStatus.BAD_REQUEST, "VALIDATION_ERROR", ErrorMessageCatalog.VALIDATION_ERROR, exception, request, false);
     }
 
     /**

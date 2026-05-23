@@ -306,24 +306,16 @@ public class ChatApplicationService {
             mcpCompletePayload.put("content", toolResult.content());
             mcpCompletePayload.put("metadata", toolResult.metadata() == null ? Map.of() : toolResult.metadata());
             chatStreamPublisher.publishMcpCall(command.conversationId(), mcpCompletePayload);
-            ChatMessage assistantMessage = ChatMessage.assistantMessage(
+            history.add(ChatMessage.create(
+                cn.hutool.core.util.IdUtil.getSnowflakeNextId(),
                 command.conversationId(),
-                toolResult.content(),
+                ChatMessageRole.SYSTEM,
+                buildToolEvidenceContext(toolResult),
                 ChatMessageStatus.COMPLETED,
                 null,
                 null,
                 null
-            ).attachRun(runId);
-            chatMessageRepository.save(assistantMessage);
-            history.add(assistantMessage);
-            conversation.rename(conversationTitleService.generateTitle(conversation, history));
-            conversation.touch();
-            conversation.recordLastRunId(runId);
-            chatConversationRepository.save(conversation);
-            recordExecutionOutcome(conversation, userMessage.getId(), assistantMessage.getId(), intentDecision.intentCode(), false, false, ChatMessageStatus.COMPLETED, null);
-            finishTrace(runId, "SUCCESS", null);
-            chatStreamPublisher.publishAssistantCompleted(command.conversationId(), assistantMessage.getContent(), conversation.getTitle());
-            return;
+            ).attachRun(runId));
         }
         if (intentDecision.action() == ConversationIntentAction.SEARCH) {
             searchReferences = executeSearchQuestions(
@@ -610,6 +602,28 @@ public class ChatApplicationService {
                 contextBuilder.append("；摘要：").append(normalizeEvidenceText(reference.snippet(), 220));
             }
             contextBuilder.append('\n');
+        }
+        return contextBuilder.toString().trim();
+    }
+
+    /**
+     * 将工具原始结果转换为模型后续回答可消费的系统证据，保证“工具完成后再整理回答”。
+     * @param toolResult 工具执行结果。
+     * @return 可注入模型上下文的证据文本。
+     */
+    private String buildToolEvidenceContext(ChatMcpToolResult toolResult) {
+        StringBuilder contextBuilder = new StringBuilder();
+        contextBuilder.append("# 工具执行证据\n");
+        contextBuilder.append("工具标识：").append(StrUtil.blankToDefault(toolResult.toolId(), "unknown")).append('\n');
+        contextBuilder.append("回答约束：\n");
+        contextBuilder.append("1. 你必须基于本次工具结果整理最终回答，而不是直接复述工具原文\n");
+        contextBuilder.append("2. 如果工具结果不足以回答问题，要明确说明不足\n");
+        contextBuilder.append("3. 如果工具结果包含结构化数据，应先提炼结论再回答\n");
+        contextBuilder.append("工具结果：\n");
+        contextBuilder.append(normalizeEvidenceText(toolResult.content(), 4000)).append('\n');
+        if (toolResult.metadata() != null && !toolResult.metadata().isEmpty()) {
+            contextBuilder.append("工具元数据：\n");
+            contextBuilder.append(normalizeEvidenceText(cn.hutool.json.JSONUtil.toJsonStr(toolResult.metadata()), 2000)).append('\n');
         }
         return contextBuilder.toString().trim();
     }

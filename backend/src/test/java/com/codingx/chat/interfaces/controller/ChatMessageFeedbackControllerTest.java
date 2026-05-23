@@ -77,6 +77,24 @@ class ChatMessageFeedbackControllerTest {
     }
 
     /**
+     * 临时乐观消息 ID 不是数据库主键时，应返回 400 校验错误而不是 500 系统异常。
+     */
+    @Test
+    void submitReactionRejectsOptimisticMessageIdWithValidationError() throws Exception {
+        mockMvc().perform(post("/api/chat/messages/optimistic-assistant-1779529346520/feedback")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {
+                      "conversationId": 2001,
+                      "vote": 1
+                    }
+                    """))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.success").value(false))
+            .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+    }
+
+    /**
      * 延迟创建 MockMvc，确保 Mockito 已完成控制器依赖注入。
      * @return 可执行兼容路径请求的 MockMvc。
      */

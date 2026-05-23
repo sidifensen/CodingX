@@ -17,8 +17,6 @@ import {
   Globe2,
   Brain,
   Sparkles,
-  PanelRightClose,
-  PanelRightOpen,
   Paperclip,
   FolderOpen,
   Monitor,
@@ -35,6 +33,7 @@ import {
   McpItem,
   McpCallItem,
   PendingAttachmentItem,
+  ProcessCardItem,
 } from './chat/types';
 
 /**
@@ -114,8 +113,6 @@ export default function ChatView({
   const latestMessageAnchorRef = React.useRef<HTMLDivElement | null>(null);
   const chatScrollRegionRef = React.useRef<HTMLDivElement | null>(null);
   const shouldFollowLatestMessageRef = React.useRef(true);
-  // 步骤：右侧工作区默认折叠，是否展开完全由用户手动控制。
-  const [isWorkspacePanelCollapsed, setIsWorkspacePanelCollapsed] = React.useState(true);
   const [activeSelectorMode, setActiveSelectorMode] = React.useState<'mcp' | 'skill' | 'expert' | null>(null);
   const [activeRuntimeWorkspaceMenu, setActiveRuntimeWorkspaceMenu] = React.useState<
     'runtime' | 'workspace' | null
@@ -599,14 +596,10 @@ export default function ChatView({
   // 步骤：选中了历史会话但暂无消息时，显示会话级空态而不是回到首页。
   const showConversationEmptyState =
     activeConversationId != null && !messages.length && !isBootstrapping;
-  // 步骤：首页只保留欢迎内容和输入框，右侧执行回放仅在真实会话上下文中展示。
-  const showWorkspacePanel = !showLandingState;
   // 业务约束：底部运行环境/工作空间切换仅在新建对话页显示，历史会话页不再重复渲染。
   const showRuntimeWorkspaceSwitcher = showLandingState;
   // 业务约束：云端环境下不展示“云端工作空间”下拉，避免出现无意义的同名选项。
   const showWorkspaceDropdownInSwitcher = showRuntimeWorkspaceSwitcher && activeRuntimeTarget === 'local';
-  // 步骤：右侧栏保留挂载以支持宽度过渡动画，面板内容在收起后不再渲染。
-  const isWorkspacePanelVisible = showWorkspacePanel && !isWorkspacePanelCollapsed;
 
   /**
    * 粘贴图片或文件时直接加入待发送附件队列。
@@ -681,22 +674,7 @@ export default function ChatView({
           <div className={`${isDesktopSidebarCollapsed ? '' : 'w-10'}`}>
             {/* 步骤：左上角预留壳层折叠按钮占位，避免与主内容视觉挤压；真实交互由 App 壳层负责。 */}
           </div>
-          {showWorkspacePanel ? (
-            <button
-              type="button"
-              aria-label={isWorkspacePanelCollapsed ? '展开右侧工作区' : '折叠右侧工作区'}
-              onClick={() => setIsWorkspacePanelCollapsed((current) => !current)}
-              className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-xl border border-border bg-surface/92 text-foreground shadow-[0_14px_30px_rgba(0,0,0,0.18)] backdrop-blur"
-            >
-              {isWorkspacePanelCollapsed ? (
-                <PanelRightOpen size={18} />
-              ) : (
-                <PanelRightClose size={18} />
-              )}
-            </button>
-          ) : (
-            <div className="w-10" />
-          )}
+          <div className="w-10" />
         </div>
         <div
           ref={chatScrollRegionRef}
@@ -813,23 +791,10 @@ export default function ChatView({
                     >
                       {isAssistant ? (
                         <>
-                          {message.thinkingContent ? (
-                            <ThinkingPanel
+                          {message.processCards && message.processCards.length > 0 ? (
+                            <ProcessTimelinePanel
                               messageId={message.id}
-                              content={message.thinkingContent}
-                            />
-                          ) : null}
-                          {message.mcpCalls && message.mcpCalls.length > 0 ? (
-                            <McpCallPanel
-                              messageId={message.id}
-                              calls={message.mcpCalls}
-                              messageStatus={message.status}
-                            />
-                          ) : null}
-                          {message.searchProgress ? (
-                            <SearchProgressPanel
-                              messageId={message.id}
-                              progress={message.searchProgress}
+                              cards={message.processCards}
                             />
                           ) : null}
                           {message.attachments && message.attachments.length > 0 ? (
@@ -1605,113 +1570,6 @@ export default function ChatView({
         </div>
       ) : null}
 
-      {showWorkspacePanel ? (
-        <aside
-          className={`hidden overflow-hidden border-l bg-surface/96 [contain:layout_paint] will-change-[width,opacity] transition-[width,opacity,border-color] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] md:flex md:flex-col ${
-            isWorkspacePanelVisible
-              ? 'w-[340px] border-border opacity-100'
-              : 'w-0 border-transparent opacity-0 pointer-events-none'
-          }`}
-          aria-hidden={!isWorkspacePanelVisible}
-        >
-          <div
-            className={`flex h-full flex-col transition-[opacity,transform] duration-200 ${
-              isWorkspacePanelVisible ? 'translate-x-0 opacity-100' : 'translate-x-4 opacity-0'
-            }`}
-          >
-            <div className="border-b border-border px-5 py-5">
-              <p className="font-mono text-[11px] uppercase tracking-[0.3em] text-muted">
-                Workspace
-              </p>
-              <h3 className="mt-2 text-lg font-semibold text-foreground">执行回放</h3>
-            </div>
-            <div className="workspace-replay-scroll-region flex-1 overflow-y-auto px-4 py-4">
-              <Panel title="执行步骤" icon={CheckCircle2}>
-                {executionSteps.length ? (
-                  executionSteps.map((step) => (
-                    <div
-                      key={step.id}
-                      className="rounded-2xl border border-border bg-surface-container px-4 py-3"
-                    >
-                      <div className="text-sm font-medium text-foreground">{step.stepTitle}</div>
-                      {step.content ? (
-                        <div className="mt-3 text-sm leading-6 text-muted">{step.content}</div>
-                      ) : null}
-                    </div>
-                  ))
-                ) : (
-                  <EmptyBlock text="当前会话暂无步骤回放" />
-                )}
-              </Panel>
-
-              <Panel title="参考来源" icon={Globe2}>
-                {references.length ? (
-                  references.map((reference) => (
-                    <a
-                      key={reference.id}
-                      href={reference.url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="block rounded-2xl border border-border bg-surface-container px-4 py-3 transition-colors hover:border-border-active"
-                    >
-                      <div className="text-sm font-medium text-foreground">{reference.title}</div>
-                      {/* 右侧来源回放只保留标题和地址，避免长摘要挤占面板空间。 */}
-                      <div className="mt-2 break-all text-[12px] text-muted">
-                        {reference.url || '地址未知'}
-                      </div>
-                    </a>
-                  ))
-                ) : (
-                  <EmptyBlock text="当前会话暂无来源回放" />
-                )}
-              </Panel>
-
-              <Panel title="生成产物" icon={FileText}>
-                {artifacts.length ? (
-                  artifacts.map((artifact) => (
-                    <div
-                      key={artifact.id}
-                      className="rounded-2xl border border-border bg-surface-container px-4 py-3"
-                    >
-                      <div className="text-sm font-medium text-foreground">{artifact.name}</div>
-                      {artifact.contentPreview ? (
-                        <div className="mt-3 text-sm leading-6 text-muted">
-                          {artifact.contentPreview}
-                        </div>
-                      ) : null}
-                    </div>
-                  ))
-                ) : (
-                  <EmptyBlock text="当前会话暂无产物回放" />
-                )}
-              </Panel>
-
-              <Panel title="当前专家" icon={Brain}>
-                {safeCurrentExperts.length ? (
-                  safeCurrentExperts.map((expert) => (
-                    <div
-                      key={expert.expertCode}
-                      className="rounded-2xl border border-border bg-surface-container px-4 py-3"
-                    >
-                      <div className="text-sm font-medium text-foreground">{expert.displayName}</div>
-                      <div className="mt-2 text-[12px] uppercase tracking-[0.2em] text-muted">
-                        {expert.category || expert.expertCode}
-                      </div>
-                      {expert.description ? (
-                        <div className="mt-3 text-sm leading-6 text-muted">{expert.description}</div>
-                      ) : null}
-                    </div>
-                  ))
-                ) : (
-                  <EmptyBlock text="当前会话暂无专家回放" />
-                )}
-              </Panel>
-
-            </div>
-          </div>
-        </aside>
-      ) : null}
-
       {renameDialog.isOpen ? (
         <InlineDialog
           title="重命名对话"
@@ -2227,6 +2085,7 @@ function MarkdownMessage({ content }: { content: string }) {
 
 type CopyMode = 'plain' | 'markdown';
 type MessageReaction = 'up' | 'down' | null;
+const PERSISTED_MESSAGE_ID_PATTERN = /^\d+$/;
 
 /**
  * 渲染助手消息底部操作栏，统一提供复制、复制 Markdown 与点赞反馈入口。
@@ -2250,6 +2109,8 @@ function AssistantMessageActions({
   );
   const [reactionError, setReactionError] = React.useState('');
   const menuContainerRef = React.useRef<HTMLDivElement | null>(null);
+  // 关键约束：反馈接口当前仅接受数据库落库后的数值主键，乐观消息临时 ID 禁止提交反馈。
+  const canSubmitReaction = PERSISTED_MESSAGE_ID_PATTERN.test(messageId);
 
   React.useEffect(() => {
     if (!isMenuOpen) {
@@ -2293,6 +2154,9 @@ function AssistantMessageActions({
    * @param nextReaction 下一次反馈值。
    */
   const submitReaction = async (nextReaction: Exclude<MessageReaction, null>) => {
+    if (!canSubmitReaction) {
+      return;
+    }
     const token = AuthStorage.getSession()?.token ?? null;
     if (!token) {
       return;
@@ -2368,6 +2232,7 @@ function AssistantMessageActions({
         data-testid={`thumbs-up-${messageId}`}
         aria-label="点赞"
         aria-pressed={reaction === 'up'}
+        disabled={!canSubmitReaction}
         onClick={() => void submitReaction('up')}
         className={`chat-message-action-button ${reaction === 'up' ? 'chat-message-action-button-active' : ''}`}
       >
@@ -2378,6 +2243,7 @@ function AssistantMessageActions({
         data-testid={`thumbs-down-${messageId}`}
         aria-label="倒赞"
         aria-pressed={reaction === 'down'}
+        disabled={!canSubmitReaction}
         onClick={() => void submitReaction('down')}
         className={`chat-message-action-button ${reaction === 'down' ? 'chat-message-action-button-active' : ''}`}
       >
@@ -2833,6 +2699,132 @@ function ConfirmDialog({
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * 渲染统一的主消息区过程时间线，承载分析、工具调用、结果与整理结论四类卡片。
+ */
+function ProcessTimelinePanel({
+  messageId,
+  cards,
+}: {
+  messageId: string;
+  cards: ProcessCardItem[];
+}) {
+  return (
+    <section
+      data-testid={`process-timeline-panel-${messageId}`}
+      className="mb-3 space-y-3 rounded-3xl border border-border bg-surface-container/88 px-4 py-4"
+    >
+      <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+        <WandSparkles size={15} className="text-accent-breeze" />
+        <span>过程时间线</span>
+      </div>
+      <div className="space-y-3">
+        {cards.map((card) => (
+          <ProcessTimelineCard key={card.id} card={card} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+/**
+ * 渲染单条过程卡片，默认折叠参数/结果明细，仅保留摘要与状态。
+ */
+function ProcessTimelineCard({ card }: { card: ProcessCardItem }) {
+  const hasDetails = (card.details?.length ?? 0) > 0;
+  const [isExpanded, setIsExpanded] = React.useState(false);
+  const contentId = `process-card-content-${card.id}`;
+  const statusLabel =
+    card.status === 'running'
+      ? '进行中'
+      : card.status === 'completed'
+        ? '已完成'
+        : card.status === 'cancelled'
+          ? '已取消'
+          : '失败';
+
+  return (
+    <article
+      data-testid={`process-card-${card.id}`}
+      className="rounded-2xl border border-border bg-surface px-4 py-3"
+    >
+      <div className="flex items-start gap-3">
+        <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-border bg-surface-container text-muted">
+          {card.type === 'analysis' ? (
+            <Brain size={14} />
+          ) : card.type === 'tool_call' ? (
+            <Search size={14} />
+          ) : card.type === 'tool_result' ? (
+            <CheckCircle2 size={14} />
+          ) : (
+            <Sparkles size={14} />
+          )}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="text-sm font-medium text-foreground">{card.title}</div>
+            <span
+              className={`rounded-full border px-2 py-0.5 text-[11px] ${
+                card.status === 'running'
+                  ? 'border-sky-500/30 bg-sky-500/10 text-sky-300'
+                  : card.status === 'completed'
+                    ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+                    : card.status === 'cancelled'
+                      ? 'border-border bg-surface-container text-muted'
+                      : 'border-red-500/30 bg-red-500/10 text-red-300'
+              }`}
+            >
+              {statusLabel}
+            </span>
+          </div>
+          <div className="mt-2 text-sm leading-6 text-muted">{card.summary}</div>
+          {hasDetails ? (
+            <>
+              <button
+                type="button"
+                data-testid={`process-card-toggle-button-${card.id}`}
+                aria-expanded={isExpanded}
+                aria-controls={contentId}
+                aria-label={isExpanded ? `折叠${card.title}详情` : `展开${card.title}详情`}
+                onClick={() => setIsExpanded((current) => !current)}
+                className="mt-3 inline-flex items-center gap-1 rounded-full border border-border bg-surface-container px-3 py-1 text-xs text-muted transition-colors hover:text-foreground"
+              >
+                {card.details?.map((detail) => detail.label).join(' / ')}
+                <ChevronDown
+                  size={14}
+                  className={`transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}
+                />
+              </button>
+              {isExpanded ? (
+                <div
+                  id={contentId}
+                  className="mt-3 overflow-hidden"
+                >
+                  <div className="space-y-2">
+                    {card.details?.map((detail) => (
+                      <div
+                        key={`${card.id}-${detail.label}`}
+                        className="rounded-xl bg-surface-container px-3 py-2"
+                      >
+                        <div className="text-[11px] uppercase tracking-[0.16em] text-muted">
+                          {detail.label}
+                        </div>
+                        <pre className="mt-1 whitespace-pre-wrap text-xs leading-5 text-foreground">
+                          {detail.content}
+                        </pre>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+            </>
+          ) : null}
+        </div>
+      </div>
+    </article>
   );
 }
 

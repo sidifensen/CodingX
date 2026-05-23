@@ -21,6 +21,7 @@ import {
   MessageSearchProgress,
   MessageSearchProgressItem,
   PendingAttachmentItem,
+  ProcessCardItem,
   ReferenceItem,
   SampleQuestionItem,
   StreamQueueState,
@@ -838,7 +839,7 @@ export function useChatWorkspace(
       activeMessageId: optimisticAssistantId,
     };
 
-    const nextMessages: ChatMessageItem[] = [
+  const nextMessages: ChatMessageItem[] = [
       ...messages,
       {
         id: optimisticMessageId,
@@ -853,6 +854,7 @@ export function useChatWorkspace(
         conversationId: optimisticConversationId,
         role: 'ASSISTANT',
         content: '',
+        processCards: [buildAnalysisProcessCard('analysis-initial')],
         status: 'streaming',
       },
     ];
@@ -1238,6 +1240,16 @@ export function useChatWorkspace(
             ? {
                 ...message,
                 content: `${message.content}${delta}`,
+                processCards: upsertProcessCard(
+                  finalizeCardsByType(message.processCards ?? [], ['analysis']),
+                  {
+                    id: 'synthesis-direct',
+                    type: 'synthesis',
+                    title: '整理结论',
+                    summary: '正在整理最终回答。',
+                    status: 'running',
+                  },
+                ),
               }
             : message,
         ),
@@ -1253,6 +1265,10 @@ export function useChatWorkspace(
             ? {
                 ...message,
                 thinkingContent: `${message.thinkingContent ?? ''}${delta}`,
+                processCards: upsertProcessCard(
+                  message.processCards ?? [],
+                  buildAnalysisProcessCard('analysis-thinking', delta),
+                ),
               }
             : message,
         ),
@@ -1301,6 +1317,7 @@ export function useChatWorkspace(
             ? {
                 ...message,
                 mcpCalls: mergeMcpCallsById(message.mcpCalls ?? [], call),
+                processCards: mergeMcpCallIntoProcessCards(message.processCards ?? [], call),
               }
             : message,
         ),
@@ -1332,6 +1349,17 @@ export function useChatWorkspace(
                     status: 'running',
                     items: message.searchProgress?.items ?? [],
                   },
+                  processCards: upsertProcessCard(
+                    message.processCards ?? [],
+                    buildSearchToolCallCard({
+                      id: String(payload.id ?? 'search-step'),
+                      title: String(payload.stepTitle ?? '调用网页搜索'),
+                      summary:
+                        typeof payload.content === 'string' && payload.content.trim().length > 0
+                          ? payload.content
+                          : '正在检索实时资料。',
+                    }),
+                  ),
                 }
               : message,
           ),
@@ -1373,6 +1401,10 @@ export function useChatWorkspace(
                 siteName: nextReference.siteName,
               }),
             },
+            processCards: mergeReferenceIntoProcessCards(
+              message.processCards ?? [],
+              nextReference,
+            ),
           };
         }),
       );
@@ -1421,16 +1453,17 @@ export function useChatWorkspace(
       setMessages((previousMessages) =>
         previousMessages.map((message) =>
           message.id === optimisticAssistantId
-            ? {
-                ...message,
-                content: String(payload.content ?? message.content),
-                status: 'done',
-                searchProgress: message.searchProgress
+              ? {
+                  ...message,
+                  content: String(payload.content ?? message.content),
+                  status: 'done',
+                  searchProgress: message.searchProgress
                   ? {
                       ...message.searchProgress,
                       status: 'completed',
                     }
                   : undefined,
+                  processCards: finalizeProcessCards(message.processCards ?? [], 'completed'),
               }
             : message,
         ),
@@ -1443,15 +1476,16 @@ export function useChatWorkspace(
       setMessages((previousMessages) =>
         previousMessages.map((message) =>
           message.id === optimisticAssistantId
-            ? {
-                ...message,
-                status: 'cancelled',
-                searchProgress: message.searchProgress
+              ? {
+                  ...message,
+                  status: 'cancelled',
+                  searchProgress: message.searchProgress
                   ? {
                       ...message.searchProgress,
                       status: 'cancelled',
                     }
                   : undefined,
+                  processCards: finalizeProcessCards(message.processCards ?? [], 'cancelled'),
               }
             : message,
         ),
@@ -1464,16 +1498,17 @@ export function useChatWorkspace(
       setMessages((previousMessages) =>
         previousMessages.map((message) =>
           message.id === optimisticAssistantId
-            ? {
-                ...message,
-                status: 'error',
-                errorMessage: String(payload.message ?? UserErrorMessages.CHAT_REQUEST_FAILED),
-                searchProgress: message.searchProgress
+              ? {
+                  ...message,
+                  status: 'error',
+                  errorMessage: String(payload.message ?? UserErrorMessages.CHAT_REQUEST_FAILED),
+                  searchProgress: message.searchProgress
                   ? {
                       ...message.searchProgress,
                       status: 'error',
                     }
                   : undefined,
+                  processCards: finalizeProcessCards(message.processCards ?? [], 'error'),
               }
             : message,
         ),
@@ -2264,6 +2299,245 @@ function mergeMcpCallsById(calls: McpCallItem[], nextCall: McpCallItem): McpCall
 }
 
 /**
+ * 构造默认的分析阶段卡片；若传入 thinking 增量则使用可读摘要覆盖默认文案。
+ * @param id 卡片标识。
+ * @param thinkingDelta 可选思考增量。
+ * @returns 分析卡片。
+ */
+function buildAnalysisProcessCard(id: string, thinkingDelta?: string): ProcessCardItem {
+  return {
+    id,
+    type: 'analysis',
+    title: '分析问题',
+    summary:
+      thinkingDelta && thinkingDelta.trim().length > 0
+        ? summarizeThinkingDelta(thinkingDelta)
+        : '正在判断问题类型，并准备选择合适的工具或回答路径。',
+    status: 'running',
+  };
+}
+
+/**
+ * 根据搜索步骤创建统一的工具调用卡片。
+ * @param options 搜索步骤信息。
+ * @returns 搜索工具卡片。
+ */
+function buildSearchToolCallCard(options: {
+  id: string;
+  title: string;
+  summary: string;
+}): ProcessCardItem {
+  return {
+    id: `process-${options.id}`,
+    type: 'tool_call',
+    title: options.title || '调用网页搜索',
+    summary: options.summary || '正在检索实时资料。',
+    status: 'running',
+    toolId: 'search',
+    displayName: '网页搜索',
+  };
+}
+
+/**
+ * 将单条来源条目合并进统一过程卡片，来源到达后自动补齐结果卡片与整理卡片。
+ * @param cards 当前卡片列表。
+ * @param reference 新来源。
+ * @returns 合并后的卡片列表。
+ */
+function mergeReferenceIntoProcessCards(
+  cards: ProcessCardItem[],
+  reference: ReferenceItem,
+): ProcessCardItem[] {
+  const nextCards = upsertProcessCard(
+    finalizeCardsByType(cards, ['analysis', 'tool_call']),
+    {
+      id: 'search-result',
+      type: 'tool_result',
+      title: '已获取结果',
+      summary: '已获取检索来源，正在比对可用结论。',
+      status: 'completed',
+      toolId: 'search',
+      displayName: '网页搜索',
+      details: [
+        {
+          label: '结果',
+          content: [reference.title, reference.siteName, reference.url].filter(Boolean).join('\n'),
+        },
+      ],
+    },
+  );
+  return upsertProcessCard(nextCards, {
+    id: 'search-synthesis',
+    type: 'synthesis',
+    title: '整理结论',
+    summary: '正在根据检索结果整理最终回答。',
+    status: 'running',
+  });
+}
+
+/**
+ * 将 MCP 事件映射为统一过程卡片。
+ * @param cards 当前卡片列表。
+ * @param call MCP 调用记录。
+ * @returns 合并后的卡片列表。
+ */
+function mergeMcpCallIntoProcessCards(
+  cards: ProcessCardItem[],
+  call: McpCallItem,
+): ProcessCardItem[] {
+  let nextCards = finalizeCardsByType(cards, ['analysis']);
+  if (call.phase === 'start' || call.phase === 'progress') {
+    nextCards = upsertProcessCard(nextCards, {
+      id: `tool-call-${call.callId ?? call.toolId}`,
+      type: 'tool_call',
+      title: `调用${call.displayName || call.toolId || '工具'}`,
+      summary:
+        call.progressText ??
+        `正在调用${call.displayName || call.toolId || '工具'}。`,
+      status: call.status === 'error' ? 'error' : 'running',
+      toolId: call.toolId,
+      displayName: call.displayName,
+      details: call.params
+        ? [
+            {
+              label: '参数',
+              content: formatProcessCardDetail(call.params),
+            },
+          ]
+        : undefined,
+    });
+    return nextCards;
+  }
+  if (call.phase === 'complete') {
+    nextCards = finalizeCardsByType(nextCards, ['tool_call']);
+    nextCards = upsertProcessCard(nextCards, {
+      id: `tool-result-${call.callId ?? call.toolId}`,
+      type: 'tool_result',
+      title: '已获取结果',
+      summary: `已获取${call.displayName || call.toolId || '工具'}结果。`,
+      status: 'completed',
+      toolId: call.toolId,
+      displayName: call.displayName,
+      details: [
+        ...(call.params
+          ? [
+              {
+                label: '参数',
+                content: formatProcessCardDetail(call.params),
+              },
+            ]
+          : []),
+        ...(call.rawResult != null
+          ? [
+              {
+                label: '结果',
+                content: formatProcessCardDetail(call.rawResult),
+              },
+            ]
+          : []),
+      ],
+    });
+    nextCards = upsertProcessCard(nextCards, {
+      id: `tool-synthesis-${call.callId ?? call.toolId}`,
+      type: 'synthesis',
+      title: '整理结论',
+      summary: '正在根据工具结果整理最终回答。',
+      status: 'running',
+      toolId: call.toolId,
+      displayName: call.displayName,
+    });
+  }
+  return nextCards;
+}
+
+/**
+ * 统一上收过程卡片终态。
+ * @param cards 当前卡片列表。
+ * @param status 目标状态。
+ * @returns 收口后的卡片列表。
+ */
+function finalizeProcessCards(
+  cards: ProcessCardItem[],
+  status: 'completed' | 'cancelled' | 'error',
+): ProcessCardItem[] {
+  return cards.map((card) =>
+    card.status === 'running'
+      ? {
+          ...card,
+          status,
+        }
+      : card,
+  );
+}
+
+/**
+ * 仅将指定类型中仍处于 running 的卡片转为 completed。
+ * @param cards 卡片列表。
+ * @param types 目标类型列表。
+ * @returns 更新后的卡片列表。
+ */
+function finalizeCardsByType(cards: ProcessCardItem[], types: ProcessCardItem['type'][]): ProcessCardItem[] {
+  return cards.map((card) =>
+    types.includes(card.type) && card.status === 'running'
+      ? {
+          ...card,
+          status: 'completed',
+        }
+      : card,
+  );
+}
+
+/**
+ * 按卡片主键更新或插入过程卡片。
+ * @param cards 当前卡片列表。
+ * @param nextCard 待合并卡片。
+ * @returns 合并后的卡片列表。
+ */
+function upsertProcessCard(cards: ProcessCardItem[], nextCard: ProcessCardItem): ProcessCardItem[] {
+  const existingIndex = cards.findIndex((card) => card.id === nextCard.id);
+  if (existingIndex < 0) {
+    return [...cards, nextCard];
+  }
+  return cards.map((card, index) =>
+    index === existingIndex
+      ? {
+          ...card,
+          ...nextCard,
+        }
+      : card,
+  );
+}
+
+/**
+ * 对思考增量做最小可读摘要，避免直接向用户暴露原始思维流。
+ * @param delta thinking 增量。
+ * @returns 用户可读摘要。
+ */
+function summarizeThinkingDelta(delta: string): string {
+  const normalized = delta.replace(/\s+/g, ' ').trim();
+  if (normalized.length <= 48) {
+    return normalized;
+  }
+  return `${normalized.slice(0, 48)}...`;
+}
+
+/**
+ * 统一格式化过程卡片细节，确保对象与数组可稳定展示。
+ * @param value 细节值。
+ * @returns 文本化内容。
+ */
+function formatProcessCardDetail(value: unknown): string {
+  if (typeof value === 'string') {
+    return value;
+  }
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
+}
+
+/**
  * 判断执行步骤是否属于联网搜索阶段，兼容大小写和未来扩展命名。
  * @param stepType 后端返回的步骤类型。
  * @returns 是否应触发搜索进度面板。
@@ -2401,6 +2675,7 @@ function deriveMcpCallsFromSteps(executionSteps: ExecutionStepItem[]): McpCallIt
  */
 function readLatestAssistantPanelState(messages: ChatMessageItem[]): {
   mcpCalls?: McpCallItem[];
+  processCards?: ProcessCardItem[];
   searchProgress?: MessageSearchProgress;
 } {
   const latestAssistantMessage = [...messages]
@@ -2411,6 +2686,7 @@ function readLatestAssistantPanelState(messages: ChatMessageItem[]): {
   }
   return {
     mcpCalls: latestAssistantMessage.mcpCalls,
+    processCards: latestAssistantMessage.processCards,
     searchProgress: latestAssistantMessage.searchProgress,
   };
 }
@@ -2458,10 +2734,24 @@ function patchLatestAssistantReplayPanels(
     latestAssistantMessage.searchProgress ??
     previousPanelState.searchProgress ??
     replaySearchProgress;
+  const nextProcessCards =
+    latestAssistantMessage.processCards && latestAssistantMessage.processCards.length > 0
+      ? latestAssistantMessage.processCards
+      : previousPanelState.processCards && previousPanelState.processCards.length > 0
+        ? previousPanelState.processCards
+        : deriveProcessCardsFromReplay({
+            message: latestAssistantMessage,
+            executionSteps: options.executionSteps,
+            references: options.references,
+            mcpCalls: nextMcpCalls ?? [],
+            searchProgress: nextSearchProgress,
+          });
   const shouldPatch =
     (nextMcpCalls && nextMcpCalls.length > 0) !=
       ((latestAssistantMessage.mcpCalls?.length ?? 0) > 0) ||
-    nextSearchProgress !== latestAssistantMessage.searchProgress;
+    nextSearchProgress !== latestAssistantMessage.searchProgress ||
+    (nextProcessCards && nextProcessCards.length > 0) !=
+      ((latestAssistantMessage.processCards?.length ?? 0) > 0);
   if (!shouldPatch) {
     return replayMessages;
   }
@@ -2470,8 +2760,111 @@ function patchLatestAssistantReplayPanels(
       ? {
           ...message,
           mcpCalls: nextMcpCalls,
+          processCards: nextProcessCards,
           searchProgress: nextSearchProgress,
         }
       : message,
   );
+}
+
+/**
+ * 根据历史消息面板字段兜底派生主消息区过程时间线，避免刷新后过程信息完全消失。
+ * @param options 回放上下文。
+ * @returns 最小可用过程卡片列表。
+ */
+function deriveProcessCardsFromReplay(options: {
+  message: ChatMessageItem;
+  executionSteps: ExecutionStepItem[];
+  references: ReferenceItem[];
+  mcpCalls: McpCallItem[];
+  searchProgress?: MessageSearchProgress;
+}): ProcessCardItem[] | undefined {
+  const processCards: ProcessCardItem[] = [];
+  if (options.message.role !== 'ASSISTANT') {
+    return undefined;
+  }
+  processCards.push({
+    id: 'replay-analysis',
+    type: 'analysis',
+    title: '分析问题',
+    summary: '已根据历史上下文恢复本次回答的处理过程。',
+    status: 'completed',
+  });
+  for (const call of options.mcpCalls) {
+    processCards.push({
+      id: `replay-tool-call-${call.callId ?? call.toolId}`,
+      type: 'tool_call',
+      title: `调用${call.displayName || call.toolId || '工具'}`,
+      summary: call.progressText ?? `已调用${call.displayName || call.toolId || '工具'}。`,
+      status: call.status === 'error' ? 'error' : 'completed',
+      toolId: call.toolId,
+      displayName: call.displayName,
+      details: call.params
+        ? [
+            {
+              label: '参数',
+              content: formatProcessCardDetail(call.params),
+            },
+          ]
+        : undefined,
+    });
+    if (call.rawResult != null || call.content) {
+      processCards.push({
+        id: `replay-tool-result-${call.callId ?? call.toolId}`,
+        type: 'tool_result',
+        title: '已获取结果',
+        summary: `已恢复${call.displayName || call.toolId || '工具'}结果。`,
+        status: call.status === 'error' ? 'error' : 'completed',
+        toolId: call.toolId,
+        displayName: call.displayName,
+        details: [
+          {
+            label: '结果',
+            content: formatProcessCardDetail(call.rawResult ?? call.content),
+          },
+        ],
+      });
+    }
+  }
+  if ((options.searchProgress?.items.length ?? 0) > 0 && !processCards.some((card) => card.toolId === 'search')) {
+    processCards.push({
+      id: 'replay-search-call',
+      type: 'tool_call',
+      title: '调用网页搜索',
+      summary: '已恢复历史检索过程。',
+      status: 'completed',
+      toolId: 'search',
+      displayName: '网页搜索',
+    });
+    processCards.push({
+      id: 'replay-search-result',
+      type: 'tool_result',
+      title: '已获取结果',
+      summary: `已恢复 ${options.searchProgress?.items.length ?? 0} 条搜索来源。`,
+      status: options.searchProgress?.status === 'error' ? 'error' : 'completed',
+      toolId: 'search',
+      displayName: '网页搜索',
+      details: [
+        {
+          label: '结果',
+          content: (options.searchProgress?.items ?? [])
+            .map((item) => [item.title, item.siteName, item.url].filter(Boolean).join(' | '))
+            .join('\n'),
+        },
+      ],
+    });
+  }
+  processCards.push({
+    id: 'replay-synthesis',
+    type: 'synthesis',
+    title: '整理结论',
+    summary: '已恢复历史回答的整理阶段。',
+    status:
+      options.message.status === 'FAILED' || options.message.status === 'error'
+        ? 'error'
+        : options.message.status === 'CANCELLED' || options.message.status === 'cancelled'
+          ? 'cancelled'
+          : 'completed',
+  });
+  return processCards.length > 0 ? processCards : undefined;
 }

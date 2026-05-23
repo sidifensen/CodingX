@@ -22,9 +22,11 @@ import com.codingx.chat.domain.port.ChatStreamPublisher;
 import com.codingx.mcp.application.service.ChatMcpExecutionService;
 import com.codingx.mcp.application.service.ChatMcpToolResult;
 import com.codingx.mcp.domain.repository.ChatMcpRepository;
+import com.codingx.expert.application.service.ChatExpertContextService;
 import com.codingx.skill.application.service.ChatSkillContextService;
 import java.util.ArrayList;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -59,6 +61,9 @@ class ChatApplicationMcpFlowTest {
     @Mock private ChatMcpRepository chatMcpRepository;
     @Mock private ChatAttachmentService chatAttachmentService;
     @Mock private ChatSkillContextService chatSkillContextService;
+    @Mock private ChatExpertContextService chatExpertContextService;
+    @Mock private com.codingx.common.support.ai.TokenCounterService tokenCounterService;
+    @Mock private com.codingx.common.support.ai.LlmResponseCleaner llmResponseCleaner;
 
     @InjectMocks
     private ChatApplicationService chatApplicationService;
@@ -70,6 +75,7 @@ class ChatApplicationMcpFlowTest {
     void sendMessageExecutesMcpToolForMcpIntent() {
         Long runId = 9301001L;
         ChatExecutionContext.start(runId);
+        AtomicBoolean aiStreamInvoked = new AtomicBoolean(false);
         ChatConversation conversation = ChatConversation.create(1L, "New Conversation", 1002L, ChatConversationStatus.ACTIVE);
         when(chatConversationRepository.requireById(1L)).thenReturn(conversation);
         when(chatMessageRepository.findByConversationId(1L)).thenReturn(new ArrayList<>());
@@ -96,6 +102,16 @@ class ChatApplicationMcpFlowTest {
             return new ChatMcpToolResult("weather_query", "北京今日晴，当前温度 26.5°C。", java.util.Map.of());
         });
         when(conversationTitleService.generateTitle(any(), any())).thenReturn("天气查询");
+        when(llmResponseCleaner.clean(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        org.mockito.Mockito.doAnswer(invocation -> {
+            aiStreamInvoked.set(true);
+            AiChatClient.StreamHandler handler = invocation.getArgument(2);
+            handler.onMetadata("mock-provider", "mock-model");
+            handler.onThinkingDelta("正在基于工具结果整理最终答案。");
+            handler.onDelta("根据天气工具结果，北京今日晴，当前温度 26.5°C。");
+            handler.onComplete();
+            return null;
+        }).when(aiChatClient).streamChat(any(), eq(false), any(AiChatClient.StreamHandler.class));
 
         chatApplicationService.sendMessage(new SendChatMessageCommand(1L, "北京今天天气怎么样", false, java.util.List.of("weather_query")), 1002L);
 
@@ -129,11 +145,12 @@ class ChatApplicationMcpFlowTest {
                 && map.get("callId") != null
                 && map.containsKey("rawResult");
         }));
-        verify(chatStreamPublisher).publishAssistantCompleted(1L, "北京今日晴，当前温度 26.5°C。", "天气查询");
+        verify(aiChatClient).streamChat(any(), eq(false), any(AiChatClient.StreamHandler.class));
+        assertEquals(true, aiStreamInvoked.get());
+        verify(chatStreamPublisher).publishAssistantCompleted(1L, "根据天气工具结果，北京今日晴，当前温度 26.5°C。", "天气查询");
         ArgumentCaptor<ChatMessage> captor = ArgumentCaptor.forClass(ChatMessage.class);
         verify(chatMessageRepository, org.mockito.Mockito.times(2)).save(captor.capture());
-        assertEquals("北京今日晴，当前温度 26.5°C。", captor.getAllValues().get(1).getContent());
-        org.mockito.Mockito.verifyNoInteractions(aiChatClient);
+        assertEquals("根据天气工具结果，北京今日晴，当前温度 26.5°C。", captor.getAllValues().get(1).getContent());
         ChatExecutionContext.clear();
     }
 
@@ -166,6 +183,15 @@ class ChatApplicationMcpFlowTest {
             any(com.codingx.mcp.application.service.ChatMcpProgressListener.class)
         )).thenReturn(new ChatMcpToolResult("code_search", "命中 ChatController.java:95", java.util.Map.of()));
         when(conversationTitleService.generateTitle(any(), any())).thenReturn("代码定位");
+        when(llmResponseCleaner.clean(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        org.mockito.Mockito.doAnswer(invocation -> {
+            AiChatClient.StreamHandler handler = invocation.getArgument(2);
+            handler.onMetadata("mock-provider", "mock-model");
+            handler.onThinkingDelta("正在根据代码检索结果整理最终答案。");
+            handler.onDelta("根据代码检索结果，命中 ChatController.java:95。");
+            handler.onComplete();
+            return null;
+        }).when(aiChatClient).streamChat(any(), eq(false), any(AiChatClient.StreamHandler.class));
 
         chatApplicationService.sendMessage(
             new SendChatMessageCommand(2L, "查找 ChatController 的 sendMessage 方法", false, java.util.List.of("code_search")),
@@ -177,8 +203,8 @@ class ChatApplicationMcpFlowTest {
             eq("查找 ChatController 的 sendMessage 方法"),
             any(com.codingx.mcp.application.service.ChatMcpProgressListener.class)
         );
-        verify(chatStreamPublisher).publishAssistantCompleted(2L, "命中 ChatController.java:95", "代码定位");
-        org.mockito.Mockito.verifyNoInteractions(aiChatClient);
+        verify(aiChatClient).streamChat(any(), eq(false), any(AiChatClient.StreamHandler.class));
+        verify(chatStreamPublisher).publishAssistantCompleted(2L, "根据代码检索结果，命中 ChatController.java:95。", "代码定位");
         ChatExecutionContext.clear();
     }
 }

@@ -25,6 +25,7 @@ export interface ChatMessageItem {
   thinkingContent?: string;
   thinkingDuration?: number;
   mcpCalls?: McpCallItem[];
+  processCards?: ProcessCardItem[];
   searchProgress?: MessageSearchProgress;
   status: string;
   provider?: string;
@@ -50,6 +51,28 @@ export interface MessageSearchProgressItem {
   title: string;
   url?: string;
   siteName?: string;
+}
+
+/**
+ * 描述主消息区中的单条过程卡片细节项，用于参数与结果的折叠展示。
+ */
+export interface ProcessCardDetailItem {
+  label: string;
+  content: string;
+}
+
+/**
+ * 描述主消息区中统一的过程时间线卡片。
+ */
+export interface ProcessCardItem {
+  id: string;
+  type: 'analysis' | 'tool_call' | 'tool_result' | 'synthesis';
+  title: string;
+  summary: string;
+  status: 'running' | 'completed' | 'error' | 'cancelled';
+  toolId?: string;
+  displayName?: string;
+  details?: ProcessCardDetailItem[];
 }
 
 /**

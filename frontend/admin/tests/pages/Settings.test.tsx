@@ -8,6 +8,16 @@ import { Settings } from '@/pages/Settings';
 
 const mockSettings = [
   {
+    id: '0',
+    settingKey: 'chat.executor.stream_core_pool_size',
+    settingValue: '2',
+    valueType: 'INTEGER',
+    categoryCode: 'chat.executor',
+    description: '聊天入口线程池核心线程数',
+    sortNo: 0,
+    restartRequired: true,
+  },
+  {
     id: '1',
     settingKey: 'chat.memory.summary_enabled',
     settingValue: 'true',
@@ -61,6 +71,7 @@ describe('Settings page', () => {
     render(<Settings />);
 
     await screen.findByRole('heading', { name: '系统配置' });
+    expect(screen.getByText('聊天执行器')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: '紧凑表格' }));
 

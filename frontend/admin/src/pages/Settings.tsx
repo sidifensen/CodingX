@@ -24,6 +24,7 @@ const VIEW_MODE_META: Array<{ mode: SettingsViewMode; label: string }> = [
 
 const CATEGORY_LABELS: Record<string, string> = {
   'chat.memory': '聊天历史压缩',
+  'chat.executor': '聊天执行器',
   search: '搜索链路',
   queue: '并发门控',
   code_search: '代码检索运行时',

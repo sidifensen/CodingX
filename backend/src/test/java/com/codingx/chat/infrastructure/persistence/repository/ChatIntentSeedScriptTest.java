@@ -47,5 +47,11 @@ class ChatIntentSeedScriptTest {
             assertFalse(initSql.contains(removedMcp), "init.sql 不应再包含已下线 MCP: " + removedMcp);
             assertTrue(cleanupMigrationSql.contains(removedMcp), "清理迁移应覆盖已下线 MCP: " + removedMcp);
         }
+
+        assertTrue(cleanupMigrationSql.contains("DELETE FROM task_mcp"), "清理迁移必须同步移除任务 MCP 绑定");
+        assertTrue(cleanupMigrationSql.contains("DELETE FROM mcp"), "清理迁移必须同步移除 MCP 配置");
+        assertTrue(cleanupMigrationSql.contains("DELETE FROM chat_intent_node"), "清理迁移必须同步移除历史意图节点");
+        assertTrue(cleanupMigrationSql.contains("sales-data"), "清理迁移必须覆盖销售链路历史节点");
+        assertTrue(cleanupMigrationSql.contains("ticket-data"), "清理迁移必须覆盖工单链路历史节点");
     }
 }

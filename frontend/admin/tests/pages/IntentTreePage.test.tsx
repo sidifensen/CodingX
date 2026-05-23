@@ -187,4 +187,16 @@ describe('IntentTreePage', () => {
     expect(pageShell.contains(overlay)).toBe(false);
     expect(overlay.parentElement).toBe(document.body);
   });
+
+  it('calls delete API when confirming deletion', async () => {
+    render(<IntentTreePage />);
+
+    await screen.findByRole('region', { name: '意图树结构' });
+    fireEvent.click(screen.getByRole('button', { name: '删除节点' }));
+
+    const dialog = await screen.findByRole('dialog', { name: '删除意图节点' });
+    fireEvent.click(within(dialog).getByRole('button', { name: '确认删除' }));
+
+    await waitFor(() => expect(AdminChatApi.deleteIntent).toHaveBeenCalledWith('domain-1'));
+  });
 });

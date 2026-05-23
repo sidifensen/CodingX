@@ -138,6 +138,21 @@ class AdminChatIntentServiceTest {
     }
 
     /**
+     * 已删除的历史子节点不应阻止父节点继续删除，否则管理端会出现“子节点已经清理但父节点仍删不掉”的假象。
+     */
+    @Test
+    void deleteAllowsNodeWithOnlySoftDeletedChildren() {
+        when(chatIntentNodeRepository.findById(3002L)).thenReturn(
+            ChatIntentNode.builder().id(3002L).intentCode("group-child").name("子节点").build()
+        );
+        when(chatIntentNodeRepository.hasChildren("group-child")).thenReturn(false);
+
+        adminChatIntentService.delete(3002L);
+
+        verify(chatIntentNodeRepository).softDeleteById(3002L);
+    }
+
+    /**
      * 更新接口必须以路径 ID 为准，防止请求体 ID 被前端误传后覆盖其他节点。
      */
     @Test

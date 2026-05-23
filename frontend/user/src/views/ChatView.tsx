@@ -652,16 +652,20 @@ export default function ChatView({
    */
   const selectExpert = React.useCallback(
     (expertCode: string | null) => {
-      setSelectedExpertCode(expertCode);
-      if (!expertCode) {
+      const nextExpertCode =
+        expertCode && selectedExpertCode === expertCode ? null : expertCode;
+      setSelectedExpertCode(nextExpertCode);
+      if (!nextExpertCode) {
         return;
       }
-      const matchedExpert = safeAvailableExperts.find((expert) => expert.expertCode === expertCode);
+      const matchedExpert = safeAvailableExperts.find(
+        (expert) => expert.expertCode === nextExpertCode,
+      );
       if (matchedExpert?.presetQuestion?.trim()) {
         setInputValue(matchedExpert.presetQuestion.trim());
       }
     },
-    [safeAvailableExperts, setInputValue, setSelectedExpertCode],
+    [safeAvailableExperts, selectedExpertCode, setInputValue, setSelectedExpertCode],
   );
 
   return (
@@ -2707,6 +2711,27 @@ function InlineDialog({
   onConfirm: (value: string) => Promise<void>;
 }) {
   const [value, setValue] = React.useState(defaultValue);
+  const [isSubmitting, setIsSubmitting] = React.useState(false);
+  const [errorMessage, setErrorMessage] = React.useState('');
+
+  const trimmedValue = value.trim();
+
+  /**
+   * 统一处理重命名提交：提交中禁用二次点击，并在失败时直接透出后端错误文案。
+   */
+  const handleConfirm = async () => {
+    if (isSubmitting || !trimmedValue) {
+      return;
+    }
+    setIsSubmitting(true);
+    setErrorMessage('');
+    try {
+      await onConfirm(trimmedValue);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : '重命名失败，请稍后重试');
+      setIsSubmitting(false);
+    }
+  };
 
   return (
     <div
@@ -2719,23 +2744,42 @@ function InlineDialog({
         <h3 className="text-base font-semibold text-foreground">{title}</h3>
         <input
           value={value}
-          onChange={(event) => setValue(event.target.value)}
+          disabled={isSubmitting}
+          onChange={(event) => {
+            setValue(event.target.value);
+            if (errorMessage) {
+              setErrorMessage('');
+            }
+          }}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' && !event.nativeEvent.isComposing) {
+              event.preventDefault();
+              void handleConfirm();
+            }
+          }}
           className="mt-4 h-24 w-full rounded-xl border border-border bg-surface px-4 py-3 text-sm text-foreground outline-none"
         />
+        {errorMessage ? (
+          <p className="mt-3 text-sm text-[#ff7b72]" role="alert" aria-live="polite">
+            {errorMessage}
+          </p>
+        ) : null}
         <div className="mt-4 flex justify-end gap-2">
           <button
             type="button"
             onClick={onCancel}
-            className="rounded-lg bg-surface px-4 py-2 text-sm text-muted transition-colors hover:bg-surface-high hover:text-foreground"
+            disabled={isSubmitting}
+            className="rounded-lg bg-surface px-4 py-2 text-sm text-muted transition-[opacity,color,background-color] hover:bg-surface-high hover:text-foreground disabled:opacity-60"
           >
             {cancelLabel}
           </button>
           <button
             type="button"
-            onClick={() => void onConfirm(value)}
-            className="rounded-lg bg-foreground px-4 py-2 text-sm text-background transition-opacity hover:opacity-90"
+            disabled={isSubmitting || !trimmedValue}
+            onClick={() => void handleConfirm()}
+            className="rounded-lg bg-foreground px-4 py-2 text-sm text-background transition-opacity hover:opacity-90 disabled:opacity-60"
           >
-            {confirmLabel}
+            {isSubmitting ? '保存中...' : confirmLabel}
           </button>
         </div>
       </div>

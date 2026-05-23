@@ -1584,6 +1584,37 @@ describe('ChatView', () => {
   });
 
   /**
+   * 专家列表中的已选项再次点击时应取消选中，保持与技能多选的切换交互一致。
+   */
+  it('应支持再次点击已选专家以取消选中', async () => {
+    const setSelectedExpertCode = vi.fn();
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          availableExperts: [
+            {
+              id: '8101',
+              expertCode: 'bi-analyst',
+              displayName: 'BI 报表专家',
+              description: '分析经营看板并给出指标建议',
+              category: '数据分析',
+            },
+          ],
+          selectedExpertCode: 'bi-analyst',
+          setSelectedExpertCode,
+        })}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '打开专家列表' }));
+    fireEvent.click(screen.getByRole('button', { name: '选择专家 BI 报表专家' }));
+
+    expect(setSelectedExpertCode).toHaveBeenCalledWith(null);
+  });
+
+  /**
    * 输入区应展示待发送附件缩略图，并支持打开预览弹窗与移除附件。
    */
   it('应支持待发送图片预览与删除', async () => {
@@ -2035,6 +2066,39 @@ describe('ChatView', () => {
     const overlay = panel?.parentElement;
     expect(overlay).toHaveClass('fixed');
     expect(overlay).toHaveClass('z-[120]');
+  });
+
+  /**
+   * 重命名失败时应保留弹窗并展示后端错误，避免用户误判为确认按钮无响应。
+   */
+  it('应在重命名失败时展示错误并保持弹窗打开', async () => {
+    const renameConversation = vi.fn().mockRejectedValue(new Error('会话标题不能为空'));
+    const closeRenameDialog = vi.fn();
+
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          renameConversation,
+          renameDialog: {
+            conversationId: '2001',
+            initialTitle: '默认标题',
+            isOpen: true,
+            open: vi.fn(),
+            close: closeRenameDialog,
+          },
+        })}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '确认' }));
+
+    await waitFor(() => {
+      expect(renameConversation).toHaveBeenCalledWith('2001', '默认标题');
+    });
+    expect(await screen.findByRole('alert')).toHaveTextContent('会话标题不能为空');
+    expect(closeRenameDialog).not.toHaveBeenCalled();
   });
 });
 

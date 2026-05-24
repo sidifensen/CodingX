@@ -3672,6 +3672,128 @@ describe('useChatWorkspace', () => {
   });
 
   /**
+   * 工具结果之后继续产生的 thinking 应作为新的分析段追加到工具过程后，并完整保留原文。
+   */
+  it('应将工具结果后的thinking完整追加到工具过程之后', async () => {
+    window.localStorage.setItem(
+      'codingx.auth.session',
+      JSON.stringify({
+        token: 'token-123',
+        userId: '1002',
+        username: 'user',
+        displayName: 'CodingX User',
+        userType: 'USER',
+      }),
+    );
+
+    const readQueue: Array<{
+      resolve: (value: ReadableStreamReadResult<Uint8Array>) => void;
+      reject: (reason?: unknown) => void;
+    }> = [];
+    const preToolThinking = '我先判断这个问题需要实时检索来确认最新模型。';
+    const postToolThinking =
+      '我需要根据检索到的证据来回答关于Qwen和GLM最新模型的问题，并进行对比。让我分析一下检索结果中关于这两个系列最新模型的信息。Qwen最新模型需要结合官方发布、模型定位、上下文长度、代码能力、工具调用能力、开源与闭源边界逐项核对；GLM最新模型也需要按同样维度整理，再给出差异。';
+    const thinkingBeforeToolEvent = new TextEncoder().encode(
+      `event:thinking\ndata:${JSON.stringify({ type: 'thinking', delta: preToolThinking })}\n\n`,
+    );
+    const searchStepEvent = new TextEncoder().encode(
+      'event:step\ndata:{"id":"search-qwen-glm","runId":"5004","stepType":"search","stepTitle":"搜索子问题 1","stepStatus":"COMPLETED","sequenceNo":1,"content":"Qwen和GLM最新模型是什么"}\n\n',
+    );
+    const referenceEvent = new TextEncoder().encode(
+      'event:reference\ndata:{"id":"ref-qwen-glm","runId":"5004","conversationId":"2004","title":"Qwen 与 GLM 最新模型信息","url":"https://example.com/models","siteName":"模型资料站","rankNo":1}\n\n',
+    );
+    const thinkingAfterToolEvent = new TextEncoder().encode(
+      `event:thinking\ndata:${JSON.stringify({ type: 'thinking', delta: postToolThinking })}\n\n`,
+    );
+    const finishEvent = new TextEncoder().encode('event:finish\ndata:{"content":"对比完成"}\n\n');
+    const mockReader = {
+      read: vi.fn(() => {
+        return new Promise<ReadableStreamReadResult<Uint8Array>>((resolve, reject) => {
+          readQueue.push({ resolve, reject });
+        });
+      }),
+    };
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (
+        url === '/api/chat/conversations' ||
+        url === '/api/chat/sample-questions' ||
+        url === '/api/chat/experts' ||
+        url === '/api/chat/skills' ||
+        url === '/api/chat/mcps' ||
+        url === '/api/chat/conversations/pending-conversation/messages' ||
+        url === '/api/chat/conversations/pending-conversation/steps' ||
+        url === '/api/chat/conversations/pending-conversation/references' ||
+        url === '/api/chat/conversations/pending-conversation/artifacts' ||
+        url === '/api/chat/conversations/pending-conversation/current-experts' ||
+        url === '/api/chat/conversations/pending-conversation/current-skills' ||
+        url === '/api/chat/conversations/pending-conversation/current-mcps'
+      ) {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (url.includes('/api/chat/stream')) {
+        return {
+          ok: true,
+          status: 200,
+          body: {
+            getReader: () => mockReader,
+          },
+        } as unknown as Response;
+      }
+      throw new Error(`Unhandled fetch in post-tool thinking test: ${url}`);
+    });
+
+    const { result } = renderHook(() => useChatWorkspace(true));
+
+    await waitFor(() => {
+      expect(result.current.isBootstrapping).toBe(false);
+    });
+    await act(async () => {
+      result.current.setInputValue('qwen和glm最新的模型是什么,帮我对比一下有什么区别');
+    });
+    const submitPromise = result.current.submitMessage();
+
+    await waitFor(() => {
+      expect(result.current.isStreaming).toBe(true);
+      expect(readQueue.length).toBeGreaterThan(0);
+    });
+    for (const event of [
+      thinkingBeforeToolEvent,
+      searchStepEvent,
+      referenceEvent,
+      thinkingAfterToolEvent,
+    ]) {
+      await act(async () => {
+        readQueue.shift()?.resolve({ done: false, value: event });
+      });
+    }
+
+    await waitFor(() => {
+      const assistantMessage = result.current.messages.find((item) => item.role === 'ASSISTANT');
+      const processCards = ((assistantMessage as Record<string, unknown> | undefined)?.processCards ?? []) as Array<Record<string, unknown>>;
+      const searchResultIndex = processCards.findIndex((card) => card.type === 'tool_result' && card.toolId === 'search');
+      const postToolThinkingIndex = processCards.findIndex((card) => card.id === 'analysis-after-tools');
+      expect(searchResultIndex).toBeGreaterThan(-1);
+      expect(postToolThinkingIndex).toBeGreaterThan(searchResultIndex);
+      expect(processCards[postToolThinkingIndex]?.summary).toBe(postToolThinking);
+    });
+
+    await act(async () => {
+      readQueue.shift()?.resolve({ done: false, value: finishEvent });
+    });
+    await act(async () => {
+      readQueue.shift()?.resolve({ done: true, value: undefined });
+    });
+    await act(async () => {
+      await submitPromise;
+    });
+  });
+
+  /**
    * MCP 两阶段事件应按 callId 合并为同一条调用记录，开始即展示运行态，完成后更新原始结果。
    */
   it('应按callId合并mcp调用开始与完成事件', async () => {

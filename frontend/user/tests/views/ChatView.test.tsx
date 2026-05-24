@@ -640,6 +640,73 @@ describe('ChatView', () => {
   });
 
   /**
+   * 工具结果后的分析应按真实过程顺序显示在工具组之后，避免把“基于结果的思考”提前到工具上方。
+   */
+  it('应按过程卡片顺序渲染工具后的分析文本', async () => {
+    const postToolThinking =
+      '我需要根据检索到的证据来回答关于Qwen和GLM最新模型的问题，并进行对比。这个分析必须完整展示，不能被中间省略号截断。';
+
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          messages: [
+            {
+              id: '705',
+              conversationId: '2001',
+              role: 'ASSISTANT',
+              content: '最终回答',
+              processCards: [
+                {
+                  id: 'analysis-before-tools',
+                  type: 'analysis',
+                  title: '分析问题',
+                  summary: '我先判断需要调用搜索工具。',
+                  status: 'completed',
+                },
+                {
+                  id: 'tool-call-705',
+                  type: 'tool_call',
+                  title: '搜索子问题 1',
+                  summary: 'Qwen和GLM最新模型是什么',
+                  status: 'completed',
+                  toolId: 'search',
+                },
+                {
+                  id: 'tool-result-705',
+                  type: 'tool_result',
+                  title: '已获取结果',
+                  summary: '找到来源：Qwen 与 GLM 最新模型信息',
+                  status: 'completed',
+                  toolId: 'search',
+                },
+                {
+                  id: 'analysis-after-tools',
+                  type: 'analysis',
+                  title: '分析检索结果',
+                  summary: postToolThinking,
+                  status: 'running',
+                },
+              ],
+              status: 'streaming',
+            } as any,
+          ],
+          executionSteps: [],
+          references: [],
+          artifacts: [],
+        })}
+      />,
+    );
+
+    const tracePanel = screen.getByTestId('process-trace-panel-705');
+    expect(tracePanel).toHaveTextContent(postToolThinking);
+    expect(tracePanel.textContent?.indexOf('已获取结果')).toBeLessThan(
+      tracePanel.textContent?.indexOf(postToolThinking) ?? -1,
+    );
+  });
+
+  /**
    * 移动端长标题与长词应允许在容器内换行，避免横向撑出页面。
    */
   it('应为助手 Markdown 消息启用窄屏断行约束', async () => {

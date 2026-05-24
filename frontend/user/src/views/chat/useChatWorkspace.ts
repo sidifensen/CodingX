@@ -1256,13 +1256,21 @@ export function useChatWorkspace(
         previousMessages.map((message) =>
           message.id === optimisticAssistantId
             ? (() => {
+                const currentProcessCards = removeInitialAnalysisPlaceholder(message.processCards ?? []);
+                const thinkingCardId = resolveThinkingProcessCardId(currentProcessCards);
+                const existingThinkingCard = currentProcessCards.find((card) => card.id === thinkingCardId);
+                const nextThinkingSummary = `${existingThinkingCard?.summary ?? ''}${delta}`;
                 const nextThinkingContent = `${message.thinkingContent ?? ''}${delta}`;
                 return {
                   ...message,
                   thinkingContent: nextThinkingContent,
                   processCards: upsertProcessCard(
-                    message.processCards ?? [],
-                    buildAnalysisProcessCard('analysis-thinking', nextThinkingContent),
+                    currentProcessCards,
+                    buildAnalysisProcessCard(
+                      thinkingCardId,
+                      nextThinkingSummary,
+                      thinkingCardId === 'analysis-after-tools' ? '分析检索结果' : '分析问题',
+                    ),
                   ),
                 };
               })()
@@ -2311,20 +2319,21 @@ function mergeMcpCallsById(calls: McpCallItem[], nextCall: McpCallItem): McpCall
 }
 
 /**
- * 构造默认的分析阶段卡片；若传入 thinking 增量则使用可读摘要覆盖默认文案。
+ * 构造分析阶段卡片；真实 thinking 到达后必须完整展示，避免中途省略导致用户无法核对过程。
  * @param id 卡片标识。
- * @param thinkingDelta 可选思考增量。
+ * @param thinkingContent 可选思考内容。
+ * @param title 过程标题。
  * @returns 分析卡片。
  */
-function buildAnalysisProcessCard(id: string, thinkingDelta?: string): ProcessCardItem {
+function buildAnalysisProcessCard(id: string, thinkingContent?: string, title = '分析问题'): ProcessCardItem {
   const summary =
-    thinkingDelta && thinkingDelta.trim().length > 0
-      ? summarizeThinkingDelta(thinkingDelta)
+    thinkingContent && thinkingContent.trim().length > 0
+      ? formatThinkingProcessContent(thinkingContent)
       : '我会先判断这个问题需要哪些信息，再决定直接回答还是调用工具补充证据。';
   return {
     id,
     type: 'analysis',
-    title: '分析问题',
+    title,
     summary,
     status: 'running',
   };
@@ -2560,16 +2569,32 @@ function resolveToolResultSummary(call: McpCallItem): string {
 }
 
 /**
- * 对思考增量做最小可读摘要，避免直接向用户暴露原始思维流。
- * @param delta thinking 增量。
- * @returns 用户可读摘要。
+ * 移除还没有真实模型过程支撑的占位分析，避免流式 thinking 到达后仍显示固定模板文案。
+ * @param cards 当前过程卡片。
+ * @returns 去除初始占位后的过程卡片。
  */
-function summarizeThinkingDelta(delta: string): string {
-  const normalized = delta.replace(/\s+/g, ' ').trim();
-  if (normalized.length <= 160) {
-    return normalized;
-  }
-  return `${normalized.slice(0, 160)}...`;
+function removeInitialAnalysisPlaceholder(cards: ProcessCardItem[]): ProcessCardItem[] {
+  return cards.filter((card) => card.id !== 'analysis-initial');
+}
+
+/**
+ * 根据已经发生的过程判断新 thinking 应追加到哪个分析段，确保工具结果后的分析显示在工具链路下面。
+ * @param cards 当前过程卡片。
+ * @returns thinking 卡片标识。
+ */
+function resolveThinkingProcessCardId(cards: ProcessCardItem[]): string {
+  return cards.some((card) => card.type === 'tool_call' || card.type === 'tool_result')
+    ? 'analysis-after-tools'
+    : 'analysis-thinking';
+}
+
+/**
+ * 格式化真实 thinking 内容：只清理首尾空白，不截断、不压缩换行，保证主消息区能完整回放。
+ * @param content thinking 内容。
+ * @returns 可展示的完整过程文本。
+ */
+function formatThinkingProcessContent(content: string): string {
+  return content.trim();
 }
 
 /**

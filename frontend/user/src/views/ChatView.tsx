@@ -2322,33 +2322,76 @@ function ProcessTracePanel({
   messageId: string;
   cards: ProcessCardItem[];
 }) {
-  const analysisCards = cards.filter((card) => card.type === 'analysis');
-  const textCards = cards.filter(
-    (card) => card.type === 'synthesis' && !isDisposableSynthesisTrace(card),
-  );
-  const toolCards = cards.filter((card) => card.type === 'tool_call' || card.type === 'tool_result');
-  const visibleTextCards = [...analysisCards, ...textCards].filter((card) =>
-    card.summary.trim().length > 0,
-  );
+  const traceSegments = groupProcessTraceSegments(cards);
+  let hasRenderedAnalysisHeading = false;
 
   return (
     <section
       data-testid={`process-trace-panel-${messageId}`}
       className="mb-4 space-y-3 text-sm text-muted"
     >
-      {visibleTextCards.map((card, index) => (
-        <ProcessTraceText
-          key={card.id}
-          card={card}
-          messageId={messageId}
-          isFirstAnalysis={card.type === 'analysis' && index === 0}
-        />
-      ))}
-      {toolCards.length > 0 ? (
-        <ProcessToolGroup messageId={messageId} cards={toolCards} />
-      ) : null}
+      {traceSegments.map((segment, index) => {
+        if (segment.type === 'tools') {
+          return (
+            <ProcessToolGroup
+              key={`tools-${index}-${segment.cards.map((card) => card.id).join('-')}`}
+              messageId={messageId}
+              cards={segment.cards}
+            />
+          );
+        }
+        const shouldShowAnalysisHeading =
+          segment.card.type === 'analysis' && !hasRenderedAnalysisHeading;
+        if (shouldShowAnalysisHeading) {
+          hasRenderedAnalysisHeading = true;
+        }
+        return (
+          <ProcessTraceText
+            key={segment.card.id}
+            card={segment.card}
+            messageId={messageId}
+            isFirstAnalysis={shouldShowAnalysisHeading}
+          />
+        );
+      })}
     </section>
   );
+}
+
+type ProcessTraceSegment =
+  | { type: 'text'; card: ProcessCardItem }
+  | { type: 'tools'; cards: ProcessCardItem[] };
+
+/**
+ * 按真实过程顺序聚合消息内链路：连续工具节点合并为一个可展开组，分析文本保留原始前后位置。
+ */
+function groupProcessTraceSegments(cards: ProcessCardItem[]): ProcessTraceSegment[] {
+  const segments: ProcessTraceSegment[] = [];
+  let pendingToolCards: ProcessCardItem[] = [];
+  const flushToolCards = () => {
+    if (pendingToolCards.length === 0) {
+      return;
+    }
+    segments.push({ type: 'tools', cards: pendingToolCards });
+    pendingToolCards = [];
+  };
+
+  for (const card of cards) {
+    if (card.type === 'tool_call' || card.type === 'tool_result') {
+      pendingToolCards.push(card);
+      continue;
+    }
+    if (card.type === 'synthesis' && isDisposableSynthesisTrace(card)) {
+      continue;
+    }
+    if (card.summary.trim().length === 0) {
+      continue;
+    }
+    flushToolCards();
+    segments.push({ type: 'text', card });
+  }
+  flushToolCards();
+  return segments;
 }
 
 /**

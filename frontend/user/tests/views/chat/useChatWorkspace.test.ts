@@ -4962,6 +4962,25 @@ describe('useChatWorkspace', () => {
         url === '/api/chat/conversations/9901/current-mcps' ||
         url === '/api/chat/conversations/9901/current-experts'
       ) {
+        if (url === '/api/chat/conversations/9901/messages') {
+          return new Response(
+            JSON.stringify({
+              success: true,
+              code: 'OK',
+              message: 'success',
+              data: [
+                {
+                  id: 'assistant-9901',
+                  conversationId: '9901',
+                  role: 'ASSISTANT',
+                  content: '',
+                  status: 'COMPLETED',
+                },
+              ],
+            }),
+            { status: 200 },
+          );
+        }
         return new Response(
           JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
           { status: 200 },
@@ -5029,5 +5048,12 @@ describe('useChatWorkspace', () => {
     );
 
     await submitPromise;
+
+    await waitFor(() => {
+      const latestAssistantMessage = [...result.current.messages]
+        .reverse()
+        .find((item) => item.role === 'ASSISTANT');
+      expect(latestAssistantMessage?.content).toBe('ok');
+    });
   });
 });

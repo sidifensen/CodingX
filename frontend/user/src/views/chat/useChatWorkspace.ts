@@ -169,7 +169,7 @@ export function useChatWorkspace(
   );
   const [conversations, setConversations] = useState<ConversationItem[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
-  const [messages, setMessages] = useState<ChatMessageItem[]>([]);
+  const [messages, setMessagesState] = useState<ChatMessageItem[]>([]);
   const [executionSteps, setExecutionSteps] = useState<ExecutionStepItem[]>([]);
   const [references, setReferences] = useState<ReferenceItem[]>([]);
   const [artifacts, setArtifacts] = useState<ArtifactItem[]>([]);
@@ -217,6 +217,23 @@ export function useChatWorkspace(
   const activeStreamSessionIdRef = useRef<number | null>(null);
   const streamQueueTimerRef = useRef<number | null>(null);
   const skipNextRuntimeSyncRef = useRef(false);
+  const messagesRef = useRef<ChatMessageItem[]>([]);
+  messagesRef.current = messages;
+
+  /**
+   * 统一写入消息列表，并同步维护最新引用，避免流结束后紧跟的会话回放读到旧闭包。
+   * @param nextValue 目标消息列表或基于前值的更新函数。
+   */
+  const setMessages = (
+    nextValue: ChatMessageItem[] | ((previous: ChatMessageItem[]) => ChatMessageItem[]),
+  ) => {
+    setMessagesState((previousMessages) => {
+      const nextMessages =
+        typeof nextValue === 'function' ? nextValue(previousMessages) : nextValue;
+      messagesRef.current = nextMessages;
+      return nextMessages;
+    });
+  };
 
   /**
    * 清理排队提示延迟任务，防止旧流事件在新流阶段误触发提示。
@@ -701,6 +718,7 @@ export function useChatWorkspace(
     sourceConversations?: ConversationItem[],
     latestAssistantMcpCalls?: McpCallItem[],
     syncUrl = true,
+    preferPreviousAssistantContent = false,
   ) => {
     const token = currentToken();
     if (!token) {
@@ -729,9 +747,10 @@ export function useChatWorkspace(
     const nextMessages = await nextMessagesPromise;
     const nextReplayMessages = patchLatestAssistantReplayPanels(nextMessages, {
       latestAssistantMcpCalls,
-      previousMessages: messages,
+      previousMessages: messagesRef.current,
       executionSteps: [],
       references: [],
+      preferPreviousContent: preferPreviousAssistantContent,
     });
     setMessages(nextReplayMessages);
 
@@ -755,6 +774,7 @@ export function useChatWorkspace(
       previousMessages: nextReplayMessages,
       executionSteps: nextSteps,
       references: nextReferences,
+      preferPreviousContent: preferPreviousAssistantContent,
     });
     setMessages(nextReplayMessagesWithPanels);
     setExecutionSteps(nextSteps);
@@ -906,6 +926,8 @@ export function useChatWorkspace(
           nextConversationId,
           nextConversations,
           streamMcpCallsRef.current[optimisticAssistantId],
+          true,
+          true,
         );
       }
       refreshWorkspaceGroups('all');
@@ -1740,7 +1762,7 @@ export function useChatWorkspace(
       return;
     }
     const replayMessages = patchLatestAssistantReplayPanels(record.messages, {
-      previousMessages: messages,
+      previousMessages: messagesRef.current,
       executionSteps: record.executionSteps,
       references: record.references,
     });
@@ -2737,6 +2759,8 @@ function deriveMcpCallsFromSteps(executionSteps: ExecutionStepItem[]): McpCallIt
  * @returns 面板字段快照。
  */
 function readLatestAssistantPanelState(messages: ChatMessageItem[]): {
+  content?: string;
+  conversationId?: string;
   mcpCalls?: McpCallItem[];
   processCards?: ProcessCardItem[];
   searchProgress?: MessageSearchProgress;
@@ -2748,6 +2772,8 @@ function readLatestAssistantPanelState(messages: ChatMessageItem[]): {
     return {};
   }
   return {
+    content: latestAssistantMessage.content,
+    conversationId: latestAssistantMessage.conversationId,
     mcpCalls: latestAssistantMessage.mcpCalls,
     processCards: latestAssistantMessage.processCards,
     searchProgress: latestAssistantMessage.searchProgress,
@@ -2767,6 +2793,7 @@ function patchLatestAssistantReplayPanels(
     previousMessages?: ChatMessageItem[];
     executionSteps: ExecutionStepItem[];
     references: ReferenceItem[];
+    preferPreviousContent?: boolean;
   },
 ): ChatMessageItem[] {
   const latestAssistantMcpCalls =
@@ -2784,6 +2811,15 @@ function patchLatestAssistantReplayPanels(
   const latestAssistantMessage = replayMessages[latestAssistantIndex];
   const previousPanelState = readLatestAssistantPanelState(options.previousMessages ?? []);
   const derivedMcpCalls = deriveMcpCallsFromSteps(options.executionSteps);
+  const previousReplayContent = normalizeReplayContent(previousPanelState.content);
+  const nextReplayContent = normalizeReplayContent(latestAssistantMessage.content);
+  const shouldPreserveReplayContent =
+    options.preferPreviousContent === true &&
+    previousReplayContent.length > 0 &&
+    previousReplayContent.length > nextReplayContent.length;
+  const nextContent = shouldPreserveReplayContent
+    ? previousPanelState.content
+    : latestAssistantMessage.content;
   const nextMcpCalls =
     latestAssistantMessage.mcpCalls && latestAssistantMessage.mcpCalls.length > 0
       ? latestAssistantMessage.mcpCalls
@@ -2813,7 +2849,8 @@ function patchLatestAssistantReplayPanels(
     (nextMcpCalls && nextMcpCalls.length > 0) !=
       ((latestAssistantMessage.mcpCalls?.length ?? 0) > 0) ||
     nextSearchProgress !== latestAssistantMessage.searchProgress ||
-    nextProcessCards !== latestAssistantMessage.processCards;
+    nextProcessCards !== latestAssistantMessage.processCards ||
+    normalizeReplayContent(nextContent) !== nextReplayContent;
   if (!shouldPatch) {
     return replayMessages;
   }
@@ -2821,6 +2858,7 @@ function patchLatestAssistantReplayPanels(
     index === latestAssistantIndex
       ? {
           ...message,
+          content: nextContent,
           mcpCalls: nextMcpCalls,
           processCards: nextProcessCards,
           searchProgress: nextSearchProgress,
@@ -2868,6 +2906,15 @@ function scoreProcessCards(cards: ProcessCardItem[]): number {
     const typeScore = card.type === 'tool_call' || card.type === 'tool_result' ? 18 : 8;
     return score + typeScore + detailScore + summaryScore - restorePenalty;
   }, 0);
+}
+
+/**
+ * 归一化消息正文，便于比较“哪一份回放更完整”。
+ * @param content 消息正文。
+ * @returns 去除首尾空白后的正文。
+ */
+function normalizeReplayContent(content?: string) {
+  return (content ?? '').trim();
 }
 
 /**

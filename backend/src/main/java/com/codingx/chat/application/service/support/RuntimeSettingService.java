@@ -294,6 +294,15 @@ public class RuntimeSettingService {
     }
 
     /**
+     * 获取本地工具调用允许的最大轮次。
+     * 这是防止模型反复工具调用不收敛的保护阈值，默认值调高到 10 轮。
+     * @return 最大工具调用轮次。
+     */
+    public int chatToolMaxRounds() {
+        return getInt("chat.tool.max_rounds", 10);
+    }
+
+    /**
      * 获取门控最大并发。
      * @return 最大并发。
      */

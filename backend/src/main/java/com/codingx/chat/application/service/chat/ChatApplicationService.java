@@ -499,7 +499,8 @@ public class ChatApplicationService {
             ));
             return;
         }
-        int maxToolRounds = 3;
+        // 轮次上限由系统配置控制，避免模型在工具-回灌链路里无限循环。
+        int maxToolRounds = Math.max(1, runtimeSettingService.chatToolMaxRounds());
         for (int round = 0; round < maxToolRounds; round++) {
             List<AiToolCall> toolCalls = new ArrayList<>();
             aiChatClient.streamChatWithTools(currentHistory, command.deepThinking(), toolSpecs, buildStreamHandler(
@@ -537,6 +538,7 @@ public class ChatApplicationService {
                 ).attachRun(runId));
             }
         }
+        // 连续工具调用仍未结束时，用明确异常提示用户收敛工具调用策略。
         streamError[0] = new IllegalStateException("本地工具调用轮次超过上限，请收敛工具调用后重试");
     }
 

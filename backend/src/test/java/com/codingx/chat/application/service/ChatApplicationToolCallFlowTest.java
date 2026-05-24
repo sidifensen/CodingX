@@ -37,6 +37,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -81,6 +82,14 @@ class ChatApplicationToolCallFlowTest {
 
     @InjectMocks
     private ChatApplicationService chatApplicationService;
+
+    /**
+     * 工具调用轮次上限由系统配置控制，单测中固定为 10，避免默认空值影响流程分支。
+     */
+    @BeforeEach
+    void stubRuntimeToolRoundLimit() {
+        when(runtimeSettingService.chatToolMaxRounds()).thenReturn(10);
+    }
 
     /**
      * 模型第一轮发起工具调用后，后端应执行工具并用第二轮模型输出作为最终助手消息。

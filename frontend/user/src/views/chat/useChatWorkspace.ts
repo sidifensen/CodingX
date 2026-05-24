@@ -855,7 +855,7 @@ export function useChatWorkspace(
         conversationId: optimisticConversationId,
         role: 'ASSISTANT',
         content: '',
-        processCards: [buildAnalysisProcessCard('analysis-initial')],
+        processCards: [],
         status: 'streaming',
       },
     ];
@@ -1256,7 +1256,7 @@ export function useChatWorkspace(
         previousMessages.map((message) =>
           message.id === optimisticAssistantId
             ? (() => {
-                const currentProcessCards = removeInitialAnalysisPlaceholder(message.processCards ?? []);
+                const currentProcessCards = message.processCards ?? [];
                 const thinkingCardId = resolveThinkingProcessCardId(currentProcessCards);
                 const existingThinkingCard = currentProcessCards.find((card) => card.id === thinkingCardId);
                 const nextThinkingSummary = `${existingThinkingCard?.summary ?? ''}${delta}`;
@@ -2326,15 +2326,11 @@ function mergeMcpCallsById(calls: McpCallItem[], nextCall: McpCallItem): McpCall
  * @returns 分析卡片。
  */
 function buildAnalysisProcessCard(id: string, thinkingContent?: string, title = '分析问题'): ProcessCardItem {
-  const summary =
-    thinkingContent && thinkingContent.trim().length > 0
-      ? formatThinkingProcessContent(thinkingContent)
-      : '我会先判断这个问题需要哪些信息，再决定直接回答还是调用工具补充证据。';
   return {
     id,
     type: 'analysis',
     title,
-    summary,
+    summary: formatThinkingProcessContent(thinkingContent ?? ''),
     status: 'running',
   };
 }
@@ -2566,15 +2562,6 @@ function resolveToolResultSummary(call: McpCallItem): string {
     return rawResultText.length > 80 ? `${rawResultText.slice(0, 80)}...` : rawResultText;
   }
   return `已获取${call.displayName || call.toolId || '工具'}结果。`;
-}
-
-/**
- * 移除还没有真实模型过程支撑的占位分析，避免流式 thinking 到达后仍显示固定模板文案。
- * @param cards 当前过程卡片。
- * @returns 去除初始占位后的过程卡片。
- */
-function removeInitialAnalysisPlaceholder(cards: ProcessCardItem[]): ProcessCardItem[] {
-  return cards.filter((card) => card.id !== 'analysis-initial');
 }
 
 /**
@@ -2900,13 +2887,16 @@ function deriveProcessCardsFromReplay(options: {
     return undefined;
   }
   const searchSteps = options.executionSteps.filter((step) => isSearchStepType(step.stepType));
-  processCards.push({
-    id: 'replay-analysis',
-    type: 'analysis',
-    title: '分析问题',
-    summary: resolveReplayAnalysisSummary(options),
-    status: 'completed',
-  });
+  const replayAnalysisSummary = resolveReplayAnalysisSummary(options);
+  if (replayAnalysisSummary) {
+    processCards.push({
+      id: 'replay-analysis',
+      type: 'analysis',
+      title: '分析问题',
+      summary: replayAnalysisSummary,
+      status: 'completed',
+    });
+  }
   for (const call of options.mcpCalls) {
     processCards.push({
       id: `replay-tool-call-${call.callId ?? call.toolId}`,
@@ -2985,18 +2975,26 @@ function deriveProcessCardsFromReplay(options: {
 }
 
 /**
- * 从历史步骤中提取更接近真实执行意图的分析摘要，兜底时也避免空泛恢复文案。
+ * 从历史消息或非工具步骤中提取真实分析摘要；没有真实来源时不伪造过程文案。
  * @param options 回放上下文。
- * @returns 分析摘要。
+ * @returns 分析摘要；没有可用真实分析时返回 undefined。
  */
 function resolveReplayAnalysisSummary(options: {
+  message: ChatMessageItem;
   executionSteps: ExecutionStepItem[];
   references: ReferenceItem[];
   mcpCalls: McpCallItem[];
   searchProgress?: MessageSearchProgress;
-}): string {
+}): string | undefined {
+  const thinkingContent = options.message.thinkingContent?.trim();
+  if (thinkingContent) {
+    return thinkingContent;
+  }
   const firstMeaningfulStep = options.executionSteps.find(
-    (step) => String(step.content ?? step.stepTitle ?? '').trim().length > 0,
+    (step) =>
+      !isSearchStepType(step.stepType) &&
+      !isMcpStep(step) &&
+      String(step.content ?? step.stepTitle ?? '').trim().length > 0,
   );
   if (firstMeaningfulStep?.content) {
     return firstMeaningfulStep.content;
@@ -3004,11 +3002,5 @@ function resolveReplayAnalysisSummary(options: {
   if (firstMeaningfulStep?.stepTitle) {
     return firstMeaningfulStep.stepTitle;
   }
-  if (options.mcpCalls.length > 0) {
-    return `需要调用 ${options.mcpCalls.length} 个工具补充信息。`;
-  }
-  if ((options.searchProgress?.items.length ?? 0) > 0 || options.references.length > 0) {
-    return '需要检索外部来源并比对结果。';
-  }
-  return '根据问题上下文整理回答。';
+  return undefined;
 }

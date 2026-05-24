@@ -3672,6 +3672,102 @@ describe('useChatWorkspace', () => {
   });
 
   /**
+   * 没有真实 thinking/tool 事件前，不应伪造分析过程，避免把前端占位文案误当成模型思考。
+   */
+  it('应避免在真实过程事件前展示固定分析占位', async () => {
+    window.localStorage.setItem(
+      'codingx.auth.session',
+      JSON.stringify({
+        token: 'token-123',
+        userId: '1002',
+        username: 'user',
+        displayName: 'CodingX User',
+        userType: 'USER',
+      }),
+    );
+
+    const readQueue: Array<{
+      resolve: (value: ReadableStreamReadResult<Uint8Array>) => void;
+      reject: (reason?: unknown) => void;
+    }> = [];
+    const finishEvent = new TextEncoder().encode('event:finish\ndata:{"content":"直接回答"}\n\n');
+    const mockReader = {
+      read: vi.fn(() => {
+        return new Promise<ReadableStreamReadResult<Uint8Array>>((resolve, reject) => {
+          readQueue.push({ resolve, reject });
+        });
+      }),
+    };
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (
+        url === '/api/chat/conversations' ||
+        url === '/api/chat/sample-questions' ||
+        url === '/api/chat/experts' ||
+        url === '/api/chat/skills' ||
+        url === '/api/chat/mcps' ||
+        url === '/api/chat/conversations/pending-conversation/messages' ||
+        url === '/api/chat/conversations/pending-conversation/steps' ||
+        url === '/api/chat/conversations/pending-conversation/references' ||
+        url === '/api/chat/conversations/pending-conversation/artifacts' ||
+        url === '/api/chat/conversations/pending-conversation/current-experts' ||
+        url === '/api/chat/conversations/pending-conversation/current-skills' ||
+        url === '/api/chat/conversations/pending-conversation/current-mcps'
+      ) {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (url.includes('/api/chat/stream')) {
+        return {
+          ok: true,
+          status: 200,
+          body: {
+            getReader: () => mockReader,
+          },
+        } as unknown as Response;
+      }
+      throw new Error(`Unhandled fetch in fixed analysis placeholder test: ${url}`);
+    });
+
+    const { result } = renderHook(() => useChatWorkspace(true));
+
+    await waitFor(() => {
+      expect(result.current.isBootstrapping).toBe(false);
+    });
+    await act(async () => {
+      result.current.setInputValue('你好');
+    });
+    const submitPromise = result.current.submitMessage();
+
+    await waitFor(() => {
+      expect(result.current.isStreaming).toBe(true);
+      expect(readQueue.length).toBeGreaterThan(0);
+    });
+
+    const streamingAssistantMessage = result.current.messages.find((item) => item.role === 'ASSISTANT');
+    const processCards = streamingAssistantMessage?.processCards ?? [];
+    expect(processCards).toHaveLength(0);
+    expect(
+      processCards.some((card) =>
+        card.summary.includes('我会先判断这个问题需要哪些信息，再决定直接回答还是调用工具补充证据。'),
+      ),
+    ).toBe(false);
+
+    await act(async () => {
+      readQueue.shift()?.resolve({ done: false, value: finishEvent });
+    });
+    await act(async () => {
+      readQueue.shift()?.resolve({ done: true, value: undefined });
+    });
+    await act(async () => {
+      await submitPromise;
+    });
+  });
+
+  /**
    * 工具结果之后继续产生的 thinking 应作为新的分析段追加到工具过程后，并完整保留原文。
    */
   it('应将工具结果后的thinking完整追加到工具过程之后', async () => {
@@ -3914,8 +4010,9 @@ describe('useChatWorkspace', () => {
       expect(calls[0].status).toBe('running');
       const processCards = ((assistantMessage as Record<string, unknown> | undefined)?.processCards ?? []) as Array<Record<string, unknown>>;
       expect(processCards.map((card) => card.title)).toEqual(
-        expect.arrayContaining(['分析问题', '调用天气查询']),
+        expect.arrayContaining(['调用天气查询']),
       );
+      expect(processCards.some((card) => card.type === 'analysis')).toBe(false);
       expect(processCards.some((card) => card.summary === '正在查询天气服务')).toBe(false);
     });
 
@@ -4186,8 +4283,9 @@ describe('useChatWorkspace', () => {
     expect(latestAssistantMessage?.searchProgress?.items[0].siteName).toBe('OpenAI');
     const processCards = ((latestAssistantMessage as Record<string, unknown> | undefined)?.processCards ?? []) as Array<Record<string, unknown>>;
     expect(processCards.map((card) => card.title)).toEqual(
-      expect.arrayContaining(['分析问题', '调用天气查询', '已获取结果']),
+      expect.arrayContaining(['调用天气查询', '已获取结果']),
     );
+    expect(processCards.some((card) => card.type === 'analysis')).toBe(false);
     expect(processCards.some((card) => String(card.summary).includes('已恢复历史'))).toBe(false);
 
     const snapshotStore = JSON.parse(

@@ -14,6 +14,8 @@ import cn.hutool.json.JSON;
 import cn.hutool.json.JSONArray;
 import cn.hutool.json.JSONObject;
 import cn.hutool.json.JSONUtil;
+import cn.hutool.http.HttpRequest;
+import cn.hutool.http.HttpResponse;
 import com.codingx.skill.domain.model.ChatSkill;
 import com.codingx.tool.domain.model.ChatTool;
 import com.codingx.skill.domain.repository.ChatSkillRepository;
@@ -22,6 +24,7 @@ import com.codingx.common.error.ErrorMessageCatalog;
 import com.codingx.common.exception.BusinessException;
 import com.codingx.mcp.domain.model.ChatMcp;
 import com.codingx.mcp.domain.repository.ChatMcpRepository;
+import java.io.ByteArrayInputStream;
 import java.awt.image.BufferedImage;
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
@@ -680,13 +683,28 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
     }
 
     /**
-     * 读取本地图片基础信息（尺寸、大小、格式）。
+     * 读取图片基础信息（尺寸、大小、格式）。
+     * <p>
+     * 约束：模型有时会把远程图片地址直接传入 `path`，这里必须同时兼容本地绝对路径和可访问的
+     * HTTP(S) 图片 URL，避免把 URL 当成本地文件路径解析。
      */
     private ChatToolExecutionResult executeViewImage(ToolInput input) {
-        String pathText = prefer(input.object().getStr("path"), findImagePath(input.raw()));
-        if (StrUtil.isBlank(pathText)) {
+        String imageReference = prefer(input.object().getStr("path"), findImagePath(input.raw()));
+        if (StrUtil.isBlank(imageReference)) {
             throw new BusinessException("CHAT_TOOL_IMAGE_PATH_REQUIRED", ErrorMessageCatalog.CHAT_TOOL_IMAGE_PATH_REQUIRED);
         }
+        if (isRemoteImageReference(imageReference)) {
+            return executeRemoteImageView(imageReference);
+        }
+        return executeLocalImageView(imageReference);
+    }
+
+    /**
+     * 读取本地图片并返回结构化元数据。
+     * @param pathText 本地图片路径。
+     * @return 图片执行结果。
+     */
+    private ChatToolExecutionResult executeLocalImageView(String pathText) {
         Path path = Path.of(pathText);
         if (!Files.exists(path) || !Files.isRegularFile(path)) {
             throw new BusinessException("CHAT_TOOL_IMAGE_NOT_FOUND", ErrorMessageCatalog.CHAT_TOOL_IMAGE_NOT_FOUND);
@@ -696,16 +714,11 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
             if (image == null) {
                 throw new BusinessException("CHAT_TOOL_IMAGE_INVALID", ErrorMessageCatalog.CHAT_TOOL_IMAGE_INVALID);
             }
-            Map<String, Object> metadata = new LinkedHashMap<>();
-            metadata.put("path", path.toAbsolutePath().toString());
-            metadata.put("width", image.getWidth());
-            metadata.put("height", image.getHeight());
-            metadata.put("sizeBytes", Files.size(path));
-            metadata.put("extension", FileUtil.extName(path.toString()));
-            return new ChatToolExecutionResult(
-                "view_image",
-                "图片读取成功",
-                metadata
+            return buildImageExecutionResult(
+                path.toAbsolutePath().toString(),
+                image,
+                Files.size(path),
+                FileUtil.extName(path.toString())
             );
         } catch (BusinessException exception) {
             throw exception;
@@ -715,6 +728,65 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
                 ErrorMessageCatalog.CHAT_TOOL_IMAGE_READ_FAILED_PREFIX + exception.getMessage()
             );
         }
+    }
+
+    /**
+     * 读取远程图片并返回结构化元数据。
+     * <p>
+     * 说明：这里不把远程地址落盘，避免额外 I/O 和临时文件清理问题；仅在工具层直接下载并解析字节。
+     * @param imageUrl 可访问的图片 URL。
+     * @return 图片执行结果。
+     */
+    private ChatToolExecutionResult executeRemoteImageView(String imageUrl) {
+        try (HttpResponse response = HttpRequest.get(imageUrl)
+            .header("Accept-Encoding", "identity")
+            .timeout(5000)
+            .execute()) {
+            int status = response.getStatus();
+            if (status < 200 || status >= 300) {
+                throw new BusinessException("CHAT_TOOL_IMAGE_NOT_FOUND", ErrorMessageCatalog.CHAT_TOOL_IMAGE_NOT_FOUND);
+            }
+            byte[] bytes = response.bodyBytes();
+            BufferedImage image = ImageIO.read(new ByteArrayInputStream(bytes));
+            if (image == null) {
+                throw new BusinessException("CHAT_TOOL_IMAGE_INVALID", ErrorMessageCatalog.CHAT_TOOL_IMAGE_INVALID);
+            }
+            return buildImageExecutionResult(
+                imageUrl,
+                image,
+                bytes.length,
+                FileUtil.extName(imageUrl)
+            );
+        } catch (BusinessException exception) {
+            throw exception;
+        } catch (Exception exception) {
+            throw new BusinessException(
+                "CHAT_TOOL_VIEW_IMAGE_FAILED",
+                ErrorMessageCatalog.CHAT_TOOL_IMAGE_READ_FAILED_PREFIX + exception.getMessage()
+            );
+        }
+    }
+
+    /**
+     * 组装图片读取结果，避免本地与远程分支重复维护相同的元数据结构。
+     * @param pathOrUrl 图片来源路径或 URL。
+     * @param image 解析后的图片对象。
+     * @param sizeBytes 图片大小。
+     * @param extension 图片扩展名。
+     * @return 图片执行结果。
+     */
+    private ChatToolExecutionResult buildImageExecutionResult(String pathOrUrl, BufferedImage image, long sizeBytes, String extension) {
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("path", pathOrUrl);
+        metadata.put("width", image.getWidth());
+        metadata.put("height", image.getHeight());
+        metadata.put("sizeBytes", sizeBytes);
+        metadata.put("extension", extension);
+        return new ChatToolExecutionResult(
+            "view_image",
+            "图片读取成功",
+            metadata
+        );
     }
 
     /**
@@ -1325,6 +1397,10 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
     }
 
     private String findImagePath(String raw) {
+        String remoteUrl = ReUtil.get("((?:https?://)[^\\s]+\\.(?:png|jpg|jpeg|webp|gif)(?:\\?[^\\s]+)?)", raw, 1);
+        if (StrUtil.isNotBlank(remoteUrl)) {
+            return remoteUrl;
+        }
         String windowsPath = ReUtil.get("([A-Za-z]:\\\\[^\\s]+\\.(png|jpg|jpeg|webp|gif))", raw, 1);
         if (StrUtil.isNotBlank(windowsPath)) {
             return windowsPath;
@@ -1393,6 +1469,16 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
 
     private String prefer(String first, String second) {
         return StrUtil.isNotBlank(first) ? first : StrUtil.blankToDefault(second, "");
+    }
+
+    /**
+     * 判断图片引用是否为可直接下载的远程地址。
+     * @param imageReference 图片路径或 URL。
+     * @return 是否为远程地址。
+     */
+    private boolean isRemoteImageReference(String imageReference) {
+        String normalized = StrUtil.trimToEmpty(imageReference).toLowerCase(Locale.ROOT);
+        return normalized.startsWith("http://") || normalized.startsWith("https://");
     }
 
     /**

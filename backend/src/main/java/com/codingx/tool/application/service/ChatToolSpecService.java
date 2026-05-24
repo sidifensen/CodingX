@@ -91,8 +91,9 @@ public class ChatToolSpecService {
                 Map.of("patch", stringSchema("Codex Begin Patch 或标准 unified diff 补丁文本")),
                 List.of("patch")
             );
+            // view_image 既要兼容本地调试图片，也要兼容模型直接传入的远程图片 URL。
             case "view_image" -> objectSchema(
-                Map.of("path", stringSchema("本地图片绝对路径")),
+                Map.of("path", stringSchema("本地图片绝对路径或可访问的 HTTP(S) 图片 URL")),
                 List.of("path")
             );
             case "tool_search" -> objectSchema(

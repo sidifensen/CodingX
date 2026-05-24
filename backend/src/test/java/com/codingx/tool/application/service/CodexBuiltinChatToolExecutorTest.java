@@ -11,7 +11,10 @@ import com.codingx.common.exception.BusinessException;
 import com.codingx.skill.domain.repository.ChatSkillRepository;
 import com.codingx.tool.domain.model.ChatTool;
 import com.codingx.tool.domain.repository.ChatToolRepository;
+import com.sun.net.httpserver.HttpServer;
 import java.awt.image.BufferedImage;
+import java.io.OutputStream;
+import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -214,6 +217,43 @@ class CodexBuiltinChatToolExecutorTest {
         assertEquals("view_image", result.toolCode());
         assertEquals(3, result.metadata().get("width"));
         assertEquals(2, result.metadata().get("height"));
+    }
+
+    /**
+     * view_image 应兼容远程图片 URL，避免模型把图片地址误传给工具后直接报“路径不存在”。
+     *
+     * @throws Exception 执行失败时抛出。
+     */
+    @Test
+    void viewImageShouldReadRemoteImageMetadata() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        try {
+            server.createContext("/images/sample.png", exchange -> {
+                BufferedImage image = new BufferedImage(4, 5, BufferedImage.TYPE_INT_RGB);
+                java.io.ByteArrayOutputStream outputStream = new java.io.ByteArrayOutputStream();
+                ImageIO.write(image, "png", outputStream);
+                byte[] bytes = outputStream.toByteArray();
+                exchange.getResponseHeaders().add("Content-Type", "image/png");
+                exchange.sendResponseHeaders(200, bytes.length);
+                try (OutputStream responseBody = exchange.getResponseBody()) {
+                    responseBody.write(bytes);
+                }
+            });
+            server.start();
+
+            String imageUrl = "http://127.0.0.1:" + server.getAddress().getPort() + "/images/sample.png";
+            ChatToolExecutionResult result = codexBuiltinChatToolExecutor.execute(
+                "view_image",
+                "{\"path\":\"" + imageUrl + "\"}"
+            );
+
+            assertEquals("view_image", result.toolCode());
+            assertEquals(4, result.metadata().get("width"));
+            assertEquals(5, result.metadata().get("height"));
+            assertEquals(imageUrl, result.metadata().get("path"));
+        } finally {
+            server.stop(0);
+        }
     }
 
     /**

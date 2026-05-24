@@ -14,7 +14,7 @@ related_docs:
   - docs/superpowers/memory/lessons/stream-replay-stale-closure-overwrites-content.md
   - docs/superpowers/memory/tool/codex-local-tool-runtime-module-card.md
   - docs/superpowers/memory/tool/codex-local-tool-runtime-contract.md
-last_verified_commit: 6576a5b0d243648431c1165c9c38bbfefa0fe8c2
+last_verified_commit: e260fa5a5173eca56ebee9d26533180f3a39553e
 status: active
 ---
 
@@ -30,6 +30,8 @@ status: active
   - 流式收敛回放不能用旧闭包覆盖刚生成完的 assistant 正文
 - `docs/superpowers/memory/lessons/default-cloud-history-must-not-include-local-workspaces.md`
   - 默认云端历史查询必须与本地工作空间历史分开，兼容旧的未归属会话
+- `docs/superpowers/memory/lessons/built-in-skill-database-records-must-match-classpath-manifests.md`
+  - 内置技能写入数据库后，必须同步提供类路径 `SKILL.md`，否则运行时上下文无法读取
 - `docs/superpowers/memory/tool/codex-local-tool-runtime-module-card.md`
   - Codex 风格本地工具执行器的职责、入口与常见陷阱
 - `docs/superpowers/memory/tool/codex-local-tool-runtime-contract.md`

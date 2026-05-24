@@ -478,7 +478,8 @@ export function useChatWorkspace(
 
       const nextConversations = await nextConversationsPromise;
       refreshWorkspaceGroups('all');
-      const preferredConversationId = didHydrateConversationFromSnapshot
+      const shouldProtectActiveStream = hasActiveStreamPlayback();
+      const preferredConversationId = didHydrateConversationFromSnapshot || shouldProtectActiveStream
         ? null
         : resolvePreferredConversationId(nextConversations);
       if (preferredConversationId) {
@@ -491,7 +492,7 @@ export function useChatWorkspace(
         } else {
           await selectConversation(preferredConversationId, nextConversations, undefined, false);
         }
-      } else if (!shouldKeepLandingState && !didHydrateConversationFromSnapshot) {
+      } else if (!shouldKeepLandingState && !didHydrateConversationFromSnapshot && !shouldProtectActiveStream) {
         // 业务意图：首次进入且无显式会话上下文时停留首页，不自动跳转到最新会话。
         clearConversationPlayback(true);
       }
@@ -1594,34 +1595,38 @@ export function useChatWorkspace(
     const currentSnapshot = readWorkspaceSnapshot(
       buildWorkspacePartitionKey(activeRuntimeTarget, fallbackWorkspacePath),
     );
+    // 关键约束：流式生成期间会话列表可能返回慢数据或空数据，不能把 meta 已写入的当前会话从侧栏快照中抹掉。
+    const protectedRemoteConversations = hasActiveStreamPlayback()
+      ? mergeConversationListById(remoteConversations, currentSnapshot.conversations)
+      : remoteConversations;
     const persistedActiveConversationId = currentSnapshot.activeConversationId ?? null;
     if (activeRuntimeTarget === 'cloud') {
-      setConversations(remoteConversations);
+      setConversations(protectedRemoteConversations);
       upsertWorkspaceSnapshot(activeRuntimeTarget, fallbackWorkspacePath, {
-        conversations: remoteConversations,
+        conversations: protectedRemoteConversations,
         activeConversationId:
           activeConversationId ??
           persistedActiveConversationId ??
-          (shouldKeepLandingState ? null : (remoteConversations[0]?.id ?? null)),
+          (shouldKeepLandingState ? null : (protectedRemoteConversations[0]?.id ?? null)),
         workspaceLabel: fallbackWorkspacePath
           ? getWorkspaceLabel(fallbackWorkspacePath)
           : getDefaultWorkspaceLabel(activeRuntimeTarget),
       });
       refreshWorkspaceGroups('all');
-      return remoteConversations;
+      return protectedRemoteConversations;
     }
     const nextWorkspaceConversations = resolveWorkspaceConversations(
       activeRuntimeTarget,
       fallbackWorkspacePath,
       effectiveWorkspaceId,
-      remoteConversations,
+      protectedRemoteConversations,
     );
     markWorkspaceConversationOwnership(
       activeRuntimeTarget,
       fallbackWorkspacePath,
       nextWorkspaceConversations.map((conversation) => conversation.id),
     );
-    const nextHistoryConversations = filterUnassignedConversations(remoteConversations);
+    const nextHistoryConversations = filterUnassignedConversations(protectedRemoteConversations);
     const localDefaultSnapshot = readWorkspaceSnapshot(buildWorkspacePartitionKey('local', null));
     const mergedLocalDefaultConversations = mergeConversationListById(
       localDefaultSnapshot.conversations,
@@ -1851,6 +1856,14 @@ export function useChatWorkspace(
       (record.currentSkills?.length ?? 0) > 0 ||
       (record.currentMcps?.length ?? 0) > 0
     );
+  }
+
+  /**
+   * 判断当前是否仍有流式会话在占用主消息区，供过期恢复任务避让实时生成状态。
+   * @returns 是否存在活跃流式会话。
+   */
+  function hasActiveStreamPlayback() {
+    return activeStreamSessionIdRef.current != null || abortControllerRef.current != null;
   }
 
   /**

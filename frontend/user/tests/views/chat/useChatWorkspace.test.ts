@@ -7,6 +7,8 @@ import { buildStreamRequestUrl, useChatWorkspace } from '@/views/chat/useChatWor
 describe('useChatWorkspace', () => {
   beforeEach(() => {
     window.localStorage.clear();
+    // 关键约束：会话恢复逻辑强依赖 URL 参数，测试间必须清理地址栏避免互相污染。
+    window.history.replaceState(window.history.state, '', '/');
     vi.restoreAllMocks();
   });
 
@@ -1844,6 +1846,190 @@ describe('useChatWorkspace', () => {
 
     expect(result.current.activeConversationId).toBe('2001');
     expect(new URL(window.location.href).searchParams.get('conversationId')).toBe('2001');
+  });
+
+  /**
+   * 首屏 URL 会话恢复仍在等待接口时，用户可能已经发起新问题；旧恢复任务不能清空新流式消息。
+   */
+  it('发送中旧URL恢复失败不应清空当前流式消息', async () => {
+    window.localStorage.setItem(
+      'codingx.auth.session',
+      JSON.stringify({
+        token: 'token-123',
+        userId: '1002',
+        username: 'user',
+        displayName: 'CodingX User',
+        userType: 'USER',
+      }),
+    );
+    window.history.replaceState(window.history.state, '', '/?conversationId=stale-2000');
+
+    const readQueue: Array<{
+      resolve: (value: ReadableStreamReadResult<Uint8Array>) => void;
+      reject: (reason?: unknown) => void;
+    }> = [];
+    const metaEvent = new TextEncoder().encode('event:meta\ndata:{"conversationId":"9010"}\n\n');
+    const partialMessageEvent = new TextEncoder().encode(
+      'event:message\ndata:{"type":"response","delta":"流式回答片段"}\n\n',
+    );
+    const finishEvent = new TextEncoder().encode(
+      'event:finish\ndata:{"conversationId":"9010","content":"流式最终回答","title":"新问题"}\n\n',
+    );
+    const mockReader = {
+      read: vi.fn(() => {
+        return new Promise<ReadableStreamReadResult<Uint8Array>>((resolve, reject) => {
+          readQueue.push({ resolve, reject });
+        });
+      }),
+    };
+    let resolveInitialConversations: ((response: Response) => void) | null = null;
+    const initialConversations = new Promise<Response>((resolve) => {
+      resolveInitialConversations = resolve;
+    });
+    let conversationRequestCount = 0;
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === '/api/chat/conversations') {
+        conversationRequestCount += 1;
+        if (conversationRequestCount === 1) {
+          return initialConversations;
+        }
+        return new Response(
+          JSON.stringify({
+            success: true,
+            code: 'OK',
+            message: 'success',
+            data: [
+              {
+                id: '9010',
+                title: '新问题',
+                status: 'ACTIVE',
+                lastRunId: '9102',
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      if (
+        url === '/api/chat/sample-questions' ||
+        url === '/api/chat/experts' ||
+        url === '/api/chat/skills' ||
+        url === '/api/chat/mcps'
+      ) {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (
+        url === '/api/chat/conversations/9010/messages' ||
+        url === '/api/chat/conversations/9010/steps' ||
+        url === '/api/chat/conversations/9010/references' ||
+        url === '/api/chat/conversations/9010/artifacts' ||
+        url === '/api/chat/conversations/9010/current-skills' ||
+        url === '/api/chat/conversations/9010/current-mcps' ||
+        url === '/api/chat/conversations/9010/current-experts'
+      ) {
+        if (url === '/api/chat/conversations/9010/messages') {
+          return new Response(
+            JSON.stringify({
+              success: true,
+              code: 'OK',
+              message: 'success',
+              data: [
+                {
+                  id: 'user-9010',
+                  conversationId: '9010',
+                  role: 'USER',
+                  content: '首屏未完成时提问',
+                  status: 'COMPLETED',
+                },
+                {
+                  id: 'assistant-9010',
+                  conversationId: '9010',
+                  role: 'ASSISTANT',
+                  content: '流式最终回答',
+                  status: 'COMPLETED',
+                },
+              ],
+            }),
+            { status: 200 },
+          );
+        }
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (url.includes('/api/chat/stream')) {
+        return {
+          ok: true,
+          status: 200,
+          body: {
+            getReader: () => mockReader,
+          },
+        } as unknown as Response;
+      }
+      throw new Error(`Unhandled fetch in stale URL bootstrap streaming test: ${url}`);
+    });
+
+    const { result } = renderHook(() => useChatWorkspace(true));
+
+    await waitFor(() => {
+      expect(conversationRequestCount).toBe(1);
+      expect(result.current.activeWorkspacePartitionKey).toBe('cloud::__no_workspace__');
+    });
+
+    await act(async () => {
+      result.current.setInputValue('首屏未完成时提问');
+    });
+    const submitPromise = result.current.submitMessage();
+
+    await waitFor(() => {
+      expect(result.current.isStreaming).toBe(true);
+      expect(readQueue.length).toBeGreaterThan(0);
+    });
+
+    await act(async () => {
+      readQueue.shift()?.resolve({ done: false, value: metaEvent });
+    });
+    await act(async () => {
+      readQueue.shift()?.resolve({ done: false, value: partialMessageEvent });
+    });
+
+    await waitFor(() => {
+      expect(result.current.activeConversationId).toBe('9010');
+      expect(result.current.messages.some((message) => message.content.includes('流式回答片段'))).toBe(true);
+    });
+
+    await act(async () => {
+      resolveInitialConversations?.(
+        new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        ),
+      );
+    });
+
+    await waitFor(() => {
+      expect(result.current.isBootstrapping).toBe(false);
+    });
+    expect(result.current.isStreaming).toBe(true);
+    expect(result.current.activeConversationId).toBe('9010');
+    expect(result.current.messages).not.toHaveLength(0);
+    expect(result.current.messages.some((message) => message.content.includes('流式回答片段'))).toBe(true);
+
+    await act(async () => {
+      readQueue.shift()?.resolve({ done: false, value: finishEvent });
+    });
+    await act(async () => {
+      readQueue.shift()?.resolve({ done: true, value: undefined });
+    });
+    await act(async () => {
+      await submitPromise;
+    });
   });
 
   /**

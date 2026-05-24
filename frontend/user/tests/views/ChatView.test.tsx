@@ -644,10 +644,15 @@ describe('ChatView', () => {
 
     fireEvent.click(toggleButton);
     expect(toggleButton).toHaveAttribute('aria-expanded', 'true');
+    const analysisCard = screen.getByTestId('process-analysis-card-704');
     const analysisText = screen.getByTestId('process-analysis-text-704');
+    expect(analysisCard).toHaveClass('rounded-xl');
+    expect(analysisCard).toHaveClass('bg-surface-container');
     expect(analysisText).toHaveTextContent(longSummary);
     expect(analysisText).toHaveClass('whitespace-pre-wrap');
     expect(analysisText).toHaveClass('[overflow-wrap:anywhere]');
+    expect(analysisText).toHaveClass('text-muted');
+    expect(analysisText).not.toHaveClass('text-foreground');
 
     fireEvent.click(toggleButton);
     expect(toggleButton).toHaveAttribute('aria-expanded', 'false');

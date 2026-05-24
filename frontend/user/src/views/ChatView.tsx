@@ -2480,13 +2480,18 @@ function ProcessAnalysisTrace({
         <span className="whitespace-nowrap">{isExpanded ? '收起' : '展开'}</span>
       </button>
       {isExpanded ? (
-        <p
+        <div
           id={contentId}
-          data-testid={`process-analysis-text-${messageId}`}
-          className="whitespace-pre-wrap [overflow-wrap:anywhere] text-sm leading-7 text-foreground"
+          data-testid={`process-analysis-card-${messageId}`}
+          className="rounded-xl border border-border bg-surface-container px-4 py-3"
         >
-          {card.summary}
-        </p>
+          <p
+            data-testid={`process-analysis-text-${messageId}`}
+            className="whitespace-pre-wrap [overflow-wrap:anywhere] text-sm leading-7 text-muted"
+          >
+            {card.summary}
+          </p>
+        </div>
       ) : null}
     </div>
   );

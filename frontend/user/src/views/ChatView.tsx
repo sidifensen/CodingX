@@ -2408,7 +2408,7 @@ function isDisposableSynthesisTrace(card: ProcessCardItem) {
 }
 
 /**
- * 渲染一段过程文本。分析阶段使用固定标题，正文保留完整换行能力。
+ * 渲染一段过程文本。深度思考默认折叠，避免长 thinking 在正文前占据整屏空间。
  */
 function ProcessTraceText({
   card,
@@ -2419,6 +2419,16 @@ function ProcessTraceText({
   messageId: string;
   isFirstAnalysis: boolean;
 }) {
+  if (card.type === 'analysis') {
+    return (
+      <ProcessAnalysisTrace
+        card={card}
+        messageId={messageId}
+        isFirstAnalysis={isFirstAnalysis}
+      />
+    );
+  }
+
   return (
     <div className="space-y-2">
       {isFirstAnalysis ? (
@@ -2430,6 +2440,54 @@ function ProcessTraceText({
       >
         {card.summary}
       </p>
+    </div>
+  );
+}
+
+/**
+ * 折叠展示模型真实 thinking：默认只露出入口，展开后才显示完整原文，避免伪摘要或截断。
+ */
+function ProcessAnalysisTrace({
+  card,
+  messageId,
+  isFirstAnalysis,
+}: {
+  card: ProcessCardItem;
+  messageId: string;
+  isFirstAnalysis: boolean;
+}) {
+  const [isExpanded, setIsExpanded] = React.useState(false);
+  const contentId = `process-analysis-content-${messageId}-${card.id}`;
+  const label = isFirstAnalysis ? '深度思考' : card.title || '深度思考';
+
+  return (
+    <div className="space-y-2">
+      <button
+        type="button"
+        data-testid={`process-analysis-toggle-${messageId}-${card.id}`}
+        aria-expanded={isExpanded}
+        aria-controls={contentId}
+        aria-label={isExpanded ? `折叠${label}` : `展开${label}`}
+        onClick={() => setIsExpanded((current) => !current)}
+        className="inline-flex max-w-full items-center gap-2 rounded-md px-0 py-1 text-xs font-medium text-muted transition-colors hover:text-foreground"
+      >
+        <ChevronDown
+          size={14}
+          className={`shrink-0 transition-transform duration-200 ${isExpanded ? 'rotate-180' : '-rotate-90'}`}
+        />
+        <span className="whitespace-nowrap">{label}</span>
+        <span className="text-border">·</span>
+        <span className="whitespace-nowrap">{isExpanded ? '收起' : '展开'}</span>
+      </button>
+      {isExpanded ? (
+        <p
+          id={contentId}
+          data-testid={`process-analysis-text-${messageId}`}
+          className="whitespace-pre-wrap [overflow-wrap:anywhere] text-sm leading-7 text-foreground"
+        >
+          {card.summary}
+        </p>
+      ) : null}
     </div>
   );
 }

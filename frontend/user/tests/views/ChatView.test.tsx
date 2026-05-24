@@ -491,7 +491,11 @@ describe('ChatView', () => {
     expect(tracePanel).toBeInTheDocument();
     expect(tracePanel).not.toHaveTextContent('过程时间线');
     expect(tracePanel).toHaveTextContent('深度思考');
-    expect(screen.getByText('先判断这个问题是否需要实时信息。')).toBeInTheDocument();
+    expect(screen.getByTestId('process-analysis-toggle-701-analysis-1')).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    );
+    expect(screen.queryByText('先判断这个问题是否需要实时信息。')).not.toBeInTheDocument();
     expect(screen.getByText('调用网页搜索')).toBeInTheDocument();
     expect(screen.getByText('已获取结果')).toBeInTheDocument();
     expect(tracePanel).not.toHaveTextContent('正在根据检索结果整理最终回答。');
@@ -597,9 +601,9 @@ describe('ChatView', () => {
   });
 
   /**
-   * 长分析摘要必须自然换行，避免在单行区域内循环闪动。
+   * 深度思考默认折叠，展开后才展示完整原文，避免长 thinking 默认挤占正文空间。
    */
-  it('应让长分析过程自然多行展示', async () => {
+  it('应支持深度思考默认折叠并点击展开完整过程', async () => {
     const longSummary =
       '用户要求对 Qwen 和 GLM 最新模型做实时对比，需要先确认发布时间、模型定位、上下文长度、工具调用能力和适用场景，再决定是否继续检索官方来源。';
 
@@ -633,10 +637,21 @@ describe('ChatView', () => {
       />,
     );
 
+    const toggleButton = screen.getByTestId('process-analysis-toggle-704-analysis-704');
+    expect(toggleButton).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByTestId('process-analysis-text-704')).not.toBeInTheDocument();
+    expect(screen.queryByText(longSummary)).not.toBeInTheDocument();
+
+    fireEvent.click(toggleButton);
+    expect(toggleButton).toHaveAttribute('aria-expanded', 'true');
     const analysisText = screen.getByTestId('process-analysis-text-704');
     expect(analysisText).toHaveTextContent(longSummary);
     expect(analysisText).toHaveClass('whitespace-pre-wrap');
     expect(analysisText).toHaveClass('[overflow-wrap:anywhere]');
+
+    fireEvent.click(toggleButton);
+    expect(toggleButton).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByTestId('process-analysis-text-704')).not.toBeInTheDocument();
   });
 
   /**
@@ -700,6 +715,8 @@ describe('ChatView', () => {
     );
 
     const tracePanel = screen.getByTestId('process-trace-panel-705');
+    const postToolToggle = screen.getByTestId('process-analysis-toggle-705-analysis-after-tools');
+    fireEvent.click(postToolToggle);
     expect(tracePanel).toHaveTextContent(postToolThinking);
     expect(tracePanel.textContent?.indexOf('已获取结果')).toBeLessThan(
       tracePanel.textContent?.indexOf(postToolThinking) ?? -1,

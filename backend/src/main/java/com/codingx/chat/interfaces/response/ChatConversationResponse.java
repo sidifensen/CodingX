@@ -11,6 +11,8 @@ public record ChatConversationResponse(
     ChatConversationStatus status, // 当前状态值。
     LocalDateTime lastMessageAt, // 最后消息时间。
     Long lastRunId, // 最近一次执行记录标识。
+    Boolean pinned, // 置顶状态。
+    String shareToken, // 分享令牌。
     Long workspaceId, // 所属工作空间标识。
     String workspaceName, // 所属工作空间名称。
     WorkspaceType workspaceType // 所属工作空间类型。

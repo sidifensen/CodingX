@@ -53,6 +53,16 @@ public class ChatConversation {
     private Long lastRunId;
 
     /**
+     * 置顶标识，供会话列表在同更新时间下优先展示。
+     */
+    private Boolean pinned;
+
+    /**
+     * 会话分享令牌，用于生成只读分享链接。
+     */
+    private String shareToken;
+
+    /**
      * 创建时间。
      */
     private LocalDateTime createdAt;
@@ -80,6 +90,7 @@ public class ChatConversation {
             .createdBy(createdBy)
             .workspaceId(workspaceId)
             .status(status)
+            .pinned(Boolean.FALSE)
             .build();
     }
 
@@ -129,6 +140,22 @@ public class ChatConversation {
     }
 
     /**
+     * 切换会话置顶状态，供侧栏快速固定高频会话。
+     * @param pinned 是否置顶。
+     */
+    public void setPinned(Boolean pinned) {
+        this.pinned = pinned;
+    }
+
+    /**
+     * 为会话生成或复用分享令牌，确保公开只读链接稳定可回放。
+     * @param shareToken 分享令牌。
+     */
+    public void setShareToken(String shareToken) {
+        this.shareToken = shareToken;
+    }
+
+    /**
      * 恢复持久化层中的运行时扩展字段，避免历史回放时丢失链路信息。
      * @param lastMessageAt 最近消息时间。
      * @param lastRunId 最近一次执行记录标识。
@@ -136,6 +163,16 @@ public class ChatConversation {
     public void restoreRuntimeState(LocalDateTime lastMessageAt, Long lastRunId) {
         this.lastMessageAt = lastMessageAt;
         this.lastRunId = lastRunId;
+    }
+
+    /**
+     * 恢复持久化层记录的分享与置顶状态，保证列表排序和分享链接回放一致。
+     * @param pinned 置顶状态。
+     * @param shareToken 分享令牌。
+     */
+    public void restoreSharingState(Boolean pinned, String shareToken) {
+        this.pinned = pinned;
+        this.shareToken = shareToken;
     }
 
     /**

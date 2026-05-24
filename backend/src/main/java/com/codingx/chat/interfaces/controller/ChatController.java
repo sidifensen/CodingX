@@ -18,6 +18,8 @@ import com.codingx.mcp.domain.model.ChatMcp;
 import com.codingx.skill.domain.model.ChatSkill;
 import com.codingx.skill.domain.repository.ChatSkillRepository;
 import com.codingx.chat.interfaces.request.ChatMessageFeedbackRequest;
+import com.codingx.chat.interfaces.request.BatchUpdateConversationRequest;
+import com.codingx.chat.interfaces.request.ConversationPinRequest;
 import com.codingx.chat.interfaces.request.CreateConversationRequest;
 import com.codingx.chat.interfaces.request.RenameConversationRequest;
 import com.codingx.chat.interfaces.request.SendChatMessageRequest;
@@ -30,12 +32,18 @@ import com.codingx.common.idempotent.IdempotentSubmit;
 import com.codingx.workspace.infrastructure.persistence.dataobject.WorkspaceDO;
 import com.codingx.workspace.infrastructure.repository.WorkspaceRepositoryImpl;
 import jakarta.validation.Valid;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -111,6 +119,21 @@ public class ChatController {
     }
 
     /**
+     * 公开分享页按分享令牌回放消息，不要求登录。
+     * @param shareToken 分享令牌。
+     * @return 会话与消息回放数据。
+     */
+    @GetMapping("/shared/{shareToken}")
+    public ApiResponse<SharedConversationResponse> getSharedConversation(@PathVariable String shareToken) {
+        ChatConversation conversation = chatConversationApplicationService.requireSharedConversation(shareToken);
+        List<ChatMessageResponse> messages = chatConversationApplicationService.listSharedMessages(shareToken)
+            .stream()
+            .map(this::toMessageResponse)
+            .toList();
+        return ApiResponse.success(new SharedConversationResponse(toSharedConversationResponse(conversation), messages));
+    }
+
+    /**
      * 发送 sendMessage 处理的消息或请求。
      * @param conversationId 输入参数。
      * @param request 输入参数。
@@ -179,6 +202,70 @@ public class ChatController {
     }
 
     /**
+     * 切换会话置顶状态，供侧边栏菜单快速固定会话。
+     * @param conversationId 会话标识。
+     * @param request 置顶状态。
+     * @return 操作结果。
+     */
+    @PatchMapping("/{conversationId}/pin")
+    public ApiResponse<Void> updateConversationPinnedState(@PathVariable Long conversationId, @Valid @RequestBody ConversationPinRequest request) {
+        chatConversationApplicationService.updateConversationPinnedState(conversationId, request.pinned(), StpUtil.getLoginIdAsLong());
+        return ApiResponse.successMessage(ErrorMessageCatalog.CHAT_CONVERSATION_PIN_UPDATED);
+    }
+
+    /**
+     * 批量设置会话置顶状态。
+     * @param request 批量请求。
+     * @return 操作结果。
+     */
+    @PostMapping("/batch/pin")
+    public ApiResponse<Void> batchUpdateConversationPinnedState(@Valid @RequestBody BatchUpdateConversationRequest request) {
+        chatConversationApplicationService.batchUpdatePinnedState(request.conversationIds(), request.pinned(), StpUtil.getLoginIdAsLong());
+        return ApiResponse.successMessage(ErrorMessageCatalog.CHAT_CONVERSATION_BATCH_UPDATED);
+    }
+
+    /**
+     * 为会话生成分享链接令牌，前端只需拼接当前站点地址即可跳转分享页。
+     * @param conversationId 会话标识。
+     * @return 分享令牌与分享路径。
+     */
+    @PostMapping("/{conversationId}/share")
+    public ApiResponse<ConversationShareResponse> shareConversation(@PathVariable Long conversationId) {
+        String shareToken = chatConversationApplicationService.generateShareToken(conversationId, StpUtil.getLoginIdAsLong());
+        return ApiResponse.success(new ConversationShareResponse(
+            shareToken,
+            "/api/chat/conversations/shared/" + shareToken
+        ));
+    }
+
+    /**
+     * 导出会话为 Markdown 文件，供前端下载。
+     * @param conversationId 会话标识。
+     * @return Markdown 下载响应。
+     */
+    @GetMapping("/{conversationId}/export")
+    public ResponseEntity<byte[]> exportConversation(@PathVariable Long conversationId) {
+        String markdown = chatConversationApplicationService.exportConversationAsMarkdown(conversationId, StpUtil.getLoginIdAsLong());
+        byte[] bytes = markdown.getBytes(StandardCharsets.UTF_8);
+        String fileName = "conversation-" + conversationId + ".md";
+        return ResponseEntity.ok()
+            .header(HttpHeaders.CONTENT_TYPE, MediaType.TEXT_MARKDOWN_VALUE + ";charset=UTF-8")
+            .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment().filename(fileName).build().toString())
+            .body(bytes);
+    }
+
+    /**
+     * 重新生成最后一条助手回复，保持会话历史不被重复写入新的用户消息。
+     * @param conversationId 会话标识。
+     * @return 操作结果。
+     */
+    @PostMapping("/{conversationId}/regenerate")
+    public ApiResponse<Void> regenerateConversation(@PathVariable Long conversationId) {
+        chatApplicationService.regenerateLastAssistantMessage(conversationId, StpUtil.getLoginIdAsLong());
+        return ApiResponse.successMessage(ErrorMessageCatalog.CHAT_CONVERSATION_REGENERATED);
+    }
+
+    /**
      * 取消指定会话当前正在进行的聊天任务。
      * @param conversationId 会话标识。
      * @return 取消结果。
@@ -207,8 +294,19 @@ public class ChatController {
      * @return 输入参数。
      */
     private ChatConversationResponse toConversationResponse(ChatConversation conversation) {
-        Long userId = StpUtil.getLoginIdAsLong();
-        Optional<WorkspaceDO> workspaceOptional = workspaceRepositoryImpl.findOwnedWorkspaceById(conversation.getWorkspaceId(), userId);
+        return toConversationResponse(StpUtil.getLoginIdAsLong(), conversation);
+    }
+
+    /**
+     * 转换会话响应，允许公开分享页跳过 workspace 权限校验。
+     * @param currentUserId 当前用户标识，可为空。
+     * @param conversation 会话对象。
+     * @return 响应对象。
+     */
+    private ChatConversationResponse toConversationResponse(Long currentUserId, ChatConversation conversation) {
+        Optional<WorkspaceDO> workspaceOptional = currentUserId == null
+            ? workspaceRepositoryImpl.findOwnedWorkspaceById(conversation.getWorkspaceId(), conversation.getCreatedBy())
+            : workspaceRepositoryImpl.findOwnedWorkspaceById(conversation.getWorkspaceId(), currentUserId);
         WorkspaceDO workspace = workspaceOptional.orElse(null);
         return new ChatConversationResponse(
             conversation.getId(),
@@ -216,6 +314,33 @@ public class ChatController {
             conversation.getStatus(),
             conversation.getLastMessageAt(),
             conversation.getLastRunId(),
+            conversation.getPinned(),
+            conversation.getShareToken(),
+            conversation.getWorkspaceId(),
+            workspace == null ? null : workspace.getName(),
+            resolveWorkspaceType(workspace)
+        );
+    }
+
+    /**
+     * 公开分享页专用会话响应，避免依赖当前登录态。
+     * @param conversation 会话对象。
+     * @return 响应对象。
+     */
+    private ChatConversationResponse toSharedConversationResponse(ChatConversation conversation) {
+        Optional<WorkspaceDO> workspaceOptional = workspaceRepositoryImpl.findOwnedWorkspaceById(
+            conversation.getWorkspaceId(),
+            conversation.getCreatedBy()
+        );
+        WorkspaceDO workspace = workspaceOptional.orElse(null);
+        return new ChatConversationResponse(
+            conversation.getId(),
+            conversation.getTitle(),
+            conversation.getStatus(),
+            conversation.getLastMessageAt(),
+            conversation.getLastRunId(),
+            conversation.getPinned(),
+            conversation.getShareToken(),
             conversation.getWorkspaceId(),
             workspace == null ? null : workspace.getName(),
             resolveWorkspaceType(workspace)
@@ -274,6 +399,28 @@ public class ChatController {
             skillCodes,
             userVote
         );
+    }
+
+    /**
+     * 公开分享页返回会话元信息与消息列表。
+     * @param conversation 会话响应。
+     * @param messages 消息列表。
+     */
+    private record SharedConversationResponse(
+        ChatConversationResponse conversation,
+        List<ChatMessageResponse> messages
+    ) {
+    }
+
+    /**
+     * 分享会话响应，只暴露生成链接所需的令牌与路径。
+     * @param shareToken 分享令牌。
+     * @param shareUrl 分享地址。
+     */
+    private record ConversationShareResponse(
+        String shareToken,
+        String shareUrl
+    ) {
     }
 
     /**

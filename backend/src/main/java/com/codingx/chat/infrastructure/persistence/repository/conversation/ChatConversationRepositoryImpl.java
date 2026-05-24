@@ -77,7 +77,9 @@ public class ChatConversationRepositoryImpl implements ChatConversationRepositor
         LambdaQueryWrapper<ChatConversationDO> queryWrapper = new LambdaQueryWrapper<ChatConversationDO>()
             .eq(ChatConversationDO::getCreatedBy, userId)
             .eq(ChatConversationDO::getDeleted, 0)
-            .orderByDesc(ChatConversationDO::getUpdatedAt);
+            .orderByDesc(ChatConversationDO::getPinned)
+            .orderByDesc(ChatConversationDO::getUpdatedAt)
+            .orderByDesc(ChatConversationDO::getId);
         if (workspaceId != null) {
             queryWrapper.eq(ChatConversationDO::getWorkspaceId, workspaceId);
         } else {
@@ -100,6 +102,7 @@ public class ChatConversationRepositoryImpl implements ChatConversationRepositor
         String normalizedKeyword = keyword == null ? "" : keyword.trim();
         LambdaQueryWrapper<ChatConversationDO> wrapper = new LambdaQueryWrapper<ChatConversationDO>()
             .eq(ChatConversationDO::getDeleted, 0)
+            .orderByDesc(ChatConversationDO::getPinned)
             .orderByDesc(ChatConversationDO::getUpdatedAt)
             .orderByDesc(ChatConversationDO::getId);
         if (!normalizedKeyword.isBlank()) {
@@ -133,6 +136,23 @@ public class ChatConversationRepositoryImpl implements ChatConversationRepositor
         return Optional.of(toDomain(dataObject));
     }
 
+    @Override
+    public Optional<ChatConversation> findByShareToken(String shareToken) {
+        if (shareToken == null || shareToken.isBlank()) {
+            return Optional.empty();
+        }
+        ChatConversationDO dataObject = chatConversationMapper.selectOne(
+            new LambdaQueryWrapper<ChatConversationDO>()
+                .eq(ChatConversationDO::getShareToken, shareToken)
+                .eq(ChatConversationDO::getDeleted, 0)
+                .last("limit 1")
+        );
+        if (dataObject == null) {
+            return Optional.empty();
+        }
+        return Optional.of(toDomain(dataObject));
+    }
+
     /**
      * 执行 toDomain 定义的处理逻辑。
      * @param dataObject 输入参数。
@@ -148,6 +168,10 @@ public class ChatConversationRepositoryImpl implements ChatConversationRepositor
         );
         conversation.restoreRuntimeState(dataObject.getLastMessageAt(), dataObject.getLastRunId());
         conversation.restorePersistenceState(dataObject.getCreatedAt(), dataObject.getUpdatedAt());
+        conversation.restoreSharingState(
+            Integer.valueOf(1).equals(dataObject.getPinned()),
+            dataObject.getShareToken()
+        );
         return conversation;
     }
 
@@ -165,6 +189,8 @@ public class ChatConversationRepositoryImpl implements ChatConversationRepositor
         dataObject.setStatus(conversation.getStatus().name());
         dataObject.setLastMessageAt(conversation.getLastMessageAt());
         dataObject.setLastRunId(conversation.getLastRunId());
+        dataObject.setPinned(Boolean.TRUE.equals(conversation.getPinned()) ? 1 : 0);
+        dataObject.setShareToken(conversation.getShareToken());
         dataObject.setDeleted(0);
         return dataObject;
     }

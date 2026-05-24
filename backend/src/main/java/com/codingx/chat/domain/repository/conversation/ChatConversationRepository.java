@@ -47,4 +47,11 @@ public interface ChatConversationRepository {
      * @return 会话记录。
      */
     Optional<ChatConversation> findById(Long conversationId);
+
+    /**
+     * 根据分享令牌查询会话，供公开只读分享页加载。
+     * @param shareToken 分享令牌。
+     * @return 会话记录。
+     */
+    Optional<ChatConversation> findByShareToken(String shareToken);
 }

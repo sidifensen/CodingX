@@ -145,11 +145,13 @@ CREATE TABLE IF NOT EXISTS chat_conversation (
     status VARCHAR(32) NOT NULL,
     last_message_at TIMESTAMP,
     last_run_id BIGINT,
+    pinned SMALLINT NOT NULL DEFAULT 0,
+    share_token VARCHAR(128),
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     deleted SMALLINT NOT NULL DEFAULT 0
 );
-COMMENT ON TABLE chat_conversation IS '会话表，存储用户与助手的对话主题、状态和最近活跃时间';
+COMMENT ON TABLE chat_conversation IS '会话表，存储用户与助手的对话主题、状态、置顶与分享信息';
 COMMENT ON COLUMN chat_conversation.id IS '会话主键 ID';
 COMMENT ON COLUMN chat_conversation.title IS '会话标题';
 COMMENT ON COLUMN chat_conversation.created_by IS '会话创建人用户 ID';
@@ -157,6 +159,8 @@ COMMENT ON COLUMN chat_conversation.workspace_id IS '所属工作空间 ID';
 COMMENT ON COLUMN chat_conversation.status IS '会话状态';
 COMMENT ON COLUMN chat_conversation.last_message_at IS '最近一条消息产生时间';
 COMMENT ON COLUMN chat_conversation.last_run_id IS '最近一次执行记录 ID';
+COMMENT ON COLUMN chat_conversation.pinned IS '会话置顶标记，0 表示未置顶，1 表示已置顶';
+COMMENT ON COLUMN chat_conversation.share_token IS '会话分享令牌，用于生成公开只读链接';
 COMMENT ON COLUMN chat_conversation.created_at IS '记录创建时间';
 COMMENT ON COLUMN chat_conversation.updated_at IS '记录最后更新时间';
 COMMENT ON COLUMN chat_conversation.deleted IS '逻辑删除标记，0 表示未删除，1 表示已删除';
@@ -797,7 +801,9 @@ CREATE INDEX IF NOT EXISTS idx_task_status ON task (status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_task_event_task_seq ON task_event (task_id, sequence_no ASC);
 CREATE INDEX IF NOT EXISTS idx_task_artifact_task ON task_artifact (task_id, created_at ASC);
 CREATE INDEX IF NOT EXISTS idx_chat_conversation_user ON chat_conversation (created_by, updated_at DESC);
-CREATE INDEX IF NOT EXISTS idx_chat_conversation_workspace_user ON chat_conversation (created_by, workspace_id, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_chat_conversation_workspace_user ON chat_conversation (created_by, workspace_id, pinned DESC, updated_at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS idx_chat_conversation_user_pinned_updated ON chat_conversation (created_by, pinned DESC, updated_at DESC, id DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_chat_conversation_share_token ON chat_conversation (share_token) WHERE share_token IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_chat_message_conversation ON chat_message (conversation_id, created_at ASC);
 CREATE INDEX IF NOT EXISTS idx_chat_conversation_summary_conv_user ON chat_conversation_summary (conversation_id, user_id, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_chat_message_feedback_message_user ON chat_message_feedback (message_id, user_id);

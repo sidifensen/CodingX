@@ -12,6 +12,7 @@ import com.codingx.chat.application.command.SendChatMessageCommand;
 import com.codingx.chat.domain.model.ChatConversation;
 import com.codingx.chat.domain.model.ChatConversationStatus;
 import com.codingx.chat.domain.model.ChatExecutionRun;
+import com.codingx.chat.domain.model.ChatTraceRun;
 import com.codingx.chat.domain.model.ChatAttachment;
 import com.codingx.chat.domain.model.ChatMessage;
 import com.codingx.chat.domain.model.ChatMessageRole;
@@ -27,8 +28,15 @@ import com.codingx.common.error.ErrorMessageCatalog;
 import com.codingx.common.exception.ConflictException;
 import com.codingx.common.exception.ForbiddenException;
 import com.codingx.expert.application.service.ChatExpertContextService;
+import com.codingx.expert.domain.model.ChatExpert;
+import com.codingx.expert.domain.repository.ChatExpertRepository;
 import com.codingx.mcp.domain.repository.ChatMcpRepository;
+import com.codingx.mcp.domain.model.ChatMcp;
 import com.codingx.skill.application.service.ChatSkillContextService;
+import com.codingx.skill.domain.model.ChatSkill;
+import com.codingx.skill.domain.repository.ChatSkillRepository;
+import com.codingx.tool.application.service.ChatToolExecutionService;
+import com.codingx.tool.application.service.ChatToolSpecService;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -124,6 +132,12 @@ class ChatApplicationServiceTest {
     private ChatMcpRepository chatMcpRepository;
 
     @Mock
+    private ChatSkillRepository chatSkillRepository;
+
+    @Mock
+    private ChatExpertRepository chatExpertRepository;
+
+    @Mock
     private ChatAttachmentService chatAttachmentService;
 
     @Mock
@@ -146,6 +160,15 @@ class ChatApplicationServiceTest {
 
     @Mock
     private RuntimeSettingService runtimeSettingService;
+
+    @Mock
+    private ChatToolSpecService chatToolSpecService;
+
+    @Mock
+    private ChatToolExecutionService chatToolExecutionService;
+
+    @Mock
+    private ChatWorkspaceBindingService chatWorkspaceBindingService;
 
     /**
      * ChatRuntimeGuardService 依赖。
@@ -480,6 +503,60 @@ class ChatApplicationServiceTest {
         verify(searchReferenceCollector).collect(eq(9001001L), any(Long.class), eq(1L), any());
         verify(documentArtifactService).createDocxArtifact(eq(9001001L), any(Long.class), eq(1L), eq("搜索结果整理中"));
         verify(chatStreamPublisher).publishAssistantCompleted(1L, "截至当前检索，Java 24 已发布", "联网搜索结果");
+        ChatExecutionContext.clear();
+    }
+
+    /**
+     * 重新生成应复用上一轮已完成 run 的上下文绑定，并在新 run 上重新落库绑定关系。
+     */
+    @Test
+    void regenerateLastAssistantMessageReusesPreviousRunBindings() {
+        ChatConversation conversation = ChatConversation.create(1L, "历史会话", 1002L, ChatConversationStatus.ACTIVE);
+        conversation.restoreRuntimeState(null, 9001L);
+        when(chatConversationRepository.requireById(1L)).thenReturn(conversation);
+        when(chatMessageRepository.findByConversationId(1L)).thenReturn(List.of(
+            ChatMessage.create(11L, 1L, ChatMessageRole.USER, "第一条问题", ChatMessageStatus.COMPLETED, null, null, null).attachRun(9001L),
+            ChatMessage.create(12L, 1L, ChatMessageRole.ASSISTANT, "旧答案", ChatMessageStatus.COMPLETED, null, null, null).attachRun(9001L)
+        ));
+        when(chatSkillRepository.findByTaskId(9001L)).thenReturn(List.of(
+            ChatSkill.builder().skillCode("web-read").displayName("网页读取").build()
+        ));
+        when(chatMcpRepository.findByTaskId(9001L)).thenReturn(List.of(
+            ChatMcp.builder().mcpCode("weather_query").displayName("天气查询").build()
+        ));
+        when(chatExpertRepository.findByTaskId(9001L)).thenReturn(List.of(
+            ChatExpert.builder().expertCode("solution-architect").displayName("解决方案架构师").build()
+        ));
+        when(conversationTraceRecordService.startTrace(eq("chat-regenerate"), eq(1L), eq(1002L))).thenReturn(
+            ChatTraceRun.builder().traceId("trace-1").conversationId(1L).taskId(9001L).userId(1002L).status("RUNNING").build()
+        );
+        when(chatToolSpecService.listModelVisibleToolSpecs()).thenReturn(List.of());
+        when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+            new ConversationRewriteResult("第一条问题", false, List.of("第一条问题"))
+        );
+        when(conversationIntentService.route("第一条问题", true)).thenReturn(
+            new ConversationIntentDecision("chat.normal", ConversationIntentAction.DIRECT, null)
+        );
+        when(chatIntentNodeRepository.findByIntentCode("chat.normal")).thenReturn(null);
+        when(chatSkillContextService.buildSkillContext(any())).thenReturn("");
+        when(chatExpertContextService.buildExpertContext(any())).thenReturn("");
+        when(conversationSummaryService.buildModelHistory(any(), any())).thenAnswer(invocation -> invocation.getArgument(1));
+        when(llmResponseCleaner.clean(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(conversationTitleService.generateTitle(any(), any())).thenReturn("新答案");
+        doAnswer(invocation -> {
+            AiChatClient.StreamHandler handler = invocation.getArgument(2);
+            handler.onMetadata("mock-provider", "mock-model");
+            handler.onDelta("新答案");
+            handler.onComplete();
+            return null;
+        }).when(aiChatClient).streamChat(any(), eq(false), any());
+
+        chatApplicationService.regenerateLastAssistantMessage(1L, 1002L);
+
+        verify(chatSkillRepository).bindTaskSkills(any(Long.class), eq(List.of("web-read")));
+        verify(chatMcpRepository).bindTaskMcps(any(Long.class), eq(List.of("weather_query")));
+        verify(chatExpertRepository).bindTaskExpert(any(Long.class), eq("solution-architect"));
+        verify(chatStreamPublisher).publishAssistantCompleted(1L, "新答案", "新答案");
         ChatExecutionContext.clear();
     }
 }

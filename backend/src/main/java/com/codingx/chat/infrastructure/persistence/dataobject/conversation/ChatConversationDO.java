@@ -18,6 +18,8 @@ public class ChatConversationDO {
     @TableField("status") private String status;
     @TableField("last_message_at") private LocalDateTime lastMessageAt;
     @TableField("last_run_id") private Long lastRunId;
+    @TableField("pinned") private Integer pinned;
+    @TableField("share_token") private String shareToken;
     @TableField("created_at") private LocalDateTime createdAt;
     @TableField("updated_at") private LocalDateTime updatedAt;
     @TableField("deleted") private Integer deleted;

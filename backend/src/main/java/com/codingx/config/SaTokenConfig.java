@@ -27,6 +27,7 @@ public class SaTokenConfig implements WebMvcConfigurer {
                 "/api/auth/login",
                 "/api/chat/stream",
                 "/api/chat/conversations/*/stream",
+                "/api/chat/conversations/shared/**",
                 "/swagger-ui/**",
                 "/swagger-ui.html",
                 "/v3/api-docs/**",

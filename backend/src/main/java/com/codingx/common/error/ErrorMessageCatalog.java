@@ -166,6 +166,61 @@ public final class ErrorMessageCatalog {
     public static final String CHAT_CONVERSATION_DELETED = "会话删除成功";
 
     /**
+     * 会话置顶状态更新成功提示。
+     */
+    public static final String CHAT_CONVERSATION_PIN_UPDATED = "会话置顶状态已更新";
+
+    /**
+     * 会话分享链接生成成功提示。
+     */
+    public static final String CHAT_CONVERSATION_SHARED = "会话分享链接已生成";
+
+    /**
+     * 会话重新生成成功提示。
+     */
+    public static final String CHAT_CONVERSATION_REGENERATED = "会话重新生成成功";
+
+    /**
+     * 会话导出成功提示。
+     */
+    public static final String CHAT_CONVERSATION_EXPORTED = "会话导出成功";
+
+    /**
+     * 会话分享令牌生成成功提示。
+     */
+    public static final String CHAT_CONVERSATION_SHARE_LINK_GENERATED = "会话分享链接已生成";
+
+    /**
+     * 会话分享记录不存在提示。
+     */
+    public static final String CHAT_CONVERSATION_SHARE_NOT_FOUND = "会话分享链接不存在或已失效";
+
+    /**
+     * 会话导出格式缺失提示。
+     */
+    public static final String CHAT_CONVERSATION_EXPORT_FORMAT_REQUIRED = "请选择导出格式";
+
+    /**
+     * 批量会话操作成功提示。
+     */
+    public static final String CHAT_CONVERSATION_BATCH_UPDATED = "批量操作成功";
+
+    /**
+     * 会话置顶状态缺失提示。
+     */
+    public static final String CHAT_CONVERSATION_PIN_STATE_REQUIRED = "会话置顶状态不能为空";
+
+    /**
+     * 批量会话标识缺失提示。
+     */
+    public static final String CHAT_CONVERSATION_BATCH_IDS_REQUIRED = "请选择要操作的会话";
+
+    /**
+     * 批量会话标识格式错误提示。
+     */
+    public static final String CHAT_CONVERSATION_BATCH_IDS_INVALID = "会话标识格式不正确";
+
+    /**
      * 消息处理成功提示。
      */
     public static final String CHAT_MESSAGE_PROCESSED = "消息处理成功";

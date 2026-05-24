@@ -183,4 +183,20 @@ class ChatControllerConversationMutationTest {
             verify(chatRuntimeGuardService).completeConversation(2001L);
         }
     }
+
+    /**
+     * 重新生成接口应转发到聊天主流程服务，确保复用原始 run 上下文。
+     */
+    @Test
+    void regenerateConversationDelegatesToChatApplicationService() {
+        try (MockedStatic<cn.dev33.satoken.stp.StpUtil> mocked = Mockito.mockStatic(cn.dev33.satoken.stp.StpUtil.class)) {
+            mocked.when(cn.dev33.satoken.stp.StpUtil::getLoginIdAsLong).thenReturn(1002L);
+
+            ApiResponse<Void> response = chatController.regenerateConversation(2001L);
+
+            assertEquals(true, response.success());
+            assertEquals(ErrorMessageCatalog.CHAT_CONVERSATION_REGENERATED, response.message());
+            verify(chatApplicationService).regenerateLastAssistantMessage(2001L, 1002L);
+        }
+    }
 }

@@ -1,4 +1,5 @@
 package com.codingx.chat.application.service;
+import cn.hutool.core.util.IdUtil;
 import cn.hutool.core.util.StrUtil;
 import cn.hutool.core.date.DateUtil;
 import com.codingx.chat.application.command.SendChatMessageCommand;
@@ -19,12 +20,16 @@ import com.codingx.chat.domain.port.ChatStreamPublisher;
 import com.codingx.common.error.ErrorMessageCatalog;
 import com.codingx.common.exception.ForbiddenException;
 import com.codingx.common.support.ai.AiToolCall;
+import com.codingx.expert.domain.model.ChatExpert;
+import com.codingx.expert.domain.repository.ChatExpertRepository;
 import com.codingx.expert.application.service.ChatExpertContextService;
 import com.codingx.mcp.application.service.ChatMcpExecutionService;
 import com.codingx.mcp.application.service.ChatMcpProgressListener;
 import com.codingx.mcp.application.service.ChatMcpToolResult;
 import com.codingx.mcp.domain.model.ChatMcp;
 import com.codingx.mcp.domain.repository.ChatMcpRepository;
+import com.codingx.skill.domain.model.ChatSkill;
+import com.codingx.skill.domain.repository.ChatSkillRepository;
 import com.codingx.skill.application.service.ChatSkillContextService;
 import com.codingx.tool.application.service.ChatToolExecutionContext;
 import com.codingx.tool.application.service.ChatToolExecutionResult;
@@ -33,6 +38,8 @@ import com.codingx.tool.application.service.ChatToolSpec;
 import com.codingx.tool.application.service.ChatToolSpecService;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Comparator;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -87,6 +94,10 @@ public class ChatApplicationService {
     private final ChatMcpExecutionService chatMcpExecutionService;
     /** MCP 配置仓储，读取工具启用状态与展示信息 */
     private final ChatMcpRepository chatMcpRepository;
+    /** 技能绑定仓储，供重新生成时复用原始 run 的技能选择 */
+    private final ChatSkillRepository chatSkillRepository;
+    /** 专家绑定仓储，供重新生成时复用原始 run 的专家选择 */
+    private final ChatExpertRepository chatExpertRepository;
     /** 附件服务，校验附件归属并绑定到当前消息 */
     private final ChatAttachmentService chatAttachmentService;
     /** 意图节点仓储，读取意图节点配置（类型、Prompt、MCP 工具映射） */
@@ -118,6 +129,509 @@ public class ChatApplicationService {
     private final ChatToolExecutionService chatToolExecutionService;
     /** 会话 workspace 绑定服务，负责把本地空间映射为真实仓库目录 */
     private final ChatWorkspaceBindingService chatWorkspaceBindingService;
+
+    /**
+     * 重新生成最后一条助手回复，复用原始会话上下文但不重复插入用户消息。
+     * 关键约束：
+     * 1. 重新生成必须开启独立 run，避免覆盖上一次执行记录
+     * 2. 重新生成必须复用最近一次已完成 run 的技能、MCP 与专家绑定
+     * 3. 重新生成只重跑最后一条用户提问，不向消息历史重复写入用户消息
+     *
+     * @param conversationId 会话标识。
+     * @param userId 当前用户标识。
+     */
+    public void regenerateLastAssistantMessage(Long conversationId, Long userId) {
+        ChatConversation conversation = chatConversationRepository.requireById(conversationId);
+        if (!conversation.getCreatedBy().equals(userId)) {
+            throw new ForbiddenException(ErrorMessageCatalog.CHAT_CONVERSATION_FORBIDDEN);
+        }
+        chatRuntimeGuardService.ensureAccepted(conversationId);
+        Long runId = IdUtil.getSnowflakeNextId();
+        ChatExecutionContext.start(runId);
+        ChatTraceRun traceRun = conversationTraceRecordService.startTrace("chat-regenerate", conversationId, userId);
+        LocalDateTime now = LocalDateTime.now();
+        chatExecutionRunRepository.save(ChatExecutionRun.builder()
+            .id(runId)
+            .conversationId(conversationId)
+            .taskId(runId)
+            .status("RUNNING")
+            .queueStatus("ACQUIRED")
+            .startedAt(now)
+            .createdAt(now)
+            .updatedAt(now)
+            .build());
+        List<ChatMessage> history = new ArrayList<>(chatMessageRepository.findByConversationId(conversationId));
+        ChatMessage lastUserMessage = findLastMessageByRole(history, ChatMessageRole.USER)
+            .orElseThrow(() -> new ForbiddenException(ErrorMessageCatalog.CHAT_CONVERSATION_FORBIDDEN));
+        ChatMessage lastAssistantMessage = findLastMessageByRole(history, ChatMessageRole.ASSISTANT)
+            .orElseThrow(() -> new ForbiddenException(ErrorMessageCatalog.CHAT_CONVERSATION_FORBIDDEN));
+        Long sourceRunId = lastAssistantMessage.getRunId() != null ? lastAssistantMessage.getRunId() : resolveRegenerateSourceRunId(conversation);
+        List<String> selectedSkillCodes = loadSelectedSkillCodes(sourceRunId);
+        List<String> selectedMcpCodes = loadSelectedMcpCodes(sourceRunId);
+        String selectedExpertCode = loadSelectedExpertCode(sourceRunId);
+        SendChatMessageCommand command = new SendChatMessageCommand(
+            conversationId,
+            lastUserMessage.getContent(),
+            false,
+            selectedMcpCodes,
+            selectedSkillCodes,
+            selectedExpertCode,
+            null,
+            List.of()
+        );
+        bindSelectedContextToRun(runId, selectedMcpCodes, selectedSkillCodes, selectedExpertCode);
+        try {
+            processRegeneratedMessage(command, conversation, history, lastUserMessage, runId);
+        } catch (RuntimeException exception) {
+            LocalDateTime failedAt = LocalDateTime.now();
+            chatExecutionRunRepository.save(ChatExecutionRun.builder()
+                .id(runId)
+                .conversationId(conversationId)
+                .taskId(runId)
+                .status("ERROR")
+                .queueStatus("FAILED")
+                .errorMessage(exception.getMessage())
+                .finishedAt(failedAt)
+                .updatedAt(failedAt)
+                .build());
+            conversationTraceRecordService.finishTrace(traceRun.getTraceId(), runId, "ERROR", exception.getMessage());
+            throw exception;
+        } finally {
+            chatRuntimeGuardService.completeConversation(conversationId, runId);
+            ChatExecutionContext.clear();
+        }
+    }
+
+    /**
+     * 执行重新生成的消息流，复用与正常发送一致的意图分流、模型流式、落库和 Trace 收口逻辑。
+     * 关键约束：
+     * 1. 历史列表中不得重复写入同一条用户消息
+     * 2. 重新生成只负责生成新的助手消息，不修改原始用户消息内容
+     * 3. 重新生成的绑定上下文必须由原 run 的技能、MCP、专家配置恢复
+     *
+     * @param command 重新生成所需的命令。
+     * @param conversation 当前会话。
+     * @param history 会话历史。
+     * @param requestMessage 触发重新生成的原始用户消息。
+     * @param runId 新的运行标识。
+     */
+    private void processRegeneratedMessage(
+        SendChatMessageCommand command,
+        ChatConversation conversation,
+        List<ChatMessage> history,
+        ChatMessage requestMessage,
+        Long runId
+    ) {
+        if (history.stream().noneMatch(message -> message.getId().equals(requestMessage.getId()))) {
+            history.add(requestMessage);
+        }
+        ConversationRewriteResult rewriteResult = conversationRewriteService.rewriteResult(
+            history.stream().filter(message -> message.getRole() == ChatMessageRole.USER)
+                .map(ChatMessage::getContent)
+                .toList(),
+            command.content()
+        );
+        List<SearchReferenceCandidate> searchReferences = List.of();
+        String rewrittenQuestion = rewriteResult.rewrite();
+        boolean mcpEnabled = command.mcpCodes() != null && !command.mcpCodes().isEmpty();
+        ConversationIntentDecision intentDecision = conversationIntentService.route(rewrittenQuestion, mcpEnabled);
+        if (intentDecision.action() == ConversationIntentAction.CLARIFY) {
+            ChatMessage assistantMessage = ChatMessage.assistantMessage(
+                command.conversationId(),
+                intentDecision.reply(),
+                ChatMessageStatus.COMPLETED,
+                null,
+                null,
+                null
+            ).attachRun(runId);
+            chatMessageRepository.save(assistantMessage);
+            history.add(assistantMessage);
+            conversation.rename(conversationTitleService.generateTitle(conversation, history));
+            conversation.touch();
+            conversation.recordLastRunId(runId);
+            chatConversationRepository.save(conversation);
+            recordExecutionOutcome(conversation, requestMessage.getId(), assistantMessage.getId(), intentDecision.intentCode(), false, false, ChatMessageStatus.COMPLETED, null);
+            finishTrace(runId, "SUCCESS", null);
+            chatStreamPublisher.publishAssistantCompleted(command.conversationId(), assistantMessage.getContent(), conversation.getTitle());
+            return;
+        }
+        if (intentDecision.action() == ConversationIntentAction.DIRECT && StrUtil.isNotBlank(intentDecision.reply())) {
+            ChatMessage assistantMessage = ChatMessage.assistantMessage(
+                command.conversationId(),
+                intentDecision.reply(),
+                ChatMessageStatus.COMPLETED,
+                null,
+                null,
+                null
+            ).attachRun(runId);
+            chatMessageRepository.save(assistantMessage);
+            history.add(assistantMessage);
+            conversation.rename(conversationTitleService.generateTitle(conversation, history));
+            conversation.touch();
+            conversation.recordLastRunId(runId);
+            chatConversationRepository.save(conversation);
+            recordExecutionOutcome(conversation, requestMessage.getId(), assistantMessage.getId(), intentDecision.intentCode(), false, false, ChatMessageStatus.COMPLETED, null);
+            finishTrace(runId, "SUCCESS", null);
+            chatStreamPublisher.publishAssistantCompleted(command.conversationId(), assistantMessage.getContent(), conversation.getTitle());
+            return;
+        }
+        if (intentDecision.action() == ConversationIntentAction.MCP_DISABLED) {
+            ChatMessage assistantMessage = ChatMessage.assistantMessage(
+                command.conversationId(),
+                "你当前未连接 MCP。请在输入框上方开启“连接 MCP”并至少选择一个 MCP 后重试",
+                ChatMessageStatus.COMPLETED,
+                null,
+                null,
+                null
+            ).attachRun(runId);
+            chatMessageRepository.save(assistantMessage);
+            history.add(assistantMessage);
+            conversation.rename(conversationTitleService.generateTitle(conversation, history));
+            conversation.touch();
+            conversation.recordLastRunId(runId);
+            chatConversationRepository.save(conversation);
+            recordExecutionOutcome(conversation, requestMessage.getId(), assistantMessage.getId(), intentDecision.intentCode(), false, false, ChatMessageStatus.COMPLETED, null);
+            finishTrace(runId, "SUCCESS", null);
+            chatStreamPublisher.publishAssistantCompleted(command.conversationId(), assistantMessage.getContent(), conversation.getTitle());
+            return;
+        }
+        if (intentDecision.action() == ConversationIntentAction.MCP) {
+            com.codingx.chat.domain.model.ChatIntentNode intentNode = chatIntentNodeRepository.findByIntentCode(intentDecision.intentCode());
+            if (intentNode == null || StrUtil.isBlank(intentNode.getMcpToolId())) {
+                throw new IllegalStateException(
+                    ErrorMessageCatalog.CHAT_MCP_TOOL_CONFIG_MISSING + "，意图编码: " + intentDecision.intentCode()
+                );
+            }
+            if (!isMcpEnabledForCurrentMessage(intentNode.getMcpToolId(), command.mcpCodes())) {
+                ChatMessage assistantMessage = ChatMessage.assistantMessage(
+                    command.conversationId(),
+                    "当前会话未连接该 MCP，请在输入框上方先启用对应 MCP 后重试",
+                    ChatMessageStatus.COMPLETED,
+                    null,
+                    null,
+                    null
+                ).attachRun(runId);
+                chatMessageRepository.save(assistantMessage);
+                history.add(assistantMessage);
+                conversation.rename(conversationTitleService.generateTitle(conversation, history));
+                conversation.touch();
+                conversation.recordLastRunId(runId);
+                chatConversationRepository.save(conversation);
+                recordExecutionOutcome(conversation, requestMessage.getId(), assistantMessage.getId(), intentDecision.intentCode(), false, false, ChatMessageStatus.COMPLETED, null);
+                finishTrace(runId, "SUCCESS", null);
+                chatStreamPublisher.publishAssistantCompleted(command.conversationId(), assistantMessage.getContent(), conversation.getTitle());
+                return;
+            }
+            Long mcpCallId = IdUtil.getSnowflakeNextId();
+            LocalDateTime mcpStartedAt = LocalDateTime.now();
+            Map<String, Object> mcpParams = new LinkedHashMap<>();
+            mcpParams.put("question", rewrittenQuestion);
+            if (StrUtil.isNotBlank(intentDecision.intentCode())) {
+                mcpParams.put("intentCode", intentDecision.intentCode());
+            }
+            Map<String, Object> mcpStartPayload = new LinkedHashMap<>();
+            mcpStartPayload.put("callId", String.valueOf(mcpCallId));
+            mcpStartPayload.put("phase", "start");
+            mcpStartPayload.put("toolId", intentNode.getMcpToolId());
+            mcpStartPayload.put("displayName", resolveMcpDisplayName(intentNode.getMcpToolId()));
+            mcpStartPayload.put("params", mcpParams);
+            mcpStartPayload.put("startedAt", mcpStartedAt.toString());
+            mcpStartPayload.put("input", rewrittenQuestion);
+            chatStreamPublisher.publishMcpCall(command.conversationId(), mcpStartPayload);
+            ChatMcpProgressListener progressListener = (stage, message, detail) -> {
+                Map<String, Object> mcpProgressPayload = new LinkedHashMap<>();
+                mcpProgressPayload.put("callId", String.valueOf(mcpCallId));
+                mcpProgressPayload.put("phase", "progress");
+                mcpProgressPayload.put("toolId", intentNode.getMcpToolId());
+                mcpProgressPayload.put("displayName", resolveMcpDisplayName(intentNode.getMcpToolId()));
+                mcpProgressPayload.put("params", mcpParams);
+                mcpProgressPayload.put("progressStage", stage);
+                mcpProgressPayload.put("progressText", message);
+                mcpProgressPayload.put("progressDetail", detail == null ? Map.of() : detail);
+                mcpProgressPayload.put("updatedAt", LocalDateTime.now().toString());
+                mcpProgressPayload.put("input", rewrittenQuestion);
+                chatStreamPublisher.publishMcpCall(command.conversationId(), mcpProgressPayload);
+            };
+            ChatMcpToolResult toolResult = chatMcpExecutionService.execute(
+                intentNode.getMcpToolId(),
+                rewrittenQuestion,
+                progressListener
+            );
+            ChatExecutionStep mcpStep = ChatExecutionStep.builder()
+                .id(IdUtil.getSnowflakeNextId())
+                .runId(runId)
+                .stepType("mcp")
+                .stepTitle("执行 MCP 工具")
+                .stepStatus("COMPLETED")
+                .sequenceNo(1L)
+                .content(toolResult.content())
+                .createdAt(LocalDateTime.now())
+                .updatedAt(LocalDateTime.now())
+                .build();
+            chatExecutionStepRepository.save(mcpStep);
+            chatStreamPublisher.publishStep(command.conversationId(), Map.of(
+                "id", mcpStep.getId(),
+                "runId", mcpStep.getRunId(),
+                "stepType", mcpStep.getStepType(),
+                "stepTitle", mcpStep.getStepTitle(),
+                "stepStatus", mcpStep.getStepStatus(),
+                "sequenceNo", mcpStep.getSequenceNo(),
+                "content", mcpStep.getContent()
+            ));
+            Map<String, Object> mcpCompletePayload = new LinkedHashMap<>();
+            mcpCompletePayload.put("callId", String.valueOf(mcpCallId));
+            mcpCompletePayload.put("phase", "complete");
+            mcpCompletePayload.put("toolId", toolResult.toolId());
+            mcpCompletePayload.put("displayName", resolveMcpDisplayName(toolResult.toolId()));
+            mcpCompletePayload.put("params", mcpParams);
+            mcpCompletePayload.put("rawResult", toolResult.content());
+            mcpCompletePayload.put("resultMetadata", toolResult.metadata() == null ? Map.of() : toolResult.metadata());
+            mcpCompletePayload.put("finishedAt", LocalDateTime.now().toString());
+            mcpCompletePayload.put("input", rewrittenQuestion);
+            mcpCompletePayload.put("content", toolResult.content());
+            mcpCompletePayload.put("metadata", toolResult.metadata() == null ? Map.of() : toolResult.metadata());
+            chatStreamPublisher.publishMcpCall(command.conversationId(), mcpCompletePayload);
+            history.add(ChatMessage.create(
+                IdUtil.getSnowflakeNextId(),
+                command.conversationId(),
+                ChatMessageRole.SYSTEM,
+                buildToolEvidenceContext(toolResult),
+                ChatMessageStatus.COMPLETED,
+                null,
+                null,
+                null
+            ).attachRun(runId));
+        }
+        if (intentDecision.action() == ConversationIntentAction.SEARCH) {
+            searchReferences = executeSearchQuestions(
+                rewriteResult.shouldSplit() ? rewriteResult.subQuestions() : List.of(rewrittenQuestion),
+                runId,
+                command.conversationId()
+            );
+            searchReferenceCollector.collect(runId, requestMessage.getId(), command.conversationId(), searchReferences);
+            documentArtifactService.createDocxArtifact(runId, requestMessage.getId(), command.conversationId(), "搜索结果整理中");
+        }
+        StringBuilder builder = new StringBuilder();
+        StringBuilder thinkingBuilder = new StringBuilder();
+        final Throwable[] streamError = new Throwable[1];
+        final String[] selectedProvider = new String[1];
+        final String[] selectedModel = new String[1];
+        List<ChatMessage> aiHistory = buildAiHistory(
+            conversationSummaryService.buildModelHistory(command.conversationId(), history),
+            intentDecision,
+            command.conversationId(),
+            command.skillCodes(),
+            command.expertCode(),
+            searchReferences
+        );
+        tokenCounterService.estimateConversationTokens(aiHistory);
+        final Long activeRunId = runId;
+        try {
+            runAiToolAwareLoop(
+                command,
+                runId,
+                aiHistory,
+                builder,
+                thinkingBuilder,
+                streamError,
+                selectedProvider,
+                selectedModel,
+                activeRunId
+            );
+        } catch (RuntimeException exception) {
+            if (chatRuntimeGuardService.isCancelled(command.conversationId(), activeRunId)) {
+                ChatMessage cancelledMessage = ChatMessage.assistantMessage(
+                    command.conversationId(),
+                    StrUtil.blankToDefault(builder.toString(), "已取消"),
+                    ChatMessageStatus.CANCELLED,
+                    selectedProvider[0],
+                    selectedModel[0],
+                    null
+                ).attachRun(runId);
+                chatMessageRepository.save(cancelledMessage);
+                conversation.touch();
+                conversation.recordLastRunId(runId);
+                chatConversationRepository.save(conversation);
+                recordExecutionOutcome(conversation, requestMessage.getId(), cancelledMessage.getId(), intentDecision.intentCode(), intentDecision.action() == ConversationIntentAction.SEARCH, true, ChatMessageStatus.CANCELLED, null);
+                finishTrace(runId, "CANCELLED", null);
+                return;
+            }
+            throw exception;
+        }
+        if (chatRuntimeGuardService.isCancelled(command.conversationId(), activeRunId)) {
+            ChatMessage cancelledMessage = ChatMessage.assistantMessage(
+                command.conversationId(),
+                StrUtil.blankToDefault(builder.toString(), "已取消"),
+                ChatMessageStatus.CANCELLED,
+                selectedProvider[0],
+                selectedModel[0],
+                null
+            ).attachRun(runId);
+            chatMessageRepository.save(cancelledMessage);
+            conversation.touch();
+            conversation.recordLastRunId(runId);
+            chatConversationRepository.save(conversation);
+            recordExecutionOutcome(conversation, requestMessage.getId(), cancelledMessage.getId(), intentDecision.intentCode(), intentDecision.action() == ConversationIntentAction.SEARCH, true, ChatMessageStatus.CANCELLED, null);
+            finishTrace(runId, "CANCELLED", null);
+            return;
+        }
+        if (streamError[0] != null) {
+
+            ChatMessage failedMessage = ChatMessage.assistantMessage(
+                command.conversationId(),
+                StrUtil.blankToDefault(llmResponseCleaner.clean(builder.toString()), ErrorMessageCatalog.CHAT_AI_RESPONSE_FAILED),
+                ChatMessageStatus.FAILED,
+                selectedProvider[0],
+                selectedModel[0],
+                streamError[0].getMessage()
+
+            ).attachRun(runId);
+            chatMessageRepository.save(failedMessage);
+            conversation.touch();
+            conversation.recordLastRunId(runId);
+            chatConversationRepository.save(conversation);
+            chatStreamPublisher.publishError(command.conversationId(), streamError[0].getMessage());
+            recordExecutionOutcome(conversation, requestMessage.getId(), failedMessage.getId(), intentDecision.intentCode(), intentDecision.action() == ConversationIntentAction.SEARCH, false, ChatMessageStatus.FAILED, streamError[0].getMessage());
+            finishTrace(runId, "ERROR", streamError[0].getMessage());
+            return;
+        }
+        ChatMessage assistantMessage = ChatMessage.assistantMessage(
+            command.conversationId(),
+            StrUtil.blankToDefault(llmResponseCleaner.clean(builder.toString()), ""),
+            ChatMessageStatus.COMPLETED,
+            selectedProvider[0],
+            selectedModel[0],
+            null
+
+        ).attachRun(runId);
+        assistantMessage.restoreRuntimeState(
+            assistantMessage.getRunId(),
+            llmResponseCleaner.clean(thinkingBuilder.toString()),
+            StrUtil.isBlank(thinkingBuilder.toString()) ? null : 0,
+            null,
+            assistantMessage.getCreatedAt(),
+            assistantMessage.getUpdatedAt()
+        );
+        chatMessageRepository.save(assistantMessage);
+        history.add(assistantMessage);
+        conversation.rename(conversationTitleService.generateTitle(conversation, history));
+        conversationSummaryService.refreshSummaryIfNeeded(conversation, history);
+        conversation.touch();
+        conversation.recordLastRunId(runId);
+        chatConversationRepository.save(conversation);
+        recordExecutionOutcome(conversation, requestMessage.getId(), assistantMessage.getId(), intentDecision.intentCode(), intentDecision.action() == ConversationIntentAction.SEARCH, true, ChatMessageStatus.COMPLETED, null);
+        finishTrace(runId, "SUCCESS", null);
+        chatStreamPublisher.publishAssistantCompleted(command.conversationId(), assistantMessage.getContent(), conversation.getTitle());
+    }
+
+    /**
+     * 在消息列表中从后往前查找最后一条指定角色的消息。
+     * @param messages 消息历史。
+     * @param role 目标角色。
+     * @return 最后命中的消息。
+     */
+    private Optional<ChatMessage> findLastMessageByRole(List<ChatMessage> messages, ChatMessageRole role) {
+        if (messages == null || messages.isEmpty() || role == null) {
+            return Optional.empty();
+        }
+        for (int index = messages.size() - 1; index >= 0; index--) {
+            ChatMessage message = messages.get(index);
+            if (message.getRole() == role) {
+                return Optional.of(message);
+            }
+        }
+        return Optional.empty();
+    }
+
+    /**
+     * 解析重新生成所需的上一轮 run 标识，优先使用会话上次成功收口的 run。
+     * @param conversation 当前会话。
+     * @return 可复用的 run 标识，缺失时返回 null。
+     */
+    private Long resolveRegenerateSourceRunId(ChatConversation conversation) {
+        if (conversation.getLastRunId() != null) {
+            return conversation.getLastRunId();
+        }
+        return chatExecutionRunRepository.findByConversationId(conversation.getId()).stream()
+            .filter(this::isReusableRun)
+            .max(Comparator.comparing(ChatExecutionRun::getCreatedAt, Comparator.nullsLast(Comparator.naturalOrder()))
+                .thenComparing(ChatExecutionRun::getId, Comparator.nullsLast(Comparator.naturalOrder())))
+            .map(run -> run.getTaskId() == null ? run.getId() : run.getTaskId())
+            .orElse(null);
+    }
+
+    /**
+     * 重新生成时读取上一轮 run 绑定的技能编码。
+     * @param sourceRunId 上一轮 run 标识。
+     * @return 技能编码列表。
+     */
+    private List<String> loadSelectedSkillCodes(Long sourceRunId) {
+        if (sourceRunId == null) {
+            return List.of();
+        }
+        return chatSkillRepository.findByTaskId(sourceRunId).stream()
+            .map(ChatSkill::getSkillCode)
+            .filter(StrUtil::isNotBlank)
+            .distinct()
+            .toList();
+    }
+
+    /**
+     * 重新生成时读取上一轮 run 绑定的 MCP 编码。
+     * @param sourceRunId 上一轮 run 标识。
+     * @return MCP 编码列表。
+     */
+    private List<String> loadSelectedMcpCodes(Long sourceRunId) {
+        if (sourceRunId == null) {
+            return List.of();
+        }
+        return chatMcpRepository.findByTaskId(sourceRunId).stream()
+            .map(ChatMcp::getMcpCode)
+            .filter(StrUtil::isNotBlank)
+            .distinct()
+            .toList();
+    }
+
+    /**
+     * 重新生成时读取上一轮 run 绑定的专家编码。
+     * @param sourceRunId 上一轮 run 标识。
+     * @return 专家编码，缺失时返回 null。
+     */
+    private String loadSelectedExpertCode(Long sourceRunId) {
+        if (sourceRunId == null) {
+            return null;
+        }
+        return chatExpertRepository.findByTaskId(sourceRunId).stream()
+            .map(ChatExpert::getExpertCode)
+            .filter(StrUtil::isNotBlank)
+            .findFirst()
+            .orElse(null);
+    }
+
+    /**
+     * 将重新生成使用的上下文显式绑定到新 run，确保右侧回放能读取到同一批能力配置。
+     * @param runId 新的执行标识。
+     * @param selectedMcpCodes 绑定的 MCP 编码。
+     * @param selectedSkillCodes 绑定的技能编码。
+     * @param selectedExpertCode 绑定的专家编码。
+     */
+    private void bindSelectedContextToRun(Long runId, List<String> selectedMcpCodes, List<String> selectedSkillCodes, String selectedExpertCode) {
+        chatMcpRepository.bindTaskMcps(runId, selectedMcpCodes);
+        chatSkillRepository.bindTaskSkills(runId, selectedSkillCodes);
+        chatExpertRepository.bindTaskExpert(runId, selectedExpertCode);
+    }
+
+    /**
+     * 只有非运行中的历史 run 才适合作为重新生成的上下文来源。
+     * @param run 执行记录。
+     * @return 是否可复用。
+     */
+    private boolean isReusableRun(ChatExecutionRun run) {
+        if (run == null || StrUtil.isBlank(run.getStatus())) {
+            return false;
+        }
+        return !StrUtil.equalsAnyIgnoreCase(run.getStatus(), "RUNNING", "WAITING", "ACQUIRED");
+    }
 
     /**
      * 处理用户发送消息主流程。

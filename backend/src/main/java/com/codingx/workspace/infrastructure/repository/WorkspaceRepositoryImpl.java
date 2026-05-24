@@ -124,6 +124,16 @@ public class WorkspaceRepositoryImpl implements WorkspaceRepository {
     }
 
     /**
+     * 读取用户默认云端工作空间，不创建新记录。
+     * 列表查询会用它区分“默认云端历史”与“本地工作空间历史”，避免把本地会话混进 Web 侧历史页。
+     * @param userId 用户标识。
+     * @return 默认云端工作空间记录（存在时）。
+     */
+    public Optional<WorkspaceDO> findDefaultCloudWorkspaceByUserId(Long userId) {
+        return Optional.ofNullable(findDefaultCloudWorkspace(userId));
+    }
+
+    /**
      * 按主键读取有效工作空间。
      * @param workspaceId 工作空间标识。
      * @return 工作空间记录（存在时）。

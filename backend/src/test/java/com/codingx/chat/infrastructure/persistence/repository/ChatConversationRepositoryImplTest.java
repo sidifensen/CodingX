@@ -2,6 +2,7 @@ package com.codingx.chat.infrastructure.persistence.repository;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.mockito.ArgumentMatchers.any;
@@ -134,11 +135,11 @@ class ChatConversationRepositoryImplTest {
     }
 
     /**
-     * workspaceId 为空时不应额外追加 workspace 条件，确保调用方可自行按前端空间语义分组。
+     * workspaceId 为空时应只读取历史未归属记录，避免本地工作空间会话被并入云端历史。
      */
     @SuppressWarnings("unchecked")
     @Test
-    void findByCreatedByAndWorkspaceIdDoesNotForceWorkspaceFilterWhenWorkspaceIdMissing() {
+    void findByCreatedByAndWorkspaceIdFiltersLegacyHistoryWhenWorkspaceIdMissing() {
         when(chatConversationMapper.selectList(any())).thenReturn(List.of());
 
         chatConversationRepository.findByCreatedByAndWorkspaceId(1002L, null);
@@ -151,7 +152,7 @@ class ChatConversationRepositoryImplTest {
             .getNormal()
             .stream()
             .anyMatch(segment -> segment == SqlKeyword.IS_NULL);
-        assertFalse(containsIsNullWorkspaceFilter);
+        assertTrue(containsIsNullWorkspaceFilter);
     }
 
     /**

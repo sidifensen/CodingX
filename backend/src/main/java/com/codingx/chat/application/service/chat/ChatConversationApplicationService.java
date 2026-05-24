@@ -12,6 +12,8 @@ import com.codingx.common.exception.ForbiddenException;
 import com.codingx.workspace.domain.repository.WorkspaceRepository;
 import com.codingx.workspace.infrastructure.persistence.dataobject.WorkspaceDO;
 import com.codingx.workspace.infrastructure.repository.WorkspaceRepositoryImpl;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -69,8 +71,19 @@ public class ChatConversationApplicationService {
     public List<ChatConversation> listConversations(Long userId, Long workspaceId) {
         if (workspaceId != null) {
             workspaceRepositoryImpl.requireOwnedWorkspace(workspaceId, userId);
+            return chatConversationRepository.findByCreatedByAndWorkspaceId(userId, workspaceId);
         }
-        return chatConversationRepository.findByCreatedByAndWorkspaceId(userId, workspaceId);
+        // 默认云端历史页只应展示“默认云端空间 + 历史遗留未归属记录”，避免本地工作空间会话串进 Web 历史。
+        List<ChatConversation> conversations = new ArrayList<>();
+        workspaceRepositoryImpl.findDefaultCloudWorkspaceByUserId(userId)
+            .ifPresent(workspace -> conversations.addAll(chatConversationRepository.findByCreatedByAndWorkspaceId(userId, workspace.getId())));
+        conversations.addAll(chatConversationRepository.findByCreatedByAndWorkspaceId(userId, null));
+        return conversations.stream()
+            .sorted(
+                Comparator.comparing(ChatConversation::getUpdatedAt, Comparator.nullsLast(Comparator.reverseOrder()))
+                    .thenComparing(ChatConversation::getId, Comparator.nullsLast(Comparator.reverseOrder()))
+            )
+            .toList();
     }
 
     /**

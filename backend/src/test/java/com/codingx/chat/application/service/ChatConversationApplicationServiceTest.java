@@ -18,6 +18,7 @@ import com.codingx.workspace.infrastructure.repository.WorkspaceRepositoryImpl;
 import com.codingx.workspace.domain.repository.WorkspaceRepository;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -185,5 +186,33 @@ class ChatConversationApplicationServiceTest {
         assertEquals(1, result.size());
         verify(workspaceRepositoryImpl).requireOwnedWorkspace(3001L, 1002L);
         verify(chatConversationRepository).findByCreatedByAndWorkspaceId(1002L, 3001L);
+    }
+
+    /**
+     * 默认会话列表应合并默认云端空间与历史遗留未归属记录，避免本地工作空间会话混入云端历史。
+     */
+    @Test
+    void listConversationsDefaultsToCloudHistoryAndLegacyUnassignedRecords() {
+        WorkspaceDO cloudWorkspace = new WorkspaceDO();
+        cloudWorkspace.setId(8001L);
+        cloudWorkspace.setRuntimeTarget("cloud");
+        cloudWorkspace.setName("历史记录");
+        when(workspaceRepositoryImpl.findDefaultCloudWorkspaceByUserId(1002L)).thenReturn(Optional.of(cloudWorkspace));
+
+        ChatConversation cloudConversation = ChatConversation.create(1L, "云端会话", 1002L, 8001L, ChatConversationStatus.ACTIVE);
+        cloudConversation.restorePersistenceState(LocalDateTime.of(2026, 5, 18, 9, 0, 0), LocalDateTime.of(2026, 5, 18, 9, 0, 0));
+        ChatConversation legacyConversation = ChatConversation.create(2L, "历史遗留会话", 1002L, ChatConversationStatus.ACTIVE);
+        legacyConversation.restorePersistenceState(LocalDateTime.of(2026, 5, 18, 10, 0, 0), LocalDateTime.of(2026, 5, 18, 10, 0, 0));
+        when(chatConversationRepository.findByCreatedByAndWorkspaceId(1002L, 8001L)).thenReturn(List.of(cloudConversation));
+        when(chatConversationRepository.findByCreatedByAndWorkspaceId(1002L, null)).thenReturn(List.of(legacyConversation));
+
+        List<ChatConversation> result = chatConversationApplicationService.listConversations(1002L, null);
+
+        assertEquals(2, result.size());
+        assertEquals(2L, result.getFirst().getId());
+        assertEquals(1L, result.getLast().getId());
+        verify(workspaceRepositoryImpl).findDefaultCloudWorkspaceByUserId(1002L);
+        verify(chatConversationRepository).findByCreatedByAndWorkspaceId(1002L, 8001L);
+        verify(chatConversationRepository).findByCreatedByAndWorkspaceId(1002L, null);
     }
 }

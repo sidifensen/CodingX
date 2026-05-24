@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doReturn;
@@ -14,6 +15,7 @@ import com.codingx.common.error.ErrorMessageCatalog;
 import com.codingx.common.exception.NotFoundException;
 import com.codingx.workspace.infrastructure.persistence.dataobject.WorkspaceDO;
 import com.codingx.workspace.infrastructure.persistence.mapper.WorkspaceMapper;
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -78,5 +80,23 @@ class WorkspaceRepositoryImplTest {
         assertEquals("历史记录", inserted.getName());
         assertEquals(1001L, inserted.getCreatedBy());
         assertEquals(workspace.getId(), inserted.getId());
+    }
+
+    /**
+     * 默认云端空间读取接口应仅返回已有记录，不应隐式创建新空间。
+     */
+    @Test
+    void findDefaultCloudWorkspaceByUserIdReturnsExistingWorkspaceWithoutCreating() {
+        WorkspaceDO workspace = new WorkspaceDO();
+        workspace.setId(9001L);
+        workspace.setRuntimeTarget(WorkspaceRepositoryImpl.RUNTIME_TARGET_CLOUD);
+        workspace.setName("历史记录");
+        when(workspaceMapper.selectOne(any())).thenReturn(workspace);
+
+        Optional<WorkspaceDO> result = workspaceRepository.findDefaultCloudWorkspaceByUserId(1001L);
+
+        assertTrue(result.isPresent());
+        assertEquals(9001L, result.get().getId());
+        verify(workspaceMapper).selectOne(any());
     }
 }

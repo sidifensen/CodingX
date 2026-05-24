@@ -80,6 +80,9 @@ public class ChatConversationRepositoryImpl implements ChatConversationRepositor
             .orderByDesc(ChatConversationDO::getUpdatedAt);
         if (workspaceId != null) {
             queryWrapper.eq(ChatConversationDO::getWorkspaceId, workspaceId);
+        } else {
+            // 默认查询需要兼容历史遗留的未归属云端会话，避免旧数据在迁移前后出现“消失”。
+            queryWrapper.isNull(ChatConversationDO::getWorkspaceId);
         }
         return chatConversationMapper.selectList(queryWrapper)
             .stream()

@@ -28,6 +28,8 @@ status: active
   - 主消息区过程卡片与 SSE 事件映射契约
 - `docs/superpowers/memory/lessons/stream-replay-stale-closure-overwrites-content.md`
   - 流式收敛回放不能用旧闭包覆盖刚生成完的 assistant 正文
+- `docs/superpowers/memory/lessons/default-cloud-history-must-not-include-local-workspaces.md`
+  - 默认云端历史查询必须与本地工作空间历史分开，兼容旧的未归属会话
 - `docs/superpowers/memory/tool/codex-local-tool-runtime-module-card.md`
   - Codex 风格本地工具执行器的职责、入口与常见陷阱
 - `docs/superpowers/memory/tool/codex-local-tool-runtime-contract.md`

@@ -13,8 +13,13 @@ import static org.mockito.Mockito.when;
 
 import com.codingx.common.error.ErrorMessageCatalog;
 import com.codingx.common.exception.NotFoundException;
+import com.codingx.chat.infrastructure.persistence.mapper.ChatConversationMapper;
+import com.codingx.workspace.domain.model.AdminWorkspacePage;
+import com.codingx.workspace.domain.model.AdminWorkspaceQuery;
 import com.codingx.workspace.infrastructure.persistence.dataobject.WorkspaceDO;
 import com.codingx.workspace.infrastructure.persistence.mapper.WorkspaceMapper;
+import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -31,6 +36,9 @@ class WorkspaceRepositoryImplTest {
 
     @Mock
     private WorkspaceMapper workspaceMapper;
+
+    @Mock
+    private ChatConversationMapper chatConversationMapper;
 
     @InjectMocks
     private WorkspaceRepositoryImpl workspaceRepository;
@@ -98,5 +106,39 @@ class WorkspaceRepositoryImplTest {
         assertTrue(result.isPresent());
         assertEquals(9001L, result.get().getId());
         verify(workspaceMapper).selectOne(any());
+    }
+
+    /**
+     * 管理端分页查询应只返回有效工作空间，并补齐未删除会话数量供前端排查归属。
+     */
+    @Test
+    void pageForAdminReturnsWorkspaceRecordsWithConversationCounts() {
+        WorkspaceDO workspace = new WorkspaceDO();
+        workspace.setId(3001L);
+        workspace.setName("本地项目");
+        workspace.setRepositoryUrl("https://example.com/codingx.git");
+        workspace.setBranchName("main");
+        workspace.setWorkingDirectory("D:/code/CodingX");
+        workspace.setRuntimeTarget(WorkspaceRepositoryImpl.RUNTIME_TARGET_LOCAL);
+        workspace.setCreatedBy(1001L);
+        workspace.setCreatedAt(LocalDateTime.of(2026, 5, 25, 0, 20, 0));
+        workspace.setUpdatedAt(LocalDateTime.of(2026, 5, 25, 0, 21, 0));
+        workspace.setDeleted(0);
+        when(workspaceMapper.selectList(any())).thenReturn(List.of(workspace));
+        when(chatConversationMapper.selectCount(any())).thenReturn(2L);
+
+        AdminWorkspacePage page = workspaceRepository.pageForAdmin(
+            new AdminWorkspaceQuery(1, 10, "codingx", "local")
+        );
+
+        assertEquals(1L, page.total());
+        assertEquals(1L, page.current());
+        assertEquals(1L, page.pages());
+        assertEquals(1, page.records().size());
+        assertEquals(3001L, page.records().get(0).id());
+        assertEquals("本地项目", page.records().get(0).name());
+        assertEquals("local", page.records().get(0).runtimeTarget());
+        assertEquals(2L, page.records().get(0).conversationCount());
+        verify(chatConversationMapper).selectCount(any());
     }
 }

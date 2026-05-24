@@ -11,6 +11,8 @@ owned_paths:
 related_docs:
   - docs/superpowers/memory/chat/message-process-timeline-module-card.md
   - docs/superpowers/memory/chat/message-process-timeline-contract.md
+  - docs/superpowers/memory/admin/workspace-management-module-card.md
+  - docs/superpowers/memory/admin/workspace-management-contract.md
   - docs/superpowers/memory/lessons/stream-replay-stale-closure-overwrites-content.md
   - docs/superpowers/memory/tool/codex-local-tool-runtime-module-card.md
   - docs/superpowers/memory/tool/codex-local-tool-runtime-contract.md
@@ -36,6 +38,10 @@ status: active
   - Codex 风格本地工具执行器的职责、入口与常见陷阱
 - `docs/superpowers/memory/tool/codex-local-tool-runtime-contract.md`
   - 本地工具可见性、执行目录、输出和不可用状态契约
+- `docs/superpowers/memory/admin/workspace-management-module-card.md`
+  - 管理端工作空间只读管理页的职责边界、入口与常见陷阱
+- `docs/superpowers/memory/admin/workspace-management-contract.md`
+  - 管理端工作空间列表 API、分页、筛选与页面字段契约
 
 当前主要缺口：
 

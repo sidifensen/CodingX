@@ -9,6 +9,7 @@ import { TaskDetail } from './pages/TaskDetail';
 import { Skills } from './pages/Skills';
 import { Experts } from './pages/Experts';
 import { ToolsPage } from './pages/ToolsPage';
+import { WorkspacePage } from './pages/WorkspacePage';
 import { MCP } from './pages/MCP';
 import { Settings } from './pages/Settings';
 import { Notifications } from './pages/Notifications';
@@ -85,6 +86,7 @@ export default function App() {
           <Route path="users/:id" element={<UserDetail />} />
           <Route path="tasks" element={<Tasks />} />
           <Route path="tasks/:id" element={<TaskDetail />} />
+          <Route path="workspaces" element={<WorkspacePage />} />
           <Route path="skills" element={<Skills />} />
           <Route path="experts" element={<Experts />} />
           <Route path="tools" element={<ToolsPage />} />

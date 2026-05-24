@@ -7,6 +7,7 @@ const navItems = [
   { path: '/', icon: 'dashboard', label: '工作台' },
   { path: '/users', icon: 'group', label: '用户管理' },
   { path: '/tasks', icon: 'assignment', label: '会话管理' },
+  { path: '/workspaces', icon: 'workspaces', label: '工作空间' },
   { path: '/skills', icon: 'extension', label: '技能管理' },
   { path: '/experts', icon: 'psychology', label: '专家管理' },
   { path: '/tools', icon: 'build_circle', label: '工具管理' },

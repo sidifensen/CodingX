@@ -276,4 +276,52 @@ describe('AdminChatApi unauthorized handling', () => {
     expect(result.executor.searchPoolSize).toBe(4);
     expect(String(fetchMock.mock.calls[0][0])).toContain('/api/admin/chat/runtime');
   });
+
+  /**
+   * 工作空间列表接口应携带分页、关键字和运行目标筛选参数。
+   */
+  it('requests workspace list with keyword and runtime target query', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          success: true,
+          code: 'OK',
+          message: 'success',
+          data: {
+            records: [
+              {
+                id: 3001,
+                name: '本地项目',
+                runtimeTarget: 'local',
+                runtimeTargetLabel: '本地',
+                conversationCount: 2,
+              },
+            ],
+            total: 1,
+            size: 10,
+            current: 2,
+            pages: 3,
+          },
+        }),
+        { status: 200 },
+      ),
+    );
+
+    const result = await AdminChatApi.listWorkspaces({
+      current: 2,
+      size: 10,
+      keyword: 'codingx',
+      runtimeTarget: 'local',
+    });
+
+    expect(result.records[0].name).toBe('本地项目');
+    expect(result.records[0].runtimeTargetLabel).toBe('本地');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const requestUrl = String(fetchMock.mock.calls[0][0]);
+    expect(requestUrl).toContain('/api/admin/workspaces?');
+    expect(requestUrl).toContain('current=2');
+    expect(requestUrl).toContain('size=10');
+    expect(requestUrl).toContain('keyword=codingx');
+    expect(requestUrl).toContain('runtimeTarget=local');
+  });
 });

@@ -107,6 +107,27 @@ export interface AdminChatConversationQuery {
   keyword?: string;
 }
 
+export interface AdminWorkspace {
+  id: number;
+  name: string;
+  repositoryUrl?: string;
+  branchName?: string;
+  workingDirectory?: string;
+  runtimeTarget: string;
+  runtimeTargetLabel: string;
+  createdBy?: number;
+  conversationCount: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface AdminWorkspaceQuery {
+  current?: number;
+  size?: number;
+  keyword?: string;
+  runtimeTarget?: string;
+}
+
 export interface AdminIntentNode {
   id?: string;
   intentCode: string;
@@ -635,6 +656,24 @@ export class AdminChatApi {
    */
   static async getRuntimeDashboard(): Promise<AdminChatRuntimeDashboardView> {
     return this.request<AdminChatRuntimeDashboardView>('/api/admin/chat/runtime');
+  }
+
+  /**
+   * 分页查询管理端工作空间列表，支持关键字与运行目标筛选。
+   * @param query 分页与筛选参数。
+   * @returns 工作空间分页结果。
+   */
+  static async listWorkspaces(query: AdminWorkspaceQuery = {}): Promise<AdminPageResult<AdminWorkspace>> {
+    const searchParams = new URLSearchParams();
+    searchParams.set('current', String(query.current ?? 1));
+    searchParams.set('size', String(query.size ?? 10));
+    if (query.keyword && query.keyword.trim()) {
+      searchParams.set('keyword', query.keyword.trim());
+    }
+    if (query.runtimeTarget && query.runtimeTarget.trim() && query.runtimeTarget !== 'ALL') {
+      searchParams.set('runtimeTarget', query.runtimeTarget.trim());
+    }
+    return this.request<AdminPageResult<AdminWorkspace>>(`/api/admin/workspaces?${searchParams.toString()}`);
   }
 
   static async listMcpTools(): Promise<AdminMcpToolView[]> {

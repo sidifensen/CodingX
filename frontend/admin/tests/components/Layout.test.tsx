@@ -7,21 +7,9 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { Layout } from '@/components/Layout';
 
 describe('Layout', () => {
-  it('keeps the admin viewport constrained and delegates overflow to the main content area', () => {
-    Object.defineProperty(window, 'matchMedia', {
-      writable: true,
-      value: vi.fn().mockImplementation(() => ({
-        matches: false,
-        media: '',
-        onchange: null,
-        addListener: vi.fn(),
-        removeListener: vi.fn(),
-        addEventListener: vi.fn(),
-        removeEventListener: vi.fn(),
-        dispatchEvent: vi.fn(),
-      })),
-    });
+  beforeEachMatchMedia();
 
+  it('keeps the admin viewport constrained and delegates overflow to the main content area', () => {
     render(
       <MemoryRouter initialEntries={['/intent-tree']}>
         <Routes>
@@ -38,4 +26,42 @@ describe('Layout', () => {
     expect(main).toHaveClass('overflow-y-auto');
     expect(main).toHaveClass('overflow-x-hidden');
   });
+
+  /**
+   * 管理端导航应提供工作空间管理入口。
+   */
+  it('renders workspace management navigation item', () => {
+    render(
+      <MemoryRouter initialEntries={['/workspaces']}>
+        <Routes>
+          <Route path="/" element={<Layout onLogout={vi.fn().mockResolvedValue(undefined)} isAuthSubmitting={false} />}>
+            <Route path="workspaces" element={<div>工作空间内容</div>} />
+          </Route>
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByRole('link', { name: /工作空间/ })).toHaveAttribute('href', '/workspaces');
+  });
 });
+
+/**
+ * Layout 初始化会读取系统主题偏好，测试中提供稳定的 matchMedia。
+ */
+function beforeEachMatchMedia() {
+  beforeEach(() => {
+    Object.defineProperty(window, 'matchMedia', {
+      writable: true,
+      value: vi.fn().mockImplementation(() => ({
+        matches: false,
+        media: '',
+        onchange: null,
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      })),
+    });
+  });
+}

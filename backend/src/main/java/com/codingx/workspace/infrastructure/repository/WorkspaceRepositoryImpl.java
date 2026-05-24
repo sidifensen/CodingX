@@ -1,13 +1,20 @@
 package com.codingx.workspace.infrastructure.repository;
 
+import cn.hutool.core.util.StrUtil;
 import cn.hutool.core.util.IdUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.codingx.chat.infrastructure.persistence.dataobject.ChatConversationDO;
+import com.codingx.chat.infrastructure.persistence.mapper.ChatConversationMapper;
 import com.codingx.common.error.ErrorMessageCatalog;
 import com.codingx.common.exception.NotFoundException;
+import com.codingx.workspace.domain.model.AdminWorkspacePage;
+import com.codingx.workspace.domain.model.AdminWorkspaceQuery;
+import com.codingx.workspace.domain.model.AdminWorkspaceRecord;
 import com.codingx.workspace.domain.repository.WorkspaceRepository;
 import com.codingx.workspace.infrastructure.persistence.dataobject.WorkspaceDO;
 import com.codingx.workspace.infrastructure.persistence.mapper.WorkspaceMapper;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Repository;
@@ -35,6 +42,7 @@ public class WorkspaceRepositoryImpl implements WorkspaceRepository {
     public static final String DEFAULT_CLOUD_WORKSPACE_NAME = "历史记录";
 
     private final WorkspaceMapper workspaceMapper;
+    private final ChatConversationMapper chatConversationMapper;
 
     /**
      * 校验工作空间是否存在且未删除。
@@ -49,6 +57,49 @@ public class WorkspaceRepositoryImpl implements WorkspaceRepository {
         if (workspace == null) {
             throw new NotFoundException(ErrorMessageCatalog.WORKSPACE_NOT_FOUND);
         }
+    }
+
+    /**
+     * 管理端分页查询工作空间，并按空间补齐未删除会话数量。
+     * @param query 查询条件。
+     * @return 工作空间分页结果。
+     */
+    @Override
+    public AdminWorkspacePage pageForAdmin(AdminWorkspaceQuery query) {
+        int normalizedCurrent = Math.max(1, query == null ? 1 : query.current());
+        int normalizedSize = Math.max(1, Math.min(query == null ? 10 : query.size(), 100));
+        String normalizedKeyword = StrUtil.trimToEmpty(query == null ? null : query.keyword());
+        String normalizedRuntimeTarget = normalizeRuntimeTarget(query == null ? null : query.runtimeTarget());
+
+        LambdaQueryWrapper<WorkspaceDO> wrapper = new LambdaQueryWrapper<WorkspaceDO>()
+            .eq(WorkspaceDO::getDeleted, 0)
+            .eq(StrUtil.isNotBlank(normalizedRuntimeTarget), WorkspaceDO::getRuntimeTarget, normalizedRuntimeTarget)
+            .and(StrUtil.isNotBlank(normalizedKeyword), condition -> {
+                Long workspaceId = parseWorkspaceId(normalizedKeyword);
+                condition.like(WorkspaceDO::getName, normalizedKeyword)
+                    .or()
+                    .like(WorkspaceDO::getRepositoryUrl, normalizedKeyword)
+                    .or()
+                    .like(WorkspaceDO::getBranchName, normalizedKeyword)
+                    .or()
+                    .like(WorkspaceDO::getWorkingDirectory, normalizedKeyword);
+                if (workspaceId != null) {
+                    condition.or().eq(WorkspaceDO::getId, workspaceId);
+                }
+            })
+            .orderByDesc(WorkspaceDO::getUpdatedAt)
+            .orderByDesc(WorkspaceDO::getId);
+
+        List<WorkspaceDO> allRecords = workspaceMapper.selectList(wrapper);
+        long total = allRecords.size();
+        long pages = total == 0 ? 1 : (total + normalizedSize - 1L) / normalizedSize;
+        int fromIndex = Math.min((normalizedCurrent - 1) * normalizedSize, allRecords.size());
+        int toIndex = Math.min(fromIndex + normalizedSize, allRecords.size());
+        List<AdminWorkspaceRecord> records = allRecords.subList(fromIndex, toIndex).stream()
+            .map(this::toAdminRecord)
+            .toList();
+
+        return new AdminWorkspacePage(records, total, (long) normalizedSize, (long) normalizedCurrent, pages);
     }
 
     /**
@@ -169,5 +220,68 @@ public class WorkspaceRepositoryImpl implements WorkspaceRepository {
      */
     private String resolveDefaultCloudWorkspaceName(String preferredName) {
         return DEFAULT_CLOUD_WORKSPACE_NAME;
+    }
+
+    /**
+     * 转换管理端工作空间记录，并按工作空间统计有效会话数量。
+     * @param workspace 工作空间持久化对象。
+     * @return 管理端列表记录。
+     */
+    private AdminWorkspaceRecord toAdminRecord(WorkspaceDO workspace) {
+        return new AdminWorkspaceRecord(
+            workspace.getId(),
+            workspace.getName(),
+            workspace.getRepositoryUrl(),
+            workspace.getBranchName(),
+            workspace.getWorkingDirectory(),
+            workspace.getRuntimeTarget(),
+            workspace.getCreatedBy(),
+            countActiveConversations(workspace.getId()),
+            workspace.getCreatedAt(),
+            workspace.getUpdatedAt()
+        );
+    }
+
+    /**
+     * 统计工作空间下未删除会话，供管理端快速判断空间活跃度。
+     * @param workspaceId 工作空间标识。
+     * @return 未删除会话数量。
+     */
+    private long countActiveConversations(Long workspaceId) {
+        if (workspaceId == null) {
+            return 0L;
+        }
+        return chatConversationMapper.selectCount(new LambdaQueryWrapper<ChatConversationDO>()
+            .eq(ChatConversationDO::getWorkspaceId, workspaceId)
+            .eq(ChatConversationDO::getDeleted, 0));
+    }
+
+    /**
+     * 归一化运行目标筛选值，ALL 或空值表示不过滤。
+     * @param runtimeTarget 原始运行目标筛选。
+     * @return 可用于数据库过滤的运行目标。
+     */
+    private String normalizeRuntimeTarget(String runtimeTarget) {
+        String normalized = StrUtil.trimToEmpty(runtimeTarget).toLowerCase();
+        if (StrUtil.isBlank(normalized) || "all".equals(normalized)) {
+            return "";
+        }
+        if (RUNTIME_TARGET_CLOUD.equals(normalized) || RUNTIME_TARGET_LOCAL.equals(normalized)) {
+            return normalized;
+        }
+        return "";
+    }
+
+    /**
+     * 尝试按数字关键字匹配工作空间 ID，非数字时忽略 ID 条件。
+     * @param keyword 关键字。
+     * @return 工作空间 ID 或 null。
+     */
+    private Long parseWorkspaceId(String keyword) {
+        try {
+            return Long.valueOf(keyword);
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
     }
 }

@@ -57,6 +57,32 @@ function getDefaultWorkspaceLabel(runtimeTarget: 'cloud' | 'local') {
 }
 
 /**
+ * 判断会话是否明确归属本地工作空间。
+ * 业务约束：Web / 云端历史页只应展示云端会话，显式标记为 LOCAL 的记录必须在前端侧拦截。
+ * @param conversation 会话项。
+ * @returns 是否为本地会话。
+ */
+function isLocalWorkspaceConversation(conversation: ConversationItem) {
+  return String(conversation.workspaceType ?? '').trim().toUpperCase() === 'LOCAL';
+}
+
+/**
+ * 按当前运行环境裁剪会话可见范围，避免不同运行环境的历史记录互相串线。
+ * @param conversations 原始会话列表。
+ * @param runtimeTarget 当前运行环境。
+ * @returns 可见会话列表。
+ */
+function filterWorkspaceConversationsByRuntimeTarget(
+  conversations: ConversationItem[],
+  runtimeTarget: 'cloud' | 'local',
+) {
+  if (runtimeTarget !== 'cloud') {
+    return conversations;
+  }
+  return conversations.filter((conversation) => !isLocalWorkspaceConversation(conversation));
+}
+
+/**
  * 按会话 ID 去重合并列表，保留已有顺序并将新增项追加到末尾。
  * @param primary 主列表。
  * @param secondary 待合并列表。
@@ -1631,19 +1657,35 @@ export function useChatWorkspace(
       : remoteConversations;
     const persistedActiveConversationId = currentSnapshot.activeConversationId ?? null;
     if (activeRuntimeTarget === 'cloud') {
-      setConversations(protectedRemoteConversations);
+      const visibleConversations = filterWorkspaceConversationsByRuntimeTarget(
+        protectedRemoteConversations,
+        activeRuntimeTarget,
+      );
+      const visibleConversationIds = new Set(visibleConversations.map((conversation) => conversation.id));
+      const visibleConversationRecords = Object.fromEntries(
+        Object.entries(currentSnapshot.conversationRecords ?? {}).filter(([conversationId]) =>
+          visibleConversationIds.has(conversationId),
+        ),
+      );
+      const nextActiveConversationId =
+        activeConversationId != null && visibleConversationIds.has(activeConversationId)
+          ? activeConversationId
+          : persistedActiveConversationId != null && visibleConversationIds.has(persistedActiveConversationId)
+            ? persistedActiveConversationId
+            : shouldKeepLandingState
+              ? null
+              : (visibleConversations[0]?.id ?? null);
+      setConversations(visibleConversations);
       upsertWorkspaceSnapshot(activeRuntimeTarget, fallbackWorkspacePath, {
-        conversations: protectedRemoteConversations,
-        activeConversationId:
-          activeConversationId ??
-          persistedActiveConversationId ??
-          (shouldKeepLandingState ? null : (protectedRemoteConversations[0]?.id ?? null)),
+        conversations: visibleConversations,
+        activeConversationId: nextActiveConversationId,
         workspaceLabel: fallbackWorkspacePath
           ? getWorkspaceLabel(fallbackWorkspacePath)
           : getDefaultWorkspaceLabel(activeRuntimeTarget),
+        conversationRecords: visibleConversationRecords,
       });
       refreshWorkspaceGroups('all');
-      return protectedRemoteConversations;
+      return visibleConversations;
     }
     const nextWorkspaceConversations = resolveWorkspaceConversations(
       activeRuntimeTarget,

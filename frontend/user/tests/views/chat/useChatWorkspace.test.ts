@@ -1019,6 +1019,82 @@ describe('useChatWorkspace', () => {
   });
 
   /**
+   * 云端历史列表只应展示云端会话，桌面端本地工作空间创建的会话不应混入其中。
+   */
+  it('应在云端会话列表中排除本地工作空间会话', async () => {
+    window.localStorage.setItem(
+      'codingx.auth.session',
+      JSON.stringify({
+        token: 'token-123',
+        userId: '1002',
+        username: 'user',
+        displayName: 'CodingX User',
+        userType: 'USER',
+      }),
+    );
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === '/api/chat/conversations') {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            code: 'OK',
+            message: 'success',
+            data: [
+              {
+                id: '5001',
+                title: '云端会话',
+                status: 'ACTIVE',
+                lastRunId: '9001',
+                workspaceType: 'CLOUD',
+              },
+              {
+                id: '6001',
+                title: '本地会话',
+                status: 'ACTIVE',
+                lastRunId: '9002',
+                workspaceType: 'LOCAL',
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      if (
+        url === '/api/chat/sample-questions' ||
+        url === '/api/chat/experts' ||
+        url === '/api/chat/skills' ||
+        url === '/api/chat/mcps'
+      ) {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      throw new Error(`Unhandled fetch in cloud workspace visibility test: ${url}`);
+    });
+
+    const { result } = renderHook(() => useChatWorkspace(true));
+
+    await waitFor(() => {
+      expect(result.current.isBootstrapping).toBe(false);
+    });
+
+    expect(result.current.conversations.map((item) => item.id)).toEqual(['5001']);
+    expect(
+      result.current.workspaceGroups
+        .find((group) => group.partitionKey === 'cloud::__no_workspace__')
+        ?.conversations.map((item) => item.id),
+    ).toEqual(['5001']);
+    expect(
+      result.current.workspaceGroups.some((group) =>
+        group.conversations.some((conversation) => conversation.id === '6001'),
+      ),
+    ).toBe(false);
+  });
+
+  /**
    * 刷新时若快照仅有 activeConversationId 且会话列表为空，也应按会话 ID 回放，不应回退到首页空态。
    */
   it('应在快照会话列表为空但存在activeConversationId时仍恢复会话', async () => {

@@ -11,9 +11,10 @@ owned_paths:
 related_docs:
   - docs/superpowers/memory/chat/message-process-timeline-module-card.md
   - docs/superpowers/memory/chat/message-process-timeline-contract.md
+  - docs/superpowers/memory/lessons/stream-replay-stale-closure-overwrites-content.md
   - docs/superpowers/memory/tool/codex-local-tool-runtime-module-card.md
   - docs/superpowers/memory/tool/codex-local-tool-runtime-contract.md
-last_verified_commit: 3b6ac022
+last_verified_commit: 6576a5b0d243648431c1165c9c38bbfefa0fe8c2
 status: active
 ---
 
@@ -25,6 +26,8 @@ status: active
   - 聊天主消息区过程时间线的职责边界与扩展点
 - `docs/superpowers/memory/chat/message-process-timeline-contract.md`
   - 主消息区过程卡片与 SSE 事件映射契约
+- `docs/superpowers/memory/lessons/stream-replay-stale-closure-overwrites-content.md`
+  - 流式收敛回放不能用旧闭包覆盖刚生成完的 assistant 正文
 - `docs/superpowers/memory/tool/codex-local-tool-runtime-module-card.md`
   - Codex 风格本地工具执行器的职责、入口与常见陷阱
 - `docs/superpowers/memory/tool/codex-local-tool-runtime-contract.md`

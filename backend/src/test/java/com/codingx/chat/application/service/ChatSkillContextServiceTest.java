@@ -54,6 +54,30 @@ class ChatSkillContextServiceTest {
     }
 
     /**
+     * 新增的 web-access 内置技能应同样能从类路径读取 SKILL.md，避免数据库记录存在但上下文无法注入。
+     */
+    @Test
+    void buildSkillContextReadsWebAccessManifestFromClasspath() {
+        when(chatSkillRepository.findBySkillCode("web-access")).thenReturn(
+            ChatSkill.builder()
+                .id(8105L)
+                .skillCode("web-access")
+                .displayName("联网访问")
+                .sourceType("built-in")
+                .enabled(1)
+                .packageStorageFormat("zip")
+                .storageKey(null)
+                .build()
+        );
+
+        String context = chatSkillContextService.buildSkillContext(List.of("web-access"));
+
+        assertTrue(context.contains("## /web-access（联网访问）"));
+        assertTrue(context.contains("所有联网操作必须通过此 skill 处理"));
+        assertTrue(context.contains("https://github.com/eze-is/web-access"));
+    }
+
+    /**
      * 非内置技能且无 storageKey 时应跳过，避免脏数据误注入系统提示。
      */
     @Test

@@ -156,6 +156,34 @@ class ChatConversationRepositoryImplTest {
     }
 
     /**
+     * 管理端工作空间详情查询应返回绑定空间的有效会话，并保留运行时展示字段。
+     */
+    @Test
+    void findAllByWorkspaceIdReturnsWorkspaceConversations() {
+        ChatConversationDO dataObject = new ChatConversationDO();
+        dataObject.setId(2001L);
+        dataObject.setTitle("本地项目会话");
+        dataObject.setCreatedBy(1002L);
+        dataObject.setWorkspaceId(3001L);
+        dataObject.setStatus(ChatConversationStatus.ACTIVE.name());
+        dataObject.setLastMessageAt(LocalDateTime.of(2026, 5, 25, 10, 2, 0));
+        dataObject.setLastRunId(5001L);
+        dataObject.setPinned(0);
+        dataObject.setCreatedAt(LocalDateTime.of(2026, 5, 25, 10, 0, 0));
+        dataObject.setUpdatedAt(LocalDateTime.of(2026, 5, 25, 10, 5, 0));
+        dataObject.setDeleted(0);
+        when(chatConversationMapper.selectList(any())).thenReturn(List.of(dataObject));
+
+        List<ChatConversation> records = chatConversationRepository.findAllByWorkspaceId(3001L, "项目");
+
+        assertEquals(1, records.size());
+        assertEquals(2001L, records.getFirst().getId());
+        assertEquals(3001L, records.getFirst().getWorkspaceId());
+        assertEquals(5001L, records.getFirst().getLastRunId());
+        verify(chatConversationMapper).selectList(any());
+    }
+
+    /**
      * 通过反射设置私有字段，保证红测能覆盖新增映射字段。
      * @param target 目标对象。
      * @param fieldName 字段名称。

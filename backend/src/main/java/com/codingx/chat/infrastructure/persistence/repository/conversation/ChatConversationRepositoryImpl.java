@@ -120,6 +120,38 @@ public class ChatConversationRepositoryImpl implements ChatConversationRepositor
     }
 
     /**
+     * 管理端按工作空间查询会话列表，支持标题模糊匹配或 ID 精确匹配。
+     * @param workspaceId 工作空间标识。
+     * @param keyword 可选关键字。
+     * @return 工作空间内会话列表。
+     */
+    @Override
+    public List<ChatConversation> findAllByWorkspaceId(Long workspaceId, String keyword) {
+        if (workspaceId == null) {
+            return List.of();
+        }
+        String normalizedKeyword = keyword == null ? "" : keyword.trim();
+        LambdaQueryWrapper<ChatConversationDO> wrapper = new LambdaQueryWrapper<ChatConversationDO>()
+            .eq(ChatConversationDO::getWorkspaceId, workspaceId)
+            .eq(ChatConversationDO::getDeleted, 0)
+            .orderByDesc(ChatConversationDO::getPinned)
+            .orderByDesc(ChatConversationDO::getUpdatedAt)
+            .orderByDesc(ChatConversationDO::getId);
+        if (!normalizedKeyword.isBlank()) {
+            Long conversationId = parseConversationId(normalizedKeyword);
+            if (conversationId != null) {
+                wrapper.and(query -> query
+                    .like(ChatConversationDO::getTitle, normalizedKeyword)
+                    .or()
+                    .eq(ChatConversationDO::getId, conversationId));
+            } else {
+                wrapper.like(ChatConversationDO::getTitle, normalizedKeyword);
+            }
+        }
+        return chatConversationMapper.selectList(wrapper).stream().map(this::toDomain).toList();
+    }
+
+    /**
      * 按会话主键查询记录，供反馈详情页展示会话标题与上下文信息。
      * @param conversationId 会话标识。
      * @return 会话记录。

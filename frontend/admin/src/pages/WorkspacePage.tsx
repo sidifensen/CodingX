@@ -1,4 +1,5 @@
 import React from 'react';
+import { Link } from 'react-router-dom';
 
 import {
   AdminChatApi,
@@ -162,10 +163,17 @@ export function WorkspacePage() {
               ) : records.map((item) => (
                 <tr key={item.id} className="transition-colors hover:bg-surface-container-low">
                   <td className="px-lg py-md">
-                    <div className="space-y-1">
-                      <p className="font-medium text-ink">{item.name || '-'}</p>
-                      <p className="font-data-mono text-[12px] text-secondary">#{item.id}</p>
-                    </div>
+                    <Link
+                      to={`/workspaces/${item.id}`}
+                      className="group inline-flex flex-col gap-1 rounded-lg px-2 py-1 -mx-2 -my-1 transition-colors hover:bg-surface-container-low"
+                    >
+                      <span className="font-medium text-ink transition-colors group-hover:text-primary">
+                        {item.name || '-'}
+                      </span>
+                      <span className="font-data-mono text-[12px] text-secondary transition-colors group-hover:text-primary">
+                        #{item.id}
+                      </span>
+                    </Link>
                   </td>
                   <td className="px-lg py-md">
                     <RuntimeTargetBadge item={item} />

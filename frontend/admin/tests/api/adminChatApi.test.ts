@@ -324,4 +324,49 @@ describe('AdminChatApi unauthorized handling', () => {
     expect(requestUrl).toContain('keyword=codingx');
     expect(requestUrl).toContain('runtimeTarget=local');
   });
+
+  /**
+   * 工作空间详情页应通过空间子资源接口分页查询会话。
+   */
+  it('requests workspace conversations with pagination and keyword query', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          success: true,
+          code: 'OK',
+          message: 'success',
+          data: {
+            records: [
+              {
+                id: 2001,
+                title: '本地项目会话',
+                createdBy: 1002,
+                status: 'ACTIVE',
+                statusLabel: '活跃',
+              },
+            ],
+            total: 1,
+            size: 10,
+            current: 1,
+            pages: 1,
+          },
+        }),
+        { status: 200 },
+      ),
+    );
+
+    const result = await AdminChatApi.listWorkspaceConversations(3001, {
+      current: 1,
+      size: 10,
+      keyword: '项目',
+    });
+
+    expect(result.records[0].title).toBe('本地项目会话');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const requestUrl = String(fetchMock.mock.calls[0][0]);
+    expect(requestUrl).toContain('/api/admin/workspaces/3001/conversations?');
+    expect(requestUrl).toContain('current=1');
+    expect(requestUrl).toContain('size=10');
+    expect(requestUrl).toContain('keyword=%E9%A1%B9%E7%9B%AE');
+  });
 });

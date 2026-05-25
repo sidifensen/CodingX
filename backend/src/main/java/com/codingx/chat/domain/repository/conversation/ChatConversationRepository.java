@@ -42,6 +42,14 @@ public interface ChatConversationRepository {
     List<ChatConversation> findAll(String keyword);
 
     /**
+     * 管理端按工作空间查询会话，供工作空间详情页查看空间内历史。
+     * @param workspaceId 工作空间标识。
+     * @param keyword 可选关键字，支持标题模糊匹配或 ID 精确匹配。
+     * @return 工作空间内未删除会话列表。
+     */
+    List<ChatConversation> findAllByWorkspaceId(Long workspaceId, String keyword);
+
+    /**
      * 按会话主键查询单条记录，不存在时返回空。
      * @param conversationId 会话标识。
      * @return 会话记录。

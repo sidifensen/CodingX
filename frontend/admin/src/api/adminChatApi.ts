@@ -676,6 +676,27 @@ export class AdminChatApi {
     return this.request<AdminPageResult<AdminWorkspace>>(`/api/admin/workspaces?${searchParams.toString()}`);
   }
 
+  /**
+   * 分页查询指定工作空间下的会话，供工作空间详情页展示空间内部历史。
+   * @param workspaceId 工作空间主键。
+   * @param query 分页与筛选参数。
+   * @returns 工作空间内会话分页结果。
+   */
+  static async listWorkspaceConversations(
+    workspaceId: string | number,
+    query: AdminChatConversationQuery = {},
+  ): Promise<AdminPageResult<AdminChatConversationListItem>> {
+    const searchParams = new URLSearchParams();
+    searchParams.set('current', String(query.current ?? 1));
+    searchParams.set('size', String(query.size ?? 10));
+    if (query.keyword && query.keyword.trim()) {
+      searchParams.set('keyword', query.keyword.trim());
+    }
+    return this.request<AdminPageResult<AdminChatConversationListItem>>(
+      `/api/admin/workspaces/${encodeURIComponent(String(workspaceId))}/conversations?${searchParams.toString()}`,
+    );
+  }
+
   static async listMcpTools(): Promise<AdminMcpToolView[]> {
     return this.request<AdminMcpToolView[]>('/api/admin/mcps/tools');
   }

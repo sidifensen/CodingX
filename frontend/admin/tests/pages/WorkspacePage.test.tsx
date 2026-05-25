@@ -1,6 +1,7 @@
 import '@testing-library/jest-dom/vitest';
 
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AdminChatApi } from '@/api/adminChatApi';
@@ -46,7 +47,7 @@ describe('WorkspacePage', () => {
    * 页面应展示工作空间核心字段、统计卡片和分页摘要。
    */
   it('renders workspace rows and summary', async () => {
-    render(<WorkspacePage />);
+    renderWorkspacePage();
 
     expect(await screen.findByRole('heading', { name: '工作空间管理' })).toBeInTheDocument();
     expect(screen.getByText('本地项目')).toBeInTheDocument();
@@ -57,10 +58,21 @@ describe('WorkspacePage', () => {
   });
 
   /**
+   * 工作空间名称应成为详情页入口，支持管理员点进空间查看内部会话。
+   */
+  it('renders workspace name as detail link', async () => {
+    renderWorkspacePage();
+
+    const link = await screen.findByRole('link', { name: /本地项目/ });
+
+    expect(link).toHaveAttribute('href', '/workspaces/3001');
+  });
+
+  /**
    * 运行目标筛选应重置到首页并传递 local 参数。
    */
   it('submits runtime target filter', async () => {
-    render(<WorkspacePage />);
+    renderWorkspacePage();
     await screen.findByRole('heading', { name: '工作空间管理' });
 
     fireEvent.change(screen.getByLabelText('运行目标'), {
@@ -86,7 +98,7 @@ describe('WorkspacePage', () => {
       }),
     );
 
-    render(<WorkspacePage />);
+    renderWorkspacePage();
 
     expect(await screen.findByRole('heading', { name: '工作空间管理' })).toBeInTheDocument();
     expect(screen.getAllByTestId('workspace-loading-skeleton-row')).toHaveLength(10);
@@ -107,8 +119,19 @@ describe('WorkspacePage', () => {
   it('shows api error message', async () => {
     vi.mocked(AdminChatApi.listWorkspaces).mockRejectedValueOnce(new Error('后端返回错误'));
 
-    render(<WorkspacePage />);
+    renderWorkspacePage();
 
     expect(await screen.findByText('后端返回错误')).toBeInTheDocument();
   });
 });
+
+/**
+ * 为即将加入的 Link 提供路由上下文，避免页面测试依赖 BrowserRouter。
+ */
+function renderWorkspacePage() {
+  return render(
+    <MemoryRouter>
+      <WorkspacePage />
+    </MemoryRouter>,
+  );
+}

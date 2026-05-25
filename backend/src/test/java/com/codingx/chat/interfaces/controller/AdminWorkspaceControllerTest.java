@@ -7,6 +7,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.codingx.admin.application.service.AdminWorkspaceService;
 import com.codingx.admin.interfaces.controller.AdminWorkspaceController;
+import com.codingx.chat.domain.model.ChatConversationStatus;
+import com.codingx.chat.interfaces.response.AdminChatConversationListItemResponse;
 import com.codingx.chat.interfaces.response.PageResult;
 import com.codingx.config.GlobalExceptionHandler;
 import com.codingx.workspace.interfaces.response.AdminWorkspaceListItemResponse;
@@ -71,6 +73,43 @@ class AdminWorkspaceControllerTest {
             .andExpect(jsonPath("$.data.records[0].name").value("本地项目"))
             .andExpect(jsonPath("$.data.records[0].runtimeTargetLabel").value("本地"))
             .andExpect(jsonPath("$.data.records[0].conversationCount").value(2));
+    }
+
+    /**
+     * 工作空间会话子资源应透传分页和关键字参数，并返回会话分页结构。
+     */
+    @Test
+    void listWorkspaceConversationsReturnsPagedPayload() throws Exception {
+        LocalDateTime now = LocalDateTime.of(2026, 5, 25, 10, 10, 0);
+        when(adminWorkspaceService.pageWorkspaceConversations(3001L, 1, 10, "项目")).thenReturn(
+            PageResult.<AdminChatConversationListItemResponse>builder()
+                .records(List.of(AdminChatConversationListItemResponse.builder()
+                    .id(2001L)
+                    .title("本地项目会话")
+                    .createdBy(1002L)
+                    .status(ChatConversationStatus.ACTIVE)
+                    .statusLabel("活跃")
+                    .lastMessageAt(now)
+                    .lastRunId(5001L)
+                    .createdAt(now)
+                    .updatedAt(now)
+                    .build()))
+                .total(1L)
+                .size(10L)
+                .current(1L)
+                .pages(1L)
+                .build()
+        );
+
+        mockMvc().perform(get("/api/admin/workspaces/3001/conversations")
+                .param("current", "1")
+                .param("size", "10")
+                .param("keyword", "项目"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.success").value(true))
+            .andExpect(jsonPath("$.data.records[0].id").value(2001))
+            .andExpect(jsonPath("$.data.records[0].title").value("本地项目会话"))
+            .andExpect(jsonPath("$.data.records[0].statusLabel").value("活跃"));
     }
 
     /**

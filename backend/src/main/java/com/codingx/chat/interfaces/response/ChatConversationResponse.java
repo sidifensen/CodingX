@@ -15,7 +15,12 @@ public record ChatConversationResponse(
     String shareToken, // 分享令牌。
     Long workspaceId, // 所属工作空间标识。
     String workspaceName, // 所属工作空间名称。
-    WorkspaceType workspaceType // 所属工作空间类型。
+    WorkspaceType workspaceType, // 所属工作空间类型。
+    Long activeTaskId, // 当前运行中的后台任务标识。
+    String activeTaskStatus, // 当前运行中的后台任务状态。
+    Long lastTaskId, // 最近后台任务标识。
+    String lastTaskStatus, // 最近后台任务状态。
+    LocalDateTime lastTaskFinishedAt // 最近后台任务完成时间。
 ) {
 
     /**

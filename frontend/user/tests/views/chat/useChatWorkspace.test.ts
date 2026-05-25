@@ -83,6 +83,264 @@ describe('useChatWorkspace', () => {
   });
 
   /**
+   * 会话列表应根据后台任务完成时间与本地已读时间恢复完成提醒圆点。
+   */
+  it('应根据任务完成时间恢复会话完成提醒', async () => {
+    window.localStorage.setItem(
+      'codingx.auth.session',
+      JSON.stringify({
+        token: 'token-123',
+        userId: '1002',
+        username: 'user',
+        displayName: 'CodingX User',
+        userType: 'USER',
+      }),
+    );
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === '/api/chat/conversations') {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            code: 'OK',
+            message: 'success',
+            data: [
+              {
+                id: 'task-conversation-1',
+                title: '后台完成会话',
+                status: 'ACTIVE',
+                lastTaskId: 'task-1',
+                lastTaskStatus: 'SUCCEEDED',
+                lastTaskFinishedAt: '2026-05-25 10:00:00',
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      if (
+        url === '/api/chat/sample-questions' ||
+        url === '/api/chat/experts' ||
+        url === '/api/chat/skills' ||
+        url === '/api/chat/mcps' ||
+        url === '/api/chat/conversations/active-task-conversation/messages' ||
+        url === '/api/chat/conversations/active-task-conversation/steps' ||
+        url === '/api/chat/conversations/active-task-conversation/references' ||
+        url === '/api/chat/conversations/active-task-conversation/artifacts' ||
+        url === '/api/chat/conversations/active-task-conversation/current-experts' ||
+        url === '/api/chat/conversations/active-task-conversation/current-skills' ||
+        url === '/api/chat/conversations/active-task-conversation/current-mcps'
+      ) {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      throw new Error(`Unhandled fetch in task reminder hydration test: ${url}`);
+    });
+
+    const { result } = renderHook(() => useChatWorkspace(true));
+
+    await waitFor(() => {
+      expect(result.current.isBootstrapping).toBe(false);
+    });
+
+    expect(result.current.conversations[0]).toEqual(
+      expect.objectContaining({
+        id: 'task-conversation-1',
+        hasUnreadTaskCompletion: true,
+      }),
+    );
+  });
+
+  /**
+   * 打开带完成提醒的会话后，应立刻清除圆点并持久化已读完成时间。
+   */
+  it('应在打开会话后清除任务完成提醒', async () => {
+    window.localStorage.setItem(
+      'codingx.auth.session',
+      JSON.stringify({
+        token: 'token-123',
+        userId: '1002',
+        username: 'user',
+        displayName: 'CodingX User',
+        userType: 'USER',
+      }),
+    );
+    const finishedAt = '2026-05-25 10:00:00';
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === '/api/chat/conversations') {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            code: 'OK',
+            message: 'success',
+            data: [
+              {
+                id: 'task-conversation-2',
+                title: '待查看会话',
+                status: 'ACTIVE',
+                lastTaskId: 'task-2',
+                lastTaskStatus: 'SUCCEEDED',
+                lastTaskFinishedAt: finishedAt,
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      if (
+        url === '/api/chat/sample-questions' ||
+        url === '/api/chat/experts' ||
+        url === '/api/chat/skills' ||
+        url === '/api/chat/mcps' ||
+        url === '/api/chat/conversations/task-conversation-2/messages' ||
+        url === '/api/chat/conversations/task-conversation-2/steps' ||
+        url === '/api/chat/conversations/task-conversation-2/references' ||
+        url === '/api/chat/conversations/task-conversation-2/artifacts' ||
+        url === '/api/chat/conversations/task-conversation-2/current-experts' ||
+        url === '/api/chat/conversations/task-conversation-2/current-skills' ||
+        url === '/api/chat/conversations/task-conversation-2/current-mcps'
+      ) {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      throw new Error(`Unhandled fetch in task reminder clear test: ${url}`);
+    });
+
+    const { result } = renderHook(() => useChatWorkspace(true));
+
+    await waitFor(() => {
+      expect(result.current.isBootstrapping).toBe(false);
+    });
+    expect(result.current.conversations[0]?.hasUnreadTaskCompletion).toBe(true);
+
+    await act(async () => {
+      await result.current.selectConversation('task-conversation-2', result.current.conversations);
+    });
+
+    expect(result.current.conversations[0]?.hasUnreadTaskCompletion).toBe(false);
+    const snapshotStore = JSON.parse(
+      window.localStorage.getItem('codingx.chat.workspace.conversations.v1') ?? '{}',
+    );
+    expect(
+      snapshotStore.snapshots['cloud::__no_workspace__'].seenTaskFinishedAtByConversationId[
+        'task-conversation-2'
+      ],
+    ).toBe(finishedAt);
+  });
+
+  /**
+   * 当前打开的会话任务完成时，应自动记录已读完成时间，避免切走后再次误提示。
+   */
+  it('当前会话任务完成时应自动标记完成提醒已读', async () => {
+    window.localStorage.setItem(
+      'codingx.auth.session',
+      JSON.stringify({
+        token: 'token-123',
+        userId: '1002',
+        username: 'user',
+        displayName: 'CodingX User',
+        userType: 'USER',
+      }),
+    );
+    const finishedAt = '2026-05-25 10:00:00';
+    window.localStorage.setItem(
+      'codingx.chat.workspace.conversations.v1',
+      JSON.stringify({
+        version: 1,
+        snapshots: {
+          'cloud::__no_workspace__': {
+            runtimeTarget: 'cloud',
+            workspacePath: null,
+            workspaceLabel: '云端历史',
+            lastOpenedAt: Date.now(),
+            activeConversationId: 'active-task-conversation',
+            conversations: [
+              {
+                id: 'active-task-conversation',
+                title: '当前会话',
+                status: 'ACTIVE',
+              },
+            ],
+            conversationRecords: {},
+            seenTaskFinishedAtByConversationId: {},
+          },
+        },
+      }),
+    );
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === '/api/chat/conversations') {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            code: 'OK',
+            message: 'success',
+            data: [
+              {
+                id: 'active-task-conversation',
+                title: '当前会话',
+                status: 'ACTIVE',
+                lastTaskId: 'task-3',
+                lastTaskStatus: 'SUCCEEDED',
+                lastTaskFinishedAt: finishedAt,
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      if (
+        url === '/api/chat/sample-questions' ||
+        url === '/api/chat/experts' ||
+        url === '/api/chat/skills' ||
+        url === '/api/chat/mcps' ||
+        url === '/api/chat/conversations/active-task-conversation/messages' ||
+        url === '/api/chat/conversations/active-task-conversation/steps' ||
+        url === '/api/chat/conversations/active-task-conversation/references' ||
+        url === '/api/chat/conversations/active-task-conversation/artifacts' ||
+        url === '/api/chat/conversations/active-task-conversation/current-experts' ||
+        url === '/api/chat/conversations/active-task-conversation/current-skills' ||
+        url === '/api/chat/conversations/active-task-conversation/current-mcps'
+      ) {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      throw new Error(`Unhandled fetch in active task reminder test: ${url}`);
+    });
+
+    const { result } = renderHook(() => useChatWorkspace(true));
+
+    await waitFor(() => {
+      expect(result.current.isBootstrapping).toBe(false);
+    });
+
+    expect(result.current.conversations[0]).toEqual(
+      expect.objectContaining({
+        id: 'active-task-conversation',
+        hasUnreadTaskCompletion: false,
+      }),
+    );
+    const snapshotStore = JSON.parse(
+      window.localStorage.getItem('codingx.chat.workspace.conversations.v1') ?? '{}',
+    );
+    expect(
+      snapshotStore.snapshots['cloud::__no_workspace__'].seenTaskFinishedAtByConversationId[
+        'active-task-conversation'
+      ],
+    ).toBe(finishedAt);
+  });
+
+  /**
    * MCP 列表包含不可用项时，应默认只选中可用项，并阻止手动写入不可用编码。
    */
   it('应在工作区状态中过滤不可用MCP', async () => {

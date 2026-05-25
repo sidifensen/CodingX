@@ -47,6 +47,11 @@ export class ChatApi {
       status: String(item.status ?? ''),
       lastMessageAt: item.lastMessageAt,
       lastRunId: item.lastRunId == null ? undefined : String(item.lastRunId),
+      activeTaskId: item.activeTaskId == null ? undefined : String(item.activeTaskId),
+      activeTaskStatus: item.activeTaskStatus == null ? undefined : String(item.activeTaskStatus),
+      lastTaskId: item.lastTaskId == null ? undefined : String(item.lastTaskId),
+      lastTaskStatus: item.lastTaskStatus == null ? undefined : String(item.lastTaskStatus),
+      lastTaskFinishedAt: item.lastTaskFinishedAt,
       workspaceId: item.workspaceId == null ? null : String(item.workspaceId),
       workspaceType: item.workspaceType,
     }));

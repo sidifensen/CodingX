@@ -26,6 +26,7 @@ import com.codingx.skill.domain.repository.ChatSkillRepository;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.MockedStatic;
@@ -104,19 +105,18 @@ class ChatStreamControllerTest {
 
             assertEquals(emitter, actual);
             verify(chatSseRegistry).register(1L);
-            verify(chatSseRegistry).publish(
-                eq(1L),
-                eq("meta"),
-                argThat(payload -> payload instanceof java.util.Map<?, ?> map
-                    && map.get("conversationId").equals(1L)
-                    && map.get("deepThinking").equals(true)
-                    && map.get("mcpCodes").equals(List.of("weather_query"))
-                    && map.get("skillCodes").equals(List.of())
-                    && map.get("expertCode") == null
-                    && map.get("attachmentIds").equals(List.of())
-                    && map.containsKey("taskId"))
-            );
+            ArgumentCaptor<Object> metaPayloadCaptor = ArgumentCaptor.forClass(Object.class);
+            verify(chatSseRegistry).publish(eq(1L), eq("meta"), metaPayloadCaptor.capture());
+            java.util.Map<?, ?> metaPayload = (java.util.Map<?, ?>) metaPayloadCaptor.getValue();
+            assertEquals(1L, metaPayload.get("conversationId"));
+            assertEquals(true, metaPayload.get("deepThinking"));
+            assertEquals(List.of("weather_query"), metaPayload.get("mcpCodes"));
+            assertEquals(List.of(), metaPayload.get("skillCodes"));
+            assertEquals(null, metaPayload.get("expertCode"));
+            assertEquals(List.of(), metaPayload.get("attachmentIds"));
+            ArgumentCaptor<Long> taskIdCaptor = ArgumentCaptor.forClass(Long.class);
             verify(chatStreamExecutionService).dispatch(
+                taskIdCaptor.capture(),
                 argThat(command -> command.conversationId().equals(1L)
                     && command.content().equals("你好")
                     && command.deepThinking()
@@ -126,6 +126,8 @@ class ChatStreamControllerTest {
                     && command.attachmentIds().isEmpty()),
                 eq(1001L)
             );
+            // 后台任务 ID 必须与 SSE meta 中的 taskId 一致，前端才能用同一标识追踪运行态。
+            assertEquals(metaPayload.get("taskId"), taskIdCaptor.getValue());
         }
     }
 
@@ -163,6 +165,7 @@ class ChatStreamControllerTest {
                     && map.containsKey("taskId"))
             );
             verify(chatStreamExecutionService).dispatch(
+                argThat(taskId -> taskId != null && taskId > 0),
                 argThat(command -> command.conversationId().equals(2001L)
                     && command.content().equals("新的问题")
                     && !command.deepThinking()
@@ -207,6 +210,7 @@ class ChatStreamControllerTest {
             verify(chatConversationApplicationService).createConversation(new CreateConversationCommand(null, 6001L), 1001L);
             verify(chatSseRegistry).register(9001L);
             verify(chatStreamExecutionService).dispatch(
+                argThat(taskId -> taskId != null && taskId > 0),
                 argThat(command -> command.conversationId().equals(9001L) && command.content().equals("分析本地仓库")),
                 eq(1001L)
             );
@@ -244,6 +248,7 @@ class ChatStreamControllerTest {
                     && map.get("expertCode") == null)
             );
             verify(chatStreamExecutionService).dispatch(
+                argThat(taskId -> taskId != null && taskId > 0),
                 argThat(command -> command.conversationId().equals(3001L)
                     && command.content().equals("查询天气")
                     && !command.deepThinking()
@@ -307,6 +312,7 @@ class ChatStreamControllerTest {
                     && map.get("expertCode") == null)
             );
             verify(chatStreamExecutionService).dispatch(
+                argThat(taskId -> taskId != null && taskId > 0),
                 argThat(command -> command.conversationId().equals(3501L)
                     && command.content().equals("请分析最近天气趋势")
                     && command.skillCodes().equals(List.of("agent-browser", "weather_query"))
@@ -386,6 +392,7 @@ class ChatStreamControllerTest {
                     && map.get("expertCode") == null)
             );
             verify(chatStreamExecutionService).dispatch(
+                argThat(taskId -> taskId != null && taskId > 0),
                 argThat(command -> command.conversationId().equals(5001L)
                     && command.content().equals("请分析最近订单趋势")
                     && command.skillCodes().equals(List.of("agent-browser"))
@@ -421,6 +428,7 @@ class ChatStreamControllerTest {
 
             assertEquals(emitter, actual);
             verify(chatStreamExecutionService).dispatch(
+                argThat(taskId -> taskId != null && taskId > 0),
                 argThat(command -> command.conversationId().equals(6001L)
                     && command.content().equals("请分析代码")
                     && command.repositoryPath().equals("D:/code/codingx")
@@ -465,6 +473,7 @@ class ChatStreamControllerTest {
                     && map.get("attachmentIds").equals(List.of(9001L, 9002L)))
             );
             verify(chatStreamExecutionService).dispatch(
+                argThat(taskId -> taskId != null && taskId > 0),
                 argThat(command -> command.conversationId().equals(7001L)
                     && command.content().equals("请结合图片分析")
                     && command.expertCode() == null
@@ -516,6 +525,7 @@ class ChatStreamControllerTest {
                     && "solution-architect".equals(map.get("expertCode")))
             );
             verify(chatStreamExecutionService).dispatch(
+                argThat(taskId -> taskId != null && taskId > 0),
                 argThat(command -> command.conversationId().equals(8001L)
                     && "solution-architect".equals(command.expertCode())),
                 eq(1001L)

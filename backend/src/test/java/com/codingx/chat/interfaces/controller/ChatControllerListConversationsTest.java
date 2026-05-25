@@ -11,9 +11,14 @@ import com.codingx.chat.application.service.ChatAttachmentService;
 import com.codingx.chat.application.service.ChatConversationApplicationService;
 import com.codingx.chat.application.service.ChatReactionService;
 import com.codingx.chat.application.service.ChatRuntimeGuardService;
+import com.codingx.chat.domain.model.ChatExecutionRun;
+import com.codingx.chat.domain.repository.ChatExecutionRunRepository;
 import com.codingx.mcp.application.service.ChatMcpQueryService;
 import com.codingx.chat.domain.model.ChatConversation;
 import com.codingx.chat.domain.model.ChatConversationStatus;
+import com.codingx.task.domain.model.RuntimeType;
+import com.codingx.task.domain.model.Task;
+import com.codingx.task.domain.repository.TaskRepository;
 import com.codingx.workspace.infrastructure.persistence.dataobject.WorkspaceDO;
 import com.codingx.workspace.infrastructure.repository.WorkspaceRepositoryImpl;
 import com.codingx.skill.domain.repository.ChatSkillRepository;
@@ -59,6 +64,12 @@ class ChatControllerListConversationsTest {
     private ChatMcpRepository chatMcpRepository;
     @Mock
     private ChatMcpQueryService chatMcpQueryService;
+
+    @Mock
+    private ChatExecutionRunRepository chatExecutionRunRepository;
+
+    @Mock
+    private TaskRepository taskRepository;
 
     @Mock
     private WorkspaceRepositoryImpl workspaceRepositoryImpl;
@@ -110,6 +121,45 @@ class ChatControllerListConversationsTest {
                 .andExpect(jsonPath("$.data[0].id").value("2055114974648864768"))
                 .andExpect(jsonPath("$.data[0].lastRunId").value("2055114974682419200"))
                 .andExpect(jsonPath("$.data[0].workspaceId").value("7001"));
+        }
+    }
+
+    /**
+     * 会话列表应暴露最新后台任务状态，供侧栏运行图标与完成提醒使用。
+     */
+    @Test
+    void listConversationsReturnsTaskStatusProjection() throws Exception {
+        Long taskId = 2054964195115945984L;
+        ChatConversation conversation = ChatConversation.create(2001L, "后台任务会话", 1002L, 3001L, ChatConversationStatus.ACTIVE);
+        conversation.restoreRuntimeState(LocalDateTime.of(2026, 5, 25, 10, 0, 0), taskId);
+        when(chatConversationApplicationService.listConversations(1002L, 3001L)).thenReturn(List.of(conversation));
+        when(chatExecutionRunRepository.findByConversationId(2001L)).thenReturn(List.of(
+            ChatExecutionRun.builder()
+                .id(taskId)
+                .conversationId(2001L)
+                .taskId(taskId)
+                .status("RUNNING")
+                .queueStatus("ACQUIRED")
+                .build()
+        ));
+        when(taskRepository.findById(taskId)).thenReturn(java.util.Optional.of(
+            Task.create(taskId, "后台任务会话", "聊天任务", RuntimeType.LOCAL, 3001L, 1002L)
+        ));
+        WorkspaceDO workspace = new WorkspaceDO();
+        workspace.setId(3001L);
+        workspace.setName("CodingX");
+        workspace.setRuntimeTarget(WorkspaceRepositoryImpl.RUNTIME_TARGET_LOCAL);
+        when(workspaceRepositoryImpl.findOwnedWorkspaceById(3001L, 1002L)).thenReturn(java.util.Optional.of(workspace));
+
+        try (MockedStatic<StpUtil> mocked = Mockito.mockStatic(StpUtil.class)) {
+            mocked.when(StpUtil::getLoginIdAsLong).thenReturn(1002L);
+
+            mockMvc().perform(get("/api/chat/conversations").param("workspaceId", "3001"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].activeTaskId").value("2054964195115945984"))
+                .andExpect(jsonPath("$.data[0].activeTaskStatus").value("RUNNING"))
+                .andExpect(jsonPath("$.data[0].lastTaskId").value("2054964195115945984"))
+                .andExpect(jsonPath("$.data[0].lastTaskStatus").value("RUNNING"));
         }
     }
 

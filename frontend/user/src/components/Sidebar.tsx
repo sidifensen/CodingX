@@ -16,6 +16,7 @@ import {
   Cloud,
   Folder,
   History,
+  LoaderCircle,
 } from 'lucide-react';
 import { ViewType } from '../App';
 import { AuthSession } from '../types/auth';
@@ -467,6 +468,8 @@ function ConversationHistory({
                             group.partitionKey === activeWorkspacePartitionKey &&
                             conversation.id === activeConversationId;
                           const isMenuOpen = openMenuId === conversation.id;
+                          const isTaskRunning =
+                            String(conversation.activeTaskStatus ?? '').trim().toUpperCase() === 'RUNNING';
                           return (
                             <div
                               key={conversation.id}
@@ -509,15 +512,36 @@ function ConversationHistory({
                                   onTouchEnd={clearLongPress}
                                   onTouchCancel={clearLongPress}
                                 >
-                                  <span
-                                    className={`absolute right-0 whitespace-nowrap text-[12px] text-muted transition-opacity ${
-                                      hoveredActionId === conversation.id || isMenuOpen
-                                        ? 'opacity-0'
-                                        : 'opacity-100'
-                                    }`}
-                                  >
-                                    {formatRelativeTime(conversation.lastMessageAt)}
-                                  </span>
+                                  {isTaskRunning ? (
+                                    <span
+                                      role="status"
+                                      aria-label={`会话 ${conversation.title} 正在后台执行`}
+                                      className={`absolute right-0 inline-flex h-5 w-5 items-center justify-center text-muted transition-opacity ${
+                                        hoveredActionId === conversation.id || isMenuOpen
+                                          ? 'opacity-0'
+                                          : 'opacity-100'
+                                      }`}
+                                    >
+                                      <LoaderCircle size={15} className="animate-spin" />
+                                    </span>
+                                  ) : (
+                                    <span
+                                      className={`absolute right-0 inline-flex items-center gap-1.5 whitespace-nowrap text-[12px] text-muted transition-opacity ${
+                                        hoveredActionId === conversation.id || isMenuOpen
+                                          ? 'opacity-0'
+                                          : 'opacity-100'
+                                      }`}
+                                    >
+                                      <span>{formatRelativeTime(conversation.lastMessageAt)}</span>
+                                      {conversation.hasUnreadTaskCompletion ? (
+                                        <span
+                                          role="status"
+                                          aria-label={`会话 ${conversation.title} 有后台任务完成提醒`}
+                                          className="h-1.5 w-1.5 rounded-full bg-accent-breeze shadow-[0_0_0_3px_color-mix(in_srgb,var(--accent-breeze)_18%,transparent)]"
+                                        />
+                                      ) : null}
+                                    </span>
+                                  )}
                                   <button
                                     type="button"
                                     aria-label={`打开会话菜单 ${conversation.title}`}

@@ -11,8 +11,10 @@ import com.codingx.chat.application.service.ChatReactionService;
 import com.codingx.chat.application.service.ChatRuntimeGuardService;
 import com.codingx.chat.domain.model.ChatAttachment;
 import com.codingx.chat.domain.model.ChatConversation;
+import com.codingx.chat.domain.model.ChatExecutionRun;
 import com.codingx.chat.domain.model.ChatMessage;
 import com.codingx.chat.domain.model.ChatMessageFeedback;
+import com.codingx.chat.domain.repository.ChatExecutionRunRepository;
 import com.codingx.chat.domain.repository.ChatMessageFeedbackRepository;
 import com.codingx.mcp.domain.model.ChatMcp;
 import com.codingx.skill.domain.model.ChatSkill;
@@ -29,6 +31,8 @@ import com.codingx.chat.interfaces.response.ChatMessageResponse;
 import com.codingx.common.error.ErrorMessageCatalog;
 import com.codingx.common.model.ApiResponse;
 import com.codingx.common.idempotent.IdempotentSubmit;
+import com.codingx.task.domain.model.Task;
+import com.codingx.task.domain.repository.TaskRepository;
 import com.codingx.workspace.infrastructure.persistence.dataobject.WorkspaceDO;
 import com.codingx.workspace.infrastructure.repository.WorkspaceRepositoryImpl;
 import jakarta.validation.Valid;
@@ -82,6 +86,8 @@ public class ChatController {
     private final ChatMcpQueryService chatMcpQueryService;
     private final ChatSkillRepository chatSkillRepository;
     private final WorkspaceRepositoryImpl workspaceRepositoryImpl;
+    private final ChatExecutionRunRepository chatExecutionRunRepository;
+    private final TaskRepository taskRepository;
 
     /**
      * 创建 createConversation 所需数据并返回结果。
@@ -308,6 +314,7 @@ public class ChatController {
             ? workspaceRepositoryImpl.findOwnedWorkspaceById(conversation.getWorkspaceId(), conversation.getCreatedBy())
             : workspaceRepositoryImpl.findOwnedWorkspaceById(conversation.getWorkspaceId(), currentUserId);
         WorkspaceDO workspace = workspaceOptional.orElse(null);
+        ConversationTaskProjection taskProjection = resolveTaskProjection(conversation);
         return new ChatConversationResponse(
             conversation.getId(),
             conversation.getTitle(),
@@ -318,7 +325,12 @@ public class ChatController {
             conversation.getShareToken(),
             conversation.getWorkspaceId(),
             workspace == null ? null : workspace.getName(),
-            resolveWorkspaceType(workspace)
+            resolveWorkspaceType(workspace),
+            taskProjection.activeTaskId(),
+            taskProjection.activeTaskStatus(),
+            taskProjection.lastTaskId(),
+            taskProjection.lastTaskStatus(),
+            taskProjection.lastTaskFinishedAt()
         );
     }
 
@@ -333,6 +345,7 @@ public class ChatController {
             conversation.getCreatedBy()
         );
         WorkspaceDO workspace = workspaceOptional.orElse(null);
+        ConversationTaskProjection taskProjection = resolveTaskProjection(conversation);
         return new ChatConversationResponse(
             conversation.getId(),
             conversation.getTitle(),
@@ -343,8 +356,80 @@ public class ChatController {
             conversation.getShareToken(),
             conversation.getWorkspaceId(),
             workspace == null ? null : workspace.getName(),
-            resolveWorkspaceType(workspace)
+            resolveWorkspaceType(workspace),
+            taskProjection.activeTaskId(),
+            taskProjection.activeTaskStatus(),
+            taskProjection.lastTaskId(),
+            taskProjection.lastTaskStatus(),
+            taskProjection.lastTaskFinishedAt()
         );
+    }
+
+    /**
+     * 从最新执行 run 与任务表中投影会话级后台任务状态，供侧栏恢复运行与完成提醒。
+     * @param conversation 会话对象。
+     * @return 任务投影。
+     */
+    private ConversationTaskProjection resolveTaskProjection(ChatConversation conversation) {
+        if (conversation.getLastRunId() == null) {
+            return ConversationTaskProjection.empty();
+        }
+        ChatExecutionRun latestRun = chatExecutionRunRepository.findByConversationId(conversation.getId()).stream()
+            .filter(run -> conversation.getLastRunId().equals(run.getId()) || conversation.getLastRunId().equals(run.getTaskId()))
+            .findFirst()
+            .orElse(null);
+        Long taskId = latestRun != null && latestRun.getTaskId() != null
+            ? latestRun.getTaskId()
+            : conversation.getLastRunId();
+        Task task = taskRepository.findById(taskId).orElse(null);
+        String taskStatus = task != null
+            ? task.getStatus().name()
+            : latestRun == null ? null : normalizeRunStatus(latestRun.getStatus(), latestRun.getQueueStatus());
+        java.time.LocalDateTime finishedAt = task != null && task.getFinishedAt() != null
+            ? task.getFinishedAt()
+            : latestRun == null ? null : latestRun.getFinishedAt();
+        if (isActiveTaskStatus(taskStatus) || (latestRun != null && isActiveRunStatus(latestRun))) {
+            return new ConversationTaskProjection(taskId, "RUNNING", taskId, "RUNNING", finishedAt);
+        }
+        return new ConversationTaskProjection(null, null, taskId, taskStatus, finishedAt);
+    }
+
+    /**
+     * 将运行记录状态折算成前端可理解的后台任务状态。
+     * @param runStatus 执行 run 状态。
+     * @param queueStatus 排队状态。
+     * @return 任务状态。
+     */
+    private String normalizeRunStatus(String runStatus, String queueStatus) {
+        if (StrUtil.equalsAnyIgnoreCase(runStatus, "COMPLETED", "SUCCESS")) {
+            return "SUCCEEDED";
+        }
+        if (StrUtil.equalsAnyIgnoreCase(runStatus, "RUNNING") || StrUtil.equalsAnyIgnoreCase(queueStatus, "WAITING", "ACQUIRED")) {
+            return "RUNNING";
+        }
+        if (StrUtil.isNotBlank(runStatus)) {
+            return "FAILED";
+        }
+        return null;
+    }
+
+    /**
+     * 判断任务状态是否仍代表后台执行中。
+     * @param taskStatus 任务状态。
+     * @return 是否运行中。
+     */
+    private boolean isActiveTaskStatus(String taskStatus) {
+        return StrUtil.equalsAnyIgnoreCase(taskStatus, "RUNNING");
+    }
+
+    /**
+     * 判断 run 或队列状态是否仍代表后台执行中。
+     * @param run 执行 run。
+     * @return 是否运行中。
+     */
+    private boolean isActiveRunStatus(ChatExecutionRun run) {
+        return StrUtil.equalsAnyIgnoreCase(run.getStatus(), "RUNNING")
+            || StrUtil.equalsAnyIgnoreCase(run.getQueueStatus(), "WAITING", "ACQUIRED");
     }
 
     /**
@@ -399,6 +484,26 @@ public class ChatController {
             skillCodes,
             userVote
         );
+    }
+
+    /**
+     * 会话列表中的后台任务投影。
+     * @param activeTaskId 当前运行任务标识。
+     * @param activeTaskStatus 当前运行任务状态。
+     * @param lastTaskId 最近任务标识。
+     * @param lastTaskStatus 最近任务状态。
+     * @param lastTaskFinishedAt 最近任务完成时间。
+     */
+    private record ConversationTaskProjection(
+        Long activeTaskId,
+        String activeTaskStatus,
+        Long lastTaskId,
+        String lastTaskStatus,
+        java.time.LocalDateTime lastTaskFinishedAt
+    ) {
+        private static ConversationTaskProjection empty() {
+            return new ConversationTaskProjection(null, null, null, null, null);
+        }
     }
 
     /**

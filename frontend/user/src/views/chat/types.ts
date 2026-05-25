@@ -7,6 +7,12 @@ export interface ConversationItem {
   status: string;
   lastMessageAt?: string;
   lastRunId?: string;
+  activeTaskId?: string;
+  activeTaskStatus?: string;
+  lastTaskId?: string;
+  lastTaskStatus?: string;
+  lastTaskFinishedAt?: string;
+  hasUnreadTaskCompletion?: boolean;
   workspaceId?: string | null;
   workspaceType?: 'CLOUD' | 'LOCAL' | string;
 }

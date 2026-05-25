@@ -209,6 +209,69 @@ describe('Sidebar conversation collapse behavior', () => {
     );
   });
 
+  it('运行中的后台任务应在右侧显示执行图标并隐藏时间', () => {
+    // 业务意图：用户切换会话后仍能从列表右侧看出哪条会话正在后台执行。
+    const props = createSidebarProps({
+      workspaceGroups: [
+        {
+          partitionKey: 'local::d:/code/codingx',
+          workspacePath: 'D:/code/CodingX',
+          workspaceLabel: 'CodingX',
+          runtimeTarget: 'local',
+          lastOpenedAt: Date.now(),
+          activeConversationId: 'conversation-1',
+          conversations: [
+            {
+              ...createConversation(1),
+              activeTaskId: 'task-1001',
+              activeTaskStatus: 'RUNNING',
+              lastMessageAt: undefined,
+            },
+          ],
+        },
+      ],
+    });
+
+    render(<Sidebar {...props} />);
+
+    expect(
+      screen.getByRole('status', { name: '会话 会话 1 正在后台执行' }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('刚刚')).not.toBeInTheDocument();
+  });
+
+  it('后台任务完成且未读时应显示时间和完成提醒圆点', () => {
+    // 业务意图：任务已完成但用户尚未打开该会话时，侧栏用轻量圆点提醒，不打断当前工作流。
+    const props = createSidebarProps({
+      workspaceGroups: [
+        {
+          partitionKey: 'local::d:/code/codingx',
+          workspacePath: 'D:/code/CodingX',
+          workspaceLabel: 'CodingX',
+          runtimeTarget: 'local',
+          lastOpenedAt: Date.now(),
+          activeConversationId: 'conversation-1',
+          conversations: [
+            {
+              ...createConversation(1),
+              lastMessageAt: undefined,
+              lastTaskStatus: 'SUCCEEDED',
+              lastTaskFinishedAt: '2026-05-25 10:00:00',
+              hasUnreadTaskCompletion: true,
+            },
+          ],
+        },
+      ],
+    });
+
+    render(<Sidebar {...props} />);
+
+    expect(screen.getByText('刚刚')).toBeInTheDocument();
+    expect(
+      screen.getByRole('status', { name: '会话 会话 1 有后台任务完成提醒' }),
+    ).toBeInTheDocument();
+  });
+
   it('相同会话ID出现在不同分组时仅激活当前分区会话，避免双高亮', () => {
     const duplicatedConversation = createConversation(1);
     const props = createSidebarProps({

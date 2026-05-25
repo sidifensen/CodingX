@@ -19,6 +19,9 @@ import com.codingx.common.exception.ConflictException;
 import com.codingx.expert.domain.repository.ChatExpertRepository;
 import com.codingx.mcp.domain.repository.ChatMcpRepository;
 import com.codingx.skill.domain.repository.ChatSkillRepository;
+import com.codingx.task.domain.model.Task;
+import com.codingx.task.domain.model.TaskStatus;
+import com.codingx.task.domain.repository.TaskRepository;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -82,6 +85,9 @@ class ChatStreamExecutionServiceTest {
     @Mock
     private ChatConversationRepository chatConversationRepository;
 
+    @Mock
+    private TaskRepository taskRepository;
+
     /**
      * 释放测试线程池，避免用例之间残留后台线程。
      */
@@ -108,6 +114,7 @@ class ChatStreamExecutionServiceTest {
             chatExpertRepository,
             chatConversationRepository,
             chatWorkspaceBindingService,
+            taskRepository,
             executorService
         );
         org.mockito.Mockito.doAnswer(invocation -> {
@@ -151,6 +158,7 @@ class ChatStreamExecutionServiceTest {
             chatExpertRepository,
             chatConversationRepository,
             chatWorkspaceBindingService,
+            taskRepository,
             executorService
         );
         try (org.mockito.MockedStatic<cn.dev33.satoken.stp.StpUtil> mocked = org.mockito.Mockito.mockStatic(cn.dev33.satoken.stp.StpUtil.class)) {
@@ -191,6 +199,7 @@ class ChatStreamExecutionServiceTest {
             chatExpertRepository,
             chatConversationRepository,
             chatWorkspaceBindingService,
+            taskRepository,
             executorService
         );
         org.mockito.Mockito.doAnswer(invocation -> {
@@ -230,6 +239,7 @@ class ChatStreamExecutionServiceTest {
             chatExpertRepository,
             chatConversationRepository,
             chatWorkspaceBindingService,
+            taskRepository,
             executorService
         );
         org.mockito.Mockito.when(conversationTraceRecordService.startTrace("chat-entry", 1001L, 2001L))
@@ -268,6 +278,7 @@ class ChatStreamExecutionServiceTest {
             chatExpertRepository,
             chatConversationRepository,
             chatWorkspaceBindingService,
+            taskRepository,
             executorService
         );
         ChatTraceRun traceRun = ChatTraceRun.builder().traceId("trace-error").traceName("chat-entry").build();
@@ -313,6 +324,7 @@ class ChatStreamExecutionServiceTest {
             chatExpertRepository,
             chatConversationRepository,
             chatWorkspaceBindingService,
+            taskRepository,
             executorService
         );
         ChatTraceRun traceRun = ChatTraceRun.builder().traceId("trace-rejected").traceName("chat-entry").build();
@@ -354,6 +366,7 @@ class ChatStreamExecutionServiceTest {
             chatExpertRepository,
             chatConversationRepository,
             chatWorkspaceBindingService,
+            taskRepository,
             executorService
         );
         org.mockito.Mockito.doAnswer(invocation -> {
@@ -398,6 +411,7 @@ class ChatStreamExecutionServiceTest {
             chatExpertRepository,
             chatConversationRepository,
             chatWorkspaceBindingService,
+            taskRepository,
             executorService
         );
         org.mockito.Mockito.doAnswer(invocation -> {
@@ -427,5 +441,62 @@ class ChatStreamExecutionServiceTest {
 
         assertTrue(captured.await(1, TimeUnit.SECONDS), "background task should start with expert selection");
         verify(chatExpertRepository).bindTaskExpert(any(Long.class), eq("solution-architect"));
+    }
+
+    /**
+     * 派发入口必须复用控制器下发的任务标识，确保 stream meta、task 与 run 可一一对应。
+     * @throws Exception 等待后台线程执行时抛出。
+     */
+    @Test
+    void dispatchPersistsDurableTaskWithProvidedTaskId() throws Exception {
+        CountDownLatch captured = new CountDownLatch(1);
+        Long taskId = 91001L;
+        ChatStreamExecutionService service = new ChatStreamExecutionService(
+            chatApplicationService,
+            chatRuntimeGuardService,
+            conversationTraceRecordService,
+            chatExecutionRunRepository,
+            chatMcpRepository,
+            chatSkillRepository,
+            chatExpertRepository,
+            chatConversationRepository,
+            chatWorkspaceBindingService,
+            taskRepository,
+            executorService
+        );
+        org.mockito.Mockito.doAnswer(invocation -> {
+            captured.countDown();
+            return null;
+        }).when(chatApplicationService).sendMessage(new SendChatMessageCommand(1001L, "你好", false, java.util.List.of(), java.util.List.of(), null, null, java.util.List.of()), 2001L);
+        when(chatExecutionRunRepository.findByConversationId(1001L)).thenReturn(java.util.List.of(
+            ChatExecutionRun.builder()
+                .id(taskId)
+                .conversationId(1001L)
+                .taskId(taskId)
+                .status("COMPLETED")
+                .finishedAt(java.time.LocalDateTime.now())
+                .build()
+        ));
+
+        service.dispatch(
+            taskId,
+            new SendChatMessageCommand(1001L, "你好", false),
+            2001L
+        );
+
+        assertTrue(captured.await(1, TimeUnit.SECONDS), "background task should finish");
+        ArgumentCaptor<ChatExecutionRun> runCaptor = ArgumentCaptor.forClass(ChatExecutionRun.class);
+        verify(chatExecutionRunRepository, timeout(1000).atLeastOnce()).save(runCaptor.capture());
+        assertTrue(
+            runCaptor.getAllValues().stream().anyMatch(run -> taskId.equals(run.getId()) && taskId.equals(run.getTaskId())),
+            "run id and task id should reuse provided task id"
+        );
+        ArgumentCaptor<Task> taskCaptor = ArgumentCaptor.forClass(Task.class);
+        verify(taskRepository, timeout(1000).atLeast(2)).save(taskCaptor.capture());
+        assertEquals(TaskStatus.RUNNING, taskCaptor.getAllValues().get(0).getStatus());
+        assertTrue(
+            taskCaptor.getAllValues().stream().anyMatch(task -> taskId.equals(task.getId()) && task.getStatus() == TaskStatus.SUCCEEDED),
+            "task should be marked succeeded after normal completion"
+        );
     }
 }

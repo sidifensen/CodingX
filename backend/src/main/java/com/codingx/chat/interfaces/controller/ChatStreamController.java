@@ -106,6 +106,7 @@ public class ChatStreamController {
         metaPayload.put("attachmentIds", selectedAttachmentIds);
         chatSseRegistry.publish(actualConversationId, "meta", metaPayload);
         chatStreamExecutionService.dispatch(
+            taskId,
             new SendChatMessageCommand(
                 actualConversationId,
                 actualQuestion,

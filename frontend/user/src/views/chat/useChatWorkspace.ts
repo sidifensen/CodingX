@@ -36,6 +36,7 @@ import {
   getWorkspaceLabel,
   findWorkspacePartitionByConversationId,
   listWorkspaceGroups,
+  markConversationTaskCompletionSeen,
   markWorkspaceConversationOwnership,
   readWorkspaceSnapshot,
   saveConversationRecordToWorkspace,
@@ -124,6 +125,94 @@ function upsertConversationToTop(
     normalizedConversation,
     ...conversations.filter((conversation) => conversation.id !== normalizedConversation.id),
   ];
+}
+
+/**
+ * 判断后端任务状态是否仍处于执行中，驱动侧栏 spinner 展示。
+ * @param conversation 会话项。
+ * @returns 是否运行中。
+ */
+function isConversationTaskRunning(conversation: ConversationItem) {
+  return String(conversation.activeTaskStatus ?? '').trim().toUpperCase() === 'RUNNING';
+}
+
+/**
+ * 根据本地已读时间戳计算会话是否有新的后台任务完成提醒。
+ * @param conversation 会话项。
+ * @param seenMap 本地已读任务完成时间。
+ * @param activeConversationId 当前打开会话。
+ * @returns 合并后的会话项。
+ */
+function applyTaskCompletionReminder(
+  conversation: ConversationItem,
+  seenMap: Record<string, string>,
+  activeConversationId: string | null,
+): ConversationItem {
+  if (isConversationTaskRunning(conversation)) {
+    return {
+      ...conversation,
+      hasUnreadTaskCompletion: false,
+    };
+  }
+  const finishedAt = conversation.lastTaskFinishedAt;
+  const isTerminalTask = String(conversation.lastTaskStatus ?? '').trim().length > 0;
+  const seenFinishedAt = seenMap[conversation.id];
+  return {
+    ...conversation,
+    hasUnreadTaskCompletion:
+      isTerminalTask &&
+      Boolean(finishedAt) &&
+      conversation.id !== activeConversationId &&
+      finishedAt !== seenFinishedAt,
+  };
+}
+
+/**
+ * 批量合并任务完成提醒状态，确保刷新后侧栏能恢复圆点。
+ * @param conversations 会话列表。
+ * @param seenMap 本地已读任务完成时间。
+ * @param activeConversationId 当前打开会话。
+ * @returns 合并后的会话列表。
+ */
+function applyTaskCompletionReminders(
+  conversations: ConversationItem[],
+  seenMap: Record<string, string>,
+  activeConversationId: string | null,
+) {
+  return conversations.map((conversation) =>
+    applyTaskCompletionReminder(conversation, seenMap, activeConversationId),
+  );
+}
+
+/**
+ * 当前打开会话的任务完成即视为已读，避免用户切走或刷新后又看到完成圆点。
+ * @param conversations 会话列表。
+ * @param seenMap 本地已读任务完成时间。
+ * @param activeConversationId 当前打开会话。
+ * @returns 合并后的已读任务完成时间。
+ */
+function markActiveTaskCompletionSeen(
+  conversations: ConversationItem[],
+  seenMap: Record<string, string>,
+  activeConversationId: string | null,
+) {
+  if (!activeConversationId) {
+    return seenMap;
+  }
+  const activeConversation = conversations.find((conversation) => conversation.id === activeConversationId);
+  if (
+    !activeConversation ||
+    isConversationTaskRunning(activeConversation) ||
+    !activeConversation.lastTaskFinishedAt ||
+    String(activeConversation.lastTaskStatus ?? '').trim().length === 0 ||
+    seenMap[activeConversation.id] === activeConversation.lastTaskFinishedAt
+  ) {
+    return seenMap;
+  }
+  return {
+    ...seenMap,
+    [activeConversation.id]: activeConversation.lastTaskFinishedAt,
+  };
 }
 
 type WorkspaceGroupQueryMode = 'runtime-only' | 'all';
@@ -754,6 +843,39 @@ export function useChatWorkspace(
     if (syncUrl) {
       // 仅用户显式切换会话时更新 URL，初始化恢复阶段由独立分支控制，避免误覆盖初始参数。
       writeConversationIdToUrl(conversationId);
+    }
+    const conversationListForSeenState = sourceConversations ?? conversations;
+    const selectedConversationForSeenState = conversationListForSeenState.find(
+      (item) => item.id === conversationId,
+    );
+    if (selectedConversationForSeenState?.lastTaskFinishedAt) {
+      markConversationTaskCompletionSeen(
+        activeRuntimeTarget,
+        workspacePath ?? null,
+        conversationId,
+        selectedConversationForSeenState.lastTaskFinishedAt,
+      );
+      const clearCompletionReminder = (items: ConversationItem[]) =>
+        items.map((item) =>
+          item.id === conversationId
+            ? {
+                ...item,
+                hasUnreadTaskCompletion: false,
+              }
+            : item,
+        );
+      const nextConversations = clearCompletionReminder(conversationListForSeenState);
+      setConversations(nextConversations);
+      upsertWorkspaceSnapshot(activeRuntimeTarget, workspacePath ?? null, {
+        conversations: nextConversations,
+        seenTaskFinishedAtByConversationId: {
+          ...(readWorkspaceSnapshot(
+            buildWorkspacePartitionKey(activeRuntimeTarget, workspacePath ?? null),
+          ).seenTaskFinishedAtByConversationId ?? {}),
+          [conversationId]: selectedConversationForSeenState.lastTaskFinishedAt,
+        },
+      });
+      refreshWorkspaceGroups('all');
     }
     // 关键约束：刷新恢复时优先渲染消息主区，避免右栏慢接口阻塞首屏可读内容。
     setExecutionSteps([]);
@@ -1651,15 +1773,25 @@ export function useChatWorkspace(
     const currentSnapshot = readWorkspaceSnapshot(
       buildWorkspacePartitionKey(activeRuntimeTarget, fallbackWorkspacePath),
     );
+    const persistedActiveConversationId = currentSnapshot.activeConversationId ?? null;
+    const effectiveActiveConversationId = activeConversationId ?? persistedActiveConversationId;
     // 关键约束：流式生成期间会话列表可能返回慢数据或空数据，不能把 meta 已写入的当前会话从侧栏快照中抹掉。
     const protectedRemoteConversations = hasActiveStreamPlayback()
       ? mergeConversationListById(remoteConversations, currentSnapshot.conversations)
       : remoteConversations;
-    const persistedActiveConversationId = currentSnapshot.activeConversationId ?? null;
+    const seenTaskFinishedAtByConversationId = markActiveTaskCompletionSeen(
+      protectedRemoteConversations,
+      currentSnapshot.seenTaskFinishedAtByConversationId ?? {},
+      effectiveActiveConversationId,
+    );
     if (activeRuntimeTarget === 'cloud') {
-      const visibleConversations = filterWorkspaceConversationsByRuntimeTarget(
-        protectedRemoteConversations,
-        activeRuntimeTarget,
+      const visibleConversations = applyTaskCompletionReminders(
+        filterWorkspaceConversationsByRuntimeTarget(
+          protectedRemoteConversations,
+          activeRuntimeTarget,
+        ),
+        seenTaskFinishedAtByConversationId,
+        effectiveActiveConversationId,
       );
       const visibleConversationIds = new Set(visibleConversations.map((conversation) => conversation.id));
       const visibleConversationRecords = Object.fromEntries(
@@ -1683,15 +1815,20 @@ export function useChatWorkspace(
           ? getWorkspaceLabel(fallbackWorkspacePath)
           : getDefaultWorkspaceLabel(activeRuntimeTarget),
         conversationRecords: visibleConversationRecords,
+        seenTaskFinishedAtByConversationId,
       });
       refreshWorkspaceGroups('all');
       return visibleConversations;
     }
-    const nextWorkspaceConversations = resolveWorkspaceConversations(
-      activeRuntimeTarget,
-      fallbackWorkspacePath,
-      effectiveWorkspaceId,
-      protectedRemoteConversations,
+    const nextWorkspaceConversations = applyTaskCompletionReminders(
+      resolveWorkspaceConversations(
+        activeRuntimeTarget,
+        fallbackWorkspacePath,
+        effectiveWorkspaceId,
+        protectedRemoteConversations,
+      ),
+      seenTaskFinishedAtByConversationId,
+      effectiveActiveConversationId,
     );
     markWorkspaceConversationOwnership(
       activeRuntimeTarget,
@@ -1714,6 +1851,7 @@ export function useChatWorkspace(
       workspaceLabel: fallbackWorkspacePath
         ? getWorkspaceLabel(fallbackWorkspacePath)
         : getDefaultWorkspaceLabel(activeRuntimeTarget),
+      seenTaskFinishedAtByConversationId,
     });
     upsertWorkspaceSnapshot('local', null, {
       conversations: mergedLocalDefaultConversations,

@@ -43,6 +43,10 @@ export interface LocalWorkspaceConversationSnapshot {
   activeConversationId: string | null;
   conversations: ConversationItem[];
   conversationRecords: Record<string, LocalConversationRecord>;
+  /**
+   * 记录用户已经打开过的任务完成时间，用于刷新后恢复“新完成任务”圆点。
+   */
+  seenTaskFinishedAtByConversationId?: Record<string, string>;
 }
 
 /**
@@ -66,6 +70,7 @@ const EMPTY_SNAPSHOT: LocalWorkspaceConversationSnapshot = {
   activeConversationId: null,
   conversations: [],
   conversationRecords: {},
+  seenTaskFinishedAtByConversationId: {},
 };
 
 /**
@@ -145,6 +150,11 @@ export function readWorkspaceSnapshot(partitionKey: string): LocalWorkspaceConve
       snapshot.conversationRecords && typeof snapshot.conversationRecords === 'object'
         ? snapshot.conversationRecords
         : {},
+    seenTaskFinishedAtByConversationId:
+      snapshot.seenTaskFinishedAtByConversationId &&
+      typeof snapshot.seenTaskFinishedAtByConversationId === 'object'
+        ? snapshot.seenTaskFinishedAtByConversationId
+        : {},
   };
 }
 
@@ -194,6 +204,10 @@ export function upsertWorkspaceSnapshot(
     conversations: partialSnapshot?.conversations ?? currentSnapshot.conversations ?? [],
     conversationRecords:
       partialSnapshot?.conversationRecords ?? currentSnapshot.conversationRecords ?? {},
+    seenTaskFinishedAtByConversationId:
+      partialSnapshot?.seenTaskFinishedAtByConversationId ??
+      currentSnapshot.seenTaskFinishedAtByConversationId ??
+      {},
   };
   writeWorkspaceSnapshot(partitionKey, snapshot);
   return { partitionKey, snapshot };
@@ -233,6 +247,11 @@ export function listWorkspaceGroups(
       conversationRecords:
         snapshot.conversationRecords && typeof snapshot.conversationRecords === 'object'
           ? snapshot.conversationRecords
+          : {},
+      seenTaskFinishedAtByConversationId:
+        snapshot.seenTaskFinishedAtByConversationId &&
+        typeof snapshot.seenTaskFinishedAtByConversationId === 'object'
+          ? snapshot.seenTaskFinishedAtByConversationId
           : {},
     }))
     // 历史分组仅用于兼容旧数据迁移，不在左侧渲染，避免重复出现“历史记录”。
@@ -308,6 +327,7 @@ export function upsertWorkspaceHistorySnapshot(
     activeConversationId: null,
     conversations,
     conversationRecords: nextConversationRecords,
+    seenTaskFinishedAtByConversationId: snapshot.seenTaskFinishedAtByConversationId ?? {},
   });
 }
 
@@ -347,6 +367,7 @@ export function markWorkspaceConversationOwnership(
     workspacePath: workspacePath ?? snapshot.workspacePath ?? null,
     lastOpenedAt: Date.now(),
     conversationRecords: nextConversationRecords,
+    seenTaskFinishedAtByConversationId: snapshot.seenTaskFinishedAtByConversationId ?? {},
   });
 }
 
@@ -455,6 +476,10 @@ function mergeHistoryPartitionIntoDefaultGroup(
       null,
     conversations: mergedConversations,
     conversationRecords: mergedConversationRecords,
+    seenTaskFinishedAtByConversationId: {
+      ...(historySnapshot.seenTaskFinishedAtByConversationId ?? {}),
+      ...(effectiveDefaultSnapshot.seenTaskFinishedAtByConversationId ?? {}),
+    },
   };
   delete snapshots[historyPartitionKey];
 }
@@ -558,6 +583,34 @@ export function saveConversationRecordToWorkspace(
         owned: true,
       },
     },
+    seenTaskFinishedAtByConversationId: nextSnapshot.seenTaskFinishedAtByConversationId ?? {},
   };
   window.localStorage.setItem(LOCAL_WORKSPACE_CONVERSATION_STORE_KEY, JSON.stringify(store));
+}
+
+/**
+ * 标记会话最近任务完成时间已被用户看过，刷新后不再显示完成提醒圆点。
+ * @param runtimeTarget 运行环境。
+ * @param workspacePath 当前工作空间路径。
+ * @param conversationId 会话标识。
+ * @param taskFinishedAt 后端返回的任务完成时间。
+ */
+export function markConversationTaskCompletionSeen(
+  runtimeTarget: 'cloud' | 'local',
+  workspacePath: string | null,
+  conversationId: string,
+  taskFinishedAt?: string,
+) {
+  if (!taskFinishedAt) {
+    return;
+  }
+  const partitionKey = buildWorkspacePartitionKey(runtimeTarget, workspacePath);
+  const snapshot = readWorkspaceSnapshot(partitionKey);
+  writeWorkspaceSnapshot(partitionKey, {
+    ...snapshot,
+    seenTaskFinishedAtByConversationId: {
+      ...(snapshot.seenTaskFinishedAtByConversationId ?? {}),
+      [conversationId]: taskFinishedAt,
+    },
+  });
 }

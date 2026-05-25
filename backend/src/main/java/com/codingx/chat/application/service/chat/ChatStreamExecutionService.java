@@ -10,6 +10,9 @@ import com.codingx.common.exception.ConflictException;
 import com.codingx.expert.domain.repository.ChatExpertRepository;
 import com.codingx.skill.domain.repository.ChatSkillRepository;
 import com.codingx.mcp.domain.repository.ChatMcpRepository;
+import com.codingx.task.domain.model.RuntimeType;
+import com.codingx.task.domain.model.Task;
+import com.codingx.task.domain.repository.TaskRepository;
 import com.codingx.tool.application.service.ChatToolExecutionContext;
 import java.time.LocalDateTime;
 import java.nio.file.Path;
@@ -36,6 +39,7 @@ public class ChatStreamExecutionService {
     private final ChatExpertRepository chatExpertRepository;
     private final ChatConversationRepository chatConversationRepository;
     private final ChatWorkspaceBindingService chatWorkspaceBindingService;
+    private final TaskRepository taskRepository;
     private final ExecutorService executor;
 
     /**
@@ -55,6 +59,7 @@ public class ChatStreamExecutionService {
         ChatExpertRepository chatExpertRepository,
         ChatConversationRepository chatConversationRepository,
         ChatWorkspaceBindingService chatWorkspaceBindingService,
+        TaskRepository taskRepository,
         @Qualifier("chatStreamExecutor")
         ExecutorService executor
     ) {
@@ -67,6 +72,7 @@ public class ChatStreamExecutionService {
         this.chatExpertRepository = chatExpertRepository;
         this.chatConversationRepository = chatConversationRepository;
         this.chatWorkspaceBindingService = chatWorkspaceBindingService;
+        this.taskRepository = taskRepository;
         this.executor = executor;
     }
 
@@ -76,8 +82,21 @@ public class ChatStreamExecutionService {
      * @param userId 当前用户标识。
      */
     public void dispatch(SendChatMessageCommand command, Long userId) {
-        Long runId = cn.hutool.core.util.IdUtil.getSnowflakeNextId();
+        dispatch(cn.hutool.core.util.IdUtil.getSnowflakeNextId(), command, userId);
+    }
+
+    /**
+     * 按指定任务标识派发聊天处理，保证前端 meta、任务表与执行 run 使用同一个主键。
+     * @param taskId 后台任务标识。
+     * @param command 聊天消息命令。
+     * @param userId 当前用户标识。
+     */
+    public void dispatch(Long taskId, SendChatMessageCommand command, Long userId) {
+        Long runId = taskId;
         LocalDateTime now = LocalDateTime.now();
+        Task task = createRunningTask(taskId, command, userId);
+        // Task 是可变领域对象，保存时使用快照，避免后续终态变更污染已持久化的运行态语义。
+        taskRepository.save(task.toBuilder().build());
         chatExecutionRunRepository.save(ChatExecutionRun.builder()
             .id(runId)
             .conversationId(command.conversationId())
@@ -106,14 +125,18 @@ public class ChatStreamExecutionService {
                 ConversationTraceContext.bind(traceRun);
                 bindToolWorkingDirectory(command, userId);
                 chatApplicationService.sendMessage(command, userId);
+                markTaskFinished(task, command.conversationId(), null);
             } catch (ConflictException exception) {
                 markRunRejected(runId, command.conversationId(), exception.getMessage());
+                markTaskFinished(task, command.conversationId(), exception);
                 throw exception;
             } catch (IllegalStateException exception) {
                 markRunFailed(runId, command.conversationId(), exception);
+                markTaskFinished(task, command.conversationId(), exception);
                 throw exception;
             } catch (Throwable throwable) {
                 markRunFailed(runId, command.conversationId(), throwable);
+                markTaskFinished(task, command.conversationId(), throwable);
                 throw throwable;
             } finally {
                 chatRuntimeGuardService.completeConversation(command.conversationId(), runId);
@@ -123,6 +146,84 @@ public class ChatStreamExecutionService {
             }
         });
         futureRef.set(future);
+    }
+
+    /**
+     * 创建并启动聊天后台任务；任务运行时类型按本地仓库参数做最小区分。
+     * @param taskId 任务主键。
+     * @param command 聊天命令。
+     * @param userId 创建人。
+     * @return 已进入 RUNNING 的任务。
+     */
+    private Task createRunningTask(Long taskId, SendChatMessageCommand command, Long userId) {
+        Task task = Task.create(
+            taskId,
+            resolveTaskTitle(command),
+            "聊天会话后台执行任务",
+            StrUtil.isNotBlank(command.repositoryPath()) ? RuntimeType.LOCAL : RuntimeType.CLOUD,
+            resolveWorkspaceId(command.conversationId()),
+            userId,
+            command.skillCodes()
+        );
+        task.start();
+        return task;
+    }
+
+    /**
+     * 任务标题保留用户问题前缀，便于后续任务页定位来源会话。
+     * @param command 聊天命令。
+     * @return 任务标题。
+     */
+    private String resolveTaskTitle(SendChatMessageCommand command) {
+        String content = StrUtil.blankToDefault(command.content(), "聊天会话");
+        return content.length() > 40 ? content.substring(0, 40) : content;
+    }
+
+    /**
+     * 尝试读取会话工作空间，用于任务与工作空间建立弱绑定；读取失败不阻断执行。
+     * @param conversationId 会话标识。
+     * @return 工作空间标识。
+     */
+    private Long resolveWorkspaceId(Long conversationId) {
+        try {
+            com.codingx.chat.domain.model.ChatConversation conversation =
+                chatConversationRepository.requireById(conversationId);
+            return conversation == null ? null : conversation.getWorkspaceId();
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    /**
+     * 根据当前 run 的最终状态收口任务表，确保客户端断开后仍可从任务状态恢复列表展示。
+     * @param task 后台任务。
+     * @param conversationId 会话标识。
+     * @param throwable 外层异常，可为空。
+     */
+    private void markTaskFinished(Task task, Long conversationId, Throwable throwable) {
+        ChatExecutionRun latestRun = chatExecutionRunRepository.findByConversationId(conversationId).stream()
+            .filter(run -> task.getId().equals(run.getTaskId()) || task.getId().equals(run.getId()))
+            .findFirst()
+            .orElse(null);
+        String status = latestRun == null ? null : latestRun.getStatus();
+        if (isRunSuccessful(status) && throwable == null) {
+            task.complete(latestRun.getStatus());
+        } else {
+            String message = throwable == null
+                ? latestRun == null ? null : latestRun.getErrorMessage()
+                : throwable.getMessage();
+            task.fail(message);
+        }
+        taskRepository.save(task.toBuilder().build());
+    }
+
+    /**
+     * 判断执行 run 是否为成功终态；未知或取消都按失败任务收口，避免列表继续显示运行中。
+     * @param status run 状态。
+     * @return 是否成功。
+     */
+    private boolean isRunSuccessful(String status) {
+        return StrUtil.equalsAnyIgnoreCase(status, "COMPLETED", "SUCCESS");
     }
 
     /**

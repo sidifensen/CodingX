@@ -390,7 +390,13 @@ public class ChatController {
         java.time.LocalDateTime finishedAt = task != null && task.getFinishedAt() != null
             ? task.getFinishedAt()
             : latestRun == null ? null : latestRun.getFinishedAt();
-        if (isActiveTaskStatus(taskStatus) || (latestRun != null && isActiveRunStatus(latestRun))) {
+        if (isActiveTaskStatus(taskStatus)) {
+            return new ConversationTaskProjection(taskId, "RUNNING", taskId, "RUNNING", finishedAt);
+        }
+        if (isTerminalTaskStatus(taskStatus)) {
+            return new ConversationTaskProjection(null, null, taskId, taskStatus, finishedAt);
+        }
+        if (latestRun != null && isActiveRunStatus(latestRun)) {
             return new ConversationTaskProjection(taskId, "RUNNING", taskId, "RUNNING", finishedAt);
         }
         return new ConversationTaskProjection(null, null, taskId, taskStatus, finishedAt);
@@ -425,13 +431,27 @@ public class ChatController {
     }
 
     /**
+     * 判断任务表状态是否已经终结；终态必须优先于历史 run 的队列残留状态。
+     * @param taskStatus 任务状态。
+     * @return 是否终态。
+     */
+    private boolean isTerminalTaskStatus(String taskStatus) {
+        return StrUtil.equalsAnyIgnoreCase(taskStatus, "SUCCEEDED", "FAILED");
+    }
+
+    /**
      * 判断 run 或队列状态是否仍代表后台执行中。
      * @param run 执行 run。
      * @return 是否运行中。
      */
     private boolean isActiveRunStatus(ChatExecutionRun run) {
-        return StrUtil.equalsAnyIgnoreCase(run.getStatus(), "RUNNING")
-            || StrUtil.equalsAnyIgnoreCase(run.getQueueStatus(), "WAITING", "ACQUIRED");
+        if (StrUtil.equalsAnyIgnoreCase(run.getStatus(), "RUNNING")) {
+            return true;
+        }
+        if (StrUtil.isNotBlank(run.getStatus())) {
+            return false;
+        }
+        return StrUtil.equalsAnyIgnoreCase(run.getQueueStatus(), "WAITING", "ACQUIRED");
     }
 
     /**

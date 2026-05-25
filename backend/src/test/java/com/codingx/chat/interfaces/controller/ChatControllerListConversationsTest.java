@@ -164,6 +164,48 @@ class ChatControllerListConversationsTest {
     }
 
     /**
+     * 任务表终态优先于 run 的队列状态，避免历史 ACQUIRED 队列标记让侧栏持续显示运行图标。
+     */
+    @Test
+    void listConversationsDoesNotTreatCompletedTaskAsActiveWhenRunQueueStillAcquired() throws Exception {
+        Long taskId = 2054964195115945984L;
+        ChatConversation conversation = ChatConversation.create(2001L, "已完成后台任务会话", 1002L, 3001L, ChatConversationStatus.ACTIVE);
+        conversation.restoreRuntimeState(LocalDateTime.of(2026, 5, 25, 10, 0, 0), taskId);
+        when(chatConversationApplicationService.listConversations(1002L, 3001L)).thenReturn(List.of(conversation));
+        when(chatExecutionRunRepository.findByConversationId(2001L)).thenReturn(List.of(
+            ChatExecutionRun.builder()
+                .id(taskId)
+                .conversationId(2001L)
+                .taskId(taskId)
+                .status("COMPLETED")
+                .queueStatus("ACQUIRED")
+                .finishedAt(LocalDateTime.of(2026, 5, 25, 10, 2, 0))
+                .build()
+        ));
+        Task completedTask = Task.create(taskId, "已完成后台任务会话", "聊天任务", RuntimeType.LOCAL, 3001L, 1002L);
+        completedTask.start();
+        completedTask.complete("done");
+        when(taskRepository.findById(taskId)).thenReturn(java.util.Optional.of(completedTask));
+        WorkspaceDO workspace = new WorkspaceDO();
+        workspace.setId(3001L);
+        workspace.setName("CodingX");
+        workspace.setRuntimeTarget(WorkspaceRepositoryImpl.RUNTIME_TARGET_LOCAL);
+        when(workspaceRepositoryImpl.findOwnedWorkspaceById(3001L, 1002L)).thenReturn(java.util.Optional.of(workspace));
+
+        try (MockedStatic<StpUtil> mocked = Mockito.mockStatic(StpUtil.class)) {
+            mocked.when(StpUtil::getLoginIdAsLong).thenReturn(1002L);
+
+            mockMvc().perform(get("/api/chat/conversations").param("workspaceId", "3001"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].activeTaskId").doesNotExist())
+                .andExpect(jsonPath("$.data[0].activeTaskStatus").doesNotExist())
+                .andExpect(jsonPath("$.data[0].lastTaskId").value("2054964195115945984"))
+                .andExpect(jsonPath("$.data[0].lastTaskStatus").value("SUCCEEDED"))
+                .andExpect(jsonPath("$.data[0].lastTaskFinishedAt").exists());
+        }
+    }
+
+    /**
      * 延迟创建 MockMvc，确保 Mockito 注入完成。
      * @return 用于接口契约断言的 MockMvc。
      */

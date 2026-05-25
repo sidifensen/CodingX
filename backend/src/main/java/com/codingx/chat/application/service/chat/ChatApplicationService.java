@@ -436,7 +436,8 @@ public class ChatApplicationService {
                 streamError,
                 selectedProvider,
                 selectedModel,
-                activeRunId
+                activeRunId,
+                List.of()
             );
         } catch (RuntimeException exception) {
             if (chatRuntimeGuardService.isCancelled(command.conversationId(), activeRunId)) {
@@ -880,7 +881,8 @@ public class ChatApplicationService {
                 streamError,
                 selectedProvider,
                 selectedModel,
-                activeRunId
+                activeRunId,
+                validatedAttachments
             );
         } catch (RuntimeException exception) {
             if (chatRuntimeGuardService.isCancelled(command.conversationId(), activeRunId)) {
@@ -983,6 +985,7 @@ public class ChatApplicationService {
      * @param selectedProvider 实际 provider 输出容器。
      * @param selectedModel 实际模型输出容器。
      * @param activeRunId 当前运行标识。
+     * @param currentMessageAttachments 当前用户消息已校验附件，用于调整模型可见工具。
      */
     private void runAiToolAwareLoop(
         SendChatMessageCommand command,
@@ -993,11 +996,10 @@ public class ChatApplicationService {
         Throwable[] streamError,
         String[] selectedProvider,
         String[] selectedModel,
-        Long activeRunId
+        Long activeRunId,
+        List<ChatAttachment> currentMessageAttachments
     ) {
-        List<ChatToolSpec> toolSpecs = chatToolSpecService == null
-            ? List.of()
-            : Optional.ofNullable(chatToolSpecService.listModelVisibleToolSpecs()).orElse(List.of());
+        List<ChatToolSpec> toolSpecs = resolveModelVisibleToolSpecs(initialAiHistory, currentMessageAttachments);
         List<ChatMessage> currentHistory = new ArrayList<>(initialAiHistory);
         if (toolSpecs.isEmpty()) {
             // 业务约束：没有模型可见工具时必须走普通流式契约，兼容未适配工具调用的 provider 与旧测试桩。
@@ -1054,6 +1056,67 @@ public class ChatApplicationService {
         }
         // 连续工具调用仍未结束时，用明确异常提示用户收敛工具调用策略。
         streamError[0] = new IllegalStateException("本地工具调用轮次超过上限，请收敛工具调用后重试");
+    }
+
+    /**
+     * 根据当前模型上下文裁剪可见工具；图片附件已作为多模态内容入模时，隐藏 view_image。
+     * 关键约束：上传图片不是本地路径，继续暴露 view_image 会诱导模型把附件当路径调用并返回“图片不存在”。
+     *
+     * @param aiHistory 本轮入模消息历史。
+     * @param currentMessageAttachments 当前用户消息附件。
+     * @return 本轮允许模型调用的工具列表。
+     */
+    private List<ChatToolSpec> resolveModelVisibleToolSpecs(
+        List<ChatMessage> aiHistory,
+        List<ChatAttachment> currentMessageAttachments
+    ) {
+        List<ChatToolSpec> toolSpecs = chatToolSpecService == null
+            ? List.of()
+            : Optional.ofNullable(chatToolSpecService.listModelVisibleToolSpecs()).orElse(List.of());
+        if (toolSpecs.isEmpty()) {
+            return toolSpecs;
+        }
+        boolean hasImageAttachment =
+            hasImageAttachment(currentMessageAttachments) || historyHasImageAttachment(aiHistory);
+        if (!hasImageAttachment) {
+            return toolSpecs;
+        }
+        return toolSpecs.stream()
+            .filter(toolSpec -> !StrUtil.equalsIgnoreCase(toolSpec.name(), "view_image"))
+            .toList();
+    }
+
+    /**
+     * 判断附件集合中是否包含图片。
+     * @param attachments 附件集合，可为空。
+     * @return 是否存在图片附件。
+     */
+    private boolean hasImageAttachment(List<ChatAttachment> attachments) {
+        if (attachments == null || attachments.isEmpty()) {
+            return false;
+        }
+        return attachments.stream()
+            .anyMatch(attachment -> attachment != null && StrUtil.equalsIgnoreCase(attachment.getAttachmentType(), "image"));
+    }
+
+    /**
+     * 从历史消息绑定附件中判断是否存在图片，覆盖重新生成和追问图片的场景。
+     * @param aiHistory 本轮入模消息历史。
+     * @return 是否存在历史图片附件。
+     */
+    private boolean historyHasImageAttachment(List<ChatMessage> aiHistory) {
+        if (aiHistory == null || aiHistory.isEmpty()) {
+            return false;
+        }
+        for (ChatMessage message : aiHistory) {
+            if (message == null || message.getRole() != ChatMessageRole.USER || message.getId() == null) {
+                continue;
+            }
+            if (hasImageAttachment(chatAttachmentService.listByMessageId(message.getId()))) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

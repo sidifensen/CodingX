@@ -9,6 +9,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.codingx.chat.application.command.SendChatMessageCommand;
+import com.codingx.chat.domain.model.ChatAttachment;
 import com.codingx.chat.domain.model.ChatConversation;
 import com.codingx.chat.domain.model.ChatConversationStatus;
 import com.codingx.chat.domain.model.ChatMessage;
@@ -220,6 +221,67 @@ class ChatApplicationToolCallFlowTest {
         verify(chatWorkspaceBindingService).findRepositoryPathByWorkspaceId(3001L);
         verify(chatToolExecutionService).execute("test_sync_tool", "{\"message\":\"workspace\"}");
         verify(chatStreamPublisher).publishAssistantCompleted(2L, "已在 workspace 执行。", "workspace 工具调用");
+        ChatExecutionContext.clear();
+    }
+
+    /**
+     * 图片附件已通过多模态请求体交给视觉模型时，不应继续暴露 view_image。
+     * 否则模型会把上传图片误当成本地路径工具调用，导致用户明明上传了图片却返回“图片不存在”。
+     */
+    @Test
+    void sendMessageHidesViewImageToolWhenImageAttachmentAlreadyUploaded() {
+        Long runId = 9401004L;
+        ChatExecutionContext.start(runId);
+        ChatConversation conversation = ChatConversation.create(4L, "Image Upload", 1002L, ChatConversationStatus.ACTIVE);
+        ChatAttachment attachment = ChatAttachment.builder()
+            .id(5001L)
+            .uploadedBy(1002L)
+            .attachmentType("image")
+            .fileName("demo.png")
+            .mimeType("image/png")
+            .fileSize(100L)
+            .storageKey("chat/attachments/demo.png")
+            .status("UPLOADED")
+            .build();
+        when(chatConversationRepository.requireById(4L)).thenReturn(conversation);
+        when(chatMessageRepository.findByConversationId(4L)).thenReturn(new ArrayList<>());
+        when(chatAttachmentService.requireOwnedAttachments(any(), eq(4L), eq(1002L))).thenReturn(List.of(attachment));
+        when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+            new ConversationRewriteResult("这张图里是谁", false, List.of("这张图里是谁"))
+        );
+        when(conversationIntentService.route("这张图里是谁", false)).thenReturn(
+            new ConversationIntentDecision("chat.normal", ConversationIntentAction.DIRECT, null)
+        );
+        when(chatIntentNodeRepository.findByIntentCode("chat.normal")).thenReturn(null);
+        when(chatSkillContextService.buildSkillContext(any())).thenReturn("");
+        when(chatExpertContextService.buildExpertContext(any())).thenReturn("");
+        when(conversationSummaryService.buildModelHistory(any(), any())).thenAnswer(invocation -> invocation.getArgument(1));
+        when(conversationTitleService.generateTitle(any(), any())).thenReturn("图片识别");
+        when(llmResponseCleaner.clean(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(chatToolSpecService.listModelVisibleToolSpecs()).thenReturn(List.of(
+            new ChatToolSpec("view_image", "读取本地图片", Map.of("type", "object")),
+            new ChatToolSpec("test_sync_tool", "同步测试工具", Map.of("type", "object"))
+        ));
+        doAnswer(invocation -> {
+            AiChatClient.ToolAwareStreamHandler handler = invocation.getArgument(3);
+            handler.onDelta("这是用户上传的图片。");
+            handler.onComplete();
+            return null;
+        }).when(aiChatClient).streamChatWithTools(any(), eq(false), any(), any());
+
+        chatApplicationService.sendMessage(
+            new SendChatMessageCommand(4L, "这张图里是谁", false, List.of(), List.of(), null, null, List.of(5001L)),
+            1002L
+        );
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<ChatToolSpec>> toolSpecsCaptor = ArgumentCaptor.forClass(List.class);
+        verify(aiChatClient).streamChatWithTools(any(), eq(false), toolSpecsCaptor.capture(), any());
+        assertEquals(
+            List.of("test_sync_tool"),
+            toolSpecsCaptor.getValue().stream().map(ChatToolSpec::name).toList()
+        );
+        verify(chatAttachmentService).bindToMessage(eq(attachment), eq(4L), org.mockito.ArgumentMatchers.any(Long.class), eq(runId));
         ChatExecutionContext.clear();
     }
 

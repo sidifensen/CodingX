@@ -49,43 +49,9 @@ node "${CLAUDE_SKILL_DIR}/scripts/check-deps.mjs"
 
 通过 CDP Proxy 直连用户日常 Chrome，天然携带登录态，无需启动独立浏览器。若无用户明确要求，不主动操作用户已有 tab。
 
-### 本项目内置工具
+### 在 CodingX 中的说明
 
-在 CodingX 中，上述能力已经封装为模型可见工具 `web_access`，默认对接 `http://127.0.0.1:3456`。
-
-调用时请传入 JSON 参数，常见动作如下：
-
-```json
-{"action":"targets"}
-{"action":"new","url":"https://example.com"}
-{"action":"eval","target":"TAB_ID","script":"document.title"}
-{"action":"screenshot","target":"TAB_ID"}
-{"action":"click","target":"TAB_ID","selector":"button.submit"}
-{"action":"setFiles","target":"TAB_ID","selector":"input[type=file]","files":["/path/to/file.png"]}
-{"action":"scroll","target":"TAB_ID","direction":"bottom"}
-{"action":"close","target":"TAB_ID"}
-```
-
-关键约束：
-
-- `targets` 用于列出当前标签页
-- `new` 用于打开新标签页，`url` 必填
-- `eval`、`screenshot`、`click`、`setFiles`、`scroll`、`close` 需要先拿到 `target`
-- `setFiles` 的 `files` 必须是本地文件绝对路径列表
-- 截图默认会落到本机临时目录，便于后续再用 `view_image` 检查
-
-### 常用操作
-
-```bash
-curl -s http://localhost:3456/targets
-curl -s "http://localhost:3456/new?url=https://example.com"
-curl -s -X POST "http://localhost:3456/eval?target=ID" -d 'document.title'
-curl -s "http://localhost:3456/screenshot?target=ID&file=/tmp/shot.png"
-curl -s -X POST "http://localhost:3456/click?target=ID" -d 'button.submit'
-curl -s -X POST "http://localhost:3456/setFiles?target=ID" -d '{"selector":"input[type=file]","files":["/path/to/file.png"]}'
-curl -s "http://localhost:3456/scroll?target=ID&direction=bottom"
-curl -s "http://localhost:3456/close?target=ID"
-```
+本仓库只保留 skill 文本和技能上下文，不额外绑定 Java 运行时工具。需要实际联网或浏览器交互时，应使用当前运行环境已经提供的浏览器/CDP 能力，而不要假设项目内存在额外的 `web_access` 工具实现。
 
 ## 任务结束
 

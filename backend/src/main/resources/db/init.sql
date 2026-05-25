@@ -304,8 +304,7 @@ VALUES
     (9124, 'list_agents', '列出子代理', '列出当前会话中的子代理', '多代理', 'codex-cli', 1, 24, 0),
     (9125, 'spawn_agents_on_csv', 'CSV 批量生成子代理', '根据 CSV 批量创建子代理任务', '批处理', 'codex-cli', 1, 25, 0),
     (9126, 'report_agent_job_result', '上报子代理任务结果', '上报批量子代理任务的执行结果', '批处理', 'codex-cli', 1, 26, 0),
-    (9127, 'test_sync_tool', '同步测试工具', '用于工具链路调试与连通性验证', '调试', 'codex-cli', 1, 27, 0),
-    (9128, 'web_access', '联网访问', '通过本机 CDP Proxy 执行联网搜索、网页抓取与浏览器交互', '网络访问', 'codex-cli', 1, 28, 0)
+    (9127, 'test_sync_tool', '同步测试工具', '用于工具链路调试与连通性验证', '调试', 'codex-cli', 1, 27, 0)
 ON CONFLICT (tool_code) DO UPDATE
 SET
     display_name = EXCLUDED.display_name,

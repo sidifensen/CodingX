@@ -3,7 +3,6 @@ import com.codingx.config.AiProperties;
 import com.codingx.config.ChatExecutorRuntimeProperties;
 import com.codingx.config.ChatMemoryProperties;
 import com.codingx.config.RuntimeProperties;
-import com.codingx.config.WebAccessProperties;
 import org.mybatis.spring.annotation.MapperScan;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
@@ -18,8 +17,7 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
     AiProperties.class,
     RuntimeProperties.class,
     ChatMemoryProperties.class,
-    ChatExecutorRuntimeProperties.class,
-    WebAccessProperties.class
+    ChatExecutorRuntimeProperties.class
 })
 public class CodingXApplication {
 

@@ -72,44 +72,6 @@ class ChatToolSpecServiceTest {
     }
 
     /**
-     * web-access 已完成真实执行器接入后，也应作为模型可见工具暴露出来，避免“有技能无工具”。
-     */
-    @Test
-    void listModelVisibleSpecsIncludesWebAccessWhenExecutorIsRegistered() {
-        ChatToolRepository repository = new InMemoryChatToolRepository(List.of(
-            ChatTool.builder()
-                .toolCode("web_access")
-                .displayName("联网访问")
-                .description("通过真实浏览器执行联网搜索、网页抓取与页面交互")
-                .enabled(1)
-                .sortNo(5)
-                .deleted(0)
-                .build()
-        ));
-        ChatToolExecutor executor = new ChatToolExecutor() {
-            @Override
-            public List<String> toolCodes() {
-                return List.of("web_access");
-            }
-
-            @Override
-            public ChatToolExecutionResult execute(String toolCode, String question) {
-                return new ChatToolExecutionResult(toolCode, "ok", Map.of());
-            }
-        };
-        ChatToolRegistry registry = new ChatToolRegistry(List.of(executor));
-        registry.init();
-        ChatToolSpecService service = new ChatToolSpecService(repository, registry);
-
-        List<ChatToolSpec> specs = service.listModelVisibleToolSpecs();
-
-        assertEquals(List.of("web_access"), specs.stream().map(ChatToolSpec::name).toList());
-        ChatToolSpec spec = specs.getFirst();
-        assertTrue(spec.parameters().containsKey("properties"));
-        assertTrue(spec.parameters().toString().contains("action"));
-    }
-
-    /**
      * 测试用内存仓储只实现 schema 服务所需的读取方法。
      */
     private record InMemoryChatToolRepository(List<ChatTool> tools) implements ChatToolRepository {

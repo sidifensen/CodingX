@@ -887,51 +887,6 @@ public final class ErrorMessageCatalog {
     public static final String CHAT_TOOL_EXECUTOR_NOT_FOUND = "工具未接入执行器";
 
     /**
-     * web_access CDP Proxy 不可用提示。
-     */
-    public static final String CHAT_TOOL_WEB_ACCESS_PROXY_UNAVAILABLE = "web_access CDP Proxy 不可用，请确认 http://127.0.0.1:3456 已启动";
-
-    /**
-     * web_access 请求失败提示前缀。
-     */
-    public static final String CHAT_TOOL_WEB_ACCESS_REQUEST_FAILED_PREFIX = "web_access 请求失败: ";
-
-    /**
-     * web_access action 缺失提示。
-     */
-    public static final String CHAT_TOOL_WEB_ACCESS_ACTION_REQUIRED = "请提供 action";
-
-    /**
-     * web_access action 非法提示。
-     */
-    public static final String CHAT_TOOL_WEB_ACCESS_ACTION_INVALID = "web_access action 不合法";
-
-    /**
-     * web_access target 缺失提示。
-     */
-    public static final String CHAT_TOOL_WEB_ACCESS_TARGET_REQUIRED = "请提供 target";
-
-    /**
-     * web_access url 缺失提示。
-     */
-    public static final String CHAT_TOOL_WEB_ACCESS_URL_REQUIRED = "请提供 url";
-
-    /**
-     * web_access script 缺失提示。
-     */
-    public static final String CHAT_TOOL_WEB_ACCESS_SCRIPT_REQUIRED = "请提供 script";
-
-    /**
-     * web_access selector 缺失提示。
-     */
-    public static final String CHAT_TOOL_WEB_ACCESS_SELECTOR_REQUIRED = "请提供 selector";
-
-    /**
-     * web_access files 缺失提示。
-     */
-    public static final String CHAT_TOOL_WEB_ACCESS_FILES_REQUIRED = "请提供 files";
-
-    /**
      * 工具配置对象缺失提示。
      */
     public static final String CHAT_TOOL_CONFIG_REQUIRED = "工具配置不能为空";

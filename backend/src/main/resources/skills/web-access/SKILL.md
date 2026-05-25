@@ -49,6 +49,31 @@ node "${CLAUDE_SKILL_DIR}/scripts/check-deps.mjs"
 
 通过 CDP Proxy 直连用户日常 Chrome，天然携带登录态，无需启动独立浏览器。若无用户明确要求，不主动操作用户已有 tab。
 
+### 本项目内置工具
+
+在 CodingX 中，上述能力已经封装为模型可见工具 `web_access`，默认对接 `http://127.0.0.1:3456`。
+
+调用时请传入 JSON 参数，常见动作如下：
+
+```json
+{"action":"targets"}
+{"action":"new","url":"https://example.com"}
+{"action":"eval","target":"TAB_ID","script":"document.title"}
+{"action":"screenshot","target":"TAB_ID"}
+{"action":"click","target":"TAB_ID","selector":"button.submit"}
+{"action":"setFiles","target":"TAB_ID","selector":"input[type=file]","files":["/path/to/file.png"]}
+{"action":"scroll","target":"TAB_ID","direction":"bottom"}
+{"action":"close","target":"TAB_ID"}
+```
+
+关键约束：
+
+- `targets` 用于列出当前标签页
+- `new` 用于打开新标签页，`url` 必填
+- `eval`、`screenshot`、`click`、`setFiles`、`scroll`、`close` 需要先拿到 `target`
+- `setFiles` 的 `files` 必须是本地文件绝对路径列表
+- 截图默认会落到本机临时目录，便于后续再用 `view_image` 检查
+
 ### 常用操作
 
 ```bash

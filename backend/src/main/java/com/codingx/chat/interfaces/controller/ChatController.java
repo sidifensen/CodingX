@@ -154,9 +154,11 @@ public class ChatController {
         leaseTimeMs = 30000
     )
     public ApiResponse<Void> sendMessage(@PathVariable Long conversationId, @Valid @RequestBody SendChatMessageRequest request) {
-        List<String> selectedSkillCodes = chatSkillRepository.findAllEnabled().stream()
-            .map(ChatSkill::getSkillCode)
+        // 同步入口只接受前端显式选择的技能，避免把全部启用技能无差别塞入模型上下文。
+        List<String> selectedSkillCodes = request.skillCodes() == null ? List.of() : request.skillCodes().stream()
+            .map(code -> StrUtil.trimToEmpty(code))
             .filter(StrUtil::isNotBlank)
+            .distinct()
             .collect(Collectors.toList());
         List<String> selectedMcpCodes = chatMcpQueryService.listEnabledMcps().stream()
             .filter(mcp -> mcp.getAvailable() == null || Boolean.TRUE.equals(mcp.getAvailable()))

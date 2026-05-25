@@ -229,6 +229,7 @@ public class AdminChatToolService {
             case "create_goal" -> "{\"goalId\":\"default\",\"title\":\"上线准备\",\"description\":\"完成工具联调\"}";
             case "update_goal" -> "{\"goalId\":\"default\",\"status\":\"completed\"}";
             case "followup_task" -> "{\"agentId\":\"agent-xxx\",\"task\":\"补充接口测试\"}";
+            case "web_access" -> "{\"action\":\"targets\"}";
             case "list_agents" -> "列出代理";
             case "spawn_agents_on_csv" -> "csvPath=D:\\\\code\\\\CodingX\\\\logs\\\\agents.csv";
             case "report_agent_job_result" -> "{\"jobId\":\"job-1\",\"status\":\"completed\",\"summary\":\"全部成功\"}";

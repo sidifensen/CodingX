@@ -86,6 +86,11 @@ app:
       summary-trigger-messages: ${CHAT_MEMORY_SUMMARY_TRIGGER_MESSAGES:12} # 触发摘要的消息数量阈值
       history-keep-turns: ${CHAT_MEMORY_HISTORY_KEEP_TURNS:6} # 保留的历史对话轮次
       summary-max-characters: ${CHAT_MEMORY_SUMMARY_MAX_CHARACTERS:4000} # 摘要最大字符数
+  web-access:
+    base-url: ${APP_WEB_ACCESS_BASE_URL:http://127.0.0.1:3456} # web_access 工具代理的 CDP Proxy 地址
+    request-timeout-ms: ${APP_WEB_ACCESS_REQUEST_TIMEOUT_MS:15000} # web_access 工具单次请求超时时间
+    connect-timeout-ms: ${APP_WEB_ACCESS_CONNECT_TIMEOUT_MS:5000} # web_access 工具连接超时时间
+    read-timeout-ms: ${APP_WEB_ACCESS_READ_TIMEOUT_MS:15000} # web_access 工具读取超时时间
   security:
     cors:
       allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5002,http://localhost:5003} # CORS 允许的源列表

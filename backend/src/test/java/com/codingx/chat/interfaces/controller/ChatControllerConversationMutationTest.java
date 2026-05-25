@@ -20,6 +20,7 @@ import com.codingx.skill.domain.repository.ChatSkillRepository;
 import com.codingx.common.model.ApiResponse;
 import com.codingx.mcp.domain.repository.ChatMcpRepository;
 import com.codingx.workspace.infrastructure.repository.WorkspaceRepositoryImpl;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -126,7 +127,6 @@ class ChatControllerConversationMutationTest {
      */
     @Test
     void sendMessageReleasesConversationGuardAfterSyncProcessing() {
-        when(chatSkillRepository.findAllEnabled()).thenReturn(java.util.List.of());
         when(chatMcpQueryService.listEnabledMcps()).thenReturn(java.util.List.of());
         try (MockedStatic<cn.dev33.satoken.stp.StpUtil> mocked = Mockito.mockStatic(cn.dev33.satoken.stp.StpUtil.class)) {
             mocked.when(cn.dev33.satoken.stp.StpUtil::getLoginIdAsLong).thenReturn(1002L);
@@ -157,7 +157,6 @@ class ChatControllerConversationMutationTest {
      */
     @Test
     void sendMessageReleasesConversationGuardWhenSyncProcessingFails() {
-        when(chatSkillRepository.findAllEnabled()).thenReturn(java.util.List.of());
         when(chatMcpQueryService.listEnabledMcps()).thenReturn(java.util.List.of());
         doThrow(new IllegalStateException("boom")).when(chatApplicationService).sendMessage(
             new com.codingx.chat.application.command.SendChatMessageCommand(
@@ -181,6 +180,37 @@ class ChatControllerConversationMutationTest {
             );
 
             verify(chatRuntimeGuardService).completeConversation(2001L);
+        }
+    }
+
+    /**
+     * 同步发送消息时应透传前端选中的技能列表，避免后端把“全量启用技能”误注入模型上下文。
+     */
+    @Test
+    void sendMessageUsesExplicitSkillCodesFromRequest() {
+        when(chatMcpQueryService.listEnabledMcps()).thenReturn(java.util.List.of());
+        try (MockedStatic<cn.dev33.satoken.stp.StpUtil> mocked = Mockito.mockStatic(cn.dev33.satoken.stp.StpUtil.class)) {
+            mocked.when(cn.dev33.satoken.stp.StpUtil::getLoginIdAsLong).thenReturn(1002L);
+
+            ApiResponse<Void> response = chatController.sendMessage(
+                2001L,
+                new SendChatMessageRequest("请用已选技能帮我查一下网页", List.of("web-access", "code_search"), List.of())
+            );
+
+            assertEquals(true, response.success());
+            verify(chatApplicationService).sendMessage(
+                new com.codingx.chat.application.command.SendChatMessageCommand(
+                    2001L,
+                    "请用已选技能帮我查一下网页",
+                    false,
+                    java.util.List.of(),
+                    java.util.List.of("web-access", "code_search"),
+                    null,
+                    null,
+                    java.util.List.of()
+                ),
+                1002L
+            );
         }
     }
 

@@ -26,6 +26,7 @@ public class ChatToolSpecService {
         "apply_patch",
         "update_plan",
         "view_image",
+        "web_access",
         "tool_search",
         "test_sync_tool"
     );
@@ -96,6 +97,22 @@ public class ChatToolSpecService {
                 Map.of("path", stringSchema("本地图片绝对路径或可访问的 HTTP(S) 图片 URL")),
                 List.of("path")
             );
+            // web_access 采用动作驱动协议，只暴露浏览器代理真正需要的少量字段，避免模型误把它当成通用浏览器 API。
+            case "web_access" -> {
+                Map<String, Object> properties = new LinkedHashMap<>();
+                properties.put("action", stringEnumSchema(
+                    "要执行的浏览器动作",
+                    List.of("targets", "new", "eval", "screenshot", "click", "setFiles", "scroll", "close")
+                ));
+                properties.put("target", stringSchema("目标标签页 ID，执行打开新页之外的动作时使用"));
+                properties.put("url", stringSchema("要打开的新页面地址"));
+                properties.put("script", stringSchema("要执行的 JavaScript 代码"));
+                properties.put("selector", stringSchema("要点击或上传文件的 CSS 选择器"));
+                properties.put("files", arraySchema("要上传到文件输入框的本地文件绝对路径列表", stringSchema("本地文件绝对路径")));
+                properties.put("direction", stringSchema("滚动方向，例如 top、bottom、left、right"));
+                properties.put("file", stringSchema("截图保存路径，缺省时由后端自动生成"));
+                yield objectSchema(properties, List.of("action"));
+            }
             case "tool_search" -> objectSchema(
                 Map.of("keyword", stringSchema("用于检索工具配置的关键词")),
                 List.of("keyword")
@@ -132,6 +149,22 @@ public class ChatToolSpecService {
 
     private Map<String, Object> stringSchema(String description) {
         return Map.of("type", "string", "description", description);
+    }
+
+    private Map<String, Object> stringEnumSchema(String description, List<String> values) {
+        Map<String, Object> schema = new LinkedHashMap<>();
+        schema.put("type", "string");
+        schema.put("description", description + "，可选值：" + String.join("、", values));
+        schema.put("enum", values);
+        return schema;
+    }
+
+    private Map<String, Object> arraySchema(String description, Map<String, Object> itemSchema) {
+        Map<String, Object> schema = new LinkedHashMap<>();
+        schema.put("type", "array");
+        schema.put("description", description);
+        schema.put("items", new LinkedHashMap<>(itemSchema));
+        return schema;
     }
 
     private Map<String, Object> numberSchema(String description) {

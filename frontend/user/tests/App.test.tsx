@@ -1484,9 +1484,9 @@ describe('App', () => {
   });
 
   /**
-   * 点击左侧会话三点按钮后应弹出重命名和删除菜单。
+   * 点击左侧会话三点按钮后应弹出完整会话操作菜单。
    */
-  it('应在点击侧边栏会话操作按钮后展示重命名与删除菜单', async () => {
+  it('应在点击侧边栏会话操作按钮后展示完整会话菜单', async () => {
     window.localStorage.setItem(
       'codingx.auth.session',
       JSON.stringify({
@@ -1595,6 +1595,10 @@ describe('App', () => {
     await waitFor(() => {
       expect(screen.getAllByRole('button', { name: '重命名对话' }).length).toBeGreaterThan(0);
     });
+    expect(screen.getAllByRole('button', { name: '置顶对话' }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole('button', { name: '分享对话' }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole('button', { name: '批量管理' }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole('button', { name: '导出对话' }).length).toBeGreaterThan(0);
     expect(screen.getAllByRole('button', { name: '删除对话' }).length).toBeGreaterThan(0);
   });
 

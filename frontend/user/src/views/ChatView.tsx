@@ -4,6 +4,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import {
   ArrowUp,
+  ExternalLink,
   ChevronDown,
   CheckCircle2,
   CircleStop,
@@ -21,8 +22,10 @@ import {
   FolderOpen,
   Monitor,
   Search,
+  Share2,
   ThumbsDown,
   ThumbsUp,
+  RotateCcw,
   WandSparkles,
 } from 'lucide-react';
 import { AuthStorage } from '../utils/authStorage';
@@ -30,6 +33,8 @@ import { ChatApi } from './chat/chatApi';
 import {
   ChatAttachmentItem,
   ChatWorkspaceController,
+  MessageSearchProgress,
+  MessageSearchProgressItem,
   McpItem,
   PendingAttachmentItem,
   ProcessCardItem,
@@ -100,6 +105,8 @@ export default function ChatView({
     setActiveRuntimeTarget,
     submitMessage,
     cancelCurrentStream,
+    shareConversation,
+    regenerateConversation,
     pickRepositoryDirectory,
     renameDialog,
     deleteDialog,
@@ -109,6 +116,9 @@ export default function ChatView({
   } = workspace;
   const safeAvailableExperts = availableExperts ?? [];
   const safeCurrentExperts = currentExperts ?? [];
+  const latestAssistantMessageId = React.useMemo(() => {
+    return [...messages].reverse().find((message) => message.role === 'ASSISTANT')?.id ?? null;
+  }, [messages]);
   const latestMessageAnchorRef = React.useRef<HTMLDivElement | null>(null);
   const chatScrollRegionRef = React.useRef<HTMLDivElement | null>(null);
   const shouldFollowLatestMessageRef = React.useRef(true);
@@ -802,12 +812,21 @@ export default function ChatView({
                               onPreviewImage={(src, alt) => setPreviewAttachment({ src, alt })}
                             />
                           ) : null}
-                          <MarkdownMessage content={messageContent} />
+                          {message.searchProgress?.items?.length ? (
+                            <SearchProgressPanel
+                              messageId={message.id}
+                              progress={message.searchProgress}
+                            />
+                          ) : null}
+                          <MarkdownMessage content={messageContent} messageId={message.id} />
                           <AssistantMessageActions
                             messageId={message.id}
                             conversationId={message.conversationId}
                             content={messageContent}
+                            isLatestAssistantMessage={message.id === latestAssistantMessageId}
                             userVote={message.userVote}
+                            onShareConversation={shareConversation}
+                            onRegenerateConversation={regenerateConversation}
                           />
                         </>
                       ) : (
@@ -1578,7 +1597,11 @@ export default function ChatView({
           onCancel={renameDialog.close}
           onConfirm={async (nextTitle) => {
             if (renameDialog.conversationId) {
-              await renameConversation(renameDialog.conversationId, nextTitle);
+              await renameConversation(
+                renameDialog.conversationId,
+                nextTitle,
+                renameDialog.actionContext,
+              );
             }
             renameDialog.close();
           }}
@@ -1594,7 +1617,10 @@ export default function ChatView({
           onCancel={deleteDialog.close}
           onConfirm={async () => {
             if (deleteDialog.conversationId) {
-              await deleteConversation(deleteDialog.conversationId);
+              await deleteConversation(
+                deleteDialog.conversationId,
+                deleteDialog.actionContext,
+              );
             }
             deleteDialog.close();
           }}
@@ -1604,10 +1630,299 @@ export default function ChatView({
   );
 }
 
+type DirectoryListingEntry = {
+  mode: string;
+  date: string;
+  time: string;
+  length?: string;
+  name: string;
+  isDirectory: boolean;
+};
+
+type DirectoryListingPreview = {
+  entries: DirectoryListingEntry[];
+  folderCount: number;
+  fileCount: number;
+};
+
+/**
+ * 将助手消息中的搜索来源渲染成可折叠列表，避免把标题、站点名和链接压缩成一行纯文本。
+ * 这里直接使用消息内的 `searchProgress`，保证流式阶段和历史回放阶段都能看到一致的来源展示。
+ */
+function SearchProgressPanel({
+  messageId,
+  progress,
+}: {
+  messageId: string;
+  progress: MessageSearchProgress;
+}) {
+  const visibleItems = progress.items.filter((item) => {
+    return [item.title, item.url, item.siteName].some((value) => String(value ?? '').trim().length > 0);
+  });
+  // 业务意图：默认只占一行摘要，用户主动展开后再看来源明细，避免搜索面板挤占正文。
+  const [isExpanded, setIsExpanded] = React.useState(false);
+  const contentId = `search-progress-content-${messageId}`;
+
+  if (visibleItems.length === 0) {
+    return null;
+  }
+
+  return (
+    <section data-testid={`search-progress-panel-${messageId}`} className="mb-1.5">
+      <button
+        type="button"
+        data-testid={`search-progress-toggle-${messageId}`}
+        aria-expanded={isExpanded}
+        aria-controls={contentId}
+        aria-label={isExpanded ? '折叠搜索来源列表' : '展开搜索来源列表'}
+        onClick={() => setIsExpanded((current) => !current)}
+        className="inline-flex max-w-full items-center gap-2 rounded-md px-0 py-1 text-xs font-medium text-muted transition-colors hover:text-foreground"
+      >
+        <ChevronDown
+          size={14}
+          className={`shrink-0 text-muted transition-transform duration-200 ${
+            isExpanded ? 'rotate-180' : '-rotate-90'
+          }`}
+        />
+        <span className="whitespace-nowrap">搜索来源</span>
+        <span className="text-border">·</span>
+        <span className="whitespace-nowrap text-foreground">{getSearchProgressStatusLabel(progress.status)}</span>
+        <span className="text-border">·</span>
+        <span className="whitespace-nowrap">{visibleItems.length} 条</span>
+      </button>
+      {isExpanded ? (
+        <div id={contentId} className="pl-4 pt-2">
+          <ul className="max-h-[280px] space-y-1.5 overflow-y-auto pl-3 pr-4 [scrollbar-gutter:stable]">
+            {visibleItems.map((item) => (
+              <li key={item.id}>
+                <SearchSourceListItem messageId={messageId} item={item} />
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+/**
+ * 渲染单条来源列表项：标题、站点信息和链接都可见，点击后通过新窗口打开原始网页。
+ * 列表项保留轻量行样式，避免再做成厚重卡片。
+ */
+function SearchSourceListItem({
+  messageId,
+  item,
+}: {
+  messageId: string;
+  item: MessageSearchProgressItem;
+}) {
+  const source = resolveSearchSourceMeta(item);
+  const displayTitle = item.title?.trim() || source.siteLabel || source.displayUrl || '来源';
+  const rowClasses =
+    'group block min-w-0 text-left transition-colors hover:text-foreground focus-visible:outline-none focus-visible:text-foreground';
+  const content = (
+    <article className="flex min-w-0 items-start gap-2">
+      <SearchSourceFavicon
+        faviconUrl={source.faviconUrl}
+        siteLabel={source.siteLabel}
+        data-testid={`search-source-favicon-${messageId}-${item.id}`}
+        className="mt-0.5 h-6 w-6 rounded-md"
+      />
+      <div className="min-w-0 flex-1 space-y-0.5">
+        <div className="flex min-w-0 items-start justify-between gap-2">
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-sm font-medium text-foreground" title={displayTitle}>
+              {displayTitle}
+            </div>
+            <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] leading-4 text-muted">
+              <span className="truncate">{source.siteLabel}</span>
+              {source.hostname ? <span className="font-mono">{source.hostname}</span> : null}
+            </div>
+          </div>
+          <ExternalLink
+            size={12}
+            className="mt-0.5 shrink-0 text-muted transition-colors group-hover:text-foreground"
+          />
+        </div>
+        {source.displayUrl ? (
+          <div
+            className="truncate font-mono text-[11px] leading-4 text-accent-breeze"
+            title={item.url}
+          >
+            {source.displayUrl}
+          </div>
+        ) : null}
+      </div>
+    </article>
+  );
+
+  if (source.href) {
+    return (
+      <a
+        data-testid={`search-source-link-${messageId}-${item.id}`}
+        href={source.href}
+        target="_blank"
+        rel="noreferrer noopener"
+        aria-label={`打开来源 ${displayTitle}${source.siteLabel ? `，${source.siteLabel}` : ''}`}
+        className={rowClasses}
+      >
+        {content}
+      </a>
+    );
+  }
+
+  return (
+    <div
+      data-testid={`search-source-row-${messageId}-${item.id}`}
+      className={`${rowClasses} cursor-default opacity-80`}
+    >
+      {content}
+    </div>
+  );
+}
+
+/**
+ * 来源列表左侧的站点图标优先使用 favicon，失败时回退为首字母。
+ * 这样既能尽量保留网站识别度，也不会因为单个站点图标不可用导致列表项视觉破损。
+ */
+function SearchSourceFavicon({
+  faviconUrl,
+  siteLabel,
+  ...props
+}: {
+  faviconUrl: string | null;
+  siteLabel: string;
+} & React.HTMLAttributes<HTMLDivElement>) {
+  const [hasImageError, setHasImageError] = React.useState(false);
+  const { className, ...restProps } = props;
+
+  React.useEffect(() => {
+    setHasImageError(false);
+  }, [faviconUrl]);
+
+  const fallbackLabel = siteLabel.trim().slice(0, 1).toUpperCase() || 'W';
+
+  return (
+    <div
+      {...restProps}
+      aria-hidden="true"
+      className={[
+        'flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-border bg-surface-container text-accent-breeze',
+        className,
+      ]
+        .filter(Boolean)
+        .join(' ')}
+    >
+      {faviconUrl && !hasImageError ? (
+        <img
+          src={faviconUrl}
+          alt=""
+          aria-hidden="true"
+          className="h-3 w-3 rounded-sm object-contain"
+          onError={() => setHasImageError(true)}
+        />
+      ) : (
+        <span
+          aria-hidden="true"
+          className="flex h-full w-full items-center justify-center rounded-md bg-surface-container text-[9px] font-semibold text-accent-breeze"
+        >
+          {fallbackLabel}
+        </span>
+      )}
+    </div>
+  );
+}
+
+/**
+ * 将搜索来源的链接信息解析为可展示、可点击的安全地址。
+ * 只允许 http/https，避免把异常字符串直接渲染成可执行链接。
+ */
+function resolveSearchSourceMeta(item: MessageSearchProgressItem): {
+  href: string | null;
+  hostname: string | null;
+  faviconUrl: string | null;
+  siteLabel: string;
+  displayUrl: string | null;
+} {
+  const rawUrl = typeof item.url === 'string' ? item.url.trim() : '';
+  let hostname: string | null = null;
+  let href: string | null = null;
+
+  if (rawUrl) {
+    const candidateUrls = rawUrl.startsWith('http://') || rawUrl.startsWith('https://')
+      ? [rawUrl]
+      : [`https://${rawUrl}`, rawUrl];
+
+    for (const candidateUrl of candidateUrls) {
+      try {
+        const parsed = new URL(candidateUrl);
+        if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+          href = parsed.toString();
+          hostname = parsed.hostname || null;
+          break;
+        }
+      } catch {
+        continue;
+      }
+    }
+  }
+
+  const siteLabel = item.siteName?.trim() || hostname || '来源站点';
+  const faviconUrl = hostname
+    ? `https://www.google.com/s2/favicons?domain=${encodeURIComponent(hostname)}&sz=64`
+    : null;
+  const displayUrl = href ? formatSearchSourceDisplayUrl(href) : null;
+
+  return {
+    href,
+    hostname,
+    faviconUrl,
+    siteLabel,
+    displayUrl,
+  };
+}
+
+/**
+ * 将完整链接压缩成更易扫读的展示文本，保留主机名和路径，避免把正文撑得过宽。
+ */
+function formatSearchSourceDisplayUrl(url: string): string {
+  try {
+    const parsed = new URL(url);
+    const path = parsed.pathname === '/' ? '' : parsed.pathname.replace(/\/$/, '');
+    return `${parsed.hostname}${path}${parsed.search}${parsed.hash}`;
+  } catch {
+    return url;
+  }
+}
+
+/**
+ * 搜索面板标题需要清楚表达当前阶段，避免用户把“正在加载”误解为结果为空。
+ */
+function getSearchProgressStatusLabel(status: MessageSearchProgress['status']): string {
+  switch (status) {
+    case 'running':
+      return '正在检索来源';
+    case 'completed':
+      return '来源已获取';
+    case 'cancelled':
+      return '检索已取消';
+    case 'error':
+      return '检索出现异常';
+    default:
+      return '搜索来源';
+  }
+}
+
 /**
  * 使用 Markdown 渲染助手消息，保证标题、列表、代码块等富文本结构按预期展示。
+ * 对 PowerShell 目录清单这类高密度代码块，额外收敛成结构化结果面板，避免正文被原始对齐文本撑散。
  */
-function MarkdownMessage({ content }: { content: string }) {
+function MarkdownMessage({ content, messageId }: { content: string; messageId?: string }) {
+  const directoryListing = parsePowerShellDirectoryListing(content);
+  if (directoryListing) {
+    return <DirectoryListingPanel listing={directoryListing} messageId={messageId} />;
+  }
+
   return (
     <div className="chat-markdown min-w-0 [overflow-wrap:anywhere] text-sm leading-7 text-foreground">
       <ReactMarkdown
@@ -1636,7 +1951,7 @@ function MarkdownMessage({ content }: { content: string }) {
             if (isBlockCode) {
               return (
                 <code
-                  className={`block overflow-x-auto rounded-2xl border border-border bg-surface-container px-4 py-3 font-mono text-[13px] leading-6 ${className}`}
+                  className={`block overflow-x-auto rounded-2xl border border-border bg-surface-container px-4 py-3 font-mono text-[13px] leading-6 shadow-[0_12px_28px_rgba(0,0,0,0.14)] ${className}`}
                   {...props}
                 >
                   {children}
@@ -1655,19 +1970,26 @@ function MarkdownMessage({ content }: { content: string }) {
           pre: ({ node: _node, ...props }) => (
             <pre className="mb-4 overflow-x-auto whitespace-pre-wrap" {...props} />
           ),
-          table: ({ node: _node, ...props }) => (
-            <div className="mb-4 overflow-x-auto rounded-2xl border border-border">
-              <table className="min-w-full border-collapse text-left text-sm" {...props} />
+          table: ({ node: _node, className, ...props }) => (
+            // Markdown 对比表通常承载高密度信息，给它单独做成卡片式容器，避免内容直接挤在正文流里。
+            <div className="chat-markdown-table-shell mb-4 overflow-x-auto">
+              <table
+                className={['chat-markdown-table min-w-full text-left', className].filter(Boolean).join(' ')}
+                {...props}
+              />
             </div>
           ),
-          thead: ({ node: _node, ...props }) => (
-            <thead className="bg-surface-container" {...props} />
+          th: ({ node: _node, children, ...props }) => (
+            // 表头单元格默认保留水平排版，短标题不应被强制拆成竖排。
+            <th className="min-w-24 px-4 py-3 font-semibold text-foreground" {...props}>
+              {children}
+            </th>
           ),
-          th: ({ node: _node, ...props }) => (
-            <th className="border-b border-border px-3 py-2 font-semibold" {...props} />
-          ),
-          td: ({ node: _node, ...props }) => (
-            <td className="border-b border-border px-3 py-2 align-top last:border-b-0" {...props} />
+          td: ({ node: _node, children, ...props }) => (
+            // 数据单元格保持自然宽度，配合横向滚动而不是硬性压缩文本。
+            <td className="min-w-24 px-4 py-3 align-top text-foreground" {...props}>
+              {children}
+            </td>
           ),
           blockquote: ({ node: _node, ...props }) => (
             <blockquote
@@ -1693,34 +2015,231 @@ function MarkdownMessage({ content }: { content: string }) {
   );
 }
 
+/**
+ * 识别 PowerShell `Get-ChildItem` 的目录输出，并将其转成更适合阅读的结构化数据。
+ * 只接受非常明确的列格式，避免误把普通代码块当成文件清单。
+ */
+function parsePowerShellDirectoryListing(text: string): DirectoryListingPreview | null {
+  const normalizedText = text.replace(/\r\n/g, '\n').trim();
+  if (!normalizedText) {
+    return null;
+  }
+
+  const lines = normalizedText
+    .split('\n')
+    .map((line) => line.trimEnd())
+    .filter((line) => line.trim().length > 0);
+  const headerIndex = lines.findIndex((line) => /^Mode\s+LastWriteTime\s+Length\s+Name$/i.test(line.trim()));
+  if (headerIndex < 0) {
+    return null;
+  }
+
+  const entries: DirectoryListingEntry[] = [];
+  const rowPattern =
+    /^(?<mode>\S+)\s+(?<date>\d{4}\/\d{1,2}\/\d{1,2})\s+(?<time>\d{1,2}:\d{2})(?:\s+(?<length>\d+))?\s+(?<name>.+)$/;
+
+  for (const line of lines.slice(headerIndex + 1)) {
+    if (/^-{3,}(\s+-{3,})*$/.test(line.trim())) {
+      continue;
+    }
+    const match = rowPattern.exec(line);
+    if (!match?.groups) {
+      continue;
+    }
+    const mode = match.groups.mode;
+    entries.push({
+      mode,
+      date: match.groups.date,
+      time: match.groups.time,
+      length: match.groups.length,
+      name: match.groups.name,
+      isDirectory: mode.startsWith('d'),
+    });
+  }
+
+  if (entries.length === 0) {
+    return null;
+  }
+
+  return {
+    entries,
+    folderCount: entries.filter((entry) => entry.isDirectory).length,
+    fileCount: entries.filter((entry) => !entry.isDirectory).length,
+  };
+}
+
+/**
+ * 将目录清单渲染成更像“结果卡片”的结构，突出文件名和元数据，而不是原始对齐文本。
+ */
+function DirectoryListingPanel({
+  listing,
+  messageId,
+}: {
+  listing: DirectoryListingPreview;
+  messageId?: string;
+}) {
+  const { entries, folderCount, fileCount } = listing;
+
+  return (
+    <div
+      data-testid={messageId ? `directory-listing-panel-${messageId}` : 'directory-listing-panel'}
+      className="mb-4 overflow-hidden rounded-2xl border border-border bg-surface shadow-[0_14px_34px_rgba(0,0,0,0.18)]"
+    >
+      <div className="flex items-center justify-between gap-3 border-b border-border bg-surface-container/80 px-4 py-3">
+        <div className="flex min-w-0 items-center gap-2">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-border bg-surface text-accent-breeze">
+            <FolderOpen size={16} />
+          </div>
+          <div className="min-w-0">
+            <div className="text-[11px] font-medium uppercase tracking-[0.22em] text-muted">
+              目录清单
+            </div>
+            <div className="truncate text-sm font-semibold text-foreground">PowerShell 输出</div>
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center justify-end gap-2 text-[11px] text-muted">
+          <span className="rounded-full border border-border bg-surface px-2.5 py-1">
+            共 {entries.length} 项
+          </span>
+          <span className="rounded-full border border-border bg-surface px-2.5 py-1">
+            {folderCount} 文件夹
+          </span>
+          <span className="rounded-full border border-border bg-surface px-2.5 py-1">
+            {fileCount} 文件
+          </span>
+        </div>
+      </div>
+      <div className="max-h-[420px] overflow-auto">
+        <table className="min-w-[720px] table-fixed border-collapse text-left">
+          <caption className="sr-only">PowerShell 目录输出</caption>
+          <thead className="sticky top-0 z-[1] bg-surface-container/90 text-[11px] uppercase tracking-[0.16em] text-muted">
+            <tr>
+              <th className="w-[84px] border-b border-border px-4 py-2 font-semibold">Mode</th>
+              <th className="w-[150px] border-b border-border px-4 py-2 font-semibold">
+                LastWriteTime
+              </th>
+              <th className="w-[96px] border-b border-border px-4 py-2 font-semibold">Length</th>
+              <th className="border-b border-border px-4 py-2 font-semibold">Name</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border/70">
+            {entries.map((entry, index) => (
+              <tr
+                key={`${entry.mode}-${entry.date}-${entry.time}-${entry.name}-${index}`}
+                className="transition-colors odd:bg-surface even:bg-surface-container/35 hover:bg-surface-container/70"
+              >
+                <td className="whitespace-nowrap px-4 py-3 font-mono text-[12px] text-muted">
+                  {entry.mode}
+                </td>
+                <td className="whitespace-nowrap px-4 py-3 font-mono text-[12px] text-muted">
+                  {entry.date} {entry.time}
+                </td>
+                <td className="whitespace-nowrap px-4 py-3 font-mono text-[12px] text-muted">
+                  <span
+                    className={`inline-flex min-w-[72px] justify-center rounded-full border px-2.5 py-0.5 ${
+                      entry.isDirectory
+                        ? 'border-accent-breeze/30 bg-accent-breeze/10 text-accent-breeze'
+                        : 'border-border bg-surface-container/70 text-muted'
+                    }`}
+                  >
+                    {formatDirectoryListingSize(entry)}
+                  </span>
+                </td>
+                <td className="px-4 py-3">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <span
+                      className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border ${
+                        entry.isDirectory
+                          ? 'border-accent-breeze/25 bg-accent-breeze/10 text-accent-breeze'
+                          : 'border-border bg-surface-container text-muted'
+                      }`}
+                    >
+                      {entry.isDirectory ? <FolderOpen size={14} /> : <FileText size={14} />}
+                    </span>
+                    <span className="min-w-0 truncate font-medium text-foreground" title={entry.name}>
+                      {entry.name}
+                    </span>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * 将长度字段转成更易扫读的单位，目录则保留为“目录”，避免空白单元格看起来像渲染失败。
+ */
+function formatDirectoryListingSize(entry: DirectoryListingEntry): string {
+  if (entry.isDirectory) {
+    return '目录';
+  }
+
+  const rawLength = Number(entry.length);
+  if (!Number.isFinite(rawLength)) {
+    return entry.length ?? '—';
+  }
+  if (rawLength < 1024) {
+    return `${rawLength} B`;
+  }
+
+  const units = ['KB', 'MB', 'GB', 'TB'];
+  let size = rawLength / 1024;
+  let unitIndex = 0;
+  while (size >= 1024 && unitIndex < units.length - 1) {
+    size /= 1024;
+    unitIndex += 1;
+  }
+
+  const rounded = unitIndex === 0 || size >= 10 ? Math.round(size) : Number(size.toFixed(1));
+  return `${rounded} ${units[unitIndex]}`;
+}
+
 type CopyMode = 'plain' | 'markdown';
 type MessageReaction = 'up' | 'down' | null;
 const PERSISTED_MESSAGE_ID_PATTERN = /^\d+$/;
 
 /**
- * 渲染助手消息底部操作栏，统一提供复制、复制 Markdown 与点赞反馈入口。
+ * 渲染助手消息底部操作栏，统一提供复制、分享、重新生成与点赞反馈入口。
  */
 function AssistantMessageActions({
   messageId,
   conversationId,
   content,
+  isLatestAssistantMessage,
   userVote,
+  onShareConversation,
+  onRegenerateConversation,
 }: {
   messageId: string;
   conversationId: string;
   content: string;
+  isLatestAssistantMessage: boolean;
   userVote?: number | null;
+  onShareConversation: (conversationId: string) => Promise<string>;
+  onRegenerateConversation: (conversationId: string) => Promise<void>;
 }) {
   const [isMenuOpen, setIsMenuOpen] = React.useState(false);
   const [copiedMode, setCopiedMode] = React.useState<CopyMode | null>(null);
+  const [shareState, setShareState] = React.useState<'idle' | 'copying' | 'copied' | 'error'>('idle');
   // 业务约束：初始化时从 userVote 恢复已投票状态，保证刷新后仍显示之前的投票结果。
   const [reaction, setReaction] = React.useState<MessageReaction>(
     userVote === 1 ? 'up' : userVote === -1 ? 'down' : null,
   );
   const [reactionError, setReactionError] = React.useState('');
+  const [isRegenerating, setIsRegenerating] = React.useState(false);
+  const [regenerateError, setRegenerateError] = React.useState('');
   const menuContainerRef = React.useRef<HTMLDivElement | null>(null);
+  const normalizedConversationId = String(conversationId ?? '').trim();
   // 关键约束：反馈接口当前仅接受数据库落库后的数值主键，乐观消息临时 ID 禁止提交反馈。
   const canSubmitReaction = PERSISTED_MESSAGE_ID_PATTERN.test(messageId);
+  // 关键约束：分享与重新生成只能作用于已落库会话，临时 pending 会话没有稳定后端上下文。
+  const canOperateOnConversation =
+    normalizedConversationId.length > 0 && normalizedConversationId !== 'pending-conversation';
+  const canRegenerateConversation = canOperateOnConversation && isLatestAssistantMessage && PERSISTED_MESSAGE_ID_PATTERN.test(messageId);
 
   React.useEffect(() => {
     if (!isMenuOpen) {
@@ -1776,12 +2295,56 @@ function AssistantMessageActions({
     setReactionError('');
     try {
       await ChatApi.submitMessageFeedback(token, messageId, {
-        conversationId,
+        conversationId: normalizedConversationId,
         vote: nextReaction === 'up' ? 1 : -1,
       });
     } catch (error) {
       setReaction(previousReaction);
       setReactionError(error instanceof Error ? error.message : '反馈提交失败');
+    }
+  };
+
+  /**
+   * 生成分享链接并复制到剪贴板，成功后给出短暂状态提示。
+   * 这里不直接暴露后端返回的相对路径，避免用户复制后无法在当前站点打开。
+   */
+  const shareMessage = async () => {
+    if (shareState === 'copying' || !canOperateOnConversation) {
+      return;
+    }
+    setShareState('copying');
+    try {
+      const shareUrl = await onShareConversation(normalizedConversationId);
+      if (!shareUrl) {
+        setShareState('error');
+        return;
+      }
+      await navigator.clipboard.writeText(shareUrl);
+      setShareState('copied');
+      window.setTimeout(() => {
+        setShareState((current) => (current === 'copied' ? 'idle' : current));
+      }, 1400);
+    } catch {
+      setShareState('error');
+    }
+  };
+
+  /**
+   * 重新生成当前会话最后一条助手回复。
+   * 只允许对当前会话尾部消息操作，避免旧消息触发“看不出变化”的无效重试。
+   */
+  const regenerateMessage = async () => {
+    if (!canRegenerateConversation || isRegenerating) {
+      return;
+    }
+    setIsRegenerating(true);
+    setRegenerateError('');
+    try {
+      await onRegenerateConversation(normalizedConversationId);
+    } catch {
+      setRegenerateError('重新生成失败');
+    } finally {
+      setIsRegenerating(false);
     }
   };
 
@@ -1839,6 +2402,26 @@ function AssistantMessageActions({
       </div>
       <button
         type="button"
+        data-testid={`share-message-${messageId}`}
+        aria-label="分享消息"
+        disabled={!canOperateOnConversation || shareState === 'copying'}
+        onClick={() => void shareMessage()}
+        className="chat-message-action-button disabled:cursor-not-allowed disabled:opacity-60"
+      >
+        <Share2 size={15} />
+      </button>
+      <button
+        type="button"
+        data-testid={`regenerate-message-${messageId}`}
+        aria-label="重新生成"
+        disabled={!canRegenerateConversation || isRegenerating}
+        onClick={() => void regenerateMessage()}
+        className="chat-message-action-button disabled:cursor-not-allowed disabled:opacity-60"
+      >
+        <RotateCcw size={15} className={isRegenerating ? 'animate-spin' : ''} />
+      </button>
+      <button
+        type="button"
         data-testid={`thumbs-up-${messageId}`}
         aria-label="点赞"
         aria-pressed={reaction === 'up'}
@@ -1864,6 +2447,9 @@ function AssistantMessageActions({
           {copiedMode === 'markdown' ? '已复制 Markdown' : '已复制'}
         </span>
       ) : null}
+      {shareState === 'copied' ? <span className="ml-2 text-[11px] text-muted">分享链接已复制</span> : null}
+      {shareState === 'error' ? <span className="ml-2 text-[11px] text-error">分享失败</span> : null}
+      {regenerateError ? <span className="ml-2 text-[11px] text-error">{regenerateError}</span> : null}
       {reactionError ? <span className="ml-2 text-[11px] text-error">{reactionError}</span> : null}
     </div>
   );
@@ -2456,9 +3042,14 @@ function ProcessAnalysisTrace({
   messageId: string;
   isFirstAnalysis: boolean;
 }) {
-  const [isExpanded, setIsExpanded] = React.useState(false);
+  const [isExpanded, setIsExpanded] = React.useState(card.status === 'running');
   const contentId = `process-analysis-content-${messageId}-${card.id}`;
   const label = isFirstAnalysis ? '深度思考' : card.title || '深度思考';
+
+  React.useEffect(() => {
+    // 流式阶段保持展开，收口后自动折叠，让用户先看到完整思考过程，再回到精简视图。
+    setIsExpanded(card.status === 'running');
+  }, [card.status]);
 
   return (
     <div className="space-y-2">
@@ -2536,11 +3127,13 @@ function ProcessToolGroup({
           {hasError ? '调用异常' : hasRunning ? '进行中' : '已完成'}
         </span>
       </button>
-      <div id={contentId} className="space-y-2 pl-6">
-        {cards.map((card) => (
-          <ProcessToolRow key={card.id} card={card} showDetails={isExpanded} />
-        ))}
-      </div>
+      {isExpanded ? (
+        <div id={contentId} className="space-y-2 pl-6">
+          {cards.map((card) => (
+            <ProcessToolRow key={card.id} card={card} showDetails={true} />
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }

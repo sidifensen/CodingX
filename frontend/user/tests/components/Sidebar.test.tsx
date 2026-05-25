@@ -47,6 +47,10 @@ function createSidebarProps(overrides?: {
     onStartNewConversation: vi.fn(async () => undefined),
     onRenameConversation: vi.fn(async () => undefined),
     onDeleteConversation: vi.fn(async () => undefined),
+    onShareConversation: vi.fn(async () => 'http://localhost/shared/conversation-1'),
+    onToggleConversationPin: vi.fn(async () => true),
+    onExportConversation: vi.fn(async () => undefined),
+    onDeleteConversations: vi.fn(async () => undefined),
     workspaceGroups:
       overrides?.workspaceGroups ??
       [
@@ -365,6 +369,102 @@ describe('Sidebar conversation collapse behavior', () => {
     const menuPanel = renameButton.closest('div');
     expect(menuPanel).toHaveClass('fixed');
     expect(menuPanel).toHaveClass('z-[130]');
+  });
+
+  it('会话菜单应提供置顶、分享、批量管理与导出入口', () => {
+    const props = createSidebarProps();
+    render(<Sidebar {...props} />);
+
+    fireEvent.click(screen.getByRole('button', { name: '打开会话菜单 会话 1' }));
+
+    expect(screen.getByRole('button', { name: '重命名对话' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '置顶对话' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '分享对话' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '批量管理' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '导出对话' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '删除对话' })).toBeInTheDocument();
+  });
+
+  it('已置顶会话的菜单文案应显示为取消置顶', () => {
+    const props = createSidebarProps({
+      workspaceGroups: [
+        {
+          partitionKey: 'local::d:/code/codingx',
+          workspacePath: 'D:/code/CodingX',
+          workspaceLabel: 'CodingX',
+          runtimeTarget: 'local',
+          lastOpenedAt: Date.now(),
+          activeConversationId: 'conversation-1',
+          conversations: [
+            {
+              ...createConversation(1),
+              isPinned: true,
+            },
+          ],
+        },
+      ],
+    });
+
+    render(<Sidebar {...props} />);
+    fireEvent.click(screen.getByRole('button', { name: '打开会话菜单 会话 1' }));
+
+    expect(screen.getByRole('button', { name: '取消置顶' })).toBeInTheDocument();
+  });
+
+  it('点击导出对话后应展示 Markdown 与 JSON 两种导出格式并触发回调', () => {
+    const props = createSidebarProps();
+    render(<Sidebar {...props} />);
+
+    fireEvent.click(screen.getByRole('button', { name: '打开会话菜单 会话 1' }));
+    fireEvent.click(screen.getByRole('button', { name: '导出对话' }));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Markdown 格式' }));
+    expect(props.onExportConversation).toHaveBeenCalledWith(
+      'conversation-1',
+      'markdown',
+      expect.objectContaining({
+        partitionKey: 'local::d:/code/codingx',
+        runtimeTarget: 'local',
+        workspacePath: 'D:/code/CodingX',
+      }),
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '打开会话菜单 会话 1' }));
+    fireEvent.click(screen.getByRole('button', { name: '导出对话' }));
+    fireEvent.click(screen.getByRole('button', { name: 'JSON 格式' }));
+    expect(props.onExportConversation).toHaveBeenCalledWith(
+      'conversation-1',
+      'json',
+      expect.objectContaining({
+        partitionKey: 'local::d:/code/codingx',
+        runtimeTarget: 'local',
+        workspacePath: 'D:/code/CodingX',
+      }),
+    );
+  });
+
+  it('进入批量管理后应展示勾选框与批量工具条', () => {
+    const props = createSidebarProps();
+    render(<Sidebar {...props} />);
+
+    fireEvent.click(screen.getByRole('button', { name: '打开会话菜单 会话 1' }));
+    fireEvent.click(screen.getByRole('button', { name: '批量管理' }));
+
+    expect(screen.getByRole('button', { name: '完成批量管理' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '全选当前分组' })).toBeInTheDocument();
+    expect(screen.getByLabelText('选择对话 会话 1')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByLabelText('选择对话 会话 1'));
+    fireEvent.click(screen.getByRole('button', { name: '批量删除' }));
+    fireEvent.click(screen.getByRole('button', { name: '确认批量删除' }));
+
+    expect(props.onDeleteConversations).toHaveBeenCalledWith(
+      ['conversation-1'],
+      expect.objectContaining({
+        partitionKey: 'local::d:/code/codingx',
+        runtimeTarget: 'local',
+      }),
+    );
   });
 
   it('应移除宿主能力信息卡片展示', () => {

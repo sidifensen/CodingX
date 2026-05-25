@@ -70,6 +70,11 @@ describe('ChatView', () => {
     expect(tracePanel).toBeInTheDocument();
     expect(screen.queryByText('过程时间线')).not.toBeInTheDocument();
     expect(tracePanel).toHaveTextContent('深度思考');
+    const toolToggle102 = screen.getByTestId('process-tool-group-toggle-102');
+    expect(toolToggle102).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByText('调用网页搜索')).not.toBeInTheDocument();
+    expect(screen.queryByText('已获取结果')).not.toBeInTheDocument();
+    fireEvent.click(toolToggle102);
     expect(screen.getByText('调用网页搜索')).toBeInTheDocument();
     expect(screen.getByText('已获取结果')).toBeInTheDocument();
     expect(screen.queryByText('执行回放')).not.toBeInTheDocument();
@@ -421,6 +426,46 @@ describe('ChatView', () => {
   });
 
   /**
+   * PowerShell 目录清单应被识别成结构化结果面板，而不是原始对齐文本块。
+   */
+  it('应将 PowerShell 目录输出渲染为结果面板', async () => {
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          messages: [
+            {
+              id: '801',
+              conversationId: '2001',
+              role: 'ASSISTANT',
+              content: [
+                'Mode                LastWriteTime         Length Name',
+                '----                -------------         ------ ----',
+                'd-----         2026/5/11  17:57                trae solo',
+                '-a----         2026/5/9   12:49             197 run-campus-login-hidden.vbs',
+              ].join('\n\n'),
+              status: 'COMPLETED',
+            } as any,
+          ],
+          executionSteps: [],
+          references: [],
+          artifacts: [],
+        })}
+      />,
+    );
+
+    expect(screen.getByTestId('directory-listing-panel-801')).toBeInTheDocument();
+    expect(screen.getByText('目录清单')).toBeInTheDocument();
+    expect(screen.getByText('PowerShell 输出')).toBeInTheDocument();
+    expect(screen.getByText((_, element) => element?.textContent === '共 2 项')).toBeInTheDocument();
+    expect(screen.getByText((_, element) => element?.textContent === '1 文件夹')).toBeInTheDocument();
+    expect(screen.getByText((_, element) => element?.textContent === '1 文件')).toBeInTheDocument();
+    expect(screen.getByText('trae solo')).toBeInTheDocument();
+    expect(screen.getByText('197 B')).toBeInTheDocument();
+  });
+
+  /**
    * 助手消息存在过程链路时，应用 WorkBuddy 式内联段落展示，而不是卡片墙。
    */
   it('应在助手消息中渲染内联过程链路', async () => {
@@ -496,6 +541,13 @@ describe('ChatView', () => {
       'false',
     );
     expect(screen.queryByText('先判断这个问题是否需要实时信息。')).not.toBeInTheDocument();
+    expect(screen.getByTestId('process-tool-group-toggle-701')).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    );
+    expect(screen.queryByText('调用网页搜索')).not.toBeInTheDocument();
+    expect(screen.queryByText('已获取结果')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('process-tool-group-toggle-701'));
     expect(screen.getByText('调用网页搜索')).toBeInTheDocument();
     expect(screen.getByText('已获取结果')).toBeInTheDocument();
     expect(tracePanel).not.toHaveTextContent('正在根据检索结果整理最终回答。');
@@ -601,9 +653,9 @@ describe('ChatView', () => {
   });
 
   /**
-   * 深度思考默认折叠，展开后才展示完整原文，避免长 thinking 默认挤占正文空间。
+   * 深度思考在流式阶段默认展开，便于用户直接看到完整推理过程；用户仍可手动折叠。
    */
-  it('应支持深度思考默认折叠并点击展开完整过程', async () => {
+  it('应支持深度思考流式期间默认展开并可手动折叠', async () => {
     const longSummary =
       '用户要求对 Qwen 和 GLM 最新模型做实时对比，需要先确认发布时间、模型定位、上下文长度、工具调用能力和适用场景，再决定是否继续检索官方来源。';
 
@@ -638,9 +690,12 @@ describe('ChatView', () => {
     );
 
     const toggleButton = screen.getByTestId('process-analysis-toggle-704-analysis-704');
+    expect(toggleButton).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByTestId('process-analysis-text-704')).toHaveTextContent(longSummary);
+
+    fireEvent.click(toggleButton);
     expect(toggleButton).toHaveAttribute('aria-expanded', 'false');
     expect(screen.queryByTestId('process-analysis-text-704')).not.toBeInTheDocument();
-    expect(screen.queryByText(longSummary)).not.toBeInTheDocument();
 
     fireEvent.click(toggleButton);
     expect(toggleButton).toHaveAttribute('aria-expanded', 'true');
@@ -653,10 +708,83 @@ describe('ChatView', () => {
     expect(analysisText).toHaveClass('[overflow-wrap:anywhere]');
     expect(analysisText).toHaveClass('text-muted');
     expect(analysisText).not.toHaveClass('text-foreground');
+  });
 
-    fireEvent.click(toggleButton);
-    expect(toggleButton).toHaveAttribute('aria-expanded', 'false');
-    expect(screen.queryByTestId('process-analysis-text-704')).not.toBeInTheDocument();
+  /**
+   * 深度思考在流式阶段应默认展开，完成后应自动折叠回精简状态。
+   */
+  it('应在深度思考流式期间展开并在完成后自动折叠', async () => {
+    const initialSummary = '正在判断是否需要检索最新资料。';
+
+    const { rerender } = render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          messages: [
+            {
+              id: '704b',
+              conversationId: '2001',
+              role: 'ASSISTANT',
+              content: '最终回答',
+              processCards: [
+                {
+                  id: 'analysis-704b',
+                  type: 'analysis',
+                  title: '分析问题',
+                  summary: initialSummary,
+                  status: 'running',
+                },
+              ],
+              status: 'streaming',
+            } as any,
+          ],
+          executionSteps: [],
+          references: [],
+          artifacts: [],
+        })}
+      />,
+    );
+
+    const toggleButton = screen.getByTestId('process-analysis-toggle-704b-analysis-704b');
+    expect(toggleButton).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByTestId('process-analysis-text-704b')).toHaveTextContent(initialSummary);
+
+    rerender(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          messages: [
+            {
+              id: '704b',
+              conversationId: '2001',
+              role: 'ASSISTANT',
+              content: '最终回答',
+              processCards: [
+                {
+                  id: 'analysis-704b',
+                  type: 'analysis',
+                  title: '分析问题',
+                  summary: initialSummary,
+                  status: 'completed',
+                },
+              ],
+              status: 'COMPLETED',
+            } as any,
+          ],
+          executionSteps: [],
+          references: [],
+          artifacts: [],
+        })}
+      />,
+    );
+
+    expect(screen.getByTestId('process-analysis-toggle-704b-analysis-704b')).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    );
+    expect(screen.queryByTestId('process-analysis-text-704b')).not.toBeInTheDocument();
   });
 
   /**
@@ -721,7 +849,7 @@ describe('ChatView', () => {
 
     const tracePanel = screen.getByTestId('process-trace-panel-705');
     const postToolToggle = screen.getByTestId('process-analysis-toggle-705-analysis-after-tools');
-    fireEvent.click(postToolToggle);
+    expect(postToolToggle).toHaveAttribute('aria-expanded', 'true');
     expect(tracePanel).toHaveTextContent(postToolThinking);
     expect(tracePanel.textContent?.indexOf('已获取结果')).toBeLessThan(
       tracePanel.textContent?.indexOf(postToolThinking) ?? -1,
@@ -995,8 +1123,93 @@ describe('ChatView', () => {
 
     expect(screen.getByTestId('copy-message-102')).toBeInTheDocument();
     expect(screen.getByTestId('copy-menu-toggle-102')).toBeInTheDocument();
+    expect(screen.getByTestId('share-message-102')).toBeInTheDocument();
+    expect(screen.getByTestId('regenerate-message-102')).toBeInTheDocument();
     expect(screen.getByTestId('thumbs-up-102')).toBeInTheDocument();
     expect(screen.getByTestId('thumbs-down-102')).toBeInTheDocument();
+  });
+
+  /**
+   * 分享与重新生成应分别触发工作区动作，且重新生成只允许对最后一条助手消息触发。
+   */
+  it('应支持分享并重新生成最后一条助手消息', async () => {
+    const sharedUrl = new URL('/api/chat/conversations/shared/share_xxx', window.location.origin).toString();
+    const shareConversation = vi.fn().mockResolvedValue(sharedUrl);
+    const regenerateConversation = vi.fn().mockResolvedValue(undefined);
+
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          shareConversation,
+          regenerateConversation,
+        })}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId('share-message-102'));
+    await waitFor(() => {
+      expect(shareConversation).toHaveBeenCalledWith('2001');
+    });
+    await waitFor(() => {
+      expect(navigator.clipboard.writeText).toHaveBeenCalledWith(sharedUrl);
+    });
+
+    fireEvent.click(screen.getByTestId('regenerate-message-102'));
+    await waitFor(() => {
+      expect(regenerateConversation).toHaveBeenCalledWith('2001');
+    });
+  });
+
+  /**
+   * 非最后一条助手消息的重新生成按钮应禁用，避免用户对旧消息触发无效重试。
+   */
+  it('应禁用非最后一条助手消息的重新生成按钮', async () => {
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          messages: [
+            {
+              id: '101',
+              conversationId: '2001',
+              role: 'USER',
+              content: '请帮我分析项目结构',
+              status: 'COMPLETED',
+            },
+            {
+              id: '102',
+              conversationId: '2001',
+              role: 'ASSISTANT',
+              content: '第一条回答',
+              status: 'COMPLETED',
+            },
+            {
+              id: '103',
+              conversationId: '2001',
+              role: 'USER',
+              content: '再补充一点',
+              status: 'COMPLETED',
+            },
+            {
+              id: '104',
+              conversationId: '2001',
+              role: 'ASSISTANT',
+              content: '最后一条回答',
+              status: 'COMPLETED',
+            },
+          ],
+          executionSteps: [],
+          references: [],
+          artifacts: [],
+        })}
+      />,
+    );
+
+    expect(screen.getByTestId('regenerate-message-102')).toBeDisabled();
+    expect(screen.getByTestId('regenerate-message-104')).not.toBeDisabled();
   });
 
   /**
@@ -2036,7 +2249,11 @@ describe('ChatView', () => {
 
     const panel = screen.getByTestId('process-trace-panel-801');
     expect(panel).toBeInTheDocument();
-    expect(screen.getByText('调用天气查询')).toBeInTheDocument();
+    expect(screen.getByTestId('process-tool-group-toggle-801')).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    );
+    expect(screen.queryByText('调用天气查询')).not.toBeInTheDocument();
     expect(panel).not.toHaveClass('rounded-3xl');
     // 业务意图：工具参数默认折叠，先确认详情不直接外露，再通过展开按钮验证内容可见。
     expect(screen.queryByText('北京今天天气怎么样')).not.toBeInTheDocument();
@@ -2101,7 +2318,11 @@ describe('ChatView', () => {
       />,
     );
 
-    expect(screen.getByText('调用天气查询')).toBeInTheDocument();
+    expect(screen.getByTestId('process-tool-group-toggle-861')).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    );
+    expect(screen.queryByText('调用天气查询')).not.toBeInTheDocument();
     expect(screen.queryByText('{"city":"北京","date":"2026-05-21"}')).not.toBeInTheDocument();
     expect(screen.queryByText('{"text":"北京今日晴","temp":28.6}')).not.toBeInTheDocument();
 
@@ -2158,17 +2379,77 @@ describe('ChatView', () => {
     );
 
     expect(screen.getByTestId('process-trace-panel-951')).toBeInTheDocument();
-    expect(screen.getByText('调用网页搜索')).toBeInTheDocument();
-    expect(screen.getByText('已获取结果')).toBeInTheDocument();
+    const toolToggle951 = screen.getByTestId('process-tool-group-toggle-951');
+    expect(toolToggle951).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByText('调用网页搜索')).not.toBeInTheDocument();
+    expect(screen.queryByText('已获取结果')).not.toBeInTheDocument();
     // 业务意图：搜索结果细节也默认收起，必须先展开工具组再断言具体结果文本。
     expect(screen.queryByText('OpenAI API 最新变更')).not.toBeInTheDocument();
     expect(screen.queryByText('Bing Search API 文档')).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByTestId('process-tool-group-toggle-951'));
+    fireEvent.click(toolToggle951);
 
     const toolGroup = screen.getByTestId('process-tool-group-951');
+    expect(screen.getByText('调用网页搜索')).toBeInTheDocument();
+    expect(screen.getByText('已获取结果')).toBeInTheDocument();
     expect(toolGroup).toHaveTextContent('OpenAI API 最新变更');
     expect(toolGroup).toHaveTextContent('Bing Search API 文档');
+  });
+
+  /**
+   * 搜索来源默认应折叠，只展示一行摘要；点击后再展开来源列表与原始链接。
+   */
+  it('应默认折叠搜索来源并在展开后显示列表项', async () => {
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          messages: [
+            {
+              id: '971',
+              conversationId: '2001',
+              role: 'ASSISTANT',
+              content: '正在整理搜索来源',
+              status: 'streaming',
+              searchProgress: {
+                status: 'running',
+                items: [
+                  {
+                    id: 'ref-1',
+                    title: 'OpenAI API 文档',
+                    siteName: 'OpenAI',
+                    url: 'https://platform.openai.com/docs',
+                  },
+                ],
+              },
+            } as any,
+          ],
+          executionSteps: [],
+          references: [],
+          artifacts: [],
+        })}
+      />,
+    );
+
+    expect(screen.getByTestId('search-progress-panel-971')).toBeInTheDocument();
+    const toggleButton = screen.getByTestId('search-progress-toggle-971');
+    expect(toggleButton).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByTestId('search-source-link-971-ref-1')).not.toBeInTheDocument();
+    expect(screen.queryByText('OpenAI API 文档')).not.toBeInTheDocument();
+
+    fireEvent.click(toggleButton);
+
+    expect(toggleButton).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByText('OpenAI API 文档')).toBeInTheDocument();
+    expect(screen.getByText('OpenAI')).toBeInTheDocument();
+    expect(screen.getByText('platform.openai.com/docs')).toBeInTheDocument();
+    expect(screen.getByTestId('search-source-favicon-971-ref-1')).toBeInTheDocument();
+
+    const sourceLink = screen.getByTestId('search-source-link-971-ref-1');
+    expect(sourceLink).toHaveAttribute('href', 'https://platform.openai.com/docs');
+    expect(sourceLink).toHaveAttribute('target', '_blank');
+    expect(sourceLink).toHaveAttribute('rel', expect.stringContaining('noopener'));
   });
 
   /**
@@ -2224,7 +2505,7 @@ describe('ChatView', () => {
     fireEvent.click(screen.getByRole('button', { name: '确认' }));
 
     await waitFor(() => {
-      expect(renameConversation).toHaveBeenCalledWith('2001', '默认标题');
+      expect(renameConversation).toHaveBeenCalledWith('2001', '默认标题', undefined);
     });
     expect(await screen.findByRole('alert')).toHaveTextContent('会话标题不能为空');
     expect(closeRenameDialog).not.toHaveBeenCalled();
@@ -2461,9 +2742,16 @@ function createWorkspace(overrides?: Partial<ChatWorkspaceController>): ChatWork
     startNewConversation: vi.fn().mockResolvedValue(undefined),
     renameConversation: vi.fn().mockResolvedValue(undefined),
     deleteConversation: vi.fn().mockResolvedValue(undefined),
+    shareConversation: vi.fn().mockResolvedValue('http://localhost/api/chat/conversations/shared/share_xxx'),
+    regenerateConversation: vi.fn().mockResolvedValue(undefined),
+    toggleConversationPin: vi.fn().mockResolvedValue(true),
+    exportConversation: vi.fn().mockResolvedValue(undefined),
+    exportConversations: vi.fn().mockResolvedValue(undefined),
+    deleteConversations: vi.fn().mockResolvedValue(undefined),
     renameDialog: {
       conversationId: null,
       initialTitle: '',
+      actionContext: undefined,
       isOpen: false,
       open: vi.fn(),
       close: vi.fn(),
@@ -2471,6 +2759,7 @@ function createWorkspace(overrides?: Partial<ChatWorkspaceController>): ChatWork
     deleteDialog: {
       conversationId: null,
       title: '',
+      actionContext: undefined,
       isOpen: false,
       open: vi.fn(),
       close: vi.fn(),

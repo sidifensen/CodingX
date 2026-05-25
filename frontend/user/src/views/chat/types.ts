@@ -5,6 +5,11 @@ export interface ConversationItem {
   id: string;
   title: string;
   status: string;
+  /**
+   * 仅供前端本地侧栏排序使用，表示该会话已被当前用户置顶。
+   * 关键约束：该字段不依赖后端持久化，刷新后由本地快照回填。
+   */
+  isPinned?: boolean;
   lastMessageAt?: string;
   lastRunId?: string;
   activeTaskId?: string;
@@ -331,8 +336,22 @@ export interface WorkspaceConversationGroup {
   runtimeTarget: 'cloud' | 'local';
   lastOpenedAt: number;
   activeConversationId: string | null;
+  /**
+   * 当前分组内被用户置顶的会话标识列表，按显示优先级排序。
+   */
+  pinnedConversationIds?: string[];
   conversations: ConversationItem[];
 }
+
+/**
+ * 统一描述会话动作所需的分组上下文，确保非当前分组菜单动作仍能落到正确分区。
+ */
+export type ConversationActionContext = WorkspaceConversationSelectionContext;
+
+/**
+ * 描述用户端支持的对话导出格式。
+ */
+export type ConversationExportFormat = 'markdown' | 'json';
 
 /**
  * 描述侧边栏会话选择时携带的分组上下文，确保会话总是在所属空间内打开。
@@ -410,20 +429,57 @@ export interface ChatWorkspaceController {
   startNewConversation: (
     createContext?: WorkspaceConversationCreateContext,
   ) => Promise<void>;
-  renameConversation: (conversationId: string, title: string) => Promise<void>;
-  deleteConversation: (conversationId: string) => Promise<void>;
+  renameConversation: (
+    conversationId: string,
+    title: string,
+    actionContext?: ConversationActionContext,
+  ) => Promise<void>;
+  deleteConversation: (
+    conversationId: string,
+    actionContext?: ConversationActionContext,
+  ) => Promise<void>;
+  shareConversation: (conversationId: string) => Promise<string>;
+  regenerateConversation: (conversationId: string) => Promise<void>;
+  toggleConversationPin: (
+    conversationId: string,
+    actionContext: ConversationActionContext,
+  ) => Promise<boolean>;
+  exportConversation: (
+    conversationId: string,
+    format: ConversationExportFormat,
+    actionContext: ConversationActionContext,
+  ) => Promise<void>;
+  exportConversations: (
+    conversationIds: string[],
+    format: ConversationExportFormat,
+    actionContext: ConversationActionContext,
+  ) => Promise<void>;
+  deleteConversations: (
+    conversationIds: string[],
+    actionContext: ConversationActionContext,
+  ) => Promise<void>;
   renameDialog: {
     conversationId: string | null;
     initialTitle: string;
+    actionContext?: ConversationActionContext;
     isOpen: boolean;
-    open: (conversationId: string, initialTitle: string) => void;
+    open: (
+      conversationId: string,
+      initialTitle: string,
+      actionContext?: ConversationActionContext,
+    ) => void;
     close: () => void;
   };
   deleteDialog: {
     conversationId: string | null;
     title: string;
+    actionContext?: ConversationActionContext;
     isOpen: boolean;
-    open: (conversationId: string, title: string) => void;
+    open: (
+      conversationId: string,
+      title: string,
+      actionContext?: ConversationActionContext,
+    ) => void;
     close: () => void;
   };
 }

@@ -41,6 +41,10 @@ export interface LocalWorkspaceConversationSnapshot {
   runtimeTarget: 'cloud' | 'local';
   lastOpenedAt: number;
   activeConversationId: string | null;
+  /**
+   * 当前分区的置顶会话顺序，仅在本地侧栏排序中生效。
+   */
+  pinnedConversationIds?: string[];
   conversations: ConversationItem[];
   conversationRecords: Record<string, LocalConversationRecord>;
   /**
@@ -68,6 +72,7 @@ const EMPTY_SNAPSHOT: LocalWorkspaceConversationSnapshot = {
   runtimeTarget: 'cloud',
   lastOpenedAt: 0,
   activeConversationId: null,
+  pinnedConversationIds: [],
   conversations: [],
   conversationRecords: {},
   seenTaskFinishedAtByConversationId: {},
@@ -145,7 +150,11 @@ export function readWorkspaceSnapshot(partitionKey: string): LocalWorkspaceConve
     runtimeTarget: snapshot.runtimeTarget ?? 'cloud',
     lastOpenedAt: snapshot.lastOpenedAt ?? 0,
     activeConversationId: snapshot.activeConversationId ?? null,
-    conversations: Array.isArray(snapshot.conversations) ? snapshot.conversations : [],
+    pinnedConversationIds: normalizePinnedConversationIds(snapshot.pinnedConversationIds),
+    conversations: decoratePinnedConversations(
+      Array.isArray(snapshot.conversations) ? snapshot.conversations : [],
+      normalizePinnedConversationIds(snapshot.pinnedConversationIds),
+    ),
     conversationRecords:
       snapshot.conversationRecords && typeof snapshot.conversationRecords === 'object'
         ? snapshot.conversationRecords
@@ -201,6 +210,8 @@ export function upsertWorkspaceSnapshot(
     activeConversationId: hasActiveConversationOverride
       ? (partialSnapshot?.activeConversationId ?? null)
       : (currentSnapshot.activeConversationId ?? null),
+    pinnedConversationIds:
+      partialSnapshot?.pinnedConversationIds ?? currentSnapshot.pinnedConversationIds ?? [],
     conversations: partialSnapshot?.conversations ?? currentSnapshot.conversations ?? [],
     conversationRecords:
       partialSnapshot?.conversationRecords ?? currentSnapshot.conversationRecords ?? {},
@@ -242,7 +253,11 @@ export function listWorkspaceGroups(
       runtimeTarget: snapshot.runtimeTarget ?? 'cloud',
       lastOpenedAt: snapshot.lastOpenedAt ?? 0,
       activeConversationId: snapshot.activeConversationId ?? null,
-      conversations: Array.isArray(snapshot.conversations) ? snapshot.conversations : [],
+      pinnedConversationIds: normalizePinnedConversationIds(snapshot.pinnedConversationIds),
+      conversations: decoratePinnedConversations(
+        Array.isArray(snapshot.conversations) ? snapshot.conversations : [],
+        normalizePinnedConversationIds(snapshot.pinnedConversationIds),
+      ),
       groupType: isWorkspaceHistoryPartitionKey(partitionKey) ? 'history' : 'workspace',
       conversationRecords:
         snapshot.conversationRecords && typeof snapshot.conversationRecords === 'object'
@@ -325,6 +340,7 @@ export function upsertWorkspaceHistorySnapshot(
     runtimeTarget,
     lastOpenedAt: Date.now(),
     activeConversationId: null,
+    pinnedConversationIds: snapshot.pinnedConversationIds ?? [],
     conversations,
     conversationRecords: nextConversationRecords,
     seenTaskFinishedAtByConversationId: snapshot.seenTaskFinishedAtByConversationId ?? {},
@@ -366,6 +382,7 @@ export function markWorkspaceConversationOwnership(
     runtimeTarget,
     workspacePath: workspacePath ?? snapshot.workspacePath ?? null,
     lastOpenedAt: Date.now(),
+    pinnedConversationIds: snapshot.pinnedConversationIds ?? [],
     conversationRecords: nextConversationRecords,
     seenTaskFinishedAtByConversationId: snapshot.seenTaskFinishedAtByConversationId ?? {},
   });
@@ -444,12 +461,14 @@ function mergeHistoryPartitionIntoDefaultGroup(
         workspacePath: null,
         workspaceLabel: defaultWorkspaceLabel,
         runtimeTarget,
+        pinnedConversationIds: normalizePinnedConversationIds(defaultSnapshot.pinnedConversationIds),
       }
     : {
         ...EMPTY_SNAPSHOT,
         workspacePath: null,
         workspaceLabel: defaultWorkspaceLabel,
         runtimeTarget,
+        pinnedConversationIds: [],
       };
 
   if (!historySnapshot) {
@@ -474,6 +493,10 @@ function mergeHistoryPartitionIntoDefaultGroup(
       historySnapshot.activeConversationId ??
       mergedConversations[0]?.id ??
       null,
+    pinnedConversationIds: mergePinnedConversationIds(
+      effectiveDefaultSnapshot.pinnedConversationIds ?? [],
+      historySnapshot.pinnedConversationIds ?? [],
+    ),
     conversations: mergedConversations,
     conversationRecords: mergedConversationRecords,
     seenTaskFinishedAtByConversationId: {
@@ -575,6 +598,7 @@ export function saveConversationRecordToWorkspace(
     runtimeTarget,
     lastOpenedAt: Date.now(),
     activeConversationId: conversationId,
+    pinnedConversationIds: nextSnapshot.pinnedConversationIds ?? [],
     conversations: conversationList,
     conversationRecords: {
       ...(nextSnapshot.conversationRecords ?? {}),
@@ -608,9 +632,79 @@ export function markConversationTaskCompletionSeen(
   const snapshot = readWorkspaceSnapshot(partitionKey);
   writeWorkspaceSnapshot(partitionKey, {
     ...snapshot,
+    pinnedConversationIds: snapshot.pinnedConversationIds ?? [],
     seenTaskFinishedAtByConversationId: {
       ...(snapshot.seenTaskFinishedAtByConversationId ?? {}),
       [conversationId]: taskFinishedAt,
     },
   });
+}
+
+/**
+ * 归一化置顶会话标识列表，过滤空值与重复项，避免本地快照因脏数据导致排序异常。
+ * @param pinnedConversationIds 原始置顶列表。
+ * @returns 去重后的置顶列表。
+ */
+function normalizePinnedConversationIds(pinnedConversationIds: unknown): string[] {
+  if (!Array.isArray(pinnedConversationIds)) {
+    return [];
+  }
+  const uniqueConversationIds = new Set<string>();
+  pinnedConversationIds.forEach((conversationId) => {
+    const normalizedConversationId = String(conversationId ?? '').trim();
+    if (!normalizedConversationId) {
+      return;
+    }
+    uniqueConversationIds.add(normalizedConversationId);
+  });
+  return Array.from(uniqueConversationIds);
+}
+
+/**
+ * 基于置顶标识列表装饰会话顺序，并为置顶项打上 `isPinned` 标记。
+ * @param conversations 原始会话列表。
+ * @param pinnedConversationIds 置顶会话标识列表。
+ * @returns 已按置顶规则排序的会话列表。
+ */
+function decoratePinnedConversations(
+  conversations: ConversationItem[],
+  pinnedConversationIds: string[],
+) {
+  const pinnedIdOrder = normalizePinnedConversationIds(pinnedConversationIds);
+  const pinnedIdSet = new Set(pinnedIdOrder);
+  const conversationMap = new Map(
+    conversations.map((conversation) => [
+      conversation.id,
+      {
+        ...conversation,
+        isPinned: pinnedIdSet.has(conversation.id),
+      },
+    ]),
+  );
+  const pinnedConversations = pinnedIdOrder
+    .map((conversationId) => conversationMap.get(conversationId))
+    .filter((conversation): conversation is ConversationItem => conversation != null);
+  const unpinnedConversations = conversations
+    .filter((conversation) => !pinnedIdSet.has(conversation.id))
+    .map((conversation) => ({
+      ...conversation,
+      isPinned: false,
+    }));
+  return [...pinnedConversations, ...unpinnedConversations];
+}
+
+/**
+ * 合并默认分区与历史分区的置顶列表，优先保留主分区顺序，再补齐历史分区中遗漏的标识。
+ * @param primary 主分区置顶列表。
+ * @param secondary 次分区置顶列表。
+ * @returns 合并后的置顶列表。
+ */
+function mergePinnedConversationIds(primary: string[], secondary: string[]) {
+  const mergedConversationIds = normalizePinnedConversationIds(primary);
+  normalizePinnedConversationIds(secondary).forEach((conversationId) => {
+    if (!mergedConversationIds.includes(conversationId)) {
+      mergedConversationIds.push(conversationId);
+    }
+  });
+  return mergedConversationIds;
 }

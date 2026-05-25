@@ -14,6 +14,8 @@ import {
   CurrentSkillItem,
   ChatMessageItem,
   ChatWorkspaceController,
+  ConversationActionContext,
+  ConversationExportFormat,
   ConversationItem,
   ExecutionStepItem,
   McpCallItem,
@@ -41,6 +43,7 @@ import {
   readWorkspaceSnapshot,
   saveConversationRecordToWorkspace,
   upsertWorkspaceSnapshot,
+  writeWorkspaceSnapshot,
 } from './localConversationStorage';
 
 const DEFAULT_CLOUD_WORKSPACE_LABEL = '历史记录';
@@ -100,6 +103,58 @@ function mergeConversationListById(primary: ConversationItem[], secondary: Conve
     mergedConversations.push(conversation);
   }
   return mergedConversations;
+}
+
+/**
+ * 使用分区置顶列表重新装饰会话顺序，确保内存态与本地快照读取行为保持一致。
+ * @param conversations 原始会话列表。
+ * @param pinnedConversationIds 分区置顶列表。
+ * @returns 已按置顶规则排序的会话列表。
+ */
+function applyPinnedConversationOrder(
+  conversations: ConversationItem[],
+  pinnedConversationIds: string[],
+) {
+  const normalizedPinnedConversationIds = Array.from(
+    new Set(
+      pinnedConversationIds
+        .map((conversationId) => String(conversationId ?? '').trim())
+        .filter(Boolean),
+    ),
+  );
+  const pinnedConversationMap = new Map(
+    conversations.map((conversation) => [
+      conversation.id,
+      {
+        ...conversation,
+        isPinned: normalizedPinnedConversationIds.includes(conversation.id),
+      },
+    ]),
+  );
+  const pinnedConversations = normalizedPinnedConversationIds
+    .map((conversationId) => pinnedConversationMap.get(conversationId))
+    .filter((conversation): conversation is ConversationItem => conversation != null);
+  const unpinnedConversations = conversations
+    .filter((conversation) => !normalizedPinnedConversationIds.includes(conversation.id))
+    .map((conversation) => ({
+      ...conversation,
+      isPinned: false,
+    }));
+  return [...pinnedConversations, ...unpinnedConversations];
+}
+
+/**
+ * 过滤置顶列表中已不存在的会话标识，避免删除或远端收敛后残留脏数据。
+ * @param pinnedConversationIds 原始置顶列表。
+ * @param conversations 当前会话列表。
+ * @returns 有效置顶列表。
+ */
+function sanitizePinnedConversationIds(
+  pinnedConversationIds: string[],
+  conversations: ConversationItem[],
+) {
+  const availableConversationIds = new Set(conversations.map((conversation) => conversation.id));
+  return pinnedConversationIds.filter((conversationId) => availableConversationIds.has(conversationId));
 }
 
 /**
@@ -311,21 +366,26 @@ export function useChatWorkspace(
     isOpen: boolean;
     conversationId: string | null;
     initialTitle: string;
+    actionContext?: ConversationActionContext;
   }>({
     isOpen: false,
     conversationId: null,
     initialTitle: '',
+    actionContext: undefined,
   });
   const [deleteDialogState, setDeleteDialogState] = useState<{
     isOpen: boolean;
     conversationId: string | null;
     title: string;
+    actionContext?: ConversationActionContext;
   }>({
     isOpen: false,
     conversationId: null,
     title: '',
+    actionContext: undefined,
   });
   const streamStateRef = useRef<ActiveStreamState | null>(null);
+  const activeConversationIdRef = useRef<string | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const streamMcpCallsRef = useRef<Record<string, McpCallItem[]>>({});
   const streamSessionSeedRef = useRef(0);
@@ -349,6 +409,13 @@ export function useChatWorkspace(
       return nextMessages;
     });
   };
+
+  /**
+   * 维护当前激活会话的最新引用，避免异步动作在闭包里读到过期会话。
+   */
+  useEffect(() => {
+    activeConversationIdRef.current = activeConversationId;
+  }, [activeConversationId]);
 
   /**
    * 清理排队提示延迟任务，防止旧流事件在新流阶段误触发提示。
@@ -1263,6 +1330,176 @@ export function useChatWorkspace(
   };
 
   /**
+   * 在指定分组上下文内切换会话置顶状态，并把结果写回本地快照。
+   * @param conversationId 会话标识。
+   * @param actionContext 会话所属分组上下文。
+   * @returns 切换后是否处于置顶状态。
+   */
+  const toggleConversationPin = async (
+    conversationId: string,
+    actionContext: ConversationActionContext,
+  ) => {
+    const snapshot = readWorkspaceSnapshot(actionContext.partitionKey);
+    const currentPinnedConversationIds = snapshot.pinnedConversationIds ?? [];
+    const isPinned = currentPinnedConversationIds.includes(conversationId);
+    const nextPinnedConversationIds = isPinned
+      ? currentPinnedConversationIds.filter((item) => item !== conversationId)
+      : [conversationId, ...currentPinnedConversationIds.filter((item) => item !== conversationId)];
+    const nextConversations = applyPinnedConversationOrder(
+      snapshot.conversations,
+      sanitizePinnedConversationIds(nextPinnedConversationIds, snapshot.conversations),
+    );
+    writeWorkspaceSnapshot(actionContext.partitionKey, {
+      ...snapshot,
+      pinnedConversationIds: sanitizePinnedConversationIds(nextPinnedConversationIds, nextConversations),
+      conversations: nextConversations,
+    });
+    if (actionContext.partitionKey === activeWorkspacePartitionKey) {
+      setConversations(nextConversations);
+    }
+    refreshWorkspaceGroups('all');
+    return !isPinned;
+  };
+
+  /**
+   * 导出单会话到指定格式；若本地快照缺少内容，则先按会话接口补齐回放。
+   * @param conversationId 会话标识。
+   * @param format 导出格式。
+   * @param actionContext 会话所属分组上下文。
+   */
+  const exportConversation = async (
+    conversationId: string,
+    format: ConversationExportFormat,
+    actionContext: ConversationActionContext,
+  ) => {
+    await exportConversations([conversationId], format, actionContext);
+  };
+
+  /**
+   * 批量导出多个会话。
+   * @param conversationIds 会话标识列表。
+   * @param format 导出格式。
+   * @param actionContext 会话所属分组上下文。
+   */
+  const exportConversations = async (
+    conversationIds: string[],
+    format: ConversationExportFormat,
+    actionContext: ConversationActionContext,
+  ) => {
+    const normalizedConversationIds = Array.from(new Set(conversationIds.filter(Boolean)));
+    if (normalizedConversationIds.length === 0) {
+      return;
+    }
+    const exportRecords = [];
+    for (const conversationId of normalizedConversationIds) {
+      exportRecords.push(await resolveConversationExportRecord(conversationId, actionContext));
+    }
+    const fileName = buildConversationExportFileName(
+      normalizedConversationIds.length === 1
+        ? exportRecords[0]?.title || normalizedConversationIds[0]
+        : `批量导出-${normalizedConversationIds.length}-会话`,
+      format,
+    );
+    const fileContent =
+      format === 'markdown'
+        ? serializeConversationExportAsMarkdown(exportRecords)
+        : JSON.stringify(
+            {
+              exportedAt: new Date().toISOString(),
+              count: exportRecords.length,
+              conversations: exportRecords,
+            },
+            null,
+            2,
+          );
+    downloadConversationExport(
+      fileName,
+      fileContent,
+      format === 'markdown' ? 'text/markdown;charset=utf-8' : 'application/json;charset=utf-8',
+    );
+  };
+
+  /**
+   * 批量删除指定会话，并尽量保持当前分组内的回放与列表状态一致。
+   * @param conversationIds 会话标识列表。
+   * @param actionContext 会话所属分组上下文。
+   */
+  const deleteConversations = async (
+    conversationIds: string[],
+    actionContext: ConversationActionContext,
+  ) => {
+    const normalizedConversationIds = Array.from(new Set(conversationIds.filter(Boolean)));
+    if (normalizedConversationIds.length === 0) {
+      return;
+    }
+    for (const conversationId of normalizedConversationIds) {
+      await deleteConversation(conversationId);
+    }
+    const snapshot = readWorkspaceSnapshot(actionContext.partitionKey);
+    const nextPinnedConversationIds = sanitizePinnedConversationIds(
+      (snapshot.pinnedConversationIds ?? []).filter(
+        (conversationId) => !normalizedConversationIds.includes(conversationId),
+      ),
+      snapshot.conversations,
+    );
+    writeWorkspaceSnapshot(actionContext.partitionKey, {
+      ...snapshot,
+      pinnedConversationIds: nextPinnedConversationIds,
+      conversations: applyPinnedConversationOrder(snapshot.conversations, nextPinnedConversationIds),
+    });
+    refreshWorkspaceGroups('all');
+  };
+
+  /**
+   * 将后端返回的分享路径规范成当前站点下的绝对地址，避免前端复制到的是相对路径。
+   * @param shareUrl 后端返回的分享路径。
+   * @param baseUrl 当前站点地址。
+   * @returns 可直接复制的绝对 URL。
+   */
+  function resolveAbsoluteShareUrl(shareUrl: string, baseUrl: string) {
+    const normalizedShareUrl = shareUrl.trim();
+    if (!normalizedShareUrl) {
+      return '';
+    }
+    try {
+      return new URL(normalizedShareUrl, baseUrl).toString();
+    } catch {
+      return normalizedShareUrl;
+    }
+  }
+
+  /**
+   * 为指定会话生成分享链接并复制到剪贴板，避免前端再维护一套分享页状态。
+   * @param conversationId 会话标识。
+   */
+  const shareConversation = async (conversationId: string) => {
+    const token = currentToken();
+    if (!token) {
+      onUnauthorizedRef.current?.();
+      return '';
+    }
+    const shareResult = await ChatApi.shareConversation(token, conversationId);
+    return resolveAbsoluteShareUrl(shareResult.shareUrl, window.location.origin);
+  };
+
+  /**
+   * 重新生成指定会话最后一条助手回复，并在完成后刷新当前会话回放。
+   * @param conversationId 会话标识。
+   */
+  const regenerateConversation = async (conversationId: string) => {
+    const token = currentToken();
+    if (!token) {
+      onUnauthorizedRef.current?.();
+      return;
+    }
+    await ChatApi.regenerateConversation(token, conversationId);
+    const nextConversations = await loadConversations(token);
+    if (activeConversationIdRef.current === conversationId) {
+      await selectConversation(conversationId, nextConversations, undefined, true, false);
+    }
+  };
+
+  /**
    * 读取当前登录态 token。
    * @returns token 或 null。
    */
@@ -1293,8 +1530,8 @@ export function useChatWorkspace(
     setStreamError('');
     setInputValue('');
     clearPendingAttachments();
-    setRenameDialogState({ isOpen: false, conversationId: null, initialTitle: '' });
-    setDeleteDialogState({ isOpen: false, conversationId: null, title: '' });
+    setRenameDialogState({ isOpen: false, conversationId: null, initialTitle: '', actionContext: undefined });
+    setDeleteDialogState({ isOpen: false, conversationId: null, title: '', actionContext: undefined });
     streamStateRef.current = null;
   };
 
@@ -1746,19 +1983,213 @@ export function useChatWorkspace(
     startNewConversation,
     renameConversation,
     deleteConversation,
+    shareConversation,
+    regenerateConversation,
+    toggleConversationPin,
+    exportConversation,
+    exportConversations,
+    deleteConversations,
     renameDialog: {
       ...renameDialogState,
-      open: (conversationId: string, initialTitle: string) =>
-        setRenameDialogState({ isOpen: true, conversationId, initialTitle }),
-      close: () => setRenameDialogState({ isOpen: false, conversationId: null, initialTitle: '' }),
+      open: (conversationId: string, initialTitle: string, actionContext?: ConversationActionContext) =>
+        setRenameDialogState({ isOpen: true, conversationId, initialTitle, actionContext }),
+      close: () =>
+        setRenameDialogState({
+          isOpen: false,
+          conversationId: null,
+          initialTitle: '',
+          actionContext: undefined,
+        }),
     },
     deleteDialog: {
       ...deleteDialogState,
-      open: (conversationId: string, title: string) =>
-        setDeleteDialogState({ isOpen: true, conversationId, title }),
-      close: () => setDeleteDialogState({ isOpen: false, conversationId: null, title: '' }),
+      open: (conversationId: string, title: string, actionContext?: ConversationActionContext) =>
+        setDeleteDialogState({ isOpen: true, conversationId, title, actionContext }),
+      close: () =>
+        setDeleteDialogState({
+          isOpen: false,
+          conversationId: null,
+          title: '',
+          actionContext: undefined,
+        }),
     },
   } satisfies ChatWorkspaceController;
+
+  /**
+   * 为导出链路读取或补齐指定会话的本地回放记录。
+   * @param conversationId 会话标识。
+   * @param actionContext 会话所属分组上下文。
+   * @returns 可导出的结构化记录。
+   */
+  async function resolveConversationExportRecord(
+    conversationId: string,
+    actionContext: ConversationActionContext,
+  ) {
+    const snapshot = readWorkspaceSnapshot(actionContext.partitionKey);
+    const existingConversation = snapshot.conversations.find((conversation) => conversation.id === conversationId);
+    const token = currentToken();
+    if (!token) {
+      throw new Error(UserErrorMessages.AUTH_SESSION_EXPIRED);
+    }
+    const existingRecord = snapshot.conversationRecords?.[conversationId];
+    if (
+      existingRecord &&
+      (
+        existingRecord.messages.length > 0 ||
+        existingRecord.executionSteps.length > 0 ||
+        existingRecord.references.length > 0 ||
+        existingRecord.artifacts.length > 0
+      )
+    ) {
+      return {
+        id: conversationId,
+        title: existingConversation?.title ?? `会话 ${conversationId}`,
+        exportedAt: new Date().toISOString(),
+        ...existingRecord,
+      };
+    }
+
+    const [
+      messages,
+      executionSteps,
+      references,
+      artifacts,
+      currentExperts,
+      currentSkills,
+      currentMcps,
+    ] = await Promise.all([
+      ChatApi.listMessages(token, conversationId),
+      ChatApi.listSteps(token, conversationId),
+      ChatApi.listReferences(token, conversationId),
+      ChatApi.listArtifacts(token, conversationId),
+      ChatApi.listCurrentExperts(token, conversationId),
+      ChatApi.listCurrentSkills(token, conversationId),
+      ChatApi.listCurrentMcps(token, conversationId),
+    ]);
+
+    saveConversationRecordToWorkspace(
+      actionContext.runtimeTarget,
+      actionContext.workspacePath,
+      conversationId,
+      snapshot.conversations,
+      {
+        messages,
+        executionSteps,
+        references,
+        artifacts,
+        currentExperts,
+        currentSkills,
+        currentMcps,
+      },
+    );
+    return {
+      id: conversationId,
+      title: existingConversation?.title ?? `会话 ${conversationId}`,
+      exportedAt: new Date().toISOString(),
+      messages,
+      executionSteps,
+      references,
+      artifacts,
+      currentExperts,
+      currentSkills,
+      currentMcps,
+    };
+  }
+
+  /**
+   * 生成导出文件名，避免会话标题中的非法字符影响浏览器下载。
+   * @param title 会话标题。
+   * @param format 导出格式。
+   * @returns 适用于下载的文件名。
+   */
+  function buildConversationExportFileName(
+    title: string,
+    format: ConversationExportFormat,
+  ) {
+    const normalizedTitle = title.replace(/[\\/:*?"<>|]+/g, '-').trim() || 'conversation';
+    return `${normalizedTitle}.${format === 'markdown' ? 'md' : 'json'}`;
+  }
+
+  /**
+   * 将导出记录序列化为 Markdown 文本，便于用户直接阅读或转发。
+   * @param exportRecords 导出记录列表。
+   * @returns Markdown 文本。
+   */
+  function serializeConversationExportAsMarkdown(
+    exportRecords: Array<{
+      id: string;
+      title: string;
+      exportedAt: string;
+      messages: ChatMessageItem[];
+      executionSteps: ExecutionStepItem[];
+      references: ReferenceItem[];
+      artifacts: ArtifactItem[];
+    }>,
+  ) {
+    return exportRecords
+      .map((record) => {
+        const messageLines = record.messages.map((message) => {
+          const roleLabel =
+            message.role === 'USER'
+              ? '用户'
+              : message.role === 'ASSISTANT'
+                ? '助手'
+                : '系统';
+          return `### ${roleLabel}\n\n${message.content || ''}`;
+        });
+        const referenceLines = record.references.length
+          ? [
+              '## 来源',
+              '',
+              ...record.references.map((reference) => {
+                const title = reference.title || reference.siteName || '未命名来源';
+                const url = reference.url ? ` (${reference.url})` : '';
+                return `- ${title}${url}`;
+              }),
+            ]
+          : [];
+        const artifactLines = record.artifacts.length
+          ? [
+              '## 产物',
+              '',
+              ...record.artifacts.map((artifact) => `- ${artifact.name} [${artifact.artifactType}]`),
+            ]
+          : [];
+        return [
+          `# ${record.title}`,
+          '',
+          `- 会话 ID：${record.id}`,
+          `- 导出时间：${record.exportedAt}`,
+          '',
+          '## 消息',
+          '',
+          ...messageLines,
+          '',
+          ...referenceLines,
+          ...(referenceLines.length ? [''] : []),
+          ...artifactLines,
+        ].join('\n');
+      })
+      .join('\n\n---\n\n');
+  }
+
+  /**
+   * 触发浏览器下载导出文件。
+   * @param fileName 文件名。
+   * @param content 文件内容。
+   * @param mimeType 文件 MIME 类型。
+   */
+  function downloadConversationExport(fileName: string, content: string, mimeType: string) {
+    const blob = new Blob([content], { type: mimeType });
+    const objectUrl = window.URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = objectUrl;
+    anchor.download = fileName;
+    anchor.click();
+    window.setTimeout(() => {
+      window.URL.revokeObjectURL(objectUrl);
+    }, 0);
+  }
 
   /**
    * 只刷新真实会话列表，避免在发送后错误回跳到旧会话。

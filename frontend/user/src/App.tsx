@@ -15,6 +15,8 @@ import { useAuth } from './hooks/useAuth';
 import { useChatWorkspace } from './views/chat/useChatWorkspace';
 import { useHostContext } from './host/useHostContext';
 import {
+  ConversationActionContext,
+  ConversationExportFormat,
   WorkspaceConversationCreateContext,
   WorkspaceConversationSelectionContext,
 } from './views/chat/types';
@@ -157,17 +159,88 @@ export default function App() {
    * @param conversationId 会话标识。
    * @param title 新标题。
    */
-  const handleRenameConversation = async (conversationId: string, title: string) => {
-    chatWorkspace.renameDialog.open(conversationId, title);
+  const handleRenameConversation = async (
+    conversationId: string,
+    title: string,
+    actionContext?: ConversationActionContext,
+  ) => {
+    chatWorkspace.renameDialog.open(conversationId, title, actionContext);
   };
 
   /**
    * 统一处理会话删除。
    * @param conversationId 会话标识。
    */
-  const handleDeleteConversation = async (conversationId: string) => {
-    const conversation = chatWorkspace.conversations.find((item) => item.id === conversationId);
-    chatWorkspace.deleteDialog.open(conversationId, conversation?.title ?? '');
+  const handleDeleteConversation = async (
+    conversationId: string,
+    actionContext?: ConversationActionContext,
+  ) => {
+    const sourceGroup = actionContext
+      ? chatWorkspace.workspaceGroups.find((group) => group.partitionKey === actionContext.partitionKey)
+      : null;
+    const sourceConversations = sourceGroup?.conversations ?? chatWorkspace.conversations;
+    const conversation = sourceConversations.find((item) => item.id === conversationId);
+    chatWorkspace.deleteDialog.open(conversationId, conversation?.title ?? '', actionContext);
+  };
+
+  /**
+   * 统一处理会话分享，复用工作区分享链路，避免侧栏菜单重复拼接链接。
+   * @param conversationId 会话标识。
+   */
+  const handleShareConversation = async (conversationId: string) => {
+    return chatWorkspace.shareConversation(conversationId);
+  };
+
+  /**
+   * 统一处理会话置顶切换，确保侧栏动作带上真实分组上下文。
+   * @param conversationId 会话标识。
+   * @param actionContext 会话所属分组上下文。
+   */
+  const handleToggleConversationPin = async (
+    conversationId: string,
+    actionContext: ConversationActionContext,
+  ) => {
+    return chatWorkspace.toggleConversationPin(conversationId, actionContext);
+  };
+
+  /**
+   * 统一处理单会话导出。
+   * @param conversationId 会话标识。
+   * @param format 导出格式。
+   * @param actionContext 会话所属分组上下文。
+   */
+  const handleExportConversation = async (
+    conversationId: string,
+    format: ConversationExportFormat,
+    actionContext: ConversationActionContext,
+  ) => {
+    await chatWorkspace.exportConversation(conversationId, format, actionContext);
+  };
+
+  /**
+   * 统一处理批量删除。
+   * @param conversationIds 会话标识列表。
+   * @param actionContext 会话所属分组上下文。
+   */
+  const handleDeleteConversations = async (
+    conversationIds: string[],
+    actionContext: ConversationActionContext,
+  ) => {
+    await chatWorkspace.deleteConversations(conversationIds, actionContext);
+  };
+
+  /**
+   * 统一处理批量导出。
+   * @param conversationIds 会话标识列表。
+   * @param format 导出格式。
+   * @param actionContext 会话所属分组上下文。
+   */
+  const handleExportConversations = async (
+    conversationIds: string[],
+    format: ConversationExportFormat,
+    actionContext: ConversationActionContext,
+  ) => {
+    await chatWorkspace.exportConversations(conversationIds, format, actionContext);
   };
 
   /**
@@ -206,6 +279,11 @@ export default function App() {
           onStartNewConversation={handleStartNewConversation}
           onRenameConversation={handleRenameConversation}
           onDeleteConversation={handleDeleteConversation}
+          onShareConversation={handleShareConversation}
+          onToggleConversationPin={handleToggleConversationPin}
+          onExportConversation={handleExportConversation}
+          onExportConversations={handleExportConversations}
+          onDeleteConversations={handleDeleteConversations}
           workspaceGroups={chatWorkspace.workspaceGroups}
           activeWorkspacePartitionKey={chatWorkspace.activeWorkspacePartitionKey}
           onSelectWorkspacePath={chatWorkspace.setActiveWorkspacePath}

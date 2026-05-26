@@ -103,4 +103,19 @@ describe('Settings page', () => {
       );
     });
   });
+
+  it('keeps the focused setting input active after editing a value', async () => {
+    render(<Settings />);
+
+    await screen.findByRole('heading', { name: '系统配置' });
+    fireEvent.click(screen.getByRole('button', { name: /搜索链路/ }));
+
+    const input = await screen.findByTestId('setting-value-search.top_k');
+    input.focus();
+
+    fireEvent.change(input, { target: { value: '9' } });
+
+    // 系统配置页输入常用于逐字修改密钥和数值，编辑后必须保持焦点避免打断连续输入。
+    expect(screen.getByTestId('setting-value-search.top_k')).toHaveFocus();
+  });
 });

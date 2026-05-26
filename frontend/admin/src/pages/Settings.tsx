@@ -16,6 +16,37 @@ interface CategoryOverview {
   restartRequired: number;
 }
 
+type SettingInputTypeResolver = (valueType?: string) => React.HTMLInputTypeAttribute;
+
+interface CardModeViewProps {
+  categories: GroupedCategory[];
+  expandedCategories: Record<string, boolean>;
+  modifiedSettingKeys: Set<string>;
+  onToggleCategory: (categoryCode: string) => void;
+  onChangeSettingValue: (settingKey: string, nextValue: string) => void;
+  inputTypeByValueType: SettingInputTypeResolver;
+}
+
+interface NavigatorModeViewProps {
+  categories: GroupedCategory[];
+  activeCategoryCode: string;
+  overviewByCategory: Map<string, CategoryOverview>;
+  modifiedSettingKeys: Set<string>;
+  onSelectCategory: (categoryCode: string) => void;
+  onChangeSettingValue: (settingKey: string, nextValue: string) => void;
+  inputTypeByValueType: SettingInputTypeResolver;
+}
+
+interface CompactModeViewProps {
+  categories: GroupedCategory[];
+  rows: Array<{ categoryCode: string; categoryLabel: string; setting: AdminRuntimeSetting }>;
+  tableCategoryFilter: string;
+  modifiedSettingKeys: Set<string>;
+  onChangeTableCategoryFilter: (value: string) => void;
+  onChangeSettingValue: (settingKey: string, nextValue: string) => void;
+  inputTypeByValueType: SettingInputTypeResolver;
+}
+
 const VIEW_MODE_META: Array<{ mode: SettingsViewMode; label: string }> = [
   { mode: 'navigator', label: '目录导航' },
   { mode: 'cards', label: '分组卡片' },
@@ -387,281 +418,262 @@ export function Settings() {
     </div>
   );
 
-  function CardModeView({
-    categories,
-    expandedCategories,
-    modifiedSettingKeys,
-    onToggleCategory,
-    onChangeSettingValue,
-    inputTypeByValueType,
-  }: {
-    categories: GroupedCategory[];
-    expandedCategories: Record<string, boolean>;
-    modifiedSettingKeys: Set<string>;
-    onToggleCategory: (categoryCode: string) => void;
-    onChangeSettingValue: (settingKey: string, nextValue: string) => void;
-    inputTypeByValueType: (valueType?: string) => React.HTMLInputTypeAttribute;
-  }) {
-    return (
-      <section className="space-y-md">
-        {categories.map((category) => {
-          const expanded = expandedCategories[category.categoryCode] ?? true;
-          const modified = category.settings.filter((setting) => modifiedSettingKeys.has(setting.settingKey)).length;
-          // 分组卡片默认展开，方便快速浏览全部配置；手动收起后仅由本地状态控制，不影响保存数据。
-          return (
-            <div key={category.categoryCode} className="rounded-2xl border border-border-hairline bg-surface-container-lowest shadow-sm">
-              <button
-                type="button"
-                className="flex w-full items-center justify-between gap-sm px-lg py-md text-left hover:bg-surface-container-low"
-                onClick={() => onToggleCategory(category.categoryCode)}
-              >
-                <div className="min-w-0">
-                  <p className="font-title-md text-title-md text-ink">{category.categoryLabel}</p>
-                  <p className="mt-1 text-[12px] text-secondary">
-                    共 {category.settings.length} 项
-                    {modified > 0 ? ` · 已修改 ${modified} 项` : ''}
-                  </p>
-                </div>
-                <span className="material-symbols-outlined text-secondary">
-                  {expanded ? 'expand_more' : 'chevron_right'}
-                </span>
-              </button>
-              {expanded ? (
-                <div className="grid gap-sm border-t border-border-hairline p-md md:grid-cols-2">
-                  {category.settings.map((setting) => {
-                    const modified = modifiedSettingKeys.has(setting.settingKey);
-                    return (
-                      <div
-                        key={setting.settingKey}
-                        className={clsx(
-                          'rounded-xl border px-md py-sm transition-colors',
-                          modified
-                            ? 'border-status-pending-border bg-status-pending-bg/40'
-                            : 'border-border-hairline bg-surface-container-low',
-                        )}
-                      >
-                        <div className="mb-2 flex flex-wrap items-center gap-xs">
-                          <p className="font-medium text-ink">{setting.description ?? setting.settingKey}</p>
-                          <span className="rounded-full border border-border-hairline bg-surface-container-lowest px-2 py-0.5 text-[11px] text-secondary">
-                            {setting.settingKey}
-                          </span>
-                          {modified ? (
-                            <span className="rounded-full border border-status-pending-border bg-status-pending-bg px-2 py-0.5 text-[11px] text-status-pending">
-                              已修改
-                            </span>
-                          ) : null}
-                          {setting.restartRequired ? (
-                            <span className="rounded-full border border-status-pending-border bg-status-pending-bg px-2 py-0.5 text-[11px] text-status-pending">
-                              重启生效
-                            </span>
-                          ) : null}
-                        </div>
-                        <input
-                          data-testid={`setting-value-${setting.settingKey}`}
-                          type={inputTypeByValueType(setting.valueType)}
-                          value={setting.settingValue}
-                          onChange={(event) => onChangeSettingValue(setting.settingKey, event.target.value)}
-                          className="w-full rounded-lg border border-border-hairline bg-surface-container-lowest px-3 py-2 text-body-sm text-ink outline-none transition-colors focus:border-border-strong"
-                        />
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : null}
-            </div>
-          );
-        })}
-      </section>
-    );
-  }
+}
 
-  function NavigatorModeView({
-    categories,
-    activeCategoryCode,
-    overviewByCategory,
-    modifiedSettingKeys,
-    onSelectCategory,
-    onChangeSettingValue,
-    inputTypeByValueType,
-  }: {
-    categories: GroupedCategory[];
-    activeCategoryCode: string;
-    overviewByCategory: Map<string, CategoryOverview>;
-    modifiedSettingKeys: Set<string>;
-    onSelectCategory: (categoryCode: string) => void;
-    onChangeSettingValue: (settingKey: string, nextValue: string) => void;
-    inputTypeByValueType: (valueType?: string) => React.HTMLInputTypeAttribute;
-  }) {
-    const activeCategory = categories.find((item) => item.categoryCode === activeCategoryCode) ?? categories[0];
-    return (
-      <section className="grid gap-md xl:grid-cols-[280px_minmax(0,1fr)]">
-        <aside className="rounded-2xl border border-border-hairline bg-surface-container-lowest p-sm shadow-sm">
-          <p className="px-sm py-xs text-[12px] text-secondary">配置分类</p>
-          <div className="space-y-1">
-            {categories.map((category) => {
-              const summary = overviewByCategory.get(category.categoryCode);
-              const selected = category.categoryCode === activeCategory.categoryCode;
-              return (
-                <button
-                  key={category.categoryCode}
-                  type="button"
-                  onClick={() => onSelectCategory(category.categoryCode)}
-                  className={clsx(
-                    'w-full rounded-lg border px-sm py-sm text-left transition-colors',
-                    selected
-                      ? 'border-border-strong bg-surface-container text-ink'
-                      : 'border-transparent text-secondary hover:bg-surface-container-low',
-                  )}
-                >
-                  <p className="font-medium">{category.categoryLabel}</p>
-                  <p className="mt-1 text-[11px]">
-                    {summary?.total ?? category.settings.length} 项
-                    {summary && summary.modified > 0 ? ` · 改动 ${summary.modified}` : ''}
-                  </p>
-                </button>
-              );
-            })}
-          </div>
-        </aside>
-
-        <div className="rounded-2xl border border-border-hairline bg-surface-container-lowest shadow-sm">
-          <div className="border-b border-border-hairline px-lg py-md">
-            <h3 className="font-title-md text-title-md text-ink">{activeCategory.categoryLabel}</h3>
-            <p className="mt-1 text-[12px] text-secondary">{activeCategory.categoryCode}</p>
-          </div>
-          <div className="grid gap-sm p-md md:grid-cols-2">
-            {activeCategory.settings.map((setting) => {
-              const modified = modifiedSettingKeys.has(setting.settingKey);
-              return (
-                <div
-                  key={setting.settingKey}
-                  className={clsx(
-                    'rounded-xl border px-md py-sm transition-colors',
-                    modified
-                      ? 'border-status-pending-border bg-status-pending-bg/40'
-                      : 'border-border-hairline bg-surface-container-low',
-                  )}
-                >
-                  <div className="mb-2 flex flex-wrap items-center gap-xs">
-                    <p className="font-medium text-ink">{setting.description ?? setting.settingKey}</p>
-                    {modified ? (
-                      <span className="rounded-full border border-status-pending-border bg-status-pending-bg px-2 py-0.5 text-[11px] text-status-pending">
-                        已修改
-                      </span>
-                    ) : null}
-                    {setting.restartRequired ? (
-                      <span className="rounded-full border border-status-pending-border bg-status-pending-bg px-2 py-0.5 text-[11px] text-status-pending">
-                        重启生效
-                      </span>
-                    ) : null}
-                  </div>
-                  <p className="mb-2 break-all text-[11px] text-secondary">{setting.settingKey}</p>
-                  <input
-                    data-testid={`setting-value-${setting.settingKey}`}
-                    type={inputTypeByValueType(setting.valueType)}
-                    value={setting.settingValue}
-                    onChange={(event) => onChangeSettingValue(setting.settingKey, event.target.value)}
-                    className="w-full rounded-lg border border-border-hairline bg-surface-container-lowest px-3 py-2 text-body-sm text-ink outline-none transition-colors focus:border-border-strong"
-                  />
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      </section>
-    );
-  }
-
-  function CompactModeView({
-    categories,
-    rows,
-    tableCategoryFilter,
-    modifiedSettingKeys,
-    onChangeTableCategoryFilter,
-    onChangeSettingValue,
-    inputTypeByValueType,
-  }: {
-    categories: GroupedCategory[];
-    rows: Array<{ categoryCode: string; categoryLabel: string; setting: AdminRuntimeSetting }>;
-    tableCategoryFilter: string;
-    modifiedSettingKeys: Set<string>;
-    onChangeTableCategoryFilter: (value: string) => void;
-    onChangeSettingValue: (settingKey: string, nextValue: string) => void;
-    inputTypeByValueType: (valueType?: string) => React.HTMLInputTypeAttribute;
-  }) {
-    return (
-      <section className="rounded-2xl border border-border-hairline bg-surface-container-lowest shadow-sm">
-        <div className="flex flex-wrap items-center justify-between gap-sm border-b border-border-hairline px-lg py-md">
-          <h3 className="font-title-md text-title-md text-ink">紧凑编辑表格</h3>
-          <label className="inline-flex items-center gap-xs text-[12px] text-secondary">
-            分类筛选
-            <select
-              value={tableCategoryFilter}
-              onChange={(event) => onChangeTableCategoryFilter(event.target.value)}
-              className="rounded-lg border border-border-hairline bg-surface-container-lowest px-sm py-1.5 text-ink outline-none"
+/**
+ * 配置编辑视图必须保持稳定的组件类型，避免每次输入导致输入框卸载并丢失焦点。
+ */
+function CardModeView({
+  categories,
+  expandedCategories,
+  modifiedSettingKeys,
+  onToggleCategory,
+  onChangeSettingValue,
+  inputTypeByValueType,
+}: CardModeViewProps) {
+  return (
+    <section className="space-y-md">
+      {categories.map((category) => {
+        const expanded = expandedCategories[category.categoryCode] ?? true;
+        const modified = category.settings.filter((setting) => modifiedSettingKeys.has(setting.settingKey)).length;
+        // 分组卡片默认展开，方便快速浏览全部配置；手动收起后仅由本地状态控制，不影响保存数据。
+        return (
+          <div key={category.categoryCode} className="rounded-2xl border border-border-hairline bg-surface-container-lowest shadow-sm">
+            <button
+              type="button"
+              className="flex w-full items-center justify-between gap-sm px-lg py-md text-left hover:bg-surface-container-low"
+              onClick={() => onToggleCategory(category.categoryCode)}
             >
-              <option value="all">全部分类</option>
-              {categories.map((category) => (
-                <option key={category.categoryCode} value={category.categoryCode}>
-                  {category.categoryLabel}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[1100px] border-collapse text-left">
-            <thead>
-              <tr className="border-b border-border-hairline bg-surface-container-low">
-                <th className="px-md py-sm text-[12px] text-secondary">分类</th>
-                <th className="px-md py-sm text-[12px] text-secondary">配置键</th>
-                <th className="px-md py-sm text-[12px] text-secondary">说明</th>
-                <th className="px-md py-sm text-[12px] text-secondary">当前值</th>
-                <th className="px-md py-sm text-[12px] text-secondary">状态</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border-hairline">
-              {rows.map((row) => {
-                const modified = modifiedSettingKeys.has(row.setting.settingKey);
-                return (
-                  <tr key={row.setting.settingKey} className={modified ? 'bg-status-pending-bg/35' : ''}>
-                    <td className="px-md py-sm text-[12px] text-secondary">{row.categoryLabel}</td>
-                    <td className="px-md py-sm font-data-mono text-[12px] text-ink">{row.setting.settingKey}</td>
-                    <td className="px-md py-sm text-[12px] text-secondary">{row.setting.description ?? '-'}</td>
-                    <td className="px-md py-sm">
-                      <input
-                        data-testid={`setting-value-${row.setting.settingKey}`}
-                        type={inputTypeByValueType(row.setting.valueType)}
-                        value={row.setting.settingValue}
-                        onChange={(event) => onChangeSettingValue(row.setting.settingKey, event.target.value)}
-                        className="w-full rounded-lg border border-border-hairline bg-surface-container-lowest px-3 py-1.5 text-[12px] text-ink outline-none transition-colors focus:border-border-strong"
-                      />
-                    </td>
-                    <td className="px-md py-sm">
-                      <div className="flex flex-wrap items-center gap-xs">
+              <div className="min-w-0">
+                <p className="font-title-md text-title-md text-ink">{category.categoryLabel}</p>
+                <p className="mt-1 text-[12px] text-secondary">
+                  共 {category.settings.length} 项
+                  {modified > 0 ? ` · 已修改 ${modified} 项` : ''}
+                </p>
+              </div>
+              <span className="material-symbols-outlined text-secondary">
+                {expanded ? 'expand_more' : 'chevron_right'}
+              </span>
+            </button>
+            {expanded ? (
+              <div className="grid gap-sm border-t border-border-hairline p-md md:grid-cols-2">
+                {category.settings.map((setting) => {
+                  const modified = modifiedSettingKeys.has(setting.settingKey);
+                  return (
+                    <div
+                      key={setting.settingKey}
+                      className={clsx(
+                        'rounded-xl border px-md py-sm transition-colors',
+                        modified
+                          ? 'border-status-pending-border bg-status-pending-bg/40'
+                          : 'border-border-hairline bg-surface-container-low',
+                      )}
+                    >
+                      <div className="mb-2 flex flex-wrap items-center gap-xs">
+                        <p className="font-medium text-ink">{setting.description ?? setting.settingKey}</p>
+                        <span className="rounded-full border border-border-hairline bg-surface-container-lowest px-2 py-0.5 text-[11px] text-secondary">
+                          {setting.settingKey}
+                        </span>
                         {modified ? (
                           <span className="rounded-full border border-status-pending-border bg-status-pending-bg px-2 py-0.5 text-[11px] text-status-pending">
                             已修改
                           </span>
-                        ) : (
-                          <span className="rounded-full border border-border-hairline bg-surface-container-low px-2 py-0.5 text-[11px] text-secondary">
-                            未改动
-                          </span>
-                        )}
-                        {row.setting.restartRequired ? (
+                        ) : null}
+                        {setting.restartRequired ? (
                           <span className="rounded-full border border-status-pending-border bg-status-pending-bg px-2 py-0.5 text-[11px] text-status-pending">
                             重启生效
                           </span>
                         ) : null}
                       </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                      <input
+                        data-testid={`setting-value-${setting.settingKey}`}
+                        type={inputTypeByValueType(setting.valueType)}
+                        value={setting.settingValue}
+                        onChange={(event) => onChangeSettingValue(setting.settingKey, event.target.value)}
+                        className="w-full rounded-lg border border-border-hairline bg-surface-container-lowest px-3 py-2 text-body-sm text-ink outline-none transition-colors focus:border-border-strong"
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            ) : null}
+          </div>
+        );
+      })}
+    </section>
+  );
+}
+
+function NavigatorModeView({
+  categories,
+  activeCategoryCode,
+  overviewByCategory,
+  modifiedSettingKeys,
+  onSelectCategory,
+  onChangeSettingValue,
+  inputTypeByValueType,
+}: NavigatorModeViewProps) {
+  const activeCategory = categories.find((item) => item.categoryCode === activeCategoryCode) ?? categories[0];
+  return (
+    <section className="grid gap-md xl:grid-cols-[280px_minmax(0,1fr)]">
+      <aside className="rounded-2xl border border-border-hairline bg-surface-container-lowest p-sm shadow-sm">
+        <p className="px-sm py-xs text-[12px] text-secondary">配置分类</p>
+        <div className="space-y-1">
+          {categories.map((category) => {
+            const summary = overviewByCategory.get(category.categoryCode);
+            const selected = category.categoryCode === activeCategory.categoryCode;
+            return (
+              <button
+                key={category.categoryCode}
+                type="button"
+                onClick={() => onSelectCategory(category.categoryCode)}
+                className={clsx(
+                  'w-full rounded-lg border px-sm py-sm text-left transition-colors',
+                  selected
+                    ? 'border-border-strong bg-surface-container text-ink'
+                    : 'border-transparent text-secondary hover:bg-surface-container-low',
+                )}
+              >
+                <p className="font-medium">{category.categoryLabel}</p>
+                <p className="mt-1 text-[11px]">
+                  {summary?.total ?? category.settings.length} 项
+                  {summary && summary.modified > 0 ? ` · 改动 ${summary.modified}` : ''}
+                </p>
+              </button>
+            );
+          })}
         </div>
-      </section>
-    );
-  }
+      </aside>
+
+      <div className="rounded-2xl border border-border-hairline bg-surface-container-lowest shadow-sm">
+        <div className="border-b border-border-hairline px-lg py-md">
+          <h3 className="font-title-md text-title-md text-ink">{activeCategory.categoryLabel}</h3>
+          <p className="mt-1 text-[12px] text-secondary">{activeCategory.categoryCode}</p>
+        </div>
+        <div className="grid gap-sm p-md md:grid-cols-2">
+          {activeCategory.settings.map((setting) => {
+            const modified = modifiedSettingKeys.has(setting.settingKey);
+            return (
+              <div
+                key={setting.settingKey}
+                className={clsx(
+                  'rounded-xl border px-md py-sm transition-colors',
+                  modified
+                    ? 'border-status-pending-border bg-status-pending-bg/40'
+                    : 'border-border-hairline bg-surface-container-low',
+                )}
+              >
+                <div className="mb-2 flex flex-wrap items-center gap-xs">
+                  <p className="font-medium text-ink">{setting.description ?? setting.settingKey}</p>
+                  {modified ? (
+                    <span className="rounded-full border border-status-pending-border bg-status-pending-bg px-2 py-0.5 text-[11px] text-status-pending">
+                      已修改
+                    </span>
+                  ) : null}
+                  {setting.restartRequired ? (
+                    <span className="rounded-full border border-status-pending-border bg-status-pending-bg px-2 py-0.5 text-[11px] text-status-pending">
+                      重启生效
+                    </span>
+                  ) : null}
+                </div>
+                <p className="mb-2 break-all text-[11px] text-secondary">{setting.settingKey}</p>
+                <input
+                  data-testid={`setting-value-${setting.settingKey}`}
+                  type={inputTypeByValueType(setting.valueType)}
+                  value={setting.settingValue}
+                  onChange={(event) => onChangeSettingValue(setting.settingKey, event.target.value)}
+                  className="w-full rounded-lg border border-border-hairline bg-surface-container-lowest px-3 py-2 text-body-sm text-ink outline-none transition-colors focus:border-border-strong"
+                />
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function CompactModeView({
+  categories,
+  rows,
+  tableCategoryFilter,
+  modifiedSettingKeys,
+  onChangeTableCategoryFilter,
+  onChangeSettingValue,
+  inputTypeByValueType,
+}: CompactModeViewProps) {
+  return (
+    <section className="rounded-2xl border border-border-hairline bg-surface-container-lowest shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-sm border-b border-border-hairline px-lg py-md">
+        <h3 className="font-title-md text-title-md text-ink">紧凑编辑表格</h3>
+        <label className="inline-flex items-center gap-xs text-[12px] text-secondary">
+          分类筛选
+          <select
+            value={tableCategoryFilter}
+            onChange={(event) => onChangeTableCategoryFilter(event.target.value)}
+            className="rounded-lg border border-border-hairline bg-surface-container-lowest px-sm py-1.5 text-ink outline-none"
+          >
+            <option value="all">全部分类</option>
+            {categories.map((category) => (
+              <option key={category.categoryCode} value={category.categoryCode}>
+                {category.categoryLabel}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[1100px] border-collapse text-left">
+          <thead>
+            <tr className="border-b border-border-hairline bg-surface-container-low">
+              <th className="px-md py-sm text-[12px] text-secondary">分类</th>
+              <th className="px-md py-sm text-[12px] text-secondary">配置键</th>
+              <th className="px-md py-sm text-[12px] text-secondary">说明</th>
+              <th className="px-md py-sm text-[12px] text-secondary">当前值</th>
+              <th className="px-md py-sm text-[12px] text-secondary">状态</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border-hairline">
+            {rows.map((row) => {
+              const modified = modifiedSettingKeys.has(row.setting.settingKey);
+              return (
+                <tr key={row.setting.settingKey} className={modified ? 'bg-status-pending-bg/35' : ''}>
+                  <td className="px-md py-sm text-[12px] text-secondary">{row.categoryLabel}</td>
+                  <td className="px-md py-sm font-data-mono text-[12px] text-ink">{row.setting.settingKey}</td>
+                  <td className="px-md py-sm text-[12px] text-secondary">{row.setting.description ?? '-'}</td>
+                  <td className="px-md py-sm">
+                    <input
+                      data-testid={`setting-value-${row.setting.settingKey}`}
+                      type={inputTypeByValueType(row.setting.valueType)}
+                      value={row.setting.settingValue}
+                      onChange={(event) => onChangeSettingValue(row.setting.settingKey, event.target.value)}
+                      className="w-full rounded-lg border border-border-hairline bg-surface-container-lowest px-3 py-1.5 text-[12px] text-ink outline-none transition-colors focus:border-border-strong"
+                    />
+                  </td>
+                  <td className="px-md py-sm">
+                    <div className="flex flex-wrap items-center gap-xs">
+                      {modified ? (
+                        <span className="rounded-full border border-status-pending-border bg-status-pending-bg px-2 py-0.5 text-[11px] text-status-pending">
+                          已修改
+                        </span>
+                      ) : (
+                        <span className="rounded-full border border-border-hairline bg-surface-container-low px-2 py-0.5 text-[11px] text-secondary">
+                          未改动
+                        </span>
+                      )}
+                      {row.setting.restartRequired ? (
+                        <span className="rounded-full border border-status-pending-border bg-status-pending-bg px-2 py-0.5 text-[11px] text-status-pending">
+                          重启生效
+                        </span>
+                      ) : null}
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
 }

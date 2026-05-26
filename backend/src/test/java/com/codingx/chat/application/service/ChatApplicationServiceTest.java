@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -445,6 +446,84 @@ class ChatApplicationServiceTest {
 
         verify(chatSkillContextService).buildSkillContext(List.of("weather_query"));
         verify(chatStreamPublisher).publishAssistantCompleted(1L, "技能已生效", "技能对话");
+        ChatExecutionContext.clear();
+    }
+
+    /**
+     * 本地运行态的聊天历史由客户端快照负责，后端只做临时推理与 SSE 推送。
+     * 关键约束：不得读取或写入 chat_conversation/chat_message，避免本地历史默认进入云端数据库。
+     */
+    @Test
+    void sendMessageLocalOnlyStreamsWithoutPersistingConversationMessages() {
+        Long runId = bindRunContext();
+        when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+            new ConversationRewriteResult("分析本地代码", false, List.of("分析本地代码"))
+        );
+        when(conversationIntentService.route("分析本地代码", false)).thenReturn(
+            new ConversationIntentDecision("chat.normal", ConversationIntentAction.DIRECT, null)
+        );
+        when(chatIntentNodeRepository.findByIntentCode("chat.normal")).thenReturn(null);
+        when(chatSkillContextService.buildSkillContext(any())).thenReturn("");
+        when(chatExpertContextService.buildExpertContext(any())).thenReturn("");
+        when(llmResponseCleaner.clean(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        doAnswer(invocation -> {
+            AiChatClient.StreamHandler handler = invocation.getArgument(2);
+            handler.onDelta("本地分析完成");
+            handler.onComplete();
+            return null;
+        }).when(aiChatClient).streamChat(any(), org.mockito.ArgumentMatchers.anyBoolean(), any());
+
+        chatApplicationService.sendMessage(
+            SendChatMessageCommand.localOnly(9901L, "分析本地代码", false, List.of(), List.of(), null, "D:/code/test", List.of()),
+            1002L
+        );
+
+        verify(chatRuntimeGuardService).ensureAccepted(9901L);
+        verify(chatConversationRepository, never()).requireById(any());
+        verify(chatConversationRepository, never()).save(any());
+        verify(chatMessageRepository, never()).findByConversationId(any());
+        verify(chatMessageRepository, never()).save(any());
+        verify(chatExecutionRunRepository, never()).save(any());
+        verify(chatStreamPublisher).publishUserMessage(9901L, "分析本地代码");
+        verify(chatStreamPublisher).publishAssistantCompleted(9901L, "本地分析完成", "分析本地代码");
+        assertEquals(runId, ChatExecutionContext.currentRunId().orElseThrow());
+        ChatExecutionContext.clear();
+    }
+
+    /**
+     * 本地运行态即使命中搜索类意图，也不能写入执行步骤、搜索引用或文档产物表。
+     * 关键约束：本地搜索过程只通过 SSE 与本地快照表达，避免 task/run 侧表把本地历史带上云端。
+     */
+    @Test
+    void sendMessageLocalOnlySearchIntentSkipsPersistentProcessRecords() {
+        bindRunContext();
+        when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+            new ConversationRewriteResult("搜索本地依赖资料", false, List.of("搜索本地依赖资料"))
+        );
+        when(conversationIntentService.route("搜索本地依赖资料", false)).thenReturn(
+            new ConversationIntentDecision("search-general", ConversationIntentAction.SEARCH, null)
+        );
+        when(chatIntentNodeRepository.findByIntentCode("search-general")).thenReturn(null);
+        when(chatSkillContextService.buildSkillContext(any())).thenReturn("");
+        when(chatExpertContextService.buildExpertContext(any())).thenReturn("");
+        when(llmResponseCleaner.clean(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        doAnswer(invocation -> {
+            AiChatClient.StreamHandler handler = invocation.getArgument(2);
+            handler.onDelta("本地搜索回答");
+            handler.onComplete();
+            return null;
+        }).when(aiChatClient).streamChat(any(), org.mockito.ArgumentMatchers.anyBoolean(), any());
+
+        chatApplicationService.sendMessage(
+            SendChatMessageCommand.localOnly(9902L, "搜索本地依赖资料", false, List.of(), List.of(), null, "D:/code/test", List.of()),
+            1002L
+        );
+
+        verify(chatExecutionStepRepository, never()).save(any());
+        verify(searchReferenceCollector, never()).collect(any(), any(), any(), any());
+        verify(documentArtifactService, never()).createDocxArtifact(any(), any(), any(), any());
+        verify(chatExecutionRunRepository, never()).save(any());
+        verify(chatStreamPublisher).publishAssistantCompleted(9902L, "本地搜索回答", "搜索本地依赖资料");
         ChatExecutionContext.clear();
     }
 

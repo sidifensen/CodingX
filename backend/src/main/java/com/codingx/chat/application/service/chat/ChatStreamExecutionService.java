@@ -92,6 +92,10 @@ public class ChatStreamExecutionService {
      * @param userId 当前用户标识。
      */
     public void dispatch(Long taskId, SendChatMessageCommand command, Long userId) {
+        if (command.localOnly()) {
+            dispatchLocalOnly(taskId, command, userId);
+            return;
+        }
         Long runId = taskId;
         LocalDateTime now = LocalDateTime.now();
         Task task = createRunningTask(taskId, command, userId);
@@ -142,6 +146,36 @@ public class ChatStreamExecutionService {
                 chatRuntimeGuardService.completeConversation(command.conversationId(), runId);
                 ChatExecutionContext.clear();
                 ConversationTraceContext.clear();
+                ChatToolExecutionContext.clear();
+            }
+        });
+        futureRef.set(future);
+    }
+
+    /**
+     * 本地运行态只保留内存级执行生命周期，不写任务、run、trace 或能力绑定表。
+     * 业务意图：本地历史由客户端快照负责，后端只承担本次临时推理和工具执行。
+     * @param taskId 临时运行标识。
+     * @param command 本地运行命令。
+     * @param userId 当前用户标识。
+     */
+    private void dispatchLocalOnly(Long taskId, SendChatMessageCommand command, Long userId) {
+        Long runId = taskId;
+        AtomicReference<Future<?>> futureRef = new AtomicReference<>();
+        chatRuntimeGuardService.registerCancellation(command.conversationId(), runId, () -> {
+            Future<?> future = futureRef.get();
+            if (future != null) {
+                future.cancel(true);
+            }
+        });
+        Future<?> future = executor.submit(() -> {
+            try {
+                ChatExecutionContext.start(runId);
+                bindToolWorkingDirectory(command, userId);
+                chatApplicationService.sendMessage(command, userId);
+            } finally {
+                chatRuntimeGuardService.completeConversation(command.conversationId(), runId);
+                ChatExecutionContext.clear();
                 ChatToolExecutionContext.clear();
             }
         });

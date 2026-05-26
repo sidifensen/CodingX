@@ -1,20 +1,17 @@
 package com.codingx.chat.application.service;
 
 import cn.dev33.satoken.stp.StpUtil;
-import cn.hutool.core.util.IdUtil;
 import cn.hutool.core.util.StrUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.codingx.common.error.ErrorMessageCatalog;
 import com.codingx.common.exception.BusinessException;
 import com.codingx.workspace.infrastructure.persistence.dataobject.WorkspaceDO;
 import com.codingx.workspace.infrastructure.persistence.mapper.WorkspaceMapper;
-import com.codingx.workspace.infrastructure.repository.WorkspaceRepositoryImpl;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
-import java.time.LocalDateTime;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -36,12 +33,12 @@ public class ChatWorkspaceBindingService {
     public WorkspaceBindingResult bindRepositoryPathForCurrentUser(String repositoryPath) {
         Long userId = StpUtil.getLoginIdAsLong();
         Path normalizedPath = normalizeAndValidateRepositoryPath(repositoryPath);
-        WorkspaceDO workspace = findOrCreateWorkspace(userId, normalizedPath);
         repositoryPathByUserId.put(userId, normalizedPath);
+        String normalizedPathText = normalizedPath.toString().replace('\\', '/');
         return new WorkspaceBindingResult(
-            workspace.getId(),
-            normalizedPath.toString().replace('\\', '/'),
-            workspace.getName()
+            null,
+            normalizedPathText,
+            normalizedPath.getFileName() == null ? normalizedPathText : normalizedPath.getFileName().toString()
         );
     }
 
@@ -76,38 +73,6 @@ public class ChatWorkspaceBindingService {
             throw new BusinessException("CHAT_WORKSPACE_PATH_INVALID", ErrorMessageCatalog.CHAT_WORKSPACE_PATH_INVALID_DIRECTORY);
         }
         return normalizedPath;
-    }
-
-    /**
-     * 按用户与目录查重创建工作空间，避免重复生成同路径工作空间记录。
-     * @param userId 当前用户标识。
-     * @param normalizedPath 规范化目录路径。
-     * @return 工作空间记录。
-     */
-    private WorkspaceDO findOrCreateWorkspace(Long userId, Path normalizedPath) {
-        String workingDirectory = normalizedPath.toString().replace('\\', '/');
-        // 本地目录绑定必须写入可复用的“本地空间”记录，后续会话按 workspaceId 稳定归属。
-        WorkspaceDO existing = workspaceMapper.selectOne(new LambdaQueryWrapper<WorkspaceDO>()
-            .eq(WorkspaceDO::getCreatedBy, userId)
-            .eq(WorkspaceDO::getWorkingDirectory, workingDirectory)
-            // 旧 workspace_type 列已下线，运行目标统一用 runtime_target 表达。
-            .eq(WorkspaceDO::getRuntimeTarget, WorkspaceRepositoryImpl.RUNTIME_TARGET_LOCAL)
-            .eq(WorkspaceDO::getDeleted, 0)
-            .last("LIMIT 1"));
-        if (existing != null) {
-            return existing;
-        }
-        WorkspaceDO workspace = new WorkspaceDO();
-        workspace.setId(IdUtil.getSnowflakeNextId());
-        workspace.setName(normalizedPath.getFileName() == null ? workingDirectory : normalizedPath.getFileName().toString());
-        workspace.setWorkingDirectory(workingDirectory);
-        workspace.setRuntimeTarget(WorkspaceRepositoryImpl.RUNTIME_TARGET_LOCAL);
-        workspace.setCreatedBy(userId);
-        workspace.setCreatedAt(LocalDateTime.now());
-        workspace.setUpdatedAt(LocalDateTime.now());
-        workspace.setDeleted(0);
-        workspaceMapper.insert(workspace);
-        return workspace;
     }
 
     /**

@@ -660,9 +660,9 @@ describe('useChatWorkspace', () => {
   });
 
   /**
-   * 切换本地工作空间后，当前空间会话应保留在本分组；历史分区应并入默认本地分组。
+   * 本地工作空间只从本机快照恢复会话，不再把远端会话列表并入本地分组。
    */
-  it('应在本地工作空间分组中保留当前空间会话，不再渲染独立历史分组', async () => {
+  it('应在本地工作空间分组中仅展示本机快照会话', async () => {
     window.localStorage.setItem(
       'codingx.auth.session',
       JSON.stringify({
@@ -674,34 +674,33 @@ describe('useChatWorkspace', () => {
       }),
     );
 
-    const chatConversations = [
-      {
-        id: '3001',
-        title: 'A 工作空间会话',
-        status: 'ACTIVE',
-        lastRunId: '7001',
-      },
-      {
-        id: '3002',
-        title: '跨工作空间历史记录',
-        status: 'ACTIVE',
-        lastRunId: '7002',
-      },
-    ];
+    window.localStorage.setItem(
+      'codingx.chat.workspace.conversations.v1',
+      JSON.stringify({
+        version: 1,
+        snapshots: {
+          'local::d:/code/workspace-a': {
+            workspacePath: 'D:/code/workspace-a',
+            workspaceLabel: 'workspace-a',
+            runtimeTarget: 'local',
+            lastOpenedAt: Date.now(),
+            activeConversationId: null,
+            conversations: [
+              {
+                id: 'local-3001',
+                title: 'A 工作空间本地会话',
+                status: 'ACTIVE',
+                workspaceType: 'LOCAL',
+              },
+            ],
+            conversationRecords: {},
+          },
+        },
+      }),
+    );
 
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
       const url = String(input);
-      if (url === '/api/chat/conversations') {
-        return new Response(
-          JSON.stringify({
-            success: true,
-            code: 'OK',
-            message: 'success',
-            data: chatConversations,
-          }),
-          { status: 200 },
-        );
-      }
       if (url === '/api/chat/sample-questions') {
         return new Response(
           JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
@@ -884,7 +883,7 @@ describe('useChatWorkspace', () => {
     expect(localDefaultGroup?.workspaceLabel).toBe('本地历史记录');
 
     expect(result.current.workspaceLabel).toBe('workspace-a');
-    expect(result.current.conversations.map((item) => item.id)).toEqual(['3001', '3002']);
+    expect(result.current.conversations.map((item) => item.id)).toEqual(['local-3001']);
 
     await act(async () => {
       await result.current.setActiveWorkspacePath('D:/code/test');
@@ -894,7 +893,7 @@ describe('useChatWorkspace', () => {
       expect(result.current.workspaceLabel).toBe('test');
     });
 
-    expect(result.current.conversations.map((item) => item.id)).toEqual(['3001', '3002']);
+    expect(result.current.conversations).toEqual([]);
     await waitFor(() => {
       expect(
         result.current.workspaceGroups.some((group) => group.partitionKey === 'local::__history__'),
@@ -2518,7 +2517,7 @@ describe('useChatWorkspace', () => {
   /**
    * 切换本地工作空间后应立即使用绑定返回的 workspaceId 发流，避免会话误落到默认云端空间。
    */
-  it('应在切换本地工作空间后使用最新workspaceId发送流请求', async () => {
+  it('应在切换本地工作空间后使用本地运行目标发送流请求', async () => {
     window.localStorage.setItem(
       'codingx.auth.session',
       JSON.stringify({
@@ -2598,7 +2597,7 @@ describe('useChatWorkspace', () => {
 
     const bindWorkspacePath = vi.fn().mockResolvedValue({
       repositoryPath: 'D:/code/workspace-b',
-      workspaceId: '3002',
+      workspaceId: null,
       workspaceName: 'workspace-b',
     });
 
@@ -2629,7 +2628,141 @@ describe('useChatWorkspace', () => {
     });
 
     expect(streamFetchMock).toHaveBeenCalledTimes(1);
-    expect(streamFetchMock.mock.calls[0][0]).toContain('workspaceId=3002');
+    const requestUrl = String(streamFetchMock.mock.calls[0][0]);
+    expect(requestUrl).toContain('runtimeTarget=local');
+    expect(requestUrl).toContain('repositoryPath=D%3A%2Fcode%2Fworkspace-b');
+    expect(requestUrl).not.toContain('workspaceId=');
+  });
+
+  /**
+   * 本地模式的会话列表与消息回放只来自本机快照，不能在初始化或发送后回查云端历史接口。
+   */
+  it('本地模式发送完成后应只写本地快照且不回查云端会话', async () => {
+    window.localStorage.setItem(
+      'codingx.auth.session',
+      JSON.stringify({
+        token: 'token-123',
+        userId: '1002',
+        username: 'user',
+        displayName: 'CodingX User',
+        userType: 'USER',
+      }),
+    );
+
+    const readQueue: Array<{
+      resolve: (value: ReadableStreamReadResult<Uint8Array>) => void;
+      reject: (reason?: unknown) => void;
+    }> = [];
+    const metaEvent = new TextEncoder().encode(
+      'event:meta\ndata:{"conversationId":"9901","runtimeTarget":"local","localOnly":true}\n\n',
+    );
+    const messageEvent = new TextEncoder().encode(
+      'event:message\ndata:{"type":"response","delta":"本地回答"}\n\n',
+    );
+    const finishEvent = new TextEncoder().encode(
+      'event:finish\ndata:{"conversationId":"9901","content":"本地回答","title":"本地项目问题"}\n\n',
+    );
+    const mockReader = {
+      read: vi.fn(() => {
+        return new Promise<ReadableStreamReadResult<Uint8Array>>((resolve, reject) => {
+          readQueue.push({ resolve, reject });
+        });
+      }),
+    };
+    const cloudConversationFetchMock = vi.fn();
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.startsWith('/api/chat/conversations')) {
+        cloudConversationFetchMock(url);
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (
+        url === '/api/chat/sample-questions' ||
+        url === '/api/chat/experts' ||
+        url === '/api/chat/skills' ||
+        url === '/api/chat/mcps'
+      ) {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (url.includes('/api/chat/stream')) {
+        return {
+          ok: true,
+          status: 200,
+          body: {
+            getReader: () => mockReader,
+          },
+        } as unknown as Response;
+      }
+      throw new Error(`Unhandled fetch in local-only snapshot test: ${url}`);
+    });
+
+    const hostContext = {
+      hostType: 'desktop',
+      executionTargets: ['local'] as const,
+      capabilities: {
+        localFiles: true,
+        localFolderPicker: true,
+        shell: true,
+        browserAutomation: false,
+        desktopNotifications: false,
+        officeInterop: false,
+        localMcp: true,
+        windowControls: true,
+      },
+      localResource: {
+        boundRepositoryPath: 'D:/code/local-project',
+        permissionGranted: true,
+      },
+    };
+
+    const { result } = renderHook(() =>
+      useChatWorkspace(true, {
+        hostContext,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(result.current.isBootstrapping).toBe(false);
+    });
+
+    await act(async () => {
+      result.current.setInputValue('本地项目问题');
+    });
+    const submitPromise = result.current.submitMessage();
+
+    await waitFor(() => {
+      expect(result.current.isStreaming).toBe(true);
+      expect(readQueue.length).toBeGreaterThan(0);
+    });
+    for (const event of [metaEvent, messageEvent, finishEvent]) {
+      await act(async () => {
+        readQueue.shift()?.resolve({ done: false, value: event });
+      });
+    }
+    await act(async () => {
+      readQueue.shift()?.resolve({ done: true, value: undefined });
+    });
+    await act(async () => {
+      await submitPromise;
+    });
+
+    expect(cloudConversationFetchMock).not.toHaveBeenCalled();
+    expect(result.current.activeConversationId).toBe('9901');
+    expect(result.current.conversations.map((conversation) => conversation.id)).toContain('9901');
+    const snapshotStore = JSON.parse(
+      window.localStorage.getItem('codingx.chat.workspace.conversations.v1') ?? '{}',
+    );
+    const localRecord =
+      snapshotStore?.snapshots?.['local::d:/code/local-project']?.conversationRecords?.['9901'];
+    expect(localRecord?.messages.map((message: { content: string }) => message.content)).toEqual(
+      expect.arrayContaining(['本地项目问题', '本地回答']),
+    );
   });
 
   /**
@@ -3758,20 +3891,6 @@ describe('useChatWorkspace', () => {
       const url = String(input);
       requestUrls.push(url);
       if (
-        url === '/api/chat/conversations?workspaceId=3001' ||
-        url === '/api/chat/conversations?workspaceId=3002'
-      ) {
-        return new Response(
-          JSON.stringify({
-            success: true,
-            code: 'OK',
-            message: 'success',
-            data: [],
-          }),
-          { status: 200 },
-        );
-      }
-      if (
         url === '/api/chat/sample-questions' ||
         url === '/api/chat/experts' ||
         url === '/api/chat/skills' ||
@@ -3860,8 +3979,7 @@ describe('useChatWorkspace', () => {
     expect(result.current.workspacePath).toBe('D:/code/workspace-b');
     expect(result.current.workspaceLabel).toBe('workspace-b');
     expect(result.current.activeConversationId).toBeNull();
-    expect(requestUrls.some((url) => url.includes('/api/chat/conversations/3001/messages'))).toBe(false);
-    expect(requestUrls.some((url) => url.includes('/api/chat/conversations/4001/messages'))).toBe(false);
+    expect(requestUrls.some((url) => url.includes('/api/chat/conversations'))).toBe(false);
   });
 
   /**
@@ -3961,6 +4079,66 @@ describe('useChatWorkspace', () => {
         },
       },
     ]);
+  });
+
+  /**
+   * 本地模式只把目录作为临时执行上下文传给后端，不应携带云端 workspaceId 触发数据库归档。
+   */
+  it('本地流式请求应标记local并忽略workspaceId', () => {
+    const requestUrl = buildStreamRequestUrl(
+      '查看本地项目',
+      'local-conversation-1',
+      '3001',
+      false,
+      true,
+      [],
+      [],
+      'agent',
+      'D:/code/test',
+      [],
+      'local',
+    );
+    const searchParams = new URLSearchParams(requestUrl.split('?')[1] ?? '');
+
+    expect(searchParams.get('runtimeTarget')).toBe('local');
+    expect(searchParams.get('repositoryPath')).toBe('D:/code/test');
+    expect(searchParams.has('workspaceId')).toBe(false);
+    expect(searchParams.has('conversationId')).toBe(false);
+  });
+
+  /**
+   * 本地历史可能残留 local-* 客户端会话标识，流请求不得把它传给后端 Long 参数。
+   */
+  it('本地流式请求应保留数值会话并过滤非数值本地会话', () => {
+    const numericRequestUrl = buildStreamRequestUrl(
+      '继续查看本地项目',
+      '9901',
+      null,
+      false,
+      true,
+      [],
+      [],
+      'agent',
+      'D:/code/test',
+      [],
+      'local',
+    );
+    const localRequestUrl = buildStreamRequestUrl(
+      '继续查看本地项目',
+      'local-stale-1',
+      null,
+      false,
+      true,
+      [],
+      [],
+      'agent',
+      'D:/code/test',
+      [],
+      'local',
+    );
+
+    expect(new URLSearchParams(numericRequestUrl.split('?')[1] ?? '').get('conversationId')).toBe('9901');
+    expect(new URLSearchParams(localRequestUrl.split('?')[1] ?? '').has('conversationId')).toBe(false);
   });
 
   /**

@@ -648,6 +648,10 @@ public class ChatApplicationService {
         if (StrUtil.isBlank(command.content())) {
             throw new IllegalArgumentException(ErrorMessageCatalog.CHAT_MESSAGE_CONTENT_REQUIRED);
         }
+        if (command.localOnly()) {
+            sendLocalOnlyMessage(command, userId);
+            return;
+        }
         Long runId = currentRunId(command.conversationId());
         ChatConversation conversation = chatConversationRepository.requireById(command.conversationId());
         if (!conversation.getCreatedBy().equals(userId)) {
@@ -968,6 +972,111 @@ public class ChatApplicationService {
         chatStreamPublisher.publishAssistantCompleted(command.conversationId(), assistantMessage.getContent(), conversation.getTitle());
     }
 
+    /**
+     * 执行本地临时聊天链路，只向 SSE 推送运行结果，不读写云端会话、消息、run 或任务相关表。
+     * 关键约束：本地历史的 source of truth 是客户端本地快照，后端仅用临时 conversationId 做流式路由。
+     *
+     * @param command 本地运行命令。
+     * @param userId 当前用户标识，预留给后续本地权限约束，当前不落库。
+     */
+    private void sendLocalOnlyMessage(SendChatMessageCommand command, Long userId) {
+        Long runId = currentRunId(command.conversationId());
+        chatRuntimeGuardService.ensureAccepted(command.conversationId());
+        List<ChatMessage> history = new ArrayList<>();
+        ChatMessage userMessage = ChatMessage.userMessage(command.conversationId(), command.content()).attachRun(runId);
+        history.add(userMessage);
+        chatStreamPublisher.publishUserMessage(command.conversationId(), userMessage.getContent());
+        ConversationRewriteResult rewriteResult = conversationRewriteService.rewriteResult(
+            List.of(command.content()),
+            command.content()
+        );
+        String rewrittenQuestion = rewriteResult.rewrite();
+        boolean mcpEnabled = command.mcpCodes() != null && !command.mcpCodes().isEmpty();
+        ConversationIntentDecision intentDecision = conversationIntentService.route(rewrittenQuestion, mcpEnabled);
+        if (intentDecision.action() == ConversationIntentAction.CLARIFY) {
+            chatStreamPublisher.publishAssistantCompleted(
+                command.conversationId(),
+                intentDecision.reply(),
+                resolveLocalConversationTitle(command)
+            );
+            return;
+        }
+        if (intentDecision.action() == ConversationIntentAction.DIRECT && StrUtil.isNotBlank(intentDecision.reply())) {
+            chatStreamPublisher.publishAssistantCompleted(
+                command.conversationId(),
+                intentDecision.reply(),
+                resolveLocalConversationTitle(command)
+            );
+            return;
+        }
+        if (intentDecision.action() == ConversationIntentAction.MCP_DISABLED) {
+            chatStreamPublisher.publishAssistantCompleted(
+                command.conversationId(),
+                "你当前未连接 MCP。请在输入框上方开启“连接 MCP”并至少选择一个 MCP 后重试",
+                resolveLocalConversationTitle(command)
+            );
+            return;
+        }
+        StringBuilder builder = new StringBuilder();
+        StringBuilder thinkingBuilder = new StringBuilder();
+        AtomicReference<LocalDateTime> thinkingStartedAt = new AtomicReference<>();
+        final Throwable[] streamError = new Throwable[1];
+        final String[] selectedProvider = new String[1];
+        final String[] selectedModel = new String[1];
+        List<ChatMessage> aiHistory = buildAiHistory(
+            history,
+            intentDecision,
+            command.conversationId(),
+            command.skillCodes(),
+            command.expertCode(),
+            List.of()
+        );
+        tokenCounterService.estimateConversationTokens(aiHistory);
+        try {
+            runAiToolAwareLoop(
+                command,
+                runId,
+                aiHistory,
+                builder,
+                thinkingBuilder,
+                thinkingStartedAt,
+                streamError,
+                selectedProvider,
+                selectedModel,
+                runId,
+                List.of()
+            );
+        } catch (RuntimeException exception) {
+            if (chatRuntimeGuardService.isCancelled(command.conversationId(), runId)) {
+                return;
+            }
+            throw exception;
+        }
+        if (chatRuntimeGuardService.isCancelled(command.conversationId(), runId)) {
+            return;
+        }
+        if (streamError[0] != null) {
+            chatStreamPublisher.publishError(command.conversationId(), streamError[0].getMessage());
+            return;
+        }
+        String assistantContent = StrUtil.blankToDefault(llmResponseCleaner.clean(builder.toString()), "");
+        chatStreamPublisher.publishAssistantCompleted(
+            command.conversationId(),
+            assistantContent,
+            resolveLocalConversationTitle(command)
+        );
+    }
+
+    /**
+     * 生成本地临时会话标题；不依赖云端会话实体，避免为了标题创建数据库记录。
+     * @param command 本地运行命令。
+     * @return 本地显示标题。
+     */
+    private String resolveLocalConversationTitle(SendChatMessageCommand command) {
+        String title = StrUtil.blankToDefault(command.content(), "本地对话").trim();
+        return title.length() > 40 ? title.substring(0, 40) : title;
+    }
+
     private Long currentRunId(Long conversationId) {
         return ChatExecutionContext.currentRunId().orElse(conversationId);
     }
@@ -1256,16 +1365,18 @@ public class ChatApplicationService {
                 .createdAt(java.time.LocalDateTime.now())
                 .updatedAt(java.time.LocalDateTime.now())
                 .build();
-            chatExecutionStepRepository.save(toolStep);
-            chatStreamPublisher.publishStep(command.conversationId(), Map.of(
-                "id", toolStep.getId(),
-                "runId", toolStep.getRunId(),
-                "stepType", toolStep.getStepType(),
-                "stepTitle", toolStep.getStepTitle(),
-                "stepStatus", toolStep.getStepStatus(),
-                "sequenceNo", toolStep.getSequenceNo(),
-                "content", toolStep.getContent()
-            ));
+            if (!command.localOnly()) {
+                chatExecutionStepRepository.save(toolStep);
+                chatStreamPublisher.publishStep(command.conversationId(), Map.of(
+                    "id", toolStep.getId(),
+                    "runId", toolStep.getRunId(),
+                    "stepType", toolStep.getStepType(),
+                    "stepTitle", toolStep.getStepTitle(),
+                    "stepStatus", toolStep.getStepStatus(),
+                    "sequenceNo", toolStep.getSequenceNo(),
+                    "content", toolStep.getContent()
+                ));
+            }
             publishLocalToolCallEvent(command.conversationId(), toolCall, "complete", startedAt, LocalDateTime.now(), toolResult);
             return toolResult;
         } catch (RuntimeException exception) {
@@ -1426,6 +1537,9 @@ public class ChatApplicationService {
             if (explicitPath != null) {
                 return explicitPath;
             }
+        }
+        if (command.localOnly()) {
+            return null;
         }
         ChatConversation conversation = chatConversationRepository.requireById(command.conversationId());
         if (conversation.getWorkspaceId() == null || chatWorkspaceBindingService == null) {

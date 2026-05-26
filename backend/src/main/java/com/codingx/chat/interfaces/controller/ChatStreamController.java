@@ -1,5 +1,6 @@
 package com.codingx.chat.interfaces.controller;
 import cn.dev33.satoken.stp.StpUtil;
+import cn.hutool.core.util.IdUtil;
 import cn.hutool.core.util.StrUtil;
 import com.codingx.chat.application.command.CreateConversationCommand;
 import com.codingx.chat.application.command.SendChatMessageCommand;
@@ -79,13 +80,15 @@ public class ChatStreamController {
         @RequestParam(required = false) String mcpCodes,
         @RequestParam(required = false) String skillCodes,
         @RequestParam(required = false) String expertCode,
+        @RequestParam(required = false) String runtimeTarget,
         @RequestParam(required = false) String repositoryPath,
         @RequestParam(required = false) String messages,
         @RequestParam(required = false) String attachmentIds
     ) {
         StpUtil.checkLogin();
         Long userId = StpUtil.getLoginIdAsLong();
-        Long actualConversationId = resolveConversationId(conversationId, workspaceId, userId);
+        boolean localOnly = isLocalRuntime(runtimeTarget);
+        Long actualConversationId = resolveConversationId(conversationId, workspaceId, userId, localOnly);
         boolean deepThinkingEnabled = Boolean.TRUE.equals(deepThinking);
         // 步骤：同一入口同时支持 MCP 与技能绑定，分别解析后传入运行时，避免语义混淆。
         List<String> selectedMcpCodes = resolveMcpCodes(mcpCodes);
@@ -104,18 +107,24 @@ public class ChatStreamController {
         metaPayload.put("skillCodes", selectedSkillCodes);
         metaPayload.put("expertCode", selectedExpertCode);
         metaPayload.put("attachmentIds", selectedAttachmentIds);
+        metaPayload.put("runtimeTarget", localOnly ? "local" : "cloud");
+        metaPayload.put("localOnly", localOnly);
+        if (StrUtil.isNotBlank(repositoryPath)) {
+            metaPayload.put("repositoryPath", StrUtil.trim(repositoryPath));
+        }
         chatSseRegistry.publish(actualConversationId, "meta", metaPayload);
         chatStreamExecutionService.dispatch(
             taskId,
-            new SendChatMessageCommand(
+            buildSendCommand(
                 actualConversationId,
                 actualQuestion,
                 deepThinkingEnabled,
                 selectedMcpCodes,
                 selectedSkillCodes,
                 selectedExpertCode,
-                StrUtil.trimToNull(repositoryPath),
-                selectedAttachmentIds
+                repositoryPath,
+                selectedAttachmentIds,
+                localOnly
             ),
             userId
         );
@@ -130,7 +139,48 @@ public class ChatStreamController {
      * @return SSE emitter。
      */
     public SseEmitter streamChat(String question, Long conversationId, Boolean deepThinking) {
-        return streamChat(question, conversationId, null, deepThinking, null, null, null, null, null, null);
+        return streamChat(question, conversationId, null, deepThinking, null, null, null, null, null, null, null);
+    }
+
+    /**
+     * 兼容旧的完整参数调用签名；旧调用方不传 runtimeTarget 时继续按云端持久化处理。
+     * @param question 用户问题。
+     * @param conversationId 会话标识。
+     * @param workspaceId 工作空间标识。
+     * @param deepThinking 是否深度思考。
+     * @param mcpCodes 显式 MCP 编码。
+     * @param skillCodes 显式技能编码。
+     * @param expertCode 专家编码。
+     * @param repositoryPath 当前仓库路径。
+     * @param messages 结构化消息 JSON。
+     * @param attachmentIds 附件主键列表。
+     * @return SSE emitter。
+     */
+    public SseEmitter streamChat(
+        String question,
+        Long conversationId,
+        Long workspaceId,
+        Boolean deepThinking,
+        String mcpCodes,
+        String skillCodes,
+        String expertCode,
+        String repositoryPath,
+        String messages,
+        String attachmentIds
+    ) {
+        return streamChat(
+            question,
+            conversationId,
+            workspaceId,
+            deepThinking,
+            mcpCodes,
+            skillCodes,
+            expertCode,
+            null,
+            repositoryPath,
+            messages,
+            attachmentIds
+        );
     }
 
     /**
@@ -149,7 +199,7 @@ public class ChatStreamController {
         String mcpCodes,
         String skillCodes
     ) {
-        return streamChat(question, conversationId, null, deepThinking, mcpCodes, skillCodes, null, null, null, null);
+        return streamChat(question, conversationId, null, deepThinking, mcpCodes, skillCodes, null, null, null, null, null);
     }
 
     /**
@@ -170,7 +220,7 @@ public class ChatStreamController {
         String skillCodes,
         String messages
     ) {
-        return streamChat(question, conversationId, null, deepThinking, mcpCodes, skillCodes, null, null, messages, null);
+        return streamChat(question, conversationId, null, deepThinking, mcpCodes, skillCodes, null, null, null, messages, null);
     }
 
     /**
@@ -193,7 +243,7 @@ public class ChatStreamController {
         String repositoryPath,
         String messages
     ) {
-        return streamChat(question, conversationId, null, deepThinking, mcpCodes, skillCodes, null, repositoryPath, messages, null);
+        return streamChat(question, conversationId, null, deepThinking, mcpCodes, skillCodes, null, null, repositoryPath, messages, null);
     }
 
     /**
@@ -214,11 +264,17 @@ public class ChatStreamController {
      * @param userId 当前用户标识。
      * @return 最终会话标识。
      */
-    private Long resolveConversationId(Long conversationId, Long workspaceId, Long userId) {
+    private Long resolveConversationId(Long conversationId, Long workspaceId, Long userId, boolean localOnly) {
         if (conversationId != null) {
-            // 步骤：复用既有会话时先做 owner 校验，避免越权订阅或发送到他人会话。
-            chatConversationApplicationService.listMessages(conversationId, userId);
+            if (!localOnly) {
+                // 步骤：复用既有会话时先做 owner 校验，避免越权订阅或发送到他人会话。
+                chatConversationApplicationService.listMessages(conversationId, userId);
+            }
             return conversationId;
+        }
+        if (localOnly) {
+            // 本地模式只需要临时数值 ID 作为 SSE 路由键，不能据此创建云端会话。
+            return IdUtil.getSnowflakeNextId();
         }
         // 新建会话时透传 workspaceId：为空走默认云端空间，不为空绑定本地空间。
         ChatConversation conversation = chatConversationApplicationService.createConversation(
@@ -226,6 +282,64 @@ public class ChatStreamController {
             userId
         );
         return conversation.getId();
+    }
+
+    /**
+     * 判断当前请求是否显式进入本地临时运行态。
+     * @param runtimeTarget 前端运行目标。
+     * @return 是否本地临时模式。
+     */
+    private boolean isLocalRuntime(String runtimeTarget) {
+        return StrUtil.equalsIgnoreCase(StrUtil.trimToEmpty(runtimeTarget), "local");
+    }
+
+    /**
+     * 根据运行态构建发送命令；本地模式必须携带 localOnly 语义，供下游跳过云端持久化。
+     * @param conversationId 最终传输会话标识。
+     * @param question 用户问题。
+     * @param deepThinking 是否深度思考。
+     * @param mcpCodes MCP 编码列表。
+     * @param skillCodes 技能编码列表。
+     * @param expertCode 专家编码。
+     * @param repositoryPath 本地仓库目录。
+     * @param attachmentIds 附件主键列表。
+     * @param localOnly 是否本地临时运行。
+     * @return 发送命令。
+     */
+    private SendChatMessageCommand buildSendCommand(
+        Long conversationId,
+        String question,
+        boolean deepThinking,
+        List<String> mcpCodes,
+        List<String> skillCodes,
+        String expertCode,
+        String repositoryPath,
+        List<Long> attachmentIds,
+        boolean localOnly
+    ) {
+        String normalizedRepositoryPath = StrUtil.trimToNull(repositoryPath);
+        if (localOnly) {
+            return SendChatMessageCommand.localOnly(
+                conversationId,
+                question,
+                deepThinking,
+                mcpCodes,
+                skillCodes,
+                expertCode,
+                normalizedRepositoryPath,
+                attachmentIds
+            );
+        }
+        return new SendChatMessageCommand(
+            conversationId,
+            question,
+            deepThinking,
+            mcpCodes,
+            skillCodes,
+            expertCode,
+            normalizedRepositoryPath,
+            attachmentIds
+        );
     }
 
     /**

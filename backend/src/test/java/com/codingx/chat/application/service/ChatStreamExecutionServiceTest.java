@@ -7,6 +7,7 @@ import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.when;
 
 import com.codingx.chat.application.command.SendChatMessageCommand;
@@ -441,6 +442,55 @@ class ChatStreamExecutionServiceTest {
 
         assertTrue(captured.await(1, TimeUnit.SECONDS), "background task should start with expert selection");
         verify(chatExpertRepository).bindTaskExpert(any(Long.class), eq("solution-architect"));
+    }
+
+    /**
+     * 本地运行态默认不把任务、运行记录与能力绑定写入数据库，避免本地历史经任务表进入云端侧。
+     * 关键约束：仍需注册取消句柄并异步执行 sendMessage，保证 SSE 生命周期不变。
+     * @throws Exception 等待后台执行时出现异常。
+     */
+    @Test
+    void dispatchLocalOnlySkipsPersistentTaskAndRunRecords() throws Exception {
+        CountDownLatch started = new CountDownLatch(1);
+        ChatStreamExecutionService service = new ChatStreamExecutionService(
+            chatApplicationService,
+            chatRuntimeGuardService,
+            conversationTraceRecordService,
+            chatExecutionRunRepository,
+            chatMcpRepository,
+            chatSkillRepository,
+            chatExpertRepository,
+            chatConversationRepository,
+            chatWorkspaceBindingService,
+            taskRepository,
+            executorService
+        );
+        SendChatMessageCommand command = SendChatMessageCommand.localOnly(
+            9901L,
+            "分析本地仓库",
+            false,
+            java.util.List.of(),
+            java.util.List.of(),
+            null,
+            "D:/code/test",
+            java.util.List.of()
+        );
+        org.mockito.Mockito.doAnswer(invocation -> {
+            started.countDown();
+            return null;
+        }).when(chatApplicationService).sendMessage(command, 2001L);
+
+        service.dispatch(8801L, command, 2001L);
+
+        assertTrue(started.await(1, TimeUnit.SECONDS), "local-only background task should start");
+        verify(taskRepository, never()).save(any(Task.class));
+        verify(chatExecutionRunRepository, never()).save(any(ChatExecutionRun.class));
+        verify(conversationTraceRecordService, never()).startTrace(any(), any(), any());
+        verify(chatMcpRepository, never()).bindTaskMcps(any(Long.class), any());
+        verify(chatSkillRepository, never()).bindTaskSkills(any(Long.class), any());
+        verify(chatExpertRepository, never()).bindTaskExpert(any(Long.class), any());
+        verify(chatRuntimeGuardService).registerCancellation(eq(9901L), eq(8801L), any(Runnable.class));
+        verify(chatRuntimeGuardService, timeout(1000)).completeConversation(9901L, 8801L);
     }
 
     /**

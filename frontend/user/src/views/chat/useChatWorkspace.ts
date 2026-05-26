@@ -232,6 +232,14 @@ function upsertConversationToTop(
 }
 
 /**
+ * 生成前端本地会话标识，避免新建本地对话在 SSE meta 返回前使用固定 pending 键互相覆盖。
+ * @returns 本地临时会话标识。
+ */
+function createLocalConversationId() {
+  return `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+/**
  * 判断后端任务状态是否仍处于执行中，驱动侧栏 spinner 展示。
  * @param conversation 会话项。
  * @returns 是否运行中。
@@ -688,6 +696,11 @@ export function useChatWorkspace(
     if (!conversationId) {
       return;
     }
+    const previousConversationId = streamStateRef.current?.conversationId;
+    const shouldRenameLocalConversation =
+      activeRuntimeTarget === 'local' &&
+      previousConversationId != null &&
+      previousConversationId !== conversationId;
     const existingConversation = conversations.find((conversation) => conversation.id === conversationId);
     const nextConversation: ConversationItem =
       existingConversation
@@ -704,8 +717,14 @@ export function useChatWorkspace(
                 ? conversationTitle
                 : '新会话',
             status: 'ACTIVE',
+            workspaceType: activeRuntimeTarget === 'local' ? 'LOCAL' : undefined,
           };
-    const nextConversations = upsertConversationToTop(conversations, nextConversation);
+    const nextConversations = upsertConversationToTop(
+      shouldRenameLocalConversation
+        ? conversations.filter((conversation) => conversation.id !== previousConversationId)
+        : conversations,
+      nextConversation,
+    );
     setConversations(nextConversations);
     upsertWorkspaceSnapshot(activeRuntimeTarget, workspacePath ?? null, {
       conversations: nextConversations,
@@ -1349,7 +1368,9 @@ export function useChatWorkspace(
     const streamAbortController = new AbortController();
     abortControllerRef.current = streamAbortController;
 
-    const optimisticConversationId = activeConversationId ?? 'pending-conversation';
+    const optimisticConversationId =
+      activeConversationId ??
+      (activeRuntimeTarget === 'local' ? createLocalConversationId() : 'pending-conversation');
     const optimisticMessageId = `optimistic-user-${Date.now()}`;
     const optimisticAssistantId = `optimistic-assistant-${Date.now()}`;
     streamMcpCallsRef.current[optimisticAssistantId] = [];
@@ -1394,7 +1415,7 @@ export function useChatWorkspace(
         buildStreamRequestUrl(
           question,
           activeConversationId,
-          workspaceId,
+          activeRuntimeTarget === 'local' ? null : workspaceId,
           deepThinkingEnabled,
           mcpConnected,
           selectedMcpCodes,
@@ -1402,6 +1423,7 @@ export function useChatWorkspace(
           selectedExpertCode,
           workspacePath,
           attachmentIds,
+          activeRuntimeTarget,
         ),
         {
           headers: {
@@ -1415,6 +1437,15 @@ export function useChatWorkspace(
       submittedAttachments.forEach((item) => URL.revokeObjectURL(item.previewUrl));
       await consumeSseStream(response, optimisticAssistantId, streamSessionId);
       if (!isActiveStreamSession(streamSessionId)) {
+        return;
+      }
+      if (activeRuntimeTarget === 'local') {
+        persistLocalStreamResult(
+          optimisticConversationId,
+          optimisticAssistantId,
+          streamMcpCallsRef.current[optimisticAssistantId],
+        );
+        refreshWorkspaceGroups('all');
         return;
       }
       const nextConversations = await loadConversations(token);
@@ -1509,6 +1540,73 @@ export function useChatWorkspace(
     } finally {
       setIsCancelling(false);
     }
+  };
+
+  /**
+   * 本地模式流结束后直接把当前内存中的消息与过程面板固化到本地快照。
+   * 业务约束：本地对话不回查云端 conversations/messages 接口，避免创建或依赖云端历史记录。
+   * @param optimisticConversationId 发送前生成的本地临时会话标识。
+   * @param optimisticAssistantId 当前助手消息标识。
+   * @param latestAssistantMcpCalls 流式阶段累计的工具调用。
+   */
+  const persistLocalStreamResult = (
+    optimisticConversationId: string,
+    optimisticAssistantId: string,
+    latestAssistantMcpCalls?: McpCallItem[],
+  ) => {
+    const finalConversationId =
+      streamStateRef.current?.conversationId ?? activeConversationIdRef.current ?? optimisticConversationId;
+    const conversationTitle = resolveLocalConversationTitle(messagesRef.current, finalConversationId);
+    const nextMessages = messagesRef.current.map((message) => ({
+      ...message,
+      conversationId:
+        message.conversationId === optimisticConversationId ? finalConversationId : message.conversationId,
+      mcpCalls:
+        message.id === optimisticAssistantId && latestAssistantMcpCalls != null
+          ? mergeMcpCallsById(message.mcpCalls ?? [], latestAssistantMcpCalls)
+          : message.mcpCalls,
+    }));
+    setActiveConversationId(finalConversationId);
+    writeConversationIdToUrl(finalConversationId);
+    setMessages(nextMessages);
+    const nextConversation: ConversationItem = {
+      id: finalConversationId,
+      title: conversationTitle,
+      status: 'ACTIVE',
+      workspaceType: 'LOCAL',
+    };
+    const nextConversations = upsertConversationToTop(
+      conversations.filter((conversation) => conversation.id !== optimisticConversationId),
+      nextConversation,
+    );
+    setConversations(nextConversations);
+    persistConversationState(finalConversationId, nextConversations, {
+      messages: nextMessages,
+      executionSteps,
+      references,
+      artifacts,
+      currentExperts,
+      currentSkills,
+      currentMcps,
+    });
+  };
+
+  /**
+   * 解析本地会话标题，优先使用首条用户问题，避免为了标题再请求后端会话详情。
+   * @param sourceMessages 当前消息列表。
+   * @param conversationId 会话标识。
+   * @returns 会话标题。
+   */
+  const resolveLocalConversationTitle = (
+    sourceMessages: ChatMessageItem[],
+    conversationId: string,
+  ) => {
+    const firstUserMessage = sourceMessages.find(
+      (message) => message.conversationId === conversationId && message.role === 'USER',
+    );
+    const fallbackUserMessage = sourceMessages.find((message) => message.role === 'USER');
+    const title = (firstUserMessage?.content ?? fallbackUserMessage?.content ?? '本地对话').trim();
+    return title.length > 40 ? title.slice(0, 40) : title;
   };
 
   /**
@@ -2919,7 +3017,6 @@ export function useChatWorkspace(
    * @returns 最新会话列表。
    */
   async function loadConversations(token: string, effectiveWorkspaceId: string | null = workspaceId) {
-    const remoteConversations = await ChatApi.listConversations(token, effectiveWorkspaceId);
     const shouldKeepLandingState =
       activeConversationId == null && messages.length === 0 && !readConversationIdFromUrl();
     const fallbackWorkspacePath = workspacePath ?? null;
@@ -2928,6 +3025,30 @@ export function useChatWorkspace(
     );
     const persistedActiveConversationId = currentSnapshot.activeConversationId ?? null;
     const effectiveActiveConversationId = activeConversationId ?? persistedActiveConversationId;
+    if (activeRuntimeTarget === 'local') {
+      const snapshotConversations = applyTaskCompletionReminders(
+        currentSnapshot.conversations,
+        currentSnapshot.seenTaskFinishedAtByConversationId ?? {},
+        effectiveActiveConversationId,
+      );
+      const nextActiveConversationId =
+        activeConversationId ??
+        persistedActiveConversationId ??
+        (shouldKeepLandingState ? null : (snapshotConversations[0]?.id ?? null));
+      setConversations(snapshotConversations);
+      upsertWorkspaceSnapshot('local', fallbackWorkspacePath, {
+        conversations: snapshotConversations,
+        activeConversationId: nextActiveConversationId,
+        workspaceLabel: fallbackWorkspacePath
+          ? getWorkspaceLabel(fallbackWorkspacePath)
+          : getDefaultWorkspaceLabel('local'),
+        conversationRecords: currentSnapshot.conversationRecords,
+        seenTaskFinishedAtByConversationId: currentSnapshot.seenTaskFinishedAtByConversationId ?? {},
+      });
+      refreshWorkspaceGroups('all');
+      return snapshotConversations;
+    }
+    const remoteConversations = await ChatApi.listConversations(token, effectiveWorkspaceId);
     // 关键约束：流式生成期间会话列表可能返回慢数据或空数据，不能把 meta 已写入的当前会话从侧栏快照中抹掉。
     const protectedRemoteConversations = hasActiveStreamPlayback()
       ? mergeConversationListById(remoteConversations, currentSnapshot.conversations)
@@ -3103,6 +3224,18 @@ export function useChatWorkspace(
     writeConversationIdToUrl(conversationId);
     const record = snapshot.conversationRecords[conversationId];
     if (!record) {
+      if (snapshot.runtimeTarget === 'local') {
+        // 本地分区禁止回退到云端回放接口；缺失记录时只恢复空本地会话壳。
+        setActiveConversationId(conversationId);
+        setMessages([]);
+        setExecutionSteps([]);
+        setReferences([]);
+        setArtifacts([]);
+        setCurrentExperts([]);
+        setCurrentSkills([]);
+        setCurrentMcps([]);
+        return;
+      }
       await selectConversation(conversationId, snapshot.conversations, undefined, false);
       return;
     }
@@ -3221,6 +3354,9 @@ export function useChatWorkspace(
     const record = snapshot.conversationRecords[conversationId];
     if (!record) {
       return false;
+    }
+    if (readWorkspaceSnapshot(activeWorkspacePartitionKey).runtimeTarget === 'local') {
+      return true;
     }
     return (
       record.messages.length > 0 ||
@@ -3476,7 +3612,8 @@ export function buildStreamRequestUrl(
   repositoryPathOrSelectedExpertCode?: string | null,
   attachmentIdsOrRepositoryPath?: string[] | string | null,
   maybeAttachmentIds?: string[],
-  maybeSelectedExpertCode?: string | null,
+  maybeSelectedExpertCodeOrRuntimeTarget?: string | null,
+  maybeRuntimeTarget?: 'cloud' | 'local',
 ) {
   const skillMessageParseResult = parseSkillMessage(question);
   const searchParams = new URLSearchParams({
@@ -3485,19 +3622,37 @@ export function buildStreamRequestUrl(
   let repositoryPath: string | null | undefined;
   let attachmentIds: string[] | undefined;
   let selectedExpertCode: string | null | undefined;
+  let runtimeTarget: 'cloud' | 'local' | undefined;
   if (Array.isArray(attachmentIdsOrRepositoryPath)) {
     repositoryPath = repositoryPathOrSelectedExpertCode;
     attachmentIds = attachmentIdsOrRepositoryPath;
-    selectedExpertCode = maybeSelectedExpertCode;
+    if (maybeSelectedExpertCodeOrRuntimeTarget === 'cloud' || maybeSelectedExpertCodeOrRuntimeTarget === 'local') {
+      runtimeTarget = maybeSelectedExpertCodeOrRuntimeTarget;
+    } else {
+      selectedExpertCode = maybeSelectedExpertCodeOrRuntimeTarget;
+      runtimeTarget = maybeRuntimeTarget;
+    }
   } else {
     repositoryPath = attachmentIdsOrRepositoryPath;
     attachmentIds = maybeAttachmentIds;
     selectedExpertCode = repositoryPathOrSelectedExpertCode;
+    runtimeTarget =
+      maybeSelectedExpertCodeOrRuntimeTarget === 'cloud' || maybeSelectedExpertCodeOrRuntimeTarget === 'local'
+        ? maybeSelectedExpertCodeOrRuntimeTarget
+        : maybeRuntimeTarget;
   }
-  if (conversationId != null) {
-    searchParams.set('conversationId', String(conversationId));
+  const normalizedConversationId = conversationId == null ? '' : String(conversationId).trim();
+  if (
+    normalizedConversationId.length > 0 &&
+    // 本地旧快照可能含 local-* 客户端 ID，后端 stream 参数是 Long，只能透传数值 ID。
+    (runtimeTarget !== 'local' || /^\d+$/.test(normalizedConversationId))
+  ) {
+    searchParams.set('conversationId', normalizedConversationId);
   }
-  if (workspaceId != null && workspaceId.trim().length > 0) {
+  if (runtimeTarget === 'local') {
+    searchParams.set('runtimeTarget', 'local');
+  }
+  if (runtimeTarget !== 'local' && workspaceId != null && workspaceId.trim().length > 0) {
     searchParams.set('workspaceId', workspaceId);
   }
   if (deepThinkingEnabled) {

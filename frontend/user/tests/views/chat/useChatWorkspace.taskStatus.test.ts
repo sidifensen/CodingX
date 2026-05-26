@@ -168,9 +168,9 @@ describe('useChatWorkspace task status state', () => {
   });
 
   /**
-   * 默认本地分区合并历史会话时，应以远端终态覆盖本地旧快照，避免完成任务继续显示加载中。
+   * 默认本地分区只以本机快照为准，不再用云端会话列表覆盖本地历史状态。
    */
-  it('远端终态会话应覆盖本地默认分区快照中的旧运行态', async () => {
+  it('本地默认分区不应被远端终态会话覆盖', async () => {
     setAuthenticatedSession();
     const finishedAt = '2026-05-25 10:00:00';
     window.localStorage.setItem(
@@ -220,31 +220,6 @@ describe('useChatWorkspace task status state', () => {
 
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
       const url = String(input);
-      if (url === '/api/chat/conversations') {
-        return new Response(
-          JSON.stringify({
-            success: true,
-            code: 'OK',
-            message: 'success',
-            data: [
-              {
-                id: 'workspace-owned',
-                title: '工作区会话',
-                status: 'ACTIVE',
-              },
-              {
-                id: 'running-stale-conversation',
-                title: '旧运行态会话',
-                status: 'ACTIVE',
-                lastTaskId: 'task-1',
-                lastTaskStatus: 'SUCCEEDED',
-                lastTaskFinishedAt: finishedAt,
-              },
-            ],
-          }),
-          { status: 200 },
-        );
-      }
       if (
         url === '/api/chat/sample-questions' ||
         url === '/api/chat/experts' ||
@@ -296,17 +271,17 @@ describe('useChatWorkspace task status state', () => {
     expect(defaultConversation).toEqual(
       expect.objectContaining({
         id: 'running-stale-conversation',
-        lastTaskStatus: 'SUCCEEDED',
+        activeTaskStatus: 'RUNNING',
       }),
     );
-    expect(defaultConversation?.activeTaskStatus).toBeUndefined();
-    expect(defaultConversation?.hasUnreadTaskCompletion).toBe(true);
+    expect(defaultConversation?.lastTaskStatus).toBeUndefined();
+    expect(defaultConversation?.hasUnreadTaskCompletion).toBeUndefined();
     const defaultWorkspaceGroup = result.current.workspaceGroups.find(
       (group) => group.partitionKey === 'local::__no_workspace__',
     );
-    expect(defaultWorkspaceGroup?.conversations[0]?.activeTaskStatus).toBeUndefined();
-    expect(defaultWorkspaceGroup?.conversations[0]?.lastTaskStatus).toBe('SUCCEEDED');
-    expect(defaultWorkspaceGroup?.conversations[0]?.hasUnreadTaskCompletion).toBe(true);
+    expect(defaultWorkspaceGroup?.conversations[0]?.activeTaskStatus).toBe('RUNNING');
+    expect(defaultWorkspaceGroup?.conversations[0]?.lastTaskStatus).toBeUndefined();
+    expect(defaultWorkspaceGroup?.conversations[0]?.hasUnreadTaskCompletion).not.toBe(true);
   });
 
   /**

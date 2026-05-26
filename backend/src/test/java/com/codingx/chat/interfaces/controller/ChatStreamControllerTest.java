@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -212,6 +213,56 @@ class ChatStreamControllerTest {
             verify(chatStreamExecutionService).dispatch(
                 argThat(taskId -> taskId != null && taskId > 0),
                 argThat(command -> command.conversationId().equals(9001L) && command.content().equals("分析本地仓库")),
+                eq(1001L)
+            );
+        }
+    }
+
+    /**
+     * 本地运行态只允许使用临时传输会话标识，不得在云端数据库创建 workspace/conversation 记录。
+     * 关键约束：repositoryPath 只作为本地工具工作目录，不能被转换成云端 workspaceId。
+     */
+    @Test
+    void streamChatLocalRuntimeDoesNotCreateCloudConversation() {
+        SseEmitter emitter = new SseEmitter(0L);
+        whenRegisterReturns(emitter);
+        when(chatMcpQueryService.listEnabledMcps()).thenReturn(List.of(
+            ChatMcp.builder().id(1L).mcpCode("code_search").displayName("代码搜索").category("代码").enabled(1).available(true).sortNo(1).build()
+        ));
+        try (MockedStatic<StpUtil> mocked = Mockito.mockStatic(StpUtil.class)) {
+            mocked.when(StpUtil::getLoginIdAsLong).thenReturn(1001L);
+
+            SseEmitter actual = chatStreamController.streamChat(
+                "分析本地仓库",
+                null,
+                6001L,
+                false,
+                null,
+                null,
+                null,
+                "local",
+                "D:/code/test",
+                null,
+                null
+            );
+
+            assertEquals(emitter, actual);
+            verify(chatConversationApplicationService, never()).createConversation(any(CreateConversationCommand.class), any(Long.class));
+            verify(chatSseRegistry).register(argThat(conversationId -> conversationId != null && conversationId > 0));
+            verify(chatSseRegistry).publish(
+                argThat(conversationId -> conversationId != null && conversationId > 0),
+                eq("meta"),
+                argThat(payload -> payload instanceof java.util.Map<?, ?> map
+                    && Boolean.TRUE.equals(map.get("localOnly"))
+                    && "local".equals(map.get("runtimeTarget"))
+                    && map.get("repositoryPath").equals("D:/code/test"))
+            );
+            verify(chatStreamExecutionService).dispatch(
+                argThat(taskId -> taskId != null && taskId > 0),
+                argThat(command -> command.conversationId() != null
+                    && command.content().equals("分析本地仓库")
+                    && command.localOnly()
+                    && command.repositoryPath().equals("D:/code/test")),
                 eq(1001L)
             );
         }

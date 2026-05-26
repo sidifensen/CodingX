@@ -3395,7 +3395,6 @@ function AssistantMessageActions({
     }
   };
 
-
   /**
    * 重新生成当前会话最后一条助手回复。
    * 只允许对当前会话尾部消息操作，避免旧消息触发“看不出变化”的无效重试。
@@ -3972,7 +3971,7 @@ function ConfirmDialog({
 }
 
 /**
- * 渲染 WorkBuddy 式消息内过程链路：文本过程直接内联，工具明细集中到一条轻量折叠行。
+ * 渲染 WorkBuddy 式消息内过程链路：思考、工具调用和工具结果按到达顺序直接铺开。
  */
 function ProcessTracePanel({
   messageId,
@@ -3990,17 +3989,14 @@ function ProcessTracePanel({
       className="mb-4 space-y-3 text-sm text-muted"
     >
       {traceSegments.map((segment, index) => {
-        if (segment.type === 'tools') {
+        if (segment.type === 'tool') {
           return (
-            <ProcessToolGroup
-              key={`tools-${index}-${segment.cards.map((card) => card.id).join('-')}`}
+            <ProcessToolRow
+              key={segment.card.id}
               messageId={messageId}
-              cards={segment.cards}
+              card={segment.card}
             />
           );
-        }
-        if (segment.type === 'tool') {
-          return <ProcessToolRow key={segment.card.id} card={segment.card} showDetails={true} />;
         }
         const shouldShowAnalysisHeading =
           segment.card.type === 'analysis' && !hasRenderedAnalysisHeading;
@@ -4022,31 +4018,17 @@ function ProcessTracePanel({
 
 type ProcessTraceSegment =
   | { type: 'text'; card: ProcessCardItem }
-  | { type: 'tool'; card: ProcessCardItem }
-  | { type: 'tools'; cards: ProcessCardItem[] };
+  | { type: 'tool'; card: ProcessCardItem };
 
 /**
- * 按真实过程顺序聚合消息内链路：连续工具节点合并为一个可展开组，分析文本保留原始前后位置。
+ * 按真实过程顺序输出消息内链路，工具调用不能再被合并成汇总行，否则用户看不到模型边思考边执行的节奏。
  */
 function groupProcessTraceSegments(cards: ProcessCardItem[]): ProcessTraceSegment[] {
   const segments: ProcessTraceSegment[] = [];
-  let pendingToolCards: ProcessCardItem[] = [];
-  const flushToolCards = () => {
-    if (pendingToolCards.length === 0) {
-      return;
-    }
-    segments.push({ type: 'tools', cards: pendingToolCards });
-    pendingToolCards = [];
-  };
 
   for (const card of cards) {
     if (card.type === 'tool_call' || card.type === 'tool_result') {
-      if (card.presentation === 'react') {
-        flushToolCards();
-        segments.push({ type: 'tool', card });
-        continue;
-      }
-      pendingToolCards.push(card);
+      segments.push({ type: 'tool', card });
       continue;
     }
     if (card.type === 'synthesis' && isDisposableSynthesisTrace(card)) {
@@ -4055,10 +4037,8 @@ function groupProcessTraceSegments(cards: ProcessCardItem[]): ProcessTraceSegmen
     if (card.summary.trim().length === 0) {
       continue;
     }
-    flushToolCards();
     segments.push({ type: 'text', card });
   }
-  flushToolCards();
   return segments;
 }
 
@@ -4076,7 +4056,7 @@ function isDisposableSynthesisTrace(card: ProcessCardItem) {
 }
 
 /**
- * 渲染一段过程文本。深度思考默认折叠，避免长 thinking 在正文前占据整屏空间。
+ * 渲染一段过程文本。深度思考默认展开，直接呈现模型在工具前后的判断过程。
  */
 function ProcessTraceText({
   card,
@@ -4113,7 +4093,7 @@ function ProcessTraceText({
 }
 
 /**
- * 折叠展示模型真实 thinking：默认只露出入口，展开后才显示完整原文，避免伪摘要或截断。
+ * 展示模型真实 thinking：默认展开，保留手动折叠能力，避免过程被误读成最终统一生成。
  */
 function ProcessAnalysisTrace({
   card,
@@ -4125,14 +4105,14 @@ function ProcessAnalysisTrace({
   isFirstAnalysis: boolean;
 }) {
   const isReactTrace = card.presentation === 'react';
-  const [isExpanded, setIsExpanded] = React.useState(isReactTrace || card.status === 'running');
+  const [isExpanded, setIsExpanded] = React.useState(true);
   const contentId = `process-analysis-content-${messageId}-${card.id}`;
   const label = isReactTrace ? card.title || '思考' : isFirstAnalysis ? '深度思考' : card.title || '深度思考';
 
   React.useEffect(() => {
-    // 流式阶段保持展开，收口后自动折叠，让用户先看到完整思考过程，再回到精简视图。
-    setIsExpanded(isReactTrace || card.status === 'running');
-  }, [card.status, isReactTrace]);
+    // 新的 ReAct 展示目标是始终让过程可见，状态变化不再自动收起思考内容。
+    setIsExpanded(true);
+  }, [card.id]);
 
   return (
     <div className="space-y-2">
@@ -4157,7 +4137,7 @@ function ProcessAnalysisTrace({
         <div
           id={contentId}
           data-testid={`process-analysis-card-${messageId}`}
-          className="rounded-xl border border-border bg-surface-container px-4 py-3"
+          className="border-l border-border pl-4"
         >
           <p
             data-testid={`process-analysis-text-${messageId}`}
@@ -4172,64 +4152,23 @@ function ProcessAnalysisTrace({
 }
 
 /**
- * 将工具调用和工具结果合并为一条可展开过程行，避免主消息区出现多张厚重卡片。
+ * 竖向展示单条工具过程，工具名和摘要默认可见，参数和结果明细由本行单独展开。
  */
-function ProcessToolGroup({
+function ProcessToolRow({
   messageId,
-  cards,
+  card,
 }: {
   messageId: string;
-  cards: ProcessCardItem[];
+  card: ProcessCardItem;
 }) {
   const [isExpanded, setIsExpanded] = React.useState(false);
-  const contentId = `process-tool-group-content-${messageId}`;
-  const toolCallCount = cards.filter((card) => card.type === 'tool_call').length;
-  const resultCount = cards.filter((card) => card.type === 'tool_result').length;
-  const hasRunning = cards.some((card) => card.status === 'running');
-  const hasError = cards.some((card) => card.status === 'error');
-
-  return (
-    <div data-testid={`process-tool-group-${messageId}`} className="space-y-2">
-      <button
-        type="button"
-        data-testid={`process-tool-group-toggle-${messageId}`}
-        aria-expanded={isExpanded}
-        aria-controls={contentId}
-        aria-label={isExpanded ? '折叠工具参数和结果' : '展开工具参数和结果'}
-        onClick={() => setIsExpanded((current) => !current)}
-        className="inline-flex max-w-full items-center gap-2 rounded-md px-0 py-1 text-xs text-muted transition-colors hover:text-foreground"
-      >
-        <ChevronDown
-          size={14}
-          className={`shrink-0 transition-transform duration-200 ${isExpanded ? 'rotate-180' : '-rotate-90'}`}
-        />
-        <span className="whitespace-nowrap">工具调用 {toolCallCount}</span>
-        <span className="text-border">·</span>
-        <span className="whitespace-nowrap">过程消息 {resultCount}</span>
-        <span className="truncate">
-          {hasError ? '调用异常' : hasRunning ? '进行中' : '已完成'}
-        </span>
-      </button>
-      {isExpanded ? (
-        <div id={contentId} className="space-y-2 pl-6">
-          {cards.map((card) => (
-            <ProcessToolRow key={card.id} card={card} showDetails={true} />
-          ))}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-/**
- * 竖向展示单条工具过程，参数和结果跟随各自工具行展开。
- */
-function ProcessToolRow({ card, showDetails }: { card: ProcessCardItem; showDetails: boolean }) {
   const Icon = card.type === 'tool_call' ? Globe2 : CheckCircle2;
   const searchResultItems = parseSearchResultDetails(card);
+  const hasDetails = searchResultItems.length > 0 || (card.details?.length ?? 0) > 0;
+  const contentId = `process-tool-detail-${messageId}-${card.id}`;
 
   return (
-    <article className="space-y-2 border-l border-border pl-3">
+    <article data-testid={`process-tool-row-${messageId}-${card.id}`} className="space-y-2 border-l border-border pl-3">
       <div className="flex min-w-0 items-start gap-2 text-sm leading-6 text-foreground">
         <Icon size={15} className="mt-1 shrink-0 text-muted" />
         <div className="min-w-0 flex-1">
@@ -4237,20 +4176,41 @@ function ProcessToolRow({ card, showDetails }: { card: ProcessCardItem; showDeta
             {card.title}
             {card.summary ? <span className="text-muted"> {card.summary}</span> : null}
           </div>
+          {hasDetails ? (
+            <button
+              type="button"
+              data-testid={`process-tool-detail-toggle-${messageId}-${card.id}`}
+              aria-expanded={isExpanded}
+              aria-controls={contentId}
+              aria-label={isExpanded ? '折叠工具明细' : '展开工具明细'}
+              onClick={() => setIsExpanded((current) => !current)}
+              className="mt-1 inline-flex items-center gap-1 text-xs text-muted transition-colors hover:text-foreground"
+            >
+              <ChevronDown
+                size={13}
+                className={`transition-transform ${isExpanded ? 'rotate-180' : '-rotate-90'}`}
+              />
+              <span>{isExpanded ? '收起明细' : '查看明细'}</span>
+            </button>
+          ) : null}
         </div>
       </div>
-      {showDetails && searchResultItems.length > 0 ? (
-        <ProcessSearchResultList cardId={card.id} items={searchResultItems} />
-      ) : showDetails && card.details && card.details.length > 0 ? (
-        <div className="space-y-2">
-          {card.details.map((detail) => (
-            <div key={`${card.id}-${detail.label}`} className="rounded-md bg-surface-container px-3 py-2">
-              <div className="mb-1 text-[11px] text-muted">{detail.label}</div>
-              <pre className="whitespace-pre-wrap [overflow-wrap:anywhere] text-xs leading-5 text-foreground">
-                {detail.content}
-              </pre>
+      {isExpanded && hasDetails ? (
+        <div id={contentId}>
+          {searchResultItems.length > 0 ? (
+            <ProcessSearchResultList cardId={card.id} items={searchResultItems} />
+          ) : card.details && card.details.length > 0 ? (
+            <div className="space-y-2">
+              {card.details.map((detail) => (
+                <div key={`${card.id}-${detail.label}`} className="rounded-md bg-surface-container px-3 py-2">
+                  <div className="mb-1 text-[11px] text-muted">{detail.label}</div>
+                  <pre className="whitespace-pre-wrap [overflow-wrap:anywhere] text-xs leading-5 text-foreground">
+                    {detail.content}
+                  </pre>
+                </div>
+              ))}
             </div>
-          ))}
+          ) : null}
         </div>
       ) : null}
     </article>

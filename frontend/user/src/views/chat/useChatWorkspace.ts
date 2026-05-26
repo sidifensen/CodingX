@@ -3730,11 +3730,15 @@ function buildSearchToolCallCard(options: {
   summary: string;
   status?: ProcessCardItem['status'];
 }): ProcessCardItem {
+  const stepTitle = options.title.trim();
+  const queryText = options.summary.trim();
   return {
     id: `process-${options.id}`,
     type: 'tool_call',
-    title: options.title || '调用网页搜索',
-    summary: options.summary || '正在检索实时资料。',
+    title: '网页搜索',
+    summary:
+      queryText ||
+      (stepTitle && stepTitle !== '搜索资料' ? stepTitle : '正在检索实时资料。'),
     status: options.status ?? 'running',
     toolId: 'search',
     displayName: '网页搜索',
@@ -3751,32 +3755,75 @@ function mergeReferenceIntoProcessCards(
   cards: ProcessCardItem[],
   reference: ReferenceItem,
 ): ProcessCardItem[] {
+  const sourceLabel = resolveSearchSourceLabel(reference);
   const nextResultDetails = [
     {
       label: '结果',
       content: [reference.title, reference.siteName, reference.url].filter(Boolean).join('\n'),
     },
   ];
-  const existingSearchResult = cards.find((card) => card.id === 'search-result');
-  const mergedResultDetails = existingSearchResult?.details
-    ? mergeProcessCardDetails(existingSearchResult.details, nextResultDetails)
-    : nextResultDetails;
-  const nextCards = upsertProcessCard(
+  return upsertProcessCard(
     finalizeCardsByType(cards, ['analysis', 'tool_call']),
     {
-      id: 'search-result',
+      id: `search-result-${reference.id}`,
       type: 'tool_result',
-      title: '已获取结果',
-      summary: reference.title
-        ? `找到来源：${reference.title}`
-        : '已获取检索来源，正在比对可用结论。',
+      title: sourceLabel ? `网页获取 ${sourceLabel}` : '网页获取',
+      summary: reference.title || reference.snippet || '已获取检索来源，正在比对可用结论。',
       status: 'completed',
       toolId: 'search',
       displayName: '网页搜索',
-      details: mergedResultDetails,
+      details: nextResultDetails,
     },
   );
-  return nextCards;
+}
+
+/**
+ * 提取搜索来源标签，优先展示站点名，缺失时用域名兜底，形成“网页获取 xxx”的过程行。
+ * @param source 搜索来源。
+ * @returns 来源标签。
+ */
+function resolveSearchSourceLabel(source: { siteName?: string; url?: string }) {
+  const siteName = source.siteName?.trim();
+  if (siteName) {
+    return siteName;
+  }
+  const url = source.url?.trim();
+  if (!url) {
+    return '';
+  }
+  try {
+    return new URL(url).hostname.replace(/^www\./, '');
+  } catch {
+    return url.replace(/^https?:\/\//, '').split('/')[0] ?? '';
+  }
+}
+
+/**
+ * 从搜索进度来源构造工具结果过程行，保证历史回放与实时流展示都按来源逐条铺开。
+ * @param item 搜索来源条目。
+ * @param status 搜索过程状态。
+ * @returns 搜索来源过程卡片。
+ */
+function buildSearchResultProcessCardFromProgressItem(
+  item: MessageSearchProgressItem,
+  status: MessageSearchProgress['status'],
+): ProcessCardItem {
+  const sourceLabel = resolveSearchSourceLabel(item);
+  return {
+    id: `replay-search-result-${item.id}`,
+    type: 'tool_result',
+    title: sourceLabel ? `网页获取 ${sourceLabel}` : '网页获取',
+    summary: item.title || item.url || '已获取检索来源，正在比对可用结论。',
+    status: status === 'error' ? 'error' : 'completed',
+    toolId: 'search',
+    displayName: '网页搜索',
+    details: [
+      {
+        label: '结果',
+        content: [item.title, item.siteName, item.url].filter(Boolean).join('\n'),
+      },
+    ],
+  };
 }
 
 /**
@@ -4408,7 +4455,7 @@ function deriveProcessCardsFromReplay(options: {
       processCards.push({
         id: `replay-search-call-${step.id}`,
         type: 'tool_call',
-        title: step.stepTitle || '调用网页搜索',
+        title: '网页搜索',
         summary:
           step.content && step.content.trim().length > 0
             ? step.content
@@ -4422,24 +4469,18 @@ function deriveProcessCardsFromReplay(options: {
       });
     }
   }
-  if ((options.searchProgress?.items.length ?? 0) > 0 && !processCards.some((card) => card.type === 'tool_result' && card.toolId === 'search')) {
-    processCards.push({
-      id: 'replay-search-result',
-      type: 'tool_result',
-      title: '已获取结果',
-      summary: `已获取 ${options.searchProgress?.items.length ?? 0} 条搜索来源。`,
-      status: options.searchProgress?.status === 'error' ? 'error' : 'completed',
-      toolId: 'search',
-      displayName: '网页搜索',
-      details: [
-        {
-          label: '结果',
-          content: (options.searchProgress?.items ?? [])
-            .map((item) => [item.title, item.siteName, item.url].filter(Boolean).join(' | '))
-            .join('\n'),
-        },
-      ],
-    });
+  if (
+    (options.searchProgress?.items.length ?? 0) > 0 &&
+    !processCards.some((card) => card.type === 'tool_result' && card.toolId === 'search')
+  ) {
+    processCards.push(
+      ...(options.searchProgress?.items ?? []).map((item) =>
+        buildSearchResultProcessCardFromProgressItem(
+          item,
+          options.searchProgress?.status ?? 'completed',
+        ),
+      ),
+    );
   }
   return processCards.length > 0 ? processCards : undefined;
 }

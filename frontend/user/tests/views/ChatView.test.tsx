@@ -71,13 +71,15 @@ describe('ChatView', () => {
     expect(tracePanel).toBeInTheDocument();
     expect(screen.queryByText('过程时间线')).not.toBeInTheDocument();
     expect(tracePanel).toHaveTextContent('深度思考');
-    const toolToggle102 = screen.getByTestId('process-tool-group-toggle-102');
-    expect(toolToggle102).toHaveAttribute('aria-expanded', 'false');
-    expect(screen.queryByText('调用网页搜索')).not.toBeInTheDocument();
-    expect(screen.queryByText('已获取结果')).not.toBeInTheDocument();
-    fireEvent.click(toolToggle102);
+    expect(screen.queryByTestId('process-tool-group-toggle-102')).not.toBeInTheDocument();
+    expect(screen.getByTestId('process-tool-row-102-tool-call-default')).toBeInTheDocument();
+    expect(screen.getByTestId('process-tool-row-102-tool-result-default')).toBeInTheDocument();
     expect(screen.getByText('调用网页搜索')).toBeInTheDocument();
     expect(screen.getByText('已获取结果')).toBeInTheDocument();
+    const resultRow = screen.getByTestId('process-tool-row-102-tool-result-default');
+    expect(within(resultRow).queryByText('Spring Boot SSE 最佳实践')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('process-tool-detail-toggle-102-tool-result-default'));
+    expect(within(resultRow).getByText('Spring Boot SSE 最佳实践')).toBeInTheDocument();
     expect(screen.queryByText('执行回放')).not.toBeInTheDocument();
   });
 
@@ -539,16 +541,12 @@ describe('ChatView', () => {
     expect(tracePanel).toHaveTextContent('深度思考');
     expect(screen.getByTestId('process-analysis-toggle-701-analysis-1')).toHaveAttribute(
       'aria-expanded',
-      'false',
+      'true',
     );
-    expect(screen.queryByText('先判断这个问题是否需要实时信息。')).not.toBeInTheDocument();
-    expect(screen.getByTestId('process-tool-group-toggle-701')).toHaveAttribute(
-      'aria-expanded',
-      'false',
-    );
-    expect(screen.queryByText('调用网页搜索')).not.toBeInTheDocument();
-    expect(screen.queryByText('已获取结果')).not.toBeInTheDocument();
-    fireEvent.click(screen.getByTestId('process-tool-group-toggle-701'));
+    expect(screen.getByText('先判断这个问题是否需要实时信息。')).toBeInTheDocument();
+    expect(screen.queryByTestId('process-tool-group-toggle-701')).not.toBeInTheDocument();
+    expect(screen.getByTestId('process-tool-row-701-tool-call-1')).toBeInTheDocument();
+    expect(screen.getByTestId('process-tool-row-701-tool-result-1')).toBeInTheDocument();
     expect(screen.getByText('调用网页搜索')).toBeInTheDocument();
     expect(screen.getByText('已获取结果')).toBeInTheDocument();
     expect(tracePanel).not.toHaveTextContent('正在根据检索结果整理最终回答。');
@@ -596,7 +594,8 @@ describe('ChatView', () => {
       />,
     );
 
-    expect(screen.getByTestId('process-tool-group-toggle-702')).toBeInTheDocument();
+    expect(screen.getByTestId('process-tool-row-702-tool-call-702')).toBeInTheDocument();
+    expect(screen.getByTestId('process-tool-detail-toggle-702-tool-call-702')).toBeInTheDocument();
   });
 
   /**
@@ -639,8 +638,9 @@ describe('ChatView', () => {
       />,
     );
 
-    const toggleButton = screen.getByTestId('process-tool-group-toggle-703');
+    const toggleButton = screen.getByTestId('process-tool-detail-toggle-703-tool-result-703');
 
+    expect(screen.getByText('已获取结果')).toBeInTheDocument();
     expect(toggleButton).toHaveAttribute('aria-expanded', 'false');
     expect(screen.queryByText('这是过程卡片结果。')).not.toBeInTheDocument();
 
@@ -702,8 +702,8 @@ describe('ChatView', () => {
     expect(toggleButton).toHaveAttribute('aria-expanded', 'true');
     const analysisCard = screen.getByTestId('process-analysis-card-704');
     const analysisText = screen.getByTestId('process-analysis-text-704');
-    expect(analysisCard).toHaveClass('rounded-xl');
-    expect(analysisCard).toHaveClass('bg-surface-container');
+    expect(analysisCard).toHaveClass('border-l');
+    expect(analysisCard).toHaveClass('pl-4');
     expect(analysisText).toHaveTextContent(longSummary);
     expect(analysisText).toHaveClass('whitespace-pre-wrap');
     expect(analysisText).toHaveClass('[overflow-wrap:anywhere]');
@@ -712,9 +712,9 @@ describe('ChatView', () => {
   });
 
   /**
-   * 深度思考在流式阶段应默认展开，完成后应自动折叠回精简状态。
+   * 深度思考在流式完成后也应保持展开，避免用户误判过程是统一生成的。
    */
-  it('应在深度思考流式期间展开并在完成后自动折叠', async () => {
+  it('应在深度思考流式完成后保持展开', async () => {
     const initialSummary = '正在判断是否需要检索最新资料。';
 
     const { rerender } = render(
@@ -783,13 +783,13 @@ describe('ChatView', () => {
 
     expect(screen.getByTestId('process-analysis-toggle-704b-analysis-704b')).toHaveAttribute(
       'aria-expanded',
-      'false',
+      'true',
     );
-    expect(screen.queryByTestId('process-analysis-text-704b')).not.toBeInTheDocument();
+    expect(screen.getByTestId('process-analysis-text-704b')).toHaveTextContent(initialSummary);
   });
 
   /**
-   * 工具结果后的分析应按真实过程顺序显示在工具组之后，避免把“基于结果的思考”提前到工具上方。
+   * 工具结果后的分析应按真实过程顺序显示在工具结果之后，避免把“基于结果的思考”提前到工具上方。
    */
   it('应按过程卡片顺序渲染工具后的分析文本', async () => {
     const postToolThinking =
@@ -2502,7 +2502,7 @@ describe('ChatView', () => {
   });
 
   /**
-   * 助手消息存在工具过程时，应展示可折叠的内联工具组。
+   * 助手消息存在工具过程时，应展示可折叠明细的内联工具行。
    */
   it('应渲染并支持折叠工具过程组', async () => {
     render(
@@ -2543,16 +2543,13 @@ describe('ChatView', () => {
 
     const panel = screen.getByTestId('process-trace-panel-801');
     expect(panel).toBeInTheDocument();
-    expect(screen.getByTestId('process-tool-group-toggle-801')).toHaveAttribute(
-      'aria-expanded',
-      'false',
-    );
-    expect(screen.queryByText('调用天气查询')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('process-tool-group-toggle-801')).not.toBeInTheDocument();
+    expect(screen.getByText('调用天气查询')).toBeInTheDocument();
     expect(panel).not.toHaveClass('rounded-3xl');
     // 业务意图：工具参数默认折叠，先确认详情不直接外露，再通过展开按钮验证内容可见。
     expect(screen.queryByText('北京今天天气怎么样')).not.toBeInTheDocument();
 
-    const toggleButton = screen.getByTestId('process-tool-group-toggle-801');
+    const toggleButton = screen.getByTestId('process-tool-detail-toggle-801-tool-call-801');
     expect(toggleButton).toHaveAttribute('aria-expanded', 'false');
     fireEvent.click(toggleButton);
     expect(toggleButton).toHaveAttribute('aria-expanded', 'true');
@@ -2560,9 +2557,9 @@ describe('ChatView', () => {
   });
 
   /**
-   * 工具参数与结果应在内联工具组中默认折叠，展开后才显示具体内容。
+   * 工具参数与结果应在各自过程行中默认折叠，展开后才显示具体内容。
    */
-  it('应在内联工具组中默认折叠参数与结果并支持展开', async () => {
+  it('应在内联工具行中默认折叠参数与结果并支持展开', async () => {
     render(
       <ChatView
         isAuthenticated={true}
@@ -2612,23 +2609,23 @@ describe('ChatView', () => {
       />,
     );
 
-    expect(screen.getByTestId('process-tool-group-toggle-861')).toHaveAttribute(
-      'aria-expanded',
-      'false',
-    );
-    expect(screen.queryByText('调用天气查询')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('process-tool-group-toggle-861')).not.toBeInTheDocument();
+    expect(screen.getByTestId('process-tool-row-861-tool-call-861')).toBeInTheDocument();
+    expect(screen.getByTestId('process-tool-row-861-tool-result-861')).toBeInTheDocument();
+    expect(screen.getByText('调用天气查询')).toBeInTheDocument();
     expect(screen.queryByText('{"city":"北京","date":"2026-05-21"}')).not.toBeInTheDocument();
     expect(screen.queryByText('{"text":"北京今日晴","temp":28.6}')).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByTestId('process-tool-group-toggle-861'));
+    fireEvent.click(screen.getByTestId('process-tool-detail-toggle-861-tool-call-861'));
+    fireEvent.click(screen.getByTestId('process-tool-detail-toggle-861-tool-result-861'));
     expect(screen.getByText('{"city":"北京","date":"2026-05-21"}')).toBeInTheDocument();
     expect(screen.getByText('{"text":"北京今日晴","temp":28.6}')).toBeInTheDocument();
   });
 
   /**
-   * 助手消息在联网搜索期间应以内联工具组展示搜索进行中与搜索结果。
+   * 助手消息在联网搜索期间应以内联工具行展示搜索进行中与搜索结果。
    */
-  it('应在助手消息中渲染搜索过程工具组', async () => {
+  it('应在助手消息中渲染搜索过程工具行', async () => {
     render(
       <ChatView
         isAuthenticated={true}
@@ -2673,25 +2670,24 @@ describe('ChatView', () => {
     );
 
     expect(screen.getByTestId('process-trace-panel-951')).toBeInTheDocument();
-    const toolToggle951 = screen.getByTestId('process-tool-group-toggle-951');
-    expect(toolToggle951).toHaveAttribute('aria-expanded', 'false');
-    expect(screen.queryByText('调用网页搜索')).not.toBeInTheDocument();
-    expect(screen.queryByText('已获取结果')).not.toBeInTheDocument();
-    // 业务意图：搜索结果细节也默认收起，必须先展开工具组再断言具体结果文本。
+    expect(screen.queryByTestId('process-tool-group-toggle-951')).not.toBeInTheDocument();
+    expect(screen.getByTestId('process-tool-row-951-tool-call-search-951')).toBeInTheDocument();
+    expect(screen.getByTestId('process-tool-row-951-tool-result-search-951')).toBeInTheDocument();
+    expect(screen.getByText('调用网页搜索')).toBeInTheDocument();
+    expect(screen.getByText('已获取结果')).toBeInTheDocument();
+    // 业务意图：搜索结果细节默认收起，必须先展开当前工具行再断言具体结果文本。
     expect(screen.queryByText('OpenAI API 最新变更')).not.toBeInTheDocument();
     expect(screen.queryByText('Bing Search API 文档')).not.toBeInTheDocument();
 
-    fireEvent.click(toolToggle951);
+    fireEvent.click(screen.getByTestId('process-tool-detail-toggle-951-tool-result-search-951'));
 
-    const toolGroup = screen.getByTestId('process-tool-group-951');
-    expect(screen.getByText('调用网页搜索')).toBeInTheDocument();
-    expect(screen.getByText('已获取结果')).toBeInTheDocument();
-    expect(toolGroup).toHaveTextContent('OpenAI API 最新变更');
-    expect(toolGroup).toHaveTextContent('Bing Search API 文档');
+    const resultRow = screen.getByTestId('process-tool-row-951-tool-result-search-951');
+    expect(resultRow).toHaveTextContent('OpenAI API 最新变更');
+    expect(resultRow).toHaveTextContent('Bing Search API 文档');
   });
 
   /**
-   * Local tool cards use the same tool group so arguments and results can be inspected inline.
+   * Local tool cards use inline rows so arguments and results can be inspected in place.
    */
   it('renders local tool arguments and results in the assistant message', async () => {
     render(
@@ -2747,18 +2743,20 @@ describe('ChatView', () => {
       />,
     );
 
-    const toolToggle963 = screen.getByTestId('process-tool-group-toggle-963');
-    expect(toolToggle963).toHaveAttribute('aria-expanded', 'false');
-    expect(screen.queryByText('调用shell_command')).not.toBeInTheDocument();
-    expect(screen.queryByText('{"command":"pwd"}')).not.toBeInTheDocument();
-
-    fireEvent.click(toolToggle963);
-
-    const toolGroup = screen.getByTestId('process-tool-group-963');
+    expect(screen.queryByTestId('process-tool-group-toggle-963')).not.toBeInTheDocument();
+    expect(screen.getByTestId('process-tool-row-963-tool-call-shell-963')).toBeInTheDocument();
+    expect(screen.getByTestId('process-tool-row-963-tool-result-shell-963')).toBeInTheDocument();
     expect(screen.getByText('调用shell_command')).toBeInTheDocument();
     expect(screen.getByText('已获取结果')).toBeInTheDocument();
-    expect(toolGroup).toHaveTextContent('{"command":"pwd"}');
-    expect(toolGroup).toHaveTextContent('D:/code/CodingX');
+    expect(screen.queryByText('{"command":"pwd"}')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('process-tool-detail-toggle-963-tool-call-shell-963'));
+    fireEvent.click(screen.getByTestId('process-tool-detail-toggle-963-tool-result-shell-963'));
+
+    const callRow = screen.getByTestId('process-tool-row-963-tool-call-shell-963');
+    const resultRow = screen.getByTestId('process-tool-row-963-tool-result-shell-963');
+    expect(callRow).toHaveTextContent('{"command":"pwd"}');
+    expect(resultRow).toHaveTextContent('D:/code/CodingX');
   });
 
   /**
@@ -2834,6 +2832,9 @@ describe('ChatView', () => {
     expect(screen.getByText('调用 shell_command')).toBeInTheDocument();
     expect(screen.getByText('观察')).toBeInTheDocument();
     expect(screen.getByText('工具返回：D:/code/CodingX')).toBeInTheDocument();
+    expect(screen.queryByText('{"command":"pwd"}')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('process-tool-detail-toggle-964-tool-call-shell-964'));
+    fireEvent.click(screen.getByTestId('process-tool-detail-toggle-964-tool-result-shell-964'));
     expect(screen.getByText('{"command":"pwd"}')).toBeInTheDocument();
     expect(screen.getByText('D:/code/CodingX')).toBeInTheDocument();
   });
@@ -2888,7 +2889,7 @@ describe('ChatView', () => {
       />,
     );
 
-    fireEvent.click(screen.getByTestId('process-tool-group-toggle-961'));
+    fireEvent.click(screen.getByTestId('process-tool-detail-toggle-961-tool-result-search-961'));
 
     expect(screen.getByTestId('process-search-result-list-tool-result-search-961')).toBeInTheDocument();
     expect(screen.getByText('OpenAI API 文档')).toBeInTheDocument();
@@ -2948,7 +2949,7 @@ describe('ChatView', () => {
       />,
     );
 
-    fireEvent.click(screen.getByTestId('process-tool-group-toggle-962'));
+    fireEvent.click(screen.getByTestId('process-tool-detail-toggle-962-tool-result-search-962'));
 
     expect(screen.getByTestId('process-search-result-list-tool-result-search-962')).toHaveTextContent(
       '2 条来源',

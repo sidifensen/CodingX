@@ -4523,6 +4523,10 @@ describe('useChatWorkspace', () => {
       const assistantMessage = result.current.messages.find((item) => item.role === 'ASSISTANT');
       expect(assistantMessage?.searchProgress?.items).toHaveLength(1);
       expect(assistantMessage?.searchProgress?.items[0].title).toBe('OpenAI API 最新文档');
+      const processCards = ((assistantMessage as Record<string, unknown> | undefined)?.processCards ?? []) as Array<Record<string, unknown>>;
+      expect(processCards.map((card) => card.title)).toEqual(
+        expect.arrayContaining(['网页搜索', '网页获取 OpenAI']),
+      );
     });
 
     await act(async () => {
@@ -4532,6 +4536,16 @@ describe('useChatWorkspace', () => {
       const assistantMessage = result.current.messages.find((item) => item.role === 'ASSISTANT');
       expect(assistantMessage?.searchProgress?.items).toHaveLength(2);
       expect(assistantMessage?.searchProgress?.items[1].title).toBe('Bing Search API 文档');
+      const processCards = ((assistantMessage as Record<string, unknown> | undefined)?.processCards ?? []) as Array<Record<string, unknown>>;
+      const searchResultCards = processCards.filter((card) => card.type === 'tool_result' && card.toolId === 'search');
+      expect(searchResultCards.map((card) => card.title)).toEqual([
+        '网页获取 OpenAI',
+        '网页获取 Microsoft Learn',
+      ]);
+      expect(searchResultCards.map((card) => card.summary)).toEqual([
+        'OpenAI API 最新文档',
+        'Bing Search API 文档',
+      ]);
     });
 
     await act(async () => {
@@ -4860,6 +4874,7 @@ describe('useChatWorkspace', () => {
       const postToolThinkingIndex = processCards.findIndex((card) => card.id === 'analysis-after-tools');
       expect(searchResultIndex).toBeGreaterThan(-1);
       expect(postToolThinkingIndex).toBeGreaterThan(searchResultIndex);
+      expect(processCards[searchResultIndex]?.title).toBe('网页获取 模型资料站');
       expect(processCards[postToolThinkingIndex]?.summary).toBe(postToolThinking);
     });
 
@@ -5663,6 +5678,7 @@ describe('useChatWorkspace', () => {
       .find((item) => item.role === 'ASSISTANT');
     const processCards = ((latestAssistantMessage as Record<string, unknown> | undefined)?.processCards ?? []) as Array<Record<string, unknown>>;
     const searchToolCards = processCards.filter((card) => card.type === 'tool_call' && card.toolId === 'search');
+    const searchResultCards = processCards.filter((card) => card.type === 'tool_result' && card.toolId === 'search');
     expect(searchToolCards.map((card) => card.summary)).toEqual(
       expect.arrayContaining([
         'Qwen最新发布的模型是什么',
@@ -5671,6 +5687,8 @@ describe('useChatWorkspace', () => {
       ]),
     );
     expect(searchToolCards).toHaveLength(3);
+    expect(searchToolCards.every((card) => card.title === '网页搜索')).toBe(true);
+    expect(searchResultCards.map((card) => card.title)).toEqual(['网页获取 博客园']);
 
     const snapshotStore = JSON.parse(
       window.localStorage.getItem('codingx.chat.workspace.conversations.v1') ?? '{}',

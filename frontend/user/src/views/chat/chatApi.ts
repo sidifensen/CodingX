@@ -273,6 +273,27 @@ export class ChatApi {
   }
 
   /**
+   * 删除会话中的指定消息，空值和重复值会在前端先规整，避免后端收到脏 ID 列表。
+   * @param token 当前登录令牌。
+   * @param conversationId 会话标识。
+   * @param messageIds 待删除消息标识。
+   */
+  static async deleteConversationMessages(
+    token: string,
+    conversationId: string,
+    messageIds: string[],
+  ): Promise<void> {
+    const normalizedMessageIds = normalizeMessageIds(messageIds);
+    if (normalizedMessageIds.length === 0) {
+      return;
+    }
+    await this.request<void>(`/api/chat/conversations/${conversationId}/messages`, token, {
+      method: 'DELETE',
+      body: JSON.stringify({ messageIds: normalizedMessageIds }),
+    });
+  }
+
+  /**
    * 为指定会话生成分享链接，供前端复制公开只读地址。
    * @param token 当前登录令牌。
    * @param conversationId 会话标识。

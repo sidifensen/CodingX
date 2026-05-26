@@ -100,7 +100,53 @@
     margin-bottom: 180px;
   }
 
-  /* 统一助手消息操作栏样式，保证亮暗主题下复制和反馈按钮可辨识。 */
+  /* 用户消息气泡自带悬浮操作区，亮暗主题均使用统一令牌，避免透明叠底影响阅读。 */
+  .chat-user-message-shell {
+    display: flex;
+    max-width: 100%;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 4px;
+  }
+
+  .chat-user-message-bubble {
+    max-width: 100%;
+    border: 1px solid var(--border-subtle);
+    border-radius: 20px;
+    background: var(--surface-container);
+    padding: 8px 16px;
+    color: var(--text-primary);
+    box-shadow: 0 10px 28px rgb(0 0 0 / 10%);
+  }
+
+  .chat-user-message-actions {
+    display: inline-flex;
+    min-height: 32px;
+    align-items: center;
+    gap: 2px;
+    border: 1px solid var(--border-subtle);
+    border-radius: 10px;
+    background: var(--surface);
+    padding: 2px;
+    color: var(--text-muted);
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(-2px);
+    transition:
+      opacity 160ms ease,
+      transform 160ms ease,
+      background-color 160ms ease,
+      border-color 160ms ease;
+  }
+
+  .chat-user-message-shell:hover .chat-user-message-actions,
+  .chat-user-message-shell:focus-within .chat-user-message-actions {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateY(0);
+  }
+
+  /* 统一消息操作栏样式，保证亮暗主题下复制、编辑和删除按钮可辨识。 */
   .chat-message-action-button {
     display: inline-flex;
     align-items: center;
@@ -168,6 +214,84 @@
 
   .chat-message-image {
     background-color: var(--surface);
+  }
+
+  /* Markdown 对比表的专用样式：让高密度信息具备更清晰的层级、分隔和阅读路径。 */
+  .chat-markdown-table-shell {
+    border: 1px solid var(--border-subtle);
+    border-radius: 18px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0)),
+      var(--surface-container);
+    box-shadow:
+      0 18px 42px rgba(0, 0, 0, 0.16),
+      inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  }
+
+  .chat-markdown-table {
+    border-collapse: separate;
+    border-spacing: 0;
+    width: max-content;
+    min-width: 100%;
+    font-size: 14px;
+    line-height: 1.7;
+    overflow: hidden;
+    table-layout: auto;
+  }
+
+  .chat-markdown-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: color-mix(in srgb, var(--surface-container-high) 92%, transparent);
+    backdrop-filter: blur(8px);
+  }
+
+  .chat-markdown-table th,
+  .chat-markdown-table td {
+    padding: 14px 16px;
+    vertical-align: top;
+    border-right: 1px solid var(--border-subtle);
+    border-bottom: 1px solid var(--border-subtle);
+    white-space: nowrap;
+    word-break: normal;
+    overflow-wrap: normal;
+  }
+
+  .chat-markdown-table th:last-child,
+  .chat-markdown-table td:last-child {
+    border-right: 0;
+  }
+
+  .chat-markdown-table tbody tr:last-child td {
+    border-bottom: 0;
+  }
+
+  .chat-markdown-table tbody tr {
+    transition:
+      background-color 160ms ease,
+      transform 160ms ease;
+  }
+
+  .chat-markdown-table tbody tr:nth-child(even) {
+    background: color-mix(in srgb, var(--surface-container-high) 28%, transparent);
+  }
+
+  .chat-markdown-table tbody tr:hover {
+    background: color-mix(in srgb, var(--surface-selected) 40%, transparent);
+  }
+
+  .chat-markdown-table p:last-child,
+  .chat-markdown-table ul:last-child,
+  .chat-markdown-table ol:last-child {
+    margin-bottom: 0;
+  }
+
+  .chat-markdown-table ul,
+  .chat-markdown-table ol {
+    padding-left: 1.15rem;
   }
 
   /* Electron 自定义标题栏需要可拖拽区域，按钮区域必须可点击。 */

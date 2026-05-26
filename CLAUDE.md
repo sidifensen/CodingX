@@ -108,12 +108,16 @@
 > **最高优先级**: 启动命令必须用 `run_in_background: true`，启动前自动检查端口占用，若被占用则先终止占用进程
 
 ```bash
-# 后端 http://localhost:5001
+# 后端服务 http://localhost:5001
 cd backend && mvn spring-boot:run
 
-# 前端 http://localhost:5002
-cd frontend && npm run dev
+# 用户前端 http://localhost:5002
+cd frontend/user && npm run dev
+
+# 管理端前端 http://localhost:5003
+cd frontend/admin && npm run dev
 ```
+启动前请先检查后端 `5001`、用户前端 `5002` 和管理端前端 `5003` 的占用情况；如对应端口已被占用，请先结束占用进程，再启动服务。
 ## 完成验证要求
 
 提交/合并前按改动面验证：

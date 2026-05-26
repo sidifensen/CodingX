@@ -1,11 +1,15 @@
 package com.codingx.chat.infrastructure.persistence.repository;
+
+import cn.hutool.core.collection.CollUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.codingx.chat.domain.model.ChatMessage;
 import com.codingx.chat.domain.model.ChatMessageRole;
 import com.codingx.chat.domain.model.ChatMessageStatus;
 import com.codingx.chat.domain.repository.ChatMessageRepository;
 import com.codingx.chat.infrastructure.persistence.dataobject.ChatMessageDO;
 import com.codingx.chat.infrastructure.persistence.mapper.ChatMessageMapper;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
@@ -46,10 +50,33 @@ public class ChatMessageRepositoryImpl implements ChatMessageRepository {
     public List<ChatMessage> findByConversationId(Long conversationId) {
         return chatMessageMapper.selectList(new LambdaQueryWrapper<ChatMessageDO>()
                 .eq(ChatMessageDO::getConversationId, conversationId)
+                .eq(ChatMessageDO::getDeleted, 0)
                 .orderByAsc(ChatMessageDO::getCreatedAt))
             .stream()
             .map(this::toDomain)
             .toList();
+    }
+
+    /**
+     * 逻辑删除指定会话内的消息；会话条件必须参与更新，避免跨会话误删。
+     * @param conversationId 会话标识。
+     * @param messageIds 消息主键列表。
+     */
+    @Override
+    public void softDeleteByConversationIdAndIds(Long conversationId, List<Long> messageIds) {
+        if (conversationId == null || CollUtil.isEmpty(messageIds)) {
+            return;
+        }
+        ChatMessageDO dataObject = new ChatMessageDO();
+        dataObject.setDeleted(1);
+        dataObject.setUpdatedAt(LocalDateTime.now());
+        chatMessageMapper.update(
+            dataObject,
+            new LambdaUpdateWrapper<ChatMessageDO>()
+                .eq(ChatMessageDO::getConversationId, conversationId)
+                .in(ChatMessageDO::getId, messageIds)
+                .eq(ChatMessageDO::getDeleted, 0)
+        );
     }
 
     /**
@@ -85,7 +112,6 @@ public class ChatMessageRepositoryImpl implements ChatMessageRepository {
             dataObject.getRunId(),
             dataObject.getThinkingContent(),
             dataObject.getThinkingDuration(),
-            dataObject.getIntentCode(),
             dataObject.getCreatedAt(),
             dataObject.getUpdatedAt()
         );
@@ -106,11 +132,11 @@ public class ChatMessageRepositoryImpl implements ChatMessageRepository {
         dataObject.setContent(message.getContent());
         dataObject.setThinkingContent(message.getThinkingContent());
         dataObject.setThinkingDuration(message.getThinkingDuration());
-        dataObject.setIntentCode(message.getIntentCode());
         dataObject.setStatus(message.getStatus().name());
         dataObject.setProvider(message.getProvider());
         dataObject.setModel(message.getModel());
         dataObject.setErrorMessage(message.getErrorMessage());
+        dataObject.setDeleted(message.getDeleted() == null ? 0 : message.getDeleted());
         dataObject.setCreatedAt(message.getCreatedAt());
         dataObject.setUpdatedAt(message.getUpdatedAt());
         return dataObject;

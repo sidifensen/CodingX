@@ -173,13 +173,13 @@ CREATE TABLE IF NOT EXISTS chat_message (
     content TEXT NOT NULL,
     thinking_content TEXT,
     thinking_duration INTEGER,
-    intent_code VARCHAR(128),
     status VARCHAR(32) NOT NULL,
     provider VARCHAR(64),
     model VARCHAR(128),
     error_message TEXT,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted SMALLINT NOT NULL DEFAULT 0
 );
 COMMENT ON TABLE chat_message IS '会话消息表，存储对话中的角色消息、模型信息与发送状态';
 COMMENT ON COLUMN chat_message.id IS '消息主键 ID';
@@ -189,13 +189,13 @@ COMMENT ON COLUMN chat_message.role IS '消息角色，例如用户或助手';
 COMMENT ON COLUMN chat_message.content IS '消息内容';
 COMMENT ON COLUMN chat_message.thinking_content IS '深度思考内容';
 COMMENT ON COLUMN chat_message.thinking_duration IS '深度思考耗时（秒）';
-COMMENT ON COLUMN chat_message.intent_code IS '命中的意图编码';
 COMMENT ON COLUMN chat_message.status IS '消息处理状态';
 COMMENT ON COLUMN chat_message.provider IS '消息对应的模型服务提供方';
 COMMENT ON COLUMN chat_message.model IS '消息对应的模型名称';
 COMMENT ON COLUMN chat_message.error_message IS '消息处理失败时的错误信息';
 COMMENT ON COLUMN chat_message.created_at IS '记录创建时间';
 COMMENT ON COLUMN chat_message.updated_at IS '记录最后更新时间';
+COMMENT ON COLUMN chat_message.deleted IS '逻辑删除标记，0 表示未删除，1 表示已删除';
 
 CREATE TABLE IF NOT EXISTS chat_conversation_summary (
     id BIGINT PRIMARY KEY,
@@ -805,6 +805,7 @@ CREATE INDEX IF NOT EXISTS idx_chat_conversation_workspace_user ON chat_conversa
 CREATE INDEX IF NOT EXISTS idx_chat_conversation_user_pinned_updated ON chat_conversation (created_by, pinned DESC, updated_at DESC, id DESC);
 CREATE UNIQUE INDEX IF NOT EXISTS uk_chat_conversation_share_token ON chat_conversation (share_token) WHERE share_token IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_chat_message_conversation ON chat_message (conversation_id, created_at ASC);
+CREATE INDEX IF NOT EXISTS idx_chat_message_conversation_deleted ON chat_message (conversation_id, deleted, created_at ASC);
 CREATE INDEX IF NOT EXISTS idx_chat_conversation_summary_conv_user ON chat_conversation_summary (conversation_id, user_id, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_chat_message_feedback_message_user ON chat_message_feedback (message_id, user_id);
 CREATE INDEX IF NOT EXISTS idx_chat_message_feedback_conversation ON chat_message_feedback (conversation_id, created_at DESC);

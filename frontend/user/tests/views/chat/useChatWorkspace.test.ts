@@ -881,7 +881,7 @@ describe('useChatWorkspace', () => {
     const localDefaultGroup = result.current.workspaceGroups.find(
       (group) => group.partitionKey === 'local::__no_workspace__',
     );
-    expect(localDefaultGroup?.workspaceLabel).toBe('历史记录');
+    expect(localDefaultGroup?.workspaceLabel).toBe('本地历史记录');
 
     expect(result.current.workspaceLabel).toBe('workspace-a');
     expect(result.current.conversations.map((item) => item.id)).toEqual(['3001', '3002']);
@@ -1103,14 +1103,14 @@ describe('useChatWorkspace', () => {
       });
     });
     expect(result.current.workspaceLabel).toBe('space-b');
-    expect(result.current.activeConversationId).toBeNull();
+    expect(result.current.activeConversationId).toBe('4001');
 
     await act(async () => {
       await result.current.setActiveWorkspacePath('D:/code/space-b');
     });
 
     await waitFor(() => {
-      expect(result.current.activeConversationId).toBeNull();
+      expect(result.current.activeConversationId).toBe('4001');
     });
     expect(result.current.workspaceLabel).toBe('space-b');
   });
@@ -1249,7 +1249,7 @@ describe('useChatWorkspace', () => {
       ).toBe(false);
     });
 
-    expect(result.current.workspaceLabel).toBe('历史记录');
+    expect(result.current.workspaceLabel).toBe('云端历史记录');
     expect(result.current.conversations.map((item) => item.id)).toEqual(['5001', '5002']);
 
     const cloudWorkspaceGroup = result.current.workspaceGroups.find(
@@ -1585,6 +1585,273 @@ describe('useChatWorkspace', () => {
     await waitFor(() => {
       expect(result.current.isBootstrapping).toBe(false);
     });
+  });
+
+  /**
+   * 本地 token 存在时会在鉴权完成前先执行一次初始化；鉴权从未完成切到已完成后，
+   * 第二轮初始化不应把第一轮已经恢复好的 URL 会话清空回首页。
+   */
+  it('应在鉴权状态切换后保留已恢复的URL会话', async () => {
+    window.localStorage.setItem(
+      'codingx.auth.session',
+      JSON.stringify({
+        token: 'token-123',
+        userId: '1002',
+        username: 'user',
+        displayName: 'CodingX User',
+        userType: 'USER',
+      }),
+    );
+    window.history.replaceState(window.history.state, '', '/?conversationId=2001');
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === '/api/chat/conversations') {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            code: 'OK',
+            message: 'success',
+            data: [
+              {
+                id: '2001',
+                title: '鉴权切换恢复会话',
+                status: 'ACTIVE',
+                lastRunId: '5002',
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      if (
+        url === '/api/chat/sample-questions' ||
+        url === '/api/chat/experts' ||
+        url === '/api/chat/skills' ||
+        url === '/api/chat/mcps' ||
+        url === '/api/chat/conversations/2001/steps' ||
+        url === '/api/chat/conversations/2001/references' ||
+        url === '/api/chat/conversations/2001/artifacts' ||
+        url === '/api/chat/conversations/2001/current-skills' ||
+        url === '/api/chat/conversations/2001/current-mcps' ||
+        url === '/api/chat/conversations/2001/current-experts'
+      ) {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (url === '/api/chat/conversations/2001/messages') {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            code: 'OK',
+            message: 'success',
+            data: [
+              {
+                id: 'user-2001',
+                conversationId: '2001',
+                role: 'USER',
+                content: '人机',
+                status: 'COMPLETED',
+              },
+              {
+                id: 'assistant-2001',
+                conversationId: '2001',
+                role: 'ASSISTANT',
+                content: '这条消息不应被第二轮初始化冲掉',
+                status: 'COMPLETED',
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      throw new Error(`Unhandled fetch in strict mode bootstrap test: ${url}`);
+    });
+
+    const { result, rerender } = renderHook(
+      ({ isAuthenticated }) => useChatWorkspace(isAuthenticated),
+      {
+        initialProps: {
+          isAuthenticated: false,
+        },
+      },
+    );
+
+    await waitFor(() => {
+      expect(result.current.activeConversationId).toBe('2001');
+      expect(
+        result.current.messages.some(
+          (message) => message.content === '这条消息不应被第二轮初始化冲掉',
+        ),
+      ).toBe(true);
+    });
+
+    rerender({ isAuthenticated: true });
+
+    await waitFor(() => {
+      expect(result.current.isBootstrapping).toBe(false);
+    });
+
+    expect(result.current.activeConversationId).toBe('2001');
+    expect(
+      result.current.messages.some(
+        (message) => message.content === '这条消息不应被第二轮初始化冲掉',
+      ),
+    ).toBe(true);
+  });
+
+  /**
+   * URL 指向本地历史分区会话时，刷新应先切到该分区再恢复消息，避免主区错误回退到首页。
+   */
+  it('应在刷新时恢复归属于其他本地分区的URL会话', async () => {
+    window.localStorage.setItem(
+      'codingx.auth.session',
+      JSON.stringify({
+        token: 'token-123',
+        userId: '1002',
+        username: 'user',
+        displayName: 'CodingX User',
+        userType: 'USER',
+      }),
+    );
+    window.history.replaceState(window.history.state, '', '/?conversationId=4001');
+    window.localStorage.setItem(
+      'codingx.chat.workspace.conversations.v1',
+      JSON.stringify({
+        version: 1,
+        snapshots: {
+          'local::d:/code/codingx': {
+            workspacePath: 'D:/code/CodingX',
+            workspaceLabel: 'CodingX',
+            runtimeTarget: 'local',
+            lastOpenedAt: Date.now(),
+            activeConversationId: null,
+            conversations: [],
+            conversationRecords: {},
+            seenTaskFinishedAtByConversationId: {},
+          },
+          'local::__no_workspace__': {
+            workspacePath: null,
+            workspaceLabel: '历史记录',
+            runtimeTarget: 'local',
+            lastOpenedAt: Date.now() - 1000,
+            activeConversationId: '4001',
+            conversations: [
+              {
+                id: '4001',
+                title: '本地历史会话',
+                status: 'ACTIVE',
+                lastRunId: '8101',
+              },
+            ],
+            conversationRecords: {
+              '4001': {
+                owned: true,
+                messages: [
+                  {
+                    id: 'assistant-4001',
+                    conversationId: '4001',
+                    role: 'ASSISTANT',
+                    content: '刷新后应恢复这条历史消息',
+                    status: 'COMPLETED',
+                  },
+                ],
+                executionSteps: [],
+                references: [],
+                artifacts: [],
+                currentExperts: [],
+                currentSkills: [],
+                currentMcps: [],
+              },
+            },
+            seenTaskFinishedAtByConversationId: {},
+          },
+        },
+      }),
+    );
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === '/api/chat/conversations') {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            code: 'OK',
+            message: 'success',
+            data: [
+              {
+                id: '4001',
+                title: '本地历史会话',
+                status: 'ACTIVE',
+                lastRunId: '8101',
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      if (
+        url === '/api/chat/sample-questions' ||
+        url === '/api/chat/experts' ||
+        url === '/api/chat/skills' ||
+        url === '/api/chat/mcps'
+      ) {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (
+        url === '/api/chat/conversations/4001/messages' ||
+        url === '/api/chat/conversations/4001/steps' ||
+        url === '/api/chat/conversations/4001/references' ||
+        url === '/api/chat/conversations/4001/artifacts' ||
+        url === '/api/chat/conversations/4001/current-skills' ||
+        url === '/api/chat/conversations/4001/current-mcps' ||
+        url === '/api/chat/conversations/4001/current-experts'
+      ) {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      throw new Error(`Unhandled fetch in cross-partition url restore test: ${url}`);
+    });
+
+    const hostContext = {
+      hostType: 'desktop',
+      executionTargets: ['local'] as const,
+      capabilities: {
+        localFiles: true,
+        localFolderPicker: true,
+        shell: true,
+        browserAutomation: false,
+        desktopNotifications: false,
+        officeInterop: false,
+        localMcp: true,
+        windowControls: true,
+      },
+      localResource: {
+        boundRepositoryPath: 'D:/code/CodingX',
+        workspaceId: '3001',
+        permissionGranted: true,
+      },
+    };
+
+    const { result } = renderHook(() => useChatWorkspace(true, { hostContext }));
+
+    await waitFor(() => {
+      expect(result.current.isBootstrapping).toBe(false);
+    });
+
+    expect(result.current.activeWorkspacePartitionKey).toBe('local::__no_workspace__');
+    expect(result.current.workspaceLabel).toBe('本地历史记录');
+    expect(result.current.activeConversationId).toBe('4001');
+    expect(
+      result.current.messages.some((message) => message.content === '刷新后应恢复这条历史消息'),
+    ).toBe(true);
   });
 
   /**
@@ -4126,166 +4393,6 @@ describe('useChatWorkspace', () => {
   });
 
   /**
-   * Generic local tool events reuse the message process chain so shell/apply_patch calls stay visible.
-   */
-  it('merges tool-call events into local tool process cards', async () => {
-    window.localStorage.setItem(
-      'codingx.auth.session',
-      JSON.stringify({
-        token: 'token-123',
-        userId: '1002',
-        username: 'user',
-        displayName: 'CodingX User',
-        userType: 'USER',
-      }),
-    );
-
-    const readQueue: Array<{
-      resolve: (value: ReadableStreamReadResult<Uint8Array>) => void;
-      reject: (reason?: unknown) => void;
-    }> = [];
-    const metaEvent = new TextEncoder().encode('event:meta\ndata:{"conversationId":"2001"}\n\n');
-    const toolStartEvent = new TextEncoder().encode(
-      'event:tool-call\ndata:{"callId":"local-call-1","phase":"start","toolId":"shell_command","displayName":"shell_command","params":{"command":"pwd"},"input":"{\\"command\\":\\"pwd\\"}","reactThought":"需要调用 shell_command 获取当前目录。","reactAction":"调用 shell_command","startedAt":"2026-05-26T18:11:08"}\n\n',
-    );
-    const toolCompleteEvent = new TextEncoder().encode(
-      'event:tool-call\ndata:{"callId":"local-call-1","phase":"complete","toolId":"shell_command","displayName":"shell_command","content":"D:/code/CodingX","rawResult":"D:/code/CodingX","reactObservation":"工具返回：D:/code/CodingX","resultMetadata":{"exitCode":0},"finishedAt":"2026-05-26T18:11:09"}\n\n',
-    );
-    const finishEvent = new TextEncoder().encode('event:finish\ndata:{"content":"Current directory is D:/code/CodingX"}\n\n');
-    const mockReader = {
-      read: vi.fn(() => {
-        return new Promise<ReadableStreamReadResult<Uint8Array>>((resolve, reject) => {
-          readQueue.push({ resolve, reject });
-        });
-      }),
-    };
-
-    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
-      const url = String(input);
-      if (
-        url === '/api/chat/conversations' ||
-        url === '/api/chat/sample-questions' ||
-        url === '/api/chat/experts' ||
-        url === '/api/chat/skills' ||
-        url === '/api/chat/mcps' ||
-        url === '/api/chat/conversations/2001/messages' ||
-        url === '/api/chat/conversations/2001/steps' ||
-        url === '/api/chat/conversations/2001/references' ||
-        url === '/api/chat/conversations/2001/artifacts' ||
-        url === '/api/chat/conversations/2001/current-skills' ||
-        url === '/api/chat/conversations/2001/current-mcps' ||
-        url === '/api/chat/conversations/2001/current-experts'
-      ) {
-        if (url === '/api/chat/conversations') {
-          return new Response(
-            JSON.stringify({
-              success: true,
-              code: 'OK',
-              message: 'success',
-              data: [
-                {
-                  id: '2001',
-                  title: 'Default Demo Conversation',
-                  status: 'ACTIVE',
-                  lastRunId: '5002',
-                },
-              ],
-            }),
-            { status: 200 },
-          );
-        }
-        return new Response(
-          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
-          { status: 200 },
-        );
-      }
-      if (url.includes('/api/chat/stream')) {
-        return {
-          ok: true,
-          status: 200,
-          body: {
-            getReader: () => mockReader,
-          },
-        } as unknown as Response;
-      }
-      throw new Error(`Unhandled fetch in local tool-call stream test: ${url}`);
-    });
-
-    const { result } = renderHook(() => useChatWorkspace(true));
-
-    await waitFor(() => {
-      expect(result.current.isBootstrapping).toBe(false);
-    });
-    await act(async () => {
-      result.current.setInputValue('show current directory');
-    });
-    const submitPromise = result.current.submitMessage();
-
-    await waitFor(() => {
-      expect(result.current.isStreaming).toBe(true);
-      expect(readQueue.length).toBeGreaterThan(0);
-    });
-
-    await act(async () => {
-      readQueue.shift()?.resolve({ done: false, value: metaEvent });
-    });
-    await waitFor(() => {
-      expect(readQueue.length).toBeGreaterThan(0);
-    });
-    await act(async () => {
-      readQueue.shift()?.resolve({ done: false, value: toolStartEvent });
-    });
-    await waitFor(() => {
-      const assistantMessage = result.current.messages.find((item) => item.role === 'ASSISTANT');
-      const processCards = ((assistantMessage as Record<string, unknown> | undefined)?.processCards ?? []) as Array<Record<string, unknown>>;
-      expect(processCards.map((card) => card.title)).toEqual(
-        expect.arrayContaining(['思考', '行动']),
-      );
-      expect(processCards.find((card) => card.title === '思考')?.summary).toBe(
-        '需要调用 shell_command 获取当前目录。',
-      );
-      const toolCallCard = processCards.find((card) => card.type === 'tool_call' && card.title === '行动');
-      expect(toolCallCard?.toolId).toBe('shell_command');
-      expect(toolCallCard?.summary).toBe('调用 shell_command');
-      expect(toolCallCard?.presentation).toBe('react');
-      expect((toolCallCard?.details as Array<Record<string, unknown>> | undefined)?.[0]?.content).toContain('pwd');
-    });
-
-    await act(async () => {
-      readQueue.shift()?.resolve({ done: false, value: toolCompleteEvent });
-    });
-    await waitFor(() => {
-      const assistantMessage = result.current.messages.find((item) => item.role === 'ASSISTANT');
-      const calls = ((assistantMessage?.mcpCalls ?? []) as Array<Record<string, unknown>>);
-      expect(calls).toHaveLength(1);
-      expect(calls[0].callId).toBe('local-call-1');
-      expect(calls[0].status).toBe('completed');
-      expect(calls[0].rawResult).toBe('D:/code/CodingX');
-      const processCards = ((assistantMessage as Record<string, unknown> | undefined)?.processCards ?? []) as Array<Record<string, unknown>>;
-      expect(processCards.map((card) => card.title)).toEqual(
-        expect.arrayContaining(['思考', '行动', '观察']),
-      );
-      const toolResultCard = processCards.find((card) => card.type === 'tool_result' && card.title === '观察');
-      expect(toolResultCard?.summary).toBe('工具返回：D:/code/CodingX');
-      expect(toolResultCard?.presentation).toBe('react');
-      expect((toolResultCard?.details as Array<Record<string, unknown>> | undefined)?.[0]?.content).toContain('D:/code/CodingX');
-    });
-
-    await act(async () => {
-      readQueue.shift()?.resolve({ done: false, value: finishEvent });
-    });
-    await waitFor(() => {
-      expect(readQueue.length).toBeGreaterThan(0);
-    });
-    await act(async () => {
-      readQueue.shift()?.resolve({ done: true, value: undefined });
-    });
-    await act(async () => {
-      await submitPromise;
-    });
-  });
-
-  /**
    * 联网搜索事件应把来源条目实时写入当前助手消息，驱动消息内进度面板递增显示。
    */
   it('应在reference事件中递增更新助手消息搜索进度', async () => {
@@ -4925,6 +5032,166 @@ describe('useChatWorkspace', () => {
         expect.arrayContaining(['调用天气查询', '已获取结果']),
       );
       expect(processCards.some((card) => String(card.summary).includes('整理最终回答'))).toBe(false);
+    });
+
+    await act(async () => {
+      readQueue.shift()?.resolve({ done: false, value: finishEvent });
+    });
+    await waitFor(() => {
+      expect(readQueue.length).toBeGreaterThan(0);
+    });
+    await act(async () => {
+      readQueue.shift()?.resolve({ done: true, value: undefined });
+    });
+    await act(async () => {
+      await submitPromise;
+    });
+  });
+
+  /**
+   * Generic local tool events reuse the message process chain so shell/apply_patch calls stay visible.
+   */
+  it('merges tool-call events into local tool process cards', async () => {
+    window.localStorage.setItem(
+      'codingx.auth.session',
+      JSON.stringify({
+        token: 'token-123',
+        userId: '1002',
+        username: 'user',
+        displayName: 'CodingX User',
+        userType: 'USER',
+      }),
+    );
+
+    const readQueue: Array<{
+      resolve: (value: ReadableStreamReadResult<Uint8Array>) => void;
+      reject: (reason?: unknown) => void;
+    }> = [];
+    const metaEvent = new TextEncoder().encode('event:meta\ndata:{"conversationId":"2001"}\n\n');
+    const toolStartEvent = new TextEncoder().encode(
+      'event:tool-call\ndata:{"callId":"local-call-1","phase":"start","toolId":"shell_command","displayName":"shell_command","params":{"command":"pwd"},"input":"{\\"command\\":\\"pwd\\"}","reactThought":"需要调用 shell_command 获取当前目录。","reactAction":"调用 shell_command","startedAt":"2026-05-26T18:11:08"}\n\n',
+    );
+    const toolCompleteEvent = new TextEncoder().encode(
+      'event:tool-call\ndata:{"callId":"local-call-1","phase":"complete","toolId":"shell_command","displayName":"shell_command","content":"D:/code/CodingX","rawResult":"D:/code/CodingX","reactObservation":"工具返回：D:/code/CodingX","resultMetadata":{"exitCode":0},"finishedAt":"2026-05-26T18:11:09"}\n\n',
+    );
+    const finishEvent = new TextEncoder().encode('event:finish\ndata:{"content":"Current directory is D:/code/CodingX"}\n\n');
+    const mockReader = {
+      read: vi.fn(() => {
+        return new Promise<ReadableStreamReadResult<Uint8Array>>((resolve, reject) => {
+          readQueue.push({ resolve, reject });
+        });
+      }),
+    };
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (
+        url === '/api/chat/conversations' ||
+        url === '/api/chat/sample-questions' ||
+        url === '/api/chat/experts' ||
+        url === '/api/chat/skills' ||
+        url === '/api/chat/mcps' ||
+        url === '/api/chat/conversations/2001/messages' ||
+        url === '/api/chat/conversations/2001/steps' ||
+        url === '/api/chat/conversations/2001/references' ||
+        url === '/api/chat/conversations/2001/artifacts' ||
+        url === '/api/chat/conversations/2001/current-skills' ||
+        url === '/api/chat/conversations/2001/current-mcps' ||
+        url === '/api/chat/conversations/2001/current-experts'
+      ) {
+        if (url === '/api/chat/conversations') {
+          return new Response(
+            JSON.stringify({
+              success: true,
+              code: 'OK',
+              message: 'success',
+              data: [
+                {
+                  id: '2001',
+                  title: 'Default Demo Conversation',
+                  status: 'ACTIVE',
+                  lastRunId: '5002',
+                },
+              ],
+            }),
+            { status: 200 },
+          );
+        }
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (url.includes('/api/chat/stream')) {
+        return {
+          ok: true,
+          status: 200,
+          body: {
+            getReader: () => mockReader,
+          },
+        } as unknown as Response;
+      }
+      throw new Error(`Unhandled fetch in local tool-call stream test: ${url}`);
+    });
+
+    const { result } = renderHook(() => useChatWorkspace(true));
+
+    await waitFor(() => {
+      expect(result.current.isBootstrapping).toBe(false);
+    });
+    await act(async () => {
+      result.current.setInputValue('show current directory');
+    });
+    const submitPromise = result.current.submitMessage();
+
+    await waitFor(() => {
+      expect(result.current.isStreaming).toBe(true);
+      expect(readQueue.length).toBeGreaterThan(0);
+    });
+
+    await act(async () => {
+      readQueue.shift()?.resolve({ done: false, value: metaEvent });
+    });
+    await waitFor(() => {
+      expect(readQueue.length).toBeGreaterThan(0);
+    });
+    await act(async () => {
+      readQueue.shift()?.resolve({ done: false, value: toolStartEvent });
+    });
+    await waitFor(() => {
+      const assistantMessage = result.current.messages.find((item) => item.role === 'ASSISTANT');
+      const processCards = ((assistantMessage as Record<string, unknown> | undefined)?.processCards ?? []) as Array<Record<string, unknown>>;
+      expect(processCards.map((card) => card.title)).toEqual(
+        expect.arrayContaining(['思考', '行动']),
+      );
+      expect(processCards.find((card) => card.title === '思考')?.summary).toBe(
+        '需要调用 shell_command 获取当前目录。',
+      );
+      const toolCallCard = processCards.find((card) => card.type === 'tool_call' && card.title === '行动');
+      expect(toolCallCard?.toolId).toBe('shell_command');
+      expect(toolCallCard?.summary).toBe('调用 shell_command');
+      expect(toolCallCard?.presentation).toBe('react');
+      expect((toolCallCard?.details as Array<Record<string, unknown>> | undefined)?.[0]?.content).toContain('pwd');
+    });
+
+    await act(async () => {
+      readQueue.shift()?.resolve({ done: false, value: toolCompleteEvent });
+    });
+    await waitFor(() => {
+      const assistantMessage = result.current.messages.find((item) => item.role === 'ASSISTANT');
+      const calls = ((assistantMessage?.mcpCalls ?? []) as Array<Record<string, unknown>>);
+      expect(calls).toHaveLength(1);
+      expect(calls[0].callId).toBe('local-call-1');
+      expect(calls[0].status).toBe('completed');
+      expect(calls[0].rawResult).toBe('D:/code/CodingX');
+      const processCards = ((assistantMessage as Record<string, unknown> | undefined)?.processCards ?? []) as Array<Record<string, unknown>>;
+      expect(processCards.map((card) => card.title)).toEqual(
+        expect.arrayContaining(['思考', '行动', '观察']),
+      );
+      const toolResultCard = processCards.find((card) => card.type === 'tool_result' && card.title === '观察');
+      expect(toolResultCard?.summary).toBe('工具返回：D:/code/CodingX');
+      expect(toolResultCard?.presentation).toBe('react');
+      expect((toolResultCard?.details as Array<Record<string, unknown>> | undefined)?.[0]?.content).toContain('D:/code/CodingX');
     });
 
     await act(async () => {

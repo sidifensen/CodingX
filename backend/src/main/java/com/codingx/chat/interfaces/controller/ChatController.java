@@ -1,4 +1,5 @@
 package com.codingx.chat.interfaces.controller;
+
 import cn.dev33.satoken.stp.StpUtil;
 import cn.hutool.core.util.StrUtil;
 import com.codingx.chat.application.command.CreateConversationCommand;
@@ -23,6 +24,7 @@ import com.codingx.chat.interfaces.request.ChatMessageFeedbackRequest;
 import com.codingx.chat.interfaces.request.BatchUpdateConversationRequest;
 import com.codingx.chat.interfaces.request.ConversationPinRequest;
 import com.codingx.chat.interfaces.request.CreateConversationRequest;
+import com.codingx.chat.interfaces.request.DeleteChatMessagesRequest;
 import com.codingx.chat.interfaces.request.RenameConversationRequest;
 import com.codingx.chat.interfaces.request.SendChatMessageRequest;
 import com.codingx.chat.interfaces.request.ShareConversationRequest;
@@ -47,6 +49,7 @@ import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -189,6 +192,25 @@ public class ChatController {
             chatRuntimeGuardService.completeConversation(conversationId);
         }
         return ApiResponse.successMessage(ErrorMessageCatalog.CHAT_MESSAGE_PROCESSED);
+    }
+
+    /**
+     * 删除会话内指定消息；用于消息气泡删除和编辑重发的旧上下文清理。
+     * @param conversationId 会话标识。
+     * @param request 删除消息请求。
+     * @return 删除结果。
+     */
+    @DeleteMapping("/{conversationId}/messages")
+    public ApiResponse<Void> deleteMessages(
+        @PathVariable Long conversationId,
+        @RequestBody(required = false) DeleteChatMessagesRequest request
+    ) {
+        chatConversationApplicationService.deleteConversationMessages(
+            conversationId,
+            request == null ? List.of() : request.messageIds(),
+            StpUtil.getLoginIdAsLong()
+        );
+        return ApiResponse.successMessage(ErrorMessageCatalog.CHAT_MESSAGES_DELETED);
     }
 
     /**

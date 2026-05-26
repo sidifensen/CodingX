@@ -470,6 +470,13 @@ export interface ChatWorkspaceController {
     conversationId: string,
     actionContext?: ConversationActionContext,
   ) => Promise<void>;
+  /**
+   * 删除当前会话中的指定消息；用于消息级选择删除与编辑重发前清理旧上下文。
+   */
+  deleteConversationMessages: (
+    conversationId: string,
+    messageIds: string[],
+  ) => Promise<void>;
   shareConversation: (
     conversationId: string,
     options?: ShareConversationOptions,
@@ -477,6 +484,13 @@ export interface ChatWorkspaceController {
   regenerateConversation: (
     conversationId: string,
     options?: RegenerateConversationOptions,
+  ) => Promise<void>;
+  /**
+   * 从一条用户消息重新发送；旧消息段落应被替换，避免编辑后的问题与旧回复同时进入上下文。
+   */
+  resendUserMessage: (
+    messageId: string,
+    content: string,
   ) => Promise<void>;
   toggleConversationPin: (
     conversationId: string,

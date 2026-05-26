@@ -133,6 +133,31 @@ public class ChatConversationApplicationService {
     }
 
     /**
+     * 逻辑删除会话内指定消息；编辑重发会先删除旧消息段落，再写入新的用户问题和助手回答。
+     * @param conversationId 会话标识。
+     * @param messageIds 待删除消息标识列表。
+     * @param userId 当前用户标识。
+     */
+    public void deleteConversationMessages(Long conversationId, List<Long> messageIds, Long userId) {
+        ChatConversation conversation = chatConversationRepository.requireById(conversationId);
+        if (!conversation.getCreatedBy().equals(userId)) {
+            throw new ForbiddenException(ErrorMessageCatalog.CHAT_CONVERSATION_FORBIDDEN);
+        }
+        List<Long> normalizedMessageIds = messageIds == null
+            ? List.of()
+            : messageIds.stream()
+                .filter(messageId -> messageId != null)
+                .distinct()
+                .toList();
+        if (normalizedMessageIds.isEmpty()) {
+            return;
+        }
+        chatMessageRepository.softDeleteByConversationIdAndIds(conversationId, normalizedMessageIds);
+        conversation.touch();
+        chatConversationRepository.save(conversation);
+    }
+
+    /**
      * 切换会话置顶状态，供侧边栏快速固定高频会话。
      * @param conversationId 会话标识。
      * @param pinned 置顶状态。

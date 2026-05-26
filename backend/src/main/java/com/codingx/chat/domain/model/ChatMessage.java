@@ -54,11 +54,6 @@ public class ChatMessage {
     private Integer thinkingDuration;
 
     /**
-     * 命中的意图编码。
-     */
-    private String intentCode;
-
-    /**
      * 当前状态值。
      */
     private ChatMessageStatus status;
@@ -77,6 +72,11 @@ public class ChatMessage {
      * 错误信息。
      */
     private String errorMessage;
+
+    /**
+     * 逻辑删除标记；消息级删除只隐藏历史，不物理清理关联运行记录。
+     */
+    private Integer deleted;
 
     /**
      * 创建时间。
@@ -148,6 +148,7 @@ public class ChatMessage {
             .provider(provider)
             .model(model)
             .errorMessage(errorMessage)
+            .deleted(0)
             .createdAt(now)
             .updatedAt(now)
             .build();
@@ -158,7 +159,6 @@ public class ChatMessage {
      * @param runId 所属执行记录标识。
      * @param thinkingContent 深度思考内容。
      * @param thinkingDuration 深度思考耗时（秒）。
-     * @param intentCode 命中的意图编码。
      * @param createdAt 创建时间。
      * @param updatedAt 更新时间。
      */
@@ -166,14 +166,12 @@ public class ChatMessage {
         Long runId,
         String thinkingContent,
         Integer thinkingDuration,
-        String intentCode,
         LocalDateTime createdAt,
         LocalDateTime updatedAt
     ) {
         this.runId = runId;
         this.thinkingContent = thinkingContent;
         this.thinkingDuration = thinkingDuration;
-        this.intentCode = intentCode;
         this.createdAt = createdAt;
         this.updatedAt = updatedAt;
     }

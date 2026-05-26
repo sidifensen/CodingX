@@ -39,6 +39,7 @@ import com.codingx.tool.application.service.ChatToolSpecService;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Comparator;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -48,6 +49,7 @@ import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ForkJoinPool;
+import java.util.concurrent.atomic.AtomicReference;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
@@ -413,6 +415,7 @@ public class ChatApplicationService {
         }
         StringBuilder builder = new StringBuilder();
         StringBuilder thinkingBuilder = new StringBuilder();
+        AtomicReference<LocalDateTime> thinkingStartedAt = new AtomicReference<>();
         final Throwable[] streamError = new Throwable[1];
         final String[] selectedProvider = new String[1];
         final String[] selectedModel = new String[1];
@@ -433,6 +436,7 @@ public class ChatApplicationService {
                 aiHistory,
                 builder,
                 thinkingBuilder,
+                thinkingStartedAt,
                 streamError,
                 selectedProvider,
                 selectedModel,
@@ -449,6 +453,7 @@ public class ChatApplicationService {
                     selectedModel[0],
                     null
                 ).attachRun(runId);
+                applyThinkingRuntimeState(cancelledMessage, thinkingStartedAt.get(), thinkingBuilder.toString());
                 chatMessageRepository.save(cancelledMessage);
                 conversation.touch();
                 conversation.recordLastRunId(runId);
@@ -468,6 +473,7 @@ public class ChatApplicationService {
                 selectedModel[0],
                 null
             ).attachRun(runId);
+            applyThinkingRuntimeState(cancelledMessage, thinkingStartedAt.get(), thinkingBuilder.toString());
             chatMessageRepository.save(cancelledMessage);
             conversation.touch();
             conversation.recordLastRunId(runId);
@@ -487,6 +493,7 @@ public class ChatApplicationService {
                 streamError[0].getMessage()
 
             ).attachRun(runId);
+            applyThinkingRuntimeState(failedMessage, thinkingStartedAt.get(), thinkingBuilder.toString());
             chatMessageRepository.save(failedMessage);
             conversation.touch();
             conversation.recordLastRunId(runId);
@@ -505,14 +512,7 @@ public class ChatApplicationService {
             null
 
         ).attachRun(runId);
-        assistantMessage.restoreRuntimeState(
-            assistantMessage.getRunId(),
-            llmResponseCleaner.clean(thinkingBuilder.toString()),
-            StrUtil.isBlank(thinkingBuilder.toString()) ? null : 0,
-            null,
-            assistantMessage.getCreatedAt(),
-            assistantMessage.getUpdatedAt()
-        );
+        applyThinkingRuntimeState(assistantMessage, thinkingStartedAt.get(), thinkingBuilder.toString());
         chatMessageRepository.save(assistantMessage);
         history.add(assistantMessage);
         conversation.rename(conversationTitleService.generateTitle(conversation, history));
@@ -858,6 +858,7 @@ public class ChatApplicationService {
         }
         StringBuilder builder = new StringBuilder();
         StringBuilder thinkingBuilder = new StringBuilder();
+        AtomicReference<LocalDateTime> thinkingStartedAt = new AtomicReference<>();
         final Throwable[] streamError = new Throwable[1];
         final String[] selectedProvider = new String[1];
         final String[] selectedModel = new String[1];
@@ -878,6 +879,7 @@ public class ChatApplicationService {
                 aiHistory,
                 builder,
                 thinkingBuilder,
+                thinkingStartedAt,
                 streamError,
                 selectedProvider,
                 selectedModel,
@@ -894,6 +896,7 @@ public class ChatApplicationService {
                     selectedModel[0],
                     null
                 ).attachRun(runId);
+                applyThinkingRuntimeState(cancelledMessage, thinkingStartedAt.get(), thinkingBuilder.toString());
                 chatMessageRepository.save(cancelledMessage);
                 conversation.touch();
                 conversation.recordLastRunId(runId);
@@ -913,6 +916,7 @@ public class ChatApplicationService {
                 selectedModel[0],
                 null
             ).attachRun(runId);
+            applyThinkingRuntimeState(cancelledMessage, thinkingStartedAt.get(), thinkingBuilder.toString());
             chatMessageRepository.save(cancelledMessage);
             conversation.touch();
             conversation.recordLastRunId(runId);
@@ -932,6 +936,7 @@ public class ChatApplicationService {
                 streamError[0].getMessage()
 
             ).attachRun(runId);
+            applyThinkingRuntimeState(failedMessage, thinkingStartedAt.get(), thinkingBuilder.toString());
             chatMessageRepository.save(failedMessage);
             conversation.touch();
             conversation.recordLastRunId(runId);
@@ -950,14 +955,7 @@ public class ChatApplicationService {
             null
 
         ).attachRun(runId);
-        assistantMessage.restoreRuntimeState(
-            assistantMessage.getRunId(),
-            llmResponseCleaner.clean(thinkingBuilder.toString()),
-            StrUtil.isBlank(thinkingBuilder.toString()) ? null : 0,
-            null,
-            assistantMessage.getCreatedAt(),
-            assistantMessage.getUpdatedAt()
-        );
+        applyThinkingRuntimeState(assistantMessage, thinkingStartedAt.get(), thinkingBuilder.toString());
         chatMessageRepository.save(assistantMessage);
         history.add(assistantMessage);
         conversation.rename(conversationTitleService.generateTitle(conversation, history));
@@ -972,6 +970,46 @@ public class ChatApplicationService {
 
     private Long currentRunId(Long conversationId) {
         return ChatExecutionContext.currentRunId().orElse(conversationId);
+    }
+
+    /**
+     * 回填本轮 assistant 消息的思考正文与耗时。
+     * 只在确实收到 thinking 增量时写入，避免普通消息或空思考内容污染消息表。
+     *
+     * @param message 需要回填的消息。
+     * @param thinkingStartedAt 首次思考增量到达时间。
+     * @param thinkingText 思考正文。
+     * @return 回填后的消息对象。
+     */
+    private ChatMessage applyThinkingRuntimeState(ChatMessage message, LocalDateTime thinkingStartedAt, String thinkingText) {
+        String cleanedThinking = llmResponseCleaner.clean(StrUtil.blankToDefault(thinkingText, ""));
+        String normalizedThinking = StrUtil.isBlank(cleanedThinking) ? null : cleanedThinking;
+        if (message == null || thinkingStartedAt == null || StrUtil.isBlank(normalizedThinking)) {
+            return message;
+        }
+        message.restoreRuntimeState(
+            message.getRunId(),
+            normalizedThinking,
+            resolveThinkingDurationSeconds(thinkingStartedAt, normalizedThinking),
+            message.getCreatedAt(),
+            message.getUpdatedAt()
+        );
+        return message;
+    }
+
+    /**
+     * 计算深度思考耗时；只有收到 thinking 增量后才记录，避免无思考内容的消息出现伪耗时。
+     * @param thinkingStartedAt 首个 thinking 增量到达时间。
+     * @param thinkingContent 已收集的 thinking 内容。
+     * @return 思考耗时秒数，缺失时返回 null。
+     */
+    private Integer resolveThinkingDurationSeconds(LocalDateTime thinkingStartedAt, String thinkingContent) {
+        if (thinkingStartedAt == null || StrUtil.isBlank(thinkingContent)) {
+            return null;
+        }
+        long elapsedMillis = Math.max(0L, Duration.between(thinkingStartedAt, LocalDateTime.now()).toMillis());
+        long elapsedSeconds = Math.max(1L, (elapsedMillis + 999L) / 1000L);
+        return Math.toIntExact(elapsedSeconds);
     }
 
     /**
@@ -993,6 +1031,7 @@ public class ChatApplicationService {
         List<ChatMessage> initialAiHistory,
         StringBuilder builder,
         StringBuilder thinkingBuilder,
+        AtomicReference<LocalDateTime> thinkingStartedAt,
         Throwable[] streamError,
         String[] selectedProvider,
         String[] selectedModel,
@@ -1007,6 +1046,7 @@ public class ChatApplicationService {
                 command,
                 builder,
                 thinkingBuilder,
+                thinkingStartedAt,
                 streamError,
                 selectedProvider,
                 selectedModel,
@@ -1023,17 +1063,20 @@ public class ChatApplicationService {
                 command,
                 builder,
                 thinkingBuilder,
+                thinkingStartedAt,
                 streamError,
                 selectedProvider,
                 selectedModel,
                 activeRunId,
                 toolCalls
             ));
-            if (streamError[0] != null || toolCalls.isEmpty()) {
+        if (streamError[0] != null || toolCalls.isEmpty()) {
                 return;
             }
             builder.setLength(0);
             thinkingBuilder.setLength(0);
+            // 工具重入会开启下一轮模型生成，思考起点必须重新计时，避免把上一轮时长混进来。
+            thinkingStartedAt.set(null);
             for (AiToolCall toolCall : toolCalls) {
                 ChatToolExecutionResult toolResult;
                 try {
@@ -1135,6 +1178,7 @@ public class ChatApplicationService {
         SendChatMessageCommand command,
         StringBuilder builder,
         StringBuilder thinkingBuilder,
+        AtomicReference<LocalDateTime> thinkingStartedAt,
         Throwable[] streamError,
         String[] selectedProvider,
         String[] selectedModel,
@@ -1162,6 +1206,7 @@ public class ChatApplicationService {
                 if (chatRuntimeGuardService.isCancelled(command.conversationId(), activeRunId)) {
                     return;
                 }
+                thinkingStartedAt.compareAndSet(null, LocalDateTime.now());
                 thinkingBuilder.append(delta);
                 chatStreamPublisher.publishAssistantThinkingDelta(command.conversationId(), delta);
             }

@@ -1640,6 +1640,160 @@ export function useChatWorkspace(
   };
 
   /**
+   * 从某条用户消息重新发送：旧问题及其后续回答先软删除，再把编辑后的问题作为新的上下文继续生成。
+   * @param messageId 被编辑的用户消息标识。
+   * @param content 编辑后的消息内容。
+   */
+  const resendUserMessage = async (messageId: string, content: string) => {
+    const normalizedContent = content.trim();
+    if (!normalizedContent) {
+      return;
+    }
+    const token = currentToken();
+    if (!token) {
+      setStreamError(UserErrorMessages.AUTH_SESSION_EXPIRED);
+      onUnauthorizedRef.current?.();
+      return;
+    }
+    const currentMessages = messagesRef.current;
+    const targetMessageIndex = currentMessages.findIndex(
+      (message) => message.id === messageId && message.role === 'USER',
+    );
+    if (targetMessageIndex < 0) {
+      return;
+    }
+    const targetMessage = currentMessages[targetMessageIndex];
+    const targetConversationId = targetMessage.conversationId || activeConversationIdRef.current;
+    if (!targetConversationId || targetConversationId === 'pending-conversation') {
+      return;
+    }
+    const replacedMessageIds = normalizePersistedMessageIds(
+      currentMessages.slice(targetMessageIndex).map((message) => message.id),
+    );
+    if (replacedMessageIds.length > 0) {
+      await ChatApi.deleteConversationMessages(token, targetConversationId, replacedMessageIds);
+    }
+
+    abortControllerRef.current?.abort();
+    const streamSessionId = createStreamSessionId();
+    activeStreamSessionIdRef.current = streamSessionId;
+    const streamAbortController = new AbortController();
+    abortControllerRef.current = streamAbortController;
+
+    const optimisticUserId = `optimistic-edit-user-${Date.now()}`;
+    const optimisticAssistantId = `optimistic-edit-assistant-${Date.now()}`;
+    streamMcpCallsRef.current[optimisticAssistantId] = [];
+    streamStateRef.current = {
+      conversationId: targetConversationId,
+      activeMessageId: optimisticAssistantId,
+    };
+
+    const reusedAttachmentIds = normalizePersistedMessageIds(
+      (targetMessage.attachments ?? []).map((attachment) => attachment.id),
+    );
+    const nextMessages: ChatMessageItem[] = [
+      ...currentMessages.slice(0, targetMessageIndex),
+      {
+        ...targetMessage,
+        id: optimisticUserId,
+        conversationId: targetConversationId,
+        content: normalizedContent,
+        status: 'COMPLETED',
+      },
+      {
+        id: optimisticAssistantId,
+        conversationId: targetConversationId,
+        role: 'ASSISTANT',
+        content: '',
+        processCards: [],
+        status: 'streaming',
+      },
+    ];
+    setMessages(nextMessages);
+    persistConversationState(targetConversationId, conversations, {
+      messages: nextMessages,
+      executionSteps,
+      references,
+      artifacts,
+      currentExperts,
+      currentSkills,
+      currentMcps,
+    });
+    setIsStreaming(true);
+    setStreamError('');
+    hideStreamQueueState();
+
+    try {
+      const response = await fetch(
+        buildStreamRequestUrl(
+          normalizedContent,
+          targetConversationId,
+          workspaceId,
+          deepThinkingEnabled,
+          mcpConnected,
+          selectedMcpCodes,
+          targetMessage.skillCodes ?? selectedSkillCodes,
+          selectedExpertCode,
+          workspacePath,
+          reusedAttachmentIds,
+        ),
+        {
+          headers: {
+            satoken: token,
+          },
+          signal: streamAbortController.signal,
+        },
+      );
+      await ChatApi.assertStreamAuthorized(response);
+      await consumeSseStream(response, optimisticAssistantId, streamSessionId);
+      if (!isActiveStreamSession(streamSessionId)) {
+        return;
+      }
+      const nextConversations = await loadConversations(token);
+      await selectConversation(
+        targetConversationId,
+        nextConversations,
+        streamMcpCallsRef.current[optimisticAssistantId],
+        true,
+        true,
+      );
+      refreshWorkspaceGroups('all');
+    } catch (error) {
+      if (!isActiveStreamSession(streamSessionId)) {
+        return;
+      }
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        setStreamError('已停止当前生成');
+      } else if (error instanceof ChatApi.UnauthorizedError) {
+        onUnauthorizedRef.current?.();
+      } else {
+        const message = error instanceof Error ? error.message : UserErrorMessages.CHAT_REQUEST_FAILED;
+        setStreamError(message);
+        setMessages((previousMessages) =>
+          previousMessages.map((item) =>
+            item.id === optimisticAssistantId
+              ? {
+                  ...item,
+                  status: 'error',
+                  errorMessage: message,
+                }
+              : item,
+          ),
+        );
+      }
+    } finally {
+      delete streamMcpCallsRef.current[optimisticAssistantId];
+      if (abortControllerRef.current === streamAbortController) {
+        abortControllerRef.current = null;
+      }
+      if (isActiveStreamSession(streamSessionId)) {
+        activeStreamSessionIdRef.current = null;
+        setIsStreaming(false);
+      }
+    }
+  };
+
+  /**
    * 在指定分组上下文内切换会话置顶状态，并把结果写回本地快照。
    * @param conversationId 会话标识。
    * @param actionContext 会话所属分组上下文。
@@ -2413,8 +2567,10 @@ export function useChatWorkspace(
     startNewConversation,
     renameConversation,
     deleteConversation,
+    deleteConversationMessages,
     shareConversation,
     regenerateConversation,
+    resendUserMessage,
     toggleConversationPin,
     exportConversation,
     exportConversations,
@@ -3284,6 +3440,23 @@ async function uploadPendingAttachments(
 function normalizeWorkspaceId(workspaceId: string | null | undefined) {
   const normalizedWorkspaceId = workspaceId == null ? '' : String(workspaceId).trim();
   return normalizedWorkspaceId.length > 0 ? normalizedWorkspaceId : null;
+}
+
+/**
+ * 只保留已落库的数字主键，避免乐观消息 ID 进入后端 Long 参数导致反序列化失败。
+ * @param messageIds 前端消息或附件标识列表。
+ * @returns 去重后的数字标识字符串列表。
+ */
+function normalizePersistedMessageIds(messageIds: Array<string | null | undefined>) {
+  const normalizedIds: string[] = [];
+  messageIds.forEach((messageId) => {
+    const normalizedMessageId = String(messageId ?? '').trim();
+    if (!/^\d+$/.test(normalizedMessageId) || normalizedIds.includes(normalizedMessageId)) {
+      return;
+    }
+    normalizedIds.push(normalizedMessageId);
+  });
+  return normalizedIds;
 }
 
 /**

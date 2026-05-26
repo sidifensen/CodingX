@@ -303,6 +303,38 @@ describe('ChatApi', () => {
   });
 
   /**
+   * 删除会话内消息应提交规范化后的消息 ID，保证编辑重发和删除选择都能持久生效。
+   */
+  it('应通过专用接口删除会话消息', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          success: true,
+          code: 'OK',
+          message: 'messages deleted',
+          data: null,
+        }),
+        { status: 200 },
+      ),
+    );
+
+    await ChatApi.deleteConversationMessages('token-123', '2055114974648864768', [
+      '101',
+      '',
+      '102',
+      '101',
+    ]);
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      '/api/chat/conversations/2055114974648864768/messages',
+      expect.objectContaining({
+        method: 'DELETE',
+        body: JSON.stringify({ messageIds: ['101', '102'] }),
+      }),
+    );
+  });
+
+  /**
    * 分享会话应命中专用接口并返回分享令牌与分享路径。
    */
   it('应通过专用接口生成分享链接', async () => {

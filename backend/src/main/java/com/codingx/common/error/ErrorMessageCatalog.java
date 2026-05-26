@@ -164,6 +164,7 @@ public final class ErrorMessageCatalog {
      * 删除会话成功提示。
      */
     public static final String CHAT_CONVERSATION_DELETED = "会话删除成功";
+    public static final String CHAT_MESSAGES_DELETED = "消息删除成功";
 
     /**
      * 会话置顶状态更新成功提示。

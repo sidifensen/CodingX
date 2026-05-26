@@ -1,6 +1,7 @@
 package com.codingx.chat.infrastructure.persistence.repository;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -49,7 +50,6 @@ class ChatMessageRepositoryImplTest {
         setField(message, "runId", 7001L);
         setField(message, "thinkingContent", "thinking");
         setField(message, "thinkingDuration", 12);
-        setField(message, "intentCode", "search.web");
         setField(message, "createdAt", createdAt);
         setField(message, "updatedAt", updatedAt);
         when(chatMessageMapper.selectById(message.getId())).thenReturn(null);
@@ -62,7 +62,6 @@ class ChatMessageRepositoryImplTest {
         assertEquals(7001L, readField(dataObject, "runId"));
         assertEquals("thinking", readField(dataObject, "thinkingContent"));
         assertEquals(12, readField(dataObject, "thinkingDuration"));
-        assertEquals("search.web", readField(dataObject, "intentCode"));
         assertEquals(createdAt, dataObject.getCreatedAt());
         assertEquals(updatedAt, dataObject.getUpdatedAt());
     }
@@ -88,7 +87,6 @@ class ChatMessageRepositoryImplTest {
         setField(dataObject, "runId", 7002L);
         setField(dataObject, "thinkingContent", "reasoning");
         setField(dataObject, "thinkingDuration", 20);
-        setField(dataObject, "intentCode", "clarify");
         when(chatMessageMapper.selectList(org.mockito.ArgumentMatchers.any())).thenReturn(List.of(dataObject));
 
         ChatMessage message = chatMessageRepository.findByConversationId(1L).getFirst();
@@ -96,9 +94,18 @@ class ChatMessageRepositoryImplTest {
         assertEquals(7002L, readField(message, "runId"));
         assertEquals("reasoning", readField(message, "thinkingContent"));
         assertEquals(20, readField(message, "thinkingDuration"));
-        assertEquals("clarify", readField(message, "intentCode"));
         assertEquals(createdAt, readField(message, "createdAt"));
         assertEquals(updatedAt, readField(message, "updatedAt"));
+    }
+
+    /**
+     * 消息级删除应限制在当前会话内执行逻辑删除，避免误删其他会话同 ID 集合之外的数据。
+     */
+    @Test
+    void softDeleteByConversationIdAndIdsUpdatesDeletedFlagInConversationScope() {
+        chatMessageRepository.softDeleteByConversationIdAndIds(1L, List.of(101L, 102L));
+
+        verify(chatMessageMapper).update(any(ChatMessageDO.class), any());
     }
 
     /**

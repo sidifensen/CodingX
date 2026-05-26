@@ -169,6 +169,35 @@ class ChatConversationApplicationServiceTest {
     }
 
     /**
+     * 删除会话内消息时应校验会话归属，并只把去重后的消息 ID 交给仓储逻辑删除。
+     */
+    @Test
+    void deleteConversationMessagesDelegatesSoftDeleteAfterOwnershipCheck() {
+        ChatConversation conversation = ChatConversation.create(1L, "待删消息会话", 1002L, ChatConversationStatus.ACTIVE);
+        when(chatConversationRepository.requireById(1L)).thenReturn(conversation);
+
+        chatConversationApplicationService.deleteConversationMessages(1L, List.of(101L, 102L, 101L), 1002L);
+
+        verify(chatMessageRepository).softDeleteByConversationIdAndIds(1L, List.of(101L, 102L));
+    }
+
+    /**
+     * 非会话所有者不得删除会话消息，避免通过消息 ID 越权修改他人历史。
+     */
+    @Test
+    void deleteConversationMessagesRejectsNonOwner() {
+        ChatConversation conversation = ChatConversation.create(1L, "他人会话", 1002L, ChatConversationStatus.ACTIVE);
+        when(chatConversationRepository.requireById(1L)).thenReturn(conversation);
+
+        ForbiddenException exception = assertThrows(
+            ForbiddenException.class,
+            () -> chatConversationApplicationService.deleteConversationMessages(1L, List.of(101L), 2001L)
+        );
+
+        assertEquals(ErrorMessageCatalog.CHAT_CONVERSATION_FORBIDDEN, exception.getMessage());
+    }
+
+    /**
      * 会话列表应按工作空间过滤，避免不同工作空间会话互相串线。
      */
     @Test

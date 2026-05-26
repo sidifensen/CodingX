@@ -2,6 +2,7 @@ package com.codingx.chat.application.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
@@ -215,6 +216,7 @@ class ChatApplicationServiceTest {
         doAnswer(invocation -> {
 
             AiChatClient.StreamHandler handler = invocation.getArgument(2);
+            handler.onThinkingDelta("thinking");
             handler.onDelta("Hello");
             handler.onDelta(" world");
             handler.onComplete();
@@ -233,6 +235,9 @@ class ChatApplicationServiceTest {
         verify(chatStreamPublisher).publishAssistantCompleted(1L, "Hello world", "AI搜索重构计划");
         assertEquals(ChatMessageRole.ASSISTANT, captor.getAllValues().get(1).getRole());
         assertEquals("Hello world", captor.getAllValues().get(1).getContent());
+        assertEquals("thinking", captor.getAllValues().get(1).getThinkingContent());
+        assertTrue(captor.getAllValues().get(1).getThinkingDuration() != null);
+        assertTrue(captor.getAllValues().get(1).getThinkingDuration() > 0);
         assertEquals(ChatMessageStatus.COMPLETED, captor.getAllValues().get(1).getStatus());
         assertEquals(runId, runCaptor.getValue().getId());
         assertEquals(captor.getAllValues().get(0).getId(), runCaptor.getValue().getRequestMessageId());

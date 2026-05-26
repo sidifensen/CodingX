@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+﻿import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import ChatView from '@/views/ChatView';
 import { within } from '@testing-library/react';
 import { ChatWorkspaceController } from '@/views/chat/types';
@@ -1115,25 +1115,126 @@ describe('ChatView', () => {
   });
 
   /**
-   * 助手消息底部应提供复制、复制更多、点赞和倒赞操作。
+   * 助手消息输出区只保留复制入口，避免生成内容下方出现过多干扰操作。
    */
-  it('应渲染助手消息操作栏', async () => {
+  it('应仅渲染助手消息复制操作', async () => {
     render(
       <ChatView isAuthenticated={true} onRequireLogin={vi.fn()} workspace={createWorkspace()} />,
     );
 
     expect(screen.getByTestId('copy-message-102')).toBeInTheDocument();
-    expect(screen.getByTestId('copy-menu-toggle-102')).toBeInTheDocument();
-    expect(screen.getByTestId('share-message-102')).toBeInTheDocument();
-    expect(screen.getByTestId('regenerate-message-102')).toBeInTheDocument();
-    expect(screen.getByTestId('thumbs-up-102')).toBeInTheDocument();
-    expect(screen.getByTestId('thumbs-down-102')).toBeInTheDocument();
+    expect(screen.queryByTestId('copy-menu-toggle-102')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('share-message-102')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('regenerate-message-102')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('thumbs-up-102')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('thumbs-down-102')).not.toBeInTheDocument();
   });
 
   /**
-   * 分享应先进入轮次选择，再展示千问风格分享弹窗，而不是直接复制整会话链接。
+   * 用户消息悬浮操作应提供编辑、复制和删除三个入口，贴近千问消息气泡交互。
    */
-  it('应支持选择消息后展示分享弹窗并复制链接', async () => {
+  it('应渲染用户消息悬浮操作栏', async () => {
+    render(
+      <ChatView isAuthenticated={true} onRequireLogin={vi.fn()} workspace={createWorkspace()} />,
+    );
+
+    expect(screen.getByTestId('edit-user-message-101')).toBeInTheDocument();
+    expect(screen.getByTestId('copy-user-message-101')).toBeInTheDocument();
+    expect(screen.getByTestId('delete-user-message-101')).toBeInTheDocument();
+    expect(screen.getByTestId('user-message-actions-101')).toHaveClass('chat-user-message-actions');
+  });
+
+  /**
+   * 编辑用户消息后再次发送应交给工作台从该消息重新生成，而不是只改前端文本。
+   */
+  it('应支持编辑用户消息并再次发送', async () => {
+    const resendUserMessage = vi.fn().mockResolvedValue(undefined);
+
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({ resendUserMessage })}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId('edit-user-message-101'));
+    const editor = screen.getByLabelText('编辑用户消息');
+    fireEvent.change(editor, { target: { value: '请重新搜索 Spring Boot SSE 资料' } });
+    fireEvent.click(screen.getByRole('button', { name: '再次发送' }));
+
+    await waitFor(() => {
+      expect(resendUserMessage).toHaveBeenCalledWith('101', '请重新搜索 Spring Boot SSE 资料');
+    });
+  });
+
+  /**
+   * 分享应进入明显的轮次选择模式：聊天区卡片化、底部输入区隐藏，并默认选中触发分享的问答轮次。
+   */
+  it('应进入分享轮次选择模式并隐藏输入区', async () => {
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          messages: [
+            {
+              id: '101',
+              conversationId: '2001',
+              role: 'USER',
+              content: '第一问',
+              status: 'COMPLETED',
+            },
+            {
+              id: '102',
+              conversationId: '2001',
+              role: 'ASSISTANT',
+              content: '第一答',
+              status: 'COMPLETED',
+            },
+            {
+              id: '201',
+              conversationId: '2001',
+              role: 'USER',
+              content: '第二问',
+              status: 'COMPLETED',
+            },
+            {
+              id: '202',
+              conversationId: '2001',
+              role: 'ASSISTANT',
+              content: '第二答',
+              status: 'COMPLETED',
+            },
+          ],
+          executionSteps: [],
+          references: [],
+          artifacts: [],
+        })}
+      />,
+    );
+
+    act(() => {
+      window.dispatchEvent(
+        new CustomEvent('codingx:start-share-conversation', {
+          detail: { conversationId: '2001' },
+        }),
+      );
+    });
+
+    expect(screen.getByTestId('share-selection-shell')).toBeInTheDocument();
+    expect(screen.queryByTestId('chat-input-dock')).not.toBeInTheDocument();
+    expect(screen.getByRole('toolbar', { name: '分享选择工具栏' })).toBeInTheDocument();
+    expect(screen.getByText('已选2组对话')).toBeInTheDocument();
+    expect(screen.getByTestId('share-round-card-202')).toHaveAttribute('data-selected', 'true');
+    expect(screen.getByTestId('share-round-card-102')).toHaveAttribute('data-selected', 'true');
+    expect(screen.queryByLabelText('选择分享消息 第一问')).not.toBeInTheDocument();
+  });
+
+  /**
+   * 分享选择只能按助手回复所在轮次勾选，提交时应自动带上对应用户问题一起分享。
+   */
+  it('应只允许按助手轮次选择并自动携带对应用户消息生成分享链接', async () => {
     const sharedUrl = new URL('/api/chat/conversations/shared/share_xxx', window.location.origin).toString();
     const shareConversation = vi.fn().mockResolvedValue(sharedUrl);
 
@@ -1142,29 +1243,66 @@ describe('ChatView', () => {
         isAuthenticated={true}
         onRequireLogin={vi.fn()}
         workspace={createWorkspace({
+          messages: [
+            {
+              id: '101',
+              conversationId: '2001',
+              role: 'USER',
+              content: '第一问',
+              status: 'COMPLETED',
+            },
+            {
+              id: '102',
+              conversationId: '2001',
+              role: 'ASSISTANT',
+              content: '第一答',
+              status: 'COMPLETED',
+            },
+            {
+              id: '201',
+              conversationId: '2001',
+              role: 'USER',
+              content: '第二问',
+              status: 'COMPLETED',
+            },
+            {
+              id: '202',
+              conversationId: '2001',
+              role: 'ASSISTANT',
+              content: '第二答',
+              status: 'COMPLETED',
+            },
+          ],
+          executionSteps: [],
+          references: [],
+          artifacts: [],
           shareConversation,
         })}
       />,
     );
 
-    fireEvent.click(screen.getByTestId('share-message-102'));
-
-    expect(screen.getByRole('toolbar', { name: '分享选择工具栏' })).toBeInTheDocument();
-    expect(screen.getByLabelText('选择分享消息 请搜索 Spring Boot SSE 最佳实践')).toBeChecked();
-    expect(screen.getByLabelText('选择分享消息 我来为您总结 Spring Boot SSE 最佳实践。')).toBeChecked();
-    expect(screen.getByText('已选2条消息')).toBeInTheDocument();
+    act(() => {
+      window.dispatchEvent(
+        new CustomEvent('codingx:start-share-conversation', {
+          detail: { conversationId: '2001' },
+        }),
+      );
+    });
+    fireEvent.click(screen.getByLabelText('选择分享轮次 第一答'));
+    expect(screen.getByText('已选1组对话')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: '生成分享链接' }));
     await waitFor(() => {
       expect(shareConversation).toHaveBeenCalledWith('2001', {
-        messageIds: ['101', '102'],
+        messageIds: ['201', '202'],
       });
     });
 
     const shareDialog = screen.getByRole('dialog', { name: '分享对话' });
     expect(shareDialog).toBeInTheDocument();
     expect(screen.getByDisplayValue(sharedUrl)).toBeInTheDocument();
-    expect(within(shareDialog).getByText('请搜索 Spring Boot SSE 最佳实践')).toBeInTheDocument();
+    expect(within(shareDialog).getByText('第二问')).toBeInTheDocument();
+    expect(within(shareDialog).getByText('第二答')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '复制链接' }));
     await waitFor(() => {
       expect(navigator.clipboard.writeText).toHaveBeenCalledWith(sharedUrl);
@@ -1172,12 +1310,36 @@ describe('ChatView', () => {
   });
 
   /**
-   * 乐观重生成中的临时 assistant 不能进入分享范围，避免把未落库字符串 ID 发给后端。
+   * 删除用户消息应进入选择模式，复用问答轮次容器并在确认后删除选中的消息 ID。
    */
-  it('应在分享乐观assistant时忽略临时消息', async () => {
-    const sharedUrl = new URL('/api/chat/conversations/shared/share_xxx', window.location.origin).toString();
-    const shareConversation = vi.fn().mockResolvedValue(sharedUrl);
+  it('应进入删除轮次选择模式并确认删除', async () => {
+    const deleteConversationMessages = vi.fn().mockResolvedValue(undefined);
 
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({ deleteConversationMessages })}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId('delete-user-message-101'));
+
+    expect(screen.getByTestId('delete-selection-shell')).toBeInTheDocument();
+    expect(screen.queryByTestId('chat-input-dock')).not.toBeInTheDocument();
+    expect(screen.getByRole('toolbar', { name: '删除选择工具栏' })).toBeInTheDocument();
+    expect(screen.getByText('已选1组对话')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '删除所选' }));
+
+    await waitFor(() => {
+      expect(deleteConversationMessages).toHaveBeenCalledWith('2001', ['101', '102']);
+    });
+  });
+
+  /**
+   * 未落库的临时 assistant 不能进入分享选择，避免用户误选到无法分享的流式占位消息。
+   */
+  it('应忽略未落库assistant的分享选择', async () => {
     render(
       <ChatView
         isAuthenticated={true}
@@ -1190,7 +1352,6 @@ describe('ChatView', () => {
               role: 'USER',
               content: '请搜索 Spring Boot SSE 最佳实践',
               status: 'COMPLETED',
-              createdAt: '2026-05-15 00:36:58',
             },
             {
               id: 'optimistic-regenerate-assistant-1779773736005',
@@ -1200,93 +1361,6 @@ describe('ChatView', () => {
               status: 'streaming',
             },
           ],
-          shareConversation,
-        })}
-      />,
-    );
-
-    fireEvent.click(screen.getByTestId('share-message-optimistic-regenerate-assistant-1779773736005'));
-
-    const shareToolbar = await screen.findByRole('toolbar', { name: '分享选择工具栏' });
-    expect(shareToolbar).toBeInTheDocument();
-    expect(screen.getByLabelText('选择分享消息 请搜索 Spring Boot SSE 最佳实践')).toBeChecked();
-    expect(screen.queryByLabelText('选择分享消息 正在生成回答...')).not.toBeInTheDocument();
-    expect(screen.getByText('已选1条消息')).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('button', { name: '全选' }));
-    expect(screen.getByText('已选1条消息')).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('button', { name: '生成分享链接' }));
-    await waitFor(() => {
-      expect(shareConversation).toHaveBeenCalledWith('2001', {
-        messageIds: ['101'],
-      });
-    });
-  });
-
-  /**
-   * 重新生成应把消息 ID 传给工作区，由工作区替换原助手消息槽位。
-   */
-  it('应重新生成最后一条助手消息', async () => {
-    const regenerateConversation = vi.fn().mockResolvedValue(undefined);
-
-    render(
-      <ChatView
-        isAuthenticated={true}
-        onRequireLogin={vi.fn()}
-        workspace={createWorkspace({
-          regenerateConversation,
-        })}
-      />,
-    );
-
-    fireEvent.click(screen.getByTestId('regenerate-message-102'));
-    await waitFor(() => {
-      expect(regenerateConversation).toHaveBeenCalledWith('2001', {
-        assistantMessageId: '102',
-      });
-    });
-  });
-
-  /**
-   * 非最后一条助手消息的重新生成按钮应禁用，避免用户对旧消息触发无效重试。
-   */
-  it('应禁用非最后一条助手消息的重新生成按钮', async () => {
-    render(
-      <ChatView
-        isAuthenticated={true}
-        onRequireLogin={vi.fn()}
-        workspace={createWorkspace({
-          messages: [
-            {
-              id: '101',
-              conversationId: '2001',
-              role: 'USER',
-              content: '请帮我分析项目结构',
-              status: 'COMPLETED',
-            },
-            {
-              id: '102',
-              conversationId: '2001',
-              role: 'ASSISTANT',
-              content: '第一条回答',
-              status: 'COMPLETED',
-            },
-            {
-              id: '103',
-              conversationId: '2001',
-              role: 'USER',
-              content: '再补充一点',
-              status: 'COMPLETED',
-            },
-            {
-              id: '104',
-              conversationId: '2001',
-              role: 'ASSISTANT',
-              content: '最后一条回答',
-              status: 'COMPLETED',
-            },
-          ],
           executionSteps: [],
           references: [],
           artifacts: [],
@@ -1294,14 +1368,21 @@ describe('ChatView', () => {
       />,
     );
 
-    expect(screen.getByTestId('regenerate-message-102')).toBeDisabled();
-    expect(screen.getByTestId('regenerate-message-104')).not.toBeDisabled();
+    act(() => {
+      window.dispatchEvent(
+        new CustomEvent('codingx:start-share-conversation', {
+          detail: { conversationId: '2001' },
+        }),
+      );
+    });
+
+    expect(screen.queryByTestId('share-selection-shell')).not.toBeInTheDocument();
   });
 
   /**
-   * 点击复制应写入剪贴板，复制更多中应支持复制 Markdown 原文。
+   * 点击复制应写入剪贴板。
    */
-  it('应支持复制消息与复制 Markdown', async () => {
+  it('应支持复制助手消息', async () => {
     render(
       <ChatView
         isAuthenticated={true}
@@ -1327,12 +1408,6 @@ describe('ChatView', () => {
     fireEvent.click(screen.getByTestId('copy-message-501'));
     await waitFor(() => {
       expect(writeText).toHaveBeenCalledWith(expect.stringContaining('标题'));
-    });
-
-    fireEvent.click(screen.getByTestId('copy-menu-toggle-501'));
-    fireEvent.click(screen.getByTestId('copy-markdown-501'));
-    await waitFor(() => {
-      expect(writeText).toHaveBeenCalledWith('### 标题\n\n- 列表项');
     });
   });
 
@@ -1928,7 +2003,7 @@ describe('ChatView', () => {
             {
               partitionKey: 'cloud::__no_workspace__',
               workspacePath: null,
-              workspaceLabel: '云端历史记录',
+              workspaceLabel: '历史记录',
               runtimeTarget: 'cloud',
               lastOpenedAt: 1716101111000,
               activeConversationId: null,
@@ -1992,7 +2067,7 @@ describe('ChatView', () => {
           references: [],
           artifacts: [],
           inputValue: '',
-          workspaceLabel: '云端历史记录',
+          workspaceLabel: '历史记录',
           activeWorkspacePartitionKey: 'cloud::__no_workspace__',
           workspacePath: null,
         })}
@@ -2154,28 +2229,6 @@ describe('ChatView', () => {
   });
 
   /**
-   * 点赞和倒赞应支持单选切换，保证反馈状态直观可见。
-   */
-  it('应支持点赞倒赞切换', async () => {
-    render(
-      <ChatView isAuthenticated={true} onRequireLogin={vi.fn()} workspace={createWorkspace()} />,
-    );
-
-    const upButton = screen.getByTestId('thumbs-up-102');
-    const downButton = screen.getByTestId('thumbs-down-102');
-    expect(upButton).toHaveAttribute('aria-pressed', 'false');
-    expect(downButton).toHaveAttribute('aria-pressed', 'false');
-
-    fireEvent.click(upButton);
-    expect(upButton).toHaveAttribute('aria-pressed', 'true');
-    expect(downButton).toHaveAttribute('aria-pressed', 'false');
-
-    fireEvent.click(downButton);
-    expect(upButton).toHaveAttribute('aria-pressed', 'false');
-    expect(downButton).toHaveAttribute('aria-pressed', 'true');
-  });
-
-  /**
    * 助手 Markdown 图片应以消息内图片样式渲染，保证与文本消息视觉一致。
    */
   it('应在助手消息中渲染 Markdown 图片', async () => {
@@ -2205,92 +2258,17 @@ describe('ChatView', () => {
   });
 
   /**
-   * 点赞时应调用真实反馈接口，确保前端状态与后端反馈记录一致。
+   * 助手复制按钮应保持独立紧凑，不再渲染下拉组合。
    */
-  it('点赞应调用反馈接口并更新选中态', async () => {
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
-      new Response(
-        JSON.stringify({
-          success: true,
-          code: 'OK',
-          message: 'feedback submitted',
-          data: null,
-        }),
-        {
-          status: 200,
-          headers: {
-            'Content-Type': 'application/json',
-          },
-        },
-      ),
-    );
-
-    render(
-      <ChatView isAuthenticated={true} onRequireLogin={vi.fn()} workspace={createWorkspace()} />,
-    );
-
-    const upButton = screen.getByTestId('thumbs-up-102');
-    fireEvent.click(upButton);
-
-    await waitFor(() => {
-      expect(fetchSpy).toHaveBeenCalledWith(
-        '/api/chat/messages/102/feedback',
-        expect.objectContaining({
-          method: 'POST',
-        }),
-      );
-    });
-    expect(upButton).toHaveAttribute('aria-pressed', 'true');
-  });
-
-  /**
-   * 乐观助手消息尚未落库时不应提交反馈，避免请求携带临时消息 ID 触发后端类型转换异常。
-   */
-  it('应禁止对乐观助手消息提交反馈', async () => {
-    const fetchSpy = vi.spyOn(globalThis, 'fetch');
-
-    render(
-      <ChatView
-        isAuthenticated={true}
-        onRequireLogin={vi.fn()}
-        workspace={createWorkspace({
-          messages: [
-            {
-              id: 'optimistic-assistant-1779529346520',
-              conversationId: '2001',
-              role: 'ASSISTANT',
-              content: '正在生成回答...',
-              status: 'streaming',
-            },
-          ],
-        })}
-      />,
-    );
-
-    const upButton = screen.getByTestId('thumbs-up-optimistic-assistant-1779529346520');
-    expect(upButton).toBeDisabled();
-
-    fireEvent.click(upButton);
-
-    await waitFor(() => {
-      expect(fetchSpy).not.toHaveBeenCalled();
-    });
-  });
-
-  /**
-   * 复制按钮与箭头应属于同一组合，避免视觉断层。
-   */
-  it('复制按钮和下拉按钮应位于同一复制操作组', async () => {
+  it('助手复制按钮应为独立操作', async () => {
     render(
       <ChatView isAuthenticated={true} onRequireLogin={vi.fn()} workspace={createWorkspace()} />,
     );
 
     const copyButton = screen.getByTestId('copy-message-102');
-    const toggleButton = screen.getByTestId('copy-menu-toggle-102');
-    const copyGroup = screen.getByTestId('copy-action-group-102');
 
-    expect(copyGroup).toContainElement(copyButton);
-    expect(copyGroup).toContainElement(toggleButton);
+    expect(copyButton).toHaveAttribute('aria-label', '复制消息');
+    expect(screen.queryByTestId('copy-menu-toggle-102')).not.toBeInTheDocument();
   });
 
   /**
@@ -2787,10 +2765,10 @@ describe('ChatView', () => {
     );
 
     expect(screen.getByTestId('search-progress-panel-971')).toBeInTheDocument();
-    // 业务意图：搜索来源必须跟在消息正文与操作区之后，作为尾部补充信息展示。
+    // 业务意图：搜索来源必须紧跟在复制按钮之后，作为消息尾部的补充信息展示。
     expect(
       screen
-        .getByTestId('copy-action-group-971')
+        .getByTestId('copy-message-971')
         .compareDocumentPosition(screen.getByTestId('search-progress-panel-971')) &
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
@@ -2893,7 +2871,7 @@ function createWorkspace(overrides?: Partial<ChatWorkspaceController>): ChatWork
       {
         partitionKey: 'cloud::__no_workspace__',
         workspacePath: null,
-        workspaceLabel: '云端历史记录',
+        workspaceLabel: '历史记录',
         runtimeTarget: 'cloud',
         lastOpenedAt: 1716101111000,
         activeConversationId: null,
@@ -3103,8 +3081,10 @@ function createWorkspace(overrides?: Partial<ChatWorkspaceController>): ChatWork
     startNewConversation: vi.fn().mockResolvedValue(undefined),
     renameConversation: vi.fn().mockResolvedValue(undefined),
     deleteConversation: vi.fn().mockResolvedValue(undefined),
+    deleteConversationMessages: vi.fn().mockResolvedValue(undefined),
     shareConversation: vi.fn().mockResolvedValue('http://localhost/api/chat/conversations/shared/share_xxx'),
     regenerateConversation: vi.fn().mockResolvedValue(undefined),
+    resendUserMessage: vi.fn().mockResolvedValue(undefined),
     toggleConversationPin: vi.fn().mockResolvedValue(true),
     exportConversation: vi.fn().mockResolvedValue(undefined),
     exportConversations: vi.fn().mockResolvedValue(undefined),

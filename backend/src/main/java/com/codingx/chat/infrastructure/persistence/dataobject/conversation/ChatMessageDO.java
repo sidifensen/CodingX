@@ -18,11 +18,11 @@ public class ChatMessageDO {
     @TableField("content") private String content;
     @TableField("thinking_content") private String thinkingContent;
     @TableField("thinking_duration") private Integer thinkingDuration;
-    @TableField("intent_code") private String intentCode;
     @TableField("status") private String status;
     @TableField("provider") private String provider;
     @TableField("model") private String model;
     @TableField("error_message") private String errorMessage;
+    @TableField("deleted") private Integer deleted;
     @TableField("created_at") private LocalDateTime createdAt;
     @TableField("updated_at") private LocalDateTime updatedAt;
 }

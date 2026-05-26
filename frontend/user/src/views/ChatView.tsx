@@ -22,13 +22,10 @@ import {
   FolderOpen,
   Monitor,
   Search,
-  Share2,
-  ThumbsDown,
-  ThumbsUp,
-  RotateCcw,
+  Pencil,
+  Trash2,
   WandSparkles,
 } from 'lucide-react';
-import { AuthStorage } from '../utils/authStorage';
 import { ChatApi } from './chat/chatApi';
 import {
   ChatAttachmentItem,
@@ -108,7 +105,8 @@ export default function ChatView({
     submitMessage,
     cancelCurrentStream,
     shareConversation,
-    regenerateConversation,
+    deleteConversationMessages,
+    resendUserMessage,
     pickRepositoryDirectory,
     renameDialog,
     deleteDialog,
@@ -118,13 +116,10 @@ export default function ChatView({
   } = workspace;
   const safeAvailableExperts = availableExperts ?? [];
   const safeCurrentExperts = currentExperts ?? [];
-  const shareableMessages = React.useMemo(
-    () => messages.filter(isShareableMessage),
+  const shareSelectionRounds = React.useMemo(
+    () => buildShareSelectionRounds(messages),
     [messages],
   );
-  const latestAssistantMessageId = React.useMemo(() => {
-    return [...messages].reverse().find((message) => message.role === 'ASSISTANT')?.id ?? null;
-  }, [messages]);
   const latestMessageAnchorRef = React.useRef<HTMLDivElement | null>(null);
   const chatScrollRegionRef = React.useRef<HTMLDivElement | null>(null);
   const shouldFollowLatestMessageRef = React.useRef(true);
@@ -151,8 +146,18 @@ export default function ChatView({
   } | null>(null);
   const [shareSelectionState, setShareSelectionState] = React.useState<{
     isActive: boolean;
-    selectedMessageIds: string[];
-  }>({ isActive: false, selectedMessageIds: [] });
+    selectedAssistantMessageIds: string[];
+  }>({ isActive: false, selectedAssistantMessageIds: [] });
+  const [deleteSelectionState, setDeleteSelectionState] = React.useState<{
+    isActive: boolean;
+    selectedAssistantMessageIds: string[];
+  }>({ isActive: false, selectedAssistantMessageIds: [] });
+  const [editingUserMessage, setEditingUserMessage] = React.useState<{
+    messageId: string;
+    content: string;
+    isSubmitting: boolean;
+    errorMessage: string;
+  } | null>(null);
   const [pendingShareConversationId, setPendingShareConversationId] = React.useState<string | null>(null);
   const [shareDialogState, setShareDialogState] = React.useState<{
     isOpen: boolean;
@@ -189,12 +194,20 @@ export default function ChatView({
    * @param defaultMessageId 默认触发分享的消息标识。
    */
   const startShareSelection = React.useCallback((defaultMessageId?: string) => {
-    const defaultSelection = resolveDefaultShareMessageIds(messages, defaultMessageId);
+    const defaultSelection = resolveDefaultShareAssistantMessageIds(
+      shareSelectionRounds,
+      defaultMessageId,
+    );
+    if (defaultSelection.length === 0) {
+      return;
+    }
+    setDeleteSelectionState({ isActive: false, selectedAssistantMessageIds: [] });
+    setEditingUserMessage(null);
     setShareSelectionState({
       isActive: true,
-      selectedMessageIds: defaultSelection,
+      selectedAssistantMessageIds: defaultSelection,
     });
-  }, [messages]);
+  }, [shareSelectionRounds]);
 
   React.useEffect(() => {
     const handleSidebarShareRequest = (event: Event) => {
@@ -224,18 +237,104 @@ export default function ChatView({
     startShareSelection();
   }, [activeConversationId, messages, pendingShareConversationId, startShareSelection]);
 
+  React.useEffect(() => {
+    if (!shareSelectionState.isActive) {
+      return;
+    }
+    const validAssistantMessageIdSet = new Set(
+      shareSelectionRounds.map((round) => round.assistantMessage.id),
+    );
+    setShareSelectionState((previousState) => {
+      const nextSelectedAssistantMessageIds = previousState.selectedAssistantMessageIds.filter(
+        (assistantMessageId) => validAssistantMessageIdSet.has(assistantMessageId),
+      );
+      if (
+        nextSelectedAssistantMessageIds.length === previousState.selectedAssistantMessageIds.length
+      ) {
+        return previousState;
+      }
+      return {
+        ...previousState,
+        selectedAssistantMessageIds: nextSelectedAssistantMessageIds,
+      };
+    });
+  }, [shareSelectionRounds, shareSelectionState.isActive]);
+
   /**
-   * 切换消息是否参与分享。
-   * @param messageId 消息标识。
+   * 进入删除选择模式；从用户消息触发时默认选中该问题对应的一轮问答。
+   * @param defaultMessageId 触发删除的消息标识。
+   */
+  const startDeleteSelection = React.useCallback((defaultMessageId?: string) => {
+    const defaultSelection = resolveDefaultDeleteAssistantMessageIds(
+      shareSelectionRounds,
+      defaultMessageId,
+    );
+    if (defaultSelection.length === 0) {
+      return;
+    }
+    setShareSelectionState({ isActive: false, selectedAssistantMessageIds: [] });
+    setEditingUserMessage(null);
+    setDeleteSelectionState({
+      isActive: true,
+      selectedAssistantMessageIds: defaultSelection,
+    });
+  }, [shareSelectionRounds]);
+
+  React.useEffect(() => {
+    if (!deleteSelectionState.isActive) {
+      return;
+    }
+    const validAssistantMessageIdSet = new Set(
+      shareSelectionRounds.map((round) => round.assistantMessage.id),
+    );
+    setDeleteSelectionState((previousState) => {
+      const nextSelectedAssistantMessageIds = previousState.selectedAssistantMessageIds.filter(
+        (assistantMessageId) => validAssistantMessageIdSet.has(assistantMessageId),
+      );
+      if (
+        nextSelectedAssistantMessageIds.length === previousState.selectedAssistantMessageIds.length
+      ) {
+        return previousState;
+      }
+      return {
+        ...previousState,
+        selectedAssistantMessageIds: nextSelectedAssistantMessageIds,
+      };
+    });
+  }, [deleteSelectionState.isActive, shareSelectionRounds]);
+
+  /**
+   * 切换某条助手回复所属轮次是否参与分享；用户问题由轮次自动附带。
+   * @param messageId 助手消息标识。
    */
   const toggleShareMessageSelection = React.useCallback((messageId: string) => {
     setShareSelectionState((previousState) => {
-      const nextSelectedMessageIds = previousState.selectedMessageIds.includes(messageId)
-        ? previousState.selectedMessageIds.filter((selectedMessageId) => selectedMessageId !== messageId)
-        : [...previousState.selectedMessageIds, messageId];
+      const nextSelectedAssistantMessageIds = previousState.selectedAssistantMessageIds.includes(messageId)
+        ? previousState.selectedAssistantMessageIds.filter(
+            (selectedMessageId) => selectedMessageId !== messageId,
+          )
+        : [...previousState.selectedAssistantMessageIds, messageId];
       return {
         ...previousState,
-        selectedMessageIds: nextSelectedMessageIds,
+        selectedAssistantMessageIds: nextSelectedAssistantMessageIds,
+      };
+    });
+  }, []);
+
+  /**
+   * 切换某条问答轮次是否参与删除，实际删除时会展开成用户问题与 AI 回复两个消息 ID。
+   * @param messageId 助手消息标识。
+   */
+  const toggleDeleteMessageSelection = React.useCallback((messageId: string) => {
+    setDeleteSelectionState((previousState) => {
+      const nextSelectedAssistantMessageIds = previousState.selectedAssistantMessageIds.includes(messageId)
+        ? previousState.selectedAssistantMessageIds.filter(
+            (selectedMessageId) => selectedMessageId !== messageId,
+          )
+        : [...previousState.selectedAssistantMessageIds, messageId];
+      return {
+        ...previousState,
+        selectedAssistantMessageIds: nextSelectedAssistantMessageIds,
       };
     });
   }, []);
@@ -244,22 +343,31 @@ export default function ChatView({
    * 退出分享选择状态并清空选择结果。
    */
   const cancelShareSelection = React.useCallback(() => {
-    setShareSelectionState({ isActive: false, selectedMessageIds: [] });
+    setShareSelectionState({ isActive: false, selectedAssistantMessageIds: [] });
+  }, []);
+
+  /**
+   * 退出删除选择状态并清空选择结果。
+   */
+  const cancelDeleteSelection = React.useCallback(() => {
+    setDeleteSelectionState({ isActive: false, selectedAssistantMessageIds: [] });
   }, []);
 
   /**
    * 根据已选消息生成分享链接，并展示千问风格预览弹窗。
    */
   const confirmShareSelection = async () => {
-    const shareableSelectedMessageIds = shareSelectionState.selectedMessageIds.filter((messageId) =>
-      PERSISTED_MESSAGE_ID_PATTERN.test(messageId),
+    const shareableSelectedMessageIds = resolveShareSelectionMessageIds(
+      shareSelectionRounds,
+      shareSelectionState.selectedAssistantMessageIds,
     );
     if (!activeConversationId || shareableSelectedMessageIds.length === 0) {
       return;
     }
     // 临时乐观消息只有前端占位 ID，提交给后端只会触发 Long 反序列化失败。
-    const previewMessages = messages.filter((message) =>
-      shareableSelectedMessageIds.includes(message.id),
+    const previewMessages = resolveShareSelectionPreviewMessages(
+      shareSelectionRounds,
+      shareSelectionState.selectedAssistantMessageIds,
     );
     setShareDialogState({
       isOpen: true,
@@ -289,6 +397,21 @@ export default function ChatView({
         errorMessage: error instanceof Error ? error.message : '分享失败',
       });
     }
+  };
+
+  /**
+   * 确认删除当前选中的问答轮次，并让工作台同步删除本地回放与后端上下文。
+   */
+  const confirmDeleteSelection = async () => {
+    const deletableSelectedMessageIds = resolveShareSelectionMessageIds(
+      shareSelectionRounds,
+      deleteSelectionState.selectedAssistantMessageIds,
+    );
+    if (!activeConversationId || deletableSelectedMessageIds.length === 0) {
+      return;
+    }
+    await deleteConversationMessages(activeConversationId, deletableSelectedMessageIds);
+    cancelDeleteSelection();
   };
 
   /**
@@ -541,7 +664,9 @@ export default function ChatView({
       {
         partitionKey: 'fallback-workspace-option',
         workspacePath: activeRuntimeTarget === 'local' ? workspacePath ?? null : null,
-        workspaceLabel: workspaceLabel || (activeRuntimeTarget === 'local' ? '本地历史记录' : '云端历史记录'),
+        // 默认分组名称按运行环境拆分，避免云端与本地历史在下拉入口里共享同一标签。
+        workspaceLabel:
+          workspaceLabel || (activeRuntimeTarget === 'local' ? '本地历史记录' : '云端历史记录'),
         runtimeTarget: activeRuntimeTarget,
         lastOpenedAt: 0,
         activeConversationId: activeConversationId ?? null,
@@ -730,6 +855,61 @@ export default function ChatView({
     await submitCurrentInput();
   };
 
+  /**
+   * 打开用户消息的内联编辑态，限制在已落库消息上，避免临时消息被重复提交。
+   * @param message 待编辑用户消息。
+   */
+  const startEditingUserMessage = React.useCallback((message: ChatMessageItem) => {
+    if (!PERSISTED_MESSAGE_ID_PATTERN.test(message.id)) {
+      return;
+    }
+    setShareSelectionState({ isActive: false, selectedAssistantMessageIds: [] });
+    setDeleteSelectionState({ isActive: false, selectedAssistantMessageIds: [] });
+    setEditingUserMessage({
+      messageId: message.id,
+      content: message.content,
+      isSubmitting: false,
+      errorMessage: '',
+    });
+  }, []);
+
+  /**
+   * 提交编辑后的用户消息，交给工作台从该位置替换旧上下文并重新生成回答。
+   */
+  const confirmUserMessageEdit = React.useCallback(async () => {
+    if (!editingUserMessage || editingUserMessage.isSubmitting) {
+      return;
+    }
+    const nextContent = editingUserMessage.content.trim();
+    if (!nextContent) {
+      setEditingUserMessage((previousState) =>
+        previousState ? { ...previousState, errorMessage: '消息不能为空' } : previousState,
+      );
+      return;
+    }
+    if (!isAuthenticated) {
+      onRequireLogin();
+      return;
+    }
+    setEditingUserMessage((previousState) =>
+      previousState ? { ...previousState, isSubmitting: true, errorMessage: '' } : previousState,
+    );
+    try {
+      await resendUserMessage(editingUserMessage.messageId, nextContent);
+      setEditingUserMessage(null);
+    } catch (error) {
+      setEditingUserMessage((previousState) =>
+        previousState
+          ? {
+              ...previousState,
+              isSubmitting: false,
+              errorMessage: error instanceof Error ? error.message : '再次发送失败',
+            }
+          : previousState,
+      );
+    }
+  }, [editingUserMessage, isAuthenticated, onRequireLogin, resendUserMessage]);
+
   // 步骤：首页欢迎区应优先渲染，避免初始化接口慢时出现长时间空白屏。
   const showLandingState = activeConversationId == null && !messages.length;
   // 步骤：选中了历史会话但暂无消息时，显示会话级空态而不是回到首页。
@@ -896,6 +1076,22 @@ export default function ChatView({
                 ))}
               </div>
             </div>
+          ) : shareSelectionState.isActive ? (
+            <ShareSelectionShell
+              mode="share"
+              rounds={shareSelectionRounds}
+              selectedAssistantMessageIds={shareSelectionState.selectedAssistantMessageIds}
+              onToggleRound={toggleShareMessageSelection}
+              onPreviewImage={(src, alt) => setPreviewAttachment({ src, alt })}
+            />
+          ) : deleteSelectionState.isActive ? (
+            <ShareSelectionShell
+              mode="delete"
+              rounds={shareSelectionRounds}
+              selectedAssistantMessageIds={deleteSelectionState.selectedAssistantMessageIds}
+              onToggleRound={toggleDeleteMessageSelection}
+              onPreviewImage={(src, alt) => setPreviewAttachment({ src, alt })}
+            />
           ) : showConversationEmptyState ? (
             <div className="mx-auto flex max-w-3xl flex-col items-center justify-center px-6 py-24 text-center">
               <div className="rounded-full border border-border bg-surface-container px-4 py-2 font-mono text-[11px] uppercase tracking-[0.32em] text-muted">
@@ -913,9 +1109,6 @@ export default function ChatView({
               {messages.map((message) => {
                 const isAssistant = message.role === 'ASSISTANT';
                 const isLatestMessage = message.id === messages[messages.length - 1]?.id;
-                const isShareSelectable =
-                  shareSelectionState.isActive && isShareableMessage(message);
-                const isShareSelected = shareSelectionState.selectedMessageIds.includes(message.id);
                 const messageContent =
                   message.content || (message.status === 'streaming' ? '正在生成回答...' : '');
                 return (
@@ -924,18 +1117,9 @@ export default function ChatView({
                     data-message-status={message.status}
                     className={`flex items-start gap-3 ${isAssistant ? 'justify-start' : 'justify-end'}`}
                   >
-                    {isShareSelectable && !isAssistant ? (
-                      <ShareMessageCheckbox
-                        message={message}
-                        checked={isShareSelected}
-                        onToggle={toggleShareMessageSelection}
-                      />
-                    ) : null}
                     <div
-                      className={`min-w-0 max-w-3xl px-1 py-1 ${
-                        isAssistant
-                          ? 'text-foreground'
-                          : 'rounded-[20px] bg-background px-4 py-2 text-foreground'
+                      className={`min-w-0 px-1 py-1 ${
+                        isAssistant ? 'max-w-3xl text-foreground' : 'w-full max-w-3xl'
                       }`}
                     >
                       {isAssistant ? (
@@ -953,47 +1137,52 @@ export default function ChatView({
                             />
                           ) : null}
                           <MarkdownMessage content={messageContent} messageId={message.id} />
-                          <AssistantMessageActions
-                            messageId={message.id}
-                            conversationId={message.conversationId}
-                            content={messageContent}
-                            isLatestAssistantMessage={message.id === latestAssistantMessageId}
-                            userVote={message.userVote}
-                            onStartShareSelection={startShareSelection}
-                            onRegenerateConversation={regenerateConversation}
-                          />
+                          <div className="mt-3 space-y-1.5">
+                            <AssistantMessageActions
+                              messageId={message.id}
+                              content={messageContent}
+                            />
+                            {/* 业务意图：搜索来源必须紧跟在消息操作区之后，优先落在倒赞按钮后面，避免被后续提示打断阅读路径。 */}
+                            {message.searchProgress?.items?.length ? (
+                              <SearchProgressPanel
+                                messageId={message.id}
+                                progress={message.searchProgress}
+                              />
+                            ) : null}
+                          </div>
                           {message.errorMessage ? (
                             <div className="mt-3 rounded-2xl border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-300">
                               {message.errorMessage}
                             </div>
                           ) : null}
-                          {/* 业务意图：搜索来源作为消息尾部的折叠补充信息，放在正文和操作区之后，避免压住回答内容。 */}
-                          {message.searchProgress?.items?.length ? (
-                            <SearchProgressPanel
-                              messageId={message.id}
-                              progress={message.searchProgress}
-                            />
-                          ) : null}
                         </>
                       ) : (
-                        <>
-                          {message.skillCodes && message.skillCodes.length > 0 ? (
-                            <MessageSkillChips
-                              messageId={message.id}
-                              skillCodes={message.skillCodes}
-                              skillNameMap={availableSkillNameMap}
-                            />
-                          ) : null}
-                          {message.attachments && message.attachments.length > 0 ? (
-                            <MessageAttachmentList
-                              attachments={message.attachments}
-                              onPreviewImage={(src, alt) => setPreviewAttachment({ src, alt })}
-                            />
-                          ) : null}
-                          <div className="whitespace-pre-wrap text-sm leading-6">
-                            {messageContent}
-                          </div>
-                        </>
+                        <UserMessageBubble
+                          message={message}
+                          content={messageContent}
+                          skillNameMap={availableSkillNameMap}
+                          editState={
+                            editingUserMessage?.messageId === message.id
+                              ? editingUserMessage
+                              : null
+                          }
+                          onStartEdit={() => startEditingUserMessage(message)}
+                          onChangeEditContent={(nextContent) =>
+                            setEditingUserMessage((previousState) =>
+                              previousState?.messageId === message.id
+                                ? {
+                                    ...previousState,
+                                    content: nextContent,
+                                    errorMessage: '',
+                                  }
+                                : previousState,
+                            )
+                          }
+                          onCancelEdit={() => setEditingUserMessage(null)}
+                          onConfirmEdit={() => void confirmUserMessageEdit()}
+                          onStartDelete={() => startDeleteSelection(message.id)}
+                          onPreviewImage={(src, alt) => setPreviewAttachment({ src, alt })}
+                        />
                       )}
                       {isLatestMessage ? (
                         // 步骤：尾部锚点固定高度为 0，确保滚动只对齐到真实内容末端，避免推高滚动高度。
@@ -1004,13 +1193,6 @@ export default function ChatView({
                         />
                       ) : null}
                     </div>
-                    {isShareSelectable && isAssistant ? (
-                      <ShareMessageCheckbox
-                        message={message}
-                        checked={isShareSelected}
-                        onToggle={toggleShareMessageSelection}
-                      />
-                    ) : null}
                   </div>
                 );
               })}
@@ -1024,12 +1206,13 @@ export default function ChatView({
           ) : null}
         </div>
 
-        <div
-          ref={chatInputDockRef}
-          data-testid="chat-input-dock"
-          className="absolute bottom-0 left-0 right-0 bg-background/88 px-4 pb-6 pt-4 backdrop-blur-xl md:px-8"
-        >
-          <div className="mx-auto max-w-4xl">
+        {!shareSelectionState.isActive && !deleteSelectionState.isActive ? (
+          <div
+            ref={chatInputDockRef}
+            data-testid="chat-input-dock"
+            className="absolute bottom-0 left-0 right-0 bg-background/88 px-4 pb-6 pt-4 backdrop-blur-xl md:px-8"
+          >
+            <div className="mx-auto max-w-4xl">
             {streamQueueState ? (
               <div className="mb-3 rounded-2xl border border-amber-500/40 bg-amber-500/12 px-4 py-3 text-sm text-amber-200">
                 {streamQueueState.message}
@@ -1703,8 +1886,9 @@ export default function ChatView({
                 ) : null}
               </div>
             ) : null}
+            </div>
           </div>
-        </div>
+        ) : null}
       </section>
 
       {previewAttachment ? (
@@ -1738,16 +1922,37 @@ export default function ChatView({
 
       {shareSelectionState.isActive ? (
         <ShareSelectionToolbar
-          selectedCount={shareSelectionState.selectedMessageIds.length}
-          totalCount={shareableMessages.length}
+          mode="share"
+          selectedCount={shareSelectionState.selectedAssistantMessageIds.length}
+          totalCount={shareSelectionRounds.length}
           onSelectAll={() =>
             setShareSelectionState({
               isActive: true,
-              selectedMessageIds: shareableMessages.map((message) => message.id),
+              selectedAssistantMessageIds: shareSelectionRounds.map(
+                (round) => round.assistantMessage.id,
+              ),
             })
           }
           onCancel={cancelShareSelection}
           onConfirm={() => void confirmShareSelection()}
+        />
+      ) : null}
+
+      {deleteSelectionState.isActive ? (
+        <ShareSelectionToolbar
+          mode="delete"
+          selectedCount={deleteSelectionState.selectedAssistantMessageIds.length}
+          totalCount={shareSelectionRounds.length}
+          onSelectAll={() =>
+            setDeleteSelectionState({
+              isActive: true,
+              selectedAssistantMessageIds: shareSelectionRounds.map(
+                (round) => round.assistantMessage.id,
+              ),
+            })
+          }
+          onCancel={cancelDeleteSelection}
+          onConfirm={() => void confirmDeleteSelection()}
         />
       ) : null}
 
@@ -1952,7 +2157,7 @@ function SearchProgressPanel({
   }
 
   return (
-    <section data-testid={`search-progress-panel-${messageId}`} className="mt-3 mb-1.5">
+    <section data-testid={`search-progress-panel-${messageId}`} className="mb-1.5">
       <button
         type="button"
         data-testid={`search-progress-toggle-${messageId}`}
@@ -2482,9 +2687,18 @@ function formatDirectoryListingSize(entry: DirectoryListingEntry): string {
   return `${rounded} ${units[unitIndex]}`;
 }
 
-type CopyMode = 'plain' | 'markdown';
-type MessageReaction = 'up' | 'down' | null;
 const PERSISTED_MESSAGE_ID_PATTERN = /^\d+$/;
+type UserMessageEditState = {
+  messageId: string;
+  content: string;
+  isSubmitting: boolean;
+  errorMessage: string;
+};
+type ShareSelectionRound = {
+  assistantMessage: ChatMessageItem;
+  userMessage: ChatMessageItem | null;
+  messageIds: string[];
+};
 
 /**
  * 只有已落库的消息才能进入分享范围，临时乐观消息只适合本地渲染。
@@ -2496,60 +2710,262 @@ function isShareableMessage(message: ChatMessageItem) {
 }
 
 /**
- * 根据触发消息解析默认分享范围；助手消息会自动带上前一条用户消息，形成完整问答轮次。
+ * 将会话消息按“用户问题 + 助手回答”构造成可分享轮次，只允许助手回答作为选择入口。
  * @param messages 当前消息列表。
- * @param defaultMessageId 触发分享的消息标识。
- * @returns 默认选中的消息标识。
+ * @returns 可分享轮次列表。
  */
-function resolveDefaultShareMessageIds(messages: ChatMessageItem[], defaultMessageId?: string) {
-  const selectableMessages = messages.filter(isShareableMessage);
-  if (!defaultMessageId) {
-    return selectableMessages.map((message) => message.id).slice(0, 2);
-  }
-  const messageIndex = messages.findIndex((message) => message.id === defaultMessageId);
-  if (messageIndex < 0) {
-    return selectableMessages.map((message) => message.id).slice(0, 2);
-  }
-  const targetMessage = messages[messageIndex];
-  if (targetMessage.role === 'ASSISTANT') {
-    const previousUserMessage = [...messages.slice(0, messageIndex)]
+function buildShareSelectionRounds(messages: ChatMessageItem[]): ShareSelectionRound[] {
+  return messages.flatMap((message, index) => {
+    if (message.role !== 'ASSISTANT' || !isShareableMessage(message)) {
+      return [];
+    }
+    const previousUserMessage = [...messages.slice(0, index)]
       .reverse()
-      .find((message) => message.role === 'USER');
-    return [previousUserMessage?.id, targetMessage.id].filter((messageId): messageId is string =>
-      Boolean(messageId) && PERSISTED_MESSAGE_ID_PATTERN.test(messageId),
-    );
+      .find((candidate) => candidate.role === 'USER' && isShareableMessage(candidate));
+    return [
+      {
+        assistantMessage: message,
+        userMessage: previousUserMessage ?? null,
+        messageIds: [previousUserMessage?.id, message.id].filter(
+          (messageId): messageId is string =>
+            Boolean(messageId) && PERSISTED_MESSAGE_ID_PATTERN.test(messageId),
+        ),
+      },
+    ];
+  });
+}
+
+/**
+ * 根据触发消息解析默认分享轮次；从消息分享按钮进入时默认只选当前回答，从会话级分享进入时默认全选。
+ * @param rounds 已构造的分享轮次。
+ * @param defaultMessageId 触发分享的消息标识。
+ * @returns 默认选中的助手消息标识。
+ */
+function resolveDefaultShareAssistantMessageIds(
+  rounds: ShareSelectionRound[],
+  defaultMessageId?: string,
+) {
+  const selectableAssistantMessageIds = rounds.map((round) => round.assistantMessage.id);
+  if (!defaultMessageId) {
+    return selectableAssistantMessageIds;
   }
-  const nextAssistantMessage = messages
-    .slice(messageIndex + 1)
-    .find((message) => message.role === 'ASSISTANT');
-  return [targetMessage.id, nextAssistantMessage?.id].filter((messageId): messageId is string =>
-    Boolean(messageId) && PERSISTED_MESSAGE_ID_PATTERN.test(messageId),
+  if (selectableAssistantMessageIds.includes(defaultMessageId)) {
+    return [defaultMessageId];
+  }
+  return selectableAssistantMessageIds;
+}
+
+/**
+ * 根据触发删除的消息找到所属问答轮次；从用户问题触发时删除该问题与后续回答。
+ * @param rounds 已构造的问答轮次。
+ * @param defaultMessageId 触发删除的消息标识。
+ * @returns 默认选中的助手消息标识。
+ */
+function resolveDefaultDeleteAssistantMessageIds(
+  rounds: ShareSelectionRound[],
+  defaultMessageId?: string,
+) {
+  if (!defaultMessageId) {
+    return rounds.map((round) => round.assistantMessage.id);
+  }
+  const matchedRound = rounds.find(
+    (round) =>
+      round.assistantMessage.id === defaultMessageId ||
+      round.userMessage?.id === defaultMessageId,
+  );
+  return matchedRound ? [matchedRound.assistantMessage.id] : [];
+}
+
+/**
+ * 将当前已选助手轮次展开为真实消息 ID 列表，保证提交给后端时仍是扁平 messageIds。
+ * @param rounds 分享轮次列表。
+ * @param selectedAssistantMessageIds 已选助手消息标识。
+ * @returns 去重后的真实消息 ID。
+ */
+function resolveShareSelectionMessageIds(
+  rounds: ShareSelectionRound[],
+  selectedAssistantMessageIds: string[],
+) {
+  const selectedAssistantIdSet = new Set(selectedAssistantMessageIds);
+  const orderedMessageIds: string[] = [];
+  rounds.forEach((round) => {
+    if (!selectedAssistantIdSet.has(round.assistantMessage.id)) {
+      return;
+    }
+    round.messageIds.forEach((messageId) => {
+      if (!orderedMessageIds.includes(messageId)) {
+        orderedMessageIds.push(messageId);
+      }
+    });
+  });
+  return orderedMessageIds;
+}
+
+/**
+ * 将当前已选轮次展开成弹窗预览消息，保持问答顺序稳定。
+ * @param rounds 分享轮次列表。
+ * @param selectedAssistantMessageIds 已选助手消息标识。
+ * @returns 预览消息列表。
+ */
+function resolveShareSelectionPreviewMessages(
+  rounds: ShareSelectionRound[],
+  selectedAssistantMessageIds: string[],
+) {
+  const selectedAssistantIdSet = new Set(selectedAssistantMessageIds);
+  const previewMessages: ChatMessageItem[] = [];
+  rounds.forEach((round) => {
+    if (!selectedAssistantIdSet.has(round.assistantMessage.id)) {
+      return;
+    }
+    if (round.userMessage) {
+      previewMessages.push(round.userMessage);
+    }
+    previewMessages.push(round.assistantMessage);
+  });
+  return previewMessages;
+}
+
+/**
+ * 渲染分享模式下的整体卡片容器，让聊天区显式切换为“内容选择态”。
+ */
+function ShareSelectionShell({
+  mode = 'share',
+  rounds,
+  selectedAssistantMessageIds,
+  onToggleRound,
+  onPreviewImage,
+}: {
+  mode?: 'share' | 'delete';
+  rounds: ShareSelectionRound[];
+  selectedAssistantMessageIds: string[];
+  onToggleRound: (assistantMessageId: string) => void;
+  onPreviewImage: (src: string, alt: string) => void;
+}) {
+  const isDeleteMode = mode === 'delete';
+  return (
+    <div
+      data-testid={isDeleteMode ? 'delete-selection-shell' : 'share-selection-shell'}
+      className="mx-auto w-full max-w-5xl"
+    >
+      <div className="overflow-hidden rounded-[32px] border border-border bg-surface shadow-[0_28px_90px_rgba(0,0,0,0.22)]">
+        <div className="border-b border-border bg-surface-container/85 px-6 py-5">
+          <div className="text-[11px] font-medium uppercase tracking-[0.28em] text-muted">
+            {isDeleteMode ? '删除选择模式' : '分享选择模式'}
+          </div>
+          <h2 className="mt-3 text-2xl font-semibold tracking-tight text-foreground">
+            {isDeleteMode ? '选择要删除的问答轮次' : '选择要分享的问答轮次'}
+          </h2>
+          <p className="mt-2 text-sm leading-6 text-muted">
+            {isDeleteMode
+              ? '勾选 AI 回复即可删除对应用户问题与回答，删除后不会再参与当前会话上下文。'
+              : '只允许勾选 AI 回复；系统会自动附带对应用户问题，确保公开分享时上下文完整。'}
+          </p>
+        </div>
+        <div className="space-y-4 px-5 py-5 md:px-6 md:py-6">
+          {rounds.map((round) => {
+            const isSelected = selectedAssistantMessageIds.includes(round.assistantMessage.id);
+            return (
+              <ShareSelectionRoundCard
+                key={round.assistantMessage.id}
+                mode={mode}
+                round={round}
+                isSelected={isSelected}
+                onToggleRound={onToggleRound}
+                onPreviewImage={onPreviewImage}
+              />
+            );
+          })}
+        </div>
+      </div>
+    </div>
   );
 }
 
 /**
- * 渲染分享选择勾选框，保持左右消息布局各自贴边。
+ * 渲染单个问答轮次卡片：用户问题与助手回答统一收纳到一个容器里，只提供一次选择入口。
  */
-function ShareMessageCheckbox({
-  message,
-  checked,
-  onToggle,
+function ShareSelectionRoundCard({
+  mode = 'share',
+  round,
+  isSelected,
+  onToggleRound,
+  onPreviewImage,
 }: {
-  message: ChatMessageItem;
-  checked: boolean;
-  onToggle: (messageId: string) => void;
+  mode?: 'share' | 'delete';
+  round: ShareSelectionRound;
+  isSelected: boolean;
+  onToggleRound: (assistantMessageId: string) => void;
+  onPreviewImage: (src: string, alt: string) => void;
 }) {
+  const { assistantMessage, userMessage } = round;
+  const assistantContent =
+    assistantMessage.content || (assistantMessage.status === 'streaming' ? '正在生成回答...' : '');
+  const selectionLabel = mode === 'delete' ? '选择删除轮次' : '选择分享轮次';
+
   return (
-    <label className="mt-2 inline-flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-full border border-border bg-surface shadow-sm">
-      <span className="sr-only">{`选择分享消息 ${message.content}`}</span>
-      <input
-        type="checkbox"
-        aria-label={`选择分享消息 ${message.content}`}
-        checked={checked}
-        onChange={() => onToggle(message.id)}
-        className="h-4 w-4 accent-foreground"
-      />
-    </label>
+    <section
+      data-testid={`share-round-card-${assistantMessage.id}`}
+      data-selected={isSelected ? 'true' : 'false'}
+      className={`rounded-[28px] border p-5 transition-[border-color,background-color,box-shadow] ${
+        isSelected
+          ? 'border-border-selected bg-surface-selected shadow-[0_20px_50px_rgba(0,0,0,0.18)]'
+          : 'border-border bg-background/70'
+      }`}
+    >
+      <div className="flex items-start gap-4">
+        <label className="mt-1 inline-flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-full border border-border bg-surface shadow-sm">
+          <span className="sr-only">{`${selectionLabel} ${assistantMessage.content}`}</span>
+          <input
+            type="checkbox"
+            aria-label={`${selectionLabel} ${assistantMessage.content}`}
+            checked={isSelected}
+            onChange={() => onToggleRound(assistantMessage.id)}
+            className="h-4 w-4 accent-foreground"
+          />
+        </label>
+        <div className="min-w-0 flex-1 space-y-4">
+          {userMessage ? (
+            <div className="flex justify-end">
+              <div className="max-w-[78%] rounded-[20px] bg-background px-4 py-3 text-sm leading-6 text-foreground shadow-sm">
+                {userMessage.attachments && userMessage.attachments.length > 0 ? (
+                  <MessageAttachmentList
+                    attachments={userMessage.attachments}
+                    onPreviewImage={onPreviewImage}
+                  />
+                ) : null}
+                <div className="whitespace-pre-wrap">{userMessage.content}</div>
+              </div>
+            </div>
+          ) : null}
+          <div className="rounded-[24px] bg-surface px-4 py-4 text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
+            {assistantMessage.processCards && assistantMessage.processCards.length > 0 ? (
+              <ProcessTracePanel
+                messageId={assistantMessage.id}
+                cards={assistantMessage.processCards}
+              />
+            ) : null}
+            {assistantMessage.attachments && assistantMessage.attachments.length > 0 ? (
+              <MessageAttachmentList
+                attachments={assistantMessage.attachments}
+                onPreviewImage={onPreviewImage}
+              />
+            ) : null}
+            <MarkdownMessage content={assistantContent} messageId={assistantMessage.id} />
+            {assistantMessage.searchProgress?.items?.length ? (
+              <SearchProgressPanel
+                messageId={assistantMessage.id}
+                progress={assistantMessage.searchProgress}
+              />
+            ) : null}
+            {assistantMessage.errorMessage ? (
+              <div className="mt-3 rounded-2xl border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+                {assistantMessage.errorMessage}
+              </div>
+            ) : null}
+          </div>
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -2557,23 +2973,26 @@ function ShareMessageCheckbox({
  * 分享选择底部工具栏，提供全选、取消和生成链接入口。
  */
 function ShareSelectionToolbar({
+  mode = 'share',
   selectedCount,
   totalCount,
   onSelectAll,
   onCancel,
   onConfirm,
 }: {
+  mode?: 'share' | 'delete';
   selectedCount: number;
   totalCount: number;
   onSelectAll: () => void;
   onCancel: () => void;
   onConfirm: () => void;
 }) {
+  const isDeleteMode = mode === 'delete';
   return (
     <div
       role="toolbar"
-      aria-label="分享选择工具栏"
-      className="absolute bottom-24 left-1/2 z-30 flex -translate-x-1/2 items-center gap-3 rounded-2xl border border-border bg-surface/95 px-4 py-3 text-sm text-foreground shadow-[0_18px_48px_rgba(0,0,0,0.22)] backdrop-blur"
+      aria-label={isDeleteMode ? '删除选择工具栏' : '分享选择工具栏'}
+      className="absolute bottom-6 left-1/2 z-30 flex -translate-x-1/2 items-center gap-3 rounded-2xl border border-border bg-surface/96 px-4 py-3 text-sm text-foreground shadow-[0_18px_48px_rgba(0,0,0,0.22)] backdrop-blur"
     >
       <button
         type="button"
@@ -2583,8 +3002,8 @@ function ShareSelectionToolbar({
         全选
       </button>
       <span className="text-muted">
-        <span>已选{selectedCount}条消息</span>
-        <span className="ml-1">/ 共{totalCount}条</span>
+        <span>已选{selectedCount}组对话</span>
+        <span className="ml-1">/ 共{totalCount}组</span>
       </span>
       <button
         type="button"
@@ -2595,12 +3014,14 @@ function ShareSelectionToolbar({
       </button>
       <button
         type="button"
-        aria-label="生成分享链接"
+        aria-label={isDeleteMode ? '删除所选' : '生成分享链接'}
         disabled={selectedCount === 0}
         onClick={onConfirm}
-        className="rounded-xl bg-foreground px-4 py-2 text-background transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+        className={`rounded-xl px-4 py-2 transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50 ${
+          isDeleteMode ? 'bg-red-600 text-white' : 'bg-foreground text-background'
+        }`}
       >
-        生成分享链接
+        {isDeleteMode ? '删除所选' : '生成分享链接'}
       </button>
     </div>
   );
@@ -2689,231 +3110,205 @@ function ShareConversationDialog({
 }
 
 /**
- * 渲染助手消息底部操作栏，统一提供复制、分享、重新生成与点赞反馈入口。
+ * 渲染用户消息气泡，并在悬浮时露出编辑、复制和删除操作。
  */
-function AssistantMessageActions({
-  messageId,
-  conversationId,
+function UserMessageBubble({
+  message,
   content,
-  isLatestAssistantMessage,
-  userVote,
-  onStartShareSelection,
-  onRegenerateConversation,
+  skillNameMap,
+  editState,
+  onStartEdit,
+  onChangeEditContent,
+  onCancelEdit,
+  onConfirmEdit,
+  onStartDelete,
+  onPreviewImage,
+}: {
+  message: ChatMessageItem;
+  content: string;
+  skillNameMap: Map<string, string>;
+  editState: UserMessageEditState | null;
+  onStartEdit: () => void;
+  onChangeEditContent: (content: string) => void;
+  onCancelEdit: () => void;
+  onConfirmEdit: () => void;
+  onStartDelete: () => void;
+  onPreviewImage: (src: string, alt: string) => void;
+}) {
+  return (
+    <div className="chat-user-message-shell">
+      <div className="chat-user-message-bubble rounded-[20px] px-4 py-2">
+        {editState ? (
+          <div className="min-w-[260px] space-y-3">
+            <textarea
+              aria-label="编辑用户消息"
+              value={editState.content}
+              onChange={(event) => onChangeEditContent(event.target.value)}
+              className="min-h-24 w-full resize-y rounded-2xl border border-border bg-surface px-3 py-2 text-sm leading-6 text-foreground outline-none transition-colors placeholder:text-muted focus:border-border-active"
+            />
+            {editState.errorMessage ? (
+              <p className="text-xs text-error">{editState.errorMessage}</p>
+            ) : null}
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={onCancelEdit}
+                disabled={editState.isSubmitting}
+                className="rounded-xl px-3 py-2 text-sm text-muted transition-colors hover:bg-surface-container hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                onClick={onConfirmEdit}
+                disabled={editState.isSubmitting || !editState.content.trim()}
+                className="rounded-xl bg-foreground px-4 py-2 text-sm text-background transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {editState.isSubmitting ? '发送中' : '再次发送'}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <>
+            {message.skillCodes && message.skillCodes.length > 0 ? (
+              <MessageSkillChips
+                messageId={message.id}
+                skillCodes={message.skillCodes}
+                skillNameMap={skillNameMap}
+              />
+            ) : null}
+            {message.attachments && message.attachments.length > 0 ? (
+              <MessageAttachmentList
+                attachments={message.attachments}
+                onPreviewImage={onPreviewImage}
+              />
+            ) : null}
+            <div className="whitespace-pre-wrap text-sm leading-6">
+              {content}
+            </div>
+          </>
+        )}
+      </div>
+      {!editState ? (
+        <UserMessageActions
+          messageId={message.id}
+          content={content}
+          onStartEdit={onStartEdit}
+          onStartDelete={onStartDelete}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * 用户消息底部悬浮操作栏；编辑和删除仅允许落库后的消息触发。
+ */
+function UserMessageActions({
+  messageId,
+  content,
+  onStartEdit,
+  onStartDelete,
 }: {
   messageId: string;
-  conversationId: string;
   content: string;
-  isLatestAssistantMessage: boolean;
-  userVote?: number | null;
-  onStartShareSelection: (messageId: string) => void;
-  onRegenerateConversation: (
-    conversationId: string,
-    options?: { assistantMessageId?: string },
-  ) => Promise<void>;
+  onStartEdit: () => void;
+  onStartDelete: () => void;
 }) {
-  const [isMenuOpen, setIsMenuOpen] = React.useState(false);
-  const [copiedMode, setCopiedMode] = React.useState<CopyMode | null>(null);
-  // 业务约束：初始化时从 userVote 恢复已投票状态，保证刷新后仍显示之前的投票结果。
-  const [reaction, setReaction] = React.useState<MessageReaction>(
-    userVote === 1 ? 'up' : userVote === -1 ? 'down' : null,
-  );
-  const [reactionError, setReactionError] = React.useState('');
-  const [isRegenerating, setIsRegenerating] = React.useState(false);
-  const [regenerateError, setRegenerateError] = React.useState('');
-  const menuContainerRef = React.useRef<HTMLDivElement | null>(null);
-  const normalizedConversationId = String(conversationId ?? '').trim();
-  // 关键约束：反馈接口当前仅接受数据库落库后的数值主键，乐观消息临时 ID 禁止提交反馈。
-  const canSubmitReaction = PERSISTED_MESSAGE_ID_PATTERN.test(messageId);
-  // 关键约束：分享与重新生成只能作用于已落库会话，临时 pending 会话没有稳定后端上下文。
-  const canOperateOnConversation =
-    normalizedConversationId.length > 0 && normalizedConversationId !== 'pending-conversation';
-  const canRegenerateConversation = canOperateOnConversation && isLatestAssistantMessage && PERSISTED_MESSAGE_ID_PATTERN.test(messageId);
+  const [copyState, setCopyState] = React.useState<'idle' | 'copied'>('idle');
+  const canMutateMessage = PERSISTED_MESSAGE_ID_PATTERN.test(messageId);
 
-  React.useEffect(() => {
-    if (!isMenuOpen) {
-      return;
-    }
-    const closeMenuWhenClickOutside = (event: MouseEvent) => {
-      if (menuContainerRef.current?.contains(event.target as Node)) {
-        return;
-      }
-      setIsMenuOpen(false);
-    };
-    document.addEventListener('mousedown', closeMenuWhenClickOutside);
-    return () => {
-      document.removeEventListener('mousedown', closeMenuWhenClickOutside);
-    };
-  }, [isMenuOpen]);
-
-  /**
-   * 复制消息内容并短暂给出状态反馈。
-   * @param mode 复制模式，区分纯文本和 Markdown。
-   */
-  const copyContent = async (mode: CopyMode) => {
-    const value = mode === 'markdown' ? content : normalizeMessageForPlainCopy(content);
+  const copyContent = async () => {
     try {
-      await navigator.clipboard.writeText(value);
-      setCopiedMode(mode);
+      await navigator.clipboard.writeText(content);
+      setCopyState('copied');
       window.setTimeout(() => {
-        setCopiedMode((previousMode) => (previousMode === mode ? null : previousMode));
+        setCopyState('idle');
       }, 1200);
     } catch {
-      setCopiedMode(null);
-    } finally {
-      if (mode === 'markdown') {
-        setIsMenuOpen(false);
-      }
-    }
-  };
-
-  /**
-   * 同步本地反馈状态，确保点赞与倒赞互斥。
-   * @param nextReaction 下一次反馈值。
-   */
-  const submitReaction = async (nextReaction: Exclude<MessageReaction, null>) => {
-    if (!canSubmitReaction) {
-      return;
-    }
-    const token = AuthStorage.getSession()?.token ?? null;
-    if (!token) {
-      return;
-    }
-    const previousReaction = reaction;
-    setReaction(nextReaction);
-    setReactionError('');
-    try {
-      await ChatApi.submitMessageFeedback(token, messageId, {
-        conversationId: normalizedConversationId,
-        vote: nextReaction === 'up' ? 1 : -1,
-      });
-    } catch (error) {
-      setReaction(previousReaction);
-      setReactionError(error instanceof Error ? error.message : '反馈提交失败');
-    }
-  };
-
-  /**
-   * 重新生成当前会话最后一条助手回复。
-   * 只允许对当前会话尾部消息操作，避免旧消息触发“看不出变化”的无效重试。
-   */
-  const regenerateMessage = async () => {
-    if (!canRegenerateConversation || isRegenerating) {
-      return;
-    }
-    setIsRegenerating(true);
-    setRegenerateError('');
-    try {
-      await onRegenerateConversation(normalizedConversationId, {
-        assistantMessageId: messageId,
-      });
-    } catch {
-      setRegenerateError('重新生成失败');
-    } finally {
-      setIsRegenerating(false);
+      setCopyState('idle');
     }
   };
 
   return (
-    <div className="chat-message-actions mt-3 flex items-center gap-1 text-muted">
-      <div
-        className="chat-message-action-button-group"
-        data-testid={`copy-action-group-${messageId}`}
-      >
-        {/* 复制主按钮与更多菜单使用连续按钮组，去掉视觉分隔线并保持紧凑布局。 */}
-        <button
-          type="button"
-          data-testid={`copy-message-${messageId}`}
-          aria-label="复制消息"
-          onClick={() => void copyContent('plain')}
-          className="chat-message-action-button chat-message-action-button-group-item"
-        >
-          <Copy size={15} />
-        </button>
-        <div ref={menuContainerRef} className="relative">
-          <button
-            type="button"
-            data-testid={`copy-menu-toggle-${messageId}`}
-            aria-label="复制更多"
-            aria-expanded={isMenuOpen}
-            onClick={() => setIsMenuOpen((open) => !open)}
-            className="chat-message-action-button chat-message-action-button-group-item"
-          >
-            <ChevronDown
-              size={15}
-              className={`transition-transform ${isMenuOpen ? 'rotate-180' : ''}`}
-            />
-          </button>
-          {isMenuOpen ? (
-            <div className="chat-copy-menu absolute bottom-11 left-0 min-w-[190px] rounded-2xl border border-border bg-surface px-2 py-2 shadow-[0_16px_40px_rgba(0,0,0,0.24)]">
-              <button
-                type="button"
-                data-testid={`copy-markdown-${messageId}`}
-                onClick={() => void copyContent('markdown')}
-                className="chat-copy-menu-item"
-              >
-                复制为Markdown
-              </button>
-              <button
-                type="button"
-                data-testid={`copy-plain-${messageId}`}
-                onClick={() => void copyContent('plain')}
-                className="chat-copy-menu-item"
-              >
-                复制
-              </button>
-            </div>
-          ) : null}
-        </div>
-      </div>
+    <div
+      data-testid={`user-message-actions-${messageId}`}
+      className="chat-user-message-actions"
+    >
       <button
         type="button"
-        data-testid={`share-message-${messageId}`}
-        aria-label="分享消息"
-        disabled={!canOperateOnConversation}
-        onClick={() => onStartShareSelection(messageId)}
-        className="chat-message-action-button disabled:cursor-not-allowed disabled:opacity-60"
+        data-testid={`edit-user-message-${messageId}`}
+        aria-label="编辑消息"
+        title="编辑"
+        disabled={!canMutateMessage}
+        onClick={onStartEdit}
+        className="chat-message-action-button disabled:cursor-not-allowed disabled:opacity-50"
       >
-        <Share2 size={15} />
+        <Pencil size={15} />
       </button>
       <button
         type="button"
-        data-testid={`regenerate-message-${messageId}`}
-        aria-label="重新生成"
-        disabled={!canRegenerateConversation || isRegenerating}
-        onClick={() => void regenerateMessage()}
-        className="chat-message-action-button disabled:cursor-not-allowed disabled:opacity-60"
+        data-testid={`copy-user-message-${messageId}`}
+        aria-label="复制消息"
+        title="复制"
+        onClick={() => void copyContent()}
+        className="chat-message-action-button"
       >
-        <RotateCcw size={15} className={isRegenerating ? 'animate-spin' : ''} />
+        <Copy size={15} />
       </button>
       <button
         type="button"
-        data-testid={`thumbs-up-${messageId}`}
-        aria-label="点赞"
-        aria-pressed={reaction === 'up'}
-        disabled={!canSubmitReaction}
-        onClick={() => void submitReaction('up')}
-        className={`chat-message-action-button ${reaction === 'up' ? 'chat-message-action-button-active' : ''}`}
+        data-testid={`delete-user-message-${messageId}`}
+        aria-label="删除消息"
+        title="删除"
+        disabled={!canMutateMessage}
+        onClick={onStartDelete}
+        className="chat-message-action-button disabled:cursor-not-allowed disabled:opacity-50"
       >
-        <ThumbsUp size={15} />
+        <Trash2 size={15} />
       </button>
+      {copyState === 'copied' ? <span className="text-[11px] text-muted">已复制</span> : null}
+    </div>
+  );
+}
+
+/**
+ * 渲染助手消息底部操作栏，输出区只保留复制入口。
+ */
+function AssistantMessageActions({
+  messageId,
+  content,
+}: {
+  messageId: string;
+  content: string;
+}) {
+  const [copyState, setCopyState] = React.useState<'idle' | 'copied'>('idle');
+
+  const copyContent = async () => {
+    try {
+      await navigator.clipboard.writeText(normalizeMessageForPlainCopy(content));
+      setCopyState('copied');
+      window.setTimeout(() => {
+        setCopyState('idle');
+      }, 1200);
+    } catch {
+      setCopyState('idle');
+    }
+  };
+
+  return (
+    <div className="chat-message-actions flex items-center gap-1 text-muted">
       <button
         type="button"
-        data-testid={`thumbs-down-${messageId}`}
-        aria-label="倒赞"
-        aria-pressed={reaction === 'down'}
-        disabled={!canSubmitReaction}
-        onClick={() => void submitReaction('down')}
-        className={`chat-message-action-button ${reaction === 'down' ? 'chat-message-action-button-active' : ''}`}
+        data-testid={`copy-message-${messageId}`}
+        aria-label="复制消息"
+        title="复制"
+        onClick={() => void copyContent()}
+        className="chat-message-action-button"
       >
-        <ThumbsDown size={15} />
+        <Copy size={15} />
       </button>
-      {copiedMode ? (
-        <span className="ml-2 text-[11px] text-muted">
-          {copiedMode === 'markdown' ? '已复制 Markdown' : '已复制'}
-        </span>
-      ) : null}
-      {regenerateError ? <span className="ml-2 text-[11px] text-error">{regenerateError}</span> : null}
-      {reactionError ? <span className="ml-2 text-[11px] text-error">{reactionError}</span> : null}
+      {copyState === 'copied' ? <span className="ml-2 text-[11px] text-muted">已复制</span> : null}
     </div>
   );
 }

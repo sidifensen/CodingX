@@ -2760,7 +2760,7 @@ describe('ChatView', () => {
   });
 
   /**
-   * ReAct 工具过程必须默认露出思考、行动和观察，避免用户只能看到折叠后的工具汇总。
+   * ReAct 工具过程应直接展示深度思考、工具动作和观察内容，但不再额外渲染角色气泡标签。
    */
   it('renders ReAct tool steps inline without opening the tool group', async () => {
     render(
@@ -2827,16 +2827,121 @@ describe('ChatView', () => {
     );
 
     expect(screen.queryByTestId('process-tool-group-toggle-964')).not.toBeInTheDocument();
-    expect(screen.getByTestId('process-analysis-toggle-964-react-thought-shell-964')).toHaveTextContent('思考');
-    expect(screen.getByText('行动')).toBeInTheDocument();
+    const tracePanel = screen.getByTestId('process-trace-panel-964');
+    expect(within(tracePanel).queryByTestId('process-react-role-label')).not.toBeInTheDocument();
+    expect(within(tracePanel).getByText('深度思考')).toBeInTheDocument();
+    expect(within(tracePanel).queryByText('Thought 思考')).not.toBeInTheDocument();
+    expect(within(tracePanel).queryByText('Action 行动')).not.toBeInTheDocument();
+    expect(within(tracePanel).queryByText('Observation 观察')).not.toBeInTheDocument();
+    expect(within(tracePanel).queryByText('行动')).not.toBeInTheDocument();
+    expect(within(tracePanel).queryByText('观察')).not.toBeInTheDocument();
     expect(screen.getByText('调用 shell_command')).toBeInTheDocument();
-    expect(screen.getByText('观察')).toBeInTheDocument();
     expect(screen.getByText('工具返回：D:/code/CodingX')).toBeInTheDocument();
     expect(screen.queryByText('{"command":"pwd"}')).not.toBeInTheDocument();
     fireEvent.click(screen.getByTestId('process-tool-detail-toggle-964-tool-call-shell-964'));
     fireEvent.click(screen.getByTestId('process-tool-detail-toggle-964-tool-result-shell-964'));
     expect(screen.getByText('{"command":"pwd"}')).toBeInTheDocument();
     expect(screen.getByText('D:/code/CodingX')).toBeInTheDocument();
+  });
+
+  /**
+   * 多轮工具过程必须按深度思考、工具动作、观察内容串联，避免退回“工具调用列表”的展示形态。
+   */
+  it('renders multiple ReAct rounds without role badges', async () => {
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          messages: [
+            {
+              id: '965',
+              conversationId: '2001',
+              role: 'ASSISTANT',
+              content: '已完成两轮检索。',
+              status: 'done',
+              processCards: [
+                {
+                  id: 'react-thought-search-1',
+                  type: 'analysis',
+                  title: '思考',
+                  summary: '需要先检索 Qwen 最新模型。',
+                  status: 'completed',
+                  presentation: 'react',
+                },
+                {
+                  id: 'tool-call-search-1',
+                  type: 'tool_call',
+                  title: '行动',
+                  summary: '调用网页搜索：Qwen 最新模型',
+                  status: 'completed',
+                  toolId: 'search',
+                  displayName: '网页搜索',
+                  presentation: 'react',
+                },
+                {
+                  id: 'tool-result-search-1',
+                  type: 'tool_result',
+                  title: '观察',
+                  summary: '网页搜索返回 Qwen 模型来源。',
+                  status: 'completed',
+                  toolId: 'search',
+                  displayName: '网页搜索',
+                  presentation: 'react',
+                },
+                {
+                  id: 'react-thought-search-2',
+                  type: 'analysis',
+                  title: '思考',
+                  summary: '需要继续检索 GLM 最新模型。',
+                  status: 'completed',
+                  presentation: 'react',
+                },
+                {
+                  id: 'tool-call-search-2',
+                  type: 'tool_call',
+                  title: '行动',
+                  summary: '调用网页搜索：GLM 最新模型',
+                  status: 'completed',
+                  toolId: 'search',
+                  displayName: '网页搜索',
+                  presentation: 'react',
+                },
+                {
+                  id: 'tool-result-search-2',
+                  type: 'tool_result',
+                  title: '观察',
+                  summary: '网页搜索返回 GLM 模型来源。',
+                  status: 'completed',
+                  toolId: 'search',
+                  displayName: '网页搜索',
+                  presentation: 'react',
+                },
+              ],
+            } as any,
+          ],
+          executionSteps: [],
+          references: [],
+          artifacts: [],
+        })}
+      />,
+    );
+
+    const tracePanel = screen.getByTestId('process-trace-panel-965');
+    expect(within(tracePanel).queryByTestId('process-react-role-label')).not.toBeInTheDocument();
+    expect(within(tracePanel).getAllByText('深度思考')).toHaveLength(2);
+    expect(within(tracePanel).queryByText('行动')).not.toBeInTheDocument();
+    expect(within(tracePanel).queryByText('观察')).not.toBeInTheDocument();
+    const traceText = tracePanel.textContent ?? '';
+    expect(traceText.indexOf('需要先检索 Qwen 最新模型。')).toBeLessThan(
+      traceText.indexOf('调用网页搜索：Qwen 最新模型'),
+    );
+    expect(traceText.indexOf('调用网页搜索：Qwen 最新模型')).toBeLessThan(
+      traceText.indexOf('网页搜索返回 Qwen 模型来源。'),
+    );
+    expect(traceText.indexOf('网页搜索返回 Qwen 模型来源。')).toBeLessThan(
+      traceText.indexOf('需要继续检索 GLM 最新模型。'),
+    );
   });
 
   /**

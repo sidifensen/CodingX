@@ -4107,7 +4107,7 @@ function ProcessAnalysisTrace({
   const isReactTrace = card.presentation === 'react';
   const [isExpanded, setIsExpanded] = React.useState(true);
   const contentId = `process-analysis-content-${messageId}-${card.id}`;
-  const label = isReactTrace ? card.title || '思考' : isFirstAnalysis ? '深度思考' : card.title || '深度思考';
+  const label = isReactTrace ? '深度思考' : isFirstAnalysis ? '深度思考' : card.title || '深度思考';
 
   React.useEffect(() => {
     // 新的 ReAct 展示目标是始终让过程可见，状态变化不再自动收起思考内容。
@@ -4166,15 +4166,16 @@ function ProcessToolRow({
   const searchResultItems = parseSearchResultDetails(card);
   const hasDetails = searchResultItems.length > 0 || (card.details?.length ?? 0) > 0;
   const contentId = `process-tool-detail-${messageId}-${card.id}`;
+  const isReactTrace = card.presentation === 'react';
 
   return (
     <article data-testid={`process-tool-row-${messageId}-${card.id}`} className="space-y-2 border-l border-border pl-3">
       <div className="flex min-w-0 items-start gap-2 text-sm leading-6 text-foreground">
         <Icon size={15} className="mt-1 shrink-0 text-muted" />
         <div className="min-w-0 flex-1">
-          <div className="whitespace-pre-wrap [overflow-wrap:anywhere]">
-            {card.title}
-            {card.summary ? <span className="text-muted"> {card.summary}</span> : null}
+          <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1 whitespace-pre-wrap [overflow-wrap:anywhere]">
+            {!isReactTrace ? <span>{card.title}</span> : null}
+            {card.summary ? <span className="min-w-0 text-muted">{card.summary}</span> : null}
           </div>
           {hasDetails ? (
             <button

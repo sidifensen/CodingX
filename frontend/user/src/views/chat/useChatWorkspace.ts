@@ -2442,9 +2442,9 @@ export function useChatWorkspace(
                     status: 'running',
                     items: message.searchProgress?.items ?? [],
                   },
-                  processCards: upsertProcessCard(
+                  processCards: mergeSearchStepIntoProcessCards(
                     message.processCards ?? [],
-                    buildSearchToolCallCard({
+                    {
                       id: String(payload.id ?? 'search-step'),
                       title: String(payload.stepTitle ?? '调用网页搜索'),
                       summary:
@@ -2455,7 +2455,7 @@ export function useChatWorkspace(
                         String(payload.stepStatus ?? '').trim().toUpperCase() === 'COMPLETED'
                           ? 'completed'
                           : 'running',
-                    }),
+                    },
                   ),
                 }
               : message,
@@ -3875,9 +3875,33 @@ function buildAnalysisProcessCard(id: string, thinkingContent?: string, title = 
 }
 
 /**
- * 根据搜索步骤创建统一的工具调用卡片。
+ * 根据搜索步骤创建 ReAct 深度思考卡片。
  * @param options 搜索步骤信息。
- * @returns 搜索工具卡片。
+ * @returns ReAct 思考卡片。
+ */
+function buildSearchThoughtCard(options: {
+  id: string;
+  title: string;
+  summary: string;
+  status?: ProcessCardItem['status'];
+}): ProcessCardItem {
+  const queryText = resolveSearchQueryText(options);
+  return {
+    id: `react-thought-search-${options.id}`,
+    type: 'analysis',
+    title: '思考',
+    summary: queryText
+      ? `需要通过网页搜索确认资料：${queryText}`
+      : '需要通过网页搜索获取实时资料。',
+    status: 'completed',
+    presentation: 'react',
+  };
+}
+
+/**
+ * 根据搜索步骤创建 ReAct 工具动作卡片；搜索 query 作为参数摘要展示。
+ * @param options 搜索步骤信息。
+ * @returns 搜索行动卡片。
  */
 function buildSearchToolCallCard(options: {
   id: string;
@@ -3885,19 +3909,61 @@ function buildSearchToolCallCard(options: {
   summary: string;
   status?: ProcessCardItem['status'];
 }): ProcessCardItem {
-  const stepTitle = options.title.trim();
-  const queryText = options.summary.trim();
+  const queryText = resolveSearchQueryText(options);
   return {
     id: `process-${options.id}`,
     type: 'tool_call',
-    title: '网页搜索',
-    summary:
-      queryText ||
-      (stepTitle && stepTitle !== '搜索资料' ? stepTitle : '正在检索实时资料。'),
+    title: '行动',
+    summary: queryText ? `调用网页搜索：${queryText}` : '调用网页搜索',
     status: options.status ?? 'running',
     toolId: 'search',
     displayName: '网页搜索',
+    presentation: 'react',
+    details: queryText
+      ? [
+          {
+            label: '参数',
+            content: queryText,
+          },
+        ]
+      : undefined,
   };
+}
+
+/**
+ * 归一化搜索步骤中的用户可读查询文本。
+ * @param options 搜索步骤信息。
+ * @returns 可展示搜索词。
+ */
+function resolveSearchQueryText(options: {
+  title: string;
+  summary: string;
+}): string {
+  const stepTitle = options.title.trim();
+  const queryText = options.summary.trim();
+  return queryText || (stepTitle && stepTitle !== '搜索资料' ? stepTitle : '');
+}
+
+/**
+ * 将搜索步骤合并为一轮 ReAct 的深度思考与工具动作，避免只展示单条工具调用。
+ * @param cards 当前卡片列表。
+ * @param options 搜索步骤信息。
+ * @returns 合并后的卡片列表。
+ */
+function mergeSearchStepIntoProcessCards(
+  cards: ProcessCardItem[],
+  options: {
+    id: string;
+    title: string;
+    summary: string;
+    status?: ProcessCardItem['status'];
+  },
+): ProcessCardItem[] {
+  const nextCards = finalizeCardsByType(cards, ['analysis']);
+  return upsertProcessCard(
+    upsertProcessCard(nextCards, buildSearchThoughtCard(options)),
+    buildSearchToolCallCard(options),
+  );
 }
 
 /**
@@ -3911,6 +3977,10 @@ function mergeReferenceIntoProcessCards(
   reference: ReferenceItem,
 ): ProcessCardItem[] {
   const sourceLabel = resolveSearchSourceLabel(reference);
+  const nextCards = hydratePendingSearchReactCards(
+    finalizeCardsByType(cards, ['analysis', 'tool_call']),
+    reference,
+  );
   const nextResultDetails = [
     {
       label: '结果',
@@ -3918,18 +3988,96 @@ function mergeReferenceIntoProcessCards(
     },
   ];
   return upsertProcessCard(
-    finalizeCardsByType(cards, ['analysis', 'tool_call']),
+    nextCards,
     {
       id: `search-result-${reference.id}`,
       type: 'tool_result',
-      title: sourceLabel ? `网页获取 ${sourceLabel}` : '网页获取',
-      summary: reference.title || reference.snippet || '已获取检索来源，正在比对可用结论。',
+      title: '观察',
+      summary: buildSearchObservationSummary(reference, sourceLabel),
       status: 'completed',
       toolId: 'search',
       displayName: '网页搜索',
+      presentation: 'react',
       details: nextResultDetails,
     },
   );
+}
+
+/**
+ * 搜索 step 先于来源到达时可能只有兜底文案；来源返回后用真实标题补强同一轮 Thought/Action 摘要。
+ * @param cards 当前卡片列表。
+ * @param reference 新来源。
+ * @returns 补强后的过程卡片。
+ */
+function hydratePendingSearchReactCards(
+  cards: ProcessCardItem[],
+  reference: ReferenceItem,
+): ProcessCardItem[] {
+  const queryText = resolveReferenceQueryText(reference);
+  if (!queryText) {
+    return cards;
+  }
+  const pendingToolIndex = cards.findIndex(
+    (card) =>
+      card.toolId === 'search' &&
+      card.type === 'tool_call' &&
+      card.presentation === 'react' &&
+      card.summary === '调用网页搜索：正在检索实时资料。',
+  );
+  if (pendingToolIndex < 0) {
+    return cards;
+  }
+  const pendingThoughtIndex = [...cards]
+    .slice(0, pendingToolIndex)
+    .map((card, index) => ({ card, index }))
+    .reverse()
+    .find(
+      (item) =>
+        item.card.type === 'analysis' &&
+        item.card.presentation === 'react' &&
+        item.card.summary === '需要通过网页搜索确认资料：正在检索实时资料。',
+    )?.index;
+  return cards.map((card, index) => {
+    if (index === pendingToolIndex) {
+      return {
+        ...card,
+        summary: `调用网页搜索：${queryText}`,
+        details: [
+          {
+            label: '参数',
+            content: queryText,
+          },
+        ],
+      };
+    }
+    if (index === pendingThoughtIndex) {
+      return {
+        ...card,
+        summary: `需要通过网页搜索确认资料：${queryText}`,
+      };
+    }
+    return card;
+  });
+}
+
+/**
+ * 从来源事件中提取可读查询兜底；优先标题，其次摘要或 URL。
+ * @param reference 搜索来源。
+ * @returns 可展示查询文本。
+ */
+function resolveReferenceQueryText(reference: ReferenceItem): string {
+  return (reference.title || reference.snippet || reference.url || '').trim();
+}
+
+/**
+ * 将搜索来源转换为 ReAct 工具结果摘要，突出“工具返回了什么”而不是只显示来源标题。
+ * @param reference 搜索来源。
+ * @param sourceLabel 来源站点标签。
+ * @returns 观察摘要。
+ */
+function buildSearchObservationSummary(reference: ReferenceItem, sourceLabel: string): string {
+  const resultText = reference.title || reference.snippet || reference.url || '已获取检索来源，正在比对可用结论。';
+  return sourceLabel ? `网页搜索返回 ${sourceLabel}：${resultText}` : `网页搜索返回：${resultText}`;
 }
 
 /**
@@ -3967,11 +4115,22 @@ function buildSearchResultProcessCardFromProgressItem(
   return {
     id: `replay-search-result-${item.id}`,
     type: 'tool_result',
-    title: sourceLabel ? `网页获取 ${sourceLabel}` : '网页获取',
-    summary: item.title || item.url || '已获取检索来源，正在比对可用结论。',
+    title: '观察',
+    summary: buildSearchObservationSummary(
+      {
+        id: item.id,
+        runId: '',
+        conversationId: '',
+        title: item.title,
+        url: item.url,
+        siteName: item.siteName,
+      },
+      sourceLabel,
+    ),
     status: status === 'error' ? 'error' : 'completed',
     toolId: 'search',
     displayName: '网页搜索',
+    presentation: 'react',
     details: [
       {
         label: '结果',
@@ -4004,7 +4163,7 @@ function mergeMcpCallIntoProcessCards(
         ]
       : existingCard?.details;
     if (isReactToolProcess) {
-      // ReAct 展示只使用公开过程摘要，不展示模型私有思维链。
+      // ReAct 展示沿用后端提供的阶段文本，并把工具动作与结果拆成独立过程节点。
       nextCards = upsertProcessCard(nextCards, {
         id: `react-thought-${call.callId ?? call.toolId}`,
         type: 'analysis',
@@ -4607,21 +4766,25 @@ function deriveProcessCardsFromReplay(options: {
   }
   if (!processCards.some((card) => card.toolId === 'search')) {
     for (const step of searchSteps) {
-      processCards.push({
-        id: `replay-search-call-${step.id}`,
-        type: 'tool_call',
-        title: '网页搜索',
-        summary:
-          step.content && step.content.trim().length > 0
-            ? step.content
-            : step.stepTitle || '根据历史搜索步骤继续展示已检索来源。',
-        status:
-          String(step.stepStatus ?? '').trim().toUpperCase() === 'COMPLETED'
-            ? 'completed'
-            : 'running',
-        toolId: 'search',
-        displayName: '网页搜索',
-      });
+      processCards.push(
+        buildSearchThoughtCard({
+          id: `replay-${step.id}`,
+          title: step.stepTitle || '搜索资料',
+          summary: step.content ?? '',
+          status: 'completed',
+        }),
+      );
+      processCards.push(
+        buildSearchToolCallCard({
+          id: `replay-${step.id}`,
+          title: step.stepTitle || '搜索资料',
+          summary: step.content ?? '',
+          status:
+            String(step.stepStatus ?? '').trim().toUpperCase() === 'COMPLETED'
+              ? 'completed'
+              : 'running',
+        }),
+      );
     }
   }
   if (

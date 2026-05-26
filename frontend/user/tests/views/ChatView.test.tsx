@@ -1131,35 +1131,47 @@ describe('ChatView', () => {
   });
 
   /**
-   * 分享与重新生成应分别触发工作区动作，且重新生成只允许对最后一条助手消息触发。
+   * 助手消息分享按钮应进入轮次选择模式，不能绕过选择流程直接生成并复制链接。
    */
-  it('应支持分享并重新生成最后一条助手消息', async () => {
-    const sharedUrl = new URL('/api/chat/conversations/shared/share_xxx', window.location.origin).toString();
-    const shareConversation = vi.fn().mockResolvedValue(sharedUrl);
+  it('助手分享按钮应进入分享轮次选择模式', async () => {
+    const shareConversation = vi.fn().mockResolvedValue('http://localhost/api/chat/conversations/shared/share_xxx');
+
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({ shareConversation })}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId('share-message-102'));
+
+    expect(screen.getByTestId('share-selection-shell')).toBeInTheDocument();
+    expect(screen.queryByTestId('chat-input-dock')).not.toBeInTheDocument();
+    expect(screen.getByTestId('share-round-card-102')).toHaveAttribute('data-selected', 'true');
+    expect(shareConversation).not.toHaveBeenCalled();
+    expect(navigator.clipboard.writeText).not.toHaveBeenCalled();
+  });
+
+  /**
+   * 重新生成应带上当前助手消息 ID，保持覆盖当前回复的重试语义。
+   */
+  it('应重新生成最后一条助手消息', async () => {
     const regenerateConversation = vi.fn().mockResolvedValue(undefined);
 
     render(
       <ChatView
         isAuthenticated={true}
         onRequireLogin={vi.fn()}
-        workspace={createWorkspace({
-          shareConversation,
-          regenerateConversation,
-        })}
+        workspace={createWorkspace({ regenerateConversation })}
       />,
     );
 
-    fireEvent.click(screen.getByTestId('share-message-102'));
-    await waitFor(() => {
-      expect(shareConversation).toHaveBeenCalledWith('2001');
-    });
-    await waitFor(() => {
-      expect(navigator.clipboard.writeText).toHaveBeenCalledWith(sharedUrl);
-    });
-
     fireEvent.click(screen.getByTestId('regenerate-message-102'));
     await waitFor(() => {
-      expect(regenerateConversation).toHaveBeenCalledWith('2001');
+      expect(regenerateConversation).toHaveBeenCalledWith('2001', {
+        assistantMessageId: '102',
+      });
     });
   });
 

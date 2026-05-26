@@ -1153,7 +1153,7 @@ export default function ChatView({
                               content={messageContent}
                               isLatestAssistantMessage={message.id === latestAssistantMessageId}
                               userVote={message.userVote}
-                              onShareConversation={shareConversation}
+                              onStartShareSelection={startShareSelection}
                               onRegenerateConversation={regenerateConversation}
                             />
                             {/* 业务意图：搜索来源必须紧跟在消息操作区之后，优先落在倒赞按钮后面，避免被后续提示打断阅读路径。 */}
@@ -3297,7 +3297,7 @@ function AssistantMessageActions({
   content,
   isLatestAssistantMessage,
   userVote,
-  onShareConversation,
+  onStartShareSelection,
   onRegenerateConversation,
 }: {
   messageId: string;
@@ -3305,12 +3305,14 @@ function AssistantMessageActions({
   content: string;
   isLatestAssistantMessage: boolean;
   userVote?: number | null;
-  onShareConversation: (conversationId: string) => Promise<string>;
-  onRegenerateConversation: (conversationId: string) => Promise<void>;
+  onStartShareSelection: (messageId: string) => void;
+  onRegenerateConversation: (
+    conversationId: string,
+    options?: { assistantMessageId?: string },
+  ) => Promise<void>;
 }) {
   const [isMenuOpen, setIsMenuOpen] = React.useState(false);
   const [copiedMode, setCopiedMode] = React.useState<CopyMode | null>(null);
-  const [shareState, setShareState] = React.useState<'idle' | 'copying' | 'copied' | 'error'>('idle');
   // 业务约束：初始化时从 userVote 恢复已投票状态，保证刷新后仍显示之前的投票结果。
   const [reaction, setReaction] = React.useState<MessageReaction>(
     userVote === 1 ? 'up' : userVote === -1 ? 'down' : null,
@@ -3393,30 +3395,6 @@ function AssistantMessageActions({
     }
   };
 
-  /**
-   * 生成分享链接并复制到剪贴板，成功后给出短暂状态提示。
-   * 这里不直接暴露后端返回的相对路径，避免用户复制后无法在当前站点打开。
-   */
-  const shareMessage = async () => {
-    if (shareState === 'copying' || !canOperateOnConversation) {
-      return;
-    }
-    setShareState('copying');
-    try {
-      const shareUrl = await onShareConversation(normalizedConversationId);
-      if (!shareUrl) {
-        setShareState('error');
-        return;
-      }
-      await navigator.clipboard.writeText(shareUrl);
-      setShareState('copied');
-      window.setTimeout(() => {
-        setShareState((current) => (current === 'copied' ? 'idle' : current));
-      }, 1400);
-    } catch {
-      setShareState('error');
-    }
-  };
 
   /**
    * 重新生成当前会话最后一条助手回复。
@@ -3429,7 +3407,9 @@ function AssistantMessageActions({
     setIsRegenerating(true);
     setRegenerateError('');
     try {
-      await onRegenerateConversation(normalizedConversationId);
+      await onRegenerateConversation(normalizedConversationId, {
+        assistantMessageId: messageId,
+      });
     } catch {
       setRegenerateError('重新生成失败');
     } finally {
@@ -3495,8 +3475,9 @@ function AssistantMessageActions({
         data-testid={`share-message-${messageId}`}
         aria-label="分享消息"
         title="分享"
-        disabled={!canOperateOnConversation || shareState === 'copying'}
-        onClick={() => void shareMessage()}
+        disabled={!canOperateOnConversation}
+        // 业务入口：助手消息分享只进入轮次选择，生成链接统一交给底部分享确认栏处理。
+        onClick={() => onStartShareSelection(messageId)}
         className="chat-message-action-button disabled:cursor-not-allowed disabled:opacity-50"
       >
         <Share2 size={15} />
@@ -3541,8 +3522,6 @@ function AssistantMessageActions({
         <ThumbsDown size={15} />
       </button>
       {copiedMode ? <span className="ml-2 text-[11px] text-muted">已复制</span> : null}
-      {shareState === 'copied' ? <span className="ml-2 text-[11px] text-muted">分享链接已复制</span> : null}
-      {shareState === 'error' ? <span className="ml-2 text-[11px] text-error">分享失败</span> : null}
       {regenerateError ? <span className="ml-2 text-[11px] text-error">{regenerateError}</span> : null}
       {reactionError ? <span className="ml-2 text-[11px] text-error">{reactionError}</span> : null}
     </div>

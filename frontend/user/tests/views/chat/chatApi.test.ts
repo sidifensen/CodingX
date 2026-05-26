@@ -303,6 +303,142 @@ describe('ChatApi', () => {
   });
 
   /**
+   * 分享会话应命中专用接口并返回分享令牌与分享路径。
+   */
+  it('应通过专用接口生成分享链接', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          success: true,
+          code: 'OK',
+          message: 'conversation shared',
+          data: {
+            shareToken: 'share_xxx',
+            shareUrl: '/api/chat/conversations/shared/share_xxx',
+          },
+        }),
+        { status: 200 },
+      ),
+    );
+
+    const result = await ChatApi.shareConversation('token-123', '2055114974648864768');
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      '/api/chat/conversations/2055114974648864768/share',
+      expect.objectContaining({
+        method: 'POST',
+      }),
+    );
+    expect(result.shareToken).toBe('share_xxx');
+    expect(result.shareUrl).toBe('/api/chat/conversations/shared/share_xxx');
+  });
+
+  /**
+   * 选择轮次分享时应把消息 ID 放入请求体，后端据此生成带过滤参数的公开链接。
+   */
+  it('应携带选中消息生成分享链接', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          success: true,
+          code: 'OK',
+          message: 'conversation shared',
+          data: {
+            shareToken: 'share_xxx',
+            shareUrl: '/share/chat/share_xxx?messages=101%2C102',
+          },
+        }),
+        { status: 200 },
+      ),
+    );
+
+    const result = await ChatApi.shareConversation('token-123', '2055114974648864768', {
+      messageIds: ['101', '102'],
+    });
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      '/api/chat/conversations/2055114974648864768/share',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ messageIds: ['101', '102'] }),
+      }),
+    );
+    expect(result.shareUrl).toBe('/share/chat/share_xxx?messages=101%2C102');
+  });
+
+  /**
+   * 公开分享页应支持按 messages 查询参数读取只读回放。
+   */
+  it('应按消息 ID 加载公开分享会话', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          success: true,
+          code: 'OK',
+          message: 'success',
+          data: {
+            conversation: {
+              id: 2055114974648864768,
+              title: '分享标题',
+              status: 'ACTIVE',
+              lastMessageAt: '2026-05-26 08:00:00',
+            },
+            messages: [
+              {
+                id: '101',
+                conversationId: '2055114974648864768',
+                role: 'USER',
+                content: '分享的问题',
+                status: 'COMPLETED',
+              },
+            ],
+          },
+        }),
+        { status: 200 },
+      ),
+    );
+
+    const result = await ChatApi.getSharedConversation('share_xxx', ['101', '102']);
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      '/api/chat/conversations/shared/share_xxx?messages=101%2C102',
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          'Content-Type': 'application/json',
+        }),
+      }),
+    );
+    expect(result.conversation.title).toBe('分享标题');
+    expect(result.messages).toHaveLength(1);
+  });
+
+  /**
+   * 重新生成会话应命中专用接口。
+   */
+  it('应通过专用接口重新生成会话', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          success: true,
+          code: 'OK',
+          message: 'conversation regenerated',
+          data: null,
+        }),
+        { status: 200 },
+      ),
+    );
+
+    await ChatApi.regenerateConversation('token-123', '2055114974648864768');
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      '/api/chat/conversations/2055114974648864768/regenerate',
+      expect.objectContaining({
+        method: 'POST',
+      }),
+    );
+  });
+
+  /**
    * 当前技能列表请求应命中会话级 current-skills 接口并返回字符串化标识。
    */
   it('应加载会话当前技能列表', async () => {

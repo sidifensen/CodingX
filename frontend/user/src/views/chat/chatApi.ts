@@ -14,7 +14,9 @@ import {
   ExecutionStepItem,
   McpItem,
   ReferenceItem,
+  SharedConversationPayload,
   SampleQuestionItem,
+  ShareConversationOptions,
 } from './types';
 
 /**
@@ -270,6 +272,81 @@ export class ChatApi {
     });
   }
 
+  /**
+   * 为指定会话生成分享链接，供前端复制公开只读地址。
+   * @param token 当前登录令牌。
+   * @param conversationId 会话标识。
+   * @returns 分享令牌与分享路径。
+   */
+  static async shareConversation(
+    token: string,
+    conversationId: string,
+    options?: ShareConversationOptions,
+  ): Promise<{ shareToken: string; shareUrl: string }> {
+    const normalizedMessageIds = normalizeMessageIds(options?.messageIds);
+    const envelope = await this.request<{ shareToken: string; shareUrl: string }>(
+      `/api/chat/conversations/${conversationId}/share`,
+      token,
+      {
+        method: 'POST',
+        ...(normalizedMessageIds.length > 0
+          ? { body: JSON.stringify({ messageIds: normalizedMessageIds }) }
+          : {}),
+      },
+    );
+    return {
+      shareToken: String(envelope.data.shareToken ?? ''),
+      shareUrl: String(envelope.data.shareUrl ?? ''),
+    };
+  }
+
+  /**
+   * 加载公开分享会话，只读页面可选按消息 ID 过滤展示范围。
+   * @param shareToken 分享令牌。
+   * @param messageIds 需要展示的消息标识集合。
+   * @returns 公开分享会话与消息列表。
+   */
+  static async getSharedConversation(
+    shareToken: string,
+    messageIds: string[] = [],
+  ): Promise<SharedConversationPayload> {
+    const searchParams = new URLSearchParams();
+    const normalizedMessageIds = normalizeMessageIds(messageIds);
+    if (normalizedMessageIds.length > 0) {
+      searchParams.set('messages', normalizedMessageIds.join(','));
+    }
+    const queryString = searchParams.toString();
+    const envelope = await this.requestPublic<SharedConversationPayload>(
+      `/api/chat/conversations/shared/${shareToken}${queryString ? `?${queryString}` : ''}`,
+    );
+    return {
+      conversation: {
+        ...envelope.data.conversation,
+        id: String(envelope.data.conversation.id ?? ''),
+        title: String(envelope.data.conversation.title ?? ''),
+        status: String(envelope.data.conversation.status ?? ''),
+      },
+      messages: (envelope.data.messages ?? []).map((message) => ({
+        ...message,
+        id: String(message.id ?? ''),
+        conversationId: String(message.conversationId ?? ''),
+        skillCodes: (message.skillCodes ?? []).map((skillCode) => String(skillCode ?? '')).filter(Boolean),
+        attachments: (message.attachments ?? []).map((attachment) => this.normalizeAttachment(attachment)),
+      })),
+    };
+  }
+
+  /**
+   * 重新生成指定会话最后一条助手回复。
+   * @param token 当前登录令牌。
+   * @param conversationId 会话标识。
+   */
+  static async regenerateConversation(token: string, conversationId: string): Promise<void> {
+    await this.request<void>(`/api/chat/conversations/${conversationId}/regenerate`, token, {
+      method: 'POST',
+    });
+  }
+
   static async cancelConversation(token: string, conversationId: string): Promise<void> {
     await this.request<void>(`/api/chat/conversations/${conversationId}/cancel`, token, {
       method: 'POST',
@@ -407,4 +484,37 @@ export class ChatApi {
     }
     throw new Error(envelope.message || UserErrorMessages.CHAT_REQUEST_FAILED);
   }
+
+  /**
+   * 公开接口不需要 satoken，但仍复用 ApiResponse 解析，保证错误语义一致。
+   * @param path 接口路径。
+   * @returns 统一响应包。
+   */
+  private static async requestPublic<T>(
+    path: string,
+  ): Promise<ApiResponseEnvelope<T>> {
+    const response = await fetch(path, {
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+    const envelope = await ApiResponseParser.parseEnvelope<T>(response, UserErrorMessages.CHAT_REQUEST_FAILED);
+    ApiResponseParser.assertSuccess(response, envelope, UserErrorMessages.CHAT_REQUEST_FAILED);
+    return envelope;
+  }
+}
+
+/**
+ * 规范化分享消息范围，过滤空值并保持用户选择顺序去重。
+ * @param messageIds 原始消息标识。
+ * @returns 可发送给后端的消息标识列表。
+ */
+function normalizeMessageIds(messageIds: string[] | undefined) {
+  return Array.from(
+    new Set(
+      (messageIds ?? [])
+        .map((messageId) => String(messageId ?? '').trim())
+        .filter(Boolean),
+    ),
+  );
 }

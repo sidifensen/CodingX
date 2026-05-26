@@ -1865,6 +1865,390 @@ describe('useChatWorkspace', () => {
   });
 
   /**
+   * 分享会话应返回可直接复制的绝对链接，避免前端后续再拼接导致分享失效。
+   */
+  it('应返回绝对分享链接', async () => {
+    window.localStorage.setItem(
+      'codingx.auth.session',
+      JSON.stringify({
+        token: 'token-123',
+        userId: '1002',
+        username: 'user',
+        displayName: 'CodingX User',
+        userType: 'USER',
+      }),
+    );
+
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === '/api/chat/conversations') {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            code: 'OK',
+            message: 'success',
+            data: [
+              {
+                id: '2001',
+                title: 'Default Demo Conversation',
+                status: 'ACTIVE',
+                lastRunId: '5002',
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      if (url === '/api/chat/conversations/2001/share') {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            code: 'OK',
+            message: 'conversation shared',
+            data: {
+              shareToken: 'share_xxx',
+              shareUrl: '/api/chat/conversations/shared/share_xxx',
+            },
+          }),
+          { status: 200 },
+        );
+      }
+      if (
+        url === '/api/chat/sample-questions' ||
+        url === '/api/chat/experts' ||
+        url === '/api/chat/skills' ||
+        url === '/api/chat/mcps' ||
+        url === '/api/chat/conversations/2001/messages' ||
+        url === '/api/chat/conversations/2001/steps' ||
+        url === '/api/chat/conversations/2001/references' ||
+        url === '/api/chat/conversations/2001/artifacts' ||
+        url === '/api/chat/conversations/2001/current-skills' ||
+        url === '/api/chat/conversations/2001/current-mcps' ||
+        url === '/api/chat/conversations/2001/current-experts'
+      ) {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      throw new Error(`Unhandled fetch in share conversation test: ${url}`);
+    });
+
+    const { result } = renderHook(() => useChatWorkspace(true));
+
+    await waitFor(() => {
+      expect(result.current.isBootstrapping).toBe(false);
+    });
+
+    await act(async () => {
+      const shareUrl = await result.current.shareConversation('2001');
+      expect(shareUrl).toBe(
+        new URL('/api/chat/conversations/shared/share_xxx', window.location.origin).toString(),
+      );
+    });
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      '/api/chat/conversations/2001/share',
+      expect.objectContaining({
+        method: 'POST',
+      }),
+    );
+  });
+
+  /**
+   * 选择消息分享时应把消息 ID 附加到分享链接，公开页据此过滤回放范围。
+   */
+  it('应返回带消息过滤参数的绝对分享链接', async () => {
+    window.localStorage.setItem(
+      'codingx.auth.session',
+      JSON.stringify({
+        token: 'token-123',
+        userId: '1002',
+        username: 'user',
+        displayName: 'CodingX User',
+        userType: 'USER',
+      }),
+    );
+
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === '/api/chat/conversations') {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            code: 'OK',
+            message: 'success',
+            data: [{ id: '2001', title: 'Default Demo Conversation', status: 'ACTIVE' }],
+          }),
+          { status: 200 },
+        );
+      }
+      if (url === '/api/chat/conversations/2001/share') {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            code: 'OK',
+            message: 'conversation shared',
+            data: {
+              shareToken: 'share_xxx',
+              shareUrl: '/share/chat/share_xxx?messages=101%2C102',
+            },
+          }),
+          { status: 200 },
+        );
+      }
+      if (
+        url === '/api/chat/sample-questions' ||
+        url === '/api/chat/experts' ||
+        url === '/api/chat/skills' ||
+        url === '/api/chat/mcps' ||
+        url === '/api/chat/conversations/2001/messages' ||
+        url === '/api/chat/conversations/2001/steps' ||
+        url === '/api/chat/conversations/2001/references' ||
+        url === '/api/chat/conversations/2001/artifacts' ||
+        url === '/api/chat/conversations/2001/current-skills' ||
+        url === '/api/chat/conversations/2001/current-mcps' ||
+        url === '/api/chat/conversations/2001/current-experts'
+      ) {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      throw new Error(`Unhandled fetch in filtered share conversation test: ${url}`);
+    });
+
+    const { result } = renderHook(() => useChatWorkspace(true));
+
+    await waitFor(() => {
+      expect(result.current.isBootstrapping).toBe(false);
+    });
+
+    await act(async () => {
+      const shareUrl = await result.current.shareConversation('2001', {
+        messageIds: ['101', '102'],
+      });
+      expect(shareUrl).toBe(
+        new URL('/share/chat/share_xxx?messages=101%2C102', window.location.origin).toString(),
+      );
+    });
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      '/api/chat/conversations/2001/share',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ messageIds: ['101', '102'] }),
+      }),
+    );
+  });
+
+  /**
+   * 重新生成会话应命中专用接口。
+   */
+  it('应调用重新生成接口', async () => {
+    window.localStorage.setItem(
+      'codingx.auth.session',
+      JSON.stringify({
+        token: 'token-123',
+        userId: '1002',
+        username: 'user',
+        displayName: 'CodingX User',
+        userType: 'USER',
+      }),
+    );
+
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === '/api/chat/conversations') {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            code: 'OK',
+            message: 'success',
+            data: [
+              {
+                id: '2001',
+                title: 'Default Demo Conversation',
+                status: 'ACTIVE',
+                lastRunId: '5002',
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      if (url === '/api/chat/conversations/2001/regenerate') {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            code: 'OK',
+            message: 'conversation regenerated',
+            data: null,
+          }),
+          { status: 200 },
+        );
+      }
+      if (
+        url === '/api/chat/sample-questions' ||
+        url === '/api/chat/experts' ||
+        url === '/api/chat/skills' ||
+        url === '/api/chat/mcps' ||
+        url === '/api/chat/conversations/2001/messages' ||
+        url === '/api/chat/conversations/2001/steps' ||
+        url === '/api/chat/conversations/2001/references' ||
+        url === '/api/chat/conversations/2001/artifacts' ||
+        url === '/api/chat/conversations/2001/current-skills' ||
+        url === '/api/chat/conversations/2001/current-mcps' ||
+        url === '/api/chat/conversations/2001/current-experts'
+      ) {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      throw new Error(`Unhandled fetch in regenerate conversation test: ${url}`);
+    });
+
+    const { result } = renderHook(() => useChatWorkspace(true));
+
+    await waitFor(() => {
+      expect(result.current.isBootstrapping).toBe(false);
+    });
+
+    await act(async () => {
+      await result.current.regenerateConversation('2001');
+    });
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      '/api/chat/conversations/2001/regenerate',
+      expect.objectContaining({
+        method: 'POST',
+      }),
+    );
+  });
+
+  /**
+   * 重新生成应先替换原助手消息槽位，再用上一条用户消息重新拉流，避免追加重复回答。
+   */
+  it('应覆盖原助手消息并重新拉流', async () => {
+    window.localStorage.setItem(
+      'codingx.auth.session',
+      JSON.stringify({
+        token: 'token-123',
+        userId: '1002',
+        username: 'user',
+        displayName: 'CodingX User',
+        userType: 'USER',
+      }),
+    );
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === '/api/chat/conversations') {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            code: 'OK',
+            message: 'success',
+            data: [{ id: '2001', title: 'Default Demo Conversation', status: 'ACTIVE' }],
+          }),
+          { status: 200 },
+        );
+      }
+      if (url === '/api/chat/conversations/2001/messages') {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            code: 'OK',
+            message: 'success',
+            data: [
+              {
+                id: '101',
+                conversationId: '2001',
+                role: 'USER',
+                content: '原问题',
+                status: 'COMPLETED',
+              },
+              {
+                id: '102',
+                conversationId: '2001',
+                role: 'ASSISTANT',
+                content: '原回答',
+                status: 'COMPLETED',
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      if (url.startsWith('/api/chat/stream?')) {
+        const stream = new ReadableStream({
+          start(controller) {
+            controller.enqueue(
+              new TextEncoder().encode(
+                'event: finish\n' +
+                  'data: {"conversationId":"2001","content":"新回答","title":"Default Demo Conversation"}\n\n',
+              ),
+            );
+            controller.close();
+          },
+        });
+        return new Response(stream, { status: 200 });
+      }
+      if (
+        url === '/api/chat/sample-questions' ||
+        url === '/api/chat/experts' ||
+        url === '/api/chat/skills' ||
+        url === '/api/chat/mcps' ||
+        url === '/api/chat/conversations/2001/steps' ||
+        url === '/api/chat/conversations/2001/references' ||
+        url === '/api/chat/conversations/2001/artifacts' ||
+        url === '/api/chat/conversations/2001/current-skills' ||
+        url === '/api/chat/conversations/2001/current-mcps' ||
+        url === '/api/chat/conversations/2001/current-experts'
+      ) {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      throw new Error(`Unhandled fetch in regenerate stream test: ${url}`);
+    });
+
+    const { result } = renderHook(() => useChatWorkspace(true));
+
+    await waitFor(() => {
+      expect(result.current.isBootstrapping).toBe(false);
+    });
+    await act(async () => {
+      await result.current.selectConversation('2001', result.current.conversations);
+    });
+    await waitFor(() => {
+      expect(result.current.messages).toHaveLength(2);
+    });
+
+    await act(async () => {
+      await result.current.regenerateConversation('2001', {
+        assistantMessageId: '102',
+      });
+    });
+
+    await waitFor(() => {
+      expect(result.current.messages).toHaveLength(2);
+      expect(result.current.messages[1]).toMatchObject({
+        role: 'ASSISTANT',
+        content: '新回答',
+        status: 'done',
+      });
+    });
+    const streamCall = vi.mocked(globalThis.fetch).mock.calls.find(([input]) =>
+      String(input).startsWith('/api/chat/stream?'),
+    );
+    expect(String(streamCall?.[0])).toContain('conversationId=2001');
+    expect(String(streamCall?.[0])).toContain('question=%E5%8E%9F%E9%97%AE%E9%A2%98');
+  });
+
+  /**
    * 切换本地工作空间后应立即使用绑定返回的 workspaceId 发流，避免会话误落到默认云端空间。
    */
   it('应在切换本地工作空间后使用最新workspaceId发送流请求', async () => {

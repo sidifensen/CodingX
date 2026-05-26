@@ -1,5 +1,6 @@
 ﻿import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import ChatView from '@/views/ChatView';
+import { within } from '@testing-library/react';
 import { ChatWorkspaceController } from '@/views/chat/types';
 
 /**
@@ -1130,12 +1131,11 @@ describe('ChatView', () => {
   });
 
   /**
-   * 分享与重新生成应分别触发工作区动作，且重新生成只允许对最后一条助手消息触发。
+   * 分享应先进入轮次选择，再展示千问风格分享弹窗，而不是直接复制整会话链接。
    */
-  it('应支持分享并重新生成最后一条助手消息', async () => {
+  it('应支持选择消息后展示分享弹窗并复制链接', async () => {
     const sharedUrl = new URL('/api/chat/conversations/shared/share_xxx', window.location.origin).toString();
     const shareConversation = vi.fn().mockResolvedValue(sharedUrl);
-    const regenerateConversation = vi.fn().mockResolvedValue(undefined);
 
     render(
       <ChatView
@@ -1143,22 +1143,55 @@ describe('ChatView', () => {
         onRequireLogin={vi.fn()}
         workspace={createWorkspace({
           shareConversation,
-          regenerateConversation,
         })}
       />,
     );
 
     fireEvent.click(screen.getByTestId('share-message-102'));
+
+    expect(screen.getByRole('toolbar', { name: '分享选择工具栏' })).toBeInTheDocument();
+    expect(screen.getByLabelText('选择分享消息 请搜索 Spring Boot SSE 最佳实践')).toBeChecked();
+    expect(screen.getByLabelText('选择分享消息 我来为您总结 Spring Boot SSE 最佳实践。')).toBeChecked();
+    expect(screen.getByText('已选2条消息')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '生成分享链接' }));
     await waitFor(() => {
-      expect(shareConversation).toHaveBeenCalledWith('2001');
+      expect(shareConversation).toHaveBeenCalledWith('2001', {
+        messageIds: ['101', '102'],
+      });
     });
+
+    const shareDialog = screen.getByRole('dialog', { name: '分享对话' });
+    expect(shareDialog).toBeInTheDocument();
+    expect(screen.getByDisplayValue(sharedUrl)).toBeInTheDocument();
+    expect(within(shareDialog).getByText('请搜索 Spring Boot SSE 最佳实践')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '复制链接' }));
     await waitFor(() => {
       expect(navigator.clipboard.writeText).toHaveBeenCalledWith(sharedUrl);
     });
+  });
+
+  /**
+   * 重新生成应把消息 ID 传给工作区，由工作区替换原助手消息槽位。
+   */
+  it('应重新生成最后一条助手消息', async () => {
+    const regenerateConversation = vi.fn().mockResolvedValue(undefined);
+
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          regenerateConversation,
+        })}
+      />,
+    );
 
     fireEvent.click(screen.getByTestId('regenerate-message-102'));
     await waitFor(() => {
-      expect(regenerateConversation).toHaveBeenCalledWith('2001');
+      expect(regenerateConversation).toHaveBeenCalledWith('2001', {
+        assistantMessageId: '102',
+      });
     });
   });
 

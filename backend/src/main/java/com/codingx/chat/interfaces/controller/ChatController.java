@@ -25,6 +25,7 @@ import com.codingx.chat.interfaces.request.ConversationPinRequest;
 import com.codingx.chat.interfaces.request.CreateConversationRequest;
 import com.codingx.chat.interfaces.request.RenameConversationRequest;
 import com.codingx.chat.interfaces.request.SendChatMessageRequest;
+import com.codingx.chat.interfaces.request.ShareConversationRequest;
 import com.codingx.chat.interfaces.response.ChatAttachmentResponse;
 import com.codingx.chat.interfaces.response.ChatConversationResponse;
 import com.codingx.chat.interfaces.response.ChatMessageResponse;
@@ -37,6 +38,7 @@ import com.codingx.workspace.infrastructure.persistence.dataobject.WorkspaceDO;
 import com.codingx.workspace.infrastructure.repository.WorkspaceRepositoryImpl;
 import jakarta.validation.Valid;
 import java.nio.charset.StandardCharsets;
+import java.net.URLEncoder;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
@@ -130,13 +132,16 @@ public class ChatController {
      * @return 会话与消息回放数据。
      */
     @GetMapping("/shared/{shareToken}")
-    public ApiResponse<SharedConversationResponse> getSharedConversation(@PathVariable String shareToken) {
+    public ApiResponse<SharedConversationResponse> getSharedConversation(
+        @PathVariable String shareToken,
+        @RequestParam(required = false) String messages
+    ) {
         ChatConversation conversation = chatConversationApplicationService.requireSharedConversation(shareToken);
-        List<ChatMessageResponse> messages = chatConversationApplicationService.listSharedMessages(shareToken)
+        List<ChatMessageResponse> sharedMessages = chatConversationApplicationService.listSharedMessages(shareToken, parseSharedMessageIds(messages))
             .stream()
-            .map(this::toMessageResponse)
+            .map(this::toSharedMessageResponse)
             .toList();
-        return ApiResponse.success(new SharedConversationResponse(toSharedConversationResponse(conversation), messages));
+        return ApiResponse.success(new SharedConversationResponse(toSharedConversationResponse(conversation), sharedMessages));
     }
 
     /**
@@ -238,11 +243,15 @@ public class ChatController {
      * @return 分享令牌与分享路径。
      */
     @PostMapping("/{conversationId}/share")
-    public ApiResponse<ConversationShareResponse> shareConversation(@PathVariable Long conversationId) {
+    public ApiResponse<ConversationShareResponse> shareConversation(
+        @PathVariable Long conversationId,
+        @org.springframework.web.bind.annotation.RequestBody(required = false) ShareConversationRequest request
+    ) {
         String shareToken = chatConversationApplicationService.generateShareToken(conversationId, StpUtil.getLoginIdAsLong());
+        String shareUrl = buildConversationShareUrl(shareToken, request == null ? List.of() : request.messageIds());
         return ApiResponse.success(new ConversationShareResponse(
             shareToken,
-            "/api/chat/conversations/shared/" + shareToken
+            shareUrl
         ));
     }
 
@@ -475,6 +484,25 @@ public class ChatController {
      * @return 输入参数。
      */
     private ChatMessageResponse toMessageResponse(ChatMessage message) {
+        return toMessageResponse(message, StpUtil.getLoginIdAsLong());
+    }
+
+    /**
+     * 公开分享页消息响应不依赖登录态，避免匿名访问只读页面时触发 Sa-Token 上下文读取。
+     * @param message 消息领域对象。
+     * @return 公开分享页消息响应。
+     */
+    private ChatMessageResponse toSharedMessageResponse(ChatMessage message) {
+        return toMessageResponse(message, null);
+    }
+
+    /**
+     * 将消息领域对象转换为接口响应；匿名场景不查询用户反馈状态。
+     * @param message 消息领域对象。
+     * @param currentUserId 当前登录用户标识，公开访问时为空。
+     * @return 消息响应。
+     */
+    private ChatMessageResponse toMessageResponse(ChatMessage message, Long currentUserId) {
         List<ChatAttachmentResponse> attachments = chatAttachmentService.listByMessageId(message.getId()).stream()
             .map(this::toAttachmentResponse)
             .toList();
@@ -486,10 +514,12 @@ public class ChatController {
                 .filter(StrUtil::isNotBlank)
                 .distinct()
                 .toList();
-        // 查询当前用户对该消息的投票状态，用于前端渲染已点赞/点踩状态。
-        Integer userVote = chatMessageFeedbackRepository.findByMessageIdAndUserId(message.getId(), StpUtil.getLoginIdAsLong())
-            .map(ChatMessageFeedback::getVote)
-            .orElse(null);
+        // 查询当前用户对该消息的投票状态；公开分享页没有登录用户时保持为空。
+        Integer userVote = currentUserId == null
+            ? null
+            : chatMessageFeedbackRepository.findByMessageIdAndUserId(message.getId(), currentUserId)
+                .map(ChatMessageFeedback::getVote)
+                .orElse(null);
         return new ChatMessageResponse(
             message.getId(),
             message.getConversationId(),
@@ -506,6 +536,48 @@ public class ChatController {
             skillCodes,
             userVote
         );
+    }
+
+    /**
+     * 解析公开分享页传入的消息过滤参数，非法值直接忽略，避免公开接口因 URL 脏参数失败。
+     * @param rawMessageIds 逗号分隔的消息标识。
+     * @return 规范化消息标识列表。
+     */
+    private List<Long> parseSharedMessageIds(String rawMessageIds) {
+        if (StrUtil.isBlank(rawMessageIds)) {
+            return List.of();
+        }
+        return StrUtil.splitTrim(rawMessageIds, ',').stream()
+            .map(value -> {
+                try {
+                    return Long.parseLong(value);
+                } catch (NumberFormatException exception) {
+                    return null;
+                }
+            })
+            .filter(messageId -> messageId != null && messageId > 0)
+            .distinct()
+            .toList();
+    }
+
+    /**
+     * 构造前端公开分享页地址；选中消息通过查询参数传递，避免新增分享明细表。
+     * @param shareToken 分享令牌。
+     * @param messageIds 选中的消息标识。
+     * @return 前端公开分享页路径。
+     */
+    private String buildConversationShareUrl(String shareToken, List<Long> messageIds) {
+        List<Long> normalizedMessageIds = messageIds == null ? List.of() : messageIds.stream()
+            .filter(messageId -> messageId != null && messageId > 0)
+            .distinct()
+            .toList();
+        if (normalizedMessageIds.isEmpty()) {
+            return "/share/chat/" + shareToken;
+        }
+        String joinedMessageIds = normalizedMessageIds.stream()
+            .map(String::valueOf)
+            .collect(java.util.stream.Collectors.joining(","));
+        return "/share/chat/" + shareToken + "?messages=" + URLEncoder.encode(joinedMessageIds, StandardCharsets.UTF_8);
     }
 
     /**

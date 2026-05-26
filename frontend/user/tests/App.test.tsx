@@ -1589,17 +1589,17 @@ describe('App', () => {
     const menuButton = screen.getAllByRole('button', { name: '打开会话菜单 可操作会话' })[0];
     fireEvent.mouseEnter(menuButton.parentElement as HTMLElement);
     expect(menuButton).toHaveStyle({ opacity: '1' });
-    expect(screen.queryByRole('button', { name: '重命名对话' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '重命名' })).not.toBeInTheDocument();
     fireEvent.click(menuButton);
 
     await waitFor(() => {
-      expect(screen.getAllByRole('button', { name: '重命名对话' }).length).toBeGreaterThan(0);
+      expect(screen.getAllByRole('button', { name: '重命名' }).length).toBeGreaterThan(0);
     });
-    expect(screen.getAllByRole('button', { name: '置顶对话' }).length).toBeGreaterThan(0);
-    expect(screen.getAllByRole('button', { name: '分享对话' }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole('button', { name: '置顶此对话' }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole('button', { name: '分享此对话' }).length).toBeGreaterThan(0);
     expect(screen.getAllByRole('button', { name: '批量管理' }).length).toBeGreaterThan(0);
     expect(screen.getAllByRole('button', { name: '导出对话' }).length).toBeGreaterThan(0);
-    expect(screen.getAllByRole('button', { name: '删除对话' }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole('button', { name: '删除此对话' }).length).toBeGreaterThan(0);
   });
 
   /**

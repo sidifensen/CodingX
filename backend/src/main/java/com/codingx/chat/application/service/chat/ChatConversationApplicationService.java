@@ -188,6 +188,28 @@ public class ChatConversationApplicationService {
     }
 
     /**
+     * 公开分享页按分享令牌和可选消息范围加载回放，保留原会话顺序。
+     * @param shareToken 分享令牌。
+     * @param messageIds 前端选择的消息标识。
+     * @return 会话消息列表。
+     */
+    public List<ChatMessage> listSharedMessages(String shareToken, List<Long> messageIds) {
+        ChatConversation conversation = requireSharedConversation(shareToken);
+        List<ChatMessage> messages = chatMessageRepository.findByConversationId(conversation.getId());
+        if (messageIds == null || messageIds.isEmpty()) {
+            return messages;
+        }
+        java.util.Set<Long> selectedMessageIds = new java.util.LinkedHashSet<>(
+            messageIds.stream()
+                .filter(messageId -> messageId != null && messageId > 0)
+                .toList()
+        );
+        return messages.stream()
+            .filter(message -> selectedMessageIds.contains(message.getId()))
+            .toList();
+    }
+
+    /**
      * 批量更新会话置顶状态。
      * @param conversationIds 会话标识集合。
      * @param pinned 目标状态。

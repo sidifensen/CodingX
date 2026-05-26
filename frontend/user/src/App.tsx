@@ -3,7 +3,7 @@ import { Menu, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { AnimatePresence } from 'motion/react';
 
 // 视图组件
-import ChatView from './views/ChatView';
+import ChatView, { SharedChatView } from './views/ChatView';
 import AutomationView from './views/AutomationView';
 import McpView from './views/McpView';
 import SkillsView from './views/SkillsView';
@@ -44,6 +44,7 @@ export default function App() {
   const isDevelopmentMode = import.meta.env.DEV;
   const loginDefaultUsername = isDevelopmentMode ? 'admin' : '';
   const loginDefaultPassword = isDevelopmentMode ? '123456' : '';
+  const sharedRoute = parseSharedChatRoute(window.location.pathname, window.location.search);
 
   // 步骤：聚合认证相关状态和操作，复用组件化登录流程。
   const {
@@ -187,8 +188,25 @@ export default function App() {
    * 统一处理会话分享，复用工作区分享链路，避免侧栏菜单重复拼接链接。
    * @param conversationId 会话标识。
    */
-  const handleShareConversation = async (conversationId: string) => {
-    return chatWorkspace.shareConversation(conversationId);
+  const handleShareConversation = async (
+    conversationId: string,
+    actionContext?: ConversationActionContext,
+  ) => {
+    setActiveView('chat');
+    if (actionContext) {
+      // 侧栏可能从非当前分区触发分享，必须先打开目标会话再让聊天区进入轮次选择。
+      await chatWorkspace.selectConversationInWorkspace(conversationId, actionContext);
+    } else if (chatWorkspace.activeConversationId !== conversationId) {
+      await chatWorkspace.selectConversation(conversationId, chatWorkspace.conversations);
+    }
+    window.dispatchEvent(
+      new CustomEvent('codingx:start-share-conversation', {
+        detail: {
+          conversationId,
+        },
+      }),
+    );
+    return '';
   };
 
   /**
@@ -249,6 +267,10 @@ export default function App() {
   const toggleDesktopSidebar = () => {
     setIsDesktopSidebarCollapsed((current) => !current);
   };
+
+  if (sharedRoute) {
+    return <SharedChatView shareToken={sharedRoute.shareToken} messageIds={sharedRoute.messageIds} />;
+  }
 
   return (
     <div className="relative h-screen w-full overflow-hidden bg-background text-foreground transition-colors duration-300">
@@ -375,4 +397,26 @@ export default function App() {
       />
     </div>
   );
+}
+
+/**
+ * 从浏览器地址解析公开分享路由，兼容千问风格 `/share/chat/{token}`。
+ * @param pathname 当前路径。
+ * @param search 查询参数。
+ * @returns 分享路由参数或 null。
+ */
+function parseSharedChatRoute(pathname: string, search: string) {
+  const matched = pathname.match(/^\/share\/chat\/([^/]+)$/);
+  if (!matched) {
+    return null;
+  }
+  const searchParams = new URLSearchParams(search);
+  const messageIds = (searchParams.get('messages') ?? '')
+    .split(',')
+    .map((messageId) => messageId.trim())
+    .filter(Boolean);
+  return {
+    shareToken: decodeURIComponent(matched[1] ?? ''),
+    messageIds,
+  };
 }

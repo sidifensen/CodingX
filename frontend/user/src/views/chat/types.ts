@@ -351,7 +351,29 @@ export type ConversationActionContext = WorkspaceConversationSelectionContext;
 /**
  * 描述用户端支持的对话导出格式。
  */
-export type ConversationExportFormat = 'markdown' | 'json';
+export type ConversationExportFormat = 'word' | 'pdf' | 'txt' | 'json' | 'markdown';
+
+/**
+ * 描述分享会话时的可选范围，messageIds 为空时表示分享整段会话。
+ */
+export interface ShareConversationOptions {
+  messageIds?: string[];
+}
+
+/**
+ * 描述重新生成助手消息时的定位参数，避免前端只能重试会话末尾。
+ */
+export interface RegenerateConversationOptions {
+  assistantMessageId?: string;
+}
+
+/**
+ * 公开分享页使用的只读回放数据。
+ */
+export interface SharedConversationPayload {
+  conversation: ConversationItem;
+  messages: ChatMessageItem[];
+}
 
 /**
  * 描述侧边栏会话选择时携带的分组上下文，确保会话总是在所属空间内打开。
@@ -438,8 +460,14 @@ export interface ChatWorkspaceController {
     conversationId: string,
     actionContext?: ConversationActionContext,
   ) => Promise<void>;
-  shareConversation: (conversationId: string) => Promise<string>;
-  regenerateConversation: (conversationId: string) => Promise<void>;
+  shareConversation: (
+    conversationId: string,
+    options?: ShareConversationOptions,
+  ) => Promise<string>;
+  regenerateConversation: (
+    conversationId: string,
+    options?: RegenerateConversationOptions,
+  ) => Promise<void>;
   toggleConversationPin: (
     conversationId: string,
     actionContext: ConversationActionContext,

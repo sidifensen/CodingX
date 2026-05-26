@@ -25,7 +25,9 @@ import {
   PendingAttachmentItem,
   ProcessCardItem,
   ReferenceItem,
+  RegenerateConversationOptions,
   SampleQuestionItem,
+  ShareConversationOptions,
   StreamQueueState,
   UseChatWorkspaceOptions,
   WorkspaceConversationCreateContext,
@@ -1400,23 +1402,8 @@ export function useChatWorkspace(
         : `批量导出-${normalizedConversationIds.length}-会话`,
       format,
     );
-    const fileContent =
-      format === 'markdown'
-        ? serializeConversationExportAsMarkdown(exportRecords)
-        : JSON.stringify(
-            {
-              exportedAt: new Date().toISOString(),
-              count: exportRecords.length,
-              conversations: exportRecords,
-            },
-            null,
-            2,
-          );
-    downloadConversationExport(
-      fileName,
-      fileContent,
-      format === 'markdown' ? 'text/markdown;charset=utf-8' : 'application/json;charset=utf-8',
-    );
+    const { content, mimeType } = serializeConversationExport(exportRecords, format);
+    downloadConversationExport(fileName, content, mimeType);
   };
 
   /**
@@ -1469,33 +1456,164 @@ export function useChatWorkspace(
   }
 
   /**
-   * 为指定会话生成分享链接并复制到剪贴板，避免前端再维护一套分享页状态。
+   * 为指定会话生成分享链接；可选消息范围由公开页查询参数负责过滤。
    * @param conversationId 会话标识。
+   * @param options 分享范围。
    */
-  const shareConversation = async (conversationId: string) => {
+  const shareConversation = async (
+    conversationId: string,
+    options?: ShareConversationOptions,
+  ) => {
     const token = currentToken();
     if (!token) {
       onUnauthorizedRef.current?.();
       return '';
     }
-    const shareResult = await ChatApi.shareConversation(token, conversationId);
+    const shareResult = await ChatApi.shareConversation(token, conversationId, options);
     return resolveAbsoluteShareUrl(shareResult.shareUrl, window.location.origin);
   };
 
   /**
-   * 重新生成指定会话最后一条助手回复，并在完成后刷新当前会话回放。
+   * 重新生成指定会话的助手回复；传入消息 ID 时前端先覆盖原槽位再重新拉流。
    * @param conversationId 会话标识。
+   * @param options 重新生成定位参数。
    */
-  const regenerateConversation = async (conversationId: string) => {
+  const regenerateConversation = async (
+    conversationId: string,
+    options?: RegenerateConversationOptions,
+  ) => {
     const token = currentToken();
     if (!token) {
       onUnauthorizedRef.current?.();
+      return;
+    }
+    if (options?.assistantMessageId) {
+      await regenerateConversationFromMessage(token, conversationId, options.assistantMessageId);
       return;
     }
     await ChatApi.regenerateConversation(token, conversationId);
     const nextConversations = await loadConversations(token);
     if (activeConversationIdRef.current === conversationId) {
       await selectConversation(conversationId, nextConversations, undefined, true, false);
+    }
+  };
+
+  /**
+   * 覆盖式重新生成：删除原助手消息及之后内容，再把新流写入同一位置。
+   * @param token 当前登录令牌。
+   * @param conversationId 会话标识。
+   * @param assistantMessageId 被重新生成的助手消息。
+   */
+  const regenerateConversationFromMessage = async (
+    token: string,
+    conversationId: string,
+    assistantMessageId: string,
+  ) => {
+    const currentMessages = messagesRef.current;
+    const assistantMessageIndex = currentMessages.findIndex((message) => message.id === assistantMessageId);
+    if (assistantMessageIndex < 0) {
+      return;
+    }
+    const previousUserMessage = [...currentMessages.slice(0, assistantMessageIndex)]
+      .reverse()
+      .find((message) => message.role === 'USER');
+    if (!previousUserMessage) {
+      return;
+    }
+    abortControllerRef.current?.abort();
+    const streamSessionId = createStreamSessionId();
+    activeStreamSessionIdRef.current = streamSessionId;
+    const streamAbortController = new AbortController();
+    abortControllerRef.current = streamAbortController;
+    const optimisticAssistantId = `optimistic-regenerate-assistant-${Date.now()}`;
+    streamMcpCallsRef.current[optimisticAssistantId] = [];
+    streamStateRef.current = {
+      conversationId,
+      activeMessageId: optimisticAssistantId,
+    };
+    const nextMessages: ChatMessageItem[] = [
+      ...currentMessages.slice(0, assistantMessageIndex),
+      {
+        id: optimisticAssistantId,
+        conversationId,
+        role: 'ASSISTANT',
+        content: '',
+        processCards: [],
+        status: 'streaming',
+      },
+    ];
+    setMessages(nextMessages);
+    persistConversationState(conversationId, conversations, {
+      messages: nextMessages,
+      executionSteps,
+      references,
+      artifacts,
+      currentExperts,
+      currentSkills,
+      currentMcps,
+    });
+    setIsStreaming(true);
+    setStreamError('');
+    hideStreamQueueState();
+    try {
+      const response = await fetch(
+        buildStreamRequestUrl(
+          previousUserMessage.content,
+          conversationId,
+          workspaceId,
+          deepThinkingEnabled,
+          mcpConnected,
+          selectedMcpCodes,
+          selectedSkillCodes,
+          selectedExpertCode,
+          workspacePath,
+          [],
+        ),
+        {
+          headers: {
+            satoken: token,
+          },
+          signal: streamAbortController.signal,
+        },
+      );
+      await ChatApi.assertStreamAuthorized(response);
+      await consumeSseStream(response, optimisticAssistantId, streamSessionId);
+      if (isActiveStreamSession(streamSessionId)) {
+        await loadConversations(token);
+      }
+      refreshWorkspaceGroups('all');
+    } catch (error) {
+      if (!isActiveStreamSession(streamSessionId)) {
+        return;
+      }
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        setStreamError('已停止当前生成');
+      } else if (error instanceof ChatApi.UnauthorizedError) {
+        onUnauthorizedRef.current?.();
+      } else {
+        const message = error instanceof Error ? error.message : UserErrorMessages.CHAT_REQUEST_FAILED;
+        setStreamError(message);
+        setMessages((previousMessages) =>
+          previousMessages.map((item) =>
+            item.id === optimisticAssistantId
+              ? {
+                  ...item,
+                  status: 'error',
+                  errorMessage: message,
+                }
+              : item,
+          ),
+        );
+      }
+    } finally {
+      delete streamMcpCallsRef.current[optimisticAssistantId];
+      if (abortControllerRef.current === streamAbortController) {
+        abortControllerRef.current = null;
+      }
+      if (isActiveStreamSession(streamSessionId)) {
+        activeStreamSessionIdRef.current = null;
+        setIsStreaming(false);
+      }
     }
   };
 
@@ -2107,7 +2225,70 @@ export function useChatWorkspace(
     format: ConversationExportFormat,
   ) {
     const normalizedTitle = title.replace(/[\\/:*?"<>|]+/g, '-').trim() || 'conversation';
-    return `${normalizedTitle}.${format === 'markdown' ? 'md' : 'json'}`;
+    const extensionByFormat: Record<ConversationExportFormat, string> = {
+      word: 'doc',
+      pdf: 'pdf',
+      txt: 'txt',
+      json: 'json',
+      markdown: 'md',
+    };
+    return `${normalizedTitle}.${extensionByFormat[format]}`;
+  }
+
+  /**
+   * 根据导出格式生成下载内容；Word/PDF 当前导出可读文本载体，后续可替换为真实二进制生成器。
+   * @param exportRecords 会话导出记录。
+   * @param format 导出格式。
+   * @returns 下载内容与 MIME 类型。
+   */
+  function serializeConversationExport(
+    exportRecords: Array<{
+      id: string;
+      title: string;
+      exportedAt: string;
+      messages: ChatMessageItem[];
+      executionSteps: ExecutionStepItem[];
+      references: ReferenceItem[];
+      artifacts: ArtifactItem[];
+    }>,
+    format: ConversationExportFormat,
+  ) {
+    if (format === 'json') {
+      return {
+        content: JSON.stringify(
+          {
+            exportedAt: new Date().toISOString(),
+            count: exportRecords.length,
+            conversations: exportRecords,
+          },
+          null,
+          2,
+        ),
+        mimeType: 'application/json;charset=utf-8',
+      };
+    }
+    if (format === 'txt') {
+      return {
+        content: serializeConversationExportAsPlainText(exportRecords),
+        mimeType: 'text/plain;charset=utf-8',
+      };
+    }
+    if (format === 'word') {
+      return {
+        content: serializeConversationExportAsHtml(exportRecords),
+        mimeType: 'application/msword;charset=utf-8',
+      };
+    }
+    if (format === 'pdf') {
+      return {
+        content: serializeConversationExportAsPlainText(exportRecords),
+        mimeType: 'application/pdf;charset=utf-8',
+      };
+    }
+    return {
+      content: serializeConversationExportAsMarkdown(exportRecords),
+      mimeType: 'text/markdown;charset=utf-8',
+    };
   }
 
   /**
@@ -2171,6 +2352,79 @@ export function useChatWorkspace(
         ].join('\n');
       })
       .join('\n\n---\n\n');
+  }
+
+  /**
+   * 将导出记录序列化为纯文本，供 TXT 与轻量 PDF 下载复用。
+   * @param exportRecords 导出记录列表。
+   * @returns 纯文本内容。
+   */
+  function serializeConversationExportAsPlainText(
+    exportRecords: Array<{
+      id: string;
+      title: string;
+      exportedAt: string;
+      messages: ChatMessageItem[];
+    }>,
+  ) {
+    return exportRecords
+      .map((record) => {
+        const messageLines = record.messages.map((message) => {
+          const roleLabel =
+            message.role === 'USER'
+              ? '用户'
+              : message.role === 'ASSISTANT'
+                ? '助手'
+                : '系统';
+          return `${roleLabel}：\n${message.content || ''}`;
+        });
+        return [
+          record.title,
+          `会话 ID：${record.id}`,
+          `导出时间：${record.exportedAt}`,
+          '',
+          ...messageLines,
+        ].join('\n\n');
+      })
+      .join('\n\n----------------\n\n');
+  }
+
+  /**
+   * 将导出记录序列化为 Word 可打开的 HTML 文档。
+   * @param exportRecords 导出记录列表。
+   * @returns HTML 文档字符串。
+   */
+  function serializeConversationExportAsHtml(
+    exportRecords: Array<{
+      id: string;
+      title: string;
+      exportedAt: string;
+      messages: ChatMessageItem[];
+    }>,
+  ) {
+    const escapeHtml = (value: string) =>
+      value
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    const body = exportRecords
+      .map((record) => {
+        const messageHtml = record.messages
+          .map((message) => {
+            const roleLabel =
+              message.role === 'USER'
+                ? '用户'
+                : message.role === 'ASSISTANT'
+                  ? '助手'
+                  : '系统';
+            return `<h3>${roleLabel}</h3><p>${escapeHtml(message.content || '').replace(/\n/g, '<br/>')}</p>`;
+          })
+          .join('');
+        return `<section><h1>${escapeHtml(record.title)}</h1><p>会话 ID：${escapeHtml(record.id)}</p><p>导出时间：${escapeHtml(record.exportedAt)}</p>${messageHtml}</section>`;
+      })
+      .join('<hr/>');
+    return `<!doctype html><html><head><meta charset="utf-8"><title>CodingX Conversation Export</title></head><body>${body}</body></html>`;
   }
 
   /**

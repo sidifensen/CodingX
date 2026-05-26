@@ -50,6 +50,7 @@ function createSidebarProps(overrides?: {
     onShareConversation: vi.fn(async () => 'http://localhost/shared/conversation-1'),
     onToggleConversationPin: vi.fn(async () => true),
     onExportConversation: vi.fn(async () => undefined),
+    onExportConversations: vi.fn(async () => undefined),
     onDeleteConversations: vi.fn(async () => undefined),
     workspaceGroups:
       overrides?.workspaceGroups ??
@@ -276,6 +277,48 @@ describe('Sidebar conversation collapse behavior', () => {
     ).toBeInTheDocument();
   });
 
+  it('点击完成提醒状态区也应打开会话以清除未读圆点', () => {
+    // 业务意图：红点位于会话行右侧，用户点红点本身也应进入会话并触发已读写回。
+    const props = createSidebarProps({
+      workspaceGroups: [
+        {
+          partitionKey: 'local::d:/code/codingx',
+          workspacePath: 'D:/code/CodingX',
+          workspaceLabel: 'CodingX',
+          runtimeTarget: 'local',
+          lastOpenedAt: Date.now(),
+          activeConversationId: 'conversation-1',
+          conversations: [
+            {
+              ...createConversation(1),
+              lastTaskStatus: 'SUCCEEDED',
+              lastTaskFinishedAt: '2026-05-25 10:00:00',
+              hasUnreadTaskCompletion: true,
+            },
+          ],
+        },
+      ],
+    });
+
+    render(<Sidebar {...props} />);
+
+    fireEvent.mouseEnter(
+      screen.getByRole('status', { name: '会话 会话 1 有后台任务完成提醒' }),
+    );
+    fireEvent.click(
+      screen.getByRole('status', { name: '会话 会话 1 有后台任务完成提醒' }),
+    );
+
+    expect(props.onSelectConversation).toHaveBeenCalledWith(
+      'conversation-1',
+      expect.objectContaining({
+        partitionKey: 'local::d:/code/codingx',
+        runtimeTarget: 'local',
+        workspacePath: 'D:/code/CodingX',
+      }),
+    );
+  });
+
   it('相同会话ID出现在不同分组时仅激活当前分区会话，避免双高亮', () => {
     const duplicatedConversation = createConversation(1);
     const props = createSidebarProps({
@@ -365,24 +408,28 @@ describe('Sidebar conversation collapse behavior', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '打开会话菜单 会话 1' }));
 
-    const renameButton = screen.getByRole('button', { name: '重命名对话' });
+    const renameButton = screen.getByRole('button', { name: '重命名' });
     const menuPanel = renameButton.closest('div');
     expect(menuPanel).toHaveClass('fixed');
     expect(menuPanel).toHaveClass('z-[130]');
   });
 
-  it('会话菜单应提供置顶、分享、批量管理与导出入口', () => {
+  it('会话菜单应按千问顺序提供完整动作且不展示移动分组', () => {
     const props = createSidebarProps();
     render(<Sidebar {...props} />);
 
     fireEvent.click(screen.getByRole('button', { name: '打开会话菜单 会话 1' }));
 
-    expect(screen.getByRole('button', { name: '重命名对话' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '置顶对话' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '分享对话' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '批量管理' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '导出对话' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '删除对话' })).toBeInTheDocument();
+    const menuItems = screen.getAllByTestId('conversation-action-menu-item');
+    expect(menuItems.map((item) => item.textContent?.trim())).toEqual([
+      '重命名',
+      '置顶此对话',
+      '分享此对话',
+      '批量管理',
+      '导出对话',
+      '删除此对话',
+    ]);
+    expect(screen.queryByText('移动到分组')).not.toBeInTheDocument();
   });
 
   it('已置顶会话的菜单文案应显示为取消置顶', () => {
@@ -411,17 +458,19 @@ describe('Sidebar conversation collapse behavior', () => {
     expect(screen.getByRole('button', { name: '取消置顶' })).toBeInTheDocument();
   });
 
-  it('点击导出对话后应展示 Markdown 与 JSON 两种导出格式并触发回调', () => {
+  it('点击导出对话后应展示 Word、PDF、TXT 与 Json 格式并触发回调', () => {
     const props = createSidebarProps();
     render(<Sidebar {...props} />);
 
     fireEvent.click(screen.getByRole('button', { name: '打开会话菜单 会话 1' }));
     fireEvent.click(screen.getByRole('button', { name: '导出对话' }));
 
-    fireEvent.click(screen.getByRole('button', { name: 'Markdown 格式' }));
+    expect(screen.getByRole('menu', { name: '导出格式' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Word' }));
     expect(props.onExportConversation).toHaveBeenCalledWith(
       'conversation-1',
-      'markdown',
+      'word',
       expect.objectContaining({
         partitionKey: 'local::d:/code/codingx',
         runtimeTarget: 'local',
@@ -431,7 +480,23 @@ describe('Sidebar conversation collapse behavior', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '打开会话菜单 会话 1' }));
     fireEvent.click(screen.getByRole('button', { name: '导出对话' }));
-    fireEvent.click(screen.getByRole('button', { name: 'JSON 格式' }));
+    fireEvent.click(screen.getByRole('button', { name: 'PDF' }));
+    fireEvent.click(screen.getByRole('button', { name: '打开会话菜单 会话 1' }));
+    fireEvent.click(screen.getByRole('button', { name: '导出对话' }));
+    fireEvent.click(screen.getByRole('button', { name: 'TXT' }));
+    fireEvent.click(screen.getByRole('button', { name: '打开会话菜单 会话 1' }));
+    fireEvent.click(screen.getByRole('button', { name: '导出对话' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Json' }));
+    expect(props.onExportConversation).toHaveBeenCalledWith(
+      'conversation-1',
+      'pdf',
+      expect.any(Object),
+    );
+    expect(props.onExportConversation).toHaveBeenCalledWith(
+      'conversation-1',
+      'txt',
+      expect.any(Object),
+    );
     expect(props.onExportConversation).toHaveBeenCalledWith(
       'conversation-1',
       'json',
@@ -443,19 +508,24 @@ describe('Sidebar conversation collapse behavior', () => {
     );
   });
 
-  it('进入批量管理后应展示勾选框与批量工具条', () => {
+  it('进入批量管理后应展示千问样式批量管理抽屉', () => {
     const props = createSidebarProps();
     render(<Sidebar {...props} />);
 
     fireEvent.click(screen.getByRole('button', { name: '打开会话菜单 会话 1' }));
     fireEvent.click(screen.getByRole('button', { name: '批量管理' }));
 
-    expect(screen.getByRole('button', { name: '完成批量管理' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '全选当前分组' })).toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: '对话批量管理' })).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: '全选' })).toBeInTheDocument();
+    expect(screen.getByText('已选0/100')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '取消' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '删除' })).toBeDisabled();
+    expect(screen.queryByText('移动到分组')).not.toBeInTheDocument();
     expect(screen.getByLabelText('选择对话 会话 1')).toBeInTheDocument();
 
     fireEvent.click(screen.getByLabelText('选择对话 会话 1'));
-    fireEvent.click(screen.getByRole('button', { name: '批量删除' }));
+    expect(screen.getByText('已选1/100')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '删除' }));
     fireEvent.click(screen.getByRole('button', { name: '确认批量删除' }));
 
     expect(props.onDeleteConversations).toHaveBeenCalledWith(

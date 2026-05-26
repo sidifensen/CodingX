@@ -14,13 +14,18 @@ import com.codingx.chat.application.service.ChatRuntimeGuardService;
 import com.codingx.mcp.application.service.ChatMcpQueryService;
 import com.codingx.chat.domain.model.ChatConversation;
 import com.codingx.chat.domain.model.ChatConversationStatus;
+import com.codingx.chat.domain.model.ChatMessage;
+import com.codingx.chat.domain.model.ChatMessageRole;
+import com.codingx.chat.domain.model.ChatMessageStatus;
 import com.codingx.chat.interfaces.request.SendChatMessageRequest;
 import com.codingx.common.error.ErrorMessageCatalog;
+import com.codingx.chat.domain.repository.ChatMessageFeedbackRepository;
 import com.codingx.skill.domain.repository.ChatSkillRepository;
 import com.codingx.common.model.ApiResponse;
 import com.codingx.mcp.domain.repository.ChatMcpRepository;
 import com.codingx.workspace.infrastructure.repository.WorkspaceRepositoryImpl;
 import java.util.List;
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -49,6 +54,9 @@ class ChatControllerConversationMutationTest {
 
     @Mock
     private ChatReactionService chatReactionService;
+
+    @Mock
+    private ChatMessageFeedbackRepository chatMessageFeedbackRepository;
 
     @Mock
     private ChatSkillRepository chatSkillRepository;
@@ -228,5 +236,48 @@ class ChatControllerConversationMutationTest {
             assertEquals(ErrorMessageCatalog.CHAT_CONVERSATION_REGENERATED, response.message());
             verify(chatApplicationService).regenerateLastAssistantMessage(2001L, 1002L);
         }
+    }
+
+    /**
+     * 分享接口应把前端选中的消息 ID 编码进公开链接，供公开页按轮次过滤。
+     */
+    @Test
+    void shareConversationBuildsUrlWithSelectedMessageIds() throws Exception {
+        when(chatConversationApplicationService.generateShareToken(2001L, 1002L)).thenReturn("share-token");
+        try (MockedStatic<cn.dev33.satoken.stp.StpUtil> mocked = Mockito.mockStatic(cn.dev33.satoken.stp.StpUtil.class)) {
+            mocked.when(cn.dev33.satoken.stp.StpUtil::getLoginIdAsLong).thenReturn(1002L);
+
+            ApiResponse<?> response = chatController.shareConversation(
+                2001L,
+                new com.codingx.chat.interfaces.request.ShareConversationRequest(List.of(101L, 102L))
+            );
+
+            assertEquals(true, response.success());
+            java.lang.reflect.Method shareUrlAccessor = response.data().getClass().getDeclaredMethod("shareUrl");
+            shareUrlAccessor.setAccessible(true);
+            assertEquals("/share/chat/share-token?messages=101%2C102", shareUrlAccessor.invoke(response.data()));
+        }
+    }
+
+    /**
+     * 公开分享页不携带登录态，消息转换不能读取当前用户投票状态。
+     */
+    @Test
+    void getSharedConversationDoesNotRequireLoginWhenMappingMessages() {
+        ChatConversation conversation = ChatConversation.create(2001L, "公开分享", 1002L, ChatConversationStatus.ACTIVE);
+        conversation.restoreSharingState(false, "share-token");
+        when(chatConversationApplicationService.requireSharedConversation("share-token")).thenReturn(conversation);
+        when(chatConversationApplicationService.listSharedMessages("share-token", List.of(101L, 102L))).thenReturn(List.of(
+            ChatMessage.create(101L, 2001L, ChatMessageRole.USER, "第一问", ChatMessageStatus.COMPLETED, null, null, null),
+            ChatMessage.create(102L, 2001L, ChatMessageRole.ASSISTANT, "第一答", ChatMessageStatus.COMPLETED, null, null, null)
+        ));
+        when(chatAttachmentService.listByMessageId(101L)).thenReturn(List.of());
+        when(chatAttachmentService.listByMessageId(102L)).thenReturn(List.of());
+        when(workspaceRepositoryImpl.findOwnedWorkspaceById(null, 1002L)).thenReturn(Optional.empty());
+
+        ApiResponse<?> response = chatController.getSharedConversation("share-token", "101,102");
+
+        assertEquals(true, response.success());
+        verify(chatMessageFeedbackRepository, Mockito.never()).findByMessageIdAndUserId(Mockito.anyLong(), Mockito.anyLong());
     }
 }

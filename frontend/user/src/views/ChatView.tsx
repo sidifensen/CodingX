@@ -33,11 +33,13 @@ import { ChatApi } from './chat/chatApi';
 import {
   ChatAttachmentItem,
   ChatWorkspaceController,
+  ChatMessageItem,
   MessageSearchProgress,
   MessageSearchProgressItem,
   McpItem,
   PendingAttachmentItem,
   ProcessCardItem,
+  SharedConversationPayload,
 } from './chat/types';
 
 /**
@@ -143,6 +145,24 @@ export default function ChatView({
     src: string;
     alt: string;
   } | null>(null);
+  const [shareSelectionState, setShareSelectionState] = React.useState<{
+    isActive: boolean;
+    selectedMessageIds: string[];
+  }>({ isActive: false, selectedMessageIds: [] });
+  const [pendingShareConversationId, setPendingShareConversationId] = React.useState<string | null>(null);
+  const [shareDialogState, setShareDialogState] = React.useState<{
+    isOpen: boolean;
+    isLoading: boolean;
+    url: string;
+    previewMessages: ChatMessageItem[];
+    errorMessage: string;
+  }>({
+    isOpen: false,
+    isLoading: false,
+    url: '',
+    previewMessages: [],
+    errorMessage: '',
+  });
 
   /**
    * 判断 MCP 是否允许用户在当前会话手动开启。
@@ -159,6 +179,109 @@ export default function ChatView({
     }
     return true;
   }, []);
+
+  /**
+   * 进入分享选择模式；默认选中当前助手消息及其前一条用户消息，贴近千问按轮次分享的交互。
+   * @param defaultMessageId 默认触发分享的消息标识。
+   */
+  const startShareSelection = React.useCallback((defaultMessageId?: string) => {
+    const defaultSelection = resolveDefaultShareMessageIds(messages, defaultMessageId);
+    setShareSelectionState({
+      isActive: true,
+      selectedMessageIds: defaultSelection,
+    });
+  }, [messages]);
+
+  React.useEffect(() => {
+    const handleSidebarShareRequest = (event: Event) => {
+      const customEvent = event as CustomEvent<{ conversationId?: string }>;
+      const targetConversationId = customEvent.detail?.conversationId ?? activeConversationId;
+      if (targetConversationId && targetConversationId !== activeConversationId) {
+        setPendingShareConversationId(targetConversationId);
+        return;
+      }
+      startShareSelection();
+    };
+    window.addEventListener('codingx:start-share-conversation', handleSidebarShareRequest);
+    return () => {
+      window.removeEventListener('codingx:start-share-conversation', handleSidebarShareRequest);
+    };
+  }, [activeConversationId, startShareSelection]);
+
+  React.useEffect(() => {
+    if (
+      !pendingShareConversationId ||
+      pendingShareConversationId !== activeConversationId ||
+      messages.filter((message) => message.role !== 'SYSTEM').length === 0
+    ) {
+      return;
+    }
+    setPendingShareConversationId(null);
+    startShareSelection();
+  }, [activeConversationId, messages, pendingShareConversationId, startShareSelection]);
+
+  /**
+   * 切换消息是否参与分享。
+   * @param messageId 消息标识。
+   */
+  const toggleShareMessageSelection = React.useCallback((messageId: string) => {
+    setShareSelectionState((previousState) => {
+      const nextSelectedMessageIds = previousState.selectedMessageIds.includes(messageId)
+        ? previousState.selectedMessageIds.filter((selectedMessageId) => selectedMessageId !== messageId)
+        : [...previousState.selectedMessageIds, messageId];
+      return {
+        ...previousState,
+        selectedMessageIds: nextSelectedMessageIds,
+      };
+    });
+  }, []);
+
+  /**
+   * 退出分享选择状态并清空选择结果。
+   */
+  const cancelShareSelection = React.useCallback(() => {
+    setShareSelectionState({ isActive: false, selectedMessageIds: [] });
+  }, []);
+
+  /**
+   * 根据已选消息生成分享链接，并展示千问风格预览弹窗。
+   */
+  const confirmShareSelection = async () => {
+    if (!activeConversationId || shareSelectionState.selectedMessageIds.length === 0) {
+      return;
+    }
+    const previewMessages = messages.filter((message) =>
+      shareSelectionState.selectedMessageIds.includes(message.id),
+    );
+    setShareDialogState({
+      isOpen: true,
+      isLoading: true,
+      url: '',
+      previewMessages,
+      errorMessage: '',
+    });
+    try {
+      const shareUrl = await shareConversation(activeConversationId, {
+        messageIds: shareSelectionState.selectedMessageIds,
+      });
+      setShareDialogState({
+        isOpen: true,
+        isLoading: false,
+        url: shareUrl,
+        previewMessages,
+        errorMessage: '',
+      });
+      cancelShareSelection();
+    } catch (error) {
+      setShareDialogState({
+        isOpen: true,
+        isLoading: false,
+        url: '',
+        previewMessages,
+        errorMessage: error instanceof Error ? error.message : '分享失败',
+      });
+    }
+  };
 
   /**
    * 过滤技能列表，支持名称与编码模糊检索。
@@ -783,14 +906,23 @@ export default function ChatView({
               {messages.map((message) => {
                 const isAssistant = message.role === 'ASSISTANT';
                 const isLatestMessage = message.id === messages[messages.length - 1]?.id;
+                const isShareSelectable = shareSelectionState.isActive && message.role !== 'SYSTEM';
+                const isShareSelected = shareSelectionState.selectedMessageIds.includes(message.id);
                 const messageContent =
                   message.content || (message.status === 'streaming' ? '正在生成回答...' : '');
                 return (
                   <div
                     key={message.id}
                     data-message-status={message.status}
-                    className={`flex ${isAssistant ? 'justify-start' : 'justify-end'}`}
+                    className={`flex items-start gap-3 ${isAssistant ? 'justify-start' : 'justify-end'}`}
                   >
+                    {isShareSelectable && !isAssistant ? (
+                      <ShareMessageCheckbox
+                        message={message}
+                        checked={isShareSelected}
+                        onToggle={toggleShareMessageSelection}
+                      />
+                    ) : null}
                     <div
                       className={`min-w-0 max-w-3xl px-1 py-1 ${
                         isAssistant
@@ -825,7 +957,7 @@ export default function ChatView({
                             content={messageContent}
                             isLatestAssistantMessage={message.id === latestAssistantMessageId}
                             userVote={message.userVote}
-                            onShareConversation={shareConversation}
+                            onStartShareSelection={startShareSelection}
                             onRegenerateConversation={regenerateConversation}
                           />
                         </>
@@ -863,6 +995,13 @@ export default function ChatView({
                         />
                       ) : null}
                     </div>
+                    {isShareSelectable && isAssistant ? (
+                      <ShareMessageCheckbox
+                        message={message}
+                        checked={isShareSelected}
+                        onToggle={toggleShareMessageSelection}
+                      />
+                    ) : null}
                   </div>
                 );
               })}
@@ -1588,6 +1727,38 @@ export default function ChatView({
         </div>
       ) : null}
 
+      {shareSelectionState.isActive ? (
+        <ShareSelectionToolbar
+          selectedCount={shareSelectionState.selectedMessageIds.length}
+          totalCount={messages.filter((message) => message.role !== 'SYSTEM').length}
+          onSelectAll={() =>
+            setShareSelectionState({
+              isActive: true,
+              selectedMessageIds: messages
+                .filter((message) => message.role !== 'SYSTEM')
+                .map((message) => message.id),
+            })
+          }
+          onCancel={cancelShareSelection}
+          onConfirm={() => void confirmShareSelection()}
+        />
+      ) : null}
+
+      {shareDialogState.isOpen ? (
+        <ShareConversationDialog
+          state={shareDialogState}
+          onClose={() =>
+            setShareDialogState({
+              isOpen: false,
+              isLoading: false,
+              url: '',
+              previewMessages: [],
+              errorMessage: '',
+            })
+          }
+        />
+      ) : null}
+
       {renameDialog.isOpen ? (
         <InlineDialog
           title="重命名对话"
@@ -1627,6 +1798,104 @@ export default function ChatView({
         />
       ) : null}
     </motion.div>
+  );
+}
+
+/**
+ * 渲染公开分享页，只读取分享接口并以只读方式展示选中消息。
+ */
+export function SharedChatView({
+  shareToken,
+  messageIds,
+}: {
+  shareToken: string;
+  messageIds: string[];
+}) {
+  const [state, setState] = React.useState<{
+    isLoading: boolean;
+    data: SharedConversationPayload | null;
+    errorMessage: string;
+  }>({
+    isLoading: true,
+    data: null,
+    errorMessage: '',
+  });
+
+  React.useEffect(() => {
+    let cancelled = false;
+    const loadSharedConversation = async () => {
+      try {
+        const data = await ChatApi.getSharedConversation(shareToken, messageIds);
+        if (!cancelled) {
+          setState({ isLoading: false, data, errorMessage: '' });
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setState({
+            isLoading: false,
+            data: null,
+            errorMessage: error instanceof Error ? error.message : '分享链接不存在或已失效',
+          });
+        }
+      }
+    };
+    void loadSharedConversation();
+    return () => {
+      cancelled = true;
+    };
+  }, [shareToken, messageIds]);
+
+  const sharedConversation = state.data?.conversation;
+  return (
+    <main className="min-h-screen bg-[#f7f2ea] px-4 py-8 text-[#191817] dark:bg-background dark:text-foreground">
+      <div className="mx-auto max-w-3xl">
+        <header className="flex items-center justify-between">
+          <div className="text-xl font-bold">CodingX</div>
+          <a
+            href="/"
+            className="rounded-full bg-[#191817] px-4 py-2 text-sm text-white dark:bg-foreground dark:text-background"
+          >
+            继续向 CodingX 提问
+          </a>
+        </header>
+        <section className="mt-10 rounded-[32px] border border-black/8 bg-white px-6 py-7 shadow-[0_24px_80px_rgba(45,35,20,0.12)] dark:border-border dark:bg-surface">
+          {state.isLoading ? (
+            <p className="text-sm text-muted">正在加载分享对话...</p>
+          ) : state.errorMessage ? (
+            <p className="text-sm text-error">{state.errorMessage}</p>
+          ) : (
+            <>
+              <div className="mb-8">
+                <h1 className="text-3xl font-semibold tracking-tight">
+                  {sharedConversation?.title || '分享对话'}
+                </h1>
+                <p className="mt-2 text-sm text-muted">
+                  {sharedConversation?.lastMessageAt || '由 CodingX 分享'}
+                </p>
+              </div>
+              <div className="space-y-6">
+                {(state.data?.messages ?? []).map((message) => (
+                  <article
+                    key={message.id}
+                    className={`flex ${message.role === 'USER' ? 'justify-end' : 'justify-start'}`}
+                  >
+                    <div
+                      className={`max-w-[86%] rounded-[24px] px-5 py-4 text-sm leading-7 ${
+                        message.role === 'USER'
+                          ? 'bg-[#ede5d8] text-[#191817] dark:bg-surface-container dark:text-foreground'
+                          : 'bg-transparent text-[#191817] dark:text-foreground'
+                      }`}
+                    >
+                      <MarkdownMessage content={message.content} messageId={`shared-${message.id}`} />
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </>
+          )}
+        </section>
+      </div>
+    </main>
   );
 }
 
@@ -2203,6 +2472,195 @@ type MessageReaction = 'up' | 'down' | null;
 const PERSISTED_MESSAGE_ID_PATTERN = /^\d+$/;
 
 /**
+ * 根据触发消息解析默认分享范围；助手消息会自动带上前一条用户消息，形成完整问答轮次。
+ * @param messages 当前消息列表。
+ * @param defaultMessageId 触发分享的消息标识。
+ * @returns 默认选中的消息标识。
+ */
+function resolveDefaultShareMessageIds(messages: ChatMessageItem[], defaultMessageId?: string) {
+  const selectableMessages = messages.filter((message) => message.role !== 'SYSTEM');
+  if (!defaultMessageId) {
+    return selectableMessages.map((message) => message.id).slice(0, 2);
+  }
+  const messageIndex = messages.findIndex((message) => message.id === defaultMessageId);
+  if (messageIndex < 0) {
+    return selectableMessages.map((message) => message.id).slice(0, 2);
+  }
+  const targetMessage = messages[messageIndex];
+  if (targetMessage.role === 'ASSISTANT') {
+    const previousUserMessage = [...messages.slice(0, messageIndex)]
+      .reverse()
+      .find((message) => message.role === 'USER');
+    return [previousUserMessage?.id, targetMessage.id].filter(Boolean) as string[];
+  }
+  const nextAssistantMessage = messages
+    .slice(messageIndex + 1)
+    .find((message) => message.role === 'ASSISTANT');
+  return [targetMessage.id, nextAssistantMessage?.id].filter(Boolean) as string[];
+}
+
+/**
+ * 渲染分享选择勾选框，保持左右消息布局各自贴边。
+ */
+function ShareMessageCheckbox({
+  message,
+  checked,
+  onToggle,
+}: {
+  message: ChatMessageItem;
+  checked: boolean;
+  onToggle: (messageId: string) => void;
+}) {
+  return (
+    <label className="mt-2 inline-flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-full border border-border bg-surface shadow-sm">
+      <span className="sr-only">{`选择分享消息 ${message.content}`}</span>
+      <input
+        type="checkbox"
+        aria-label={`选择分享消息 ${message.content}`}
+        checked={checked}
+        onChange={() => onToggle(message.id)}
+        className="h-4 w-4 accent-foreground"
+      />
+    </label>
+  );
+}
+
+/**
+ * 分享选择底部工具栏，提供全选、取消和生成链接入口。
+ */
+function ShareSelectionToolbar({
+  selectedCount,
+  totalCount,
+  onSelectAll,
+  onCancel,
+  onConfirm,
+}: {
+  selectedCount: number;
+  totalCount: number;
+  onSelectAll: () => void;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div
+      role="toolbar"
+      aria-label="分享选择工具栏"
+      className="absolute bottom-24 left-1/2 z-30 flex -translate-x-1/2 items-center gap-3 rounded-2xl border border-border bg-surface/95 px-4 py-3 text-sm text-foreground shadow-[0_18px_48px_rgba(0,0,0,0.22)] backdrop-blur"
+    >
+      <button
+        type="button"
+        onClick={onSelectAll}
+        className="rounded-xl px-3 py-2 text-muted transition-colors hover:bg-surface-container hover:text-foreground"
+      >
+        全选
+      </button>
+      <span className="text-muted">
+        <span>已选{selectedCount}条消息</span>
+        <span className="ml-1">/ 共{totalCount}条</span>
+      </span>
+      <button
+        type="button"
+        onClick={onCancel}
+        className="rounded-xl px-3 py-2 text-muted transition-colors hover:bg-surface-container hover:text-foreground"
+      >
+        取消
+      </button>
+      <button
+        type="button"
+        aria-label="生成分享链接"
+        disabled={selectedCount === 0}
+        onClick={onConfirm}
+        className="rounded-xl bg-foreground px-4 py-2 text-background transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        生成分享链接
+      </button>
+    </div>
+  );
+}
+
+/**
+ * 千问风格分享弹窗，展示选中内容预览与可复制公开链接。
+ */
+function ShareConversationDialog({
+  state,
+  onClose,
+}: {
+  state: {
+    isLoading: boolean;
+    url: string;
+    previewMessages: ChatMessageItem[];
+    errorMessage: string;
+  };
+  onClose: () => void;
+}) {
+  const [copyState, setCopyState] = React.useState<'idle' | 'copied' | 'error'>('idle');
+  const copyShareUrl = async () => {
+    if (!state.url) {
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(state.url);
+      setCopyState('copied');
+    } catch {
+      setCopyState('error');
+    }
+  };
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="分享对话"
+      className="fixed inset-0 z-[140] flex items-center justify-center bg-black/45 px-4 backdrop-blur-md"
+    >
+      <div className="w-full max-w-lg rounded-[28px] border border-border bg-surface p-5 text-foreground shadow-[0_30px_90px_rgba(0,0,0,0.34)]">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-semibold">分享对话</h2>
+          <button
+            type="button"
+            aria-label="关闭分享弹窗"
+            onClick={onClose}
+            className="rounded-full p-1.5 text-muted transition-colors hover:bg-surface-container hover:text-foreground"
+          >
+            <X size={18} />
+          </button>
+        </div>
+        <div className="mt-4 max-h-64 overflow-y-auto rounded-2xl border border-border bg-surface-container p-4">
+          {state.previewMessages.map((message) => (
+            <div key={message.id} className="mb-3 last:mb-0">
+              <div className="mb-1 text-[11px] font-medium text-muted">
+                {message.role === 'USER' ? '用户' : 'CodingX'}
+              </div>
+              <div className="whitespace-pre-wrap text-sm leading-6">{message.content}</div>
+            </div>
+          ))}
+        </div>
+        <div className="mt-4 flex gap-2 rounded-2xl border border-border bg-background p-2">
+          <input
+            readOnly
+            value={state.isLoading ? '正在生成分享链接...' : state.url}
+            className="min-w-0 flex-1 bg-transparent px-2 text-sm text-foreground outline-none"
+          />
+          <button
+            type="button"
+            aria-label="复制链接"
+            disabled={!state.url}
+            onClick={() => void copyShareUrl()}
+            className="rounded-xl bg-foreground px-4 py-2 text-sm text-background transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            复制链接
+          </button>
+        </div>
+        {state.errorMessage ? (
+          <p className="mt-3 text-sm text-error">{state.errorMessage}</p>
+        ) : null}
+        {copyState === 'copied' ? <p className="mt-3 text-sm text-muted">分享链接已复制</p> : null}
+        {copyState === 'error' ? <p className="mt-3 text-sm text-error">复制失败</p> : null}
+      </div>
+    </div>
+  );
+}
+
+/**
  * 渲染助手消息底部操作栏，统一提供复制、分享、重新生成与点赞反馈入口。
  */
 function AssistantMessageActions({
@@ -2211,7 +2669,7 @@ function AssistantMessageActions({
   content,
   isLatestAssistantMessage,
   userVote,
-  onShareConversation,
+  onStartShareSelection,
   onRegenerateConversation,
 }: {
   messageId: string;
@@ -2219,12 +2677,14 @@ function AssistantMessageActions({
   content: string;
   isLatestAssistantMessage: boolean;
   userVote?: number | null;
-  onShareConversation: (conversationId: string) => Promise<string>;
-  onRegenerateConversation: (conversationId: string) => Promise<void>;
+  onStartShareSelection: (messageId: string) => void;
+  onRegenerateConversation: (
+    conversationId: string,
+    options?: { assistantMessageId?: string },
+  ) => Promise<void>;
 }) {
   const [isMenuOpen, setIsMenuOpen] = React.useState(false);
   const [copiedMode, setCopiedMode] = React.useState<CopyMode | null>(null);
-  const [shareState, setShareState] = React.useState<'idle' | 'copying' | 'copied' | 'error'>('idle');
   // 业务约束：初始化时从 userVote 恢复已投票状态，保证刷新后仍显示之前的投票结果。
   const [reaction, setReaction] = React.useState<MessageReaction>(
     userVote === 1 ? 'up' : userVote === -1 ? 'down' : null,
@@ -2305,31 +2765,6 @@ function AssistantMessageActions({
   };
 
   /**
-   * 生成分享链接并复制到剪贴板，成功后给出短暂状态提示。
-   * 这里不直接暴露后端返回的相对路径，避免用户复制后无法在当前站点打开。
-   */
-  const shareMessage = async () => {
-    if (shareState === 'copying' || !canOperateOnConversation) {
-      return;
-    }
-    setShareState('copying');
-    try {
-      const shareUrl = await onShareConversation(normalizedConversationId);
-      if (!shareUrl) {
-        setShareState('error');
-        return;
-      }
-      await navigator.clipboard.writeText(shareUrl);
-      setShareState('copied');
-      window.setTimeout(() => {
-        setShareState((current) => (current === 'copied' ? 'idle' : current));
-      }, 1400);
-    } catch {
-      setShareState('error');
-    }
-  };
-
-  /**
    * 重新生成当前会话最后一条助手回复。
    * 只允许对当前会话尾部消息操作，避免旧消息触发“看不出变化”的无效重试。
    */
@@ -2340,7 +2775,9 @@ function AssistantMessageActions({
     setIsRegenerating(true);
     setRegenerateError('');
     try {
-      await onRegenerateConversation(normalizedConversationId);
+      await onRegenerateConversation(normalizedConversationId, {
+        assistantMessageId: messageId,
+      });
     } catch {
       setRegenerateError('重新生成失败');
     } finally {
@@ -2404,8 +2841,8 @@ function AssistantMessageActions({
         type="button"
         data-testid={`share-message-${messageId}`}
         aria-label="分享消息"
-        disabled={!canOperateOnConversation || shareState === 'copying'}
-        onClick={() => void shareMessage()}
+        disabled={!canOperateOnConversation}
+        onClick={() => onStartShareSelection(messageId)}
         className="chat-message-action-button disabled:cursor-not-allowed disabled:opacity-60"
       >
         <Share2 size={15} />
@@ -2447,8 +2884,6 @@ function AssistantMessageActions({
           {copiedMode === 'markdown' ? '已复制 Markdown' : '已复制'}
         </span>
       ) : null}
-      {shareState === 'copied' ? <span className="ml-2 text-[11px] text-muted">分享链接已复制</span> : null}
-      {shareState === 'error' ? <span className="ml-2 text-[11px] text-error">分享失败</span> : null}
       {regenerateError ? <span className="ml-2 text-[11px] text-error">{regenerateError}</span> : null}
       {reactionError ? <span className="ml-2 text-[11px] text-error">{reactionError}</span> : null}
     </div>

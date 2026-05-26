@@ -97,6 +97,24 @@ class ChatConversationApplicationServiceBehaviorTest {
     }
 
     @Test
+    void shareConversationLookupFiltersMessagesByRequestedIds() {
+        ChatConversation conversation = ChatConversation.create(1L, "公开分享", 1002L, ChatConversationStatus.ACTIVE);
+        conversation.restoreSharingState(false, "share-token");
+        when(chatConversationRepository.findByShareToken("share-token")).thenReturn(Optional.of(conversation));
+        when(chatMessageRepository.findByConversationId(1L)).thenReturn(List.of(
+            ChatMessage.create(2L, 1L, ChatMessageRole.USER, "第一问", ChatMessageStatus.COMPLETED, null, null, null),
+            ChatMessage.create(3L, 1L, ChatMessageRole.ASSISTANT, "第一答", ChatMessageStatus.COMPLETED, null, null, null),
+            ChatMessage.create(4L, 1L, ChatMessageRole.USER, "第二问", ChatMessageStatus.COMPLETED, null, null, null)
+        ));
+
+        List<ChatMessage> messages = chatConversationApplicationService.listSharedMessages("share-token", List.of(4L, 2L));
+
+        assertEquals(2, messages.size());
+        assertEquals(2L, messages.get(0).getId());
+        assertEquals(4L, messages.get(1).getId());
+    }
+
+    @Test
     void shareConversationLookupReturnsNotFoundWhenTokenMissing() {
         when(chatConversationRepository.findByShareToken("missing-token")).thenReturn(Optional.empty());
 

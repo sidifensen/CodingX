@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import {
   Check,
   Download,
+  File,
   SquareTerminal,
   Search,
   PlusCircle,
@@ -23,8 +24,6 @@ import {
   PinOff,
   Share2,
   Layers3,
-  FileJson,
-  FileText,
   X,
 } from 'lucide-react';
 import { ViewType } from '../App';
@@ -48,6 +47,13 @@ const CONVERSATION_MENU_WIDTH = 176;
 const CONVERSATION_MENU_OFFSET = 8;
 const CONVERSATION_MENU_SAFE_PADDING = 12;
 const CONVERSATION_MENU_ESTIMATED_HEIGHT = 332;
+const BATCH_SELECTION_LIMIT = 100;
+const QIANWEN_EXPORT_FORMATS: Array<{ label: string; value: ConversationExportFormat }> = [
+  { label: 'Word', value: 'word' },
+  { label: 'PDF', value: 'pdf' },
+  { label: 'TXT', value: 'txt' },
+  { label: 'Json', value: 'json' },
+];
 
 /**
  * 定义 Sidebar 组件需要的输入属性。
@@ -82,7 +88,10 @@ interface SidebarProps {
     conversationId: string,
     actionContext?: ConversationActionContext,
   ) => Promise<void>;
-  onShareConversation: (conversationId: string) => Promise<string>;
+  onShareConversation: (
+    conversationId: string,
+    actionContext?: ConversationActionContext,
+  ) => Promise<string>;
   onToggleConversationPin: (
     conversationId: string,
     actionContext: ConversationActionContext,
@@ -298,7 +307,10 @@ function ConversationHistory({
     conversationId: string,
     actionContext?: ConversationActionContext,
   ) => Promise<void>;
-  onShareConversation: (conversationId: string) => Promise<string>;
+  onShareConversation: (
+    conversationId: string,
+    actionContext?: ConversationActionContext,
+  ) => Promise<string>;
   onToggleConversationPin: (
     conversationId: string,
     actionContext: ConversationActionContext,
@@ -447,8 +459,18 @@ function ConversationHistory({
     setSelectedConversationIds((previousIds) =>
       previousIds.includes(conversationId)
         ? previousIds.filter((item) => item !== conversationId)
-        : [...previousIds, conversationId],
+        : previousIds.length >= BATCH_SELECTION_LIMIT
+          ? previousIds
+          : [...previousIds, conversationId],
     );
+  };
+
+  /**
+   * 千问批量管理最多勾选 100 条，超过部分保留未选中状态。
+   * @param conversations 当前抽屉可见会话。
+   */
+  const selectBatchConversations = (conversations: ConversationItem[]) => {
+    setSelectedConversationIds(conversations.slice(0, BATCH_SELECTION_LIMIT).map((conversation) => conversation.id));
   };
 
   /**
@@ -599,6 +621,22 @@ function ConversationHistory({
                           const isMenuOpen = openMenuId === conversation.id;
                           const isTaskRunning =
                             String(conversation.activeTaskStatus ?? '').trim().toUpperCase() === 'RUNNING';
+                          const shouldShowActionMenu =
+                            (hoveredActionId === conversation.id || isMenuOpen) &&
+                            !(conversation.hasUnreadTaskCompletion && !isMenuOpen);
+                          const statusSlotClass = shouldShowActionMenu
+                            ? 'opacity-0 pointer-events-none'
+                            : 'opacity-100 pointer-events-auto';
+                          const actionButtonClass = shouldShowActionMenu
+                            ? 'opacity-100 pointer-events-auto'
+                            : 'opacity-0 pointer-events-none';
+                          const selectConversation = () =>
+                            onSelectConversation(conversation.id, {
+                              partitionKey: group.partitionKey,
+                              runtimeTarget: group.runtimeTarget,
+                              workspacePath: group.workspacePath,
+                              groupType: group.groupType,
+                            });
                           return (
                             <div
                               key={conversation.id}
@@ -616,7 +654,7 @@ function ConversationHistory({
                                 {isBatchMode ? (
                                   <label
                                     className="flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center"
-                                    aria-label={`选择对话 ${conversation.title}`}
+                                    aria-label={`选择侧栏对话 ${conversation.title}`}
                                   >
                                     <input
                                       type="checkbox"
@@ -638,12 +676,7 @@ function ConversationHistory({
                                 <button
                                   type="button"
                                   onClick={() =>
-                                    void onSelectConversation(conversation.id, {
-                                      partitionKey: group.partitionKey,
-                                      runtimeTarget: group.runtimeTarget,
-                                      workspacePath: group.workspacePath,
-                                      groupType: group.groupType,
-                                    })
+                                    void selectConversation()
                                   }
                                   disabled={isBatchMode}
                                   className={`min-w-0 flex-1 cursor-pointer pl-3 text-left ${
@@ -671,26 +704,19 @@ function ConversationHistory({
                                     onTouchStart={() => startLongPress(conversation.id)}
                                     onTouchEnd={clearLongPress}
                                     onTouchCancel={clearLongPress}
+                                    onClick={() => void selectConversation()}
                                   >
                                     {isTaskRunning ? (
                                       <span
                                         role="status"
                                         aria-label={`会话 ${conversation.title} 正在后台执行`}
-                                        className={`absolute right-0 inline-flex h-5 w-5 items-center justify-center text-muted transition-opacity ${
-                                          hoveredActionId === conversation.id || isMenuOpen
-                                            ? 'opacity-0'
-                                            : 'opacity-100'
-                                        }`}
+                                        className={`absolute right-0 inline-flex h-5 w-5 items-center justify-center text-muted transition-opacity ${statusSlotClass}`}
                                       >
                                         <LoaderCircle size={15} className="animate-spin" />
                                       </span>
                                     ) : (
                                       <span
-                                        className={`absolute right-0 inline-flex items-center gap-1.5 whitespace-nowrap text-[12px] text-muted transition-opacity ${
-                                          hoveredActionId === conversation.id || isMenuOpen
-                                            ? 'opacity-0'
-                                            : 'opacity-100'
-                                        }`}
+                                        className={`absolute right-0 inline-flex items-center gap-1.5 whitespace-nowrap text-[12px] text-muted transition-opacity ${statusSlotClass}`}
                                       >
                                         <span>{formatRelativeTime(conversation.lastMessageAt)}</span>
                                         {conversation.hasUnreadTaskCompletion ? (
@@ -705,7 +731,9 @@ function ConversationHistory({
                                     <button
                                       type="button"
                                       aria-label={`打开会话菜单 ${conversation.title}`}
-                                      onClick={() => {
+                                      onClick={(event) => {
+                                        // 菜单按钮和状态槽重叠；阻止冒泡，避免打开菜单时误切换会话。
+                                        event.stopPropagation();
                                         const nextIsOpen = !(openMenuId === conversation.id);
                                         setOpenMenuId(nextIsOpen ? conversation.id : null);
                                         setActiveExportConversationId(null);
@@ -713,11 +741,7 @@ function ConversationHistory({
                                       ref={(element) => {
                                         menuTriggerRefs.current[conversation.id] = element;
                                       }}
-                                      className={`absolute right-0 cursor-pointer rounded-md p-1 text-muted transition-opacity hover:text-foreground ${
-                                        hoveredActionId === conversation.id || isMenuOpen
-                                          ? 'opacity-100'
-                                          : 'opacity-0'
-                                      }`}
+                                      className={`absolute right-0 cursor-pointer rounded-md p-1 text-muted transition-opacity hover:text-foreground ${actionButtonClass}`}
                                     >
                                       <MoreHorizontal size={16} />
                                     </button>
@@ -735,7 +759,8 @@ function ConversationHistory({
                                       >
                                         <button
                                           type="button"
-                                          aria-label="重命名对话"
+                                          aria-label="重命名"
+                                          data-testid="conversation-action-menu-item"
                                           onClick={() => {
                                             void onRenameConversation(
                                               conversation.id,
@@ -748,11 +773,12 @@ function ConversationHistory({
                                           className="flex w-full cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-left text-sm text-foreground transition-colors hover:bg-surface-high"
                                         >
                                           <PencilLine size={16} />
-                                          重命名对话
+                                          重命名
                                         </button>
                                         <button
                                           type="button"
-                                          aria-label={conversation.isPinned ? '取消置顶' : '置顶对话'}
+                                          aria-label={conversation.isPinned ? '取消置顶' : '置顶此对话'}
+                                          data-testid="conversation-action-menu-item"
                                           onClick={() => {
                                             void onToggleConversationPin(conversation.id, actionContext);
                                             setOpenMenuId(null);
@@ -761,24 +787,26 @@ function ConversationHistory({
                                           className="mt-1 flex w-full cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-left text-sm text-foreground transition-colors hover:bg-surface-high"
                                         >
                                           {conversation.isPinned ? <PinOff size={16} /> : <Pin size={16} />}
-                                          {conversation.isPinned ? '取消置顶' : '置顶对话'}
+                                          {conversation.isPinned ? '取消置顶' : '置顶此对话'}
                                         </button>
                                         <button
                                           type="button"
-                                          aria-label="分享对话"
+                                          aria-label="分享此对话"
+                                          data-testid="conversation-action-menu-item"
                                           onClick={() => {
-                                            void onShareConversation(conversation.id);
+                                            void onShareConversation(conversation.id, actionContext);
                                             setOpenMenuId(null);
                                             setActiveExportConversationId(null);
                                           }}
                                           className="mt-1 flex w-full cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-left text-sm text-foreground transition-colors hover:bg-surface-high"
                                         >
                                           <Share2 size={16} />
-                                          分享对话
+                                          分享此对话
                                         </button>
                                         <button
                                           type="button"
                                           aria-label="批量管理"
+                                          data-testid="conversation-action-menu-item"
                                           onClick={() => enterBatchMode(group.partitionKey)}
                                           className="mt-1 flex w-full cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-left text-sm text-foreground transition-colors hover:bg-surface-high"
                                         >
@@ -788,57 +816,52 @@ function ConversationHistory({
                                         <button
                                           type="button"
                                           aria-label="导出对话"
+                                          data-testid="conversation-action-menu-item"
                                           onClick={() =>
                                             setActiveExportConversationId((currentId) =>
                                               currentId === conversation.id ? null : conversation.id,
                                             )
                                           }
-                                          className="mt-1 flex w-full cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-left text-sm text-foreground transition-colors hover:bg-surface-high"
+                                          className="mt-1 flex w-full cursor-pointer items-center justify-between rounded-lg px-3 py-2 text-left text-sm text-foreground transition-colors hover:bg-surface-high"
                                         >
-                                          <Download size={16} />
-                                          导出对话
+                                          <span className="inline-flex items-center gap-3">
+                                            <Download size={16} />
+                                            导出对话
+                                          </span>
+                                          <ChevronDown size={14} className="-rotate-90 text-muted" />
                                         </button>
                                         {activeExportConversationId === conversation.id ? (
-                                          <div className="mt-1 space-y-1 rounded-lg border border-border bg-surface px-2 py-2">
-                                            <button
-                                              type="button"
-                                              aria-label="Markdown 格式"
-                                              onClick={() => {
-                                                void onExportConversation(
-                                                  conversation.id,
-                                                  'markdown',
-                                                  actionContext,
-                                                );
-                                                setOpenMenuId(null);
-                                                setActiveExportConversationId(null);
-                                              }}
-                                              className="flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-left text-xs text-foreground transition-colors hover:bg-surface-container"
-                                            >
-                                              <FileText size={14} />
-                                              Markdown 格式
-                                            </button>
-                                            <button
-                                              type="button"
-                                              aria-label="JSON 格式"
-                                              onClick={() => {
-                                                void onExportConversation(
-                                                  conversation.id,
-                                                  'json',
-                                                  actionContext,
-                                                );
-                                                setOpenMenuId(null);
-                                                setActiveExportConversationId(null);
-                                              }}
-                                              className="flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-left text-xs text-foreground transition-colors hover:bg-surface-container"
-                                            >
-                                              <FileJson size={14} />
-                                              JSON 格式
-                                            </button>
+                                          <div
+                                            role="menu"
+                                            aria-label="导出格式"
+                                            className="absolute left-[calc(100%-4px)] top-[206px] w-28 space-y-1 rounded-xl border border-border bg-surface-container px-2 py-2 shadow-[0_16px_40px_rgba(0,0,0,0.24)]"
+                                          >
+                                            {QIANWEN_EXPORT_FORMATS.map((format) => (
+                                              <button
+                                                key={format.value}
+                                                type="button"
+                                                aria-label={format.label}
+                                                onClick={() => {
+                                                  void onExportConversation(
+                                                    conversation.id,
+                                                    format.value,
+                                                    actionContext,
+                                                  );
+                                                  setOpenMenuId(null);
+                                                  setActiveExportConversationId(null);
+                                                }}
+                                                className="flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-left text-xs text-foreground transition-colors hover:bg-surface-high"
+                                              >
+                                                <File size={14} />
+                                                {format.label}
+                                              </button>
+                                            ))}
                                           </div>
                                         ) : null}
                                         <button
                                           type="button"
-                                          aria-label="删除对话"
+                                          aria-label="删除此对话"
+                                          data-testid="conversation-action-menu-item"
                                           onClick={() => {
                                             void onDeleteConversation(conversation.id, actionContext);
                                             setOpenMenuId(null);
@@ -847,7 +870,7 @@ function ConversationHistory({
                                           className="mt-1 flex w-full cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-left text-sm text-[#ff5b57] transition-colors hover:bg-[#ff5b57]/10"
                                         >
                                           <Trash2 size={16} />
-                                          删除对话
+                                          删除此对话
                                         </button>
                                       </div>,
                                       document.body,
@@ -862,70 +885,6 @@ function ConversationHistory({
                           暂无会话
                         </div>
                       )}
-                      {isBatchMode ? (
-                        <div className="ml-2 rounded-2xl border border-border bg-surface-container/70 p-3">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <button
-                              type="button"
-                              aria-label="全选当前分组"
-                              onClick={() =>
-                                setSelectedConversationIds(visibleConversations.map((conversation) => conversation.id))
-                              }
-                              className="inline-flex items-center rounded-lg bg-surface px-3 py-1.5 text-xs text-foreground transition-colors hover:bg-surface-high"
-                            >
-                              全选当前分组
-                            </button>
-                            <button
-                              type="button"
-                              aria-label="批量导出 Markdown"
-                              disabled={selectedConversationIds.length === 0}
-                              onClick={() =>
-                                void onExportConversations(
-                                  selectedConversationIds,
-                                  'markdown',
-                                  actionContext,
-                                )
-                              }
-                              className="inline-flex items-center rounded-lg bg-surface px-3 py-1.5 text-xs text-foreground transition-colors hover:bg-surface-high disabled:opacity-50"
-                            >
-                              批量导出 Markdown
-                            </button>
-                            <button
-                              type="button"
-                              aria-label="批量导出 JSON"
-                              disabled={selectedConversationIds.length === 0}
-                              onClick={() =>
-                                void onExportConversations(
-                                  selectedConversationIds,
-                                  'json',
-                                  actionContext,
-                                )
-                              }
-                              className="inline-flex items-center rounded-lg bg-surface px-3 py-1.5 text-xs text-foreground transition-colors hover:bg-surface-high disabled:opacity-50"
-                            >
-                              批量导出 JSON
-                            </button>
-                            <button
-                              type="button"
-                              aria-label="批量删除"
-                              disabled={selectedConversationIds.length === 0}
-                              onClick={() => setIsBatchDeleteDialogOpen(true)}
-                              className="inline-flex items-center rounded-lg bg-[#ff5b57]/12 px-3 py-1.5 text-xs text-[#ff5b57] transition-colors hover:bg-[#ff5b57]/18 disabled:opacity-50"
-                            >
-                              批量删除
-                            </button>
-                            <button
-                              type="button"
-                              aria-label="完成批量管理"
-                              onClick={exitBatchMode}
-                              className="ml-auto inline-flex items-center rounded-lg px-2 py-1.5 text-xs text-muted transition-colors hover:bg-surface hover:text-foreground"
-                            >
-                              <X size={14} className="mr-1" />
-                              完成批量管理
-                            </button>
-                          </div>
-                        </div>
-                      ) : null}
                       {hasMoreConversations ? (
                         <button
                           type="button"
@@ -956,6 +915,92 @@ function ConversationHistory({
       ) : (
         <div className="px-5 text-sm text-muted">暂无工作空间</div>
       )}
+      {batchModePartitionKey ? (
+        (() => {
+          const batchGroup = workspaceGroups.find((group) => group.partitionKey === batchModePartitionKey);
+          const batchConversations = (batchGroup?.conversations ?? []).slice(0, BATCH_SELECTION_LIMIT);
+          const allSelected =
+            batchConversations.length > 0 &&
+            batchConversations.every((conversation) => selectedConversationIds.includes(conversation.id));
+          return (
+            <div className="fixed inset-0 z-[132] bg-background/35 backdrop-blur-sm">
+              <section
+                role="dialog"
+                aria-modal="true"
+                aria-label="对话批量管理"
+                className="flex h-full w-full max-w-[360px] flex-col border-r border-border bg-surface text-foreground shadow-[24px_0_60px_rgba(0,0,0,0.18)]"
+              >
+                <div className="flex items-center justify-between border-b border-border px-5 py-4">
+                  <h2 className="text-base font-semibold">对话批量管理</h2>
+                  <button
+                    type="button"
+                    aria-label="关闭批量管理"
+                    onClick={exitBatchMode}
+                    className="rounded-full p-1.5 text-muted transition-colors hover:bg-surface-container hover:text-foreground"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+                <label className="flex cursor-pointer items-center justify-between border-b border-border px-5 py-3 text-sm text-foreground">
+                  <span>全选</span>
+                  <input
+                    type="checkbox"
+                    aria-label="全选"
+                    checked={allSelected}
+                    onChange={(event) => {
+                      if (event.target.checked) {
+                        selectBatchConversations(batchConversations);
+                        return;
+                      }
+                      setSelectedConversationIds([]);
+                    }}
+                    className="h-4 w-4 accent-foreground"
+                  />
+                </label>
+                <div className="flex-1 overflow-y-auto px-3 py-3">
+                  {batchConversations.map((conversation) => (
+                    <label
+                      key={conversation.id}
+                      className="flex cursor-pointer items-center justify-between gap-3 rounded-xl px-3 py-2.5 text-sm text-foreground transition-colors hover:bg-surface-container"
+                    >
+                      <span className="min-w-0 truncate">{conversation.title}</span>
+                      <input
+                        type="checkbox"
+                        aria-label={`选择对话 ${conversation.title}`}
+                        checked={selectedConversationIds.includes(conversation.id)}
+                        onChange={() => toggleBatchSelection(conversation.id)}
+                        className="h-4 w-4 shrink-0 accent-foreground"
+                      />
+                    </label>
+                  ))}
+                </div>
+                <div className="flex items-center gap-3 border-t border-border px-5 py-4">
+                  <button
+                    type="button"
+                    aria-label="取消"
+                    onClick={exitBatchMode}
+                    className="rounded-xl border border-border px-4 py-2 text-sm text-muted transition-colors hover:bg-surface-container hover:text-foreground"
+                  >
+                    取消
+                  </button>
+                  <span className="ml-auto text-sm text-muted">
+                    已选{selectedConversationIds.length}/{BATCH_SELECTION_LIMIT}
+                  </span>
+                  <button
+                    type="button"
+                    aria-label="删除"
+                    disabled={selectedConversationIds.length === 0}
+                    onClick={() => setIsBatchDeleteDialogOpen(true)}
+                    className="rounded-xl bg-[#ff5b57] px-4 py-2 text-sm text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-45"
+                  >
+                    删除
+                  </button>
+                </div>
+              </section>
+            </div>
+          );
+        })()
+      ) : null}
       {isBatchDeleteDialogOpen ? (
         <div
           role="dialog"

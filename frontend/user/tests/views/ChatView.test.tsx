@@ -3065,6 +3065,79 @@ describe('ChatView', () => {
   });
 
   /**
+   * 多条网页搜索返回应默认合并折叠，避免来源列表把主回答顶到视窗外。
+   */
+  it('应默认折叠连续网页搜索返回过程并按需展开', async () => {
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          messages: [
+            {
+              id: '966',
+              conversationId: '2001',
+              role: 'ASSISTANT',
+              content: '正在分析检索结果',
+              status: 'streaming',
+              processCards: [
+                {
+                  id: 'react-thought-search-966',
+                  type: 'analysis',
+                  title: '思考',
+                  summary: '需要检索网上公开资料。',
+                  status: 'completed',
+                  presentation: 'react',
+                },
+                {
+                  id: 'tool-call-search-966',
+                  type: 'tool_call',
+                  title: '行动',
+                  summary: '调用网页搜索：哪个AI最厉害',
+                  status: 'completed',
+                  toolId: 'search',
+                  presentation: 'react',
+                },
+                ...Array.from({ length: 4 }, (_, index) => ({
+                  id: `search-result-${index + 1}`,
+                  type: 'tool_result',
+                  title: '观察',
+                  summary: `网页搜索返回 site-${index + 1}.com：AI 资料 ${index + 1}`,
+                  status: 'completed',
+                  toolId: 'search',
+                  displayName: '网页搜索',
+                  presentation: 'react',
+                  details: [
+                    {
+                      label: '结果',
+                      content: `AI 资料 ${index + 1}\nsite-${index + 1}.com\nhttps://site-${index + 1}.com/ai`,
+                    },
+                  ],
+                })),
+              ],
+            } as any,
+          ],
+          executionSteps: [],
+          references: [],
+          artifacts: [],
+        })}
+      />,
+    );
+
+    const tracePanel = screen.getByTestId('process-trace-panel-966');
+    expect(screen.getByTestId('process-search-result-group-966-search-result-1')).toHaveTextContent(
+      '网页搜索返回 4 条来源',
+    );
+    expect(within(tracePanel).queryByText('网页搜索返回 site-1.com：AI 资料 1')).not.toBeInTheDocument();
+    expect(within(tracePanel).queryByText('网页搜索返回 site-4.com：AI 资料 4')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('process-search-result-group-toggle-966-search-result-1'));
+
+    expect(within(tracePanel).getByText('网页搜索返回 site-1.com：AI 资料 1')).toBeInTheDocument();
+    expect(within(tracePanel).getByText('网页搜索返回 site-4.com：AI 资料 4')).toBeInTheDocument();
+  });
+
+  /**
    * 搜索来源默认应折叠，只展示一行摘要；点击后再展开来源列表与原始链接。
    */
   it('应默认折叠搜索来源并在展开后显示列表项', async () => {

@@ -3998,6 +3998,15 @@ function ProcessTracePanel({
             />
           );
         }
+        if (segment.type === 'search_result_group') {
+          return (
+            <ProcessSearchResultGroup
+              key={`search-result-group-${segment.cards[0]?.id ?? index}`}
+              messageId={messageId}
+              cards={segment.cards}
+            />
+          );
+        }
         const shouldShowAnalysisHeading =
           segment.card.type === 'analysis' && !hasRenderedAnalysisHeading;
         if (shouldShowAnalysisHeading) {
@@ -4018,7 +4027,8 @@ function ProcessTracePanel({
 
 type ProcessTraceSegment =
   | { type: 'text'; card: ProcessCardItem }
-  | { type: 'tool'; card: ProcessCardItem };
+  | { type: 'tool'; card: ProcessCardItem }
+  | { type: 'search_result_group'; cards: ProcessCardItem[] };
 
 /**
  * 按真实过程顺序输出消息内链路，工具调用不能再被合并成汇总行，否则用户看不到模型边思考边执行的节奏。
@@ -4026,8 +4036,26 @@ type ProcessTraceSegment =
 function groupProcessTraceSegments(cards: ProcessCardItem[]): ProcessTraceSegment[] {
   const segments: ProcessTraceSegment[] = [];
 
-  for (const card of cards) {
+  for (let index = 0; index < cards.length; index += 1) {
+    const card = cards[index];
     if (card.type === 'tool_call' || card.type === 'tool_result') {
+      if (card.type === 'tool_result' && isSearchProcessCard(card)) {
+        const searchResultCards = [card];
+        let nextIndex = index + 1;
+        while (
+          nextIndex < cards.length &&
+          cards[nextIndex].type === 'tool_result' &&
+          isSearchProcessCard(cards[nextIndex])
+        ) {
+          searchResultCards.push(cards[nextIndex]);
+          nextIndex += 1;
+        }
+        if (searchResultCards.length > 1) {
+          segments.push({ type: 'search_result_group', cards: searchResultCards });
+          index = nextIndex - 1;
+          continue;
+        }
+      }
       segments.push({ type: 'tool', card });
       continue;
     }
@@ -4040,6 +4068,59 @@ function groupProcessTraceSegments(cards: ProcessCardItem[]): ProcessTraceSegmen
     segments.push({ type: 'text', card });
   }
   return segments;
+}
+
+/**
+ * 连续搜索结果默认收起为一条来源摘要，避免大批网页返回占满主消息区。
+ */
+function ProcessSearchResultGroup({
+  messageId,
+  cards,
+}: {
+  messageId: string;
+  cards: ProcessCardItem[];
+}) {
+  const [isExpanded, setIsExpanded] = React.useState(false);
+  const firstCardId = cards[0]?.id ?? 'search-results';
+  const contentId = `process-search-result-group-content-${messageId}-${firstCardId}`;
+
+  return (
+    <article
+      data-testid={`process-search-result-group-${messageId}-${firstCardId}`}
+      className="space-y-2 border-l border-border pl-3"
+    >
+      <div className="flex min-w-0 items-start gap-2 text-sm leading-6 text-foreground">
+        <CheckCircle2 size={15} className="mt-1 shrink-0 text-muted" />
+        <div className="min-w-0 flex-1">
+          <div className="whitespace-pre-wrap [overflow-wrap:anywhere] text-muted">
+            网页搜索返回 {cards.length} 条来源
+          </div>
+          <button
+            type="button"
+            data-testid={`process-search-result-group-toggle-${messageId}-${firstCardId}`}
+            aria-expanded={isExpanded}
+            aria-controls={contentId}
+            aria-label={isExpanded ? '收起搜索来源' : '展开搜索来源'}
+            onClick={() => setIsExpanded((current) => !current)}
+            className="mt-1 inline-flex items-center gap-1 text-xs text-muted transition-colors hover:text-foreground"
+          >
+            <ChevronDown
+              size={13}
+              className={`transition-transform ${isExpanded ? 'rotate-180' : '-rotate-90'}`}
+            />
+            <span>{isExpanded ? '收起来源' : '展开来源'}</span>
+          </button>
+        </div>
+      </div>
+      {isExpanded ? (
+        <div id={contentId} className="space-y-2">
+          {cards.map((card) => (
+            <ProcessToolRow key={card.id} messageId={messageId} card={card} />
+          ))}
+        </div>
+      ) : null}
+    </article>
+  );
 }
 
 /**

@@ -541,8 +541,7 @@ export default function ChatView({
       {
         partitionKey: 'fallback-workspace-option',
         workspacePath: activeRuntimeTarget === 'local' ? workspacePath ?? null : null,
-        workspaceLabel:
-          workspaceLabel || '历史记录',
+        workspaceLabel: workspaceLabel || (activeRuntimeTarget === 'local' ? '本地历史记录' : '云端历史记录'),
         runtimeTarget: activeRuntimeTarget,
         lastOpenedAt: 0,
         activeConversationId: activeConversationId ?? null,

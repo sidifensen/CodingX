@@ -85,7 +85,7 @@ class WorkspaceRepositoryImplTest {
         WorkspaceDO inserted = workspaceCaptor.getValue();
         assertEquals("cloud", inserted.getRuntimeTarget());
         assertNull(inserted.getWorkspaceType());
-        assertEquals("历史记录", inserted.getName());
+        assertEquals("云端历史记录", inserted.getName());
         assertEquals(1001L, inserted.getCreatedBy());
         assertEquals(workspace.getId(), inserted.getId());
     }
@@ -98,7 +98,7 @@ class WorkspaceRepositoryImplTest {
         WorkspaceDO workspace = new WorkspaceDO();
         workspace.setId(9001L);
         workspace.setRuntimeTarget(WorkspaceRepositoryImpl.RUNTIME_TARGET_CLOUD);
-        workspace.setName("历史记录");
+        workspace.setName("云端历史记录");
         when(workspaceMapper.selectOne(any())).thenReturn(workspace);
 
         Optional<WorkspaceDO> result = workspaceRepository.findDefaultCloudWorkspaceByUserId(1001L);

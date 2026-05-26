@@ -122,7 +122,7 @@ describe('Sidebar conversation collapse behavior', () => {
         {
           partitionKey: 'cloud::__no_workspace__',
           workspacePath: null,
-          workspaceLabel: '历史记录',
+          workspaceLabel: '云端历史记录',
           runtimeTarget: 'cloud',
           lastOpenedAt: Date.now(),
           activeConversationId: 'conversation-1',

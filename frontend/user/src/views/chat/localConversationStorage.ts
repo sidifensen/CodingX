@@ -15,8 +15,8 @@ import {
 const LOCAL_WORKSPACE_CONVERSATION_STORE_KEY = 'codingx.chat.workspace.conversations.v1';
 const WORKSPACE_HISTORY_PARTITION_SUFFIX = '__history__';
 const WORKSPACE_HISTORY_LABEL = '历史记录';
-const CLOUD_DEFAULT_WORKSPACE_LABEL = '历史记录';
-const LOCAL_DEFAULT_WORKSPACE_LABEL = '历史记录';
+const CLOUD_DEFAULT_WORKSPACE_LABEL = '云端历史记录';
+const LOCAL_DEFAULT_WORKSPACE_LABEL = '本地历史记录';
 
 /**
  * 统一表示单个会话在本地缓存中的完整回放数据。
@@ -134,6 +134,43 @@ function getDefaultWorkspaceLabel(runtimeTarget: 'cloud' | 'local') {
 }
 
 /**
+ * 判断当前分区是否为默认云端或默认本地分区。
+ * 默认分区的展示名必须跟随运行环境固定归一，避免旧数据把云端/本地历史混成同一个标签。
+ * @param partitionKey 分区键。
+ * @param runtimeTarget 运行环境。
+ * @returns 是否为默认分区。
+ */
+function isDefaultWorkspacePartitionKey(
+  partitionKey: string,
+  runtimeTarget: 'cloud' | 'local',
+) {
+  return partitionKey === buildWorkspacePartitionKey(runtimeTarget, null);
+}
+
+/**
+ * 将默认分区快照归一为运行环境对应的固定标签。
+ * 历史记录键只在兼容迁移里使用，不应被改名，否则会丢失“默认云端/本地”语义。
+ * @param partitionKey 分区键。
+ * @param snapshot 原始快照。
+ * @returns 归一化后的快照。
+ */
+function normalizeWorkspaceSnapshot(
+  partitionKey: string,
+  snapshot: LocalWorkspaceConversationSnapshot,
+): LocalWorkspaceConversationSnapshot {
+  const normalizedRuntimeTarget = snapshot.runtimeTarget ?? 'cloud';
+  if (!isDefaultWorkspacePartitionKey(partitionKey, normalizedRuntimeTarget)) {
+    return snapshot;
+  }
+  return {
+    ...snapshot,
+    workspacePath: null,
+    workspaceLabel: getDefaultWorkspaceLabel(normalizedRuntimeTarget),
+    runtimeTarget: normalizedRuntimeTarget,
+  };
+}
+
+/**
  * 读取指定分区的本地会话快照；读取失败时返回空快照。
  * @param partitionKey 分区键。
  * @returns 本地会话快照。
@@ -144,25 +181,26 @@ export function readWorkspaceSnapshot(partitionKey: string): LocalWorkspaceConve
   if (!snapshot) {
     return EMPTY_SNAPSHOT;
   }
+  const normalizedSnapshot = normalizeWorkspaceSnapshot(partitionKey, snapshot);
   return {
-    workspacePath: snapshot.workspacePath ?? null,
-    workspaceLabel: snapshot.workspaceLabel ?? '未命名工作空间',
-    runtimeTarget: snapshot.runtimeTarget ?? 'cloud',
-    lastOpenedAt: snapshot.lastOpenedAt ?? 0,
-    activeConversationId: snapshot.activeConversationId ?? null,
+    workspacePath: normalizedSnapshot.workspacePath ?? null,
+    workspaceLabel: normalizedSnapshot.workspaceLabel ?? '未命名工作空间',
+    runtimeTarget: normalizedSnapshot.runtimeTarget ?? 'cloud',
+    lastOpenedAt: normalizedSnapshot.lastOpenedAt ?? 0,
+    activeConversationId: normalizedSnapshot.activeConversationId ?? null,
     pinnedConversationIds: normalizePinnedConversationIds(snapshot.pinnedConversationIds),
     conversations: decoratePinnedConversations(
-      Array.isArray(snapshot.conversations) ? snapshot.conversations : [],
+      Array.isArray(normalizedSnapshot.conversations) ? normalizedSnapshot.conversations : [],
       normalizePinnedConversationIds(snapshot.pinnedConversationIds),
     ),
     conversationRecords:
-      snapshot.conversationRecords && typeof snapshot.conversationRecords === 'object'
-        ? snapshot.conversationRecords
+      normalizedSnapshot.conversationRecords && typeof normalizedSnapshot.conversationRecords === 'object'
+        ? normalizedSnapshot.conversationRecords
         : {},
     seenTaskFinishedAtByConversationId:
-      snapshot.seenTaskFinishedAtByConversationId &&
-      typeof snapshot.seenTaskFinishedAtByConversationId === 'object'
-        ? snapshot.seenTaskFinishedAtByConversationId
+      normalizedSnapshot.seenTaskFinishedAtByConversationId &&
+      typeof normalizedSnapshot.seenTaskFinishedAtByConversationId === 'object'
+        ? normalizedSnapshot.seenTaskFinishedAtByConversationId
         : {},
   };
 }
@@ -176,8 +214,9 @@ export function writeWorkspaceSnapshot(
   partitionKey: string,
   snapshot: LocalWorkspaceConversationSnapshot,
 ) {
+  const normalizedSnapshot = normalizeWorkspaceSnapshot(partitionKey, snapshot);
   const store = readStore();
-  store.snapshots[partitionKey] = snapshot;
+  store.snapshots[partitionKey] = normalizedSnapshot;
   window.localStorage.setItem(LOCAL_WORKSPACE_CONVERSATION_STORE_KEY, JSON.stringify(store));
 }
 
@@ -194,16 +233,20 @@ export function upsertWorkspaceSnapshot(
   partialSnapshot?: Partial<LocalWorkspaceConversationSnapshot>,
 ): { partitionKey: string; snapshot: LocalWorkspaceConversationSnapshot } {
   const partitionKey = buildWorkspacePartitionKey(runtimeTarget, workspacePath);
+  const isDefaultPartition = isDefaultWorkspacePartitionKey(partitionKey, runtimeTarget);
   const currentSnapshot = readWorkspaceSnapshot(partitionKey);
   const hasActiveConversationOverride =
     partialSnapshot != null &&
     Object.prototype.hasOwnProperty.call(partialSnapshot, 'activeConversationId');
   const snapshot: LocalWorkspaceConversationSnapshot = {
-    workspacePath: workspacePath ?? currentSnapshot.workspacePath ?? null,
+    workspacePath: isDefaultPartition
+      ? null
+      : (workspacePath ?? currentSnapshot.workspacePath ?? null),
     workspaceLabel:
       partialSnapshot?.workspaceLabel ??
-      currentSnapshot.workspaceLabel ??
-      getWorkspaceLabel(workspacePath),
+      (isDefaultPartition
+        ? getDefaultWorkspaceLabel(runtimeTarget)
+        : currentSnapshot.workspaceLabel ?? getWorkspaceLabel(workspacePath)),
     runtimeTarget,
     lastOpenedAt: Date.now(),
     // 允许调用方显式写入 null（例如“新建会话”场景清空激活会话），避免被 ?? 回退到旧值。
@@ -426,7 +469,12 @@ function readStore(): LocalWorkspaceConversationStore {
  * @returns 归一化后的快照仓库。
  */
 function normalizeWorkspaceSnapshots(store: LocalWorkspaceConversationStore): LocalWorkspaceConversationStore {
-  const normalizedSnapshots = { ...store.snapshots };
+  const normalizedSnapshots = Object.fromEntries(
+    Object.entries(store.snapshots).map(([partitionKey, snapshot]) => [
+      partitionKey,
+      normalizeWorkspaceSnapshot(partitionKey, snapshot),
+    ]),
+  );
   mergeHistoryPartitionIntoDefaultGroup(normalizedSnapshots, 'local');
   mergeHistoryPartitionIntoDefaultGroup(normalizedSnapshots, 'cloud');
   const normalizedStore: LocalWorkspaceConversationStore = {

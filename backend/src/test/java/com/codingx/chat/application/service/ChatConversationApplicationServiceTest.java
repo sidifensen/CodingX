@@ -87,7 +87,7 @@ class ChatConversationApplicationServiceTest {
         WorkspaceDO cloudWorkspace = new WorkspaceDO();
         cloudWorkspace.setId(8001L);
         cloudWorkspace.setRuntimeTarget("cloud");
-        cloudWorkspace.setName("历史记录");
+        cloudWorkspace.setName("云端历史记录");
         when(workspaceRepositoryImpl.ensureDefaultCloudWorkspace(1002L, null)).thenReturn(cloudWorkspace);
 
         ChatConversation conversation = chatConversationApplicationService.createConversation(
@@ -196,7 +196,7 @@ class ChatConversationApplicationServiceTest {
         WorkspaceDO cloudWorkspace = new WorkspaceDO();
         cloudWorkspace.setId(8001L);
         cloudWorkspace.setRuntimeTarget("cloud");
-        cloudWorkspace.setName("历史记录");
+        cloudWorkspace.setName("云端历史记录");
         when(workspaceRepositoryImpl.findDefaultCloudWorkspaceByUserId(1002L)).thenReturn(Optional.of(cloudWorkspace));
 
         ChatConversation cloudConversation = ChatConversation.create(1L, "云端会话", 1002L, 8001L, ChatConversationStatus.ACTIVE);

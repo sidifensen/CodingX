@@ -39,7 +39,7 @@ public class WorkspaceRepositoryImpl implements WorkspaceRepository {
     /**
      * 默认云端空间名称常量，保证多入口创建时展示语义一致。
      */
-    public static final String DEFAULT_CLOUD_WORKSPACE_NAME = "历史记录";
+    public static final String DEFAULT_CLOUD_WORKSPACE_NAME = "云端历史记录";
 
     private final WorkspaceMapper workspaceMapper;
     private final ChatConversationMapper chatConversationMapper;

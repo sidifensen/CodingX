@@ -46,7 +46,7 @@ describe('localConversationStorage', () => {
    */
   it('应将历史分区并入默认分组并保留本地工作空间入口', () => {
     upsertWorkspaceSnapshot('cloud', null, {
-      workspaceLabel: '历史记录',
+      workspaceLabel: '云端历史记录',
       conversations: [{ id: '5001', title: '云端会话', status: 'ACTIVE', lastRunId: '9001' }],
       activeConversationId: '5001',
     });
@@ -66,11 +66,11 @@ describe('localConversationStorage', () => {
     expect(allGroups.some((group) => group.partitionKey === 'cloud::__history__')).toBe(false);
     expect(allGroups.some((group) => group.partitionKey === 'local::__history__')).toBe(false);
     const cloudDefaultGroup = allGroups.find((group) => group.partitionKey === 'cloud::__no_workspace__');
-    expect(cloudDefaultGroup?.workspaceLabel).toBe('历史记录');
+    expect(cloudDefaultGroup?.workspaceLabel).toBe('云端历史记录');
     expect(cloudDefaultGroup?.groupType).toBe('workspace');
     expect(cloudDefaultGroup?.conversations.map((conversation) => conversation.id)).toEqual(['5001', '5002']);
     const localDefaultGroup = allGroups.find((group) => group.partitionKey === 'local::__no_workspace__');
-    expect(localDefaultGroup?.workspaceLabel).toBe('历史记录');
+    expect(localDefaultGroup?.workspaceLabel).toBe('本地历史记录');
     expect(localDefaultGroup?.groupType).toBe('workspace');
     expect(localDefaultGroup?.conversations.map((conversation) => conversation.id)).toEqual(['6002']);
     expect(

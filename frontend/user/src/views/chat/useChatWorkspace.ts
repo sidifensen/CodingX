@@ -48,8 +48,8 @@ import {
   writeWorkspaceSnapshot,
 } from './localConversationStorage';
 
-const DEFAULT_CLOUD_WORKSPACE_LABEL = '历史记录';
-const DEFAULT_LOCAL_WORKSPACE_LABEL = '历史记录';
+const DEFAULT_CLOUD_WORKSPACE_LABEL = '云端历史记录';
+const DEFAULT_LOCAL_WORKSPACE_LABEL = '本地历史记录';
 const CONVERSATION_ID_QUERY_KEY = 'conversationId';
 const STREAM_QUEUE_BANNER_DELAY_MS = 250;
 

@@ -1,4 +1,4 @@
-﻿import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import ChatView from '@/views/ChatView';
 import { within } from '@testing-library/react';
 import { ChatWorkspaceController } from '@/views/chat/types';
@@ -1928,7 +1928,7 @@ describe('ChatView', () => {
             {
               partitionKey: 'cloud::__no_workspace__',
               workspacePath: null,
-              workspaceLabel: '历史记录',
+              workspaceLabel: '云端历史记录',
               runtimeTarget: 'cloud',
               lastOpenedAt: 1716101111000,
               activeConversationId: null,
@@ -1992,7 +1992,7 @@ describe('ChatView', () => {
           references: [],
           artifacts: [],
           inputValue: '',
-          workspaceLabel: '历史记录',
+          workspaceLabel: '云端历史记录',
           activeWorkspacePartitionKey: 'cloud::__no_workspace__',
           workspacePath: null,
         })}
@@ -2816,7 +2816,7 @@ function createWorkspace(overrides?: Partial<ChatWorkspaceController>): ChatWork
       {
         partitionKey: 'cloud::__no_workspace__',
         workspacePath: null,
-        workspaceLabel: '历史记录',
+        workspaceLabel: '云端历史记录',
         runtimeTarget: 'cloud',
         lastOpenedAt: 1716101111000,
         activeConversationId: null,

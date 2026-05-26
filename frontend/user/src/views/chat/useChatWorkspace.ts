@@ -94,17 +94,64 @@ function filterWorkspaceConversationsByRuntimeTarget(
  * @param secondary 待合并列表。
  * @returns 合并后的会话列表。
  */
-function mergeConversationListById(primary: ConversationItem[], secondary: ConversationItem[]) {
+function mergeConversationListById(
+  primary: ConversationItem[],
+  secondary: ConversationItem[],
+  options?: { mergeExisting?: boolean },
+) {
   const mergedConversations = [...primary];
-  const existingConversationIds = new Set(primary.map((conversation) => conversation.id));
+  const conversationIndexById = new Map(
+    primary.map((conversation, index) => [conversation.id, index]),
+  );
   for (const conversation of secondary) {
-    if (existingConversationIds.has(conversation.id)) {
+    const existingIndex = conversationIndexById.get(conversation.id);
+    if (existingIndex != null) {
+      if (options?.mergeExisting) {
+        mergedConversations[existingIndex] = mergeConversationFromAuthoritativeSource(
+          mergedConversations[existingIndex],
+          conversation,
+        );
+      }
       continue;
     }
-    existingConversationIds.add(conversation.id);
+    conversationIndexById.set(conversation.id, mergedConversations.length);
     mergedConversations.push(conversation);
   }
   return mergedConversations;
+}
+
+/**
+ * 判断权威会话数据是否仍声明存在运行中的后台任务。
+ * @param conversation 权威会话数据。
+ * @returns 是否存在运行中任务。
+ */
+function hasRunningTaskProjection(conversation: ConversationItem) {
+  return String(conversation.activeTaskStatus ?? '').trim().toUpperCase() === 'RUNNING';
+}
+
+/**
+ * 使用权威会话数据覆盖本地快照，同时清理权威终态下已经过期的运行中字段。
+ * @param existingConversation 本地已有会话。
+ * @param authoritativeConversation 后到权威会话。
+ * @returns 合并后的会话。
+ */
+function mergeConversationFromAuthoritativeSource(
+  existingConversation: ConversationItem,
+  authoritativeConversation: ConversationItem,
+): ConversationItem {
+  const mergedConversation = {
+    ...existingConversation,
+    ...authoritativeConversation,
+  };
+  if (hasRunningTaskProjection(authoritativeConversation)) {
+    return mergedConversation;
+  }
+  // 权威列表未再声明运行中任务时，必须清理本地旧快照中的 active 投影，避免侧栏 spinner 残留。
+  return {
+    ...mergedConversation,
+    activeTaskId: undefined,
+    activeTaskStatus: undefined,
+  };
 }
 
 /**
@@ -291,6 +338,77 @@ function isSelectableMcp(mcp: McpItem): boolean {
 }
 
 /**
+ * 判断一个工作空间快照是否包含足够的可恢复状态。
+ * 仅依赖最近访问时间会把空壳默认分区误判成有效分区，
+ * 所以这里必须至少命中会话、回放记录或任务已读映射中的一种。
+ * @param snapshot 工作空间快照。
+ * @returns 是否存在真实可恢复状态。
+ */
+function hasMeaningfulWorkspaceSnapshot(
+  snapshot: Pick<
+    WorkspaceConversationGroup,
+    'activeConversationId' | 'conversations' | 'conversationRecords' | 'seenTaskFinishedAtByConversationId' | 'pinnedConversationIds'
+  >,
+) {
+  return (
+    String(snapshot.activeConversationId ?? '').trim().length > 0 ||
+    (snapshot.conversations?.length ?? 0) > 0 ||
+    Object.keys(snapshot.conversationRecords ?? {}).length > 0 ||
+    Object.keys(snapshot.seenTaskFinishedAtByConversationId ?? {}).length > 0 ||
+    (snapshot.pinnedConversationIds?.length ?? 0) > 0
+  );
+}
+
+/**
+ * 从本地快照里挑出最近访问且包含真实状态的工作空间分区。
+ * 这里明确忽略默认空壳分区，避免刷新后把“云端首页”误当成最近工作上下文。
+ * @param runtimeTargets 当前允许的运行目标。
+ * @param hostBoundRepositoryPath 宿主绑定的本地仓库路径。
+ * @param hostWorkspaceId 宿主绑定的本地 workspaceId。
+ * @returns 可恢复的分区信息或 null。
+ */
+function resolveMostRecentWorkspacePartition(
+  runtimeTargets: Array<'cloud' | 'local'>,
+  hostBoundRepositoryPath: string | null,
+  hostWorkspaceId: string | null,
+) {
+  const normalizedHostBoundRepositoryPath = (hostBoundRepositoryPath ?? '').trim().toLowerCase();
+  const candidates = listWorkspaceGroups()
+    .filter((group) => runtimeTargets.includes(group.runtimeTarget))
+    .filter((group) => hasMeaningfulWorkspaceSnapshot(group))
+    .filter((group) => {
+      if (group.runtimeTarget !== 'local') {
+        return true;
+      }
+      if (!normalizedHostBoundRepositoryPath) {
+        return (group.workspacePath ?? '').trim().length === 0;
+      }
+      return (group.workspacePath ?? '').trim().toLowerCase() === normalizedHostBoundRepositoryPath;
+    })
+    .sort((left, right) => {
+      if (left.lastOpenedAt !== right.lastOpenedAt) {
+        return right.lastOpenedAt - left.lastOpenedAt;
+      }
+      if (left.runtimeTarget !== right.runtimeTarget) {
+        return left.runtimeTarget === 'cloud' ? -1 : 1;
+      }
+      return left.partitionKey.localeCompare(right.partitionKey, 'zh-Hans-CN');
+    });
+  if (candidates.length === 0) {
+    return null;
+  }
+  const latest = candidates[0];
+  return {
+    partitionKey: latest.partitionKey,
+    snapshot: readWorkspaceSnapshot(latest.partitionKey),
+    workspaceId:
+      latest.runtimeTarget === 'local' && (latest.workspacePath ?? '').trim().length > 0
+        ? hostWorkspaceId
+        : null,
+  };
+}
+
+/**
  * 聚合聊天页三栏所需的真实状态、接口请求与 SSE 流式控制。
  */
 export function useChatWorkspace(
@@ -410,6 +528,53 @@ export function useChatWorkspace(
       messagesRef.current = nextMessages;
       return nextMessages;
     });
+  };
+
+  /**
+   * 刷新命中 URL 会话时，优先解析该会话真实归属分区，避免默认工作空间误吞历史会话恢复。
+   * @returns 会话归属分区及其快照；不存在时返回 null。
+   */
+  const resolveInitialConversationPartition = () => {
+    if (hasHydratedInitialConversationRef.current) {
+      return null;
+    }
+    const initialConversationId = initialUrlConversationIdRef.current;
+    if (!initialConversationId) {
+      return null;
+    }
+    const partitionKey = findWorkspacePartitionByConversationId(initialConversationId);
+    if (!partitionKey) {
+      return null;
+    }
+    const snapshot = readWorkspaceSnapshot(partitionKey);
+    if (!runtimeTargets.includes(snapshot.runtimeTarget)) {
+      return null;
+    }
+    return {
+      partitionKey,
+      snapshot,
+      workspaceId:
+        snapshot.runtimeTarget === 'local' && snapshot.workspacePath === hostBoundRepositoryPath
+          ? hostWorkspaceId
+          : null,
+    };
+  };
+
+  /**
+   * 解析初始化时应恢复的工作空间分区。
+   * URL 中如果显式带了会话标识，必须优先恢复对应会话所在分区；
+   * 否则退回到最近一次打开且包含真实状态的分区，避免刷新后回到空壳默认分区。
+   * @returns 应恢复的分区信息或 null。
+   */
+  const resolveInitialWorkspacePartition = () => {
+    const conversationPartition = resolveInitialConversationPartition();
+    if (conversationPartition) {
+      return conversationPartition;
+    }
+    if (hasHydratedInitialConversationRef.current) {
+      return null;
+    }
+    return resolveMostRecentWorkspacePartition(runtimeTargets, hostBoundRepositoryPath, hostWorkspaceId);
   };
 
   /**
@@ -582,17 +747,35 @@ export function useChatWorkspace(
       setActiveRuntimeTargetState(runtimeTargets[0] ?? 'cloud');
       return;
     }
+    const preferredInitialConversationPartition = resolveInitialWorkspacePartition();
+    if (
+      preferredInitialConversationPartition &&
+      preferredInitialConversationPartition.snapshot.runtimeTarget !== activeRuntimeTarget
+    ) {
+      setActiveRuntimeTargetState(preferredInitialConversationPartition.snapshot.runtimeTarget);
+      refreshWorkspaceGroups('all');
+      return;
+    }
     // 业务约束：云端环境不绑定本地目录，避免与本地工作空间混淆。
-    const nextWorkspacePath =
-      activeRuntimeTarget === 'local' ? hostBoundRepositoryPath : null;
-    const nextWorkspaceId =
-      activeRuntimeTarget === 'local' ? hostWorkspaceId : null;
-    const nextPartitionKey = buildWorkspacePartitionKey(activeRuntimeTarget, nextWorkspacePath);
+    const nextWorkspacePath = preferredInitialConversationPartition
+      ? preferredInitialConversationPartition.snapshot.workspacePath ?? null
+      : activeRuntimeTarget === 'local'
+        ? hostBoundRepositoryPath
+        : null;
+    const nextWorkspaceId = preferredInitialConversationPartition
+      ? preferredInitialConversationPartition.workspaceId
+      : activeRuntimeTarget === 'local'
+        ? hostWorkspaceId
+        : null;
+    const nextPartitionKey =
+      preferredInitialConversationPartition?.partitionKey ??
+      buildWorkspacePartitionKey(activeRuntimeTarget, nextWorkspacePath);
     const isSamePartition = nextPartitionKey === activeWorkspacePartitionKey;
+    const nextSnapshot =
+      preferredInitialConversationPartition?.snapshot ?? readWorkspaceSnapshot(nextPartitionKey);
     const nextWorkspaceLabel = nextWorkspacePath
       ? getWorkspaceLabel(nextWorkspacePath)
-      : getDefaultWorkspaceLabel(activeRuntimeTarget);
-    const nextSnapshot = readWorkspaceSnapshot(nextPartitionKey);
+      : getDefaultWorkspaceLabel(nextSnapshot.runtimeTarget);
     if (activeStreamSessionIdRef.current != null || abortControllerRef.current != null || isStreaming) {
       // 关键约束：流式生成期间仅允许用户显式切换分区，宿主被动上下文刷新不得打断当前会话。
       // 否则会导致消息区被清空但输入栏仍显示生成中，形成“内容消失”的错位体验。
@@ -661,6 +844,25 @@ export function useChatWorkspace(
     }
     setIsBootstrapping(true);
     try {
+      const preferredInitialConversationPartition = resolveInitialWorkspacePartition();
+      if (
+        preferredInitialConversationPartition &&
+        preferredInitialConversationPartition.partitionKey !== activeWorkspacePartitionKey
+      ) {
+        setWorkspacePath(preferredInitialConversationPartition.snapshot.workspacePath ?? null);
+        setWorkspaceId(preferredInitialConversationPartition.workspaceId);
+        setWorkspaceLabel(
+          preferredInitialConversationPartition.snapshot.workspacePath != null
+            ? getWorkspaceLabel(preferredInitialConversationPartition.snapshot.workspacePath)
+            : getDefaultWorkspaceLabel(
+                preferredInitialConversationPartition.snapshot.runtimeTarget,
+              ),
+        );
+        setActiveWorkspacePartitionKey(preferredInitialConversationPartition.partitionKey);
+        setConversations(preferredInitialConversationPartition.snapshot.conversations);
+        refreshWorkspaceGroups('all');
+        return;
+      }
       const shouldKeepLandingState =
         activeConversationId == null && messages.length === 0 && !readConversationIdFromUrl();
       // 性能约束：会话恢复是首屏关键路径；技能/MCP/示例题/专家属于旁路信息，不应阻塞会话正文渲染。
@@ -694,8 +896,13 @@ export function useChatWorkspace(
           await selectConversation(preferredConversationId, nextConversations, undefined, false);
         }
       } else if (!shouldKeepLandingState && !didHydrateConversationFromSnapshot && !shouldProtectActiveStream) {
-        // 业务意图：首次进入且无显式会话上下文时停留首页，不自动跳转到最新会话。
-        clearConversationPlayback(true);
+        const hasRecoveredConversation =
+          activeConversationIdRef.current != null || messagesRef.current.length > 0;
+        // 关键约束：鉴权完成或严格模式带来的后续初始化可能晚于首轮恢复；
+        // 只有当前仍然真的是空态时，才允许回退到首页，避免把刚恢复好的会话再次清空。
+        if (!hasRecoveredConversation) {
+          clearConversationPlayback(true);
+        }
       }
 
       const [nextSampleQuestionsResult, nextExpertsResult, nextSkillsResult, nextMcpsResult] =
@@ -858,8 +1065,24 @@ export function useChatWorkspace(
       groupType?: 'workspace' | 'history';
     },
   ) => {
+    const normalizedSelectionWorkspacePath =
+      selectionContext.runtimeTarget === 'local' ? selectionContext.workspacePath : null;
+    const selectionSnapshotKey = isWorkspaceHistoryPartitionKey(selectionContext.partitionKey)
+      ? buildWorkspacePartitionKey(selectionContext.runtimeTarget, normalizedSelectionWorkspacePath)
+      : selectionContext.partitionKey;
     if (selectionContext.groupType === 'history' || isWorkspaceHistoryPartitionKey(selectionContext.partitionKey)) {
-      await selectConversation(conversationId, conversations);
+      const latestSnapshot = readWorkspaceSnapshot(selectionSnapshotKey);
+      await selectConversation(
+        conversationId,
+        latestSnapshot.conversations,
+        undefined,
+        true,
+        false,
+        {
+          runtimeTarget: selectionContext.runtimeTarget,
+          workspacePath: normalizedSelectionWorkspacePath,
+        },
+      );
       return;
     }
     const isSamePartition =
@@ -873,8 +1096,18 @@ export function useChatWorkspace(
         false,
       );
     }
-    const latestSnapshot = readWorkspaceSnapshot(selectionContext.partitionKey);
-    await selectConversation(conversationId, latestSnapshot.conversations);
+    const latestSnapshot = readWorkspaceSnapshot(selectionSnapshotKey);
+    await selectConversation(
+      conversationId,
+      latestSnapshot.conversations,
+      undefined,
+      true,
+      false,
+      {
+        runtimeTarget: selectionContext.runtimeTarget,
+        workspacePath: normalizedSelectionWorkspacePath,
+      },
+    );
   };
 
   /**
@@ -903,6 +1136,10 @@ export function useChatWorkspace(
     latestAssistantMcpCalls?: McpCallItem[],
     syncUrl = true,
     preferPreviousAssistantContent = false,
+    snapshotContext?: {
+      runtimeTarget: 'cloud' | 'local';
+      workspacePath: string | null;
+    },
   ) => {
     const token = currentToken();
     if (!token) {
@@ -913,14 +1150,21 @@ export function useChatWorkspace(
       // 仅用户显式切换会话时更新 URL，初始化恢复阶段由独立分支控制，避免误覆盖初始参数。
       writeConversationIdToUrl(conversationId);
     }
+    const seenRuntimeTarget = snapshotContext?.runtimeTarget ?? activeRuntimeTarget;
+    const seenWorkspacePath = snapshotContext?.workspacePath ?? workspacePath ?? null;
+    const seenSnapshot = snapshotContext
+      ? readWorkspaceSnapshot(buildWorkspacePartitionKey(seenRuntimeTarget, seenWorkspacePath))
+      : null;
     const conversationListForSeenState = sourceConversations ?? conversations;
+    let conversationListForPersist = conversationListForSeenState;
+    let seenTaskFinishedAtByConversationIdForPersist: Record<string, string> | null = null;
     const selectedConversationForSeenState = conversationListForSeenState.find(
       (item) => item.id === conversationId,
-    );
+    ) ?? seenSnapshot?.conversations.find((item) => item.id === conversationId);
     if (selectedConversationForSeenState?.lastTaskFinishedAt) {
       markConversationTaskCompletionSeen(
-        activeRuntimeTarget,
-        workspacePath ?? null,
+        seenRuntimeTarget,
+        seenWorkspacePath,
         conversationId,
         selectedConversationForSeenState.lastTaskFinishedAt,
       );
@@ -933,16 +1177,23 @@ export function useChatWorkspace(
               }
             : item,
         );
-      const nextConversations = clearCompletionReminder(conversationListForSeenState);
+      const targetConversationsForSeenState = conversationListForSeenState.some(
+        (item) => item.id === conversationId,
+      )
+        ? conversationListForSeenState
+        : (seenSnapshot?.conversations ?? conversationListForSeenState);
+      const nextConversations = clearCompletionReminder(targetConversationsForSeenState);
+      conversationListForPersist = nextConversations;
+      seenTaskFinishedAtByConversationIdForPersist = {
+        ...(readWorkspaceSnapshot(
+          buildWorkspacePartitionKey(seenRuntimeTarget, seenWorkspacePath),
+        ).seenTaskFinishedAtByConversationId ?? {}),
+        [conversationId]: selectedConversationForSeenState.lastTaskFinishedAt,
+      };
       setConversations(nextConversations);
-      upsertWorkspaceSnapshot(activeRuntimeTarget, workspacePath ?? null, {
+      upsertWorkspaceSnapshot(seenRuntimeTarget, seenWorkspacePath, {
         conversations: nextConversations,
-        seenTaskFinishedAtByConversationId: {
-          ...(readWorkspaceSnapshot(
-            buildWorkspacePartitionKey(activeRuntimeTarget, workspacePath ?? null),
-          ).seenTaskFinishedAtByConversationId ?? {}),
-          [conversationId]: selectedConversationForSeenState.lastTaskFinishedAt,
-        },
+        seenTaskFinishedAtByConversationId: seenTaskFinishedAtByConversationIdForPersist,
       });
       refreshWorkspaceGroups('all');
     }
@@ -1000,7 +1251,7 @@ export function useChatWorkspace(
     setCurrentExperts(nextCurrentExperts);
     setCurrentSkills(nextCurrentSkills);
     setCurrentMcps(nextCurrentMcps);
-    const conversationList = sourceConversations ?? conversations;
+    const conversationList = conversationListForPersist;
     const selectedConversation = conversationList.find((item) => item.id === conversationId);
     if (selectedConversation?.lastRunId && nextReplayMessagesWithPanels.length > 0) {
       streamStateRef.current = {
@@ -1008,6 +1259,36 @@ export function useChatWorkspace(
         activeMessageId:
           nextReplayMessagesWithPanels[nextReplayMessagesWithPanels.length - 1].id,
       };
+    }
+    if (snapshotContext) {
+      saveConversationRecordToWorkspace(
+        snapshotContext.runtimeTarget,
+        snapshotContext.workspacePath,
+        conversationId,
+        conversationList,
+        {
+          messages: nextReplayMessagesWithPanels,
+          executionSteps: nextSteps,
+          references: nextReferences,
+          artifacts: nextArtifacts,
+          currentExperts: nextCurrentExperts,
+          currentSkills: nextCurrentSkills,
+          currentMcps: nextCurrentMcps,
+        },
+      );
+      const latestSnapshotAfterRecordSave = readWorkspaceSnapshot(
+        buildWorkspacePartitionKey(snapshotContext.runtimeTarget, snapshotContext.workspacePath),
+      );
+      upsertWorkspaceSnapshot(snapshotContext.runtimeTarget, snapshotContext.workspacePath, {
+        conversations: conversationList,
+        activeConversationId: conversationId,
+        seenTaskFinishedAtByConversationId:
+          seenTaskFinishedAtByConversationIdForPersist ??
+          latestSnapshotAfterRecordSave.seenTaskFinishedAtByConversationId ??
+          {},
+      });
+      refreshWorkspaceGroups('all');
+      return;
     }
     persistConversationState(conversationId, conversationList, {
       messages: nextReplayMessagesWithPanels,
@@ -1328,6 +1609,33 @@ export function useChatWorkspace(
         clearConversationPlayback();
       }
     }
+    refreshWorkspaceGroups('all');
+  };
+
+  /**
+   * 删除会话中的指定消息，并同步裁剪本地回放，避免刷新前仍看到已删除内容。
+   * @param conversationId 会话标识。
+   * @param messageIds 待删除消息标识。
+   */
+  const deleteConversationMessages = async (conversationId: string, messageIds: string[]) => {
+    const token = currentToken();
+    const normalizedMessageIds = normalizePersistedMessageIds(messageIds);
+    if (!token || normalizedMessageIds.length === 0) {
+      return;
+    }
+    await ChatApi.deleteConversationMessages(token, conversationId, normalizedMessageIds);
+    const deletedMessageIdSet = new Set(normalizedMessageIds);
+    const nextMessages = messagesRef.current.filter((message) => !deletedMessageIdSet.has(message.id));
+    setMessages(nextMessages);
+    persistConversationState(conversationId, conversations, {
+      messages: nextMessages,
+      executionSteps,
+      references,
+      artifacts,
+      currentExperts,
+      currentSkills,
+      currentMcps,
+    });
     refreshWorkspaceGroups('all');
   };
 
@@ -2526,9 +2834,20 @@ export function useChatWorkspace(
     );
     const nextHistoryConversations = filterUnassignedConversations(protectedRemoteConversations);
     const localDefaultSnapshot = readWorkspaceSnapshot(buildWorkspacePartitionKey('local', null));
-    const mergedLocalDefaultConversations = mergeConversationListById(
-      localDefaultSnapshot.conversations,
-      nextHistoryConversations,
+    const localDefaultPartitionKey = buildWorkspacePartitionKey('local', null);
+    const isLocalDefaultActivePartition =
+      buildWorkspacePartitionKey(activeRuntimeTarget, fallbackWorkspacePath) === localDefaultPartitionKey;
+    const localDefaultSeenTaskFinishedAtByConversationId = isLocalDefaultActivePartition
+      ? seenTaskFinishedAtByConversationId
+      : (localDefaultSnapshot.seenTaskFinishedAtByConversationId ?? {});
+    const mergedLocalDefaultConversations = applyTaskCompletionReminders(
+      mergeConversationListById(
+        localDefaultSnapshot.conversations,
+        nextHistoryConversations,
+        { mergeExisting: true },
+      ),
+      localDefaultSeenTaskFinishedAtByConversationId,
+      isLocalDefaultActivePartition ? effectiveActiveConversationId : null,
     );
     setConversations(nextWorkspaceConversations);
     upsertWorkspaceSnapshot(activeRuntimeTarget, fallbackWorkspacePath, {
@@ -2547,6 +2866,7 @@ export function useChatWorkspace(
       activeConversationId: localDefaultSnapshot.activeConversationId ?? null,
       workspaceLabel: getDefaultWorkspaceLabel('local'),
       conversationRecords: localDefaultSnapshot.conversationRecords,
+      seenTaskFinishedAtByConversationId: localDefaultSeenTaskFinishedAtByConversationId,
     });
     if (
       activeConversationId &&

@@ -84,10 +84,13 @@
 - **强制要求：凡涉及数据库结构变更（建表、删表、字段新增/删除/类型变更、索引/约束变更），必须同时提交迁移脚本与结构定义更新。**
 - **强制要求：所有新建表必须补充表注释，所有新增字段必须补充字段注释；修改既有表结构时，若目标表或字段缺少注释，必须一并补齐。**
 - **强制要求：数据库表注释与字段注释统一使用中文短语，注释内容末尾不加句号。**
+- **强制要求：执行仓库中已编写的 `.sql` 文件时，必须优先通过 `mcp__postgres__` 完成，不得直接用 shell 直连数据库执行，以确保和项目数据库上下文、权限与事务控制保持一致。**
 - 必须新增对应 `db/migration` 脚本（遵循现有命名规则），确保其他环境可自动补齐。
 - 必须同步更新 `backend/src/main/resources/db/schema.sql`，保持基线结构与迁移一致。
 - `backend/src/main/resources/db/schema.sql` 与迁移脚本中的表定义、字段定义必须同时包含注释语句，禁止提交无注释的表结构。
 - 涉及表字段变更时，必须同步检查并更新对应的 PO/Mapper/DTO 映射，避免“数据库已变更但代码未生效”。
+- 聊天会话的提醒已读状态只能写入本地快照的 `seenTaskFinishedAtByConversationId`，点击提醒或进入会话时也只能更新这份本地状态，不能借用数据库 `chat_conversation.pinned`。
+- `chat_conversation.pinned` 只表示会话置顶排序，`chat_conversation.share_token` 只表示公开分享令牌，两者都必须保留中文注释并保持语义独立，禁止在前端或后端代码里把它们当作提醒状态位复用。
 
 ## 文档布局
 
@@ -95,31 +98,40 @@
 - `docs/superpowers/plans/` — 实现计划（`YYYY-MM-DD-HHMMSS-<feature>.md`）
 - `docs/superpowers/acceptance/` — 验收标准文档（`YYYY-MM-DD-HHMMSS-<feature>-acceptance.md`）
 
----
-## 本地 MCP 服务
-
-- **postgres** — PostgreSQL 数据库（graphhire），用于结构化数据持久化
-- **redis** — Redis 缓存（default），用于缓存和会话存储
-- **chrome-devtools** — Chrome DevTools，用于浏览器自动化、页面测试、截图、网络抓包
-
-> **使用场景**: 浏览器自动化 / 前端页面测试 → chrome-devtools；数据库查询 / SQL 调试 → postgres；缓存操作 / Session 管理 → redis
----
-
-## 常用命令
-
-> **最高优先级**: 启动命令必须用 `run_in_background: true`，启动前自动检查端口占用，若被占用则先终止占用进程
-
 ```bash
-# 后端 http://localhost:5001
+# 后端服务 http://localhost:5001
 cd backend && mvn spring-boot:run
 
-# 前端 http://localhost:5002
-cd frontend && npm run dev
+# 用户前端 http://localhost:5002
+cd frontend/user && npm run dev
+
+# 管理端前端 http://localhost:5003
+cd frontend/admin && npm run dev
 ```
+启动前请先检查后端 `5001`、用户前端 `5002` 和管理端前端 `5003` 的占用情况；如对应端口已被占用，请先结束占用进程，再启动服务。
+
 ## 完成验证要求
 
 提交/合并前按改动面验证：
 
 1. **仅后端改动**：执行 `mvn compile`、`mvn test`
 2. **仅前端改动**：默认执行 `npm run build`、`npm run test:run`
-3. **前后端都有改动**：全部执行
+    - 若属于“简单任务豁免”且仅涉及样式/文案微调，可降级为：受影响测试文件定向执行 + CDP 视觉验证
+3. **前后端都有改动**：四项全部执行
+4. **浏览器验证（/web-access + CDP）**：仅在改动前端页面/交互，或用户明确要求时执行
+5. **视觉改动强制项**（弹窗/下拉/日期时间选择器/主题切换）：必须补充 CDP 证据（截图或计算样式），未提供证据不得声明“已修复”
+
+## 浏览器测试
+
+若本次改动属于“简单任务豁免范围”（如文档/注释/排版/格式化、日志或文案微调且不改变业务行为），且未涉及前端页面/交互变更，则无需执行本节浏览器验证要求。
+
+使用浏览器进行测试时，必须通过 `/web-access` skill，并使用 CDP 打开和操作浏览器；禁止绕过 CDP 直接声称已完成浏览器验证。
+
+### 浏览器验证最小证据标准（强制）
+
+1. 给出复现路径：页面 URL + 关键点击路径。
+2. 给出结果证据：至少一张截图（保存到 `logs/`）或关键节点计算样式（如 `backgroundColor`、`opacity`）。
+3. 对“透明/可读性”问题，必须明确验证：
+    - 关键容器背景非透明，不会透出下层内容影响识别
+    - 文本、边框与交互控件在当前主题下清晰可读
+4. 验证失败时不得直接结束，必须继续定位并二次验证后再交付。

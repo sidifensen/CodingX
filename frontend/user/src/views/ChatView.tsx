@@ -118,6 +118,10 @@ export default function ChatView({
   } = workspace;
   const safeAvailableExperts = availableExperts ?? [];
   const safeCurrentExperts = currentExperts ?? [];
+  const shareableMessages = React.useMemo(
+    () => messages.filter(isShareableMessage),
+    [messages],
+  );
   const latestAssistantMessageId = React.useMemo(() => {
     return [...messages].reverse().find((message) => message.role === 'ASSISTANT')?.id ?? null;
   }, [messages]);
@@ -247,11 +251,15 @@ export default function ChatView({
    * 根据已选消息生成分享链接，并展示千问风格预览弹窗。
    */
   const confirmShareSelection = async () => {
-    if (!activeConversationId || shareSelectionState.selectedMessageIds.length === 0) {
+    const shareableSelectedMessageIds = shareSelectionState.selectedMessageIds.filter((messageId) =>
+      PERSISTED_MESSAGE_ID_PATTERN.test(messageId),
+    );
+    if (!activeConversationId || shareableSelectedMessageIds.length === 0) {
       return;
     }
+    // 临时乐观消息只有前端占位 ID，提交给后端只会触发 Long 反序列化失败。
     const previewMessages = messages.filter((message) =>
-      shareSelectionState.selectedMessageIds.includes(message.id),
+      shareableSelectedMessageIds.includes(message.id),
     );
     setShareDialogState({
       isOpen: true,
@@ -262,7 +270,7 @@ export default function ChatView({
     });
     try {
       const shareUrl = await shareConversation(activeConversationId, {
-        messageIds: shareSelectionState.selectedMessageIds,
+        messageIds: shareableSelectedMessageIds,
       });
       setShareDialogState({
         isOpen: true,
@@ -906,7 +914,8 @@ export default function ChatView({
               {messages.map((message) => {
                 const isAssistant = message.role === 'ASSISTANT';
                 const isLatestMessage = message.id === messages[messages.length - 1]?.id;
-                const isShareSelectable = shareSelectionState.isActive && message.role !== 'SYSTEM';
+                const isShareSelectable =
+                  shareSelectionState.isActive && isShareableMessage(message);
                 const isShareSelected = shareSelectionState.selectedMessageIds.includes(message.id);
                 const messageContent =
                   message.content || (message.status === 'streaming' ? '正在生成回答...' : '');
@@ -1730,13 +1739,11 @@ export default function ChatView({
       {shareSelectionState.isActive ? (
         <ShareSelectionToolbar
           selectedCount={shareSelectionState.selectedMessageIds.length}
-          totalCount={messages.filter((message) => message.role !== 'SYSTEM').length}
+          totalCount={shareableMessages.length}
           onSelectAll={() =>
             setShareSelectionState({
               isActive: true,
-              selectedMessageIds: messages
-                .filter((message) => message.role !== 'SYSTEM')
-                .map((message) => message.id),
+              selectedMessageIds: shareableMessages.map((message) => message.id),
             })
           }
           onCancel={cancelShareSelection}
@@ -2472,13 +2479,22 @@ type MessageReaction = 'up' | 'down' | null;
 const PERSISTED_MESSAGE_ID_PATTERN = /^\d+$/;
 
 /**
+ * 只有已落库的消息才能进入分享范围，临时乐观消息只适合本地渲染。
+ * @param message 消息对象。
+ * @returns 是否可进入分享选择。
+ */
+function isShareableMessage(message: ChatMessageItem) {
+  return message.role !== 'SYSTEM' && PERSISTED_MESSAGE_ID_PATTERN.test(message.id);
+}
+
+/**
  * 根据触发消息解析默认分享范围；助手消息会自动带上前一条用户消息，形成完整问答轮次。
  * @param messages 当前消息列表。
  * @param defaultMessageId 触发分享的消息标识。
  * @returns 默认选中的消息标识。
  */
 function resolveDefaultShareMessageIds(messages: ChatMessageItem[], defaultMessageId?: string) {
-  const selectableMessages = messages.filter((message) => message.role !== 'SYSTEM');
+  const selectableMessages = messages.filter(isShareableMessage);
   if (!defaultMessageId) {
     return selectableMessages.map((message) => message.id).slice(0, 2);
   }
@@ -2491,12 +2507,16 @@ function resolveDefaultShareMessageIds(messages: ChatMessageItem[], defaultMessa
     const previousUserMessage = [...messages.slice(0, messageIndex)]
       .reverse()
       .find((message) => message.role === 'USER');
-    return [previousUserMessage?.id, targetMessage.id].filter(Boolean) as string[];
+    return [previousUserMessage?.id, targetMessage.id].filter((messageId): messageId is string =>
+      Boolean(messageId) && PERSISTED_MESSAGE_ID_PATTERN.test(messageId),
+    );
   }
   const nextAssistantMessage = messages
     .slice(messageIndex + 1)
     .find((message) => message.role === 'ASSISTANT');
-  return [targetMessage.id, nextAssistantMessage?.id].filter(Boolean) as string[];
+  return [targetMessage.id, nextAssistantMessage?.id].filter((messageId): messageId is string =>
+    Boolean(messageId) && PERSISTED_MESSAGE_ID_PATTERN.test(messageId),
+  );
 }
 
 /**

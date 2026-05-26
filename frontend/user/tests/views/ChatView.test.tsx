@@ -1172,6 +1172,59 @@ describe('ChatView', () => {
   });
 
   /**
+   * 乐观重生成中的临时 assistant 不能进入分享范围，避免把未落库字符串 ID 发给后端。
+   */
+  it('应在分享乐观assistant时忽略临时消息', async () => {
+    const sharedUrl = new URL('/api/chat/conversations/shared/share_xxx', window.location.origin).toString();
+    const shareConversation = vi.fn().mockResolvedValue(sharedUrl);
+
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          messages: [
+            {
+              id: '101',
+              conversationId: '2001',
+              role: 'USER',
+              content: '请搜索 Spring Boot SSE 最佳实践',
+              status: 'COMPLETED',
+              createdAt: '2026-05-15 00:36:58',
+            },
+            {
+              id: 'optimistic-regenerate-assistant-1779773736005',
+              conversationId: '2001',
+              role: 'ASSISTANT',
+              content: '正在生成回答...',
+              status: 'streaming',
+            },
+          ],
+          shareConversation,
+        })}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId('share-message-optimistic-regenerate-assistant-1779773736005'));
+
+    const shareToolbar = await screen.findByRole('toolbar', { name: '分享选择工具栏' });
+    expect(shareToolbar).toBeInTheDocument();
+    expect(screen.getByLabelText('选择分享消息 请搜索 Spring Boot SSE 最佳实践')).toBeChecked();
+    expect(screen.queryByLabelText('选择分享消息 正在生成回答...')).not.toBeInTheDocument();
+    expect(screen.getByText('已选1条消息')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '全选' }));
+    expect(screen.getByText('已选1条消息')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '生成分享链接' }));
+    await waitFor(() => {
+      expect(shareConversation).toHaveBeenCalledWith('2001', {
+        messageIds: ['101'],
+      });
+    });
+  });
+
+  /**
    * 重新生成应把消息 ID 传给工作区，由工作区替换原助手消息槽位。
    */
   it('应重新生成最后一条助手消息', async () => {

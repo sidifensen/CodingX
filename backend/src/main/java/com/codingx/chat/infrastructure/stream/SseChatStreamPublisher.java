@@ -54,6 +54,11 @@ public class SseChatStreamPublisher implements ChatStreamPublisher {
     }
 
     @Override
+    public void publishToolCall(Long conversationId, Object payload) {
+        chatSseRegistry.publish(conversationId, "tool-call", payload);
+    }
+
+    @Override
     public void publishReference(Long conversationId, Object payload) {
         chatSseRegistry.publish(conversationId, "reference", payload);
     }

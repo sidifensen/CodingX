@@ -953,12 +953,6 @@ export default function ChatView({
                               onPreviewImage={(src, alt) => setPreviewAttachment({ src, alt })}
                             />
                           ) : null}
-                          {message.searchProgress?.items?.length ? (
-                            <SearchProgressPanel
-                              messageId={message.id}
-                              progress={message.searchProgress}
-                            />
-                          ) : null}
                           <MarkdownMessage content={messageContent} messageId={message.id} />
                           <AssistantMessageActions
                             messageId={message.id}
@@ -969,6 +963,18 @@ export default function ChatView({
                             onStartShareSelection={startShareSelection}
                             onRegenerateConversation={regenerateConversation}
                           />
+                          {message.errorMessage ? (
+                            <div className="mt-3 rounded-2xl border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+                              {message.errorMessage}
+                            </div>
+                          ) : null}
+                          {/* 业务意图：搜索来源作为消息尾部的折叠补充信息，放在正文和操作区之后，避免压住回答内容。 */}
+                          {message.searchProgress?.items?.length ? (
+                            <SearchProgressPanel
+                              messageId={message.id}
+                              progress={message.searchProgress}
+                            />
+                          ) : null}
                         </>
                       ) : (
                         <>
@@ -990,11 +996,6 @@ export default function ChatView({
                           </div>
                         </>
                       )}
-                      {message.errorMessage ? (
-                        <div className="mt-3 rounded-2xl border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-300">
-                          {message.errorMessage}
-                        </div>
-                      ) : null}
                       {isLatestMessage ? (
                         // 步骤：尾部锚点固定高度为 0，确保滚动只对齐到真实内容末端，避免推高滚动高度。
                         <div
@@ -1921,8 +1922,16 @@ type DirectoryListingPreview = {
   fileCount: number;
 };
 
+type SearchSourceDisplayItem = {
+  id: string;
+  title: string;
+  url?: string;
+  siteName?: string;
+  snippet?: string;
+};
+
 /**
- * 将助手消息中的搜索来源渲染成可折叠列表，避免把标题、站点名和链接压缩成一行纯文本。
+ * 将助手消息中的搜索来源渲染成消息尾部的可折叠列表，避免把标题、站点名和链接压缩成一行纯文本。
  * 这里直接使用消息内的 `searchProgress`，保证流式阶段和历史回放阶段都能看到一致的来源展示。
  */
 function SearchProgressPanel({
@@ -1944,7 +1953,7 @@ function SearchProgressPanel({
   }
 
   return (
-    <section data-testid={`search-progress-panel-${messageId}`} className="mb-1.5">
+    <section data-testid={`search-progress-panel-${messageId}`} className="mt-3 mb-1.5">
       <button
         type="button"
         data-testid={`search-progress-toggle-${messageId}`}
@@ -1990,7 +1999,7 @@ function SearchSourceListItem({
   item,
 }: {
   messageId: string;
-  item: MessageSearchProgressItem;
+  item: SearchSourceDisplayItem;
 }) {
   const source = resolveSearchSourceMeta(item);
   const displayTitle = item.title?.trim() || source.siteLabel || source.displayUrl || '来源';
@@ -2113,7 +2122,7 @@ function SearchSourceFavicon({
  * 将搜索来源的链接信息解析为可展示、可点击的安全地址。
  * 只允许 http/https，避免把异常字符串直接渲染成可执行链接。
  */
-function resolveSearchSourceMeta(item: MessageSearchProgressItem): {
+function resolveSearchSourceMeta(item: SearchSourceDisplayItem): {
   href: string | null;
   hostname: string | null;
   faviconUrl: string | null;
@@ -3598,6 +3607,7 @@ function ProcessToolGroup({
  */
 function ProcessToolRow({ card, showDetails }: { card: ProcessCardItem; showDetails: boolean }) {
   const Icon = card.type === 'tool_call' ? Globe2 : CheckCircle2;
+  const searchResultItems = parseSearchResultDetails(card);
 
   return (
     <article className="space-y-2 border-l border-border pl-3">
@@ -3610,7 +3620,9 @@ function ProcessToolRow({ card, showDetails }: { card: ProcessCardItem; showDeta
           </div>
         </div>
       </div>
-      {showDetails && card.details && card.details.length > 0 ? (
+      {showDetails && searchResultItems.length > 0 ? (
+        <ProcessSearchResultList cardId={card.id} items={searchResultItems} />
+      ) : showDetails && card.details && card.details.length > 0 ? (
         <div className="space-y-2">
           {card.details.map((detail) => (
             <div key={`${card.id}-${detail.label}`} className="rounded-md bg-surface-container px-3 py-2">
@@ -3624,6 +3636,250 @@ function ProcessToolRow({ card, showDetails }: { card: ProcessCardItem; showDeta
       ) : null}
     </article>
   );
+}
+
+/**
+ * 在工具结果行内展示搜索来源列表，把原始明细转换为可扫读的来源卡片。
+ */
+function ProcessSearchResultList({
+  cardId,
+  items,
+}: {
+  cardId: string;
+  items: SearchSourceDisplayItem[];
+}) {
+  return (
+    <div
+      data-testid={`process-search-result-list-${cardId}`}
+      className="max-h-[360px] overflow-y-auto rounded-xl border border-border bg-surface/88 p-2 [scrollbar-gutter:stable]"
+    >
+      <div className="mb-2 flex items-center justify-between gap-3 px-1">
+        <div className="text-[11px] font-medium text-muted">搜索结果</div>
+        <div className="rounded-full border border-border bg-surface-container px-2 py-0.5 text-[10px] text-muted">
+          {items.length} 条来源
+        </div>
+      </div>
+      <ol className="space-y-1.5">
+        {items.map((item, index) => (
+          <li key={`${item.id}-${index}`}>
+            <ProcessSearchResultItem cardId={cardId} item={item} index={index} />
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
+}
+
+/**
+ * 渲染工具结果中的单条搜索来源，保留标题、站点和原始链接三个阅读层级。
+ */
+function ProcessSearchResultItem({
+  cardId,
+  item,
+  index,
+}: {
+  cardId: string;
+  item: SearchSourceDisplayItem;
+  index: number;
+}) {
+  const source = resolveSearchSourceMeta(item);
+  const displayTitle = item.title.trim() || source.siteLabel || source.displayUrl || `来源 ${index + 1}`;
+  const rowClassName =
+    'group flex min-w-0 gap-2 rounded-lg px-2 py-2 text-left transition-colors hover:bg-surface-container focus-visible:bg-surface-container focus-visible:outline-none';
+  const content = (
+    <>
+      <div className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-border bg-surface-container font-mono text-[10px] text-muted">
+        {index + 1}
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="flex min-w-0 items-start justify-between gap-2">
+          <div className="min-w-0 text-sm font-medium leading-5 text-foreground" title={displayTitle}>
+            {displayTitle}
+          </div>
+          {source.href ? (
+            <ExternalLink
+              size={12}
+              className="mt-0.5 shrink-0 text-muted transition-colors group-hover:text-foreground"
+            />
+          ) : null}
+        </div>
+        <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] leading-4 text-muted">
+          <span className="max-w-[180px] truncate">{source.siteLabel}</span>
+          {source.hostname ? <span className="font-mono">{source.hostname}</span> : null}
+        </div>
+        {source.displayUrl ? (
+          <div
+            className="mt-1 truncate font-mono text-[11px] leading-4 text-accent-breeze"
+            title={item.url}
+          >
+            {source.displayUrl}
+          </div>
+        ) : null}
+      </div>
+    </>
+  );
+
+  if (source.href) {
+    return (
+      <a
+        data-testid={`process-search-result-link-${cardId}-${index}`}
+        href={source.href}
+        target="_blank"
+        rel="noreferrer noopener"
+        aria-label={`打开搜索结果 ${displayTitle}`}
+        className={rowClassName}
+      >
+        {content}
+      </a>
+    );
+  }
+
+  return (
+    <div
+      data-testid={`process-search-result-row-${cardId}-${index}`}
+      className={`${rowClassName} cursor-default`}
+    >
+      {content}
+    </div>
+  );
+}
+
+/**
+ * 识别搜索工具结果明细，兼容流式来源拼接和历史回放中的多种分隔格式。
+ */
+function parseSearchResultDetails(card: ProcessCardItem): SearchSourceDisplayItem[] {
+  if (card.type !== 'tool_result' || !isSearchProcessCard(card)) {
+    return [];
+  }
+  const rawDetails = card.details ?? [];
+  const resultDetails = rawDetails.filter((detail) => detail.label.trim() === '结果');
+  const parsedItems = resultDetails.flatMap((detail) => parseSearchResultDetailContent(detail.content));
+  return dedupeSearchSourceItems(parsedItems);
+}
+
+/**
+ * 判断过程卡片是否来自网页搜索，历史数据缺失 toolId 时用标题和摘要兜底识别。
+ */
+function isSearchProcessCard(card: ProcessCardItem): boolean {
+  if (card.toolId === 'search') {
+    return true;
+  }
+  const text = `${card.displayName ?? ''} ${card.title ?? ''} ${card.summary ?? ''}`;
+  return text.includes('网页搜索') || text.includes('搜索结果') || text.includes('搜索来源');
+}
+
+/**
+ * 解析单段搜索结果文本；优先按竖线分隔读取标题、站点和链接，再兜底解析独立链接。
+ */
+function parseSearchResultDetailContent(content: string): SearchSourceDisplayItem[] {
+  const blocks = content
+    .split(/\n{2,}/)
+    .map((block) => block.trim())
+    .filter(Boolean);
+  return blocks.flatMap((block, blockIndex) => {
+    const blockItem = parseSearchResultBlock(block, blockIndex);
+    if (blockItem) {
+      return [blockItem];
+    }
+    return block
+      .split(/\n{1,}/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line, lineIndex) => parseSearchResultLine(line, blockIndex * 100 + lineIndex))
+      .filter((item): item is SearchSourceDisplayItem => item != null);
+  });
+}
+
+/**
+ * 解析实时搜索事件常见的三行块：标题、站点、链接。
+ */
+function parseSearchResultBlock(block: string, index: number): SearchSourceDisplayItem | null {
+  const lines = block
+    .split(/\n{1,}/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (lines.length < 2 || lines.some((line) => line.includes('|'))) {
+    return null;
+  }
+  const urlLineIndex = lines.findIndex((line) => looksLikeHttpUrl(line));
+  if (urlLineIndex < 0) {
+    return null;
+  }
+  const url = lines[urlLineIndex].replace(/[，。；;,.]+$/, '');
+  const nonUrlLines = lines.filter((_, lineIndex) => lineIndex !== urlLineIndex);
+  return {
+    id: `process-search-${index}`,
+    title: nonUrlLines[0] ?? url,
+    siteName: nonUrlLines[1],
+    url,
+  };
+}
+
+/**
+ * 将一行搜索结果拆成展示字段，避免把长 URL 留在纯文本里撑开布局。
+ */
+function parseSearchResultLine(line: string, index: number): SearchSourceDisplayItem | null {
+  const pipeParts = line
+    .split('|')
+    .map((part) => part.trim())
+    .filter(Boolean);
+  if (pipeParts.length >= 2) {
+    const urlPartIndex = pipeParts.findIndex((part) => looksLikeHttpUrl(part));
+    const url = urlPartIndex >= 0 ? pipeParts[urlPartIndex] : undefined;
+    const nonUrlParts = pipeParts.filter((_, partIndex) => partIndex !== urlPartIndex);
+    return {
+      id: `process-search-${index}`,
+      title: nonUrlParts[0] ?? url ?? line,
+      siteName: nonUrlParts[1],
+      url,
+    };
+  }
+
+  const urlMatch = line.match(/https?:\/\/\S+/);
+  if (urlMatch) {
+    const url = urlMatch[0].replace(/[，。；;,.]+$/, '');
+    const title = line.replace(urlMatch[0], '').replace(/[|｜\-–—]+$/, '').trim();
+    return {
+      id: `process-search-${index}`,
+      title: title || url,
+      url,
+    };
+  }
+
+  if (line.length < 4) {
+    return null;
+  }
+  return {
+    id: `process-search-${index}`,
+    title: line,
+  };
+}
+
+/**
+ * 按 URL 或标题去重，避免多个搜索事件合并后重复展示同一来源。
+ */
+function dedupeSearchSourceItems(items: SearchSourceDisplayItem[]): SearchSourceDisplayItem[] {
+  const seenKeys = new Set<string>();
+  const dedupedItems: SearchSourceDisplayItem[] = [];
+  for (const item of items) {
+    const key = (item.url || item.title).trim().toLowerCase();
+    if (!key || seenKeys.has(key)) {
+      continue;
+    }
+    seenKeys.add(key);
+    dedupedItems.push({
+      ...item,
+      id: item.id || `process-search-${dedupedItems.length}`,
+    });
+  }
+  return dedupedItems;
+}
+
+/**
+ * 判断文本是否像 HTTP 链接，用于从搜索结果分隔片段中定位 URL 字段。
+ */
+function looksLikeHttpUrl(value: string): boolean {
+  return /^https?:\/\/\S+$/i.test(value.trim());
 }
 
 

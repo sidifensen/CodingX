@@ -41,6 +41,13 @@ public interface ChatStreamPublisher {
     void publishMcpCall(Long conversationId, Object payload);
 
     /**
+     * 发布通用模型工具调用事件，供前端把本地工具调用展示为消息内过程链路。
+     * @param conversationId 会话标识。
+     * @param payload 工具调用载荷。
+     */
+    void publishToolCall(Long conversationId, Object payload);
+
+    /**
      * 发布参考来源事件，供前端右栏在搜索完成后即时展示。
      * @param conversationId 会话标识。
      * @param payload 来源载荷。

@@ -150,6 +150,21 @@ class ChatApplicationToolCallFlowTest {
 
         verify(chatToolExecutionService).execute("test_sync_tool", "{\"message\":\"touch\"}");
         verify(aiChatClient, org.mockito.Mockito.times(2)).streamChatWithTools(any(), eq(false), any(), any());
+        ArgumentCaptor<Object> toolEventCaptor = ArgumentCaptor.forClass(Object.class);
+        verify(chatStreamPublisher, org.mockito.Mockito.times(2)).publishToolCall(eq(1L), toolEventCaptor.capture());
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> toolEvents = toolEventCaptor.getAllValues().stream()
+            .map(value -> (Map<String, Object>) value)
+            .toList();
+        assertEquals("start", toolEvents.get(0).get("phase"));
+        assertEquals("call-1", toolEvents.get(0).get("callId"));
+        assertEquals("test_sync_tool", toolEvents.get(0).get("toolId"));
+        assertEquals("touch", ((Map<?, ?>) toolEvents.get(0).get("params")).get("message"));
+        assertEquals("complete", toolEvents.get(1).get("phase"));
+        assertEquals("call-1", toolEvents.get(1).get("callId"));
+        assertEquals("test_sync_tool", toolEvents.get(1).get("toolId"));
+        assertEquals("工具已执行", toolEvents.get(1).get("content"));
+        assertEquals(Boolean.TRUE, ((Map<?, ?>) toolEvents.get(1).get("resultMetadata")).get("ok"));
         verify(chatStreamPublisher).publishAssistantCompleted(1L, "已通过工具完成本地文件操作。", "本地工具调用");
         ArgumentCaptor<ChatMessage> messageCaptor = ArgumentCaptor.forClass(ChatMessage.class);
         verify(chatMessageRepository, org.mockito.Mockito.times(2)).save(messageCaptor.capture());
@@ -326,6 +341,17 @@ class ChatApplicationToolCallFlowTest {
         ));
 
         verify(chatStreamPublisher).publishError(3L, "spawn_agent 暂未接入真实 Codex 运行时");
+        ArgumentCaptor<Object> toolEventCaptor = ArgumentCaptor.forClass(Object.class);
+        verify(chatStreamPublisher, org.mockito.Mockito.times(2)).publishToolCall(eq(3L), toolEventCaptor.capture());
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> toolEvents = toolEventCaptor.getAllValues().stream()
+            .map(value -> (Map<String, Object>) value)
+            .toList();
+        assertEquals("start", toolEvents.get(0).get("phase"));
+        assertEquals("spawn_agent", toolEvents.get(0).get("toolId"));
+        assertEquals("error", toolEvents.get(1).get("phase"));
+        assertEquals("spawn_agent", toolEvents.get(1).get("toolId"));
+        assertEquals("spawn_agent 暂未接入真实 Codex 运行时", toolEvents.get(1).get("errorMessage"));
         ArgumentCaptor<ChatMessage> messageCaptor = ArgumentCaptor.forClass(ChatMessage.class);
         verify(chatMessageRepository, org.mockito.Mockito.times(2)).save(messageCaptor.capture());
         ChatMessage failedMessage = messageCaptor.getAllValues().get(1);

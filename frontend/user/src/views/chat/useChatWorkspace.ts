@@ -1805,7 +1805,8 @@ export function useChatWorkspace(
       return;
     }
 
-    if (eventName === 'mcp-call' && isRecord(payload)) {
+    if ((eventName === 'mcp-call' || eventName === 'tool-call') && isRecord(payload)) {
+      // Local model tools share the MCP process-card path so shell/apply_patch stays in the main message flow.
       const phase = resolveMcpCallPhase(payload.phase);
       const status = resolveMcpCallStatus(phase);
       const callId = normalizeOptionalString(payload.callId);

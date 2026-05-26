@@ -1196,6 +1196,8 @@ public class ChatApplicationService {
         if (workspacePath != null) {
             ChatToolExecutionContext.bindToolWorkingDirectory(workspacePath);
         }
+        LocalDateTime startedAt = LocalDateTime.now();
+        publishLocalToolCallEvent(command.conversationId(), toolCall, "start", startedAt, null, null);
         try {
             ChatToolExecutionResult toolResult = chatToolExecutionService.execute(toolCall.toolCode(), toolCall.arguments());
             ChatExecutionStep toolStep = ChatExecutionStep.builder()
@@ -1219,9 +1221,105 @@ public class ChatApplicationService {
                 "sequenceNo", toolStep.getSequenceNo(),
                 "content", toolStep.getContent()
             ));
+            publishLocalToolCallEvent(command.conversationId(), toolCall, "complete", startedAt, LocalDateTime.now(), toolResult);
             return toolResult;
+        } catch (RuntimeException exception) {
+            publishLocalToolCallError(command.conversationId(), toolCall, startedAt, exception);
+            throw exception;
         } finally {
             ChatToolExecutionContext.clear();
+        }
+    }
+
+    /**
+     * 发布本地工具调用生命周期事件；事件结构与前端现有工具过程链路字段保持一致。
+     * @param conversationId 会话标识。
+     * @param toolCall 模型请求执行的工具调用。
+     * @param phase start 或 complete。
+     * @param startedAt 工具开始时间。
+     * @param finishedAt 工具结束时间，开始事件为空。
+     * @param toolResult 工具执行结果，开始事件为空。
+     */
+    private void publishLocalToolCallEvent(
+        Long conversationId,
+        AiToolCall toolCall,
+        String phase,
+        LocalDateTime startedAt,
+        LocalDateTime finishedAt,
+        ChatToolExecutionResult toolResult
+    ) {
+        Map<String, Object> payload = baseLocalToolCallPayload(toolCall, phase, startedAt);
+        if (finishedAt != null) {
+            payload.put("finishedAt", finishedAt.toString());
+        }
+        if (toolResult != null) {
+            payload.put("content", StrUtil.blankToDefault(toolResult.content(), ""));
+            payload.put("rawResult", StrUtil.blankToDefault(toolResult.content(), ""));
+            if (toolResult.metadata() != null && !toolResult.metadata().isEmpty()) {
+                payload.put("resultMetadata", toolResult.metadata());
+            }
+        }
+        chatStreamPublisher.publishToolCall(conversationId, payload);
+    }
+
+    /**
+     * 发布本地工具执行失败事件，保证前端能在最终错误前看到是哪一个工具失败。
+     * @param conversationId 会话标识。
+     * @param toolCall 模型请求执行的工具调用。
+     * @param startedAt 工具开始时间。
+     * @param exception 工具执行异常。
+     */
+    private void publishLocalToolCallError(
+        Long conversationId,
+        AiToolCall toolCall,
+        LocalDateTime startedAt,
+        RuntimeException exception
+    ) {
+        Map<String, Object> payload = baseLocalToolCallPayload(toolCall, "error", startedAt);
+        String message = StrUtil.blankToDefault(exception.getMessage(), "工具执行失败");
+        payload.put("finishedAt", LocalDateTime.now().toString());
+        payload.put("content", message);
+        payload.put("errorMessage", message);
+        chatStreamPublisher.publishToolCall(conversationId, payload);
+    }
+
+    /**
+     * 构造本地工具事件公共字段；参数解析失败时保留原始字符串，避免坏 JSON 中断工具链路展示。
+     * @param toolCall 模型请求执行的工具调用。
+     * @param phase 当前工具阶段。
+     * @param startedAt 工具开始时间。
+     * @return 可直接发布的事件载荷。
+     */
+    private Map<String, Object> baseLocalToolCallPayload(AiToolCall toolCall, String phase, LocalDateTime startedAt) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("callId", StrUtil.blankToDefault(toolCall.callId(), "tool-call-" + System.nanoTime()));
+        payload.put("phase", phase);
+        payload.put("toolId", StrUtil.blankToDefault(toolCall.toolCode(), "unknown"));
+        payload.put("displayName", StrUtil.blankToDefault(toolCall.toolCode(), "本地工具"));
+        payload.put("input", StrUtil.blankToDefault(toolCall.arguments(), ""));
+        payload.put("params", parseToolCallParams(toolCall.arguments()));
+        payload.put("startedAt", startedAt.toString());
+        return payload;
+    }
+
+    /**
+     * 将模型工具参数解析为前端可折叠展示的结构化对象。
+     * @param argumentsText 模型返回的工具参数。
+     * @return 结构化参数或原始文本。
+     */
+    private Object parseToolCallParams(String argumentsText) {
+        if (StrUtil.isBlank(argumentsText)) {
+            return Map.of();
+        }
+        try {
+            Object parsed = cn.hutool.json.JSONUtil.parse(argumentsText);
+            if (parsed instanceof cn.hutool.json.JSONObject jsonObject) {
+                return new LinkedHashMap<>(jsonObject);
+            }
+            return parsed;
+        } catch (Exception ignored) {
+            // 模型偶发返回非 JSON 参数时仍需展示原始输入，不能影响工具执行主流程。
+            return argumentsText;
         }
     }
 

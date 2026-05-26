@@ -2483,6 +2483,197 @@ describe('ChatView', () => {
   });
 
   /**
+   * Local tool cards use the same tool group so arguments and results can be inspected inline.
+   */
+  it('renders local tool arguments and results in the assistant message', async () => {
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          messages: [
+            {
+              id: '963',
+              conversationId: '2001',
+              role: 'ASSISTANT',
+              content: 'Current directory is D:/code/CodingX',
+              status: 'done',
+              processCards: [
+                {
+                  id: 'tool-call-shell-963',
+                  type: 'tool_call',
+                  title: '调用shell_command',
+                  summary: '正在执行本地命令。',
+                  status: 'completed',
+                  toolId: 'shell_command',
+                  displayName: 'shell_command',
+                  details: [
+                    {
+                      label: '参数',
+                      content: '{"command":"pwd"}',
+                    },
+                  ],
+                },
+                {
+                  id: 'tool-result-shell-963',
+                  type: 'tool_result',
+                  title: '已获取结果',
+                  summary: 'D:/code/CodingX',
+                  status: 'completed',
+                  toolId: 'shell_command',
+                  displayName: 'shell_command',
+                  details: [
+                    {
+                      label: '结果',
+                      content: 'D:/code/CodingX',
+                    },
+                  ],
+                },
+              ],
+            } as any,
+          ],
+          executionSteps: [],
+          references: [],
+          artifacts: [],
+        })}
+      />,
+    );
+
+    const toolToggle963 = screen.getByTestId('process-tool-group-toggle-963');
+    expect(toolToggle963).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByText('调用shell_command')).not.toBeInTheDocument();
+    expect(screen.queryByText('{"command":"pwd"}')).not.toBeInTheDocument();
+
+    fireEvent.click(toolToggle963);
+
+    const toolGroup = screen.getByTestId('process-tool-group-963');
+    expect(screen.getByText('调用shell_command')).toBeInTheDocument();
+    expect(screen.getByText('已获取结果')).toBeInTheDocument();
+    expect(toolGroup).toHaveTextContent('{"command":"pwd"}');
+    expect(toolGroup).toHaveTextContent('D:/code/CodingX');
+  });
+
+  /**
+   * 搜索工具结果应按来源列表展示，避免标题、站点和链接混在一段原始文本里。
+   */
+  it('应将搜索工具结果渲染为结构化来源列表', async () => {
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          messages: [
+            {
+              id: '961',
+              conversationId: '2001',
+              role: 'ASSISTANT',
+              content: '正在汇总检索结果',
+              status: 'streaming',
+              processCards: [
+                {
+                  id: 'tool-call-search-961',
+                  type: 'tool_call',
+                  title: '调用网页搜索',
+                  summary: '正在检索公开资料。',
+                  status: 'completed',
+                  toolId: 'search',
+                },
+                {
+                  id: 'tool-result-search-961',
+                  type: 'tool_result',
+                  title: '已获取结果',
+                  summary: '已获取 2 条搜索结果。',
+                  status: 'completed',
+                  toolId: 'search',
+                  details: [
+                    {
+                      label: '结果',
+                      content:
+                        'OpenAI API 文档 | OpenAI | https://platform.openai.com/docs\nBing Search API 文档 | Microsoft Learn | https://learn.microsoft.com/bing/search-apis/',
+                    },
+                  ],
+                },
+              ],
+            } as any,
+          ],
+          executionSteps: [],
+          references: [],
+          artifacts: [],
+        })}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId('process-tool-group-toggle-961'));
+
+    expect(screen.getByTestId('process-search-result-list-tool-result-search-961')).toBeInTheDocument();
+    expect(screen.getByText('OpenAI API 文档')).toBeInTheDocument();
+    expect(screen.getByText('Microsoft Learn')).toBeInTheDocument();
+    const firstSource = screen.getByTestId('process-search-result-link-tool-result-search-961-0');
+    expect(firstSource).toHaveAttribute('href', 'https://platform.openai.com/docs');
+    expect(firstSource).toHaveAttribute('target', '_blank');
+  });
+
+  /**
+   * 实时搜索来源按三行块写入时，也应合并为一条来源卡片。
+   */
+  it('应兼容实时搜索结果的标题站点链接三行格式', async () => {
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          messages: [
+            {
+              id: '962',
+              conversationId: '2001',
+              role: 'ASSISTANT',
+              content: '正在汇总检索结果',
+              status: 'streaming',
+              processCards: [
+                {
+                  id: 'tool-call-search-962',
+                  type: 'tool_call',
+                  title: '调用网页搜索',
+                  summary: '正在检索公开资料。',
+                  status: 'completed',
+                  toolId: 'search',
+                },
+                {
+                  id: 'tool-result-search-962',
+                  type: 'tool_result',
+                  title: '已获取结果',
+                  summary: '已获取 2 条搜索结果。',
+                  status: 'completed',
+                  toolId: 'search',
+                  details: [
+                    {
+                      label: '结果',
+                      content:
+                        'OpenAI API 文档\nOpenAI\nhttps://platform.openai.com/docs\n\nBing Search API 文档\nMicrosoft Learn\nhttps://learn.microsoft.com/bing/search-apis/',
+                    },
+                  ],
+                },
+              ],
+            } as any,
+          ],
+          executionSteps: [],
+          references: [],
+          artifacts: [],
+        })}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId('process-tool-group-toggle-962'));
+
+    expect(screen.getByTestId('process-search-result-list-tool-result-search-962')).toHaveTextContent(
+      '2 条来源',
+    );
+    expect(screen.getByText('OpenAI API 文档')).toBeInTheDocument();
+    expect(screen.getByText('Microsoft Learn')).toBeInTheDocument();
+    expect(screen.queryByText('https://platform.openai.com/docs')).not.toBeInTheDocument();
+  });
+
+  /**
    * 搜索来源默认应折叠，只展示一行摘要；点击后再展开来源列表与原始链接。
    */
   it('应默认折叠搜索来源并在展开后显示列表项', async () => {
@@ -2519,6 +2710,13 @@ describe('ChatView', () => {
     );
 
     expect(screen.getByTestId('search-progress-panel-971')).toBeInTheDocument();
+    // 业务意图：搜索来源必须跟在消息正文与操作区之后，作为尾部补充信息展示。
+    expect(
+      screen
+        .getByTestId('copy-action-group-971')
+        .compareDocumentPosition(screen.getByTestId('search-progress-panel-971')) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
     const toggleButton = screen.getByTestId('search-progress-toggle-971');
     expect(toggleButton).toHaveAttribute('aria-expanded', 'false');
     expect(screen.queryByTestId('search-source-link-971-ref-1')).not.toBeInTheDocument();

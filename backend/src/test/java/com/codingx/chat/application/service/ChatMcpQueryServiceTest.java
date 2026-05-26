@@ -6,9 +6,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.when;
 
 import com.codingx.mcp.application.service.ChatMcpQueryService;
-import com.codingx.mcp.application.service.ChatMcpToolExecutor;
-import com.codingx.mcp.application.service.ChatMcpToolRegistry;
-import com.codingx.mcp.application.service.ChatMcpToolResult;
+import com.codingx.mcp.application.executor.ChatMcpToolExecutor;
+import com.codingx.mcp.application.executor.ChatMcpToolRegistry;
+import com.codingx.mcp.application.executor.ChatMcpToolResult;
 import com.codingx.mcp.domain.model.ChatMcp;
 import com.codingx.mcp.domain.repository.ChatMcpRepository;
 import java.util.List;

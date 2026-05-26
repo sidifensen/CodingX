@@ -3,8 +3,8 @@ package com.codingx.chat.application.service;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.codingx.mcp.application.service.ChatMcpToolResult;
-import com.codingx.mcp.application.service.WeatherMcpToolExecutor;
+import com.codingx.mcp.application.executor.ChatMcpToolResult;
+import com.codingx.mcp.application.executor.WeatherMcpToolExecutor;
 import com.sun.net.httpserver.HttpServer;
 import com.sun.net.httpserver.HttpExchange;
 import java.io.IOException;

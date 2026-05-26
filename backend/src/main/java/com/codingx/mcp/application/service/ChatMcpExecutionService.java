@@ -1,5 +1,8 @@
 package com.codingx.mcp.application.service;
 
+import com.codingx.mcp.application.executor.ChatMcpProgressListener;
+import com.codingx.mcp.application.executor.ChatMcpToolRegistry;
+import com.codingx.mcp.application.executor.ChatMcpToolResult;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 

@@ -3,12 +3,12 @@ package com.codingx.chat.application.service;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.codingx.mcp.application.service.ChatMcpProgressListener;
+import com.codingx.mcp.application.executor.ChatMcpProgressListener;
 import com.codingx.mcp.application.service.ChatMcpExecutionService;
-import com.codingx.mcp.application.service.ChatMcpToolExecutor;
-import com.codingx.mcp.application.service.ChatMcpToolRegistry;
-import com.codingx.mcp.application.service.ChatMcpToolResult;
-import com.codingx.mcp.application.service.WeatherMcpToolExecutor;
+import com.codingx.mcp.application.executor.ChatMcpToolExecutor;
+import com.codingx.mcp.application.executor.ChatMcpToolRegistry;
+import com.codingx.mcp.application.executor.ChatMcpToolResult;
+import com.codingx.mcp.application.executor.WeatherMcpToolExecutor;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.Test;

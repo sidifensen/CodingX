@@ -20,7 +20,7 @@ import com.codingx.chat.domain.repository.ChatMessageRepository;
 import com.codingx.chat.domain.port.AiChatClient;
 import com.codingx.chat.domain.port.ChatStreamPublisher;
 import com.codingx.mcp.application.service.ChatMcpExecutionService;
-import com.codingx.mcp.application.service.ChatMcpToolResult;
+import com.codingx.mcp.application.executor.ChatMcpToolResult;
 import com.codingx.mcp.domain.repository.ChatMcpRepository;
 import com.codingx.expert.application.service.ChatExpertContextService;
 import com.codingx.skill.application.service.ChatSkillContextService;
@@ -95,9 +95,9 @@ class ChatApplicationMcpFlowTest {
         when(chatMcpExecutionService.execute(
             eq("weather_query"),
             eq("北京今天天气怎么样"),
-            any(com.codingx.mcp.application.service.ChatMcpProgressListener.class)
+            any(com.codingx.mcp.application.executor.ChatMcpProgressListener.class)
         )).thenAnswer(invocation -> {
-            com.codingx.mcp.application.service.ChatMcpProgressListener listener = invocation.getArgument(2);
+            com.codingx.mcp.application.executor.ChatMcpProgressListener listener = invocation.getArgument(2);
             listener.onProgress("mock-progress", "正在查询天气数据", java.util.Map.of("source", "mock"));
             return new ChatMcpToolResult("weather_query", "北京今日晴，当前温度 26.5°C。", java.util.Map.of());
         });
@@ -118,7 +118,7 @@ class ChatApplicationMcpFlowTest {
         verify(chatMcpExecutionService).execute(
             eq("weather_query"),
             eq("北京今天天气怎么样"),
-            any(com.codingx.mcp.application.service.ChatMcpProgressListener.class)
+            any(com.codingx.mcp.application.executor.ChatMcpProgressListener.class)
         );
         // 新契约：MCP 调用需先上报 start，再上报 complete，且两次都携带 callId。
         verify(chatStreamPublisher, atLeast(1)).publishMcpCall(eq(1L), org.mockito.ArgumentMatchers.argThat(payload -> {
@@ -180,7 +180,7 @@ class ChatApplicationMcpFlowTest {
         when(chatMcpExecutionService.execute(
             eq("code_search"),
             eq("查找 ChatController 的 sendMessage 方法"),
-            any(com.codingx.mcp.application.service.ChatMcpProgressListener.class)
+            any(com.codingx.mcp.application.executor.ChatMcpProgressListener.class)
         )).thenReturn(new ChatMcpToolResult("code_search", "命中 ChatController.java:95", java.util.Map.of()));
         when(conversationTitleService.generateTitle(any(), any())).thenReturn("代码定位");
         when(llmResponseCleaner.clean(any())).thenAnswer(invocation -> invocation.getArgument(0));
@@ -201,7 +201,7 @@ class ChatApplicationMcpFlowTest {
         verify(chatMcpExecutionService).execute(
             eq("code_search"),
             eq("查找 ChatController 的 sendMessage 方法"),
-            any(com.codingx.mcp.application.service.ChatMcpProgressListener.class)
+            any(com.codingx.mcp.application.executor.ChatMcpProgressListener.class)
         );
         verify(aiChatClient).streamChat(any(), eq(false), any(AiChatClient.StreamHandler.class));
         verify(chatStreamPublisher).publishAssistantCompleted(2L, "根据代码检索结果，命中 ChatController.java:95。", "代码定位");

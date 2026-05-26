@@ -1115,19 +1115,140 @@ describe('ChatView', () => {
   });
 
   /**
-   * 助手消息输出区只保留复制入口，避免生成内容下方出现过多干扰操作。
+   * 助手消息底部应恢复复制、分享、重新生成、点赞和倒赞入口，避免消息能力被误收敛。
    */
-  it('应仅渲染助手消息复制操作', async () => {
+  it('应渲染助手消息操作栏', async () => {
     render(
       <ChatView isAuthenticated={true} onRequireLogin={vi.fn()} workspace={createWorkspace()} />,
     );
 
     expect(screen.getByTestId('copy-message-102')).toBeInTheDocument();
-    expect(screen.queryByTestId('copy-menu-toggle-102')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('share-message-102')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('regenerate-message-102')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('thumbs-up-102')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('thumbs-down-102')).not.toBeInTheDocument();
+    expect(screen.getByTestId('copy-menu-toggle-102')).toBeInTheDocument();
+    expect(screen.getByTestId('share-message-102')).toBeInTheDocument();
+    expect(screen.getByTestId('regenerate-message-102')).toBeInTheDocument();
+    expect(screen.getByTestId('thumbs-up-102')).toBeInTheDocument();
+    expect(screen.getByTestId('thumbs-down-102')).toBeInTheDocument();
+  });
+
+  /**
+   * 分享与重新生成应分别触发工作区动作，且重新生成只允许对最后一条助手消息触发。
+   */
+  it('应支持分享并重新生成最后一条助手消息', async () => {
+    const sharedUrl = new URL('/api/chat/conversations/shared/share_xxx', window.location.origin).toString();
+    const shareConversation = vi.fn().mockResolvedValue(sharedUrl);
+    const regenerateConversation = vi.fn().mockResolvedValue(undefined);
+
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          shareConversation,
+          regenerateConversation,
+        })}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId('share-message-102'));
+    await waitFor(() => {
+      expect(shareConversation).toHaveBeenCalledWith('2001');
+    });
+    await waitFor(() => {
+      expect(navigator.clipboard.writeText).toHaveBeenCalledWith(sharedUrl);
+    });
+
+    fireEvent.click(screen.getByTestId('regenerate-message-102'));
+    await waitFor(() => {
+      expect(regenerateConversation).toHaveBeenCalledWith('2001');
+    });
+  });
+
+  /**
+   * 非最后一条助手消息的重新生成按钮应禁用，避免用户对旧消息触发无效重试。
+   */
+  it('应禁用非最后一条助手消息的重新生成按钮', async () => {
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          messages: [
+            {
+              id: '101',
+              conversationId: '2001',
+              role: 'USER',
+              content: '请帮我分析项目结构',
+              status: 'COMPLETED',
+            },
+            {
+              id: '102',
+              conversationId: '2001',
+              role: 'ASSISTANT',
+              content: '第一条回答',
+              status: 'COMPLETED',
+            },
+            {
+              id: '103',
+              conversationId: '2001',
+              role: 'USER',
+              content: '再补充一点',
+              status: 'COMPLETED',
+            },
+            {
+              id: '104',
+              conversationId: '2001',
+              role: 'ASSISTANT',
+              content: '最后一条回答',
+              status: 'COMPLETED',
+            },
+          ],
+          executionSteps: [],
+          references: [],
+          artifacts: [],
+        })}
+      />,
+    );
+
+    expect(screen.getByTestId('regenerate-message-102')).toBeDisabled();
+    expect(screen.getByTestId('regenerate-message-104')).not.toBeDisabled();
+  });
+
+  /**
+   * 点击复制应写入剪贴板，复制更多中应支持复制 Markdown 原文。
+   */
+  it('应支持复制消息与复制 Markdown', async () => {
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          messages: [
+            {
+              id: '501',
+              conversationId: '2001',
+              role: 'ASSISTANT',
+              content: '### 标题\n\n- 列表项',
+              status: 'COMPLETED',
+            },
+          ],
+          executionSteps: [],
+          references: [],
+          artifacts: [],
+        })}
+      />,
+    );
+
+    const writeText = vi.mocked(navigator.clipboard.writeText);
+    fireEvent.click(screen.getByTestId('copy-message-501'));
+    await waitFor(() => {
+      expect(writeText).toHaveBeenCalledWith(expect.stringContaining('标题'));
+    });
+
+    fireEvent.click(screen.getByTestId('copy-menu-toggle-501'));
+    fireEvent.click(screen.getByTestId('copy-markdown-501'));
+    await waitFor(() => {
+      expect(writeText).toHaveBeenCalledWith('### 标题\n\n- 列表项');
+    });
   });
 
   /**
@@ -2229,6 +2350,101 @@ describe('ChatView', () => {
   });
 
   /**
+   * 点赞和倒赞应支持单选切换，保证反馈状态直观可见。
+   */
+  it('应支持点赞倒赞切换', async () => {
+    render(
+      <ChatView isAuthenticated={true} onRequireLogin={vi.fn()} workspace={createWorkspace()} />,
+    );
+
+    const upButton = screen.getByTestId('thumbs-up-102');
+    const downButton = screen.getByTestId('thumbs-down-102');
+    expect(upButton).toHaveAttribute('aria-pressed', 'false');
+    expect(downButton).toHaveAttribute('aria-pressed', 'false');
+
+    fireEvent.click(upButton);
+    expect(upButton).toHaveAttribute('aria-pressed', 'true');
+    expect(downButton).toHaveAttribute('aria-pressed', 'false');
+
+    fireEvent.click(downButton);
+    expect(upButton).toHaveAttribute('aria-pressed', 'false');
+    expect(downButton).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  /**
+   * 点赞时应调用真实反馈接口，确保前端状态与后端反馈记录一致。
+   */
+  it('点赞应调用反馈接口并更新选中态', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          success: true,
+          code: 'OK',
+          message: 'feedback submitted',
+          data: null,
+        }),
+        {
+          status: 200,
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        },
+      ),
+    );
+
+    render(
+      <ChatView isAuthenticated={true} onRequireLogin={vi.fn()} workspace={createWorkspace()} />,
+    );
+
+    const upButton = screen.getByTestId('thumbs-up-102');
+    fireEvent.click(upButton);
+
+    await waitFor(() => {
+      expect(fetchSpy).toHaveBeenCalledWith(
+        '/api/chat/messages/102/feedback',
+        expect.objectContaining({
+          method: 'POST',
+        }),
+      );
+    });
+    expect(upButton).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  /**
+   * 乐观助手消息尚未落库时不应提交反馈，避免请求携带临时消息 ID 触发后端类型转换异常。
+   */
+  it('应禁止对乐观助手消息提交反馈', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          messages: [
+            {
+              id: 'optimistic-assistant-1779529346520',
+              conversationId: '2001',
+              role: 'ASSISTANT',
+              content: '正在生成回答...',
+              status: 'streaming',
+            },
+          ],
+        })}
+      />,
+    );
+
+    const upButton = screen.getByTestId('thumbs-up-optimistic-assistant-1779529346520');
+    expect(upButton).toBeDisabled();
+
+    fireEvent.click(upButton);
+
+    await waitFor(() => {
+      expect(fetchSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  /**
    * 助手 Markdown 图片应以消息内图片样式渲染，保证与文本消息视觉一致。
    */
   it('应在助手消息中渲染 Markdown 图片', async () => {
@@ -2258,17 +2474,19 @@ describe('ChatView', () => {
   });
 
   /**
-   * 助手复制按钮应保持独立紧凑，不再渲染下拉组合。
+   * 复制按钮与箭头应属于同一组合，避免视觉断层。
    */
-  it('助手复制按钮应为独立操作', async () => {
+  it('复制按钮和下拉按钮应位于同一复制操作组', async () => {
     render(
       <ChatView isAuthenticated={true} onRequireLogin={vi.fn()} workspace={createWorkspace()} />,
     );
 
     const copyButton = screen.getByTestId('copy-message-102');
+    const toggleButton = screen.getByTestId('copy-menu-toggle-102');
+    const copyGroup = screen.getByTestId('copy-action-group-102');
 
-    expect(copyButton).toHaveAttribute('aria-label', '复制消息');
-    expect(screen.queryByTestId('copy-menu-toggle-102')).not.toBeInTheDocument();
+    expect(copyGroup).toContainElement(copyButton);
+    expect(copyGroup).toContainElement(toggleButton);
   });
 
   /**

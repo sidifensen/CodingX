@@ -23,9 +23,14 @@ import {
   Monitor,
   Search,
   Pencil,
+  RotateCcw,
+  Share2,
+  ThumbsDown,
+  ThumbsUp,
   Trash2,
   WandSparkles,
 } from 'lucide-react';
+import { AuthStorage } from '../utils/authStorage';
 import { ChatApi } from './chat/chatApi';
 import {
   ChatAttachmentItem,
@@ -106,6 +111,7 @@ export default function ChatView({
     cancelCurrentStream,
     shareConversation,
     deleteConversationMessages,
+    regenerateConversation,
     resendUserMessage,
     pickRepositoryDirectory,
     renameDialog,
@@ -120,6 +126,9 @@ export default function ChatView({
     () => buildShareSelectionRounds(messages),
     [messages],
   );
+  const latestAssistantMessageId = React.useMemo(() => {
+    return [...messages].reverse().find((message) => message.role === 'ASSISTANT')?.id ?? null;
+  }, [messages]);
   const latestMessageAnchorRef = React.useRef<HTMLDivElement | null>(null);
   const chatScrollRegionRef = React.useRef<HTMLDivElement | null>(null);
   const shouldFollowLatestMessageRef = React.useRef(true);
@@ -1140,7 +1149,12 @@ export default function ChatView({
                           <div className="mt-3 space-y-1.5">
                             <AssistantMessageActions
                               messageId={message.id}
+                              conversationId={message.conversationId}
                               content={messageContent}
+                              isLatestAssistantMessage={message.id === latestAssistantMessageId}
+                              userVote={message.userVote}
+                              onShareConversation={shareConversation}
+                              onRegenerateConversation={regenerateConversation}
                             />
                             {/* 业务意图：搜索来源必须紧跟在消息操作区之后，优先落在倒赞按钮后面，避免被后续提示打断阅读路径。 */}
                             {message.searchProgress?.items?.length ? (
@@ -2687,6 +2701,8 @@ function formatDirectoryListingSize(entry: DirectoryListingEntry): string {
   return `${rounded} ${units[unitIndex]}`;
 }
 
+type CopyMode = 'plain' | 'markdown';
+type MessageReaction = 'up' | 'down' | null;
 const PERSISTED_MESSAGE_ID_PATTERN = /^\d+$/;
 type UserMessageEditState = {
   messageId: string;
@@ -3273,42 +3289,262 @@ function UserMessageActions({
 }
 
 /**
- * 渲染助手消息底部操作栏，输出区只保留复制入口。
+ * 渲染助手消息底部操作栏，恢复复制、分享、重新生成和反馈入口。
  */
 function AssistantMessageActions({
   messageId,
+  conversationId,
   content,
+  isLatestAssistantMessage,
+  userVote,
+  onShareConversation,
+  onRegenerateConversation,
 }: {
   messageId: string;
+  conversationId: string;
   content: string;
+  isLatestAssistantMessage: boolean;
+  userVote?: number | null;
+  onShareConversation: (conversationId: string) => Promise<string>;
+  onRegenerateConversation: (conversationId: string) => Promise<void>;
 }) {
-  const [copyState, setCopyState] = React.useState<'idle' | 'copied'>('idle');
+  const [isMenuOpen, setIsMenuOpen] = React.useState(false);
+  const [copiedMode, setCopiedMode] = React.useState<CopyMode | null>(null);
+  const [shareState, setShareState] = React.useState<'idle' | 'copying' | 'copied' | 'error'>('idle');
+  // 业务约束：初始化时从 userVote 恢复已投票状态，保证刷新后仍显示之前的投票结果。
+  const [reaction, setReaction] = React.useState<MessageReaction>(
+    userVote === 1 ? 'up' : userVote === -1 ? 'down' : null,
+  );
+  const [reactionError, setReactionError] = React.useState('');
+  const [isRegenerating, setIsRegenerating] = React.useState(false);
+  const [regenerateError, setRegenerateError] = React.useState('');
+  const menuContainerRef = React.useRef<HTMLDivElement | null>(null);
+  const normalizedConversationId = String(conversationId ?? '').trim();
+  // 关键约束：反馈接口当前仅接受数据库落库后的数值主键，乐观消息临时 ID 禁止提交反馈。
+  const canSubmitReaction = PERSISTED_MESSAGE_ID_PATTERN.test(messageId);
+  // 关键约束：分享与重新生成只能作用于已落库会话，临时 pending 会话没有稳定后端上下文。
+  const canOperateOnConversation =
+    normalizedConversationId.length > 0 && normalizedConversationId !== 'pending-conversation';
+  const canRegenerateConversation =
+    canOperateOnConversation &&
+    isLatestAssistantMessage &&
+    PERSISTED_MESSAGE_ID_PATTERN.test(messageId);
 
-  const copyContent = async () => {
+  React.useEffect(() => {
+    if (!isMenuOpen) {
+      return;
+    }
+    const closeMenuWhenClickOutside = (event: MouseEvent) => {
+      if (menuContainerRef.current?.contains(event.target as Node)) {
+        return;
+      }
+      setIsMenuOpen(false);
+    };
+    document.addEventListener('mousedown', closeMenuWhenClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', closeMenuWhenClickOutside);
+    };
+  }, [isMenuOpen]);
+
+  /**
+   * 复制消息内容并短暂给出状态反馈。
+   * @param mode 复制模式，区分纯文本和 Markdown。
+   */
+  const copyContent = async (mode: CopyMode) => {
+    const value = mode === 'markdown' ? content : normalizeMessageForPlainCopy(content);
     try {
-      await navigator.clipboard.writeText(normalizeMessageForPlainCopy(content));
-      setCopyState('copied');
+      await navigator.clipboard.writeText(value);
+      setCopiedMode(mode);
       window.setTimeout(() => {
-        setCopyState('idle');
+        setCopiedMode((previousMode) => (previousMode === mode ? null : previousMode));
       }, 1200);
     } catch {
-      setCopyState('idle');
+      setCopiedMode(null);
+    } finally {
+      if (mode === 'markdown') {
+        setIsMenuOpen(false);
+      }
+    }
+  };
+
+  /**
+   * 同步本地反馈状态，确保点赞与倒赞互斥。
+   * @param nextReaction 下一次反馈值。
+   */
+  const submitReaction = async (nextReaction: Exclude<MessageReaction, null>) => {
+    if (!canSubmitReaction) {
+      return;
+    }
+    const token = AuthStorage.getSession()?.token ?? null;
+    if (!token) {
+      return;
+    }
+    const previousReaction = reaction;
+    setReaction(nextReaction);
+    setReactionError('');
+    try {
+      await ChatApi.submitMessageFeedback(token, messageId, {
+        conversationId: normalizedConversationId,
+        vote: nextReaction === 'up' ? 1 : -1,
+      });
+    } catch (error) {
+      setReaction(previousReaction);
+      setReactionError(error instanceof Error ? error.message : '反馈提交失败');
+    }
+  };
+
+  /**
+   * 生成分享链接并复制到剪贴板，成功后给出短暂状态提示。
+   * 这里不直接暴露后端返回的相对路径，避免用户复制后无法在当前站点打开。
+   */
+  const shareMessage = async () => {
+    if (shareState === 'copying' || !canOperateOnConversation) {
+      return;
+    }
+    setShareState('copying');
+    try {
+      const shareUrl = await onShareConversation(normalizedConversationId);
+      if (!shareUrl) {
+        setShareState('error');
+        return;
+      }
+      await navigator.clipboard.writeText(shareUrl);
+      setShareState('copied');
+      window.setTimeout(() => {
+        setShareState((current) => (current === 'copied' ? 'idle' : current));
+      }, 1400);
+    } catch {
+      setShareState('error');
+    }
+  };
+
+  /**
+   * 重新生成当前会话最后一条助手回复。
+   * 只允许对当前会话尾部消息操作，避免旧消息触发“看不出变化”的无效重试。
+   */
+  const regenerateMessage = async () => {
+    if (!canRegenerateConversation || isRegenerating) {
+      return;
+    }
+    setIsRegenerating(true);
+    setRegenerateError('');
+    try {
+      await onRegenerateConversation(normalizedConversationId);
+    } catch {
+      setRegenerateError('重新生成失败');
+    } finally {
+      setIsRegenerating(false);
     }
   };
 
   return (
     <div className="chat-message-actions flex items-center gap-1 text-muted">
+      <div
+        className="chat-message-action-button-group"
+        data-testid={`copy-action-group-${messageId}`}
+      >
+        {/* 复制主按钮与更多菜单使用连续按钮组，去掉视觉分隔线并保持紧凑布局。 */}
+        <button
+          type="button"
+          data-testid={`copy-message-${messageId}`}
+          aria-label="复制消息"
+          title="复制"
+          onClick={() => void copyContent('plain')}
+          className="chat-message-action-button chat-message-action-button-group-item"
+        >
+          <Copy size={15} />
+        </button>
+        <div ref={menuContainerRef} className="relative">
+          <button
+            type="button"
+            data-testid={`copy-menu-toggle-${messageId}`}
+            aria-label="复制更多"
+            title="复制更多"
+            aria-expanded={isMenuOpen}
+            onClick={() => setIsMenuOpen((open) => !open)}
+            className="chat-message-action-button chat-message-action-button-group-item"
+          >
+            <ChevronDown
+              size={15}
+              className={`transition-transform ${isMenuOpen ? 'rotate-180' : ''}`}
+            />
+          </button>
+          {isMenuOpen ? (
+            <div className="chat-copy-menu absolute bottom-11 left-0 min-w-[190px] rounded-2xl border border-border bg-surface px-2 py-2 shadow-[0_16px_40px_rgba(0,0,0,0.24)]">
+              <button
+                type="button"
+                data-testid={`copy-markdown-${messageId}`}
+                onClick={() => void copyContent('markdown')}
+                className="chat-copy-menu-item"
+              >
+                复制为Markdown
+              </button>
+              <button
+                type="button"
+                onClick={() => void copyContent('plain')}
+                className="chat-copy-menu-item"
+              >
+                复制为纯文本
+              </button>
+            </div>
+          ) : null}
+        </div>
+      </div>
       <button
         type="button"
-        data-testid={`copy-message-${messageId}`}
-        aria-label="复制消息"
-        title="复制"
-        onClick={() => void copyContent()}
-        className="chat-message-action-button"
+        data-testid={`share-message-${messageId}`}
+        aria-label="分享消息"
+        title="分享"
+        disabled={!canOperateOnConversation || shareState === 'copying'}
+        onClick={() => void shareMessage()}
+        className="chat-message-action-button disabled:cursor-not-allowed disabled:opacity-50"
       >
-        <Copy size={15} />
+        <Share2 size={15} />
       </button>
-      {copyState === 'copied' ? <span className="ml-2 text-[11px] text-muted">已复制</span> : null}
+      <button
+        type="button"
+        data-testid={`regenerate-message-${messageId}`}
+        aria-label="重新生成"
+        title="重新生成"
+        onClick={() => void regenerateMessage()}
+        disabled={!canRegenerateConversation || isRegenerating}
+        className="chat-message-action-button disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        <RotateCcw size={15} className={isRegenerating ? 'animate-spin' : ''} />
+      </button>
+      <button
+        type="button"
+        data-testid={`thumbs-up-${messageId}`}
+        aria-label="点赞"
+        title="点赞"
+        aria-pressed={reaction === 'up'}
+        disabled={!canSubmitReaction}
+        onClick={() => void submitReaction('up')}
+        className={`chat-message-action-button disabled:cursor-not-allowed disabled:opacity-50 ${
+          reaction === 'up' ? 'chat-message-action-button-active' : ''
+        }`}
+      >
+        <ThumbsUp size={15} />
+      </button>
+      <button
+        type="button"
+        data-testid={`thumbs-down-${messageId}`}
+        aria-label="倒赞"
+        title="倒赞"
+        aria-pressed={reaction === 'down'}
+        disabled={!canSubmitReaction}
+        onClick={() => void submitReaction('down')}
+        className={`chat-message-action-button disabled:cursor-not-allowed disabled:opacity-50 ${
+          reaction === 'down' ? 'chat-message-action-button-active' : ''
+        }`}
+      >
+        <ThumbsDown size={15} />
+      </button>
+      {copiedMode ? <span className="ml-2 text-[11px] text-muted">已复制</span> : null}
+      {shareState === 'copied' ? <span className="ml-2 text-[11px] text-muted">分享链接已复制</span> : null}
+      {shareState === 'error' ? <span className="ml-2 text-[11px] text-error">分享失败</span> : null}
+      {regenerateError ? <span className="ml-2 text-[11px] text-error">{regenerateError}</span> : null}
+      {reactionError ? <span className="ml-2 text-[11px] text-error">{reactionError}</span> : null}
     </div>
   );
 }

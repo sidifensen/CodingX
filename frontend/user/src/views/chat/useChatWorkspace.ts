@@ -1830,6 +1830,9 @@ export function useChatWorkspace(
         params,
         rawResult,
         resultMetadata,
+        reactThought: normalizeOptionalString(payload.reactThought),
+        reactAction: normalizeOptionalString(payload.reactAction),
+        reactObservation: normalizeOptionalString(payload.reactObservation),
         progressStage: normalizeOptionalString(payload.progressStage),
         progressText: normalizeOptionalString(payload.progressText),
         progressDetail: isRecord(payload.progressDetail) ? payload.progressDetail : undefined,
@@ -3294,6 +3297,7 @@ function mergeMcpCallIntoProcessCards(
   call: McpCallItem,
 ): ProcessCardItem[] {
   let nextCards = finalizeCardsByType(cards, ['analysis']);
+  const isReactToolProcess = Boolean(call.reactThought || call.reactAction || call.reactObservation);
   if (call.phase === 'start' || call.phase === 'progress') {
     const existingCard = nextCards.find((card) => card.id === `tool-call-${call.callId ?? call.toolId}`);
     const nextDetails = call.params
@@ -3304,6 +3308,31 @@ function mergeMcpCallIntoProcessCards(
           },
         ]
       : existingCard?.details;
+    if (isReactToolProcess) {
+      // ReAct 展示只使用公开过程摘要，不展示模型私有思维链。
+      nextCards = upsertProcessCard(nextCards, {
+        id: `react-thought-${call.callId ?? call.toolId}`,
+        type: 'analysis',
+        title: '思考',
+        summary:
+          call.reactThought ??
+          `需要调用 ${call.displayName || call.toolId || '工具'} 获取或处理当前问题所需的信息。`,
+        status: 'completed',
+        presentation: 'react',
+      });
+      nextCards = upsertProcessCard(nextCards, {
+        id: `tool-call-${call.callId ?? call.toolId}`,
+        type: 'tool_call',
+        title: '行动',
+        summary: call.reactAction ?? `调用 ${call.displayName || call.toolId || '工具'}`,
+        status: call.status === 'error' ? 'error' : 'running',
+        toolId: call.toolId,
+        displayName: call.displayName,
+        presentation: 'react',
+        details: nextDetails,
+      });
+      return nextCards;
+    }
     nextCards = upsertProcessCard(nextCards, {
       id: `tool-call-${call.callId ?? call.toolId}`,
       type: 'tool_call',
@@ -3318,8 +3347,43 @@ function mergeMcpCallIntoProcessCards(
     });
     return nextCards;
   }
-  if (call.phase === 'complete') {
+  if (call.phase === 'complete' || call.phase === 'error') {
     nextCards = finalizeCardsByType(nextCards, ['tool_call']);
+    if (isReactToolProcess) {
+      nextCards = upsertProcessCard(nextCards, {
+        id: `tool-result-${call.callId ?? call.toolId}`,
+        type: 'tool_result',
+        title: '观察',
+        summary:
+          call.reactObservation ??
+          (call.phase === 'error'
+            ? call.errorMessage || `工具 ${call.displayName || call.toolId || ''} 执行异常。`
+            : resolveToolResultSummary(call)),
+        status: call.phase === 'error' ? 'error' : 'completed',
+        toolId: call.toolId,
+        displayName: call.displayName,
+        presentation: 'react',
+        details: [
+          ...(call.params
+            ? [
+                {
+                  label: '参数',
+                  content: formatProcessCardDetail(call.params),
+                },
+              ]
+            : []),
+          ...(call.rawResult != null || call.errorMessage
+            ? [
+                {
+                  label: call.phase === 'error' ? '异常' : '结果',
+                  content: formatProcessCardDetail(call.rawResult ?? call.errorMessage),
+                },
+              ]
+            : []),
+        ],
+      });
+      return nextCards;
+    }
     nextCards = upsertProcessCard(nextCards, {
       id: `tool-result-${call.callId ?? call.toolId}`,
       type: 'tool_result',

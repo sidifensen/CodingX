@@ -3389,6 +3389,9 @@ function ProcessTracePanel({
             />
           );
         }
+        if (segment.type === 'tool') {
+          return <ProcessToolRow key={segment.card.id} card={segment.card} showDetails={true} />;
+        }
         const shouldShowAnalysisHeading =
           segment.card.type === 'analysis' && !hasRenderedAnalysisHeading;
         if (shouldShowAnalysisHeading) {
@@ -3409,6 +3412,7 @@ function ProcessTracePanel({
 
 type ProcessTraceSegment =
   | { type: 'text'; card: ProcessCardItem }
+  | { type: 'tool'; card: ProcessCardItem }
   | { type: 'tools'; cards: ProcessCardItem[] };
 
 /**
@@ -3427,6 +3431,11 @@ function groupProcessTraceSegments(cards: ProcessCardItem[]): ProcessTraceSegmen
 
   for (const card of cards) {
     if (card.type === 'tool_call' || card.type === 'tool_result') {
+      if (card.presentation === 'react') {
+        flushToolCards();
+        segments.push({ type: 'tool', card });
+        continue;
+      }
       pendingToolCards.push(card);
       continue;
     }
@@ -3505,14 +3514,15 @@ function ProcessAnalysisTrace({
   messageId: string;
   isFirstAnalysis: boolean;
 }) {
-  const [isExpanded, setIsExpanded] = React.useState(card.status === 'running');
+  const isReactTrace = card.presentation === 'react';
+  const [isExpanded, setIsExpanded] = React.useState(isReactTrace || card.status === 'running');
   const contentId = `process-analysis-content-${messageId}-${card.id}`;
-  const label = isFirstAnalysis ? '深度思考' : card.title || '深度思考';
+  const label = isReactTrace ? card.title || '思考' : isFirstAnalysis ? '深度思考' : card.title || '深度思考';
 
   React.useEffect(() => {
     // 流式阶段保持展开，收口后自动折叠，让用户先看到完整思考过程，再回到精简视图。
-    setIsExpanded(card.status === 'running');
-  }, [card.status]);
+    setIsExpanded(isReactTrace || card.status === 'running');
+  }, [card.status, isReactTrace]);
 
   return (
     <div className="space-y-2">

@@ -160,10 +160,13 @@ class ChatApplicationToolCallFlowTest {
         assertEquals("call-1", toolEvents.get(0).get("callId"));
         assertEquals("test_sync_tool", toolEvents.get(0).get("toolId"));
         assertEquals("touch", ((Map<?, ?>) toolEvents.get(0).get("params")).get("message"));
+        assertEquals("需要调用 test_sync_tool 获取或处理当前问题所需的信息。", toolEvents.get(0).get("reactThought"));
+        assertEquals("调用 test_sync_tool", toolEvents.get(0).get("reactAction"));
         assertEquals("complete", toolEvents.get(1).get("phase"));
         assertEquals("call-1", toolEvents.get(1).get("callId"));
         assertEquals("test_sync_tool", toolEvents.get(1).get("toolId"));
         assertEquals("工具已执行", toolEvents.get(1).get("content"));
+        assertEquals("工具返回：工具已执行", toolEvents.get(1).get("reactObservation"));
         assertEquals(Boolean.TRUE, ((Map<?, ?>) toolEvents.get(1).get("resultMetadata")).get("ok"));
         verify(chatStreamPublisher).publishAssistantCompleted(1L, "已通过工具完成本地文件操作。", "本地工具调用");
         ArgumentCaptor<ChatMessage> messageCaptor = ArgumentCaptor.forClass(ChatMessage.class);
@@ -352,6 +355,7 @@ class ChatApplicationToolCallFlowTest {
         assertEquals("error", toolEvents.get(1).get("phase"));
         assertEquals("spawn_agent", toolEvents.get(1).get("toolId"));
         assertEquals("spawn_agent 暂未接入真实 Codex 运行时", toolEvents.get(1).get("errorMessage"));
+        assertEquals("工具异常：spawn_agent 暂未接入真实 Codex 运行时", toolEvents.get(1).get("reactObservation"));
         ArgumentCaptor<ChatMessage> messageCaptor = ArgumentCaptor.forClass(ChatMessage.class);
         verify(chatMessageRepository, org.mockito.Mockito.times(2)).save(messageCaptor.capture());
         ChatMessage failedMessage = messageCaptor.getAllValues().get(1);

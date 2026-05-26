@@ -1249,12 +1249,17 @@ public class ChatApplicationService {
         ChatToolExecutionResult toolResult
     ) {
         Map<String, Object> payload = baseLocalToolCallPayload(toolCall, phase, startedAt);
+        if (StrUtil.equalsIgnoreCase(phase, "start")) {
+            payload.put("reactThought", buildLocalToolReactThought(toolCall));
+            payload.put("reactAction", buildLocalToolReactAction(toolCall));
+        }
         if (finishedAt != null) {
             payload.put("finishedAt", finishedAt.toString());
         }
         if (toolResult != null) {
             payload.put("content", StrUtil.blankToDefault(toolResult.content(), ""));
             payload.put("rawResult", StrUtil.blankToDefault(toolResult.content(), ""));
+            payload.put("reactObservation", buildLocalToolReactObservation("工具返回", toolResult.content()));
             if (toolResult.metadata() != null && !toolResult.metadata().isEmpty()) {
                 payload.put("resultMetadata", toolResult.metadata());
             }
@@ -1280,6 +1285,7 @@ public class ChatApplicationService {
         payload.put("finishedAt", LocalDateTime.now().toString());
         payload.put("content", message);
         payload.put("errorMessage", message);
+        payload.put("reactObservation", buildLocalToolReactObservation("工具异常", message));
         chatStreamPublisher.publishToolCall(conversationId, payload);
     }
 
@@ -1300,6 +1306,47 @@ public class ChatApplicationService {
         payload.put("params", parseToolCallParams(toolCall.arguments()));
         payload.put("startedAt", startedAt.toString());
         return payload;
+    }
+
+    /**
+     * 构造可公开展示的 ReAct 思考摘要；该文案只描述工具选择原因，不暴露模型私有思维链。
+     * @param toolCall 模型请求执行的工具调用。
+     * @return ReAct 思考摘要。
+     */
+    private String buildLocalToolReactThought(AiToolCall toolCall) {
+        return "需要调用 " + resolveLocalToolDisplayName(toolCall) + " 获取或处理当前问题所需的信息。";
+    }
+
+    /**
+     * 构造 ReAct 行动摘要，供前端把结构化工具调用显示成“行动”节点。
+     * @param toolCall 模型请求执行的工具调用。
+     * @return ReAct 行动摘要。
+     */
+    private String buildLocalToolReactAction(AiToolCall toolCall) {
+        return "调用 " + resolveLocalToolDisplayName(toolCall);
+    }
+
+    /**
+     * 构造 ReAct 观察摘要，避免把超长工具输出直接挤占主消息区。
+     * @param prefix 观察前缀。
+     * @param content 工具输出或错误文案。
+     * @return ReAct 观察摘要。
+     */
+    private String buildLocalToolReactObservation(String prefix, String content) {
+        String normalizedContent = StrUtil.blankToDefault(content, "无输出").replaceAll("\\s+", " ").trim();
+        String clippedContent = normalizedContent.length() > 160
+            ? normalizedContent.substring(0, 160) + "..."
+            : normalizedContent;
+        return prefix + "：" + clippedContent;
+    }
+
+    /**
+     * 解析本地工具展示名；当前工具 schema 尚未回传显示名时，使用工具编码保持稳定可追踪。
+     * @param toolCall 模型请求执行的工具调用。
+     * @return 工具展示名。
+     */
+    private String resolveLocalToolDisplayName(AiToolCall toolCall) {
+        return StrUtil.blankToDefault(toolCall.toolCode(), "本地工具");
     }
 
     /**

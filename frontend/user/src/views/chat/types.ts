@@ -81,6 +81,10 @@ export interface ProcessCardItem {
   title: string;
   summary: string;
   status: 'running' | 'completed' | 'error' | 'cancelled';
+  /**
+   * 标记特殊展示形态；ReAct 过程需要按时间线直接露出，不能折叠进工具汇总。
+   */
+  presentation?: 'react';
   toolId?: string;
   displayName?: string;
   details?: ProcessCardDetailItem[];
@@ -294,6 +298,12 @@ export interface McpCallItem {
    * 调用完成态返回的元数据。
    */
   resultMetadata?: Record<string, unknown>;
+  /**
+   * 后端基于工具调用公开生成的 ReAct 摘要，不承载模型私有思维链。
+   */
+  reactThought?: string;
+  reactAction?: string;
+  reactObservation?: string;
   startedAt?: string;
   finishedAt?: string;
   errorMessage?: string;

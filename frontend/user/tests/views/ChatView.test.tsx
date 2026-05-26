@@ -2554,6 +2554,83 @@ describe('ChatView', () => {
   });
 
   /**
+   * ReAct 工具过程必须默认露出思考、行动和观察，避免用户只能看到折叠后的工具汇总。
+   */
+  it('renders ReAct tool steps inline without opening the tool group', async () => {
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          messages: [
+            {
+              id: '964',
+              conversationId: '2001',
+              role: 'ASSISTANT',
+              content: 'Current directory is D:/code/CodingX',
+              status: 'done',
+              processCards: [
+                {
+                  id: 'react-thought-shell-964',
+                  type: 'analysis',
+                  title: '思考',
+                  summary: '需要调用 shell_command 获取当前目录。',
+                  status: 'completed',
+                  presentation: 'react',
+                },
+                {
+                  id: 'tool-call-shell-964',
+                  type: 'tool_call',
+                  title: '行动',
+                  summary: '调用 shell_command',
+                  status: 'completed',
+                  toolId: 'shell_command',
+                  displayName: 'shell_command',
+                  presentation: 'react',
+                  details: [
+                    {
+                      label: '参数',
+                      content: '{"command":"pwd"}',
+                    },
+                  ],
+                },
+                {
+                  id: 'tool-result-shell-964',
+                  type: 'tool_result',
+                  title: '观察',
+                  summary: '工具返回：D:/code/CodingX',
+                  status: 'completed',
+                  toolId: 'shell_command',
+                  displayName: 'shell_command',
+                  presentation: 'react',
+                  details: [
+                    {
+                      label: '结果',
+                      content: 'D:/code/CodingX',
+                    },
+                  ],
+                },
+              ],
+            } as any,
+          ],
+          executionSteps: [],
+          references: [],
+          artifacts: [],
+        })}
+      />,
+    );
+
+    expect(screen.queryByTestId('process-tool-group-toggle-964')).not.toBeInTheDocument();
+    expect(screen.getByTestId('process-analysis-toggle-964-react-thought-shell-964')).toHaveTextContent('思考');
+    expect(screen.getByText('行动')).toBeInTheDocument();
+    expect(screen.getByText('调用 shell_command')).toBeInTheDocument();
+    expect(screen.getByText('观察')).toBeInTheDocument();
+    expect(screen.getByText('工具返回：D:/code/CodingX')).toBeInTheDocument();
+    expect(screen.getByText('{"command":"pwd"}')).toBeInTheDocument();
+    expect(screen.getByText('D:/code/CodingX')).toBeInTheDocument();
+  });
+
+  /**
    * 搜索工具结果应按来源列表展示，避免标题、站点和链接混在一段原始文本里。
    */
   it('应将搜索工具结果渲染为结构化来源列表', async () => {

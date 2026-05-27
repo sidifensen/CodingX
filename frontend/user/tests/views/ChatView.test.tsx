@@ -612,13 +612,13 @@ describe('ChatView', () => {
                 {
                   id: 'tool-call-702',
                   type: 'tool_call',
-                  title: '调用网页搜索',
-                  summary: '正在检索官方资料。',
+                  title: '调用天气查询',
+                  summary: '正在请求天气工具。',
                   status: 'running',
                   details: [
                     {
                       label: '参数',
-                      content: '{\"q\":\"Gemini latest model\"}',
+                      content: '{\"city\":\"北京\"}',
                     },
                   ],
                 },
@@ -1188,6 +1188,9 @@ describe('ChatView', () => {
     expect(screen.getByTestId('share-selection-shell')).toBeInTheDocument();
     expect(screen.queryByTestId('chat-input-dock')).not.toBeInTheDocument();
     expect(screen.getByTestId('share-round-card-102')).toHaveAttribute('data-selected', 'true');
+    expect(screen.queryByText('分享选择模式')).not.toBeInTheDocument();
+    expect(screen.queryByText('选择要分享的问答轮次')).not.toBeInTheDocument();
+    expect(screen.queryByText(/只允许勾选 AI 回复/)).not.toBeInTheDocument();
     expect(shareConversation).not.toHaveBeenCalled();
     expect(navigator.clipboard.writeText).not.toHaveBeenCalled();
   });
@@ -1400,6 +1403,16 @@ describe('ChatView', () => {
     expect(screen.getByText('已选2组对话')).toBeInTheDocument();
     expect(screen.getByTestId('share-round-card-202')).toHaveAttribute('data-selected', 'true');
     expect(screen.getByTestId('share-round-card-102')).toHaveAttribute('data-selected', 'true');
+    expect(screen.getByTestId('share-selection-list')).toBe(screen.getByTestId('share-round-card-202').parentElement);
+    expect(screen.getByRole('checkbox', { name: '全选' })).toBeChecked();
+    fireEvent.click(screen.getByRole('checkbox', { name: '全选' }));
+    expect(screen.getByText('已选0组对话')).toBeInTheDocument();
+    expect(screen.getByTestId('share-round-card-202')).toHaveAttribute('data-selected', 'false');
+    expect(screen.getByTestId('share-round-card-102')).toHaveAttribute('data-selected', 'false');
+    expect(screen.getByRole('checkbox', { name: '全选' })).not.toBeChecked();
+    fireEvent.click(screen.getByRole('checkbox', { name: '全选' }));
+    expect(screen.getByText('已选2组对话')).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: '全选' })).toBeChecked();
     expect(screen.queryByLabelText('选择分享消息 第一问')).not.toBeInTheDocument();
   });
 
@@ -2723,6 +2736,54 @@ describe('ChatView', () => {
     const resultRow = screen.getByTestId('process-tool-row-951-tool-result-search-951');
     expect(resultRow).toHaveTextContent('OpenAI API 最新变更');
     expect(resultRow).toHaveTextContent('Bing Search API 文档');
+  });
+
+  /**
+   * 网页搜索调用的查询词已在摘要展示，参数明细不应再占用一行展开入口。
+   */
+  it('应隐藏网页搜索调用参数明细入口', async () => {
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          messages: [
+            {
+              id: '952',
+              conversationId: '2001',
+              role: 'ASSISTANT',
+              content: '正在汇总检索结果',
+              status: 'streaming',
+              processCards: [
+                {
+                  id: 'tool-call-search-952',
+                  type: 'tool_call',
+                  title: '调用网页搜索',
+                  summary: '调用网页搜索：量子力学是什么',
+                  status: 'completed',
+                  toolId: 'search',
+                  details: [
+                    {
+                      label: '参数',
+                      content: '量子力学是什么',
+                    },
+                  ],
+                },
+              ],
+            } as any,
+          ],
+          executionSteps: [],
+          references: [],
+          artifacts: [],
+        })}
+      />,
+    );
+
+    const searchRow = screen.getByTestId('process-tool-row-952-tool-call-search-952');
+    expect(searchRow).toHaveTextContent('调用网页搜索：量子力学是什么');
+    expect(screen.queryByTestId('process-tool-detail-toggle-952-tool-call-search-952')).not.toBeInTheDocument();
+    expect(screen.queryByText('查看明细')).not.toBeInTheDocument();
+    expect(screen.queryByText('参数')).not.toBeInTheDocument();
   });
 
   /**

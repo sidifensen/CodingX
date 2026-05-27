@@ -2,6 +2,10 @@ package com.codingx.chat.application.service;
 
 import cn.hutool.core.util.StrUtil;
 import java.net.URI;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
@@ -11,22 +15,26 @@ import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
 /**
- * 面向“最新/当前”类公开信息问题做权威来源与版本号优先排序。
+ * 面向“最新/当前”类公开信息问题做权威来源与时效信号优先排序。
  */
 @Component
 @Order(200)
 public class AuthoritativeLatestSearchPostProcessor implements SearchResultPostProcessor {
 
-    private static final Pattern GPT_VERSION_PATTERN = Pattern.compile("(?i)gpt[-\\s]?(\\d+(?:\\.\\d+)*)");
+    private static final Pattern VERSION_PATTERN = Pattern.compile("(?<!\\d)(\\d+(?:\\.\\d+){1,3})(?!\\d)");
+    private static final Pattern ISO_DATE_PATTERN = Pattern.compile("(?<!\\d)(20\\d{2})[-/.](0?[1-9]|1[0-2])[-/.](0?[1-9]|[12]\\d|3[01])(?!\\d)");
+    private static final Pattern YEAR_MONTH_PATTERN = Pattern.compile("(?<!\\d)(20\\d{2})[-/.](0?[1-9]|1[0-2])(?!\\d)");
+    private static final Pattern YEAR_PATTERN = Pattern.compile("(?<!\\d)(20\\d{2})(?!\\d)");
+    private static final int MAX_VERSION_SEGMENTS = 4;
 
     @Override
     public List<SearchReferenceCandidate> process(SearchRequestContext context, List<SearchReferenceCandidate> candidates) {
-        if (!isLatestModelQuestion(context.question()) || candidates == null || candidates.size() < 2) {
+        if (!isFreshnessQuestion(context.question()) || candidates == null || candidates.size() < 2) {
             return candidates;
         }
         return candidates.stream()
             .sorted(Comparator
-                .comparingDouble((SearchReferenceCandidate candidate) -> authoritativeLatestScore(candidate)).reversed()
+                .comparing((SearchReferenceCandidate candidate) -> rankingSignals(candidate), Comparator.reverseOrder())
                 .thenComparing(Comparator.comparingDouble(
                     (SearchReferenceCandidate candidate) -> candidate.score() == null ? 0D : candidate.score()
                 ).reversed()))
@@ -34,79 +42,123 @@ public class AuthoritativeLatestSearchPostProcessor implements SearchResultPostP
     }
 
     /**
-     * 只对同时包含“最新/当前”和模型实体的搜索启用，避免影响普通百科类搜索排序。
+     * 只对包含新鲜度意图的问题启用，避免影响普通百科类搜索排序。
      */
-    private boolean isLatestModelQuestion(String question) {
+    private boolean isFreshnessQuestion(String question) {
         if (StrUtil.isBlank(question)) {
             return false;
         }
         String normalized = question.toLowerCase(Locale.ROOT);
-        boolean latestIntent = normalized.contains("最新")
+        return normalized.contains("最新")
             || normalized.contains("当前")
             || normalized.contains("现在")
             || normalized.contains("latest")
-            || normalized.contains("current");
-        boolean modelIntent = normalized.contains("gpt")
-            || normalized.contains("openai")
-            || normalized.contains("模型")
-            || normalized.contains("model");
-        return latestIntent && modelIntent;
+            || normalized.contains("current")
+            || normalized.contains("version")
+            || normalized.contains("版本")
+            || normalized.contains("release")
+            || normalized.contains("发布");
     }
 
     /**
-     * 综合来源权威度和版本号新旧给候选打分，确保官方新版本不被旧页面或第三方传言压住。
+     * 综合来源权威度、版本号、日期和未确认语义给候选打分，避免单纯搜索分数压过更新权威证据。
      */
-    private double authoritativeLatestScore(SearchReferenceCandidate candidate) {
-        return officialSourceWeight(candidate) + latestVersionWeight(candidate);
+    private RankingSignals rankingSignals(SearchReferenceCandidate candidate) {
+        return new RankingSignals(
+            sourceAuthority(candidate),
+            newestVersion(candidate),
+            newestDate(candidate),
+            uncertaintyPenalty(candidate)
+        );
     }
 
     /**
-     * OpenAI 官方文档域名权重最高，官方主站次之，第三方来源保持最低基础权重。
+     * 根据通用站点形态判断权威度，不绑定任何具体厂商或产品名。
      */
-    private double officialSourceWeight(SearchReferenceCandidate candidate) {
+    private int sourceAuthority(SearchReferenceCandidate candidate) {
         String host = normalizedHost(candidate);
-        if ("developers.openai.com".equals(host) || "platform.openai.com".equals(host)) {
-            return 10_000D;
+        String url = StrUtil.blankToDefault(candidate.url(), "").toLowerCase(Locale.ROOT);
+        String title = StrUtil.blankToDefault(candidate.title(), "").toLowerCase(Locale.ROOT);
+        if (host.startsWith("docs.") || host.contains(".docs.") || host.startsWith("developer.") || host.startsWith("developers.")) {
+            return 40;
         }
-        if ("openai.com".equals(host) || host.endsWith(".openai.com")) {
-            return 8_000D;
+        if (host.startsWith("help.") || host.startsWith("support.") || host.startsWith("learn.")) {
+            return 32;
         }
-        return 0D;
+        if (containsAny(url, "/docs", "/documentation", "/release", "/releases", "/changelog", "/versions", "/download")
+            || containsAny(title, "docs", "documentation", "release notes", "changelog", "版本说明", "发布说明")) {
+            return 24;
+        }
+        if (containsAny(url, "blog", "news", "forum", "community", "medium.com", "reddit.com")
+            || containsAny(title, "rumor", "leak", "传言", "爆料", "泄露")) {
+            return 4;
+        }
+        return 12;
     }
 
     /**
-     * 从标题、链接和摘要中提取 GPT 版本号，按数值位比较而不是字符串比较。
+     * 从标题、链接和摘要中提取通用语义版本号，按数值位比较而不是字符串比较。
      */
-    private double latestVersionWeight(SearchReferenceCandidate candidate) {
-        String evidence = StrUtil.blankToDefault(candidate.title(), "")
+    private Version newestVersion(SearchReferenceCandidate candidate) {
+        String evidence = evidenceText(candidate);
+        Matcher matcher = VERSION_PATTERN.matcher(evidence);
+        Version newest = Version.empty();
+        while (matcher.find()) {
+            Version version = Version.parse(matcher.group(1));
+            if (version.compareTo(newest) > 0) {
+                newest = version;
+            }
+        }
+        return newest;
+    }
+
+    /**
+     * 从候选内容中提取可比较日期，作为没有清晰版本号时的次级新鲜度信号。
+     */
+    private LocalDate newestDate(SearchReferenceCandidate candidate) {
+        String evidence = evidenceText(candidate);
+        LocalDate newest = LocalDate.MIN;
+        Matcher dateMatcher = ISO_DATE_PATTERN.matcher(evidence);
+        while (dateMatcher.find()) {
+            LocalDate parsed = parseDate(dateMatcher.group(1), dateMatcher.group(2), dateMatcher.group(3));
+            if (parsed.isAfter(newest)) {
+                newest = parsed;
+            }
+        }
+        Matcher monthMatcher = YEAR_MONTH_PATTERN.matcher(evidence);
+        while (monthMatcher.find()) {
+            LocalDate parsed = parseDate(monthMatcher.group(1), monthMatcher.group(2), "1");
+            if (parsed.isAfter(newest)) {
+                newest = parsed;
+            }
+        }
+        Matcher yearMatcher = YEAR_PATTERN.matcher(evidence);
+        while (yearMatcher.find()) {
+            LocalDate parsed = parseDate(yearMatcher.group(1), "1", "1");
+            if (parsed.isAfter(newest)) {
+                newest = parsed;
+            }
+        }
+        return newest;
+    }
+
+    /**
+     * 第三方传言、泄露和未确认表述不应仅凭更高版本号压过权威证据。
+     */
+    private int uncertaintyPenalty(SearchReferenceCandidate candidate) {
+        String evidence = evidenceText(candidate).toLowerCase(Locale.ROOT);
+        return containsAny(evidence, "rumor", "leak", "unconfirmed", "reportedly", "传言", "爆料", "泄露", "未经确认") ? -20 : 0;
+    }
+
+    /**
+     * 合并候选中的可检索文本，统一供版本、日期和语义信号提取使用。
+     */
+    private String evidenceText(SearchReferenceCandidate candidate) {
+        return StrUtil.blankToDefault(candidate.title(), "")
             + " "
             + StrUtil.blankToDefault(candidate.url(), "")
             + " "
             + StrUtil.blankToDefault(candidate.snippet(), "");
-        Matcher matcher = GPT_VERSION_PATTERN.matcher(evidence);
-        double maxWeight = 0D;
-        while (matcher.find()) {
-            maxWeight = Math.max(maxWeight, versionWeight(matcher.group(1)));
-        }
-        return maxWeight;
-    }
-
-    /**
-     * 把形如 5.5.1 的版本号折算成可比较分数，前置数字权重更高。
-     */
-    private double versionWeight(String version) {
-        String[] parts = version.split("\\.");
-        double weight = 0D;
-        double multiplier = 100D;
-        for (String part : parts) {
-            try {
-                weight += Integer.parseInt(part) * multiplier;
-            } catch (NumberFormatException ignored) {
-                // 非标准版本片段直接忽略，避免单个异常片段破坏整条搜索结果排序。
-            }
-            multiplier = multiplier / 100D;
-        }
-        return weight;
     }
 
     /**
@@ -123,5 +175,94 @@ public class AuthoritativeLatestSearchPostProcessor implements SearchResultPostP
         }
         host = host.trim().toLowerCase(Locale.ROOT);
         return host.startsWith("www.") ? host.substring(4) : host;
+    }
+
+    /**
+     * 判断文本是否包含任一通用权威或不确定性关键词。
+     */
+    private boolean containsAny(String text, String... needles) {
+        if (StrUtil.isBlank(text)) {
+            return false;
+        }
+        for (String needle : needles) {
+            if (text.contains(needle)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 容错解析搜索结果中的日期片段，异常日期不参与排序。
+     */
+    private LocalDate parseDate(String year, String month, String day) {
+        try {
+            return LocalDate.parse(
+                String.format("%04d-%02d-%02d", Integer.parseInt(year), Integer.parseInt(month), Integer.parseInt(day)),
+                DateTimeFormatter.ISO_LOCAL_DATE
+            );
+        } catch (DateTimeParseException | NumberFormatException exception) {
+            return LocalDate.MIN;
+        }
+    }
+
+    /**
+     * 后处理排序信号：来源权威度优先，其次版本号和日期；未确认内容通过负权重降低排序。
+     */
+    private record RankingSignals(int authority, Version version, LocalDate date, int certainty) implements Comparable<RankingSignals> {
+
+        @Override
+        public int compareTo(RankingSignals other) {
+            int authorityComparison = Integer.compare(authority, other.authority);
+            if (authorityComparison != 0) {
+                return authorityComparison;
+            }
+            int versionComparison = version.compareTo(other.version);
+            if (versionComparison != 0) {
+                return versionComparison;
+            }
+            int dateComparison = date.compareTo(other.date);
+            if (dateComparison != 0) {
+                return dateComparison;
+            }
+            return Integer.compare(certainty, other.certainty);
+        }
+    }
+
+    /**
+     * 用固定段数保存语义版本，保证 2.10 能正确排在 2.9 之后。
+     */
+    private record Version(List<Integer> segments) implements Comparable<Version> {
+
+        private static Version empty() {
+            return new Version(List.of());
+        }
+
+        private static Version parse(String rawVersion) {
+            String[] rawSegments = rawVersion.split("\\.");
+            List<Integer> parsedSegments = new ArrayList<>();
+            for (int index = 0; index < Math.min(rawSegments.length, MAX_VERSION_SEGMENTS); index++) {
+                try {
+                    parsedSegments.add(Integer.parseInt(rawSegments[index]));
+                } catch (NumberFormatException exception) {
+                    parsedSegments.add(0);
+                }
+            }
+            return new Version(List.copyOf(parsedSegments));
+        }
+
+        @Override
+        public int compareTo(Version other) {
+            int maxLength = Math.max(segments.size(), other.segments.size());
+            for (int index = 0; index < maxLength; index++) {
+                int current = index < segments.size() ? segments.get(index) : 0;
+                int compared = index < other.segments.size() ? other.segments.get(index) : 0;
+                int comparison = Integer.compare(current, compared);
+                if (comparison != 0) {
+                    return comparison;
+                }
+            }
+            return Integer.compare(segments.size(), other.segments.size());
+        }
     }
 }

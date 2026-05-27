@@ -4,7 +4,6 @@ import cn.hutool.core.util.StrUtil;
 import cn.hutool.json.JSONObject;
 import cn.hutool.json.JSONUtil;
 import java.util.List;
-import java.util.Locale;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -41,7 +40,7 @@ public class ConversationRewriteService {
         if (StrUtil.isBlank(question)) {
             return new ConversationRewriteResult(question, false, List.of());
         }
-        String normalizedQuestion = enhanceAuthoritativeLatestQuestion(conversationQueryTermMappingService.normalize(question));
+        String normalizedQuestion = conversationQueryTermMappingService.normalize(question);
         if (shouldBypassPromptRewrite(history, normalizedQuestion)) {
             return new ConversationRewriteResult(normalizedQuestion, false, List.of(normalizedQuestion));
         }
@@ -78,25 +77,6 @@ public class ConversationRewriteService {
         return "历史上下文：" + latestHistory + "\n当前问题：" + question;
     }
 
-    /**
-     * 对 GPT/OpenAI 最新模型问题补充官方文档搜索锚点，降低旧摘要和第三方传言进入证据首位的概率。
-     */
-    private String enhanceAuthoritativeLatestQuestion(String question) {
-        if (StrUtil.isBlank(question)) {
-            return question;
-        }
-        String normalized = question.toLowerCase(Locale.ROOT);
-        boolean latestIntent = normalized.contains("最新")
-            || normalized.contains("当前")
-            || normalized.contains("现在")
-            || normalized.contains("latest")
-            || normalized.contains("current");
-        boolean openAiModelIntent = normalized.contains("gpt") || normalized.contains("openai");
-        if (!latestIntent || !openAiModelIntent || normalized.contains("developers.openai.com")) {
-            return question;
-        }
-        return question + " OpenAI 官方文档 latest model developers.openai.com";
-    }
     /**
      * 对明显无需 LLM 改写的短问题做快速旁路，避免主链路在简单统计问句上额外等待。
      * @param history 历史上下文。

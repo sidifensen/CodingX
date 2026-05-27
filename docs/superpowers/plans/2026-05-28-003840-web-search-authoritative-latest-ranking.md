@@ -1,10 +1,10 @@
-# Web Search Authoritative Latest Ranking Implementation Plan
+# Web Search Authoritative Freshness Ranking Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:executing-plans` to implement this plan task-by-task. It will decide whether each batch should run in parallel or serial subagent mode and will pass only task-local context to each subagent. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 修复“最新 GPT 模型”类搜索回答把过期官方结果排在更新官方结果前的问题。
+**Goal:** 修复“最新/当前/版本”类搜索回答把过期权威结果排在更新权威结果前的问题。
 
-**Architecture:** 在现有 `SearchChannel -> WebSearchExecutionService -> SearchResultPostProcessor` 链路中新增权威最新排序后处理，不改 provider 协议。查询改写层对 OpenAI/GPT 最新模型问题追加官方来源提示，证据上下文明确官方来源和版本号冲突规则。
+**Architecture:** 在现有 `SearchChannel -> WebSearchExecutionService -> SearchResultPostProcessor` 链路中新增通用权威时效排序后处理，不改 provider 协议。查询改写层不追加特定厂商或域名锚点，证据上下文明确权威来源、版本号、日期和未确认来源的冲突规则。
 
 **Tech Stack:** Java 21, Spring Boot, Hutool, JUnit 5, Mockito.
 
@@ -22,12 +22,12 @@ Add tests that assert:
 
 ```java
 // WebSearchExecutionServiceTest
-// 官方 OpenAI GPT 5.5 结果应排在 GPT 5.4 结果之前，即使原始搜索分数更低。
+// 权威文档源的 2.5 版本应排在同源 2.4 版本之前，即使原始搜索分数更低。
 ```
 
 ```java
 // ConversationRewriteServiceTest
-// “gpt 最新模型”应在查询归一化后补充 OpenAI 官方文档限定词。
+// 最新版本类问题在查询归一化后不应补充任何特定厂商或域名限定词。
 ```
 
 - [ ] **Step 2: Verify RED**
@@ -39,7 +39,7 @@ cd backend
 mvn -Dtest=WebSearchExecutionServiceTest,ConversationRewriteServiceTest test
 ```
 
-Expected: new assertions fail because no authoritative latest ranking and no GPT latest query hint exist yet.
+Expected: new ranking assertions fail because the old processor does not understand generic version signals.
 
 ### Task 2: Implementation
 
@@ -52,20 +52,20 @@ Expected: new assertions fail because no authoritative latest ranking and no GPT
 
 - [ ] **Step 1: Implement search post processor**
 
-Create a focused `SearchResultPostProcessor` that only activates for latest/current model questions. It should:
+Create a focused `SearchResultPostProcessor` that only activates for freshness questions. It should:
 
 ```java
-// 激活条件：问题包含最新/当前/latest/current 且包含 gpt/openai/模型/model。
-// 排序信号：官方域名优先、OpenAI 官方 docs 域名更优、标题/URL/摘要中的 GPT 版本号越新越优。
+// 激活条件：问题包含最新/当前/版本/发布/latest/current/version/release。
+// 排序信号：通用文档/开发者/支持站点形态优先，标题/URL/摘要中的语义版本号和日期越新越优。
 ```
 
-- [ ] **Step 2: Add GPT latest query hint**
+- [ ] **Step 2: Remove vendor-specific query hint**
 
-Extend `ConversationRewriteService` so a no-history question containing GPT/OpenAI latest model intent appends `OpenAI 官方文档 latest model developers.openai.com` when missing. Keep it narrow to avoid polluting unrelated searches.
+Keep `ConversationRewriteService` limited to term normalization and prompt-driven rewrite. Do not append hardcoded vendor, product, or domain hints.
 
 - [ ] **Step 3: Tighten evidence instructions**
 
-Add evidence constraints that latest/current public product questions must prefer official product or developer docs, compare version-like identifiers, and state uncertainty when only non-official evidence supports a newer claim.
+Add evidence constraints that latest/current public product questions must prefer official product or developer docs, compare version-like identifiers and dates, and state uncertainty when only non-official evidence supports a newer claim.
 
 - [ ] **Step 4: Verify GREEN**
 
@@ -98,5 +98,5 @@ mvn test
 Stage only search fix files and docs. Commit message:
 
 ```bash
-fix(search): 修复最新模型搜索证据排序
+fix(search): 泛化联网搜索权威时效排序
 ```

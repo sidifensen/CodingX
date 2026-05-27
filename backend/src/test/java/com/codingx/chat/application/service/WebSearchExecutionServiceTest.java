@@ -135,10 +135,10 @@ class WebSearchExecutionServiceTest {
     }
 
     /**
-     * 最新模型问题遇到多个官方 OpenAI 结果时，应优先把版本号更新的官方文档放入证据首位。
+     * 最新版本类问题遇到同一权威文档源的多个版本时，应优先把更新版本放入证据首位。
      */
     @Test
-    void searchReranksOfficialLatestModelResultAheadOfOlderOfficialResult() {
+    void searchReranksAuthoritativeLatestVersionResultAheadOfOlderAuthoritativeResult() {
         when(runtimeSettingService.searchTimeoutMs()).thenReturn(15_000L);
         ExecutorService executorService = Executors.newSingleThreadExecutor();
         SearchChannel searchChannel = new SearchChannel() {
@@ -156,24 +156,24 @@ class WebSearchExecutionServiceTest {
             public List<SearchReferenceCandidate> search(SearchRequestContext context) {
                 return List.of(
                     new SearchReferenceCandidate(
-                        "GPT-5.4 Model",
-                        "https://developers.openai.com/api/docs/models/gpt-5.4/",
-                        "developers.openai.com",
-                        "GPT-5.4 is an OpenAI model.",
+                        "AcmeDB 2.4 Release Notes",
+                        "https://docs.acmedb.example/releases/2.4",
+                        "docs.acmedb.example",
+                        "AcmeDB 2.4 release notes and upgrade guide.",
                         0.99D
                     ),
                     new SearchReferenceCandidate(
-                        "GPT-5.5 Model",
-                        "https://developers.openai.com/api/docs/models/gpt-5.5/",
-                        "developers.openai.com",
-                        "GPT-5.5 is OpenAI's latest flagship model.",
+                        "AcmeDB 2.5 Release Notes",
+                        "https://docs.acmedb.example/releases/2.5",
+                        "docs.acmedb.example",
+                        "AcmeDB 2.5 release notes with the latest stable changes.",
                         0.72D
                     ),
                     new SearchReferenceCandidate(
-                        "媒体称 OpenAI 发布 GPT-5.6",
-                        "https://news.example.com/openai-gpt-5-6",
+                        "社区传言 AcmeDB 2.6 已泄露",
+                        "https://news.example.com/acmedb-2-6",
                         "news.example.com",
-                        "第三方媒体报道了未经官方确认的新版本。",
+                        "第三方站点报道未经权威来源确认的新版本。",
                         1.0D
                     )
                 );
@@ -186,10 +186,10 @@ class WebSearchExecutionServiceTest {
             runtimeSettingService
         );
 
-        List<SearchReferenceCandidate> references = service.search("gpt 最新模型是什么");
+        List<SearchReferenceCandidate> references = service.search("AcmeDB 最新版本是什么");
 
-        assertEquals("GPT-5.5 Model", references.getFirst().title());
-        assertEquals("developers.openai.com", references.getFirst().siteName());
+        assertEquals("AcmeDB 2.5 Release Notes", references.getFirst().title());
+        assertEquals("docs.acmedb.example", references.getFirst().siteName());
         executorService.shutdownNow();
     }
 
@@ -216,17 +216,17 @@ class WebSearchExecutionServiceTest {
             public List<SearchReferenceCandidate> search(SearchRequestContext context) {
                 return List.of(
                     new SearchReferenceCandidate(
-                        "GPT-5.4 Model",
-                        "https://developers.openai.com/api/docs/models/gpt-5.4/",
-                        "developers.openai.com",
-                        "GPT-5.4 is an OpenAI model.",
+                        "AcmeDB 2.4 Release Notes",
+                        "https://docs.acmedb.example/releases/2.4",
+                        "docs.acmedb.example",
+                        "AcmeDB 2.4 release notes and upgrade guide.",
                         0.99D
                     ),
                     new SearchReferenceCandidate(
-                        "GPT-5.5 Model",
-                        "https://developers.openai.com/api/docs/models/gpt-5.5/",
-                        "developers.openai.com",
-                        "GPT-5.5 is OpenAI's latest flagship model.",
+                        "AcmeDB 2.5 Release Notes",
+                        "https://docs.acmedb.example/releases/2.5",
+                        "docs.acmedb.example",
+                        "AcmeDB 2.5 release notes with the latest stable changes.",
                         0.72D
                     )
                 );
@@ -239,9 +239,9 @@ class WebSearchExecutionServiceTest {
             runtimeSettingService
         );
 
-        List<SearchReferenceCandidate> references = service.search("gpt 最新模型是什么");
+        List<SearchReferenceCandidate> references = service.search("AcmeDB 最新版本是什么");
 
-        assertEquals("GPT-5.5 Model", references.getFirst().title());
+        assertEquals("AcmeDB 2.5 Release Notes", references.getFirst().title());
         executorService.shutdownNow();
     }
 }

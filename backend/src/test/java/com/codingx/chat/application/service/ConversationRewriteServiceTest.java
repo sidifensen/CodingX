@@ -89,29 +89,26 @@ class ConversationRewriteServiceTest {
     }
 
     /**
-     * GPT 最新模型类问题应补充 OpenAI 官方文档限定词，减少搜索引擎返回旧版本或第三方传言的概率。
+     * 改写服务不应对特定厂商或产品追加写死的搜索锚点，搜索质量由通用排序链路处理。
      */
     @Test
-    void rewriteResultAddsOfficialOpenAiHintForLatestGptModelQuestion() {
-        when(conversationQueryTermMappingService.normalize("gpt最新模型是什么")).thenReturn("gpt最新模型是什么");
+    void rewriteResultDoesNotAppendVendorSpecificSearchHint() {
+        when(conversationQueryTermMappingService.normalize("AcmeDB 最新版本是什么")).thenReturn("AcmeDB 最新版本是什么");
         when(promptTemplateLoader.load("rewrite")).thenReturn("rewrite prompt");
         when(aiPromptExecutionService.complete(
             "rewrite prompt",
-            "历史上下文：无\n当前问题：gpt最新模型是什么 OpenAI 官方文档 latest model developers.openai.com"
+            "历史上下文：无\n当前问题：AcmeDB 最新版本是什么"
         )).thenReturn("""
             {
-              "rewrite":"gpt最新模型是什么 OpenAI 官方文档 latest model developers.openai.com",
+              "rewrite":"AcmeDB 最新版本是什么",
               "should_split":false,
-              "sub_questions":["gpt最新模型是什么 OpenAI 官方文档 latest model developers.openai.com"]
+              "sub_questions":["AcmeDB 最新版本是什么"]
             }
             """);
 
-        ConversationRewriteResult result = conversationRewriteService.rewriteResult(List.of(), "gpt最新模型是什么");
+        ConversationRewriteResult result = conversationRewriteService.rewriteResult(List.of(), "AcmeDB 最新版本是什么");
 
-        assertEquals("gpt最新模型是什么 OpenAI 官方文档 latest model developers.openai.com", result.rewrite());
-        assertEquals(
-            List.of("gpt最新模型是什么 OpenAI 官方文档 latest model developers.openai.com"),
-            result.subQuestions()
-        );
+        assertEquals("AcmeDB 最新版本是什么", result.rewrite());
+        assertEquals(List.of("AcmeDB 最新版本是什么"), result.subQuestions());
     }
 }

@@ -1588,8 +1588,10 @@ public class ChatApplicationService {
         contextBuilder.append("1. 你只能依据下方检索证据回答，不得引用训练记忆中的旧时间、旧版本或旧结论\n");
         contextBuilder.append("2. 当联网证据与模型记忆冲突时，必须以联网证据为准\n");
         contextBuilder.append("3. 优先采用来源可靠且信息更新的条目；若证据冲突，说明冲突并给出更可信来源\n");
-        contextBuilder.append("4. 若证据不足以得出结论，必须明确回答“当前检索证据不足，无法确认”\n");
-        contextBuilder.append("5. 最终回答每个关键结论都必须带引用编号，如 [R1]、[R2]\n");
+        contextBuilder.append("4. 询问最新/当前公开产品、模型、版本时，优先采用官方产品页、开发者文档或发布公告；版本号冲突时必须比较版本号新旧\n");
+        contextBuilder.append("5. 只有第三方来源声称存在更新版本而官方证据未确认时，不得把第三方说法写成已确认结论\n");
+        contextBuilder.append("6. 若证据不足以得出结论，必须明确回答“当前检索证据不足，无法确认”\n");
+        contextBuilder.append("7. 最终回答每个关键结论都必须带引用编号，如 [R1]、[R2]\n");
         contextBuilder.append("检索结果：\n");
         int rank = 1;
         for (SearchReferenceCandidate reference : references) {

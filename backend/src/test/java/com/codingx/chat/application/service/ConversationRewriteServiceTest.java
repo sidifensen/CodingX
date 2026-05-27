@@ -87,4 +87,31 @@ class ConversationRewriteServiceTest {
         assertEquals("销售总额是多少", result.rewrite());
         assertEquals(List.of("销售总额是多少"), result.subQuestions());
     }
+
+    /**
+     * GPT 最新模型类问题应补充 OpenAI 官方文档限定词，减少搜索引擎返回旧版本或第三方传言的概率。
+     */
+    @Test
+    void rewriteResultAddsOfficialOpenAiHintForLatestGptModelQuestion() {
+        when(conversationQueryTermMappingService.normalize("gpt最新模型是什么")).thenReturn("gpt最新模型是什么");
+        when(promptTemplateLoader.load("rewrite")).thenReturn("rewrite prompt");
+        when(aiPromptExecutionService.complete(
+            "rewrite prompt",
+            "历史上下文：无\n当前问题：gpt最新模型是什么 OpenAI 官方文档 latest model developers.openai.com"
+        )).thenReturn("""
+            {
+              "rewrite":"gpt最新模型是什么 OpenAI 官方文档 latest model developers.openai.com",
+              "should_split":false,
+              "sub_questions":["gpt最新模型是什么 OpenAI 官方文档 latest model developers.openai.com"]
+            }
+            """);
+
+        ConversationRewriteResult result = conversationRewriteService.rewriteResult(List.of(), "gpt最新模型是什么");
+
+        assertEquals("gpt最新模型是什么 OpenAI 官方文档 latest model developers.openai.com", result.rewrite());
+        assertEquals(
+            List.of("gpt最新模型是什么 OpenAI 官方文档 latest model developers.openai.com"),
+            result.subQuestions()
+        );
+    }
 }

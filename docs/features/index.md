@@ -10,3 +10,4 @@
 - [Redis 聊天队列门控](chat/redis-queue-gate.md)
 - [本地工作空间会话分区](chat/local-workspace-conversation-partition.md)
 - [本地工具运行时](chat/local-tool-runtime.md)
+- [联网搜索权威最新排序](chat/web-search-authoritative-latest.md)

@@ -133,4 +133,115 @@ class WebSearchExecutionServiceTest {
         assertEquals("Backup", references.get(1).siteName());
         executorService.shutdownNow();
     }
+
+    /**
+     * 最新模型问题遇到多个官方 OpenAI 结果时，应优先把版本号更新的官方文档放入证据首位。
+     */
+    @Test
+    void searchReranksOfficialLatestModelResultAheadOfOlderOfficialResult() {
+        when(runtimeSettingService.searchTimeoutMs()).thenReturn(15_000L);
+        ExecutorService executorService = Executors.newSingleThreadExecutor();
+        SearchChannel searchChannel = new SearchChannel() {
+            @Override
+            public String getName() {
+                return "mock";
+            }
+
+            @Override
+            public int getPriority() {
+                return 1;
+            }
+
+            @Override
+            public List<SearchReferenceCandidate> search(SearchRequestContext context) {
+                return List.of(
+                    new SearchReferenceCandidate(
+                        "GPT-5.4 Model",
+                        "https://developers.openai.com/api/docs/models/gpt-5.4/",
+                        "developers.openai.com",
+                        "GPT-5.4 is an OpenAI model.",
+                        0.99D
+                    ),
+                    new SearchReferenceCandidate(
+                        "GPT-5.5 Model",
+                        "https://developers.openai.com/api/docs/models/gpt-5.5/",
+                        "developers.openai.com",
+                        "GPT-5.5 is OpenAI's latest flagship model.",
+                        0.72D
+                    ),
+                    new SearchReferenceCandidate(
+                        "媒体称 OpenAI 发布 GPT-5.6",
+                        "https://news.example.com/openai-gpt-5-6",
+                        "news.example.com",
+                        "第三方媒体报道了未经官方确认的新版本。",
+                        1.0D
+                    )
+                );
+            }
+        };
+        WebSearchExecutionService service = new WebSearchExecutionService(
+            List.of(searchChannel),
+            List.of(new AuthoritativeLatestSearchPostProcessor()),
+            executorService,
+            runtimeSettingService
+        );
+
+        List<SearchReferenceCandidate> references = service.search("gpt 最新模型是什么");
+
+        assertEquals("GPT-5.5 Model", references.getFirst().title());
+        assertEquals("developers.openai.com", references.getFirst().siteName());
+        executorService.shutdownNow();
+    }
+
+    /**
+     * 构造器应按后处理器注解顺序执行，确保普通分数重排不会覆盖权威最新排序。
+     */
+    @Test
+    void searchSortsPostProcessorsSoAuthoritativeLatestRunsAfterGenericRerank() {
+        when(runtimeSettingService.searchTimeoutMs()).thenReturn(15_000L);
+        when(runtimeSettingService.searchRerankEnabled()).thenReturn(true);
+        ExecutorService executorService = Executors.newSingleThreadExecutor();
+        SearchChannel searchChannel = new SearchChannel() {
+            @Override
+            public String getName() {
+                return "mock";
+            }
+
+            @Override
+            public int getPriority() {
+                return 1;
+            }
+
+            @Override
+            public List<SearchReferenceCandidate> search(SearchRequestContext context) {
+                return List.of(
+                    new SearchReferenceCandidate(
+                        "GPT-5.4 Model",
+                        "https://developers.openai.com/api/docs/models/gpt-5.4/",
+                        "developers.openai.com",
+                        "GPT-5.4 is an OpenAI model.",
+                        0.99D
+                    ),
+                    new SearchReferenceCandidate(
+                        "GPT-5.5 Model",
+                        "https://developers.openai.com/api/docs/models/gpt-5.5/",
+                        "developers.openai.com",
+                        "GPT-5.5 is OpenAI's latest flagship model.",
+                        0.72D
+                    )
+                );
+            }
+        };
+        WebSearchExecutionService service = new WebSearchExecutionService(
+            List.of(searchChannel),
+            List.of(new AuthoritativeLatestSearchPostProcessor(), new RerankPostProcessor(runtimeSettingService)),
+            executorService,
+            runtimeSettingService
+        );
+
+        List<SearchReferenceCandidate> references = service.search("gpt 最新模型是什么");
+
+        assertEquals("GPT-5.5 Model", references.getFirst().title());
+        executorService.shutdownNow();
+    }
 }

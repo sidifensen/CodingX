@@ -6,6 +6,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.core.annotation.AnnotationAwareOrderComparator;
 import org.springframework.stereotype.Service;
 
 /**
@@ -32,7 +33,9 @@ public class WebSearchExecutionService {
         RuntimeSettingService runtimeSettingService
     ) {
         this.channels = channels;
-        this.postProcessors = postProcessors;
+        this.postProcessors = postProcessors.stream()
+            .sorted(AnnotationAwareOrderComparator.INSTANCE)
+            .toList();
         this.searchExecutor = searchExecutor;
         this.runtimeSettingService = runtimeSettingService;
     }

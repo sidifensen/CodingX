@@ -2,12 +2,14 @@ package com.codingx.chat.application.service;
 
 import java.util.Comparator;
 import java.util.List;
+import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
 /**
  * 使用启发式分数对搜索结果做重排，为后续真实 rerank 服务预留接口位置。
  */
 @Component
+@Order(100)
 public class RerankPostProcessor implements SearchResultPostProcessor {
 
     private final RuntimeSettingService runtimeSettingService;

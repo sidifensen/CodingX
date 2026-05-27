@@ -2,12 +2,14 @@ package com.codingx.chat.application.service;
 
 import java.util.LinkedHashMap;
 import java.util.List;
+import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
 /**
  * 对多通道结果按 URL 或标题去重，并优先保留分数更高的项。
  */
 @Component
+@Order(10)
 public class DeduplicationPostProcessor implements SearchResultPostProcessor {
 
     @Override

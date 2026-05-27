@@ -1,12 +1,14 @@
 package com.codingx.chat.application.service;
+import cn.hutool.core.date.DateUtil;
+import cn.hutool.core.collection.CollUtil;
 import cn.hutool.core.util.IdUtil;
 import cn.hutool.core.util.StrUtil;
-import cn.hutool.core.date.DateUtil;
 import com.codingx.chat.application.command.SendChatMessageCommand;
 import com.codingx.chat.domain.model.ChatConversation;
 import com.codingx.chat.domain.model.ChatExecutionStep;
 import com.codingx.chat.domain.model.ChatExecutionRun;
 import com.codingx.chat.domain.model.ChatAttachment;
+import com.codingx.chat.domain.model.ChatIntentNode;
 import com.codingx.chat.domain.model.ChatMessage;
 import com.codingx.chat.domain.model.ChatMessageRole;
 import com.codingx.chat.domain.model.ChatMessageStatus;
@@ -236,8 +238,14 @@ public class ChatApplicationService {
         List<SearchReferenceCandidate> searchReferences = List.of();
         String rewrittenQuestion = rewriteResult.rewrite();
         boolean mcpEnabled = command.mcpCodes() != null && !command.mcpCodes().isEmpty();
-        ConversationIntentDecision intentDecision = conversationIntentService.route(rewrittenQuestion, mcpEnabled);
-        if (intentDecision.action() == ConversationIntentAction.CLARIFY) {
+        List<SubQuestionIntentDecision> subQuestionDecisions = resolveSubQuestionDecisions(rewriteResult, mcpEnabled);
+        ConversationIntentDecision intentDecision = primaryIntentDecision(subQuestionDecisions);
+        Optional<SubQuestionIntentDecision> clarifyDecision = firstDecisionWithAction(
+            subQuestionDecisions,
+            ConversationIntentAction.CLARIFY
+        );
+        if (clarifyDecision.isPresent()) {
+            intentDecision = clarifyDecision.get().intentDecision();
             ChatMessage assistantMessage = ChatMessage.assistantMessage(
                 command.conversationId(),
                 intentDecision.reply(),
@@ -257,7 +265,7 @@ public class ChatApplicationService {
             chatStreamPublisher.publishAssistantCompleted(command.conversationId(), assistantMessage.getContent(), conversation.getTitle());
             return;
         }
-        if (intentDecision.action() == ConversationIntentAction.DIRECT && StrUtil.isNotBlank(intentDecision.reply())) {
+        if (isSingleDirectReply(subQuestionDecisions)) {
             ChatMessage assistantMessage = ChatMessage.assistantMessage(
                 command.conversationId(),
                 intentDecision.reply(),
@@ -277,7 +285,12 @@ public class ChatApplicationService {
             chatStreamPublisher.publishAssistantCompleted(command.conversationId(), assistantMessage.getContent(), conversation.getTitle());
             return;
         }
-        if (intentDecision.action() == ConversationIntentAction.MCP_DISABLED) {
+        Optional<SubQuestionIntentDecision> mcpDisabledDecision = firstDecisionWithAction(
+            subQuestionDecisions,
+            ConversationIntentAction.MCP_DISABLED
+        );
+        if (mcpDisabledDecision.isPresent()) {
+            intentDecision = mcpDisabledDecision.get().intentDecision();
             ChatMessage assistantMessage = ChatMessage.assistantMessage(
                 command.conversationId(),
                 "你当前未连接 MCP。请在输入框上方开启“连接 MCP”并至少选择一个 MCP 后重试",
@@ -297,118 +310,39 @@ public class ChatApplicationService {
             chatStreamPublisher.publishAssistantCompleted(command.conversationId(), assistantMessage.getContent(), conversation.getTitle());
             return;
         }
-        if (intentDecision.action() == ConversationIntentAction.MCP) {
-            com.codingx.chat.domain.model.ChatIntentNode intentNode = chatIntentNodeRepository.findByIntentCode(intentDecision.intentCode());
-            if (intentNode == null || StrUtil.isBlank(intentNode.getMcpToolId())) {
-                throw new IllegalStateException(
-                    ErrorMessageCatalog.CHAT_MCP_TOOL_CONFIG_MISSING + "，意图编码: " + intentDecision.intentCode()
-                );
-            }
-            if (!isMcpEnabledForCurrentMessage(intentNode.getMcpToolId(), command.mcpCodes())) {
-                ChatMessage assistantMessage = ChatMessage.assistantMessage(
-                    command.conversationId(),
-                    "当前会话未连接该 MCP，请在输入框上方先启用对应 MCP 后重试",
-                    ChatMessageStatus.COMPLETED,
-                    null,
-                    null,
-                    null
-                ).attachRun(runId);
-                chatMessageRepository.save(assistantMessage);
-                history.add(assistantMessage);
-                conversation.rename(conversationTitleService.generateTitle(conversation, history));
-                conversation.touch();
-                conversation.recordLastRunId(runId);
-                chatConversationRepository.save(conversation);
-                recordExecutionOutcome(conversation, requestMessage.getId(), assistantMessage.getId(), intentDecision.intentCode(), false, false, ChatMessageStatus.COMPLETED, null);
-                finishTrace(runId, "SUCCESS", null);
-                chatStreamPublisher.publishAssistantCompleted(command.conversationId(), assistantMessage.getContent(), conversation.getTitle());
-                return;
-            }
-            Long mcpCallId = IdUtil.getSnowflakeNextId();
-            LocalDateTime mcpStartedAt = LocalDateTime.now();
-            Map<String, Object> mcpParams = new LinkedHashMap<>();
-            mcpParams.put("question", rewrittenQuestion);
-            if (StrUtil.isNotBlank(intentDecision.intentCode())) {
-                mcpParams.put("intentCode", intentDecision.intentCode());
-            }
-            Map<String, Object> mcpStartPayload = new LinkedHashMap<>();
-            mcpStartPayload.put("callId", String.valueOf(mcpCallId));
-            mcpStartPayload.put("phase", "start");
-            mcpStartPayload.put("toolId", intentNode.getMcpToolId());
-            mcpStartPayload.put("displayName", resolveMcpDisplayName(intentNode.getMcpToolId()));
-            mcpStartPayload.put("params", mcpParams);
-            mcpStartPayload.put("startedAt", mcpStartedAt.toString());
-            mcpStartPayload.put("input", rewrittenQuestion);
-            chatStreamPublisher.publishMcpCall(command.conversationId(), mcpStartPayload);
-            ChatMcpProgressListener progressListener = (stage, message, detail) -> {
-                Map<String, Object> mcpProgressPayload = new LinkedHashMap<>();
-                mcpProgressPayload.put("callId", String.valueOf(mcpCallId));
-                mcpProgressPayload.put("phase", "progress");
-                mcpProgressPayload.put("toolId", intentNode.getMcpToolId());
-                mcpProgressPayload.put("displayName", resolveMcpDisplayName(intentNode.getMcpToolId()));
-                mcpProgressPayload.put("params", mcpParams);
-                mcpProgressPayload.put("progressStage", stage);
-                mcpProgressPayload.put("progressText", message);
-                mcpProgressPayload.put("progressDetail", detail == null ? Map.of() : detail);
-                mcpProgressPayload.put("updatedAt", LocalDateTime.now().toString());
-                mcpProgressPayload.put("input", rewrittenQuestion);
-                chatStreamPublisher.publishMcpCall(command.conversationId(), mcpProgressPayload);
-            };
-            ChatMcpToolResult toolResult = chatMcpExecutionService.execute(
-                intentNode.getMcpToolId(),
-                rewrittenQuestion,
-                progressListener
-            );
-            ChatExecutionStep mcpStep = ChatExecutionStep.builder()
-                .id(IdUtil.getSnowflakeNextId())
-                .runId(runId)
-                .stepType("mcp")
-                .stepTitle("执行 MCP 工具")
-                .stepStatus("COMPLETED")
-                .sequenceNo(1L)
-                .content(toolResult.content())
-                .createdAt(LocalDateTime.now())
-                .updatedAt(LocalDateTime.now())
-                .build();
-            chatExecutionStepRepository.save(mcpStep);
-            chatStreamPublisher.publishStep(command.conversationId(), Map.of(
-                "id", mcpStep.getId(),
-                "runId", mcpStep.getRunId(),
-                "stepType", mcpStep.getStepType(),
-                "stepTitle", mcpStep.getStepTitle(),
-                "stepStatus", mcpStep.getStepStatus(),
-                "sequenceNo", mcpStep.getSequenceNo(),
-                "content", mcpStep.getContent()
-            ));
-            Map<String, Object> mcpCompletePayload = new LinkedHashMap<>();
-            mcpCompletePayload.put("callId", String.valueOf(mcpCallId));
-            mcpCompletePayload.put("phase", "complete");
-            mcpCompletePayload.put("toolId", toolResult.toolId());
-            mcpCompletePayload.put("displayName", resolveMcpDisplayName(toolResult.toolId()));
-            mcpCompletePayload.put("params", mcpParams);
-            mcpCompletePayload.put("rawResult", toolResult.content());
-            mcpCompletePayload.put("resultMetadata", toolResult.metadata() == null ? Map.of() : toolResult.metadata());
-            mcpCompletePayload.put("finishedAt", LocalDateTime.now().toString());
-            mcpCompletePayload.put("input", rewrittenQuestion);
-            mcpCompletePayload.put("content", toolResult.content());
-            mcpCompletePayload.put("metadata", toolResult.metadata() == null ? Map.of() : toolResult.metadata());
-            chatStreamPublisher.publishMcpCall(command.conversationId(), mcpCompletePayload);
-            history.add(ChatMessage.create(
-                IdUtil.getSnowflakeNextId(),
+        Optional<SubQuestionIntentDecision> unavailableMcpDecision = firstUnavailableMcpDecision(
+            subQuestionDecisions,
+            command.mcpCodes()
+        );
+        if (unavailableMcpDecision.isPresent()) {
+            intentDecision = unavailableMcpDecision.get().intentDecision();
+            ChatMessage assistantMessage = ChatMessage.assistantMessage(
                 command.conversationId(),
-                ChatMessageRole.SYSTEM,
-                buildToolEvidenceContext(toolResult),
+                "当前会话未连接该 MCP，请在输入框上方先启用对应 MCP 后重试",
                 ChatMessageStatus.COMPLETED,
                 null,
                 null,
                 null
-            ).attachRun(runId));
+            ).attachRun(runId);
+            chatMessageRepository.save(assistantMessage);
+            history.add(assistantMessage);
+            conversation.rename(conversationTitleService.generateTitle(conversation, history));
+            conversation.touch();
+            conversation.recordLastRunId(runId);
+            chatConversationRepository.save(conversation);
+            recordExecutionOutcome(conversation, requestMessage.getId(), assistantMessage.getId(), intentDecision.intentCode(), false, false, ChatMessageStatus.COMPLETED, null);
+            finishTrace(runId, "SUCCESS", null);
+            chatStreamPublisher.publishAssistantCompleted(command.conversationId(), assistantMessage.getContent(), conversation.getTitle());
+            return;
         }
-        if (intentDecision.action() == ConversationIntentAction.SEARCH) {
+        long nextSequenceNo = executeMcpDecisions(subQuestionDecisions, command, runId, history, 1L);
+        List<String> searchQuestions = searchQuestions(subQuestionDecisions);
+        if (CollUtil.isNotEmpty(searchQuestions)) {
             searchReferences = executeSearchQuestions(
-                rewriteResult.shouldSplit() ? rewriteResult.subQuestions() : List.of(rewrittenQuestion),
+                searchQuestions,
                 runId,
-                command.conversationId()
+                command.conversationId(),
+                nextSequenceNo
             );
             searchReferenceCollector.collect(runId, requestMessage.getId(), command.conversationId(), searchReferences);
             documentArtifactService.createDocxArtifact(runId, requestMessage.getId(), command.conversationId(), "搜索结果整理中");
@@ -680,8 +614,14 @@ public class ChatApplicationService {
         List<SearchReferenceCandidate> searchReferences = List.of();
         String rewrittenQuestion = rewriteResult.rewrite();
         boolean mcpEnabled = command.mcpCodes() != null && !command.mcpCodes().isEmpty();
-        ConversationIntentDecision intentDecision = conversationIntentService.route(rewrittenQuestion, mcpEnabled);
-        if (intentDecision.action() == ConversationIntentAction.CLARIFY) {
+        List<SubQuestionIntentDecision> subQuestionDecisions = resolveSubQuestionDecisions(rewriteResult, mcpEnabled);
+        ConversationIntentDecision intentDecision = primaryIntentDecision(subQuestionDecisions);
+        Optional<SubQuestionIntentDecision> clarifyDecision = firstDecisionWithAction(
+            subQuestionDecisions,
+            ConversationIntentAction.CLARIFY
+        );
+        if (clarifyDecision.isPresent()) {
+            intentDecision = clarifyDecision.get().intentDecision();
             ChatMessage assistantMessage = ChatMessage.assistantMessage(
                 command.conversationId(),
                 intentDecision.reply(),
@@ -701,7 +641,7 @@ public class ChatApplicationService {
             chatStreamPublisher.publishAssistantCompleted(command.conversationId(), assistantMessage.getContent(), conversation.getTitle());
             return;
         }
-        if (intentDecision.action() == ConversationIntentAction.DIRECT && StrUtil.isNotBlank(intentDecision.reply())) {
+        if (isSingleDirectReply(subQuestionDecisions)) {
             ChatMessage assistantMessage = ChatMessage.assistantMessage(
                 command.conversationId(),
                 intentDecision.reply(),
@@ -721,7 +661,12 @@ public class ChatApplicationService {
             chatStreamPublisher.publishAssistantCompleted(command.conversationId(), assistantMessage.getContent(), conversation.getTitle());
             return;
         }
-        if (intentDecision.action() == ConversationIntentAction.MCP_DISABLED) {
+        Optional<SubQuestionIntentDecision> mcpDisabledDecision = firstDecisionWithAction(
+            subQuestionDecisions,
+            ConversationIntentAction.MCP_DISABLED
+        );
+        if (mcpDisabledDecision.isPresent()) {
+            intentDecision = mcpDisabledDecision.get().intentDecision();
             ChatMessage assistantMessage = ChatMessage.assistantMessage(
                 command.conversationId(),
                 "你当前未连接 MCP。请在输入框上方开启“连接 MCP”并至少选择一个 MCP 后重试",
@@ -741,121 +686,39 @@ public class ChatApplicationService {
             chatStreamPublisher.publishAssistantCompleted(command.conversationId(), assistantMessage.getContent(), conversation.getTitle());
             return;
         }
-        if (intentDecision.action() == ConversationIntentAction.MCP) {
-            com.codingx.chat.domain.model.ChatIntentNode intentNode = chatIntentNodeRepository.findByIntentCode(intentDecision.intentCode());
-            if (intentNode == null || StrUtil.isBlank(intentNode.getMcpToolId())) {
-                throw new IllegalStateException(
-                    ErrorMessageCatalog.CHAT_MCP_TOOL_CONFIG_MISSING + "，意图编码: " + intentDecision.intentCode()
-                );
-            }
-            if (!isMcpEnabledForCurrentMessage(intentNode.getMcpToolId(), command.mcpCodes())) {
-                ChatMessage assistantMessage = ChatMessage.assistantMessage(
-                    command.conversationId(),
-                    "当前会话未连接该 MCP，请在输入框上方先启用对应 MCP 后重试",
-                    ChatMessageStatus.COMPLETED,
-                    null,
-                    null,
-                    null
-                ).attachRun(runId);
-                chatMessageRepository.save(assistantMessage);
-                history.add(assistantMessage);
-                conversation.rename(conversationTitleService.generateTitle(conversation, history));
-                conversation.touch();
-                conversation.recordLastRunId(runId);
-                chatConversationRepository.save(conversation);
-                recordExecutionOutcome(conversation, userMessage.getId(), assistantMessage.getId(), intentDecision.intentCode(), false, false, ChatMessageStatus.COMPLETED, null);
-                finishTrace(runId, "SUCCESS", null);
-                chatStreamPublisher.publishAssistantCompleted(command.conversationId(), assistantMessage.getContent(), conversation.getTitle());
-                return;
-            }
-            Long mcpCallId = cn.hutool.core.util.IdUtil.getSnowflakeNextId();
-            java.time.LocalDateTime mcpStartedAt = java.time.LocalDateTime.now();
-            Map<String, Object> mcpParams = new LinkedHashMap<>();
-            mcpParams.put("question", rewrittenQuestion);
-            if (StrUtil.isNotBlank(intentDecision.intentCode())) {
-                mcpParams.put("intentCode", intentDecision.intentCode());
-            }
-            Map<String, Object> mcpStartPayload = new LinkedHashMap<>();
-            mcpStartPayload.put("callId", String.valueOf(mcpCallId));
-            mcpStartPayload.put("phase", "start");
-            mcpStartPayload.put("toolId", intentNode.getMcpToolId());
-            mcpStartPayload.put("displayName", resolveMcpDisplayName(intentNode.getMcpToolId()));
-            mcpStartPayload.put("params", mcpParams);
-            mcpStartPayload.put("startedAt", mcpStartedAt.toString());
-            // 兼容旧前端字段：即便在开始阶段也保持 input 可回显。
-            mcpStartPayload.put("input", rewrittenQuestion);
-            chatStreamPublisher.publishMcpCall(command.conversationId(), mcpStartPayload);
-            ChatMcpProgressListener progressListener = (stage, message, detail) -> {
-                Map<String, Object> mcpProgressPayload = new LinkedHashMap<>();
-                mcpProgressPayload.put("callId", String.valueOf(mcpCallId));
-                mcpProgressPayload.put("phase", "progress");
-                mcpProgressPayload.put("toolId", intentNode.getMcpToolId());
-                mcpProgressPayload.put("displayName", resolveMcpDisplayName(intentNode.getMcpToolId()));
-                mcpProgressPayload.put("params", mcpParams);
-                mcpProgressPayload.put("progressStage", stage);
-                mcpProgressPayload.put("progressText", message);
-                mcpProgressPayload.put("progressDetail", detail == null ? Map.of() : detail);
-                mcpProgressPayload.put("updatedAt", java.time.LocalDateTime.now().toString());
-                // 兼容旧前端字段，保留 input 以便回显本次提问。
-                mcpProgressPayload.put("input", rewrittenQuestion);
-                chatStreamPublisher.publishMcpCall(command.conversationId(), mcpProgressPayload);
-            };
-            ChatMcpToolResult toolResult = chatMcpExecutionService.execute(
-                intentNode.getMcpToolId(),
-                rewrittenQuestion,
-                progressListener
-            );
-            ChatExecutionStep mcpStep = ChatExecutionStep.builder()
-                .id(cn.hutool.core.util.IdUtil.getSnowflakeNextId())
-                .runId(runId)
-                .stepType("mcp")
-                .stepTitle("执行 MCP 工具")
-                .stepStatus("COMPLETED")
-                .sequenceNo(1L)
-                .content(toolResult.content())
-                .createdAt(java.time.LocalDateTime.now())
-                .updatedAt(java.time.LocalDateTime.now())
-                .build();
-            chatExecutionStepRepository.save(mcpStep);
-            chatStreamPublisher.publishStep(command.conversationId(), Map.of(
-                "id", mcpStep.getId(),
-                "runId", mcpStep.getRunId(),
-                "stepType", mcpStep.getStepType(),
-                "stepTitle", mcpStep.getStepTitle(),
-                "stepStatus", mcpStep.getStepStatus(),
-                "sequenceNo", mcpStep.getSequenceNo(),
-                "content", mcpStep.getContent()
-            ));
-            Map<String, Object> mcpCompletePayload = new LinkedHashMap<>();
-            mcpCompletePayload.put("callId", String.valueOf(mcpCallId));
-            mcpCompletePayload.put("phase", "complete");
-            mcpCompletePayload.put("toolId", toolResult.toolId());
-            mcpCompletePayload.put("displayName", resolveMcpDisplayName(toolResult.toolId()));
-            mcpCompletePayload.put("params", mcpParams);
-            mcpCompletePayload.put("rawResult", toolResult.content());
-            mcpCompletePayload.put("resultMetadata", toolResult.metadata() == null ? Map.of() : toolResult.metadata());
-            mcpCompletePayload.put("finishedAt", java.time.LocalDateTime.now().toString());
-            // 兼容旧前端字段：继续保留 input/content/metadata。
-            mcpCompletePayload.put("input", rewrittenQuestion);
-            mcpCompletePayload.put("content", toolResult.content());
-            mcpCompletePayload.put("metadata", toolResult.metadata() == null ? Map.of() : toolResult.metadata());
-            chatStreamPublisher.publishMcpCall(command.conversationId(), mcpCompletePayload);
-            history.add(ChatMessage.create(
-                cn.hutool.core.util.IdUtil.getSnowflakeNextId(),
+        Optional<SubQuestionIntentDecision> unavailableMcpDecision = firstUnavailableMcpDecision(
+            subQuestionDecisions,
+            command.mcpCodes()
+        );
+        if (unavailableMcpDecision.isPresent()) {
+            intentDecision = unavailableMcpDecision.get().intentDecision();
+            ChatMessage assistantMessage = ChatMessage.assistantMessage(
                 command.conversationId(),
-                ChatMessageRole.SYSTEM,
-                buildToolEvidenceContext(toolResult),
+                "当前会话未连接该 MCP，请在输入框上方先启用对应 MCP 后重试",
                 ChatMessageStatus.COMPLETED,
                 null,
                 null,
                 null
-            ).attachRun(runId));
+            ).attachRun(runId);
+            chatMessageRepository.save(assistantMessage);
+            history.add(assistantMessage);
+            conversation.rename(conversationTitleService.generateTitle(conversation, history));
+            conversation.touch();
+            conversation.recordLastRunId(runId);
+            chatConversationRepository.save(conversation);
+            recordExecutionOutcome(conversation, userMessage.getId(), assistantMessage.getId(), intentDecision.intentCode(), false, false, ChatMessageStatus.COMPLETED, null);
+            finishTrace(runId, "SUCCESS", null);
+            chatStreamPublisher.publishAssistantCompleted(command.conversationId(), assistantMessage.getContent(), conversation.getTitle());
+            return;
         }
-        if (intentDecision.action() == ConversationIntentAction.SEARCH) {
+        long nextSequenceNo = executeMcpDecisions(subQuestionDecisions, command, runId, history, 1L);
+        List<String> searchQuestions = searchQuestions(subQuestionDecisions);
+        if (CollUtil.isNotEmpty(searchQuestions)) {
             searchReferences = executeSearchQuestions(
-                rewriteResult.shouldSplit() ? rewriteResult.subQuestions() : List.of(rewrittenQuestion),
+                searchQuestions,
                 runId,
-                command.conversationId()
+                command.conversationId(),
+                nextSequenceNo
             );
             searchReferenceCollector.collect(runId, userMessage.getId(), command.conversationId(), searchReferences);
             documentArtifactService.createDocxArtifact(runId, userMessage.getId(), command.conversationId(), "搜索结果整理中");
@@ -1793,6 +1656,247 @@ public class ChatApplicationService {
     }
 
     /**
+     * 子问题与其独立意图决策的绑定结果。
+     * 业务意图：对齐 ragent 的“先拆分、再逐题识别”，避免整体搜索意图吞掉天气等 MCP 子问题。
+     */
+    private record SubQuestionIntentDecision(String question, ConversationIntentDecision intentDecision) {
+    }
+
+    /**
+     * 从改写结果提取实际参与路由的问题列表，并逐题调用意图服务。
+     * @param rewriteResult 改写与拆分结果。
+     * @param mcpEnabled 本轮是否启用了 MCP。
+     * @return 子问题级意图决策。
+     */
+    private List<SubQuestionIntentDecision> resolveSubQuestionDecisions(
+        ConversationRewriteResult rewriteResult,
+        boolean mcpEnabled
+    ) {
+        List<String> questions = routedQuestions(rewriteResult);
+        List<SubQuestionIntentDecision> decisions = new ArrayList<>();
+        for (String question : questions) {
+            ConversationIntentDecision decision = conversationIntentService.route(question, mcpEnabled);
+            decisions.add(new SubQuestionIntentDecision(question, decision));
+        }
+        return decisions;
+    }
+
+    /**
+     * 拆分结果为空时回退到改写问题，保证单问题链路和旧数据兼容。
+     */
+    private List<String> routedQuestions(ConversationRewriteResult rewriteResult) {
+        List<String> candidates = rewriteResult.shouldSplit() && CollUtil.isNotEmpty(rewriteResult.subQuestions())
+            ? rewriteResult.subQuestions()
+            : List.of(rewriteResult.rewrite());
+        List<String> questions = candidates.stream()
+            .filter(StrUtil::isNotBlank)
+            .map(String::trim)
+            .toList();
+        if (CollUtil.isNotEmpty(questions)) {
+            return questions;
+        }
+        return List.of(StrUtil.blankToDefault(rewriteResult.rewrite(), ""));
+    }
+
+    /**
+     * 选择本轮落库和系统提示使用的主意图；搜索优先，确保混合问题保留联网证据约束。
+     */
+    private ConversationIntentDecision primaryIntentDecision(List<SubQuestionIntentDecision> decisions) {
+        return decisions.stream()
+            .filter(decision -> decision.intentDecision().action() == ConversationIntentAction.SEARCH)
+            .map(SubQuestionIntentDecision::intentDecision)
+            .findFirst()
+            .or(() -> decisions.stream()
+                .filter(decision -> decision.intentDecision().action() == ConversationIntentAction.MCP)
+                .map(SubQuestionIntentDecision::intentDecision)
+                .findFirst())
+            .orElseGet(() -> decisions.getFirst().intentDecision());
+    }
+
+    /**
+     * 查找首个指定动作的子问题决策，用于澄清和 MCP 未启用等短路分支。
+     */
+    private Optional<SubQuestionIntentDecision> firstDecisionWithAction(
+        List<SubQuestionIntentDecision> decisions,
+        ConversationIntentAction action
+    ) {
+        return decisions.stream()
+            .filter(decision -> decision.intentDecision().action() == action)
+            .findFirst();
+    }
+
+    /**
+     * 单问题直答保持原有短路行为；混合问题中的直答子项交给最终模型综合处理。
+     */
+    private boolean isSingleDirectReply(List<SubQuestionIntentDecision> decisions) {
+        if (decisions.size() != 1) {
+            return false;
+        }
+        ConversationIntentDecision decision = decisions.getFirst().intentDecision();
+        return decision.action() == ConversationIntentAction.DIRECT && StrUtil.isNotBlank(decision.reply());
+    }
+
+    /**
+     * 提前校验所有 MCP 子问题，避免已经执行部分搜索或工具后才发现本轮未启用对应 MCP。
+     */
+    private Optional<SubQuestionIntentDecision> firstUnavailableMcpDecision(
+        List<SubQuestionIntentDecision> decisions,
+        List<String> selectedMcpCodes
+    ) {
+        for (SubQuestionIntentDecision decision : decisions) {
+            if (decision.intentDecision().action() != ConversationIntentAction.MCP) {
+                continue;
+            }
+            ChatIntentNode intentNode = resolveMcpIntentNode(decision.intentDecision());
+            if (!isMcpEnabledForCurrentMessage(intentNode.getMcpToolId(), selectedMcpCodes)) {
+                return Optional.of(decision);
+            }
+        }
+        return Optional.empty();
+    }
+
+    /**
+     * 提取所有搜索子问题，天气等 MCP 子问题不会再进入网页搜索。
+     */
+    private List<String> searchQuestions(List<SubQuestionIntentDecision> decisions) {
+        return decisions.stream()
+            .filter(decision -> decision.intentDecision().action() == ConversationIntentAction.SEARCH)
+            .map(SubQuestionIntentDecision::question)
+            .filter(StrUtil::isNotBlank)
+            .toList();
+    }
+
+    /**
+     * 顺序执行 MCP 子问题，返回下一条执行步骤应使用的序号。
+     */
+    private long executeMcpDecisions(
+        List<SubQuestionIntentDecision> decisions,
+        SendChatMessageCommand command,
+        Long runId,
+        List<ChatMessage> history,
+        long startSequenceNo
+    ) {
+        long sequenceNo = startSequenceNo;
+        for (SubQuestionIntentDecision decision : decisions) {
+            if (decision.intentDecision().action() != ConversationIntentAction.MCP) {
+                continue;
+            }
+            executeMcpDecision(decision, command, runId, history, sequenceNo++);
+        }
+        return sequenceNo;
+    }
+
+    /**
+     * 执行单个 MCP 子问题并发布兼容的 mcp-call 与 step 事件。
+     */
+    private void executeMcpDecision(
+        SubQuestionIntentDecision subQuestionDecision,
+        SendChatMessageCommand command,
+        Long runId,
+        List<ChatMessage> history,
+        long sequenceNo
+    ) {
+        ConversationIntentDecision intentDecision = subQuestionDecision.intentDecision();
+        String question = subQuestionDecision.question();
+        ChatIntentNode intentNode = resolveMcpIntentNode(intentDecision);
+        Long mcpCallId = IdUtil.getSnowflakeNextId();
+        LocalDateTime mcpStartedAt = LocalDateTime.now();
+        Map<String, Object> mcpParams = new LinkedHashMap<>();
+        mcpParams.put("question", question);
+        if (StrUtil.isNotBlank(intentDecision.intentCode())) {
+            mcpParams.put("intentCode", intentDecision.intentCode());
+        }
+        Map<String, Object> mcpStartPayload = new LinkedHashMap<>();
+        mcpStartPayload.put("callId", String.valueOf(mcpCallId));
+        mcpStartPayload.put("phase", "start");
+        mcpStartPayload.put("toolId", intentNode.getMcpToolId());
+        mcpStartPayload.put("displayName", resolveMcpDisplayName(intentNode.getMcpToolId()));
+        mcpStartPayload.put("params", mcpParams);
+        mcpStartPayload.put("startedAt", mcpStartedAt.toString());
+        // 兼容旧前端字段：即便在开始阶段也保持 input 可回显。
+        mcpStartPayload.put("input", question);
+        chatStreamPublisher.publishMcpCall(command.conversationId(), mcpStartPayload);
+        ChatMcpProgressListener progressListener = (stage, message, detail) -> {
+            Map<String, Object> mcpProgressPayload = new LinkedHashMap<>();
+            mcpProgressPayload.put("callId", String.valueOf(mcpCallId));
+            mcpProgressPayload.put("phase", "progress");
+            mcpProgressPayload.put("toolId", intentNode.getMcpToolId());
+            mcpProgressPayload.put("displayName", resolveMcpDisplayName(intentNode.getMcpToolId()));
+            mcpProgressPayload.put("params", mcpParams);
+            mcpProgressPayload.put("progressStage", stage);
+            mcpProgressPayload.put("progressText", message);
+            mcpProgressPayload.put("progressDetail", detail == null ? Map.of() : detail);
+            mcpProgressPayload.put("updatedAt", LocalDateTime.now().toString());
+            // 兼容旧前端字段，保留 input 以便回显本次提问。
+            mcpProgressPayload.put("input", question);
+            chatStreamPublisher.publishMcpCall(command.conversationId(), mcpProgressPayload);
+        };
+        ChatMcpToolResult toolResult = chatMcpExecutionService.execute(
+            intentNode.getMcpToolId(),
+            question,
+            progressListener
+        );
+        ChatExecutionStep mcpStep = ChatExecutionStep.builder()
+            .id(IdUtil.getSnowflakeNextId())
+            .runId(runId)
+            .stepType("mcp")
+            .stepTitle("执行 MCP 工具")
+            .stepStatus("COMPLETED")
+            .sequenceNo(sequenceNo)
+            .content(toolResult.content())
+            .createdAt(LocalDateTime.now())
+            .updatedAt(LocalDateTime.now())
+            .build();
+        chatExecutionStepRepository.save(mcpStep);
+        chatStreamPublisher.publishStep(command.conversationId(), Map.of(
+            "id", mcpStep.getId(),
+            "runId", mcpStep.getRunId(),
+            "stepType", mcpStep.getStepType(),
+            "stepTitle", mcpStep.getStepTitle(),
+            "stepStatus", mcpStep.getStepStatus(),
+            "sequenceNo", mcpStep.getSequenceNo(),
+            "content", mcpStep.getContent()
+        ));
+        Map<String, Object> mcpCompletePayload = new LinkedHashMap<>();
+        mcpCompletePayload.put("callId", String.valueOf(mcpCallId));
+        mcpCompletePayload.put("phase", "complete");
+        mcpCompletePayload.put("toolId", toolResult.toolId());
+        mcpCompletePayload.put("displayName", resolveMcpDisplayName(toolResult.toolId()));
+        mcpCompletePayload.put("params", mcpParams);
+        mcpCompletePayload.put("rawResult", toolResult.content());
+        mcpCompletePayload.put("resultMetadata", toolResult.metadata() == null ? Map.of() : toolResult.metadata());
+        mcpCompletePayload.put("finishedAt", LocalDateTime.now().toString());
+        // 兼容旧前端字段：继续保留 input/content/metadata。
+        mcpCompletePayload.put("input", question);
+        mcpCompletePayload.put("content", toolResult.content());
+        mcpCompletePayload.put("metadata", toolResult.metadata() == null ? Map.of() : toolResult.metadata());
+        chatStreamPublisher.publishMcpCall(command.conversationId(), mcpCompletePayload);
+        history.add(ChatMessage.create(
+            IdUtil.getSnowflakeNextId(),
+            command.conversationId(),
+            ChatMessageRole.SYSTEM,
+            buildToolEvidenceContext(toolResult),
+            ChatMessageStatus.COMPLETED,
+            null,
+            null,
+            null
+        ).attachRun(runId));
+    }
+
+    /**
+     * 读取 MCP 意图节点，并集中处理缺失配置的异常文案。
+     */
+    private ChatIntentNode resolveMcpIntentNode(ConversationIntentDecision intentDecision) {
+        ChatIntentNode intentNode = chatIntentNodeRepository.findByIntentCode(intentDecision.intentCode());
+        if (intentNode == null || StrUtil.isBlank(intentNode.getMcpToolId())) {
+            throw new IllegalStateException(
+                ErrorMessageCatalog.CHAT_MCP_TOOL_CONFIG_MISSING + "，意图编码: " + intentDecision.intentCode()
+            );
+        }
+        return intentNode;
+    }
+
+    /**
      * 按子问题并行执行搜索，并为每个子问题推送独立步骤事件。
      * @param searchQuestions 搜索问题集合。
      * @param runId 运行标识。
@@ -1800,13 +1904,25 @@ public class ChatApplicationService {
      * @return 合并去重后的来源候选。
      */
     private List<SearchReferenceCandidate> executeSearchQuestions(List<String> searchQuestions, Long runId, Long conversationId) {
+        return executeSearchQuestions(searchQuestions, runId, conversationId, 1L);
+    }
+
+    /**
+     * 按指定起始序号执行搜索，确保混合 MCP + 搜索时过程步骤顺序稳定。
+     */
+    private List<SearchReferenceCandidate> executeSearchQuestions(
+        List<String> searchQuestions,
+        Long runId,
+        Long conversationId,
+        long startSequenceNo
+    ) {
         List<CompletableFuture<List<SearchReferenceCandidate>>> futures = new ArrayList<>();
         int maxParallelQuestions = Math.max(1, runtimeSettingService.searchMaxParallelQuestions());
         List<String> effectiveQuestions = searchQuestions;
         if (searchQuestions.size() > maxParallelQuestions) {
             effectiveQuestions = searchQuestions.subList(0, maxParallelQuestions);
         }
-        int sequenceNo = 1;
+        long sequenceNo = startSequenceNo;
         for (String searchQuestion : effectiveQuestions) {
             ChatExecutionStep searchStep = ChatExecutionStep.builder()
                 .id(cn.hutool.core.util.IdUtil.getSnowflakeNextId())
@@ -1814,7 +1930,7 @@ public class ChatApplicationService {
                 .stepType("search")
                 .stepTitle(effectiveQuestions.size() > 1 ? "搜索子问题 " + sequenceNo : "搜索资料")
                 .stepStatus("COMPLETED")
-                .sequenceNo((long) sequenceNo++)
+                .sequenceNo(sequenceNo++)
                 .content(searchQuestion)
                 .createdAt(java.time.LocalDateTime.now())
                 .updatedAt(java.time.LocalDateTime.now())

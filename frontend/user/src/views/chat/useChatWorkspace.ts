@@ -3964,30 +3964,6 @@ function buildAnalysisProcessCard(id: string, thinkingContent?: string, title = 
 }
 
 /**
- * 根据搜索步骤创建 ReAct 深度思考卡片。
- * @param options 搜索步骤信息。
- * @returns ReAct 思考卡片。
- */
-function buildSearchThoughtCard(options: {
-  id: string;
-  title: string;
-  summary: string;
-  status?: ProcessCardItem['status'];
-}): ProcessCardItem {
-  const queryText = resolveSearchQueryText(options);
-  return {
-    id: `react-thought-search-${options.id}`,
-    type: 'analysis',
-    title: '思考',
-    summary: queryText
-      ? `需要通过网页搜索确认资料：${queryText}`
-      : '需要通过网页搜索获取实时资料。',
-    status: 'completed',
-    presentation: 'react',
-  };
-}
-
-/**
  * 根据搜索步骤创建 ReAct 工具动作卡片；搜索 query 作为参数摘要展示。
  * @param options 搜索步骤信息。
  * @returns 搜索行动卡片。
@@ -4034,7 +4010,7 @@ function resolveSearchQueryText(options: {
 }
 
 /**
- * 将搜索步骤合并为一轮 ReAct 的深度思考与工具动作，避免只展示单条工具调用。
+ * 将搜索步骤合并为工具动作；普通回答和真实 thinking 只来自 SSE 正文/thinking 事件，前端不伪造思考内容。
  * @param cards 当前卡片列表。
  * @param options 搜索步骤信息。
  * @returns 合并后的卡片列表。
@@ -4049,10 +4025,7 @@ function mergeSearchStepIntoProcessCards(
   },
 ): ProcessCardItem[] {
   const nextCards = finalizeCardsByType(cards, ['analysis']);
-  return upsertProcessCard(
-    upsertProcessCard(nextCards, buildSearchThoughtCard(options)),
-    buildSearchToolCallCard(options),
-  );
+  return upsertProcessCard(nextCards, buildSearchToolCallCard(options));
 }
 
 /**
@@ -4066,7 +4039,7 @@ function mergeReferenceIntoProcessCards(
   reference: ReferenceItem,
 ): ProcessCardItem[] {
   const sourceLabel = resolveSearchSourceLabel(reference);
-  const nextCards = hydratePendingSearchReactCards(
+  const nextCards = hydratePendingSearchToolCallCard(
     finalizeCardsByType(cards, ['analysis', 'tool_call']),
     reference,
   );
@@ -4093,12 +4066,12 @@ function mergeReferenceIntoProcessCards(
 }
 
 /**
- * 搜索 step 先于来源到达时可能只有兜底文案；来源返回后用真实标题补强同一轮 Thought/Action 摘要。
+ * 搜索 step 先于来源到达时可能只有兜底文案；来源返回后只补强工具动作摘要，不伪造思考节点。
  * @param cards 当前卡片列表。
  * @param reference 新来源。
  * @returns 补强后的过程卡片。
  */
-function hydratePendingSearchReactCards(
+function hydratePendingSearchToolCallCard(
   cards: ProcessCardItem[],
   reference: ReferenceItem,
 ): ProcessCardItem[] {
@@ -4116,16 +4089,6 @@ function hydratePendingSearchReactCards(
   if (pendingToolIndex < 0) {
     return cards;
   }
-  const pendingThoughtIndex = [...cards]
-    .slice(0, pendingToolIndex)
-    .map((card, index) => ({ card, index }))
-    .reverse()
-    .find(
-      (item) =>
-        item.card.type === 'analysis' &&
-        item.card.presentation === 'react' &&
-        item.card.summary === '需要通过网页搜索确认资料：正在检索实时资料。',
-    )?.index;
   return cards.map((card, index) => {
     if (index === pendingToolIndex) {
       return {
@@ -4137,12 +4100,6 @@ function hydratePendingSearchReactCards(
             content: queryText,
           },
         ],
-      };
-    }
-    if (index === pendingThoughtIndex) {
-      return {
-        ...card,
-        summary: `需要通过网页搜索确认资料：${queryText}`,
       };
     }
     return card;
@@ -4159,18 +4116,18 @@ function resolveReferenceQueryText(reference: ReferenceItem): string {
 }
 
 /**
- * 将搜索来源转换为 ReAct 工具结果摘要，突出“工具返回了什么”而不是只显示来源标题。
+ * 将搜索来源转换为 ReAct 工具结果摘要，只保留站点与标题，避免过程行重复展示“网页搜索返回”前缀。
  * @param reference 搜索来源。
  * @param sourceLabel 来源站点标签。
  * @returns 观察摘要。
  */
 function buildSearchObservationSummary(reference: ReferenceItem, sourceLabel: string): string {
   const resultText = reference.title || reference.snippet || reference.url || '已获取检索来源，正在比对可用结论。';
-  return sourceLabel ? `网页搜索返回 ${sourceLabel}：${resultText}` : `网页搜索返回：${resultText}`;
+  return sourceLabel ? `${sourceLabel}：${resultText}` : resultText;
 }
 
 /**
- * 提取搜索来源标签，优先展示站点名，缺失时用域名兜底，形成“网页获取 xxx”的过程行。
+ * 提取搜索来源标签，优先展示站点名，缺失时用完整域名兜底，形成简洁来源过程行。
  * @param source 搜索来源。
  * @returns 来源标签。
  */
@@ -4184,7 +4141,7 @@ function resolveSearchSourceLabel(source: { siteName?: string; url?: string }) {
     return '';
   }
   try {
-    return new URL(url).hostname.replace(/^www\./, '');
+    return new URL(url).hostname;
   } catch {
     return url.replace(/^https?:\/\//, '').split('/')[0] ?? '';
   }
@@ -4979,14 +4936,6 @@ function deriveProcessCardsFromReplay(options: {
   }
   if (!processCards.some((card) => card.toolId === 'search')) {
     for (const step of searchSteps) {
-      processCards.push(
-        buildSearchThoughtCard({
-          id: `replay-${step.id}`,
-          title: step.stepTitle || '搜索资料',
-          summary: step.content ?? '',
-          status: 'completed',
-        }),
-      );
       processCards.push(
         buildSearchToolCallCard({
           id: `replay-${step.id}`,

@@ -4676,6 +4676,9 @@ describe('useChatWorkspace', () => {
       reject: (reason?: unknown) => void;
     }> = [];
     const metaEvent = new TextEncoder().encode('event:meta\ndata:{"conversationId":"2001"}\n\n');
+    const firstMessageEvent = new TextEncoder().encode(
+      'event:message\ndata:{"type":"response","delta":"我先查看今天公开来源里的科技新闻。\\n\\n"}\n\n',
+    );
     const searchStepEvent = new TextEncoder().encode(
       'event:step\ndata:{"id":"step-1","runId":"5002","stepType":"search","stepTitle":"搜索资料","stepStatus":"COMPLETED","sequenceNo":1}\n\n',
     );
@@ -4772,12 +4775,22 @@ describe('useChatWorkspace', () => {
       readQueue.shift()?.resolve({ done: false, value: metaEvent });
     });
     await act(async () => {
+      readQueue.shift()?.resolve({ done: false, value: firstMessageEvent });
+    });
+    await waitFor(() => {
+      const assistantMessage = result.current.messages.find((item) => item.role === 'ASSISTANT');
+      expect(assistantMessage?.content).toBe('我先查看今天公开来源里的科技新闻。\n\n');
+    });
+    await act(async () => {
       readQueue.shift()?.resolve({ done: false, value: searchStepEvent });
     });
     await waitFor(() => {
       const assistantMessage = result.current.messages.find((item) => item.role === 'ASSISTANT');
       expect(assistantMessage?.searchProgress?.status).toBe('running');
       expect(assistantMessage?.searchProgress?.items).toHaveLength(0);
+      const processCards = ((assistantMessage as Record<string, unknown> | undefined)?.processCards ?? []) as Array<Record<string, unknown>>;
+      expect(processCards.map((card) => card.type)).toEqual(['tool_call']);
+      expect(processCards.some((card) => String(card.summary).includes('需要通过网页搜索确认资料'))).toBe(false);
     });
 
     await act(async () => {
@@ -4788,13 +4801,18 @@ describe('useChatWorkspace', () => {
       expect(assistantMessage?.searchProgress?.items).toHaveLength(1);
       expect(assistantMessage?.searchProgress?.items[0].title).toBe('OpenAI API 最新文档');
       const processCards = ((assistantMessage as Record<string, unknown> | undefined)?.processCards ?? []) as Array<Record<string, unknown>>;
-      expect(processCards.map((card) => card.type)).toEqual(['analysis', 'tool_call', 'tool_result']);
-      expect(processCards.map((card) => card.presentation)).toEqual(['react', 'react', 'react']);
+      expect(processCards.map((card) => card.type)).toEqual(['tool_call', 'tool_result']);
+      expect(processCards.map((card) => card.presentation)).toEqual(['react', 'react']);
       expect(processCards.map((card) => card.summary)).toEqual([
-        '需要通过网页搜索确认资料：OpenAI API 最新文档',
         '调用网页搜索：OpenAI API 最新文档',
-        '网页搜索返回 OpenAI：OpenAI API 最新文档',
+        'OpenAI：OpenAI API 最新文档',
       ]);
+      expect(processCards.some((card) => String(card.summary).includes('需要通过网页搜索确认资料'))).toBe(false);
+      const timelineItems = ((assistantMessage as Record<string, unknown> | undefined)?.timelineItems ?? []) as Array<Record<string, unknown>>;
+      expect(timelineItems.map((item) => item.type)).toEqual(['content', 'process', 'process']);
+      expect(timelineItems[0].content).toBe('我先查看今天公开来源里的科技新闻。\n\n');
+      expect((timelineItems[1].card as Record<string, unknown>).id).toBe('process-step-1');
+      expect((timelineItems[2].card as Record<string, unknown>).id).toBe('search-result-ref-1');
     });
 
     await act(async () => {
@@ -4807,8 +4825,8 @@ describe('useChatWorkspace', () => {
       const processCards = ((assistantMessage as Record<string, unknown> | undefined)?.processCards ?? []) as Array<Record<string, unknown>>;
       const searchResultCards = processCards.filter((card) => card.type === 'tool_result' && card.toolId === 'search');
       expect(searchResultCards.map((card) => card.summary)).toEqual([
-        '网页搜索返回 OpenAI：OpenAI API 最新文档',
-        '网页搜索返回 Microsoft Learn：Bing Search API 文档',
+        'OpenAI：OpenAI API 最新文档',
+        'Microsoft Learn：Bing Search API 文档',
       ]);
     });
 
@@ -5138,7 +5156,7 @@ describe('useChatWorkspace', () => {
       const postToolThinkingIndex = processCards.findIndex((card) => card.id === 'analysis-after-tools');
       expect(searchResultIndex).toBeGreaterThan(-1);
       expect(postToolThinkingIndex).toBeGreaterThan(searchResultIndex);
-      expect(processCards[searchResultIndex]?.summary).toBe('网页搜索返回 模型资料站：Qwen 与 GLM 最新模型信息');
+      expect(processCards[searchResultIndex]?.summary).toBe('模型资料站：Qwen 与 GLM 最新模型信息');
       expect(processCards[postToolThinkingIndex]?.summary).toBe(postToolThinking);
     });
 
@@ -5861,7 +5879,8 @@ describe('useChatWorkspace', () => {
     expect(processCards.map((card) => card.title)).toEqual(
       expect.arrayContaining(['调用天气查询', '已获取结果']),
     );
-    expect(processCards.some((card) => card.type === 'analysis' && card.presentation === 'react')).toBe(true);
+    expect(processCards.some((card) => card.type === 'analysis' && card.presentation === 'react')).toBe(false);
+    expect(processCards.some((card) => String(card.summary).includes('需要通过网页搜索确认资料'))).toBe(false);
     expect(processCards.some((card) => String(card.summary).includes('已恢复历史'))).toBe(false);
 
     const snapshotStore = JSON.parse(

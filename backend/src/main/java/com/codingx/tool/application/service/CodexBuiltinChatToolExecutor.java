@@ -46,6 +46,8 @@ import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import javax.imageio.ImageIO;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
@@ -69,6 +71,9 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
     );
     private static final DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     private static final int MAX_BUFFER_LENGTH = 12000;
+    private static final Pattern GIT_HUNK_HEADER_PATTERN = Pattern.compile(
+        "^@@ -(\\d+)(?:,\\d+)? \\+(\\d+)(?:,\\d+)? @@(.*)$"
+    );
 
     private final ChatToolRepository chatToolRepository;
     private final ChatMcpRepository chatMcpRepository;
@@ -359,9 +364,63 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
             }
             normalizedLines.add(line);
         }
-        String normalizedPatch = String.join("\n", normalizedLines);
+        String normalizedPatch = String.join("\n", normalizeGitPatchHunkHeaders(normalizedLines));
         // git apply 会把缺少文件尾换行的最后一个 hunk 判定为 corrupt patch，模型输出 JSON 时常丢失该换行。
         return normalizedPatch.endsWith("\n") ? normalizedPatch : normalizedPatch + "\n";
+    }
+
+    /**
+     * 按 hunk 实际 +/-/空格行重算行数，修复模型把 @@ 里的行数写成示意值导致 git apply 拒绝的问题。
+     */
+    private List<String> normalizeGitPatchHunkHeaders(List<String> lines) {
+        List<String> normalizedLines = new ArrayList<>(lines);
+        int lineIndex = 0;
+        while (lineIndex < normalizedLines.size()) {
+            Matcher matcher = GIT_HUNK_HEADER_PATTERN.matcher(normalizedLines.get(lineIndex));
+            if (!matcher.matches()) {
+                lineIndex++;
+                continue;
+            }
+            int oldLineCount = 0;
+            int newLineCount = 0;
+            int hunkLineIndex = lineIndex + 1;
+            while (hunkLineIndex < normalizedLines.size() && !isGitPatchHunkBoundary(normalizedLines.get(hunkLineIndex))) {
+                GitHunkLineCount lineCount = countGitPatchHunkLine(normalizedLines.get(hunkLineIndex));
+                oldLineCount += lineCount.oldLineCount();
+                newLineCount += lineCount.newLineCount();
+                hunkLineIndex++;
+            }
+            normalizedLines.set(
+                lineIndex,
+                "@@ -" + matcher.group(1) + "," + oldLineCount
+                    + " +" + matcher.group(2) + "," + newLineCount
+                    + " @@" + matcher.group(3)
+            );
+            lineIndex = hunkLineIndex;
+        }
+        return normalizedLines;
+    }
+
+    /**
+     * 判断当前行是否已经进入下一个 hunk 或下一个文件块。
+     */
+    private boolean isGitPatchHunkBoundary(String line) {
+        return StrUtil.startWith(line, "@@ ") || StrUtil.startWith(line, "diff --git ");
+    }
+
+    /**
+     * 统计单行 hunk 对旧文件和新文件的行数贡献；`\ No newline` 标记不计入任一侧。
+     */
+    private GitHunkLineCount countGitPatchHunkLine(String line) {
+        if (StrUtil.isEmpty(line) || StrUtil.startWith(line, "\\ No newline")) {
+            return new GitHunkLineCount(0, 0);
+        }
+        return switch (line.charAt(0)) {
+            case ' ' -> new GitHunkLineCount(1, 1);
+            case '-' -> new GitHunkLineCount(1, 0);
+            case '+' -> new GitHunkLineCount(0, 1);
+            default -> new GitHunkLineCount(0, 0);
+        };
     }
 
     /**
@@ -1594,6 +1653,12 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
      * 命令执行结果。
      */
     private record CommandExecution(String output, int exitCode, boolean timedOut, long durationMs) {
+    }
+
+    /**
+     * 标准 diff 单行对旧文件和新文件的行数贡献。
+     */
+    private record GitHunkLineCount(int oldLineCount, int newLineCount) {
     }
 
     /**

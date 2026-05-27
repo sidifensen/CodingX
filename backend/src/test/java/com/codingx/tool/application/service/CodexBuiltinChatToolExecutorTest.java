@@ -144,6 +144,52 @@ class CodexBuiltinChatToolExecutorTest {
     }
 
     /**
+     * 标准 diff 的 hunk 行数若由模型估算错误，应按实际 +/- 行重算，避免 git apply 在文件尾报 corrupt patch。
+     * 业务背景：生成大段 HTML/CSS 时，模型经常把 @@ -0,0 +1,N @@ 的 N 写成示意值而非真实行数。
+     *
+     * @param tempDir 测试临时目录。
+     * @throws Exception 执行失败时抛出。
+     */
+    @Test
+    void applyPatchShouldRecountGitDiffHunkLineCount(@TempDir Path tempDir) throws Exception {
+        Path projectRoot = tempDir.resolve("workspace");
+        Files.createDirectories(projectRoot);
+        Path targetFile = projectRoot.resolve("calendar").resolve("index.html");
+        String patch = """
+            diff --git a/calendar/index.html b/calendar/index.html
+            new file mode 100644
+            index 0000000..e69de29
+            --- /dev/null
+            +++ b/calendar/index.html
+            @@ -0,0 +1,58 @@
+            +<!DOCTYPE html>
+            +<html lang="zh-CN">
+            +<head>
+            +  <meta charset="UTF-8">
+            +  <title>简单日历</title>
+            +</head>
+            +<body>
+            +  <h1>简单日历</h1>
+            +</body>
+            +</html>
+            """.stripTrailing();
+
+        ChatToolExecutionContext.bindToolWorkingDirectory(projectRoot);
+        try {
+            ChatToolExecutionResult result = codexBuiltinChatToolExecutor.execute(
+                "apply_patch",
+                JSONUtil.toJsonStr(Map.of("patch", patch))
+            );
+
+            assertEquals("apply_patch", result.toolCode());
+            assertTrue(Files.exists(targetFile));
+            assertTrue(Files.readString(targetFile, StandardCharsets.UTF_8).contains("简单日历"));
+        } finally {
+            ChatToolExecutionContext.clear();
+        }
+    }
+
+    /**
      * shell_command 必须在当前工具上下文绑定的工作目录执行，避免误改后端进程目录。
      *
      * @param tempDir 测试临时目录。

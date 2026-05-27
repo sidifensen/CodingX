@@ -6888,4 +6888,141 @@ describe('useChatWorkspace', () => {
       expect(latestAssistantMessage?.content).toBe('ok');
     });
   });
+
+  /**
+   * finish 带回真实助手消息 ID 后应立即替换乐观消息，避免操作栏出现但反馈按钮仍不可用。
+   */
+  it('finish携带assistantMessageId时应立即回填助手消息真实标识', async () => {
+    window.localStorage.setItem(
+      'codingx.auth.session',
+      JSON.stringify({
+        token: 'token-123',
+        userId: '1002',
+        username: 'user',
+        displayName: 'CodingX User',
+        userType: 'USER',
+      }),
+    );
+
+    const readQueue: Array<{
+      resolve: (value: ReadableStreamReadResult<Uint8Array>) => void;
+      reject: (reason?: unknown) => void;
+    }> = [];
+    const finishEvent = new TextEncoder().encode(
+      'event:finish\ndata:{"conversationId":"9901","assistantMessageId":"102","content":"回答已完成","title":"完成标题"}\n\n',
+    );
+    const mockReader = {
+      read: vi.fn(() => {
+        return new Promise<ReadableStreamReadResult<Uint8Array>>((resolve, reject) => {
+          readQueue.push({ resolve, reject });
+        });
+      }),
+    };
+
+    let resolveConversationsAfterDone: ((response: Response) => void) | null = null;
+    const conversationsAfterDone = new Promise<Response>((resolve) => {
+      resolveConversationsAfterDone = resolve;
+    });
+    let conversationsRequestCount = 0;
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === '/api/chat/conversations') {
+        conversationsRequestCount += 1;
+        if (conversationsRequestCount === 1) {
+          return new Response(
+            JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+            { status: 200 },
+          );
+        }
+        return conversationsAfterDone;
+      }
+      if (
+        url === '/api/chat/sample-questions' ||
+        url === '/api/chat/experts' ||
+        url === '/api/chat/skills' ||
+        url === '/api/chat/mcps' ||
+        url === '/api/chat/conversations/9901/messages' ||
+        url === '/api/chat/conversations/9901/steps' ||
+        url === '/api/chat/conversations/9901/references' ||
+        url === '/api/chat/conversations/9901/artifacts' ||
+        url === '/api/chat/conversations/9901/current-skills' ||
+        url === '/api/chat/conversations/9901/current-mcps' ||
+        url === '/api/chat/conversations/9901/current-experts'
+      ) {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (url.includes('/api/chat/stream')) {
+        return {
+          ok: true,
+          status: 200,
+          body: {
+            getReader: () => mockReader,
+          },
+        } as unknown as Response;
+      }
+      throw new Error(`Unhandled fetch in finish-message-id hydration test: ${url}`);
+    });
+
+    const { result } = renderHook(() => useChatWorkspace(true));
+
+    await waitFor(() => {
+      expect(result.current.isBootstrapping).toBe(false);
+    });
+
+    await act(async () => {
+      result.current.setInputValue('生成一条回复');
+    });
+    const submitPromise = result.current.submitMessage();
+
+    await waitFor(() => {
+      expect(result.current.isStreaming).toBe(true);
+      expect(readQueue.length).toBeGreaterThan(0);
+    });
+
+    await act(async () => {
+      readQueue.shift()?.resolve({ done: false, value: finishEvent });
+    });
+
+    await waitFor(() => {
+      const latestAssistantMessage = [...result.current.messages]
+        .reverse()
+        .find((item) => item.role === 'ASSISTANT');
+      expect(latestAssistantMessage).toEqual(
+        expect.objectContaining({
+          id: '102',
+          conversationId: '9901',
+          content: '回答已完成',
+        }),
+      );
+    });
+
+    await act(async () => {
+      readQueue.shift()?.resolve({ done: true, value: undefined });
+    });
+
+    resolveConversationsAfterDone?.(
+      new Response(
+        JSON.stringify({
+          success: true,
+          code: 'OK',
+          message: 'success',
+          data: [
+            {
+              id: '9901',
+              title: '完成标题',
+              status: 'ACTIVE',
+              lastRunId: '9201',
+            },
+          ],
+        }),
+        { status: 200 },
+      ),
+    );
+
+    await submitPromise;
+  });
 });

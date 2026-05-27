@@ -2616,6 +2616,7 @@ export function useChatWorkspace(
 
     if (eventName === 'finish' && isRecord(payload)) {
       const finishConversationId = String(payload.conversationId ?? '').trim();
+      const finishAssistantMessageId = normalizePersistedMessageId(payload.assistantMessageId);
       if (finishConversationId) {
         const finishTitle = typeof payload.title === 'string' ? payload.title : undefined;
         // 关键约束：即使后端未先下发 meta，也要在 finish 阶段收敛到真实会话 ID，
@@ -2636,6 +2637,9 @@ export function useChatWorkspace(
           message.id === optimisticAssistantId
               ? {
                   ...message,
+                  // 业务约束：云端 finish 会在消息落库后带回真实主键，必须立即替换临时 ID 以启用消息级操作。
+                  id: finishAssistantMessageId ?? message.id,
+                  conversationId: finishConversationId || message.conversationId,
                   content: String(payload.content ?? message.content),
                   status: 'done',
                   searchProgress: message.searchProgress
@@ -3692,8 +3696,7 @@ function normalizePersistedMessageIds(messageIds: Array<string | null | undefine
     normalizedIds.push(normalizedMessageId);
   });
   return normalizedIds;
-}
-
+}helper
 /**
  * 统一拼装聊天流请求地址，保证新建态不会误带旧会话标识。
  * @param question 用户输入问题。

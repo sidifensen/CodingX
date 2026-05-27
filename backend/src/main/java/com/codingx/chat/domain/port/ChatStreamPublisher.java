@@ -62,11 +62,25 @@ public interface ChatStreamPublisher {
     void publishArtifact(Long conversationId, Object payload);
 
     /**
-     * 发布 publishAssistantCompleted 处理的更新内容。
-     * @param conversationId 输入参数。
-     * @param content 输入参数。
+     * 发布助手回复完成事件。
+     * 业务约束：本地临时会话没有云端消息主键，继续使用该兼容入口，不向前端伪造可反馈的消息 ID。
+     * @param conversationId 会话标识。
+     * @param content 助手完整回复。
+     * @param title 会话标题。
      */
     void publishAssistantCompleted(Long conversationId, String content, String title);
+
+    /**
+     * 发布已落库助手回复完成事件。
+     * 业务约束：云端聊天必须带上助手消息主键，前端据此立即启用点赞、重新生成等消息级操作。
+     * @param conversationId 会话标识。
+     * @param assistantMessageId 已落库助手消息主键。
+     * @param content 助手完整回复。
+     * @param title 会话标题。
+     */
+    default void publishAssistantCompleted(Long conversationId, Long assistantMessageId, String content, String title) {
+        publishAssistantCompleted(conversationId, content, title);
+    }
 
     /**
      * 发布主动取消事件。

@@ -262,7 +262,7 @@ public class ChatApplicationService {
             chatConversationRepository.save(conversation);
             recordExecutionOutcome(conversation, requestMessage.getId(), assistantMessage.getId(), intentDecision.intentCode(), false, false, ChatMessageStatus.COMPLETED, null);
             finishTrace(runId, "SUCCESS", null);
-            chatStreamPublisher.publishAssistantCompleted(command.conversationId(), assistantMessage.getContent(), conversation.getTitle());
+            chatStreamPublisher.publishAssistantCompleted(command.conversationId(), assistantMessage.getId(), assistantMessage.getContent(), conversation.getTitle());
             return;
         }
         if (isSingleDirectReply(subQuestionDecisions)) {
@@ -282,7 +282,7 @@ public class ChatApplicationService {
             chatConversationRepository.save(conversation);
             recordExecutionOutcome(conversation, requestMessage.getId(), assistantMessage.getId(), intentDecision.intentCode(), false, false, ChatMessageStatus.COMPLETED, null);
             finishTrace(runId, "SUCCESS", null);
-            chatStreamPublisher.publishAssistantCompleted(command.conversationId(), assistantMessage.getContent(), conversation.getTitle());
+            chatStreamPublisher.publishAssistantCompleted(command.conversationId(), assistantMessage.getId(), assistantMessage.getContent(), conversation.getTitle());
             return;
         }
         Optional<SubQuestionIntentDecision> mcpDisabledDecision = firstDecisionWithAction(
@@ -307,7 +307,7 @@ public class ChatApplicationService {
             chatConversationRepository.save(conversation);
             recordExecutionOutcome(conversation, requestMessage.getId(), assistantMessage.getId(), intentDecision.intentCode(), false, false, ChatMessageStatus.COMPLETED, null);
             finishTrace(runId, "SUCCESS", null);
-            chatStreamPublisher.publishAssistantCompleted(command.conversationId(), assistantMessage.getContent(), conversation.getTitle());
+            chatStreamPublisher.publishAssistantCompleted(command.conversationId(), assistantMessage.getId(), assistantMessage.getContent(), conversation.getTitle());
             return;
         }
         Optional<SubQuestionIntentDecision> unavailableMcpDecision = firstUnavailableMcpDecision(
@@ -332,7 +332,7 @@ public class ChatApplicationService {
             chatConversationRepository.save(conversation);
             recordExecutionOutcome(conversation, requestMessage.getId(), assistantMessage.getId(), intentDecision.intentCode(), false, false, ChatMessageStatus.COMPLETED, null);
             finishTrace(runId, "SUCCESS", null);
-            chatStreamPublisher.publishAssistantCompleted(command.conversationId(), assistantMessage.getContent(), conversation.getTitle());
+            chatStreamPublisher.publishAssistantCompleted(command.conversationId(), assistantMessage.getId(), assistantMessage.getContent(), conversation.getTitle());
             return;
         }
         long nextSequenceNo = executeMcpDecisions(subQuestionDecisions, command, runId, history, 1L);
@@ -456,7 +456,7 @@ public class ChatApplicationService {
         chatConversationRepository.save(conversation);
         recordExecutionOutcome(conversation, requestMessage.getId(), assistantMessage.getId(), intentDecision.intentCode(), intentDecision.action() == ConversationIntentAction.SEARCH, true, ChatMessageStatus.COMPLETED, null);
         finishTrace(runId, "SUCCESS", null);
-        chatStreamPublisher.publishAssistantCompleted(command.conversationId(), assistantMessage.getContent(), conversation.getTitle());
+        chatStreamPublisher.publishAssistantCompleted(command.conversationId(), assistantMessage.getId(), assistantMessage.getContent(), conversation.getTitle());
     }
 
     /**
@@ -638,7 +638,7 @@ public class ChatApplicationService {
             chatConversationRepository.save(conversation);
             recordExecutionOutcome(conversation, userMessage.getId(), assistantMessage.getId(), intentDecision.intentCode(), false, false, ChatMessageStatus.COMPLETED, null);
             finishTrace(runId, "SUCCESS", null);
-            chatStreamPublisher.publishAssistantCompleted(command.conversationId(), assistantMessage.getContent(), conversation.getTitle());
+            chatStreamPublisher.publishAssistantCompleted(command.conversationId(), assistantMessage.getId(), assistantMessage.getContent(), conversation.getTitle());
             return;
         }
         if (isSingleDirectReply(subQuestionDecisions)) {
@@ -658,7 +658,7 @@ public class ChatApplicationService {
             chatConversationRepository.save(conversation);
             recordExecutionOutcome(conversation, userMessage.getId(), assistantMessage.getId(), intentDecision.intentCode(), false, false, ChatMessageStatus.COMPLETED, null);
             finishTrace(runId, "SUCCESS", null);
-            chatStreamPublisher.publishAssistantCompleted(command.conversationId(), assistantMessage.getContent(), conversation.getTitle());
+            chatStreamPublisher.publishAssistantCompleted(command.conversationId(), assistantMessage.getId(), assistantMessage.getContent(), conversation.getTitle());
             return;
         }
         Optional<SubQuestionIntentDecision> mcpDisabledDecision = firstDecisionWithAction(
@@ -683,7 +683,7 @@ public class ChatApplicationService {
             chatConversationRepository.save(conversation);
             recordExecutionOutcome(conversation, userMessage.getId(), assistantMessage.getId(), intentDecision.intentCode(), false, false, ChatMessageStatus.COMPLETED, null);
             finishTrace(runId, "SUCCESS", null);
-            chatStreamPublisher.publishAssistantCompleted(command.conversationId(), assistantMessage.getContent(), conversation.getTitle());
+            chatStreamPublisher.publishAssistantCompleted(command.conversationId(), assistantMessage.getId(), assistantMessage.getContent(), conversation.getTitle());
             return;
         }
         Optional<SubQuestionIntentDecision> unavailableMcpDecision = firstUnavailableMcpDecision(
@@ -708,7 +708,7 @@ public class ChatApplicationService {
             chatConversationRepository.save(conversation);
             recordExecutionOutcome(conversation, userMessage.getId(), assistantMessage.getId(), intentDecision.intentCode(), false, false, ChatMessageStatus.COMPLETED, null);
             finishTrace(runId, "SUCCESS", null);
-            chatStreamPublisher.publishAssistantCompleted(command.conversationId(), assistantMessage.getContent(), conversation.getTitle());
+            chatStreamPublisher.publishAssistantCompleted(command.conversationId(), assistantMessage.getId(), assistantMessage.getContent(), conversation.getTitle());
             return;
         }
         long nextSequenceNo = executeMcpDecisions(subQuestionDecisions, command, runId, history, 1L);
@@ -832,7 +832,7 @@ public class ChatApplicationService {
         chatConversationRepository.save(conversation);
         recordExecutionOutcome(conversation, userMessage.getId(), assistantMessage.getId(), intentDecision.intentCode(), intentDecision.action() == ConversationIntentAction.SEARCH, true, ChatMessageStatus.COMPLETED, null);
         finishTrace(runId, "SUCCESS", null);
-        chatStreamPublisher.publishAssistantCompleted(command.conversationId(), assistantMessage.getContent(), conversation.getTitle());
+        chatStreamPublisher.publishAssistantCompleted(command.conversationId(), assistantMessage.getId(), assistantMessage.getContent(), conversation.getTitle());
     }
 
     /**

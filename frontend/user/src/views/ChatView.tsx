@@ -1128,6 +1128,8 @@ export default function ChatView({
                 const isLatestMessage = message.id === messages[messages.length - 1]?.id;
                 const messageContent =
                   message.content || (message.status === 'streaming' ? '正在生成回答...' : '');
+                // 业务约束：AI 回复在流式生成中禁止露出复制、反馈等操作，只有结束、停止或异常后才允许操作。
+                const shouldShowAssistantActions = isAssistant && message.status !== 'streaming';
                 return (
                   <div
                     key={message.id}

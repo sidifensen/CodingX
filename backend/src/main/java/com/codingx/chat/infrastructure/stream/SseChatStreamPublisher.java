@@ -1,5 +1,6 @@
 package com.codingx.chat.infrastructure.stream;
 import com.codingx.chat.domain.port.ChatStreamPublisher;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Primary;
@@ -69,13 +70,33 @@ public class SseChatStreamPublisher implements ChatStreamPublisher {
     }
 
     /**
-     * 发布 publishAssistantCompleted 处理的更新内容。
-     * @param conversationId 输入参数。
-     * @param content 输入参数。
+     * 发布助手回复完成事件。
+     * @param conversationId 会话标识。
+     * @param content 助手完整回复。
+     * @param title 会话标题。
      */
     @Override
     public void publishAssistantCompleted(Long conversationId, String content, String title) {
-        chatSseRegistry.publish(conversationId, "finish", Map.of("conversationId", conversationId, "content", content, "title", title));
+        publishAssistantCompleted(conversationId, null, content, title);
+    }
+
+    /**
+     * 发布已落库助手回复完成事件，完成载荷携带真实消息 ID，避免前端等待历史回放后才能启用消息操作。
+     * @param conversationId 会话标识。
+     * @param assistantMessageId 已落库助手消息主键。
+     * @param content 助手完整回复。
+     * @param title 会话标题。
+     */
+    @Override
+    public void publishAssistantCompleted(Long conversationId, Long assistantMessageId, String content, String title) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("conversationId", conversationId);
+        if (assistantMessageId != null) {
+            payload.put("assistantMessageId", assistantMessageId);
+        }
+        payload.put("content", content);
+        payload.put("title", title);
+        chatSseRegistry.publish(conversationId, "finish", payload);
         chatSseRegistry.publish(conversationId, "done", Map.of("conversationId", conversationId));
         chatSseRegistry.complete(conversationId);
     }

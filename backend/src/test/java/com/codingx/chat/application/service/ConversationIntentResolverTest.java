@@ -79,4 +79,39 @@ class ConversationIntentResolverTest {
         assertEquals("search-general", candidates.getFirst().node().getIntentCode());
         verifyNoInteractions(promptTemplateLoader, aiPromptExecutionService);
     }
+
+    /**
+     * 天气问法即使包含“最近/今天”等时效词，也应优先命中天气 MCP，而不是被通用搜索抢占。
+     */
+    @Test
+    void resolveCandidatesPrefersWeatherMcpOverRecentSearchHeuristic() {
+        List<ChatIntentNode> nodes = List.of(
+            ChatIntentNode.builder().intentCode("search").name("联网搜索").intentType("search").enabled(1).sortNo(1).build(),
+            ChatIntentNode.builder().intentCode("search-general").parentCode("search").name("通用检索").intentType("search").enabled(1).sortNo(2).build(),
+            ChatIntentNode.builder().intentCode("weather").name("天气信息查询服务").intentType("mcp").enabled(1).sortNo(3).build(),
+            ChatIntentNode.builder()
+                .intentCode("weather-data")
+                .parentCode("weather")
+                .name("天气查询")
+                .description("城市天气信息查询，覆盖今天、明天、未来预报、气温、温度、降雨、湿度、风力、空气质量等天气问法")
+                .intentType("mcp")
+                .mcpToolId("weather_query")
+                .enabled(1)
+                .sortNo(4)
+                .build()
+        );
+        List<ChatIntentExample> examples = List.of(
+            ChatIntentExample.builder().intentCode("weather-data").exampleText("今天北京的天气怎么样").sortNo(1).build(),
+            ChatIntentExample.builder().intentCode("weather-data").exampleText("广州未来三天天气预报").sortNo(2).build()
+        );
+
+        List<ConversationIntentCandidate> candidates = conversationIntentResolver.resolveCandidates(
+            "广州最近天气怎么样",
+            nodes,
+            examples
+        );
+
+        assertEquals("weather-data", candidates.getFirst().node().getIntentCode());
+        verifyNoInteractions(promptTemplateLoader, aiPromptExecutionService);
+    }
 }

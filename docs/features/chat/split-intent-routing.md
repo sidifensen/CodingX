@@ -28,8 +28,11 @@
 
 主意图用于运行结果落库和搜索证据系统提示；只要本轮存在搜索子问题，就优先选择搜索意图，确保模型回答时带上联网证据约束。
 
+天气类问法在意图解析阶段优先保护 `weather_query` MCP：即使问题包含“最近”“今天”等时效词，只要同时命中天气、气温、温度、预报、下雨、空气质量等天气语义，也应优先进入 `weather-data`，避免被通用搜索规则抢占。
+
 ## 测试与验证
 
 - `mvn -Dtest=ChatApplicationSearchFlowTest#sendMessageRoutesEachSplitQuestionBeforeExecutingSearchAndMcp test`
 - `mvn "-Dtest=ChatApplicationSearchFlowTest,ChatApplicationMcpFlowTest" test`
+- `mvn "-Dtest=ConversationIntentResolverTest" test`
 - 后端提交前继续执行 `mvn compile` 和 `mvn test`。

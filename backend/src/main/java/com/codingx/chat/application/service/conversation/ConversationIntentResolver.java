@@ -15,6 +15,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 /**
@@ -22,6 +23,7 @@ import org.springframework.stereotype.Service;
  */
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class ConversationIntentResolver {
 
     /**
@@ -52,6 +54,23 @@ public class ConversationIntentResolver {
      * 事实查询关键词，用于优先命中 search-facts 节点。
      */
     private static final List<String> SEARCH_FACT_KEYWORDS = List.of("是什么", "哪一年", "定义", "原理", "含义", "解释");
+    /**
+     * 天气类关键词优先保护 MCP 路由，避免“最近/今天”这类时效词把天气问题误导到通用搜索。
+     */
+    private static final List<String> WEATHER_QUERY_KEYWORDS = List.of(
+        "天气",
+        "气温",
+        "温度",
+        "预报",
+        "下雨",
+        "降雨",
+        "湿度",
+        "风力",
+        "空气质量",
+        "多少度",
+        "热不热",
+        "冷不冷"
+    );
 
     private final PromptTemplateLoader promptTemplateLoader;
     private final AiPromptExecutionService aiPromptExecutionService;
@@ -104,6 +123,7 @@ public class ConversationIntentResolver {
         }
         List<ConversationIntentCandidate> heuristicCandidates = heuristicCandidates(question, leafNodes, examplesByCode);
         if (!heuristicCandidates.isEmpty()) {
+            logIntentCandidates("启发式", question, heuristicCandidates);
             return heuristicCandidates;
         }
         String prompt = promptTemplateLoader.render("intent-classify", Map.of(
@@ -111,9 +131,18 @@ public class ConversationIntentResolver {
         ));
         try {
             String raw = aiPromptExecutionService.complete(prompt, question);
-            return parseCandidates(raw, nodeByCode);
+            List<ConversationIntentCandidate> candidates = parseCandidates(raw, nodeByCode);
+            logIntentCandidates("模型", question, candidates);
+            return candidates;
         } catch (Exception exception) {
-            return fallbackCandidates(question, leafNodes);
+            List<ConversationIntentCandidate> candidates = fallbackCandidates(question, leafNodes);
+            log.warn(
+                "意图识别失败，使用兜底候选: 问题={}, 候选数={}",
+                StrUtil.maxLength(question, 120),
+                candidates.size(),
+                exception
+            );
+            return candidates;
         }
     }
 
@@ -218,9 +247,13 @@ public class ConversationIntentResolver {
         boolean explicitSearchIntent = containsAnyKeyword(normalizedQuestion, SEARCH_INTENT_KEYWORDS);
         boolean newsLikeQuestion = containsAnyKeyword(normalizedQuestion, SEARCH_NEWS_KEYWORDS);
         boolean factsLikeQuestion = containsAnyKeyword(normalizedQuestion, SEARCH_FACT_KEYWORDS);
+        boolean weatherLikeQuestion = containsAnyKeyword(normalizedQuestion, WEATHER_QUERY_KEYWORDS);
         for (ChatIntentNode node : leafNodes) {
             String intentType = StrUtil.blankToDefault(node.getIntentType(), "");
             if ("search".equalsIgnoreCase(intentType)) {
+                if (weatherLikeQuestion) {
+                    continue;
+                }
                 double searchScore = resolveSearchHeuristicScore(
                     explicitSearchIntent,
                     newsLikeQuestion,
@@ -235,7 +268,12 @@ public class ConversationIntentResolver {
                 continue;
             }
             if ("system".equalsIgnoreCase(intentType) || "mcp".equalsIgnoreCase(intentType)) {
-                double score = resolveHeuristicScore(normalizedQuestion, node, examplesByCode.getOrDefault(node.getIntentCode(), List.of()));
+                double score = resolveMcpOrSystemHeuristicScore(
+                    normalizedQuestion,
+                    weatherLikeQuestion,
+                    node,
+                    examplesByCode.getOrDefault(node.getIntentCode(), List.of())
+                );
                 if (score > 0D) {
                     candidates.add(new ConversationIntentCandidate(node, score));
                 }
@@ -285,6 +323,43 @@ public class ConversationIntentResolver {
             return Math.max(baseScore, 0.88D);
         }
         return baseScore;
+    }
+
+    /**
+     * MCP/SYSTEM 节点启发式命中；天气类问法对天气 MCP 加强匹配，避免被时间词搜索规则抢占。
+     * @param normalizedQuestion 标准化问题。
+     * @param weatherLikeQuestion 是否天气类问法。
+     * @param node 当前候选节点。
+     * @param examples 当前节点示例。
+     * @return 匹配分数；未命中返回 0。
+     */
+    private double resolveMcpOrSystemHeuristicScore(
+        String normalizedQuestion,
+        boolean weatherLikeQuestion,
+        ChatIntentNode node,
+        List<String> examples
+    ) {
+        double baseScore = resolveHeuristicScore(normalizedQuestion, node, examples);
+        if (weatherLikeQuestion && isWeatherMcpNode(node)) {
+            return Math.max(baseScore, 0.97D);
+        }
+        return baseScore;
+    }
+
+    /**
+     * 判断节点是否天气 MCP；同时兼容编码、名称、描述和工具 ID，降低管理端改名后的误判概率。
+     */
+    private boolean isWeatherMcpNode(ChatIntentNode node) {
+        String text = normalizeText(
+            StrUtil.blankToDefault(node.getIntentCode(), "")
+                + " " + StrUtil.blankToDefault(node.getName(), "")
+                + " " + StrUtil.blankToDefault(node.getDescription(), "")
+                + " " + StrUtil.blankToDefault(node.getMcpToolId(), "")
+        );
+        return text.contains("weather")
+            || text.contains("天气")
+            || text.contains("气温")
+            || text.contains("预报");
     }
 
     /**
@@ -377,5 +452,20 @@ public class ConversationIntentResolver {
      */
     private String normalizeText(String value) {
         return value == null ? "" : value.replaceAll("[\\p{Punct}\\s]+", "").toLowerCase(java.util.Locale.ROOT);
+    }
+
+    /**
+     * 打印意图分类候选摘要，只保留首位候选和候选数量，避免暴露完整 Prompt 与示例数据。
+     */
+    private void logIntentCandidates(String source, String question, List<ConversationIntentCandidate> candidates) {
+        ConversationIntentCandidate top = candidates.isEmpty() ? null : candidates.getFirst();
+        log.info(
+            "意图识别: 来源={}, 问题={}, 首选={}, 分数={}, 候选数={}",
+            source,
+            StrUtil.maxLength(question, 120),
+            top == null ? null : top.node().getIntentCode(),
+            top == null ? null : top.score(),
+            candidates.size()
+        );
     }
 }

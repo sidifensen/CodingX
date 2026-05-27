@@ -1,4 +1,5 @@
 package com.codingx.chat.infrastructure.stream;
+import com.codingx.common.support.web.ClientAbortExceptionDetector;
 import java.io.IOException;
 import java.util.List;
 import java.util.Map;
@@ -24,6 +25,7 @@ public class ChatSseRegistry {
         SseEmitter emitter = new SseEmitter(0L);
         emitters.computeIfAbsent(conversationId, key -> new CopyOnWriteArrayList<>()).add(emitter);
         emitter.onCompletion(() -> remove(conversationId, emitter));
+        emitter.onError(exception -> remove(conversationId, emitter));
         emitter.onTimeout(() -> remove(conversationId, emitter));
         return emitter;
     }
@@ -43,6 +45,12 @@ public class ChatSseRegistry {
             try {
                 emitter.send(SseEmitter.event().name(eventName).data(payload));
             } catch (IOException exception) {
+                remove(conversationId, emitter);
+            } catch (RuntimeException exception) {
+                if (!ClientAbortExceptionDetector.isClientAbort(exception)) {
+                    throw exception;
+                }
+                // Spring 可能把已断开的响应流包装为运行时异常，业务上只需清理该连接。
                 remove(conversationId, emitter);
             }
         }

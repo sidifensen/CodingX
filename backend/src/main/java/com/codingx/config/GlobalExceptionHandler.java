@@ -8,6 +8,7 @@ import com.codingx.common.exception.ForbiddenException;
 import com.codingx.common.exception.NotFoundException;
 import com.codingx.common.exception.UnauthorizedException;
 import com.codingx.common.model.ApiResponse;
+import com.codingx.common.support.web.ClientAbortExceptionDetector;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
@@ -169,7 +170,12 @@ public class GlobalExceptionHandler {
      * @return 标准错误响应。
      */
     @ExceptionHandler(Exception.class)
-    public ResponseEntity<ApiResponse<Void>> handleUnknown(Exception exception, HttpServletRequest request) {
+    public ResponseEntity<?> handleUnknown(Exception exception, HttpServletRequest request) {
+        if (ClientAbortExceptionDetector.isClientAbort(exception)) {
+            // 客户端已断开时响应体不可写，继续返回 ApiResponse 会造成二次异常和控制台刷屏。
+            log.debug("客户端已断开连接，跳过错误响应 | 接口={}", buildEndpoint(request), exception);
+            return ResponseEntity.noContent().build();
+        }
         return buildResponse(HttpStatus.INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", ErrorMessageCatalog.INTERNAL_ERROR, exception, request, true);
     }
 
@@ -193,7 +199,7 @@ public class GlobalExceptionHandler {
     ) {
         String normalizedCode = sanitizeMessage(code, "INTERNAL_ERROR");
         String normalizedMessage = sanitizeMessage(message, ErrorMessageCatalog.INTERNAL_ERROR);
-        String endpoint = request.getMethod() + " " + request.getRequestURI();
+        String endpoint = buildEndpoint(request);
 
         if (includeStack) {
             log.error("接口异常 | 状态码={} | 错误码={} | 接口={} | 返回信息={}", status.value(), normalizedCode, endpoint, normalizedMessage, exception);
@@ -202,6 +208,15 @@ public class GlobalExceptionHandler {
         }
 
         return ResponseEntity.status(status).body(ApiResponse.failure(normalizedCode, normalizedMessage));
+    }
+
+    /**
+     * 拼接日志中的请求入口，保持所有异常日志格式一致。
+     * @param request 当前请求。
+     * @return HTTP 方法与路径。
+     */
+    private String buildEndpoint(HttpServletRequest request) {
+        return request.getMethod() + " " + request.getRequestURI();
     }
 
     /**

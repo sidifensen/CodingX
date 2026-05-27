@@ -1,4 +1,5 @@
 package com.codingx.task.infrastructure.stream;
+import com.codingx.common.support.web.ClientAbortExceptionDetector;
 import java.io.IOException;
 import java.util.List;
 import java.util.Map;
@@ -24,10 +25,17 @@ public class TaskSseRegistry {
         SseEmitter emitter = new SseEmitter(0L);
         emitters.computeIfAbsent(taskId, key -> new CopyOnWriteArrayList<>()).add(emitter);
         emitter.onCompletion(() -> remove(taskId, emitter));
+        emitter.onError(exception -> remove(taskId, emitter));
         emitter.onTimeout(() -> remove(taskId, emitter));
         try {
             emitter.send(SseEmitter.event().name("task-connected").data(Map.of("taskId", taskId)));
         } catch (IOException exception) {
+            remove(taskId, emitter);
+        } catch (RuntimeException exception) {
+            if (!ClientAbortExceptionDetector.isClientAbort(exception)) {
+                throw exception;
+            }
+            // 首包发送时客户端已断开，清理连接即可，任务本身不应失败。
             remove(taskId, emitter);
         }
         return emitter;
@@ -48,6 +56,12 @@ public class TaskSseRegistry {
             try {
                 emitter.send(SseEmitter.event().name(eventName).data(payload));
             } catch (IOException exception) {
+                remove(taskId, emitter);
+            } catch (RuntimeException exception) {
+                if (!ClientAbortExceptionDetector.isClientAbort(exception)) {
+                    throw exception;
+                }
+                // 浏览器刷新或取消订阅只影响这条 SSE 连接，不影响任务运行态。
                 remove(taskId, emitter);
             }
         }

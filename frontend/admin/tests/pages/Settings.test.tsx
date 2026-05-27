@@ -47,6 +47,26 @@ const mockSettings = [
     sortNo: 3,
     restartRequired: true,
   },
+  {
+    id: '4',
+    settingKey: 'chat.intent.guidance.enabled',
+    settingValue: 'true',
+    valueType: 'BOOLEAN',
+    categoryCode: 'chat.intent.guidance',
+    description: '是否启用聊天歧义引导',
+    sortNo: 4,
+    restartRequired: false,
+  },
+  {
+    id: '5',
+    settingKey: 'chat.intent.guidance.ambiguity_score_ratio',
+    settingValue: '0.8',
+    valueType: 'DECIMAL',
+    categoryCode: 'chat.intent.guidance',
+    description: '歧义引导分数比值阈值',
+    sortNo: 5,
+    restartRequired: false,
+  },
 ] as const;
 
 vi.mock('@/api/adminChatApi', () => ({
@@ -117,5 +137,16 @@ describe('Settings page', () => {
 
     // 系统配置页输入常用于逐字修改密钥和数值，编辑后必须保持焦点避免打断连续输入。
     expect(screen.getByTestId('setting-value-search.top_k')).toHaveFocus();
+  });
+
+  it('renders the intent guidance settings with a Chinese category name', async () => {
+    render(<Settings />);
+
+    await screen.findByRole('heading', { name: '系统配置' });
+
+    fireEvent.click(screen.getByText('歧义引导'));
+
+    expect(screen.getByText('是否启用聊天歧义引导')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('0.8')).toHaveAttribute('type', 'number');
   });
 });

@@ -28,6 +28,7 @@ public class RuntimeSettingService {
     private static final String TYPE_BOOLEAN = "BOOLEAN";
     private static final String TYPE_INTEGER = "INTEGER";
     private static final String TYPE_LONG = "LONG";
+    private static final String TYPE_DECIMAL = "DECIMAL";
     private static final String TYPE_STRING = "STRING";
 
     private final ChatRuntimeSettingRepository chatRuntimeSettingRepository;
@@ -146,6 +147,24 @@ public class RuntimeSettingService {
             return Long.parseLong(raw.trim());
         } catch (NumberFormatException exception) {
             throw invalidValue(key, raw, TYPE_LONG);
+        }
+    }
+
+    /**
+     * 获取小数配置，未配置时回退默认值，主要用于模型阈值等运行时策略参数。
+     * @param key 配置键。
+     * @param fallback 回退值。
+     * @return 小数值。
+     */
+    public double getDouble(String key, double fallback) {
+        String raw = rawValue(key);
+        if (StrUtil.isBlank(raw)) {
+            return fallback;
+        }
+        try {
+            return Double.parseDouble(raw.trim());
+        } catch (NumberFormatException exception) {
+            throw invalidValue(key, raw, TYPE_DECIMAL);
         }
     }
 
@@ -300,6 +319,38 @@ public class RuntimeSettingService {
      */
     public int chatToolMaxRounds() {
         return getInt("chat.tool.max_rounds", 10);
+    }
+
+    /**
+     * 获取聊天歧义引导开关，默认沿用 ragent 的开启策略，避免模糊问题被直接硬答。
+     * @return 是否启用歧义引导。
+     */
+    public boolean chatIntentGuidanceEnabled() {
+        return getBoolean("chat.intent.guidance.enabled", true);
+    }
+
+    /**
+     * 获取歧义引导分数比值阈值；第二名/第一名达到该值时直接触发澄清。
+     * @return 分数比值阈值。
+     */
+    public double chatIntentGuidanceAmbiguityScoreRatio() {
+        return getDouble("chat.intent.guidance.ambiguity_score_ratio", 0.8D);
+    }
+
+    /**
+     * 获取歧义引导边界缓冲宽度；落入边界区间时交由 LLM 二次确认。
+     * @return 边界缓冲宽度。
+     */
+    public double chatIntentGuidanceAmbiguityMargin() {
+        return getDouble("chat.intent.guidance.ambiguity_margin", 0.15D);
+    }
+
+    /**
+     * 获取单次歧义引导最多展示的候选数量，防止提示内容过长影响用户选择。
+     * @return 最大候选数量。
+     */
+    public int chatIntentGuidanceMaxOptions() {
+        return getInt("chat.intent.guidance.max_options", 6);
     }
 
     /**

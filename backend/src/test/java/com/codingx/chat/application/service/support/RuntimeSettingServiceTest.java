@@ -79,4 +79,63 @@ class RuntimeSettingServiceTest {
 
         assertEquals(10, runtimeSettingService.chatToolMaxRounds());
     }
+
+    /**
+     * 歧义引导参数由系统配置表统一控制，便于管理端按运行策略调整。
+     */
+    @Test
+    void chatIntentGuidanceReadsConfiguredValues() {
+        when(chatRuntimeSettingRepository.findAll()).thenReturn(List.of(
+            ChatRuntimeSetting.builder()
+                .settingKey("chat.intent.guidance.enabled")
+                .settingValue("false")
+                .valueType("BOOLEAN")
+                .categoryCode("chat.intent.guidance")
+                .description("是否启用聊天歧义引导")
+                .build(),
+            ChatRuntimeSetting.builder()
+                .settingKey("chat.intent.guidance.ambiguity_score_ratio")
+                .settingValue("0.72")
+                .valueType("DECIMAL")
+                .categoryCode("chat.intent.guidance")
+                .description("歧义引导分数比值阈值")
+                .build(),
+            ChatRuntimeSetting.builder()
+                .settingKey("chat.intent.guidance.ambiguity_margin")
+                .settingValue("0.08")
+                .valueType("DECIMAL")
+                .categoryCode("chat.intent.guidance")
+                .description("歧义引导边界缓冲宽度")
+                .build(),
+            ChatRuntimeSetting.builder()
+                .settingKey("chat.intent.guidance.max_options")
+                .settingValue("3")
+                .valueType("INTEGER")
+                .categoryCode("chat.intent.guidance")
+                .description("歧义引导最大候选数量")
+                .build()
+        ));
+
+        runtimeSettingService.init();
+
+        assertEquals(false, runtimeSettingService.chatIntentGuidanceEnabled());
+        assertEquals(0.72D, runtimeSettingService.chatIntentGuidanceAmbiguityScoreRatio());
+        assertEquals(0.08D, runtimeSettingService.chatIntentGuidanceAmbiguityMargin());
+        assertEquals(3, runtimeSettingService.chatIntentGuidanceMaxOptions());
+    }
+
+    /**
+     * 缺省值保持与 ragent 的 guidance 配置一致，避免存量环境升级后必须手工补配置。
+     */
+    @Test
+    void chatIntentGuidanceFallsBackToRagentDefaultsWhenMissing() {
+        when(chatRuntimeSettingRepository.findAll()).thenReturn(List.of());
+
+        runtimeSettingService.init();
+
+        assertEquals(true, runtimeSettingService.chatIntentGuidanceEnabled());
+        assertEquals(0.8D, runtimeSettingService.chatIntentGuidanceAmbiguityScoreRatio());
+        assertEquals(0.15D, runtimeSettingService.chatIntentGuidanceAmbiguityMargin());
+        assertEquals(6, runtimeSettingService.chatIntentGuidanceMaxOptions());
+    }
 }

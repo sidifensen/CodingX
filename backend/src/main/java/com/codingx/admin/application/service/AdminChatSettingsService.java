@@ -22,7 +22,11 @@ public class AdminChatSettingsService {
     private final ChatRuntimeSettingRepository chatRuntimeSettingRepository;
     private final RuntimeSettingService runtimeSettingService;
 
+    /**
+     * 管理端列表是人工校准配置的入口，读取前先刷新运行时缓存，确保外部改库后页面刷新可见。
+     */
     public List<ChatRuntimeSetting> listAllSettings() {
+        runtimeSettingService.refresh();
         return runtimeSettingService.listAll();
     }
 

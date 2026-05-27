@@ -56,6 +56,8 @@ const VIEW_MODE_META: Array<{ mode: SettingsViewMode; label: string }> = [
 const CATEGORY_LABELS: Record<string, string> = {
   'chat.memory': '聊天历史压缩',
   'chat.executor': '聊天执行器',
+  // 系统配置页面向管理员展示，运行时策略分类需要中文名称避免暴露内部 key。
+  'chat.intent.guidance': '歧义引导',
   search: '搜索链路',
   queue: '并发门控',
   code_search: '代码检索运行时',
@@ -280,7 +282,7 @@ export function Settings() {
 
   function inputTypeByValueType(valueType?: string): React.HTMLInputTypeAttribute {
     const normalized = String(valueType ?? '').toUpperCase();
-    if (normalized === 'INTEGER' || normalized === 'LONG') {
+    if (normalized === 'INTEGER' || normalized === 'LONG' || normalized === 'DECIMAL') {
       return 'number';
     }
     return 'text';

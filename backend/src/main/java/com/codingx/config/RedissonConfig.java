@@ -3,7 +3,9 @@ package com.codingx.config;
 import cn.hutool.core.util.StrUtil;
 import org.redisson.Redisson;
 import org.redisson.api.RedissonClient;
+import org.redisson.client.codec.StringCodec;
 import org.redisson.config.Config;
+import org.redisson.config.SingleServerConfig;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.autoconfigure.data.redis.RedisProperties;
 import org.springframework.context.annotation.Bean;
@@ -23,15 +25,26 @@ public class RedissonConfig {
      */
     @Bean(destroyMethod = "shutdown")
     public RedissonClient redissonClient(RedisProperties redisProperties) {
+        return Redisson.create(createConfig(redisProperties));
+    }
+
+    /**
+     * 创建 Redisson 原始配置，供 Bean 初始化和配置级单元测试复用。
+     * @param redisProperties Redis 基础配置。
+     * @return 已设置连接地址、数据库与字符串序列化的 Redisson 配置。
+     */
+    Config createConfig(RedisProperties redisProperties) {
         Config config = new Config();
+        // 聊天队列门控只存储字符串 permit/member，使用文本 codec 便于在 Redis 工具中排查运行态。
+        config.setCodec(StringCodec.INSTANCE);
         String address = "redis://" + redisProperties.getHost() + ":" + redisProperties.getPort();
-        config.useSingleServer()
+        SingleServerConfig singleServerConfig = config.useSingleServer()
             .setAddress(address)
             .setDatabase(redisProperties.getDatabase())
             .setTimeout((int) redisProperties.getTimeout().toMillis());
         if (StrUtil.isNotBlank(redisProperties.getPassword())) {
-            config.useSingleServer().setPassword(redisProperties.getPassword());
+            singleServerConfig.setPassword(redisProperties.getPassword());
         }
-        return Redisson.create(config);
+        return config;
     }
 }

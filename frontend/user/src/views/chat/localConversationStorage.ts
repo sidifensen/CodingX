@@ -17,6 +17,7 @@ const WORKSPACE_HISTORY_PARTITION_SUFFIX = '__history__';
 const WORKSPACE_HISTORY_LABEL = '历史记录';
 const CLOUD_DEFAULT_WORKSPACE_LABEL = '云端历史记录';
 const LOCAL_DEFAULT_WORKSPACE_LABEL = '本地历史记录';
+const UNNAMED_WORKSPACE_LABEL = '未命名工作空间';
 
 /**
  * 统一表示单个会话在本地缓存中的完整回放数据。
@@ -68,7 +69,7 @@ interface LocalWorkspaceConversationStore {
 
 const EMPTY_SNAPSHOT: LocalWorkspaceConversationSnapshot = {
   workspacePath: null,
-  workspaceLabel: '未命名工作空间',
+  workspaceLabel: UNNAMED_WORKSPACE_LABEL,
   runtimeTarget: 'cloud',
   lastOpenedAt: 0,
   activeConversationId: null,
@@ -88,8 +89,21 @@ export function buildWorkspacePartitionKey(
   runtimeTarget: 'cloud' | 'local',
   workspacePath: string | null,
 ) {
-  const normalizedPath = (workspacePath ?? '').trim().toLowerCase();
+  const normalizedPath = normalizeWorkspacePathForPartition(workspacePath);
   return `${runtimeTarget}::${normalizedPath || '__no_workspace__'}`;
+}
+
+/**
+ * 归一化用于分区键的工作空间路径，避免 Windows 正反斜杠写法把同一目录拆成两个分组。
+ * @param workspacePath 原始工作空间路径。
+ * @returns 适合作为分区键的路径片段。
+ */
+function normalizeWorkspacePathForPartition(workspacePath: string | null) {
+  const slashNormalizedPath = (workspacePath ?? '').trim().replace(/\\/g, '/');
+  const withoutTrailingSlash = slashNormalizedPath.length > 1
+    ? slashNormalizedPath.replace(/\/+$/g, '')
+    : slashNormalizedPath;
+  return withoutTrailingSlash.toLowerCase();
 }
 
 /**
@@ -122,6 +136,40 @@ export function getWorkspaceLabel(workspacePath: string | null) {
   }
   const segments = normalizedPath.split('/').filter(Boolean);
   return segments.length ? segments[segments.length - 1] : normalizedPath;
+}
+
+/**
+ * 判断快照标签是否只是内部空模板占位，避免把占位文案当成真实工作空间名称展示。
+ * @param workspaceLabel 快照中的工作空间标签。
+ * @returns 是否为空模板标签。
+ */
+function isPlaceholderWorkspaceLabel(workspaceLabel: string | null | undefined) {
+  return String(workspaceLabel ?? '').trim() === UNNAMED_WORKSPACE_LABEL;
+}
+
+/**
+ * 根据分区语义推导展示标签；默认分区使用固定中文名，有路径分区使用目录名。
+ * @param runtimeTarget 运行环境。
+ * @param workspacePath 工作空间路径。
+ * @param currentWorkspaceLabel 已存在的快照标签。
+ * @returns 可展示工作空间标签。
+ */
+function resolveWorkspaceLabel(
+  runtimeTarget: 'cloud' | 'local',
+  workspacePath: string | null,
+  currentWorkspaceLabel: string | null | undefined,
+) {
+  const normalizedWorkspacePath = workspacePath ?? null;
+  if (!normalizedWorkspacePath) {
+    return getDefaultWorkspaceLabel(runtimeTarget);
+  }
+  if (
+    currentWorkspaceLabel &&
+    !isPlaceholderWorkspaceLabel(currentWorkspaceLabel)
+  ) {
+    return currentWorkspaceLabel;
+  }
+  return getWorkspaceLabel(normalizedWorkspacePath);
 }
 
 /**
@@ -184,7 +232,11 @@ export function readWorkspaceSnapshot(partitionKey: string): LocalWorkspaceConve
   const normalizedSnapshot = normalizeWorkspaceSnapshot(partitionKey, snapshot);
   return {
     workspacePath: normalizedSnapshot.workspacePath ?? null,
-    workspaceLabel: normalizedSnapshot.workspaceLabel ?? '未命名工作空间',
+    workspaceLabel: resolveWorkspaceLabel(
+      normalizedSnapshot.runtimeTarget ?? 'cloud',
+      normalizedSnapshot.workspacePath ?? null,
+      normalizedSnapshot.workspaceLabel,
+    ),
     runtimeTarget: normalizedSnapshot.runtimeTarget ?? 'cloud',
     lastOpenedAt: normalizedSnapshot.lastOpenedAt ?? 0,
     activeConversationId: normalizedSnapshot.activeConversationId ?? null,
@@ -244,9 +296,13 @@ export function upsertWorkspaceSnapshot(
       : (workspacePath ?? currentSnapshot.workspacePath ?? null),
     workspaceLabel:
       partialSnapshot?.workspaceLabel ??
-      (isDefaultPartition
-        ? getDefaultWorkspaceLabel(runtimeTarget)
-        : currentSnapshot.workspaceLabel ?? getWorkspaceLabel(workspacePath)),
+      resolveWorkspaceLabel(
+        runtimeTarget,
+        isDefaultPartition
+          ? null
+          : (workspacePath ?? currentSnapshot.workspacePath ?? null),
+        currentSnapshot.workspaceLabel,
+      ),
     runtimeTarget,
     lastOpenedAt: Date.now(),
     // 允许调用方显式写入 null（例如“新建会话”场景清空激活会话），避免被 ?? 回退到旧值。
@@ -292,7 +348,11 @@ export function listWorkspaceGroups(
     .map(([partitionKey, snapshot]) => ({
       partitionKey,
       workspacePath: snapshot.workspacePath ?? null,
-      workspaceLabel: snapshot.workspaceLabel ?? getWorkspaceLabel(snapshot.workspacePath ?? null),
+      workspaceLabel: resolveWorkspaceLabel(
+        snapshot.runtimeTarget ?? 'cloud',
+        snapshot.workspacePath ?? null,
+        snapshot.workspaceLabel,
+      ),
       runtimeTarget: snapshot.runtimeTarget ?? 'cloud',
       lastOpenedAt: snapshot.lastOpenedAt ?? 0,
       activeConversationId: snapshot.activeConversationId ?? null,
@@ -469,12 +529,17 @@ function readStore(): LocalWorkspaceConversationStore {
  * @returns 归一化后的快照仓库。
  */
 function normalizeWorkspaceSnapshots(store: LocalWorkspaceConversationStore): LocalWorkspaceConversationStore {
-  const normalizedSnapshots = Object.fromEntries(
-    Object.entries(store.snapshots).map(([partitionKey, snapshot]) => [
+  const normalizedSnapshots: Record<string, LocalWorkspaceConversationSnapshot> = {};
+  for (const [partitionKey, snapshot] of Object.entries(store.snapshots)) {
+    const [canonicalPartitionKey, normalizedSnapshot] = normalizeWorkspaceSnapshotEntry(
       partitionKey,
-      normalizeWorkspaceSnapshot(partitionKey, snapshot),
-    ]),
-  );
+      snapshot,
+    );
+    const existingSnapshot = normalizedSnapshots[canonicalPartitionKey];
+    normalizedSnapshots[canonicalPartitionKey] = existingSnapshot
+      ? mergeWorkspaceSnapshots(existingSnapshot, normalizedSnapshot)
+      : normalizedSnapshot;
+  }
   mergeHistoryPartitionIntoDefaultGroup(normalizedSnapshots, 'local');
   mergeHistoryPartitionIntoDefaultGroup(normalizedSnapshots, 'cloud');
   const normalizedStore: LocalWorkspaceConversationStore = {
@@ -487,6 +552,147 @@ function normalizeWorkspaceSnapshots(store: LocalWorkspaceConversationStore): Lo
     window.localStorage.setItem(LOCAL_WORKSPACE_CONVERSATION_STORE_KEY, normalizedSerialized);
   }
   return normalizedStore;
+}
+
+/**
+ * 将单个快照条目归一到规范分区键，并补齐旧缓存可能缺失的路径语义。
+ * @param partitionKey 原始分区键。
+ * @param snapshot 原始快照。
+ * @returns 规范分区键与归一化快照。
+ */
+function normalizeWorkspaceSnapshotEntry(
+  partitionKey: string,
+  snapshot: LocalWorkspaceConversationSnapshot,
+): [string, LocalWorkspaceConversationSnapshot] {
+  const runtimeTarget = getRuntimeTargetFromPartitionKey(
+    partitionKey,
+    snapshot.runtimeTarget ?? 'cloud',
+  );
+  if (isWorkspaceHistoryPartitionKey(partitionKey)) {
+    return [
+      buildWorkspaceHistoryPartitionKey(runtimeTarget),
+      {
+        ...snapshot,
+        runtimeTarget,
+      },
+    ];
+  }
+
+  const workspacePath = resolveWorkspacePathFromPartition(partitionKey, snapshot, runtimeTarget);
+  const canonicalPartitionKey = buildWorkspacePartitionKey(runtimeTarget, workspacePath);
+  const normalizedSnapshot = normalizeWorkspaceSnapshot(canonicalPartitionKey, {
+    ...snapshot,
+    workspacePath,
+    workspaceLabel: resolveWorkspaceLabel(runtimeTarget, workspacePath, snapshot.workspaceLabel),
+    runtimeTarget,
+    pinnedConversationIds: normalizePinnedConversationIds(snapshot.pinnedConversationIds),
+    conversations: Array.isArray(snapshot.conversations) ? snapshot.conversations : [],
+    conversationRecords: snapshot.conversationRecords ?? {},
+    seenTaskFinishedAtByConversationId: snapshot.seenTaskFinishedAtByConversationId ?? {},
+  });
+
+  return [canonicalPartitionKey, normalizedSnapshot];
+}
+
+/**
+ * 从分区键前缀还原运行环境，兼容旧快照 runtimeTarget 缺失或写错的情况。
+ * @param partitionKey 分区键。
+ * @param fallbackRuntimeTarget 快照中的兜底运行环境。
+ * @returns 归一后的运行环境。
+ */
+function getRuntimeTargetFromPartitionKey(
+  partitionKey: string,
+  fallbackRuntimeTarget: 'cloud' | 'local',
+) {
+  if (partitionKey.startsWith('local::')) {
+    return 'local';
+  }
+  if (partitionKey.startsWith('cloud::')) {
+    return 'cloud';
+  }
+  return fallbackRuntimeTarget;
+}
+
+/**
+ * 优先使用快照路径；旧缓存没有 workspacePath 时，从分区键中恢复目录路径。
+ * @param partitionKey 分区键。
+ * @param snapshot 快照。
+ * @param runtimeTarget 运行环境。
+ * @returns 工作空间路径。
+ */
+function resolveWorkspacePathFromPartition(
+  partitionKey: string,
+  snapshot: LocalWorkspaceConversationSnapshot,
+  runtimeTarget: 'cloud' | 'local',
+) {
+  const explicitWorkspacePath = String(snapshot.workspacePath ?? '').trim();
+  if (explicitWorkspacePath) {
+    return explicitWorkspacePath;
+  }
+  const partitionPrefix = `${runtimeTarget}::`;
+  if (!partitionKey.startsWith(partitionPrefix)) {
+    return null;
+  }
+  const partitionWorkspacePath = partitionKey.slice(partitionPrefix.length);
+  if (
+    !partitionWorkspacePath ||
+    partitionWorkspacePath === '__no_workspace__' ||
+    partitionWorkspacePath === WORKSPACE_HISTORY_PARTITION_SUFFIX
+  ) {
+    return null;
+  }
+  return partitionWorkspacePath;
+}
+
+/**
+ * 合并归一化后落到同一分区的快照，保留会话、置顶和已读状态，清理旧重复分组。
+ * @param primary 已归一到目标分区的主快照。
+ * @param secondary 需要并入的重复快照。
+ * @returns 合并后的快照。
+ */
+function mergeWorkspaceSnapshots(
+  primary: LocalWorkspaceConversationSnapshot,
+  secondary: LocalWorkspaceConversationSnapshot,
+) {
+  const runtimeTarget = primary.runtimeTarget ?? secondary.runtimeTarget ?? 'cloud';
+  const workspacePath = primary.workspacePath ?? secondary.workspacePath ?? null;
+  const mergedConversations = mergeConversationLists(
+    Array.isArray(primary.conversations) ? primary.conversations : [],
+    Array.isArray(secondary.conversations) ? secondary.conversations : [],
+  );
+  const primaryLastOpenedAt = primary.lastOpenedAt ?? 0;
+  const secondaryLastOpenedAt = secondary.lastOpenedAt ?? 0;
+  const recentActiveConversationId = secondaryLastOpenedAt > primaryLastOpenedAt
+    ? secondary.activeConversationId ?? primary.activeConversationId
+    : primary.activeConversationId ?? secondary.activeConversationId;
+  return {
+    ...primary,
+    workspacePath,
+    workspaceLabel: resolveWorkspaceLabel(
+      runtimeTarget,
+      workspacePath,
+      primary.workspaceLabel ?? secondary.workspaceLabel,
+    ),
+    runtimeTarget,
+    lastOpenedAt: Math.max(primaryLastOpenedAt, secondaryLastOpenedAt),
+    activeConversationId:
+      recentActiveConversationId ??
+      mergedConversations[0]?.id ??
+      null,
+    pinnedConversationIds: mergePinnedConversationIds(
+      primary.pinnedConversationIds ?? [],
+      secondary.pinnedConversationIds ?? [],
+    ),
+    conversations: mergedConversations,
+    conversationRecords: mergeConversationRecordMap(
+      primary.conversationRecords ?? {},
+      secondary.conversationRecords ?? {},
+    ),
+    seenTaskFinishedAtByConversationId: {
+      ...(secondary.seenTaskFinishedAtByConversationId ?? {}),
+      ...(primary.seenTaskFinishedAtByConversationId ?? {}),
+    },
+  };
 }
 
 /**
@@ -642,7 +848,11 @@ export function saveConversationRecordToWorkspace(
     ...nextSnapshot,
     workspacePath: workspacePath ?? nextSnapshot.workspacePath ?? null,
     workspaceLabel:
-      nextSnapshot.workspaceLabel ?? getWorkspaceLabel(workspacePath ?? nextSnapshot.workspacePath),
+      resolveWorkspaceLabel(
+        runtimeTarget,
+        workspacePath ?? nextSnapshot.workspacePath ?? null,
+        nextSnapshot.workspaceLabel,
+      ),
     runtimeTarget,
     lastOpenedAt: Date.now(),
     activeConversationId: conversationId,

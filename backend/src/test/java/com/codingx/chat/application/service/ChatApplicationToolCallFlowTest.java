@@ -179,6 +179,222 @@ class ChatApplicationToolCallFlowTest {
     }
 
     /**
+     * 模型在工具调用前已经说出的正文必须保留，工具结果回灌后继续追加后续正文。
+     *
+     * @param tempDir 本地 workspace 临时目录。
+     * @throws Exception 执行失败时抛出。
+     */
+    @Test
+    void sendMessagePreservesContentBeforeAndAfterModelToolCall(@TempDir Path tempDir) throws Exception {
+        Long runId = 9401005L;
+        ChatExecutionContext.start(runId);
+        Path workspace = tempDir.resolve("repo");
+        Files.createDirectories(workspace);
+        ChatConversation conversation = ChatConversation.create(5L, "Live Tool Stream", 1002L, ChatConversationStatus.ACTIVE);
+        when(chatConversationRepository.requireById(5L)).thenReturn(conversation);
+        when(chatMessageRepository.findByConversationId(5L)).thenReturn(new ArrayList<>());
+        when(chatAttachmentService.requireOwnedAttachments(any(), eq(5L), eq(1002L))).thenReturn(List.of());
+        when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+            new ConversationRewriteResult("检查目录后继续说明", false, List.of("检查目录后继续说明"))
+        );
+        when(conversationIntentService.route("检查目录后继续说明", false)).thenReturn(
+            new ConversationIntentDecision("chat.normal", ConversationIntentAction.DIRECT, null)
+        );
+        when(chatIntentNodeRepository.findByIntentCode("chat.normal")).thenReturn(null);
+        when(chatSkillContextService.buildSkillContext(any())).thenReturn("");
+        when(chatExpertContextService.buildExpertContext(any())).thenReturn("");
+        when(conversationSummaryService.buildModelHistory(any(), any())).thenAnswer(invocation -> invocation.getArgument(1));
+        when(conversationTitleService.generateTitle(any(), any())).thenReturn("实时工具过程");
+        when(llmResponseCleaner.clean(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(chatToolSpecService.listModelVisibleToolSpecs()).thenReturn(List.of(
+            new ChatToolSpec("test_sync_tool", "同步测试工具", Map.of("type", "object"))
+        ));
+        when(chatToolExecutionService.execute(eq("test_sync_tool"), eq("{\"message\":\"pwd\"}"))).thenReturn(
+            new ChatToolExecutionResult("test_sync_tool", "D:/code/CodingX", Map.of("exitCode", 0))
+        );
+        AtomicInteger modelRound = new AtomicInteger();
+        doAnswer(invocation -> {
+            AiChatClient.ToolAwareStreamHandler handler = invocation.getArgument(3);
+            if (modelRound.incrementAndGet() == 1) {
+                handler.onDelta("我先检查当前目录。\n\n");
+                handler.onToolCall(new AiToolCall("call-live-1", "test_sync_tool", "{\"message\":\"pwd\"}"));
+                handler.onComplete();
+                return null;
+            }
+            handler.onDelta("目录确认后，我继续说明结果。");
+            handler.onComplete();
+            return null;
+        }).when(aiChatClient).streamChatWithTools(any(), eq(false), any(), any());
+
+        chatApplicationService.sendMessage(
+            new SendChatMessageCommand(5L, "检查目录后继续说明", false, List.of(), List.of(), null, workspace.toString(), List.of()),
+            1002L
+        );
+
+        verify(chatStreamPublisher).publishAssistantDelta(5L, "我先检查当前目录。\n\n");
+        verify(chatStreamPublisher).publishAssistantDelta(5L, "目录确认后，我继续说明结果。");
+        verify(chatStreamPublisher).publishAssistantCompleted(
+            5L,
+            "我先检查当前目录。\n\n目录确认后，我继续说明结果。",
+            "实时工具过程"
+        );
+        ArgumentCaptor<ChatMessage> messageCaptor = ArgumentCaptor.forClass(ChatMessage.class);
+        verify(chatMessageRepository, org.mockito.Mockito.times(2)).save(messageCaptor.capture());
+        ChatMessage assistantMessage = messageCaptor.getAllValues().get(1);
+        assertEquals("我先检查当前目录。\n\n目录确认后，我继续说明结果。", assistantMessage.getContent());
+        ChatExecutionContext.clear();
+    }
+
+    /**
+     * 深度思考内容是模型真实返回的 reasoning，工具回灌轮次不能清空已收到的 thinking。
+     *
+     * @param tempDir 本地 workspace 临时目录。
+     * @throws Exception 执行失败时抛出。
+     */
+    @Test
+    void sendMessagePreservesThinkingBeforeModelToolCall(@TempDir Path tempDir) throws Exception {
+        Long runId = 9401006L;
+        ChatExecutionContext.start(runId);
+        Path workspace = tempDir.resolve("repo");
+        Files.createDirectories(workspace);
+        ChatConversation conversation = ChatConversation.create(6L, "Thinking Tools", 1002L, ChatConversationStatus.ACTIVE);
+        when(chatConversationRepository.requireById(6L)).thenReturn(conversation);
+        when(chatMessageRepository.findByConversationId(6L)).thenReturn(new ArrayList<>());
+        when(chatAttachmentService.requireOwnedAttachments(any(), eq(6L), eq(1002L))).thenReturn(List.of());
+        when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+            new ConversationRewriteResult("深度思考后调用工具", false, List.of("深度思考后调用工具"))
+        );
+        when(conversationIntentService.route("深度思考后调用工具", false)).thenReturn(
+            new ConversationIntentDecision("chat.normal", ConversationIntentAction.DIRECT, null)
+        );
+        when(chatIntentNodeRepository.findByIntentCode("chat.normal")).thenReturn(null);
+        when(chatSkillContextService.buildSkillContext(any())).thenReturn("");
+        when(chatExpertContextService.buildExpertContext(any())).thenReturn("");
+        when(conversationSummaryService.buildModelHistory(any(), any())).thenAnswer(invocation -> invocation.getArgument(1));
+        when(conversationTitleService.generateTitle(any(), any())).thenReturn("思考工具过程");
+        when(llmResponseCleaner.clean(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(chatToolSpecService.listModelVisibleToolSpecs()).thenReturn(List.of(
+            new ChatToolSpec("test_sync_tool", "同步测试工具", Map.of("type", "object"))
+        ));
+        when(chatToolExecutionService.execute(eq("test_sync_tool"), eq("{\"message\":\"inspect\"}"))).thenReturn(
+            new ChatToolExecutionResult("test_sync_tool", "工具观察结果", Map.of("ok", true))
+        );
+        AtomicInteger modelRound = new AtomicInteger();
+        doAnswer(invocation -> {
+            AiChatClient.ToolAwareStreamHandler handler = invocation.getArgument(3);
+            if (modelRound.incrementAndGet() == 1) {
+                handler.onThinkingDelta("先判断是否需要工具。");
+                handler.onDelta("我先确认一下信息。\n\n");
+                handler.onToolCall(new AiToolCall("call-thinking-1", "test_sync_tool", "{\"message\":\"inspect\"}"));
+                handler.onComplete();
+                return null;
+            }
+            handler.onThinkingDelta("根据工具结果继续分析。");
+            handler.onDelta("工具结果已经确认。");
+            handler.onComplete();
+            return null;
+        }).when(aiChatClient).streamChatWithTools(any(), eq(true), any(), any());
+
+        chatApplicationService.sendMessage(
+            new SendChatMessageCommand(6L, "深度思考后调用工具", true, List.of(), List.of(), null, workspace.toString(), List.of()),
+            1002L
+        );
+
+        verify(chatStreamPublisher).publishAssistantThinkingDelta(6L, "先判断是否需要工具。");
+        verify(chatStreamPublisher).publishAssistantThinkingDelta(6L, "根据工具结果继续分析。");
+        ArgumentCaptor<ChatMessage> messageCaptor = ArgumentCaptor.forClass(ChatMessage.class);
+        verify(chatMessageRepository, org.mockito.Mockito.times(2)).save(messageCaptor.capture());
+        ChatMessage assistantMessage = messageCaptor.getAllValues().get(1);
+        assertEquals("先判断是否需要工具。根据工具结果继续分析。", assistantMessage.getThinkingContent());
+        ChatExecutionContext.clear();
+    }
+
+    /**
+     * 第一轮工具完成后仍需继续生成但已达上限时，应失败收口并保留第一轮正文与 thinking。
+     *
+     * @param tempDir 本地 workspace 临时目录。
+     * @throws Exception 执行失败时抛出。
+     */
+    @Test
+    void sendMessageReportsToolRoundLimitAfterFirstToolRoundReachesLimit(@TempDir Path tempDir) throws Exception {
+        Long runId = 9401007L;
+        ChatExecutionContext.start(runId);
+        try {
+            Path workspace = tempDir.resolve("repo");
+            Files.createDirectories(workspace);
+            ChatConversation conversation = ChatConversation.create(7L, "Tool Round Limit", 1002L, ChatConversationStatus.ACTIVE);
+            when(runtimeSettingService.chatToolMaxRounds()).thenReturn(1);
+            when(chatConversationRepository.requireById(7L)).thenReturn(conversation);
+            when(chatMessageRepository.findByConversationId(7L)).thenReturn(new ArrayList<>());
+            when(chatAttachmentService.requireOwnedAttachments(any(), eq(7L), eq(1002L))).thenReturn(List.of());
+            when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+                new ConversationRewriteResult("连续调用本地工具", false, List.of("连续调用本地工具"))
+            );
+            when(conversationIntentService.route("连续调用本地工具", false)).thenReturn(
+                new ConversationIntentDecision("chat.normal", ConversationIntentAction.DIRECT, null)
+            );
+            when(chatIntentNodeRepository.findByIntentCode("chat.normal")).thenReturn(null);
+            when(chatSkillContextService.buildSkillContext(any())).thenReturn("");
+            when(chatExpertContextService.buildExpertContext(any())).thenReturn("");
+            when(conversationSummaryService.buildModelHistory(any(), any())).thenAnswer(invocation -> invocation.getArgument(1));
+            when(llmResponseCleaner.clean(any())).thenAnswer(invocation -> invocation.getArgument(0));
+            when(chatToolSpecService.listModelVisibleToolSpecs()).thenReturn(List.of(
+                new ChatToolSpec("test_sync_tool", "同步测试工具", Map.of("type", "object"))
+            ));
+            when(chatToolExecutionService.execute(eq("test_sync_tool"), eq("{\"message\":\"first\"}"))).thenReturn(
+                new ChatToolExecutionResult("test_sync_tool", "第一轮工具结果", Map.of("round", 1))
+            );
+            AtomicInteger modelRound = new AtomicInteger();
+            doAnswer(invocation -> {
+                AiChatClient.ToolAwareStreamHandler handler = invocation.getArgument(3);
+                int round = modelRound.incrementAndGet();
+                if (round > 1) {
+                    throw new AssertionError("工具轮次达到上限后不应再次请求模型生成");
+                }
+                handler.onThinkingDelta("先规划第一步。");
+                handler.onDelta("我先执行第一轮工具。\n\n");
+                handler.onToolCall(new AiToolCall("call-limit-1", "test_sync_tool", "{\"message\":\"first\"}"));
+                handler.onComplete();
+                return null;
+            }).when(aiChatClient).streamChatWithTools(any(), eq(true), any(), any());
+
+            chatApplicationService.sendMessage(
+                new SendChatMessageCommand(7L, "连续调用本地工具", true, List.of(), List.of(), null, workspace.toString(), List.of()),
+                1002L
+            );
+
+            verify(aiChatClient, org.mockito.Mockito.times(1)).streamChatWithTools(any(), eq(true), any(), any());
+            verify(chatToolExecutionService).execute("test_sync_tool", "{\"message\":\"first\"}");
+            verify(chatToolExecutionService, org.mockito.Mockito.never()).execute(
+                eq("test_sync_tool"),
+                eq("{\"message\":\"second\"}")
+            );
+            verify(chatStreamPublisher).publishError(7L, "本地工具调用轮次超过上限，请收敛工具调用后重试");
+            ArgumentCaptor<Object> toolEventCaptor = ArgumentCaptor.forClass(Object.class);
+            verify(chatStreamPublisher, org.mockito.Mockito.times(2)).publishToolCall(eq(7L), toolEventCaptor.capture());
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> toolEvents = toolEventCaptor.getAllValues().stream()
+                .map(value -> (Map<String, Object>) value)
+                .toList();
+            assertEquals("start", toolEvents.get(0).get("phase"));
+            assertEquals("call-limit-1", toolEvents.get(0).get("callId"));
+            assertEquals("test_sync_tool", toolEvents.get(0).get("toolId"));
+            assertEquals("complete", toolEvents.get(1).get("phase"));
+            assertEquals("call-limit-1", toolEvents.get(1).get("callId"));
+            assertEquals("第一轮工具结果", toolEvents.get(1).get("content"));
+            ArgumentCaptor<ChatMessage> messageCaptor = ArgumentCaptor.forClass(ChatMessage.class);
+            verify(chatMessageRepository, org.mockito.Mockito.times(2)).save(messageCaptor.capture());
+            ChatMessage failedMessage = messageCaptor.getAllValues().get(1);
+            assertEquals(ChatMessageStatus.FAILED, failedMessage.getStatus());
+            assertEquals("我先执行第一轮工具。\n\n", failedMessage.getContent());
+            assertEquals("先规划第一步。", failedMessage.getThinkingContent());
+            assertEquals("本地工具调用轮次超过上限，请收敛工具调用后重试", failedMessage.getErrorMessage());
+        } finally {
+            ChatExecutionContext.clear();
+        }
+    }
+
+    /**
      * 当前端没有在单次消息里继续传 repositoryPath 时，应回落到会话 workspace 绑定的目录。
      *
      * @param tempDir 本地 workspace 临时目录。
@@ -333,13 +549,15 @@ class ChatApplicationToolCallFlowTest {
         );
         doAnswer(invocation -> {
             AiChatClient.ToolAwareStreamHandler handler = invocation.getArgument(3);
+            handler.onThinkingDelta("先判断工具可用性。");
+            handler.onDelta("我先尝试调用工具。\n\n");
             handler.onToolCall(new AiToolCall("call-failed", "spawn_agent", "{\"message\":\"x\"}"));
             handler.onComplete();
             return null;
-        }).when(aiChatClient).streamChatWithTools(any(), eq(false), any(), any());
+        }).when(aiChatClient).streamChatWithTools(any(), eq(true), any(), any());
 
         assertDoesNotThrow(() -> chatApplicationService.sendMessage(
-            new SendChatMessageCommand(3L, "调用不可用工具", false, List.of(), List.of(), null, null, List.of()),
+            new SendChatMessageCommand(3L, "调用不可用工具", true, List.of(), List.of(), null, null, List.of()),
             1002L
         ));
 
@@ -360,7 +578,8 @@ class ChatApplicationToolCallFlowTest {
         verify(chatMessageRepository, org.mockito.Mockito.times(2)).save(messageCaptor.capture());
         ChatMessage failedMessage = messageCaptor.getAllValues().get(1);
         assertEquals(ChatMessageStatus.FAILED, failedMessage.getStatus());
-        assertEquals("AI 回复失败", failedMessage.getContent());
+        assertEquals("我先尝试调用工具。\n\n", failedMessage.getContent());
+        assertEquals("先判断工具可用性。", failedMessage.getThinkingContent());
         ChatExecutionContext.clear();
     }
 }

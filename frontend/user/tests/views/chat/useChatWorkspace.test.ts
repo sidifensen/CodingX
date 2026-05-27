@@ -5646,6 +5646,21 @@ describe('useChatWorkspace', () => {
       readQueue.shift()?.resolve({ done: false, value: finishEvent });
     });
     await waitFor(() => {
+      const assistantMessage = result.current.messages.find((item) => item.role === 'ASSISTANT');
+      const timelineItems = ((assistantMessage as Record<string, unknown> | undefined)?.timelineItems ?? []) as Array<Record<string, unknown>>;
+      expect(assistantMessage?.content).toBe('我先检查当前目录。\n\n我再根据结果继续分析。');
+      expect(timelineItems.map((item) => item.type)).toEqual([
+        'content',
+        'process',
+        'process',
+        'content',
+      ]);
+      expect(timelineItems[0].content).toBe('我先检查当前目录。\n\n');
+      expect((timelineItems[1].card as Record<string, unknown>).id).toBe('tool-call-timeline-call-1');
+      expect((timelineItems[2].card as Record<string, unknown>).id).toBe('tool-result-timeline-call-1');
+      expect(timelineItems[3].content).toBe('我再根据结果继续分析。');
+    });
+    await waitFor(() => {
       expect(readQueue.length).toBeGreaterThan(0);
     });
     await act(async () => {
@@ -5654,6 +5669,226 @@ describe('useChatWorkspace', () => {
     await act(async () => {
       await submitPromise;
     });
+  });
+
+  /**
+   * AC-010：finish 后立即回放同一会话时，空历史正文只能补面板字段，不能覆盖本地流式正文或压扁时间线。
+   */
+  it('AC-010 finish后立即选择同一会话应保留本地流式正文与timeline', async () => {
+    window.localStorage.setItem(
+      'codingx.auth.session',
+      JSON.stringify({
+        token: 'token-123',
+        userId: '1002',
+        username: 'user',
+        displayName: 'CodingX User',
+        userType: 'USER',
+      }),
+    );
+
+    const readQueue: Array<{
+      resolve: (value: ReadableStreamReadResult<Uint8Array>) => void;
+      reject: (reason?: unknown) => void;
+    }> = [];
+    const metaEvent = new TextEncoder().encode('event:meta\ndata:{"conversationId":"2001"}\n\n');
+    const firstMessageEvent = new TextEncoder().encode(
+      'event:message\ndata:{"type":"response","delta":"我先检查当前目录。\\n\\n"}\n\n',
+    );
+    const toolStartEvent = new TextEncoder().encode(
+      'event:tool-call\ndata:{"callId":"timeline-call-1","phase":"start","toolId":"shell_command","displayName":"shell_command","params":{"command":"pwd"},"reactAction":"调用 shell_command","startedAt":"2026-05-26T18:11:08"}\n\n',
+    );
+    const toolCompleteEvent = new TextEncoder().encode(
+      'event:tool-call\ndata:{"callId":"timeline-call-1","phase":"complete","toolId":"shell_command","displayName":"shell_command","content":"D:/code/CodingX","rawResult":"D:/code/CodingX","reactObservation":"工具返回：D:/code/CodingX","resultMetadata":{"exitCode":0},"finishedAt":"2026-05-26T18:11:09"}\n\n',
+    );
+    const secondMessageEvent = new TextEncoder().encode(
+      'event:message\ndata:{"type":"response","delta":"我再根据结果继续分析。"}\n\n',
+    );
+    const finishEvent = new TextEncoder().encode(
+      'event:finish\ndata:{"conversationId":"2001","content":"我先检查当前目录。\\n\\n我再根据结果继续分析。","title":"检查当前目录"}\n\n',
+    );
+    const mockReader = {
+      read: vi.fn(() => {
+        return new Promise<ReadableStreamReadResult<Uint8Array>>((resolve, reject) => {
+          readQueue.push({ resolve, reject });
+        });
+      }),
+    };
+    let listConversationCallCount = 0;
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === '/api/chat/conversations') {
+        listConversationCallCount += 1;
+        return new Response(
+          JSON.stringify({
+            success: true,
+            code: 'OK',
+            message: 'success',
+            data:
+              listConversationCallCount > 1
+                ? [
+                    {
+                      id: '2001',
+                      title: '检查当前目录',
+                      status: 'ACTIVE',
+                      lastRunId: '5002',
+                    },
+                  ]
+                : [],
+          }),
+          { status: 200 },
+        );
+      }
+      if (
+        url === '/api/chat/sample-questions' ||
+        url === '/api/chat/experts' ||
+        url === '/api/chat/skills' ||
+        url === '/api/chat/mcps'
+      ) {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (url === '/api/chat/conversations/2001/messages') {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            code: 'OK',
+            message: 'success',
+            data: [
+              {
+                id: 'assistant-2001',
+                conversationId: '2001',
+                role: 'ASSISTANT',
+                content: '',
+                status: 'COMPLETED',
+                processCards: [
+                  {
+                    id: 'replay-analysis',
+                    type: 'analysis',
+                    title: '分析问题',
+                    summary: '已恢复历史上下文',
+                    status: 'completed',
+                  },
+                ],
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      if (url === '/api/chat/conversations/2001/steps') {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            code: 'OK',
+            message: 'success',
+            data: [
+              {
+                id: 'step-1',
+                runId: '5002',
+                stepType: 'analysis',
+                stepTitle: '回放补充过程',
+                stepStatus: 'COMPLETED',
+                sequenceNo: 1,
+                content: '历史接口只补充过程字段',
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      if (
+        url === '/api/chat/conversations/2001/references' ||
+        url === '/api/chat/conversations/2001/artifacts' ||
+        url === '/api/chat/conversations/2001/current-skills' ||
+        url === '/api/chat/conversations/2001/current-mcps' ||
+        url === '/api/chat/conversations/2001/current-experts'
+      ) {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (url.includes('/api/chat/stream')) {
+        return {
+          ok: true,
+          status: 200,
+          body: {
+            getReader: () => mockReader,
+          },
+        } as unknown as Response;
+      }
+      throw new Error(`Unhandled fetch in AC-010 stream replay test: ${url}`);
+    });
+
+    const { result } = renderHook(() => useChatWorkspace(true));
+
+    await waitFor(() => {
+      expect(result.current.isBootstrapping).toBe(false);
+    });
+    await act(async () => {
+      result.current.setInputValue('show current directory');
+    });
+    const submitPromise = result.current.submitMessage();
+
+    await waitFor(() => {
+      expect(result.current.isStreaming).toBe(true);
+      expect(readQueue.length).toBeGreaterThan(0);
+    });
+
+    for (const event of [
+      metaEvent,
+      firstMessageEvent,
+      toolStartEvent,
+      toolCompleteEvent,
+      secondMessageEvent,
+      finishEvent,
+    ]) {
+      await act(async () => {
+        readQueue.shift()?.resolve({ done: false, value: event });
+      });
+      await waitFor(() => {
+        expect(readQueue.length).toBeGreaterThan(0);
+      });
+    }
+
+    await act(async () => {
+      await result.current.selectConversation('2001', result.current.conversations);
+    });
+
+    const assertAssistantReplayState = () => {
+      const assistantMessage = result.current.messages.find((item) => item.role === 'ASSISTANT');
+      const processCards = ((assistantMessage as Record<string, unknown> | undefined)?.processCards ?? []) as Array<Record<string, unknown>>;
+      const timelineItems = ((assistantMessage as Record<string, unknown> | undefined)?.timelineItems ?? []) as Array<Record<string, unknown>>;
+      expect(assistantMessage?.content).toBe('我先检查当前目录。\n\n我再根据结果继续分析。');
+      expect(processCards.map((card) => card.id)).toEqual(
+        expect.arrayContaining(['tool-call-timeline-call-1', 'tool-result-timeline-call-1']),
+      );
+      expect(processCards.some((card) => String(card.summary).includes('已恢复历史'))).toBe(false);
+      expect(timelineItems.map((item) => item.type)).toEqual([
+        'content',
+        'process',
+        'process',
+        'content',
+      ]);
+      expect(timelineItems[0].content).toBe('我先检查当前目录。\n\n');
+      expect((timelineItems[1].card as Record<string, unknown>).id).toBe('tool-call-timeline-call-1');
+      expect((timelineItems[2].card as Record<string, unknown>).id).toBe('tool-result-timeline-call-1');
+      expect(timelineItems[3].content).toBe('我再根据结果继续分析。');
+    };
+
+    await waitFor(assertAssistantReplayState);
+
+    await act(async () => {
+      readQueue.shift()?.resolve({ done: true, value: undefined });
+    });
+    await act(async () => {
+      await submitPromise;
+    });
+
+    await waitFor(assertAssistantReplayState);
   });
 
   /**

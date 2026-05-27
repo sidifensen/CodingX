@@ -1045,10 +1045,8 @@ public class ChatApplicationService {
         if (streamError[0] != null || toolCalls.isEmpty()) {
                 return;
             }
-            builder.setLength(0);
-            thinkingBuilder.setLength(0);
-            // 工具重入会开启下一轮模型生成，思考起点必须重新计时，避免把上一轮时长混进来。
-            thinkingStartedAt.set(null);
+            // 工具重入后模型会继续追加同一条助手消息；已流出的正文和真实 thinking 不能清空。
+            // 失败收口、finish 事件和消息落库都依赖这两个缓冲保留工具调用前已经到达的内容。
             for (AiToolCall toolCall : toolCalls) {
                 ChatToolExecutionResult toolResult;
                 try {

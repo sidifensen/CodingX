@@ -1261,12 +1261,20 @@ export function useChatWorkspace(
     const nextCurrentMcpsPromise = ChatApi.listCurrentMcps(token, conversationId);
 
     const nextMessages = await nextMessagesPromise;
+    const shouldPreservePreviousAssistantContent =
+      preferPreviousAssistantContent ||
+      isActiveAssistantReplayContext(
+        messagesRef.current,
+        conversationId,
+        streamStateRef.current,
+      );
     const nextReplayMessages = patchLatestAssistantReplayPanels(nextMessages, {
       latestAssistantMcpCalls,
       previousMessages: messagesRef.current,
+      targetConversationId: conversationId,
       executionSteps: [],
       references: [],
-      preferPreviousContent: preferPreviousAssistantContent,
+      preferPreviousContent: shouldPreservePreviousAssistantContent,
     });
     setMessages(nextReplayMessages);
 
@@ -1288,9 +1296,10 @@ export function useChatWorkspace(
     const nextReplayMessagesWithPanels = patchLatestAssistantReplayPanels(nextMessages, {
       latestAssistantMcpCalls,
       previousMessages: nextReplayMessages,
+      targetConversationId: conversationId,
       executionSteps: nextSteps,
       references: nextReferences,
-      preferPreviousContent: preferPreviousAssistantContent,
+      preferPreviousContent: shouldPreservePreviousAssistantContent,
     });
     setMessages(nextReplayMessagesWithPanels);
     setExecutionSteps(nextSteps);
@@ -4704,11 +4713,13 @@ function deriveMcpCallsFromSteps(executionSteps: ExecutionStepItem[]): McpCallIt
  * @returns 面板字段快照。
  */
 function readLatestAssistantPanelState(messages: ChatMessageItem[]): {
+  id?: string;
   content?: string;
   conversationId?: string;
   mcpCalls?: McpCallItem[];
   processCards?: ProcessCardItem[];
   searchProgress?: MessageSearchProgress;
+  timelineItems?: MessageTimelineItem[];
 } {
   const latestAssistantMessage = [...messages]
     .reverse()
@@ -4717,11 +4728,13 @@ function readLatestAssistantPanelState(messages: ChatMessageItem[]): {
     return {};
   }
   return {
+    id: latestAssistantMessage.id,
     content: latestAssistantMessage.content,
     conversationId: latestAssistantMessage.conversationId,
     mcpCalls: latestAssistantMessage.mcpCalls,
     processCards: latestAssistantMessage.processCards,
     searchProgress: latestAssistantMessage.searchProgress,
+    timelineItems: latestAssistantMessage.timelineItems,
   };
 }
 
@@ -4736,6 +4749,7 @@ function patchLatestAssistantReplayPanels(
   options: {
     latestAssistantMcpCalls?: McpCallItem[];
     previousMessages?: ChatMessageItem[];
+    targetConversationId?: string;
     executionSteps: ExecutionStepItem[];
     references: ReferenceItem[];
     preferPreviousContent?: boolean;
@@ -4758,8 +4772,17 @@ function patchLatestAssistantReplayPanels(
   const derivedMcpCalls = deriveMcpCallsFromSteps(options.executionSteps);
   const previousReplayContent = normalizeReplayContent(previousPanelState.content);
   const nextReplayContent = normalizeReplayContent(latestAssistantMessage.content);
+  const targetConversationId = normalizeReplayConversationId(options.targetConversationId);
+  const latestMessageConversationId = normalizeReplayConversationId(
+    latestAssistantMessage.conversationId,
+  );
+  const isTargetConversationReplay =
+    targetConversationId.length > 0 && latestMessageConversationId === targetConversationId;
   const shouldPreserveReplayContent =
+    // 业务边界：只有 selectConversation 已确认这是当前流式助手的目标会话回放时，
+    // 才允许空/短历史正文让位给本地正文；普通历史切换继续以接口返回为准。
     options.preferPreviousContent === true &&
+    isTargetConversationReplay &&
     previousReplayContent.length > 0 &&
     previousReplayContent.length > nextReplayContent.length;
   const nextContent = shouldPreserveReplayContent
@@ -4778,6 +4801,10 @@ function patchLatestAssistantReplayPanels(
     latestAssistantMessage.searchProgress ??
     previousPanelState.searchProgress ??
     replaySearchProgress;
+  const shouldPreservePreviousPanels =
+    shouldPreserveReplayContent &&
+    previousPanelState.processCards != null &&
+    previousPanelState.processCards.length > 0;
   const derivedProcessCards = deriveProcessCardsFromReplay({
     message: latestAssistantMessage,
     executionSteps: options.executionSteps,
@@ -4785,16 +4812,27 @@ function patchLatestAssistantReplayPanels(
     mcpCalls: nextMcpCalls ?? [],
     searchProgress: nextSearchProgress,
   });
-  const nextProcessCards = pickMostInformativeProcessCards([
-    latestAssistantMessage.processCards,
-    previousPanelState.processCards,
-    derivedProcessCards,
-  ]);
+  const nextProcessCards = shouldPreservePreviousPanels
+    // 活跃流收敛到目标会话时，本地过程卡和 timeline 的 ID 是同一套来源；
+    // 继续用回放兜底卡会追加 replay-* 节点，导致正文虽保留但过程链路被压扁。
+    ? previousPanelState.processCards
+    : pickMostInformativeProcessCards([
+        latestAssistantMessage.processCards,
+        previousPanelState.processCards,
+        derivedProcessCards,
+      ]);
+  const nextTimelineItems = mergeReplayTimelineItems(
+    latestAssistantMessage.timelineItems,
+    previousPanelState.timelineItems,
+    nextProcessCards,
+    shouldPreserveReplayContent,
+  );
   const shouldPatch =
     (nextMcpCalls && nextMcpCalls.length > 0) !=
       ((latestAssistantMessage.mcpCalls?.length ?? 0) > 0) ||
     nextSearchProgress !== latestAssistantMessage.searchProgress ||
     nextProcessCards !== latestAssistantMessage.processCards ||
+    nextTimelineItems !== latestAssistantMessage.timelineItems ||
     normalizeReplayContent(nextContent) !== nextReplayContent;
   if (!shouldPatch) {
     return replayMessages;
@@ -4807,8 +4845,57 @@ function patchLatestAssistantReplayPanels(
           mcpCalls: nextMcpCalls,
           processCards: nextProcessCards,
           searchProgress: nextSearchProgress,
+          timelineItems: nextTimelineItems,
         }
       : message,
+  );
+}
+
+/**
+ * 判断本地末条助手消息是否属于正在收敛的活跃流式会话。
+ * 业务边界：新建云端会话收到真实 ID 后，乐观消息的 conversationId 可能仍是 pending，
+ * 因此必须用目标会话 ID 与活跃流 messageId 双重确认，避免普通历史浏览误保留本地旧正文。
+ */
+function isActiveAssistantReplayContext(
+  messages: ChatMessageItem[],
+  targetConversationId: string,
+  activeStreamState: ActiveStreamState | null,
+) {
+  const normalizedTargetConversationId = normalizeReplayConversationId(targetConversationId);
+  if (
+    normalizedTargetConversationId.length === 0 ||
+    normalizeReplayConversationId(activeStreamState?.conversationId) !== normalizedTargetConversationId ||
+    !activeStreamState?.activeMessageId
+  ) {
+    return false;
+  }
+  const previousPanelState = readLatestAssistantPanelState(messages);
+  return previousPanelState.id === activeStreamState.activeMessageId;
+}
+
+/**
+ * 回放同一会话时优先保留本地已形成的混合时间线，再把历史接口补充的过程卡同步进去。
+ * @param replayTimeline 历史消息自带的时间线。
+ * @param previousTimeline 当前本地消息时间线。
+ * @param processCards 合并后的过程卡片。
+ * @param preservePreviousTimeline 是否应保护本地流式时间线。
+ * @returns 合并后的时间线。
+ */
+function mergeReplayTimelineItems(
+  replayTimeline: MessageTimelineItem[] | undefined,
+  previousTimeline: MessageTimelineItem[] | undefined,
+  processCards: ProcessCardItem[] | undefined,
+  preservePreviousTimeline: boolean,
+): MessageTimelineItem[] | undefined {
+  if (!preservePreviousTimeline || !previousTimeline || previousTimeline.length === 0) {
+    return replayTimeline;
+  }
+  return syncProcessCardsToTimeline(
+    previousTimeline,
+    previousTimeline
+      .filter((item): item is Extract<MessageTimelineItem, { type: 'process' }> => item.type === 'process')
+      .map((item) => item.card),
+    processCards,
   );
 }
 
@@ -4860,6 +4947,10 @@ function scoreProcessCards(cards: ProcessCardItem[]): number {
  */
 function normalizeReplayContent(content?: string) {
   return (content ?? '').trim();
+}
+
+function normalizeReplayConversationId(conversationId?: string | null) {
+  return String(conversationId ?? '').trim();
 }
 
 /**

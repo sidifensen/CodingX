@@ -2395,6 +2395,90 @@ describe('useChatWorkspace', () => {
   });
 
   /**
+   * 删除消息时应忽略临时字符串 ID，只把已落库的数值消息提交给后端。
+   */
+  it('应在删除消息时过滤掉未落库消息ID', async () => {
+    window.localStorage.setItem(
+      'codingx.auth.session',
+      JSON.stringify({
+        token: 'token-123',
+        userId: '1002',
+        username: 'user',
+        displayName: 'CodingX User',
+        userType: 'USER',
+      }),
+    );
+
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === '/api/chat/conversations') {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            code: 'OK',
+            message: 'success',
+            data: [{ id: '2001', title: 'Default Demo Conversation', status: 'ACTIVE' }],
+          }),
+          { status: 200 },
+        );
+      }
+      if (url === '/api/chat/conversations/2001/messages') {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            code: 'OK',
+            message: 'success',
+            data: [],
+          }),
+          { status: 200 },
+        );
+      }
+      if (
+        url === '/api/chat/sample-questions' ||
+        url === '/api/chat/experts' ||
+        url === '/api/chat/skills' ||
+        url === '/api/chat/mcps' ||
+        url === '/api/chat/conversations/2001/steps' ||
+        url === '/api/chat/conversations/2001/references' ||
+        url === '/api/chat/conversations/2001/artifacts' ||
+        url === '/api/chat/conversations/2001/current-skills' ||
+        url === '/api/chat/conversations/2001/current-mcps' ||
+        url === '/api/chat/conversations/2001/current-experts'
+      ) {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      throw new Error(`Unhandled fetch in delete message normalization test: ${url}`);
+    });
+
+    const { result } = renderHook(() => useChatWorkspace(true));
+
+    await waitFor(() => {
+      expect(result.current.isBootstrapping).toBe(false);
+    });
+
+    await act(async () => {
+      await result.current.deleteConversationMessages('2001', [
+        'optimistic-assistant-1779529346520',
+        '102',
+        '102',
+        'optimistic-edit-assistant-1779529346521',
+        '101',
+      ]);
+    });
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      '/api/chat/conversations/2001/messages',
+      expect.objectContaining({
+        method: 'DELETE',
+        body: JSON.stringify({ messageIds: ['102', '101'] }),
+      }),
+    );
+  });
+
+  /**
    * 重新生成会话应命中专用接口。
    */
   it('应调用重新生成接口', async () => {

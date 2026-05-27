@@ -741,8 +741,12 @@ describe('ChatView', () => {
     expect(toggleButton).toHaveAttribute('aria-expanded', 'true');
     const analysisCard = screen.getByTestId('process-analysis-card-704');
     const analysisText = screen.getByTestId('process-analysis-text-704');
-    expect(analysisCard).toHaveClass('border-l');
-    expect(analysisCard).toHaveClass('pl-4');
+    expect(analysisCard).toHaveClass('ml-5');
+    expect(analysisCard).toHaveClass('rounded-xl');
+    expect(analysisCard).toHaveClass('border');
+    expect(analysisCard).toHaveClass('bg-surface-container');
+    expect(analysisCard).toHaveClass('px-4');
+    expect(analysisCard).not.toHaveClass('before:bg-border');
     expect(analysisText).toHaveTextContent(longSummary);
     expect(analysisText).toHaveClass('whitespace-pre-wrap');
     expect(analysisText).toHaveClass('[overflow-wrap:anywhere]');
@@ -1336,7 +1340,7 @@ describe('ChatView', () => {
     fireEvent.click(screen.getByTestId('edit-user-message-101'));
     const editor = screen.getByLabelText('编辑用户消息');
     fireEvent.change(editor, { target: { value: '请重新搜索 Spring Boot SSE 资料' } });
-    fireEvent.click(screen.getByRole('button', { name: '再次发送' }));
+    fireEvent.click(screen.getByRole('button', { name: '发送' }));
 
     await waitFor(() => {
       expect(resendUserMessage).toHaveBeenCalledWith('101', '请重新搜索 Spring Boot SSE 资料');
@@ -1403,6 +1407,8 @@ describe('ChatView', () => {
     expect(screen.getByText('已选2组对话')).toBeInTheDocument();
     expect(screen.getByTestId('share-round-card-202')).toHaveAttribute('data-selected', 'true');
     expect(screen.getByTestId('share-round-card-102')).toHaveAttribute('data-selected', 'true');
+    expect(screen.getByTestId('share-round-card-202')).not.toHaveClass('bg-surface-selected');
+    expect(screen.getByTestId('share-round-card-102')).not.toHaveClass('bg-surface-selected');
     expect(screen.getByTestId('share-selection-list')).toBe(screen.getByTestId('share-round-card-202').parentElement);
     expect(screen.getByRole('checkbox', { name: '全选' })).toBeChecked();
     fireEvent.click(screen.getByRole('checkbox', { name: '全选' }));
@@ -2498,10 +2504,9 @@ describe('ChatView', () => {
       />,
     );
 
-    const upButton = screen.getByTestId('thumbs-up-optimistic-assistant-1779529346520');
-    expect(upButton).toBeDisabled();
-
-    fireEvent.click(upButton);
+    expect(
+      screen.queryByTestId('thumbs-up-optimistic-assistant-1779529346520'),
+    ).not.toBeInTheDocument();
 
     await waitFor(() => {
       expect(fetchSpy).not.toHaveBeenCalled();
@@ -2663,13 +2668,12 @@ describe('ChatView', () => {
 
     expect(screen.queryByTestId('process-tool-group-toggle-861')).not.toBeInTheDocument();
     expect(screen.getByTestId('process-tool-row-861-tool-call-861')).toBeInTheDocument();
-    expect(screen.getByTestId('process-tool-row-861-tool-result-861')).toBeInTheDocument();
+    expect(screen.queryByTestId('process-tool-row-861-tool-result-861')).not.toBeInTheDocument();
     expect(screen.getByText('调用天气查询')).toBeInTheDocument();
     expect(screen.queryByText('{"city":"北京","date":"2026-05-21"}')).not.toBeInTheDocument();
     expect(screen.queryByText('{"text":"北京今日晴","temp":28.6}')).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByTestId('process-tool-detail-toggle-861-tool-call-861'));
-    fireEvent.click(screen.getByTestId('process-tool-detail-toggle-861-tool-result-861'));
     expect(screen.getByText('{"city":"北京","date":"2026-05-21"}')).toBeInTheDocument();
     expect(screen.getByText('{"text":"北京今日晴","temp":28.6}')).toBeInTheDocument();
   });
@@ -2727,15 +2731,10 @@ describe('ChatView', () => {
     expect(screen.getByTestId('process-tool-row-951-tool-result-search-951')).toBeInTheDocument();
     expect(screen.getByText('调用网页搜索')).toBeInTheDocument();
     expect(screen.getByText('已获取结果')).toBeInTheDocument();
-    // 业务意图：搜索结果细节默认收起，必须先展开当前工具行再断言具体结果文本。
+    // 业务意图：网页搜索结果只展示来源摘要，详情已由最终回答和来源面板承载。
     expect(screen.queryByText('OpenAI API 最新变更')).not.toBeInTheDocument();
     expect(screen.queryByText('Bing Search API 文档')).not.toBeInTheDocument();
-
-    fireEvent.click(screen.getByTestId('process-tool-detail-toggle-951-tool-result-search-951'));
-
-    const resultRow = screen.getByTestId('process-tool-row-951-tool-result-search-951');
-    expect(resultRow).toHaveTextContent('OpenAI API 最新变更');
-    expect(resultRow).toHaveTextContent('Bing Search API 文档');
+    expect(screen.queryByTestId('process-tool-detail-toggle-951-tool-result-search-951')).not.toBeInTheDocument();
   });
 
   /**
@@ -2845,18 +2844,16 @@ describe('ChatView', () => {
 
     expect(screen.queryByTestId('process-tool-group-toggle-963')).not.toBeInTheDocument();
     expect(screen.getByTestId('process-tool-row-963-tool-call-shell-963')).toBeInTheDocument();
-    expect(screen.getByTestId('process-tool-row-963-tool-result-shell-963')).toBeInTheDocument();
+    expect(screen.queryByTestId('process-tool-row-963-tool-result-shell-963')).not.toBeInTheDocument();
     expect(screen.getByText('调用shell_command')).toBeInTheDocument();
     expect(screen.getByText('已获取结果')).toBeInTheDocument();
     expect(screen.queryByText('{"command":"pwd"}')).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByTestId('process-tool-detail-toggle-963-tool-call-shell-963'));
-    fireEvent.click(screen.getByTestId('process-tool-detail-toggle-963-tool-result-shell-963'));
 
     const callRow = screen.getByTestId('process-tool-row-963-tool-call-shell-963');
-    const resultRow = screen.getByTestId('process-tool-row-963-tool-result-shell-963');
     expect(callRow).toHaveTextContent('{"command":"pwd"}');
-    expect(resultRow).toHaveTextContent('D:/code/CodingX');
+    expect(callRow).toHaveTextContent('D:/code/CodingX');
   });
 
   /**
@@ -2935,20 +2932,18 @@ describe('ChatView', () => {
     expect(within(tracePanel).queryByText('Action 行动')).not.toBeInTheDocument();
     expect(within(tracePanel).queryByText('Observation 观察')).not.toBeInTheDocument();
     expect(within(tracePanel).queryByText('行动')).not.toBeInTheDocument();
-    expect(within(tracePanel).queryByText('观察')).not.toBeInTheDocument();
     expect(screen.getByText('调用 shell_command')).toBeInTheDocument();
-    expect(screen.getByText('工具返回：D:/code/CodingX')).toBeInTheDocument();
+    expect(screen.getByText('观察')).toBeInTheDocument();
     expect(screen.queryByText('{"command":"pwd"}')).not.toBeInTheDocument();
     fireEvent.click(screen.getByTestId('process-tool-detail-toggle-964-tool-call-shell-964'));
-    fireEvent.click(screen.getByTestId('process-tool-detail-toggle-964-tool-result-shell-964'));
     expect(screen.getByText('{"command":"pwd"}')).toBeInTheDocument();
     expect(screen.getByText('D:/code/CodingX')).toBeInTheDocument();
   });
 
   /**
-   * 未开启真实 thinking 时，工具前的普通说明不能误标成“深度思考”。
+   * 历史持久化的旧版搜索思考模板不是模型真实输出，渲染层必须丢弃。
    */
-  it('应将普通工具前说明渲染为过程文字而非深度思考', async () => {
+  it('应过滤历史旧版伪造搜索思考并保留真实工具调用', async () => {
     render(
       <ChatView
         isAuthenticated={true}
@@ -2992,7 +2987,7 @@ describe('ChatView', () => {
 
     const tracePanel = screen.getByTestId('process-trace-panel-964b');
     expect(within(tracePanel).queryByText('深度思考')).not.toBeInTheDocument();
-    expect(within(tracePanel).getByText('需要通过网页搜索确认资料：当前最强的AI模型是什么')).toBeInTheDocument();
+    expect(within(tracePanel).queryByText('需要通过网页搜索确认资料：当前最强的AI模型是什么')).not.toBeInTheDocument();
     expect(screen.getByText('调用网页搜索：当前最强的AI模型是什么')).toBeInTheDocument();
   });
 
@@ -3089,9 +3084,10 @@ describe('ChatView', () => {
       traceText.indexOf('调用网页搜索：Qwen 最新模型'),
     );
     expect(traceText.indexOf('调用网页搜索：Qwen 最新模型')).toBeLessThan(
-      traceText.indexOf('网页搜索返回 Qwen 模型来源。'),
+      traceText.indexOf('Qwen 模型来源。'),
     );
-    expect(traceText.indexOf('网页搜索返回 Qwen 模型来源。')).toBeLessThan(
+    expect(traceText).not.toContain('网页搜索返回 Qwen 模型来源。');
+    expect(traceText.indexOf('Qwen 模型来源。')).toBeLessThan(
       traceText.indexOf('需要继续检索 GLM 最新模型。'),
     );
   });
@@ -3249,9 +3245,9 @@ describe('ChatView', () => {
   });
 
   /**
-   * 搜索工具结果应按来源列表展示，避免标题、站点和链接混在一段原始文本里。
+   * 搜索工具结果只展示摘要，不再提供来源明细展开入口。
    */
-  it('应将搜索工具结果渲染为结构化来源列表', async () => {
+  it('应隐藏搜索工具结果明细入口', async () => {
     render(
       <ChatView
         isAuthenticated={true}
@@ -3298,20 +3294,16 @@ describe('ChatView', () => {
       />,
     );
 
-    fireEvent.click(screen.getByTestId('process-tool-detail-toggle-961-tool-result-search-961'));
-
-    expect(screen.getByTestId('process-search-result-list-tool-result-search-961')).toBeInTheDocument();
-    expect(screen.getByText('OpenAI API 文档')).toBeInTheDocument();
-    expect(screen.getByText('Microsoft Learn')).toBeInTheDocument();
-    const firstSource = screen.getByTestId('process-search-result-link-tool-result-search-961-0');
-    expect(firstSource).toHaveAttribute('href', 'https://platform.openai.com/docs');
-    expect(firstSource).toHaveAttribute('target', '_blank');
+    expect(screen.getByText('已获取 2 条搜索结果。')).toBeInTheDocument();
+    expect(screen.queryByTestId('process-tool-detail-toggle-961-tool-result-search-961')).not.toBeInTheDocument();
+    expect(screen.queryByText('OpenAI API 文档')).not.toBeInTheDocument();
+    expect(screen.queryByText('Microsoft Learn')).not.toBeInTheDocument();
   });
 
   /**
-   * 实时搜索来源按三行块写入时，也应合并为一条来源卡片。
+   * 实时搜索来源按三行块写入时，仍不在过程行里暴露明细。
    */
-  it('应兼容实时搜索结果的标题站点链接三行格式', async () => {
+  it('应隐藏实时搜索结果明细入口', async () => {
     render(
       <ChatView
         isAuthenticated={true}
@@ -3358,13 +3350,10 @@ describe('ChatView', () => {
       />,
     );
 
-    fireEvent.click(screen.getByTestId('process-tool-detail-toggle-962-tool-result-search-962'));
-
-    expect(screen.getByTestId('process-search-result-list-tool-result-search-962')).toHaveTextContent(
-      '2 条来源',
-    );
-    expect(screen.getByText('OpenAI API 文档')).toBeInTheDocument();
-    expect(screen.getByText('Microsoft Learn')).toBeInTheDocument();
+    expect(screen.getByText('已获取 2 条搜索结果。')).toBeInTheDocument();
+    expect(screen.queryByTestId('process-tool-detail-toggle-962-tool-result-search-962')).not.toBeInTheDocument();
+    expect(screen.queryByText('OpenAI API 文档')).not.toBeInTheDocument();
+    expect(screen.queryByText('Microsoft Learn')).not.toBeInTheDocument();
     expect(screen.queryByText('https://platform.openai.com/docs')).not.toBeInTheDocument();
   });
 
@@ -3432,13 +3421,20 @@ describe('ChatView', () => {
     expect(screen.getByTestId('process-search-summary-966-search-result-1')).toHaveTextContent(
       '已搜索网页 4 次',
     );
+    const summaryToggle = screen.getByTestId('process-search-summary-toggle-966-search-result-1');
+    expect(summaryToggle.parentElement).toHaveTextContent('已搜索网页 4 次');
+    expect(summaryToggle.parentElement).toHaveTextContent('展开来源');
+    expect(within(tracePanel).queryByText('site-1.com：AI 资料 1')).not.toBeInTheDocument();
+    expect(within(tracePanel).queryByText('site-4.com：AI 资料 4')).not.toBeInTheDocument();
+
+    fireEvent.click(summaryToggle);
+
+    expect(within(tracePanel).getByText('site-1.com：AI 资料 1')).toBeInTheDocument();
+    expect(within(tracePanel).getByText('site-4.com：AI 资料 4')).toBeInTheDocument();
+    expect(
+      within(tracePanel).queryByTestId('process-tool-detail-toggle-966-search-result-1'),
+    ).not.toBeInTheDocument();
     expect(within(tracePanel).queryByText('网页搜索返回 site-1.com：AI 资料 1')).not.toBeInTheDocument();
-    expect(within(tracePanel).queryByText('网页搜索返回 site-4.com：AI 资料 4')).not.toBeInTheDocument();
-
-    fireEvent.click(screen.getByTestId('process-search-summary-toggle-966-search-result-1'));
-
-    expect(within(tracePanel).getByText('网页搜索返回 site-1.com：AI 资料 1')).toBeInTheDocument();
-    expect(within(tracePanel).getByText('网页搜索返回 site-4.com：AI 资料 4')).toBeInTheDocument();
   });
 
   /**
@@ -3623,10 +3619,10 @@ describe('ChatView', () => {
               id: '971',
               conversationId: '2001',
               role: 'ASSISTANT',
-              content: '正在整理搜索来源',
-              status: 'streaming',
+              content: '已完成搜索来源整理',
+              status: 'COMPLETED',
               searchProgress: {
-                status: 'running',
+                status: 'completed',
                 items: [
                   {
                     id: 'ref-1',
@@ -3646,14 +3642,21 @@ describe('ChatView', () => {
     );
 
     expect(screen.getByTestId('search-progress-panel-971')).toBeInTheDocument();
-    // 业务意图：搜索来源必须紧跟在复制按钮之后，作为消息尾部的补充信息展示。
+    // 业务意图：搜索来源必须跟随倒赞按钮，作为消息操作栏的一部分展示。
     expect(
       screen
-        .getByTestId('copy-message-971')
+        .getByTestId('thumbs-down-971')
         .compareDocumentPosition(screen.getByTestId('search-progress-panel-971')) &
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
     const toggleButton = screen.getByTestId('search-progress-toggle-971');
+    const actionRow = screen.getByTestId('thumbs-down-971').parentElement;
+    expect(screen.getByTestId('search-progress-panel-971').parentElement).toBe(actionRow);
+    expect(actionRow).toHaveClass('flex-wrap');
+    expect(screen.getByTestId('search-progress-panel-971')).toHaveClass('contents');
+    expect(toggleButton).toHaveTextContent('搜索来源');
+    expect(toggleButton).toHaveTextContent('1 条');
+    expect(toggleButton).not.toHaveTextContent('来源已获取');
     expect(toggleButton).toHaveAttribute('aria-expanded', 'false');
     expect(screen.queryByTestId('search-source-link-971-ref-1')).not.toBeInTheDocument();
     expect(screen.queryByText('OpenAI API 文档')).not.toBeInTheDocument();
@@ -3661,6 +3664,9 @@ describe('ChatView', () => {
     fireEvent.click(toggleButton);
 
     expect(toggleButton).toHaveAttribute('aria-expanded', 'true');
+    const sourceContent = document.getElementById('search-progress-content-971');
+    expect(sourceContent).toHaveClass('basis-full');
+    expect(sourceContent).toHaveClass('w-full');
     expect(screen.getByText('OpenAI API 文档')).toBeInTheDocument();
     expect(screen.getByText('OpenAI')).toBeInTheDocument();
     expect(screen.getByText('platform.openai.com/docs')).toBeInTheDocument();

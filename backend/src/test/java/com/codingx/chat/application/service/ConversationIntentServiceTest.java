@@ -9,9 +9,11 @@ import static org.mockito.Mockito.when;
 
 import com.codingx.chat.domain.model.ChatIntentNode;
 import com.codingx.chat.domain.repository.ChatIntentNodeRepository;
+import com.codingx.mcp.application.executor.WeatherQuestionParser;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Spy;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -30,6 +32,9 @@ class ConversationIntentServiceTest {
 
     @Mock
     private ConversationIntentGuidanceService conversationIntentGuidanceService;
+
+    @Spy
+    private WeatherQuestionParser weatherQuestionParser = new WeatherQuestionParser();
 
     @InjectMocks
     private ConversationIntentService conversationIntentService;
@@ -124,6 +129,58 @@ class ConversationIntentServiceTest {
 
         assertEquals(ConversationIntentAction.MCP, decision.action());
         assertEquals("weather-data", decision.intentCode());
+    }
+
+    /**
+     * 天气 MCP 已命中但缺少城市时，应先澄清必要参数，避免工具返回“请提供城市名称”后再交给模型硬答。
+     */
+    @Test
+    void routeClarifiesWeatherMcpWhenCityIsMissing() {
+        ChatIntentNode node = ChatIntentNode.builder()
+            .intentCode("weather-data")
+            .name("天气查询")
+            .intentType("mcp")
+            .mcpToolId("weather_query")
+            .enabled(1)
+            .examples("[\"北京今天天气怎么样？\",\"上海明天会下雨吗？\"]")
+            .build();
+        when(chatIntentNodeRepository.findEnabledNodes()).thenReturn(List.of(node));
+        when(conversationIntentResolver.resolveCandidates(eq("天气怎么样"), eq(List.of(node)), any()))
+            .thenReturn(List.of(new ConversationIntentCandidate(node, 0.92D)));
+        when(conversationIntentGuidanceService.buildGuidancePrompt(eq("天气怎么样"), any(), eq(List.of(node))))
+            .thenReturn(null);
+
+        ConversationIntentDecision decision = conversationIntentService.route("天气怎么样", true);
+
+        assertEquals(ConversationIntentAction.CLARIFY, decision.action());
+        assertEquals("weather-data", decision.intentCode());
+        assertEquals("请明确你想查询哪个城市的天气，例如：上海今天天气怎么样。", decision.reply());
+    }
+
+    /**
+     * 天气问题已经包含城市时仍应正常进入 MCP，不能因新增槽位保护影响既有城市天气查询。
+     */
+    @Test
+    void routeKeepsWeatherMcpWhenCityExists() {
+        ChatIntentNode node = ChatIntentNode.builder()
+            .intentCode("weather-data")
+            .name("天气查询")
+            .intentType("mcp")
+            .mcpToolId("weather_query")
+            .enabled(1)
+            .examples("[\"北京今天天气怎么样？\",\"上海明天会下雨吗？\"]")
+            .build();
+        when(chatIntentNodeRepository.findEnabledNodes()).thenReturn(List.of(node));
+        when(conversationIntentResolver.resolveCandidates(eq("上海今天天气怎么样"), eq(List.of(node)), any()))
+            .thenReturn(List.of(new ConversationIntentCandidate(node, 0.94D)));
+        when(conversationIntentGuidanceService.buildGuidancePrompt(eq("上海今天天气怎么样"), any(), eq(List.of(node))))
+            .thenReturn(null);
+
+        ConversationIntentDecision decision = conversationIntentService.route("上海今天天气怎么样", true);
+
+        assertEquals(ConversationIntentAction.MCP, decision.action());
+        assertEquals("weather-data", decision.intentCode());
+        assertNull(decision.reply());
     }
 
     /**

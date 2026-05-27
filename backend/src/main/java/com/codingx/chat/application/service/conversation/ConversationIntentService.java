@@ -6,6 +6,7 @@ import cn.hutool.json.JSONUtil;
 import com.codingx.chat.domain.model.ChatIntentExample;
 import com.codingx.chat.domain.model.ChatIntentNode;
 import com.codingx.chat.domain.repository.ChatIntentNodeRepository;
+import com.codingx.mcp.application.executor.WeatherQuestionParser;
 import java.util.ArrayList;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -21,6 +22,7 @@ public class ConversationIntentService {
     private final ChatIntentNodeRepository chatIntentNodeRepository;
     private final ConversationIntentResolver conversationIntentResolver;
     private final ConversationIntentGuidanceService conversationIntentGuidanceService;
+    private final WeatherQuestionParser weatherQuestionParser;
 
     /**
      * 对当前问题进行分流，返回后续动作决策。
@@ -59,6 +61,9 @@ public class ConversationIntentService {
             if (!mcpEnabled) {
                 return new ConversationIntentDecision(topNode.getIntentCode(), ConversationIntentAction.MCP_DISABLED, "当前消息未连接 MCP");
             }
+            if (weatherMcpMissingCity(topNode, question)) {
+                return new ConversationIntentDecision(topNode.getIntentCode(), ConversationIntentAction.CLARIFY, "请明确你想查询哪个城市的天气，例如：上海今天天气怎么样。");
+            }
             return new ConversationIntentDecision(topNode.getIntentCode(), ConversationIntentAction.MCP, null);
         }
         if ("search".equalsIgnoreCase(topNode.getIntentType())) {
@@ -66,6 +71,15 @@ public class ConversationIntentService {
         }
         // 非法或未知类型回退为 DIRECT，避免把错误配置误导到联网搜索链路。
         return new ConversationIntentDecision(topNode.getIntentCode(), ConversationIntentAction.DIRECT, null);
+    }
+
+    /**
+     * 天气工具需要城市槽位；缺少城市时在路由层澄清，避免工具错误结果进入模型上下文。
+     */
+    private boolean weatherMcpMissingCity(ChatIntentNode node, String question) {
+        return node != null
+            && StrUtil.equals("weather_query", node.getMcpToolId())
+            && !weatherQuestionParser.hasCity(question);
     }
 
     /**

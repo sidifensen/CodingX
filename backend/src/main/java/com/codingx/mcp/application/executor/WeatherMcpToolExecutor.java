@@ -37,6 +37,7 @@ public class WeatherMcpToolExecutor implements ChatMcpToolExecutor {
     private static final String CITY_EXTRACT_TEMPLATE = "weather-city-extract";
     private static final String OPEN_METEO_GEOCODING = "https://geocoding-api.open-meteo.com/v1/search";
     private static final String OPEN_METEO_FORECAST = "https://api.open-meteo.com/v1/forecast";
+    private final WeatherQuestionParser weatherQuestionParser = new WeatherQuestionParser();
     @Autowired(required = false)
     private PromptTemplateLoader promptTemplateLoader;
     @Autowired(required = false)
@@ -84,7 +85,7 @@ public class WeatherMcpToolExecutor implements ChatMcpToolExecutor {
     @Override
     public ChatMcpToolResult execute(String question, ChatMcpProgressListener progressListener) {
         String safeQuestion = StrUtil.blankToDefault(question, "");
-        WeatherQueryContext context = parseQuestion(safeQuestion);
+        WeatherQuestionParser.WeatherQueryContext context = weatherQuestionParser.parse(safeQuestion, extractCityByAi(safeQuestion));
         emitProgress(
             progressListener,
             "parse-question",
@@ -177,50 +178,6 @@ public class WeatherMcpToolExecutor implements ChatMcpToolExecutor {
     }
 
     /**
-     * 解析天气查询参数。
-     *
-     * @param question 用户问题。
-     * @return 查询上下文。
-     */
-    private WeatherQueryContext parseQuestion(String question) {
-        String city = extractCity(question);
-        String queryType = containsAny(question, List.of("预报", "未来", "后天", "明天")) ? "forecast" : "current";
-        int days = parseDays(question, 3);
-        return new WeatherQueryContext(city, queryType, days);
-    }
-
-    /**
-     * 从用户问题中提取城市关键词。
-     *
-     * @param question 用户问题。
-     * @return 城市名；无法识别返回 null。
-     */
-    private String extractCity(String question) {
-        if (StrUtil.isBlank(question)) {
-            return null;
-        }
-        String aiCity = normalizeCityKeyword(extractCityByAi(question));
-        if (StrUtil.isNotBlank(aiCity)) {
-            return aiCity;
-        }
-        // 城市与时间词分组提取，避免把“北京今天/上海未来三天”误识别为城市名。
-        String directCity = normalizeCityKeyword(ReUtil.get(
-            "([\\p{IsHan}]{2,8}?)(?:市|区|县|州|盟)?(?:今天|明天|后天|未来\\d+天|未来[一二三四五六七八九十两]+天)?(?:的)?(?:天气|气温|温度|预报)",
-            question,
-            1
-        ));
-        if (StrUtil.isNotBlank(directCity)) {
-            return directCity;
-        }
-        String fallbackCity = normalizeCityKeyword(ReUtil.get(
-            "(北京|上海|广州|深圳|杭州|成都|武汉|南京|西安|重庆|长沙|天津|苏州|郑州|青岛|大连|厦门|昆明|哈尔滨|三亚)",
-            question,
-            1
-        ));
-        return StrUtil.isBlank(fallbackCity) ? null : fallbackCity;
-    }
-
-    /**
      * 借助 LLM 从自然语言问题中抽取城市，作为规则匹配前的主路径。
      *
      * @param question 用户问题。
@@ -264,95 +221,6 @@ public class WeatherMcpToolExecutor implements ChatMcpToolExecutor {
                 return null;
             }
         }
-    }
-
-    /**
-     * 规范化城市关键词，移除口语助词等非地理实体尾缀。
-     *
-     * @param city 原始城市文本。
-     * @return 规范化后的城市关键词。
-     */
-    private String normalizeCityKeyword(String city) {
-        String normalized = StrUtil.trim(city);
-        if (StrUtil.isBlank(normalized)) {
-            return normalized;
-        }
-        // 兼容口语表达中尾部助词，避免污染地理编码查询入参。
-        while (StrUtil.endWith(normalized, "的")) {
-            normalized = StrUtil.removeSuffix(normalized, "的");
-        }
-        return normalized;
-    }
-
-    /**
-     * 从文本中解析预报天数。
-     *
-     * @param question 问题文本。
-     * @param defaultDays 默认天数。
-     * @return 预报天数。
-     */
-    private int parseDays(String question, int defaultDays) {
-        String digitDays = ReUtil.get("(\\d+)\\s*天", question, 1);
-        if (StrUtil.isNotBlank(digitDays)) {
-            return normalizeDays(Integer.parseInt(digitDays));
-        }
-        String chineseDays = ReUtil.get("([一二三四五六七八九十两]+)天", question, 1);
-        if (StrUtil.isNotBlank(chineseDays)) {
-            return normalizeDays(parseChineseNumber(chineseDays));
-        }
-        if (question.contains("明天")) {
-            return 2;
-        }
-        if (question.contains("后天")) {
-            return 3;
-        }
-        return defaultDays;
-    }
-
-    /**
-     * 中文数字转整数。
-     *
-     * @param chinese 中文数字。
-     * @return 对应整数。
-     */
-    private int parseChineseNumber(String chinese) {
-        return switch (chinese) {
-            case "一" -> 1;
-            case "二", "两" -> 2;
-            case "三" -> 3;
-            case "四" -> 4;
-            case "五" -> 5;
-            case "六" -> 6;
-            case "七" -> 7;
-            case "八" -> 8;
-            case "九" -> 9;
-            case "十" -> 10;
-            default -> 3;
-        };
-    }
-
-    /**
-     * 天数边界保护。
-     *
-     * @param days 原始天数。
-     * @return 合法天数。
-     */
-    private int normalizeDays(int days) {
-        if (days <= 0) {
-            return 3;
-        }
-        return Math.min(days, 7);
-    }
-
-    /**
-     * 判断是否命中任一关键词。
-     *
-     * @param text 文本。
-     * @param keywords 关键词。
-     * @return 命中返回 true。
-     */
-    private boolean containsAny(String text, List<String> keywords) {
-        return keywords.stream().anyMatch(text::contains);
     }
 
     /**
@@ -560,16 +428,6 @@ public class WeatherMcpToolExecutor implements ChatMcpToolExecutor {
             return LocalDate.parse(value.substring(0, 10));
         }
         return LocalDate.parse(value);
-    }
-
-    /**
-     * 天气查询上下文。
-     *
-     * @param city 城市名。
-     * @param queryType 查询类型。
-     * @param days 预报天数。
-     */
-    private record WeatherQueryContext(String city, String queryType, int days) {
     }
 
     private record GeocodeResult(double latitude, double longitude, String displayCity, String fullName) {

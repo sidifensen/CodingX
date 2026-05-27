@@ -8,6 +8,10 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.codingx.chat.domain.model.ChatIntentNode;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -34,18 +38,29 @@ class ConversationIntentGuidanceServiceTest {
     void buildGuidancePromptReturnsPromptForAmbiguousCandidates() throws Exception {
         ChatIntentNode oa = ChatIntentNode.builder().intentCode("search-web-oa-intro").parentCode("search-web-oa").name("系统介绍").intentType("search").build();
         ChatIntentNode ins = ChatIntentNode.builder().intentCode("search-web-ins-intro").parentCode("search-web-ins").name("系统介绍").intentType("search").build();
+        Logger logger = (Logger) org.slf4j.LoggerFactory.getLogger(ConversationIntentAmbiguityDetector.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
 
-        String prompt = buildService().buildGuidancePrompt(
-            "系统介绍是什么",
-            List.of(
-                new ConversationIntentCandidate(oa, 0.90D),
-                new ConversationIntentCandidate(ins, 0.82D)
-            ),
-            defaultNodes()
-        );
+        try {
+            String prompt = buildService().buildGuidancePrompt(
+                "系统介绍是什么",
+                List.of(
+                    new ConversationIntentCandidate(oa, 0.90D),
+                    new ConversationIntentCandidate(ins, 0.82D)
+                ),
+                defaultNodes()
+            );
 
-        assertEquals("关于系统介绍，候选如下：\n1) 联网搜索 > OA系统 > 系统介绍\n2) 联网搜索 > 保险系统 > 系统介绍", prompt);
-        verify(aiPromptExecutionService, never()).complete(anyString(), anyString());
+            assertEquals("关于系统介绍，候选如下：\n1) 联网搜索 > OA系统 > 系统介绍\n2) 联网搜索 > 保险系统 > 系统介绍", prompt);
+            verify(aiPromptExecutionService, never()).complete(anyString(), anyString());
+            boolean logged = appender.list.stream()
+                .anyMatch(event -> event.getLevel().equals(Level.INFO) && event.getFormattedMessage().contains("歧义引导触发"));
+            assertEquals(true, logged);
+        } finally {
+            logger.detachAppender(appender);
+        }
     }
 
     /**

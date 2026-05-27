@@ -54,6 +54,7 @@ public class ConversationIntentAmbiguityDetector {
         if (trimmed.size() < 2) {
             return null;
         }
+        logAmbiguityTriggered(question, trimmed, nodeByCode);
         return new AmbiguityGroup(
             StrUtil.blankToDefault(trimmed.getFirst().node().getName(), "当前主题"),
             trimmed,
@@ -226,6 +227,40 @@ public class ConversationIntentAmbiguityDetector {
             return ranked;
         }
         return ranked.subList(0, Math.max(maxOptions, 0));
+    }
+
+    /**
+     * 仅在最终确认触发澄清时打印 INFO 日志，便于和“候选接近但最终跳过”的调试日志区分。
+     */
+    private void logAmbiguityTriggered(
+        String question,
+        List<ConversationIntentCandidate> candidates,
+        Map<String, ChatIntentNode> nodeByCode
+    ) {
+        log.info(
+            "歧义引导触发: question={}, topic={}, 候选数={}, 候选={}",
+            StrUtil.maxLength(question, 120),
+            StrUtil.blankToDefault(candidates.getFirst().node().getName(), "当前主题"),
+            candidates.size(),
+            buildTriggeredCandidateSummary(candidates, nodeByCode)
+        );
+    }
+
+    /**
+     * 将触发澄清的候选压缩成单行摘要，避免完整提示词进入业务日志。
+     */
+    private String buildTriggeredCandidateSummary(
+        List<ConversationIntentCandidate> candidates,
+        Map<String, ChatIntentNode> nodeByCode
+    ) {
+        return candidates.stream()
+            .map(candidate -> candidate.node().getIntentCode()
+                + "@"
+                + conversationIntentPathResolver.resolveSystemIdentity(candidate.node(), nodeByCode)
+                + ":"
+                + candidate.score())
+            .toList()
+            .toString();
     }
 
     /**

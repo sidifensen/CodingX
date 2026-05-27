@@ -2860,7 +2860,7 @@ describe('ChatView', () => {
   });
 
   /**
-   * ReAct 工具过程应直接展示深度思考、工具动作和观察内容，但不再额外渲染角色气泡标签。
+   * ReAct 工具过程应直接展示普通过程文字、工具动作和观察内容，但不再额外渲染角色气泡标签。
    */
   it('renders ReAct tool steps inline without opening the tool group', async () => {
     render(
@@ -2929,7 +2929,8 @@ describe('ChatView', () => {
     expect(screen.queryByTestId('process-tool-group-toggle-964')).not.toBeInTheDocument();
     const tracePanel = screen.getByTestId('process-trace-panel-964');
     expect(within(tracePanel).queryByTestId('process-react-role-label')).not.toBeInTheDocument();
-    expect(within(tracePanel).getByText('深度思考')).toBeInTheDocument();
+    expect(within(tracePanel).queryByText('深度思考')).not.toBeInTheDocument();
+    expect(within(tracePanel).getByText('需要调用 shell_command 获取当前目录。')).toBeInTheDocument();
     expect(within(tracePanel).queryByText('Thought 思考')).not.toBeInTheDocument();
     expect(within(tracePanel).queryByText('Action 行动')).not.toBeInTheDocument();
     expect(within(tracePanel).queryByText('Observation 观察')).not.toBeInTheDocument();
@@ -2945,7 +2946,58 @@ describe('ChatView', () => {
   });
 
   /**
-   * 多轮工具过程必须按深度思考、工具动作、观察内容串联，避免退回“工具调用列表”的展示形态。
+   * 未开启真实 thinking 时，工具前的普通说明不能误标成“深度思考”。
+   */
+  it('应将普通工具前说明渲染为过程文字而非深度思考', async () => {
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          messages: [
+            {
+              id: '964b',
+              conversationId: '2001',
+              role: 'ASSISTANT',
+              content: '已完成检索。',
+              status: 'done',
+              processCards: [
+                {
+                  id: 'react-thought-search-964b',
+                  type: 'analysis',
+                  title: '思考',
+                  summary: '需要通过网页搜索确认资料：当前最强的AI模型是什么',
+                  status: 'completed',
+                  presentation: 'react',
+                },
+                {
+                  id: 'tool-call-search-964b',
+                  type: 'tool_call',
+                  title: '行动',
+                  summary: '调用网页搜索：当前最强的AI模型是什么',
+                  status: 'completed',
+                  toolId: 'search',
+                  displayName: '网页搜索',
+                  presentation: 'react',
+                },
+              ],
+            } as any,
+          ],
+          executionSteps: [],
+          references: [],
+          artifacts: [],
+        })}
+      />,
+    );
+
+    const tracePanel = screen.getByTestId('process-trace-panel-964b');
+    expect(within(tracePanel).queryByText('深度思考')).not.toBeInTheDocument();
+    expect(within(tracePanel).getByText('需要通过网页搜索确认资料：当前最强的AI模型是什么')).toBeInTheDocument();
+    expect(screen.getByText('调用网页搜索：当前最强的AI模型是什么')).toBeInTheDocument();
+  });
+
+  /**
+   * 多轮工具过程必须按普通过程文字、工具动作、观察内容串联，避免退回“工具调用列表”的展示形态。
    */
   it('renders multiple ReAct rounds without role badges', async () => {
     render(
@@ -3029,7 +3081,7 @@ describe('ChatView', () => {
 
     const tracePanel = screen.getByTestId('process-trace-panel-965');
     expect(within(tracePanel).queryByTestId('process-react-role-label')).not.toBeInTheDocument();
-    expect(within(tracePanel).getAllByText('深度思考')).toHaveLength(2);
+    expect(within(tracePanel).queryByText('深度思考')).not.toBeInTheDocument();
     expect(within(tracePanel).queryByText('行动')).not.toBeInTheDocument();
     expect(within(tracePanel).queryByText('观察')).not.toBeInTheDocument();
     const traceText = tracePanel.textContent ?? '';

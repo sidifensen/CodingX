@@ -4108,7 +4108,7 @@ function ProcessTracePanel({
           );
         }
         const shouldShowAnalysisHeading =
-          segment.card.type === 'analysis' && !hasRenderedAnalysisHeading;
+          isDeepThinkingProcessCard(segment.card) && !hasRenderedAnalysisHeading;
         if (shouldShowAnalysisHeading) {
           hasRenderedAnalysisHeading = true;
         }
@@ -4334,7 +4334,7 @@ function isDisposableSynthesisTrace(card: ProcessCardItem) {
 }
 
 /**
- * 渲染一段过程文本。深度思考默认展开，直接呈现模型在工具前后的判断过程。
+ * 渲染一段过程文本；只有真实 thinking 事件才进入深度思考折叠块。
  */
 function ProcessTraceText({
   card,
@@ -4345,7 +4345,7 @@ function ProcessTraceText({
   messageId: string;
   isFirstAnalysis: boolean;
 }) {
-  if (card.type === 'analysis') {
+  if (isDeepThinkingProcessCard(card)) {
     return (
       <ProcessAnalysisTrace
         card={card}
@@ -4425,6 +4425,13 @@ function ProcessAnalysisTrace({
       ) : null}
     </div>
   );
+}
+
+/**
+ * 区分真实 thinking 与 ReAct 工具说明，避免普通工具前说明被误标为“深度思考”。
+ */
+function isDeepThinkingProcessCard(card: ProcessCardItem) {
+  return card.type === 'analysis' && card.presentation !== 'react';
 }
 
 /**

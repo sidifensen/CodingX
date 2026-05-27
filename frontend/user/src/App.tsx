@@ -26,12 +26,28 @@ import {
  */
 export type ViewType = 'chat' | 'mcp' | 'skills' | 'experts' | 'automation';
 
+const VIEW_ROUTE_PATHS: Record<ViewType, string> = {
+  chat: '/',
+  mcp: '/mcp',
+  skills: '/skills',
+  experts: '/experts',
+  automation: '/automation',
+};
+const PATH_VIEW_MAP: Record<string, ViewType> = Object.entries(VIEW_ROUTE_PATHS).reduce(
+  (viewMap, [view, path]) => ({
+    ...viewMap,
+    [path]: view as ViewType,
+  }),
+  {} as Record<string, ViewType>,
+);
+const CONVERSATION_ID_QUERY_KEY = 'conversationId';
+
 /**
  * 渲染前端应用壳层，并管理视图、主题、移动端导航与登录弹窗状态。
  */
 export default function App() {
-  // 步骤：维护当前激活的主视图。
-  const [activeView, setActiveView] = useState<ViewType>('chat');
+  // 步骤：维护当前激活的主视图，首次进入时从地址栏路径恢复页面级路由。
+  const [activeView, setActiveView] = useState<ViewType>(() => parseViewRoute(window.location.pathname));
   // 步骤：维护当前深色主题开关状态。
   const [isDarkMode, setIsDarkMode] = useState(true);
   // 步骤：维护移动端侧边栏开关状态。
@@ -92,6 +108,24 @@ export default function App() {
     }
   }, [isDarkMode]);
 
+  useEffect(() => {
+    // 浏览器前进/后退只改变 history，必须同步回 React 视图状态。
+    const handlePopState = () => {
+      setActiveView(parseViewRoute(window.location.pathname));
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  /**
+   * 切换页面级视图并同步浏览器地址栏，避免会话参数残留在功能页路由上。
+   * @param nextView 目标主视图。
+   */
+  const navigateToView = (nextView: ViewType) => {
+    setActiveView(nextView);
+    writeViewRouteToUrl(nextView);
+  };
+
   /**
    * 切换当前主题模式。
    */
@@ -140,7 +174,7 @@ export default function App() {
     conversationId: string,
     selectionContext: WorkspaceConversationSelectionContext,
   ) => {
-    setActiveView('chat');
+    navigateToView('chat');
     // 先切到会话所属空间，再加载目标会话，避免不同空间会话互相串线。
     await chatWorkspace.selectConversationInWorkspace(conversationId, selectionContext);
   };
@@ -151,7 +185,7 @@ export default function App() {
   const handleStartNewConversation = async (
     createContext?: WorkspaceConversationCreateContext,
   ) => {
-    setActiveView('chat');
+    navigateToView('chat');
     await chatWorkspace.startNewConversation(createContext);
   };
 
@@ -192,7 +226,7 @@ export default function App() {
     conversationId: string,
     actionContext?: ConversationActionContext,
   ) => {
-    setActiveView('chat');
+    navigateToView('chat');
     if (actionContext) {
       // 侧栏可能从非当前分区触发分享，必须先打开目标会话再让聊天区进入轮次选择。
       await chatWorkspace.selectConversationInWorkspace(conversationId, actionContext);
@@ -285,7 +319,7 @@ export default function App() {
       >
           <Sidebar
             activeView={activeView}
-            setActiveView={setActiveView}
+            setActiveView={navigateToView}
           isMobileMenuOpen={isMobileMenuOpen}
           setIsMobileMenuOpen={setIsMobileMenuOpen}
           isDesktopCollapsed={isDesktopSidebarCollapsed}
@@ -377,7 +411,7 @@ export default function App() {
                 <ExpertsView
                   key="experts"
                   workspace={chatWorkspace}
-                  onSelectExpert={() => setActiveView('chat')}
+                  onSelectExpert={() => navigateToView('chat')}
                 />
               )}
             </AnimatePresence>
@@ -397,6 +431,30 @@ export default function App() {
       />
     </div>
   );
+}
+
+/**
+ * 根据路径解析页面级视图，未知路径回落到聊天页，避免刷新后空白。
+ * @param pathname 当前浏览器路径。
+ * @returns 可渲染的主视图类型。
+ */
+function parseViewRoute(pathname: string): ViewType {
+  return PATH_VIEW_MAP[pathname] ?? 'chat';
+}
+
+/**
+ * 将页面级视图写入地址栏；非聊天页必须移除会话参数，避免功能页看起来仍停留在某个会话。
+ * @param view 目标主视图。
+ */
+function writeViewRouteToUrl(view: ViewType) {
+  const nextUrl = new URL(window.location.href);
+  nextUrl.pathname = VIEW_ROUTE_PATHS[view];
+  if (view !== 'chat') {
+    nextUrl.searchParams.delete(CONVERSATION_ID_QUERY_KEY);
+  } else if (nextUrl.pathname !== window.location.pathname) {
+    nextUrl.searchParams.delete(CONVERSATION_ID_QUERY_KEY);
+  }
+  window.history.pushState(window.history.state, '', nextUrl.toString());
 }
 
 /**

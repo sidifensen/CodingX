@@ -104,6 +104,9 @@ describe('App', () => {
    * 在每个测试前重置浏览器持久化状态与网络模拟，避免测试互相污染。
    */
   beforeEach(() => {
+    // 步骤：每条用例从首页路由开始，避免页面级路由测试污染后续 App 初始化状态。
+    window.history.replaceState({}, '', '/');
+
     // 步骤：清理 localStorage，保证每个测试都从未登录状态开始。
     window.localStorage.clear();
 
@@ -182,6 +185,30 @@ describe('App', () => {
 
     // 步骤：断言页面中存在品牌标题，确保基础渲染链路可用。
     expect(screen.getAllByText('CodingX').length).toBeGreaterThan(0);
+  });
+
+  /**
+   * 从会话链接进入后点击侧栏页面，应切换到真实页面路由并清理会话参数。
+   */
+  it('应在点击侧栏功能页时同步地址栏路由', async () => {
+    window.history.replaceState({}, '', '/?conversationId=2001');
+    render(<App />);
+
+    fireEvent.click(screen.getByRole('button', { name: '技能与套件' }));
+
+    await waitFor(() => {
+      const currentUrl = new URL(window.location.href);
+      expect(currentUrl.pathname).toBe('/skills');
+      expect(currentUrl.searchParams.get('conversationId')).toBeNull();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'MCP 管理' }));
+
+    await waitFor(() => {
+      const currentUrl = new URL(window.location.href);
+      expect(currentUrl.pathname).toBe('/mcp');
+      expect(currentUrl.searchParams.get('conversationId')).toBeNull();
+    });
   });
 
   /**

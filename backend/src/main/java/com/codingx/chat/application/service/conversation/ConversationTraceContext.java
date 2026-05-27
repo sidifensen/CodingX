@@ -24,13 +24,7 @@ public final class ConversationTraceContext {
      * @return 根 Trace 记录。
      */
     public static ChatTraceRun start(String traceName, Long conversationId, Long userId) {
-        ChatTraceRun traceRun = ChatTraceRun.builder()
-            .traceId(UUID.randomUUID().toString())
-            .traceName(traceName)
-            .conversationId(conversationId)
-            .userId(userId)
-            .status("RUNNING")
-            .build();
+        ChatTraceRun traceRun = ChatTraceRun.createRunning(UUID.randomUUID().toString(), traceName, conversationId, userId);
         CURRENT.set(traceRun);
         return traceRun;
     }

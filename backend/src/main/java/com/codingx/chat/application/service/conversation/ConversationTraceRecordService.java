@@ -30,14 +30,8 @@ public class ConversationTraceRecordService {
      */
     public ChatTraceRun startTrace(String traceName, Long conversationId, Long userId) {
         LocalDateTime now = LocalDateTime.now();
-        ChatTraceRun traceRun = ConversationTraceContext.start(traceName, conversationId, userId).toBuilder()
-            .id(IdUtil.getSnowflakeNextId())
-            .entryMethod("chat")
-            .startedAt(now)
-            .createdAt(now)
-            .updatedAt(now)
-            .deleted(0)
-            .build();
+        ChatTraceRun traceRun = ConversationTraceContext.start(traceName, conversationId, userId)
+            .withStartMetadata(IdUtil.getSnowflakeNextId(), "chat", now, now, now, 0);
         chatTraceRunRepository.save(traceRun);
         ChatTraceNode rootNode = ChatTraceNode.builder()
             .id(IdUtil.getSnowflakeNextId())
@@ -67,14 +61,13 @@ public class ConversationTraceRecordService {
         ChatTraceRun traceRun = chatTraceRunRepository.findByTraceId(traceId)
             .orElseThrow(() -> new NotFoundException(ErrorMessageCatalog.CHAT_TRACE_NOT_FOUND));
         LocalDateTime startedAt = traceRun.getStartedAt() != null ? traceRun.getStartedAt() : now;
-        chatTraceRunRepository.save(traceRun.toBuilder()
-            .taskId(taskId)
-            .status(status)
-            .errorMessage(errorMessage)
-            .finishedAt(now)
-            .updatedAt(now)
-            .durationMs(java.time.Duration.between(startedAt, now).toMillis())
-            .build());
+        chatTraceRunRepository.save(traceRun.finish(
+            taskId,
+            status,
+            errorMessage,
+            now,
+            java.time.Duration.between(startedAt, now).toMillis()
+        ));
 
         for (ChatTraceNode node : chatTraceNodeRepository.findByTraceId(traceId)) {
             if (!"entry".equals(node.getNodeType())) {

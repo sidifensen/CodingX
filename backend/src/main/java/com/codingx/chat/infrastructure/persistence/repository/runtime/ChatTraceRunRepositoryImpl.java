@@ -92,23 +92,23 @@ public class ChatTraceRunRepositoryImpl implements ChatTraceRunRepository {
     }
 
     private ChatTraceRun toDomain(ChatTraceRunDO dataObject) {
-        return ChatTraceRun.builder()
-            .id(dataObject.getId())
-            .traceId(dataObject.getTraceId())
-            .traceName(dataObject.getTraceName())
-            .entryMethod(dataObject.getEntryMethod())
-            .conversationId(dataObject.getConversationId())
-            .taskId(dataObject.getTaskId())
-            .userId(dataObject.getUserId())
-            .status(dataObject.getStatus())
-            .errorMessage(dataObject.getErrorMessage())
-            .durationMs(dataObject.getDurationMs())
-            .extraDataJson(dataObject.getExtraDataJson())
-            .startedAt(dataObject.getStartedAt())
-            .finishedAt(dataObject.getFinishedAt())
-            .createdAt(dataObject.getCreatedAt())
-            .updatedAt(dataObject.getUpdatedAt())
-            .deleted(dataObject.getDeleted())
-            .build();
+        return ChatTraceRun.restore(
+            dataObject.getId(),
+            dataObject.getTraceId(),
+            dataObject.getTraceName(),
+            dataObject.getEntryMethod(),
+            dataObject.getConversationId(),
+            dataObject.getTaskId(),
+            dataObject.getUserId(),
+            dataObject.getStatus(),
+            dataObject.getErrorMessage(),
+            dataObject.getDurationMs(),
+            dataObject.getExtraDataJson(),
+            dataObject.getStartedAt(),
+            dataObject.getFinishedAt(),
+            dataObject.getCreatedAt(),
+            dataObject.getUpdatedAt(),
+            dataObject.getDeleted()
+        );
     }
 }

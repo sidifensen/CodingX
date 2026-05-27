@@ -1029,6 +1029,7 @@ public class ChatApplicationService {
         }
         // 轮次上限由系统配置控制，避免模型在工具-回灌链路里无限循环。
         int maxToolRounds = Math.max(1, runtimeSettingService.chatToolMaxRounds());
+        int publishedAssistantContextLength = 0;
         for (int round = 0; round < maxToolRounds; round++) {
             List<AiToolCall> toolCalls = new ArrayList<>();
             aiChatClient.streamChatWithTools(currentHistory, command.deepThinking(), toolSpecs, buildStreamHandler(
@@ -1047,6 +1048,20 @@ public class ChatApplicationService {
             }
             // 工具重入后模型会继续追加同一条助手消息；已流出的正文和真实 thinking 不能清空。
             // 失败收口、finish 事件和消息落库都依赖这两个缓冲保留工具调用前已经到达的内容。
+            if (builder.length() > publishedAssistantContextLength) {
+                // 将已展示给用户的正文同步给下一轮模型，避免工具回灌后重复输出相同开场白。
+                currentHistory.add(ChatMessage.create(
+                    cn.hutool.core.util.IdUtil.getSnowflakeNextId(),
+                    command.conversationId(),
+                    ChatMessageRole.SYSTEM,
+                    buildPublishedAssistantContentContext(builder.toString()),
+                    ChatMessageStatus.COMPLETED,
+                    null,
+                    null,
+                    null
+                ).attachRun(runId));
+                publishedAssistantContextLength = builder.length();
+            }
             for (AiToolCall toolCall : toolCalls) {
                 ChatToolExecutionResult toolResult;
                 try {
@@ -1069,6 +1084,18 @@ public class ChatApplicationService {
         }
         // 连续工具调用仍未结束时，用明确异常提示用户收敛工具调用策略。
         streamError[0] = new IllegalStateException("本地工具调用轮次超过上限，请收敛工具调用后重试");
+    }
+
+    /**
+     * 构造已流式输出正文的模型上下文，约束下一轮工具回灌只继续未完成步骤。
+     */
+    private String buildPublishedAssistantContentContext(String content) {
+        return """
+            本轮助手已经向用户流式输出过以下正文：
+            %s
+
+            后续回答必须承接这些已输出内容，不要重复输出上述正文或相同含义的开场白；只继续调用必要工具或补充尚未完成的最终结果。
+            """.formatted(content);
     }
 
     /**

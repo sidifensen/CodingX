@@ -246,6 +246,81 @@ class ChatApplicationToolCallFlowTest {
     }
 
     /**
+     * 工具回灌后的下一轮模型必须知道本轮已经流给用户的正文，避免重复输出相同开场白。
+     *
+     * @param tempDir 本地 workspace 临时目录。
+     * @throws Exception 执行失败时抛出。
+     */
+    @Test
+    void sendMessageFeedsPublishedAssistantContentIntoNextToolRound(@TempDir Path tempDir) throws Exception {
+        Long runId = 9401008L;
+        ChatExecutionContext.start(runId);
+        try {
+            Path workspace = tempDir.resolve("repo");
+            Files.createDirectories(workspace);
+            ChatConversation conversation = ChatConversation.create(8L, "No Repeat Preamble", 1002L, ChatConversationStatus.ACTIVE);
+            when(chatConversationRepository.requireById(8L)).thenReturn(conversation);
+            when(chatMessageRepository.findByConversationId(8L)).thenReturn(new ArrayList<>());
+            when(chatAttachmentService.requireOwnedAttachments(any(), eq(8L), eq(1002L))).thenReturn(List.of());
+            when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+                new ConversationRewriteResult("帮我写个简单的日记html", false, List.of("帮我写个简单的日记html"))
+            );
+            when(conversationIntentService.route("帮我写个简单的日记html", false)).thenReturn(
+                new ConversationIntentDecision("chat.normal", ConversationIntentAction.DIRECT, null)
+            );
+            when(chatIntentNodeRepository.findByIntentCode("chat.normal")).thenReturn(null);
+            when(chatSkillContextService.buildSkillContext(any())).thenReturn("");
+            when(chatExpertContextService.buildExpertContext(any())).thenReturn("");
+            when(conversationSummaryService.buildModelHistory(any(), any())).thenAnswer(invocation -> invocation.getArgument(1));
+            when(conversationTitleService.generateTitle(any(), any())).thenReturn("日记页面");
+            when(llmResponseCleaner.clean(any())).thenAnswer(invocation -> invocation.getArgument(0));
+            when(chatToolSpecService.listModelVisibleToolSpecs()).thenReturn(List.of(
+                new ChatToolSpec("test_sync_tool", "同步测试工具", Map.of("type", "object"))
+            ));
+            when(chatToolExecutionService.execute(eq("test_sync_tool"), eq("{\"message\":\"mkdir\"}"))).thenReturn(
+                new ChatToolExecutionResult("test_sync_tool", "目录已创建", Map.of("round", 1))
+            );
+            AtomicInteger modelRound = new AtomicInteger();
+            doAnswer(invocation -> {
+                @SuppressWarnings("unchecked")
+                List<ChatMessage> history = invocation.getArgument(0);
+                AiChatClient.ToolAwareStreamHandler handler = invocation.getArgument(3);
+                if (modelRound.incrementAndGet() == 1) {
+                    handler.onDelta("我将为您创建一个简单的日记HTML页面。");
+                    handler.onToolCall(new AiToolCall("call-repeat-1", "test_sync_tool", "{\"message\":\"mkdir\"}"));
+                    handler.onComplete();
+                    return null;
+                }
+                assertEquals(
+                    true,
+                    history.stream().anyMatch(message ->
+                        message.getRole() == ChatMessageRole.SYSTEM
+                            && message.getContent().contains("我将为您创建一个简单的日记HTML页面")
+                            && message.getContent().contains("不要重复输出")
+                    )
+                );
+                handler.onDelta("目录已准备好，接下来写入页面。");
+                handler.onComplete();
+                return null;
+            }).when(aiChatClient).streamChatWithTools(any(), eq(false), any(), any());
+
+            chatApplicationService.sendMessage(
+                new SendChatMessageCommand(8L, "帮我写个简单的日记html", false, List.of(), List.of(), null, workspace.toString(), List.of()),
+                1002L
+            );
+
+            verify(aiChatClient, org.mockito.Mockito.times(2)).streamChatWithTools(any(), eq(false), any(), any());
+            verify(chatStreamPublisher).publishAssistantCompleted(
+                8L,
+                "我将为您创建一个简单的日记HTML页面。目录已准备好，接下来写入页面。",
+                "日记页面"
+            );
+        } finally {
+            ChatExecutionContext.clear();
+        }
+    }
+
+    /**
      * 深度思考内容是模型真实返回的 reasoning，工具回灌轮次不能清空已收到的 thinking。
      *
      * @param tempDir 本地 workspace 临时目录。

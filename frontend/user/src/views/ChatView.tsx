@@ -4000,8 +4000,17 @@ function ProcessTracePanel({
         }
         if (segment.type === 'search_result_group') {
           return (
-            <ProcessSearchResultGroup
+            <ProcessSearchSummary
               key={`search-result-group-${segment.cards[0]?.id ?? index}`}
+              messageId={messageId}
+              cards={segment.cards}
+            />
+          );
+        }
+        if (segment.type === 'command_group') {
+          return (
+            <ProcessCommandSummary
+              key={`command-group-${segment.cards[0]?.id ?? index}`}
               messageId={messageId}
               cards={segment.cards}
             />
@@ -4028,7 +4037,8 @@ function ProcessTracePanel({
 type ProcessTraceSegment =
   | { type: 'text'; card: ProcessCardItem }
   | { type: 'tool'; card: ProcessCardItem }
-  | { type: 'search_result_group'; cards: ProcessCardItem[] };
+  | { type: 'search_result_group'; cards: ProcessCardItem[] }
+  | { type: 'command_group'; cards: ProcessCardItem[] };
 
 /**
  * 按真实过程顺序输出消息内链路，工具调用不能再被合并成汇总行，否则用户看不到模型边思考边执行的节奏。
@@ -4039,6 +4049,24 @@ function groupProcessTraceSegments(cards: ProcessCardItem[]): ProcessTraceSegmen
   for (let index = 0; index < cards.length; index += 1) {
     const card = cards[index];
     if (card.type === 'tool_call' || card.type === 'tool_result') {
+      if (isCommandProcessCard(card)) {
+        const commandCards = [card];
+        let nextIndex = index + 1;
+        while (
+          nextIndex < cards.length &&
+          (cards[nextIndex].type === 'tool_call' || cards[nextIndex].type === 'tool_result') &&
+          isCommandProcessCard(cards[nextIndex])
+        ) {
+          commandCards.push(cards[nextIndex]);
+          nextIndex += 1;
+        }
+        const commandCount = countCommandCalls(commandCards);
+        if (commandCount > 1) {
+          segments.push({ type: 'command_group', cards: commandCards });
+          index = nextIndex - 1;
+          continue;
+        }
+      }
       if (card.type === 'tool_result' && isSearchProcessCard(card)) {
         const searchResultCards = [card];
         let nextIndex = index + 1;
@@ -4071,9 +4099,9 @@ function groupProcessTraceSegments(cards: ProcessCardItem[]): ProcessTraceSegmen
 }
 
 /**
- * 连续搜索结果默认收起为一条来源摘要，避免大批网页返回占满主消息区。
+ * 连续搜索结果默认收起为 Codex 风格网页访问摘要，避免大批网页返回占满主消息区。
  */
-function ProcessSearchResultGroup({
+function ProcessSearchSummary({
   messageId,
   cards,
 }: {
@@ -4082,22 +4110,22 @@ function ProcessSearchResultGroup({
 }) {
   const [isExpanded, setIsExpanded] = React.useState(false);
   const firstCardId = cards[0]?.id ?? 'search-results';
-  const contentId = `process-search-result-group-content-${messageId}-${firstCardId}`;
+  const contentId = `process-search-summary-content-${messageId}-${firstCardId}`;
 
   return (
     <article
-      data-testid={`process-search-result-group-${messageId}-${firstCardId}`}
+      data-testid={`process-search-summary-${messageId}-${firstCardId}`}
       className="space-y-2 border-l border-border pl-3"
     >
       <div className="flex min-w-0 items-start gap-2 text-sm leading-6 text-foreground">
-        <CheckCircle2 size={15} className="mt-1 shrink-0 text-muted" />
+        <Globe2 size={15} className="mt-1 shrink-0 text-muted" />
         <div className="min-w-0 flex-1">
           <div className="whitespace-pre-wrap [overflow-wrap:anywhere] text-muted">
-            网页搜索返回 {cards.length} 条来源
+            已搜索网页 {cards.length} 次
           </div>
           <button
             type="button"
-            data-testid={`process-search-result-group-toggle-${messageId}-${firstCardId}`}
+            data-testid={`process-search-summary-toggle-${messageId}-${firstCardId}`}
             aria-expanded={isExpanded}
             aria-controls={contentId}
             aria-label={isExpanded ? '收起搜索来源' : '展开搜索来源'}
@@ -4120,6 +4148,84 @@ function ProcessSearchResultGroup({
         </div>
       ) : null}
     </article>
+  );
+}
+
+/**
+ * 连续命令默认收起为一条运行摘要；展开后保留每次命令和输出，方便核对长任务过程。
+ */
+function ProcessCommandSummary({
+  messageId,
+  cards,
+}: {
+  messageId: string;
+  cards: ProcessCardItem[];
+}) {
+  const [isExpanded, setIsExpanded] = React.useState(false);
+  const firstCardId = cards[0]?.id ?? 'command-results';
+  const contentId = `process-command-summary-content-${messageId}-${firstCardId}`;
+  const commandRuns = buildCommandRuns(cards);
+
+  return (
+    <article
+      data-testid={`process-command-summary-${messageId}-${firstCardId}`}
+      className="space-y-2 border-l border-border pl-3"
+    >
+      <div className="flex min-w-0 items-start gap-2 text-sm leading-6 text-foreground">
+        <CheckCircle2 size={15} className="mt-1 shrink-0 text-muted" />
+        <div className="min-w-0 flex-1">
+          <div className="whitespace-pre-wrap [overflow-wrap:anywhere] text-muted">
+            已运行 {commandRuns.length} 条命令
+          </div>
+          <button
+            type="button"
+            data-testid={`process-command-summary-toggle-${messageId}-${firstCardId}`}
+            aria-expanded={isExpanded}
+            aria-controls={contentId}
+            aria-label={isExpanded ? '收起命令输出' : '展开命令输出'}
+            onClick={() => setIsExpanded((current) => !current)}
+            className="mt-1 inline-flex items-center gap-1 text-xs text-muted transition-colors hover:text-foreground"
+          >
+            <ChevronDown
+              size={13}
+              className={`transition-transform ${isExpanded ? 'rotate-180' : '-rotate-90'}`}
+            />
+            <span>{isExpanded ? '收起命令' : '展开命令'}</span>
+          </button>
+        </div>
+      </div>
+      {isExpanded ? (
+        <div id={contentId} className="space-y-2">
+          {commandRuns.map((run, index) => (
+            <ProcessCommandBlock key={`${firstCardId}-${index}-${run.command}`} run={run} />
+          ))}
+        </div>
+      ) : null}
+    </article>
+  );
+}
+
+/**
+ * 展开后的单条命令块，刻意使用不透明背景，保证暗色模式下长输出仍然可读。
+ */
+function ProcessCommandBlock({ run }: { run: CommandProcessRun }) {
+  return (
+    <div className="overflow-hidden rounded-md border border-border bg-surface-container">
+      <div className="border-b border-border px-3 py-2 text-[11px] font-medium text-muted">Shell</div>
+      <div className="space-y-3 px-3 py-3 font-mono text-xs leading-5 text-foreground">
+        <div className="whitespace-pre-wrap [overflow-wrap:anywhere]">
+          {`$ ${run.command}`}
+        </div>
+        {run.output ? (
+          <pre className="max-h-64 overflow-y-auto whitespace-pre-wrap [overflow-wrap:anywhere] rounded bg-surface px-3 py-2 text-muted [scrollbar-gutter:stable]">
+            {run.output}
+          </pre>
+        ) : null}
+      </div>
+      <div className="flex justify-end border-t border-border px-3 py-2 text-[11px] text-muted">
+        {run.status === 'error' ? '失败' : '成功'}
+      </div>
+    </div>
   );
 }
 
@@ -4427,6 +4533,166 @@ function isSearchProcessCard(card: ProcessCardItem): boolean {
   }
   const text = `${card.displayName ?? ''} ${card.title ?? ''} ${card.summary ?? ''}`;
   return text.includes('网页搜索') || text.includes('搜索结果') || text.includes('搜索来源');
+}
+
+interface CommandProcessRun {
+  command: string;
+  output: string;
+  status: ProcessCardItem['status'];
+}
+
+/**
+ * 识别本地命令工具；只聚合 shell 类工具，避免普通 MCP/业务工具被错误折叠为命令。
+ */
+function isCommandProcessCard(card: ProcessCardItem): boolean {
+  if (isSearchProcessCard(card)) {
+    return false;
+  }
+  const text = `${card.toolId ?? ''} ${card.displayName ?? ''} ${card.title ?? ''} ${card.summary ?? ''}`.toLowerCase();
+  if (text.includes('shell_command') || text.includes('shell command') || text.includes('powershell')) {
+    return true;
+  }
+  return getProcessCardDetailContent(card, '参数').some(hasExplicitShellCommandParameter);
+}
+
+/**
+ * 统计命令动作数量；结果卡片只补充输出，不参与“运行 N 条命令”的计数。
+ */
+function countCommandCalls(cards: ProcessCardItem[]): number {
+  const commandCards = cards.filter((card) => card.type === 'tool_call');
+  if (commandCards.length > 0) {
+    return commandCards.length;
+  }
+  return buildCommandRuns(cards).length;
+}
+
+/**
+ * 将连续 shell 调用和结果配对成可展示命令块；结果缺失时仍保留命令，方便流式阶段观察正在运行的命令。
+ */
+function buildCommandRuns(cards: ProcessCardItem[]): CommandProcessRun[] {
+  const runs: CommandProcessRun[] = [];
+  let pendingRunIndex: number | null = null;
+  for (const card of cards) {
+    if (card.type === 'tool_call') {
+      const command = extractCommandFromCard(card) || card.summary || card.displayName || card.title || '命令';
+      runs.push({
+        command,
+        output: '',
+        status: card.status,
+      });
+      pendingRunIndex = runs.length - 1;
+      continue;
+    }
+    if (card.type === 'tool_result') {
+      const output = extractOutputFromCard(card) || card.summary;
+      const targetIndex = pendingRunIndex ?? runs.length - 1;
+      if (targetIndex >= 0 && runs[targetIndex]) {
+        runs[targetIndex] = {
+          ...runs[targetIndex],
+          output,
+          status: card.status,
+        };
+      } else {
+        runs.push({
+          command: extractCommandFromCard(card) || card.displayName || card.title || '命令',
+          output,
+          status: card.status,
+        });
+      }
+      pendingRunIndex = null;
+    }
+  }
+  return runs.filter((run) => run.command.trim().length > 0 || run.output.trim().length > 0);
+}
+
+/**
+ * 从过程卡片参数里提取 shell 命令，兼容 JSON 参数和纯文本参数。
+ */
+function extractCommandFromCard(card: ProcessCardItem): string {
+  const parameterDetails = getProcessCardDetailContent(card, '参数');
+  for (const content of parameterDetails) {
+    const command = extractShellCommand(content);
+    if (command) {
+      return command;
+    }
+  }
+  return '';
+}
+
+/**
+ * 从过程卡片结果明细提取命令输出，避免把摘要当成完整输出。
+ */
+function extractOutputFromCard(card: ProcessCardItem): string {
+  return getProcessCardDetailContent(card, '结果')[0] ?? getProcessCardDetailContent(card, '异常')[0] ?? '';
+}
+
+/**
+ * 获取指定标签的明细内容，标签按包含匹配以兼容“参数/输入参数”等历史文案。
+ */
+function getProcessCardDetailContent(card: ProcessCardItem, label: string): string[] {
+  return (card.details ?? [])
+    .filter((detail) => detail.label.trim().includes(label))
+    .map((detail) => detail.content.trim())
+    .filter(Boolean);
+}
+
+/**
+ * 从 JSON 或纯文本中读取命令字段；解析失败时返回原始文本，避免模型参数格式波动影响展示。
+ */
+function extractShellCommand(content: string): string {
+  const trimmed = content.trim();
+  if (!trimmed) {
+    return '';
+  }
+  try {
+    const parsed = JSON.parse(trimmed) as unknown;
+    if (isObjectRecord(parsed)) {
+      const commandValue = parsed.command ?? parsed.cmd ?? parsed.script;
+      if (typeof commandValue === 'string' && commandValue.trim()) {
+        return commandValue.trim();
+      }
+      return '';
+    }
+  } catch {
+    // 非 JSON 参数常见于历史回放，直接把内容作为命令文本展示。
+  }
+  return trimmed;
+}
+
+/**
+ * 只在参数明确像命令时用于自动识别，避免连续普通工具被误聚合成 shell 命令。
+ */
+function hasExplicitShellCommandParameter(content: string): boolean {
+  const trimmed = content.trim();
+  if (!trimmed) {
+    return false;
+  }
+  try {
+    const parsed = JSON.parse(trimmed) as unknown;
+    if (!isObjectRecord(parsed)) {
+      return false;
+    }
+    return ['command', 'cmd', 'script'].some((key) => {
+      const value = parsed[key];
+      return typeof value === 'string' && value.trim().length > 0;
+    });
+  } catch {
+    return looksLikeShellCommandText(trimmed);
+  }
+}
+
+/**
+ * 兼容历史纯文本命令参数；只匹配常见 shell 前缀，不把普通搜索词当命令。
+ */
+function looksLikeShellCommandText(value: string): boolean {
+  return /^(?:\$\s*)?(?:pwd|dir|ls|rg|grep|git|npm|pnpm|yarn|mvn|gradle|python|node|cd\b|cat\b|type\b|get-[a-z]+|set-[a-z]+|select-[a-z]+)/i.test(value.trim());
+}
+
+/**
+ * 判断未知值是否为普通对象，避免 JSON 数组或 null 被误当作命令参数对象。
+ */
+function isObjectRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 /**

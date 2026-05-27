@@ -3125,16 +3125,184 @@ describe('ChatView', () => {
     );
 
     const tracePanel = screen.getByTestId('process-trace-panel-966');
-    expect(screen.getByTestId('process-search-result-group-966-search-result-1')).toHaveTextContent(
-      '网页搜索返回 4 条来源',
+    expect(screen.getByTestId('process-search-summary-966-search-result-1')).toHaveTextContent(
+      '已搜索网页 4 次',
     );
     expect(within(tracePanel).queryByText('网页搜索返回 site-1.com：AI 资料 1')).not.toBeInTheDocument();
     expect(within(tracePanel).queryByText('网页搜索返回 site-4.com：AI 资料 4')).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByTestId('process-search-result-group-toggle-966-search-result-1'));
+    fireEvent.click(screen.getByTestId('process-search-summary-toggle-966-search-result-1'));
 
     expect(within(tracePanel).getByText('网页搜索返回 site-1.com：AI 资料 1')).toBeInTheDocument();
     expect(within(tracePanel).getByText('网页搜索返回 site-4.com：AI 资料 4')).toBeInTheDocument();
+  });
+
+  /**
+   * 多条 shell 命令应像 Codex 一样默认聚合，避免长任务把主消息区挤满原始输出。
+   */
+  it('应默认折叠连续 shell 命令并在展开后显示命令输出', async () => {
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          messages: [
+            {
+              id: '967',
+              conversationId: '2001',
+              role: 'ASSISTANT',
+              content: '已经检查项目结构',
+              status: 'done',
+              processCards: [
+                {
+                  id: 'tool-call-shell-967-a',
+                  type: 'tool_call',
+                  title: '行动',
+                  summary: '调用 shell_command',
+                  status: 'completed',
+                  toolId: 'shell_command',
+                  displayName: 'shell_command',
+                  presentation: 'react',
+                  details: [
+                    {
+                      label: '参数',
+                      content: '{"command":"Get-ChildItem"}',
+                    },
+                  ],
+                },
+                {
+                  id: 'tool-result-shell-967-a',
+                  type: 'tool_result',
+                  title: '观察',
+                  summary: '工具返回：package.json',
+                  status: 'completed',
+                  toolId: 'shell_command',
+                  displayName: 'shell_command',
+                  presentation: 'react',
+                  details: [
+                    {
+                      label: '结果',
+                      content: 'package.json\nsrc',
+                    },
+                  ],
+                },
+                {
+                  id: 'tool-call-shell-967-b',
+                  type: 'tool_call',
+                  title: '行动',
+                  summary: '调用 shell_command',
+                  status: 'completed',
+                  toolId: 'shell_command',
+                  displayName: 'shell_command',
+                  presentation: 'react',
+                  details: [
+                    {
+                      label: '参数',
+                      content: '{"command":"rg --files"}',
+                    },
+                  ],
+                },
+                {
+                  id: 'tool-result-shell-967-b',
+                  type: 'tool_result',
+                  title: '观察',
+                  summary: '工具返回：src/App.tsx',
+                  status: 'completed',
+                  toolId: 'shell_command',
+                  displayName: 'shell_command',
+                  presentation: 'react',
+                  details: [
+                    {
+                      label: '结果',
+                      content: 'src/App.tsx\nsrc/main.tsx',
+                    },
+                  ],
+                },
+              ],
+            } as any,
+          ],
+          executionSteps: [],
+          references: [],
+          artifacts: [],
+        })}
+      />,
+    );
+
+    const tracePanel = screen.getByTestId('process-trace-panel-967');
+    expect(screen.getByTestId('process-command-summary-967-tool-call-shell-967-a')).toHaveTextContent(
+      '已运行 2 条命令',
+    );
+    expect(within(tracePanel).queryByText('$ Get-ChildItem')).not.toBeInTheDocument();
+    expect(within(tracePanel).queryByText('package.json')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('process-command-summary-toggle-967-tool-call-shell-967-a'));
+
+    expect(within(tracePanel).getByText('$ Get-ChildItem')).toBeInTheDocument();
+    expect(within(tracePanel).getByText(/package\.json/)).toBeInTheDocument();
+    expect(within(tracePanel).getByText('$ rg --files')).toBeInTheDocument();
+    expect(within(tracePanel).getByText(/src\/App\.tsx/)).toBeInTheDocument();
+  });
+
+  /**
+   * 连续普通工具不是 shell 命令，必须保持原有内联工具行展示。
+   */
+  it('不应把连续非 shell 工具折叠成命令摘要', async () => {
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          messages: [
+            {
+              id: '968',
+              conversationId: '2001',
+              role: 'ASSISTANT',
+              content: '已经完成天气查询',
+              status: 'done',
+              processCards: [
+                {
+                  id: 'tool-call-weather-968-a',
+                  type: 'tool_call',
+                  title: '调用天气查询',
+                  summary: '查询北京天气。',
+                  status: 'completed',
+                  toolId: 'weather',
+                  displayName: '天气查询',
+                  details: [{ label: '参数', content: '{"city":"北京"}' }],
+                },
+                {
+                  id: 'tool-result-weather-968-a',
+                  type: 'tool_result',
+                  title: '已获取结果',
+                  summary: '北京晴。',
+                  status: 'completed',
+                  toolId: 'weather',
+                  displayName: '天气查询',
+                  details: [{ label: '结果', content: '北京晴' }],
+                },
+                {
+                  id: 'tool-call-weather-968-b',
+                  type: 'tool_call',
+                  title: '调用天气查询',
+                  summary: '查询上海天气。',
+                  status: 'completed',
+                  toolId: 'weather',
+                  displayName: '天气查询',
+                  details: [{ label: '参数', content: '{"city":"上海"}' }],
+                },
+              ],
+            } as any,
+          ],
+          executionSteps: [],
+          references: [],
+          artifacts: [],
+        })}
+      />,
+    );
+
+    expect(screen.queryByTestId('process-command-summary-968-tool-call-weather-968-a')).not.toBeInTheDocument();
+    expect(screen.getByTestId('process-tool-row-968-tool-call-weather-968-a')).toBeInTheDocument();
+    expect(screen.getByTestId('process-tool-row-968-tool-call-weather-968-b')).toBeInTheDocument();
   });
 
   /**

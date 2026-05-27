@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.when;
 
+import cn.hutool.json.JSONUtil;
 import com.codingx.mcp.domain.repository.ChatMcpRepository;
 import com.codingx.common.exception.BusinessException;
 import com.codingx.skill.domain.repository.ChatSkillRepository;
@@ -19,6 +20,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import javax.imageio.ImageIO;
 import org.junit.jupiter.api.Test;
@@ -95,6 +97,47 @@ class CodexBuiltinChatToolExecutorTest {
             assertNotNull(result.metadata());
             assertEquals(Boolean.TRUE, result.metadata().get("applied"));
             assertTrue(String.valueOf(result.metadata().get("diffPreview")).contains("line-2-updated"));
+        } finally {
+            ChatToolExecutionContext.clear();
+        }
+    }
+
+    /**
+     * 标准 diff 中如果出现当前工作目录内的绝对路径，工具应先规范化为相对路径再交给 git apply。
+     * 业务背景：模型容易把上一轮命令输出的绝对路径直接写进补丁头，不能因此阻断文件创建。
+     *
+     * @param tempDir 测试临时目录。
+     * @throws Exception 执行失败时抛出。
+     */
+    @Test
+    void applyPatchShouldNormalizeWorkspaceAbsolutePathInGitDiff(@TempDir Path tempDir) throws Exception {
+        Path projectRoot = tempDir.resolve("workspace");
+        Files.createDirectories(projectRoot);
+        Path targetFile = projectRoot.resolve("diary").resolve("index.html");
+        String absolutePatchPath = targetFile.toAbsolutePath().normalize().toString().replace('\\', '/');
+        String patch = """
+            diff --git a/%1$s b/%1$s
+            new file mode 100644
+            index 0000000..e69de29
+            --- /dev/null
+            +++ b/%1$s
+            @@ -0,0 +1,3 @@
+            +<!doctype html>
+            +<title>Diary</title>
+            +<main>today</main>
+            """.formatted(absolutePatchPath).stripTrailing();
+
+        ChatToolExecutionContext.bindToolWorkingDirectory(projectRoot);
+        try {
+            ChatToolExecutionResult result = codexBuiltinChatToolExecutor.execute(
+                "apply_patch",
+                JSONUtil.toJsonStr(Map.of("patch", patch))
+            );
+
+            assertEquals("apply_patch", result.toolCode());
+            assertTrue(Files.exists(targetFile));
+            assertTrue(Files.readString(targetFile, StandardCharsets.UTF_8).contains("<title>Diary</title>"));
+            assertEquals(projectRoot.toAbsolutePath().normalize().toString(), result.metadata().get("workingDirectory"));
         } finally {
             ChatToolExecutionContext.clear();
         }

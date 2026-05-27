@@ -32,6 +32,7 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -300,7 +301,7 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
         Path tempPatch = null;
         try {
             tempPatch = Files.createTempFile("chat-tool-", ".patch");
-            FileUtil.writeUtf8String(patchText, tempPatch.toFile());
+            FileUtil.writeUtf8String(normalizeGitPatchWorkspacePaths(workingDirectory, patchText), tempPatch.toFile());
             CommandExecution checkExecution = runCommand(
                 "git apply --check \"" + tempPatch.toAbsolutePath() + "\"",
                 10000L,
@@ -334,6 +335,96 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
             if (tempPatch != null) {
                 FileUtil.del(tempPatch.toFile());
             }
+        }
+    }
+
+    /**
+     * 标准 diff 偶尔会带上工作目录内的绝对路径；应用前转为相对路径，保持写入边界仍锁定在当前工作区。
+     * @param workingDirectory 工具工作目录。
+     * @param patchText 原始标准 diff。
+     * @return 可交给 git apply 的补丁文本。
+     */
+    private String normalizeGitPatchWorkspacePaths(Path workingDirectory, String patchText) {
+        Path normalizedWorkingDirectory = workingDirectory.toAbsolutePath().normalize();
+        String[] lines = patchText.split("\n", -1);
+        List<String> normalizedLines = new ArrayList<>(lines.length);
+        for (String line : lines) {
+            if (StrUtil.startWith(line, "diff --git ")) {
+                normalizedLines.add(normalizeGitDiffHeaderLine(normalizedWorkingDirectory, line));
+                continue;
+            }
+            if (StrUtil.startWith(line, "--- ") || StrUtil.startWith(line, "+++ ")) {
+                normalizedLines.add(normalizeGitFileHeaderLine(normalizedWorkingDirectory, line));
+                continue;
+            }
+            normalizedLines.add(line);
+        }
+        String normalizedPatch = String.join("\n", normalizedLines);
+        // git apply 会把缺少文件尾换行的最后一个 hunk 判定为 corrupt patch，模型输出 JSON 时常丢失该换行。
+        return normalizedPatch.endsWith("\n") ? normalizedPatch : normalizedPatch + "\n";
+    }
+
+    /**
+     * 规范化 diff --git 头部的 a/b 两个路径，避免 Windows 绝对路径被 git apply 判定为非法路径。
+     */
+    private String normalizeGitDiffHeaderLine(Path workingDirectory, String line) {
+        String body = StrUtil.removePrefix(line, "diff --git ");
+        List<String> parts = StrUtil.split(body, ' ');
+        if (parts.size() != 2) {
+            return line;
+        }
+        return "diff --git "
+            + normalizeGitPatchPathToken(workingDirectory, parts.get(0))
+            + " "
+            + normalizeGitPatchPathToken(workingDirectory, parts.get(1));
+    }
+
+    /**
+     * 规范化 ---/+++ 文件头路径；/dev/null 表示新增或删除文件，必须原样保留。
+     */
+    private String normalizeGitFileHeaderLine(Path workingDirectory, String line) {
+        String prefix = line.substring(0, 4);
+        String pathToken = line.substring(4);
+        return prefix + normalizeGitPatchPathToken(workingDirectory, pathToken);
+    }
+
+    /**
+     * 将工作区内绝对路径转换为 git patch 期望的相对路径，工作区外路径继续按越界处理。
+     */
+    private String normalizeGitPatchPathToken(Path workingDirectory, String token) {
+        if (StrUtil.isBlank(token) || StrUtil.equals(token, "/dev/null")) {
+            return token;
+        }
+        String normalizedToken = token.trim();
+        String prefix = "";
+        if (StrUtil.startWith(normalizedToken, "a/") || StrUtil.startWith(normalizedToken, "b/")) {
+            prefix = normalizedToken.substring(0, 2);
+            normalizedToken = normalizedToken.substring(2);
+        }
+        String relativePath = relativizeWorkspaceAbsolutePath(workingDirectory, normalizedToken);
+        return relativePath == null ? token : prefix + relativePath;
+    }
+
+    /**
+     * 只接受当前工作目录内的绝对路径，确保模型误传其他盘符时不会越界写入。
+     */
+    private String relativizeWorkspaceAbsolutePath(Path workingDirectory, String pathText) {
+        try {
+            Path candidatePath = Path.of(pathText);
+            if (!candidatePath.isAbsolute()) {
+                return null;
+            }
+            Path normalizedWorkingDirectory = workingDirectory.toAbsolutePath().normalize();
+            Path normalizedCandidatePath = candidatePath.toAbsolutePath().normalize();
+            if (!normalizedCandidatePath.startsWith(normalizedWorkingDirectory)) {
+                throw new BusinessException(
+                    "CHAT_TOOL_APPLY_PATCH_FAILED",
+                    ErrorMessageCatalog.CHAT_TOOL_PATCH_PATH_OUT_OF_BOUND
+                );
+            }
+            return normalizedWorkingDirectory.relativize(normalizedCandidatePath).toString().replace('\\', '/');
+        } catch (InvalidPathException exception) {
+            return null;
         }
     }
 

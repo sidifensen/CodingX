@@ -20,6 +20,7 @@ import {
   ExecutionStepItem,
   McpCallItem,
   McpItem,
+  MessageTimelineItem,
   MessageSearchProgress,
   MessageSearchProgressItem,
   PendingAttachmentItem,
@@ -1422,6 +1423,7 @@ export function useChatWorkspace(
         role: 'ASSISTANT',
         content: '',
         processCards: [],
+        timelineItems: [],
         status: 'streaming',
       },
     ];
@@ -1831,6 +1833,7 @@ export function useChatWorkspace(
         role: 'ASSISTANT',
         content: '',
         processCards: [],
+        timelineItems: [],
         status: 'streaming',
       },
     ];
@@ -2126,6 +2129,7 @@ export function useChatWorkspace(
         role: 'ASSISTANT',
         content: '',
         processCards: [],
+        timelineItems: [],
         status: 'streaming',
       },
     ];
@@ -2350,12 +2354,24 @@ export function useChatWorkspace(
       setMessages((previousMessages) =>
         previousMessages.map((message) =>
           message.id === optimisticAssistantId
-            ? {
-                ...message,
-                content: `${message.content}${delta}`,
+            ? (() => {
+                const currentProcessCards = message.processCards ?? [];
                 // 正文 token 本身已经是最终回答，过程链路只保留真实分析与工具事件，避免展示无信息量的固定“整理中”步骤。
-                processCards: finalizeCardsByType(message.processCards ?? [], ['analysis']),
-              }
+                const nextProcessCards = finalizeCardsByType(currentProcessCards, ['analysis']);
+                return {
+                  ...message,
+                  content: `${message.content}${delta}`,
+                  processCards: nextProcessCards,
+                  timelineItems: appendContentToTimeline(
+                    syncProcessCardsToTimeline(
+                      message.timelineItems,
+                      currentProcessCards,
+                      nextProcessCards,
+                    ),
+                    delta,
+                  ),
+                };
+              })()
             : message,
         ),
       );
@@ -2373,16 +2389,22 @@ export function useChatWorkspace(
                 const existingThinkingCard = currentProcessCards.find((card) => card.id === thinkingCardId);
                 const nextThinkingSummary = `${existingThinkingCard?.summary ?? ''}${delta}`;
                 const nextThinkingContent = `${message.thinkingContent ?? ''}${delta}`;
+                const nextProcessCards = upsertProcessCard(
+                  currentProcessCards,
+                  buildAnalysisProcessCard(
+                    thinkingCardId,
+                    nextThinkingSummary,
+                    thinkingCardId === 'analysis-after-tools' ? '分析检索结果' : '分析问题',
+                  ),
+                );
                 return {
                   ...message,
                   thinkingContent: nextThinkingContent,
-                  processCards: upsertProcessCard(
+                  processCards: nextProcessCards,
+                  timelineItems: syncProcessCardsToTimeline(
+                    message.timelineItems,
                     currentProcessCards,
-                    buildAnalysisProcessCard(
-                      thinkingCardId,
-                      nextThinkingSummary,
-                      thinkingCardId === 'analysis-after-tools' ? '分析检索结果' : '分析问题',
-                    ),
+                    nextProcessCards,
                   ),
                 };
               })()
@@ -2434,11 +2456,20 @@ export function useChatWorkspace(
       setMessages((previousMessages) =>
         previousMessages.map((message) =>
           message.id === optimisticAssistantId
-            ? {
-                ...message,
-                mcpCalls: mergeMcpCallsById(message.mcpCalls ?? [], call),
-                processCards: mergeMcpCallIntoProcessCards(message.processCards ?? [], call),
-              }
+            ? (() => {
+                const currentProcessCards = message.processCards ?? [];
+                const nextProcessCards = mergeMcpCallIntoProcessCards(currentProcessCards, call);
+                return {
+                  ...message,
+                  mcpCalls: mergeMcpCallsById(message.mcpCalls ?? [], call),
+                  processCards: nextProcessCards,
+                  timelineItems: syncProcessCardsToTimeline(
+                    message.timelineItems,
+                    currentProcessCards,
+                    nextProcessCards,
+                  ),
+                };
+              })()
             : message,
         ),
       );
@@ -2463,14 +2494,10 @@ export function useChatWorkspace(
         setMessages((previousMessages) =>
           previousMessages.map((message) =>
             message.id === optimisticAssistantId
-              ? {
-                  ...message,
-                  searchProgress: {
-                    status: 'running',
-                    items: message.searchProgress?.items ?? [],
-                  },
-                  processCards: mergeSearchStepIntoProcessCards(
-                    message.processCards ?? [],
+              ? (() => {
+                  const currentProcessCards = message.processCards ?? [];
+                  const nextProcessCards = mergeSearchStepIntoProcessCards(
+                    currentProcessCards,
                     {
                       id: String(payload.id ?? 'search-step'),
                       title: String(payload.stepTitle ?? '调用网页搜索'),
@@ -2483,8 +2510,21 @@ export function useChatWorkspace(
                           ? 'completed'
                           : 'running',
                     },
-                  ),
-                }
+                  );
+                  return {
+                    ...message,
+                    searchProgress: {
+                      status: 'running',
+                      items: message.searchProgress?.items ?? [],
+                    },
+                    processCards: nextProcessCards,
+                    timelineItems: syncProcessCardsToTimeline(
+                      message.timelineItems,
+                      currentProcessCards,
+                      nextProcessCards,
+                    ),
+                  };
+                })()
               : message,
           ),
         );
@@ -2514,6 +2554,11 @@ export function useChatWorkspace(
           if (message.id !== optimisticAssistantId) {
             return message;
           }
+          const currentProcessCards = message.processCards ?? [];
+          const nextProcessCards = mergeReferenceIntoProcessCards(
+            currentProcessCards,
+            nextReference,
+          );
           return {
             ...message,
             searchProgress: {
@@ -2525,9 +2570,11 @@ export function useChatWorkspace(
                 siteName: nextReference.siteName,
               }),
             },
-            processCards: mergeReferenceIntoProcessCards(
-              message.processCards ?? [],
-              nextReference,
+            processCards: nextProcessCards,
+            timelineItems: syncProcessCardsToTimeline(
+              message.timelineItems,
+              currentProcessCards,
+              nextProcessCards,
             ),
           };
         }),
@@ -2588,6 +2635,13 @@ export function useChatWorkspace(
                     }
                   : undefined,
                   processCards: finalizeProcessCards(message.processCards ?? [], 'completed'),
+                  timelineItems: finalizeTimelineProcessCards(
+                    ensureTimelineContent(
+                      message.timelineItems,
+                      String(payload.content ?? message.content),
+                    ),
+                    'completed',
+                  ),
               }
             : message,
         ),
@@ -2610,6 +2664,10 @@ export function useChatWorkspace(
                     }
                   : undefined,
                   processCards: finalizeProcessCards(message.processCards ?? [], 'cancelled'),
+                  timelineItems: finalizeTimelineProcessCards(
+                    message.timelineItems,
+                    'cancelled',
+                  ),
               }
             : message,
         ),
@@ -2633,6 +2691,10 @@ export function useChatWorkspace(
                     }
                   : undefined,
                   processCards: finalizeProcessCards(message.processCards ?? [], 'error'),
+                  timelineItems: finalizeTimelineProcessCards(
+                    message.timelineItems,
+                    'error',
+                  ),
               }
             : message,
         ),
@@ -4331,6 +4393,130 @@ function finalizeCardsByType(cards: ProcessCardItem[], types: ProcessCardItem['t
         }
       : card,
   );
+}
+
+/**
+ * 将正文 delta 追加到消息时间线；若上一段是过程节点则开启新的正文片段。
+ * @param items 当前时间线。
+ * @param delta 新到达正文。
+ * @returns 更新后的时间线。
+ */
+function appendContentToTimeline(
+  items: MessageTimelineItem[] | undefined,
+  delta: string,
+): MessageTimelineItem[] | undefined {
+  if (!delta) {
+    return items;
+  }
+  const nextItems = [...(items ?? [])];
+  const lastItem = nextItems[nextItems.length - 1];
+  if (lastItem?.type === 'content') {
+    nextItems[nextItems.length - 1] = {
+      ...lastItem,
+      content: `${lastItem.content}${delta}`,
+    };
+    return nextItems;
+  }
+  nextItems.push({
+    id: `content-${nextItems.length + 1}`,
+    type: 'content',
+    content: delta,
+  });
+  return nextItems;
+}
+
+/**
+ * 把最新过程卡片同步进消息时间线；已有过程只更新内容，不改变原始到达顺序。
+ * @param items 当前时间线。
+ * @param previousCards 合并前过程卡片。
+ * @param nextCards 合并后过程卡片。
+ * @returns 更新后的时间线。
+ */
+function syncProcessCardsToTimeline(
+  items: MessageTimelineItem[] | undefined,
+  previousCards: ProcessCardItem[] | undefined,
+  nextCards: ProcessCardItem[] | undefined,
+): MessageTimelineItem[] | undefined {
+  if (!nextCards || nextCards.length === 0) {
+    return items;
+  }
+  const previousCardIds = new Set((previousCards ?? []).map((card) => card.id));
+  const nextItems = [...(items ?? [])];
+  for (const card of nextCards) {
+    const existingTimelineIndex = nextItems.findIndex(
+      (item) => item.type === 'process' && item.card.id === card.id,
+    );
+    if (existingTimelineIndex >= 0) {
+      const existingItem = nextItems[existingTimelineIndex];
+      if (existingItem.type === 'process') {
+        nextItems[existingTimelineIndex] = {
+          ...existingItem,
+          card,
+        };
+      }
+      continue;
+    }
+    if (!previousCardIds.has(card.id)) {
+      nextItems.push({
+        id: `process-${card.id}`,
+        type: 'process',
+        card,
+      });
+    }
+  }
+  return nextItems;
+}
+
+/**
+ * 终止、取消或异常时同步时间线中的过程状态，避免时间线与旧 processCards 字段显示不一致。
+ * @param items 当前时间线。
+ * @param status 目标过程状态。
+ * @returns 更新后的时间线。
+ */
+function finalizeTimelineProcessCards(
+  items: MessageTimelineItem[] | undefined,
+  status: ProcessCardItem['status'],
+): MessageTimelineItem[] | undefined {
+  if (!items || items.length === 0) {
+    return items;
+  }
+  return items.map((item) =>
+    item.type === 'process'
+      ? {
+          ...item,
+          card: {
+            ...item.card,
+            status: item.card.status === 'running' ? status : item.card.status,
+          },
+        }
+      : item,
+  );
+}
+
+/**
+ * finish 只补齐流式正文缺失的尾段，避免把已穿插的正文和过程重新洗牌。
+ * @param items 当前时间线。
+ * @param content 最终正文。
+ * @returns 更新后的时间线。
+ */
+function ensureTimelineContent(
+  items: MessageTimelineItem[] | undefined,
+  content: string,
+): MessageTimelineItem[] | undefined {
+  if (!content) {
+    return items;
+  }
+  const timelineContent = (items ?? [])
+    .filter((item): item is Extract<MessageTimelineItem, { type: 'content' }> => item.type === 'content')
+    .map((item) => item.content)
+    .join('');
+  if (!timelineContent) {
+    return appendContentToTimeline(items, content);
+  }
+  if (content.length <= timelineContent.length || !content.startsWith(timelineContent)) {
+    return items;
+  }
+  return appendContentToTimeline(items, content.slice(timelineContent.length));
 }
 
 /**

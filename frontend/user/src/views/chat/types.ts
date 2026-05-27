@@ -41,6 +41,10 @@ export interface ChatMessageItem {
   thinkingDuration?: number;
   mcpCalls?: McpCallItem[];
   processCards?: ProcessCardItem[];
+  /**
+   * 助手消息内按 SSE 到达顺序记录的正文与过程片段；用于 Codex 风格穿插展示。
+   */
+  timelineItems?: MessageTimelineItem[];
   searchProgress?: MessageSearchProgress;
   status: string;
   provider?: string;
@@ -93,6 +97,21 @@ export interface ProcessCardItem {
   displayName?: string;
   details?: ProcessCardDetailItem[];
 }
+
+/**
+ * 描述单条助手消息内的混合时间线片段，保留正文 token 与工具过程的相对顺序。
+ */
+export type MessageTimelineItem =
+  | {
+      id: string;
+      type: 'content';
+      content: string;
+    }
+  | {
+      id: string;
+      type: 'process';
+      card: ProcessCardItem;
+    };
 
 /**
  * 描述聊天附件在“输入中/消息中”两个阶段都可复用的结构。

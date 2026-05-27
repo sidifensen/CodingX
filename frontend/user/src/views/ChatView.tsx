@@ -36,6 +36,7 @@ import {
   ChatAttachmentItem,
   ChatWorkspaceController,
   ChatMessageItem,
+  MessageTimelineItem,
   MessageSearchProgress,
   MessageSearchProgressItem,
   McpItem,
@@ -1133,19 +1134,18 @@ export default function ChatView({
                     >
                       {isAssistant ? (
                         <>
-                          {message.processCards && message.processCards.length > 0 ? (
-                            <ProcessTracePanel
-                              messageId={message.id}
-                              cards={message.processCards}
-                            />
-                          ) : null}
                           {message.attachments && message.attachments.length > 0 ? (
                             <MessageAttachmentList
                               attachments={message.attachments}
                               onPreviewImage={(src, alt) => setPreviewAttachment({ src, alt })}
                             />
                           ) : null}
-                          <MarkdownMessage content={messageContent} messageId={message.id} />
+                          <AssistantMessageBody
+                            messageId={message.id}
+                            content={messageContent}
+                            processCards={message.processCards}
+                            timelineItems={message.timelineItems}
+                          />
                           <div className="mt-3 space-y-1.5">
                             <AssistantMessageActions
                               messageId={message.id}
@@ -2519,6 +2519,91 @@ function MarkdownMessage({ content, messageId }: { content: string; messageId?: 
 }
 
 /**
+ * 按单条助手消息内的真实事件顺序渲染正文与过程节点，缺少时间线时保留历史消息兜底。
+ */
+function AssistantMessageBody({
+  messageId,
+  content,
+  processCards,
+  timelineItems,
+}: {
+  messageId: string;
+  content: string;
+  processCards?: ProcessCardItem[];
+  timelineItems?: MessageTimelineItem[];
+}) {
+  const hasTimeline = timelineItems && timelineItems.length > 0;
+  if (!hasTimeline) {
+    return (
+      <div data-testid={`assistant-message-body-${messageId}`}>
+        {processCards && processCards.length > 0 ? (
+          <ProcessTracePanel
+            messageId={messageId}
+            cards={processCards}
+          />
+        ) : null}
+        <MarkdownMessage content={content} messageId={messageId} />
+      </div>
+    );
+  }
+
+  return (
+    <div data-testid={`assistant-message-body-${messageId}`} className="space-y-3">
+      {groupMessageTimelineSegments(timelineItems).map((segment) =>
+        segment.type === 'content' ? (
+          <MarkdownMessage
+            key={segment.id}
+            content={segment.content}
+            messageId={`${messageId}-${segment.id}`}
+          />
+        ) : (
+          <ProcessTracePanel
+            key={segment.id}
+            messageId={messageId}
+            cards={segment.cards}
+          />
+        ),
+      )}
+    </div>
+  );
+}
+
+type MessageTimelineRenderSegment =
+  | { id: string; type: 'content'; content: string }
+  | { id: string; type: 'process'; cards: ProcessCardItem[] };
+
+/**
+ * 将连续过程片段合并后交给 ProcessTracePanel，保留搜索和命令连续汇总能力。
+ */
+function groupMessageTimelineSegments(items: MessageTimelineItem[]): MessageTimelineRenderSegment[] {
+  const segments: MessageTimelineRenderSegment[] = [];
+  for (const item of items) {
+    if (item.type === 'content') {
+      if (item.content.length === 0) {
+        continue;
+      }
+      segments.push({
+        id: item.id,
+        type: 'content',
+        content: item.content,
+      });
+      continue;
+    }
+    const lastSegment = segments[segments.length - 1];
+    if (lastSegment?.type === 'process') {
+      lastSegment.cards.push(item.card);
+      continue;
+    }
+    segments.push({
+      id: `process-${item.card.id}`,
+      type: 'process',
+      cards: [item.card],
+    });
+  }
+  return segments;
+}
+
+/**
  * 识别 PowerShell `Get-ChildItem` 的目录输出，并将其转成更适合阅读的结构化数据。
  * 只接受非常明确的列格式，避免误把普通代码块当成文件清单。
  */
@@ -2954,19 +3039,18 @@ function ShareSelectionRoundCard({
             </div>
           ) : null}
           <div className="rounded-[24px] bg-surface px-4 py-4 text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
-            {assistantMessage.processCards && assistantMessage.processCards.length > 0 ? (
-              <ProcessTracePanel
-                messageId={assistantMessage.id}
-                cards={assistantMessage.processCards}
-              />
-            ) : null}
             {assistantMessage.attachments && assistantMessage.attachments.length > 0 ? (
               <MessageAttachmentList
                 attachments={assistantMessage.attachments}
                 onPreviewImage={onPreviewImage}
               />
             ) : null}
-            <MarkdownMessage content={assistantContent} messageId={assistantMessage.id} />
+            <AssistantMessageBody
+              messageId={assistantMessage.id}
+              content={assistantContent}
+              processCards={assistantMessage.processCards}
+              timelineItems={assistantMessage.timelineItems}
+            />
             {assistantMessage.searchProgress?.items?.length ? (
               <SearchProgressPanel
                 messageId={assistantMessage.id}

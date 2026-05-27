@@ -2945,6 +2945,158 @@ describe('ChatView', () => {
   });
 
   /**
+   * 带时间线的消息必须按正文与过程事件的原始顺序渲染，避免所有过程块被固定挪到消息顶部。
+   */
+  it('按时间线穿插渲染助手正文与过程节点', async () => {
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          messages: [
+            {
+              id: '969',
+              conversationId: '2001',
+              role: 'ASSISTANT',
+              content: '我先检查当前目录。\n\n我再根据结果继续分析。',
+              status: 'done',
+              processCards: [
+                {
+                  id: 'tool-call-shell-969',
+                  type: 'tool_call',
+                  title: '行动',
+                  summary: '调用 shell_command',
+                  status: 'completed',
+                  toolId: 'shell_command',
+                  displayName: 'shell_command',
+                  presentation: 'react',
+                },
+              ],
+              timelineItems: [
+                {
+                  id: 'content-969-a',
+                  type: 'content',
+                  content: '我先检查当前目录。\n\n',
+                },
+                {
+                  id: 'process-tool-call-shell-969',
+                  type: 'process',
+                  card: {
+                    id: 'tool-call-shell-969',
+                    type: 'tool_call',
+                    title: '行动',
+                    summary: '调用 shell_command',
+                    status: 'completed',
+                    toolId: 'shell_command',
+                    displayName: 'shell_command',
+                    presentation: 'react',
+                  },
+                },
+                {
+                  id: 'content-969-b',
+                  type: 'content',
+                  content: '我再根据结果继续分析。',
+                },
+              ],
+            } as any,
+          ],
+          executionSteps: [],
+          references: [],
+          artifacts: [],
+        })}
+      />,
+    );
+
+    const messageShell = screen.getByTestId('assistant-message-body-969');
+    const messageText = messageShell.textContent ?? '';
+    expect(messageText.indexOf('我先检查当前目录。')).toBeLessThan(
+      messageText.indexOf('调用 shell_command'),
+    );
+    expect(messageText.indexOf('调用 shell_command')).toBeLessThan(
+      messageText.indexOf('我再根据结果继续分析。'),
+    );
+    expect(screen.getAllByTestId('process-tool-row-969-tool-call-shell-969')).toHaveLength(1);
+  });
+
+  /**
+   * 时间线中的连续搜索结果仍要复用原有汇总能力，避免长任务刷屏。
+   */
+  it('应在时间线内折叠连续搜索结果', async () => {
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          messages: [
+            {
+              id: '970',
+              conversationId: '2001',
+              role: 'ASSISTANT',
+              content: '根据两条来源汇总如下。',
+              status: 'done',
+              timelineItems: [
+                {
+                  id: 'content-970-a',
+                  type: 'content',
+                  content: '我先搜索最新资料。\n\n',
+                },
+                {
+                  id: 'process-search-result-970-a',
+                  type: 'process',
+                  card: {
+                    id: 'search-result-970-a',
+                    type: 'tool_result',
+                    title: '观察',
+                    summary: '网页搜索返回 OpenAI：文档 A',
+                    status: 'completed',
+                    toolId: 'search',
+                    displayName: '网页搜索',
+                    presentation: 'react',
+                  },
+                },
+                {
+                  id: 'process-search-result-970-b',
+                  type: 'process',
+                  card: {
+                    id: 'search-result-970-b',
+                    type: 'tool_result',
+                    title: '观察',
+                    summary: '网页搜索返回 Microsoft：文档 B',
+                    status: 'completed',
+                    toolId: 'search',
+                    displayName: '网页搜索',
+                    presentation: 'react',
+                  },
+                },
+                {
+                  id: 'content-970-b',
+                  type: 'content',
+                  content: '根据两条来源汇总如下。',
+                },
+              ],
+            } as any,
+          ],
+          executionSteps: [],
+          references: [],
+          artifacts: [],
+        })}
+      />,
+    );
+
+    const messageShell = screen.getByTestId('assistant-message-body-970');
+    expect(within(messageShell).getByTestId('process-search-summary-970-search-result-970-a')).toHaveTextContent(
+      '已搜索网页 2 次',
+    );
+    const messageText = messageShell.textContent ?? '';
+    expect(messageText.indexOf('我先搜索最新资料。')).toBeLessThan(
+      messageText.indexOf('已搜索网页 2 次'),
+    );
+    expect(messageText.indexOf('已搜索网页 2 次')).toBeLessThan(
+      messageText.indexOf('根据两条来源汇总如下。'),
+    );
+  });
+
+  /**
    * 搜索工具结果应按来源列表展示，避免标题、站点和链接混在一段原始文本里。
    */
   it('应将搜索工具结果渲染为结构化来源列表', async () => {

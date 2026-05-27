@@ -543,8 +543,9 @@ export function useChatWorkspace(
     nextValue: ChatMessageItem[] | ((previous: ChatMessageItem[]) => ChatMessageItem[]),
   ) => {
     setMessagesState((previousMessages) => {
-      const nextMessages =
+      const rawNextMessages =
         typeof nextValue === 'function' ? nextValue(previousMessages) : nextValue;
+      const nextMessages = sanitizeMessagesForProcessDisplay(rawNextMessages);
       messagesRef.current = nextMessages;
       return nextMessages;
     });
@@ -4197,7 +4198,7 @@ function mergeMcpCallIntoProcessCards(
   call: McpCallItem,
 ): ProcessCardItem[] {
   let nextCards = finalizeCardsByType(cards, ['analysis']);
-  const isReactToolProcess = Boolean(call.reactThought || call.reactAction || call.reactObservation);
+  const isReactToolProcess = Boolean(call.reactAction || call.reactObservation);
   if (call.phase === 'start' || call.phase === 'progress') {
     const existingCard = nextCards.find((card) => card.id === `tool-call-${call.callId ?? call.toolId}`);
     const nextDetails = call.params
@@ -4209,17 +4210,7 @@ function mergeMcpCallIntoProcessCards(
         ]
       : existingCard?.details;
     if (isReactToolProcess) {
-      // ReAct 展示沿用后端提供的阶段文本，并把工具动作与结果拆成独立过程节点。
-      nextCards = upsertProcessCard(nextCards, {
-        id: `react-thought-${call.callId ?? call.toolId}`,
-        type: 'analysis',
-        title: '思考',
-        summary:
-          call.reactThought ??
-          `需要调用 ${call.displayName || call.toolId || '工具'} 获取或处理当前问题所需的信息。`,
-        status: 'completed',
-        presentation: 'react',
-      });
+      // 工具事件里的 reactThought 可能是后端兜底模板，不代表模型真实正文；只展示动作和观察。
       nextCards = upsertProcessCard(nextCards, {
         id: `tool-call-${call.callId ?? call.toolId}`,
         type: 'tool_call',
@@ -4869,6 +4860,75 @@ function scoreProcessCards(cards: ProcessCardItem[]): number {
  */
 function normalizeReplayContent(content?: string) {
   return (content ?? '').trim();
+}
+
+/**
+ * 清理旧版前端/后端模板生成的工具前“思考”文案；只保留真实正文、工具调用和工具结果。
+ * @param messages 待展示消息列表。
+ * @returns 已过滤伪造过程文案的消息列表。
+ */
+function sanitizeMessagesForProcessDisplay(messages: ChatMessageItem[]): ChatMessageItem[] {
+  return messages.map((message) => {
+    const nextProcessCards = sanitizeProcessCardsForDisplay(message.processCards);
+    const nextTimelineItems = sanitizeTimelineItemsForDisplay(message.timelineItems);
+    if (nextProcessCards === message.processCards && nextTimelineItems === message.timelineItems) {
+      return message;
+    }
+    return {
+      ...message,
+      processCards: nextProcessCards,
+      timelineItems: nextTimelineItems,
+    };
+  });
+}
+
+/**
+ * 过滤过程卡片中的模板化工具前说明。
+ * @param cards 原始过程卡片。
+ * @returns 过滤后的过程卡片。
+ */
+function sanitizeProcessCardsForDisplay(
+  cards: ProcessCardItem[] | undefined,
+): ProcessCardItem[] | undefined {
+  if (!cards) {
+    return cards;
+  }
+  const nextCards = cards.filter((card) => !isSyntheticToolThoughtCard(card));
+  return nextCards.length === cards.length ? cards : nextCards;
+}
+
+/**
+ * 同步过滤消息时间线里的模板化工具前说明，避免刷新历史时再次显示假过程。
+ * @param items 原始时间线。
+ * @returns 过滤后的时间线。
+ */
+function sanitizeTimelineItemsForDisplay(
+  items: MessageTimelineItem[] | undefined,
+): MessageTimelineItem[] | undefined {
+  if (!items) {
+    return items;
+  }
+  const nextItems = items.filter(
+    (item) => item.type !== 'process' || !isSyntheticToolThoughtCard(item.card),
+  );
+  return nextItems.length === items.length ? items : nextItems;
+}
+
+/**
+ * 判断过程卡是否为模板化工具前说明，而非模型真实输出。
+ * @param card 过程卡片。
+ * @returns 是否应隐藏。
+ */
+function isSyntheticToolThoughtCard(card: ProcessCardItem): boolean {
+  if (card.type !== 'analysis' || card.presentation !== 'react') {
+    return false;
+  }
+  const summary = card.summary.trim();
+  return (
+    summary.startsWith('需要调用') ||
+    summary.startsWith('需要通过网页搜索确认资料') ||
+    summary === '需要通过网页搜索获取实时资料。'
+  );
 }
 
 /**

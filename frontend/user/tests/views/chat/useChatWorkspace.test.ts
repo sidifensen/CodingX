@@ -5458,10 +5458,8 @@ describe('useChatWorkspace', () => {
     await waitFor(() => {
       const assistantMessage = result.current.messages.find((item) => item.role === 'ASSISTANT');
       const processCards = ((assistantMessage as Record<string, unknown> | undefined)?.processCards ?? []) as Array<Record<string, unknown>>;
-      expect(processCards.some((card) => card.type === 'analysis' && card.summary === '需要调用 shell_command 获取当前目录。')).toBe(true);
-      expect(processCards.find((card) => card.type === 'analysis')?.summary).toBe(
-        '需要调用 shell_command 获取当前目录。',
-      );
+      expect(processCards.some((card) => card.type === 'analysis')).toBe(false);
+      expect(processCards.some((card) => String(card.summary).includes('需要调用'))).toBe(false);
       const toolCallCard = processCards.find((card) => card.type === 'tool_call');
       expect(toolCallCard?.toolId).toBe('shell_command');
       expect(toolCallCard?.summary).toBe('调用 shell_command');
@@ -5480,7 +5478,9 @@ describe('useChatWorkspace', () => {
       expect(calls[0].status).toBe('completed');
       expect(calls[0].rawResult).toBe('D:/code/CodingX');
       const processCards = ((assistantMessage as Record<string, unknown> | undefined)?.processCards ?? []) as Array<Record<string, unknown>>;
-      expect(processCards.map((card) => card.type)).toEqual(expect.arrayContaining(['analysis', 'tool_call', 'tool_result']));
+      expect(processCards.map((card) => card.type)).toEqual(expect.arrayContaining(['tool_call', 'tool_result']));
+      expect(processCards.some((card) => card.type === 'analysis')).toBe(false);
+      expect(processCards.some((card) => String(card.summary).includes('需要调用'))).toBe(false);
       const toolResultCard = processCards.find((card) => card.type === 'tool_result');
       expect(toolResultCard?.summary).toBe('工具返回：D:/code/CodingX');
       expect(toolResultCard?.presentation).toBe('react');
@@ -5633,14 +5633,13 @@ describe('useChatWorkspace', () => {
         'content',
         'process',
         'process',
-        'process',
         'content',
       ]);
       expect(timelineItems[0].content).toBe('我先检查当前目录。\n\n');
-      expect((timelineItems[1].card as Record<string, unknown>).id).toBe('react-thought-timeline-call-1');
-      expect((timelineItems[2].card as Record<string, unknown>).id).toBe('tool-call-timeline-call-1');
-      expect((timelineItems[3].card as Record<string, unknown>).id).toBe('tool-result-timeline-call-1');
-      expect(timelineItems[4].content).toBe('我再根据结果继续分析。');
+      expect((timelineItems[1].card as Record<string, unknown>).id).toBe('tool-call-timeline-call-1');
+      expect((timelineItems[2].card as Record<string, unknown>).id).toBe('tool-result-timeline-call-1');
+      expect(timelineItems.some((item) => String((item.card as Record<string, unknown> | undefined)?.summary).includes('需要调用'))).toBe(false);
+      expect(timelineItems[3].content).toBe('我再根据结果继续分析。');
     });
 
     await act(async () => {

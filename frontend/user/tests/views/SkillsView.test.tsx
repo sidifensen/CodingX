@@ -1,6 +1,6 @@
 ﻿import '@testing-library/jest-dom/vitest';
 
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import SkillsView from '@/views/SkillsView';
@@ -65,8 +65,29 @@ describe('SkillsView', () => {
 
     expect(screen.getByText('销售查询')).toBeInTheDocument();
     expect(screen.getByText('工单查询')).toBeInTheDocument();
-    expect(screen.getByText('查询销售汇总、排名、趋势与明细')).toBeInTheDocument();
+    expect(screen.getAllByText('查询销售汇总、排名、趋势与明细').length).toBeGreaterThan(0);
     expect(screen.getByText('查询工单状态、列表、优先级与解决率')).toBeInTheDocument();
+    expect(screen.getByText('已安装 (2)')).toBeInTheDocument();
+  });
+
+  /**
+   * 点击技能卡片后应切换到详情页，避免技能库只展示列表但无法查看完整信息。
+   */
+  it('opens skill detail page when installed skill card is clicked', async () => {
+    render(<SkillsView />);
+
+    const salesSkillCard = await screen.findByRole('button', { name: '查看技能详情 销售查询' });
+    fireEvent.click(salesSkillCard);
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '销售查询' })).toBeInTheDocument();
+    expect(screen.getAllByText('查询销售汇总、排名、趋势与明细').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('/sales_query').length).toBeGreaterThan(0);
+    expect(screen.getByText('销售')).toBeInTheDocument();
+    expect(screen.getByText('built-in')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '返回技能库' }));
+    expect(screen.getByRole('heading', { name: '技能库' })).toBeInTheDocument();
     expect(screen.getByText('已安装 (2)')).toBeInTheDocument();
   });
 });

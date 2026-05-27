@@ -12,7 +12,6 @@ import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -25,52 +24,6 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 @Slf4j
 public class ConversationIntentResolver {
-
-    /**
-     * 联网搜索显式意图关键词，命中后优先把问题路由到 SEARCH 叶子节点。
-     */
-    private static final List<String> SEARCH_INTENT_KEYWORDS = List.of(
-        "联网搜索",
-        "上网搜索",
-        "在线搜索",
-        "帮我查",
-        "查一下",
-        "最新",
-        "实时",
-        "新闻",
-        "今天",
-        "最近",
-        "版本",
-        "汇率",
-        "股价"
-    );
-
-    /**
-     * 新闻资讯关键词，用于优先命中 search-news 节点。
-     */
-    private static final List<String> SEARCH_NEWS_KEYWORDS = List.of("新闻", "资讯", "热点", "发布", "快讯");
-
-    /**
-     * 事实查询关键词，用于优先命中 search-facts 节点。
-     */
-    private static final List<String> SEARCH_FACT_KEYWORDS = List.of("是什么", "哪一年", "定义", "原理", "含义", "解释");
-    /**
-     * 天气类关键词优先保护 MCP 路由，避免“最近/今天”这类时效词把天气问题误导到通用搜索。
-     */
-    private static final List<String> WEATHER_QUERY_KEYWORDS = List.of(
-        "天气",
-        "气温",
-        "温度",
-        "预报",
-        "下雨",
-        "降雨",
-        "湿度",
-        "风力",
-        "空气质量",
-        "多少度",
-        "热不热",
-        "冷不冷"
-    );
 
     private final PromptTemplateLoader promptTemplateLoader;
     private final AiPromptExecutionService aiPromptExecutionService;
@@ -121,11 +74,6 @@ public class ConversationIntentResolver {
         if (leafNodes.isEmpty()) {
             return List.of();
         }
-        List<ConversationIntentCandidate> heuristicCandidates = heuristicCandidates(question, leafNodes, examplesByCode);
-        if (!heuristicCandidates.isEmpty()) {
-            logIntentCandidates("启发式", question, heuristicCandidates);
-            return heuristicCandidates;
-        }
         String prompt = promptTemplateLoader.render("intent-classify", Map.of(
             "intent_list", buildIntentList(leafNodes, nodeByCode, examplesByCode)
         ));
@@ -135,7 +83,7 @@ public class ConversationIntentResolver {
             logIntentCandidates("模型", question, candidates);
             return candidates;
         } catch (Exception exception) {
-            List<ConversationIntentCandidate> candidates = fallbackCandidates(question, leafNodes);
+            List<ConversationIntentCandidate> candidates = fallbackCandidates(question, leafNodes, nodeByCode, examplesByCode);
             log.warn(
                 "意图识别失败，使用兜底候选: 问题={}, 候选数={}",
                 StrUtil.maxLength(question, 120),
@@ -160,6 +108,9 @@ public class ConversationIntentResolver {
             builder.append("  path=").append(resolveFullPath(node, nodeByCode)).append("\n");
             builder.append("  description=").append(StrUtil.blankToDefault(node.getDescription(), "")).append("\n");
             builder.append("  type=").append(StrUtil.blankToDefault(node.getIntentType(), "search").toUpperCase()).append("\n");
+            if ("mcp".equalsIgnoreCase(node.getIntentType()) && StrUtil.isNotBlank(node.getMcpToolId())) {
+                builder.append("  toolId=").append(node.getMcpToolId()).append("\n");
+            }
             List<String> nodeExamples = examplesByCode.getOrDefault(node.getIntentCode(), List.of());
             if (!nodeExamples.isEmpty()) {
                 builder.append("  examples=").append(String.join(" / ", nodeExamples)).append("\n");
@@ -176,8 +127,12 @@ public class ConversationIntentResolver {
      * @return 排序后的候选。
      */
     private List<ConversationIntentCandidate> parseCandidates(String raw, Map<String, ChatIntentNode> nodeByCode) {
+        String cleanedRaw = stripMarkdownCodeFence(raw);
+        if (StrUtil.isBlank(cleanedRaw)) {
+            return List.of();
+        }
         JSONArray array;
-        Object parsed = JSONUtil.parse(raw);
+        Object parsed = JSONUtil.parse(cleanedRaw);
         if (parsed instanceof JSONArray jsonArray) {
             array = jsonArray;
         } else if (parsed instanceof JSONObject jsonObject && jsonObject.containsKey("results")) {
@@ -203,17 +158,66 @@ public class ConversationIntentResolver {
     }
 
     /**
-     * 在模型输出不可用时提供一个最低限度的关键词兜底，避免链路直接失明。
+     * 清理模型常见的 markdown 代码块包裹，复用 ragent 的“先清洗再解析 JSON”思路。
+     */
+    private String stripMarkdownCodeFence(String raw) {
+        String value = StrUtil.trim(raw);
+        if (StrUtil.isBlank(value) || !value.startsWith("```")) {
+            return value;
+        }
+        String[] lines = value.split("\\R", -1);
+        if (lines.length < 2 || !StrUtil.trim(lines[0]).startsWith("```")) {
+            return value;
+        }
+        int endFenceLine = -1;
+        for (int index = lines.length - 1; index > 0; index--) {
+            if (StrUtil.trim(lines[index]).startsWith("```")) {
+                endFenceLine = index;
+                break;
+            }
+        }
+        if (endFenceLine <= 0) {
+            return value;
+        }
+        StringBuilder builder = new StringBuilder();
+        for (int index = 1; index < endFenceLine; index++) {
+            if (!builder.isEmpty()) {
+                builder.append('\n');
+            }
+            builder.append(lines[index]);
+        }
+        return builder.toString().trim();
+    }
+
+    /**
+     * 在模型输出不可用时提供配置化兜底，评分依据仅来自意图节点路径、描述、工具标识和示例。
      * @param question 用户问题。
      * @param leafNodes 叶子候选。
-     * @return 兜底候选。
+     * @param nodeByCode 节点索引。
+     * @param examplesByCode 示例索引。
+     * @return 按兜底相关度排序的候选。
      */
-    private List<ConversationIntentCandidate> fallbackCandidates(String question, List<ChatIntentNode> leafNodes) {
+    private List<ConversationIntentCandidate> fallbackCandidates(
+        String question,
+        List<ChatIntentNode> leafNodes,
+        Map<String, ChatIntentNode> nodeByCode,
+        Map<String, List<String>> examplesByCode
+    ) {
         String normalizedQuestion = normalizeText(question);
+        if (StrUtil.isBlank(normalizedQuestion)) {
+            return List.of();
+        }
         return leafNodes.stream()
-            .filter(node -> normalizedQuestion.contains(normalizeText(node.getName()))
-                || normalizedQuestion.contains(normalizeText(node.getDescription())))
-            .map(node -> new ConversationIntentCandidate(node, 0.60D))
+            .map(node -> new ConversationIntentCandidate(
+                node,
+                resolveConfiguredFallbackScore(
+                    normalizedQuestion,
+                    node,
+                    nodeByCode,
+                    examplesByCode.getOrDefault(node.getIntentCode(), List.of())
+                )
+            ))
+            .filter(candidate -> candidate.score() > 0D)
             .sorted(Comparator.comparingDouble(ConversationIntentCandidate::score).reversed())
             .toList();
     }
@@ -235,197 +239,19 @@ public class ConversationIntentResolver {
     }
 
     /**
-     * 对 system / mcp 这类强模式意图优先做启发式命中，避免每次都走 LLM 分类。
-     * @param question 用户问题。
-     * @param leafNodes 叶子候选。
-     * @param examplesByCode 示例索引。
-     * @return 命中的启发式候选。
-     */
-    private List<ConversationIntentCandidate> heuristicCandidates(String question, List<ChatIntentNode> leafNodes, Map<String, List<String>> examplesByCode) {
-        String normalizedQuestion = normalizeText(question);
-        List<ConversationIntentCandidate> candidates = new ArrayList<>();
-        boolean explicitSearchIntent = containsAnyKeyword(normalizedQuestion, SEARCH_INTENT_KEYWORDS);
-        boolean newsLikeQuestion = containsAnyKeyword(normalizedQuestion, SEARCH_NEWS_KEYWORDS);
-        boolean factsLikeQuestion = containsAnyKeyword(normalizedQuestion, SEARCH_FACT_KEYWORDS);
-        boolean weatherLikeQuestion = containsAnyKeyword(normalizedQuestion, WEATHER_QUERY_KEYWORDS);
-        for (ChatIntentNode node : leafNodes) {
-            String intentType = StrUtil.blankToDefault(node.getIntentType(), "");
-            if ("search".equalsIgnoreCase(intentType)) {
-                if (weatherLikeQuestion) {
-                    continue;
-                }
-                double searchScore = resolveSearchHeuristicScore(
-                    explicitSearchIntent,
-                    newsLikeQuestion,
-                    factsLikeQuestion,
-                    normalizedQuestion,
-                    node,
-                    examplesByCode.getOrDefault(node.getIntentCode(), List.of())
-                );
-                if (searchScore > 0D) {
-                    candidates.add(new ConversationIntentCandidate(node, searchScore));
-                }
-                continue;
-            }
-            if ("system".equalsIgnoreCase(intentType) || "mcp".equalsIgnoreCase(intentType)) {
-                double score = resolveMcpOrSystemHeuristicScore(
-                    normalizedQuestion,
-                    weatherLikeQuestion,
-                    node,
-                    examplesByCode.getOrDefault(node.getIntentCode(), List.of())
-                );
-                if (score > 0D) {
-                    candidates.add(new ConversationIntentCandidate(node, score));
-                }
-            }
-        }
-        candidates.sort(Comparator.comparingDouble(ConversationIntentCandidate::score).reversed());
-        return candidates;
-    }
-
-    /**
-     * 对 SEARCH 节点执行轻量启发式打分，避免“明确联网搜索”问法被误判为普通对话。
-     * @param explicitSearchIntent 是否出现显式搜索意图词。
-     * @param newsLikeQuestion 是否为新闻资讯型问法。
-     * @param factsLikeQuestion 是否为事实解释型问法。
-     * @param normalizedQuestion 标准化后的问题。
-     * @param node 当前候选节点。
-     * @param examples 当前节点示例。
-     * @return 匹配分数；未命中返回 0。
-     */
-    private double resolveSearchHeuristicScore(
-        boolean explicitSearchIntent,
-        boolean newsLikeQuestion,
-        boolean factsLikeQuestion,
-        String normalizedQuestion,
-        ChatIntentNode node,
-        List<String> examples
-    ) {
-        double baseScore = resolveHeuristicScore(normalizedQuestion, node, examples);
-        String normalizedName = normalizeText(node.getName());
-        String normalizedCode = normalizeText(node.getIntentCode());
-        if (explicitSearchIntent) {
-            if (isGeneralSearchNode(normalizedName, normalizedCode)) {
-                return Math.max(baseScore, 0.96D);
-            }
-            if (isNewsSearchNode(normalizedName, normalizedCode)) {
-                return Math.max(baseScore, newsLikeQuestion ? 0.95D : 0.78D);
-            }
-            if (isFactsSearchNode(normalizedName, normalizedCode)) {
-                return Math.max(baseScore, factsLikeQuestion ? 0.95D : 0.76D);
-            }
-            return Math.max(baseScore, 0.74D);
-        }
-        if (newsLikeQuestion && isNewsSearchNode(normalizedName, normalizedCode)) {
-            return Math.max(baseScore, 0.90D);
-        }
-        if (factsLikeQuestion && isFactsSearchNode(normalizedName, normalizedCode)) {
-            return Math.max(baseScore, 0.88D);
-        }
-        return baseScore;
-    }
-
-    /**
-     * MCP/SYSTEM 节点启发式命中；天气类问法对天气 MCP 加强匹配，避免被时间词搜索规则抢占。
-     * @param normalizedQuestion 标准化问题。
-     * @param weatherLikeQuestion 是否天气类问法。
-     * @param node 当前候选节点。
-     * @param examples 当前节点示例。
-     * @return 匹配分数；未命中返回 0。
-     */
-    private double resolveMcpOrSystemHeuristicScore(
-        String normalizedQuestion,
-        boolean weatherLikeQuestion,
-        ChatIntentNode node,
-        List<String> examples
-    ) {
-        double baseScore = resolveHeuristicScore(normalizedQuestion, node, examples);
-        if (weatherLikeQuestion && isWeatherMcpNode(node)) {
-            return Math.max(baseScore, 0.97D);
-        }
-        return baseScore;
-    }
-
-    /**
-     * 判断节点是否天气 MCP；同时兼容编码、名称、描述和工具 ID，降低管理端改名后的误判概率。
-     */
-    private boolean isWeatherMcpNode(ChatIntentNode node) {
-        String text = normalizeText(
-            StrUtil.blankToDefault(node.getIntentCode(), "")
-                + " " + StrUtil.blankToDefault(node.getName(), "")
-                + " " + StrUtil.blankToDefault(node.getDescription(), "")
-                + " " + StrUtil.blankToDefault(node.getMcpToolId(), "")
-        );
-        return text.contains("weather")
-            || text.contains("天气")
-            || text.contains("气温")
-            || text.contains("预报");
-    }
-
-    /**
-     * 判断节点是否通用搜索类。
-     * @param normalizedName 标准化名称。
-     * @param normalizedCode 标准化编码。
-     * @return 是否通用搜索节点。
-     */
-    private boolean isGeneralSearchNode(String normalizedName, String normalizedCode) {
-        return normalizedName.contains("通用")
-            || normalizedName.contains("联网搜索")
-            || normalizedCode.contains("searchgeneral")
-            || "search".equals(normalizedCode);
-    }
-
-    /**
-     * 判断节点是否新闻搜索类。
-     * @param normalizedName 标准化名称。
-     * @param normalizedCode 标准化编码。
-     * @return 是否新闻节点。
-     */
-    private boolean isNewsSearchNode(String normalizedName, String normalizedCode) {
-        return normalizedName.contains("新闻")
-            || normalizedName.contains("资讯")
-            || normalizedCode.contains("news");
-    }
-
-    /**
-     * 判断节点是否事实查询类。
-     * @param normalizedName 标准化名称。
-     * @param normalizedCode 标准化编码。
-     * @return 是否事实节点。
-     */
-    private boolean isFactsSearchNode(String normalizedName, String normalizedCode) {
-        return normalizedName.contains("事实")
-            || normalizedName.contains("百科")
-            || normalizedCode.contains("facts");
-    }
-
-    /**
-     * 检查问题是否包含任一关键词（标准化后匹配）。
-     * @param normalizedQuestion 标准化问题。
-     * @param keywords 关键词集合。
-     * @return 是否命中任一关键词。
-     */
-    private boolean containsAnyKeyword(String normalizedQuestion, List<String> keywords) {
-        for (String keyword : keywords) {
-            String normalizedKeyword = normalizeText(keyword);
-            if (StrUtil.isBlank(normalizedKeyword)) {
-                continue;
-            }
-            if (normalizedQuestion.contains(normalizedKeyword)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    /**
-     * 基于节点示例与节点名做轻量启发式命中，避免把欢迎语、MCP 查询入口绑死在具体编码上。
+     * 基于节点配置文本做轻量兜底命中，避免把搜索、天气等业务词写死在代码里。
      * @param normalizedQuestion 标准化后的用户问题。
      * @param node 当前叶子节点。
+     * @param nodeByCode 节点索引。
      * @param examples 当前节点示例。
      * @return 命中分数；未命中返回 0。
      */
-    private double resolveHeuristicScore(String normalizedQuestion, ChatIntentNode node, List<String> examples) {
+    private double resolveConfiguredFallbackScore(
+        String normalizedQuestion,
+        ChatIntentNode node,
+        Map<String, ChatIntentNode> nodeByCode,
+        List<String> examples
+    ) {
         for (String example : examples) {
             String normalizedExample = normalizeText(example);
             if (StrUtil.isBlank(normalizedExample)) {
@@ -438,11 +264,71 @@ public class ConversationIntentResolver {
                 return 0.92D;
             }
         }
+        String configuredText = normalizeText(buildConfiguredFallbackText(node, nodeByCode, examples));
+        if (StrUtil.isBlank(configuredText)) {
+            return 0D;
+        }
         String normalizedName = normalizeText(node.getName());
         if (StrUtil.isNotBlank(normalizedName) && normalizedQuestion.contains(normalizedName)) {
             return 0.82D;
         }
-        return 0D;
+        int matchedUnits = countMatchedTextUnits(normalizedQuestion, configuredText);
+        if (matchedUnits >= 3) {
+            return 0.78D;
+        }
+        if (matchedUnits == 2) {
+            return 0.68D;
+        }
+        if (matchedUnits == 1) {
+            return 0.58D;
+        }
+        return configuredText.contains(normalizedQuestion) ? 0.60D : 0D;
+    }
+
+    /**
+     * 汇总单个叶子节点的可配置语义文本，模拟 ragent 将 path/description/type/examples 交给分类器的方式。
+     */
+    private String buildConfiguredFallbackText(ChatIntentNode node, Map<String, ChatIntentNode> nodeByCode, List<String> examples) {
+        return String.join(
+            " ",
+            StrUtil.blankToDefault(node.getIntentCode(), ""),
+            resolveFullPath(node, nodeByCode),
+            StrUtil.blankToDefault(node.getDescription(), ""),
+            StrUtil.blankToDefault(node.getIntentType(), ""),
+            StrUtil.blankToDefault(node.getMcpToolId(), ""),
+            String.join(" ", examples)
+        );
+    }
+
+    /**
+     * 使用二元字符片段统计问题与配置文本的交集，兼容中文短句没有天然空格分词的场景。
+     */
+    private int countMatchedTextUnits(String normalizedQuestion, String configuredText) {
+        Set<String> units = new LinkedHashSet<>();
+        collectTextUnits(normalizedQuestion, units);
+        int matched = 0;
+        for (String unit : units) {
+            if (configuredText.contains(unit)) {
+                matched++;
+            }
+        }
+        return matched;
+    }
+
+    /**
+     * 抽取长度为 2 的滑动片段；过短文本保留原文，避免短指令完全失去兜底匹配能力。
+     */
+    private void collectTextUnits(String value, Set<String> units) {
+        if (StrUtil.isBlank(value)) {
+            return;
+        }
+        if (value.length() <= 2) {
+            units.add(value);
+            return;
+        }
+        for (int index = 0; index < value.length() - 1; index++) {
+            units.add(value.substring(index, index + 2));
+        }
     }
 
     /**

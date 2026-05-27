@@ -1,8 +1,10 @@
 package com.codingx.chat.application.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.codingx.chat.domain.model.ChatIntentExample;
@@ -10,6 +12,7 @@ import com.codingx.chat.domain.model.ChatIntentNode;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -58,10 +61,39 @@ class ConversationIntentResolverTest {
     }
 
     /**
-     * 显式“联网搜索”问法应优先命中 SEARCH 节点，不再回落到 LLM 分类链路。
+     * 兼容模型把 JSON 包在 markdown 代码块中的常见输出格式，避免有效分类结果被解析失败吞掉。
      */
     @Test
-    void resolveCandidatesPrefersSearchHeuristicForExplicitWebSearchQuery() {
+    void resolveCandidatesStripsMarkdownCodeFenceBeforeParsingModelResponse() {
+        List<ChatIntentNode> nodes = List.of(
+            ChatIntentNode.builder().intentCode("external").name("外部服务").intentType("mcp").enabled(1).sortNo(1).build(),
+            ChatIntentNode.builder()
+                .intentCode("external-service")
+                .parentCode("external")
+                .name("第三方接口")
+                .description("外部接口调用")
+                .intentType("mcp")
+                .enabled(1)
+                .sortNo(2)
+                .build()
+        );
+        when(promptTemplateLoader.render(anyString(), anyMap())).thenReturn("intent prompt");
+        when(aiPromptExecutionService.complete("intent prompt", "北京天气")).thenReturn("""
+            ```json
+            [{"id":"external-service","score":0.93,"reason":"模型选择该外部接口"}]
+            ```
+            """);
+
+        List<ConversationIntentCandidate> candidates = conversationIntentResolver.resolveCandidates("北京天气", nodes, List.of());
+
+        assertEquals("external-service", candidates.getFirst().node().getIntentCode());
+    }
+
+    /**
+     * 显式“联网搜索”问法应由配置化候选和模型分数决定，不在 Java 中维护搜索关键词表。
+     */
+    @Test
+    void resolveCandidatesUsesModelScoreForExplicitWebSearchQuery() {
         List<ChatIntentNode> nodes = List.of(
             ChatIntentNode.builder().intentCode("search").name("联网搜索").intentType("search").enabled(1).sortNo(1).build(),
             ChatIntentNode.builder().intentCode("search-news").parentCode("search").name("新闻资讯").intentType("search").enabled(1).sortNo(2).build(),
@@ -69,6 +101,10 @@ class ConversationIntentResolverTest {
             ChatIntentNode.builder().intentCode("search-general").parentCode("search").name("通用检索").intentType("search").enabled(1).sortNo(4).build(),
             ChatIntentNode.builder().intentCode("sys-about-bot").name("关于助手").intentType("system").enabled(1).sortNo(10).build()
         );
+        when(promptTemplateLoader.render(anyString(), anyMap())).thenReturn("intent prompt");
+        when(aiPromptExecutionService.complete("intent prompt", "请联网搜索最新 Java 版本")).thenReturn("""
+            [{"id":"search-general","score":0.96,"reason":"问题明确要求联网检索最新版本信息"}]
+            """);
 
         List<ConversationIntentCandidate> candidates = conversationIntentResolver.resolveCandidates(
             "请联网搜索最新 Java 版本",
@@ -77,14 +113,15 @@ class ConversationIntentResolverTest {
         );
 
         assertEquals("search-general", candidates.getFirst().node().getIntentCode());
-        verifyNoInteractions(promptTemplateLoader, aiPromptExecutionService);
+        verify(promptTemplateLoader).render(anyString(), anyMap());
+        verify(aiPromptExecutionService).complete("intent prompt", "请联网搜索最新 Java 版本");
     }
 
     /**
-     * 天气问法即使包含“最近/今天”等时效词，也应优先命中天气 MCP，而不是被通用搜索抢占。
+     * 天气问法由天气 MCP 节点自身的描述和示例交给模型判断，不依赖写死的天气关键词保护逻辑。
      */
     @Test
-    void resolveCandidatesPrefersWeatherMcpOverRecentSearchHeuristic() {
+    void resolveCandidatesUsesModelScoreForWeatherMcpQuery() {
         List<ChatIntentNode> nodes = List.of(
             ChatIntentNode.builder().intentCode("search").name("联网搜索").intentType("search").enabled(1).sortNo(1).build(),
             ChatIntentNode.builder().intentCode("search-general").parentCode("search").name("通用检索").intentType("search").enabled(1).sortNo(2).build(),
@@ -104,6 +141,10 @@ class ConversationIntentResolverTest {
             ChatIntentExample.builder().intentCode("weather-data").exampleText("今天北京的天气怎么样").sortNo(1).build(),
             ChatIntentExample.builder().intentCode("weather-data").exampleText("广州未来三天天气预报").sortNo(2).build()
         );
+        when(promptTemplateLoader.render(anyString(), anyMap())).thenReturn("intent prompt");
+        when(aiPromptExecutionService.complete("intent prompt", "广州最近天气怎么样")).thenReturn("""
+            [{"id":"weather-data","score":0.97,"reason":"问题询问城市天气，应调用天气 MCP"}]
+            """);
 
         List<ConversationIntentCandidate> candidates = conversationIntentResolver.resolveCandidates(
             "广州最近天气怎么样",
@@ -112,6 +153,57 @@ class ConversationIntentResolverTest {
         );
 
         assertEquals("weather-data", candidates.getFirst().node().getIntentCode());
-        verifyNoInteractions(promptTemplateLoader, aiPromptExecutionService);
+        ArgumentCaptor<java.util.Map<String, String>> variablesCaptor = ArgumentCaptor.captor();
+        verify(promptTemplateLoader).render(anyString(), variablesCaptor.capture());
+        String intentList = (String) variablesCaptor.getValue().get("intent_list");
+        assertTrue(intentList.contains("type=MCP"));
+        assertTrue(intentList.contains("toolId=weather_query"));
+        verify(aiPromptExecutionService).complete("intent prompt", "广州最近天气怎么样");
+    }
+
+    /**
+     * 模型不可用时才进入本地兜底；兜底只能读取节点名称、路径、描述和示例这类配置化语义。
+     */
+    @Test
+    void resolveCandidatesFallsBackToConfiguredNodeTextWhenModelUnavailable() {
+        List<ChatIntentNode> nodes = List.of(
+            ChatIntentNode.builder().intentCode("search").name("联网搜索").intentType("search").enabled(1).sortNo(1).build(),
+            ChatIntentNode.builder()
+                .intentCode("search-general")
+                .parentCode("search")
+                .name("通用检索")
+                .description("联网资料检索，用于查询公开网页信息")
+                .intentType("search")
+                .enabled(1)
+                .sortNo(2)
+                .build(),
+            ChatIntentNode.builder().intentCode("weather").name("天气信息查询服务").intentType("mcp").enabled(1).sortNo(3).build(),
+            ChatIntentNode.builder()
+                .intentCode("weather-data")
+                .parentCode("weather")
+                .name("天气查询")
+                .description("城市天气信息查询，覆盖今天、明天、未来预报、气温、温度、降雨、湿度、风力、空气质量等天气问法")
+                .intentType("mcp")
+                .mcpToolId("weather_query")
+                .enabled(1)
+                .sortNo(4)
+                .build()
+        );
+        List<ChatIntentExample> examples = List.of(
+            ChatIntentExample.builder().intentCode("weather-data").exampleText("今天北京的天气怎么样").sortNo(1).build(),
+            ChatIntentExample.builder().intentCode("weather-data").exampleText("广州未来三天天气预报").sortNo(2).build()
+        );
+        when(promptTemplateLoader.render(anyString(), anyMap())).thenReturn("intent prompt");
+        when(aiPromptExecutionService.complete("intent prompt", "广州最近天气怎么样")).thenThrow(new IllegalStateException("llm unavailable"));
+
+        List<ConversationIntentCandidate> candidates = conversationIntentResolver.resolveCandidates(
+            "广州最近天气怎么样",
+            nodes,
+            examples
+        );
+
+        assertEquals("weather-data", candidates.getFirst().node().getIntentCode());
+        verify(promptTemplateLoader).render(anyString(), anyMap());
+        verify(aiPromptExecutionService).complete("intent prompt", "广州最近天气怎么样");
     }
 }

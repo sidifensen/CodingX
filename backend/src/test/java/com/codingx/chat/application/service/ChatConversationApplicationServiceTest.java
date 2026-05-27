@@ -198,6 +198,37 @@ class ChatConversationApplicationServiceTest {
     }
 
     /**
+     * 打开会话后应把任务完成提醒标记为已读，避免刷新后继续显示提醒圆点。
+     */
+    @Test
+    void markTaskCompletionReadPersistsReadStateAfterOwnershipCheck() {
+        ChatConversation conversation = ChatConversation.create(1L, "待读提醒会话", 1002L, ChatConversationStatus.ACTIVE);
+        conversation.markTaskCompletionUnread();
+        when(chatConversationRepository.requireById(1L)).thenReturn(conversation);
+
+        chatConversationApplicationService.markTaskCompletionRead(1L, 1002L);
+
+        assertEquals(Boolean.TRUE, conversation.getTaskCompletionRead());
+        verify(chatConversationRepository).save(conversation);
+    }
+
+    /**
+     * 任务完成提醒已读接口必须校验会话归属，避免用户越权清理他人的提醒状态。
+     */
+    @Test
+    void markTaskCompletionReadRejectsNonOwner() {
+        ChatConversation conversation = ChatConversation.create(1L, "他人提醒会话", 1002L, ChatConversationStatus.ACTIVE);
+        when(chatConversationRepository.requireById(1L)).thenReturn(conversation);
+
+        ForbiddenException exception = assertThrows(
+            ForbiddenException.class,
+            () -> chatConversationApplicationService.markTaskCompletionRead(1L, 2001L)
+        );
+
+        assertEquals(ErrorMessageCatalog.CHAT_CONVERSATION_FORBIDDEN, exception.getMessage());
+    }
+
+    /**
      * 会话列表应按工作空间过滤，避免不同工作空间会话互相串线。
      */
     @Test

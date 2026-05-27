@@ -63,6 +63,11 @@ public class ChatConversation {
     private String shareToken;
 
     /**
+     * 最近任务完成提醒是否已读；false 表示侧栏需要展示提醒圆点。
+     */
+    private Boolean taskCompletionRead;
+
+    /**
      * 创建时间。
      */
     private LocalDateTime createdAt;
@@ -91,6 +96,7 @@ public class ChatConversation {
             .workspaceId(workspaceId)
             .status(status)
             .pinned(Boolean.FALSE)
+            .taskCompletionRead(Boolean.TRUE)
             .build();
     }
 
@@ -156,6 +162,20 @@ public class ChatConversation {
     }
 
     /**
+     * 后台任务进入终态时重置为未读，提示用户回来查看执行结果。
+     */
+    public void markTaskCompletionUnread() {
+        this.taskCompletionRead = Boolean.FALSE;
+    }
+
+    /**
+     * 用户打开会话后标记任务完成提醒已读，避免刷新后重复提示。
+     */
+    public void markTaskCompletionRead() {
+        this.taskCompletionRead = Boolean.TRUE;
+    }
+
+    /**
      * 恢复持久化层中的运行时扩展字段，避免历史回放时丢失链路信息。
      * @param lastMessageAt 最近消息时间。
      * @param lastRunId 最近一次执行记录标识。
@@ -173,6 +193,14 @@ public class ChatConversation {
     public void restoreSharingState(Boolean pinned, String shareToken) {
         this.pinned = pinned;
         this.shareToken = shareToken;
+    }
+
+    /**
+     * 恢复持久化层记录的任务完成提醒已读状态，兼容旧数据默认已读。
+     * @param taskCompletionRead 任务完成提醒是否已读。
+     */
+    public void restoreTaskCompletionReadState(Boolean taskCompletionRead) {
+        this.taskCompletionRead = taskCompletionRead == null ? Boolean.TRUE : taskCompletionRead;
     }
 
     /**

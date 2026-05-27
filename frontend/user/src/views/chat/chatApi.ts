@@ -54,6 +54,10 @@ export class ChatApi {
       lastTaskId: item.lastTaskId == null ? undefined : String(item.lastTaskId),
       lastTaskStatus: item.lastTaskStatus == null ? undefined : String(item.lastTaskStatus),
       lastTaskFinishedAt: item.lastTaskFinishedAt,
+      taskCompletionRead:
+        item.taskCompletionRead == null
+          ? undefined
+          : Boolean(item.taskCompletionRead),
       workspaceId: item.workspaceId == null ? null : String(item.workspaceId),
       workspaceType: item.workspaceType,
     }));
@@ -270,6 +274,21 @@ export class ChatApi {
     await this.request<void>(`/api/chat/conversations/${conversationId}`, token, {
       method: 'DELETE',
     });
+  }
+
+  /**
+   * 标记指定会话的任务完成提醒为已读，服务端字段是刷新后圆点状态的权威来源。
+   * @param token 当前登录令牌。
+   * @param conversationId 会话标识。
+   */
+  static async markTaskCompletionRead(token: string, conversationId: string): Promise<void> {
+    await this.request<void>(
+      `/api/chat/conversations/${conversationId}/task-completion-read`,
+      token,
+      {
+        method: 'PATCH',
+      },
+    );
   }
 
   /**

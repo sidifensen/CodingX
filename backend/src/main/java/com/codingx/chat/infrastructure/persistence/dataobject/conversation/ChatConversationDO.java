@@ -20,6 +20,7 @@ public class ChatConversationDO {
     @TableField("last_run_id") private Long lastRunId;
     @TableField("pinned") private Integer pinned;
     @TableField("share_token") private String shareToken;
+    @TableField("task_completion_read") private Integer taskCompletionRead;
     @TableField("created_at") private LocalDateTime createdAt;
     @TableField("updated_at") private LocalDateTime updatedAt;
     @TableField("deleted") private Integer deleted;

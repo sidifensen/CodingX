@@ -105,6 +105,22 @@ class ChatControllerConversationMutationTest {
     }
 
     /**
+     * 打开会话时前端会调用该接口清除任务完成提醒，后端必须只更新独立的已读字段。
+     */
+    @Test
+    void markTaskCompletionReadDelegatesToApplicationService() {
+        try (MockedStatic<cn.dev33.satoken.stp.StpUtil> mocked = Mockito.mockStatic(cn.dev33.satoken.stp.StpUtil.class)) {
+            mocked.when(cn.dev33.satoken.stp.StpUtil::getLoginIdAsLong).thenReturn(1002L);
+
+            ApiResponse<Void> response = chatController.markTaskCompletionRead(2001L);
+
+            assertEquals(true, response.success());
+            assertEquals(ErrorMessageCatalog.CHAT_CONVERSATION_TASK_COMPLETION_READ, response.message());
+            verify(chatConversationApplicationService).markTaskCompletionRead(2001L, 1002L);
+        }
+    }
+
+    /**
      * 创建会话接口应透传 workspaceId，保证会话和工作空间建立持久化关联。
      */
     @Test

@@ -174,6 +174,20 @@ public class ChatConversationApplicationService {
     }
 
     /**
+     * 将任务完成提醒标记为已读；该状态独立于置顶与分享字段，供前端刷新后恢复提醒状态。
+     * @param conversationId 会话标识。
+     * @param userId 当前用户标识。
+     */
+    public void markTaskCompletionRead(Long conversationId, Long userId) {
+        ChatConversation conversation = chatConversationRepository.requireById(conversationId);
+        if (!conversation.getCreatedBy().equals(userId)) {
+            throw new ForbiddenException(ErrorMessageCatalog.CHAT_CONVERSATION_FORBIDDEN);
+        }
+        conversation.markTaskCompletionRead();
+        chatConversationRepository.save(conversation);
+    }
+
+    /**
      * 为会话生成分享令牌，公开分享页仅依赖该令牌回放只读内容。
      * @param conversationId 会话标识。
      * @param userId 当前用户标识。

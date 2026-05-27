@@ -172,6 +172,11 @@ public final class ErrorMessageCatalog {
     public static final String CHAT_CONVERSATION_PIN_UPDATED = "会话置顶状态已更新";
 
     /**
+     * 会话任务完成提醒已读成功提示。
+     */
+    public static final String CHAT_CONVERSATION_TASK_COMPLETION_READ = "会话任务完成提醒已读状态已更新";
+
+    /**
      * 会话分享链接生成成功提示。
      */
     public static final String CHAT_CONVERSATION_SHARED = "会话分享链接已生成";

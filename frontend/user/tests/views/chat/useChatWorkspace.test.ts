@@ -236,6 +236,92 @@ describe('useChatWorkspace', () => {
   });
 
   /**
+   * 后端返回未读提醒时，打开会话应调用服务端已读接口并立即清除本地圆点。
+   */
+  it('应在打开后端未读会话后提交任务完成提醒已读状态', async () => {
+    window.localStorage.setItem(
+      'codingx.auth.session',
+      JSON.stringify({
+        token: 'token-123',
+        userId: '1002',
+        username: 'user',
+        displayName: 'CodingX User',
+        userType: 'USER',
+      }),
+    );
+    const finishedAt = '2026-05-25 10:00:00';
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === '/api/chat/conversations') {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            code: 'OK',
+            message: 'success',
+            data: [
+              {
+                id: 'task-conversation-db',
+                title: '服务端未读会话',
+                status: 'ACTIVE',
+                lastTaskId: 'task-db',
+                lastTaskStatus: 'SUCCEEDED',
+                lastTaskFinishedAt: finishedAt,
+                taskCompletionRead: false,
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      if (url === '/api/chat/conversations/task-conversation-db/task-completion-read') {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: null }),
+          { status: 200 },
+        );
+      }
+      if (
+        url === '/api/chat/sample-questions' ||
+        url === '/api/chat/experts' ||
+        url === '/api/chat/skills' ||
+        url === '/api/chat/mcps' ||
+        url === '/api/chat/conversations/task-conversation-db/messages' ||
+        url === '/api/chat/conversations/task-conversation-db/steps' ||
+        url === '/api/chat/conversations/task-conversation-db/references' ||
+        url === '/api/chat/conversations/task-conversation-db/artifacts' ||
+        url === '/api/chat/conversations/task-conversation-db/current-experts' ||
+        url === '/api/chat/conversations/task-conversation-db/current-skills' ||
+        url === '/api/chat/conversations/task-conversation-db/current-mcps'
+      ) {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      throw new Error(`Unhandled fetch in db task reminder read test: ${url}`);
+    });
+
+    const { result } = renderHook(() => useChatWorkspace(true));
+
+    await waitFor(() => {
+      expect(result.current.isBootstrapping).toBe(false);
+    });
+    expect(result.current.conversations[0]?.hasUnreadTaskCompletion).toBe(true);
+
+    await act(async () => {
+      await result.current.selectConversation('task-conversation-db', result.current.conversations);
+    });
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      '/api/chat/conversations/task-conversation-db/task-completion-read',
+      expect.objectContaining({
+        method: 'PATCH',
+      }),
+    );
+    expect(result.current.conversations[0]?.taskCompletionRead).toBe(true);
+    expect(result.current.conversations[0]?.hasUnreadTaskCompletion).toBe(false);
+  });
+
+  /**
    * 当前打开的会话任务完成时，应自动记录已读完成时间，避免切走后再次误提示。
    */
   it('当前会话任务完成时应自动标记完成提醒已读', async () => {

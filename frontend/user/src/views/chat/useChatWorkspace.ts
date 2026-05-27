@@ -268,6 +268,16 @@ function applyTaskCompletionReminder(
   }
   const finishedAt = conversation.lastTaskFinishedAt;
   const isTerminalTask = String(conversation.lastTaskStatus ?? '').trim().length > 0;
+  if (typeof conversation.taskCompletionRead === 'boolean') {
+    return {
+      ...conversation,
+      hasUnreadTaskCompletion:
+        isTerminalTask &&
+        Boolean(finishedAt) &&
+        conversation.id !== activeConversationId &&
+        !conversation.taskCompletionRead,
+    };
+  }
   const seenFinishedAt = seenMap[conversation.id];
   return {
     ...conversation,
@@ -317,6 +327,7 @@ function markActiveTaskCompletionSeen(
     isConversationTaskRunning(activeConversation) ||
     !activeConversation.lastTaskFinishedAt ||
     String(activeConversation.lastTaskStatus ?? '').trim().length === 0 ||
+    typeof activeConversation.taskCompletionRead === 'boolean' ||
     seenMap[activeConversation.id] === activeConversation.lastTaskFinishedAt
   ) {
     return seenMap;
@@ -1180,18 +1191,28 @@ export function useChatWorkspace(
     const selectedConversationForSeenState = conversationListForSeenState.find(
       (item) => item.id === conversationId,
     ) ?? seenSnapshot?.conversations.find((item) => item.id === conversationId);
+    const shouldMarkBackendTaskCompletionRead =
+      Boolean(selectedConversationForSeenState?.lastTaskFinishedAt) &&
+      selectedConversationForSeenState?.taskCompletionRead === false;
+    if (shouldMarkBackendTaskCompletionRead) {
+      await ChatApi.markTaskCompletionRead(token, conversationId);
+    }
     if (selectedConversationForSeenState?.lastTaskFinishedAt) {
-      markConversationTaskCompletionSeen(
-        seenRuntimeTarget,
-        seenWorkspacePath,
-        conversationId,
-        selectedConversationForSeenState.lastTaskFinishedAt,
-      );
+      if (selectedConversationForSeenState.taskCompletionRead == null) {
+        markConversationTaskCompletionSeen(
+          seenRuntimeTarget,
+          seenWorkspacePath,
+          conversationId,
+          selectedConversationForSeenState.lastTaskFinishedAt,
+        );
+      }
       const clearCompletionReminder = (items: ConversationItem[]) =>
         items.map((item) =>
           item.id === conversationId
             ? {
                 ...item,
+                taskCompletionRead:
+                  item.taskCompletionRead == null ? item.taskCompletionRead : true,
                 hasUnreadTaskCompletion: false,
               }
             : item,
@@ -1203,12 +1224,18 @@ export function useChatWorkspace(
         : (seenSnapshot?.conversations ?? conversationListForSeenState);
       const nextConversations = clearCompletionReminder(targetConversationsForSeenState);
       conversationListForPersist = nextConversations;
-      seenTaskFinishedAtByConversationIdForPersist = {
-        ...(readWorkspaceSnapshot(
+      if (selectedConversationForSeenState.taskCompletionRead == null) {
+        seenTaskFinishedAtByConversationIdForPersist = {
+          ...(readWorkspaceSnapshot(
+            buildWorkspacePartitionKey(seenRuntimeTarget, seenWorkspacePath),
+          ).seenTaskFinishedAtByConversationId ?? {}),
+          [conversationId]: selectedConversationForSeenState.lastTaskFinishedAt,
+        };
+      } else {
+        seenTaskFinishedAtByConversationIdForPersist = readWorkspaceSnapshot(
           buildWorkspacePartitionKey(seenRuntimeTarget, seenWorkspacePath),
-        ).seenTaskFinishedAtByConversationId ?? {}),
-        [conversationId]: selectedConversationForSeenState.lastTaskFinishedAt,
-      };
+        ).seenTaskFinishedAtByConversationId ?? {};
+      }
       setConversations(nextConversations);
       upsertWorkspaceSnapshot(seenRuntimeTarget, seenWorkspacePath, {
         conversations: nextConversations,

@@ -17,6 +17,10 @@ export interface ConversationItem {
   lastTaskId?: string;
   lastTaskStatus?: string;
   lastTaskFinishedAt?: string;
+  /**
+   * 后端持久化的任务完成提醒已读状态；云端会话刷新后的提醒圆点以该字段为准。
+   */
+  taskCompletionRead?: boolean;
   hasUnreadTaskCompletion?: boolean;
   workspaceId?: string | null;
   workspaceType?: 'CLOUD' | 'LOCAL' | string;

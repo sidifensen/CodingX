@@ -13,6 +13,7 @@ public record ChatConversationResponse(
     Long lastRunId, // 最近一次执行记录标识。
     Boolean pinned, // 置顶状态。
     String shareToken, // 分享令牌。
+    Boolean taskCompletionRead, // 任务完成提醒是否已读。
     Long workspaceId, // 所属工作空间标识。
     String workspaceName, // 所属工作空间名称。
     WorkspaceType workspaceType, // 所属工作空间类型。

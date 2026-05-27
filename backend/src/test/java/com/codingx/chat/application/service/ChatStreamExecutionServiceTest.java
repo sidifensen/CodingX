@@ -11,12 +11,15 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.when;
 
 import com.codingx.chat.application.command.SendChatMessageCommand;
+import com.codingx.chat.domain.model.ChatConversation;
+import com.codingx.chat.domain.model.ChatConversationStatus;
 import com.codingx.chat.domain.model.ChatExecutionRun;
 import com.codingx.chat.domain.model.ChatTraceRun;
 import com.codingx.chat.domain.repository.ChatConversationRepository;
 import com.codingx.chat.domain.repository.ChatExecutionRunRepository;
 import com.codingx.common.error.ErrorMessageCatalog;
 import com.codingx.common.exception.ConflictException;
+import com.codingx.common.exception.NotFoundException;
 import com.codingx.expert.domain.repository.ChatExpertRepository;
 import com.codingx.mcp.domain.repository.ChatMcpRepository;
 import com.codingx.skill.domain.repository.ChatSkillRepository;
@@ -547,6 +550,113 @@ class ChatStreamExecutionServiceTest {
         assertTrue(
             taskCaptor.getAllValues().stream().anyMatch(task -> taskId.equals(task.getId()) && task.getStatus() == TaskStatus.SUCCEEDED),
             "task should be marked succeeded after normal completion"
+        );
+    }
+
+    /**
+     * 后台任务进入终态时应把会话任务完成提醒重置为未读，让前端列表刷新后能显示提醒圆点。
+     * @throws Exception 等待后台线程执行时抛出。
+     */
+    @Test
+    void dispatchMarksConversationTaskCompletionUnreadAfterTaskFinished() throws Exception {
+        CountDownLatch captured = new CountDownLatch(1);
+        Long taskId = 91002L;
+        ChatConversation conversation = ChatConversation.create(1001L, "后台完成会话", 2001L, ChatConversationStatus.ACTIVE);
+        when(chatConversationRepository.findById(1001L)).thenReturn(java.util.Optional.of(conversation));
+        ChatStreamExecutionService service = new ChatStreamExecutionService(
+            chatApplicationService,
+            chatRuntimeGuardService,
+            conversationTraceRecordService,
+            chatExecutionRunRepository,
+            chatMcpRepository,
+            chatSkillRepository,
+            chatExpertRepository,
+            chatConversationRepository,
+            chatWorkspaceBindingService,
+            taskRepository,
+            executorService
+        );
+        org.mockito.Mockito.doAnswer(invocation -> {
+            captured.countDown();
+            return null;
+        }).when(chatApplicationService).sendMessage(new SendChatMessageCommand(1001L, "你好", false, java.util.List.of(), java.util.List.of(), null, null, java.util.List.of()), 2001L);
+        when(chatExecutionRunRepository.findByConversationId(1001L)).thenReturn(java.util.List.of(
+            ChatExecutionRun.builder()
+                .id(taskId)
+                .conversationId(1001L)
+                .taskId(taskId)
+                .status("COMPLETED")
+                .finishedAt(java.time.LocalDateTime.now())
+                .build()
+        ));
+
+        service.dispatch(
+            taskId,
+            new SendChatMessageCommand(1001L, "你好", false),
+            2001L
+        );
+
+        assertTrue(captured.await(1, TimeUnit.SECONDS), "background task should finish");
+        ArgumentCaptor<ChatConversation> conversationCaptor = ArgumentCaptor.forClass(ChatConversation.class);
+        verify(chatConversationRepository, timeout(1000)).save(conversationCaptor.capture());
+        assertEquals(Boolean.FALSE, conversationCaptor.getValue().getTaskCompletionRead());
+    }
+
+    /**
+     * 提醒状态写入失败不能反向污染任务终态；会话被删除时后台任务仍应按执行结果收口。
+     * @throws Exception 等待后台线程执行时抛出。
+     */
+    @Test
+    void dispatchKeepsTaskSucceededWhenTaskCompletionReminderWriteFails() throws Exception {
+        CountDownLatch captured = new CountDownLatch(1);
+        Long taskId = 91003L;
+        ChatConversation conversation = ChatConversation.create(1001L, "后台完成会话", 2001L, ChatConversationStatus.ACTIVE);
+        when(chatConversationRepository.findById(1001L)).thenReturn(java.util.Optional.of(conversation));
+        org.mockito.Mockito.doThrow(new NotFoundException(ErrorMessageCatalog.CHAT_CONVERSATION_NOT_FOUND))
+            .when(chatConversationRepository)
+            .save(any(ChatConversation.class));
+        ChatStreamExecutionService service = new ChatStreamExecutionService(
+            chatApplicationService,
+            chatRuntimeGuardService,
+            conversationTraceRecordService,
+            chatExecutionRunRepository,
+            chatMcpRepository,
+            chatSkillRepository,
+            chatExpertRepository,
+            chatConversationRepository,
+            chatWorkspaceBindingService,
+            taskRepository,
+            executorService
+        );
+        org.mockito.Mockito.doAnswer(invocation -> {
+            captured.countDown();
+            return null;
+        }).when(chatApplicationService).sendMessage(new SendChatMessageCommand(1001L, "你好", false, java.util.List.of(), java.util.List.of(), null, null, java.util.List.of()), 2001L);
+        when(chatExecutionRunRepository.findByConversationId(1001L)).thenReturn(java.util.List.of(
+            ChatExecutionRun.builder()
+                .id(taskId)
+                .conversationId(1001L)
+                .taskId(taskId)
+                .status("COMPLETED")
+                .finishedAt(java.time.LocalDateTime.now())
+                .build()
+        ));
+
+        service.dispatch(
+            taskId,
+            new SendChatMessageCommand(1001L, "你好", false),
+            2001L
+        );
+
+        assertTrue(captured.await(1, TimeUnit.SECONDS), "background task should finish");
+        ArgumentCaptor<Task> taskCaptor = ArgumentCaptor.forClass(Task.class);
+        verify(taskRepository, timeout(1000).atLeast(2)).save(taskCaptor.capture());
+        assertTrue(
+            taskCaptor.getAllValues().stream().anyMatch(task -> taskId.equals(task.getId()) && task.getStatus() == TaskStatus.SUCCEEDED),
+            "task should stay succeeded even when reminder write fails"
+        );
+        verify(chatExecutionRunRepository, org.mockito.Mockito.never()).save(
+            org.mockito.ArgumentMatchers.argThat(run -> "ERROR".equals(run.getStatus()))
         );
     }
 }

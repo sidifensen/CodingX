@@ -51,6 +51,7 @@ class ChatConversationRepositoryImplTest {
         LocalDateTime lastMessageAt = LocalDateTime.of(2026, 5, 14, 20, 15, 30);
         setField(conversation, "lastMessageAt", lastMessageAt);
         setField(conversation, "lastRunId", 9001L);
+        conversation.markTaskCompletionUnread();
         when(chatConversationMapper.selectById(1L)).thenReturn(null);
 
         chatConversationRepository.save(conversation);
@@ -60,6 +61,7 @@ class ChatConversationRepositoryImplTest {
         assertEquals(lastMessageAt, captor.getValue().getLastMessageAt());
         assertEquals(3001L, captor.getValue().getWorkspaceId());
         assertEquals(9001L, readField(captor.getValue(), "lastRunId"));
+        assertEquals(0, readField(captor.getValue(), "taskCompletionRead"));
     }
 
     /**
@@ -80,6 +82,7 @@ class ChatConversationRepositoryImplTest {
         dataObject.setCreatedAt(LocalDateTime.of(2026, 5, 14, 21, 0, 0));
         dataObject.setUpdatedAt(LocalDateTime.of(2026, 5, 14, 21, 5, 0));
         setField(dataObject, "lastRunId", 9002L);
+        setField(dataObject, "taskCompletionRead", 0);
         when(chatConversationMapper.selectById(1L)).thenReturn(dataObject);
 
         ChatConversation conversation = chatConversationRepository.requireById(1L);
@@ -87,6 +90,7 @@ class ChatConversationRepositoryImplTest {
         assertEquals(lastMessageAt, readField(conversation, "lastMessageAt"));
         assertEquals(3002L, conversation.getWorkspaceId());
         assertEquals(9002L, readField(conversation, "lastRunId"));
+        assertFalse(conversation.getTaskCompletionRead());
         assertEquals(LocalDateTime.of(2026, 5, 14, 21, 0, 0), readField(conversation, "createdAt"));
         assertEquals(LocalDateTime.of(2026, 5, 14, 21, 5, 0), readField(conversation, "updatedAt"));
     }

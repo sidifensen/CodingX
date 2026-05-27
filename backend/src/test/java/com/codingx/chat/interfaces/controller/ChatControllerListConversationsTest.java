@@ -164,6 +164,29 @@ class ChatControllerListConversationsTest {
     }
 
     /**
+     * 会话列表应返回任务完成提醒已读状态，前端刷新后必须以该字段作为提醒圆点的权威来源。
+     */
+    @Test
+    void listConversationsReturnsTaskCompletionReadState() throws Exception {
+        ChatConversation conversation = ChatConversation.create(2001L, "待查看后台任务会话", 1002L, 3001L, ChatConversationStatus.ACTIVE);
+        conversation.markTaskCompletionUnread();
+        when(chatConversationApplicationService.listConversations(1002L, 3001L)).thenReturn(List.of(conversation));
+        WorkspaceDO workspace = new WorkspaceDO();
+        workspace.setId(3001L);
+        workspace.setName("CodingX");
+        workspace.setRuntimeTarget(WorkspaceRepositoryImpl.RUNTIME_TARGET_LOCAL);
+        when(workspaceRepositoryImpl.findOwnedWorkspaceById(3001L, 1002L)).thenReturn(java.util.Optional.of(workspace));
+
+        try (MockedStatic<StpUtil> mocked = Mockito.mockStatic(StpUtil.class)) {
+            mocked.when(StpUtil::getLoginIdAsLong).thenReturn(1002L);
+
+            mockMvc().perform(get("/api/chat/conversations").param("workspaceId", "3001"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].taskCompletionRead").value(false));
+        }
+    }
+
+    /**
      * 任务表终态优先于 run 的队列状态，避免历史 ACQUIRED 队列标记让侧栏持续显示运行图标。
      */
     @Test

@@ -17,8 +17,8 @@ SET
     updated_at = CURRENT_TIMESTAMP,
     deleted = 0;
 
-INSERT INTO chat_conversation (id, title, created_by, status, pinned, share_token)
-VALUES (2001, 'Default Demo Conversation', 1002, 'ACTIVE', 0, NULL)
+INSERT INTO chat_conversation (id, title, created_by, status, pinned, share_token, task_completion_read)
+VALUES (2001, 'Default Demo Conversation', 1002, 'ACTIVE', 0, NULL, 1)
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO chat_intent_node (

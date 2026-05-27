@@ -20,6 +20,7 @@ import java.util.Optional;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicReference;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
@@ -28,6 +29,7 @@ import org.springframework.stereotype.Service;
  * 负责将聊天消息处理异步派发到后台线程，避免 SSE 入口阻塞整个 HTTP 请求。
  */
 @Service
+@Slf4j
 public class ChatStreamExecutionService {
 
     private final ChatApplicationService chatApplicationService;
@@ -249,6 +251,27 @@ public class ChatStreamExecutionService {
             task.fail(message);
         }
         taskRepository.save(task.toBuilder().build());
+        markConversationTaskCompletionUnread(conversationId);
+    }
+
+    /**
+     * 后台任务收口后将会话提醒状态置为未读，供前端历史列表刷新后提示用户查看结果。
+     * @param conversationId 会话标识。
+     */
+    private void markConversationTaskCompletionUnread(Long conversationId) {
+        Optional<com.codingx.chat.domain.model.ChatConversation> conversationOptional =
+            chatConversationRepository.findById(conversationId);
+        if (conversationOptional == null || conversationOptional.isEmpty()) {
+            return;
+        }
+        try {
+            com.codingx.chat.domain.model.ChatConversation conversation = conversationOptional.get();
+            conversation.markTaskCompletionUnread();
+            chatConversationRepository.save(conversation);
+        } catch (Exception exception) {
+            // 提醒状态只影响侧栏提示，不能反向污染已经完成的后台任务终态。
+            log.warn("标记会话任务完成提醒未读失败，conversationId={}", conversationId, exception);
+        }
     }
 
     /**

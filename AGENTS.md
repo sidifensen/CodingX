@@ -94,8 +94,9 @@
 - 必须同步更新 `backend/src/main/resources/db/schema.sql`，保持基线结构与迁移一致。
 - `backend/src/main/resources/db/schema.sql` 与迁移脚本中的表定义、字段定义必须同时包含注释语句，禁止提交无注释的表结构。
 - 涉及表字段变更时，必须同步检查并更新对应的 PO/Mapper/DTO 映射，避免“数据库已变更但代码未生效”。
-- 聊天会话的提醒已读状态只能写入本地快照的 `seenTaskFinishedAtByConversationId`，点击提醒或进入会话时也只能更新这份本地状态，不能借用数据库 `chat_conversation.pinned`。
-- `chat_conversation.pinned` 只表示会话置顶排序，`chat_conversation.share_token` 只表示公开分享令牌，两者都必须保留中文注释并保持语义独立，禁止在前端或后端代码里把它们当作提醒状态位复用。
+- 聊天会话的任务完成提醒已读状态必须写入数据库 `chat_conversation.task_completion_read`，默认值为 `1` 表示已读；后台任务完成后重置为 `0`，用户点击提醒或进入会话后更新为 `1`。
+- 前端刷新后的提醒圆点必须优先使用后端返回的 `taskCompletionRead`，`seenTaskFinishedAtByConversationId` 仅允许作为本地运行会话或旧快照的兼容兜底。
+- `chat_conversation.pinned` 只表示会话置顶排序，`chat_conversation.share_token` 只表示公开分享令牌，`chat_conversation.task_completion_read` 只表示任务完成提醒已读状态，三者都必须保留中文注释并保持语义独立，禁止在前端或后端代码里互相复用。
 
 ## 文档布局
 

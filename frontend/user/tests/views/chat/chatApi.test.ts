@@ -45,6 +45,34 @@ describe('ChatApi', () => {
   });
 
   /**
+   * 会话列表应解析后端任务完成提醒已读字段，刷新后侧栏提醒圆点以该字段为准。
+   */
+  it('应解析任务完成提醒已读字段', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          success: true,
+          code: 'OK',
+          message: 'success',
+          data: [
+            {
+              id: 2001,
+              title: '后台任务会话',
+              status: 'ACTIVE',
+              taskCompletionRead: false,
+            },
+          ],
+        }),
+        { status: 200 },
+      ),
+    );
+
+    const result = await ChatApi.listConversations('token-123');
+
+    expect(result[0].taskCompletionRead).toBe(false);
+  });
+
+  /**
    * 会话列表应在本地工作空间场景携带 workspaceId 参数。
    */
   it('应在会话列表请求中携带 workspaceId', async () => {
@@ -330,6 +358,32 @@ describe('ChatApi', () => {
       expect.objectContaining({
         method: 'DELETE',
         body: JSON.stringify({ messageIds: ['101', '102'] }),
+      }),
+    );
+  });
+
+  /**
+   * 打开会话后应调用任务完成提醒已读接口，避免刷新后重复提示。
+   */
+  it('应通过专用接口标记任务完成提醒已读', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          success: true,
+          code: 'OK',
+          message: 'conversation task completion read',
+          data: null,
+        }),
+        { status: 200 },
+      ),
+    );
+
+    await ChatApi.markTaskCompletionRead('token-123', '2055114974648864768');
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      '/api/chat/conversations/2055114974648864768/task-completion-read',
+      expect.objectContaining({
+        method: 'PATCH',
       }),
     );
   });

@@ -249,6 +249,17 @@ public class ChatController {
     }
 
     /**
+     * 标记会话任务完成提醒为已读，避免刷新后重复显示完成提醒。
+     * @param conversationId 会话标识。
+     * @return 操作结果。
+     */
+    @PatchMapping("/{conversationId}/task-completion-read")
+    public ApiResponse<Void> markTaskCompletionRead(@PathVariable Long conversationId) {
+        chatConversationApplicationService.markTaskCompletionRead(conversationId, StpUtil.getLoginIdAsLong());
+        return ApiResponse.successMessage(ErrorMessageCatalog.CHAT_CONVERSATION_TASK_COMPLETION_READ);
+    }
+
+    /**
      * 批量设置会话置顶状态。
      * @param request 批量请求。
      * @return 操作结果。
@@ -356,6 +367,7 @@ public class ChatController {
             conversation.getLastRunId(),
             conversation.getPinned(),
             conversation.getShareToken(),
+            conversation.getTaskCompletionRead(),
             conversation.getWorkspaceId(),
             workspace == null ? null : workspace.getName(),
             resolveWorkspaceType(workspace),
@@ -387,6 +399,7 @@ public class ChatController {
             conversation.getLastRunId(),
             conversation.getPinned(),
             conversation.getShareToken(),
+            conversation.getTaskCompletionRead(),
             conversation.getWorkspaceId(),
             workspace == null ? null : workspace.getName(),
             resolveWorkspaceType(workspace),

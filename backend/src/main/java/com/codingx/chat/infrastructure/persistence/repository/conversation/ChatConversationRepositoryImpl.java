@@ -204,6 +204,7 @@ public class ChatConversationRepositoryImpl implements ChatConversationRepositor
             Integer.valueOf(1).equals(dataObject.getPinned()),
             dataObject.getShareToken()
         );
+        conversation.restoreTaskCompletionReadState(!Integer.valueOf(0).equals(dataObject.getTaskCompletionRead()));
         return conversation;
     }
 
@@ -223,6 +224,7 @@ public class ChatConversationRepositoryImpl implements ChatConversationRepositor
         dataObject.setLastRunId(conversation.getLastRunId());
         dataObject.setPinned(Boolean.TRUE.equals(conversation.getPinned()) ? 1 : 0);
         dataObject.setShareToken(conversation.getShareToken());
+        dataObject.setTaskCompletionRead(Boolean.FALSE.equals(conversation.getTaskCompletionRead()) ? 0 : 1);
         dataObject.setDeleted(0);
         return dataObject;
     }

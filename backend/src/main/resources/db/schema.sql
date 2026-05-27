@@ -147,6 +147,7 @@ CREATE TABLE IF NOT EXISTS chat_conversation (
     last_run_id BIGINT,
     pinned SMALLINT NOT NULL DEFAULT 0,
     share_token VARCHAR(128),
+    task_completion_read SMALLINT NOT NULL DEFAULT 1,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     deleted SMALLINT NOT NULL DEFAULT 0
@@ -161,6 +162,7 @@ COMMENT ON COLUMN chat_conversation.last_message_at IS '最近一条消息产生
 COMMENT ON COLUMN chat_conversation.last_run_id IS '最近一次执行记录 ID';
 COMMENT ON COLUMN chat_conversation.pinned IS '会话置顶标记，0 表示未置顶，1 表示已置顶';
 COMMENT ON COLUMN chat_conversation.share_token IS '会话分享令牌，用于生成公开只读链接';
+COMMENT ON COLUMN chat_conversation.task_completion_read IS '任务完成提醒已读标记，0 表示未读，1 表示已读';
 COMMENT ON COLUMN chat_conversation.created_at IS '记录创建时间';
 COMMENT ON COLUMN chat_conversation.updated_at IS '记录最后更新时间';
 COMMENT ON COLUMN chat_conversation.deleted IS '逻辑删除标记，0 表示未删除，1 表示已删除';

@@ -182,6 +182,25 @@ class ConversationIntentGuidanceServiceTest {
     }
 
     /**
+     * 歧义引导只处理同名主题跨系统的场景，不能把同一大类下的不同搜索策略都拿来询问用户。
+     */
+    @Test
+    void buildGuidancePromptReturnsNullForDifferentSearchTopicsUnderSameDomain() throws Exception {
+        String prompt = buildService().buildGuidancePrompt(
+            "GPT 的最新模型是什么",
+            List.of(
+                new ConversationIntentCandidate(node("search-web-general", "search-web", "通用检索"), 0.91D),
+                new ConversationIntentCandidate(node("search-web-fact", "search-web", "事实查询"), 0.89D),
+                new ConversationIntentCandidate(node("search-web-news", "search-web", "新闻资讯"), 0.86D)
+            ),
+            defaultNodes()
+        );
+
+        assertNull(prompt);
+        verify(aiPromptExecutionService, never()).complete(anyString(), anyString());
+    }
+
+    /**
      * 边界区间的 LLM 复核需要兼容模型返回 Markdown code fence 包裹的 JSON。
      */
     @Test

@@ -43,7 +43,7 @@ public class ConversationIntentAmbiguityDetector {
             return null;
         }
         Map<String, ChatIntentNode> nodeByCode = conversationIntentPathResolver.indexByCode(allNodes);
-        List<ConversationIntentCandidate> ranked = rankBestCandidatePerSystem(candidates, nodeByCode);
+        List<ConversationIntentCandidate> ranked = keepSameTopicCandidates(rankBestCandidatePerSystem(candidates, nodeByCode));
         if (ranked.size() < 2 || shouldSkipGuidance(question, ranked, nodeByCode)) {
             return null;
         }
@@ -89,6 +89,29 @@ public class ConversationIntentAmbiguityDetector {
         return bestBySystem.values().stream()
             .sorted(Comparator.comparingDouble(ConversationIntentCandidate::score).reversed())
             .toList();
+    }
+
+    /**
+     * ragent 的歧义引导只针对“同名主题跨系统”场景；不同名称通常代表不同处理策略，应交给最高分意图继续执行。
+     */
+    private List<ConversationIntentCandidate> keepSameTopicCandidates(List<ConversationIntentCandidate> ranked) {
+        if (ranked.isEmpty()) {
+            return List.of();
+        }
+        String topicKey = normalizeTopicName(ranked.getFirst().node());
+        if (StrUtil.isBlank(topicKey)) {
+            return List.of();
+        }
+        return ranked.stream()
+            .filter(candidate -> StrUtil.equals(topicKey, normalizeTopicName(candidate.node())))
+            .toList();
+    }
+
+    /**
+     * 归一化主题名，避免空格、标点和大小写差异影响同名主题判断。
+     */
+    private String normalizeTopicName(ChatIntentNode node) {
+        return node == null ? "" : conversationIntentPathResolver.normalize(node.getName());
     }
 
     /**

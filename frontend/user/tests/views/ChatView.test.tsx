@@ -156,6 +156,45 @@ describe('ChatView', () => {
   });
 
   /**
+   * 并发拒绝会同时写入助手消息错误和流式错误，页面只保留消息内提示，避免重复打断阅读。
+   */
+  it('应在并发拒绝错误已进入消息时隐藏重复的流式错误提示', async () => {
+    const queueBusyMessage = '当前会话并发已满，请稍后重试';
+
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          streamError: queueBusyMessage,
+          messages: [
+            {
+              id: '401',
+              conversationId: '2001',
+              role: 'USER',
+              content: '用 html 帮我写一个贪吃蛇游戏，并且运行起来',
+              status: 'COMPLETED',
+            },
+            {
+              id: '402',
+              conversationId: '2001',
+              role: 'ASSISTANT',
+              content: '',
+              status: 'error',
+              errorMessage: queueBusyMessage,
+            },
+          ],
+          executionSteps: [],
+          references: [],
+          artifacts: [],
+        })}
+      />,
+    );
+
+    expect(screen.getAllByText(queueBusyMessage)).toHaveLength(1);
+  });
+
+  /**
    * 排队中应展示独立提示条，且不影响原错误提示区域语义。
    */
   it('应展示排队提示条', async () => {

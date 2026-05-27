@@ -130,6 +130,13 @@ export default function ChatView({
   const latestAssistantMessageId = React.useMemo(() => {
     return [...messages].reverse().find((message) => message.role === 'ASSISTANT')?.id ?? null;
   }, [messages]);
+  const shouldShowStreamError = React.useMemo(() => {
+    if (!streamError) {
+      return false;
+    }
+    // 业务约束：SSE 拒绝事件会同时回填助手消息错误和全局流式错误，消息内已有同文案时只保留一处提示。
+    return !messages.some((message) => message.role === 'ASSISTANT' && message.errorMessage === streamError);
+  }, [messages, streamError]);
   const latestMessageAnchorRef = React.useRef<HTMLDivElement | null>(null);
   const chatScrollRegionRef = React.useRef<HTMLDivElement | null>(null);
   const shouldFollowLatestMessageRef = React.useRef(true);
@@ -1212,7 +1219,7 @@ export default function ChatView({
               })}
             </div>
           )}
-          {streamError ? (
+          {shouldShowStreamError ? (
             // 步骤：统一在消息滚动区尾部渲染一条错误提示，避免输入框上方与消息区重复提示。
             <div className="mx-auto mt-6 w-full max-w-4xl rounded-2xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
               {streamError}

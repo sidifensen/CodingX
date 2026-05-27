@@ -266,4 +266,57 @@ describe('localConversationStorage', () => {
     expect(Object.keys(persistedStore.snapshots)).toContain(canonicalPartitionKey);
     expect(Object.keys(persistedStore.snapshots)).not.toContain(legacyBackslashPartitionKey);
   });
+
+  /**
+   * 云端历史不应绑定本地目录；旧缓存中带路径的云端分区要并回云端默认分区，避免侧栏出现云端 test。
+   */
+  it('应将带本地路径的云端工作空间分区归并到云端默认分区', () => {
+    const defaultCloudPartitionKey = buildWorkspacePartitionKey('cloud', null);
+    const cloudPathPartitionKey = 'cloud::d:/code/test';
+
+    window.localStorage.setItem(
+      'codingx.chat.workspace.conversations.v1',
+      JSON.stringify({
+        version: 1,
+        snapshots: {
+          [defaultCloudPartitionKey]: {
+            workspacePath: null,
+            workspaceLabel: '云端历史记录',
+            runtimeTarget: 'cloud',
+            lastOpenedAt: 100,
+            activeConversationId: 'cloud-a',
+            conversations: [{ id: 'cloud-a', title: '云端默认会话', status: 'ACTIVE' }],
+            conversationRecords: {},
+          },
+          [cloudPathPartitionKey]: {
+            workspacePath: 'D:/code/test',
+            workspaceLabel: 'test',
+            runtimeTarget: 'cloud',
+            lastOpenedAt: 200,
+            activeConversationId: 'cloud-b',
+            conversations: [{ id: 'cloud-b', title: '误归属本地目录的云端会话', status: 'ACTIVE' }],
+            conversationRecords: {},
+          },
+        },
+      }),
+    );
+
+    const cloudGroups = listWorkspaceGroups('cloud');
+    const persistedStore = JSON.parse(
+      window.localStorage.getItem('codingx.chat.workspace.conversations.v1') ?? '{"snapshots":{}}',
+    );
+
+    expect(buildWorkspacePartitionKey('cloud', 'D:/code/test')).toBe(defaultCloudPartitionKey);
+    expect(cloudGroups).toHaveLength(1);
+    expect(cloudGroups[0].partitionKey).toBe(defaultCloudPartitionKey);
+    expect(cloudGroups[0].workspaceLabel).toBe('云端历史记录');
+    expect(cloudGroups[0].workspacePath).toBeNull();
+    expect(cloudGroups[0].activeConversationId).toBe('cloud-b');
+    expect(cloudGroups[0].conversations.map((conversation) => conversation.id)).toEqual([
+      'cloud-a',
+      'cloud-b',
+    ]);
+    expect(Object.keys(persistedStore.snapshots)).toContain(defaultCloudPartitionKey);
+    expect(Object.keys(persistedStore.snapshots)).not.toContain(cloudPathPartitionKey);
+  });
 });

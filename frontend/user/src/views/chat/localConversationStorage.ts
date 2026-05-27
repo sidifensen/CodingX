@@ -89,6 +89,9 @@ export function buildWorkspacePartitionKey(
   runtimeTarget: 'cloud' | 'local',
   workspacePath: string | null,
 ) {
+  if (runtimeTarget === 'cloud') {
+    return `${runtimeTarget}::__no_workspace__`;
+  }
   const normalizedPath = normalizeWorkspacePathForPartition(workspacePath);
   return `${runtimeTarget}::${normalizedPath || '__no_workspace__'}`;
 }
@@ -578,7 +581,10 @@ function normalizeWorkspaceSnapshotEntry(
     ];
   }
 
-  const workspacePath = resolveWorkspacePathFromPartition(partitionKey, snapshot, runtimeTarget);
+  // 业务约束：云端会话不绑定本地目录，旧缓存里的 cloud::<path> 必须并回云端默认分区。
+  const workspacePath = runtimeTarget === 'cloud'
+    ? null
+    : resolveWorkspacePathFromPartition(partitionKey, snapshot, runtimeTarget);
   const canonicalPartitionKey = buildWorkspacePartitionKey(runtimeTarget, workspacePath);
   const normalizedSnapshot = normalizeWorkspaceSnapshot(canonicalPartitionKey, {
     ...snapshot,

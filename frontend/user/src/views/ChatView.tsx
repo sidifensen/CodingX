@@ -4408,8 +4408,6 @@ function ProcessAnalysisTrace({
           className={`shrink-0 transition-transform duration-200 ${isExpanded ? 'rotate-180' : '-rotate-90'}`}
         />
         <span className="whitespace-nowrap">{label}</span>
-        <span className="text-border">·</span>
-        <span className="whitespace-nowrap">{isExpanded ? '收起' : '展开'}</span>
       </button>
       {isExpanded ? (
         <div
@@ -4442,7 +4440,8 @@ function ProcessToolRow({
   const [isExpanded, setIsExpanded] = React.useState(false);
   const Icon = card.type === 'tool_call' ? Globe2 : CheckCircle2;
   const searchResultItems = parseSearchResultDetails(card);
-  const hasDetails = searchResultItems.length > 0 || (card.details?.length ?? 0) > 0;
+  const visibleDetails = shouldHideSearchCallDetails(card) ? [] : card.details ?? [];
+  const hasDetails = searchResultItems.length > 0 || visibleDetails.length > 0;
   const contentId = `process-tool-detail-${messageId}-${card.id}`;
   const isReactTrace = card.presentation === 'react';
 
@@ -4478,9 +4477,9 @@ function ProcessToolRow({
         <div id={contentId}>
           {searchResultItems.length > 0 ? (
             <ProcessSearchResultList cardId={card.id} items={searchResultItems} />
-          ) : card.details && card.details.length > 0 ? (
+          ) : visibleDetails.length > 0 ? (
             <div className="space-y-2">
-              {card.details.map((detail) => (
+              {visibleDetails.map((detail) => (
                 <div key={`${card.id}-${detail.label}`} className="rounded-md bg-surface-container px-3 py-2">
                   <div className="mb-1 text-[11px] text-muted">{detail.label}</div>
                   <pre className="whitespace-pre-wrap [overflow-wrap:anywhere] text-xs leading-5 text-foreground">
@@ -4624,6 +4623,13 @@ function isSearchProcessCard(card: ProcessCardItem): boolean {
   }
   const text = `${card.displayName ?? ''} ${card.title ?? ''} ${card.summary ?? ''}`;
   return text.includes('网页搜索') || text.includes('搜索结果') || text.includes('搜索来源');
+}
+
+/**
+ * 搜索调用参数通常只是查询词，已在摘要中展示；隐藏明细入口避免同一信息重复占位。
+ */
+function shouldHideSearchCallDetails(card: ProcessCardItem): boolean {
+  return card.type === 'tool_call' && isSearchProcessCard(card);
 }
 
 interface CommandProcessRun {

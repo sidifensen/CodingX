@@ -26,7 +26,7 @@
 
 ## 关键逻辑
 
-`shell_command` 当前在 Windows 服务端通过 `powershell -NoProfile -Command` 执行，因此模型需要使用 `New-Item -ItemType Directory -Force`、`Set-Content` 或 `apply_patch` 等 PowerShell/工具原生命令。多行内容应优先用 `apply_patch`，必要时才用 PowerShell here-string 配合 `Set-Content`。`mkdir -p`、`cat <<EOF`、`&&` 串联和 `<` 输入重定向属于 Bash 习惯写法，在 Windows PowerShell 下容易失败。
+`shell_command` 当前在 Windows 服务端通过 `powershell -NoProfile -Command` 执行，因此模型需要使用 `New-Item -ItemType Directory -Force`、`Set-Content` 或 `apply_patch` 等 PowerShell/工具原生命令。多行 HTML/XML/代码文件不应通过 `shell_command` 创建或编辑，应改用 `apply_patch`。必要时才用 PowerShell here-string 配合 `Set-Content`。`mkdir -p`、`cat <<EOF`、`&&` 串联和 `<` 输入重定向属于 Bash 习惯写法，其中 `<` 也是 PowerShell 保留字符，未正确引用会直接触发语法错误。
 
 ## 测试与验证
 

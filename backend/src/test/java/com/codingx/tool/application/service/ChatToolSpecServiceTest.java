@@ -113,6 +113,8 @@ class ChatToolSpecServiceTest {
         assertTrue(commandDescription.contains("mkdir -p"));
         assertTrue(commandDescription.contains("Set-Content"));
         assertTrue(commandDescription.contains("apply_patch"));
+        assertTrue(commandDescription.contains("不要使用 shell_command 创建或编辑多行 HTML/XML/代码文件"));
+        assertTrue(commandDescription.contains("< 是 PowerShell 保留字符"));
     }
 
     /**

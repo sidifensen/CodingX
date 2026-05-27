@@ -278,7 +278,7 @@ SET
 
 INSERT INTO tool (id, tool_code, display_name, description, category, source_type, enabled, sort_no, deleted)
 VALUES
-    (9101, 'shell_command', 'Shell 命令执行', '在当前工作区执行终端命令', '终端', 'codex-cli', 1, 1, 0),
+    (9101, 'shell_command', 'Shell 命令执行', '在当前本地工作区执行命令；Windows 环境使用 Windows PowerShell（powershell -NoProfile -Command），避免 mkdir -p、cat <<EOF、&& 和 < 等 Bash 写法，文件编辑优先使用 apply_patch 或 Set-Content', '终端', 'codex-cli', 1, 1, 0),
     (9102, 'apply_patch', '补丁编辑', '通过补丁语法修改本地文件', '代码编辑', 'codex-cli', 1, 2, 0),
     (9103, 'list_mcp_resources', '列出 MCP 资源', '读取已接入 MCP 服务的资源列表', 'MCP', 'codex-cli', 1, 3, 0),
     (9104, 'list_mcp_resource_templates', '列出 MCP 资源模板', '读取已接入 MCP 服务的参数化资源模板', 'MCP', 'codex-cli', 1, 4, 0),
@@ -294,7 +294,7 @@ VALUES
     (9114, 'tool_search', '工具搜索', '在可安装工具中按语义搜索候选项', '扩展', 'codex-cli', 1, 14, 0),
     (9115, 'request_plugin_install', '请求安装插件', '建议用户安装缺失的插件或连接器', '扩展', 'codex-cli', 1, 15, 0),
     (9116, 'request_permissions', '请求权限提升', '在受限环境中申请命令权限', '权限', 'codex-cli', 1, 16, 0),
-    (9117, 'exec_command', '统一执行命令', '在统一执行后端中运行命令', '终端', 'codex-cli', 1, 17, 0),
+    (9117, 'exec_command', '统一执行命令', '在当前本地工作区启动后台命令会话；Windows 环境使用 Windows PowerShell，避免 Bash 专属语法，后续通过 write_stdin 写入交互输入', '终端', 'codex-cli', 1, 17, 0),
     (9118, 'write_stdin', '写入标准输入', '向运行中的命令进程写入标准输入', '终端', 'codex-cli', 1, 18, 0),
     (9119, 'get_goal', '读取目标', '获取当前会话目标定义', '目标', 'codex-cli', 1, 19, 0),
     (9120, 'create_goal', '创建目标', '创建新的目标定义', '目标', 'codex-cli', 1, 20, 0),

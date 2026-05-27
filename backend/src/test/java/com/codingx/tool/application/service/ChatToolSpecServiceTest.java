@@ -72,6 +72,50 @@ class ChatToolSpecServiceTest {
     }
 
     /**
+     * Windows 本地运行时会通过 PowerShell 执行命令，schema 必须把这一点暴露给模型，
+     * 否则模型容易生成 mkdir -p、cat <<EOF 等 Bash 写法导致工具调用反复失败。
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void shellCommandSpecShouldTellModelToUsePowerShellSyntax() {
+        ChatToolRepository repository = new InMemoryChatToolRepository(List.of(
+            ChatTool.builder()
+                .toolCode("shell_command")
+                .displayName("Shell 命令执行")
+                .description("在当前工作区执行终端命令")
+                .enabled(1)
+                .sortNo(1)
+                .deleted(0)
+                .build()
+        ));
+        ChatToolExecutor executor = new ChatToolExecutor() {
+            @Override
+            public List<String> toolCodes() {
+                return List.of("shell_command");
+            }
+
+            @Override
+            public ChatToolExecutionResult execute(String toolCode, String question) {
+                return new ChatToolExecutionResult(toolCode, "ok", Map.of());
+            }
+        };
+        ChatToolRegistry registry = new ChatToolRegistry(List.of(executor));
+        registry.init();
+        ChatToolSpecService service = new ChatToolSpecService(repository, registry);
+
+        ChatToolSpec shellSpec = service.listModelVisibleToolSpecs().getFirst();
+        Map<String, Object> properties = (Map<String, Object>) shellSpec.parameters().get("properties");
+        Map<String, Object> commandSchema = (Map<String, Object>) properties.get("command");
+        String commandDescription = String.valueOf(commandSchema.get("description"));
+
+        assertTrue(shellSpec.description().contains("Windows PowerShell"));
+        assertTrue(commandDescription.contains("Windows PowerShell"));
+        assertTrue(commandDescription.contains("mkdir -p"));
+        assertTrue(commandDescription.contains("Set-Content"));
+        assertTrue(commandDescription.contains("apply_patch"));
+    }
+
+    /**
      * 测试用内存仓储只实现 schema 服务所需的读取方法。
      */
     private record InMemoryChatToolRepository(List<ChatTool> tools) implements ChatToolRepository {

@@ -29,6 +29,12 @@ public class ChatToolSpecService {
         "tool_search",
         "test_sync_tool"
     );
+    private static final String SHELL_COMMAND_MODEL_GUIDANCE = """
+        当前后端按服务端操作系统选择命令解释器；Windows 环境使用 Windows PowerShell（powershell -NoProfile -Command），不是 Bash。请使用 PowerShell 语法，避免 mkdir -p、cat <<EOF、heredoc、&& 串联和 < 输入重定向等 Bash 写法。创建目录用 New-Item -ItemType Directory -Force -Path <path>；写入多行文件优先调用 apply_patch，必要时用 Set-Content -Encoding UTF8 写入 PowerShell here-string。
+        """.trim();
+    private static final String EXEC_COMMAND_MODEL_GUIDANCE = """
+        后台命令使用与 shell_command 相同的命令解释器；Windows 环境是 Windows PowerShell，请避免 Bash 专属语法，交互输入通过 write_stdin 写入。
+        """.trim();
 
     private final ChatToolRepository chatToolRepository;
     private final ChatToolRegistry chatToolRegistry;
@@ -57,7 +63,7 @@ public class ChatToolSpecService {
         String toolCode = normalizeToolCode(tool.getToolCode());
         return new ChatToolSpec(
             toolCode,
-            StrUtil.blankToDefault(tool.getDescription(), tool.getDisplayName()),
+            descriptionFor(toolCode, tool),
             parametersFor(toolCode)
         );
     }
@@ -71,13 +77,13 @@ public class ChatToolSpecService {
         return switch (toolCode) {
             case "shell_command" -> objectSchema(
                 Map.of(
-                    "command", stringSchema("要在当前本地工作区执行的命令"),
+                    "command", stringSchema("要在当前本地工作区执行的命令。" + SHELL_COMMAND_MODEL_GUIDANCE),
                     "timeoutMs", numberSchema("命令超时时间，单位毫秒，最大 60000")
                 ),
                 List.of("command")
             );
             case "exec_command" -> objectSchema(
-                Map.of("command", stringSchema("要启动的后台命令")),
+                Map.of("command", stringSchema("要启动的后台命令。" + EXEC_COMMAND_MODEL_GUIDANCE)),
                 List.of("command")
             );
             case "write_stdin" -> objectSchema(
@@ -119,6 +125,23 @@ public class ChatToolSpecService {
             );
             default -> objectSchema(Map.of("input", stringSchema("工具输入文本")), List.of());
         };
+    }
+
+    /**
+     * 追加模型调用时必须知道的运行时边界；数据库描述仍用于管理端展示基础信息。
+     * @param toolCode 工具编码。
+     * @param tool 工具配置。
+     * @return 模型可见工具说明。
+     */
+    private String descriptionFor(String toolCode, ChatTool tool) {
+        String baseDescription = StrUtil.blankToDefault(tool.getDescription(), tool.getDisplayName());
+        if (StrUtil.equals(toolCode, "shell_command")) {
+            return baseDescription + "。" + SHELL_COMMAND_MODEL_GUIDANCE;
+        }
+        if (StrUtil.equals(toolCode, "exec_command")) {
+            return baseDescription + "。" + EXEC_COMMAND_MODEL_GUIDANCE;
+        }
+        return baseDescription;
     }
 
     private Map<String, Object> objectSchema(Map<String, Object> properties, List<String> required) {

@@ -65,6 +65,46 @@ class ChatRuntimePersistenceStructureTest {
     }
 
     /**
+     * 终端工具描述必须明确 Windows PowerShell 语法边界，避免模型按 Bash 习惯生成无法执行的命令。
+     *
+     * @throws Exception 迁移脚本缺失或内容不符合约定时抛出。
+     */
+    @Test
+    void shellCommandRuntimeMigrationClarifiesPowerShellSyntax() throws Exception {
+        Path migration = Path.of("src/main/resources/db/migration/V20260527_153000__clarify_shell_command_windows_runtime.sql");
+        assertTrue(Files.exists(migration), "缺少终端工具 PowerShell 语法说明迁移脚本");
+        String sql = Files.readString(migration, StandardCharsets.UTF_8);
+
+        assertTrue(sql.contains("shell_command"), "迁移脚本应覆盖 shell_command");
+        assertTrue(sql.contains("Windows PowerShell"), "迁移脚本应说明 Windows PowerShell 运行时");
+        assertTrue(sql.contains("mkdir -p"), "迁移脚本应提示 Bash mkdir -p 写法不适用");
+        assertTrue(sql.contains("Set-Content"), "迁移脚本应给出 PowerShell 文件写入提示");
+        assertTrue(sql.contains("apply_patch"), "迁移脚本应提示文件编辑优先使用 apply_patch");
+    }
+
+    /**
+     * 歧义引导运行时参数必须进入系统配置数据，管理端才能按中文说明维护开关与阈值。
+     *
+     * @throws Exception 迁移脚本或初始化数据缺失时抛出。
+     */
+    @Test
+    void chatIntentGuidanceRuntimeSettingsAreSeeded() throws Exception {
+        Path migration = Path.of("src/main/resources/db/migration/V20260527_200000__add_chat_intent_guidance_settings.sql");
+        assertTrue(Files.exists(migration), "缺少聊天歧义引导运行时配置迁移脚本");
+        String migrationSql = Files.readString(migration, StandardCharsets.UTF_8);
+        String initSql = Files.readString(Path.of("src/main/resources/db/init.sql"), StandardCharsets.UTF_8);
+
+        for (String sql : List.of(migrationSql, initSql)) {
+            assertTrue(sql.contains("chat.intent.guidance.enabled"), "必须写入歧义引导开关配置");
+            assertTrue(sql.contains("chat.intent.guidance.ambiguity_score_ratio"), "必须写入歧义分数比值阈值配置");
+            assertTrue(sql.contains("chat.intent.guidance.ambiguity_margin"), "必须写入歧义边界缓冲配置");
+            assertTrue(sql.contains("chat.intent.guidance.max_options"), "必须写入歧义候选数量配置");
+            assertTrue(sql.contains("是否启用聊天歧义引导"), "配置说明必须为中文");
+            assertTrue(sql.contains("DECIMAL"), "比例和边界配置必须声明为 DECIMAL 类型");
+        }
+    }
+
+    /**
      * 校验单张表的持久化骨架结构完整性。
      * @param skeleton 骨架定义。
      * @throws Exception 目标类缺失或结构不符合约定时抛出。

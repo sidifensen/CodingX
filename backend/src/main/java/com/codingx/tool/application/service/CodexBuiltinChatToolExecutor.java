@@ -86,13 +86,6 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
     private final List<Map<String, Object>> pluginInstallRequests = new CopyOnWriteArrayList<>();
     private final List<Map<String, Object>> permissionRequests = new CopyOnWriteArrayList<>();
     private final List<Map<String, Object>> jobReports = new CopyOnWriteArrayList<>();
-    private static final List<String> UNSUPPORTED_CODEX_RUNTIME_TOOLS = List.of(
-        "list_mcp_resources", "list_mcp_resource_templates", "read_mcp_resource",
-        "request_user_input", "spawn_agent", "send_input", "send_message", "wait_agent", "close_agent",
-        "resume_agent", "request_plugin_install", "request_permissions", "get_goal", "create_goal",
-        "update_goal", "followup_task", "list_agents", "spawn_agents_on_csv", "report_agent_job_result"
-    );
-
     @Override
     public List<String> toolCodes() {
         return TOOL_CODES;
@@ -102,9 +95,6 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
     public ChatToolExecutionResult execute(String toolCode, String question) {
         String normalizedCode = normalizeToolCode(toolCode);
         ToolInput input = parseInput(question);
-        if (UNSUPPORTED_CODEX_RUNTIME_TOOLS.contains(normalizedCode)) {
-            throw unsupportedCodexRuntimeTool(normalizedCode);
-        }
         return switch (normalizedCode) {
             case "shell_command" -> executeShellCommand(input);
             case "exec_command" -> executeExecCommand(input);
@@ -1919,18 +1909,6 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
     private boolean isRemoteImageReference(String imageReference) {
         String normalized = StrUtil.trimToEmpty(imageReference).toLowerCase(Locale.ROOT);
         return normalized.startsWith("http://") || normalized.startsWith("https://");
-    }
-
-    /**
-     * 对依赖真实 Codex session 的工具返回明确不可用错误，避免用内存假状态误导模型。
-     * @param toolCode 工具编码。
-     * @return 业务异常。
-     */
-    private BusinessException unsupportedCodexRuntimeTool(String toolCode) {
-        return new BusinessException(
-            "CHAT_TOOL_CODEX_RUNTIME_UNAVAILABLE",
-            toolCode + " 暂未接入真实 Codex 运行时，不能在 Java 后端返回假成功"
-        );
     }
 
     /**

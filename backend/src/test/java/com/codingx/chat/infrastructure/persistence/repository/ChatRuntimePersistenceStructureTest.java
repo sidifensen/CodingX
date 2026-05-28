@@ -46,22 +46,21 @@ class ChatRuntimePersistenceStructureTest {
     }
 
     /**
-     * Codex 工具运行时迁移必须区分本地可执行工具和暂未适配工具，避免管理端展示假可用。
+     * Codex 工具运行时迁移必须启用已在 Java 后端接入的进程内工具，避免历史数据库沿用旧禁用状态。
      *
      * @throws Exception 迁移脚本缺失或内容不符合约定时抛出。
      */
     @Test
-    void codexLocalToolRuntimeMigrationMarksUnsupportedToolsDisabled() throws Exception {
-        Path migration = Path.of("src/main/resources/db/migration/V20260523_190340__align_codex_local_tool_runtime.sql");
-        assertTrue(Files.exists(migration), "缺少 Codex 本地工具运行时迁移脚本");
+    void codexRuntimeToolMigrationEnablesImplementedTools() throws Exception {
+        Path migration = Path.of("src/main/resources/db/migration/V20260529_020000__enable_codex_runtime_tools.sql");
+        assertTrue(Files.exists(migration), "缺少 Codex 运行时工具启用迁移脚本");
         String sql = Files.readString(migration, StandardCharsets.UTF_8);
 
-        assertTrue(sql.contains("shell_command"), "迁移脚本应保留本地可执行 shell_command");
-        assertTrue(sql.contains("apply_patch"), "迁移脚本应保留本地可执行 apply_patch");
-        assertTrue(sql.contains("spawn_agent"), "迁移脚本应显式处理暂未适配 spawn_agent");
-        assertTrue(sql.contains("暂未适配"), "迁移脚本描述必须让管理端可区分未适配工具");
-        assertTrue(sql.contains("enabled = 0") || sql.contains("enabled=0"), "未适配工具必须禁用");
-        assertTrue(sql.contains("COMMENT ON TABLE tool"), "数据库结构变更脚本必须包含表注释语句");
+        for (String toolCode : List.of("spawn_agent", "send_input", "wait_agent", "close_agent", "resume_agent", "request_permissions")) {
+            assertTrue(sql.contains(toolCode), "迁移脚本应覆盖已接入工具：" + toolCode);
+        }
+        assertTrue(sql.contains("enabled = 1") || sql.contains("enabled=1"), "已接入工具必须启用");
+        assertTrue(sql.contains("updated_at = CURRENT_TIMESTAMP"), "迁移应更新时间戳便于排查配置来源");
     }
 
     /**

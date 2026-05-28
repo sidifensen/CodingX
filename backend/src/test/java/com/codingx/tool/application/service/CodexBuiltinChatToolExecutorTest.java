@@ -8,7 +8,9 @@ import static org.mockito.Mockito.when;
 
 import cn.hutool.json.JSONUtil;
 import com.codingx.mcp.domain.repository.ChatMcpRepository;
+import com.codingx.mcp.domain.model.ChatMcp;
 import com.codingx.common.exception.BusinessException;
+import com.codingx.skill.domain.model.ChatSkill;
 import com.codingx.skill.domain.repository.ChatSkillRepository;
 import com.codingx.tool.domain.model.ChatTool;
 import com.codingx.tool.domain.repository.ChatToolRepository;
@@ -609,24 +611,44 @@ class CodexBuiltinChatToolExecutorTest {
     }
 
     /**
-     * 未接入真实 Codex session 的多代理工具不能再返回假成功，避免误导模型继续依赖不可用结果。
+     * 进程内实现的 Codex 运行时工具必须能被入口真实调用，避免后端提前拦截导致模型无法完成计划、子代理或资源读取链路。
+     *
+     * @param tempDir 测试临时目录。
+     * @throws Exception 执行失败时抛出。
      */
     @Test
-    void unsupportedCodexSessionToolShouldReturnUnavailableError() {
-        List<String> unsupportedToolCodes = List.of(
-            "list_mcp_resources", "list_mcp_resource_templates", "read_mcp_resource",
-            "request_user_input", "spawn_agent", "send_input", "send_message", "wait_agent", "close_agent",
-            "resume_agent", "request_plugin_install", "request_permissions", "get_goal", "create_goal",
-            "update_goal", "followup_task", "list_agents", "spawn_agents_on_csv", "report_agent_job_result"
+    void codexRuntimeToolsShouldBeCallableThroughExecutorEntry(@TempDir Path tempDir) throws Exception {
+        when(chatMcpRepository.findAll()).thenReturn(List.of(ChatMcp.builder().mcpCode("weather_query").build()));
+        when(chatMcpRepository.findByMcpCode("weather_query")).thenReturn(ChatMcp.builder().mcpCode("weather_query").displayName("天气").build());
+        when(chatSkillRepository.findAll()).thenReturn(List.of(ChatSkill.builder().skillCode("browser").build()));
+        when(chatToolRepository.findAll()).thenReturn(List.of(ChatTool.builder().toolCode("shell_command").displayName("Shell").build()));
+
+        assertEquals("list_mcp_resources", codexBuiltinChatToolExecutor.execute("list_mcp_resources", "{}").toolCode());
+        assertEquals("list_mcp_resource_templates", codexBuiltinChatToolExecutor.execute("list_mcp_resource_templates", "{}").toolCode());
+        assertEquals("read_mcp_resource", codexBuiltinChatToolExecutor.execute("read_mcp_resource", "{\"uri\":\"mcp://configs/weather_query\"}").toolCode());
+        assertEquals("request_user_input", codexBuiltinChatToolExecutor.execute("request_user_input", "{\"question\":\"是否继续？\"}").toolCode());
+        assertEquals("request_plugin_install", codexBuiltinChatToolExecutor.execute("request_plugin_install", "{\"plugin\":\"browser-use\"}").toolCode());
+        assertEquals("request_permissions", codexBuiltinChatToolExecutor.execute("request_permissions", "{\"command\":\"Get-ChildItem\"}").toolCode());
+        assertEquals("create_goal", codexBuiltinChatToolExecutor.execute("create_goal", "{\"goalId\":\"tool-check\",\"title\":\"工具检查\"}").toolCode());
+        assertEquals("get_goal", codexBuiltinChatToolExecutor.execute("get_goal", "{\"goalId\":\"tool-check\"}").toolCode());
+        assertEquals("update_goal", codexBuiltinChatToolExecutor.execute("update_goal", "{\"goalId\":\"tool-check\",\"status\":\"done\"}").toolCode());
+
+        ChatToolExecutionResult spawnResult = codexBuiltinChatToolExecutor.execute("spawn_agent", "{\"prompt\":\"检查工具\"}");
+        String agentId = String.valueOf(spawnResult.metadata().get("agentId"));
+        assertEquals("spawn_agent", spawnResult.toolCode());
+        assertEquals("send_input", codexBuiltinChatToolExecutor.execute("send_input", "{\"target\":\"" + agentId + "\",\"message\":\"继续\"}").toolCode());
+        assertEquals("wait_agent", codexBuiltinChatToolExecutor.execute("wait_agent", "{\"agentId\":\"" + agentId + "\"}").toolCode());
+        assertEquals("followup_task", codexBuiltinChatToolExecutor.execute("followup_task", "{\"agentId\":\"" + agentId + "\",\"task\":\"补充验证\"}").toolCode());
+        assertEquals("close_agent", codexBuiltinChatToolExecutor.execute("close_agent", "{\"agentId\":\"" + agentId + "\"}").toolCode());
+        assertEquals("resume_agent", codexBuiltinChatToolExecutor.execute("resume_agent", "{\"agentId\":\"" + agentId + "\"}").toolCode());
+        assertEquals("list_agents", codexBuiltinChatToolExecutor.execute("list_agents", "{}").toolCode());
+
+        Path csvPath = tempDir.resolve("agents.csv");
+        Files.writeString(csvPath, "name\nalpha\n", StandardCharsets.UTF_8);
+        assertEquals(
+            "spawn_agents_on_csv",
+            codexBuiltinChatToolExecutor.execute("spawn_agents_on_csv", "{\"csvPath\":\"" + csvPath.toString().replace("\\", "\\\\") + "\"}").toolCode()
         );
-
-        for (String toolCode : unsupportedToolCodes) {
-            BusinessException exception = assertThrows(
-                BusinessException.class,
-                () -> codexBuiltinChatToolExecutor.execute(toolCode, "{\"message\":\"分析代码\"}")
-            );
-
-            assertTrue(exception.getMessage().contains("暂未接入真实 Codex 运行时"), toolCode);
-        }
+        assertEquals("report_agent_job_result", codexBuiltinChatToolExecutor.execute("report_agent_job_result", "{\"jobId\":\"job-1\",\"summary\":\"ok\"}").toolCode());
     }
 }

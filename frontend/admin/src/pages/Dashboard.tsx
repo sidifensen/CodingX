@@ -18,6 +18,7 @@ export function Dashboard() {
   const [windowValue, setWindowValue] = React.useState<AdminDashboardWindow>('24h');
   const [dashboard, setDashboard] = React.useState<AdminDashboardView | null>(null);
   const [runtimeDashboard, setRuntimeDashboard] = React.useState<AdminChatRuntimeDashboardView | null>(null);
+  const chartTheme = useChartTheme();
 
   React.useEffect(() => {
     void AdminChatApi.getDashboard(windowValue).then(setDashboard);
@@ -139,7 +140,7 @@ export function Dashboard() {
               </div>
               <div data-testid="dashboard-traffic-chart" className="h-[300px]">
                 <Area
-                  {...buildAreaConfig(mainTrafficData, '--chart-primary')}
+                  {...buildAreaConfig(mainTrafficData, '--chart-primary', chartTheme)}
                   data-testid="dashboard-traffic-plot"
                 />
               </div>
@@ -151,17 +152,44 @@ export function Dashboard() {
                 <span className="text-[12px] text-secondary">窗口 {windowValue}</span>
               </div>
               <div className="grid gap-4 lg:grid-cols-2">
-                <TrendChartCard title="会话趋势" testId="dashboard-conversation-chart">
-                  <Line {...buildLineConfig(conversationTrendData, '#22c55e')} data-testid="dashboard-conversation-plot" />
+                <TrendChartCard
+                  title="会话趋势"
+                  meta="单位：次"
+                  legendLabel="会话数"
+                  legendColor="#22c55e"
+                  testId="dashboard-conversation-chart"
+                >
+                  <Line {...buildLineConfig(conversationTrendData, '#22c55e', chartTheme, '次')} data-testid="dashboard-conversation-plot" />
                 </TrendChartCard>
-                <TrendChartCard title="活跃用户趋势" testId="dashboard-active-user-chart">
-                  <Line {...buildLineConfig(activeUserTrendData, '#8b5cf6')} data-testid="dashboard-active-user-plot" />
+                <TrendChartCard
+                  title="活跃用户趋势"
+                  meta="单位：人"
+                  legendLabel="活跃用户"
+                  legendColor="#8b5cf6"
+                  testId="dashboard-active-user-chart"
+                >
+                  <Line {...buildLineConfig(activeUserTrendData, '#8b5cf6', chartTheme, '人')} data-testid="dashboard-active-user-plot" />
                 </TrendChartCard>
-                <TrendChartCard title="响应耗时趋势" testId="dashboard-latency-chart">
-                  <Line {...buildLineConfig(latencyTrendData, '#f59e0b')} data-testid="dashboard-latency-plot" />
+                <TrendChartCard
+                  title="响应耗时趋势"
+                  meta="单位：毫秒"
+                  legendLabel="平均响应时间"
+                  legendColor="#f59e0b"
+                  annotation="警告 > 15000ms"
+                  testId="dashboard-latency-chart"
+                >
+                  <Line {...buildLineConfig(latencyTrendData, '#f59e0b', chartTheme, '毫秒')} data-testid="dashboard-latency-plot" />
                 </TrendChartCard>
-                <TrendChartCard title="质量趋势" testId="dashboard-quality-chart">
-                  <Column {...buildColumnConfig(qualityTrendData)} data-testid="dashboard-quality-plot" />
+                <TrendChartCard
+                  title="质量趋势"
+                  meta="单位：次"
+                  legendItems={[
+                    { label: '成功', color: '#22c55e' },
+                    { label: '失败', color: '#ef4444' },
+                  ]}
+                  testId="dashboard-quality-chart"
+                >
+                  <Column {...buildColumnConfig(qualityTrendData, chartTheme)} data-testid="dashboard-quality-plot" />
                 </TrendChartCard>
               </div>
             </section>
@@ -182,6 +210,7 @@ export function Dashboard() {
                 <StatRow label="平均响应" value={formatDuration(dashboard?.performance.avgTraceDurationMs)} accent="text-emerald-500" />
                 <StatRow label="P95 响应" value={formatDuration(dashboard?.performance.p95TraceDurationMs)} accent="text-rose-500" />
                 <StatRow label="运行中占比" value={`${dashboard?.performance.runningRate ?? 0}%`} accent="text-sky-500" />
+                <StatRow label="链路总数" value={`${dashboard?.kpis.traceCount ?? 0}`} />
               </div>
             </section>
 
@@ -193,12 +222,14 @@ export function Dashboard() {
                 value={Math.min(100, ((runtimeDashboard?.queue.waitingCount ?? 0) / Math.max(1, runtimeDashboard?.queue.maxConcurrent ?? 1)) * 100)}
                 colorClass="bg-sky-500"
               />
+              <StatRow label="运行中链路" value={`${dashboard?.kpis.runningTraceCount ?? 0}`} />
             </SidebarCard>
 
             <SidebarCard title="运营效率">
               <StatRow label="人均会话" value={formatRatio(resolveAverage(dashboard?.kpis.conversationCount, dashboard?.kpis.activeUserCount))} />
               <StatRow label="单会话消息" value={formatRatio(resolveAverage(dashboard?.kpis.messageCount, dashboard?.kpis.conversationCount))} />
               <StatRow label="每空间会话" value={formatRatio(resolveAverage(dashboard?.kpis.conversationCount, dashboard?.kpis.workspaceCount))} />
+              <StatRow label="技能总数" value={`${dashboard?.resources.skillCount ?? 0}`} />
             </SidebarCard>
 
             <SidebarCard title="运营洞察">
@@ -251,20 +282,56 @@ function MetricCard({
 
 function TrendChartCard({
   title,
+  meta,
+  legendLabel,
+  legendColor,
+  legendItems,
+  annotation,
   testId,
   children,
 }: {
   title: string;
+  meta?: string;
+  legendLabel?: string;
+  legendColor?: string;
+  legendItems?: Array<{ label: string; color: string }>;
+  annotation?: string;
   testId: string;
   children: React.ReactNode;
 }) {
   return (
     <div className="rounded-[24px] bg-surface-container-low p-4">
-      <div className="mb-3 text-[14px] font-medium text-ink">{title}</div>
+      <div className="mb-3 flex items-start justify-between gap-3">
+        <div>
+          <div className="text-[14px] font-medium text-ink">{title}</div>
+          {meta ? <div className="mt-1 text-[12px] text-secondary">{meta}</div> : null}
+          {legendItems?.length ? (
+            <div className="mt-2 flex flex-wrap items-center gap-3">
+              {legendItems.map((item) => (
+                <LegendChip key={item.label} label={item.label} color={item.color} />
+              ))}
+            </div>
+          ) : legendLabel && legendColor ? (
+            <div className="mt-2">
+              <LegendChip label={legendLabel} color={legendColor} />
+            </div>
+          ) : null}
+        </div>
+        {annotation ? <span className="text-[11px] text-secondary">{annotation}</span> : null}
+      </div>
       <div data-testid={testId} className="h-[220px]">
         {children}
       </div>
     </div>
+  );
+}
+
+function LegendChip({ label, color }: { label: string; color: string }) {
+  return (
+    <span className="inline-flex items-center gap-1.5 text-[12px] text-secondary">
+      <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: color }} />
+      {label}
+    </span>
   );
 }
 
@@ -337,7 +404,7 @@ function InsightItem({
   );
 }
 
-function buildAreaConfig(data: Array<{ label: string; value: number }>, colorToken: string) {
+function buildAreaConfig(data: Array<{ label: string; value: number }>, colorToken: string, chartTheme: ChartTheme) {
   return {
     data,
     xField: 'label',
@@ -353,13 +420,19 @@ function buildAreaConfig(data: Array<{ label: string; value: number }>, colorTok
     areaStyle: {
       fill: 'l(270) 0:rgba(59,130,246,0.26) 1:rgba(59,130,246,0.02)',
     },
-    axis: buildAxisTheme(),
+    axis: buildAxisTheme(chartTheme, '条'),
     tooltip: buildTooltipTheme(),
     legend: false,
+    padding: [16, 16, 40, 52],
   };
 }
 
-function buildLineConfig(data: Array<{ label: string; value: number }>, color: string) {
+function buildLineConfig(
+  data: Array<{ label: string; value: number }>,
+  color: string,
+  chartTheme: ChartTheme,
+  unit: string,
+) {
   return {
     data,
     xField: 'label',
@@ -376,13 +449,14 @@ function buildLineConfig(data: Array<{ label: string; value: number }>, color: s
         lineWidth: 1.5,
       },
     },
-    axis: buildAxisTheme(),
+    axis: buildAxisTheme(chartTheme, unit),
     tooltip: buildTooltipTheme(),
     legend: false,
+    padding: [16, 16, 40, 52],
   };
 }
 
-function buildColumnConfig(data: Array<{ label: string; type: string; value: number }>) {
+function buildColumnConfig(data: Array<{ label: string; type: string; value: number }>, chartTheme: ChartTheme) {
   return {
     data,
     xField: 'label',
@@ -390,12 +464,13 @@ function buildColumnConfig(data: Array<{ label: string; type: string; value: num
     seriesField: 'type',
     height: 220,
     color: ['#22c55e', '#ef4444'],
-    axis: buildAxisTheme(),
+    axis: buildAxisTheme(chartTheme, '次'),
     tooltip: buildTooltipTheme(),
     legend: {
       position: 'top-left' as const,
-      itemLabelFill: 'var(--theme-secondary)',
+      itemLabelFill: chartTheme.axisLabelColor,
     },
+    padding: [16, 16, 40, 52],
   };
 }
 
@@ -433,19 +508,26 @@ function buildRingConfig(data: Array<{ type: string; value: number }>) {
   };
 }
 
-function buildAxisTheme() {
+function buildAxisTheme(chartTheme: ChartTheme, unit: string) {
   return {
     x: {
-      labelFill: 'var(--theme-secondary)',
-      line: false,
-      tick: false,
+      labelFill: chartTheme.axisLabelColor,
+      labelOpacity: 1,
+      lineStroke: chartTheme.axisStrokeColor,
+      tickStroke: chartTheme.axisStrokeColor,
+      tickLength: 4,
       grid: false,
     },
     y: {
-      labelFill: 'var(--theme-secondary)',
-      line: false,
-      tick: false,
-      gridStroke: 'rgba(148,163,184,0.18)',
+      title: unit ? unit : false,
+      titleFill: chartTheme.axisLabelColor,
+      labelFill: chartTheme.axisLabelColor,
+      labelOpacity: 1,
+      lineStroke: chartTheme.axisStrokeColor,
+      tickStroke: chartTheme.axisStrokeColor,
+      tickLength: 4,
+      gridStroke: chartTheme.gridStrokeColor,
+      gridStrokeOpacity: 1,
     },
   };
 }
@@ -513,4 +595,41 @@ function formatRatio(value: number) {
     return '-';
   }
   return value.toFixed(2);
+}
+
+interface ChartTheme {
+  axisLabelColor: string;
+  axisStrokeColor: string;
+  gridStrokeColor: string;
+}
+
+function useChartTheme(): ChartTheme {
+  const resolveTheme = React.useCallback(() => {
+    const root = document.documentElement;
+    if (root.classList.contains('dark')) {
+      return {
+        axisLabelColor: '#a8b0bd',
+        axisStrokeColor: '#4b5563',
+        gridStrokeColor: 'rgba(107, 114, 128, 0.32)',
+      };
+    }
+    return {
+      axisLabelColor: '#6b7280',
+      axisStrokeColor: '#cbd5e1',
+      gridStrokeColor: 'rgba(148, 163, 184, 0.22)',
+    };
+  }, []);
+
+  const [theme, setTheme] = React.useState<ChartTheme>(() => resolveTheme());
+
+  React.useEffect(() => {
+    const root = document.documentElement;
+    const observer = new MutationObserver(() => {
+      setTheme(resolveTheme());
+    });
+    observer.observe(root, { attributes: true, attributeFilter: ['class'] });
+    return () => observer.disconnect();
+  }, [resolveTheme]);
+
+  return theme;
 }

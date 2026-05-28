@@ -365,7 +365,8 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
             normalizedLines.add(line);
         }
         List<String> repairedLines = normalizeBareNewFileGitPatchLines(normalizedLines);
-        String normalizedPatch = String.join("\n", normalizeGitPatchHunkHeaders(repairedLines));
+        List<String> replacementLines = normalizeExistingFileNewFileGitPatchLines(normalizedWorkingDirectory, repairedLines);
+        String normalizedPatch = String.join("\n", normalizeGitPatchHunkHeaders(replacementLines));
         // git apply 会把缺少文件尾换行的最后一个 hunk 判定为 corrupt patch，模型输出 JSON 时常丢失该换行。
         return normalizedPatch.endsWith("\n") ? normalizedPatch : normalizedPatch + "\n";
     }
@@ -406,6 +407,173 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
             lineIndex = hunkLineIndex;
         }
         return normalizedLines;
+    }
+
+    /**
+     * 将“新增文件”补丁指向同名既有文件的场景转为整文件替换补丁。
+     * 业务意图：模型生成 weather.html 等单文件页面时常忽略目标已存在，继续输出 `new file mode`。
+     */
+    private List<String> normalizeExistingFileNewFileGitPatchLines(Path workingDirectory, List<String> lines) {
+        List<String> normalizedLines = new ArrayList<>(lines.size());
+        int lineIndex = 0;
+        while (lineIndex < lines.size()) {
+            if (!StrUtil.startWith(lines.get(lineIndex), "diff --git ")) {
+                normalizedLines.add(lines.get(lineIndex));
+                lineIndex++;
+                continue;
+            }
+            int blockEndIndex = lineIndex + 1;
+            while (blockEndIndex < lines.size() && !StrUtil.startWith(lines.get(blockEndIndex), "diff --git ")) {
+                blockEndIndex++;
+            }
+            List<String> blockLines = new ArrayList<>(lines.subList(lineIndex, blockEndIndex));
+            normalizedLines.addAll(rewriteNewFileBlockForExistingFile(workingDirectory, blockLines));
+            lineIndex = blockEndIndex;
+        }
+        return normalizedLines;
+    }
+
+    /**
+     * 只在新增文件块的目标路径已存在且是普通文件时改写，避免影响真正的新建文件和删除文件补丁。
+     */
+    private List<String> rewriteNewFileBlockForExistingFile(Path workingDirectory, List<String> blockLines) {
+        String targetPathText = findGitPatchNewFileTargetPath(blockLines);
+        if (StrUtil.isBlank(targetPathText)) {
+            return blockLines;
+        }
+        Path targetPath = resolvePatchTargetPath(workingDirectory, targetPathText);
+        if (!Files.isRegularFile(targetPath)) {
+            return blockLines;
+        }
+        try {
+            GitPatchTextContent oldContent = splitGitPatchTextContent(
+                normalizeLineEnding(Files.readString(targetPath, StandardCharsets.UTF_8))
+            );
+            GitPatchTextContent newContent = collectNewFileGitPatchContent(blockLines);
+            return buildWholeFileReplacementGitPatch(targetPathText, oldContent, newContent);
+        } catch (BusinessException exception) {
+            throw exception;
+        } catch (Exception exception) {
+            throw new BusinessException(
+                "CHAT_TOOL_APPLY_PATCH_FAILED",
+                ErrorMessageCatalog.CHAT_TOOL_PATCH_APPLY_FAILED_PREFIX + exception.getMessage()
+            );
+        }
+    }
+
+    /**
+     * 从 `--- /dev/null` / `+++ b/path` 组合中提取新增文件目标路径。
+     */
+    private String findGitPatchNewFileTargetPath(List<String> blockLines) {
+        boolean newFileBlock = false;
+        String targetPathText = null;
+        for (String line : blockLines) {
+            if (StrUtil.equals(line, "--- /dev/null")) {
+                newFileBlock = true;
+                continue;
+            }
+            if (StrUtil.startWith(line, "+++ ")) {
+                String pathToken = StrUtil.trim(StrUtil.subSuf(line, 4));
+                if (!StrUtil.equals(pathToken, "/dev/null")) {
+                    targetPathText = stripGitPatchSidePrefix(pathToken);
+                }
+            }
+        }
+        return newFileBlock ? targetPathText : null;
+    }
+
+    /**
+     * 提取新增文件 hunk 的新文件内容，供同名文件覆盖场景生成整文件替换补丁。
+     */
+    private GitPatchTextContent collectNewFileGitPatchContent(List<String> blockLines) {
+        List<String> contentLines = new ArrayList<>();
+        boolean inHunk = false;
+        boolean trailingNewline = true;
+        boolean lastLineBelongsToNewFile = false;
+        for (String line : blockLines) {
+            if (GIT_HUNK_HEADER_PATTERN.matcher(line).matches()) {
+                inHunk = true;
+                lastLineBelongsToNewFile = false;
+                continue;
+            }
+            if (!inHunk) {
+                continue;
+            }
+            if (StrUtil.startWith(line, "@@ ")) {
+                lastLineBelongsToNewFile = false;
+                continue;
+            }
+            if (StrUtil.startWith(line, "+") || StrUtil.startWith(line, " ")) {
+                contentLines.add(StrUtil.subSuf(line, 1));
+                trailingNewline = true;
+                lastLineBelongsToNewFile = true;
+                continue;
+            }
+            if (StrUtil.startWith(line, "\\ No newline") && lastLineBelongsToNewFile) {
+                trailingNewline = false;
+            } else {
+                lastLineBelongsToNewFile = false;
+            }
+        }
+        return new GitPatchTextContent(contentLines, trailingNewline);
+    }
+
+    /**
+     * 将文本拆成 git hunk 行模型，保留“文件末尾是否有换行”的边界信息。
+     */
+    private GitPatchTextContent splitGitPatchTextContent(String content) {
+        if (StrUtil.isEmpty(content)) {
+            return new GitPatchTextContent(List.of(), true);
+        }
+        boolean trailingNewline = content.endsWith("\n");
+        String[] parts = content.split("\n", -1);
+        int lineCount = trailingNewline ? parts.length - 1 : parts.length;
+        List<String> contentLines = new ArrayList<>(lineCount);
+        for (int index = 0; index < lineCount; index++) {
+            contentLines.add(parts[index]);
+        }
+        return new GitPatchTextContent(contentLines, trailingNewline);
+    }
+
+    /**
+     * 生成整文件替换 patch，避免 git apply 把同名文件误判为重复新增。
+     */
+    private List<String> buildWholeFileReplacementGitPatch(
+        String targetPathText,
+        GitPatchTextContent oldContent,
+        GitPatchTextContent newContent
+    ) {
+        List<String> replacementLines = new ArrayList<>();
+        replacementLines.add("diff --git a/" + targetPathText + " b/" + targetPathText);
+        replacementLines.add("--- a/" + targetPathText);
+        replacementLines.add("+++ b/" + targetPathText);
+        replacementLines.add(
+            "@@ -" + gitPatchStartLine(oldContent.lines()) + "," + oldContent.lines().size()
+                + " +" + gitPatchStartLine(newContent.lines()) + "," + newContent.lines().size()
+                + " @@"
+        );
+        appendGitPatchSideLines(replacementLines, oldContent, "-");
+        appendGitPatchSideLines(replacementLines, newContent, "+");
+        return replacementLines;
+    }
+
+    /**
+     * 空文件 hunk 的起始行必须写 0，非空文件从第 1 行开始。
+     */
+    private int gitPatchStartLine(List<String> lines) {
+        return lines.isEmpty() ? 0 : 1;
+    }
+
+    /**
+     * 追加整文件替换 hunk 的旧侧或新侧内容，并保留无文件尾换行标记。
+     */
+    private void appendGitPatchSideLines(List<String> replacementLines, GitPatchTextContent content, String prefix) {
+        for (String line : content.lines()) {
+            replacementLines.add(prefix + line);
+        }
+        if (!content.trailingNewline() && !content.lines().isEmpty()) {
+            replacementLines.add("\\ No newline at end of file");
+        }
     }
 
     /**
@@ -501,6 +669,17 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
         }
         String relativePath = relativizeWorkspaceAbsolutePath(workingDirectory, normalizedToken);
         return relativePath == null ? token : prefix + relativePath;
+    }
+
+    /**
+     * 去掉 git patch 文件头中的 a/b 侧前缀，得到工作目录内相对路径。
+     */
+    private String stripGitPatchSidePrefix(String pathText) {
+        String normalizedPath = StrUtil.trim(pathText);
+        if (StrUtil.startWith(normalizedPath, "a/") || StrUtil.startWith(normalizedPath, "b/")) {
+            return normalizedPath.substring(2);
+        }
+        return normalizedPath;
     }
 
     /**
@@ -1698,6 +1877,12 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
      * 标准 diff 单行对旧文件和新文件的行数贡献。
      */
     private record GitHunkLineCount(int oldLineCount, int newLineCount) {
+    }
+
+    /**
+     * 标准 diff 文本内容及文件尾换行状态。
+     */
+    private record GitPatchTextContent(List<String> lines, boolean trailingNewline) {
     }
 
     /**

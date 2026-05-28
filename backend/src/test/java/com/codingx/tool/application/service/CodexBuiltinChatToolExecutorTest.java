@@ -235,6 +235,53 @@ class CodexBuiltinChatToolExecutorTest {
     }
 
     /**
+     * 模型把同名输出文件误描述成新增文件时，执行器应覆盖当前工作区内的既有文件。
+     * 业务背景：用户反复生成 weather.html 等单文件页面时，目标文件已存在但模型仍常输出 new file diff。
+     *
+     * @param tempDir 测试临时目录。
+     * @throws Exception 执行失败时抛出。
+     */
+    @Test
+    void applyPatchShouldOverwriteExistingFileWhenNewFileDiffTargetsSameName(@TempDir Path tempDir) throws Exception {
+        Path projectRoot = tempDir.resolve("workspace");
+        Files.createDirectories(projectRoot.resolve("weather"));
+        Path targetFile = projectRoot.resolve("weather").resolve("weather.html");
+        Files.writeString(
+            targetFile,
+            "<!doctype html>\n<title>旧天气页</title>\n<main>old weather</main>\n",
+            StandardCharsets.UTF_8
+        );
+        String patch = """
+            diff --git a/weather/weather.html b/weather/weather.html
+            new file mode 100644
+            index 0000000..e69de29
+            --- /dev/null
+            +++ b/weather/weather.html
+            @@ -0,0 +1,4 @@
+            +<!doctype html>
+            +<title>新天气页</title>
+            +<main>sunny</main>
+            +<footer>updated by ai</footer>
+            """.stripTrailing();
+
+        ChatToolExecutionContext.bindToolWorkingDirectory(projectRoot);
+        try {
+            ChatToolExecutionResult result = codexBuiltinChatToolExecutor.execute(
+                "apply_patch",
+                JSONUtil.toJsonStr(Map.of("patch", patch))
+            );
+
+            assertEquals("apply_patch", result.toolCode());
+            String content = Files.readString(targetFile, StandardCharsets.UTF_8);
+            assertTrue(content.contains("<title>新天气页</title>"));
+            assertTrue(content.contains("<footer>updated by ai</footer>"));
+            assertTrue(!content.contains("old weather"));
+        } finally {
+            ChatToolExecutionContext.clear();
+        }
+    }
+
+    /**
      * shell_command 必须在当前工具上下文绑定的工作目录执行，避免误改后端进程目录。
      *
      * @param tempDir 测试临时目录。

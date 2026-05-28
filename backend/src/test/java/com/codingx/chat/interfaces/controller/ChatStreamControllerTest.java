@@ -14,6 +14,7 @@ import cn.dev33.satoken.stp.StpUtil;
 import com.codingx.chat.application.command.CreateConversationCommand;
 import com.codingx.chat.application.service.ChatConversationApplicationService;
 import com.codingx.chat.application.service.ChatStreamExecutionService;
+import com.codingx.chat.application.service.ChatWorkspaceBindingService;
 import com.codingx.mcp.application.service.ChatMcpQueryService;
 import com.codingx.chat.domain.model.ChatConversation;
 import com.codingx.chat.domain.model.ChatConversationStatus;
@@ -46,6 +47,9 @@ class ChatStreamControllerTest {
      */
     @Mock
     private ChatStreamExecutionService chatStreamExecutionService;
+
+    @Mock
+    private ChatWorkspaceBindingService chatWorkspaceBindingService;
 
     /**
      * 会话应用服务依赖。
@@ -219,16 +223,18 @@ class ChatStreamControllerTest {
     }
 
     /**
-     * 本地运行态只允许使用临时传输会话标识，不得在云端数据库创建 workspace/conversation 记录。
-     * 关键约束：repositoryPath 只作为本地工具工作目录，不能被转换成云端 workspaceId。
+     * 本地运行态也必须创建云端会话记录，方便统一历史回放和审计。
+     * 关键约束：repositoryPath 继续作为工具工作目录，workspaceId 作为会话归属。
      */
     @Test
-    void streamChatLocalRuntimeDoesNotCreateCloudConversation() {
+    void streamChatLocalRuntimeCreatesPersistedConversation() {
         SseEmitter emitter = new SseEmitter(0L);
         whenRegisterReturns(emitter);
         when(chatMcpQueryService.listEnabledMcps()).thenReturn(List.of(
             ChatMcp.builder().id(1L).mcpCode("code_search").displayName("代码搜索").category("代码").enabled(1).available(true).sortNo(1).build()
         ));
+        ChatConversation conversation = ChatConversation.create(9901L, "本地会话", 1001L, 6001L, ChatConversationStatus.ACTIVE);
+        when(chatConversationApplicationService.createConversation(any(CreateConversationCommand.class), any(Long.class))).thenReturn(conversation);
         try (MockedStatic<StpUtil> mocked = Mockito.mockStatic(StpUtil.class)) {
             mocked.when(StpUtil::getLoginIdAsLong).thenReturn(1001L);
 
@@ -247,21 +253,63 @@ class ChatStreamControllerTest {
             );
 
             assertEquals(emitter, actual);
-            verify(chatConversationApplicationService, never()).createConversation(any(CreateConversationCommand.class), any(Long.class));
-            verify(chatSseRegistry).register(argThat(conversationId -> conversationId != null && conversationId > 0));
+            verify(chatConversationApplicationService).createConversation(new CreateConversationCommand(null, 6001L, "local"), 1001L);
+            verify(chatSseRegistry).register(9901L);
             verify(chatSseRegistry).publish(
-                argThat(conversationId -> conversationId != null && conversationId > 0),
+                eq(9901L),
                 eq("meta"),
                 argThat(payload -> payload instanceof java.util.Map<?, ?> map
-                    && Boolean.TRUE.equals(map.get("localOnly"))
+                    && Boolean.FALSE.equals(map.get("localOnly"))
                     && "local".equals(map.get("runtimeTarget"))
                     && map.get("repositoryPath").equals("D:/code/test"))
             );
             verify(chatStreamExecutionService).dispatch(
                 argThat(taskId -> taskId != null && taskId > 0),
-                argThat(command -> command.conversationId() != null
+                argThat(command -> command.conversationId().equals(9901L)
                     && command.content().equals("分析本地仓库")
-                    && command.localOnly()
+                    && !command.localOnly()
+                    && command.repositoryPath().equals("D:/code/test")),
+                eq(1001L)
+            );
+        }
+    }
+
+    /**
+     * 本地运行态未显式传 workspaceId 时，应按 repositoryPath 先创建或复用本地工作空间。
+     */
+    @Test
+    void streamChatLocalRuntimeBindsRepositoryWhenWorkspaceIdMissing() {
+        SseEmitter emitter = new SseEmitter(0L);
+        whenRegisterReturns(emitter);
+        when(chatMcpQueryService.listEnabledMcps()).thenReturn(List.of());
+        when(chatWorkspaceBindingService.bindRepositoryPathForCurrentUser("D:/code/test"))
+            .thenReturn(new ChatWorkspaceBindingService.WorkspaceBindingResult(6101L, "D:/code/test", "test"));
+        ChatConversation conversation = ChatConversation.create(9902L, "本地会话", 1001L, 6101L, ChatConversationStatus.ACTIVE);
+        when(chatConversationApplicationService.createConversation(any(CreateConversationCommand.class), any(Long.class))).thenReturn(conversation);
+        try (MockedStatic<StpUtil> mocked = Mockito.mockStatic(StpUtil.class)) {
+            mocked.when(StpUtil::getLoginIdAsLong).thenReturn(1001L);
+
+            SseEmitter actual = chatStreamController.streamChat(
+                "分析本地仓库",
+                null,
+                null,
+                false,
+                null,
+                null,
+                null,
+                "local",
+                "D:/code/test",
+                null,
+                null
+            );
+
+            assertEquals(emitter, actual);
+            verify(chatWorkspaceBindingService).bindRepositoryPathForCurrentUser("D:/code/test");
+            verify(chatConversationApplicationService).createConversation(new CreateConversationCommand(null, 6101L, "local"), 1001L);
+            verify(chatStreamExecutionService).dispatch(
+                argThat(taskId -> taskId != null && taskId > 0),
+                argThat(command -> command.conversationId().equals(9902L)
+                    && !command.localOnly()
                     && command.repositoryPath().equals("D:/code/test")),
                 eq(1001L)
             );

@@ -1423,7 +1423,7 @@ export function useChatWorkspace(
       return;
     }
     setStreamError('');
-    // 关键约束：本地模式下只要存在 workspaceId 或已绑定目录任一条件，就允许发送，避免目录已绑定但 ID 延迟回写时误拦截。
+    // 关键约束：本地模式有目录时先绑定 workspaceId；无目录时交给后端默认“本地历史记录”归档。
     let effectiveWorkspaceId = workspaceId;
     if (activeRuntimeTarget === 'local' && workspacePath != null && workspacePath.trim().length > 0) {
       const bindingResult = await bindWorkspacePath(workspacePath);
@@ -1431,13 +1431,6 @@ export function useChatWorkspace(
       if (effectiveWorkspaceId && effectiveWorkspaceId !== workspaceId) {
         setWorkspaceId(effectiveWorkspaceId);
       }
-    }
-    const hasLocalWorkspaceContext =
-      (effectiveWorkspaceId != null && effectiveWorkspaceId.trim().length > 0) ||
-      (workspacePath != null && workspacePath.trim().length > 0);
-    if (activeRuntimeTarget === 'local' && !hasLocalWorkspaceContext) {
-      setStreamError('请选择本地工作空间后再发送消息');
-      return;
     }
     const submittedInputValue = inputValue;
     const submittedAttachments = pendingAttachments;
@@ -1626,73 +1619,6 @@ export function useChatWorkspace(
     } finally {
       setIsCancelling(false);
     }
-  };
-
-  /**
-   * 本地模式流结束后直接把当前内存中的消息与过程面板固化到本地快照。
-   * 业务约束：本地对话不回查云端 conversations/messages 接口，避免创建或依赖云端历史记录。
-   * @param optimisticConversationId 发送前生成的本地临时会话标识。
-   * @param optimisticAssistantId 当前助手消息标识。
-   * @param latestAssistantMcpCalls 流式阶段累计的工具调用。
-   */
-  const persistLocalStreamResult = (
-    optimisticConversationId: string,
-    optimisticAssistantId: string,
-    latestAssistantMcpCalls?: McpCallItem[],
-  ) => {
-    const finalConversationId =
-      streamStateRef.current?.conversationId ?? activeConversationIdRef.current ?? optimisticConversationId;
-    const conversationTitle = resolveLocalConversationTitle(messagesRef.current, finalConversationId);
-    const nextMessages = messagesRef.current.map((message) => ({
-      ...message,
-      conversationId:
-        message.conversationId === optimisticConversationId ? finalConversationId : message.conversationId,
-      mcpCalls:
-        message.id === optimisticAssistantId && latestAssistantMcpCalls != null
-          ? mergeMcpCallsById(message.mcpCalls ?? [], latestAssistantMcpCalls)
-          : message.mcpCalls,
-    }));
-    setActiveConversationId(finalConversationId);
-    writeConversationIdToUrl(finalConversationId);
-    setMessages(nextMessages);
-    const nextConversation: ConversationItem = {
-      id: finalConversationId,
-      title: conversationTitle,
-      status: 'ACTIVE',
-      workspaceType: 'LOCAL',
-    };
-    const nextConversations = upsertConversationToTop(
-      conversations.filter((conversation) => conversation.id !== optimisticConversationId),
-      nextConversation,
-    );
-    setConversations(nextConversations);
-    persistConversationState(finalConversationId, nextConversations, {
-      messages: nextMessages,
-      executionSteps,
-      references,
-      artifacts,
-      currentExperts,
-      currentSkills,
-      currentMcps,
-    });
-  };
-
-  /**
-   * 解析本地会话标题，优先使用首条用户问题，避免为了标题再请求后端会话详情。
-   * @param sourceMessages 当前消息列表。
-   * @param conversationId 会话标识。
-   * @returns 会话标题。
-   */
-  const resolveLocalConversationTitle = (
-    sourceMessages: ChatMessageItem[],
-    conversationId: string,
-  ) => {
-    const firstUserMessage = sourceMessages.find(
-      (message) => message.conversationId === conversationId && message.role === 'USER',
-    );
-    const fallbackUserMessage = sourceMessages.find((message) => message.role === 'USER');
-    const title = (firstUserMessage?.content ?? fallbackUserMessage?.content ?? '本地对话').trim();
-    return title.length > 40 ? title.slice(0, 40) : title;
   };
 
   /**
@@ -2544,6 +2470,7 @@ export function useChatWorkspace(
           stepStatus: String(payload.stepStatus ?? ''),
           sequenceNo: Number(payload.sequenceNo ?? 0),
           content: typeof payload.content === 'string' ? payload.content : undefined,
+          metadataJson: typeof payload.metadataJson === 'string' ? payload.metadataJson : undefined,
         }),
       );
       if (isSearchStepType(stepType)) {
@@ -4713,38 +4640,132 @@ function deriveSearchProgressFromReplay(
 }
 
 /**
- * 判断执行步骤是否属于 MCP 工具执行阶段，兼容历史数据中的标题兜底命名。
+ * 判断执行步骤是否属于工具执行阶段，兼容 MCP 与本地模型工具两类历史步骤。
  * @param step 执行步骤。
- * @returns 是否为 MCP 工具步骤。
+ * @returns 是否为工具步骤。
  */
-function isMcpStep(step: ExecutionStepItem): boolean {
+function isReplayToolStep(step: ExecutionStepItem): boolean {
   const normalizedStepType = String(step.stepType ?? '').trim().toLowerCase();
   const normalizedStepTitle = String(step.stepTitle ?? '').trim().toLowerCase();
-  return normalizedStepType.includes('mcp') || normalizedStepTitle.includes('mcp');
+  return (
+    normalizedStepType.includes('mcp') ||
+    normalizedStepType === 'tool' ||
+    normalizedStepType.includes('tool') ||
+    normalizedStepTitle.includes('mcp') ||
+    normalizedStepTitle.includes('本地工具')
+  );
 }
 
 /**
- * 从步骤回放兜底生成 MCP 调用面板数据，保障历史会话在缺失消息级字段时仍可展示。
+ * 从步骤回放兜底生成工具调用面板数据，保障历史会话在缺失消息级字段时仍可展示。
  * @param executionSteps 执行步骤列表。
- * @returns 生成的 MCP 调用列表。
+ * @returns 生成的工具调用列表。
  */
 function deriveMcpCallsFromSteps(executionSteps: ExecutionStepItem[]): McpCallItem[] {
   return executionSteps
-    .filter((step) => isMcpStep(step))
+    .filter((step) => isReplayToolStep(step))
     .map((step) => {
       const normalizedStepStatus = String(step.stepStatus ?? '').trim().toUpperCase();
+      const metadata = parseExecutionStepMetadata(step);
       const stepContent = step.content ?? '';
+      const toolId = resolveReplayToolStepId(step, metadata);
+      const displayName = resolveReplayToolStepDisplayName(step, metadata, toolId);
+      const rawResult = metadata.rawResult ?? metadata.content ?? stepContent;
       return {
         callId: `replay-step-${step.id}`,
-        toolId: String(step.stepType ?? 'mcp_tool'),
-        displayName: step.stepTitle || 'MCP 调用',
-        input: '',
-        content: stepContent,
-        rawResult: stepContent || undefined,
+        toolId,
+        displayName,
+        input: normalizeReplayToolStepInput(metadata),
+        content: rawResult == null ? stepContent : formatProcessCardDetail(rawResult),
+        rawResult: rawResult || undefined,
         phase: normalizedStepStatus === 'COMPLETED' ? 'complete' : 'start',
         status: normalizedStepStatus === 'COMPLETED' ? 'completed' : 'running',
+        params: resolveReplayToolStepParams(metadata),
+        resultMetadata: isRecord(metadata.resultMetadata) ? metadata.resultMetadata : undefined,
       } satisfies McpCallItem;
     });
+}
+
+/**
+ * 解析步骤元数据；历史数据可能为空或格式异常，异常时降级为空对象继续展示步骤本身。
+ * @param step 执行步骤。
+ * @returns 步骤元数据对象。
+ */
+function parseExecutionStepMetadata(step: ExecutionStepItem): Record<string, unknown> {
+  if (!step.metadataJson) {
+    return {};
+  }
+  try {
+    const parsed = JSON.parse(step.metadataJson) as unknown;
+    return isRecord(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * 从本地工具步骤标题或元数据中恢复工具标识；旧数据没有元数据时标题是唯一稳定来源。
+ * @param step 执行步骤。
+ * @param metadata 步骤元数据。
+ * @returns 工具标识。
+ */
+function resolveReplayToolStepId(
+  step: ExecutionStepItem,
+  metadata: Record<string, unknown>,
+): string {
+  const metadataToolId = normalizeOptionalString(metadata.toolId ?? metadata.toolCode);
+  if (metadataToolId) {
+    return metadataToolId;
+  }
+  const titleToolId = String(step.stepTitle ?? '').match(/(?:执行\s*)?(?:本地)?工具\s+([^\s:：]+)/)?.[1];
+  if (titleToolId) {
+    return titleToolId;
+  }
+  return String(step.stepType ?? 'tool');
+}
+
+/**
+ * 恢复历史工具展示名，优先使用元数据，其次使用标题中的真实工具编码。
+ * @param step 执行步骤。
+ * @param metadata 步骤元数据。
+ * @param toolId 工具标识。
+ * @returns 展示名。
+ */
+function resolveReplayToolStepDisplayName(
+  step: ExecutionStepItem,
+  metadata: Record<string, unknown>,
+  toolId: string,
+): string {
+  return (
+    normalizeOptionalString(metadata.displayName) ??
+    (toolId === 'tool' ? normalizeOptionalString(step.stepTitle) : toolId) ??
+    '工具调用'
+  );
+}
+
+/**
+ * 从工具步骤元数据恢复入参，shell 工具优先把 command 归入参数区，方便历史回放展开查看。
+ * @param metadata 步骤元数据。
+ * @returns 工具入参。
+ */
+function resolveReplayToolStepParams(
+  metadata: Record<string, unknown>,
+): Record<string, unknown> | string | undefined {
+  const params = normalizeMcpCallParams(metadata.params);
+  if (params) {
+    return params;
+  }
+  const command = normalizeOptionalString(metadata.command);
+  return command ? { command } : undefined;
+}
+
+/**
+ * 读取历史工具输入，缺失时返回空串以兼容旧接口结构。
+ * @param metadata 步骤元数据。
+ * @returns 工具输入文本。
+ */
+function normalizeReplayToolStepInput(metadata: Record<string, unknown>): string {
+  return normalizeOptionalString(metadata.input) ?? '';
 }
 
 /**
@@ -5094,7 +5115,7 @@ function deriveProcessCardsFromReplay(options: {
       id: `replay-tool-call-${call.callId ?? call.toolId}`,
       type: 'tool_call',
       title: `调用${call.displayName || call.toolId || '工具'}`,
-      summary: call.progressText ?? call.content ?? `调用${call.displayName || call.toolId || '工具'}。`,
+      summary: call.progressText ?? call.reactAction ?? `调用${call.displayName || call.toolId || '工具'}。`,
       status: call.status === 'error' ? 'error' : 'completed',
       toolId: call.toolId,
       displayName: call.displayName,
@@ -5175,7 +5196,7 @@ function resolveReplayAnalysisSummary(options: {
   const firstMeaningfulStep = options.executionSteps.find(
     (step) =>
       !isSearchStepType(step.stepType) &&
-      !isMcpStep(step) &&
+      !isReplayToolStep(step) &&
       String(step.content ?? step.stepTitle ?? '').trim().length > 0,
   );
   if (firstMeaningfulStep?.content) {

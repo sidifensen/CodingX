@@ -53,7 +53,7 @@ public class ChatConversationApplicationService {
      * @return 输入参数。
      */
     public ChatConversation createConversation(CreateConversationCommand command, Long userId) {
-        Long actualWorkspaceId = resolveWorkspaceId(command.workspaceId(), userId);
+        Long actualWorkspaceId = resolveWorkspaceId(command.workspaceId(), command.runtimeTarget(), userId);
         String title = StrUtil.blankToDefault(command.title(), ErrorMessageCatalog.CHAT_CONVERSATION_DEFAULT_TITLE);
         ChatConversation conversation = ChatConversation.create(
             IdUtil.getSnowflakeNextId(),
@@ -295,10 +295,14 @@ public class ChatConversationApplicationService {
      * @param userId 当前用户标识。
      * @return 会话最终归属的工作空间标识。
      */
-    private Long resolveWorkspaceId(Long requestedWorkspaceId, Long userId) {
+    private Long resolveWorkspaceId(Long requestedWorkspaceId, String runtimeTarget, Long userId) {
         if (requestedWorkspaceId != null) {
             WorkspaceDO workspace = workspaceRepositoryImpl.requireOwnedWorkspace(requestedWorkspaceId, userId);
             return workspace.getId();
+        }
+        if (WorkspaceRepositoryImpl.RUNTIME_TARGET_LOCAL.equalsIgnoreCase(StrUtil.trimToEmpty(runtimeTarget))) {
+            WorkspaceDO localWorkspace = workspaceRepositoryImpl.ensureDefaultLocalWorkspace(userId);
+            return localWorkspace.getId();
         }
         WorkspaceDO cloudWorkspace = workspaceRepositoryImpl.ensureDefaultCloudWorkspace(userId, null);
         return cloudWorkspace.getId();

@@ -220,6 +220,10 @@ describe('useChatWorkspace task status state', () => {
 
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
       const url = String(input);
+      if (url === '/api/chat/conversations') {
+        // 本地历史现在也会先尝试读取云端会话列表；该用例只验证本地快照提醒状态。
+        return createEmptyListResponse();
+      }
       if (
         url === '/api/chat/sample-questions' ||
         url === '/api/chat/experts' ||
@@ -275,7 +279,7 @@ describe('useChatWorkspace task status state', () => {
       }),
     );
     expect(defaultConversation?.lastTaskStatus).toBeUndefined();
-    expect(defaultConversation?.hasUnreadTaskCompletion).toBeUndefined();
+    expect(defaultConversation?.hasUnreadTaskCompletion).toBe(false);
     const defaultWorkspaceGroup = result.current.workspaceGroups.find(
       (group) => group.partitionKey === 'local::__no_workspace__',
     );

@@ -91,6 +91,48 @@ class WorkspaceRepositoryImplTest {
     }
 
     /**
+     * 创建默认本地历史空间时应使用 local 运行目标且不写入目录路径。
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void ensureDefaultLocalWorkspaceCreatesLocalHistoryWorkspace() {
+        when(workspaceMapper.selectOne(any())).thenReturn(null);
+        doReturn(1).when(workspaceMapper).insert(any(WorkspaceDO.class));
+
+        WorkspaceDO workspace = workspaceRepository.ensureDefaultLocalWorkspace(1001L);
+
+        ArgumentCaptor<WorkspaceDO> workspaceCaptor = ArgumentCaptor.forClass(WorkspaceDO.class);
+        verify(workspaceMapper).insert(workspaceCaptor.capture());
+        WorkspaceDO inserted = workspaceCaptor.getValue();
+        assertEquals("local", inserted.getRuntimeTarget());
+        assertEquals("本地历史记录", inserted.getName());
+        assertNull(inserted.getWorkingDirectory());
+        assertEquals(1001L, inserted.getCreatedBy());
+        assertEquals(workspace.getId(), inserted.getId());
+    }
+
+    /**
+     * 绑定本地目录时应按规范化路径创建 local workspace，后续会话可直接挂载。
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void ensureLocalWorkspaceCreatesWorkspaceForPath() {
+        when(workspaceMapper.selectOne(any())).thenReturn(null);
+        doReturn(1).when(workspaceMapper).insert(any(WorkspaceDO.class));
+
+        WorkspaceDO workspace = workspaceRepository.ensureLocalWorkspace(1001L, "D:/code/test", "test");
+
+        ArgumentCaptor<WorkspaceDO> workspaceCaptor = ArgumentCaptor.forClass(WorkspaceDO.class);
+        verify(workspaceMapper).insert(workspaceCaptor.capture());
+        WorkspaceDO inserted = workspaceCaptor.getValue();
+        assertEquals("local", inserted.getRuntimeTarget());
+        assertEquals("test", inserted.getName());
+        assertEquals("D:/code/test", inserted.getWorkingDirectory());
+        assertEquals(1001L, inserted.getCreatedBy());
+        assertEquals(workspace.getId(), inserted.getId());
+    }
+
+    /**
      * 默认云端空间读取接口应仅返回已有记录，不应隐式创建新空间。
      */
     @Test

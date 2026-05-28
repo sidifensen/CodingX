@@ -7,6 +7,7 @@ import com.codingx.common.error.ErrorMessageCatalog;
 import com.codingx.common.exception.BusinessException;
 import com.codingx.workspace.infrastructure.persistence.dataobject.WorkspaceDO;
 import com.codingx.workspace.infrastructure.persistence.mapper.WorkspaceMapper;
+import com.codingx.workspace.infrastructure.repository.WorkspaceRepositoryImpl;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
@@ -24,6 +25,7 @@ public class ChatWorkspaceBindingService {
 
     private final Map<Long, Path> repositoryPathByUserId = new ConcurrentHashMap<>();
     private final WorkspaceMapper workspaceMapper;
+    private final WorkspaceRepositoryImpl workspaceRepositoryImpl;
 
     /**
      * 绑定当前登录用户的仓库目录。
@@ -35,10 +37,12 @@ public class ChatWorkspaceBindingService {
         Path normalizedPath = normalizeAndValidateRepositoryPath(repositoryPath);
         repositoryPathByUserId.put(userId, normalizedPath);
         String normalizedPathText = normalizedPath.toString().replace('\\', '/');
+        String workspaceName = normalizedPath.getFileName() == null ? normalizedPathText : normalizedPath.getFileName().toString();
+        WorkspaceDO workspace = workspaceRepositoryImpl.ensureLocalWorkspace(userId, normalizedPathText, workspaceName);
         return new WorkspaceBindingResult(
-            null,
+            workspace.getId(),
             normalizedPathText,
-            normalizedPath.getFileName() == null ? normalizedPathText : normalizedPath.getFileName().toString()
+            workspace.getName()
         );
     }
 

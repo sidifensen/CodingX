@@ -41,6 +41,11 @@ public class WorkspaceRepositoryImpl implements WorkspaceRepository {
      */
     public static final String DEFAULT_CLOUD_WORKSPACE_NAME = "云端历史记录";
 
+    /**
+     * 默认本地空间名称常量，用于本地运行但尚未选择目录的历史归档。
+     */
+    public static final String DEFAULT_LOCAL_WORKSPACE_NAME = "本地历史记录";
+
     private final WorkspaceMapper workspaceMapper;
     private final ChatConversationMapper chatConversationMapper;
 
@@ -175,6 +180,74 @@ public class WorkspaceRepositoryImpl implements WorkspaceRepository {
     }
 
     /**
+     * 确保用户存在默认本地历史空间，供本地运行但未选择目录的请求归档。
+     * @param userId 用户标识。
+     * @return 默认本地空间记录。
+     */
+    public WorkspaceDO ensureDefaultLocalWorkspace(Long userId) {
+        WorkspaceDO existing = findDefaultLocalWorkspace(userId);
+        if (existing != null) {
+            return existing;
+        }
+        LocalDateTime now = LocalDateTime.now();
+        WorkspaceDO workspace = new WorkspaceDO();
+        workspace.setId(IdUtil.getSnowflakeNextId());
+        workspace.setName(DEFAULT_LOCAL_WORKSPACE_NAME);
+        workspace.setRuntimeTarget(RUNTIME_TARGET_LOCAL);
+        workspace.setCreatedBy(userId);
+        workspace.setCreatedAt(now);
+        workspace.setUpdatedAt(now);
+        workspace.setDeleted(0);
+        try {
+            workspaceMapper.insert(workspace);
+            return workspace;
+        } catch (Exception ignored) {
+            // 并发创建默认本地空间时回查复用，避免同一用户出现多个“本地历史记录”。
+            WorkspaceDO concurrentWorkspace = findDefaultLocalWorkspace(userId);
+            if (concurrentWorkspace != null) {
+                return concurrentWorkspace;
+            }
+            throw ignored;
+        }
+    }
+
+    /**
+     * 确保用户指定本地目录存在 workspace 记录，按规范化路径复用，避免同一路径重复建空间。
+     * @param userId 用户标识。
+     * @param normalizedWorkingDirectory 规范化后的本地目录路径。
+     * @param workspaceName 工作空间展示名。
+     * @return 本地目录工作空间记录。
+     */
+    public WorkspaceDO ensureLocalWorkspace(Long userId, String normalizedWorkingDirectory, String workspaceName) {
+        String normalizedPath = StrUtil.trimToEmpty(normalizedWorkingDirectory).replace('\\', '/');
+        WorkspaceDO existing = findLocalWorkspaceByPath(userId, normalizedPath);
+        if (existing != null) {
+            return existing;
+        }
+        LocalDateTime now = LocalDateTime.now();
+        WorkspaceDO workspace = new WorkspaceDO();
+        workspace.setId(IdUtil.getSnowflakeNextId());
+        workspace.setName(StrUtil.blankToDefault(workspaceName, DEFAULT_LOCAL_WORKSPACE_NAME));
+        workspace.setWorkingDirectory(normalizedPath);
+        workspace.setRuntimeTarget(RUNTIME_TARGET_LOCAL);
+        workspace.setCreatedBy(userId);
+        workspace.setCreatedAt(now);
+        workspace.setUpdatedAt(now);
+        workspace.setDeleted(0);
+        try {
+            workspaceMapper.insert(workspace);
+            return workspace;
+        } catch (Exception ignored) {
+            // 并发绑定同一路径时回查复用，避免前端重复点击生成重复项目。
+            WorkspaceDO concurrentWorkspace = findLocalWorkspaceByPath(userId, normalizedPath);
+            if (concurrentWorkspace != null) {
+                return concurrentWorkspace;
+            }
+            throw ignored;
+        }
+    }
+
+    /**
      * 读取用户默认云端工作空间，不创建新记录。
      * 列表查询会用它区分“默认云端历史”与“本地工作空间历史”，避免把本地会话混进 Web 侧历史页。
      * @param userId 用户标识。
@@ -209,6 +282,41 @@ public class WorkspaceRepositoryImpl implements WorkspaceRepository {
             .eq(WorkspaceDO::getCreatedBy, userId)
             .eq(WorkspaceDO::getRuntimeTarget, RUNTIME_TARGET_CLOUD)
             .isNull(WorkspaceDO::getWorkingDirectory)
+            .eq(WorkspaceDO::getDeleted, 0)
+            .last("limit 1"));
+    }
+
+    /**
+     * 查询用户默认本地历史空间，约束为 local 且无本地目录。
+     * @param userId 用户标识。
+     * @return 默认本地空间，不存在返回 null。
+     */
+    private WorkspaceDO findDefaultLocalWorkspace(Long userId) {
+        if (userId == null) {
+            return null;
+        }
+        return workspaceMapper.selectOne(new LambdaQueryWrapper<WorkspaceDO>()
+            .eq(WorkspaceDO::getCreatedBy, userId)
+            .eq(WorkspaceDO::getRuntimeTarget, RUNTIME_TARGET_LOCAL)
+            .isNull(WorkspaceDO::getWorkingDirectory)
+            .eq(WorkspaceDO::getDeleted, 0)
+            .last("limit 1"));
+    }
+
+    /**
+     * 按本地目录查询用户工作空间。
+     * @param userId 用户标识。
+     * @param normalizedWorkingDirectory 规范化后的本地目录。
+     * @return 本地工作空间，不存在返回 null。
+     */
+    private WorkspaceDO findLocalWorkspaceByPath(Long userId, String normalizedWorkingDirectory) {
+        if (userId == null || StrUtil.isBlank(normalizedWorkingDirectory)) {
+            return null;
+        }
+        return workspaceMapper.selectOne(new LambdaQueryWrapper<WorkspaceDO>()
+            .eq(WorkspaceDO::getCreatedBy, userId)
+            .eq(WorkspaceDO::getRuntimeTarget, RUNTIME_TARGET_LOCAL)
+            .eq(WorkspaceDO::getWorkingDirectory, normalizedWorkingDirectory)
             .eq(WorkspaceDO::getDeleted, 0)
             .last("limit 1"));
     }

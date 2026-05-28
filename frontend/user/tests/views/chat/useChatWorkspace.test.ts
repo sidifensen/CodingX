@@ -2374,6 +2374,94 @@ describe('useChatWorkspace', () => {
   });
 
   /**
+   * 未选择本地目录时也应允许发送，由后端创建或复用“本地历史记录”工作空间。
+   */
+  it('本地默认历史分区未选择目录时也应允许发送消息', async () => {
+    window.localStorage.setItem(
+      'codingx.auth.session',
+      JSON.stringify({
+        token: 'token-123',
+        userId: '1002',
+        username: 'user',
+        displayName: 'CodingX User',
+        userType: 'USER',
+      }),
+    );
+
+    const streamFetchMock = vi.fn();
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === '/api/chat/conversations') {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (
+        url === '/api/chat/sample-questions' ||
+        url === '/api/chat/experts' ||
+        url === '/api/chat/skills' ||
+        url === '/api/chat/mcps' ||
+        /^\/api\/chat\/conversations\/local-[^/]+\/(messages|steps|references|artifacts|current-skills|current-mcps|current-experts)$/.test(url)
+      ) {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (url.includes('/api/chat/stream')) {
+        streamFetchMock(url);
+        return new Response('', { status: 200 });
+      }
+      throw new Error(`Unhandled fetch in local default history send test: ${url}`);
+    });
+
+    const hostContext = {
+      hostType: 'desktop',
+      executionTargets: ['local'] as const,
+      capabilities: {
+        localFiles: true,
+        localFolderPicker: true,
+        shell: true,
+        browserAutomation: false,
+        desktopNotifications: false,
+        officeInterop: false,
+        localMcp: true,
+        windowControls: true,
+      },
+      localResource: {
+        boundRepositoryPath: null,
+        permissionGranted: false,
+      },
+    };
+
+    const { result } = renderHook(() =>
+      useChatWorkspace(true, {
+        hostContext,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(result.current.isBootstrapping).toBe(false);
+    });
+
+    await act(async () => {
+      result.current.setInputValue('记录到本地历史');
+    });
+    await act(async () => {
+      await result.current.submitMessage();
+    });
+
+    expect(streamFetchMock).toHaveBeenCalledTimes(1);
+    const requestUrl = String(streamFetchMock.mock.calls[0][0]);
+    expect(requestUrl).toContain('/api/chat/stream?');
+    expect(requestUrl).toContain('runtimeTarget=local');
+    expect(requestUrl).not.toContain('repositoryPath=');
+    expect(requestUrl).not.toContain('workspaceId=');
+    expect(result.current.streamError).toBe('');
+  });
+
+  /**
    * 分享会话应返回可直接复制的绝对链接，避免前端后续再拼接导致分享失效。
    */
   it('应返回绝对分享链接', async () => {

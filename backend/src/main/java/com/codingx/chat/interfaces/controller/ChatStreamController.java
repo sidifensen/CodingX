@@ -6,6 +6,7 @@ import com.codingx.chat.application.command.CreateConversationCommand;
 import com.codingx.chat.application.command.SendChatMessageCommand;
 import com.codingx.chat.application.service.ChatConversationApplicationService;
 import com.codingx.chat.application.service.ChatStreamExecutionService;
+import com.codingx.chat.application.service.ChatWorkspaceBindingService;
 import com.codingx.chat.domain.model.ChatConversation;
 import com.codingx.skill.domain.repository.ChatSkillRepository;
 import com.codingx.chat.infrastructure.stream.ChatSseRegistry;
@@ -43,6 +44,7 @@ public class ChatStreamController {
      * 聊天应用服务依赖。
      */
     private final ChatStreamExecutionService chatStreamExecutionService;
+    private final ChatWorkspaceBindingService chatWorkspaceBindingService;
 
     /**
      * ChatSseRegistry 依赖。
@@ -87,8 +89,16 @@ public class ChatStreamController {
     ) {
         StpUtil.checkLogin();
         Long userId = StpUtil.getLoginIdAsLong();
-        boolean localOnly = isLocalRuntime(runtimeTarget);
-        Long actualConversationId = resolveConversationId(conversationId, workspaceId, userId, localOnly);
+        boolean localRuntime = isLocalRuntime(runtimeTarget);
+        boolean localOnly = false;
+        ResolvedWorkspace resolvedWorkspace = resolveWorkspace(workspaceId, repositoryPath, localRuntime);
+        Long actualConversationId = resolveConversationId(
+            conversationId,
+            resolvedWorkspace.workspaceId(),
+            userId,
+            localOnly,
+            localRuntime
+        );
         boolean deepThinkingEnabled = Boolean.TRUE.equals(deepThinking);
         // 步骤：同一入口同时支持 MCP 与技能绑定，分别解析后传入运行时，避免语义混淆。
         List<String> selectedMcpCodes = resolveMcpCodes(mcpCodes);
@@ -107,10 +117,13 @@ public class ChatStreamController {
         metaPayload.put("skillCodes", selectedSkillCodes);
         metaPayload.put("expertCode", selectedExpertCode);
         metaPayload.put("attachmentIds", selectedAttachmentIds);
-        metaPayload.put("runtimeTarget", localOnly ? "local" : "cloud");
+        metaPayload.put("runtimeTarget", localRuntime ? "local" : "cloud");
         metaPayload.put("localOnly", localOnly);
+        if (resolvedWorkspace.workspaceId() != null) {
+            metaPayload.put("workspaceId", resolvedWorkspace.workspaceId());
+        }
         if (StrUtil.isNotBlank(repositoryPath)) {
-            metaPayload.put("repositoryPath", StrUtil.trim(repositoryPath));
+            metaPayload.put("repositoryPath", StrUtil.blankToDefault(resolvedWorkspace.repositoryPath(), StrUtil.trim(repositoryPath)));
         }
         chatSseRegistry.publish(actualConversationId, "meta", metaPayload);
         chatStreamExecutionService.dispatch(
@@ -122,7 +135,7 @@ public class ChatStreamController {
                 selectedMcpCodes,
                 selectedSkillCodes,
                 selectedExpertCode,
-                repositoryPath,
+                StrUtil.blankToDefault(resolvedWorkspace.repositoryPath(), repositoryPath),
                 selectedAttachmentIds,
                 localOnly
             ),
@@ -140,6 +153,22 @@ public class ChatStreamController {
      */
     public SseEmitter streamChat(String question, Long conversationId, Boolean deepThinking) {
         return streamChat(question, conversationId, null, deepThinking, null, null, null, null, null, null, null);
+    }
+
+    /**
+     * 解析本轮请求归属工作空间；本地路径请求即使没带 workspaceId，也要先绑定目录 workspace。
+     * @param workspaceId 前端传入的工作空间标识。
+     * @param repositoryPath 本地目录路径。
+     * @param localRuntime 是否本地运行。
+     * @return 归一后的工作空间与目录。
+     */
+    private ResolvedWorkspace resolveWorkspace(Long workspaceId, String repositoryPath, boolean localRuntime) {
+        if (!localRuntime || workspaceId != null || StrUtil.isBlank(repositoryPath)) {
+            return new ResolvedWorkspace(workspaceId, StrUtil.trimToNull(repositoryPath));
+        }
+        ChatWorkspaceBindingService.WorkspaceBindingResult bindingResult =
+            chatWorkspaceBindingService.bindRepositoryPathForCurrentUser(repositoryPath);
+        return new ResolvedWorkspace(bindingResult.workspaceId(), bindingResult.repositoryPath());
     }
 
     /**
@@ -264,7 +293,13 @@ public class ChatStreamController {
      * @param userId 当前用户标识。
      * @return 最终会话标识。
      */
-    private Long resolveConversationId(Long conversationId, Long workspaceId, Long userId, boolean localOnly) {
+    private Long resolveConversationId(
+        Long conversationId,
+        Long workspaceId,
+        Long userId,
+        boolean localOnly,
+        boolean localRuntime
+    ) {
         if (conversationId != null) {
             if (!localOnly) {
                 // 步骤：复用既有会话时先做 owner 校验，避免越权订阅或发送到他人会话。
@@ -276,16 +311,16 @@ public class ChatStreamController {
             // 本地模式只需要临时数值 ID 作为 SSE 路由键，不能据此创建云端会话。
             return IdUtil.getSnowflakeNextId();
         }
-        // 新建会话时透传 workspaceId：为空走默认云端空间，不为空绑定本地空间。
+        // 新建会话时透传 workspaceId：为空时根据运行目标选择默认云端或本地历史空间。
         ChatConversation conversation = chatConversationApplicationService.createConversation(
-            new CreateConversationCommand(null, workspaceId),
+            new CreateConversationCommand(null, workspaceId, localRuntime ? "local" : null),
             userId
         );
         return conversation.getId();
     }
 
     /**
-     * 判断当前请求是否显式进入本地临时运行态。
+     * 判断当前请求是否显式进入本地运行目标；本地运行目标仍会持久化会话与消息。
      * @param runtimeTarget 前端运行目标。
      * @return 是否本地临时模式。
      */
@@ -294,7 +329,7 @@ public class ChatStreamController {
     }
 
     /**
-     * 根据运行态构建发送命令；本地模式必须携带 localOnly 语义，供下游跳过云端持久化。
+     * 根据运行态构建发送命令；默认请求都走云端持久化，localOnly 仅保留给显式临时链路。
      * @param conversationId 最终传输会话标识。
      * @param question 用户问题。
      * @param deepThinking 是否深度思考。
@@ -340,6 +375,14 @@ public class ChatStreamController {
             normalizedRepositoryPath,
             attachmentIds
         );
+    }
+
+    /**
+     * 表示本轮请求解析后的工作空间归属。
+     * @param workspaceId 工作空间标识。
+     * @param repositoryPath 规范化后的本地目录路径。
+     */
+    private record ResolvedWorkspace(Long workspaceId, String repositoryPath) {
     }
 
     /**

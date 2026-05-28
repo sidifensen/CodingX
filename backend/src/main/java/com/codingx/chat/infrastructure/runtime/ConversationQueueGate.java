@@ -275,7 +275,7 @@ public class ConversationQueueGate {
      */
     private QueueAcquireResult tryAcquireInMemory(Long conversationId, IntConsumer queuePositionConsumer) {
         if (activeConversations.containsKey(conversationId)) {
-            return QueueAcquireResult.granted();
+            return QueueAcquireResult.rejected(ErrorMessageCatalog.CHAT_QUEUE_BUSY);
         }
         if (activeConversations.size() >= maxConcurrent) {
             if (queuePositionConsumer != null) {
@@ -299,7 +299,7 @@ public class ConversationQueueGate {
         semaphore.trySetPermits(maxConcurrent);
 
         if (permitByConversation.containsKey(conversationId)) {
-            return QueueAcquireResult.granted();
+            return QueueAcquireResult.rejected(ErrorMessageCatalog.CHAT_QUEUE_BUSY);
         }
         queue.add(System.currentTimeMillis(), requestMember);
         long deadline = System.currentTimeMillis() + queueAcquireTimeoutMs;

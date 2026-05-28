@@ -154,6 +154,52 @@ describe('ChatView', () => {
   });
 
   /**
+   * 流式阶段用户消息仍是乐观 ID，后端引用已携带真实消息 ID 时，也应立即把引用编号转成链接。
+   */
+  it('应在乐观用户消息阶段将引用编号渲染为真实来源链接', async () => {
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          messages: [
+            {
+              id: 'optimistic-user-1779773736005',
+              conversationId: '2001',
+              role: 'USER',
+              content: '请搜索实时资料',
+              status: 'COMPLETED',
+            },
+            {
+              id: 'optimistic-assistant-1779773736005',
+              conversationId: '2001',
+              role: 'ASSISTANT',
+              content: '我查到的结果见 [R1]。',
+              status: 'streaming',
+            },
+          ],
+          executionSteps: [],
+          references: [
+            {
+              id: '11',
+              runId: '5002',
+              messageId: '101',
+              conversationId: '2001',
+              title: '实时资料',
+              url: 'https://example.com/live',
+              siteName: 'Example',
+              rankNo: 1,
+            },
+          ],
+          artifacts: [],
+        })}
+      />,
+    );
+
+    const citationLink = await screen.findByRole('link', { name: '[R1]' });
+    expect(citationLink).toHaveAttribute('href', 'https://example.com/live');
+  });
+  /**
    * 已登录发送消息时应调用工作台提交动作。
    */
   it('应在已登录发送消息时调用提交动作', async () => {

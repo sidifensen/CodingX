@@ -1155,6 +1155,7 @@ export default function ChatView({
                           ) : null}
                           <AssistantMessageBody
                             messageId={message.id}
+                            conversationId={message.conversationId}
                             content={messageContent}
                             processCards={message.processCards}
                             timelineItems={message.timelineItems}
@@ -2573,14 +2574,21 @@ function MarkdownMessage({
 function buildCitationReferenceLinks(
   references: ReferenceItem[] | undefined,
   referenceMessageId: string | null | undefined,
+  conversationId?: string | null,
 ): Map<number, CitationReferenceLink> {
   if (!references?.length || !referenceMessageId) {
     return new Map();
   }
 
   const citationLinks = new Map<number, CitationReferenceLink>();
-  references
-    .filter((reference) => String(reference.messageId ?? '') === String(referenceMessageId))
+  const exactReferences = references.filter(
+    (reference) => String(reference.messageId ?? '') === String(referenceMessageId),
+  );
+  const eligibleReferences =
+    exactReferences.length > 0
+      ? exactReferences
+      : resolveOptimisticCitationReferences(references, referenceMessageId, conversationId);
+  eligibleReferences
     .forEach((reference, index) => {
       const normalizedRankNo = Number(reference.rankNo ?? index + 1);
       if (!Number.isFinite(normalizedRankNo) || normalizedRankNo < 1 || citationLinks.has(normalizedRankNo)) {
@@ -2603,6 +2611,37 @@ function buildCitationReferenceLinks(
   return citationLinks;
 }
 
+/**
+ * 流式阶段上一条用户消息仍是乐观 ID，而 reference 事件已带真实消息 ID。
+ * 此时只允许回退到当前会话最新 run 的引用批次，避免把历史轮次来源误绑到新回答。
+ */
+function resolveOptimisticCitationReferences(
+  references: ReferenceItem[],
+  referenceMessageId: string,
+  conversationId?: string | null,
+) {
+  if (!isOptimisticUserMessageId(referenceMessageId) || !conversationId) {
+    return [];
+  }
+  const sameConversationReferences = references.filter(
+    (reference) => String(reference.conversationId ?? '') === String(conversationId),
+  );
+  const latestRunId = sameConversationReferences
+    .map((reference) => String(reference.runId ?? ''))
+    .filter(Boolean)
+    .at(-1);
+  if (!latestRunId) {
+    return sameConversationReferences;
+  }
+  return sameConversationReferences.filter((reference) => String(reference.runId ?? '') === latestRunId);
+}
+
+/**
+ * 用户提问的临时消息 ID 只存在于流式阶段，历史回放完成后会被真实数据库 ID 替换。
+ */
+function isOptimisticUserMessageId(messageId: string) {
+  return messageId.startsWith('optimistic-user-') || messageId.startsWith('optimistic-edit-user-');
+}
 /**
  * 反查当前助手消息对应的用户提问消息 ID。
  * 搜索来源挂在提问消息上，因此正文里的引用编号必须回溯到上一条用户消息。
@@ -2723,6 +2762,7 @@ function splitCitationTextNode(text: string, citationReferenceLinks: Map<number,
  */
 function AssistantMessageBody({
   messageId,
+  conversationId,
   content,
   processCards,
   timelineItems,
@@ -2730,6 +2770,7 @@ function AssistantMessageBody({
   referenceMessageId,
 }: {
   messageId: string;
+  conversationId?: string;
   content: string;
   processCards?: ProcessCardItem[];
   timelineItems?: MessageTimelineItem[];
@@ -2738,8 +2779,8 @@ function AssistantMessageBody({
 }) {
   const hasTimeline = timelineItems && timelineItems.length > 0;
   const citationReferenceLinks = React.useMemo(
-    () => buildCitationReferenceLinks(references, referenceMessageId),
-    [referenceMessageId, references],
+    () => buildCitationReferenceLinks(references, referenceMessageId, conversationId),
+    [conversationId, referenceMessageId, references],
   );
   if (!hasTimeline) {
     return (

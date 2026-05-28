@@ -530,6 +530,7 @@ export function useChatWorkspace(
   const streamMcpCallsRef = useRef<Record<string, McpCallItem[]>>({});
   const streamSessionSeedRef = useRef(0);
   const activeStreamSessionIdRef = useRef<number | null>(null);
+  const submitMessageInFlightRef = useRef(false);
   const streamQueueTimerRef = useRef<number | null>(null);
   const skipNextRuntimeSyncRef = useRef(false);
   const messagesRef = useRef<ChatMessageItem[]>([]);
@@ -1422,159 +1423,172 @@ export function useChatWorkspace(
       onUnauthorizedRef.current?.();
       return;
     }
-    setStreamError('');
-    // 关键约束：本地模式有目录时先绑定 workspaceId；无目录时交给后端默认“本地历史记录”归档。
-    let effectiveWorkspaceId = workspaceId;
-    if (activeRuntimeTarget === 'local' && workspacePath != null && workspacePath.trim().length > 0) {
-      const bindingResult = await bindWorkspacePath(workspacePath);
-      effectiveWorkspaceId = normalizeWorkspaceId(bindingResult?.workspaceId) ?? effectiveWorkspaceId;
-      if (effectiveWorkspaceId && effectiveWorkspaceId !== workspaceId) {
-        setWorkspaceId(effectiveWorkspaceId);
-      }
-    }
-    const submittedInputValue = inputValue;
-    const submittedAttachments = pendingAttachments;
-    // 交互约束：点击发送后立即清空输入与待发送附件，避免用户误判请求未触发。
-    setInputValue('');
-    setPendingAttachments([]);
-    let uploadedAttachments: ChatAttachmentItem[] = [];
-    try {
-      uploadedAttachments = await uploadPendingAttachments(token, activeConversationId, submittedAttachments);
-    } catch (error) {
-      // 上传失败时恢复发送前输入与附件，允许用户修正后重试。
-      setInputValue(submittedInputValue);
-      restorePendingAttachmentsAfterUploadFailed(submittedAttachments);
-      setStreamError(error instanceof Error ? error.message : UserErrorMessages.CHAT_ATTACHMENT_UPLOAD_FAILED);
+    if (
+      submitMessageInFlightRef.current ||
+      activeStreamSessionIdRef.current != null ||
+      abortControllerRef.current != null
+    ) {
       return;
     }
-    const attachmentIds = uploadedAttachments.map((attachment) => attachment.id);
-    setIsStreaming(true);
-    const streamSessionId = createStreamSessionId();
-    activeStreamSessionIdRef.current = streamSessionId;
-    abortControllerRef.current?.abort();
-    const streamAbortController = new AbortController();
-    abortControllerRef.current = streamAbortController;
-
-    const optimisticConversationId =
-      activeConversationId ??
-      (activeRuntimeTarget === 'local' ? createLocalConversationId() : 'pending-conversation');
-    const optimisticMessageId = `optimistic-user-${Date.now()}`;
-    const optimisticAssistantId = `optimistic-assistant-${Date.now()}`;
-    streamMcpCallsRef.current[optimisticAssistantId] = [];
-    streamStateRef.current = {
-      conversationId: optimisticConversationId,
-      activeMessageId: optimisticAssistantId,
-    };
-
-  const nextMessages: ChatMessageItem[] = [
-      ...messages,
-      {
-        id: optimisticMessageId,
-        conversationId: optimisticConversationId,
-        role: 'USER',
-        content: question,
-        attachments: uploadedAttachments,
-        status: 'COMPLETED',
-      },
-      {
-        id: optimisticAssistantId,
-        conversationId: optimisticConversationId,
-        role: 'ASSISTANT',
-        content: '',
-        processCards: [],
-        timelineItems: [],
-        status: 'streaming',
-      },
-    ];
-    setMessages(nextMessages);
-
-    persistConversationState(optimisticConversationId, conversations, {
-      messages: nextMessages,
-      executionSteps,
-      references,
-      artifacts,
-      currentExperts,
-      currentSkills,
-      currentMcps,
-    });
-
+    // 关键约束：提交防重必须早于工作区绑定和附件上传，覆盖 React 状态尚未刷新前的重复触发窗口。
+    submitMessageInFlightRef.current = true;
+    setStreamError('');
     try {
-      const response = await fetch(
-        buildStreamRequestUrl(
-          question,
-          activeConversationId,
-          effectiveWorkspaceId,
-          deepThinkingEnabled,
-          mcpConnected,
-          selectedMcpCodes,
-          selectedSkillCodes,
-          selectedExpertCode,
-          workspacePath,
-          attachmentIds,
-          activeRuntimeTarget,
-        ),
+      // 关键约束：本地模式有目录时先绑定 workspaceId；无目录时交给后端默认“本地历史记录”归档。
+      let effectiveWorkspaceId = workspaceId;
+      if (activeRuntimeTarget === 'local' && workspacePath != null && workspacePath.trim().length > 0) {
+        const bindingResult = await bindWorkspacePath(workspacePath);
+        effectiveWorkspaceId = normalizeWorkspaceId(bindingResult?.workspaceId) ?? effectiveWorkspaceId;
+        if (effectiveWorkspaceId && effectiveWorkspaceId !== workspaceId) {
+          setWorkspaceId(effectiveWorkspaceId);
+        }
+      }
+      const submittedInputValue = inputValue;
+      const submittedAttachments = pendingAttachments;
+      // 交互约束：点击发送后立即清空输入与待发送附件，避免用户误判请求未触发。
+      setInputValue('');
+      setPendingAttachments([]);
+      let uploadedAttachments: ChatAttachmentItem[] = [];
+      try {
+        uploadedAttachments = await uploadPendingAttachments(token, activeConversationId, submittedAttachments);
+      } catch (error) {
+        // 上传失败时恢复发送前输入与附件，允许用户修正后重试。
+        setInputValue(submittedInputValue);
+        restorePendingAttachmentsAfterUploadFailed(submittedAttachments);
+        setStreamError(error instanceof Error ? error.message : UserErrorMessages.CHAT_ATTACHMENT_UPLOAD_FAILED);
+        return;
+      }
+      const attachmentIds = uploadedAttachments.map((attachment) => attachment.id);
+      setIsStreaming(true);
+      const streamSessionId = createStreamSessionId();
+      activeStreamSessionIdRef.current = streamSessionId;
+      abortControllerRef.current?.abort();
+      const streamAbortController = new AbortController();
+      abortControllerRef.current = streamAbortController;
+
+      const optimisticConversationId =
+        activeConversationId ??
+        (activeRuntimeTarget === 'local' ? createLocalConversationId() : 'pending-conversation');
+      const optimisticMessageId = `optimistic-user-${Date.now()}`;
+      const optimisticAssistantId = `optimistic-assistant-${Date.now()}`;
+      streamMcpCallsRef.current[optimisticAssistantId] = [];
+      streamStateRef.current = {
+        conversationId: optimisticConversationId,
+        activeMessageId: optimisticAssistantId,
+      };
+
+      const nextMessages: ChatMessageItem[] = [
+        ...messages,
         {
-          headers: {
-            satoken: token,
-          },
-          signal: streamAbortController.signal,
+          id: optimisticMessageId,
+          conversationId: optimisticConversationId,
+          role: 'USER',
+          content: question,
+          attachments: uploadedAttachments,
+          status: 'COMPLETED',
         },
-      );
-      await ChatApi.assertStreamAuthorized(response);
-      // 附件上传成功并已发出流请求后即可释放预览 URL，避免长期占用浏览器内存。
-      submittedAttachments.forEach((item) => URL.revokeObjectURL(item.previewUrl));
-      await consumeSseStream(response, optimisticAssistantId, streamSessionId);
-      if (!isActiveStreamSession(streamSessionId)) {
-        return;
-      }
-      const nextConversations = await loadConversations(token, effectiveWorkspaceId);
-      const nextConversationId = streamStateRef.current?.conversationId ?? activeConversationId;
-      if (nextConversationId) {
-        await selectConversation(
-          nextConversationId,
-          nextConversations,
-          streamMcpCallsRef.current[optimisticAssistantId],
-          true,
-          true,
-        );
-      }
-      refreshWorkspaceGroups('all');
-    } catch (error) {
-      if (!isActiveStreamSession(streamSessionId)) {
-        return;
-      }
-      if (error instanceof DOMException && error.name === 'AbortError') {
-        setMessages((previousMessages) =>
-          previousMessages.map((message) =>
-            message.id === optimisticAssistantId
-              ? {
-                  ...message,
-                  status: 'cancelled',
-                  searchProgress: message.searchProgress
-                    ? {
-                        ...message.searchProgress,
-                        status: 'cancelled',
-                      }
-                    : undefined,
-                }
-              : message,
+        {
+          id: optimisticAssistantId,
+          conversationId: optimisticConversationId,
+          role: 'ASSISTANT',
+          content: '',
+          processCards: [],
+          timelineItems: [],
+          status: 'streaming',
+        },
+      ];
+      setMessages(nextMessages);
+
+      persistConversationState(optimisticConversationId, conversations, {
+        messages: nextMessages,
+        executionSteps,
+        references,
+        artifacts,
+        currentExperts,
+        currentSkills,
+        currentMcps,
+      });
+
+      try {
+        const response = await fetch(
+          buildStreamRequestUrl(
+            question,
+            activeConversationId,
+            effectiveWorkspaceId,
+            deepThinkingEnabled,
+            mcpConnected,
+            selectedMcpCodes,
+            selectedSkillCodes,
+            selectedExpertCode,
+            workspacePath,
+            attachmentIds,
+            activeRuntimeTarget,
           ),
+          {
+            headers: {
+              satoken: token,
+            },
+            signal: streamAbortController.signal,
+          },
         );
-        setStreamError('已停止当前生成');
-      } else if (error instanceof ChatApi.UnauthorizedError) {
-        onUnauthorizedRef.current?.();
-      } else {
-        setStreamError(error instanceof Error ? error.message : UserErrorMessages.CHAT_REQUEST_FAILED);
+        await ChatApi.assertStreamAuthorized(response);
+        // 附件上传成功并已发出流请求后即可释放预览 URL，避免长期占用浏览器内存。
+        submittedAttachments.forEach((item) => URL.revokeObjectURL(item.previewUrl));
+        await consumeSseStream(response, optimisticAssistantId, streamSessionId);
+        if (!isActiveStreamSession(streamSessionId)) {
+          return;
+        }
+        const nextConversations = await loadConversations(token, effectiveWorkspaceId);
+        const nextConversationId = streamStateRef.current?.conversationId ?? activeConversationId;
+        if (nextConversationId) {
+          await selectConversation(
+            nextConversationId,
+            nextConversations,
+            streamMcpCallsRef.current[optimisticAssistantId],
+            true,
+            true,
+          );
+        }
+        refreshWorkspaceGroups('all');
+      } catch (error) {
+        if (!isActiveStreamSession(streamSessionId)) {
+          return;
+        }
+        if (error instanceof DOMException && error.name === 'AbortError') {
+          setMessages((previousMessages) =>
+            previousMessages.map((message) =>
+              message.id === optimisticAssistantId
+                ? {
+                    ...message,
+                    status: 'cancelled',
+                    searchProgress: message.searchProgress
+                      ? {
+                          ...message.searchProgress,
+                          status: 'cancelled',
+                        }
+                      : undefined,
+                  }
+                : message,
+            ),
+          );
+          setStreamError('已停止当前生成');
+        } else if (error instanceof ChatApi.UnauthorizedError) {
+          onUnauthorizedRef.current?.();
+        } else {
+          setStreamError(error instanceof Error ? error.message : UserErrorMessages.CHAT_REQUEST_FAILED);
+        }
+      } finally {
+        delete streamMcpCallsRef.current[optimisticAssistantId];
+        if (abortControllerRef.current === streamAbortController) {
+          abortControllerRef.current = null;
+        }
+        if (isActiveStreamSession(streamSessionId)) {
+          activeStreamSessionIdRef.current = null;
+          setIsStreaming(false);
+        }
       }
     } finally {
-      delete streamMcpCallsRef.current[optimisticAssistantId];
-      if (abortControllerRef.current === streamAbortController) {
-        abortControllerRef.current = null;
-      }
-      if (isActiveStreamSession(streamSessionId)) {
-        activeStreamSessionIdRef.current = null;
-        setIsStreaming(false);
-      }
+      submitMessageInFlightRef.current = false;
     }
   };
 

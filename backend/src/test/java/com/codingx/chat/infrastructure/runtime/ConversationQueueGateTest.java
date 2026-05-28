@@ -47,6 +47,20 @@ class ConversationQueueGateTest {
     }
 
     /**
+     * 同一会话已有运行时必须拒绝再次进入，避免重复请求保存两条相同用户消息并启动两条执行流。
+     */
+    @Test
+    void inMemoryAcquireRejectsSameConversationWhenAlreadyActive() {
+        ConversationQueueGate gate = new ConversationQueueGate(2);
+
+        assertTrue(gate.tryAcquire(1001L).allowed());
+        QueueAcquireResult duplicate = gate.tryAcquire(1001L);
+
+        assertFalse(duplicate.allowed());
+        assertEquals(ErrorMessageCatalog.CHAT_QUEUE_BUSY, duplicate.reason());
+    }
+
+    /**
      * 释放 permit 后后续请求应可继续获取执行资格。
      */
     @Test
@@ -163,6 +177,34 @@ class ConversationQueueGateTest {
         ConversationQueueGate gate = new ConversationQueueGate(true, 1, 500L, 50L, 300L, redissonClient);
         assertTrue(gate.tryAcquire(1001L).allowed());
         assertTrue(gate.renew(1001L));
+    }
+
+    /**
+     * Redis 门控在当前节点已经持有会话许可时也必须拒绝重复进入，避免同一会话并发执行。
+     */
+    @Test
+    void redisAcquireRejectsSameConversationWhenPermitAlreadyActive() throws Exception {
+        RedissonClient redissonClient = mock(RedissonClient.class);
+        @SuppressWarnings("unchecked")
+        RScoredSortedSet<String> queue = mock(RScoredSortedSet.class);
+        RPermitExpirableSemaphore semaphore = mock(RPermitExpirableSemaphore.class);
+        RTopic topic = mock(RTopic.class);
+
+        when(redissonClient.<String>getScoredSortedSet(anyString())).thenReturn(queue);
+        when(redissonClient.getPermitExpirableSemaphore(anyString())).thenReturn(semaphore);
+        when(redissonClient.getTopic(anyString())).thenReturn(topic);
+        when(semaphore.trySetPermits(anyInt())).thenReturn(false);
+        when(queue.rank("1001")).thenReturn(0);
+        when(semaphore.tryAcquire(anyLong(), anyLong(), any(TimeUnit.class))).thenReturn("permit-1001");
+        when(topic.publish(anyString())).thenReturn(1L);
+
+        ConversationQueueGate gate = new ConversationQueueGate(true, 2, 500L, 50L, 300L, redissonClient);
+
+        assertTrue(gate.tryAcquire(1001L).allowed());
+        QueueAcquireResult duplicate = gate.tryAcquire(1001L);
+
+        assertFalse(duplicate.allowed());
+        assertEquals(ErrorMessageCatalog.CHAT_QUEUE_BUSY, duplicate.reason());
     }
 
     /**

@@ -240,7 +240,7 @@ VALUES
     (7049, 'web_search.country', 'cn', NULL, FALSE, NULL, NULL, NULL, 'STRING', 'search', '联网搜索地区代码', 110, FALSE, 0),
     (7050, 'ai.selection.failure_threshold', '2', NULL, FALSE, NULL, NULL, NULL, 'INTEGER', 'ai.routing', '模型路由连续失败熔断阈值', 10, TRUE, 0),
     (7051, 'ai.selection.open_duration_ms', '30000', NULL, FALSE, NULL, NULL, NULL, 'LONG', 'ai.routing', '模型路由熔断打开时长毫秒', 20, TRUE, 0),
-    (7052, 'ai.selection.first_packet_timeout_ms', '60000', NULL, FALSE, NULL, NULL, NULL, 'LONG', 'ai.routing', '模型路由首包超时毫秒', 30, FALSE, 0),
+    (7052, 'ai.selection.first_packet_timeout_ms', '15000', NULL, FALSE, NULL, NULL, NULL, 'LONG', 'ai.routing', '模型路由首包超时毫秒', 30, FALSE, 0),
     -- AI 路由默认值优先硅基流动 DeepSeek，保证新初始化环境开箱即用。
     (7053, 'ai.chat.default_model', 'siliconflow-deepseek-v4-flash', NULL, FALSE, NULL, NULL, NULL, 'STRING', 'ai.routing', '模型路由默认模型ID', 40, FALSE, 0),
     (7054, 'ai.chat.deep_thinking_model', 'siliconflow-deepseek-v4-flash-thinking', NULL, FALSE, NULL, NULL, NULL, 'STRING', 'ai.routing', '模型路由深度思考模型ID', 50, FALSE, 0),

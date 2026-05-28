@@ -167,8 +167,8 @@ public class AiProperties {
         private Long openDurationMs = 30_000L;
 
         /**
-         * 首包等待超时时间。
+         * 首包等待超时时间；超过该窗口会切换候选，不能等到底层读超时才释放用户请求。
          */
-        private Long firstPacketTimeoutMs = 60_000L;
+        private Long firstPacketTimeoutMs = 15_000L;
     }
 }

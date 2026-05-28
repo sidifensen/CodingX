@@ -14,6 +14,7 @@ import java.io.IOException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
+import okhttp3.Call;
 import okhttp3.HttpUrl;
 import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
@@ -110,8 +111,9 @@ public class DeepSeekOkHttpChatClient implements AiProviderClient {
             .header("Content-Type", "application/json")
             .post(RequestBody.create(requestBody.toString(), JSON))
             .build();
+        Call call = okHttpClient.newCall(httpRequest);
         CompletableFuture.runAsync(() -> {
-            try (Response response = okHttpClient.newCall(httpRequest).execute()) {
+            try (Response response = call.execute()) {
                 if (!response.isSuccessful()) {
                     String body = response.body() != null ? response.body().string() : "";
                     throw new IllegalStateException(ErrorMessageCatalog.AI_REQUEST_FAILED + "：HTTP " + response.code() + " " + body);
@@ -167,7 +169,11 @@ public class DeepSeekOkHttpChatClient implements AiProviderClient {
                 completion.completeExceptionally(exception);
             }
         });
-        return new AiStreamSession(() -> cancelled.set(true), completion);
+        return new AiStreamSession(() -> {
+            cancelled.set(true);
+            // 业务约束：路由层 fallback 时必须取消真实 HTTP 调用，避免慢 provider 继续阻塞后台读流。
+            call.cancel();
+        }, completion);
     }
 
     /**

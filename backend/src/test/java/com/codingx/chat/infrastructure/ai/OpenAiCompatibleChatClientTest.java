@@ -12,6 +12,7 @@ import com.codingx.config.AiProperties;
 import com.codingx.common.support.ai.AiConversationRequest;
 import com.codingx.common.support.ai.AiModelTarget;
 import com.codingx.common.support.ai.AiStreamHandler;
+import com.codingx.common.support.ai.AiStreamSession;
 import com.codingx.common.support.ai.OpenAiStyleStreamParser;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
@@ -21,7 +22,9 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicReference;
 import okhttp3.OkHttpClient;
 import org.junit.jupiter.api.AfterEach;
@@ -129,6 +132,51 @@ class OpenAiCompatibleChatClientTest {
         assertTrue(serializedBody.contains("resume.pdf"), "请求体应包含附件文件名");
         assertTrue(serializedBody.contains("这是候选人的简历摘要"), "请求体应包含附件摘要正文");
         Mockito.verify(chatAttachmentService, Mockito.never()).downloadContent(ArgumentMatchers.any());
+    }
+
+    /**
+     * 路由层首包超时后取消会话时，provider 必须同步取消底层 HTTP Call，避免旧连接继续占用线程和连接池。
+     */
+    @Test
+    void cancelStopsUnderlyingHttpCallPromptly() throws Exception {
+        CountDownLatch requestStarted = new CountDownLatch(1);
+        CountDownLatch releaseServer = new CountDownLatch(1);
+        httpServer = HttpServer.create(new InetSocketAddress(0), 0);
+        httpServer.createContext("/compatible-mode/v1/chat/completions", exchange -> {
+            requestStarted.countDown();
+            exchange.getResponseHeaders().add("Content-Type", "text/event-stream; charset=utf-8");
+            exchange.sendResponseHeaders(200, 0);
+            try (OutputStream outputStream = exchange.getResponseBody()) {
+                outputStream.write("data: ".getBytes(StandardCharsets.UTF_8));
+                outputStream.flush();
+                releaseServer.await(3, TimeUnit.SECONDS);
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+                throw new IOException("Interrupted while holding test SSE stream", exception);
+            }
+        });
+        httpServer.start();
+
+        OpenAiCompatibleChatClient client = new OpenAiCompatibleChatClient(
+            new OkHttpClient.Builder().readTimeout(5, TimeUnit.SECONDS).build(),
+            new OpenAiStyleStreamParser(),
+            Mockito.mock(ChatAttachmentService.class)
+        );
+
+        AiStreamSession session = client.streamChat(buildThinkingRequest(), buildTarget(httpServer.getAddress().getPort()), new AiStreamHandler() {
+        });
+        assertTrue(requestStarted.await(1, TimeUnit.SECONDS), "测试服务应收到 provider 请求");
+        Thread.sleep(100L);
+
+        session.cancel();
+
+        try {
+            session.completion().handle((ignored, throwable) -> null).get(500, TimeUnit.MILLISECONDS);
+        } catch (TimeoutException exception) {
+            throw new AssertionError("取消会话后底层 HTTP Call 应快速结束", exception);
+        } finally {
+            releaseServer.countDown();
+        }
     }
 
     /**

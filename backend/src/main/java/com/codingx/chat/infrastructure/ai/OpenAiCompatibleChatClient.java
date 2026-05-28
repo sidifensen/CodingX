@@ -21,6 +21,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
+import okhttp3.Call;
 import okhttp3.HttpUrl;
 import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
@@ -67,8 +68,9 @@ public class OpenAiCompatibleChatClient implements AiProviderClient {
             .header("Content-Type", "application/json")
             .post(RequestBody.create(requestBody.toString(), JSON))
             .build();
+        Call call = okHttpClient.newCall(httpRequest);
         CompletableFuture.runAsync(() -> {
-            try (Response response = okHttpClient.newCall(httpRequest).execute()) {
+            try (Response response = call.execute()) {
                 if (!response.isSuccessful()) {
                     String body = response.body() != null ? response.body().string() : "";
                     throw new IllegalStateException(ErrorMessageCatalog.AI_REQUEST_FAILED + "：HTTP " + response.code() + " " + body);
@@ -124,7 +126,11 @@ public class OpenAiCompatibleChatClient implements AiProviderClient {
                 completion.completeExceptionally(exception);
             }
         });
-        return new AiStreamSession(() -> cancelled.set(true), completion);
+        return new AiStreamSession(() -> {
+            cancelled.set(true);
+            // 业务约束：首包超时 fallback 时必须打断真实网络读，避免旧 provider 持续占用连接与后台线程。
+            call.cancel();
+        }, completion);
     }
 
     /**

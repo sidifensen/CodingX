@@ -27,9 +27,9 @@ class AiRoutingDefaultsConfigTest {
         assertTrue(!applicationYaml.contains("provider: ${AI_PROVIDER:siliconflow}"), "AI provider 运行时默认值不应继续留在 application.yml");
         assertTrue(!applicationYaml.contains("default-model:"), "默认聊天模型应收口到 AiProperties 默认值与系统配置表，不再写在 application.yml");
         assertTrue(!applicationYaml.contains("deep-thinking-model:"), "深度思考模型默认值应收口到 AiProperties 默认值与系统配置表");
-        assertTrue(applicationYaml.contains("id: siliconflow-deepseek-v4-flash"), "候选池应包含 siliconflow-deepseek-v4-flash");
-        assertTrue(applicationYaml.contains("id: siliconflow-qwen3.5-122b-a10b"), "候选池应包含 siliconflow-qwen3.5-122b-a10b 视觉候选");
-        assertTrue(applicationYaml.contains("provider: siliconflow # 模型所属提供商"), "硅基流动候选应排在百炼候选之前");
+        assertFalse(applicationYaml.contains("id: siliconflow-deepseek-v4-flash"), "AI 候选池应由数据库初始化数据维护，不应继续散落在 YAML");
+        assertFalse(applicationYaml.contains("id: siliconflow-qwen3.5-122b-a10b"), "视觉候选也应由数据库初始化数据维护");
+        assertFalse(applicationYaml.contains("provider: siliconflow # 模型所属提供商"), "provider 候选优先级不应继续写死在 YAML");
         assertFalse(applicationYaml.contains("id: stub-chat"), "聊天候选池不应继续保留 stub-chat 兜底");
         assertFalse(applicationYaml.contains("base-url: stub://local"), "application.yml 不应继续声明 stub provider 运行时地址");
     }
@@ -48,6 +48,7 @@ class AiRoutingDefaultsConfigTest {
         assertTrue(initSql.contains("ai.chat.candidates.10.id'"), "初始化数据应包含模型候选池扁平键");
         assertTrue(initSql.contains("ai.chat.candidates.10.provider'"), "初始化数据应包含候选 provider 扁平键");
         assertTrue(initSql.contains("ai.chat.candidates.10.supports_vision'"), "初始化数据应包含候选视觉能力扁平键");
+        assertTrue(initSql.contains("ai.selection.first_packet_timeout_ms', '15000'"), "初始化数据应把首包等待窗口控制在 15 秒");
     }
 
     /**
@@ -65,9 +66,7 @@ class AiRoutingDefaultsConfigTest {
                         return containsAll(
                             content,
                             "ai.chat.default_model', 'siliconflow-deepseek-v4-flash'",
-                            "ai.chat.deep_thinking_model', 'siliconflow-deepseek-v4-flash-thinking'",
-                            "ai.providers.siliconflow.endpoints.chat'",
-                            "ai.chat.candidates.10.id'"
+                            "ai.chat.deep_thinking_model', 'siliconflow-deepseek-v4-flash-thinking'"
                         );
                     } catch (IOException exception) {
                         throw new IllegalStateException("读取迁移文件失败：" + path, exception);
@@ -75,6 +74,34 @@ class AiRoutingDefaultsConfigTest {
                 });
 
             assertTrue(found, "应存在一条迁移把 AI 路由默认值更新为 SiliconFlow DeepSeek");
+        }
+    }
+
+    /**
+     * 历史环境升级时必须补齐 provider endpoint 与候选池键位，默认模型 ID 才能解析到真实 provider。
+     * @throws IOException 读取迁移文件失败时抛出。
+     */
+    @Test
+    void migrationSeedsAiEndpointAndCandidateSettingsForExistingDatabases() throws IOException {
+        try (Stream<Path> migrations = Files.list(Path.of("src/main/resources/db/migration"))) {
+            boolean found = migrations
+                .filter(path -> path.getFileName().toString().endsWith(".sql"))
+                .anyMatch(path -> {
+                    try {
+                        String content = Files.readString(path);
+                        return containsAll(
+                            content,
+                            "ai.providers.siliconflow.endpoints.chat'",
+                            "ai.chat.candidates.10.id'",
+                            "ai.chat.candidates.10.provider'",
+                            "ai.chat.candidates.10.supports_vision'"
+                        );
+                    } catch (IOException exception) {
+                        throw new IllegalStateException("读取迁移文件失败：" + path, exception);
+                    }
+                });
+
+            assertTrue(found, "应存在一条迁移为历史数据库补齐 AI endpoint 与候选池配置");
         }
     }
 
@@ -108,6 +135,32 @@ class AiRoutingDefaultsConfigTest {
                 });
 
             assertTrue(found, "应存在一条迁移为历史数据库补齐 AI provider 运行时配置");
+        }
+    }
+
+    /**
+     * 历史环境升级时必须把首包等待窗口降到 15 秒，避免慢 provider 长时间占住用户请求。
+     * @throws IOException 读取迁移文件失败时抛出。
+     */
+    @Test
+    void migrationReducesFirstPacketTimeoutForExistingDatabases() throws IOException {
+        try (Stream<Path> migrations = Files.list(Path.of("src/main/resources/db/migration"))) {
+            boolean found = migrations
+                .filter(path -> path.getFileName().toString().endsWith(".sql"))
+                .anyMatch(path -> {
+                    try {
+                        String content = Files.readString(path);
+                        return containsAll(
+                            content,
+                            "ai.selection.first_packet_timeout_ms",
+                            "'15000'"
+                        );
+                    } catch (IOException exception) {
+                        throw new IllegalStateException("读取迁移文件失败：" + path, exception);
+                    }
+                });
+
+            assertTrue(found, "应存在一条迁移把首包等待窗口更新为 15 秒");
         }
     }
 

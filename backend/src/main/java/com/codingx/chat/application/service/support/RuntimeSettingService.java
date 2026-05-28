@@ -469,7 +469,7 @@ public class RuntimeSettingService {
      */
     public long aiFirstPacketTimeoutMs() {
         Long fallback = aiProperties.getSelection() == null ? null : aiProperties.getSelection().getFirstPacketTimeoutMs();
-        return getLong("ai.selection.first_packet_timeout_ms", fallback == null ? 60_000L : fallback);
+        return getLong("ai.selection.first_packet_timeout_ms", fallback == null ? 15_000L : fallback);
     }
 
     /**

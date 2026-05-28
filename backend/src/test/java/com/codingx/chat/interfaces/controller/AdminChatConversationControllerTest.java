@@ -8,8 +8,15 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.codingx.admin.application.service.AdminChatConversationService;
+import com.codingx.admin.application.service.AdminChatDashboardKpiView;
+import com.codingx.admin.application.service.AdminChatDashboardPerformanceView;
+import com.codingx.admin.application.service.AdminChatDashboardResourceView;
 import com.codingx.admin.application.service.AdminChatRuntimeDashboardService;
 import com.codingx.admin.application.service.AdminChatRuntimeDashboardView;
+import com.codingx.admin.application.service.AdminChatDashboardService;
+import com.codingx.admin.application.service.AdminChatDashboardTrendBucketView;
+import com.codingx.admin.application.service.AdminChatDashboardView;
+import com.codingx.admin.interfaces.controller.AdminChatDashboardController;
 import com.codingx.chat.application.service.ChatRuntimeExecutorDashboardView;
 import com.codingx.chat.application.service.ChatRuntimeQueueDashboardView;
 import com.codingx.chat.domain.model.ChatConversationStatus;
@@ -47,6 +54,12 @@ class AdminChatConversationControllerTest {
 
     @InjectMocks
     private AdminChatRuntimeDashboardController adminChatRuntimeDashboardController;
+
+    @Mock
+    private AdminChatDashboardService adminChatDashboardService;
+
+    @InjectMocks
+    private AdminChatDashboardController adminChatDashboardController;
 
     /**
      * 分页列表接口应返回 records/total/current/size/pages 结构。
@@ -144,6 +157,48 @@ class AdminChatConversationControllerTest {
             .andExpect(jsonPath("$.data.queue.waitingCount").value(3))
             .andExpect(jsonPath("$.data.executor.streamQueueSize").value(3))
             .andExpect(jsonPath("$.data.executor.searchPoolSize").value(4));
+    }
+
+    /**
+     * Dashboard 接口应支持窗口参数，并返回控制台聚合结构。
+     */
+    @Test
+    void getDashboardReturnsWindowedConsolePayload() throws Exception {
+        when(adminChatDashboardService.getDashboard("7d")).thenReturn(
+            new AdminChatDashboardView(
+                "7d",
+                "2026-05-28T15:52:32",
+                new AdminChatDashboardKpiView(12, 18, 86, 6, 42, 5),
+                new AdminChatDashboardResourceView(9, 11, 3, 4, 22, 7, 5),
+                new AdminChatDashboardPerformanceView(83.3, 8.3, 8.4, 9200L, 15000L),
+                List.of(
+                    new AdminChatDashboardTrendBucketView(
+                        "05-22",
+                        "2026-05-22T00:00:00",
+                        2,
+                        10,
+                        2,
+                        3,
+                        2,
+                        1,
+                        8400L
+                    )
+                )
+            )
+        );
+
+        MockMvcBuilders.standaloneSetup(adminChatDashboardController)
+            .setControllerAdvice(new GlobalExceptionHandler())
+            .build()
+            .perform(get("/api/admin/chat/dashboard").param("window", "7d"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.success").value(true))
+            .andExpect(jsonPath("$.data.window").value("7d"))
+            .andExpect(jsonPath("$.data.kpis.activeUserCount").value(12))
+            .andExpect(jsonPath("$.data.resources.skillCount").value(9))
+            .andExpect(jsonPath("$.data.performance.successRate").value(83.3))
+            .andExpect(jsonPath("$.data.trendBuckets[0].label").value("05-22"))
+            .andExpect(jsonPath("$.data.trendBuckets[0].messageCount").value(10));
     }
 
     /**

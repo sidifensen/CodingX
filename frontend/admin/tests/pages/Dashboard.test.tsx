@@ -1,6 +1,6 @@
 import '@testing-library/jest-dom/vitest';
 
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 
@@ -14,14 +14,55 @@ vi.mock('@/api/adminChatApi', () => ({
   },
 }));
 
+vi.mock('@ant-design/plots', () => ({
+  Area: (props: { ['data-testid']?: string }) => <div data-testid={props['data-testid'] ?? 'mock-area-chart'} />,
+  Line: (props: { ['data-testid']?: string }) => <div data-testid={props['data-testid'] ?? 'mock-line-chart'} />,
+  Column: (props: { ['data-testid']?: string }) => <div data-testid={props['data-testid'] ?? 'mock-column-chart'} />,
+  Pie: (props: { ['data-testid']?: string }) => <div data-testid={props['data-testid'] ?? 'mock-pie-chart'} />,
+}));
+
 describe('Dashboard page', () => {
   beforeEach(() => {
     vi.mocked(AdminChatApi.getDashboard).mockResolvedValue({
-      traceCount: 9,
-      runningTraceCount: 2,
-      intentNodeCount: 12,
-      mappingCount: 6,
-      sampleQuestionCount: 4,
+      window: '24h',
+      generatedAt: '2026-05-28T15:52:32',
+      kpis: {
+        activeUserCount: 12,
+        conversationCount: 18,
+        messageCount: 86,
+        workspaceCount: 6,
+        traceCount: 42,
+        runningTraceCount: 5,
+      },
+      resources: {
+        skillCount: 9,
+        toolCount: 11,
+        expertCount: 3,
+        mcpCount: 4,
+        intentNodeCount: 22,
+        mappingCount: 7,
+        sampleQuestionCount: 5,
+      },
+      performance: {
+        successRate: 83.3,
+        failureRate: 8.3,
+        runningRate: 8.4,
+        avgTraceDurationMs: 9200,
+        p95TraceDurationMs: 15000,
+      },
+      trendBuckets: [
+        {
+          label: '16:00',
+          bucketStart: '2026-05-28T16:00:00',
+          conversationCount: 1,
+          messageCount: 11,
+          activeUserCount: 1,
+          traceCount: 2,
+          successCount: 1,
+          failedCount: 1,
+          avgDurationMs: 9200,
+        },
+      ],
     });
     vi.mocked(AdminChatApi.getRuntimeDashboard).mockResolvedValue({
       queue: {
@@ -50,23 +91,42 @@ describe('Dashboard page', () => {
   });
 
   /**
-   * 首页应展示聊天运行时观测卡片，并渲染队列与线程池关键指标。
+   * 控制台首页应展示核心指标、右侧健康卡和运行时观测入口。
    */
-  it('renders runtime queue and executor metrics', async () => {
+  it('renders console dashboard sections', async () => {
     render(
       <MemoryRouter>
         <Dashboard />
       </MemoryRouter>,
     );
 
-    expect(await screen.findByText('聊天运行时观测')).toBeInTheDocument();
-    expect(screen.getByText('队列门控')).toBeInTheDocument();
-    expect(screen.getByText('线程池状态')).toBeInTheDocument();
-    expect(screen.getByText('chatStreamExecutor')).toBeInTheDocument();
-    expect(screen.getByText('searchExecutor')).toBeInTheDocument();
-    expect(screen.getByText('3')).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Dashboard' })).toBeInTheDocument();
+    expect(screen.getByText('核心指标')).toBeInTheDocument();
+    expect(screen.getByText('流量概览')).toBeInTheDocument();
+    expect(screen.getByText('趋势分析')).toBeInTheDocument();
+    expect(screen.getByText('AI 性能')).toBeInTheDocument();
+    expect(screen.getByText('运营洞察')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '7d' })).toBeInTheDocument();
     await waitFor(() => {
+      expect(AdminChatApi.getDashboard).toHaveBeenCalledTimes(1);
       expect(AdminChatApi.getRuntimeDashboard).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  /**
+   * 切换时间窗口后应重新请求对应 Dashboard 数据。
+   */
+  it('reloads dashboard when time window changes', async () => {
+    render(
+      <MemoryRouter>
+        <Dashboard />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: '7d' }));
+
+    await waitFor(() => {
+      expect(AdminChatApi.getDashboard).toHaveBeenLastCalledWith('7d');
     });
   });
 });

@@ -6,6 +6,7 @@ import com.codingx.common.model.ApiResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -19,7 +20,9 @@ public class AdminChatDashboardController {
     private final AdminChatDashboardService adminChatDashboardService;
 
     @GetMapping
-    public ApiResponse<AdminChatDashboardView> getDashboard() {
-        return ApiResponse.success(adminChatDashboardService.getDashboard());
+    public ApiResponse<AdminChatDashboardView> getDashboard(
+        @RequestParam(defaultValue = "24h") String window
+    ) {
+        return ApiResponse.success(adminChatDashboardService.getDashboard(window));
     }
 }

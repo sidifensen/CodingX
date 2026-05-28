@@ -1,295 +1,516 @@
 import React from 'react';
-import { Link } from 'react-router-dom';
+import { Area, Column, Line, Pie } from '@ant-design/plots';
+
 import {
   AdminChatApi,
-  AdminChatRuntimeDashboardView,
-  AdminDashboardView,
+  type AdminChatRuntimeDashboardView,
+  type AdminDashboardTrendBucket,
+  type AdminDashboardView,
+  type AdminDashboardWindow,
 } from '../api/adminChatApi';
 
+const WINDOW_OPTIONS: AdminDashboardWindow[] = ['24h', '7d', '30d'];
+
+/**
+ * 管理端控制台首页：参考 ragent 的信息架构，但只展示当前仓库真实可得的数据域。
+ */
 export function Dashboard() {
+  const [windowValue, setWindowValue] = React.useState<AdminDashboardWindow>('24h');
   const [dashboard, setDashboard] = React.useState<AdminDashboardView | null>(null);
   const [runtimeDashboard, setRuntimeDashboard] = React.useState<AdminChatRuntimeDashboardView | null>(null);
 
   React.useEffect(() => {
-    void AdminChatApi.getDashboard().then(setDashboard);
+    void AdminChatApi.getDashboard(windowValue).then(setDashboard);
+  }, [windowValue]);
+
+  React.useEffect(() => {
     void AdminChatApi.getRuntimeDashboard().then(setRuntimeDashboard);
   }, []);
 
+  const trendBuckets = dashboard?.trendBuckets ?? [];
+  const mainTrafficData = trendBuckets.map((bucket) => ({
+    label: bucket.label,
+    value: bucket.messageCount,
+  }));
+  const conversationTrendData = trendBuckets.map((bucket) => ({
+    label: bucket.label,
+    value: bucket.conversationCount,
+  }));
+  const activeUserTrendData = trendBuckets.map((bucket) => ({
+    label: bucket.label,
+    value: bucket.activeUserCount,
+  }));
+  const latencyTrendData = trendBuckets.map((bucket) => ({
+    label: bucket.label,
+    value: bucket.avgDurationMs,
+  }));
+  const qualityTrendData = trendBuckets.flatMap((bucket) => ([
+    { label: bucket.label, type: '成功', value: bucket.successCount },
+    { label: bucket.label, type: '失败', value: bucket.failedCount },
+  ]));
+
+  const successRate = dashboard?.performance.successRate ?? 0;
+  const ringData = [
+    { type: '成功率', value: successRate },
+    { type: '剩余', value: Math.max(0, 100 - successRate) },
+  ];
+
   return (
-    <>
-      <div className="sky-wash pt-xl pb-section px-xl">
-        <div className="w-full">
-          <div className="mb-lg">
-            <h2 className="font-headline-md text-headline-md text-ink">工作台首页</h2>
-            <p className="text-secondary mt-xs">欢迎回来，这是您的系统实时运行概览。</p>
+    <div className="px-6 py-6">
+      <div className="mx-auto max-w-[1500px] space-y-5">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+          <div>
+            <h1 className="text-[44px] font-semibold tracking-[-0.04em] text-ink">Dashboard</h1>
+            <p className="mt-2 text-body-sm text-secondary">当前窗口下的运营态快照、运行健康和配置资产全览。</p>
           </div>
-          
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-md">
-            <Link to="/users" className="bg-surface-container-lowest p-lg rounded-xl border border-border-hairline hover:shadow-[0_4px_12px_rgba(0,0,0,0.04)] transition-all group block active:scale-[0.98]">
-              <div className="flex justify-between items-start mb-sm">
-                <span className="font-label-caps text-label-caps text-secondary uppercase tracking-widest">用户总数</span>
-                <span className="material-symbols-outlined text-secondary group-hover:text-primary transition-colors">group</span>
-              </div>
-              <div className="font-metric-lg text-metric-lg text-ink font-bold">{dashboard?.intentNodeCount ?? '-'}</div>
-              <div className="mt-xs flex items-center gap-1 text-[12px] text-status-running">
-                <span className="material-symbols-outlined text-[14px]">trending_up</span>
-                <span>+12% 较上月</span>
-              </div>
-            </Link>
-            
-            <Link to="/tasks" className="bg-surface-container-lowest p-lg rounded-xl border border-border-hairline hover:shadow-[0_4px_12px_rgba(0,0,0,0.04)] transition-all group block active:scale-[0.98]">
-              <div className="flex justify-between items-start mb-sm">
-                <span className="font-label-caps text-label-caps text-secondary uppercase tracking-widest">会话总数</span>
-                <span className="material-symbols-outlined text-secondary group-hover:text-primary transition-colors">assignment</span>
-              </div>
-              <div className="font-metric-lg text-metric-lg text-ink font-bold">{dashboard?.mappingCount ?? '-'}</div>
-              <div className="mt-xs flex items-center gap-1 text-[12px] text-secondary">
-                <span className="material-symbols-outlined text-[14px]">history</span>
-                <span>近24小时新增 142</span>
-              </div>
-            </Link>
-
-            <Link to="/tasks" className="bg-surface-container-lowest p-lg rounded-xl border border-border-hairline hover:shadow-[0_4px_12px_rgba(0,0,0,0.04)] transition-all group block active:scale-[0.98]">
-              <div className="flex justify-between items-start mb-sm">
-                <span className="font-label-caps text-label-caps text-secondary uppercase tracking-widest">活跃会话</span>
-                <div className="w-2 h-2 rounded-full bg-status-running animate-pulse"></div>
-              </div>
-              <div className="font-metric-lg text-metric-lg text-ink font-bold">{dashboard?.runningTraceCount ?? '-'}</div>
-              <div className="mt-xs">
-                <span className="px-xs py-0.5 bg-status-running-bg text-status-running rounded text-[10px] font-bold border border-status-running-border">HEALTHY</span>
-              </div>
-            </Link>
-
-            <Link to="/tasks" className="bg-surface-container-lowest p-lg rounded-xl border border-border-hairline hover:shadow-[0_4px_12px_rgba(0,0,0,0.04)] transition-all group block active:scale-[0.98]">
-              <div className="flex justify-between items-start mb-sm">
-                <span className="font-label-caps text-label-caps text-secondary uppercase tracking-widest">异常会话</span>
-                <span className="material-symbols-outlined text-status-failed transition-colors">error_outline</span>
-              </div>
-              <div className="font-metric-lg text-metric-lg text-ink font-bold">{dashboard?.traceCount ?? '-'}</div>
-              <div className="mt-xs">
-                <span className="px-xs py-0.5 bg-status-failed-bg text-status-failed rounded text-[10px] font-bold border border-status-failed-border">CRITICAL</span>
-              </div>
-            </Link>
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="inline-flex rounded-2xl border border-border-hairline bg-surface-container-lowest p-1 shadow-sm">
+              {WINDOW_OPTIONS.map((option) => (
+                <button
+                  key={option}
+                  type="button"
+                  onClick={() => setWindowValue(option)}
+                  className={[
+                    'rounded-2xl px-4 py-2 text-[13px] font-semibold transition-colors',
+                    windowValue === option ? 'bg-[#121826] text-white' : 'text-secondary hover:text-ink',
+                  ].join(' ')}
+                >
+                  {option}
+                </button>
+              ))}
+            </div>
+            <div className="inline-flex items-center gap-2 rounded-2xl border border-border-hairline bg-surface-container-lowest px-4 py-2 text-[12px] text-secondary shadow-sm">
+              <span className="h-2 w-2 rounded-full bg-emerald-500" />
+              {formatDateTime(dashboard?.generatedAt)}
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                void AdminChatApi.getDashboard(windowValue).then(setDashboard);
+                void AdminChatApi.getRuntimeDashboard().then(setRuntimeDashboard);
+              }}
+              className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-border-hairline bg-surface-container-lowest text-secondary transition-colors hover:bg-surface-container-low hover:text-ink"
+              title="刷新"
+            >
+              <span className="material-symbols-outlined text-[19px]">refresh</span>
+            </button>
           </div>
         </div>
-      </div>
 
-      <div className="px-xl -mt-md pb-section">
-        <div className="w-full space-y-xl">
-          <section>
-            <h3 className="font-title-md text-title-md text-ink mb-md flex items-center gap-xs">
-              <span className="material-symbols-outlined text-secondary">bolt</span>
-              快捷入口
-            </h3>
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-md">
-              <Link to="/users" className="flex flex-col items-center justify-center p-xl bg-surface-container-lowest border border-border-hairline rounded-xl hover:border-ink hover:bg-surface-container-low transition-all group active:scale-95">
-                <div className="w-12 h-12 bg-surface-container rounded-lg flex items-center justify-center mb-sm group-hover:bg-ink group-hover:text-on-ink transition-colors">
-                  <span className="material-symbols-outlined text-[28px]">group</span>
-                </div>
-                <span className="font-medium text-ink">用户管理</span>
-              </Link>
-              <Link to="/tasks" className="flex flex-col items-center justify-center p-xl bg-surface-container-lowest border border-border-hairline rounded-xl hover:border-ink hover:bg-surface-container-low transition-all group active:scale-95">
-                <div className="w-12 h-12 bg-surface-container rounded-lg flex items-center justify-center mb-sm group-hover:bg-ink group-hover:text-on-ink transition-colors">
-                  <span className="material-symbols-outlined text-[28px]">assignment</span>
-                </div>
-                <span className="font-medium text-ink">会话管理</span>
-              </Link>
-              <Link to="/skills" className="flex flex-col items-center justify-center p-xl bg-surface-container-lowest border border-border-hairline rounded-xl hover:border-ink hover:bg-surface-container-low transition-all group active:scale-95">
-                <div className="w-12 h-12 bg-surface-container rounded-lg flex items-center justify-center mb-sm group-hover:bg-ink group-hover:text-on-ink transition-colors">
-                  <span className="material-symbols-outlined text-[28px]">extension</span>
-                </div>
-                <span className="font-medium text-ink">技能管理</span>
-              </Link>
-              <Link to="/tools" className="flex flex-col items-center justify-center p-xl bg-surface-container-lowest border border-border-hairline rounded-xl hover:border-ink hover:bg-surface-container-low transition-all group active:scale-95">
-                <div className="w-12 h-12 bg-surface-container rounded-lg flex items-center justify-center mb-sm group-hover:bg-ink group-hover:text-on-ink transition-colors">
-                  <span className="material-symbols-outlined text-[28px]">build_circle</span>
-                </div>
-                <span className="font-medium text-ink">工具管理</span>
-              </Link>
-              <Link to="/mcp" className="flex flex-col items-center justify-center p-xl bg-surface-container-lowest border border-border-hairline rounded-xl hover:border-ink hover:bg-surface-container-low transition-all group active:scale-95">
-                <div className="w-12 h-12 bg-surface-container rounded-lg flex items-center justify-center mb-sm group-hover:bg-ink group-hover:text-on-ink transition-colors">
-                  <span className="material-symbols-outlined text-[28px]">terminal</span>
-                </div>
-                <span className="font-medium text-ink">MCP管理</span>
-              </Link>
-              <Link to="/traces" className="flex flex-col items-center justify-center p-xl bg-surface-container-lowest border border-border-hairline rounded-xl hover:border-ink hover:bg-surface-container-low transition-all group active:scale-95">
-                <div className="w-12 h-12 bg-surface-container rounded-lg flex items-center justify-center mb-sm group-hover:bg-ink group-hover:text-on-ink transition-colors">
-                  <span className="material-symbols-outlined text-[28px]">account_tree</span>
-                </div>
-                <span className="font-medium text-ink">Trace管理</span>
-              </Link>
-              <Link to="/intent-tree" className="flex flex-col items-center justify-center p-xl bg-surface-container-lowest border border-border-hairline rounded-xl hover:border-ink hover:bg-surface-container-low transition-all group active:scale-95">
-                <div className="w-12 h-12 bg-surface-container rounded-lg flex items-center justify-center mb-sm group-hover:bg-ink group-hover:text-on-ink transition-colors">
-                  <span className="material-symbols-outlined text-[28px]">schema</span>
-                </div>
-                <span className="font-medium text-ink">意图树</span>
-              </Link>
-              <Link to="/query-term-mappings" className="flex flex-col items-center justify-center p-xl bg-surface-container-lowest border border-border-hairline rounded-xl hover:border-ink hover:bg-surface-container-low transition-all group active:scale-95">
-                <div className="w-12 h-12 bg-surface-container rounded-lg flex items-center justify-center mb-sm group-hover:bg-ink group-hover:text-on-ink transition-colors">
-                  <span className="material-symbols-outlined text-[28px]">manage_search</span>
-                </div>
-                <span className="font-medium text-ink">关键词映射</span>
-              </Link>
-              <Link to="/settings" className="flex flex-col items-center justify-center p-xl bg-surface-container-lowest border border-border-hairline rounded-xl hover:border-ink hover:bg-surface-container-low transition-all group active:scale-95">
-                <div className="w-12 h-12 bg-surface-container rounded-lg flex items-center justify-center mb-sm group-hover:bg-ink group-hover:text-on-ink transition-colors">
-                  <span className="material-symbols-outlined text-[28px]">settings</span>
-                </div>
-                <span className="font-medium text-ink">系统配置</span>
-              </Link>
-            </div>
-          </section>
-
-          <section>
-            <h3 className="font-title-md text-title-md text-ink mb-md flex items-center gap-xs">
-              <span className="material-symbols-outlined text-secondary">monitoring</span>
-              聊天运行时观测
-            </h3>
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-md">
-              <div className="rounded-xl border border-border-hairline bg-surface-container-lowest p-lg">
-                <div className="flex items-center justify-between mb-sm">
-                  <span className="font-label-caps text-label-caps text-secondary uppercase tracking-widest">队列门控</span>
-                  <span className="rounded-full border border-border-hairline px-2 py-0.5 text-[11px] text-secondary">
-                    {runtimeDashboard?.queue.mode ?? '-'}
-                  </span>
-                </div>
-                <div className="grid grid-cols-2 gap-sm text-sm">
-                  <div className="rounded-lg bg-surface-container px-3 py-2">
-                    <div className="text-secondary text-[12px]">最大并发</div>
-                    <div className="text-ink font-semibold">{runtimeDashboard?.queue.maxConcurrent ?? '-'}</div>
-                  </div>
-                  <div className="rounded-lg bg-surface-container px-3 py-2">
-                    <div className="text-secondary text-[12px]">活跃执行</div>
-                    <div className="text-ink font-semibold">{runtimeDashboard?.queue.activeCount ?? '-'}</div>
-                  </div>
-                  <div className="rounded-lg bg-surface-container px-3 py-2">
-                    <div className="text-secondary text-[12px]">排队数量</div>
-                    <div className="text-ink font-semibold">{runtimeDashboard?.queue.waitingCount ?? '-'}</div>
-                  </div>
-                  <div className="rounded-lg bg-surface-container px-3 py-2">
-                    <div className="text-secondary text-[12px]">可用许可</div>
-                    <div className="text-ink font-semibold">{runtimeDashboard?.queue.availablePermits ?? '-'}</div>
-                  </div>
-                </div>
+        <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
+          <div className="space-y-5">
+            <section className="rounded-[28px] border border-border-hairline bg-surface-container-lowest p-5 shadow-[0_18px_40px_rgba(15,23,42,0.06)]">
+              <div className="mb-4 flex items-center justify-between">
+                <h2 className="text-[16px] font-semibold text-ink">核心指标</h2>
+                <span className="text-[12px] text-secondary">窗口 {windowValue}</span>
               </div>
-
-              <div className="rounded-xl border border-border-hairline bg-surface-container-lowest p-lg">
-                <div className="mb-sm">
-                  <span className="font-label-caps text-label-caps text-secondary uppercase tracking-widest">线程池状态</span>
-                </div>
-                <div className="space-y-sm text-sm">
-                  <div className="rounded-lg border border-border-hairline px-3 py-2">
-                    <div className="font-medium text-ink mb-1">chatStreamExecutor</div>
-                    <div className="text-secondary">
-                      活跃 {runtimeDashboard?.executor.streamActiveCount ?? '-'} / 池 {runtimeDashboard?.executor.streamPoolSize ?? '-'} / 队列 {runtimeDashboard?.executor.streamQueueSize ?? '-'} / 剩余 {runtimeDashboard?.executor.streamQueueRemainingCapacity ?? '-'}
-                    </div>
-                  </div>
-                  <div className="rounded-lg border border-border-hairline px-3 py-2">
-                    <div className="font-medium text-ink mb-1">searchExecutor</div>
-                    <div className="text-secondary">
-                      活跃 {runtimeDashboard?.executor.searchActiveCount ?? '-'} / 池 {runtimeDashboard?.executor.searchPoolSize ?? '-'} / 队列 {runtimeDashboard?.executor.searchQueueSize ?? '-'} / 剩余 {runtimeDashboard?.executor.searchQueueRemainingCapacity ?? '-'}
-                    </div>
-                  </div>
-                </div>
+              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                <MetricCard
+                  label="活跃用户"
+                  value={dashboard?.kpis.activeUserCount ?? '-'}
+                  icon="monitoring"
+                  tone="from-sky-50 to-sky-100 dark:from-sky-500/12 dark:to-sky-500/18"
+                />
+                <MetricCard
+                  label="会话数"
+                  value={dashboard?.kpis.conversationCount ?? '-'}
+                  icon="chat_bubble"
+                  tone="from-indigo-50 to-indigo-100 dark:from-indigo-500/12 dark:to-indigo-500/18"
+                />
+                <MetricCard
+                  label="消息数"
+                  value={dashboard?.kpis.messageCount ?? '-'}
+                  icon="bolt"
+                  tone="from-amber-50 to-orange-100 dark:from-amber-500/12 dark:to-orange-500/18"
+                />
+                <MetricCard
+                  label="工作空间"
+                  value={dashboard?.kpis.workspaceCount ?? '-'}
+                  icon="deployed_code"
+                  tone="from-emerald-50 to-emerald-100 dark:from-emerald-500/12 dark:to-emerald-500/18"
+                />
               </div>
-            </div>
-          </section>
+            </section>
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-xl">
-            <div className="lg:col-span-2 bg-surface-container-lowest rounded-xl border border-border-hairline overflow-hidden">
-              <div className="px-lg py-md border-b border-border-hairline flex justify-between items-center">
-                <h3 className="font-title-md text-title-md text-ink">最新系统动态</h3>
-                <button className="text-tertiary-container hover:underline font-medium text-[12px]">查看全部</button>
+            <section className="rounded-[28px] border border-border-hairline bg-surface-container-lowest p-5 shadow-[0_18px_40px_rgba(15,23,42,0.06)]">
+              <div className="mb-4 flex items-center justify-between">
+                <h2 className="text-[16px] font-semibold text-ink">流量概览</h2>
+                <span className="text-[12px] text-secondary">消息趋势</span>
               </div>
-              <table className="w-full text-left">
-                <thead className="bg-surface-container-low font-label-caps text-label-caps text-on-secondary-container">
-                  <tr>
-                    <th className="px-lg py-sm font-semibold uppercase">会话 ID</th>
-                    <th className="px-lg py-sm font-semibold uppercase">执行人</th>
-                    <th className="px-lg py-sm font-semibold uppercase">状态</th>
-                    <th className="px-lg py-sm font-semibold uppercase">耗时</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border-hairline">
-                  <tr className="hover:bg-surface-container-low transition-colors group cursor-pointer">
-                    <td className="px-lg py-md font-data-mono text-secondary">#TX-9021</td>
-                    <td className="px-lg py-md text-ink">Li Wei (Admin)</td>
-                    <td className="px-lg py-md">
-                      <span className="flex items-center gap-1.5 text-status-running">
-                        <span className="w-1.5 h-1.5 rounded-full bg-status-running"></span> 运行中
-                      </span>
-                    </td>
-                    <td className="px-lg py-md text-secondary">12m 4s</td>
-                  </tr>
-                  <tr className="hover:bg-surface-container-low transition-colors group cursor-pointer">
-                    <td className="px-lg py-md font-data-mono text-secondary">#TX-8998</td>
-                    <td className="px-lg py-md text-ink">Zhang San</td>
-                    <td className="px-lg py-md">
-                      <span className="flex items-center gap-1.5 text-ink">
-                        <span className="w-1.5 h-1.5 rounded-full bg-border-strong"></span> 已完成
-                      </span>
-                    </td>
-                    <td className="px-lg py-md text-secondary">4m 22s</td>
-                  </tr>
-                  <tr className="hover:bg-surface-container-low transition-colors group cursor-pointer">
-                    <td className="px-lg py-md font-data-mono text-secondary">#TX-8842</td>
-                    <td className="px-lg py-md text-ink">System Root</td>
-                    <td className="px-lg py-md">
-                      <span className="flex items-center gap-1.5 text-status-failed">
-                        <span className="w-1.5 h-1.5 rounded-full bg-status-failed"></span> 失败
-                      </span>
-                    </td>
-                    <td className="px-lg py-md text-secondary">--</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
+              <div data-testid="dashboard-traffic-chart" className="h-[300px]">
+                <Area
+                  {...buildAreaConfig(mainTrafficData, '--chart-primary')}
+                  data-testid="dashboard-traffic-plot"
+                />
+              </div>
+            </section>
 
-            <div className="space-y-md">
-              <div className="bg-surface-container-lowest p-lg rounded-xl border border-border-hairline">
-                <h3 className="font-title-md text-title-md text-ink mb-md">MCP 状态监控</h3>
-                <div className="space-y-sm">
-                  <div className="flex justify-between items-center text-body-sm">
-                    <span className="text-secondary">API 服务响应</span>
-                    <span className="text-status-running font-medium">99.98%</span>
-                  </div>
-                  <div className="w-full bg-surface-container rounded-full h-1">
-                    <div className="bg-status-running h-1 rounded-full" style={{ width: '99.98%' }}></div>
-                  </div>
-                  <div className="flex justify-between items-center text-body-sm pt-xs">
-                    <span className="text-secondary">计算节点负载</span>
-                    <span className="text-status-pending font-medium">64%</span>
-                  </div>
-                  <div className="w-full bg-surface-container rounded-full h-1">
-                    <div className="bg-status-pending h-1 rounded-full" style={{ width: '64%' }}></div>
-                  </div>
-                  <div className="flex justify-between items-center text-body-sm pt-xs">
-                    <span className="text-secondary">存储容量</span>
-                    <span className="text-ink font-medium">1.2 TB / 4 TB</span>
-                  </div>
-                  <div className="w-full bg-surface-container rounded-full h-1">
-                    <div className="bg-ink h-1 rounded-full" style={{ width: '30%' }}></div>
-                  </div>
-                </div>
+            <section className="rounded-[28px] border border-border-hairline bg-surface-container-lowest p-5 shadow-[0_18px_40px_rgba(15,23,42,0.06)]">
+              <div className="mb-4 flex items-center justify-between">
+                <h2 className="text-[16px] font-semibold text-ink">趋势分析</h2>
+                <span className="text-[12px] text-secondary">窗口 {windowValue}</span>
               </div>
-
-              <div className="relative h-40 rounded-xl overflow-hidden group">
-                <img className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" alt="Networking visual" src="https://lh3.googleusercontent.com/aida-public/AB6AXuC7ZhEOC4yrviB1_9fvteqs4M1Uv-08f-0ebu3HUFSYEXbAS6l1vX1V0MrcFyqxRL2dHZYPWLpCMhiSkkaFLtJqFsIwB1vFV_Ro4heyzwBhxqqmGc-VEXRRIf6YGmj_2vy9Wyp2vXRl6RhMpOnMjh7kuPh-WkvlHVDPRvRKD9EbEBSR4U2gGad4UaUCM3uFXzKjqG_rYYZqfEyOKC9_9oXIP_gWZDG-yjrmfVNogSyUBjkw1tN4dQgt3ukFfSZUBzrREyvC327ASAU"/>
-                <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent flex items-end p-md">
-                  <div>
-                    <p className="text-white font-bold">MCP v3.0 已上线</p>
-                    <p className="text-white/70 text-[11px]">探索更高效的资源调度机制</p>
-                  </div>
-                </div>
+              <div className="grid gap-4 lg:grid-cols-2">
+                <TrendChartCard title="会话趋势" testId="dashboard-conversation-chart">
+                  <Line {...buildLineConfig(conversationTrendData, '#22c55e')} data-testid="dashboard-conversation-plot" />
+                </TrendChartCard>
+                <TrendChartCard title="活跃用户趋势" testId="dashboard-active-user-chart">
+                  <Line {...buildLineConfig(activeUserTrendData, '#8b5cf6')} data-testid="dashboard-active-user-plot" />
+                </TrendChartCard>
+                <TrendChartCard title="响应耗时趋势" testId="dashboard-latency-chart">
+                  <Line {...buildLineConfig(latencyTrendData, '#f59e0b')} data-testid="dashboard-latency-plot" />
+                </TrendChartCard>
+                <TrendChartCard title="质量趋势" testId="dashboard-quality-chart">
+                  <Column {...buildColumnConfig(qualityTrendData)} data-testid="dashboard-quality-plot" />
+                </TrendChartCard>
               </div>
-            </div>
+            </section>
           </div>
+
+          <aside className="space-y-5">
+            <section className="rounded-[28px] border border-border-hairline bg-surface-container-lowest p-5 shadow-[0_18px_40px_rgba(15,23,42,0.06)]">
+              <div className="mb-4 flex items-center justify-between">
+                <h2 className="text-[16px] font-semibold text-ink">AI 性能</h2>
+                <span className="rounded-full bg-amber-100 px-2.5 py-1 text-[11px] font-semibold text-amber-700 dark:bg-amber-500/12 dark:text-amber-300">
+                  需要关注
+                </span>
+              </div>
+              <div data-testid="dashboard-success-ring" className="mx-auto h-[190px] max-w-[240px]">
+                <Pie {...buildRingConfig(ringData)} data-testid="dashboard-success-ring-plot" />
+              </div>
+              <div className="space-y-3 text-[13px]">
+                <StatRow label="平均响应" value={formatDuration(dashboard?.performance.avgTraceDurationMs)} accent="text-emerald-500" />
+                <StatRow label="P95 响应" value={formatDuration(dashboard?.performance.p95TraceDurationMs)} accent="text-rose-500" />
+                <StatRow label="运行中占比" value={`${dashboard?.performance.runningRate ?? 0}%`} accent="text-sky-500" />
+              </div>
+            </section>
+
+            <SidebarCard title="质量快照">
+              <QualityBar label="失败率" value={dashboard?.performance.failureRate ?? 0} colorClass="bg-rose-500" />
+              <QualityBar label="成功率" value={dashboard?.performance.successRate ?? 0} colorClass="bg-amber-500" />
+              <QualityBar
+                label="排队压力"
+                value={Math.min(100, ((runtimeDashboard?.queue.waitingCount ?? 0) / Math.max(1, runtimeDashboard?.queue.maxConcurrent ?? 1)) * 100)}
+                colorClass="bg-sky-500"
+              />
+            </SidebarCard>
+
+            <SidebarCard title="运营效率">
+              <StatRow label="人均会话" value={formatRatio(resolveAverage(dashboard?.kpis.conversationCount, dashboard?.kpis.activeUserCount))} />
+              <StatRow label="单会话消息" value={formatRatio(resolveAverage(dashboard?.kpis.messageCount, dashboard?.kpis.conversationCount))} />
+              <StatRow label="每空间会话" value={formatRatio(resolveAverage(dashboard?.kpis.conversationCount, dashboard?.kpis.workspaceCount))} />
+            </SidebarCard>
+
+            <SidebarCard title="运营洞察">
+              <InsightItem
+                badge="趋势"
+                badgeTone="text-sky-600 bg-sky-50 dark:text-sky-300 dark:bg-sky-500/12"
+                title="控制台首页已切换到新结构"
+                body={`当前窗口共记录 ${dashboard?.kpis.traceCount ?? 0} 条链路，资源侧统计技能 ${dashboard?.resources.skillCount ?? 0} 个。`}
+              />
+              <InsightItem
+                badge="建议"
+                badgeTone="text-amber-600 bg-amber-50 dark:text-amber-300 dark:bg-amber-500/12"
+                title="关注排队与失败率"
+                body={`队列等待 ${runtimeDashboard?.queue.waitingCount ?? 0}，失败率 ${(dashboard?.performance.failureRate ?? 0).toFixed(1)}%。`}
+              />
+            </SidebarCard>
+          </aside>
         </div>
       </div>
-
-      <button className="fixed bottom-lg right-lg w-14 h-14 bg-ink text-on-ink rounded-full shadow-lg hover:scale-105 active:scale-95 transition-all flex items-center justify-center group z-50 overflow-visible">
-        <span className="material-symbols-outlined text-[28px]">add</span>
-        <span className="absolute right-full mr-md px-sm py-1 bg-ink text-on-ink text-[12px] rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">创建新会话</span>
-      </button>
-    </>
+    </div>
   );
+}
+
+function MetricCard({
+  label,
+  value,
+  icon,
+  tone,
+}: {
+  label: string;
+  value: number | string;
+  icon: string;
+  tone: string;
+}) {
+  return (
+    <div className="rounded-[24px] bg-surface-container-low p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="text-[30px] font-semibold tracking-[-0.04em] text-ink">{value}</div>
+          <div className="mt-1 text-[13px] text-secondary">{label}</div>
+        </div>
+        <div className={`flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br ${tone}`}>
+          <span className="material-symbols-outlined text-[21px] text-ink dark:text-white">{icon}</span>
+        </div>
+      </div>
+      <div className="mt-4 text-[12px] text-secondary">数据来自当前控制台真实运行与配置快照</div>
+    </div>
+  );
+}
+
+function TrendChartCard({
+  title,
+  testId,
+  children,
+}: {
+  title: string;
+  testId: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="rounded-[24px] bg-surface-container-low p-4">
+      <div className="mb-3 text-[14px] font-medium text-ink">{title}</div>
+      <div data-testid={testId} className="h-[220px]">
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function SidebarCard({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section className="rounded-[28px] border border-border-hairline bg-surface-container-lowest p-5 shadow-[0_18px_40px_rgba(15,23,42,0.06)]">
+      <h2 className="mb-4 text-[16px] font-semibold text-ink">{title}</h2>
+      <div className="space-y-4">{children}</div>
+    </section>
+  );
+}
+
+function StatRow({
+  label,
+  value,
+  accent,
+}: {
+  label: string;
+  value: string;
+  accent?: string;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3 text-[13px]">
+      <span className="text-secondary">{label}</span>
+      <span className={['font-semibold text-ink', accent ?? ''].join(' ')}>{value}</span>
+    </div>
+  );
+}
+
+function QualityBar({
+  label,
+  value,
+  colorClass,
+}: {
+  label: string;
+  value: number;
+  colorClass: string;
+}) {
+  const normalizedValue = Math.max(0, Math.min(100, value));
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between gap-3 text-[13px]">
+        <span className="text-secondary">{label}</span>
+        <span className="font-semibold text-ink">{normalizedValue.toFixed(1)}%</span>
+      </div>
+      <div className="h-3 rounded-full bg-surface-container-low">
+        <div className={`h-3 rounded-full ${colorClass}`} style={{ width: `${normalizedValue}%` }} />
+      </div>
+    </div>
+  );
+}
+
+function InsightItem({
+  badge,
+  badgeTone,
+  title,
+  body,
+}: {
+  badge: string;
+  badgeTone: string;
+  title: string;
+  body: string;
+}) {
+  return (
+    <div className="rounded-[22px] bg-surface-container-low p-4">
+      <span className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold ${badgeTone}`}>{badge}</span>
+      <div className="mt-3 text-[14px] font-semibold text-ink">{title}</div>
+      <p className="mt-2 text-[13px] leading-6 text-secondary">{body}</p>
+    </div>
+  );
+}
+
+function buildAreaConfig(data: Array<{ label: string; value: number }>, colorToken: string) {
+  return {
+    data,
+    xField: 'label',
+    yField: 'value',
+    height: 300,
+    smooth: true,
+    color: `var(${colorToken})`,
+    line: {
+      style: {
+        lineWidth: 2.5,
+      },
+    },
+    areaStyle: {
+      fill: 'l(270) 0:rgba(59,130,246,0.26) 1:rgba(59,130,246,0.02)',
+    },
+    axis: buildAxisTheme(),
+    tooltip: buildTooltipTheme(),
+    legend: false,
+  };
+}
+
+function buildLineConfig(data: Array<{ label: string; value: number }>, color: string) {
+  return {
+    data,
+    xField: 'label',
+    yField: 'value',
+    height: 220,
+    smooth: true,
+    color,
+    point: {
+      size: 3,
+      shape: 'circle',
+      style: {
+        fill: color,
+        stroke: '#ffffff',
+        lineWidth: 1.5,
+      },
+    },
+    axis: buildAxisTheme(),
+    tooltip: buildTooltipTheme(),
+    legend: false,
+  };
+}
+
+function buildColumnConfig(data: Array<{ label: string; type: string; value: number }>) {
+  return {
+    data,
+    xField: 'label',
+    yField: 'value',
+    seriesField: 'type',
+    height: 220,
+    color: ['#22c55e', '#ef4444'],
+    axis: buildAxisTheme(),
+    tooltip: buildTooltipTheme(),
+    legend: {
+      position: 'top-left' as const,
+      itemLabelFill: 'var(--theme-secondary)',
+    },
+  };
+}
+
+function buildRingConfig(data: Array<{ type: string; value: number }>) {
+  return {
+    data,
+    angleField: 'value',
+    colorField: 'type',
+    innerRadius: 0.74,
+    color: ['#10b981', 'rgba(148,163,184,0.18)'],
+    legend: false,
+    tooltip: buildTooltipTheme(),
+    label: {
+      position: 'center',
+      text: `${data[0]?.value.toFixed(1) ?? '0.0'}%`,
+      style: {
+        fontSize: 28,
+        fontWeight: 700,
+        fill: 'var(--theme-ink)',
+      },
+    },
+    annotations: [
+      {
+        type: 'text',
+        style: {
+          text: '成功率',
+          x: '50%',
+          y: '58%',
+          textAlign: 'center',
+          fill: 'var(--theme-secondary)',
+          fontSize: 12,
+        },
+      },
+    ],
+  };
+}
+
+function buildAxisTheme() {
+  return {
+    x: {
+      labelFill: 'var(--theme-secondary)',
+      line: false,
+      tick: false,
+      grid: false,
+    },
+    y: {
+      labelFill: 'var(--theme-secondary)',
+      line: false,
+      tick: false,
+      gridStroke: 'rgba(148,163,184,0.18)',
+    },
+  };
+}
+
+function buildTooltipTheme() {
+  return {
+    titleFill: 'var(--theme-ink)',
+    marker: true,
+    domStyles: {
+      'g2-tooltip': {
+        borderRadius: '16px',
+        border: '1px solid var(--theme-border-hairline)',
+        background: 'var(--theme-surface-container-lowest)',
+        boxShadow: '0 18px 42px rgba(15,23,42,0.18)',
+      },
+      'g2-tooltip-title': {
+        color: 'var(--theme-ink)',
+      },
+      'g2-tooltip-list-item-name': {
+        color: 'var(--theme-secondary)',
+      },
+      'g2-tooltip-list-item-value': {
+        color: 'var(--theme-ink)',
+      },
+    },
+  };
+}
+
+function formatDateTime(value?: string) {
+  if (!value) {
+    return '-';
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  return date.toLocaleString('zh-CN', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+}
+
+function formatDuration(value?: number) {
+  if (!value || value <= 0) {
+    return '-';
+  }
+  if (value < 1000) {
+    return `${Math.round(value)}ms`;
+  }
+  return `${(value / 1000).toFixed(2)}s`;
+}
+
+function resolveAverage(numerator?: number, denominator?: number) {
+  if (!numerator || !denominator) {
+    return 0;
+  }
+  return numerator / denominator;
+}
+
+function formatRatio(value: number) {
+  if (!value || Number.isNaN(value)) {
+    return '-';
+  }
+  return value.toFixed(2);
 }

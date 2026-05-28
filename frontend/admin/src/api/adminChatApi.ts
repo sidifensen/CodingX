@@ -231,12 +231,54 @@ export interface AdminRuntimeSetting {
   restartRequired?: boolean;
 }
 
-export interface AdminDashboardView {
+export type AdminDashboardWindow = '24h' | '7d' | '30d';
+
+export interface AdminDashboardKpis {
+  activeUserCount: number;
+  conversationCount: number;
+  messageCount: number;
+  workspaceCount: number;
   traceCount: number;
   runningTraceCount: number;
+}
+
+export interface AdminDashboardResources {
+  skillCount: number;
+  toolCount: number;
+  expertCount: number;
+  mcpCount: number;
   intentNodeCount: number;
   mappingCount: number;
   sampleQuestionCount: number;
+}
+
+export interface AdminDashboardPerformance {
+  successRate: number;
+  failureRate: number;
+  runningRate: number;
+  avgTraceDurationMs: number;
+  p95TraceDurationMs: number;
+}
+
+export interface AdminDashboardTrendBucket {
+  label: string;
+  bucketStart: string;
+  conversationCount: number;
+  messageCount: number;
+  activeUserCount: number;
+  traceCount: number;
+  successCount: number;
+  failedCount: number;
+  avgDurationMs: number;
+}
+
+export interface AdminDashboardView {
+  window: AdminDashboardWindow;
+  generatedAt: string;
+  kpis: AdminDashboardKpis;
+  resources: AdminDashboardResources;
+  performance: AdminDashboardPerformance;
+  trendBuckets: AdminDashboardTrendBucket[];
 }
 
 /**
@@ -647,8 +689,8 @@ export class AdminChatApi {
     });
   }
 
-  static async getDashboard(): Promise<AdminDashboardView> {
-    return this.request<AdminDashboardView>('/api/admin/chat/dashboard');
+  static async getDashboard(window: AdminDashboardWindow = '24h'): Promise<AdminDashboardView> {
+    return this.request<AdminDashboardView>(`/api/admin/chat/dashboard?window=${encodeURIComponent(window)}`);
   }
 
   /**

@@ -1,0 +1,63 @@
+---
+type: decision
+title: chat-memory-index
+summary: 记录聊天主消息区过程时间线相关的最小仓库记忆入口
+tags:
+  - chat
+owned_paths:
+  - frontend/user/src/views/chat
+  - frontend/user/src/views/ChatView.tsx
+  - backend/src/main/java/com/codingx/chat/application/service/chat
+related_docs:
+  - docs/superpowers/memory/chat/message-process-timeline-module-card.md
+  - docs/superpowers/memory/chat/message-process-timeline-contract.md
+  - docs/superpowers/memory/admin/workspace-management-module-card.md
+  - docs/superpowers/memory/admin/workspace-management-contract.md
+  - docs/superpowers/memory/lessons/stream-replay-stale-closure-overwrites-content.md
+  - docs/superpowers/memory/lessons/chat-citation-links-must-not-wait-for-slow-replay-panels.md
+  - docs/superpowers/memory/lessons/share-selection-must-ignore-unpersisted-message-ids.md
+  - docs/superpowers/memory/tool/codex-local-tool-runtime-module-card.md
+  - docs/superpowers/memory/tool/codex-local-tool-runtime-contract.md
+last_verified_commit: df295563eedea6ac3e6b6e500b3487c9c7b12db7
+status: active
+---
+
+# Repository Memory
+
+当前已覆盖的聊天域记忆：
+
+- `docs/superpowers/memory/chat/message-process-timeline-module-card.md`
+  - 聊天主消息区过程时间线的职责边界与扩展点
+- `docs/superpowers/memory/chat/message-process-timeline-contract.md`
+  - 主消息区过程卡片与 SSE 事件映射契约
+  - `docs/superpowers/memory/lessons/stream-replay-stale-closure-overwrites-content.md`
+    - 流式收敛回放不能用旧闭包覆盖刚生成完的 assistant 正文
+  - `docs/superpowers/memory/lessons/chat-citation-links-must-not-wait-for-slow-replay-panels.md`
+    - 聊天正文里的引用链接回填不能跟步骤/产物等慢面板一起等待
+  - `docs/superpowers/memory/lessons/default-cloud-history-must-not-include-local-workspaces.md`
+    - 默认云端历史查询必须与本地工作空间历史分开，兼容旧的未归属会话
+  - `docs/superpowers/memory/lessons/share-selection-must-ignore-unpersisted-message-ids.md`
+    - 分享选择只能使用已落库的数值消息 ID，临时乐观消息必须在 UI 和提交前过滤
+  - `docs/superpowers/memory/lessons/chat-task-reminder-read-state-must-use-local-snapshot.md`
+    - 聊天任务完成提醒的已读状态必须写入本地快照，不能复用数据库置顶字段
+  - `docs/superpowers/memory/lessons/built-in-skill-database-records-must-match-classpath-manifests.md`
+    - 内置技能写入数据库后，必须同步提供类路径 `SKILL.md`，否则运行时上下文无法读取
+- `docs/superpowers/memory/tool/codex-local-tool-runtime-module-card.md`
+  - Codex 风格本地工具执行器的职责、入口与常见陷阱
+- `docs/superpowers/memory/tool/codex-local-tool-runtime-contract.md`
+  - 本地工具可见性、执行目录、输出和不可用状态契约
+- `docs/superpowers/memory/admin/workspace-management-module-card.md`
+  - 管理端工作空间只读管理页的职责边界、入口与常见陷阱
+- `docs/superpowers/memory/admin/workspace-management-contract.md`
+  - 管理端工作空间列表 API、分页、筛选与页面字段契约
+- `docs/superpowers/memory/admin/dashboard-console-module-card.md`
+  - 管理端 Dashboard 控制台的职责边界、布局承载与图表实现约束
+- `docs/superpowers/memory/admin/dashboard-console-contract.md`
+  - 管理端 Dashboard 聚合接口、时间窗口与趋势分桶契约
+
+当前主要缺口：
+
+- MCP / 搜索 / 思考统一事件模型仍以前端运行时聚合为主，未形成数据库级持久化协议
+- 聊天页历史回放和本地快照的长期演化规则尚未独立成 runbook
+- 模型 tool-call 流程与本地工具执行结果回灌仍需实现端到端契约
+- 管理端 Dashboard 统计当前仍依赖应用层聚合，尚未沉淀大数据量场景的查询优化规范

@@ -278,6 +278,72 @@ describe('AdminChatApi unauthorized handling', () => {
   });
 
   /**
+   * Dashboard 聚合接口应支持时间窗口查询参数并解析新结构。
+   */
+  it('requests dashboard view with window query', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          success: true,
+          code: 'OK',
+          message: 'success',
+          data: {
+            window: '7d',
+            generatedAt: '2026-05-28T15:52:32',
+            kpis: {
+              activeUserCount: 12,
+              conversationCount: 18,
+              messageCount: 86,
+              workspaceCount: 6,
+              traceCount: 42,
+              runningTraceCount: 5,
+            },
+            resources: {
+              skillCount: 9,
+              toolCount: 11,
+              expertCount: 3,
+              mcpCount: 4,
+              intentNodeCount: 22,
+              mappingCount: 7,
+              sampleQuestionCount: 5,
+            },
+            performance: {
+              successRate: 83.3,
+              failureRate: 8.3,
+              runningRate: 8.4,
+              avgTraceDurationMs: 9200,
+              p95TraceDurationMs: 15000,
+            },
+            trendBuckets: [
+              {
+                label: '05-22',
+                bucketStart: '2026-05-22T00:00:00',
+                conversationCount: 2,
+                messageCount: 10,
+                activeUserCount: 2,
+                traceCount: 3,
+                successCount: 2,
+                failedCount: 1,
+                avgDurationMs: 8400,
+              },
+            ],
+          },
+        }),
+        { status: 200 },
+      ),
+    );
+
+    const result = await AdminChatApi.getDashboard('7d');
+
+    expect(result.window).toBe('7d');
+    expect(result.kpis.activeUserCount).toBe(12);
+    expect(result.resources.toolCount).toBe(11);
+    expect(result.performance.p95TraceDurationMs).toBe(15000);
+    expect(result.trendBuckets[0].label).toBe('05-22');
+    expect(String(fetchMock.mock.calls[0][0])).toContain('/api/admin/chat/dashboard?window=7d');
+  });
+
+  /**
    * 工作空间列表接口应携带分页、关键字和运行目标筛选参数。
    */
   it('requests workspace list with keyword and runtime target query', async () => {

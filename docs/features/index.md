@@ -13,3 +13,7 @@
 - [本地工具运行时](chat/local-tool-runtime.md)
 - [AI 路由默认策略](chat/ai-routing-defaults.md)
 - [联网搜索权威时效排序](chat/web-search-authoritative-latest.md)
+
+## Admin
+
+- [管理端控制台首页](admin/admin-dashboard-console.md)

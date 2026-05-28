@@ -119,18 +119,18 @@ app:
         base-url: stub://local # Stub 提供商本地模拟地址
         api-key: "" # Stub 提供商模拟密钥
     chat:
-      default-model: ${AI_DEFAULT_MODEL:deepseek-chat} # 默认聊天模型 ID，优先使用 DeepSeek Chat
-      deep-thinking-model: ${AI_DEEP_THINKING_MODEL:deepseek-reasoner} # 深度思考模型 ID，优先使用 DeepSeek Reasoner
+      default-model: ${AI_DEFAULT_MODEL:deepseek-v4-flash} # 默认聊天模型 ID，优先使用 DeepSeek v4 Flash
+      deep-thinking-model: ${AI_DEEP_THINKING_MODEL:deepseek-v4-flash-thinking} # 深度思考模型 ID，优先使用 DeepSeek v4 Flash 思考变体
       candidates:
-        - id: deepseek-chat # 模型唯一标识
+        - id: deepseek-v4-flash # 模型唯一标识
           provider: deepseek # 模型所属提供商
-          model: ${DEEPSEEK_CHAT_MODEL:deepseek-chat} # 实际模型名称
+          model: ${DEEPSEEK_CHAT_MODEL:deepseek-v4-flash} # 实际模型名称
           priority: 1 # 模型优先级，数字越小优先级越高
           enabled: true # 是否启用该模型
           supports-thinking: false # 是否支持思考过程
-        - id: deepseek-reasoner
+        - id: deepseek-v4-flash-thinking
           provider: deepseek
-          model: ${DEEPSEEK_REASONER_MODEL:deepseek-reasoner}
+          model: ${DEEPSEEK_REASONER_MODEL:deepseek-v4-flash-thinking}
           priority: 2
           enabled: true
           supports-thinking: true

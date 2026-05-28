@@ -10,7 +10,7 @@ import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 
 /**
- * 验证 AI 路由默认值优先落到 DeepSeek，避免新环境或升级后继续回到百炼默认模型。
+ * 验证 AI 路由默认值优先落到 DeepSeek v4 Flash，避免新环境或升级后继续回到百炼默认模型。
  */
 class AiRoutingDefaultsConfigTest {
 
@@ -23,10 +23,10 @@ class AiRoutingDefaultsConfigTest {
         String applicationYaml = Files.readString(Path.of("src/main/resources/application.yml"));
 
         assertTrue(applicationYaml.contains("provider: ${AI_PROVIDER:deepseek}"), "AI provider 默认值应为 deepseek");
-        assertTrue(applicationYaml.contains("default-model: ${AI_DEFAULT_MODEL:deepseek-chat}"), "默认聊天模型应优先使用 deepseek-chat");
-        assertTrue(applicationYaml.contains("deep-thinking-model: ${AI_DEEP_THINKING_MODEL:deepseek-reasoner}"), "深度思考模型应优先使用 deepseek-reasoner");
-        assertTrue(applicationYaml.contains("id: deepseek-chat"), "候选池应包含 deepseek-chat");
-        assertTrue(applicationYaml.contains("id: deepseek-reasoner"), "候选池应包含 deepseek-reasoner");
+        assertTrue(applicationYaml.contains("default-model: ${AI_DEFAULT_MODEL:deepseek-v4-flash}"), "默认聊天模型应优先使用 deepseek-v4-flash");
+        assertTrue(applicationYaml.contains("deep-thinking-model: ${AI_DEEP_THINKING_MODEL:deepseek-v4-flash-thinking}"), "深度思考模型应优先使用 deepseek-v4-flash-thinking");
+        assertTrue(applicationYaml.contains("id: deepseek-v4-flash"), "候选池应包含 deepseek-v4-flash");
+        assertTrue(applicationYaml.contains("id: deepseek-v4-flash-thinking"), "候选池应包含 deepseek-v4-flash-thinking");
     }
 
     /**
@@ -37,8 +37,8 @@ class AiRoutingDefaultsConfigTest {
     void initSqlSeedsDeepSeekRuntimeDefaults() throws IOException {
         String initSql = Files.readString(Path.of("src/main/resources/db/init.sql"));
 
-        assertTrue(initSql.contains("ai.chat.default_model', 'deepseek-chat'"), "初始化数据应默认写入 deepseek-chat");
-        assertTrue(initSql.contains("ai.chat.deep_thinking_model', 'deepseek-reasoner'"), "初始化数据应默认写入 deepseek-reasoner");
+        assertTrue(initSql.contains("ai.chat.default_model', 'deepseek-v4-flash'"), "初始化数据应默认写入 deepseek-v4-flash");
+        assertTrue(initSql.contains("ai.chat.deep_thinking_model', 'deepseek-v4-flash-thinking'"), "初始化数据应默认写入 deepseek-v4-flash-thinking");
     }
 
     /**
@@ -55,8 +55,8 @@ class AiRoutingDefaultsConfigTest {
                         String content = Files.readString(path);
                         return containsAll(
                             content,
-                            "ai.chat.default_model', 'deepseek-chat'",
-                            "ai.chat.deep_thinking_model', 'deepseek-reasoner'"
+                            "ai.chat.default_model', 'deepseek-v4-flash'",
+                            "ai.chat.deep_thinking_model', 'deepseek-v4-flash-thinking'"
                         );
                     } catch (IOException exception) {
                         throw new IllegalStateException("读取迁移文件失败：" + path, exception);

@@ -241,9 +241,9 @@ VALUES
     (7050, 'ai.selection.failure_threshold', '2', 'INTEGER', 'ai.routing', '模型路由连续失败熔断阈值', 10, TRUE, 0),
     (7051, 'ai.selection.open_duration_ms', '30000', 'LONG', 'ai.routing', '模型路由熔断打开时长毫秒', 20, TRUE, 0),
     (7052, 'ai.selection.first_packet_timeout_ms', '60000', 'LONG', 'ai.routing', '模型路由首包超时毫秒', 30, FALSE, 0),
-    -- AI 路由默认值优先 DeepSeek，保证新初始化环境开箱即用。
-    (7053, 'ai.chat.default_model', 'deepseek-chat', 'STRING', 'ai.routing', '模型路由默认模型ID', 40, FALSE, 0),
-    (7054, 'ai.chat.deep_thinking_model', 'deepseek-reasoner', 'STRING', 'ai.routing', '模型路由深度思考模型ID', 50, FALSE, 0),
+    -- AI 路由默认值优先 DeepSeek v4 Flash，保证新初始化环境开箱即用。
+    (7053, 'ai.chat.default_model', 'deepseek-v4-flash', 'STRING', 'ai.routing', '模型路由默认模型ID', 40, FALSE, 0),
+    (7054, 'ai.chat.deep_thinking_model', 'deepseek-v4-flash-thinking', 'STRING', 'ai.routing', '模型路由深度思考模型ID', 50, FALSE, 0),
     (7060, 'chat.executor.stream_core_pool_size', '2', 'INTEGER', 'chat.executor', '聊天入口线程池核心线程数', 10, TRUE, 0),
     (7061, 'chat.executor.stream_max_pool_size', '8', 'INTEGER', 'chat.executor', '聊天入口线程池最大线程数', 20, TRUE, 0),
     (7062, 'chat.executor.stream_queue_capacity', '256', 'INTEGER', 'chat.executor', '聊天入口线程池队列容量', 30, TRUE, 0),

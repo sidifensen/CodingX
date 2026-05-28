@@ -3,6 +3,8 @@ package com.codingx.chat.infrastructure.runtime;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.Test;
 
@@ -16,7 +18,7 @@ class ChatRunControlServiceTest {
      */
     @Test
     void cancelTriggersRegisteredActionAndClearsRunningState() {
-        ChatRunControlService service = new ChatRunControlService(new InMemoryChatRuntimeStateStore());
+        ChatRunControlService service = new ChatRunControlService(new TestChatRuntimeStateStore());
         AtomicBoolean cancelled = new AtomicBoolean(false);
 
         service.register(1001L, () -> cancelled.set(true));
@@ -32,7 +34,7 @@ class ChatRunControlServiceTest {
      */
     @Test
     void cancelReturnsFalseForUnknownConversation() {
-        ChatRunControlService service = new ChatRunControlService(new InMemoryChatRuntimeStateStore());
+        ChatRunControlService service = new ChatRunControlService(new TestChatRuntimeStateStore());
 
         assertFalse(service.cancel(9999L));
     }
@@ -42,7 +44,7 @@ class ChatRunControlServiceTest {
      */
     @Test
     void oldRunShouldBeTreatedAsCancelledAfterNewRunRegistered() {
-        ChatRunControlService service = new ChatRunControlService(new InMemoryChatRuntimeStateStore());
+        ChatRunControlService service = new ChatRunControlService(new TestChatRuntimeStateStore());
         service.register(1001L, 9001L, () -> {
         });
         service.register(1001L, 9002L, () -> {
@@ -57,7 +59,7 @@ class ChatRunControlServiceTest {
      */
     @Test
     void completeOldRunMustNotClearCurrentRunState() {
-        ChatRunControlService service = new ChatRunControlService(new InMemoryChatRuntimeStateStore());
+        ChatRunControlService service = new ChatRunControlService(new TestChatRuntimeStateStore());
         service.register(1001L, 9001L, () -> {
         });
         service.register(1001L, 9002L, () -> {
@@ -66,5 +68,42 @@ class ChatRunControlServiceTest {
         assertFalse(service.complete(1001L, 9001L));
         assertTrue(service.isRunning(1001L));
         assertFalse(service.isCancelled(1001L, 9002L));
+    }
+
+    /**
+     * 仅用于单测的轻量状态存储，实现 ChatRunControlService 所需最小契约。
+     */
+    private static final class TestChatRuntimeStateStore implements ChatRuntimeStateStore {
+
+        private final Map<Long, Boolean> activeConversations = new ConcurrentHashMap<>();
+        private final Map<Long, Boolean> cancelledConversations = new ConcurrentHashMap<>();
+
+        @Override
+        public void markActive(Long conversationId) {
+            activeConversations.put(conversationId, Boolean.TRUE);
+            cancelledConversations.remove(conversationId);
+        }
+
+        @Override
+        public void markCancelled(Long conversationId) {
+            cancelledConversations.put(conversationId, Boolean.TRUE);
+            activeConversations.remove(conversationId);
+        }
+
+        @Override
+        public boolean isActive(Long conversationId) {
+            return activeConversations.containsKey(conversationId);
+        }
+
+        @Override
+        public boolean isCancelled(Long conversationId) {
+            return cancelledConversations.containsKey(conversationId);
+        }
+
+        @Override
+        public void clear(Long conversationId) {
+            activeConversations.remove(conversationId);
+            cancelledConversations.remove(conversationId);
+        }
     }
 }

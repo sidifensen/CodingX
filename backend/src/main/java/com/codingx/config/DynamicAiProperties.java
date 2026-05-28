@@ -2,8 +2,12 @@ package com.codingx.config;
 
 import cn.hutool.core.util.StrUtil;
 import com.codingx.chat.application.service.RuntimeSettingService;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.TreeMap;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -34,35 +38,27 @@ public class DynamicAiProperties {
     }
 
     /**
-     * 获取当前默认 provider 编码。
-     * @return provider 编码。
-     */
-    public String provider() {
-        return runtimeSettingService.getString("ai.provider", aiProperties.getProvider());
-    }
-
-    /**
-     * 获取旧式默认 provider 的基础地址。
-     * @return 基础地址。
+     * 兼容旧式 DeepSeek provider 回退路径，缺少明确模型目标时仍可读取基础地址。
+     * @return 默认基础地址。
      */
     public String baseUrl() {
-        return runtimeSettingService.getString("ai.base_url", aiProperties.getBaseUrl());
+        return aiProperties.getBaseUrl();
     }
 
     /**
-     * 获取旧式默认 provider 的 API Key。
-     * @return API Key。
+     * 兼容旧式 DeepSeek provider 回退路径，缺少明确模型目标时仍可读取 API Key。
+     * @return 默认 API Key。
      */
     public String apiKey() {
-        return runtimeSettingService.getString("ai.api_key", aiProperties.getApiKey());
+        return aiProperties.getApiKey();
     }
 
     /**
-     * 获取旧式聊天模型名。
-     * @return 聊天模型名。
+     * 兼容旧式 DeepSeek provider 回退路径，缺少明确模型目标时仍可读取模型名。
+     * @return 默认模型名。
      */
     public String chatModel() {
-        return runtimeSettingService.getString("ai.chat_model", aiProperties.getChatModel());
+        return aiProperties.getChatModel();
     }
 
     /**
@@ -99,7 +95,90 @@ public class DynamicAiProperties {
             "ai.providers." + providerCode + ".api_key",
             provider.getApiKey()
         ));
+        Map<String, String> endpointOverrides = runtimeSettingService.getByPrefix("ai.providers." + providerCode + ".endpoints.");
+        if (!endpointOverrides.isEmpty()) {
+            Map<String, String> endpoints = provider.getEndpoints() == null ? new HashMap<>() : new HashMap<>(provider.getEndpoints());
+            endpointOverrides.forEach((key, value) -> {
+                String endpointName = StrUtil.removePrefix(key, "ai.providers." + providerCode + ".endpoints.");
+                if (StrUtil.isNotBlank(endpointName) && StrUtil.isNotBlank(value)) {
+                    endpoints.put(endpointName, value.trim());
+                }
+            });
+            provider.setEndpoints(endpoints);
+        }
         providers.put(providerCode, provider);
+    }
+
+    /**
+     * 从系统配置表中聚合聊天候选池；未配置时回退到静态骨架。
+     * @return 聊天候选列表。
+     */
+    public List<AiProperties.ChatCandidate> chatCandidates() {
+        Map<String, String> candidateSettings = runtimeSettingService.getByPrefix("ai.chat.candidates.");
+        if (candidateSettings.isEmpty()) {
+            return aiProperties.getChat() == null ? List.of() : aiProperties.getChat().getCandidates();
+        }
+        Map<Integer, Map<String, String>> slotSettings = new TreeMap<>();
+        candidateSettings.forEach((key, value) -> {
+            String remainder = StrUtil.removePrefix(key, "ai.chat.candidates.");
+            String[] fragments = remainder.split("\\.", 2);
+            if (fragments.length != 2 || !StrUtil.isNumeric(fragments[0])) {
+                return;
+            }
+            Integer slot = Integer.valueOf(fragments[0]);
+            slotSettings.computeIfAbsent(slot, ignored -> new LinkedHashMap<>()).put(fragments[1], value);
+        });
+        List<AiProperties.ChatCandidate> candidates = new ArrayList<>();
+        slotSettings.values().forEach(fields -> {
+            AiProperties.ChatCandidate candidate = toCandidate(fields);
+            if (candidate != null) {
+                candidates.add(candidate);
+            }
+        });
+        return candidates;
+    }
+
+    private AiProperties.ChatCandidate toCandidate(Map<String, String> fields) {
+        String id = trim(fields.get("id"));
+        String provider = trim(fields.get("provider"));
+        String model = trim(fields.get("model"));
+        if (StrUtil.hasBlank(id, provider, model)) {
+            return null;
+        }
+        AiProperties.ChatCandidate candidate = new AiProperties.ChatCandidate();
+        candidate.setId(id);
+        candidate.setProvider(provider);
+        candidate.setModel(model);
+        candidate.setPriority(parseInteger(fields.get("priority"), 100));
+        candidate.setEnabled(parseBoolean(fields.get("enabled"), true));
+        candidate.setSupportsThinking(parseBoolean(fields.get("supports_thinking"), false));
+        candidate.setSupportsVision(parseBoolean(fields.get("supports_vision"), false));
+        return candidate;
+    }
+
+    private String trim(String value) {
+        return StrUtil.trimToNull(value);
+    }
+
+    private Integer parseInteger(String value, int fallback) {
+        if (StrUtil.isBlank(value) || !StrUtil.isNumeric(value.trim())) {
+            return fallback;
+        }
+        return Integer.parseInt(value.trim());
+    }
+
+    private Boolean parseBoolean(String value, boolean fallback) {
+        if (StrUtil.isBlank(value)) {
+            return fallback;
+        }
+        String normalized = value.trim().toLowerCase();
+        if ("true".equals(normalized) || "1".equals(normalized)) {
+            return true;
+        }
+        if ("false".equals(normalized) || "0".equals(normalized)) {
+            return false;
+        }
+        return fallback;
     }
 
     private AiProperties.Provider cloneProvider(AiProperties.Provider source) {

@@ -2,6 +2,7 @@ package com.codingx.chat.infrastructure.search;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.when;
 
 import com.codingx.chat.application.service.SearchReferenceCandidate;
@@ -51,7 +52,7 @@ class ConfigurableWebSearchChannelTest {
         );
 
         assertFalse(channel.isEnabled(new SearchRequestContext("Spring Boot SSE")));
-        assertEquals(List.of(), channel.search(new SearchRequestContext("Spring Boot SSE")));
+        assertThrows(IllegalStateException.class, () -> channel.search(new SearchRequestContext("Spring Boot SSE")));
     }
 
     /**

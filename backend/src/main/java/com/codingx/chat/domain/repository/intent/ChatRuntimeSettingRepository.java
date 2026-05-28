@@ -10,5 +10,7 @@ public interface ChatRuntimeSettingRepository {
 
     List<ChatRuntimeSetting> findAll();
 
+    ChatRuntimeSetting findBySettingKey(String settingKey);
+
     void save(ChatRuntimeSetting setting);
 }

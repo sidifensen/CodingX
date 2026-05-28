@@ -1,6 +1,14 @@
 import React from 'react';
 import clsx from 'clsx';
 import { AdminChatApi, AdminRuntimeSetting } from '../api/adminChatApi';
+import {
+  buildCandidateRows,
+  buildProviderRows,
+  extractCandidateSlot,
+  normalizeCandidatePriorityUpdates,
+  summarizeCandidateSlots,
+  type CandidatePriorityUpdate,
+} from './settings/candidateSettings';
 
 type SettingsViewMode = 'cards' | 'navigator' | 'compact';
 
@@ -54,6 +62,9 @@ const VIEW_MODE_META: Array<{ mode: SettingsViewMode; label: string }> = [
 ];
 
 const CATEGORY_LABELS: Record<string, string> = {
+  ai: 'AI 基础配置',
+  'ai.providers': 'AI 提供商',
+  'ai.candidates': '模型候选池',
   'chat.memory': '聊天历史压缩',
   'chat.executor': '聊天执行器',
   // 系统配置页面向管理员展示，运行时策略分类需要中文名称避免暴露内部 key。
@@ -63,6 +74,32 @@ const CATEGORY_LABELS: Record<string, string> = {
   code_search: '代码检索运行时',
   'ai.routing': '模型路由',
 };
+
+function secretPlaceholder(setting: AdminRuntimeSetting): string | undefined {
+  if (setting.secret !== true) {
+    return undefined;
+  }
+  if (setting.maskedValue) {
+    return `留空表示保持不变，当前已配置：${setting.maskedValue}`;
+  }
+  return '留空表示保持不变';
+}
+
+function providerTitle(code: string): string {
+  if (code === 'siliconflow') {
+    return '硅基流动';
+  }
+  if (code === 'bailian') {
+    return '百炼';
+  }
+  if (code === 'deepseek') {
+    return 'DeepSeek';
+  }
+  if (code === 'stub') {
+    return 'Stub';
+  }
+  return code;
+}
 
 /**
  * 系统配置管理页：提供多种展示模式，降低配置项增多后的浏览和维护成本。
@@ -253,9 +290,16 @@ export function Settings() {
   }
 
   function updateDraft(settingKey: string, nextValue: string) {
-    setDraftSettings((previous) =>
-      previous.map((item) => (item.settingKey === settingKey ? { ...item, settingValue: nextValue } : item)),
-    );
+    setDraftSettings((previous) => {
+      if (settingKey.endsWith('.priority')) {
+        const slot = extractCandidateSlot(settingKey);
+        const nextPriority = Number(nextValue);
+        if (slot && Number.isFinite(nextPriority) && nextPriority > 0) {
+          return normalizeCandidatePriorityUpdates(previous, { slot, priority: nextPriority });
+        }
+      }
+      return previous.map((item) => (item.settingKey === settingKey ? { ...item, settingValue: nextValue } : item));
+    });
   }
 
   function restoreDraft() {
@@ -280,13 +324,13 @@ export function Settings() {
     }
   }
 
-  function inputTypeByValueType(valueType?: string): React.HTMLInputTypeAttribute {
+function inputTypeByValueType(valueType?: string): React.HTMLInputTypeAttribute {
     const normalized = String(valueType ?? '').toUpperCase();
     if (normalized === 'INTEGER' || normalized === 'LONG' || normalized === 'DECIMAL') {
       return 'number';
     }
-    return 'text';
-  }
+  return 'text';
+}
 
   function isModified(settingKey: string): boolean {
     return modifiedSettingKeys.has(settingKey);
@@ -438,6 +482,8 @@ function CardModeView({
       {categories.map((category) => {
         const expanded = expandedCategories[category.categoryCode] ?? true;
         const modified = category.settings.filter((setting) => modifiedSettingKeys.has(setting.settingKey)).length;
+        const candidateSlots = category.categoryCode === 'ai.candidates' ? summarizeCandidateSlots(category.settings) : [];
+        const providerRows = category.categoryCode === 'ai.providers' ? buildProviderRows(category.settings) : [];
         // 分组卡片默认展开，方便快速浏览全部配置；手动收起后仅由本地状态控制，不影响保存数据。
         return (
           <div key={category.categoryCode} className="rounded-2xl border border-border-hairline bg-surface-container-lowest shadow-sm">
@@ -459,7 +505,21 @@ function CardModeView({
             </button>
             {expanded ? (
               <div className="grid gap-sm border-t border-border-hairline p-md md:grid-cols-2">
-                {category.settings.map((setting) => {
+                {candidateSlots.length > 0 ? (
+                  <CandidateTableEditor
+                    settings={category.settings}
+                    modifiedSettingKeys={modifiedSettingKeys}
+                    onChangeSettingValue={onChangeSettingValue}
+                  />
+                ) : null}
+                {providerRows.length > 0 ? (
+                  <ProviderTableEditor
+                    settings={category.settings}
+                    modifiedSettingKeys={modifiedSettingKeys}
+                    onChangeSettingValue={onChangeSettingValue}
+                  />
+                ) : null}
+                {category.settings.filter((setting) => category.categoryCode !== 'ai.candidates' && category.categoryCode !== 'ai.providers').map((setting) => {
                   const modified = modifiedSettingKeys.has(setting.settingKey);
                   return (
                     <div
@@ -492,8 +552,12 @@ function CardModeView({
                         type={inputTypeByValueType(setting.valueType)}
                         value={setting.settingValue}
                         onChange={(event) => onChangeSettingValue(setting.settingKey, event.target.value)}
+                        placeholder={secretPlaceholder(setting)}
                         className="w-full rounded-lg border border-border-hairline bg-surface-container-lowest px-3 py-2 text-body-sm text-ink outline-none transition-colors focus:border-border-strong"
                       />
+                      {setting.secret ? (
+                        <p className="mt-2 text-[11px] text-secondary">留空表示保持不变，输入新值后会重新加密保存。</p>
+                      ) : null}
                     </div>
                   );
                 })}
@@ -516,6 +580,8 @@ function NavigatorModeView({
   inputTypeByValueType,
 }: NavigatorModeViewProps) {
   const activeCategory = categories.find((item) => item.categoryCode === activeCategoryCode) ?? categories[0];
+  const candidateSlots = activeCategory.categoryCode === 'ai.candidates' ? summarizeCandidateSlots(activeCategory.settings) : [];
+  const providerRows = activeCategory.categoryCode === 'ai.providers' ? buildProviderRows(activeCategory.settings) : [];
   return (
     <section className="grid gap-md xl:grid-cols-[280px_minmax(0,1fr)]">
       <aside className="rounded-2xl border border-border-hairline bg-surface-container-lowest p-sm shadow-sm">
@@ -553,7 +619,21 @@ function NavigatorModeView({
           <p className="mt-1 text-[12px] text-secondary">{activeCategory.categoryCode}</p>
         </div>
         <div className="grid gap-sm p-md md:grid-cols-2">
-          {activeCategory.settings.map((setting) => {
+          {candidateSlots.length > 0 ? (
+            <CandidateTableEditor
+              settings={activeCategory.settings}
+              modifiedSettingKeys={modifiedSettingKeys}
+              onChangeSettingValue={onChangeSettingValue}
+            />
+          ) : null}
+          {providerRows.length > 0 ? (
+            <ProviderTableEditor
+              settings={activeCategory.settings}
+              modifiedSettingKeys={modifiedSettingKeys}
+              onChangeSettingValue={onChangeSettingValue}
+            />
+          ) : null}
+          {activeCategory.settings.filter((setting) => activeCategory.categoryCode !== 'ai.candidates' && activeCategory.categoryCode !== 'ai.providers').map((setting) => {
             const modified = modifiedSettingKeys.has(setting.settingKey);
             return (
               <div
@@ -584,14 +664,205 @@ function NavigatorModeView({
                   type={inputTypeByValueType(setting.valueType)}
                   value={setting.settingValue}
                   onChange={(event) => onChangeSettingValue(setting.settingKey, event.target.value)}
+                  placeholder={secretPlaceholder(setting)}
                   className="w-full rounded-lg border border-border-hairline bg-surface-container-lowest px-3 py-2 text-body-sm text-ink outline-none transition-colors focus:border-border-strong"
                 />
+                {setting.secret ? (
+                  <p className="mt-2 text-[11px] text-secondary">留空表示保持不变，输入新值后会重新加密保存。</p>
+                ) : null}
               </div>
             );
           })}
         </div>
       </div>
     </section>
+  );
+}
+
+function CandidateTableEditor({
+  settings,
+  modifiedSettingKeys,
+  onChangeSettingValue,
+}: {
+  settings: AdminRuntimeSetting[];
+  modifiedSettingKeys: Set<string>;
+  onChangeSettingValue: (settingKey: string, nextValue: string) => void;
+}) {
+  const rows = buildCandidateRows(settings);
+  return (
+    <div className="md:col-span-2 rounded-xl border border-dashed border-border-hairline bg-surface-container-low p-md">
+      <div className="mb-3 flex items-center justify-between gap-sm">
+        <div>
+          <p className="text-[12px] font-medium text-ink">候选模型表格编辑</p>
+          <p className="mt-1 text-[11px] text-secondary">修改优先级时会自动重排其它候选，保持优先级唯一且连续。</p>
+        </div>
+        <span className="rounded-full border border-border-hairline bg-surface-container-lowest px-2 py-0.5 text-[11px] text-secondary">
+          共 {rows.length} 个候选
+        </span>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[1080px] border-collapse text-left">
+          <thead>
+            <tr className="border-b border-border-hairline bg-surface-container-lowest">
+              <th className="px-sm py-sm text-[12px] text-secondary">槽位</th>
+              <th className="px-sm py-sm text-[12px] text-secondary">模型ID</th>
+              <th className="px-sm py-sm text-[12px] text-secondary">Provider</th>
+              <th className="px-sm py-sm text-[12px] text-secondary">模型名称</th>
+              <th className="px-sm py-sm text-[12px] text-secondary">优先级</th>
+              <th className="px-sm py-sm text-[12px] text-secondary">启用</th>
+              <th className="px-sm py-sm text-[12px] text-secondary">思考</th>
+              <th className="px-sm py-sm text-[12px] text-secondary">视觉</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border-hairline">
+            {rows.map((row) => {
+              const rowModified = [
+                row.idSetting,
+                row.providerSetting,
+                row.modelSetting,
+                row.prioritySetting,
+                row.enabledSetting,
+                row.supportsThinkingSetting,
+                row.supportsVisionSetting,
+              ].some((setting) => setting && modifiedSettingKeys.has(setting.settingKey));
+              return (
+                <tr key={row.slot} className={rowModified ? 'bg-status-pending-bg/30' : ''}>
+                  <td className="px-sm py-sm align-top text-[12px] text-secondary">{row.slot}</td>
+                  <td className="px-sm py-sm">
+                    <StructuredSettingInput setting={row.idSetting} onChangeSettingValue={onChangeSettingValue} />
+                  </td>
+                  <td className="px-sm py-sm">
+                    <StructuredSettingInput setting={row.providerSetting} onChangeSettingValue={onChangeSettingValue} />
+                  </td>
+                  <td className="px-sm py-sm">
+                    <StructuredSettingInput setting={row.modelSetting} onChangeSettingValue={onChangeSettingValue} />
+                  </td>
+                  <td className="px-sm py-sm">
+                    <StructuredSettingInput setting={row.prioritySetting} onChangeSettingValue={onChangeSettingValue} type="number" />
+                  </td>
+                  <td className="px-sm py-sm">
+                    <StructuredBooleanInput setting={row.enabledSetting} onChangeSettingValue={onChangeSettingValue} />
+                  </td>
+                  <td className="px-sm py-sm">
+                    <StructuredBooleanInput setting={row.supportsThinkingSetting} onChangeSettingValue={onChangeSettingValue} />
+                  </td>
+                  <td className="px-sm py-sm">
+                    <StructuredBooleanInput setting={row.supportsVisionSetting} onChangeSettingValue={onChangeSettingValue} />
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function ProviderTableEditor({
+  settings,
+  modifiedSettingKeys,
+  onChangeSettingValue,
+}: {
+  settings: AdminRuntimeSetting[];
+  modifiedSettingKeys: Set<string>;
+  onChangeSettingValue: (settingKey: string, nextValue: string) => void;
+}) {
+  const rows = buildProviderRows(settings);
+  return (
+    <div className="md:col-span-2 rounded-xl border border-dashed border-border-hairline bg-surface-container-low p-md">
+      <div className="mb-3 flex items-center justify-between gap-sm">
+        <div>
+          <p className="text-[12px] font-medium text-ink">AI 提供商表格编辑</p>
+          <p className="mt-1 text-[11px] text-secondary">中文名、基础地址、聊天端点和密钥都可直接编辑。</p>
+        </div>
+        <span className="rounded-full border border-border-hairline bg-surface-container-lowest px-2 py-0.5 text-[11px] text-secondary">
+          共 {rows.length} 个提供商
+        </span>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[960px] border-collapse text-left">
+          <thead>
+            <tr className="border-b border-border-hairline bg-surface-container-lowest">
+              <th className="px-sm py-sm text-[12px] text-secondary">中文名</th>
+              <th className="px-sm py-sm text-[12px] text-secondary">Provider</th>
+              <th className="px-sm py-sm text-[12px] text-secondary">基础地址</th>
+              <th className="px-sm py-sm text-[12px] text-secondary">聊天端点</th>
+              <th className="px-sm py-sm text-[12px] text-secondary">API Key</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border-hairline">
+            {rows.map((row) => {
+              const rowModified = [row.baseUrlSetting, row.apiKeySetting, row.chatEndpointSetting].some(
+                (setting) => setting && modifiedSettingKeys.has(setting.settingKey),
+              );
+              return (
+                <tr key={row.code} className={rowModified ? 'bg-status-pending-bg/30' : ''}>
+                  <td className="px-sm py-sm align-top text-[12px] font-medium text-ink">{providerTitle(row.code)}</td>
+                  <td className="px-sm py-sm align-top text-[12px] text-secondary">{row.code}</td>
+                  <td className="px-sm py-sm">
+                    <StructuredSettingInput setting={row.baseUrlSetting} onChangeSettingValue={onChangeSettingValue} />
+                  </td>
+                  <td className="px-sm py-sm">
+                    <StructuredSettingInput setting={row.chatEndpointSetting} onChangeSettingValue={onChangeSettingValue} />
+                  </td>
+                  <td className="px-sm py-sm">
+                    <StructuredSettingInput setting={row.apiKeySetting} onChangeSettingValue={onChangeSettingValue} />
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function StructuredSettingInput({
+  setting,
+  onChangeSettingValue,
+  type = 'text',
+}: {
+  setting?: AdminRuntimeSetting;
+  onChangeSettingValue: (settingKey: string, nextValue: string) => void;
+  type?: React.HTMLInputTypeAttribute;
+}) {
+  if (!setting) {
+    return <span className="text-[12px] text-secondary">-</span>;
+  }
+  return (
+    <input
+      data-testid={`setting-value-${setting.settingKey}`}
+      type={type}
+      value={setting.settingValue}
+      onChange={(event) => onChangeSettingValue(setting.settingKey, event.target.value)}
+      placeholder={secretPlaceholder(setting)}
+      className="w-full rounded-lg border border-border-hairline bg-surface-container-lowest px-3 py-1.5 text-[12px] text-ink outline-none transition-colors focus:border-border-strong"
+    />
+  );
+}
+
+function StructuredBooleanInput({
+  setting,
+  onChangeSettingValue,
+}: {
+  setting?: AdminRuntimeSetting;
+  onChangeSettingValue: (settingKey: string, nextValue: string) => void;
+}) {
+  if (!setting) {
+    return <span className="text-[12px] text-secondary">-</span>;
+  }
+  return (
+    <select
+      data-testid={`setting-value-${setting.settingKey}`}
+      value={setting.settingValue}
+      onChange={(event) => onChangeSettingValue(setting.settingKey, event.target.value)}
+      className="w-full rounded-lg border border-border-hairline bg-surface-container-lowest px-3 py-1.5 text-[12px] text-ink outline-none transition-colors focus:border-border-strong"
+    >
+      <option value="true">true</option>
+      <option value="false">false</option>
+    </select>
   );
 }
 
@@ -649,6 +920,7 @@ function CompactModeView({
                       type={inputTypeByValueType(row.setting.valueType)}
                       value={row.setting.settingValue}
                       onChange={(event) => onChangeSettingValue(row.setting.settingKey, event.target.value)}
+                      placeholder={secretPlaceholder(row.setting)}
                       className="w-full rounded-lg border border-border-hairline bg-surface-container-lowest px-3 py-1.5 text-[12px] text-ink outline-none transition-colors focus:border-border-strong"
                     />
                   </td>

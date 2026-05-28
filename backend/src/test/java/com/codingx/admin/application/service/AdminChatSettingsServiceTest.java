@@ -1,7 +1,9 @@
 package com.codingx.admin.application.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -82,5 +84,62 @@ class AdminChatSettingsServiceTest {
         assertEquals("cipher-secret", saved.getEncryptedValue());
         assertEquals("pla***cret", saved.getMaskedValue());
         verify(chatRuntimeSettingRepository).save(any(ChatRuntimeSetting.class));
+    }
+
+    /**
+     * 管理端列表展示敏感配置时，只允许返回脱敏值，禁止继续把密文挂回接口响应。
+     */
+    @Test
+    void listAllSettingsMasksSecretValues() {
+        ChatRuntimeSetting secretSetting = ChatRuntimeSetting.builder()
+            .id(2L)
+            .settingKey("ai.providers.siliconflow.api_key")
+            .settingValue("")
+            .encryptedValue("cipher-secret")
+            .secret(true)
+            .maskedValue("sk-****")
+            .valueType("STRING")
+            .categoryCode("ai.providers")
+            .description("硅基流动接口密钥")
+            .build();
+        when(runtimeSettingService.listAll()).thenReturn(List.of(secretSetting));
+
+        List<ChatRuntimeSetting> settings = adminChatSettingsService.listAllSettings();
+
+        assertEquals("", settings.getFirst().getSettingValue());
+        assertEquals("sk-****", settings.getFirst().getMaskedValue());
+        assertNull(settings.getFirst().getEncryptedValue());
+    }
+
+    /**
+     * 敏感配置在管理端留空时表示保持原值，不应把空字符串重新加密覆盖旧密文。
+     */
+    @Test
+    void saveKeepsExistingCipherWhenSecretValueLeftBlank() {
+        ChatRuntimeSetting existing = ChatRuntimeSetting.builder()
+            .id(9L)
+            .settingKey("ai.providers.siliconflow.api_key")
+            .settingValue("")
+            .encryptedValue("cipher-secret")
+            .secret(true)
+            .maskedValue("sk-****")
+            .valueType("STRING")
+            .build();
+        ChatRuntimeSetting incoming = ChatRuntimeSetting.builder()
+            .id(9L)
+            .settingKey("ai.providers.siliconflow.api_key")
+            .settingValue("")
+            .secret(true)
+            .maskedValue("sk-****")
+            .valueType("STRING")
+            .build();
+        when(runtimeSettingService.listAll()).thenReturn(List.of(existing));
+
+        ChatRuntimeSetting saved = adminChatSettingsService.save(incoming);
+
+        assertEquals("cipher-secret", saved.getEncryptedValue());
+        assertEquals("sk-****", saved.getMaskedValue());
+        verify(runtimeSettingService).refresh();
+        verify(configCryptoService, never()).encrypt("");
     }
 }

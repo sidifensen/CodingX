@@ -10,7 +10,9 @@ import com.codingx.chat.application.service.SearchRequestContext;
 import com.codingx.chat.application.service.RuntimeSettingService;
 import com.codingx.common.error.ErrorMessageCatalog;
 import java.io.IOException;
+import java.io.InterruptedIOException;
 import java.net.URI;
+import java.net.SocketTimeoutException;
 import java.util.ArrayList;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -20,6 +22,7 @@ import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.RequestBody;
 import okhttp3.Response;
+import java.util.concurrent.TimeUnit;
 import org.springframework.stereotype.Component;
 
 /**
@@ -55,14 +58,20 @@ public class ConfigurableWebSearchChannel implements SearchChannel {
     @Override
     public List<SearchReferenceCandidate> search(SearchRequestContext context) {
         if (!isEnabled(context) || StrUtil.isBlank(context.question())) {
-            return List.of();
+            throw new IllegalStateException(ErrorMessageCatalog.WEB_SEARCH_UNAVAILABLE);
         }
-        try (Response response = okHttpClient.newCall(buildRequest(context)).execute()) {
+        Request request = buildRequest(context);
+        try (Response response = okHttpClient
+            .newBuilder()
+            .callTimeout(context.timeoutMs(), TimeUnit.MILLISECONDS)
+            .build()
+            .newCall(request)
+            .execute()) {
             if (!response.isSuccessful()) {
-                return List.of();
+                throw new IllegalStateException(ErrorMessageCatalog.WEB_SEARCH_UNAVAILABLE + "：HTTP " + response.code());
             }
             if (response.body() == null) {
-                return List.of();
+                throw new IllegalStateException(ErrorMessageCatalog.WEB_SEARCH_UNAVAILABLE);
             }
             String body = response.body().string();
             JSONObject root = JSONUtil.parseObj(body);
@@ -70,11 +79,15 @@ public class ConfigurableWebSearchChannel implements SearchChannel {
                 case "bing" -> parseBingResults(root);
                 case "tavily" -> parseTavilyResults(root);
                 case "serper" -> parseSerperResults(root);
-                default -> List.of();
+                default -> throw new IllegalStateException(ErrorMessageCatalog.WEB_SEARCH_PROVIDER_UNSUPPORTED + "：" + normalizedProvider());
             };
-        } catch (IOException | RuntimeException exception) {
-            // 搜索链路允许单通道静默失败，由上层统一做降级与空结果兜底。
-            return List.of();
+        } catch (IOException exception) {
+            if (isTimeout(exception)) {
+                throw new IllegalStateException(ErrorMessageCatalog.WEB_SEARCH_TIMEOUT, exception);
+            }
+            throw new IllegalStateException(ErrorMessageCatalog.WEB_SEARCH_UNAVAILABLE, exception);
+        } catch (RuntimeException exception) {
+            throw new IllegalStateException(ErrorMessageCatalog.WEB_SEARCH_UNAVAILABLE, exception);
         }
     }
 
@@ -290,5 +303,11 @@ public class ConfigurableWebSearchChannel implements SearchChannel {
         String language = StrUtil.blankToDefault(runtimeSettingService.webSearchLanguage(), "zh-cn");
         String country = StrUtil.blankToDefault(runtimeSettingService.webSearchCountry(), "cn");
         return language + "-" + country.toUpperCase();
+    }
+
+    private boolean isTimeout(IOException exception) {
+        return exception instanceof SocketTimeoutException
+            || exception instanceof InterruptedIOException
+            || StrUtil.containsIgnoreCase(StrUtil.nullToEmpty(exception.getMessage()), "timeout");
     }
 }

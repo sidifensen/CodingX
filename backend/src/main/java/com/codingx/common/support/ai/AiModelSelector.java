@@ -19,10 +19,6 @@ import java.util.stream.Collectors;
  */
 public class AiModelSelector {
 
-    private static final String STUB_PROVIDER = "stub";
-    private static final String STUB_MODEL_ID = "stub-chat";
-    private static final String STUB_MODEL_NAME = "stub-chat";
-
     private final AiProperties aiProperties;
     private final DynamicAiRoutingProperties dynamicProperties;
     private final DynamicAiProperties dynamicAiProperties;
@@ -126,22 +122,21 @@ public class AiModelSelector {
     }
 
     /**
-     * 兼容旧式单模型配置，确保至少有一个真实候选和一个 stub 候选。
+     * 兼容旧式单模型配置，确保至少有一个真实候选，避免历史环境因未迁移候选池而失去可用模型。
      * @return 具备候选列表的聊天模型组。
      */
     private AiProperties.ChatModelGroup chatGroupWithFallback() {
         AiProperties.ChatModelGroup configured = aiProperties.getChat() == null ? new AiProperties.ChatModelGroup() : aiProperties.getChat();
+        List<AiProperties.ChatCandidate> dynamicCandidates = dynamicAiProperties == null ? List.of() : dynamicAiProperties.chatCandidates();
+        if (CollUtil.isNotEmpty(dynamicCandidates)) {
+            AiProperties.ChatModelGroup dynamicGroup = new AiProperties.ChatModelGroup();
+            dynamicGroup.setCandidates(dynamicCandidates);
+            return dynamicGroup;
+        }
         if (CollUtil.isNotEmpty(configured.getCandidates())) {
             return configured;
         }
-        AiProperties.ChatModelGroup fallbackGroup = new AiProperties.ChatModelGroup();
-        fallbackGroup.setDefaultModel(StrUtil.blankToDefault(configured.getDefaultModel(), fallbackChatModel()));
-        fallbackGroup.setDeepThinkingModel(StrUtil.blankToDefault(configured.getDeepThinkingModel(), fallbackGroup.getDefaultModel()));
-        List<AiProperties.ChatCandidate> candidates = new ArrayList<>();
-        candidates.add(realFallbackCandidate());
-        candidates.add(stubCandidate());
-        fallbackGroup.setCandidates(candidates);
-        return fallbackGroup;
+        return new AiProperties.ChatModelGroup();
     }
 
     /**
@@ -152,18 +147,6 @@ public class AiModelSelector {
         Map<String, AiProperties.Provider> providers = new HashMap<>(aiProperties.getProviders());
         if (dynamicAiProperties != null) {
             providers = new HashMap<>(dynamicAiProperties.providers());
-        }
-        if (!providers.containsKey(fallbackProvider())) {
-            AiProperties.Provider provider = new AiProperties.Provider();
-            provider.setBaseUrl(fallbackBaseUrl());
-            provider.setApiKey(fallbackApiKey());
-            providers.put(fallbackProvider(), provider);
-        }
-        if (!providers.containsKey(STUB_PROVIDER)) {
-            AiProperties.Provider stubProvider = new AiProperties.Provider();
-            stubProvider.setBaseUrl("stub://local");
-            stubProvider.setApiKey("");
-            providers.put(STUB_PROVIDER, stubProvider);
         }
         return providers;
     }
@@ -191,14 +174,7 @@ public class AiModelSelector {
         if (StrUtil.isNotBlank(preferredModel)) {
             return preferredModel;
         }
-        String configuredThinkingModel = dynamicProperties == null ? group.getDeepThinkingModel() : dynamicProperties.deepThinkingModel();
-        if (thinkingEnabled && StrUtil.isNotBlank(configuredThinkingModel)) {
-            return configuredThinkingModel;
-        }
-        return StrUtil.blankToDefault(
-            dynamicProperties == null ? group.getDefaultModel() : dynamicProperties.defaultModel(),
-            group.getDefaultModel()
-        );
+        return null;
     }
 
     /**
@@ -216,50 +192,5 @@ public class AiModelSelector {
         return new AiModelTarget(id, candidate, provider);
     }
 
-    /**
-     * 由旧式单模型配置合成真实候选。
-     * @return 默认真实候选。
-     */
-    private AiProperties.ChatCandidate realFallbackCandidate() {
-        AiProperties.ChatCandidate candidate = new AiProperties.ChatCandidate();
-        candidate.setId(fallbackChatModel());
-        candidate.setProvider(fallbackProvider());
-        candidate.setModel(fallbackChatModel());
-        candidate.setPriority(1);
-        candidate.setEnabled(true);
-        candidate.setSupportsThinking(false);
-        return candidate;
-    }
-
-    private String fallbackProvider() {
-        return dynamicAiProperties == null ? aiProperties.getProvider() : dynamicAiProperties.provider();
-    }
-
-    private String fallbackBaseUrl() {
-        return dynamicAiProperties == null ? aiProperties.getBaseUrl() : dynamicAiProperties.baseUrl();
-    }
-
-    private String fallbackApiKey() {
-        return dynamicAiProperties == null ? aiProperties.getApiKey() : dynamicAiProperties.apiKey();
-    }
-
-    private String fallbackChatModel() {
-        return dynamicAiProperties == null ? aiProperties.getChatModel() : dynamicAiProperties.chatModel();
-    }
-
-    /**
-     * 生成本地 stub 保底候选。
-     * @return stub 候选。
-     */
-    private AiProperties.ChatCandidate stubCandidate() {
-        AiProperties.ChatCandidate candidate = new AiProperties.ChatCandidate();
-        candidate.setId(STUB_MODEL_ID);
-        candidate.setProvider(STUB_PROVIDER);
-        candidate.setModel(STUB_MODEL_NAME);
-        candidate.setPriority(999);
-        candidate.setEnabled(true);
-        candidate.setSupportsThinking(true);
-        return candidate;
-    }
 }
 

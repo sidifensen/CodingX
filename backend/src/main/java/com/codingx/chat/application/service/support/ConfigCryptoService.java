@@ -3,7 +3,6 @@ package com.codingx.chat.application.service.support;
 import cn.hutool.core.codec.Base64;
 import cn.hutool.core.util.StrUtil;
 import com.codingx.config.ConfigCryptoProperties;
-import jakarta.annotation.PostConstruct;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
@@ -28,20 +27,11 @@ public class ConfigCryptoService {
     private final SecureRandom secureRandom = new SecureRandom();
 
     /**
-     * 直接构造实例时也要立即校验主密钥，保证单测与运行时行为一致。
+     * 构造阶段只保留配置引用，主密钥在首次加解密时再校验，避免未使用敏感配置的环境无法启动。
      * @param configCryptoProperties 主密钥配置。
      */
     public ConfigCryptoService(ConfigCryptoProperties configCryptoProperties) {
         this.configCryptoProperties = configCryptoProperties;
-        validate();
-    }
-
-    /**
-     * 启动阶段立即校验主密钥，避免应用运行后才暴露密钥配置缺失问题。
-     */
-    @PostConstruct
-    public void validate() {
-        decodeKey();
     }
 
     /**

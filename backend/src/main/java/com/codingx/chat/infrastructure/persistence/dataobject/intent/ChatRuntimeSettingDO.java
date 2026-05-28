@@ -1,4 +1,4 @@
-package com.codingx.chat.infrastructure.persistence.dataobject;
+package com.codingx.chat.infrastructure.persistence.dataobject.intent;
 
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;

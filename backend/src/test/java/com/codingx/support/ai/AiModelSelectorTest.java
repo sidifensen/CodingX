@@ -5,9 +5,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.codingx.chat.domain.model.ChatAttachment;
 import com.codingx.config.AiProperties;
+import com.codingx.config.DynamicAiProperties;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
 
 /**
  * 验证模型选择器会按首选模型、思考能力和兼容配置规则生成候选列表。
@@ -60,10 +63,10 @@ class AiModelSelectorTest {
     }
 
     /**
-     * 仅保留旧式单模型配置时，选择器仍应补出默认真实候选与 stub 候选。
+     * 仅保留旧式单模型配置时，选择器应补出默认真实候选，但不再偷偷拼接 stub 兜底。
      */
     @Test
-    void selectChatCandidatesSynthesizesDefaultAndStubCandidatesFromLegacyConfig() {
+    void selectChatCandidatesSynthesizesOnlyRealCandidateFromLegacyConfig() {
         AiProperties properties = new AiProperties();
         properties.setProvider("deepseek");
         properties.setBaseUrl("https://api.deepseek.com/v1");
@@ -73,8 +76,7 @@ class AiModelSelectorTest {
 
         List<AiModelTarget> targets = selector.selectChatCandidates(null, false);
 
-        assertTrue(targets.stream().anyMatch(target -> "deepseek-chat".equals(target.id())));
-        assertTrue(targets.stream().anyMatch(target -> "stub-chat".equals(target.id())));
+        assertEquals(List.of("deepseek-chat"), targets.stream().map(AiModelTarget::id).toList());
     }
 
     /**
@@ -112,6 +114,31 @@ class AiModelSelectorTest {
 
         assertEquals("siliconflow-qwen3.5-122b-a10b", targets.getFirst().id());
         assertTrue(Boolean.TRUE.equals(targets.getFirst().candidate().getSupportsVision()));
+    }
+
+    /**
+     * 当系统配置表显式提供候选池时，选择器应优先使用动态候选而不是静态 YAML 骨架。
+     */
+    @Test
+    void selectChatCandidatesPrefersDynamicCandidatesFromSystemSettings() {
+        AiProperties properties = buildProperties(
+            candidate("static-deepseek", "deepseek", "deepseek-chat", 1, false)
+        );
+        DynamicAiProperties dynamicAiProperties = Mockito.mock(DynamicAiProperties.class);
+        Mockito.when(dynamicAiProperties.chatCandidates()).thenReturn(List.of(
+            candidate("dynamic-siliconflow", "siliconflow", "deepseek-ai/DeepSeek-V4-Flash", 1, false)
+        ));
+        Mockito.when(dynamicAiProperties.providers()).thenReturn(Map.of(
+            "siliconflow", provider("https://api.siliconflow.cn", "test-key"),
+            "deepseek", provider("https://api.deepseek.com/v1", "test-key"),
+            "stub", provider("stub://local", "")
+        ));
+
+        AiModelSelector selector = new AiModelSelector(properties, null, dynamicAiProperties);
+
+        List<AiModelTarget> targets = selector.selectChatCandidates(null, false);
+
+        assertEquals("dynamic-siliconflow", targets.getFirst().id());
     }
 
     /**

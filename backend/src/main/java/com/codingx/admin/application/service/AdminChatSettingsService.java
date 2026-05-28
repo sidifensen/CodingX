@@ -29,7 +29,9 @@ public class AdminChatSettingsService {
      */
     public List<ChatRuntimeSetting> listAllSettings() {
         runtimeSettingService.refresh();
-        return runtimeSettingService.listAll();
+        return runtimeSettingService.listAll().stream()
+            .map(this::sanitizeForAdmin)
+            .toList();
     }
 
     public ChatRuntimeSetting save(ChatRuntimeSetting setting) {
@@ -46,7 +48,7 @@ public class AdminChatSettingsService {
             .build();
         chatRuntimeSettingRepository.save(persisted);
         runtimeSettingService.refresh();
-        return persisted;
+        return sanitizeForAdmin(persisted);
     }
 
     /**
@@ -58,6 +60,21 @@ public class AdminChatSettingsService {
         if (!Boolean.TRUE.equals(setting.getSecret())) {
             return setting.toBuilder()
                 .secret(false)
+                .build();
+        }
+        runtimeSettingService.refresh();
+        ChatRuntimeSetting existing = runtimeSettingService.listAll().stream()
+            .filter(item -> StrUtil.equals(item.getSettingKey(), setting.getSettingKey()))
+            .findFirst()
+            .orElse(null);
+        if (existing != null && StrUtil.isBlank(setting.getSettingValue())) {
+            return setting.toBuilder()
+                .settingValue("")
+                .encryptedValue(existing.getEncryptedValue())
+                .maskedValue(existing.getMaskedValue())
+                .encryptionAlgorithm(existing.getEncryptionAlgorithm())
+                .encryptionKeyVersion(existing.getEncryptionKeyVersion())
+                .secret(true)
                 .build();
         }
         String plainText = StrUtil.nullToEmpty(setting.getSettingValue());
@@ -88,5 +105,20 @@ public class AdminChatSettingsService {
         if (setting.getSettingValue() == null && !Boolean.TRUE.equals(setting.getSecret())) {
             throw new BusinessException("SETTING_INVALID", ErrorMessageCatalog.CHAT_SETTING_VALUE_REQUIRED);
         }
+    }
+
+    /**
+     * 管理端返回前移除敏感项密文，只保留脱敏值与空白输入槽位。
+     * @param setting 原始配置。
+     * @return 适合管理端展示的配置。
+     */
+    private ChatRuntimeSetting sanitizeForAdmin(ChatRuntimeSetting setting) {
+        if (setting == null || !Boolean.TRUE.equals(setting.getSecret())) {
+            return setting;
+        }
+        return setting.toBuilder()
+            .settingValue("")
+            .encryptedValue(null)
+            .build();
     }
 }

@@ -39,13 +39,13 @@ const mockSettings = [
   },
   {
     id: '3',
-    settingKey: 'ai.routing.default_model',
-    settingValue: 'qwen-plus',
-    valueType: 'STRING',
+    settingKey: 'ai.routing.first_packet_timeout_ms',
+    settingValue: '60000',
+    valueType: 'LONG',
     categoryCode: 'ai.routing',
-    description: '默认模型',
+    description: '首包超时毫秒',
     sortNo: 3,
-    restartRequired: true,
+    restartRequired: false,
   },
   {
     id: '4',
@@ -65,6 +65,98 @@ const mockSettings = [
     categoryCode: 'chat.intent.guidance',
     description: '歧义引导分数比值阈值',
     sortNo: 5,
+    restartRequired: false,
+  },
+  {
+    id: '6',
+    settingKey: 'ai.providers.siliconflow.api_key',
+    settingValue: '',
+    valueType: 'STRING',
+    categoryCode: 'ai.providers',
+    description: '硅基流动接口密钥',
+    sortNo: 6,
+    restartRequired: false,
+    secret: true,
+    maskedValue: 'sk-****',
+  },
+  {
+    id: '7',
+    settingKey: 'ai.chat.candidates.10.id',
+    settingValue: 'siliconflow-deepseek-v4-flash',
+    valueType: 'STRING',
+    categoryCode: 'ai.candidates',
+    description: '候选 10 模型ID',
+    sortNo: 10,
+    restartRequired: false,
+  },
+  {
+    id: '8',
+    settingKey: 'ai.chat.candidates.10.provider',
+    settingValue: 'siliconflow',
+    valueType: 'STRING',
+    categoryCode: 'ai.candidates',
+    description: '候选 10 提供商',
+    sortNo: 20,
+    restartRequired: false,
+  },
+  {
+    id: '9',
+    settingKey: 'ai.chat.candidates.10.model',
+    settingValue: 'deepseek-ai/DeepSeek-V4-Flash',
+    valueType: 'STRING',
+    categoryCode: 'ai.candidates',
+    description: '候选 10 模型名称',
+    sortNo: 30,
+    restartRequired: false,
+  },
+  {
+    id: '10',
+    settingKey: 'ai.chat.candidates.10.priority',
+    settingValue: '1',
+    valueType: 'INTEGER',
+    categoryCode: 'ai.candidates',
+    description: '候选 10 优先级',
+    sortNo: 40,
+    restartRequired: false,
+  },
+  {
+    id: '11',
+    settingKey: 'ai.chat.candidates.20.id',
+    settingValue: 'qwen-plus',
+    valueType: 'STRING',
+    categoryCode: 'ai.candidates',
+    description: '候选 20 模型ID',
+    sortNo: 50,
+    restartRequired: false,
+  },
+  {
+    id: '12',
+    settingKey: 'ai.chat.candidates.20.provider',
+    settingValue: 'bailian',
+    valueType: 'STRING',
+    categoryCode: 'ai.candidates',
+    description: '候选 20 提供商',
+    sortNo: 60,
+    restartRequired: false,
+  },
+  {
+    id: '13',
+    settingKey: 'ai.chat.candidates.20.model',
+    settingValue: 'qwen-plus-latest',
+    valueType: 'STRING',
+    categoryCode: 'ai.candidates',
+    description: '候选 20 模型名称',
+    sortNo: 70,
+    restartRequired: false,
+  },
+  {
+    id: '14',
+    settingKey: 'ai.chat.candidates.20.priority',
+    settingValue: '2',
+    valueType: 'INTEGER',
+    categoryCode: 'ai.candidates',
+    description: '候选 20 优先级',
+    sortNo: 80,
     restartRequired: false,
   },
 ] as const;
@@ -148,5 +240,40 @@ describe('Settings page', () => {
 
     expect(screen.getByText('是否启用聊天歧义引导')).toBeInTheDocument();
     expect(screen.getByDisplayValue('0.8')).toHaveAttribute('type', 'number');
+  });
+
+  it('shows AI provider category and keeps secret inputs empty with preserve hint', async () => {
+    render(<Settings />);
+
+    await screen.findByRole('heading', { name: '系统配置' });
+
+    fireEvent.click(screen.getByRole('button', { name: /AI 提供商/ }));
+
+    expect(screen.getByText('AI 提供商表格编辑')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('留空表示保持不变，当前已配置：sk-****')).toBeInTheDocument();
+  });
+
+  it('renders candidate slots as structured cards', async () => {
+    render(<Settings />);
+
+    await screen.findByRole('heading', { name: '系统配置' });
+    fireEvent.click(screen.getByRole('button', { name: /模型候选池/ }));
+
+    expect(screen.getByText('候选模型表格编辑')).toBeInTheDocument();
+    expect(screen.getByTestId('setting-value-ai.chat.candidates.10.id')).toHaveValue('siliconflow-deepseek-v4-flash');
+    expect(screen.getByTestId('setting-value-ai.chat.candidates.20.id')).toHaveValue('qwen-plus');
+  });
+
+  it('reorders other candidates when one priority is raised', async () => {
+    render(<Settings />);
+
+    await screen.findByRole('heading', { name: '系统配置' });
+    fireEvent.click(screen.getByRole('button', { name: /模型候选池/ }));
+
+    const priorityInput = screen.getByTestId('setting-value-ai.chat.candidates.20.priority');
+    fireEvent.change(priorityInput, { target: { value: '1' } });
+
+    expect(screen.getByTestId('setting-value-ai.chat.candidates.20.priority')).toHaveValue(1);
+    expect(screen.getByTestId('setting-value-ai.chat.candidates.10.priority')).toHaveValue(2);
   });
 });

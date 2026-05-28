@@ -408,6 +408,16 @@ public final class ErrorMessageCatalog {
     public static final String WEB_SEARCH_BASE_URL_INVALID = "搜索服务地址不合法";
 
     /**
+     * 联网搜索不可用提示。
+     */
+    public static final String WEB_SEARCH_UNAVAILABLE = "联网搜索暂不可用，请检查搜索配置或稍后重试";
+
+    /**
+     * 联网搜索超时提示。
+     */
+    public static final String WEB_SEARCH_TIMEOUT = "联网搜索超时，请稍后重试";
+
+    /**
      * 模型提供方不支持提示。
      */
     public static final String AI_PROVIDER_UNSUPPORTED = "不支持的模型提供方";

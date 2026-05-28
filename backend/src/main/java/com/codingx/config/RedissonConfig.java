@@ -6,7 +6,6 @@ import org.redisson.api.RedissonClient;
 import org.redisson.client.codec.StringCodec;
 import org.redisson.config.Config;
 import org.redisson.config.SingleServerConfig;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.autoconfigure.data.redis.RedisProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -15,7 +14,6 @@ import org.springframework.context.annotation.Configuration;
  * 提供聊天门控所需的 RedissonClient，按 Spring Redis 配置自动拼装连接参数。
  */
 @Configuration
-@ConditionalOnProperty(prefix = "app.runtime", name = "use-redis-queue-gate", havingValue = "true")
 public class RedissonConfig {
 
     /**

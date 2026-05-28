@@ -12,6 +12,7 @@ import com.codingx.config.ChatMemoryProperties;
 import com.codingx.config.RuntimeProperties;
 import jakarta.annotation.PostConstruct;
 import java.util.List;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import lombok.RequiredArgsConstructor;
@@ -179,6 +180,23 @@ public class RuntimeSettingService {
     public String getString(String key, String fallback) {
         String raw = rawValue(key);
         return StrUtil.isBlank(raw) ? fallback : raw.trim();
+    }
+
+    /**
+     * 按前缀返回解密后的配置键值映射，供候选池与 provider endpoint 这类层级配置聚合使用。
+     * @param prefix 配置前缀。
+     * @return 命中的键值映射。
+     */
+    public Map<String, String> getByPrefix(String prefix) {
+        if (StrUtil.isBlank(prefix)) {
+            return Map.of();
+        }
+        Map<String, String> matched = new LinkedHashMap<>();
+        cache.entrySet().stream()
+            .filter(entry -> StrUtil.startWith(entry.getKey(), prefix))
+            .sorted(Map.Entry.comparingByKey())
+            .forEach(entry -> matched.put(entry.getKey(), rawValue(entry.getKey())));
+        return matched;
     }
 
     /**
@@ -452,24 +470,6 @@ public class RuntimeSettingService {
     public long aiFirstPacketTimeoutMs() {
         Long fallback = aiProperties.getSelection() == null ? null : aiProperties.getSelection().getFirstPacketTimeoutMs();
         return getLong("ai.selection.first_packet_timeout_ms", fallback == null ? 60_000L : fallback);
-    }
-
-    /**
-     * 获取模型路由默认模型 ID。
-     * @return 默认模型 ID。
-     */
-    public String aiDefaultModel() {
-        String fallback = aiProperties.getChat() == null ? null : aiProperties.getChat().getDefaultModel();
-        return getString("ai.chat.default_model", fallback);
-    }
-
-    /**
-     * 获取模型路由深度思考模型 ID。
-     * @return 深度思考模型 ID。
-     */
-    public String aiDeepThinkingModel() {
-        String fallback = aiProperties.getChat() == null ? null : aiProperties.getChat().getDeepThinkingModel();
-        return getString("ai.chat.deep_thinking_model", fallback);
     }
 
     /**

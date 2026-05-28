@@ -1,7 +1,7 @@
-package com.codingx.chat.infrastructure.persistence.mapper;
+package com.codingx.chat.infrastructure.persistence.mapper.intent;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
-import com.codingx.chat.infrastructure.persistence.dataobject.ChatRuntimeSettingDO;
+import com.codingx.chat.infrastructure.persistence.dataobject.intent.ChatRuntimeSettingDO;
 import org.apache.ibatis.annotations.Mapper;
 
 /**

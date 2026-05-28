@@ -41,23 +41,24 @@ class ConfigCryptoServiceTest {
     }
 
     /**
-     * 缺失主密钥时，服务初始化必须失败，避免后续把敏感值以伪安全方式落库。
+     * 合法主密钥初始化不应抛错，确保服务可在运行时按需执行敏感配置加解密。
      */
     @Test
-    void missingMasterKeyFailsFast() {
-        ConfigCryptoProperties properties = new ConfigCryptoProperties();
-
-        assertThrows(IllegalStateException.class, () -> new ConfigCryptoService(properties));
-    }
-
-    /**
-     * 合法主密钥初始化不应抛错，确保启动期可以显式校验配置健康度。
-     */
-    @Test
-    void validMasterKeyPassesValidation() {
+    void validMasterKeyCreatesService() {
         ConfigCryptoProperties properties = new ConfigCryptoProperties();
         properties.setMasterKey("MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=");
 
         assertDoesNotThrow(() -> new ConfigCryptoService(properties));
+    }
+
+    /**
+     * 缺失主密钥时允许应用启动，但首次执行加密必须失败，避免无敏感配置环境被强制阻断。
+     */
+    @Test
+    void missingMasterKeyFailsWhenEncrypting() {
+        ConfigCryptoProperties properties = new ConfigCryptoProperties();
+        ConfigCryptoService service = new ConfigCryptoService(properties);
+
+        assertThrows(IllegalStateException.class, () -> service.encrypt("plain-secret"));
     }
 }

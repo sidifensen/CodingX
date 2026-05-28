@@ -225,6 +225,8 @@ export interface AdminRuntimeSetting {
   settingKey: string;
   settingValue: string;
   valueType: string;
+  secret?: boolean;
+  maskedValue?: string;
   categoryCode?: string;
   description?: string;
   sortNo?: number;

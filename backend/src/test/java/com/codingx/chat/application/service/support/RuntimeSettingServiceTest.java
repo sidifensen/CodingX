@@ -2,6 +2,7 @@ package com.codingx.chat.application.service.support;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.when;
 
 import com.codingx.chat.domain.model.ChatRuntimeSetting;
@@ -13,6 +14,7 @@ import com.codingx.config.ChatMemoryProperties;
 import com.codingx.config.RuntimeProperties;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -185,5 +187,69 @@ class RuntimeSettingServiceTest {
         runtimeSettingService.init();
 
         assertThrows(IllegalStateException.class, () -> runtimeSettingService.webSearchApiKey());
+    }
+
+    /**
+     * AI 候选池和 provider endpoint 依赖按前缀聚合读取，系统配置服务必须返回同前缀下的完整键值映射。
+     */
+    @Test
+    void getByPrefixReturnsMatchingSettings() {
+        when(chatRuntimeSettingRepository.findAll()).thenReturn(List.of(
+            ChatRuntimeSetting.builder()
+                .settingKey("ai.chat.candidates.10.id")
+                .settingValue("siliconflow-deepseek-v4-flash")
+                .valueType("STRING")
+                .categoryCode("ai.candidates")
+                .description("候选模型 ID")
+                .build(),
+            ChatRuntimeSetting.builder()
+                .settingKey("ai.chat.candidates.10.provider")
+                .settingValue("siliconflow")
+                .valueType("STRING")
+                .categoryCode("ai.candidates")
+                .description("候选模型 provider")
+                .build(),
+            ChatRuntimeSetting.builder()
+                .settingKey("search.top_k")
+                .settingValue("5")
+                .valueType("INTEGER")
+                .categoryCode("search")
+                .description("搜索召回数量")
+                .build()
+        ));
+
+        runtimeSettingService.init();
+
+        Map<String, String> prefixedValues = runtimeSettingService.getByPrefix("ai.chat.candidates.");
+
+        assertEquals(2, prefixedValues.size());
+        assertEquals("siliconflow-deepseek-v4-flash", prefixedValues.get("ai.chat.candidates.10.id"));
+        assertEquals("siliconflow", prefixedValues.get("ai.chat.candidates.10.provider"));
+    }
+
+    /**
+     * 前缀聚合读取命中敏感配置时也必须先解密，避免动态 provider 配置拿到空值。
+     */
+    @Test
+    void getByPrefixDecryptsSecretValues() {
+        when(chatRuntimeSettingRepository.findAll()).thenReturn(List.of(
+            ChatRuntimeSetting.builder()
+                .settingKey("ai.providers.siliconflow.api_key")
+                .settingValue("")
+                .encryptedValue("cipher-provider-key")
+                .secret(true)
+                .valueType("STRING")
+                .categoryCode("ai.providers")
+                .description("硅基流动接口密钥")
+                .build()
+        ));
+        when(configCryptoService.decrypt("cipher-provider-key")).thenReturn("plain-provider-key");
+
+        runtimeSettingService.init();
+
+        Map<String, String> prefixedValues = runtimeSettingService.getByPrefix("ai.providers.siliconflow.");
+
+        assertTrue(prefixedValues.containsKey("ai.providers.siliconflow.api_key"));
+        assertEquals("plain-provider-key", prefixedValues.get("ai.providers.siliconflow.api_key"));
     }
 }

@@ -30,7 +30,7 @@ public class AiProperties {
     private String apiKey = "";
 
     /**
-     * 旧式默认聊天模型名。
+     * 旧式默认聊天模型名，仅作为历史兼容回退。
      */
     private String chatModel = "deepseek-chat";
 
@@ -91,14 +91,13 @@ public class AiProperties {
      */
     @Data
     public static class ChatModelGroup {
-
         /**
-         * 默认模型 ID。
+         * 历史兼容字段：保留旧测试与旧对象装配路径，但运行时不再依赖该值选模型。
          */
         private String defaultModel;
 
         /**
-         * 深度思考模式默认模型 ID。
+         * 历史兼容字段：保留旧测试与旧对象装配路径，但运行时不再依赖该值选模型。
          */
         private String deepThinkingModel;
 

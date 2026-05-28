@@ -1,7 +1,6 @@
 package com.codingx.chat.infrastructure.runtime;
 
 import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 
@@ -10,7 +9,6 @@ import org.springframework.stereotype.Component;
  */
 @Component
 @Qualifier("redisChatRuntimeStateStore")
-@ConditionalOnProperty(prefix = "app.runtime", name = "use-redis-state-store", havingValue = "true")
 public class RedisChatRuntimeStateStore implements ChatRuntimeStateStore {
 
     private static final String ACTIVE_PREFIX = "chat:active:";

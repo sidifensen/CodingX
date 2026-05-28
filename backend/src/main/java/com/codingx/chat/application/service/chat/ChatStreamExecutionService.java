@@ -6,6 +6,7 @@ import com.codingx.chat.domain.model.ChatExecutionRun;
 import com.codingx.chat.domain.model.ChatTraceRun;
 import com.codingx.chat.domain.repository.ChatConversationRepository;
 import com.codingx.chat.domain.repository.ChatExecutionRunRepository;
+import com.codingx.chat.domain.port.ChatStreamPublisher;
 import com.codingx.common.exception.ConflictException;
 import com.codingx.expert.domain.repository.ChatExpertRepository;
 import com.codingx.skill.domain.repository.ChatSkillRepository;
@@ -24,6 +25,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
+import com.codingx.chat.infrastructure.stream.NoopChatStreamPublisher;
 
 /**
  * 负责将聊天消息处理异步派发到后台线程，避免 SSE 入口阻塞整个 HTTP 请求。
@@ -42,6 +44,7 @@ public class ChatStreamExecutionService {
     private final ChatConversationRepository chatConversationRepository;
     private final ChatWorkspaceBindingService chatWorkspaceBindingService;
     private final TaskRepository taskRepository;
+    private final ChatStreamPublisher chatStreamPublisher;
     private final ExecutorService executor;
 
     /**
@@ -62,6 +65,7 @@ public class ChatStreamExecutionService {
         ChatConversationRepository chatConversationRepository,
         ChatWorkspaceBindingService chatWorkspaceBindingService,
         TaskRepository taskRepository,
+        ChatStreamPublisher chatStreamPublisher,
         @Qualifier("chatStreamExecutor")
         ExecutorService executor
     ) {
@@ -75,7 +79,40 @@ public class ChatStreamExecutionService {
         this.chatConversationRepository = chatConversationRepository;
         this.chatWorkspaceBindingService = chatWorkspaceBindingService;
         this.taskRepository = taskRepository;
+        this.chatStreamPublisher = chatStreamPublisher;
         this.executor = executor;
+    }
+
+    /**
+     * 兼容既有单测构造签名，默认注入空实现流发布器。
+     */
+    public ChatStreamExecutionService(
+        ChatApplicationService chatApplicationService,
+        ChatRuntimeGuardService chatRuntimeGuardService,
+        ConversationTraceRecordService conversationTraceRecordService,
+        ChatExecutionRunRepository chatExecutionRunRepository,
+        ChatMcpRepository chatMcpRepository,
+        ChatSkillRepository chatSkillRepository,
+        ChatExpertRepository chatExpertRepository,
+        ChatConversationRepository chatConversationRepository,
+        ChatWorkspaceBindingService chatWorkspaceBindingService,
+        TaskRepository taskRepository,
+        ExecutorService executor
+    ) {
+        this(
+            chatApplicationService,
+            chatRuntimeGuardService,
+            conversationTraceRecordService,
+            chatExecutionRunRepository,
+            chatMcpRepository,
+            chatSkillRepository,
+            chatExpertRepository,
+            chatConversationRepository,
+            chatWorkspaceBindingService,
+            taskRepository,
+            new NoopChatStreamPublisher(),
+            executor
+        );
     }
 
     /**
@@ -95,11 +132,29 @@ public class ChatStreamExecutionService {
      */
     public void dispatch(Long taskId, SendChatMessageCommand command, Long userId) {
         if (command.localOnly()) {
+            log.info(
+                "聊天派发: runId={}, 会话={}, 模式=本地, 深度思考={}, MCP数={}, 技能数={}, 专家={}",
+                taskId,
+                command.conversationId(),
+                command.deepThinking(),
+                sizeOf(command.mcpCodes()),
+                sizeOf(command.skillCodes()),
+                command.expertCode()
+            );
             dispatchLocalOnly(taskId, command, userId);
             return;
         }
         Long runId = taskId;
         LocalDateTime now = LocalDateTime.now();
+        log.info(
+            "聊天派发: runId={}, 会话={}, 模式=云端, 深度思考={}, MCP数={}, 技能数={}, 专家={}",
+            runId,
+            command.conversationId(),
+            command.deepThinking(),
+            sizeOf(command.mcpCodes()),
+            sizeOf(command.skillCodes()),
+            command.expertCode()
+        );
         Task task = createRunningTask(taskId, command, userId);
         // Task 是可变领域对象，保存时使用快照，避免后续终态变更污染已持久化的运行态语义。
         taskRepository.save(task.toBuilder().build());
@@ -130,7 +185,9 @@ public class ChatStreamExecutionService {
                 ChatExecutionContext.start(runId);
                 ConversationTraceContext.bind(traceRun);
                 bindToolWorkingDirectory(command, userId);
+                log.info("聊天执行开始");
                 chatApplicationService.sendMessage(command, userId);
+                log.info("聊天执行结束: runId={}, 会话={}, 状态=SUCCESS", runId, command.conversationId());
                 markTaskFinished(task, command.conversationId(), null);
             } catch (ConflictException exception) {
                 markRunRejected(runId, command.conversationId(), exception.getMessage());
@@ -139,10 +196,12 @@ public class ChatStreamExecutionService {
             } catch (IllegalStateException exception) {
                 markRunFailed(runId, command.conversationId(), exception);
                 markTaskFinished(task, command.conversationId(), exception);
+                chatStreamPublisher.publishError(command.conversationId(), exception.getMessage());
                 throw exception;
             } catch (Throwable throwable) {
                 markRunFailed(runId, command.conversationId(), throwable);
                 markTaskFinished(task, command.conversationId(), throwable);
+                chatStreamPublisher.publishError(command.conversationId(), throwable.getMessage());
                 throw throwable;
             } finally {
                 chatRuntimeGuardService.completeConversation(command.conversationId(), runId);
@@ -174,7 +233,9 @@ public class ChatStreamExecutionService {
             try {
                 ChatExecutionContext.start(runId);
                 bindToolWorkingDirectory(command, userId);
+                log.info("聊天执行开始");
                 chatApplicationService.sendMessage(command, userId);
+                log.info("聊天执行结束: runId={}, 会话={}, 状态=SUCCESS", runId, command.conversationId());
             } finally {
                 chatRuntimeGuardService.completeConversation(command.conversationId(), runId);
                 ChatExecutionContext.clear();
@@ -317,6 +378,13 @@ public class ChatStreamExecutionService {
         }
         Optional<Path> boundRepositoryPath = chatWorkspaceBindingService.findRepositoryPathByUserId(userId);
         boundRepositoryPath.ifPresent(ChatToolExecutionContext::bindToolWorkingDirectory);
+    }
+
+    /**
+     * 统一处理可空集合长度，避免日志调用点重复空判断。
+     */
+    private int sizeOf(java.util.Collection<?> values) {
+        return values == null ? 0 : values.size();
     }
 
     /**

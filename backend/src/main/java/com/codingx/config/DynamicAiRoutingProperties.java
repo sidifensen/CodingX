@@ -37,20 +37,5 @@ public class DynamicAiRoutingProperties {
         return runtimeSettingService.aiFirstPacketTimeoutMs();
     }
 
-    /**
-     * 获取默认聊天模型 ID。
-     * @return 默认聊天模型 ID。
-     */
-    public String defaultModel() {
-        return runtimeSettingService.aiDefaultModel();
-    }
-
-    /**
-     * 获取深度思考模型 ID。
-     * @return 深度思考模型 ID。
-     */
-    public String deepThinkingModel() {
-        return runtimeSettingService.aiDeepThinkingModel();
-    }
 }
 

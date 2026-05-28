@@ -14,7 +14,6 @@ import java.io.IOException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
-import lombok.RequiredArgsConstructor;
 import okhttp3.HttpUrl;
 import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
@@ -25,13 +24,13 @@ import okhttp3.ResponseBody;
 import okio.BufferedSource;
 import cn.hutool.json.JSONObject;
 import cn.hutool.json.JSONUtil;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 /**
  * 提供 DeepSeek 风格模型的流式 provider 实现。
  */
 @Component
-@RequiredArgsConstructor
 public class DeepSeekOkHttpChatClient implements AiProviderClient {
 
     private static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
@@ -55,6 +54,26 @@ public class DeepSeekOkHttpChatClient implements AiProviderClient {
      * 解析 OpenAI 风格 SSE 文本的通用解析器。
      */
     private final OpenAiStyleStreamParser openAiStyleStreamParser;
+
+    /**
+     * Spring 主构造器，显式注入动态 AI 配置，避免额外兼容构造影响 Bean 选择。
+     * @param okHttpClient HTTP 客户端。
+     * @param aiProperties 静态 AI 配置。
+     * @param dynamicAiProperties 动态 AI 配置。
+     * @param openAiStyleStreamParser 流解析器。
+     */
+    @Autowired
+    public DeepSeekOkHttpChatClient(
+        OkHttpClient okHttpClient,
+        AiProperties aiProperties,
+        DynamicAiProperties dynamicAiProperties,
+        OpenAiStyleStreamParser openAiStyleStreamParser
+    ) {
+        this.okHttpClient = okHttpClient;
+        this.aiProperties = aiProperties;
+        this.dynamicAiProperties = dynamicAiProperties;
+        this.openAiStyleStreamParser = openAiStyleStreamParser;
+    }
 
     /**
      * 兼容旧测试与旧调用签名，未显式注入动态配置时回退到静态 AI 配置。
@@ -82,7 +101,7 @@ public class DeepSeekOkHttpChatClient implements AiProviderClient {
             handler.onComplete();
             return new AiStreamSession(() -> {}, CompletableFuture.completedFuture(null));
         }
-        JSONObject requestBody = buildRequestBody(request);
+        JSONObject requestBody = buildRequestBody(request, target);
         AtomicBoolean cancelled = new AtomicBoolean(false);
         CompletableFuture<Void> completion = new CompletableFuture<>();
         Request httpRequest = new Request.Builder()
@@ -156,9 +175,9 @@ public class DeepSeekOkHttpChatClient implements AiProviderClient {
      * @param request 统一请求对象。
      * @return JSON 请求体。
      */
-    private JSONObject buildRequestBody(AiConversationRequest request) {
+    private JSONObject buildRequestBody(AiConversationRequest request, AiModelTarget target) {
         return JSONUtil.createObj()
-            .set("model", StrUtil.blankToDefault(request.preferredModel(), fallbackChatModel()))
+            .set("model", target != null && target.candidate() != null ? target.candidate().getModel() : targetModel(request))
             .set("stream", request.stream())
             .set("messages", request.messages().stream()
                 .map(this::toMessagePayload)
@@ -237,6 +256,10 @@ public class DeepSeekOkHttpChatClient implements AiProviderClient {
 
     private String fallbackChatModel() {
         return dynamicAiProperties == null ? aiProperties.getChatModel() : dynamicAiProperties.chatModel();
+    }
+
+    private String targetModel(AiConversationRequest request) {
+        return StrUtil.blankToDefault(request.preferredModel(), fallbackChatModel());
     }
 }
 

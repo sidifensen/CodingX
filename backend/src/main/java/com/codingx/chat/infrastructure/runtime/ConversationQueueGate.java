@@ -56,7 +56,7 @@ public class ConversationQueueGate {
         ObjectProvider<RedissonClient> redissonClientProvider
     ) {
         this(
-            runtimeProperties.isUseRedisQueueGate(),
+            true,
             runtimeProperties.getQueueMaxConcurrent(),
             runtimeProperties.getQueueAcquireTimeoutMs(),
             runtimeProperties.getQueuePollIntervalMs(),

@@ -10,16 +10,6 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public class RuntimeProperties {
 
     /**
-     * 是否启用 Redis 运行态存储，用于跨节点取消控制。
-     */
-    private boolean useRedisStateStore = false;
-
-    /**
-     * 是否启用 Redis 队列门控，用于跨节点统一并发控制。
-     */
-    private boolean useRedisQueueGate = false;
-
-    /**
      * 聊天链路允许的最大并发数。
      */
     private int queueMaxConcurrent = 2;
@@ -83,12 +73,12 @@ public class RuntimeProperties {
         /**
          * 搜索 provider 编码，目前支持 serper 与 tavily。
          */
-        private String provider = "serper";
+        private String provider = "bing";
 
         /**
          * 搜索接口地址。
          */
-        private String baseUrl = "";
+        private String baseUrl = "https://api.bing.microsoft.com/v7.0/search";
 
         /**
          * 搜索服务 API Key。

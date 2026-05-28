@@ -231,7 +231,7 @@ export default function Sidebar({
           <NavItem id="automation" label="自动化" icon={Bot} />
         </nav>
 
-        <div className="flex-1 overflow-y-auto pb-4">
+        <div className="sidebar-scrollbar flex-1 overflow-y-auto pb-4">
           {authSession ? (
             <ConversationHistory
               workspaceGroups={workspaceGroups}
@@ -546,7 +546,7 @@ function ConversationHistory({
             const RuntimeIcon = getWorkspaceRuntimeIcon(group.runtimeTarget, group.groupType);
             return (
               <section key={group.partitionKey}>
-                <div className="flex min-h-10 w-full items-center justify-between gap-3 py-1.5">
+                <div className="group/workspace-header flex min-h-11 w-full items-center justify-between gap-3 rounded-lg bg-surface-container/55 px-1 py-1.5 transition-colors hover:bg-surface-container">
                   <button
                     type="button"
                     aria-label={`${isGroupCollapsed ? '展开' : '折叠'}工作空间 ${group.workspaceLabel} 会话`}
@@ -557,7 +557,7 @@ function ConversationHistory({
                       }
                       handleToggleGroupCollapse(group.partitionKey);
                     }}
-                    className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-md px-0 py-0 text-left transition-colors hover:bg-surface-container active:bg-surface-container-high"
+                    className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-md px-0 py-0 text-left"
                   >
                     <RuntimeIcon
                       size={14}
@@ -595,7 +595,7 @@ function ConversationHistory({
                         groupType: group.groupType,
                       })
                     }
-                    className="mr-1 inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-md text-muted transition-colors hover:bg-surface-container hover:text-foreground"
+                    className="mr-1 inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-md text-muted transition-colors hover:bg-surface-container-high hover:text-foreground"
                   >
                     <Plus size={15} />
                   </button>
@@ -647,7 +647,7 @@ function ConversationHistory({
                                 className={`group flex cursor-pointer items-center justify-between gap-3 rounded-xl border px-3 py-1.5 transition-[border-color,background-color,box-shadow] duration-200 ${
                                   isActive
                                     ? 'border-border-selected bg-surface-selected shadow-sm'
-                                    : 'border-transparent hover:border-border-active hover:bg-surface-container-high active:border-border-active active:bg-surface-container-high'
+                                    : 'border-transparent hover:border-border-active hover:bg-surface-selected active:border-border-active active:bg-surface-selected'
                                 }`}
                               >
                                 {/* 让会话标题与工作空间标题文字起点对齐，并增强选中态可辨识度。 */}

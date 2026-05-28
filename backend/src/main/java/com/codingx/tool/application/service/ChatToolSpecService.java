@@ -35,6 +35,9 @@ public class ChatToolSpecService {
     private static final String EXEC_COMMAND_MODEL_GUIDANCE = """
         后台命令使用与 shell_command 相同的命令解释器；Windows 环境是 Windows PowerShell，请避免 Bash 专属语法，交互输入通过 write_stdin 写入。
         """.trim();
+    private static final String APPLY_PATCH_MODEL_GUIDANCE = """
+        补丁路径必须基于当前工具工作目录；优先使用相对路径，例如 diary/index.html。不要编造 C:\\workspace 等虚拟根目录；如果已经从工具结果拿到工作目录内绝对路径，也必须确认它属于当前工作目录。
+        """.trim();
 
     private final ChatToolRepository chatToolRepository;
     private final ChatToolRegistry chatToolRegistry;
@@ -94,7 +97,7 @@ public class ChatToolSpecService {
                 List.of("sessionId", "text")
             );
             case "apply_patch" -> objectSchema(
-                Map.of("patch", stringSchema("Codex Begin Patch 或标准 unified diff 补丁文本")),
+                Map.of("patch", stringSchema("Codex Begin Patch 或标准 unified diff 补丁文本。" + APPLY_PATCH_MODEL_GUIDANCE)),
                 List.of("patch")
             );
             // view_image 既要兼容本地调试图片，也要兼容模型直接传入的远程图片 URL。
@@ -140,6 +143,9 @@ public class ChatToolSpecService {
         }
         if (StrUtil.equals(toolCode, "exec_command")) {
             return baseDescription + "。" + EXEC_COMMAND_MODEL_GUIDANCE;
+        }
+        if (StrUtil.equals(toolCode, "apply_patch")) {
+            return baseDescription + "。" + APPLY_PATCH_MODEL_GUIDANCE;
         }
         return baseDescription;
     }

@@ -4846,6 +4846,11 @@ function patchLatestAssistantReplayPanels(
     isTargetConversationReplay &&
     previousReplayContent.length > 0 &&
     previousReplayContent.length > nextReplayContent.length;
+  const shouldPreservePreviousTimeline =
+    options.preferPreviousContent === true &&
+    isTargetConversationReplay &&
+    (previousPanelState.timelineItems?.length ?? 0) > 0 &&
+    (latestAssistantMessage.timelineItems?.length ?? 0) === 0;
   const nextContent = shouldPreserveReplayContent
     ? previousPanelState.content
     : latestAssistantMessage.content;
@@ -4886,7 +4891,7 @@ function patchLatestAssistantReplayPanels(
     latestAssistantMessage.timelineItems,
     previousPanelState.timelineItems,
     nextProcessCards,
-    shouldPreserveReplayContent,
+    shouldPreserveReplayContent || shouldPreservePreviousTimeline,
   );
   const shouldPatch =
     (nextMcpCalls && nextMcpCalls.length > 0) !=

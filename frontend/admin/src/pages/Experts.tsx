@@ -247,9 +247,9 @@ function ExpertEditDialog({
         role="dialog"
         aria-modal="true"
         aria-label={mode === 'create' ? '新增专家' : '编辑专家'}
-        className="max-h-[88vh] w-full max-w-3xl overflow-y-auto rounded-2xl border border-border-hairline bg-surface-container-lowest shadow-2xl"
+        className="flex max-h-[88vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-border-hairline bg-surface-container-lowest shadow-2xl"
       >
-        <div className="sticky top-0 z-10 flex items-start justify-between gap-md border-b border-border-hairline bg-surface-container-lowest px-lg py-md">
+        <div className="flex items-start justify-between gap-md border-b border-border-hairline bg-surface-container-lowest px-lg py-md">
           <div>
             <h3 className="font-title-md text-title-md text-ink">{mode === 'create' ? '新增专家' : '编辑专家'}</h3>
             <p className="mt-1 text-body-sm text-secondary">维护专家编码、示例问题和提示词。</p>
@@ -264,30 +264,36 @@ function ExpertEditDialog({
           </button>
         </div>
 
-        <form className="space-y-lg p-lg" onSubmit={handleSubmit}>
-          {formError ? (
-            <div className="rounded-xl border border-error bg-error-container px-md py-sm text-sm text-on-error-container">
-              {formError}
-            </div>
-          ) : null}
+        {/* 业务意图：弹窗外壳固定高度，只让中间表单区滚动，避免标题和操作按钮随着内容一起滑走。 */}
+        <form className="flex min-h-0 flex-1 flex-col" onSubmit={handleSubmit}>
+          <div
+            data-testid="expert-edit-dialog-body"
+            className="min-h-0 flex-1 space-y-lg overflow-y-auto overscroll-y-contain p-lg"
+          >
+            {formError ? (
+              <div className="rounded-xl border border-error bg-error-container px-md py-sm text-sm text-on-error-container">
+                {formError}
+              </div>
+            ) : null}
 
-          <div className="grid gap-md md:grid-cols-2">
-            <TextField id="expert-code" label="专家编码" value={form.expertCode} disabled={mode === 'edit'} onChange={(value) => updateField('expertCode', value)} />
-            <TextField id="expert-display-name" label="专家名称" value={form.displayName} onChange={(value) => updateField('displayName', value)} />
-            <TextField id="expert-category" label="分类" value={form.category} onChange={(value) => updateField('category', value)} />
-            <TextField id="expert-sort-no" label="排序" type="number" value={form.sortNo} onChange={(value) => updateField('sortNo', value)} />
-            <TextField id="expert-tags-json" label="标签JSON" value={form.tagsJson} onChange={(value) => updateField('tagsJson', value)} />
-            <label className="flex items-center gap-sm rounded-xl border border-border-hairline bg-surface-container-lowest px-md py-sm text-ink">
-              <input type="checkbox" checked={form.enabled} onChange={(event) => updateField('enabled', event.target.checked)} />
-              启用专家
-            </label>
+            <div className="grid gap-md md:grid-cols-2">
+              <TextField id="expert-code" label="专家编码" value={form.expertCode} disabled={mode === 'edit'} onChange={(value) => updateField('expertCode', value)} />
+              <TextField id="expert-display-name" label="专家名称" value={form.displayName} onChange={(value) => updateField('displayName', value)} />
+              <TextField id="expert-category" label="分类" value={form.category} onChange={(value) => updateField('category', value)} />
+              <TextField id="expert-sort-no" label="排序" type="number" value={form.sortNo} onChange={(value) => updateField('sortNo', value)} />
+              <TextField id="expert-tags-json" label="标签JSON" value={form.tagsJson} onChange={(value) => updateField('tagsJson', value)} />
+              <label className="flex items-center gap-sm rounded-xl border border-border-hairline bg-surface-container-lowest px-md py-sm text-ink">
+                <input type="checkbox" checked={form.enabled} onChange={(event) => updateField('enabled', event.target.checked)} />
+                启用专家
+              </label>
+            </div>
+
+            <TextAreaField id="expert-description" label="专家描述" value={form.description} rows={3} onChange={(value) => updateField('description', value)} />
+            <TextAreaField id="expert-preset-question" label="示例问题" value={form.presetQuestion} rows={3} onChange={(value) => updateField('presetQuestion', value)} />
+            <TextAreaField id="expert-system-prompt" label="系统提示词" value={form.systemPrompt} rows={8} onChange={(value) => updateField('systemPrompt', value)} />
           </div>
 
-          <TextAreaField id="expert-description" label="专家描述" value={form.description} rows={3} onChange={(value) => updateField('description', value)} />
-          <TextAreaField id="expert-preset-question" label="示例问题" value={form.presetQuestion} rows={3} onChange={(value) => updateField('presetQuestion', value)} />
-          <TextAreaField id="expert-system-prompt" label="系统提示词" value={form.systemPrompt} rows={8} onChange={(value) => updateField('systemPrompt', value)} />
-
-          <div className="flex flex-wrap justify-end gap-sm">
+          <div className="flex flex-wrap justify-end gap-sm border-t border-border-hairline bg-surface-container-lowest px-lg py-md">
             <button
               type="button"
               onClick={onClose}

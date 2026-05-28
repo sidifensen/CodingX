@@ -179,14 +179,14 @@ describe('Sidebar conversation collapse behavior', () => {
     expect(screen.getByTestId('workspace-runtime-icon-history')).toBeInTheDocument();
   });
 
-  it('会话项 hover 态应具备高亮边框背景，展开按钮应为无边框紧凑样式', () => {
+  it('会话项 hover 态应复用选中态背景，展开按钮应为无边框紧凑样式', () => {
     render(<Sidebar {...createSidebarProps()} />);
 
     const conversationButton = screen.getByRole('button', { name: '会话 1' });
     const conversationRow = conversationButton.closest('div[class*=\"rounded-xl border\"]');
     expect(conversationRow?.className).toContain('border-transparent');
     expect(conversationRow?.className).toContain('hover:border-border-active');
-    expect(conversationRow?.className).toContain('hover:bg-surface-container-high');
+    expect(conversationRow?.className).toContain('hover:bg-surface-selected');
 
     const expandButton = screen.getByRole('button', { name: '展开显示' });
     expect(expandButton.className).toContain('inline-flex');

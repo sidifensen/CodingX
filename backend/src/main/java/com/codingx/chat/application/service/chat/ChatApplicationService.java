@@ -53,6 +53,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.atomic.AtomicReference;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 
@@ -65,6 +66,7 @@ import org.springframework.stereotype.Service;
  */
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class ChatApplicationService {
 
     /** 会话聚合仓储，负责读取与更新会话主状态（归属、标题、最后活跃时间等） */
@@ -240,6 +242,7 @@ public class ChatApplicationService {
         boolean mcpEnabled = command.mcpCodes() != null && !command.mcpCodes().isEmpty();
         List<SubQuestionIntentDecision> subQuestionDecisions = resolveSubQuestionDecisions(rewriteResult, mcpEnabled);
         ConversationIntentDecision intentDecision = primaryIntentDecision(subQuestionDecisions);
+        logChatDecision("继续生成", command, runId, intentDecision, rewriteResult);
         Optional<SubQuestionIntentDecision> clarifyDecision = firstDecisionWithAction(
             subQuestionDecisions,
             ConversationIntentAction.CLARIFY
@@ -338,6 +341,10 @@ public class ChatApplicationService {
         long nextSequenceNo = executeMcpDecisions(subQuestionDecisions, command, runId, history, 1L);
         List<String> searchQuestions = searchQuestions(subQuestionDecisions);
         if (CollUtil.isNotEmpty(searchQuestions)) {
+            log.info(
+                "搜索决策: 子问题数={}",
+                searchQuestions.size()
+            );
             searchReferences = executeSearchQuestions(
                 searchQuestions,
                 runId,
@@ -360,6 +367,14 @@ public class ChatApplicationService {
             command.skillCodes(),
             command.expertCode(),
             searchReferences
+        );
+        log.info(
+            "模型调用: 深度思考={}, 技能数={}, 专家={}, 历史条数={}, 搜索引用数={}",
+            command.deepThinking(),
+            sizeOf(command.skillCodes()),
+            command.expertCode(),
+            aiHistory.size(),
+            searchReferences.size()
         );
         tokenCounterService.estimateConversationTokens(aiHistory);
         final Long activeRunId = runId;
@@ -616,6 +631,7 @@ public class ChatApplicationService {
         boolean mcpEnabled = command.mcpCodes() != null && !command.mcpCodes().isEmpty();
         List<SubQuestionIntentDecision> subQuestionDecisions = resolveSubQuestionDecisions(rewriteResult, mcpEnabled);
         ConversationIntentDecision intentDecision = primaryIntentDecision(subQuestionDecisions);
+        logChatDecision("发送消息", command, runId, intentDecision, rewriteResult);
         Optional<SubQuestionIntentDecision> clarifyDecision = firstDecisionWithAction(
             subQuestionDecisions,
             ConversationIntentAction.CLARIFY
@@ -714,6 +730,10 @@ public class ChatApplicationService {
         long nextSequenceNo = executeMcpDecisions(subQuestionDecisions, command, runId, history, 1L);
         List<String> searchQuestions = searchQuestions(subQuestionDecisions);
         if (CollUtil.isNotEmpty(searchQuestions)) {
+            log.info(
+                "搜索决策: 子问题数={}",
+                searchQuestions.size()
+            );
             searchReferences = executeSearchQuestions(
                 searchQuestions,
                 runId,
@@ -736,6 +756,14 @@ public class ChatApplicationService {
             command.skillCodes(),
             command.expertCode(),
             searchReferences
+        );
+        log.info(
+            "模型调用: 深度思考={}, 技能数={}, 专家={}, 历史条数={}, 搜索引用数={}",
+            command.deepThinking(),
+            sizeOf(command.skillCodes()),
+            command.expertCode(),
+            aiHistory.size(),
+            searchReferences.size()
         );
         tokenCounterService.estimateConversationTokens(aiHistory);
         final Long activeRunId = runId;
@@ -856,6 +884,7 @@ public class ChatApplicationService {
         String rewrittenQuestion = rewriteResult.rewrite();
         boolean mcpEnabled = command.mcpCodes() != null && !command.mcpCodes().isEmpty();
         ConversationIntentDecision intentDecision = conversationIntentService.route(rewrittenQuestion, mcpEnabled);
+        logChatDecision("本地消息", command, runId, intentDecision, rewriteResult);
         if (intentDecision.action() == ConversationIntentAction.CLARIFY) {
             chatStreamPublisher.publishAssistantCompleted(
                 command.conversationId(),
@@ -893,6 +922,14 @@ public class ChatApplicationService {
             command.skillCodes(),
             command.expertCode(),
             List.of()
+        );
+        log.info(
+            "模型调用: 深度思考={}, 技能数={}, 专家={}, 历史条数={}, 搜索引用数={}",
+            command.deepThinking(),
+            sizeOf(command.skillCodes()),
+            command.expertCode(),
+            aiHistory.size(),
+            0
         );
         tokenCounterService.estimateConversationTokens(aiHistory);
         try {
@@ -942,6 +979,40 @@ public class ChatApplicationService {
 
     private Long currentRunId(Long conversationId) {
         return ChatExecutionContext.currentRunId().orElse(conversationId);
+    }
+
+    /**
+     * 打印聊天主流程分支决策，只输出短字段，方便定位本轮进入哪个能力链路。
+     */
+    private void logChatDecision(
+        String stage,
+        SendChatMessageCommand command,
+        Long runId,
+        ConversationIntentDecision intentDecision,
+        ConversationRewriteResult rewriteResult
+    ) {
+        log.info(
+            "聊天决策: 阶段={}, 动作={}, 意图={}, 改写后问题={}, 拆分={}",
+            stage,
+            intentDecision.action(),
+            intentDecision.intentCode(),
+            logPreview(rewriteResult.rewrite()),
+            rewriteResult.shouldSplit()
+        );
+    }
+
+    /**
+     * 统一处理可空集合长度，避免日志调用点重复空判断。
+     */
+    private int sizeOf(java.util.Collection<?> values) {
+        return values == null ? 0 : values.size();
+    }
+
+    /**
+     * 日志文本只保留短预览，避免用户长输入或模型参数撑大单行日志。
+     */
+    private String logPreview(String text) {
+        return StrUtil.maxLength(text, 120);
     }
 
     /**
@@ -1012,6 +1083,11 @@ public class ChatApplicationService {
     ) {
         List<ChatToolSpec> toolSpecs = resolveModelVisibleToolSpecs(initialAiHistory, currentMessageAttachments);
         List<ChatMessage> currentHistory = new ArrayList<>(initialAiHistory);
+        log.info(
+            "模型工具决策: 可见工具数={}, 调用模式={}",
+            toolSpecs.size(),
+            toolSpecs.isEmpty() ? "普通流式" : "工具调用"
+        );
         if (toolSpecs.isEmpty()) {
             // 业务约束：没有模型可见工具时必须走普通流式契约，兼容未适配工具调用的 provider 与旧测试桩。
             aiChatClient.streamChat(currentHistory, command.deepThinking(), buildStreamHandler(
@@ -1032,6 +1108,7 @@ public class ChatApplicationService {
         int publishedAssistantContextLength = 0;
         for (int round = 0; round < maxToolRounds; round++) {
             List<AiToolCall> toolCalls = new ArrayList<>();
+            log.info("模型工具轮次: 轮次={}", round + 1);
             aiChatClient.streamChatWithTools(currentHistory, command.deepThinking(), toolSpecs, buildStreamHandler(
                 command,
                 builder,
@@ -1043,7 +1120,13 @@ public class ChatApplicationService {
                 activeRunId,
                 toolCalls
             ));
-        if (streamError[0] != null || toolCalls.isEmpty()) {
+            if (streamError[0] != null || toolCalls.isEmpty()) {
+                log.info(
+                    "模型工具轮次结束: 轮次={}, 工具调用数={}, 流错误={}",
+                    round + 1,
+                    toolCalls.size(),
+                    streamError[0] == null ? null : streamError[0].getMessage()
+                );
                 return;
             }
             // 工具重入后模型会继续追加同一条助手消息；已流出的正文和真实 thinking 不能清空。
@@ -1239,9 +1322,18 @@ public class ChatApplicationService {
             ChatToolExecutionContext.bindToolWorkingDirectory(workspacePath);
         }
         LocalDateTime startedAt = LocalDateTime.now();
+        log.info(
+            "本地工具执行: 工具={}",
+            toolCall.toolCode()
+        );
         publishLocalToolCallEvent(command.conversationId(), toolCall, "start", startedAt, null, null);
         try {
             ChatToolExecutionResult toolResult = chatToolExecutionService.execute(toolCall.toolCode(), toolCall.arguments());
+            log.info(
+                "本地工具完成: 工具={}, 输出长度={}",
+                toolCall.toolCode(),
+                StrUtil.length(toolResult.content())
+            );
             ChatExecutionStep toolStep = ChatExecutionStep.builder()
                 .id(cn.hutool.core.util.IdUtil.getSnowflakeNextId())
                 .runId(runId)
@@ -1461,6 +1553,14 @@ public class ChatApplicationService {
         contextBuilder.append("工具标识：").append(StrUtil.blankToDefault(toolResult.toolCode(), "unknown")).append('\n');
         contextBuilder.append("工具输出：").append(normalizeEvidenceText(toolResult.content(), 4000)).append('\n');
         if (toolResult.metadata() != null && !toolResult.metadata().isEmpty()) {
+            String workingDirectory = Optional.ofNullable(toolResult.metadata().get("workingDirectory"))
+                .map(String::valueOf)
+                .filter(StrUtil::isNotBlank)
+                .orElse(null);
+            if (StrUtil.isNotBlank(workingDirectory)) {
+                contextBuilder.append("当前真实工作目录：").append(workingDirectory).append('\n');
+                contextBuilder.append("路径约束：后续读写文件必须基于当前真实工作目录；优先使用相对路径，不要编造 C:\\workspace 等虚拟根目录。\n");
+            }
             contextBuilder.append("工具元数据：")
                 .append(normalizeEvidenceText(cn.hutool.json.JSONUtil.toJsonStr(toolResult.metadata()), 2000));
         }
@@ -1496,6 +1596,14 @@ public class ChatApplicationService {
             .updatedAt(java.time.LocalDateTime.now())
             .build();
         chatExecutionRunRepository.save(run);
+        log.info(
+            "执行收口: 状态={}, 意图={}, 搜索={}, 产物={}, 错误={}",
+            status,
+            intentCode,
+            searchEnabled,
+            artifactEnabled,
+            StrUtil.maxLength(errorMessage, 120)
+        );
     }
 
     /**
@@ -1827,6 +1935,11 @@ public class ChatApplicationService {
         String question = subQuestionDecision.question();
         ChatIntentNode intentNode = resolveMcpIntentNode(intentDecision);
         Long mcpCallId = IdUtil.getSnowflakeNextId();
+        log.info(
+            "MCP执行: 工具={}, 问题={}",
+            intentNode.getMcpToolId(),
+            logPreview(question)
+        );
         LocalDateTime mcpStartedAt = LocalDateTime.now();
         Map<String, Object> mcpParams = new LinkedHashMap<>();
         mcpParams.put("question", question);
@@ -1862,6 +1975,11 @@ public class ChatApplicationService {
             intentNode.getMcpToolId(),
             question,
             progressListener
+        );
+        log.info(
+            "MCP完成: 工具={}, 输出长度={}",
+            toolResult.toolId(),
+            StrUtil.length(toolResult.content())
         );
         ChatExecutionStep mcpStep = ChatExecutionStep.builder()
             .id(IdUtil.getSnowflakeNextId())
@@ -1949,6 +2067,12 @@ public class ChatApplicationService {
         if (searchQuestions.size() > maxParallelQuestions) {
             effectiveQuestions = searchQuestions.subList(0, maxParallelQuestions);
         }
+        log.info(
+            "搜索执行: 请求子问题数={}, 实际子问题数={}, 并发上限={}",
+            searchQuestions.size(),
+            effectiveQuestions.size(),
+            maxParallelQuestions
+        );
         long sequenceNo = startSequenceNo;
         for (String searchQuestion : effectiveQuestions) {
             ChatExecutionStep searchStep = ChatExecutionStep.builder()
@@ -1984,7 +2108,9 @@ public class ChatApplicationService {
                 merged.putIfAbsent(key, candidate);
             }
         }
-        return new ArrayList<>(merged.values());
+        List<SearchReferenceCandidate> references = new ArrayList<>(merged.values());
+        log.info("搜索完成: 引用数={}", references.size());
+        return references;
     }
 
     /**

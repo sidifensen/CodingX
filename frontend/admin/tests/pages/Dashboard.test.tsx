@@ -100,7 +100,7 @@ describe('Dashboard page', () => {
       </MemoryRouter>,
     );
 
-    expect(await screen.findByRole('heading', { name: 'Dashboard' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: '工作台' })).toBeInTheDocument();
     expect(screen.getByText('核心指标')).toBeInTheDocument();
     expect(screen.getByText('流量概览')).toBeInTheDocument();
     expect(screen.getByText('趋势分析')).toBeInTheDocument();

@@ -21,6 +21,7 @@ import {
   Paperclip,
   FolderOpen,
   Monitor,
+  Plug,
   Search,
   Pencil,
   RotateCcw,
@@ -1123,9 +1124,12 @@ export default function ChatView({
             </div>
           ) : (
             <div className="mx-auto flex max-w-4xl flex-col gap-6">
-              {messages.map((message) => {
+              {messages.map((message, index) => {
                 const isAssistant = message.role === 'ASSISTANT';
                 const isLatestMessage = message.id === messages[messages.length - 1]?.id;
+                const referenceMessageId = isAssistant
+                  ? resolveAssistantReferenceMessageId(messages, index)
+                  : null;
                 const messageContent =
                   message.content || (message.status === 'streaming' ? '正在生成回答...' : '');
                 // 业务约束：AI 回复在流式生成中禁止露出复制、反馈等操作，只有结束、停止或异常后才允许操作。
@@ -1154,25 +1158,23 @@ export default function ChatView({
                             content={messageContent}
                             processCards={message.processCards}
                             timelineItems={message.timelineItems}
+                            references={references}
+                            referenceMessageId={referenceMessageId}
                           />
-                          <div className="mt-3 space-y-1.5">
-                            <AssistantMessageActions
-                              messageId={message.id}
-                              conversationId={message.conversationId}
-                              content={messageContent}
-                              isLatestAssistantMessage={message.id === latestAssistantMessageId}
-                              userVote={message.userVote}
-                              onStartShareSelection={startShareSelection}
-                              onRegenerateConversation={regenerateConversation}
-                            />
-                            {/* 业务意图：搜索来源必须紧跟在消息操作区之后，优先落在倒赞按钮后面，避免被后续提示打断阅读路径。 */}
-                            {message.searchProgress?.items?.length ? (
-                              <SearchProgressPanel
+                          {shouldShowAssistantActions ? (
+                            <div className="mt-3 space-y-1.5">
+                              <AssistantMessageActions
                                 messageId={message.id}
-                                progress={message.searchProgress}
+                                conversationId={message.conversationId}
+                                content={messageContent}
+                                isLatestAssistantMessage={message.id === latestAssistantMessageId}
+                                userVote={message.userVote}
+                                searchProgress={message.searchProgress}
+                                onStartShareSelection={startShareSelection}
+                                onRegenerateConversation={regenerateConversation}
                               />
-                            ) : null}
-                          </div>
+                            </div>
+                          ) : null}
                           {message.errorMessage ? (
                             <div className="mt-3 rounded-2xl border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-300">
                               {message.errorMessage}
@@ -1233,7 +1235,7 @@ export default function ChatView({
           <div
             ref={chatInputDockRef}
             data-testid="chat-input-dock"
-            className="absolute bottom-0 left-0 right-0 bg-background/88 px-4 pb-6 pt-4 backdrop-blur-xl md:px-8"
+            className="absolute bottom-0 left-0 right-0 z-30 bg-background px-4 pb-6 pt-4 shadow-[0_-18px_42px_rgba(0,0,0,0.18)] md:px-8"
           >
             <div className="mx-auto max-w-4xl">
             {streamQueueState ? (
@@ -1951,9 +1953,10 @@ export default function ChatView({
           onSelectAll={() =>
             setShareSelectionState({
               isActive: true,
-              selectedAssistantMessageIds: shareSelectionRounds.map(
-                (round) => round.assistantMessage.id,
-              ),
+              selectedAssistantMessageIds:
+                shareSelectionState.selectedAssistantMessageIds.length === shareSelectionRounds.length
+                  ? []
+                  : shareSelectionRounds.map((round) => round.assistantMessage.id),
             })
           }
           onCancel={cancelShareSelection}
@@ -1969,9 +1972,10 @@ export default function ChatView({
           onSelectAll={() =>
             setDeleteSelectionState({
               isActive: true,
-              selectedAssistantMessageIds: shareSelectionRounds.map(
-                (round) => round.assistantMessage.id,
-              ),
+              selectedAssistantMessageIds:
+                deleteSelectionState.selectedAssistantMessageIds.length === shareSelectionRounds.length
+                  ? []
+                  : shareSelectionRounds.map((round) => round.assistantMessage.id),
             })
           }
           onCancel={cancelDeleteSelection}
@@ -2157,6 +2161,22 @@ type SearchSourceDisplayItem = {
   snippet?: string;
 };
 
+type CitationReferenceLink = {
+  href: string;
+  title: string;
+};
+
+type MarkdownNode = {
+  type?: string;
+  value?: unknown;
+  children?: MarkdownNode[];
+  url?: string;
+  title?: string;
+  data?: {
+    hProperties?: Record<string, string>;
+  };
+};
+
 /**
  * 将助手消息中的搜索来源渲染成消息尾部的可折叠列表，避免把标题、站点名和链接压缩成一行纯文本。
  * 这里直接使用消息内的 `searchProgress`，保证流式阶段和历史回放阶段都能看到一致的来源展示。
@@ -2164,9 +2184,11 @@ type SearchSourceDisplayItem = {
 function SearchProgressPanel({
   messageId,
   progress,
+  className = 'mb-1.5',
 }: {
   messageId: string;
   progress: MessageSearchProgress;
+  className?: string;
 }) {
   const visibleItems = progress.items.filter((item) => {
     return [item.title, item.url, item.siteName].some((value) => String(value ?? '').trim().length > 0);
@@ -2180,7 +2202,7 @@ function SearchProgressPanel({
   }
 
   return (
-    <section data-testid={`search-progress-panel-${messageId}`} className="mb-1.5">
+    <section data-testid={`search-progress-panel-${messageId}`} className={className}>
       <button
         type="button"
         data-testid={`search-progress-toggle-${messageId}`}
@@ -2198,12 +2220,13 @@ function SearchProgressPanel({
         />
         <span className="whitespace-nowrap">搜索来源</span>
         <span className="text-border">·</span>
-        <span className="whitespace-nowrap text-foreground">{getSearchProgressStatusLabel(progress.status)}</span>
-        <span className="text-border">·</span>
         <span className="whitespace-nowrap">{visibleItems.length} 条</span>
       </button>
       {isExpanded ? (
-        <div id={contentId} className="pl-4 pt-2">
+        <div
+          id={contentId}
+          className="mt-3 basis-full w-full rounded-xl border border-border bg-surface-container px-3 py-2 shadow-[0_12px_32px_rgba(0,0,0,0.16)]"
+        >
           <ul className="max-h-[280px] space-y-1.5 overflow-y-auto pl-3 pr-4 [scrollbar-gutter:stable]">
             {visibleItems.map((item) => (
               <li key={item.id}>
@@ -2408,37 +2431,31 @@ function formatSearchSourceDisplayUrl(url: string): string {
 }
 
 /**
- * 搜索面板标题需要清楚表达当前阶段，避免用户把“正在加载”误解为结果为空。
- */
-function getSearchProgressStatusLabel(status: MessageSearchProgress['status']): string {
-  switch (status) {
-    case 'running':
-      return '正在检索来源';
-    case 'completed':
-      return '来源已获取';
-    case 'cancelled':
-      return '检索已取消';
-    case 'error':
-      return '检索出现异常';
-    default:
-      return '搜索来源';
-  }
-}
-
-/**
  * 使用 Markdown 渲染助手消息，保证标题、列表、代码块等富文本结构按预期展示。
  * 对 PowerShell 目录清单这类高密度代码块，额外收敛成结构化结果面板，避免正文被原始对齐文本撑散。
  */
-function MarkdownMessage({ content, messageId }: { content: string; messageId?: string }) {
+function MarkdownMessage({
+  content,
+  messageId,
+  citationReferenceLinks,
+}: {
+  content: string;
+  messageId?: string;
+  citationReferenceLinks?: Map<number, CitationReferenceLink>;
+}) {
   const directoryListing = parsePowerShellDirectoryListing(content);
   if (directoryListing) {
     return <DirectoryListingPanel listing={directoryListing} messageId={messageId} />;
   }
+  const citationRemarkPlugin = citationReferenceLinks
+    ? createCitationRemarkPlugin(citationReferenceLinks)
+    : null;
+  const remarkPlugins = citationRemarkPlugin ? [remarkGfm, citationRemarkPlugin] : [remarkGfm];
 
   return (
     <div className="chat-markdown min-w-0 [overflow-wrap:anywhere] text-sm leading-7 text-foreground">
       <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
+        remarkPlugins={remarkPlugins}
         components={{
           h1: ({ node: _node, ...props }) => (
             <h1 className="mb-4 text-3xl font-semibold tracking-tight" {...props} />
@@ -2512,6 +2529,28 @@ function MarkdownMessage({ content, messageId }: { content: string; messageId?: 
           strong: ({ node: _node, ...props }) => (
             <strong className="font-semibold text-foreground" {...props} />
           ),
+          a: ({ node: _node, ...props }) => {
+            const anchorProps = props as React.AnchorHTMLAttributes<HTMLAnchorElement> & {
+              'data-reference-link'?: string;
+            };
+            const isCitationLink = anchorProps['data-reference-link'] === 'true';
+            const className = [
+              isCitationLink
+                ? 'inline-flex items-center rounded-md border border-border/70 bg-surface-container/80 px-1.5 py-0.5 align-baseline text-[12px] font-medium text-foreground no-underline transition-colors hover:border-border-active hover:bg-surface'
+                : 'text-accent-breeze underline underline-offset-2 decoration-border-active/40 transition-colors hover:text-foreground',
+              typeof anchorProps.className === 'string' ? anchorProps.className : '',
+            ]
+              .filter(Boolean)
+              .join(' ');
+            return (
+              <a
+                {...anchorProps}
+                className={className}
+                target={isCitationLink ? '_blank' : anchorProps.target}
+                rel={isCitationLink ? 'noreferrer noopener' : anchorProps.rel}
+              />
+            );
+          },
           img: ({ node: _node, ...props }) => (
             <img
               className="chat-message-image mb-4 max-h-[460px] w-full rounded-2xl border border-border object-contain shadow-sm"
@@ -2528,6 +2567,158 @@ function MarkdownMessage({ content, messageId }: { content: string; messageId?: 
 }
 
 /**
+ * 从当前助手消息对应的用户提问信息中，构建引用编号到真实 URL 的映射。
+ * 只有当前轮次的来源才应参与编号解析，避免把历史轮次的来源误绑到新回答上。
+ */
+function buildCitationReferenceLinks(
+  references: ReferenceItem[] | undefined,
+  referenceMessageId: string | null | undefined,
+): Map<number, CitationReferenceLink> {
+  if (!references?.length || !referenceMessageId) {
+    return new Map();
+  }
+
+  const citationLinks = new Map<number, CitationReferenceLink>();
+  references
+    .filter((reference) => String(reference.messageId ?? '') === String(referenceMessageId))
+    .forEach((reference, index) => {
+      const normalizedRankNo = Number(reference.rankNo ?? index + 1);
+      if (!Number.isFinite(normalizedRankNo) || normalizedRankNo < 1 || citationLinks.has(normalizedRankNo)) {
+        return;
+      }
+      const sourceMeta = resolveSearchSourceMeta({
+        title: reference.title,
+        url: reference.url,
+        siteName: reference.siteName,
+        snippet: reference.snippet,
+      });
+      if (!sourceMeta.href) {
+        return;
+      }
+      citationLinks.set(normalizedRankNo, {
+        href: sourceMeta.href,
+        title: [reference.title, reference.siteName].filter(Boolean).join(' · ') || sourceMeta.href,
+      });
+    });
+  return citationLinks;
+}
+
+/**
+ * 反查当前助手消息对应的用户提问消息 ID。
+ * 搜索来源挂在提问消息上，因此正文里的引用编号必须回溯到上一条用户消息。
+ */
+function resolveAssistantReferenceMessageId(messages: ChatMessageItem[], currentIndex: number) {
+  for (let index = currentIndex - 1; index >= 0; index -= 1) {
+    const candidate = messages[index];
+    if (candidate.role === 'USER') {
+      return candidate.id;
+    }
+  }
+  return null;
+}
+
+/**
+ * 把正文中形如 [R1] 的纯文本片段转换为链接节点，避免破坏既有 Markdown 结构。
+ * @param citationReferenceLinks 编号到来源链接的映射。
+ * @returns remark 插件。
+ */
+function createCitationRemarkPlugin(citationReferenceLinks: Map<number, CitationReferenceLink>) {
+  return function citationRemarkPlugin() {
+    return (tree: MarkdownNode) => {
+      transformCitationMarkdownTree(tree, citationReferenceLinks);
+    };
+  };
+}
+
+/**
+ * 深度遍历 Markdown 树，将普通文本中的引用编号替换为链接节点。
+ * @param markdownTree Markdown AST。
+ * @param citationReferenceLinks 编号到来源链接的映射。
+ */
+function transformCitationMarkdownTree(
+  markdownTree: MarkdownNode,
+  citationReferenceLinks: Map<number, CitationReferenceLink>,
+) {
+  if (!markdownTree || markdownTree.type === 'link' || markdownTree.type === 'linkReference') {
+    return;
+  }
+  if (!Array.isArray(markdownTree.children) || markdownTree.children.length === 0) {
+    return;
+  }
+
+  for (let index = 0; index < markdownTree.children.length; index += 1) {
+    const child = markdownTree.children[index];
+    if (!child) {
+      continue;
+    }
+    if (child.type === 'text' && typeof child.value === 'string' && child.value.includes('[R')) {
+      const replacementNodes = splitCitationTextNode(child.value, citationReferenceLinks);
+      if (replacementNodes.length !== 1 || replacementNodes[0] !== child) {
+        markdownTree.children.splice(index, 1, ...replacementNodes);
+        index += replacementNodes.length - 1;
+        continue;
+      }
+    }
+    transformCitationMarkdownTree(child, citationReferenceLinks);
+  }
+}
+
+/**
+ * 将一个文本节点拆分成普通文本与引用链接混合节点。
+ * @param text 原始正文片段。
+ * @param citationReferenceLinks 编号到来源链接的映射。
+ */
+function splitCitationTextNode(text: string, citationReferenceLinks: Map<number, CitationReferenceLink>) {
+  const nodes: MarkdownNode[] = [];
+  const citationPattern = /\[R(\d+)\]/g;
+  let cursor = 0;
+
+  for (const match of text.matchAll(citationPattern)) {
+    const matchIndex = match.index ?? -1;
+    const matchText = match[0];
+    const rankNo = Number(match[1]);
+    if (matchIndex < 0) {
+      continue;
+    }
+    if (matchIndex > cursor) {
+      nodes.push({
+        type: 'text',
+        value: text.slice(cursor, matchIndex),
+      });
+    }
+    const citationLink = citationReferenceLinks.get(rankNo);
+    if (citationLink) {
+      nodes.push({
+        type: 'link',
+        url: citationLink.href,
+        title: citationLink.title,
+        children: [{ type: 'text', value: matchText }],
+        data: {
+          hProperties: {
+            'data-reference-link': 'true',
+          },
+        },
+      });
+    } else {
+      nodes.push({
+        type: 'text',
+        value: matchText,
+      });
+    }
+    cursor = matchIndex + matchText.length;
+  }
+
+  if (cursor < text.length) {
+    nodes.push({
+      type: 'text',
+      value: text.slice(cursor),
+    });
+  }
+
+  return nodes.length > 0 ? nodes : [{ type: 'text', value: text }];
+}
+
+/**
  * 按单条助手消息内的真实事件顺序渲染正文与过程节点，缺少时间线时保留历史消息兜底。
  */
 function AssistantMessageBody({
@@ -2535,13 +2726,21 @@ function AssistantMessageBody({
   content,
   processCards,
   timelineItems,
+  references,
+  referenceMessageId,
 }: {
   messageId: string;
   content: string;
   processCards?: ProcessCardItem[];
   timelineItems?: MessageTimelineItem[];
+  references?: ReferenceItem[];
+  referenceMessageId?: string | null;
 }) {
   const hasTimeline = timelineItems && timelineItems.length > 0;
+  const citationReferenceLinks = React.useMemo(
+    () => buildCitationReferenceLinks(references, referenceMessageId),
+    [referenceMessageId, references],
+  );
   if (!hasTimeline) {
     return (
       <div data-testid={`assistant-message-body-${messageId}`}>
@@ -2551,7 +2750,11 @@ function AssistantMessageBody({
             cards={processCards}
           />
         ) : null}
-        <MarkdownMessage content={content} messageId={messageId} />
+        <MarkdownMessage
+          content={content}
+          messageId={messageId}
+          citationReferenceLinks={citationReferenceLinks}
+        />
       </div>
     );
   }
@@ -2564,6 +2767,7 @@ function AssistantMessageBody({
             key={segment.id}
             content={segment.content}
             messageId={`${messageId}-${segment.id}`}
+            citationReferenceLinks={citationReferenceLinks}
           />
         ) : (
           <ProcessTracePanel
@@ -2936,7 +3140,7 @@ function resolveShareSelectionPreviewMessages(
 }
 
 /**
- * 渲染分享模式下的整体卡片容器，让聊天区显式切换为“内容选择态”。
+ * 渲染选择模式下的轮次卡片流；顶部说明已移除，避免选择态挤占聊天内容焦点。
  */
 function ShareSelectionShell({
   mode = 'share',
@@ -2957,42 +3161,27 @@ function ShareSelectionShell({
       data-testid={isDeleteMode ? 'delete-selection-shell' : 'share-selection-shell'}
       className="mx-auto w-full max-w-5xl"
     >
-      <div className="overflow-hidden rounded-[32px] border border-border bg-surface shadow-[0_28px_90px_rgba(0,0,0,0.22)]">
-        <div className="border-b border-border bg-surface-container/85 px-6 py-5">
-          <div className="text-[11px] font-medium uppercase tracking-[0.28em] text-muted">
-            {isDeleteMode ? '删除选择模式' : '分享选择模式'}
-          </div>
-          <h2 className="mt-3 text-2xl font-semibold tracking-tight text-foreground">
-            {isDeleteMode ? '选择要删除的问答轮次' : '选择要分享的问答轮次'}
-          </h2>
-          <p className="mt-2 text-sm leading-6 text-muted">
-            {isDeleteMode
-              ? '勾选 AI 回复即可删除对应用户问题与回答，删除后不会再参与当前会话上下文。'
-              : '只允许勾选 AI 回复；系统会自动附带对应用户问题，确保公开分享时上下文完整。'}
-          </p>
-        </div>
-        <div className="space-y-4 px-5 py-5 md:px-6 md:py-6">
-          {rounds.map((round) => {
-            const isSelected = selectedAssistantMessageIds.includes(round.assistantMessage.id);
-            return (
-              <ShareSelectionRoundCard
-                key={round.assistantMessage.id}
-                mode={mode}
-                round={round}
-                isSelected={isSelected}
-                onToggleRound={onToggleRound}
-                onPreviewImage={onPreviewImage}
-              />
-            );
-          })}
-        </div>
+      <div data-testid={isDeleteMode ? 'delete-selection-list' : 'share-selection-list'} className="space-y-5">
+        {rounds.map((round) => {
+          const isSelected = selectedAssistantMessageIds.includes(round.assistantMessage.id);
+          return (
+            <ShareSelectionRoundCard
+              key={round.assistantMessage.id}
+              mode={mode}
+              round={round}
+              isSelected={isSelected}
+              onToggleRound={onToggleRound}
+              onPreviewImage={onPreviewImage}
+            />
+          );
+        })}
       </div>
     </div>
   );
 }
 
 /**
- * 渲染单个问答轮次卡片：用户问题与助手回答统一收纳到一个容器里，只提供一次选择入口。
+ * 渲染单个问答轮次卡片；用户问题只作为上下文展示，选择入口始终绑定到 AI 回复。
  */
 function ShareSelectionRoundCard({
   mode = 'share',
@@ -3016,62 +3205,60 @@ function ShareSelectionRoundCard({
     <section
       data-testid={`share-round-card-${assistantMessage.id}`}
       data-selected={isSelected ? 'true' : 'false'}
-      className={`rounded-[28px] border p-5 transition-[border-color,background-color,box-shadow] ${
+      className={`rounded-[28px] border bg-surface px-5 py-6 transition-[border-color,box-shadow] md:px-6 ${
         isSelected
-          ? 'border-border-selected bg-surface-selected shadow-[0_20px_50px_rgba(0,0,0,0.18)]'
-          : 'border-border bg-background/70'
+          ? 'border-border-selected shadow-[0_20px_58px_rgba(0,0,0,0.24)]'
+          : 'border-border shadow-[0_18px_52px_rgba(0,0,0,0.16)]'
       }`}
     >
-      <div className="flex items-start gap-4">
-        <label className="mt-1 inline-flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-full border border-border bg-surface shadow-sm">
+      <div className="flex justify-end">
+        {userMessage ? (
+          <div className="max-w-[78%] rounded-[20px] bg-surface-selected px-4 py-3 text-sm leading-6 text-foreground shadow-sm">
+            {userMessage.attachments && userMessage.attachments.length > 0 ? (
+              <MessageAttachmentList
+                attachments={userMessage.attachments}
+                onPreviewImage={onPreviewImage}
+              />
+            ) : null}
+            <div className="whitespace-pre-wrap">{userMessage.content}</div>
+          </div>
+        ) : null}
+      </div>
+      <div className="mt-8 flex items-start gap-5">
+        <label className="mt-1 inline-flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center">
           <span className="sr-only">{`${selectionLabel} ${assistantMessage.content}`}</span>
           <input
             type="checkbox"
             aria-label={`${selectionLabel} ${assistantMessage.content}`}
             checked={isSelected}
             onChange={() => onToggleRound(assistantMessage.id)}
-            className="h-4 w-4 accent-foreground"
+            className="h-5 w-5 cursor-pointer rounded-[4px] border-border accent-foreground"
           />
         </label>
-        <div className="min-w-0 flex-1 space-y-4">
-          {userMessage ? (
-            <div className="flex justify-end">
-              <div className="max-w-[78%] rounded-[20px] bg-background px-4 py-3 text-sm leading-6 text-foreground shadow-sm">
-                {userMessage.attachments && userMessage.attachments.length > 0 ? (
-                  <MessageAttachmentList
-                    attachments={userMessage.attachments}
-                    onPreviewImage={onPreviewImage}
-                  />
-                ) : null}
-                <div className="whitespace-pre-wrap">{userMessage.content}</div>
-              </div>
+        <div className="min-w-0 flex-1 text-foreground">
+          {assistantMessage.attachments && assistantMessage.attachments.length > 0 ? (
+            <MessageAttachmentList
+              attachments={assistantMessage.attachments}
+              onPreviewImage={onPreviewImage}
+            />
+          ) : null}
+          <AssistantMessageBody
+            messageId={assistantMessage.id}
+            content={assistantContent}
+            processCards={assistantMessage.processCards}
+            timelineItems={assistantMessage.timelineItems}
+          />
+          {assistantMessage.searchProgress?.items?.length ? (
+            <SearchProgressPanel
+              messageId={assistantMessage.id}
+              progress={assistantMessage.searchProgress}
+            />
+          ) : null}
+          {assistantMessage.errorMessage ? (
+            <div className="mt-3 rounded-2xl border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+              {assistantMessage.errorMessage}
             </div>
           ) : null}
-          <div className="rounded-[24px] bg-surface px-4 py-4 text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
-            {assistantMessage.attachments && assistantMessage.attachments.length > 0 ? (
-              <MessageAttachmentList
-                attachments={assistantMessage.attachments}
-                onPreviewImage={onPreviewImage}
-              />
-            ) : null}
-            <AssistantMessageBody
-              messageId={assistantMessage.id}
-              content={assistantContent}
-              processCards={assistantMessage.processCards}
-              timelineItems={assistantMessage.timelineItems}
-            />
-            {assistantMessage.searchProgress?.items?.length ? (
-              <SearchProgressPanel
-                messageId={assistantMessage.id}
-                progress={assistantMessage.searchProgress}
-              />
-            ) : null}
-            {assistantMessage.errorMessage ? (
-              <div className="mt-3 rounded-2xl border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-300">
-                {assistantMessage.errorMessage}
-              </div>
-            ) : null}
-          </div>
         </div>
       </div>
     </section>
@@ -3097,19 +3284,26 @@ function ShareSelectionToolbar({
   onConfirm: () => void;
 }) {
   const isDeleteMode = mode === 'delete';
+  const isAllSelected = totalCount > 0 && selectedCount === totalCount;
   return (
     <div
       role="toolbar"
       aria-label={isDeleteMode ? '删除选择工具栏' : '分享选择工具栏'}
       className="absolute bottom-6 left-1/2 z-30 flex -translate-x-1/2 items-center gap-3 rounded-2xl border border-border bg-surface/96 px-4 py-3 text-sm text-foreground shadow-[0_18px_48px_rgba(0,0,0,0.22)] backdrop-blur"
     >
-      <button
-        type="button"
-        onClick={onSelectAll}
-        className="rounded-xl px-3 py-2 text-muted transition-colors hover:bg-surface-container hover:text-foreground"
+      <label
+        className="inline-flex cursor-pointer items-center gap-2 rounded-xl px-3 py-2 text-muted transition-colors hover:bg-surface-container hover:text-foreground"
       >
+        <input
+          type="checkbox"
+          aria-label="全选"
+          checked={isAllSelected}
+          disabled={totalCount === 0}
+          onChange={onSelectAll}
+          className="h-4 w-4 cursor-pointer rounded-[4px] border-border accent-foreground disabled:cursor-not-allowed"
+        />
         全选
-      </button>
+      </label>
       <span className="text-muted">
         <span>已选{selectedCount}组对话</span>
         <span className="ml-1">/ 共{totalCount}组</span>
@@ -3244,16 +3438,19 @@ function UserMessageBubble({
   onStartDelete: () => void;
   onPreviewImage: (src: string, alt: string) => void;
 }) {
+  const hasAttachments = Boolean(message.attachments?.length);
+  const hasTextContent = content.trim().length > 0;
+
   return (
     <div className="chat-user-message-shell">
-      <div className="chat-user-message-bubble rounded-[20px] px-4 py-2">
-        {editState ? (
-          <div className="min-w-[260px] space-y-3">
+      {editState ? (
+        <div className="chat-user-message-bubble chat-user-message-edit-panel">
+          <div className="flex min-h-[96px] w-full max-w-full flex-col gap-2">
             <textarea
               aria-label="编辑用户消息"
               value={editState.content}
               onChange={(event) => onChangeEditContent(event.target.value)}
-              className="min-h-24 w-full resize-y rounded-2xl border border-border bg-surface px-3 py-2 text-sm leading-6 text-foreground outline-none transition-colors placeholder:text-muted focus:border-border-active"
+              className="min-h-14 flex-1 resize-none border-0 bg-transparent px-0 py-0 text-[16px] leading-7 text-foreground outline-none placeholder:text-muted"
             />
             {editState.errorMessage ? (
               <p className="text-xs text-error">{editState.errorMessage}</p>
@@ -3263,7 +3460,7 @@ function UserMessageBubble({
                 type="button"
                 onClick={onCancelEdit}
                 disabled={editState.isSubmitting}
-                className="rounded-xl px-3 py-2 text-sm text-muted transition-colors hover:bg-surface-container hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                className="rounded-2xl border border-border-active bg-surface-high px-3.5 py-1 text-[15px] font-medium text-foreground transition-colors hover:bg-surface-selected disabled:cursor-not-allowed disabled:opacity-50"
               >
                 取消
               </button>
@@ -3271,33 +3468,40 @@ function UserMessageBubble({
                 type="button"
                 onClick={onConfirmEdit}
                 disabled={editState.isSubmitting || !editState.content.trim()}
-                className="rounded-xl bg-foreground px-4 py-2 text-sm text-background transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                className="rounded-2xl bg-foreground px-4 py-1 text-[15px] font-medium text-background transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {editState.isSubmitting ? '发送中' : '再次发送'}
+                {editState.isSubmitting ? '发送中' : '发送'}
               </button>
             </div>
           </div>
-        ) : (
-          <>
-            {message.skillCodes && message.skillCodes.length > 0 ? (
+        </div>
+      ) : (
+        <>
+          {message.skillCodes && message.skillCodes.length > 0 ? (
+            <div className="chat-user-message-bubble rounded-[20px] px-4 py-2">
               <MessageSkillChips
                 messageId={message.id}
                 skillCodes={message.skillCodes}
                 skillNameMap={skillNameMap}
               />
-            ) : null}
-            {message.attachments && message.attachments.length > 0 ? (
-              <MessageAttachmentList
-                attachments={message.attachments}
-                onPreviewImage={onPreviewImage}
-              />
-            ) : null}
-            <div className="whitespace-pre-wrap text-sm leading-6">
-              {content}
             </div>
-          </>
-        )}
-      </div>
+          ) : null}
+          {hasAttachments ? (
+            <MessageAttachmentList
+              attachments={message.attachments ?? []}
+              isUserMessageStandalone
+              onPreviewImage={onPreviewImage}
+            />
+          ) : null}
+          {hasTextContent ? (
+            <div className="chat-user-message-bubble rounded-[20px] px-4 py-2">
+              <div className="whitespace-pre-wrap text-sm leading-6">
+                {content}
+              </div>
+            </div>
+          ) : null}
+        </>
+      )}
       {!editState ? (
         <UserMessageActions
           messageId={message.id}
@@ -3333,7 +3537,7 @@ function UserMessageActions({
       setCopyState('copied');
       window.setTimeout(() => {
         setCopyState('idle');
-      }, 1200);
+      }, 2000);
     } catch {
       setCopyState('idle');
     }
@@ -3363,7 +3567,7 @@ function UserMessageActions({
         onClick={() => void copyContent()}
         className="chat-message-action-button"
       >
-        <Copy size={15} />
+        {copyState === 'copied' ? <CheckCircle2 size={15} /> : <Copy size={15} />}
       </button>
       <button
         type="button"
@@ -3376,7 +3580,6 @@ function UserMessageActions({
       >
         <Trash2 size={15} />
       </button>
-      {copyState === 'copied' ? <span className="text-[11px] text-muted">已复制</span> : null}
     </div>
   );
 }
@@ -3390,6 +3593,7 @@ function AssistantMessageActions({
   content,
   isLatestAssistantMessage,
   userVote,
+  searchProgress,
   onStartShareSelection,
   onRegenerateConversation,
 }: {
@@ -3398,6 +3602,7 @@ function AssistantMessageActions({
   content: string;
   isLatestAssistantMessage: boolean;
   userVote?: number | null;
+  searchProgress?: MessageSearchProgress;
   onStartShareSelection: (messageId: string) => void;
   onRegenerateConversation: (
     conversationId: string,
@@ -3452,7 +3657,7 @@ function AssistantMessageActions({
       setCopiedMode(mode);
       window.setTimeout(() => {
         setCopiedMode((previousMode) => (previousMode === mode ? null : previousMode));
-      }, 1200);
+      }, 2000);
     } catch {
       setCopiedMode(null);
     } finally {
@@ -3510,7 +3715,7 @@ function AssistantMessageActions({
   };
 
   return (
-    <div className="chat-message-actions flex items-center gap-1 text-muted">
+    <div className="chat-message-actions flex flex-wrap items-center gap-1 text-muted">
       <div
         className="chat-message-action-button-group"
         data-testid={`copy-action-group-${messageId}`}
@@ -3524,7 +3729,7 @@ function AssistantMessageActions({
           onClick={() => void copyContent('plain')}
           className="chat-message-action-button chat-message-action-button-group-item"
         >
-          <Copy size={15} />
+          {copiedMode ? <CheckCircle2 size={15} /> : <Copy size={15} />}
         </button>
         <div ref={menuContainerRef} className="relative">
           <button
@@ -3613,7 +3818,14 @@ function AssistantMessageActions({
       >
         <ThumbsDown size={15} />
       </button>
-      {copiedMode ? <span className="ml-2 text-[11px] text-muted">已复制</span> : null}
+      {/* 业务意图：搜索来源入口贴在倒赞后面，归属于当前消息的操作区。 */}
+      {searchProgress?.items?.length ? (
+        <SearchProgressPanel
+          messageId={messageId}
+          progress={searchProgress}
+          className="contents"
+        />
+      ) : null}
       {regenerateError ? <span className="ml-2 text-[11px] text-error">{regenerateError}</span> : null}
       {reactionError ? <span className="ml-2 text-[11px] text-error">{reactionError}</span> : null}
     </div>
@@ -3641,16 +3853,24 @@ function normalizeMessageForPlainCopy(content: string) {
  */
 function MessageAttachmentList({
   attachments,
+  isUserMessageStandalone = false,
   onPreviewImage,
 }: {
   attachments: ChatAttachmentItem[];
+  isUserMessageStandalone?: boolean;
   onPreviewImage: (src: string, alt: string) => void;
 }) {
   if (attachments.length === 0) {
     return null;
   }
+  const listClassName = isUserMessageStandalone
+    ? 'chat-message-attachment-list flex flex-wrap items-start justify-end gap-2'
+    : 'mb-3 flex flex-wrap items-start gap-2';
+  const imageButtonClassName = isUserMessageStandalone
+    ? 'chat-message-image-attachment h-[116px] w-[116px] overflow-hidden rounded-lg bg-transparent p-0'
+    : 'h-[88px] w-[88px] overflow-hidden rounded-lg border border-border bg-surface';
   return (
-    <div className="mb-3 flex flex-wrap items-start gap-2">
+    <div className={listClassName}>
       {attachments.map((attachment) => {
         const isImage = attachment.attachmentType === 'image' && !!attachment.previewUrl;
         if (isImage) {
@@ -3660,7 +3880,7 @@ function MessageAttachmentList({
               type="button"
               aria-label={`预览图片 ${attachment.fileName}`}
               data-testid={`message-image-attachment-${attachment.id}`}
-              className="h-[88px] w-[88px] overflow-hidden rounded-lg border border-border bg-surface"
+              className={imageButtonClassName}
               onClick={() => onPreviewImage(attachment.previewUrl as string, attachment.fileName)}
             >
               <img
@@ -4085,9 +4305,10 @@ function ProcessTracePanel({
         if (segment.type === 'tool') {
           return (
             <ProcessToolRow
-              key={segment.card.id}
+              key={segment.resultCard ? `${segment.card.id}-${segment.resultCard.id}` : segment.card.id}
               messageId={messageId}
               card={segment.card}
+              resultCard={segment.resultCard}
             />
           );
         }
@@ -4129,18 +4350,21 @@ function ProcessTracePanel({
 
 type ProcessTraceSegment =
   | { type: 'text'; card: ProcessCardItem }
-  | { type: 'tool'; card: ProcessCardItem }
+  | { type: 'tool'; card: ProcessCardItem; resultCard?: ProcessCardItem }
   | { type: 'search_result_group'; cards: ProcessCardItem[] }
   | { type: 'command_group'; cards: ProcessCardItem[] };
 
 /**
- * 按真实过程顺序输出消息内链路，工具调用不能再被合并成汇总行，否则用户看不到模型边思考边执行的节奏。
+ * 按真实过程顺序输出消息内链路；相邻的同一次工具调用和返回结果合并为一行，减少重复占位。
  */
 function groupProcessTraceSegments(cards: ProcessCardItem[]): ProcessTraceSegment[] {
   const segments: ProcessTraceSegment[] = [];
 
   for (let index = 0; index < cards.length; index += 1) {
     const card = cards[index];
+    if (isSyntheticSearchThoughtTrace(card)) {
+      continue;
+    }
     if (card.type === 'tool_call' || card.type === 'tool_result') {
       if (isCommandProcessCard(card)) {
         const commandCards = [card];
@@ -4154,11 +4378,17 @@ function groupProcessTraceSegments(cards: ProcessCardItem[]): ProcessTraceSegmen
           nextIndex += 1;
         }
         const commandCount = countCommandCalls(commandCards);
-        if (commandCount > 1) {
+        if (commandCount > 0) {
           segments.push({ type: 'command_group', cards: commandCards });
           index = nextIndex - 1;
           continue;
         }
+      }
+      const nextCard = cards[index + 1];
+      if (card.type === 'tool_call' && nextCard && isPairableToolResult(card, nextCard)) {
+        segments.push({ type: 'tool', card, resultCard: nextCard });
+        index += 1;
+        continue;
       }
       if (card.type === 'tool_result' && isSearchProcessCard(card)) {
         const searchResultCards = [card];
@@ -4212,10 +4442,10 @@ function ProcessSearchSummary({
     >
       <div className="flex min-w-0 items-start gap-2 text-sm leading-6 text-foreground">
         <Globe2 size={15} className="mt-1 shrink-0 text-muted" />
-        <div className="min-w-0 flex-1">
-          <div className="whitespace-pre-wrap [overflow-wrap:anywhere] text-muted">
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1">
+          <span className="whitespace-pre-wrap [overflow-wrap:anywhere] text-muted">
             已搜索网页 {cards.length} 次
-          </div>
+          </span>
           <button
             type="button"
             data-testid={`process-search-summary-toggle-${messageId}-${firstCardId}`}
@@ -4223,7 +4453,7 @@ function ProcessSearchSummary({
             aria-controls={contentId}
             aria-label={isExpanded ? '收起搜索来源' : '展开搜索来源'}
             onClick={() => setIsExpanded((current) => !current)}
-            className="mt-1 inline-flex items-center gap-1 text-xs text-muted transition-colors hover:text-foreground"
+            className="inline-flex items-center gap-1 text-xs text-muted transition-colors hover:text-foreground"
           >
             <ChevronDown
               size={13}
@@ -4245,7 +4475,7 @@ function ProcessSearchSummary({
 }
 
 /**
- * 连续命令默认收起为一条运行摘要；展开后保留每次命令和输出，方便核对长任务过程。
+ * 命令过程默认展示摘要和命令列表；摘要右侧箭头只负责折叠列表，单条输出再由命令行箭头控制。
  */
 function ProcessCommandSummary({
   messageId,
@@ -4264,33 +4494,35 @@ function ProcessCommandSummary({
       data-testid={`process-command-summary-${messageId}-${firstCardId}`}
       className="space-y-2 border-l border-border pl-3"
     >
-      <div className="flex min-w-0 items-start gap-2 text-sm leading-6 text-foreground">
+      <button
+        type="button"
+        data-testid={`process-command-summary-toggle-${messageId}-${firstCardId}`}
+        aria-expanded={isExpanded}
+        aria-controls={contentId}
+        aria-label={isExpanded ? '收起命令列表' : '展开命令列表'}
+        onClick={() => setIsExpanded((current) => !current)}
+        className="flex w-full min-w-0 items-start gap-2 text-left text-sm leading-6 text-foreground transition-colors hover:text-foreground"
+      >
         <CheckCircle2 size={15} className="mt-1 shrink-0 text-muted" />
-        <div className="min-w-0 flex-1">
-          <div className="whitespace-pre-wrap [overflow-wrap:anywhere] text-muted">
+        <span className="flex min-w-0 flex-1 items-center justify-between gap-3">
+          <span className="whitespace-pre-wrap [overflow-wrap:anywhere] text-muted">
             已运行 {commandRuns.length} 条命令
-          </div>
-          <button
-            type="button"
-            data-testid={`process-command-summary-toggle-${messageId}-${firstCardId}`}
-            aria-expanded={isExpanded}
-            aria-controls={contentId}
-            aria-label={isExpanded ? '收起命令输出' : '展开命令输出'}
-            onClick={() => setIsExpanded((current) => !current)}
-            className="mt-1 inline-flex items-center gap-1 text-xs text-muted transition-colors hover:text-foreground"
-          >
-            <ChevronDown
-              size={13}
-              className={`transition-transform ${isExpanded ? 'rotate-180' : '-rotate-90'}`}
-            />
-            <span>{isExpanded ? '收起命令' : '展开命令'}</span>
-          </button>
-        </div>
-      </div>
+          </span>
+          <ChevronDown
+            size={13}
+            className={`mt-1 shrink-0 text-muted transition-transform ${isExpanded ? 'rotate-180' : '-rotate-90'}`}
+          />
+        </span>
+      </button>
       {isExpanded ? (
-        <div id={contentId} className="space-y-2">
+        <div id={contentId} className="ml-6 space-y-1.5">
           {commandRuns.map((run, index) => (
-            <ProcessCommandBlock key={`${firstCardId}-${index}-${run.command}`} run={run} />
+            <ProcessCommandRunRow
+              key={`${firstCardId}-${index}-${run.command}`}
+              messageId={messageId}
+              firstCardId={firstCardId}
+              run={run}
+            />
           ))}
         </div>
       ) : null}
@@ -4299,11 +4531,59 @@ function ProcessCommandSummary({
 }
 
 /**
+ * 渲染命令列表中的一行；命令本身默认可见，输出按需展开，贴近 Codex 的执行列表形态。
+ */
+function ProcessCommandRunRow({
+  messageId,
+  firstCardId,
+  run,
+}: {
+  messageId: string;
+  firstCardId: string;
+  run: CommandProcessRun;
+}) {
+  const [isExpanded, setIsExpanded] = React.useState(false);
+  const runSlug = getProcessCommandSlug(run.command);
+  const contentId = `process-command-run-content-${messageId}-${firstCardId}-${runSlug}`;
+
+  return (
+    <div className="space-y-2">
+      <div className="flex min-w-0 items-center gap-2 text-sm leading-6 text-muted">
+        <span className="min-w-0 flex-1 truncate [overflow-wrap:anywhere]" title={run.command}>
+          已运行 {run.command}
+        </span>
+        <button
+          type="button"
+          data-testid={`process-command-run-toggle-${messageId}-${firstCardId}-${runSlug}`}
+          aria-expanded={isExpanded}
+          aria-controls={contentId}
+          aria-label={isExpanded ? `收起命令 ${run.command} 输出` : `展开命令 ${run.command} 输出`}
+          onClick={() => setIsExpanded((current) => !current)}
+          className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted transition-colors hover:bg-surface-container hover:text-foreground"
+        >
+          <ChevronDown
+            size={13}
+            className={`transition-transform ${isExpanded ? 'rotate-180' : '-rotate-90'}`}
+          />
+        </button>
+      </div>
+      {isExpanded ? (
+        <ProcessCommandBlock run={run} contentId={contentId} />
+      ) : null}
+    </div>
+  );
+}
+
+/**
  * 展开后的单条命令块，刻意使用不透明背景，保证暗色模式下长输出仍然可读。
  */
-function ProcessCommandBlock({ run }: { run: CommandProcessRun }) {
+function ProcessCommandBlock({ run, contentId }: { run: CommandProcessRun; contentId: string }) {
   return (
-    <div className="overflow-hidden rounded-md border border-border bg-surface-container">
+    <div
+      id={contentId}
+      data-testid={getProcessCommandBlockTestId(run.command)}
+      className="overflow-hidden rounded-md border border-border bg-surface-container"
+    >
       <div className="border-b border-border px-3 py-2 text-[11px] font-medium text-muted">Shell</div>
       <div className="space-y-3 px-3 py-3 font-mono text-xs leading-5 text-foreground">
         <div className="whitespace-pre-wrap [overflow-wrap:anywhere]">
@@ -4323,6 +4603,24 @@ function ProcessCommandBlock({ run }: { run: CommandProcessRun }) {
 }
 
 /**
+ * 命令文本会包含空格、斜杠等字符，测试标识只保留可稳定定位的 ASCII 片段。
+ */
+function getProcessCommandBlockTestId(command: string): string {
+  return `process-command-block-${getProcessCommandSlug(command)}`;
+}
+
+/**
+ * 归一化命令名，供同一命令的展开按钮、内容区和测试标识复用。
+ */
+function getProcessCommandSlug(command: string): string {
+  return command
+    .trim()
+    .replace(/^\$\s*/, '')
+    .replace(/[^A-Za-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '') || 'command';
+}
+
+/**
  * 历史会话里可能已经持久化了“整理结论”占位节点；最终答案正文已承载结论，渲染层直接过滤这类无价值过程。
  */
 function isDisposableSynthesisTrace(card: ProcessCardItem) {
@@ -4332,6 +4630,20 @@ function isDisposableSynthesisTrace(card: ProcessCardItem) {
     normalizedTitle === '整理结论' ||
     normalizedSummary.includes('整理最终回答') ||
     normalizedSummary.includes('最终回答')
+  );
+}
+
+/**
+ * 过滤旧版本前端自行合成的搜索“思考”；这类模板不是模型真实输出，不能再混入过程流。
+ */
+function isSyntheticSearchThoughtTrace(card: ProcessCardItem) {
+  if (card.type !== 'analysis' || card.presentation !== 'react') {
+    return false;
+  }
+  const normalizedSummary = card.summary.trim();
+  return (
+    normalizedSummary.startsWith('需要通过网页搜索确认资料') ||
+    normalizedSummary === '需要通过网页搜索获取实时资料。'
   );
 }
 
@@ -4390,9 +4702,9 @@ function ProcessAnalysisTrace({
   const label = isReactTrace ? '深度思考' : isFirstAnalysis ? '深度思考' : card.title || '深度思考';
 
   React.useEffect(() => {
-    // 新的 ReAct 展示目标是始终让过程可见，状态变化不再自动收起思考内容。
-    setIsExpanded(true);
-  }, [card.id]);
+    // 业务意图：流式阶段默认展开帮助用户跟踪推理，完成态默认折叠减少正文阅读干扰。
+    setIsExpanded(card.status === 'running');
+  }, [card.id, card.status]);
 
   return (
     <div className="space-y-2">
@@ -4405,17 +4717,17 @@ function ProcessAnalysisTrace({
         onClick={() => setIsExpanded((current) => !current)}
         className="inline-flex max-w-full items-center gap-2 rounded-md px-0 py-1 text-xs font-medium text-muted transition-colors hover:text-foreground"
       >
+        <span className="whitespace-nowrap">{label}</span>
         <ChevronDown
           size={14}
           className={`shrink-0 transition-transform duration-200 ${isExpanded ? 'rotate-180' : '-rotate-90'}`}
         />
-        <span className="whitespace-nowrap">{label}</span>
       </button>
       {isExpanded ? (
         <div
           id={contentId}
           data-testid={`process-analysis-card-${messageId}`}
-          className="border-l border-border pl-4"
+          className="relative rounded-xl border border-border bg-surface-container px-4 py-3 shadow-[0_10px_26px_rgba(0,0,0,0.14)]"
         >
           <p
             data-testid={`process-analysis-text-${messageId}`}
@@ -4442,17 +4754,22 @@ function isDeepThinkingProcessCard(card: ProcessCardItem) {
 function ProcessToolRow({
   messageId,
   card,
+  resultCard,
 }: {
   messageId: string;
   card: ProcessCardItem;
+  resultCard?: ProcessCardItem;
 }) {
   const [isExpanded, setIsExpanded] = React.useState(false);
-  const Icon = card.type === 'tool_call' ? Globe2 : CheckCircle2;
-  const searchResultItems = parseSearchResultDetails(card);
-  const visibleDetails = shouldHideSearchCallDetails(card) ? [] : card.details ?? [];
-  const hasDetails = searchResultItems.length > 0 || visibleDetails.length > 0;
+  const Icon = resolveProcessToolIcon(card);
+  const mergedCards = resultCard ? [card, resultCard] : [card];
+  const shouldHideDetails = mergedCards.some(shouldHideSearchDetails);
+  const visibleDetails = shouldHideDetails ? [] : buildProcessToolDetailViews(card, resultCard);
+  const hasDetails = !shouldHideDetails && visibleDetails.length > 0;
   const contentId = `process-tool-detail-${messageId}-${card.id}`;
   const isReactTrace = card.presentation === 'react';
+  const summaryText = formatProcessToolSurfaceSummary(card, Boolean(resultCard));
+  const detailToggleLabel = isExpanded ? '收起明细' : '展开明细';
 
   return (
     <article data-testid={`process-tool-row-${messageId}-${card.id}`} className="space-y-2 border-l border-border pl-3">
@@ -4461,166 +4778,145 @@ function ProcessToolRow({
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1 whitespace-pre-wrap [overflow-wrap:anywhere]">
             {!isReactTrace ? <span>{card.title}</span> : null}
-            {card.summary ? <span className="min-w-0 text-muted">{card.summary}</span> : null}
+            {summaryText ? <span className="min-w-0 text-muted">{summaryText}</span> : null}
+            {hasDetails ? (
+              <button
+                type="button"
+                data-testid={`process-tool-detail-toggle-${messageId}-${card.id}`}
+                aria-expanded={isExpanded}
+                aria-controls={contentId}
+                aria-label={isExpanded ? '折叠工具调用与结果明细' : '展开工具调用与结果明细'}
+                onClick={() => setIsExpanded((current) => !current)}
+                className="inline-flex min-h-5 items-center gap-1 self-center text-xs text-muted transition-colors hover:text-foreground"
+              >
+                <ChevronDown
+                  size={13}
+                  className={`transition-transform ${isExpanded ? 'rotate-180' : '-rotate-90'}`}
+                />
+                <span>{detailToggleLabel}</span>
+              </button>
+            ) : null}
           </div>
-          {hasDetails ? (
-            <button
-              type="button"
-              data-testid={`process-tool-detail-toggle-${messageId}-${card.id}`}
-              aria-expanded={isExpanded}
-              aria-controls={contentId}
-              aria-label={isExpanded ? '折叠工具明细' : '展开工具明细'}
-              onClick={() => setIsExpanded((current) => !current)}
-              className="mt-1 inline-flex items-center gap-1 text-xs text-muted transition-colors hover:text-foreground"
-            >
-              <ChevronDown
-                size={13}
-                className={`transition-transform ${isExpanded ? 'rotate-180' : '-rotate-90'}`}
-              />
-              <span>{isExpanded ? '收起明细' : '查看明细'}</span>
-            </button>
-          ) : null}
         </div>
       </div>
       {isExpanded && hasDetails ? (
         <div id={contentId}>
-          {searchResultItems.length > 0 ? (
-            <ProcessSearchResultList cardId={card.id} items={searchResultItems} />
-          ) : visibleDetails.length > 0 ? (
-            <div className="space-y-2">
-              {visibleDetails.map((detail) => (
-                <div key={`${card.id}-${detail.label}`} className="rounded-md bg-surface-container px-3 py-2">
-                  <div className="mb-1 text-[11px] text-muted">{detail.label}</div>
-                  <pre className="whitespace-pre-wrap [overflow-wrap:anywhere] text-xs leading-5 text-foreground">
-                    {detail.content}
-                  </pre>
-                </div>
-              ))}
-            </div>
-          ) : null}
+          <div className="space-y-2">
+            {visibleDetails.map((detail) => (
+              <div key={detail.id} className="rounded-md bg-surface-container px-3 py-2">
+                <div className="mb-1 text-[11px] text-muted">{detail.label}</div>
+                <pre className="whitespace-pre-wrap [overflow-wrap:anywhere] text-xs leading-5 text-foreground">
+                  {detail.content}
+                </pre>
+              </div>
+            ))}
+          </div>
         </div>
       ) : null}
     </article>
   );
 }
 
+type ProcessToolDetailView = {
+  id: string;
+  label: string;
+  content: string;
+};
+
 /**
- * 在工具结果行内展示搜索来源列表，把原始明细转换为可扫读的来源卡片。
+ * 同一次工具调用的参数和返回结果共用一个展开区，避免过程流里出现两张相邻明细卡。
  */
-function ProcessSearchResultList({
-  cardId,
-  items,
-}: {
-  cardId: string;
-  items: SearchSourceDisplayItem[];
-}) {
-  return (
-    <div
-      data-testid={`process-search-result-list-${cardId}`}
-      className="max-h-[360px] overflow-y-auto rounded-xl border border-border bg-surface/88 p-2 [scrollbar-gutter:stable]"
-    >
-      <div className="mb-2 flex items-center justify-between gap-3 px-1">
-        <div className="text-[11px] font-medium text-muted">搜索结果</div>
-        <div className="rounded-full border border-border bg-surface-container px-2 py-0.5 text-[10px] text-muted">
-          {items.length} 条来源
-        </div>
-      </div>
-      <ol className="space-y-1.5">
-        {items.map((item, index) => (
-          <li key={`${item.id}-${index}`}>
-            <ProcessSearchResultItem cardId={cardId} item={item} index={index} />
-          </li>
-        ))}
-      </ol>
-    </div>
-  );
+function buildProcessToolDetailViews(
+  card: ProcessCardItem,
+  resultCard?: ProcessCardItem,
+): ProcessToolDetailView[] {
+  return dedupeProcessToolDetailViews([card, resultCard].flatMap((sourceCard) => {
+    if (!sourceCard) {
+      return [];
+    }
+    return (sourceCard.details ?? []).map((detail, index) => ({
+      id: `${sourceCard.id}-${index}-${detail.label}`,
+      label: detail.label,
+      content: detail.content,
+    }));
+  }));
 }
 
 /**
- * 渲染工具结果中的单条搜索来源，保留标题、站点和原始链接三个阅读层级。
+ * 工具开始和完成事件可能同时携带同一份参数；合并展示时按标签和内容去重，避免展开区重复出现“参数”。
  */
-function ProcessSearchResultItem({
-  cardId,
-  item,
-  index,
-}: {
-  cardId: string;
-  item: SearchSourceDisplayItem;
-  index: number;
-}) {
-  const source = resolveSearchSourceMeta(item);
-  const displayTitle = item.title.trim() || source.siteLabel || source.displayUrl || `来源 ${index + 1}`;
-  const rowClassName =
-    'group flex min-w-0 gap-2 rounded-lg px-2 py-2 text-left transition-colors hover:bg-surface-container focus-visible:bg-surface-container focus-visible:outline-none';
-  const content = (
-    <>
-      <div className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-border bg-surface-container font-mono text-[10px] text-muted">
-        {index + 1}
-      </div>
-      <div className="min-w-0 flex-1">
-        <div className="flex min-w-0 items-start justify-between gap-2">
-          <div className="min-w-0 text-sm font-medium leading-5 text-foreground" title={displayTitle}>
-            {displayTitle}
-          </div>
-          {source.href ? (
-            <ExternalLink
-              size={12}
-              className="mt-0.5 shrink-0 text-muted transition-colors group-hover:text-foreground"
-            />
-          ) : null}
-        </div>
-        <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] leading-4 text-muted">
-          <span className="max-w-[180px] truncate">{source.siteLabel}</span>
-          {source.hostname ? <span className="font-mono">{source.hostname}</span> : null}
-        </div>
-        {source.displayUrl ? (
-          <div
-            className="mt-1 truncate font-mono text-[11px] leading-4 text-accent-breeze"
-            title={item.url}
-          >
-            {source.displayUrl}
-          </div>
-        ) : null}
-      </div>
-    </>
-  );
-
-  if (source.href) {
-    return (
-      <a
-        data-testid={`process-search-result-link-${cardId}-${index}`}
-        href={source.href}
-        target="_blank"
-        rel="noreferrer noopener"
-        aria-label={`打开搜索结果 ${displayTitle}`}
-        className={rowClassName}
-      >
-        {content}
-      </a>
-    );
-  }
-
-  return (
-    <div
-      data-testid={`process-search-result-row-${cardId}-${index}`}
-      className={`${rowClassName} cursor-default`}
-    >
-      {content}
-    </div>
-  );
+function dedupeProcessToolDetailViews(details: ProcessToolDetailView[]): ProcessToolDetailView[] {
+  const seenKeys = new Set<string>();
+  return details.filter((detail) => {
+    const key = `${detail.label.trim()}::${detail.content.trim()}`;
+    if (seenKeys.has(key)) {
+      return false;
+    }
+    seenKeys.add(key);
+    return true;
+  });
 }
 
 /**
- * 识别搜索工具结果明细，兼容流式来源拼接和历史回放中的多种分隔格式。
+ * 工具合并行表面只展示动作级摘要；结果型长摘要必须进入展开明细，避免挤占主消息流。
  */
-function parseSearchResultDetails(card: ProcessCardItem): SearchSourceDisplayItem[] {
-  if (card.type !== 'tool_result' || !isSearchProcessCard(card)) {
-    return [];
+function formatProcessToolSurfaceSummary(card: ProcessCardItem, hasResultCard: boolean): string {
+  const summary = formatProcessToolSummary(card);
+  if (!hasResultCard || !shouldMoveToolSummaryToDetails(summary)) {
+    return summary;
   }
-  const rawDetails = card.details ?? [];
-  const resultDetails = rawDetails.filter((detail) => detail.label.trim() === '结果');
-  const parsedItems = resultDetails.flatMap((detail) => parseSearchResultDetailContent(detail.content));
-  return dedupeSearchSourceItems(parsedItems);
+  return card.displayName || card.title;
+}
+
+function shouldMoveToolSummaryToDetails(summary: string): boolean {
+  const normalizedSummary = summary.trim();
+  if (!normalizedSummary) {
+    return false;
+  }
+  if (/\r?\n/.test(normalizedSummary)) {
+    return true;
+  }
+  return !/^(?:正在|调用|开始|准备|执行|查询|检索|搜索)/.test(normalizedSummary);
+}
+
+/**
+ * 只合并相邻的同一非搜索工具调用和结果；搜索来源另有专门面板，不混进普通工具行。
+ */
+function isPairableToolResult(callCard: ProcessCardItem, resultCard: ProcessCardItem): boolean {
+  if (callCard.type !== 'tool_call' || resultCard.type !== 'tool_result') {
+    return false;
+  }
+  if (isSearchProcessCard(callCard) || isSearchProcessCard(resultCard)) {
+    return false;
+  }
+  const callToolId = normalizeProcessToolIdentity(callCard.toolId);
+  const resultToolId = normalizeProcessToolIdentity(resultCard.toolId);
+  if (callToolId && resultToolId && callToolId !== resultToolId) {
+    return false;
+  }
+  const callDisplayName = normalizeProcessToolIdentity(callCard.displayName);
+  const resultDisplayName = normalizeProcessToolIdentity(resultCard.displayName);
+  return !(callDisplayName && resultDisplayName && callDisplayName !== resultDisplayName);
+}
+
+function normalizeProcessToolIdentity(value?: string): string {
+  return String(value ?? '').trim().toLowerCase();
+}
+
+/**
+ * 合并行内只保留一个轻量状态标记，表达结果已返回但不再单独占一整行。
+ */
+/**
+ * 按过程类型选择图标：网页搜索、MCP/业务工具、本地命令不能共用同一个符号，否则消息过程语义会被混淆。
+ */
+function resolveProcessToolIcon(card: ProcessCardItem) {
+  if (isSearchProcessCard(card)) {
+    return card.type === 'tool_call' ? Globe2 : CheckCircle2;
+  }
+  if (isCommandProcessCard(card)) {
+    return card.type === 'tool_call' ? Monitor : CheckCircle2;
+  }
+  return card.type === 'tool_call' ? Plug : CheckCircle2;
 }
 
 /**
@@ -4630,15 +4926,35 @@ function isSearchProcessCard(card: ProcessCardItem): boolean {
   if (card.toolId === 'search') {
     return true;
   }
+  if (card.presentation === 'react' && card.displayName === '网页搜索') {
+    return true;
+  }
+  if (card.presentation === 'react' && card.summary.includes('网页搜索返回')) {
+    return true;
+  }
+  if (card.id.includes('search')) {
+    return true;
+  }
   const text = `${card.displayName ?? ''} ${card.title ?? ''} ${card.summary ?? ''}`;
-  return text.includes('网页搜索') || text.includes('搜索结果') || text.includes('搜索来源');
+  return text.includes('网页搜索');
 }
 
 /**
- * 搜索调用参数通常只是查询词，已在摘要中展示；隐藏明细入口避免同一信息重复占位。
+ * 搜索调用和搜索返回过程只保留摘要，明细由来源面板和最终回答承载，避免过程列表反复展开原始网页数据。
  */
-function shouldHideSearchCallDetails(card: ProcessCardItem): boolean {
-  return card.type === 'tool_call' && isSearchProcessCard(card);
+function shouldHideSearchDetails(card: ProcessCardItem): boolean {
+  return (card.type === 'tool_call' || card.type === 'tool_result') && isSearchProcessCard(card);
+}
+
+/**
+ * 兼容历史持久化的搜索返回摘要，界面不再展示“网页搜索返回”前缀，只保留站点和标题。
+ */
+function formatProcessToolSummary(card: ProcessCardItem): string {
+  const summary = card.summary.trim();
+  if (card.type !== 'tool_result' || !isSearchProcessCard(card)) {
+    return summary;
+  }
+  return summary.replace(/^网页搜索返回\s*：?/, '');
 }
 
 interface CommandProcessRun {
@@ -4800,119 +5116,3 @@ function looksLikeShellCommandText(value: string): boolean {
 function isObjectRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
-
-/**
- * 解析单段搜索结果文本；优先按竖线分隔读取标题、站点和链接，再兜底解析独立链接。
- */
-function parseSearchResultDetailContent(content: string): SearchSourceDisplayItem[] {
-  const blocks = content
-    .split(/\n{2,}/)
-    .map((block) => block.trim())
-    .filter(Boolean);
-  return blocks.flatMap((block, blockIndex) => {
-    const blockItem = parseSearchResultBlock(block, blockIndex);
-    if (blockItem) {
-      return [blockItem];
-    }
-    return block
-      .split(/\n{1,}/)
-      .map((line) => line.trim())
-      .filter(Boolean)
-      .map((line, lineIndex) => parseSearchResultLine(line, blockIndex * 100 + lineIndex))
-      .filter((item): item is SearchSourceDisplayItem => item != null);
-  });
-}
-
-/**
- * 解析实时搜索事件常见的三行块：标题、站点、链接。
- */
-function parseSearchResultBlock(block: string, index: number): SearchSourceDisplayItem | null {
-  const lines = block
-    .split(/\n{1,}/)
-    .map((line) => line.trim())
-    .filter(Boolean);
-  if (lines.length < 2 || lines.some((line) => line.includes('|'))) {
-    return null;
-  }
-  const urlLineIndex = lines.findIndex((line) => looksLikeHttpUrl(line));
-  if (urlLineIndex < 0) {
-    return null;
-  }
-  const url = lines[urlLineIndex].replace(/[，。；;,.]+$/, '');
-  const nonUrlLines = lines.filter((_, lineIndex) => lineIndex !== urlLineIndex);
-  return {
-    id: `process-search-${index}`,
-    title: nonUrlLines[0] ?? url,
-    siteName: nonUrlLines[1],
-    url,
-  };
-}
-
-/**
- * 将一行搜索结果拆成展示字段，避免把长 URL 留在纯文本里撑开布局。
- */
-function parseSearchResultLine(line: string, index: number): SearchSourceDisplayItem | null {
-  const pipeParts = line
-    .split('|')
-    .map((part) => part.trim())
-    .filter(Boolean);
-  if (pipeParts.length >= 2) {
-    const urlPartIndex = pipeParts.findIndex((part) => looksLikeHttpUrl(part));
-    const url = urlPartIndex >= 0 ? pipeParts[urlPartIndex] : undefined;
-    const nonUrlParts = pipeParts.filter((_, partIndex) => partIndex !== urlPartIndex);
-    return {
-      id: `process-search-${index}`,
-      title: nonUrlParts[0] ?? url ?? line,
-      siteName: nonUrlParts[1],
-      url,
-    };
-  }
-
-  const urlMatch = line.match(/https?:\/\/\S+/);
-  if (urlMatch) {
-    const url = urlMatch[0].replace(/[，。；;,.]+$/, '');
-    const title = line.replace(urlMatch[0], '').replace(/[|｜\-–—]+$/, '').trim();
-    return {
-      id: `process-search-${index}`,
-      title: title || url,
-      url,
-    };
-  }
-
-  if (line.length < 4) {
-    return null;
-  }
-  return {
-    id: `process-search-${index}`,
-    title: line,
-  };
-}
-
-/**
- * 按 URL 或标题去重，避免多个搜索事件合并后重复展示同一来源。
- */
-function dedupeSearchSourceItems(items: SearchSourceDisplayItem[]): SearchSourceDisplayItem[] {
-  const seenKeys = new Set<string>();
-  const dedupedItems: SearchSourceDisplayItem[] = [];
-  for (const item of items) {
-    const key = (item.url || item.title).trim().toLowerCase();
-    if (!key || seenKeys.has(key)) {
-      continue;
-    }
-    seenKeys.add(key);
-    dedupedItems.push({
-      ...item,
-      id: item.id || `process-search-${dedupedItems.length}`,
-    });
-  }
-  return dedupedItems;
-}
-
-/**
- * 判断文本是否像 HTTP 链接，用于从搜索结果分隔片段中定位 URL 字段。
- */
-function looksLikeHttpUrl(value: string): boolean {
-  return /^https?:\/\/\S+$/i.test(value.trim());
-}
-
-

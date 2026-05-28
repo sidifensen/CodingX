@@ -179,6 +179,24 @@ describe('Tools page', () => {
     });
   });
 
+  it('supports toggling tool enabled state from the action column', async () => {
+    render(<ToolsPage />);
+    const disableButton = await screen.findByRole('button', { name: '禁用工具 shell_command' });
+    fireEvent.click(disableButton);
+
+    await waitFor(() => {
+      expect(AdminChatApi.updateTool).toHaveBeenCalledWith(
+        9101,
+        expect.objectContaining({
+          toolCode: 'shell_command',
+          enabled: 0,
+        }),
+      );
+    });
+    expect(AdminChatApi.listTools).toHaveBeenCalledTimes(2);
+    expect(AdminChatApi.listToolHealthViews).toHaveBeenCalledTimes(2);
+  });
+
   it('supports delete tool config', async () => {
     render(<ToolsPage />);
     const deleteButton = await screen.findByRole('button', { name: '删除工具 shell_command' });

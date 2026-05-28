@@ -1,6 +1,5 @@
 package com.codingx.runtime.infrastructure.executor;
 import cn.hutool.core.thread.ThreadUtil;
-import com.codingx.config.RuntimeProperties;
 import com.codingx.event.domain.model.TaskEvent;
 import com.codingx.event.domain.repository.TaskEventRepository;
 import com.codingx.runtime.domain.service.TaskRuntimeExecutor;
@@ -23,6 +22,16 @@ import org.springframework.stereotype.Component;
 public class MockTaskRuntimeExecutor implements TaskRuntimeExecutor {
 
     /**
+     * Mock 执行器仅用于本地联调，固定阶段间隔即可，不再暴露环境变量以免污染部署配置。
+     */
+    private static final long MOCK_STEP_DELAY_MS = 300L;
+
+    /**
+     * 任务标题命中该关键字时，直接走失败分支，便于手工验证失败态与通知链路。
+     */
+    private static final String MOCK_FAIL_KEYWORD = "fail";
+
+    /**
      * TaskRepository 依赖。
      */
     private final TaskRepository taskRepository;
@@ -41,11 +50,6 @@ public class MockTaskRuntimeExecutor implements TaskRuntimeExecutor {
      * TaskStreamPublisher 依赖。
      */
     private final TaskStreamPublisher taskStreamPublisher;
-
-    /**
-     * RuntimeProperties 依赖。
-     */
-    private final RuntimeProperties runtimeProperties;
 
     /**
      * 执行 execute 定义的处理逻辑。
@@ -71,7 +75,7 @@ public class MockTaskRuntimeExecutor implements TaskRuntimeExecutor {
             appendEvent(task, "task-log", "Executing", "Running mock backend workflow");
             taskStreamPublisher.publishLog(task.getId(), "Executing", "Running mock backend workflow");
             pause();
-            if (task.getTitle().toLowerCase().contains(runtimeProperties.getMockFailKeyword().toLowerCase())) {
+            if (task.getTitle().toLowerCase().contains(MOCK_FAIL_KEYWORD.toLowerCase())) {
                 task.fail("Mock runtime detected fail keyword in task title");
                 taskRepository.save(task);
                 appendEvent(task, "task-error", "Task failed", task.getErrorMessage());
@@ -110,6 +114,6 @@ public class MockTaskRuntimeExecutor implements TaskRuntimeExecutor {
      * 执行 pause 定义的处理逻辑。
      */
     private void pause() {
-        ThreadUtil.safeSleep(runtimeProperties.getMockStepDelayMs());
+        ThreadUtil.safeSleep(MOCK_STEP_DELAY_MS);
     }
 }

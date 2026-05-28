@@ -5,6 +5,7 @@ import cn.hutool.json.JSONObject;
 import cn.hutool.json.JSONUtil;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 /**
@@ -12,7 +13,10 @@ import org.springframework.stereotype.Service;
  */
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class ConversationRewriteService {
+
+    private static final int LOG_QUESTION_PREVIEW_LENGTH = 300;
 
     private final PromptTemplateLoader promptTemplateLoader;
     private final AiPromptExecutionService aiPromptExecutionService;
@@ -42,13 +46,18 @@ public class ConversationRewriteService {
         }
         String normalizedQuestion = conversationQueryTermMappingService.normalize(question);
         if (shouldBypassPromptRewrite(history, normalizedQuestion)) {
+            logRewriteResult(question, normalizedQuestion);
             return new ConversationRewriteResult(normalizedQuestion, false, List.of(normalizedQuestion));
         }
         String prompt = promptTemplateLoader.load("rewrite");
         String userPrompt = buildRewriteInput(history, normalizedQuestion);
         try {
             String raw = aiPromptExecutionService.complete(prompt, userPrompt);
-            JSONObject root = JSONUtil.parseObj(raw);
+            JSONObject root = parseRewritePayload(raw);
+            if (root == null) {
+                logRewriteFallback(question, normalizedQuestion, "模型未返回 JSON 改写结果");
+                return new ConversationRewriteResult(normalizedQuestion, false, List.of(normalizedQuestion));
+            }
             String rewrite = StrUtil.trim(root.getStr("rewrite"));
             boolean shouldSplit = Boolean.TRUE.equals(root.getBool("should_split"));
             List<String> subQuestions = root.getJSONArray("sub_questions") == null
@@ -60,8 +69,11 @@ public class ConversationRewriteService {
                     .toList();
             String resolvedRewrite = StrUtil.isBlank(rewrite) ? normalizedQuestion : rewrite;
             List<String> resolvedSubQuestions = subQuestions.isEmpty() ? List.of(resolvedRewrite) : subQuestions;
-            return new ConversationRewriteResult(resolvedRewrite, shouldSplit && resolvedSubQuestions.size() > 1, resolvedSubQuestions);
+            boolean resolvedShouldSplit = shouldSplit && resolvedSubQuestions.size() > 1;
+            logRewriteResult(question, resolvedRewrite);
+            return new ConversationRewriteResult(resolvedRewrite, resolvedShouldSplit, resolvedSubQuestions);
         } catch (Exception exception) {
+            logRewriteFallback(question, normalizedQuestion, "改写结果解析失败", exception);
             return new ConversationRewriteResult(normalizedQuestion, false, List.of(normalizedQuestion));
         }
     }
@@ -88,5 +100,91 @@ public class ConversationRewriteService {
             return false;
         }
         return question.contains("销售");
+    }
+
+    /**
+     * 按固定格式打印问题改写结果，方便在后端日志中快速对比改写前后文本。
+     */
+    private void logRewriteResult(String originalQuestion, String rewrittenQuestion) {
+        log.info(
+            "原问题: {}, 改写后问题: {}",
+            logPreview(originalQuestion),
+            logPreview(rewrittenQuestion)
+        );
+    }
+
+    /**
+     * 记录改写链路降级原因，便于区分“模型格式不符”和“真正异常”两类情况。
+     */
+    private void logRewriteFallback(String originalQuestion, String rewrittenQuestion, String reason) {
+        log.info(
+            "原问题: {}, 改写后问题: {}, 降级原因: {}",
+            logPreview(originalQuestion),
+            logPreview(rewrittenQuestion),
+            reason
+        );
+    }
+
+    /**
+     * 记录改写链路异常降级，保留堆栈用于排查模型输出或解析器行为异常。
+     */
+    private void logRewriteFallback(String originalQuestion, String rewrittenQuestion, String reason, Exception exception) {
+        log.warn(
+            "原问题: {}, 改写后问题: {}, 降级原因: {}",
+            logPreview(originalQuestion),
+            logPreview(rewrittenQuestion),
+            reason,
+            exception
+        );
+    }
+
+    /**
+     * 兼容模型把 JSON 包在 markdown 代码块中返回，同时规避普通文本触发 Hutool JSON 异常。
+     */
+    private JSONObject parseRewritePayload(String raw) {
+        String cleaned = stripMarkdownCodeFence(raw);
+        if (!StrUtil.startWith(cleaned, "{")) {
+            return null;
+        }
+        return JSONUtil.parseObj(cleaned);
+    }
+
+    /**
+     * 清理 markdown fenced code block，保持和意图解析链路一致的 JSON 读取入口。
+     */
+    private String stripMarkdownCodeFence(String raw) {
+        String value = StrUtil.trim(raw);
+        if (StrUtil.isBlank(value) || !value.startsWith("```")) {
+            return value;
+        }
+        String[] lines = value.split("\\R", -1);
+        if (lines.length < 2 || !StrUtil.trim(lines[0]).startsWith("```")) {
+            return value;
+        }
+        int endFenceLine = -1;
+        for (int index = lines.length - 1; index > 0; index--) {
+            if (StrUtil.trim(lines[index]).startsWith("```")) {
+                endFenceLine = index;
+                break;
+            }
+        }
+        if (endFenceLine <= 0) {
+            return value;
+        }
+        StringBuilder builder = new StringBuilder();
+        for (int index = 1; index < endFenceLine; index++) {
+            if (!builder.isEmpty()) {
+                builder.append('\n');
+            }
+            builder.append(lines[index]);
+        }
+        return builder.toString().trim();
+    }
+
+    /**
+     * 日志只保留问题预览，避免超长输入或拆分结果撑大单行日志。
+     */
+    private String logPreview(String text) {
+        return StrUtil.maxLength(text, LOG_QUESTION_PREVIEW_LENGTH);
     }
 }

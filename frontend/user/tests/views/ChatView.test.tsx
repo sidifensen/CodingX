@@ -84,6 +84,76 @@ describe('ChatView', () => {
   });
 
   /**
+   * 搜索引用编号应连接到真实来源链接，避免展示成不能跳转的纯文本。
+   */
+  it('应将引用编号渲染为真实来源链接', async () => {
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          messages: [
+            {
+              id: '101',
+              conversationId: '2001',
+              role: 'USER',
+              content: '请对比三份资料',
+              status: 'COMPLETED',
+            },
+            {
+              id: '102',
+              conversationId: '2001',
+              role: 'ASSISTANT',
+              content: '根据资料，结论分别为 [R1]、[R2] 和 [R3]。',
+              status: 'COMPLETED',
+            },
+          ],
+          executionSteps: [],
+          references: [
+            {
+              id: '11',
+              runId: '5002',
+              messageId: '101',
+              conversationId: '2001',
+              title: '资料一',
+              url: 'https://example.com/a',
+              siteName: 'Example',
+            },
+            {
+              id: '12',
+              runId: '5002',
+              messageId: '101',
+              conversationId: '2001',
+              title: '资料二',
+              url: 'https://example.com/b',
+              siteName: 'Example',
+              rankNo: 2,
+            },
+            {
+              id: '13',
+              runId: '5002',
+              messageId: '101',
+              conversationId: '2001',
+              title: '资料三',
+              url: 'https://example.com/c',
+              siteName: 'Example',
+              rankNo: 3,
+            },
+          ],
+          artifacts: [],
+        })}
+      />,
+    );
+
+    const links = await screen.findAllByRole('link');
+    const citationLinks = links.filter((link) => link.textContent?.includes('[R'));
+    expect(citationLinks).toHaveLength(3);
+    expect(citationLinks[0]).toHaveAttribute('href', 'https://example.com/a');
+    expect(citationLinks[1]).toHaveAttribute('href', 'https://example.com/b');
+    expect(citationLinks[2]).toHaveAttribute('href', 'https://example.com/c');
+  });
+
+  /**
    * 已登录发送消息时应调用工作台提交动作。
    */
   it('应在已登录发送消息时调用提交动作', async () => {
@@ -435,6 +505,9 @@ describe('ChatView', () => {
       scrollPaddingBottom: '160px',
     });
     expect(inputDock).toBeInTheDocument();
+    expect(inputDock).toHaveClass('z-30');
+    expect(inputDock).toHaveClass('bg-background');
+    expect(inputDock).not.toHaveClass('bg-background/88');
   });
 
   /**
@@ -578,10 +651,11 @@ describe('ChatView', () => {
     expect(tracePanel).toBeInTheDocument();
     expect(tracePanel).not.toHaveTextContent('过程时间线');
     expect(tracePanel).toHaveTextContent('深度思考');
-    expect(screen.getByTestId('process-analysis-toggle-701-analysis-1')).toHaveAttribute(
-      'aria-expanded',
-      'true',
-    );
+    const analysisToggle = screen.getByTestId('process-analysis-toggle-701-analysis-1');
+    expect(analysisToggle).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByText('先判断这个问题是否需要实时信息。')).not.toBeInTheDocument();
+    fireEvent.click(analysisToggle);
+    expect(analysisToggle).toHaveAttribute('aria-expanded', 'true');
     expect(screen.getByText('先判断这个问题是否需要实时信息。')).toBeInTheDocument();
     expect(screen.queryByTestId('process-tool-group-toggle-701')).not.toBeInTheDocument();
     expect(screen.getByTestId('process-tool-row-701-tool-call-1')).toBeInTheDocument();
@@ -741,7 +815,6 @@ describe('ChatView', () => {
     expect(toggleButton).toHaveAttribute('aria-expanded', 'true');
     const analysisCard = screen.getByTestId('process-analysis-card-704');
     const analysisText = screen.getByTestId('process-analysis-text-704');
-    expect(analysisCard).toHaveClass('ml-5');
     expect(analysisCard).toHaveClass('rounded-xl');
     expect(analysisCard).toHaveClass('border');
     expect(analysisCard).toHaveClass('bg-surface-container');
@@ -755,9 +828,9 @@ describe('ChatView', () => {
   });
 
   /**
-   * 深度思考在流式完成后也应保持展开，避免用户误判过程是统一生成的。
+   * 深度思考在流式完成后应默认折叠，避免长过程持续占据主阅读区；用户仍可手动展开复核。
    */
-  it('应在深度思考流式完成后保持展开', async () => {
+  it('应在深度思考流式完成后默认折叠', async () => {
     const initialSummary = '正在判断是否需要检索最新资料。';
 
     const { rerender } = render(
@@ -824,10 +897,12 @@ describe('ChatView', () => {
       />,
     );
 
-    expect(screen.getByTestId('process-analysis-toggle-704b-analysis-704b')).toHaveAttribute(
-      'aria-expanded',
-      'true',
-    );
+    const completedToggleButton = screen.getByTestId('process-analysis-toggle-704b-analysis-704b');
+    expect(completedToggleButton).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByTestId('process-analysis-text-704b')).not.toBeInTheDocument();
+
+    fireEvent.click(completedToggleButton);
+    expect(completedToggleButton).toHaveAttribute('aria-expanded', 'true');
     expect(screen.getByTestId('process-analysis-text-704b')).toHaveTextContent(initialSummary);
   });
 

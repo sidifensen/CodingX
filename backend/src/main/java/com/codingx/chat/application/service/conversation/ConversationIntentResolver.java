@@ -131,6 +131,9 @@ public class ConversationIntentResolver {
         if (StrUtil.isBlank(cleanedRaw)) {
             return List.of();
         }
+        if (!looksLikeJson(cleanedRaw)) {
+            return List.of();
+        }
         JSONArray array;
         Object parsed = JSONUtil.parse(cleanedRaw);
         if (parsed instanceof JSONArray jsonArray) {
@@ -187,6 +190,13 @@ public class ConversationIntentResolver {
             builder.append(lines[index]);
         }
         return builder.toString().trim();
+    }
+
+    /**
+     * 仅在返回值看起来像 JSON 时才交给 Hutool 解析，避免普通文本命中异常堆栈。
+     */
+    private boolean looksLikeJson(String raw) {
+        return StrUtil.startWith(raw, "[") || StrUtil.startWith(raw, "{");
     }
 
     /**

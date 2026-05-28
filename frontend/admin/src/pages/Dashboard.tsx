@@ -61,7 +61,7 @@ export function Dashboard() {
       <div className="mx-auto max-w-[1500px] space-y-5">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
           <div>
-            <h1 className="text-[44px] font-semibold tracking-[-0.04em] text-ink">Dashboard</h1>
+            <h1 className="text-[44px] font-semibold tracking-[-0.04em] text-ink">工作台</h1>
             <p className="mt-2 text-body-sm text-secondary">当前窗口下的运营态快照、运行健康和配置资产全览。</p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
@@ -110,25 +110,29 @@ export function Dashboard() {
                   label="活跃用户"
                   value={dashboard?.kpis.activeUserCount ?? '-'}
                   icon="monitoring"
-                  tone="from-sky-50 to-sky-100 dark:from-sky-500/12 dark:to-sky-500/18"
+                  toneLight="bg-[#8fcfff]"
+                  toneDark="dark:bg-sky-500/16"
                 />
                 <MetricCard
                   label="会话数"
                   value={dashboard?.kpis.conversationCount ?? '-'}
                   icon="chat_bubble"
-                  tone="from-indigo-50 to-indigo-100 dark:from-indigo-500/12 dark:to-indigo-500/18"
+                  toneLight="bg-[#c9b8ff]"
+                  toneDark="dark:bg-indigo-500/16"
                 />
                 <MetricCard
                   label="消息数"
                   value={dashboard?.kpis.messageCount ?? '-'}
                   icon="bolt"
-                  tone="from-amber-50 to-orange-100 dark:from-amber-500/12 dark:to-orange-500/18"
+                  toneLight="bg-[#ffc86f]"
+                  toneDark="dark:bg-amber-500/16"
                 />
                 <MetricCard
                   label="工作空间"
                   value={dashboard?.kpis.workspaceCount ?? '-'}
                   icon="deployed_code"
-                  tone="from-emerald-50 to-emerald-100 dark:from-emerald-500/12 dark:to-emerald-500/18"
+                  toneLight="bg-[#87e7bb]"
+                  toneDark="dark:bg-emerald-500/16"
                 />
               </div>
             </section>
@@ -140,7 +144,7 @@ export function Dashboard() {
               </div>
               <div data-testid="dashboard-traffic-chart" className="h-[300px]">
                 <Area
-                  {...buildAreaConfig(mainTrafficData, '--chart-primary', chartTheme)}
+                  {...buildAreaConfig(mainTrafficData, '--chart-primary', chartTheme, '消息数', '条')}
                   data-testid="dashboard-traffic-plot"
                 />
               </div>
@@ -159,7 +163,10 @@ export function Dashboard() {
                   legendColor="#22c55e"
                   testId="dashboard-conversation-chart"
                 >
-                  <Line {...buildLineConfig(conversationTrendData, '#22c55e', chartTheme, '次')} data-testid="dashboard-conversation-plot" />
+                  <Line
+                    {...buildLineConfig(conversationTrendData, '#22c55e', chartTheme, '次', '会话数')}
+                    data-testid="dashboard-conversation-plot"
+                  />
                 </TrendChartCard>
                 <TrendChartCard
                   title="活跃用户趋势"
@@ -168,7 +175,10 @@ export function Dashboard() {
                   legendColor="#8b5cf6"
                   testId="dashboard-active-user-chart"
                 >
-                  <Line {...buildLineConfig(activeUserTrendData, '#8b5cf6', chartTheme, '人')} data-testid="dashboard-active-user-plot" />
+                  <Line
+                    {...buildLineConfig(activeUserTrendData, '#8b5cf6', chartTheme, '人', '活跃用户')}
+                    data-testid="dashboard-active-user-plot"
+                  />
                 </TrendChartCard>
                 <TrendChartCard
                   title="响应耗时趋势"
@@ -178,7 +188,10 @@ export function Dashboard() {
                   annotation="警告 > 15000ms"
                   testId="dashboard-latency-chart"
                 >
-                  <Line {...buildLineConfig(latencyTrendData, '#f59e0b', chartTheme, '毫秒')} data-testid="dashboard-latency-plot" />
+                  <Line
+                    {...buildLineConfig(latencyTrendData, '#f59e0b', chartTheme, '毫秒', '平均响应时间', { domainMin: 0 })}
+                    data-testid="dashboard-latency-plot"
+                  />
                 </TrendChartCard>
                 <TrendChartCard
                   title="质量趋势"
@@ -257,12 +270,14 @@ function MetricCard({
   label,
   value,
   icon,
-  tone,
+  toneLight,
+  toneDark,
 }: {
   label: string;
   value: number | string;
   icon: string;
-  tone: string;
+  toneLight: string;
+  toneDark: string;
 }) {
   return (
     <div className="rounded-[24px] bg-surface-container-low p-4">
@@ -271,8 +286,17 @@ function MetricCard({
           <div className="text-[30px] font-semibold tracking-[-0.04em] text-ink">{value}</div>
           <div className="mt-1 text-[13px] text-secondary">{label}</div>
         </div>
-        <div className={`flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br ${tone}`}>
-          <span className="material-symbols-outlined text-[21px] text-ink dark:text-white">{icon}</span>
+        <div className={`flex h-12 w-12 items-center justify-center rounded-2xl ${toneLight} ${toneDark}`}>
+          <span
+            className="material-symbols-outlined text-[22px]"
+            style={{
+              color: '#ffffff',
+              fontVariationSettings: "'FILL' 1, 'wght' 700, 'GRAD' 0, 'opsz' 24",
+              textShadow: '0 1px 1px rgba(0, 0, 0, 0.08)',
+            }}
+          >
+            {icon}
+          </span>
         </div>
       </div>
       <div className="mt-4 text-[12px] text-secondary">数据来自当前控制台真实运行与配置快照</div>
@@ -404,7 +428,13 @@ function InsightItem({
   );
 }
 
-function buildAreaConfig(data: Array<{ label: string; value: number }>, colorToken: string, chartTheme: ChartTheme) {
+function buildAreaConfig(
+  data: Array<{ label: string; value: number }>,
+  colorToken: string,
+  chartTheme: ChartTheme,
+  seriesLabel: string,
+  unit: string,
+) {
   return {
     data,
     xField: 'label',
@@ -420,8 +450,18 @@ function buildAreaConfig(data: Array<{ label: string; value: number }>, colorTok
     areaStyle: {
       fill: 'l(270) 0:rgba(59,130,246,0.26) 1:rgba(59,130,246,0.02)',
     },
-    axis: buildAxisTheme(chartTheme, '条'),
-    tooltip: buildTooltipTheme(),
+    scale: {
+      y: {
+        type: 'linear',
+        nice: true,
+        domainMin: 0,
+      },
+    },
+    axis: buildAxisTheme(chartTheme, unit),
+    tooltip: buildTooltipTheme({
+      title: { field: 'label' },
+      items: [buildSingleSeriesTooltipItem(seriesLabel, unit)],
+    }),
     legend: false,
     padding: [16, 16, 40, 52],
   };
@@ -432,7 +472,10 @@ function buildLineConfig(
   color: string,
   chartTheme: ChartTheme,
   unit: string,
+  seriesLabel: string,
+  yScaleOverrides?: Record<string, unknown>,
 ) {
+  const xLabelFormatter = buildSparseLabelFormatter(data.map((item) => item.label));
   return {
     data,
     xField: 'label',
@@ -440,6 +483,14 @@ function buildLineConfig(
     height: 220,
     smooth: true,
     color,
+    scale: {
+      y: {
+        type: 'linear',
+        nice: true,
+        domainMin: 0,
+        ...yScaleOverrides,
+      },
+    },
     point: {
       size: 3,
       shape: 'circle',
@@ -449,14 +500,20 @@ function buildLineConfig(
         lineWidth: 1.5,
       },
     },
-    axis: buildAxisTheme(chartTheme, unit),
-    tooltip: buildTooltipTheme(),
+    axis: buildAxisTheme(chartTheme, unit, xLabelFormatter),
+    tooltip: buildTooltipTheme({
+      title: { field: 'label' },
+      items: [buildSingleSeriesTooltipItem(seriesLabel, unit)],
+    }),
     legend: false,
     padding: [16, 16, 40, 52],
   };
 }
 
 function buildColumnConfig(data: Array<{ label: string; type: string; value: number }>, chartTheme: ChartTheme) {
+  const xLabelFormatter = buildSparseLabelFormatter(
+    Array.from(new Set(data.map((item) => item.label))),
+  );
   return {
     data,
     xField: 'label',
@@ -464,8 +521,23 @@ function buildColumnConfig(data: Array<{ label: string; type: string; value: num
     seriesField: 'type',
     height: 220,
     color: ['#22c55e', '#ef4444'],
-    axis: buildAxisTheme(chartTheme, '次'),
-    tooltip: buildTooltipTheme(),
+    scale: {
+      y: {
+        type: 'linear',
+        nice: true,
+        domainMin: 0,
+      },
+    },
+    axis: buildAxisTheme(chartTheme, '次', xLabelFormatter),
+    tooltip: buildTooltipTheme({
+      title: { field: 'label' },
+      items: [
+        (datum: { type: string; value: number }) => ({
+          name: datum.type,
+          value: formatTooltipValue(datum.value, '次'),
+        }),
+      ],
+    }),
     legend: {
       position: 'top-left' as const,
       itemLabelFill: chartTheme.axisLabelColor,
@@ -508,11 +580,16 @@ function buildRingConfig(data: Array<{ type: string; value: number }>) {
   };
 }
 
-function buildAxisTheme(chartTheme: ChartTheme, unit: string) {
+function buildAxisTheme(
+  chartTheme: ChartTheme,
+  unit: string,
+  xLabelFormatter?: (value: string) => string,
+) {
   return {
     x: {
       labelFill: chartTheme.axisLabelColor,
       labelOpacity: 1,
+      labelFormatter: xLabelFormatter,
       lineStroke: chartTheme.axisStrokeColor,
       tickStroke: chartTheme.axisStrokeColor,
       tickLength: 4,
@@ -532,10 +609,11 @@ function buildAxisTheme(chartTheme: ChartTheme, unit: string) {
   };
 }
 
-function buildTooltipTheme() {
+function buildTooltipTheme(overrides?: Record<string, unknown>) {
   return {
     titleFill: 'var(--theme-ink)',
     marker: true,
+    ...overrides,
     domStyles: {
       'g2-tooltip': {
         borderRadius: '16px',
@@ -595,6 +673,52 @@ function formatRatio(value: number) {
     return '-';
   }
   return value.toFixed(2);
+}
+
+function buildSingleSeriesTooltipItem(seriesLabel: string, unit: string) {
+  return (datum: { value: number }) => ({
+    name: seriesLabel,
+    value: formatTooltipValue(datum.value, unit),
+  });
+}
+
+function formatTooltipValue(value: number, unit: string) {
+  if (unit === '毫秒') {
+    return `${Math.round(value).toLocaleString('zh-CN')} ms`;
+  }
+  if (unit === '人') {
+    return `${value} 人`;
+  }
+  if (unit === '次' || unit === '条') {
+    return `${value} ${unit}`;
+  }
+  return String(value);
+}
+
+function buildSparseLabelFormatter(labels: string[], maxVisible = 5) {
+  if (labels.length <= maxVisible) {
+    return (value: string) => value;
+  }
+  const lastIndex = labels.length - 1;
+  const visibleIndexes = new Set<number>();
+  const step = lastIndex / Math.max(1, maxVisible - 1);
+  for (let index = 0; index < maxVisible; index += 1) {
+    visibleIndexes.add(Math.round(index * step));
+  }
+  visibleIndexes.add(lastIndex);
+  const indexMap = new Map<string, number>();
+  labels.forEach((label, index) => {
+    if (!indexMap.has(label)) {
+      indexMap.set(label, index);
+    }
+  });
+  return (value: string) => {
+    const index = indexMap.get(value);
+    if (index === undefined) {
+      return value;
+    }
+    return visibleIndexes.has(index) ? value : '';
+  };
 }
 
 interface ChartTheme {

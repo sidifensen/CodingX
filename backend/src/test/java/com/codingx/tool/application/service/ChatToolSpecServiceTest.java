@@ -118,6 +118,48 @@ class ChatToolSpecServiceTest {
     }
 
     /**
+     * apply_patch 的模型说明必须强调当前工作目录路径边界，避免模型继续编造 C:\workspace 这类虚拟根路径。
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void applyPatchSpecShouldTellModelToUseWorkspaceRelativePaths() {
+        ChatToolRepository repository = new InMemoryChatToolRepository(List.of(
+            ChatTool.builder()
+                .toolCode("apply_patch")
+                .displayName("应用补丁")
+                .description("在当前工作区写入文件")
+                .enabled(1)
+                .sortNo(1)
+                .deleted(0)
+                .build()
+        ));
+        ChatToolExecutor executor = new ChatToolExecutor() {
+            @Override
+            public List<String> toolCodes() {
+                return List.of("apply_patch");
+            }
+
+            @Override
+            public ChatToolExecutionResult execute(String toolCode, String question) {
+                return new ChatToolExecutionResult(toolCode, "ok", Map.of());
+            }
+        };
+        ChatToolRegistry registry = new ChatToolRegistry(List.of(executor));
+        registry.init();
+        ChatToolSpecService service = new ChatToolSpecService(repository, registry);
+
+        ChatToolSpec patchSpec = service.listModelVisibleToolSpecs().getFirst();
+        Map<String, Object> properties = (Map<String, Object>) patchSpec.parameters().get("properties");
+        Map<String, Object> patchSchema = (Map<String, Object>) properties.get("patch");
+        String patchDescription = String.valueOf(patchSchema.get("description"));
+
+        assertTrue(patchSpec.description().contains("当前工具工作目录"));
+        assertTrue(patchDescription.contains("相对路径"));
+        assertTrue(patchDescription.contains("diary/index.html"));
+        assertTrue(patchDescription.contains("C:\\workspace"));
+    }
+
+    /**
      * 测试用内存仓储只实现 schema 服务所需的读取方法。
      */
     private record InMemoryChatToolRepository(List<ChatTool> tools) implements ChatToolRepository {

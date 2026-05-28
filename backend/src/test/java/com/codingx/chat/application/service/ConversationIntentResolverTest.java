@@ -206,4 +206,34 @@ class ConversationIntentResolverTest {
         verify(promptTemplateLoader).render(anyString(), anyMap());
         verify(aiPromptExecutionService).complete("intent prompt", "广州最近天气怎么样");
     }
+
+    /**
+     * 当模型返回普通文本而不是 JSON 时，应直接走本地兜底候选，避免 JSON 解析异常污染主链路日志。
+     */
+    @Test
+    void resolveCandidatesFallsBackWhenModelReturnsPlainTextInsteadOfJson() {
+        List<ChatIntentNode> nodes = List.of(
+            ChatIntentNode.builder().intentCode("system").name("系统问候").intentType("system").enabled(1).sortNo(1).build(),
+            ChatIntentNode.builder()
+                .intentCode("sys-welcome")
+                .parentCode("system")
+                .name("欢迎语")
+                .description("你好、hello、hi 等问候语")
+                .intentType("system")
+                .enabled(1)
+                .sortNo(2)
+                .build()
+        );
+        List<ChatIntentExample> examples = List.of(
+            ChatIntentExample.builder().intentCode("sys-welcome").exampleText("你好").sortNo(1).build()
+        );
+        when(promptTemplateLoader.render(anyString(), anyMap())).thenReturn("intent prompt");
+        when(aiPromptExecutionService.complete("intent prompt", "你好")).thenReturn("你好");
+
+        List<ConversationIntentCandidate> candidates = conversationIntentResolver.resolveCandidates("你好", nodes, examples);
+
+        assertEquals("sys-welcome", candidates.getFirst().node().getIntentCode());
+        verify(promptTemplateLoader).render(anyString(), anyMap());
+        verify(aiPromptExecutionService).complete("intent prompt", "你好");
+    }
 }

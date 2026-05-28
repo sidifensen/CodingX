@@ -1,16 +1,25 @@
 package com.codingx.common.idempotent;
 
+import cn.hutool.core.collection.ListUtil;
+import cn.hutool.core.util.ArrayUtil;
 import cn.hutool.core.util.StrUtil;
 import cn.hutool.crypto.digest.DigestUtil;
 import com.codingx.common.exception.ConflictException;
 import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.annotation.Around;
 import org.aspectj.lang.annotation.Aspect;
 import org.aspectj.lang.reflect.MethodSignature;
+import org.springframework.core.DefaultParameterNameDiscoverer;
+import org.springframework.expression.Expression;
+import org.springframework.expression.ExpressionParser;
+import org.springframework.expression.spel.standard.SpelExpressionParser;
+import org.springframework.expression.spel.support.StandardEvaluationContext;
 import org.springframework.stereotype.Component;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
@@ -22,6 +31,10 @@ import org.springframework.web.context.request.ServletRequestAttributes;
 @Component
 @RequiredArgsConstructor
 public class IdempotentSubmitAspect {
+
+    private static final DefaultParameterNameDiscoverer PARAMETER_NAME_DISCOVERER = new DefaultParameterNameDiscoverer();
+    private static final ExpressionParser EXPRESSION_PARSER = new SpelExpressionParser();
+    private static final List<String> SPEL_PREFIXES = ListUtil.of("#", "T(");
 
     private final IdempotentLockProvider idempotentLockProvider;
 
@@ -73,7 +86,7 @@ public class IdempotentSubmitAspect {
     private String buildLockKey(ProceedingJoinPoint joinPoint, IdempotentSubmit idempotentSubmit) {
         if (StrUtil.isNotBlank(idempotentSubmit.key())) {
             MethodSignature signature = (MethodSignature) joinPoint.getSignature();
-            Object keyValue = SpELUtil.parseKey(idempotentSubmit.key(), signature.getMethod(), joinPoint.getArgs());
+            Object keyValue = parseLockKeyValue(idempotentSubmit.key(), signature.getMethod(), joinPoint.getArgs());
             return "idempotent-submit:key:" + keyValue;
         }
         return "idempotent-submit:path:"
@@ -115,5 +128,39 @@ public class IdempotentSubmitAspect {
      */
     private String calcArgsMD5(ProceedingJoinPoint joinPoint) {
         return DigestUtil.md5Hex(cn.hutool.json.JSONUtil.toJsonStr(joinPoint.getArgs()).getBytes(StandardCharsets.UTF_8));
+    }
+
+    /**
+     * 直接在切面内解析锁键，避免热重载时遗漏工具类字节码导致幂等校验失效。
+     * @param keyExpression 注解中声明的键表达式。
+     * @param method 目标方法。
+     * @param args 调用参数。
+     * @return 解析后的锁键值。
+     */
+    private Object parseLockKeyValue(String keyExpression, Method method, Object[] args) {
+        Optional<String> spelPrefix = SPEL_PREFIXES.stream().filter(keyExpression::contains).findFirst();
+        if (spelPrefix.isEmpty()) {
+            return keyExpression;
+        }
+        return evaluateSpelKey(keyExpression, method, args);
+    }
+
+    /**
+     * 解析 SpEL 锁键表达式，并把方法入参注入上下文。
+     * @param keyExpression SpEL 表达式。
+     * @param method 目标方法。
+     * @param args 调用参数。
+     * @return 表达式执行结果。
+     */
+    private Object evaluateSpelKey(String keyExpression, Method method, Object[] args) {
+        Expression expression = EXPRESSION_PARSER.parseExpression(keyExpression);
+        String[] parameterNames = PARAMETER_NAME_DISCOVERER.getParameterNames(method);
+        StandardEvaluationContext context = new StandardEvaluationContext();
+        if (ArrayUtil.isNotEmpty(parameterNames)) {
+            for (int index = 0; index < parameterNames.length; index++) {
+                context.setVariable(parameterNames[index], args[index]);
+            }
+        }
+        return expression.getValue(context);
     }
 }

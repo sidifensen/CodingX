@@ -91,6 +91,20 @@ describe('Experts page', () => {
     });
   });
 
+  it('keeps the expert dialog shell fixed and scrolls only the form body', async () => {
+    render(<Experts />);
+    await screen.findByText('/solution-architect');
+
+    fireEvent.click(screen.getByRole('button', { name: '创建新专家' }));
+
+    const dialog = await screen.findByRole('dialog', { name: '新增专家' });
+    expect(dialog).toHaveClass('overflow-hidden');
+
+    const dialogBody = within(dialog).getByTestId('expert-edit-dialog-body');
+    expect(dialogBody).toHaveClass('overflow-y-auto');
+    expect(dialogBody).toHaveClass('overscroll-y-contain');
+  });
+
   it('supports edit expert in experts page', async () => {
     render(<Experts />);
     const editButton = await screen.findByRole('button', { name: '编辑专家 solution-architect' });

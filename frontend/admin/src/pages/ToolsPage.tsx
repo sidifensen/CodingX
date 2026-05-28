@@ -186,6 +186,26 @@ export function ToolsPage() {
     }
   };
 
+  /**
+   * 列表操作列直接切换工具启停状态，保持原配置字段不变，只改 enabled。
+   */
+  const handleToggleToolEnabled = async (tool: AdminChatTool) => {
+    if (tool.id == null) {
+      setConfigErrorMessage('工具配置缺少主键，无法切换状态');
+      return;
+    }
+    setConfigErrorMessage('');
+    try {
+      await AdminChatApi.updateTool(tool.id, {
+        ...tool,
+        enabled: tool.enabled === 0 ? 1 : 0,
+      });
+      await Promise.all([loadTools(), loadToolHealthViews()]);
+    } catch (error) {
+      setConfigErrorMessage(extractErrorMessage(error, tool.enabled === 0 ? '启用工具失败' : '禁用工具失败'));
+    }
+  };
+
   return (
     <div className="w-full space-y-lg p-lg">
       <div className="flex flex-col gap-sm lg:flex-row lg:items-end lg:justify-between">
@@ -331,6 +351,20 @@ export function ToolsPage() {
                             onClick={() => openInvokeDialog(toolCode, health?.sampleQuestion)}
                           >
                             调用
+                          </button>
+                          <button
+                            type="button"
+                            aria-label={`${tool?.enabled === 0 ? '启用' : '禁用'}工具 ${toolCode}`}
+                            className={clsx(
+                              'rounded-lg border px-sm py-1.5 text-[12px] transition-colors disabled:opacity-60',
+                              tool?.enabled === 0
+                                ? 'border-border-strong bg-surface-container-lowest text-ink hover:bg-surface-container-low'
+                                : 'border-warning bg-warning-container text-on-warning-container hover:opacity-90',
+                            )}
+                            onClick={() => (tool ? void handleToggleToolEnabled(tool) : null)}
+                            disabled={!tool}
+                          >
+                            {tool?.enabled === 0 ? '启用' : '禁用'}
                           </button>
                           <button
                             type="button"

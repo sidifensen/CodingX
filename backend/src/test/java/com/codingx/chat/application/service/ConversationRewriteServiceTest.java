@@ -111,4 +111,50 @@ class ConversationRewriteServiceTest {
         assertEquals("AcmeDB 最新版本是什么", result.rewrite());
         assertEquals(List.of("AcmeDB 最新版本是什么"), result.subQuestions());
     }
+
+    /**
+     * 改写服务应兼容模型把 JSON 包在 markdown 代码块中的返回格式，避免把有效结果误判为异常。
+     */
+    @Test
+    void rewriteResultStripsMarkdownCodeFenceBeforeParsingJson() {
+        when(conversationQueryTermMappingService.normalize("你好")).thenReturn("你好");
+        when(promptTemplateLoader.load("rewrite")).thenReturn("rewrite prompt");
+        when(aiPromptExecutionService.complete(
+            "rewrite prompt",
+            "历史上下文：无\n当前问题：你好"
+        )).thenReturn("""
+            ```json
+            {
+              "rewrite":"你好",
+              "should_split":false,
+              "sub_questions":["你好"]
+            }
+            ```
+            """);
+
+        ConversationRewriteResult result = conversationRewriteService.rewriteResult(List.of(), "你好");
+
+        assertEquals("你好", result.rewrite());
+        assertEquals(false, result.shouldSplit());
+        assertEquals(List.of("你好"), result.subQuestions());
+    }
+
+    /**
+     * 当模型未按约定返回 JSON 时，改写服务应降级为规范化后的原问题，而不是把异常继续扩散到主链路。
+     */
+    @Test
+    void rewriteResultFallsBackToNormalizedQuestionWhenModelReturnsPlainText() {
+        when(conversationQueryTermMappingService.normalize("你好")).thenReturn("你好");
+        when(promptTemplateLoader.load("rewrite")).thenReturn("rewrite prompt");
+        when(aiPromptExecutionService.complete(
+            "rewrite prompt",
+            "历史上下文：无\n当前问题：你好"
+        )).thenReturn("你好");
+
+        ConversationRewriteResult result = conversationRewriteService.rewriteResult(List.of(), "你好");
+
+        assertEquals("你好", result.rewrite());
+        assertEquals(false, result.shouldSplit());
+        assertEquals(List.of("你好"), result.subQuestions());
+    }
 }

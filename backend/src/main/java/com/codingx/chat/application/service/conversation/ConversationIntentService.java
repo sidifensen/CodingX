@@ -10,6 +10,7 @@ import com.codingx.mcp.application.executor.WeatherQuestionParser;
 import java.util.ArrayList;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 /**
@@ -17,6 +18,7 @@ import org.springframework.stereotype.Service;
  */
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class ConversationIntentService {
 
     private final ChatIntentNodeRepository chatIntentNodeRepository;
@@ -41,36 +43,44 @@ public class ConversationIntentService {
      */
     public ConversationIntentDecision route(String question, boolean mcpEnabled) {
         if (StrUtil.isBlank(question)) {
-            return new ConversationIntentDecision("clarify.ambiguity", ConversationIntentAction.CLARIFY, "请补充你的具体问题");
+            ConversationIntentDecision decision = new ConversationIntentDecision("clarify.ambiguity", ConversationIntentAction.CLARIFY, "请补充你的具体问题");
+            logIntentDecision(question, mcpEnabled, decision);
+            return decision;
         }
         List<ChatIntentNode> nodes = chatIntentNodeRepository.findEnabledNodes();
         List<ChatIntentExample> examples = collectExamples(nodes);
         List<ConversationIntentCandidate> candidates = conversationIntentResolver.resolveCandidates(question, nodes, examples);
         String guidancePrompt = conversationIntentGuidanceService.buildGuidancePrompt(question, candidates, nodes);
         if (StrUtil.isNotBlank(guidancePrompt)) {
-            return new ConversationIntentDecision("clarify.ambiguity", ConversationIntentAction.CLARIFY, guidancePrompt);
+            ConversationIntentDecision decision = new ConversationIntentDecision("clarify.ambiguity", ConversationIntentAction.CLARIFY, guidancePrompt);
+            logIntentDecision(question, mcpEnabled, decision);
+            return decision;
         }
         if (candidates.isEmpty()) {
-            return new ConversationIntentDecision("chat.normal", ConversationIntentAction.DIRECT, null);
+            ConversationIntentDecision decision = new ConversationIntentDecision("chat.normal", ConversationIntentAction.DIRECT, null);
+            logIntentDecision(question, mcpEnabled, decision);
+            return decision;
         }
         ChatIntentNode topNode = candidates.getFirst().node();
+        ConversationIntentDecision decision;
         if ("system".equalsIgnoreCase(topNode.getIntentType())) {
-            return new ConversationIntentDecision(topNode.getIntentCode(), ConversationIntentAction.DIRECT, null);
-        }
-        if ("mcp".equalsIgnoreCase(topNode.getIntentType())) {
+            decision = new ConversationIntentDecision(topNode.getIntentCode(), ConversationIntentAction.DIRECT, null);
+        } else if ("mcp".equalsIgnoreCase(topNode.getIntentType())) {
             if (!mcpEnabled) {
-                return new ConversationIntentDecision(topNode.getIntentCode(), ConversationIntentAction.MCP_DISABLED, "当前消息未连接 MCP");
+                decision = new ConversationIntentDecision(topNode.getIntentCode(), ConversationIntentAction.MCP_DISABLED, "当前消息未连接 MCP");
+            } else if (weatherMcpMissingCity(topNode, question)) {
+                decision = new ConversationIntentDecision(topNode.getIntentCode(), ConversationIntentAction.CLARIFY, "请明确你想查询哪个城市的天气，例如：上海今天天气怎么样。");
+            } else {
+                decision = new ConversationIntentDecision(topNode.getIntentCode(), ConversationIntentAction.MCP, null);
             }
-            if (weatherMcpMissingCity(topNode, question)) {
-                return new ConversationIntentDecision(topNode.getIntentCode(), ConversationIntentAction.CLARIFY, "请明确你想查询哪个城市的天气，例如：上海今天天气怎么样。");
-            }
-            return new ConversationIntentDecision(topNode.getIntentCode(), ConversationIntentAction.MCP, null);
+        } else if ("search".equalsIgnoreCase(topNode.getIntentType())) {
+            decision = new ConversationIntentDecision(topNode.getIntentCode(), ConversationIntentAction.SEARCH, null);
+        } else {
+            // 非法或未知类型回退为 DIRECT，避免把错误配置误导到联网搜索链路。
+            decision = new ConversationIntentDecision(topNode.getIntentCode(), ConversationIntentAction.DIRECT, null);
         }
-        if ("search".equalsIgnoreCase(topNode.getIntentType())) {
-            return new ConversationIntentDecision(topNode.getIntentCode(), ConversationIntentAction.SEARCH, null);
-        }
-        // 非法或未知类型回退为 DIRECT，避免把错误配置误导到联网搜索链路。
-        return new ConversationIntentDecision(topNode.getIntentCode(), ConversationIntentAction.DIRECT, null);
+        logIntentDecision(question, mcpEnabled, decision);
+        return decision;
     }
 
     /**
@@ -123,5 +133,18 @@ public class ConversationIntentService {
         } catch (Exception exception) {
             return List.of();
         }
+    }
+
+    /**
+     * 打印最终意图路由结果，便于从日志快速判断本轮进入直答、搜索、MCP 或澄清分支。
+     */
+    private void logIntentDecision(String question, boolean mcpEnabled, ConversationIntentDecision decision) {
+        log.info(
+            "意图决策: 问题={}, 动作={}, 意图={}, MCP启用={}",
+            StrUtil.maxLength(question, 120),
+            decision.action(),
+            decision.intentCode(),
+            mcpEnabled
+        );
     }
 }

@@ -29,7 +29,7 @@
     --surface: #ffffff;
     --surface-container: #f7f3f2;
     --surface-container-high: #ebe7e6;
-    --surface-selected: #e3e3e3;
+    --surface-selected: #eeeeee;
     --border-subtle: #e5e2e1;
     --border-active: #c4c7c7;
     --border-selected: #b9b9b9;
@@ -48,7 +48,7 @@
     --surface: #131313;
     --surface-container: #1c1b1b;
     --surface-container-high: #2a2a2a;
-    --surface-selected: #3a3a3a;
+    --surface-selected: #484848;
     --border-subtle: #212327;
     --border-active: rgba(255, 255, 255, 0.25);
     --border-selected: #5a5a5a;
@@ -69,7 +69,7 @@
 
   /* Custom Scrollbar for technical feel */
   ::-webkit-scrollbar {
-    width: 4px;
+    width: 12px;
     height: 4px;
   }
   ::-webkit-scrollbar-track {
@@ -77,10 +77,13 @@
   }
   ::-webkit-scrollbar-thumb {
     background: var(--surface-container-high);
-    border-radius: 2px;
+    border-radius: 999px;
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: var(--border-subtle);
+    background: color-mix(in srgb, var(--surface-container-high) 88%, var(--text-primary));
+  }
+  ::-webkit-scrollbar-thumb:active {
+    background: color-mix(in srgb, var(--surface-container-high) 78%, var(--text-primary));
   }
 
   .scrollbar-hide::-webkit-scrollbar {
@@ -89,6 +92,29 @@
   .scrollbar-hide {
     -ms-overflow-style: none;
     scrollbar-width: none;
+  }
+
+  /* 侧边栏空间更窄，单独收细滚动条；主页面滚动条保持全局宽度。 */
+  .sidebar-scrollbar {
+    scrollbar-color: var(--surface-container-high) transparent;
+    scrollbar-width: thin;
+  }
+
+  .sidebar-scrollbar::-webkit-scrollbar {
+    width: 8px;
+    height: 4px;
+  }
+
+  .sidebar-scrollbar::-webkit-scrollbar-track {
+    border-radius: 999px;
+    background: transparent;
+  }
+
+  .sidebar-scrollbar::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    border: 2px solid transparent;
+    background: var(--surface-container-high);
+    background-clip: padding-box;
   }
 
   /* 仅缩短聊天主内容区右侧滚动条的可视轨道，避免整条从顶部贯穿到底部。 */
@@ -117,6 +143,37 @@
     padding: 8px 16px;
     color: var(--text-primary);
     box-shadow: 0 10px 28px rgb(0 0 0 / 10%);
+  }
+
+  /* 图片消息与文字消息分层展示，图片本身不再包进用户消息气泡。 */
+  .chat-message-attachment-list {
+    max-width: min(100%, 360px);
+  }
+
+  .chat-message-image-attachment {
+    outline: 0;
+    transition:
+      opacity 160ms ease,
+      box-shadow 160ms ease;
+  }
+
+  .chat-message-image-attachment:hover {
+    opacity: 0.92;
+  }
+
+  .chat-message-image-attachment:focus-visible {
+    box-shadow: 0 0 0 2px var(--background), 0 0 0 4px var(--border-active);
+  }
+
+  /* 用户消息编辑态采用整块不透明输入面板，按钮固定在右下，避免表单挤在原消息气泡内。 */
+  .chat-user-message-edit-panel {
+    width: min(100%, 760px);
+    min-height: 112px;
+    border-color: color-mix(in srgb, var(--border-subtle) 70%, transparent);
+    border-radius: 28px;
+    background: var(--surface-container-high);
+    padding: 12px 16px 12px;
+    box-shadow: 0 18px 42px rgb(0 0 0 / 14%);
   }
 
   .chat-user-message-actions {

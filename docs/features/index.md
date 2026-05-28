@@ -11,4 +11,5 @@
 - [本地工作空间会话分区](chat/local-workspace-conversation-partition.md)
 - [本地会话云端持久化](chat/cloud-persisted-local-chat.md)
 - [本地工具运行时](chat/local-tool-runtime.md)
+- [AI 路由默认策略](chat/ai-routing-defaults.md)
 - [联网搜索权威时效排序](chat/web-search-authoritative-latest.md)

@@ -3,6 +3,7 @@ package com.codingx.common.support.ai;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.codingx.chat.domain.model.ChatAttachment;
 import com.codingx.config.AiProperties;
 import java.util.HashMap;
 import java.util.List;
@@ -93,6 +94,27 @@ class AiModelSelectorTest {
     }
 
     /**
+     * 带图片附件时应优先选择优先级更高的硅基流动千问视觉候选。
+     */
+    @Test
+    void selectChatCandidatesPrefersSiliconFlowVisionCandidateForImageAttachments() {
+        AiModelSelector selector = new AiModelSelector(buildProperties(
+            candidate("siliconflow-deepseek-v4-flash", "siliconflow", "deepseek-ai/DeepSeek-V4-Flash", 1, false, false),
+            candidate("siliconflow-qwen3.5-122b-a10b", "siliconflow", "Qwen/Qwen3.5-122B-A10B", 3, true, true),
+            candidate("qwen3.6-plus", "bailian", "qwen3.6-plus", 6, true, true)
+        ));
+
+        ChatAttachment imageAttachment = ChatAttachment.builder()
+            .attachmentType("image")
+            .build();
+
+        List<AiModelTarget> targets = selector.selectChatCandidates(null, false, List.of(imageAttachment));
+
+        assertEquals("siliconflow-qwen3.5-122b-a10b", targets.getFirst().id());
+        assertTrue(Boolean.TRUE.equals(targets.getFirst().candidate().getSupportsVision()));
+    }
+
+    /**
      * 生成测试配置，避免依赖 Spring 配置绑定。
      * @param candidates 候选模型。
      * @return 测试配置。
@@ -101,6 +123,7 @@ class AiModelSelectorTest {
         AiProperties properties = new AiProperties();
         HashMap<String, AiProperties.Provider> providers = new HashMap<>();
         providers.put("deepseek", provider("https://api.deepseek.com/v1", "test-key"));
+        providers.put("siliconflow", provider("https://api.siliconflow.cn", "test-key"));
         providers.put("bailian", provider("https://dashscope.aliyuncs.com/compatible-mode/v1", "test-key"));
         providers.put("stub", provider("stub://local", ""));
         properties.setProviders(providers);

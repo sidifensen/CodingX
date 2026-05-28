@@ -16,13 +16,13 @@
 2. `useAdminDashboard` 统一管理窗口切换、刷新、加载和错误状态。
 3. `dashboardViewModel` 把原始聚合字段转换为 KPI、AntV 图表数据、质量快照和洞察文案。
 4. 页面按“顶部控制条 + 左侧主图/趋势区 + 右侧健康侧栏”编排渲染。
-5. Layout 提供深色导航、顶部工具栏、主题切换和主内容滚动容器。
+5. Layout 继续复用原有管理端侧边栏与主题切换，只让 Dashboard 页面自身承载控制台内容。
 
 ## 关键文件
 
 - `backend/src/main/java/com/codingx/admin/application/service/AdminChatDashboardService.java`：Dashboard 聚合入口
 - `backend/src/main/java/com/codingx/admin/application/service/AdminChatDashboardView*.java`：Dashboard 只读视图结构
-- `frontend/admin/src/components/Layout.tsx`：管理端深色导航与顶部工具栏
+- `frontend/admin/src/components/Layout.tsx`：管理端既有侧边栏与主题切换容器
 - `frontend/admin/src/pages/Dashboard.tsx`：控制台页面编排
 - `frontend/admin/src/pages/dashboard/useAdminDashboard.ts`：控制台数据拉取
 - `frontend/admin/src/pages/dashboard/dashboardViewModel.ts`：派生指标与洞察

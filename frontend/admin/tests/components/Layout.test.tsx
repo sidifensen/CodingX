@@ -1,7 +1,7 @@
 import '@testing-library/jest-dom/vitest';
 
 import { render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 
 import { Layout } from '@/components/Layout';
@@ -42,23 +42,6 @@ describe('Layout', () => {
     );
 
     expect(screen.getByRole('link', { name: /工作空间/ })).toHaveAttribute('href', '/workspaces');
-  });
-
-  /**
-   * 管理端布局应提供顶部搜索工具栏，支撑控制台与后续全局筛选入口。
-   */
-  it('renders topbar search input', () => {
-    render(
-      <MemoryRouter initialEntries={['/']}>
-        <Routes>
-          <Route path="/" element={<Layout onLogout={vi.fn().mockResolvedValue(undefined)} isAuthSubmitting={false} />}>
-            <Route index element={<div>首页内容</div>} />
-          </Route>
-        </Routes>
-      </MemoryRouter>,
-    );
-
-    expect(screen.getByPlaceholderText('搜索知识库、会话或工作空间')).toBeInTheDocument();
   });
 });
 

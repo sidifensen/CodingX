@@ -23,7 +23,7 @@ status: active
 ## Responsibilities
 
 - 管理端 Dashboard 聚合当前系统的用户、会话、消息、工作空间、链路和配置资产指标，输出可供前端控制台直接消费的只读视图。
-- Dashboard 页面负责呈现 `ragent` 风格的控制台布局：深色导航、顶部工具栏、左侧趋势区、右侧健康区，并统一支持亮色/暗色主题。
+- Dashboard 页面负责呈现接近 `ragent` 控制台的信息编排：左侧趋势区、右侧健康区和多块统计图，并统一支持亮色/暗色主题。
 - 图表统一使用 AntV，避免本地手写 SVG 图表与样式逻辑分散在页面组件中。
 - Dashboard 只展示当前项目真实可获得的数据域，不引入知识库召回、文档切片或 RAG 诊断等本仓库未实现的指标语义。
 
@@ -32,7 +32,7 @@ status: active
 - `AdminChatDashboardController` 暴露 `/api/admin/chat/dashboard` 聚合接口，按时间窗口返回 KPI、趋势分桶和控制台性能摘要。
 - `AdminChatRuntimeDashboardController` 暴露 `/api/admin/chat/runtime` 运行时快照，提供队列门控和线程池状态。
 - `frontend/admin/src/pages/Dashboard.tsx` 负责路由级数据装配，并把渲染拆分给 Dashboard 子组件。
-- `frontend/admin/src/components/Layout.tsx` 负责深色侧边栏、顶部搜索栏、主题切换和主内容滚动容器。
+- `frontend/admin/src/components/Layout.tsx` 继续负责既有管理端侧边栏、主题切换和主内容滚动容器。
 
 ## Invariants
 

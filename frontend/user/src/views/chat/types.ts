@@ -154,6 +154,10 @@ export interface ExecutionStepItem {
   stepStatus: string;
   sequenceNo: number;
   content?: string;
+  /**
+   * 后端步骤附加元数据；历史工具回放优先从这里恢复工具名、入参与原始结果。
+   */
+  metadataJson?: string;
 }
 
 /**

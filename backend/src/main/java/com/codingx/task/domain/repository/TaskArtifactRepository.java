@@ -1,9 +1,9 @@
-package com.codingx.artifact.domain.repository;
-import com.codingx.artifact.domain.model.TaskArtifact;
+package com.codingx.task.domain.repository;
+import com.codingx.task.domain.model.TaskArtifact;
 import java.util.List;
 
 /**
- * 定义 TaskArtifactRepository 的仓储契约。
+ * 定义任务产物的仓储契约。
  */
 public interface TaskArtifactRepository {
 

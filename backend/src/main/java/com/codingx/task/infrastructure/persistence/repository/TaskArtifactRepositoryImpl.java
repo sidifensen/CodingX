@@ -1,15 +1,15 @@
-package com.codingx.artifact.infrastructure.persistence.repository;
+package com.codingx.task.infrastructure.persistence.repository;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.codingx.artifact.domain.model.TaskArtifact;
-import com.codingx.artifact.domain.repository.TaskArtifactRepository;
-import com.codingx.artifact.infrastructure.persistence.dataobject.TaskArtifactDO;
-import com.codingx.artifact.infrastructure.persistence.mapper.TaskArtifactMapper;
+import com.codingx.task.domain.model.TaskArtifact;
+import com.codingx.task.domain.repository.TaskArtifactRepository;
+import com.codingx.task.infrastructure.persistence.dataobject.TaskArtifactDO;
+import com.codingx.task.infrastructure.persistence.mapper.TaskArtifactMapper;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Repository;
 
 /**
- * 实现 TaskArtifactRepositoryImpl 的持久化行为。
+ * 实现任务产物仓储的持久化行为。
  */
 @Repository
 @RequiredArgsConstructor
@@ -48,7 +48,15 @@ public class TaskArtifactRepositoryImpl implements TaskArtifactRepository {
                 .eq(TaskArtifactDO::getTaskId, taskId)
                 .orderByAsc(TaskArtifactDO::getCreatedAt))
             .stream()
-            .map(dataObject -> TaskArtifact.create(dataObject.getTaskId(), dataObject.getArtifactType(), dataObject.getName(), dataObject.getContent(), dataObject.getStoragePath()))
+            .map(dataObject -> TaskArtifact.restore(
+                dataObject.getId(),
+                dataObject.getTaskId(),
+                dataObject.getArtifactType(),
+                dataObject.getName(),
+                dataObject.getContent(),
+                dataObject.getStoragePath(),
+                dataObject.getCreatedAt()
+            ))
             .toList();
     }
 }

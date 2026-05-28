@@ -1,11 +1,11 @@
 package com.codingx.common.persistence;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import com.baomidou.mybatisplus.annotation.TableName;
-import com.codingx.artifact.infrastructure.persistence.dataobject.TaskArtifactDO;
 import com.codingx.chat.infrastructure.persistence.dataobject.ChatConversationDO;
 import com.codingx.chat.infrastructure.persistence.dataobject.ChatMessageDO;
 import com.codingx.event.infrastructure.persistence.dataobject.TaskEventDO;
 import com.codingx.task.infrastructure.persistence.dataobject.TaskDO;
+import com.codingx.task.infrastructure.persistence.dataobject.TaskArtifactDO;
 import org.junit.jupiter.api.Test;
 
 /**

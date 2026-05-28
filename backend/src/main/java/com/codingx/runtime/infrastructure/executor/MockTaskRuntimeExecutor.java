@@ -1,12 +1,12 @@
 package com.codingx.runtime.infrastructure.executor;
 import cn.hutool.core.thread.ThreadUtil;
-import com.codingx.artifact.domain.model.TaskArtifact;
-import com.codingx.artifact.domain.repository.TaskArtifactRepository;
 import com.codingx.config.RuntimeProperties;
 import com.codingx.event.domain.model.TaskEvent;
 import com.codingx.event.domain.repository.TaskEventRepository;
 import com.codingx.runtime.domain.service.TaskRuntimeExecutor;
 import com.codingx.task.domain.model.Task;
+import com.codingx.task.domain.model.TaskArtifact;
+import com.codingx.task.domain.repository.TaskArtifactRepository;
 import com.codingx.task.domain.repository.TaskRepository;
 import com.codingx.task.domain.service.TaskStreamPublisher;
 import java.util.concurrent.CompletableFuture;

@@ -1,4 +1,4 @@
-package com.codingx.artifact.infrastructure.persistence.dataobject;
+package com.codingx.task.infrastructure.persistence.dataobject;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
@@ -6,7 +6,7 @@ import java.time.LocalDateTime;
 import lombok.Data;
 
 /**
- * 定义 TaskArtifactDO 的数据库字段映射。
+ * 定义任务产物的数据库字段映射。
  */
 @Data
 @TableName("task_artifact")

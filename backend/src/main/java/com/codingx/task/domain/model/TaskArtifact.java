@@ -1,4 +1,4 @@
-package com.codingx.artifact.domain.model;
+package com.codingx.task.domain.model;
 import cn.hutool.core.util.IdUtil;
 import cn.hutool.core.util.StrUtil;
 import com.codingx.common.error.ErrorMessageCatalog;
@@ -54,13 +54,13 @@ public class TaskArtifact {
     private LocalDateTime createdAt;
 
     /**
-     * 创建 create 所需数据并返回结果。
-     * @param taskId 输入参数。
-     * @param artifactType 输入参数。
-     * @param name 输入参数。
-     * @param content 输入参数。
-     * @param storagePath 输入参数。
-     * @return 输入参数。
+     * 创建新的任务产物，适用于运行时首次生成写入数据库的场景。
+     * @param taskId 所属任务 ID。
+     * @param artifactType 产物类型。
+     * @param name 产物名称。
+     * @param content 产物内容。
+     * @param storagePath 产物存储路径。
+     * @return 新建的任务产物。
      */
     public static TaskArtifact create(Long taskId, String artifactType, String name, String content, String storagePath) {
         if (taskId == null || StrUtil.hasBlank(artifactType, name)) {
@@ -74,6 +74,29 @@ public class TaskArtifact {
             .content(content)
             .storagePath(storagePath)
             .createdAt(LocalDateTime.now())
+            .build();
+    }
+
+    /**
+     * 从数据库记录恢复任务产物，避免读库时重新生成主键和创建时间。
+     * @param id 主键。
+     * @param taskId 所属任务 ID。
+     * @param artifactType 产物类型。
+     * @param name 产物名称。
+     * @param content 产物内容。
+     * @param storagePath 产物存储路径。
+     * @param createdAt 创建时间。
+     * @return 恢复后的任务产物。
+     */
+    public static TaskArtifact restore(Long id, Long taskId, String artifactType, String name, String content, String storagePath, LocalDateTime createdAt) {
+        return TaskArtifact.builder()
+            .id(id)
+            .taskId(taskId)
+            .artifactType(artifactType)
+            .name(name)
+            .content(content)
+            .storagePath(storagePath)
+            .createdAt(createdAt)
             .build();
     }
 }

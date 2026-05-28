@@ -536,6 +536,46 @@ export function useChatWorkspace(
   messagesRef.current = messages;
 
   /**
+   * 保护正在流式生成的助手消息，避免慢回放或列表刷新用旧消息快照覆盖实时输出。
+   * @param previousMessages 覆盖前的消息列表。
+   * @param nextMessages 即将写入的消息列表。
+   * @param activeStreamState 当前流式会话状态。
+   * @returns 补齐活跃助手消息后的消息列表。
+   */
+  function preserveActiveStreamingAssistantMessage(
+    previousMessages: ChatMessageItem[],
+    nextMessages: ChatMessageItem[],
+    activeStreamState: ActiveStreamState | null,
+  ): ChatMessageItem[] {
+    const activeMessageId = activeStreamState?.activeMessageId;
+    if (!activeMessageId || nextMessages.some((message) => message.id === activeMessageId)) {
+      return nextMessages;
+    }
+    const activeMessage = previousMessages.find(
+      (message) => message.id === activeMessageId && message.role === 'ASSISTANT',
+    );
+    if (!activeMessage || activeMessage.status !== 'streaming') {
+      return nextMessages;
+    }
+    const activeConversationId = normalizeReplayConversationId(activeStreamState?.conversationId);
+    const shouldProtectSameConversation =
+      activeConversationId.length === 0 ||
+      nextMessages.some((message) => {
+        const messageConversationId = normalizeReplayConversationId(message.conversationId);
+        return (
+          messageConversationId === activeConversationId ||
+          messageConversationId === 'pending-conversation' ||
+          activeMessage.conversationId === 'pending-conversation'
+        );
+      });
+    if (!shouldProtectSameConversation) {
+      return nextMessages;
+    }
+    // 业务约束：只有活跃流的助手消息被整组回放遗漏时才追加，避免普通历史切换混入旧会话回答。
+    return [...nextMessages, activeMessage];
+  }
+
+  /**
    * 统一写入消息列表，并同步维护最新引用，避免流结束后紧跟的会话回放读到旧闭包。
    * @param nextValue 目标消息列表或基于前值的更新函数。
    */
@@ -545,7 +585,13 @@ export function useChatWorkspace(
     setMessagesState((previousMessages) => {
       const rawNextMessages =
         typeof nextValue === 'function' ? nextValue(previousMessages) : nextValue;
-      const nextMessages = sanitizeMessagesForProcessDisplay(rawNextMessages);
+      const nextMessages = sanitizeMessagesForProcessDisplay(
+        preserveActiveStreamingAssistantMessage(
+          previousMessages,
+          rawNextMessages,
+          streamStateRef.current,
+        ),
+      );
       messagesRef.current = nextMessages;
       return nextMessages;
     });
@@ -1278,16 +1324,18 @@ export function useChatWorkspace(
     });
     setMessages(nextReplayMessages);
 
+    // 业务意图：引用是正文中 [R1]/[R2] 可点击化的前置条件，必须先回填，不能等步骤/产物等慢接口。
+    const nextReferences = await nextReferencesPromise;
+    setReferences(nextReferences);
+
     const [
       nextSteps,
-      nextReferences,
       nextArtifacts,
       nextCurrentExperts,
       nextCurrentSkills,
       nextCurrentMcps,
     ] = await Promise.all([
       nextStepsPromise,
-      nextReferencesPromise,
       nextArtifactsPromise,
       nextCurrentExpertsPromise,
       nextCurrentSkillsPromise,
@@ -1376,8 +1424,16 @@ export function useChatWorkspace(
     }
     setStreamError('');
     // 关键约束：本地模式下只要存在 workspaceId 或已绑定目录任一条件，就允许发送，避免目录已绑定但 ID 延迟回写时误拦截。
+    let effectiveWorkspaceId = workspaceId;
+    if (activeRuntimeTarget === 'local' && workspacePath != null && workspacePath.trim().length > 0) {
+      const bindingResult = await bindWorkspacePath(workspacePath);
+      effectiveWorkspaceId = normalizeWorkspaceId(bindingResult?.workspaceId) ?? effectiveWorkspaceId;
+      if (effectiveWorkspaceId && effectiveWorkspaceId !== workspaceId) {
+        setWorkspaceId(effectiveWorkspaceId);
+      }
+    }
     const hasLocalWorkspaceContext =
-      (workspaceId != null && workspaceId.trim().length > 0) ||
+      (effectiveWorkspaceId != null && effectiveWorkspaceId.trim().length > 0) ||
       (workspacePath != null && workspacePath.trim().length > 0);
     if (activeRuntimeTarget === 'local' && !hasLocalWorkspaceContext) {
       setStreamError('请选择本地工作空间后再发送消息');
@@ -1454,7 +1510,7 @@ export function useChatWorkspace(
         buildStreamRequestUrl(
           question,
           activeConversationId,
-          activeRuntimeTarget === 'local' ? null : workspaceId,
+          effectiveWorkspaceId,
           deepThinkingEnabled,
           mcpConnected,
           selectedMcpCodes,
@@ -1478,16 +1534,7 @@ export function useChatWorkspace(
       if (!isActiveStreamSession(streamSessionId)) {
         return;
       }
-      if (activeRuntimeTarget === 'local') {
-        persistLocalStreamResult(
-          optimisticConversationId,
-          optimisticAssistantId,
-          streamMcpCallsRef.current[optimisticAssistantId],
-        );
-        refreshWorkspaceGroups('all');
-        return;
-      }
-      const nextConversations = await loadConversations(token);
+      const nextConversations = await loadConversations(token, effectiveWorkspaceId);
       const nextConversationId = streamStateRef.current?.conversationId ?? activeConversationId;
       if (nextConversationId) {
         await selectConversation(
@@ -2623,7 +2670,9 @@ export function useChatWorkspace(
         // 避免后续回放请求继续命中 pending-conversation 导致左侧历史延迟或丢失。
         streamStateRef.current = {
           conversationId: finishConversationId,
-          activeMessageId: optimisticAssistantId,
+          // 业务约束：finish 带回真实消息主键时，活跃流状态也要同步迁移到最终 ID，
+          // 否则收尾 setMessages 仍会把旧乐观消息视作“活跃流”重新追加回列表。
+          activeMessageId: finishAssistantMessageId ?? optimisticAssistantId,
         };
         setActiveConversationId(finishConversationId);
         upsertConversationFromStreamMeta(finishConversationId, finishTitle);
@@ -3128,29 +3177,6 @@ export function useChatWorkspace(
     );
     const persistedActiveConversationId = currentSnapshot.activeConversationId ?? null;
     const effectiveActiveConversationId = activeConversationId ?? persistedActiveConversationId;
-    if (activeRuntimeTarget === 'local') {
-      const snapshotConversations = applyTaskCompletionReminders(
-        currentSnapshot.conversations,
-        currentSnapshot.seenTaskFinishedAtByConversationId ?? {},
-        effectiveActiveConversationId,
-      );
-      const nextActiveConversationId =
-        activeConversationId ??
-        persistedActiveConversationId ??
-        (shouldKeepLandingState ? null : (snapshotConversations[0]?.id ?? null));
-      setConversations(snapshotConversations);
-      upsertWorkspaceSnapshot('local', fallbackWorkspacePath, {
-        conversations: snapshotConversations,
-        activeConversationId: nextActiveConversationId,
-        workspaceLabel: fallbackWorkspacePath
-          ? getWorkspaceLabel(fallbackWorkspacePath)
-          : getDefaultWorkspaceLabel('local'),
-        conversationRecords: currentSnapshot.conversationRecords,
-        seenTaskFinishedAtByConversationId: currentSnapshot.seenTaskFinishedAtByConversationId ?? {},
-      });
-      refreshWorkspaceGroups('all');
-      return snapshotConversations;
-    }
     const remoteConversations = await ChatApi.listConversations(token, effectiveWorkspaceId);
     // 关键约束：流式生成期间会话列表可能返回慢数据或空数据，不能把 meta 已写入的当前会话从侧栏快照中抹掉。
     const protectedRemoteConversations = hasActiveStreamPlayback()
@@ -3689,14 +3715,25 @@ function normalizeWorkspaceId(workspaceId: string | null | undefined) {
 function normalizePersistedMessageIds(messageIds: Array<string | null | undefined>) {
   const normalizedIds: string[] = [];
   messageIds.forEach((messageId) => {
-    const normalizedMessageId = String(messageId ?? '').trim();
-    if (!/^\d+$/.test(normalizedMessageId) || normalizedIds.includes(normalizedMessageId)) {
+    const normalizedMessageId = normalizePersistedMessageId(messageId);
+    if (!normalizedMessageId || normalizedIds.includes(normalizedMessageId)) {
       return;
     }
     normalizedIds.push(normalizedMessageId);
   });
   return normalizedIds;
-}helper
+}
+
+/**
+ * 归一化已落库消息 ID，只有数字主键才能驱动后端 Long 参数接口。
+ * @param messageId 原始消息标识。
+ * @returns 可提交给后端的消息主键字符串，非法时返回 undefined。
+ */
+function normalizePersistedMessageId(messageId: unknown): string | undefined {
+  const normalizedMessageId = String(messageId ?? '').trim();
+  return /^\d+$/.test(normalizedMessageId) ? normalizedMessageId : undefined;
+}
+
 /**
  * 统一拼装聊天流请求地址，保证新建态不会误带旧会话标识。
  * @param question 用户输入问题。
@@ -3754,7 +3791,7 @@ export function buildStreamRequestUrl(
   if (runtimeTarget === 'local') {
     searchParams.set('runtimeTarget', 'local');
   }
-  if (runtimeTarget !== 'local' && workspaceId != null && workspaceId.trim().length > 0) {
+  if (workspaceId != null && workspaceId.trim().length > 0) {
     searchParams.set('workspaceId', workspaceId);
   }
   if (deepThinkingEnabled) {

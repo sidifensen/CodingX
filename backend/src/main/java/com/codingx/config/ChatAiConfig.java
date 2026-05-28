@@ -18,15 +18,17 @@ public class ChatAiConfig {
      * @param providerClients AI provider 列表。
      * @param aiProperties AI 配置。
      * @param dynamicAiRoutingProperties 模型路由动态配置。
+     * @param dynamicAiProperties 动态 AI 配置。
      * @return 模型路由服务。
      */
     @Bean
     public AiModelDispatchService aiModelDispatchService(
         List<AiProviderClient> providerClients,
         AiProperties aiProperties,
-        DynamicAiRoutingProperties dynamicAiRoutingProperties
+        DynamicAiRoutingProperties dynamicAiRoutingProperties,
+        DynamicAiProperties dynamicAiProperties
     ) {
-        return new AiModelDispatchService(providerClients, aiProperties, dynamicAiRoutingProperties);
+        return new AiModelDispatchService(providerClients, aiProperties, dynamicAiRoutingProperties, dynamicAiProperties);
     }
 
     /**

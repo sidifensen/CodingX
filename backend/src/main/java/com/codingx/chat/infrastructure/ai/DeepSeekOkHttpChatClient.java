@@ -2,6 +2,7 @@ package com.codingx.chat.infrastructure.ai;
 import cn.hutool.core.util.StrUtil;
 import com.codingx.chat.domain.model.ChatMessage;
 import com.codingx.config.AiProperties;
+import com.codingx.config.DynamicAiProperties;
 import com.codingx.common.error.ErrorMessageCatalog;
 import com.codingx.common.support.ai.AiConversationRequest;
 import com.codingx.common.support.ai.AiModelTarget;
@@ -46,9 +47,28 @@ public class DeepSeekOkHttpChatClient implements AiProviderClient {
     private final AiProperties aiProperties;
 
     /**
+     * 动态 AI 配置依赖，用于覆盖旧式全局默认值与密钥读取。
+     */
+    private final DynamicAiProperties dynamicAiProperties;
+
+    /**
      * 解析 OpenAI 风格 SSE 文本的通用解析器。
      */
     private final OpenAiStyleStreamParser openAiStyleStreamParser;
+
+    /**
+     * 兼容旧测试与旧调用签名，未显式注入动态配置时回退到静态 AI 配置。
+     * @param okHttpClient HTTP 客户端。
+     * @param aiProperties 静态 AI 配置。
+     * @param openAiStyleStreamParser 流解析器。
+     */
+    public DeepSeekOkHttpChatClient(
+        OkHttpClient okHttpClient,
+        AiProperties aiProperties,
+        OpenAiStyleStreamParser openAiStyleStreamParser
+    ) {
+        this(okHttpClient, aiProperties, null, openAiStyleStreamParser);
+    }
 
     @Override
     public String provider() {
@@ -138,7 +158,7 @@ public class DeepSeekOkHttpChatClient implements AiProviderClient {
      */
     private JSONObject buildRequestBody(AiConversationRequest request) {
         return JSONUtil.createObj()
-            .set("model", StrUtil.blankToDefault(request.preferredModel(), aiProperties.getChatModel()))
+            .set("model", StrUtil.blankToDefault(request.preferredModel(), fallbackChatModel()))
             .set("stream", request.stream())
             .set("messages", request.messages().stream()
                 .map(this::toMessagePayload)
@@ -193,7 +213,7 @@ public class DeepSeekOkHttpChatClient implements AiProviderClient {
     private String resolveBaseUrl(AiModelTarget target) {
         return target != null && target.provider() != null && StrUtil.isNotBlank(target.provider().getBaseUrl())
             ? target.provider().getBaseUrl()
-            : aiProperties.getBaseUrl();
+            : fallbackBaseUrl();
     }
 
     /**
@@ -204,7 +224,19 @@ public class DeepSeekOkHttpChatClient implements AiProviderClient {
     private String resolveApiKey(AiModelTarget target) {
         return target != null && target.provider() != null && StrUtil.isNotBlank(target.provider().getApiKey())
             ? target.provider().getApiKey()
-            : aiProperties.getApiKey();
+            : fallbackApiKey();
+    }
+
+    private String fallbackBaseUrl() {
+        return dynamicAiProperties == null ? aiProperties.getBaseUrl() : dynamicAiProperties.baseUrl();
+    }
+
+    private String fallbackApiKey() {
+        return dynamicAiProperties == null ? aiProperties.getApiKey() : dynamicAiProperties.apiKey();
+    }
+
+    private String fallbackChatModel() {
+        return dynamicAiProperties == null ? aiProperties.getChatModel() : dynamicAiProperties.chatModel();
     }
 }
 

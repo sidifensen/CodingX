@@ -596,6 +596,11 @@ CREATE TABLE IF NOT EXISTS setting (
     id BIGINT PRIMARY KEY,
     setting_key VARCHAR(128) NOT NULL UNIQUE,
     setting_value TEXT NOT NULL,
+    encrypted_value TEXT,
+    secret BOOLEAN NOT NULL DEFAULT FALSE,
+    masked_value VARCHAR(255),
+    encryption_algorithm VARCHAR(64),
+    encryption_key_version VARCHAR(64),
     value_type VARCHAR(32) NOT NULL,
     category_code VARCHAR(64) NOT NULL DEFAULT 'general',
     description VARCHAR(255),
@@ -609,6 +614,11 @@ COMMENT ON TABLE setting IS '系统配置表';
 COMMENT ON COLUMN setting.id IS '主键ID';
 COMMENT ON COLUMN setting.setting_key IS '配置键';
 COMMENT ON COLUMN setting.setting_value IS '配置值';
+COMMENT ON COLUMN setting.encrypted_value IS '敏感配置密文';
+COMMENT ON COLUMN setting.secret IS '是否敏感配置';
+COMMENT ON COLUMN setting.masked_value IS '敏感配置脱敏值';
+COMMENT ON COLUMN setting.encryption_algorithm IS '密文加密算法';
+COMMENT ON COLUMN setting.encryption_key_version IS '密钥版本';
 COMMENT ON COLUMN setting.value_type IS '值类型';
 COMMENT ON COLUMN setting.category_code IS '配置分类编码';
 COMMENT ON COLUMN setting.description IS '配置说明';

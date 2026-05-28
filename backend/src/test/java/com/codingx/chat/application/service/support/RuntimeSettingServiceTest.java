@@ -1,6 +1,7 @@
 package com.codingx.chat.application.service.support;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.when;
 
 import com.codingx.chat.domain.model.ChatRuntimeSetting;
@@ -38,6 +39,9 @@ class RuntimeSettingServiceTest {
 
     @Mock
     private AiProperties aiProperties;
+
+    @Mock
+    private ConfigCryptoService configCryptoService;
 
     @InjectMocks
     private RuntimeSettingService runtimeSettingService;
@@ -137,5 +141,49 @@ class RuntimeSettingServiceTest {
         assertEquals(0.8D, runtimeSettingService.chatIntentGuidanceAmbiguityScoreRatio());
         assertEquals(0.15D, runtimeSettingService.chatIntentGuidanceAmbiguityMargin());
         assertEquals(6, runtimeSettingService.chatIntentGuidanceMaxOptions());
+    }
+
+    /**
+     * 敏感配置应从密文字段解密读取，而不是继续依赖明文值。
+     */
+    @Test
+    void webSearchApiKeyDecryptsSecretValue() {
+        when(chatRuntimeSettingRepository.findAll()).thenReturn(List.of(
+            ChatRuntimeSetting.builder()
+                .settingKey("web_search.api_key")
+                .settingValue("")
+                .encryptedValue("cipher-secret")
+                .secret(true)
+                .valueType("STRING")
+                .categoryCode("search")
+                .description("联网搜索接口密钥")
+                .build()
+        ));
+        when(configCryptoService.decrypt("cipher-secret")).thenReturn("plain-secret");
+
+        runtimeSettingService.init();
+
+        assertEquals("plain-secret", runtimeSettingService.webSearchApiKey());
+    }
+
+    /**
+     * 敏感配置缺少密文时必须立即失败，避免业务静默读取空字符串。
+     */
+    @Test
+    void webSearchApiKeyThrowsWhenSecretMissingCipherText() {
+        when(chatRuntimeSettingRepository.findAll()).thenReturn(List.of(
+            ChatRuntimeSetting.builder()
+                .settingKey("web_search.api_key")
+                .settingValue("")
+                .secret(true)
+                .valueType("STRING")
+                .categoryCode("search")
+                .description("联网搜索接口密钥")
+                .build()
+        ));
+
+        runtimeSettingService.init();
+
+        assertThrows(IllegalStateException.class, () -> runtimeSettingService.webSearchApiKey());
     }
 }

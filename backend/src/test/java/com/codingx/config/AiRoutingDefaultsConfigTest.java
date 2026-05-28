@@ -15,14 +15,15 @@ import org.junit.jupiter.api.Test;
 class AiRoutingDefaultsConfigTest {
 
     /**
-     * application.yml 必须把 SiliconFlow 作为默认 AI provider，并将默认聊天模型切到 SiliconFlow 的 DeepSeek。
+     * application.yml 仅保留主密钥与静态模型候选骨架，不再承载 AI 默认 provider / API Key 等业务运行时默认值。
      * @throws IOException 读取配置文件失败时抛出。
      */
     @Test
-    void applicationYamlPrefersSiliconFlowDeepSeekByDefault() throws IOException {
+    void applicationYamlKeepsOnlyStaticAiSkeleton() throws IOException {
         String applicationYaml = Files.readString(Path.of("src/main/resources/application.yml"));
 
-        assertTrue(applicationYaml.contains("provider: ${AI_PROVIDER:siliconflow}"), "AI provider 默认值应为 siliconflow");
+        assertTrue(applicationYaml.contains("master-key: ${APP_CONFIG_MASTER_KEY:}"), "系统配置主密钥应保留在 application.yml 骨架中");
+        assertTrue(!applicationYaml.contains("provider: ${AI_PROVIDER:siliconflow}"), "AI provider 运行时默认值不应继续留在 application.yml");
         assertTrue(applicationYaml.contains("default-model: ${AI_DEFAULT_MODEL:siliconflow-deepseek-v4-flash}"), "默认聊天模型应优先使用 siliconflow-deepseek-v4-flash");
         assertTrue(applicationYaml.contains("deep-thinking-model: ${AI_DEEP_THINKING_MODEL:siliconflow-deepseek-v4-flash-thinking}"), "深度思考模型应优先使用 siliconflow-deepseek-v4-flash-thinking");
         assertTrue(applicationYaml.contains("id: siliconflow-deepseek-v4-flash"), "候选池应包含 siliconflow-deepseek-v4-flash");

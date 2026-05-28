@@ -1,9 +1,12 @@
 package com.codingx.admin.application.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.codingx.chat.application.service.support.ConfigCryptoService;
 import com.codingx.chat.application.service.RuntimeSettingService;
 import com.codingx.chat.domain.model.ChatRuntimeSetting;
 import com.codingx.chat.domain.repository.ChatRuntimeSettingRepository;
@@ -26,6 +29,9 @@ class AdminChatSettingsServiceTest {
 
     @Mock
     private RuntimeSettingService runtimeSettingService;
+
+    @Mock
+    private ConfigCryptoService configCryptoService;
 
     @InjectMocks
     private AdminChatSettingsService adminChatSettingsService;
@@ -54,5 +60,27 @@ class AdminChatSettingsServiceTest {
         runtimeCacheOrder.verify(runtimeSettingService).refresh();
         runtimeCacheOrder.verify(runtimeSettingService).listAll();
         assertEquals("本地工具调用", settings.getFirst().getCategoryCode());
+    }
+
+    /**
+     * 敏感配置写入时必须加密并写入脱敏值，避免后台把明文密钥直接落库。
+     */
+    @Test
+    void saveEncryptsSecretSetting() {
+        ChatRuntimeSetting secretSetting = ChatRuntimeSetting.builder()
+            .settingKey("ai.providers.siliconflow.api_key")
+            .settingValue("plain-secret")
+            .valueType("STRING")
+            .secret(true)
+            .build();
+        when(configCryptoService.encrypt("plain-secret")).thenReturn("cipher-secret");
+        when(configCryptoService.mask("plain-secret")).thenReturn("pla***cret");
+
+        ChatRuntimeSetting saved = adminChatSettingsService.save(secretSetting);
+
+        assertEquals("", saved.getSettingValue());
+        assertEquals("cipher-secret", saved.getEncryptedValue());
+        assertEquals("pla***cret", saved.getMaskedValue());
+        verify(chatRuntimeSettingRepository).save(any(ChatRuntimeSetting.class));
     }
 }

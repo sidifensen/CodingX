@@ -5,6 +5,7 @@ import cn.hutool.core.util.StrUtil;
 import com.codingx.chat.domain.model.ChatAttachment;
 import com.codingx.config.DynamicAiRoutingProperties;
 import com.codingx.config.AiProperties;
+import com.codingx.config.DynamicAiProperties;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -24,13 +25,14 @@ public class AiModelSelector {
 
     private final AiProperties aiProperties;
     private final DynamicAiRoutingProperties dynamicProperties;
+    private final DynamicAiProperties dynamicAiProperties;
 
     /**
      * 使用 AI 配置构造模型选择器。
      * @param aiProperties AI 配置。
      */
     public AiModelSelector(AiProperties aiProperties) {
-        this(aiProperties, null);
+        this(aiProperties, null, null);
     }
 
     /**
@@ -39,8 +41,23 @@ public class AiModelSelector {
      * @param dynamicProperties 动态路由配置。
      */
     public AiModelSelector(AiProperties aiProperties, DynamicAiRoutingProperties dynamicProperties) {
+        this(aiProperties, dynamicProperties, null);
+    }
+
+    /**
+     * 使用 AI 配置、动态路由配置和动态 provider 配置构造模型选择器。
+     * @param aiProperties AI 配置。
+     * @param dynamicProperties 动态路由配置。
+     * @param dynamicAiProperties 动态 AI 配置。
+     */
+    public AiModelSelector(
+        AiProperties aiProperties,
+        DynamicAiRoutingProperties dynamicProperties,
+        DynamicAiProperties dynamicAiProperties
+    ) {
         this.aiProperties = aiProperties;
         this.dynamicProperties = dynamicProperties;
+        this.dynamicAiProperties = dynamicAiProperties;
     }
 
     /**
@@ -118,7 +135,7 @@ public class AiModelSelector {
             return configured;
         }
         AiProperties.ChatModelGroup fallbackGroup = new AiProperties.ChatModelGroup();
-        fallbackGroup.setDefaultModel(StrUtil.blankToDefault(configured.getDefaultModel(), aiProperties.getChatModel()));
+        fallbackGroup.setDefaultModel(StrUtil.blankToDefault(configured.getDefaultModel(), fallbackChatModel()));
         fallbackGroup.setDeepThinkingModel(StrUtil.blankToDefault(configured.getDeepThinkingModel(), fallbackGroup.getDefaultModel()));
         List<AiProperties.ChatCandidate> candidates = new ArrayList<>();
         candidates.add(realFallbackCandidate());
@@ -133,11 +150,14 @@ public class AiModelSelector {
      */
     private Map<String, AiProperties.Provider> mergedProviders() {
         Map<String, AiProperties.Provider> providers = new HashMap<>(aiProperties.getProviders());
-        if (!providers.containsKey(aiProperties.getProvider())) {
+        if (dynamicAiProperties != null) {
+            providers = new HashMap<>(dynamicAiProperties.providers());
+        }
+        if (!providers.containsKey(fallbackProvider())) {
             AiProperties.Provider provider = new AiProperties.Provider();
-            provider.setBaseUrl(aiProperties.getBaseUrl());
-            provider.setApiKey(aiProperties.getApiKey());
-            providers.put(aiProperties.getProvider(), provider);
+            provider.setBaseUrl(fallbackBaseUrl());
+            provider.setApiKey(fallbackApiKey());
+            providers.put(fallbackProvider(), provider);
         }
         if (!providers.containsKey(STUB_PROVIDER)) {
             AiProperties.Provider stubProvider = new AiProperties.Provider();
@@ -202,13 +222,29 @@ public class AiModelSelector {
      */
     private AiProperties.ChatCandidate realFallbackCandidate() {
         AiProperties.ChatCandidate candidate = new AiProperties.ChatCandidate();
-        candidate.setId(aiProperties.getChatModel());
-        candidate.setProvider(aiProperties.getProvider());
-        candidate.setModel(aiProperties.getChatModel());
+        candidate.setId(fallbackChatModel());
+        candidate.setProvider(fallbackProvider());
+        candidate.setModel(fallbackChatModel());
         candidate.setPriority(1);
         candidate.setEnabled(true);
         candidate.setSupportsThinking(false);
         return candidate;
+    }
+
+    private String fallbackProvider() {
+        return dynamicAiProperties == null ? aiProperties.getProvider() : dynamicAiProperties.provider();
+    }
+
+    private String fallbackBaseUrl() {
+        return dynamicAiProperties == null ? aiProperties.getBaseUrl() : dynamicAiProperties.baseUrl();
+    }
+
+    private String fallbackApiKey() {
+        return dynamicAiProperties == null ? aiProperties.getApiKey() : dynamicAiProperties.apiKey();
+    }
+
+    private String fallbackChatModel() {
+        return dynamicAiProperties == null ? aiProperties.getChatModel() : dynamicAiProperties.chatModel();
     }
 
     /**

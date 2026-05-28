@@ -19,6 +19,11 @@ public class ChatRuntimeSetting {
     private Long id;
     private String settingKey;
     private String settingValue;
+    private String encryptedValue;
+    private Boolean secret;
+    private String maskedValue;
+    private String encryptionAlgorithm;
+    private String encryptionKeyVersion;
     private String valueType;
     private String categoryCode;
     private String description;

@@ -10,16 +10,6 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public class RuntimeProperties {
 
     /**
-     * Mock 运行时每个阶段的默认延迟，便于本地观察流式进度。
-     */
-    private long mockStepDelayMs = 300L;
-
-    /**
-     * Mock 运行时触发失败的关键字。
-     */
-    private String mockFailKeyword = "fail";
-
-    /**
      * 是否启用 Redis 运行态存储，用于跨节点取消控制。
      */
     private boolean useRedisStateStore = false;

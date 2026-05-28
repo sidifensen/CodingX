@@ -1,6 +1,7 @@
 package com.codingx.chat.application.service;
 
 import cn.hutool.core.util.StrUtil;
+import com.codingx.chat.application.service.support.ConfigCryptoService;
 import com.codingx.chat.domain.model.ChatRuntimeSetting;
 import com.codingx.chat.domain.repository.ChatRuntimeSettingRepository;
 import com.codingx.common.error.ErrorMessageCatalog;
@@ -36,6 +37,7 @@ public class RuntimeSettingService {
     private final ChatExecutorRuntimeProperties chatExecutorRuntimeProperties;
     private final ChatMemoryProperties chatMemoryProperties;
     private final AiProperties aiProperties;
+    private final ConfigCryptoService configCryptoService;
     private final Map<String, ChatRuntimeSetting> cache = new ConcurrentHashMap<>();
 
     /**
@@ -535,6 +537,12 @@ public class RuntimeSettingService {
         ChatRuntimeSetting setting = cache.get(key);
         if (setting == null) {
             return null;
+        }
+        if (Boolean.TRUE.equals(setting.getSecret())) {
+            if (StrUtil.isBlank(setting.getEncryptedValue())) {
+                throw new IllegalStateException("敏感配置缺少密文，key=" + key);
+            }
+            return configCryptoService.decrypt(setting.getEncryptedValue());
         }
         return setting.getSettingValue();
     }

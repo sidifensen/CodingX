@@ -15,6 +15,11 @@ public class ChatRuntimeSettingDO {
     @TableId("id") private Long id;
     @TableField("setting_key") private String settingKey;
     @TableField("setting_value") private String settingValue;
+    @TableField("encrypted_value") private String encryptedValue;
+    @TableField("secret") private Boolean secret;
+    @TableField("masked_value") private String maskedValue;
+    @TableField("encryption_algorithm") private String encryptionAlgorithm;
+    @TableField("encryption_key_version") private String encryptionKeyVersion;
     @TableField("value_type") private String valueType;
     @TableField("category_code") private String categoryCode;
     @TableField("description") private String description;

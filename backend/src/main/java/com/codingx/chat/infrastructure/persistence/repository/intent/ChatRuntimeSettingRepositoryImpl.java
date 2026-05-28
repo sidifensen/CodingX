@@ -36,6 +36,11 @@ public class ChatRuntimeSettingRepositoryImpl implements ChatRuntimeSettingRepos
         dataObject.setId(setting.getId());
         dataObject.setSettingKey(setting.getSettingKey());
         dataObject.setSettingValue(setting.getSettingValue());
+        dataObject.setEncryptedValue(setting.getEncryptedValue());
+        dataObject.setSecret(setting.getSecret());
+        dataObject.setMaskedValue(setting.getMaskedValue());
+        dataObject.setEncryptionAlgorithm(setting.getEncryptionAlgorithm());
+        dataObject.setEncryptionKeyVersion(setting.getEncryptionKeyVersion());
         dataObject.setValueType(setting.getValueType());
         dataObject.setCategoryCode(setting.getCategoryCode());
         dataObject.setDescription(setting.getDescription());
@@ -56,6 +61,11 @@ public class ChatRuntimeSettingRepositoryImpl implements ChatRuntimeSettingRepos
             .id(dataObject.getId())
             .settingKey(dataObject.getSettingKey())
             .settingValue(dataObject.getSettingValue())
+            .encryptedValue(dataObject.getEncryptedValue())
+            .secret(dataObject.getSecret())
+            .maskedValue(dataObject.getMaskedValue())
+            .encryptionAlgorithm(dataObject.getEncryptionAlgorithm())
+            .encryptionKeyVersion(dataObject.getEncryptionKeyVersion())
             .valueType(dataObject.getValueType())
             .categoryCode(dataObject.getCategoryCode())
             .description(dataObject.getDescription())

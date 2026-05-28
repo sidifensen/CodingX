@@ -3,6 +3,7 @@ package com.codingx.common.support.ai;
 import cn.hutool.core.collection.CollUtil;
 import com.codingx.common.error.ErrorMessageCatalog;
 import com.codingx.config.AiProperties;
+import com.codingx.config.DynamicAiProperties;
 import com.codingx.config.DynamicAiRoutingProperties;
 import java.util.ArrayList;
 import java.util.List;
@@ -42,6 +43,22 @@ public class AiModelDispatchService {
         AiProperties aiProperties,
         DynamicAiRoutingProperties dynamicProperties
     ) {
+        this(providerClients, aiProperties, dynamicProperties, null);
+    }
+
+    /**
+     * 使用 AI 配置、动态路由配置和动态 provider 配置装配路由层依赖。
+     * @param providerClients provider 客户端列表。
+     * @param aiProperties AI 配置。
+     * @param dynamicProperties 动态路由配置。
+     * @param dynamicAiProperties 动态 AI 配置。
+     */
+    public AiModelDispatchService(
+        List<AiProviderClient> providerClients,
+        AiProperties aiProperties,
+        DynamicAiRoutingProperties dynamicProperties,
+        DynamicAiProperties dynamicAiProperties
+    ) {
         this(
             providerClients,
             new AiProviderHealthRegistry(
@@ -52,7 +69,7 @@ public class AiModelDispatchService {
                     ? aiProperties.getSelection().getOpenDurationMs()
                     : dynamicProperties.openDurationMs()
             ),
-            new AiModelSelector(aiProperties, dynamicProperties)
+            new AiModelSelector(aiProperties, dynamicProperties, dynamicAiProperties)
         );
     }
 

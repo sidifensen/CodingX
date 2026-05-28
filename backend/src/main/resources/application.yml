@@ -90,7 +90,7 @@ app:
     cors:
       allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5002,http://localhost:5003} # CORS 允许的源列表
   ai:
-    provider: ${AI_PROVIDER:bailian} # AI 服务提供商，默认使用百炼
+    provider: ${AI_PROVIDER:deepseek} # AI 服务提供商，默认使用 DeepSeek
     base-url: ${AI_BASE_URL:${DEEPSEEK_BASE_URL:https://api.deepseek.com/v1}} # AI API 基础地址，支持嵌套环境变量覆盖
     api-key: ${AI_API_KEY:${DEEPSEEK_API_KEY:}} # AI API 密钥，支持嵌套环境变量覆盖
     chat-model: ${AI_CHAT_MODEL:${DEEPSEEK_CHAT_MODEL:deepseek-chat}} # 默认聊天模型，支持环境变量覆盖
@@ -119,33 +119,45 @@ app:
         base-url: stub://local # Stub 提供商本地模拟地址
         api-key: "" # Stub 提供商模拟密钥
     chat:
-      default-model: ${AI_DEFAULT_MODEL:qwen-plus} # 默认聊天模型 ID
-      deep-thinking-model: ${AI_DEEP_THINKING_MODEL:qwen3-max} # 深度思考模型 ID
+      default-model: ${AI_DEFAULT_MODEL:deepseek-chat} # 默认聊天模型 ID，优先使用 DeepSeek Chat
+      deep-thinking-model: ${AI_DEEP_THINKING_MODEL:deepseek-reasoner} # 深度思考模型 ID，优先使用 DeepSeek Reasoner
       candidates:
+        - id: deepseek-chat # 模型唯一标识
+          provider: deepseek # 模型所属提供商
+          model: ${DEEPSEEK_CHAT_MODEL:deepseek-chat} # 实际模型名称
+          priority: 1 # 模型优先级，数字越小优先级越高
+          enabled: true # 是否启用该模型
+          supports-thinking: false # 是否支持思考过程
+        - id: deepseek-reasoner
+          provider: deepseek
+          model: ${DEEPSEEK_REASONER_MODEL:deepseek-reasoner}
+          priority: 2
+          enabled: true
+          supports-thinking: true
         - id: qwen-plus # 模型唯一标识
           provider: bailian # 模型所属提供商
           model: ${BAILIAN_CHAT_MODEL:qwen-plus-latest} # 实际模型名称
-          priority: 1 # 模型优先级，数字越小优先级越高
+          priority: 3 # 模型优先级，数字越小优先级越高
           enabled: true # 是否启用该模型
           supports-thinking: false # 是否支持思考过程
         - id: qwen3-max
           provider: bailian
           model: ${BAILIAN_DEEP_MODEL:qwen3-max}
-          priority: 2
+          priority: 4
           enabled: true
           supports-thinking: true
         # 视觉附件优先路由到这个候选，确保图片不会误发给纯文本模型。
         - id: qwen3.6-plus
           provider: bailian
           model: ${BAILIAN_VISION_MODEL:qwen3.6-plus}
-          priority: 2
+          priority: 4
           enabled: true
           supports-thinking: true
           supports-vision: true # 是否支持视觉/图片输入
         - id: glm-4.7
           provider: siliconflow
           model: ${SILICONFLOW_CHAT_MODEL:Pro/zai-org/GLM-4.7}
-          priority: 3
+          priority: 5
           enabled: true
           supports-thinking: true
         - id: stub-chat

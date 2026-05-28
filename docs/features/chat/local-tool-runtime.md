@@ -12,9 +12,10 @@
 
 1. `ChatToolSpecService` 从启用的工具配置中过滤出 Java 执行器真实支持的本地工具。
 2. `shell_command` 与 `exec_command` 的模型说明会显式写入命令解释器边界：Windows 环境使用 Windows PowerShell，不应使用 Bash 专属语法。
-3. 聊天执行前通过 `ChatToolExecutionContext` 绑定当前本地工作区，工具结果元数据回显实际工作目录。
-4. `CodexBuiltinChatToolExecutor` 执行命令、补丁、计划、图片读取等本地子集；未接入真实 Codex session 的多代理和插件工具保持不可用。
-5. 工具输出会作为系统证据追加给下一轮模型生成，前端同步展示 start、complete 或 error 过程卡片。
+3. `apply_patch` 的模型说明要求补丁路径基于当前工具工作目录，优先使用 `diary/index.html` 这类相对路径，不应编造 `C:\workspace` 等虚拟根目录。
+4. 聊天执行前通过 `ChatToolExecutionContext` 绑定当前本地工作区，工具结果元数据回显实际工作目录。
+5. `CodexBuiltinChatToolExecutor` 执行命令、补丁、计划、图片读取等本地子集；标准 diff 中若出现当前工作区内的绝对路径，会在应用前规范化为相对路径，工作区外路径继续拒绝。
+6. 工具输出会作为系统证据追加给下一轮模型生成，证据中单独写出真实 `workingDirectory` 和后续路径约束；前端同步展示 start、complete 或 error 过程卡片。
 
 ## 关键文件
 
@@ -28,7 +29,10 @@
 
 `shell_command` 当前在 Windows 服务端通过 `powershell -NoProfile -Command` 执行，因此模型需要使用 `New-Item -ItemType Directory -Force`、`Set-Content` 或 `apply_patch` 等 PowerShell/工具原生命令。多行 HTML/XML/代码文件不应通过 `shell_command` 创建或编辑，应改用 `apply_patch`。必要时才用 PowerShell here-string 配合 `Set-Content`。`mkdir -p`、`cat <<EOF`、`&&` 串联和 `<` 输入重定向属于 Bash 习惯写法，其中 `<` 也是 PowerShell 保留字符，未正确引用会直接触发语法错误。
 
+`apply_patch` 以当前工具工作目录为写入边界。模型如果拿到工具输出中的真实工作目录，例如 `D:\`，后续补丁应写 `diary/index.html` 或工作目录内的绝对路径；如果补丁指向 `C:\workspace\...` 这类不属于当前工作目录的路径，后端会按越界路径拒绝执行，避免误写用户未授权目录。标准 diff 新增文件块里若模型漏写 hunk 内容行开头的 `+`，执行器只会在 `--- /dev/null` 且旧文件行号为 0 的新增文件 hunk 内补齐新增标记，避免误改普通修改补丁。
+
 ## 测试与验证
 
 - `mvn -Dtest=ChatToolSpecServiceTest test`
+- `mvn -Dtest=CodexBuiltinChatToolExecutorTest#applyPatchShouldNormalizeWorkspaceAbsolutePathInGitDiff test`
 - `mvn -Dtest=ChatRuntimePersistenceStructureTest#shellCommandRuntimeMigrationClarifiesPowerShellSyntax test`

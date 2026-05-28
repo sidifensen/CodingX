@@ -364,9 +364,48 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
             }
             normalizedLines.add(line);
         }
-        String normalizedPatch = String.join("\n", normalizeGitPatchHunkHeaders(normalizedLines));
+        List<String> repairedLines = normalizeBareNewFileGitPatchLines(normalizedLines);
+        String normalizedPatch = String.join("\n", normalizeGitPatchHunkHeaders(repairedLines));
         // git apply 会把缺少文件尾换行的最后一个 hunk 判定为 corrupt patch，模型输出 JSON 时常丢失该换行。
         return normalizedPatch.endsWith("\n") ? normalizedPatch : normalizedPatch + "\n";
+    }
+
+    /**
+     * 修复模型把新建文件标准 diff 的 hunk 内容当成原文输出、漏写每行 + 前缀的问题。
+     * 关键约束：只处理 `--- /dev/null` 且旧文件行号为 0 的新增文件 hunk，避免误改普通 diff。
+     */
+    private List<String> normalizeBareNewFileGitPatchLines(List<String> lines) {
+        List<String> normalizedLines = new ArrayList<>(lines);
+        boolean newFileBlock = false;
+        int lineIndex = 0;
+        while (lineIndex < normalizedLines.size()) {
+            String line = normalizedLines.get(lineIndex);
+            if (StrUtil.startWith(line, "diff --git ")) {
+                newFileBlock = false;
+                lineIndex++;
+                continue;
+            }
+            if (StrUtil.equals(line, "--- /dev/null")) {
+                newFileBlock = true;
+                lineIndex++;
+                continue;
+            }
+            Matcher matcher = GIT_HUNK_HEADER_PATTERN.matcher(line);
+            if (!newFileBlock || !matcher.matches() || !StrUtil.equals(matcher.group(1), "0")) {
+                lineIndex++;
+                continue;
+            }
+            int hunkLineIndex = lineIndex + 1;
+            while (hunkLineIndex < normalizedLines.size() && !isGitPatchHunkBoundary(normalizedLines.get(hunkLineIndex))) {
+                String hunkLine = normalizedLines.get(hunkLineIndex);
+                if (!StrUtil.startWith(hunkLine, "+") && !StrUtil.startWith(hunkLine, "\\ No newline")) {
+                    normalizedLines.set(hunkLineIndex, "+" + hunkLine);
+                }
+                hunkLineIndex++;
+            }
+            lineIndex = hunkLineIndex;
+        }
+        return normalizedLines;
     }
 
     /**

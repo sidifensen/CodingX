@@ -190,6 +190,51 @@ class CodexBuiltinChatToolExecutorTest {
     }
 
     /**
+     * 模型有时会输出标准 diff 头，但在新增文件 hunk 中漏掉每行开头的 +。
+     * 这种内容仍然只能写入新文件，执行器应补齐新增标记后再交给 git apply。
+     *
+     * @param tempDir 测试临时目录。
+     * @throws Exception 执行失败时抛出。
+     */
+    @Test
+    void applyPatchShouldRepairBareLinesInNewFileGitDiff(@TempDir Path tempDir) throws Exception {
+        Path projectRoot = tempDir.resolve("workspace");
+        Files.createDirectories(projectRoot);
+        Path targetFile = projectRoot.resolve("diary").resolve("index.html");
+        String patch = """
+            diff --git a/diary/index.html b/diary/index.html
+            new file mode 100644
+            index 0000000..e69de29
+            --- /dev/null
+            +++ b/diary/index.html
+            @@ -0,0 +1,9 @@
+            <!DOCTYPE html>
+            <html lang="zh-CN">
+            <head>
+              <meta charset="UTF-8">
+              <title>日记</title>
+            </head>
+            <body>
+              <h1>简单日记</h1>
+            </body>
+            """.stripTrailing();
+
+        ChatToolExecutionContext.bindToolWorkingDirectory(projectRoot);
+        try {
+            ChatToolExecutionResult result = codexBuiltinChatToolExecutor.execute(
+                "apply_patch",
+                JSONUtil.toJsonStr(Map.of("patch", patch))
+            );
+
+            assertEquals("apply_patch", result.toolCode());
+            assertTrue(Files.exists(targetFile));
+            assertTrue(Files.readString(targetFile, StandardCharsets.UTF_8).contains("<h1>简单日记</h1>"));
+        } finally {
+            ChatToolExecutionContext.clear();
+        }
+    }
+
+    /**
      * shell_command 必须在当前工具上下文绑定的工作目录执行，避免误改后端进程目录。
      *
      * @param tempDir 测试临时目录。

@@ -386,7 +386,7 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
                 lineIndex++;
                 continue;
             }
-            if (StrUtil.equals(line, "--- /dev/null")) {
+            if (isGitDevNullHeaderLine(line)) {
                 newFileBlock = true;
                 lineIndex++;
                 continue;
@@ -417,20 +417,96 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
         List<String> normalizedLines = new ArrayList<>(lines.size());
         int lineIndex = 0;
         while (lineIndex < lines.size()) {
-            if (!StrUtil.startWith(lines.get(lineIndex), "diff --git ")) {
-                normalizedLines.add(lines.get(lineIndex));
-                lineIndex++;
+            if (StrUtil.startWith(lines.get(lineIndex), "diff --git ")) {
+                int blockEndIndex = lineIndex + 1;
+                while (blockEndIndex < lines.size() && !StrUtil.startWith(lines.get(blockEndIndex), "diff --git ")) {
+                    blockEndIndex++;
+                }
+                List<String> blockLines = new ArrayList<>(lines.subList(lineIndex, blockEndIndex));
+                normalizedLines.addAll(rewriteNewFileBlockForExistingFile(workingDirectory, blockLines));
+                lineIndex = blockEndIndex;
                 continue;
             }
-            int blockEndIndex = lineIndex + 1;
-            while (blockEndIndex < lines.size() && !StrUtil.startWith(lines.get(blockEndIndex), "diff --git ")) {
-                blockEndIndex++;
+            if (isStandaloneGitFileHeaderAt(lines, lineIndex)) {
+                int blockEndIndex = lineIndex + 2;
+                while (blockEndIndex < lines.size()
+                    && !StrUtil.startWith(lines.get(blockEndIndex), "diff --git ")
+                    && !isStandaloneGitFileHeaderAt(lines, blockEndIndex)) {
+                    blockEndIndex++;
+                }
+                List<String> blockLines = new ArrayList<>(lines.subList(lineIndex, blockEndIndex));
+                normalizedLines.addAll(rewriteNewFileBlockForExistingFile(workingDirectory, blockLines));
+                lineIndex = blockEndIndex;
+                continue;
             }
-            List<String> blockLines = new ArrayList<>(lines.subList(lineIndex, blockEndIndex));
-            normalizedLines.addAll(rewriteNewFileBlockForExistingFile(workingDirectory, blockLines));
-            lineIndex = blockEndIndex;
+            normalizedLines.add(lines.get(lineIndex));
+            lineIndex++;
         }
         return normalizedLines;
+    }
+
+    /**
+     * 识别缺少 diff --git 头的标准 unified diff 文件块边界。
+     * 关键约束：只有连续 `---`/`+++` 文件头才视作文件块，避免把 hunk 内普通删除内容误判为新文件。
+     */
+    private boolean isStandaloneGitFileHeaderAt(List<String> lines, int lineIndex) {
+        if (lineIndex < 0 || lineIndex + 1 >= lines.size()) {
+            return false;
+        }
+        return StrUtil.startWith(lines.get(lineIndex), "--- ")
+            && StrUtil.startWith(lines.get(lineIndex + 1), "+++ ");
+    }
+
+    /**
+     * 同名文件覆盖只需要路径本体；文件头中的时间戳元数据不能参与路径解析。
+     */
+    private String extractGitFileHeaderPathToken(String headerBody) {
+        String trimmedBody = StrUtil.trim(headerBody);
+        int metadataIndex = trimmedBody.indexOf('\t');
+        if (metadataIndex < 0) {
+            return trimmedBody;
+        }
+        return trimmedBody.substring(0, metadataIndex);
+    }
+
+    /**
+     * 规范化 standalone 文件头，剥离时间戳后再做工作区路径约束。
+     */
+    private String normalizeGitFileHeaderPathToken(Path workingDirectory, String headerBody) {
+        String pathToken = extractGitFileHeaderPathToken(headerBody);
+        return normalizeGitPatchPathToken(workingDirectory, pathToken);
+    }
+
+    /**
+     * 从 `---`/`+++` 文件头中读取不含时间戳的路径本体。
+     */
+    private String extractGitFileHeaderPathFromLine(String line) {
+        if (!StrUtil.startWith(line, "--- ") && !StrUtil.startWith(line, "+++ ")) {
+            return "";
+        }
+        return extractGitFileHeaderPathToken(StrUtil.subSuf(line, 4));
+    }
+
+    /**
+     * 判断文件头是否指向 /dev/null，兼容 unified diff 中可能携带的时间戳字段。
+     */
+    private boolean isGitDevNullHeaderLine(String line) {
+        return StrUtil.startWith(line, "--- ")
+            && StrUtil.equals(extractGitFileHeaderPathFromLine(line), "/dev/null");
+    }
+
+    /**
+     * 从新增文件头中提取目标路径，自动剥离 b/ 前缀与时间戳。
+     */
+    private String extractGitNewFileTargetPath(String line) {
+        if (!StrUtil.startWith(line, "+++ ")) {
+            return "";
+        }
+        String pathToken = extractGitFileHeaderPathFromLine(line);
+        if (StrUtil.equals(pathToken, "/dev/null")) {
+            return "";
+        }
+        return stripGitPatchSidePrefix(pathToken);
     }
 
     /**
@@ -468,15 +544,12 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
         boolean newFileBlock = false;
         String targetPathText = null;
         for (String line : blockLines) {
-            if (StrUtil.equals(line, "--- /dev/null")) {
+            if (isGitDevNullHeaderLine(line)) {
                 newFileBlock = true;
                 continue;
             }
             if (StrUtil.startWith(line, "+++ ")) {
-                String pathToken = StrUtil.trim(StrUtil.subSuf(line, 4));
-                if (!StrUtil.equals(pathToken, "/dev/null")) {
-                    targetPathText = stripGitPatchSidePrefix(pathToken);
-                }
+                targetPathText = extractGitNewFileTargetPath(line);
             }
         }
         return newFileBlock ? targetPathText : null;
@@ -650,8 +723,7 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
      */
     private String normalizeGitFileHeaderLine(Path workingDirectory, String line) {
         String prefix = line.substring(0, 4);
-        String pathToken = line.substring(4);
-        return prefix + normalizeGitPatchPathToken(workingDirectory, pathToken);
+        return prefix + normalizeGitFileHeaderPathToken(workingDirectory, line.substring(4));
     }
 
     /**

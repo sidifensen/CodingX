@@ -282,6 +282,135 @@ class CodexBuiltinChatToolExecutorTest {
     }
 
     /**
+     * 缺少 diff --git 头的标准新增文件补丁也应覆盖同名既有文件。
+     * 业务背景：模型有时只输出 `--- /dev/null`/`+++ b/notes.html` 片段，不能绕过同名覆盖兜底。
+     *
+     * @param tempDir 测试临时目录。
+     * @throws Exception 执行失败时抛出。
+     */
+    @Test
+    void applyPatchShouldOverwriteExistingFileWhenStandaloneNewFileDiffTargetsSameName(@TempDir Path tempDir) throws Exception {
+        Path projectRoot = tempDir.resolve("workspace");
+        Files.createDirectories(projectRoot);
+        Path targetFile = projectRoot.resolve("notes.html");
+        Files.writeString(
+            targetFile,
+            "<!doctype html>\n<title>旧笔记</title>\n<main>old note</main>\n",
+            StandardCharsets.UTF_8
+        );
+        String patch = """
+            --- /dev/null
+            +++ b/notes.html
+            @@ -0,0 +1,3 @@
+            +<!doctype html>
+            +<title>简单笔记</title>
+            +<main>new note</main>
+            """.stripTrailing();
+
+        ChatToolExecutionContext.bindToolWorkingDirectory(projectRoot);
+        try {
+            ChatToolExecutionResult result = codexBuiltinChatToolExecutor.execute(
+                "apply_patch",
+                JSONUtil.toJsonStr(Map.of("patch", patch))
+            );
+
+            assertEquals("apply_patch", result.toolCode());
+            String content = Files.readString(targetFile, StandardCharsets.UTF_8);
+            assertTrue(content.contains("<title>简单笔记</title>"));
+            assertTrue(content.contains("<main>new note</main>"));
+            assertTrue(!content.contains("old note"));
+        } finally {
+            ChatToolExecutionContext.clear();
+        }
+    }
+
+    /**
+     * standalone 新增文件 hunk 中出现形似旧文件头的正文时，不应被误拆成新的文件块。
+     * 业务背景：Markdown、代码片段或分隔线可能包含 `--- ` 开头的内容行。
+     *
+     * @param tempDir 测试临时目录。
+     * @throws Exception 执行失败时抛出。
+     */
+    @Test
+    void applyPatchShouldKeepStandaloneNewFileContentThatLooksLikeOldFileHeader(@TempDir Path tempDir) throws Exception {
+        Path projectRoot = tempDir.resolve("workspace");
+        Files.createDirectories(projectRoot);
+        Path targetFile = projectRoot.resolve("notes.md");
+        Files.writeString(targetFile, "old note\n", StandardCharsets.UTF_8);
+        String patch = """
+            --- /dev/null
+            +++ b/notes.md
+            @@ -0,0 +1,4 @@
+            # 笔记
+            --- old marker
+            正文
+            结尾
+            """.stripTrailing();
+
+        ChatToolExecutionContext.bindToolWorkingDirectory(projectRoot);
+        try {
+            ChatToolExecutionResult result = codexBuiltinChatToolExecutor.execute(
+                "apply_patch",
+                JSONUtil.toJsonStr(Map.of("patch", patch))
+            );
+
+            assertEquals("apply_patch", result.toolCode());
+            String content = Files.readString(targetFile, StandardCharsets.UTF_8);
+            assertTrue(content.contains("--- old marker"));
+            assertTrue(content.contains("正文"));
+            assertTrue(!content.contains("old note"));
+        } finally {
+            ChatToolExecutionContext.clear();
+        }
+    }
+
+    /**
+     * 标准 diff 文件头带时间戳时，同名新增文件仍应走整文件覆盖兜底。
+     * 业务背景：部分模型会输出 `+++ b/notes.html\t时间戳`，路径解析不能把时间戳误当成文件名。
+     *
+     * @param tempDir 测试临时目录。
+     * @throws Exception 执行失败时抛出。
+     */
+    @Test
+    void applyPatchShouldOverwriteExistingFileWhenNewFileDiffHeaderHasTimestamp(@TempDir Path tempDir) throws Exception {
+        Path projectRoot = tempDir.resolve("workspace");
+        Files.createDirectories(projectRoot);
+        Path targetFile = projectRoot.resolve("notes.html");
+        Files.writeString(
+            targetFile,
+            "<!doctype html>\n<title>旧笔记</title>\n<main>old note</main>\n",
+            StandardCharsets.UTF_8
+        );
+        String patch = """
+            diff --git a/notes.html b/notes.html
+            new file mode 100644
+            index 0000000..e69de29
+            --- /dev/null
+            +++ b/notes.html\t2026-05-29 00:00:00 +0800
+            @@ -0,0 +1,3 @@
+            +<!doctype html>
+            +<title>简单笔记</title>
+            +<main>new note</main>
+            """.stripTrailing();
+
+        ChatToolExecutionContext.bindToolWorkingDirectory(projectRoot);
+        try {
+            ChatToolExecutionResult result = codexBuiltinChatToolExecutor.execute(
+                "apply_patch",
+                JSONUtil.toJsonStr(Map.of("patch", patch))
+            );
+
+            assertEquals("apply_patch", result.toolCode());
+            String content = Files.readString(targetFile, StandardCharsets.UTF_8);
+            assertTrue(content.contains("<title>简单笔记</title>"));
+            assertTrue(content.contains("<main>new note</main>"));
+            assertTrue(!content.contains("old note"));
+        } finally {
+            ChatToolExecutionContext.clear();
+        }
+    }
+
+    /**
      * shell_command 必须在当前工具上下文绑定的工作目录执行，避免误改后端进程目录。
      *
      * @param tempDir 测试临时目录。

@@ -14,6 +14,7 @@
 - [AI 路由默认策略](chat/ai-routing-defaults.md)
 - [联网搜索权威时效排序](chat/web-search-authoritative-latest.md)
 - [聊天流式提交与引用链接](chat/stream-submit-citation.md)
+- [聊天流式完成收尾与发送解锁](chat/stream-finish-submit-unlock.md)
 - [系统配置与密钥统一化](chat/system-config-secret-unification.md)
 
 ## Admin

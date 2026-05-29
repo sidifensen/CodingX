@@ -208,6 +208,161 @@ describe('useChatWorkspace submit behavior', () => {
   });
 
   /**
+   * finish 事件已经代表模型输出结束，后续会话回放慢响应不应继续占用发送锁。
+   * 业务边界：否则输入区已经恢复“发送”按钮，但点击第三条消息会被内部状态静默拦截。
+   */
+  it('应在finish后立即允许下一次提交并持久化最终助手消息', async () => {
+    const streamReaders: Array<{
+      readQueue: Array<{
+        resolve: (value: ReadableStreamReadResult<Uint8Array>) => void;
+        reject: (reason?: unknown) => void;
+      }>;
+      read: ReturnType<typeof vi.fn>;
+    }> = [];
+    let streamRequestCount = 0;
+    let conversationsRequestCount = 0;
+    let resolveConversationsAfterFinish: ((response: Response) => void) | null = null;
+    const conversationsAfterFinish = new Promise<Response>((resolve) => {
+      resolveConversationsAfterFinish = resolve;
+    });
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === '/api/chat/conversations') {
+        conversationsRequestCount += 1;
+        if (conversationsRequestCount === 1) {
+          return new Response(
+            JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+            { status: 200 },
+          );
+        }
+        return conversationsAfterFinish;
+      }
+      if (
+        url === '/api/chat/sample-questions' ||
+        url === '/api/chat/experts' ||
+        url === '/api/chat/skills' ||
+        url === '/api/chat/mcps' ||
+        url === '/api/chat/conversations/2001/messages' ||
+        url === '/api/chat/conversations/2001/steps' ||
+        url === '/api/chat/conversations/2001/references' ||
+        url === '/api/chat/conversations/2001/artifacts' ||
+        url === '/api/chat/conversations/2001/current-skills' ||
+        url === '/api/chat/conversations/2001/current-mcps' ||
+        url === '/api/chat/conversations/2001/current-experts'
+      ) {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (url.includes('/api/chat/stream')) {
+        streamRequestCount += 1;
+        const readQueue: Array<{
+          resolve: (value: ReadableStreamReadResult<Uint8Array>) => void;
+          reject: (reason?: unknown) => void;
+        }> = [];
+        const reader = {
+          readQueue,
+          read: vi.fn(
+            () =>
+              new Promise<ReadableStreamReadResult<Uint8Array>>((resolve, reject) => {
+                readQueue.push({ resolve, reject });
+              }),
+          ),
+        };
+        streamReaders.push(reader);
+        return {
+          ok: true,
+          status: 200,
+          body: {
+            getReader: () => reader,
+          },
+        } as unknown as Response;
+      }
+      throw new Error(`Unhandled fetch in finish unlock submit test: ${url}`);
+    });
+
+    const { result } = renderHook(() => useChatWorkspace(true));
+    await waitFor(() => {
+      expect(result.current.isBootstrapping).toBe(false);
+    });
+
+    await act(async () => {
+      result.current.setInputValue('第二个请求');
+    });
+    const firstSubmitPromise = result.current.submitMessage();
+
+    await waitFor(() => {
+      expect(streamReaders[0]?.readQueue.length).toBeGreaterThan(0);
+    });
+
+    await act(async () => {
+      streamReaders[0].readQueue.shift()?.resolve({
+        done: false,
+        value: new TextEncoder().encode(
+          'event:finish\ndata:{"conversationId":"2001","assistantMessageId":"3001","content":"第二个回答","title":"第二个会话"}\n\n',
+        ),
+      });
+    });
+
+    await waitFor(() => {
+      expect(result.current.isStreaming).toBe(false);
+    });
+
+    const persistedStore = JSON.parse(
+      window.localStorage.getItem('codingx.chat.workspace.conversations.v1') ?? '{}',
+    );
+    const persistedMessage =
+      persistedStore.snapshots?.['cloud::__no_workspace__']?.conversationRecords?.['2001']
+        ?.messages?.[1];
+    expect(persistedMessage).toEqual(
+      expect.objectContaining({
+        id: '3001',
+        content: '第二个回答',
+        status: 'done',
+      }),
+    );
+
+    await act(async () => {
+      result.current.setInputValue('第三个请求');
+    });
+    await act(async () => {
+      void result.current.submitMessage();
+    });
+
+    await waitFor(() => {
+      expect(streamRequestCount).toBe(2);
+    });
+
+    await act(async () => {
+      streamReaders[1].readQueue.shift()?.resolve({ done: true, value: undefined });
+      streamReaders[0].readQueue.shift()?.resolve({ done: true, value: undefined });
+      resolveConversationsAfterFinish?.(
+        new Response(
+          JSON.stringify({
+            success: true,
+            code: 'OK',
+            message: 'success',
+            data: [
+              {
+                id: '2001',
+                title: '第二个会话',
+                status: 'ACTIVE',
+                lastRunId: '5002',
+              },
+            ],
+          }),
+          { status: 200 },
+        ),
+      );
+    });
+    await act(async () => {
+      await firstSubmitPromise;
+    });
+  });
+
+  /**
    * token 丢失时不应静默失败，应提示登录失效并触发未授权回调，避免用户误判“发送键无响应”。
    */
   it('应在token缺失时提示登录失效并触发未授权回调', async () => {

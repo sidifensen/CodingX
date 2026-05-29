@@ -530,7 +530,9 @@ export function useChatWorkspace(
   const streamMcpCallsRef = useRef<Record<string, McpCallItem[]>>({});
   const streamSessionSeedRef = useRef(0);
   const activeStreamSessionIdRef = useRef<number | null>(null);
-  const submitMessageInFlightRef = useRef(false);
+  const finishedStreamSessionIdsRef = useRef<Set<number>>(new Set());
+  const submitLockSeedRef = useRef(0);
+  const submitMessageInFlightRef = useRef<number | null>(null);
   const streamQueueTimerRef = useRef<number | null>(null);
   const skipNextRuntimeSyncRef = useRef(false);
   const messagesRef = useRef<ChatMessageItem[]>([]);
@@ -583,9 +585,23 @@ export function useChatWorkspace(
   const setMessages = (
     nextValue: ChatMessageItem[] | ((previous: ChatMessageItem[]) => ChatMessageItem[]),
   ) => {
+    if (typeof nextValue !== 'function') {
+      // 关键约束：SSE 可能在同一轮事件循环内立即返回，数组式写入必须同步刷新引用，
+      // 否则 finish 收敛会读到旧消息并把被替换的助手消息重新带回。
+      const nextMessages = sanitizeMessagesForProcessDisplay(
+        preserveActiveStreamingAssistantMessage(
+          messagesRef.current,
+          nextValue,
+          streamStateRef.current,
+        ),
+      );
+      messagesRef.current = nextMessages;
+      setMessagesState(nextMessages);
+      return;
+    }
     setMessagesState((previousMessages) => {
       const rawNextMessages =
-        typeof nextValue === 'function' ? nextValue(previousMessages) : nextValue;
+        nextValue(previousMessages);
       const nextMessages = sanitizeMessagesForProcessDisplay(
         preserveActiveStreamingAssistantMessage(
           previousMessages,
@@ -738,6 +754,15 @@ export function useChatWorkspace(
   const createStreamSessionId = () => {
     streamSessionSeedRef.current += 1;
     return streamSessionSeedRef.current;
+  };
+
+  /**
+   * 生成单调递增的提交锁编号，避免同毫秒提交导致旧请求 finally 误释放新请求。
+   * @returns 新提交锁编号。
+   */
+  const createSubmitLockId = () => {
+    submitLockSeedRef.current += 1;
+    return submitLockSeedRef.current;
   };
 
   /**
@@ -1426,14 +1451,15 @@ export function useChatWorkspace(
       return;
     }
     if (
-      submitMessageInFlightRef.current ||
+      submitMessageInFlightRef.current != null ||
       activeStreamSessionIdRef.current != null ||
       abortControllerRef.current != null
     ) {
       return;
     }
     // 关键约束：提交防重必须早于工作区绑定和附件上传，覆盖 React 状态尚未刷新前的重复触发窗口。
-    submitMessageInFlightRef.current = true;
+    const submitLockId = createSubmitLockId();
+    submitMessageInFlightRef.current = submitLockId;
     setStreamError('');
     try {
       // 关键约束：本地模式有目录时先绑定 workspaceId；无目录时交给后端默认“本地历史记录”归档。
@@ -1536,10 +1562,14 @@ export function useChatWorkspace(
         await ChatApi.assertStreamAuthorized(response);
         // 附件上传成功并已发出流请求后即可释放预览 URL，避免长期占用浏览器内存。
         submittedAttachments.forEach((item) => URL.revokeObjectURL(item.previewUrl));
-        await consumeSseStream(response, optimisticAssistantId, streamSessionId);
-        if (!isActiveStreamSession(streamSessionId)) {
+        await consumeSseStream(response, optimisticAssistantId, streamSessionId, submitLockId);
+        if (
+          !isActiveStreamSession(streamSessionId) &&
+          !finishedStreamSessionIdsRef.current.has(streamSessionId)
+        ) {
           return;
         }
+        finishedStreamSessionIdsRef.current.delete(streamSessionId);
         const nextConversations = await loadConversations(token, effectiveWorkspaceId);
         const nextConversationId = streamStateRef.current?.conversationId ?? activeConversationId;
         if (nextConversationId) {
@@ -1580,6 +1610,7 @@ export function useChatWorkspace(
           setStreamError(error instanceof Error ? error.message : UserErrorMessages.CHAT_REQUEST_FAILED);
         }
       } finally {
+        finishedStreamSessionIdsRef.current.delete(streamSessionId);
         delete streamMcpCallsRef.current[optimisticAssistantId];
         if (abortControllerRef.current === streamAbortController) {
           abortControllerRef.current = null;
@@ -1590,7 +1621,9 @@ export function useChatWorkspace(
         }
       }
     } finally {
-      submitMessageInFlightRef.current = false;
+      if (submitMessageInFlightRef.current === submitLockId) {
+        submitMessageInFlightRef.current = null;
+      }
     }
   };
 
@@ -2253,6 +2286,7 @@ export function useChatWorkspace(
     response: Response,
     optimisticAssistantId: string,
     streamSessionId: number,
+    submitLockId?: number,
   ) => {
     const reader = response.body?.getReader();
     if (!reader) {
@@ -2266,7 +2300,7 @@ export function useChatWorkspace(
       if (done) {
         const { events } = extractSseEvents(`${buffer}\n\n`);
         for (const event of events) {
-          applySseEvent(event.event, event.data, optimisticAssistantId, streamSessionId);
+          applySseEvent(event.event, event.data, optimisticAssistantId, streamSessionId, submitLockId);
         }
         break;
       }
@@ -2274,7 +2308,7 @@ export function useChatWorkspace(
       const { events, remainder } = extractSseEvents(buffer);
       buffer = remainder;
       for (const event of events) {
-        applySseEvent(event.event, event.data, optimisticAssistantId, streamSessionId);
+        applySseEvent(event.event, event.data, optimisticAssistantId, streamSessionId, submitLockId);
       }
     }
   };
@@ -2291,6 +2325,7 @@ export function useChatWorkspace(
     payload: unknown,
     optimisticAssistantId: string,
     streamSessionId: number,
+    submitLockId?: number,
   ) => {
     if (!isActiveStreamSession(streamSessionId)) {
       return;
@@ -2607,6 +2642,7 @@ export function useChatWorkspace(
     if (eventName === 'finish' && isRecord(payload)) {
       const finishConversationId = String(payload.conversationId ?? '').trim();
       const finishAssistantMessageId = normalizePersistedMessageId(payload.assistantMessageId);
+      let nextConversationListForPersist = conversations;
       if (finishConversationId) {
         const finishTitle = typeof payload.title === 'string' ? payload.title : undefined;
         // 关键约束：即使后端未先下发 meta，也要在 finish 阶段收敛到真实会话 ID，
@@ -2619,13 +2655,35 @@ export function useChatWorkspace(
         };
         setActiveConversationId(finishConversationId);
         upsertConversationFromStreamMeta(finishConversationId, finishTitle);
+        const existingConversation = conversations.find(
+          (conversation) => conversation.id === finishConversationId,
+        );
+        nextConversationListForPersist = upsertConversationToTop(
+          conversations,
+          existingConversation
+            ? {
+                ...existingConversation,
+                title:
+                  finishTitle && finishTitle.trim().length > 0
+                    ? finishTitle
+                    : existingConversation.title,
+              }
+            : {
+                id: finishConversationId,
+                title:
+                  finishTitle && finishTitle.trim().length > 0
+                    ? finishTitle
+                    : '新会话',
+                status: 'ACTIVE',
+                workspaceType: activeRuntimeTarget === 'local' ? 'LOCAL' : undefined,
+              },
+        );
         writeConversationIdToUrl(finishConversationId);
       }
       hideStreamQueueState();
       // 业务约束：finish 事件表示模型输出已完成，需立刻恢复输入区发送态，避免“停止”按钮滞留。
       setIsStreaming(false);
-      setMessages((previousMessages) =>
-        previousMessages.map((message) =>
+      const finishedMessages = messagesRef.current.map((message) =>
           message.id === optimisticAssistantId
               ? {
                   ...message,
@@ -2650,8 +2708,28 @@ export function useChatWorkspace(
                   ),
               }
             : message,
-        ),
       );
+      setMessages(finishedMessages);
+      if (finishConversationId) {
+        persistConversationState(finishConversationId, nextConversationListForPersist, {
+          messages: finishedMessages,
+          executionSteps,
+          references,
+          artifacts,
+          currentExperts,
+          currentSkills,
+          currentMcps,
+        });
+      }
+      // 交互约束：服务端已明确完成输出后，慢速历史回放只负责补面板数据，不能继续锁住下一次发送。
+      finishedStreamSessionIdsRef.current.add(streamSessionId);
+      if (activeStreamSessionIdRef.current === streamSessionId) {
+        activeStreamSessionIdRef.current = null;
+      }
+      if (submitLockId != null && submitMessageInFlightRef.current === submitLockId) {
+        submitMessageInFlightRef.current = null;
+      }
+      abortControllerRef.current = null;
       return;
     }
 

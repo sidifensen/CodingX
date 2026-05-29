@@ -144,6 +144,7 @@ export default function ChatView({
     'runtime' | 'workspace' | null
   >(null);
   const [skillSearchKeyword, setSkillSearchKeyword] = React.useState('');
+  const [activeSkillOptionIndex, setActiveSkillOptionIndex] = React.useState(-1);
   const [expertSearchKeyword, setExpertSearchKeyword] = React.useState('');
   const [skillSelectorSource, setSkillSelectorSource] = React.useState<'button' | 'slash' | null>(
     null,
@@ -445,6 +446,17 @@ export default function ChatView({
   }, [availableSkills, skillSearchKeyword]);
 
   /**
+   * 技能筛选结果变化时默认高亮首项，保证 Tab 能直接确认当前最相关候选。
+   */
+  React.useEffect(() => {
+    if (activeSelectorMode !== 'skill' || filteredSkills.length === 0) {
+      setActiveSkillOptionIndex(-1);
+      return;
+    }
+    setActiveSkillOptionIndex(0);
+  }, [activeSelectorMode, filteredSkills.length, skillSearchKeyword]);
+
+  /**
    * 过滤专家列表，支持名称与编码模糊检索。
    * @returns 过滤后的专家列表。
    */
@@ -655,6 +667,59 @@ export default function ChatView({
     },
     [inputValue, selectedSkillCodes, setInputValue, skillSelectorSource, syncSelectedSkillCodesFromInput],
   );
+
+  /**
+   * 处理技能候选列表键盘交互：上下键移动高亮，Tab 直接确认当前候选。
+   * @param event 输入框或检索框的键盘事件。
+   * @returns 是否已消费该按键。
+   */
+  const handleSkillSelectorKeyDown = React.useCallback(
+    (event: React.KeyboardEvent<HTMLElement>) => {
+      if (activeSelectorMode !== 'skill' || filteredSkills.length === 0) {
+        return false;
+      }
+      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+        event.preventDefault();
+        event.stopPropagation();
+        setActiveSkillOptionIndex((currentIndex) => {
+          const normalizedIndex = currentIndex >= 0 ? currentIndex : 0;
+          if (event.key === 'ArrowDown') {
+            return (normalizedIndex + 1) % filteredSkills.length;
+          }
+          return (normalizedIndex - 1 + filteredSkills.length) % filteredSkills.length;
+        });
+        return true;
+      }
+      if (event.key === 'Tab' && !event.shiftKey) {
+        const fallbackIndex = activeSkillOptionIndex >= 0 ? activeSkillOptionIndex : 0;
+        const targetSkill = filteredSkills[fallbackIndex];
+        if (!targetSkill) {
+          return false;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+        selectSkill(targetSkill.skillCode);
+        return true;
+      }
+      return false;
+    },
+    [activeSelectorMode, activeSkillOptionIndex, filteredSkills, selectSkill],
+  );
+
+  /**
+   * 高亮项随键盘移动时保持在候选列表可视范围内，长列表不需要用户额外滚动寻找。
+   */
+  React.useEffect(() => {
+    if (activeSelectorMode !== 'skill' || activeSkillOptionIndex < 0) {
+      return;
+    }
+    const activeOption = selectorLayerRef.current?.querySelector(
+      `[data-skill-option-index="${activeSkillOptionIndex}"]`,
+    );
+    if (activeOption instanceof HTMLElement) {
+      activeOption.scrollIntoView({ block: 'nearest' });
+    }
+  }, [activeSelectorMode, activeSkillOptionIndex]);
 
   /**
    * 判断当前共享选择弹层是否打开。
@@ -1215,8 +1280,8 @@ export default function ChatView({
               // 业务意图：只保留输入操作栏自身边界，外层 dock 不再额外包装成卡片或分区。
               className="rounded-[24px] border border-border bg-surface"
             >
-              <div ref={selectorLayerRef} className="px-4 pb-2 pt-3">
-                <div className="relative mb-2">
+              <div className="px-4 pb-2 pt-3">
+                <div ref={selectorLayerRef} className="relative mb-2">
                   {isSelectorPanelOpen ? (
                     <div
                       data-testid={
@@ -1235,6 +1300,7 @@ export default function ChatView({
                             type="text"
                             value={skillSearchKeyword}
                             onChange={(event) => setSkillSearchKeyword(event.target.value)}
+                            onKeyDown={handleSkillSelectorKeyDown}
                             placeholder="搜索技能"
                             className="h-8 w-full rounded-lg border border-border bg-surface-container px-3 text-xs text-foreground outline-none placeholder:text-muted"
                           />
@@ -1351,8 +1417,9 @@ export default function ChatView({
                             </div>
                           )
                         ) : filteredSkills.length ? (
-                          filteredSkills.map((skill) => {
+                          filteredSkills.map((skill, index) => {
                             const isSelected = selectedSkillCodes.includes(skill.skillCode);
+                            const isKeyboardActive = index === activeSkillOptionIndex;
                             // 技能说明优先展示给用户理解用途；缺少描述时再回退编码，避免空白行影响列表扫读。
                             const skillDescription = skill.description?.trim() || skill.skillCode;
                             return (
@@ -1360,9 +1427,11 @@ export default function ChatView({
                                 key={skill.skillCode}
                                 type="button"
                                 aria-label={`选择技能 ${skill.displayName}`}
+                                aria-selected={isKeyboardActive}
+                                data-skill-option-index={index}
                                 onClick={() => selectSkill(skill.skillCode)}
                                 className={`mb-1 flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm transition-colors last:mb-0 ${
-                                  isSelected
+                                  isSelected || isKeyboardActive
                                     ? 'bg-surface-container text-foreground'
                                     : 'text-muted hover:bg-surface-container hover:text-foreground'
                                 }`}
@@ -1619,6 +1688,9 @@ export default function ChatView({
                             syncSelectedSkillCodesFromInput(nextInput);
                           }}
                           onKeyDown={(event) => {
+                            if (handleSkillSelectorKeyDown(event)) {
+                              return;
+                            }
                             if (
                               event.key === 'Backspace' &&
                               !event.shiftKey &&
@@ -4517,7 +4589,7 @@ function ProcessCommandSummary({
         className="flex w-full min-w-0 items-start gap-2 text-left text-sm leading-6 text-foreground transition-colors hover:text-foreground"
       >
         <CheckCircle2 size={15} className="mt-1 shrink-0 text-muted" />
-        <span className="flex min-w-0 flex-1 items-center justify-between gap-3">
+        <span className="flex min-w-0 items-center gap-3">
           <span className="whitespace-pre-wrap [overflow-wrap:anywhere] text-muted">
             已运行 {commandRuns.length} 条命令
           </span>
@@ -4562,7 +4634,7 @@ function ProcessCommandRunRow({
   return (
     <div className="space-y-2">
       <div className="flex min-w-0 items-center gap-2 text-sm leading-6 text-muted">
-        <span className="min-w-0 flex-1 truncate [overflow-wrap:anywhere]" title={run.command}>
+        <span className="min-w-0 truncate [overflow-wrap:anywhere]" title={run.command}>
           已运行 {run.command}
         </span>
         <button

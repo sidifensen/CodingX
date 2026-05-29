@@ -309,7 +309,18 @@ describe('Skills page', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '资源预览 weather_query' }));
     const dialog = await screen.findByRole('dialog', { name: '技能包资源预览 weather_query' });
+    expect(dialog).toHaveClass('flex');
+    expect(dialog).toHaveClass('h-[90vh]');
+    expect(dialog).toHaveClass('max-h-[90vh]');
     expect(within(dialog).getByText('文件目录')).toBeInTheDocument();
+    const packagePreviewBody = within(dialog).getByTestId('skill-package-preview-body');
+    expect(packagePreviewBody).toHaveClass('min-h-0');
+    expect(packagePreviewBody).toHaveClass('flex-1');
+    expect(packagePreviewBody).toHaveClass('overflow-hidden');
+    // 文件目录需要独立滚动，长技能包树不应把整个弹窗高度撑开。
+    expect(within(dialog).getByTestId('skill-package-tree-scroll')).toHaveClass(
+      'skill-package-tree-scroll',
+    );
 
     await waitFor(() => {
       expect(AdminChatApi.listSkillPackageEntries).toHaveBeenCalledWith(7101);
@@ -322,4 +333,3 @@ describe('Skills page', () => {
     expect(within(dialog).getByText('# Skill Manifest')).toBeInTheDocument();
   });
 });
-

@@ -950,6 +950,35 @@ export function useChatWorkspace(
       const nextExpertsPromise = ChatApi.listExperts(token);
       const nextSkillsPromise = ChatApi.listSkills(token);
       const nextMcpsPromise = ChatApi.listMcps(token);
+
+      // 优化：技能和MCP数据独立于会话恢复，提前处理以加快UI响应
+      void Promise.allSettled([
+        nextSampleQuestionsPromise,
+        nextExpertsPromise,
+        nextSkillsPromise,
+        nextMcpsPromise,
+      ]).then(([nextSampleQuestionsResult, nextExpertsResult, nextSkillsResult, nextMcpsResult]) => {
+        if (nextSampleQuestionsResult.status === 'fulfilled') {
+          setSampleQuestions(nextSampleQuestionsResult.value);
+        }
+        if (nextExpertsResult.status === 'fulfilled') {
+          setAvailableExperts(nextExpertsResult.value);
+        }
+        if (nextSkillsResult.status === 'fulfilled') {
+          setAvailableSkills(nextSkillsResult.value);
+        }
+        const nextMcps = nextMcpsResult.status === 'fulfilled' ? nextMcpsResult.value : [];
+        setAvailableMcps(nextMcps);
+        const selectableMcps = nextMcps.filter((item) => isSelectableMcp(item));
+        if (selectedSkillCodes.length === 0) {
+          setSelectedSkillCodes([]);
+        }
+        if (selectedMcpCodes.length === 0) {
+          setSelectedMcpCodesState(selectableMcps.map((item) => item.mcpCode));
+        }
+        setMcpConnected(selectableMcps.length > 0);
+      });
+
       const preferredConversationIdFromSnapshot = resolvePreferredConversationIdFromSnapshot();
       const didHydrateConversationFromSnapshot = Boolean(preferredConversationIdFromSnapshot);
       if (preferredConversationIdFromSnapshot && activeWorkspacePartitionKey) {
@@ -984,33 +1013,6 @@ export function useChatWorkspace(
         }
       }
 
-      const [nextSampleQuestionsResult, nextExpertsResult, nextSkillsResult, nextMcpsResult] =
-        await Promise.allSettled([
-          nextSampleQuestionsPromise,
-          nextExpertsPromise,
-          nextSkillsPromise,
-          nextMcpsPromise,
-        ]);
-
-      if (nextSampleQuestionsResult.status === 'fulfilled') {
-        setSampleQuestions(nextSampleQuestionsResult.value);
-      }
-      if (nextExpertsResult.status === 'fulfilled') {
-        setAvailableExperts(nextExpertsResult.value);
-      }
-      if (nextSkillsResult.status === 'fulfilled') {
-        setAvailableSkills(nextSkillsResult.value);
-      }
-      const nextMcps = nextMcpsResult.status === 'fulfilled' ? nextMcpsResult.value : [];
-      setAvailableMcps(nextMcps);
-      const selectableMcps = nextMcps.filter((item) => isSelectableMcp(item));
-      if (selectedSkillCodes.length === 0) {
-        setSelectedSkillCodes([]);
-      }
-      if (selectedMcpCodes.length === 0) {
-        setSelectedMcpCodesState(selectableMcps.map((item) => item.mcpCode));
-      }
-      setMcpConnected(selectableMcps.length > 0);
       if (!hasHydratedInitialConversationRef.current) {
         hasHydratedInitialConversationRef.current = true;
       }

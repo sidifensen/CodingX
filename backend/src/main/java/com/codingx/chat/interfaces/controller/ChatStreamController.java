@@ -81,6 +81,7 @@ public class ChatStreamController {
         @RequestParam(required = false) Boolean deepThinking,
         @RequestParam(required = false) String mcpCodes,
         @RequestParam(required = false) String skillCodes,
+        @RequestParam(required = false) String skillPaths,
         @RequestParam(required = false) String expertCode,
         @RequestParam(required = false) String runtimeTarget,
         @RequestParam(required = false) String repositoryPath,
@@ -105,6 +106,7 @@ public class ChatStreamController {
         StructuredMessageParseResult structuredMessageParseResult = resolveStructuredMessages(messages);
         String actualQuestion = StrUtil.blankToDefault(structuredMessageParseResult.content(), question);
         List<String> selectedSkillCodes = resolveSkillCodes(skillCodes, structuredMessageParseResult.skillCodes());
+        Map<String, String> resolvedSkillPaths = resolveSkillPaths(skillPaths);
         String selectedExpertCode = resolveExpertCode(expertCode);
         List<Long> selectedAttachmentIds = resolveAttachmentIds(attachmentIds);
         SseEmitter emitter = chatSseRegistry.register(actualConversationId);
@@ -134,10 +136,12 @@ public class ChatStreamController {
                 deepThinkingEnabled,
                 selectedMcpCodes,
                 selectedSkillCodes,
+                resolvedSkillPaths,
                 selectedExpertCode,
                 StrUtil.blankToDefault(resolvedWorkspace.repositoryPath(), repositoryPath),
                 selectedAttachmentIds,
-                localOnly
+                localOnly,
+                localRuntime
             ),
             userId
         );
@@ -152,7 +156,7 @@ public class ChatStreamController {
      * @return SSE emitter。
      */
     public SseEmitter streamChat(String question, Long conversationId, Boolean deepThinking) {
-        return streamChat(question, conversationId, null, deepThinking, null, null, null, null, null, null, null);
+        return streamChat(question, conversationId, null, deepThinking, null, null, null, null, null, null, null, null);
     }
 
     /**
@@ -336,9 +340,13 @@ public class ChatStreamController {
      * @param mcpCodes MCP 编码列表。
      * @param skillCodes 技能编码列表。
      * @param expertCode 专家编码。
+     * @param skillCodes 技能编码列表。
+     * @param skillPaths 技能本地路径映射。
+     * @param expertCode 专家编码。
      * @param repositoryPath 本地仓库目录。
      * @param attachmentIds 附件主键列表。
      * @param localOnly 是否本地临时运行。
+     * @param localRuntime 是否本地运行时。
      * @return 发送命令。
      */
     private SendChatMessageCommand buildSendCommand(
@@ -347,10 +355,12 @@ public class ChatStreamController {
         boolean deepThinking,
         List<String> mcpCodes,
         List<String> skillCodes,
+        Map<String, String> skillPaths,
         String expertCode,
         String repositoryPath,
         List<Long> attachmentIds,
-        boolean localOnly
+        boolean localOnly,
+        boolean localRuntime
     ) {
         String normalizedRepositoryPath = StrUtil.trimToNull(repositoryPath);
         if (localOnly) {
@@ -360,9 +370,11 @@ public class ChatStreamController {
                 deepThinking,
                 mcpCodes,
                 skillCodes,
+                skillPaths,
                 expertCode,
                 normalizedRepositoryPath,
-                attachmentIds
+                attachmentIds,
+                localRuntime
             );
         }
         return new SendChatMessageCommand(
@@ -371,9 +383,11 @@ public class ChatStreamController {
             deepThinking,
             mcpCodes,
             skillCodes,
+            skillPaths,
             expertCode,
             normalizedRepositoryPath,
-            attachmentIds
+            attachmentIds,
+            localRuntime
         );
     }
 
@@ -432,6 +446,30 @@ public class ChatStreamController {
                 .collect(Collectors.toList());
         }
         return List.of();
+    }
+
+    /**
+     * 解析 skill 路径映射：将 JSON 字符串解析为 Map。
+     * @param skillPathsParam 查询参数字符串，格式为 JSON 对象。
+     * @return skill 编码到路径的映射。
+     */
+    private Map<String, String> resolveSkillPaths(String skillPathsParam) {
+        if (StrUtil.isBlank(skillPathsParam)) {
+            return Map.of();
+        }
+        try {
+            cn.hutool.json.JSONObject jsonObject = cn.hutool.json.JSONUtil.parseObj(skillPathsParam);
+            Map<String, String> result = new java.util.HashMap<>();
+            for (String key : jsonObject.keySet()) {
+                String value = jsonObject.getStr(key);
+                if (StrUtil.isNotBlank(value)) {
+                    result.put(key.trim(), value.trim());
+                }
+            }
+            return result;
+        } catch (Exception exception) {
+            return Map.of();
+        }
     }
 
     /**

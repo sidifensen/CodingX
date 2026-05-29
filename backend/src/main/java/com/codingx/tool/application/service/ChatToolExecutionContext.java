@@ -1,14 +1,16 @@
 package com.codingx.tool.application.service;
 
 import java.nio.file.Path;
+import java.util.Map;
 import java.util.Optional;
 
 /**
- * 维护工具执行线程上下文，向工具链路传递当前会话绑定的工作目录。
+ * 维护工具执行线程上下文，向工具链路传递当前会话绑定的工作目录与 skill 目录。
  */
 public final class ChatToolExecutionContext {
 
     private static final ThreadLocal<Path> CURRENT_TOOL_WORKING_DIRECTORY = new ThreadLocal<>();
+    private static final ThreadLocal<Map<String, Path>> SKILL_DIRECTORIES = new ThreadLocal<>();
 
     private ChatToolExecutionContext() {
     }
@@ -34,9 +36,31 @@ public final class ChatToolExecutionContext {
     }
 
     /**
+     * 绑定 skill 目录映射。
+     * @param skillDirectories skill 编码到目录路径的映射。
+     */
+    public static void bindSkillDirectories(Map<String, Path> skillDirectories) {
+        if (skillDirectories == null || skillDirectories.isEmpty()) {
+            SKILL_DIRECTORIES.remove();
+            return;
+        }
+        SKILL_DIRECTORIES.set(Map.copyOf(skillDirectories));
+    }
+
+    /**
+     * 获取当前线程绑定的 skill 目录映射。
+     * @return skill 编码到目录路径的映射，未绑定时返回空 Map。
+     */
+    public static Map<String, Path> currentSkillDirectories() {
+        Map<String, Path> skillDirs = SKILL_DIRECTORIES.get();
+        return skillDirs == null ? Map.of() : skillDirs;
+    }
+
+    /**
      * 清理当前线程的工具上下文。
      */
     public static void clear() {
         CURRENT_TOOL_WORKING_DIRECTORY.remove();
+        SKILL_DIRECTORIES.remove();
     }
 }

@@ -633,7 +633,7 @@ function SkillPackagePreviewDialog({ skill, onClose }: SkillPackagePreviewDialog
         role="dialog"
         aria-modal="true"
         aria-label={`技能包资源预览 ${skill.skillCode}`}
-        className="max-h-[90vh] w-full max-w-6xl overflow-hidden rounded-2xl border border-border-hairline bg-surface-container-lowest shadow-2xl"
+        className="flex h-[90vh] max-h-[90vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-border-hairline bg-surface-container-lowest shadow-2xl"
       >
         <div className="flex items-start justify-between gap-md border-b border-border-hairline bg-surface-container-lowest px-lg py-md">
           <div>
@@ -653,10 +653,17 @@ function SkillPackagePreviewDialog({ skill, onClose }: SkillPackagePreviewDialog
           </button>
         </div>
 
-        <div className="grid h-[72vh] grid-cols-1 gap-0 lg:grid-cols-[340px_1fr]">
-          <aside className="flex h-full flex-col border-r border-border-hairline bg-surface-container-low">
+        <div
+          data-testid="skill-package-preview-body"
+          className="grid min-h-0 flex-1 grid-cols-1 gap-0 overflow-hidden lg:grid-cols-[340px_1fr]"
+        >
+          <aside className="flex min-h-0 flex-col border-r border-border-hairline bg-surface-container-low">
             <div className="shrink-0 border-b border-border-hairline px-md py-sm text-[12px] text-secondary">文件目录</div>
-            <div className="min-h-0 flex-1 overflow-y-auto px-xs py-xs">
+            <div
+              data-testid="skill-package-tree-scroll"
+              // 资源树文件数可能远多于预览区高度，独立滚动可避免左侧目录把弹窗整体撑开。
+              className="skill-package-tree-scroll min-h-0 flex-1 overflow-y-scroll px-xs py-xs"
+            >
               {loadingEntries ? (
                 <div className="px-sm py-sm text-[12px] text-secondary">目录加载中...</div>
               ) : entriesError ? (

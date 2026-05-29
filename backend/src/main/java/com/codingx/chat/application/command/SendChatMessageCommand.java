@@ -1,6 +1,7 @@
 package com.codingx.chat.application.command;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * 定义 SendChatMessageCommand 使用的数据载体。
@@ -11,10 +12,12 @@ public record SendChatMessageCommand(
     boolean deepThinking, // 是否开启深度思考。
     List<String> mcpCodes, // 当前会话选择的 MCP 编码。
     List<String> skillCodes, // 当前会话选择的技能编码。
+    Map<String, String> skillPaths, // skill 编码到本地路径的映射。
     String expertCode, // 当前消息选择的专家编码。
     String repositoryPath, // 当前消息显式指定的仓库目录。
     List<Long> attachmentIds, // 当前消息关联附件主键。
-    boolean localOnly // 是否仅作为本地临时会话执行，禁止写入云端会话与消息表。
+    boolean localOnly, // 是否仅作为本地临时会话执行，禁止写入云端会话与消息表。
+    boolean localRuntime // 是否本地运行时。
 ) {
 
     /**
@@ -38,7 +41,7 @@ public record SendChatMessageCommand(
         String repositoryPath,
         List<Long> attachmentIds
     ) {
-        this(conversationId, content, deepThinking, mcpCodes, skillCodes, expertCode, repositoryPath, attachmentIds, false);
+        this(conversationId, content, deepThinking, mcpCodes, skillCodes, Map.of(), expertCode, repositoryPath, attachmentIds, false, false);
     }
 
     /**
@@ -48,7 +51,7 @@ public record SendChatMessageCommand(
      * @param deepThinking 是否深度思考。
      */
     public SendChatMessageCommand(Long conversationId, String content, boolean deepThinking) {
-        this(conversationId, content, deepThinking, List.of(), List.of(), null, null, List.of(), false);
+        this(conversationId, content, deepThinking, List.of(), List.of(), Map.of(), null, null, List.of(), false, false);
     }
 
     /**
@@ -59,7 +62,7 @@ public record SendChatMessageCommand(
      * @param mcpCodes 当前会话选择的 MCP 编码。
      */
     public SendChatMessageCommand(Long conversationId, String content, boolean deepThinking, List<String> mcpCodes) {
-        this(conversationId, content, deepThinking, mcpCodes, List.of(), null, null, List.of(), false);
+        this(conversationId, content, deepThinking, mcpCodes, List.of(), Map.of(), null, null, List.of(), false, false);
     }
 
     /**
@@ -77,7 +80,7 @@ public record SendChatMessageCommand(
         List<String> mcpCodes,
         List<String> skillCodes
     ) {
-        this(conversationId, content, deepThinking, mcpCodes, skillCodes, null, null, List.of(), false);
+        this(conversationId, content, deepThinking, mcpCodes, skillCodes, Map.of(), null, null, List.of(), false, false);
     }
 
     /**
@@ -97,7 +100,7 @@ public record SendChatMessageCommand(
         List<String> skillCodes,
         String repositoryPath
     ) {
-        this(conversationId, content, deepThinking, mcpCodes, skillCodes, null, repositoryPath, List.of(), false);
+        this(conversationId, content, deepThinking, mcpCodes, skillCodes, Map.of(), null, repositoryPath, List.of(), false, false);
     }
 
     /**
@@ -119,7 +122,7 @@ public record SendChatMessageCommand(
         String expertCode,
         String repositoryPath
     ) {
-        this(conversationId, content, deepThinking, mcpCodes, skillCodes, expertCode, repositoryPath, List.of(), false);
+        this(conversationId, content, deepThinking, mcpCodes, skillCodes, Map.of(), expertCode, repositoryPath, List.of(), false, false);
     }
 
     /**
@@ -129,9 +132,11 @@ public record SendChatMessageCommand(
      * @param deepThinking 是否深度思考。
      * @param mcpCodes 当前会话选择的 MCP 编码。
      * @param skillCodes 当前会话选择的技能编码。
+     * @param skillPaths skill 编码到本地路径的映射。
      * @param expertCode 当前消息选择的专家编码。
      * @param repositoryPath 当前消息显式指定的仓库目录。
      * @param attachmentIds 当前消息关联附件主键。
+     * @param localRuntime 是否本地运行时。
      * @return 本地临时运行命令。
      */
     public static SendChatMessageCommand localOnly(
@@ -140,9 +145,11 @@ public record SendChatMessageCommand(
         boolean deepThinking,
         List<String> mcpCodes,
         List<String> skillCodes,
+        Map<String, String> skillPaths,
         String expertCode,
         String repositoryPath,
-        List<Long> attachmentIds
+        List<Long> attachmentIds,
+        boolean localRuntime
     ) {
         return new SendChatMessageCommand(
             conversationId,
@@ -150,10 +157,12 @@ public record SendChatMessageCommand(
             deepThinking,
             mcpCodes,
             skillCodes,
+            skillPaths,
             expertCode,
             repositoryPath,
             attachmentIds,
-            true
+            true,
+            localRuntime
         );
     }
 }

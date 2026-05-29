@@ -1,7 +1,9 @@
-package com.codingx.chat.application.service;
+package com.codingx.chat.application.service.chat;
 
 import cn.hutool.core.util.StrUtil;
 import com.codingx.chat.application.command.SendChatMessageCommand;
+import com.codingx.chat.application.service.ChatApplicationService;
+import com.codingx.chat.application.service.ChatWorkspaceBindingService;
 import com.codingx.chat.domain.model.ChatExecutionRun;
 import com.codingx.chat.domain.model.ChatTraceRun;
 import com.codingx.chat.domain.repository.ChatConversationRepository;
@@ -181,10 +183,12 @@ public class ChatStreamExecutionService {
             }
         });
         Future<?> future = executor.submit(() -> {
+            Path tempSkillRoot = null;
             try {
                 ChatExecutionContext.start(runId);
                 ConversationTraceContext.bind(traceRun);
                 bindToolWorkingDirectory(command, userId);
+                tempSkillRoot = bindSkillDirectories(command);
                 log.info("聊天执行开始");
                 chatApplicationService.sendMessage(command, userId);
                 log.info("聊天执行结束: runId={}, 会话={}, 状态=SUCCESS", runId, command.conversationId());
@@ -204,6 +208,13 @@ public class ChatStreamExecutionService {
                 chatStreamPublisher.publishError(command.conversationId(), throwable.getMessage());
                 throw throwable;
             } finally {
+                if (tempSkillRoot != null) {
+                    try {
+                        cn.hutool.core.io.FileUtil.del(tempSkillRoot.toFile());
+                    } catch (Exception exception) {
+                        log.warn("临时 skill 目录清理失败: path={}", tempSkillRoot, exception);
+                    }
+                }
                 chatRuntimeGuardService.completeConversation(command.conversationId(), runId);
                 ChatExecutionContext.clear();
                 ConversationTraceContext.clear();
@@ -230,13 +241,22 @@ public class ChatStreamExecutionService {
             }
         });
         Future<?> future = executor.submit(() -> {
+            Path tempSkillRoot = null;
             try {
                 ChatExecutionContext.start(runId);
                 bindToolWorkingDirectory(command, userId);
+                tempSkillRoot = bindSkillDirectories(command);
                 log.info("聊天执行开始");
                 chatApplicationService.sendMessage(command, userId);
                 log.info("聊天执行结束: runId={}, 会话={}, 状态=SUCCESS", runId, command.conversationId());
             } finally {
+                if (tempSkillRoot != null) {
+                    try {
+                        cn.hutool.core.io.FileUtil.del(tempSkillRoot.toFile());
+                    } catch (Exception exception) {
+                        log.warn("临时 skill 目录清理失败: path={}", tempSkillRoot, exception);
+                    }
+                }
                 chatRuntimeGuardService.completeConversation(command.conversationId(), runId);
                 ChatExecutionContext.clear();
                 ChatToolExecutionContext.clear();
@@ -378,6 +398,60 @@ public class ChatStreamExecutionService {
         }
         Optional<Path> boundRepositoryPath = chatWorkspaceBindingService.findRepositoryPathByUserId(userId);
         boundRepositoryPath.ifPresent(ChatToolExecutionContext::bindToolWorkingDirectory);
+    }
+
+    /**
+     * 绑定 skill 目录到工具执行上下文。
+     * @param command 聊天命令。
+     * @return 云端运行时创建的临时目录根路径，本地运行时返回 null。
+     */
+    private Path bindSkillDirectories(SendChatMessageCommand command) {
+        if (command.skillCodes() == null || command.skillCodes().isEmpty()) {
+            return null;
+        }
+
+        java.util.Map<String, Path> skillDirs = new java.util.HashMap<>();
+        Path tempSkillRoot = null;
+
+        for (String skillCode : command.skillCodes()) {
+            if (command.localRuntime() && command.skillPaths() != null) {
+                // 本地运行时：使用前端传来的路径
+                String localPath = command.skillPaths().get(skillCode);
+                if (StrUtil.isNotBlank(localPath)) {
+                    try {
+                        Path skillPath = Path.of(localPath);
+                        if (java.nio.file.Files.exists(skillPath)) {
+                            skillDirs.put(skillCode, skillPath);
+                        } else {
+                            log.warn("本地 skill 路径不存在，跳过: skillCode={}, path={}", skillCode, localPath);
+                        }
+                    } catch (Exception exception) {
+                        log.warn("本地 skill 路径解析失败，跳过: skillCode={}, path={}", skillCode, localPath, exception);
+                    }
+                }
+            } else {
+                // 云端运行时：从 RustFS 下载到临时目录
+                try {
+                    com.codingx.skill.application.service.SkillLocalCacheService skillLocalCacheService =
+                        org.springframework.context.ApplicationContextProvider.getBean(
+                            com.codingx.skill.application.service.SkillLocalCacheService.class
+                        );
+                    Path skillPath = skillLocalCacheService.downloadSkillToTemp(skillCode);
+                    skillDirs.put(skillCode, skillPath);
+                    if (tempSkillRoot == null) {
+                        tempSkillRoot = skillPath.getParent().getParent();
+                    }
+                } catch (Exception exception) {
+                    log.warn("云端 skill 下载失败，跳过: skillCode={}", skillCode, exception);
+                }
+            }
+        }
+
+        if (!skillDirs.isEmpty()) {
+            ChatToolExecutionContext.bindSkillDirectories(skillDirs);
+        }
+
+        return tempSkillRoot;
     }
 
     /**

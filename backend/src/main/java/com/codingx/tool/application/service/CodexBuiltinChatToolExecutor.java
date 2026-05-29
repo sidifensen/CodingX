@@ -160,9 +160,10 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
             throw new BusinessException("CHAT_TOOL_INVALID_COMMAND", ErrorMessageCatalog.CHAT_TOOL_COMMAND_REQUIRED);
         }
         try {
-            Process process = new ProcessBuilder(resolveShellCommand(command))
-                .directory(resolveToolWorkingDirectory().toFile())
-                .start();
+            ProcessBuilder pb = new ProcessBuilder(resolveShellCommand(command));
+            pb.directory(resolveToolWorkingDirectory().toFile());
+            injectSkillEnvironmentVariables(pb.environment());
+            Process process = pb.start();
             String sessionId = "cmd-" + UUID.fastUUID().toString(true);
             CommandSession session = new CommandSession(
                 sessionId,
@@ -1759,10 +1760,44 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
 
     private String[] resolveShellCommand(String command) {
         String osName = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
+        ProcessBuilder pb;
         if (osName.contains("win")) {
-            return new String[]{"powershell", "-NoProfile", "-Command", command};
+            pb = new ProcessBuilder("powershell", "-NoProfile", "-Command", command);
+        } else {
+            pb = new ProcessBuilder("sh", "-lc", command);
         }
-        return new String[]{"sh", "-lc", command};
+
+        pb.directory(resolveToolWorkingDirectory().toFile());
+
+        // 注入 skill 环境变量
+        injectSkillEnvironmentVariables(pb.environment());
+
+        return pb.command().toArray(new String[0]);
+    }
+
+    /**
+     * 注入 skill 环境变量到 ProcessBuilder 环境中。
+     * @param env ProcessBuilder 的环境变量 Map。
+     */
+    private void injectSkillEnvironmentVariables(Map<String, String> env) {
+        Map<String, Path> skillDirs = ChatToolExecutionContext.currentSkillDirectories();
+
+        if (skillDirs.isEmpty()) {
+            return;
+        }
+
+        if (skillDirs.size() == 1) {
+            // 单个 skill：设置 CLAUDE_SKILL_DIR
+            Map.Entry<String, Path> entry = skillDirs.entrySet().iterator().next();
+            env.put("CLAUDE_SKILL_DIR", entry.getValue().toString());
+        } else {
+            // 多个 skill：分别设置 CLAUDE_SKILL_DIR_<CODE>
+            for (Map.Entry<String, Path> entry : skillDirs.entrySet()) {
+                String envKey = "CLAUDE_SKILL_DIR_" +
+                    entry.getKey().toUpperCase(Locale.ROOT).replace("-", "_");
+                env.put(envKey, entry.getValue().toString());
+            }
+        }
     }
 
     private String readStream(InputStream inputStream) {

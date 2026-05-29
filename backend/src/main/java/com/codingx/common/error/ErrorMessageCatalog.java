@@ -733,6 +733,16 @@ public final class ErrorMessageCatalog {
     public static final String CHAT_SKILL_NOT_FOUND = "技能不存在";
 
     /**
+     * 技能不存在提示前缀。
+     */
+    public static final String CHAT_SKILL_NOT_FOUND_PREFIX = "技能不存在: ";
+
+    /**
+     * 技能下载失败提示前缀。
+     */
+    public static final String CHAT_SKILL_DOWNLOAD_FAILED_PREFIX = "技能文件下载失败: ";
+
+    /**
      * 技能包文件不存在提示。
      */
     public static final String CHAT_SKILL_PACKAGE_FILE_NOT_FOUND = "技能包文件不存在";

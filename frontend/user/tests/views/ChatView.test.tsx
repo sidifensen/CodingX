@@ -1881,6 +1881,80 @@ describe('ChatView', () => {
   });
 
   /**
+   * 技能面板打开且已有匹配项时，Tab 应直接确认当前高亮技能，避免用户还要移到鼠标点击。
+   */
+  it('应支持通过Tab键选中当前匹配技能', async () => {
+    const setInputValue = vi.fn();
+
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          inputValue: '/web',
+          setInputValue,
+          availableSkills: [
+            {
+              id: '7103',
+              skillCode: 'web-access',
+              displayName: 'web-access',
+              description: '所有联网操作必须通过此 skill 处理',
+              category: '网络',
+            },
+          ],
+        })}
+      />,
+    );
+
+    expect(screen.getByTestId('skill-selector-panel')).toBeInTheDocument();
+    fireEvent.keyDown(screen.getByPlaceholderText('输入问题，或先选择技能/MCP...'), {
+      key: 'Tab',
+    });
+
+    expect(setInputValue).toHaveBeenCalledWith('@web-access ');
+  });
+
+  /**
+   * 上下方向键应在技能候选项中移动高亮，随后 Tab 确认高亮项。
+   */
+  it('应支持通过上下键切换技能候选并用Tab确认', async () => {
+    const setInputValue = vi.fn();
+
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          inputValue: '/',
+          setInputValue,
+        })}
+      />,
+    );
+
+    const textarea = screen.getByPlaceholderText('输入问题，或先选择技能/MCP...');
+    expect(screen.getByRole('button', { name: '选择技能 销售查询' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+
+    fireEvent.keyDown(textarea, { key: 'ArrowDown' });
+    expect(screen.getByRole('button', { name: '选择技能 工单查询' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+    fireEvent.keyDown(textarea, { key: 'ArrowUp' });
+    expect(screen.getByRole('button', { name: '选择技能 销售查询' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+
+    fireEvent.keyDown(textarea, { key: 'ArrowDown' });
+    fireEvent.keyDown(textarea, { key: 'Tab' });
+
+    expect(setInputValue).toHaveBeenCalledWith('@ticket_query ');
+  });
+
+  /**
    * 斜杠触发技能面板后切换到 MCP 时，应保持 MCP 面板可见，避免被自动逻辑抢回技能面板。
    */
   it('应在斜杠输入场景支持从技能面板切换到MCP面板', async () => {

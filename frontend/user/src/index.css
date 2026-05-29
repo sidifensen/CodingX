@@ -96,7 +96,7 @@
 
   /* 侧边栏空间更窄，单独收细滚动条；主页面滚动条保持全局宽度。 */
   .sidebar-scrollbar {
-    scrollbar-color: var(--surface-container-high) transparent;
+    scrollbar-color: color-mix(in srgb, var(--text-muted) 50%, transparent) transparent;
     scrollbar-width: thin;
   }
 
@@ -113,8 +113,12 @@
   .sidebar-scrollbar::-webkit-scrollbar-thumb {
     border-radius: 999px;
     border: 2px solid transparent;
-    background: var(--surface-container-high);
+    background: color-mix(in srgb, var(--text-muted) 50%, transparent);
     background-clip: padding-box;
+  }
+
+  .sidebar-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: color-mix(in srgb, var(--text-muted) 70%, transparent);
   }
 
   /* 聊天主内容区只在顶部避开标题按钮；底部由输入区参与布局，不再裁切滚动条轨道。 */

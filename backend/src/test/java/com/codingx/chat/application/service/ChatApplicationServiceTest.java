@@ -591,6 +591,7 @@ class ChatApplicationServiceTest {
         when(conversationIntentService.route("请联网搜索最新 Java 版本", false)).thenReturn(
             new ConversationIntentDecision("search-general", ConversationIntentAction.SEARCH, null)
         );
+        when(runtimeSettingService.webSearchEnabled()).thenReturn(true);
         when(runtimeSettingService.searchMaxParallelQuestions()).thenReturn(1);
         doAnswer(invocation -> {
             Runnable runnable = invocation.getArgument(0);

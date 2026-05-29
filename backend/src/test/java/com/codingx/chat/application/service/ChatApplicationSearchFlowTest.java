@@ -91,6 +91,7 @@ class ChatApplicationSearchFlowTest {
             new ConversationRewriteResult("请搜索 Spring Boot SSE", false, List.of("请搜索 Spring Boot SSE"))
         );
         when(conversationSummaryService.buildModelHistory(any(), any())).thenAnswer(invocation -> invocation.getArgument(1));
+        when(runtimeSettingService.webSearchEnabled()).thenReturn(true);
         when(runtimeSettingService.searchMaxParallelQuestions()).thenReturn(3);
         when(conversationIntentService.route("请搜索 Spring Boot SSE", false)).thenReturn(
             new ConversationIntentDecision("search.web", ConversationIntentAction.SEARCH, null)
@@ -133,6 +134,7 @@ class ChatApplicationSearchFlowTest {
             new ConversationRewriteResult("介绍 OA 系统和保险系统", true, List.of("介绍 OA 系统", "介绍 保险系统"))
         );
         when(conversationSummaryService.buildModelHistory(any(), any())).thenAnswer(invocation -> invocation.getArgument(1));
+        when(runtimeSettingService.webSearchEnabled()).thenReturn(true);
         when(runtimeSettingService.searchMaxParallelQuestions()).thenReturn(3);
         when(conversationIntentService.route("介绍 OA 系统", false)).thenReturn(
             new ConversationIntentDecision("biz-oa-intro", ConversationIntentAction.SEARCH, null)
@@ -185,6 +187,7 @@ class ChatApplicationSearchFlowTest {
             )
         );
         when(conversationSummaryService.buildModelHistory(any(), any())).thenAnswer(invocation -> invocation.getArgument(1));
+        when(runtimeSettingService.webSearchEnabled()).thenReturn(true);
         when(runtimeSettingService.searchMaxParallelQuestions()).thenReturn(3);
         Mockito.lenient().when(conversationIntentService.route("当前最强的AI模型、今天北京的天气、量子力学的定义", true)).thenReturn(
             new ConversationIntentDecision("search-general", ConversationIntentAction.SEARCH, null)
@@ -240,6 +243,103 @@ class ChatApplicationSearchFlowTest {
         verify(webSearchExecutionService).search("量子力学是什么");
         Mockito.verify(webSearchExecutionService, Mockito.never()).search("今天北京的天气怎么样");
         verify(searchReferenceCollector).collect(any(), any(), any(), any());
+        ChatExecutionContext.clear();
+    }
+
+    /**
+     * 关闭真实联网搜索后，即使命中 SEARCH 意图也不得创建搜索步骤或调用外部搜索通道。
+     */
+    @Test
+    void sendMessageSkipsSearchFlowWhenWebSearchDisabled() {
+        Long runId = 9201004L;
+        ChatExecutionContext.start(runId);
+        ChatConversation conversation = ChatConversation.create(1L, "New Conversation", 1002L, ChatConversationStatus.ACTIVE);
+        when(chatConversationRepository.requireById(1L)).thenReturn(conversation);
+        when(chatMessageRepository.findByConversationId(1L)).thenReturn(new ArrayList<>());
+        when(chatAttachmentService.requireOwnedAttachments(any(), eq(1L), eq(1002L))).thenReturn(List.of());
+        when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+            new ConversationRewriteResult("请搜索 Spring Boot SSE", false, List.of("请搜索 Spring Boot SSE"))
+        );
+        when(conversationSummaryService.buildModelHistory(any(), any())).thenAnswer(invocation -> invocation.getArgument(1));
+        when(runtimeSettingService.webSearchEnabled()).thenReturn(false);
+        Mockito.lenient().when(runtimeSettingService.searchMaxParallelQuestions()).thenReturn(3);
+        when(conversationIntentService.route("请搜索 Spring Boot SSE", false)).thenReturn(
+            new ConversationIntentDecision("search.web", ConversationIntentAction.SEARCH, null)
+        );
+        when(chatExpertContextService.buildExpertContext(any())).thenReturn("");
+        when(chatSkillContextService.buildSkillContext(any())).thenReturn("");
+        when(chatIntentNodeRepository.findByIntentCode("search.web")).thenReturn(null);
+        Mockito.lenient().when(webSearchExecutionService.search("请搜索 Spring Boot SSE")).thenReturn(List.of(
+            new SearchReferenceCandidate("SSE", "https://example.com", "Example", "snippet")
+        ));
+        when(llmResponseCleaner.clean(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(conversationTitleService.generateTitle(any(), any())).thenReturn("SSE搜索");
+        org.mockito.Mockito.doAnswer(invocation -> {
+            AiChatClient.StreamHandler handler = invocation.getArgument(2);
+            handler.onDelta("普通回答");
+            handler.onComplete();
+            return null;
+        }).when(aiChatClient).streamChat(any(), org.mockito.ArgumentMatchers.anyBoolean(), any());
+
+        chatApplicationService.sendMessage(new SendChatMessageCommand(1L, "请搜索 Spring Boot SSE", false), 1002L);
+
+        Mockito.verify(webSearchExecutionService, Mockito.never()).search(any());
+        Mockito.verify(chatExecutionStepRepository, Mockito.never()).save(any());
+        Mockito.verify(searchReferenceCollector, Mockito.never()).collect(any(), any(), any(), any());
+        Mockito.verify(documentArtifactService, Mockito.never()).createDocxArtifact(any(), any(), any(), any());
+        verify(chatStreamPublisher).publishAssistantCompleted(1L, "普通回答", "SSE搜索");
+        ChatExecutionContext.clear();
+    }
+
+    /**
+     * 显式选择 web-access 技能时，联网能力交给技能上下文约束，避免系统搜索抢先消费用户请求。
+     */
+    @Test
+    void sendMessageWithWebAccessSkillSkipsSystemSearchFlow() {
+        Long runId = 9201005L;
+        ChatExecutionContext.start(runId);
+        ChatConversation conversation = ChatConversation.create(1L, "New Conversation", 1002L, ChatConversationStatus.ACTIVE);
+        when(chatConversationRepository.requireById(1L)).thenReturn(conversation);
+        when(chatMessageRepository.findByConversationId(1L)).thenReturn(new ArrayList<>());
+        when(chatAttachmentService.requireOwnedAttachments(any(), eq(1L), eq(1002L))).thenReturn(List.of());
+        when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+            new ConversationRewriteResult("搜一下今天的新闻", false, List.of("搜一下今天的新闻"))
+        );
+        when(conversationSummaryService.buildModelHistory(any(), any())).thenAnswer(invocation -> invocation.getArgument(1));
+        when(runtimeSettingService.webSearchEnabled()).thenReturn(true);
+        Mockito.lenient().when(runtimeSettingService.searchMaxParallelQuestions()).thenReturn(3);
+        when(conversationIntentService.route("搜一下今天的新闻", false)).thenReturn(
+            new ConversationIntentDecision("search-news", ConversationIntentAction.SEARCH, null)
+        );
+        when(chatExpertContextService.buildExpertContext(any())).thenReturn("");
+        when(chatSkillContextService.buildSkillContext(List.of("web-access"))).thenReturn("web-access skill context");
+        when(chatIntentNodeRepository.findByIntentCode("search-news")).thenReturn(null);
+        Mockito.lenient().when(webSearchExecutionService.search("搜一下今天的新闻")).thenReturn(List.of(
+            new SearchReferenceCandidate("今日新闻", "https://example.com/news", "Example", "news")
+        ));
+        when(llmResponseCleaner.clean(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(conversationTitleService.generateTitle(any(), any())).thenReturn("技能搜索");
+        org.mockito.Mockito.doAnswer(invocation -> {
+            @SuppressWarnings("unchecked")
+            List<ChatMessage> aiHistory = invocation.getArgument(0, List.class);
+            assertEquals("web-access skill context", aiHistory.getFirst().getContent());
+            AiChatClient.StreamHandler handler = invocation.getArgument(2);
+            handler.onDelta("技能上下文回答");
+            handler.onComplete();
+            return null;
+        }).when(aiChatClient).streamChat(any(), org.mockito.ArgumentMatchers.anyBoolean(), any());
+
+        chatApplicationService.sendMessage(
+            new SendChatMessageCommand(1L, "搜一下今天的新闻", false, List.of(), List.of("web-access")),
+            1002L
+        );
+
+        Mockito.verify(webSearchExecutionService, Mockito.never()).search(any());
+        Mockito.verify(chatExecutionStepRepository, Mockito.never()).save(any());
+        Mockito.verify(searchReferenceCollector, Mockito.never()).collect(any(), any(), any(), any());
+        Mockito.verify(documentArtifactService, Mockito.never()).createDocxArtifact(any(), any(), any(), any());
+        verify(chatSkillContextService).buildSkillContext(List.of("web-access"));
+        verify(chatStreamPublisher).publishAssistantCompleted(1L, "技能上下文回答", "技能搜索");
         ChatExecutionContext.clear();
     }
 }

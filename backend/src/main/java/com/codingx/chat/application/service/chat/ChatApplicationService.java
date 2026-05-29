@@ -69,6 +69,9 @@ import org.springframework.stereotype.Service;
 @Slf4j
 public class ChatApplicationService {
 
+    /** web-access 技能只注入技能上下文，不应触发系统内置联网搜索链路。 */
+    private static final String WEB_ACCESS_SKILL_CODE = "web-access";
+
     /** 会话聚合仓储，负责读取与更新会话主状态（归属、标题、最后活跃时间等） */
     private final ChatConversationRepository chatConversationRepository;
     /** 消息仓储，负责会话消息历史读写与按会话回放 */
@@ -241,7 +244,10 @@ public class ChatApplicationService {
         List<SearchReferenceCandidate> searchReferences = List.of();
         String rewrittenQuestion = rewriteResult.rewrite();
         boolean mcpEnabled = command.mcpCodes() != null && !command.mcpCodes().isEmpty();
-        List<SubQuestionIntentDecision> subQuestionDecisions = resolveSubQuestionDecisions(rewriteResult, mcpEnabled);
+        List<SubQuestionIntentDecision> subQuestionDecisions = suppressAutomaticSearchDecisions(
+            resolveSubQuestionDecisions(rewriteResult, mcpEnabled),
+            command.skillCodes()
+        );
         ConversationIntentDecision intentDecision = primaryIntentDecision(subQuestionDecisions);
         logChatDecision("继续生成", command, runId, intentDecision, rewriteResult);
         Optional<SubQuestionIntentDecision> clarifyDecision = firstDecisionWithAction(
@@ -657,7 +663,10 @@ public class ChatApplicationService {
         List<SearchReferenceCandidate> searchReferences = List.of();
         String rewrittenQuestion = rewriteResult.rewrite();
         boolean mcpEnabled = command.mcpCodes() != null && !command.mcpCodes().isEmpty();
-        List<SubQuestionIntentDecision> subQuestionDecisions = resolveSubQuestionDecisions(rewriteResult, mcpEnabled);
+        List<SubQuestionIntentDecision> subQuestionDecisions = suppressAutomaticSearchDecisions(
+            resolveSubQuestionDecisions(rewriteResult, mcpEnabled),
+            selectedSkillCodes
+        );
         ConversationIntentDecision intentDecision = primaryIntentDecision(subQuestionDecisions);
         logChatDecision("发送消息", command, runId, intentDecision, rewriteResult);
         Optional<SubQuestionIntentDecision> clarifyDecision = firstDecisionWithAction(
@@ -2065,6 +2074,77 @@ public class ChatApplicationService {
             .map(SubQuestionIntentDecision::question)
             .filter(StrUtil::isNotBlank)
             .toList();
+    }
+
+    /**
+     * 在执行阶段统一拦截自动搜索，保证系统总开关关闭或 web-access 技能接管时不会再落搜索步骤。
+     * @param decisions 子问题意图决策。
+     * @param selectedSkillCodes 当前消息选择的技能编码。
+     * @return 搜索决策被降级后的子问题意图决策。
+     */
+    private List<SubQuestionIntentDecision> suppressAutomaticSearchDecisions(
+        List<SubQuestionIntentDecision> decisions,
+        List<String> selectedSkillCodes
+    ) {
+        if (CollUtil.isEmpty(decisions)) {
+            return decisions;
+        }
+        boolean hasSearchDecision = decisions.stream()
+            .anyMatch(decision -> decision.intentDecision().action() == ConversationIntentAction.SEARCH);
+        if (!hasSearchDecision) {
+            return decisions;
+        }
+        String disabledReason = automaticSearchDisabledReason(selectedSkillCodes);
+        if (StrUtil.isBlank(disabledReason)) {
+            return decisions;
+        }
+        return decisions.stream()
+            .map(decision -> {
+                if (decision.intentDecision().action() != ConversationIntentAction.SEARCH) {
+                    return decision;
+                }
+                log.info(
+                    "搜索决策跳过: 原因={}, 子问题={}, 意图={}",
+                    disabledReason,
+                    logPreview(decision.question()),
+                    decision.intentDecision().intentCode()
+                );
+                return new SubQuestionIntentDecision(
+                    decision.question(),
+                    new ConversationIntentDecision(
+                        decision.intentDecision().intentCode(),
+                        ConversationIntentAction.DIRECT,
+                        null
+                    )
+                );
+            })
+            .toList();
+    }
+
+    /**
+     * 计算本轮自动搜索禁用原因；返回空字符串表示允许系统搜索链路执行。
+     */
+    private String automaticSearchDisabledReason(List<String> selectedSkillCodes) {
+        if (!runtimeSettingService.webSearchEnabled()) {
+            return "系统联网搜索已关闭";
+        }
+        if (isWebAccessSkillSelected(selectedSkillCodes)) {
+            return "web-access 技能已选择";
+        }
+        return "";
+    }
+
+    /**
+     * 判断用户是否显式选择 web-access 技能，兼容前端传参和正文标记合并后的大小写差异。
+     */
+    private boolean isWebAccessSkillSelected(List<String> selectedSkillCodes) {
+        if (CollUtil.isEmpty(selectedSkillCodes)) {
+            return false;
+        }
+        return selectedSkillCodes.stream()
+            .filter(StrUtil::isNotBlank)
+            .map(String::trim)
+            .anyMatch(skillCode -> StrUtil.equalsIgnoreCase(skillCode, WEB_ACCESS_SKILL_CODE));
     }
 
     /**

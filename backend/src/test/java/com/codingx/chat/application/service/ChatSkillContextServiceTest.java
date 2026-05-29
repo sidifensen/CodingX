@@ -98,6 +98,8 @@ class ChatSkillContextServiceTest {
 
         assertTrue(context.contains("用户已显式选择以下技能"));
         assertTrue(context.contains("不要因为用户正文较短或像闲聊就忽略已选技能"));
+        assertTrue(context.contains("当用户正文使用“这个”“这些”“它”“有什么区别”等指代"));
+        assertTrue(context.contains("默认先指向本轮已选技能"));
         assertTrue(context.contains("如果缺少 URL、页面、附件或其他必要目标"));
     }
 

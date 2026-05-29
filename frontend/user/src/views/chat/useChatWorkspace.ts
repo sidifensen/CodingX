@@ -48,6 +48,7 @@ import {
   upsertWorkspaceSnapshot,
   writeWorkspaceSnapshot,
 } from './localConversationStorage';
+import { buildOptimisticUserMessage } from './messagePresentation';
 
 const DEFAULT_CLOUD_WORKSPACE_LABEL = '云端历史记录';
 const DEFAULT_LOCAL_WORKSPACE_LABEL = '本地历史记录';
@@ -1507,14 +1508,13 @@ export function useChatWorkspace(
 
       const nextMessages: ChatMessageItem[] = [
         ...messages,
-        {
+        buildOptimisticUserMessage({
           id: optimisticMessageId,
           conversationId: optimisticConversationId,
-          role: 'USER',
           content: question,
+          skillCodes: selectedSkillCodes,
           attachments: uploadedAttachments,
-          status: 'COMPLETED',
-        },
+        }),
         {
           id: optimisticAssistantId,
           conversationId: optimisticConversationId,

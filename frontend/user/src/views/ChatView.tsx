@@ -45,6 +45,7 @@ import {
   ProcessCardItem,
   SharedConversationPayload,
 } from './chat/types';
+import { resolveSkillChipLabel } from './chat/messagePresentation';
 
 /**
  * 定义聊天视图的输入属性。
@@ -1650,8 +1651,9 @@ export default function ChatView({
                                   <span
                                     data-testid={`selected-skill-chip-${segment.skillCode}`}
                                     className="pointer-events-auto absolute inset-y-0 left-0 right-0 inline-flex h-6 items-center overflow-hidden rounded-md border border-border/70 bg-surface-container/82 px-1.5 text-[12px] font-normal text-foreground"
+                                    title={segment.displayName}
                                   >
-                                    <span className="min-w-0 truncate">{segment.rawToken}</span>
+                                    <span className="min-w-0 truncate">{segment.displayName}</span>
                                     <button
                                       type="button"
                                       aria-label={`删除技能 ${segment.displayName}`}
@@ -4052,7 +4054,7 @@ function MessageSkillChips({
   return (
     <div className="mb-2 flex flex-wrap gap-1.5">
       {skillCodes.map((skillCode) => {
-        const displayName = skillNameMap.get(skillCode) ?? skillCode;
+        const displayName = resolveSkillChipLabel(skillCode, skillNameMap);
         return (
           <span
             key={`${messageId}-${skillCode}`}
@@ -4061,7 +4063,7 @@ function MessageSkillChips({
             title={displayName}
           >
             <Sparkles size={12} className="mr-1 shrink-0 text-muted" />
-            <span className="whitespace-nowrap">@{skillCode}</span>
+            <span className="whitespace-nowrap">{displayName}</span>
           </span>
         );
       })}

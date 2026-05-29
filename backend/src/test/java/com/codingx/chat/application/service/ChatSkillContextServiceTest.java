@@ -78,6 +78,30 @@ class ChatSkillContextServiceTest {
     }
 
     /**
+     * 显式选择技能本身就是用户意图，短句也不能被普通闲聊或关于助手意图吞掉。
+     */
+    @Test
+    void buildSkillContextTreatsSelectedSkillAsActiveInstruction() {
+        when(chatSkillRepository.findBySkillCode("web-access")).thenReturn(
+            ChatSkill.builder()
+                .id(8105L)
+                .skillCode("web-access")
+                .displayName("联网访问")
+                .sourceType("built-in")
+                .enabled(1)
+                .packageStorageFormat("zip")
+                .storageKey(null)
+                .build()
+        );
+
+        String context = chatSkillContextService.buildSkillContext(List.of("web-access"));
+
+        assertTrue(context.contains("用户已显式选择以下技能"));
+        assertTrue(context.contains("不要因为用户正文较短或像闲聊就忽略已选技能"));
+        assertTrue(context.contains("如果缺少 URL、页面、附件或其他必要目标"));
+    }
+
+    /**
      * 非内置技能且无 storageKey 时应跳过，避免脏数据误注入系统提示。
      */
     @Test

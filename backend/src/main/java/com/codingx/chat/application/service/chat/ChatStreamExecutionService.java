@@ -443,7 +443,7 @@ public class ChatStreamExecutionService {
                     Path skillPath = skillLocalCacheService.downloadSkillToTemp(skillCode);
                     skillDirs.put(skillCode, skillPath);
                     if (tempSkillRoot == null) {
-                        tempSkillRoot = skillPath.getParent().getParent();
+                        tempSkillRoot = resolveCloudSkillTempRoot(skillPath);
                     }
                 } catch (Exception exception) {
                     log.warn("云端 skill 下载失败，跳过: skillCode={}", skillCode, exception);
@@ -456,6 +456,23 @@ public class ChatStreamExecutionService {
         }
 
         return tempSkillRoot;
+    }
+
+    /**
+     * 从 skill 目录反推本次下载包根目录，清理边界必须停在 codingx-skills-*，避免误删系统 Temp 根目录。
+     * @param skillPath 形如 <tmp>/codingx-skills-uuid/<skillCode> 的 skill 目录。
+     * @return 可安全清理的下载包根目录；路径异常时返回 null。
+     */
+    private Path resolveCloudSkillTempRoot(Path skillPath) {
+        if (skillPath == null || skillPath.getParent() == null || skillPath.getParent().getFileName() == null) {
+            return null;
+        }
+        Path packageRoot = skillPath.getParent();
+        if (!packageRoot.getFileName().toString().startsWith("codingx-skills-")) {
+            log.warn("云端 skill 临时目录根路径异常，跳过自动清理: skillPath={}", skillPath);
+            return null;
+        }
+        return packageRoot;
     }
 
     /**

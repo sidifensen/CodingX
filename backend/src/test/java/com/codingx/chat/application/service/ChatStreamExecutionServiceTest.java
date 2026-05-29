@@ -23,10 +23,13 @@ import com.codingx.common.exception.ConflictException;
 import com.codingx.common.exception.NotFoundException;
 import com.codingx.expert.domain.repository.ChatExpertRepository;
 import com.codingx.mcp.domain.repository.ChatMcpRepository;
+import com.codingx.skill.application.service.SkillLocalCacheService;
 import com.codingx.skill.domain.repository.ChatSkillRepository;
 import com.codingx.task.domain.model.Task;
 import com.codingx.task.domain.model.TaskStatus;
 import com.codingx.task.domain.repository.TaskRepository;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -39,6 +42,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.junit.jupiter.api.io.TempDir;
 
 /**
  * 验证聊天流派发服务会异步触发实际消息处理。
@@ -77,6 +81,9 @@ class ChatStreamExecutionServiceTest {
 
     @Mock
     private ChatSkillRepository chatSkillRepository;
+
+    @Mock
+    private SkillLocalCacheService skillLocalCacheService;
 
     @Mock
     private ChatMcpRepository chatMcpRepository;
@@ -397,6 +404,65 @@ class ChatStreamExecutionServiceTest {
         verify(chatMcpRepository).bindTaskMcps(any(Long.class), eq(java.util.List.of("weather_query")));
         verify(chatSkillRepository).bindTaskSkills(any(Long.class), eq(java.util.List.of("agent-browser")));
         verify(chatExpertRepository).bindTaskExpert(any(Long.class), eq(null));
+    }
+
+    /**
+     * 云端 skill 的临时清理只能删除本次下载根目录，不能误删系统 Temp 父目录里的其他进程文件。
+     * @param tempParent 测试隔离的临时父目录，用于模拟 java.io.tmpdir。
+     * @throws Exception 准备临时目录或等待后台线程失败。
+     */
+    @Test
+    void dispatchCleansOnlyCloudSkillTempPackageRoot(@TempDir Path tempParent) throws Exception {
+        CountDownLatch captured = new CountDownLatch(1);
+        Long taskId = 92001L;
+        Path packageRoot = tempParent.resolve("codingx-skills-test");
+        Path skillDir = packageRoot.resolve("web-access");
+        Path siblingOwnedByOtherProcess = tempParent.resolve("owned-by-other.tmp");
+        Files.createDirectories(skillDir);
+        Files.writeString(skillDir.resolve("SKILL.md"), "web access skill");
+        Files.writeString(siblingOwnedByOtherProcess, "keep");
+        when(skillLocalCacheService.downloadSkillToTemp("web-access")).thenReturn(skillDir);
+        when(chatExecutionRunRepository.findByConversationId(1001L)).thenReturn(java.util.List.of(
+            ChatExecutionRun.builder()
+                .id(taskId)
+                .conversationId(1001L)
+                .taskId(taskId)
+                .status("COMPLETED")
+                .build()
+        ));
+        ChatStreamExecutionService service = new ChatStreamExecutionService(
+            chatApplicationService,
+            chatRuntimeGuardService,
+            conversationTraceRecordService,
+            chatExecutionRunRepository,
+            chatMcpRepository,
+            chatSkillRepository,
+            chatExpertRepository,
+            chatConversationRepository,
+            chatWorkspaceBindingService,
+            taskRepository,
+            new com.codingx.chat.infrastructure.stream.NoopChatStreamPublisher(),
+            skillLocalCacheService,
+            executorService
+        );
+        SendChatMessageCommand command = new SendChatMessageCommand(
+            1001L,
+            "使用联网技能",
+            false,
+            java.util.List.of(),
+            java.util.List.of("web-access")
+        );
+        org.mockito.Mockito.doAnswer(invocation -> {
+            captured.countDown();
+            return null;
+        }).when(chatApplicationService).sendMessage(command, 2001L);
+
+        service.dispatch(taskId, command, 2001L);
+
+        assertTrue(captured.await(1, TimeUnit.SECONDS), "background task should use downloaded cloud skill");
+        verify(chatRuntimeGuardService, timeout(1000)).completeConversation(1001L, taskId);
+        assertTrue(Files.exists(siblingOwnedByOtherProcess), "cleanup must not delete files beside codingx skill package root");
+        assertTrue(Files.notExists(packageRoot), "cleanup should delete the downloaded codingx skill package root");
     }
 
     /**

@@ -8,6 +8,8 @@
 
 用户在聊天页启用工具能力并发送消息后，后端会把可见工具 schema 传给模型；模型返回 `tool_calls` 时由后端在绑定工作区执行，并通过 `tool-call` SSE 事件回传过程与结果。
 
+用户在输入框中显式选择 `@技能` 后，后端会把该技能的 `SKILL.md` 注入本轮模型系统上下文。显式技能选择本身会被视为当前任务意图的一部分，避免“这是啥”这类短句被普通闲聊或关于助手意图吞掉。
+
 ## 核心流程
 
 1. `ChatToolSpecService` 从启用的工具配置中过滤出 Java 执行器真实支持的本地工具。
@@ -16,12 +18,14 @@
 4. 聊天执行前通过 `ChatToolExecutionContext` 绑定当前本地工作区，工具结果元数据回显实际工作目录。
 5. `CodexBuiltinChatToolExecutor` 执行命令、补丁、计划、资源读取、图片读取、目标状态、权限申请、插件申请与进程内子代理状态工具；标准 diff 中若出现当前工作区内的绝对路径，会在应用前规范化为相对路径，工作区外路径继续拒绝。
 6. 工具输出会作为系统证据追加给下一轮模型生成，证据中单独写出真实 `workingDirectory` 和后续路径约束；前端同步展示 start、complete 或 error 过程卡片。
+7. `ChatSkillContextService` 读取已选技能说明并加入系统提示；若缺少 URL、页面、附件等必要目标，模型应围绕已选技能追问或尝试获取上下文，而不是转成普通闲聊回答。
 
 ## 关键文件
 
 - `backend/src/main/java/com/codingx/tool/application/service/ChatToolSpecService.java`：生成模型可见工具 schema，并注入 PowerShell 语法约束。
 - `backend/src/main/java/com/codingx/tool/application/service/CodexBuiltinChatToolExecutor.java`：执行已接入的 Codex 风格本地工具。
 - `backend/src/main/java/com/codingx/chat/application/service/chat/ChatApplicationService.java`：把工具 schema 交给模型，执行模型工具调用并发布过程事件。
+- `backend/src/main/java/com/codingx/skill/application/service/ChatSkillContextService.java`：读取已选技能说明，并声明显式技能选择的任务意图约束。
 - `backend/src/main/resources/db/init.sql`：初始化内置工具配置。
 - `backend/src/main/resources/db/migration/V20260527_153000__clarify_shell_command_windows_runtime.sql`：同步已有环境中的终端工具描述。
 - `backend/src/main/resources/db/migration/V20260529_020000__enable_codex_runtime_tools.sql`：启用历史环境中已接入的 Codex 运行时工具配置。
@@ -44,3 +48,4 @@
 - `mvn -Dtest=CodexBuiltinChatToolExecutorTest#codexRuntimeToolsShouldBeCallableThroughExecutorEntry test`
 - `mvn -Dtest=ChatRuntimePersistenceStructureTest#codexRuntimeToolMigrationEnablesImplementedTools test`
 - `mvn -Dtest=ChatRuntimePersistenceStructureTest#shellCommandRuntimeMigrationClarifiesPowerShellSyntax test`
+- `mvn -Dtest=ChatSkillContextServiceTest test`

@@ -1916,9 +1916,11 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
     private CommandExecution runCommand(String command, long timeoutMs, Path workingDirectory) {
         long start = System.currentTimeMillis();
         try {
-            Process process = new ProcessBuilder(resolveShellCommand(command))
-                .directory(workingDirectory.toFile())
-                .start();
+            ProcessBuilder processBuilder = new ProcessBuilder(resolveShellCommand(command))
+                .directory(workingDirectory.toFile());
+            // shell_command 是模型最常用的技能脚本入口，必须把当前聊天绑定的 skill 目录注入到真实进程环境。
+            injectSkillEnvironmentVariables(processBuilder.environment());
+            Process process = processBuilder.start();
             StringBuilder stdoutBuffer = new StringBuilder();
             StringBuilder stderrBuffer = new StringBuilder();
             Thread stdoutReader = startProcessOutputReader(process.getInputStream(), stdoutBuffer);
@@ -2216,19 +2218,10 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
 
     private String[] resolveShellCommand(String command) {
         String osName = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
-        ProcessBuilder pb;
         if (osName.contains("win")) {
-            pb = new ProcessBuilder("powershell", "-NoProfile", "-Command", command);
-        } else {
-            pb = new ProcessBuilder("sh", "-lc", command);
+            return new String[]{"powershell", "-NoProfile", "-Command", command};
         }
-
-        pb.directory(resolveToolWorkingDirectory().toFile());
-
-        // 注入 skill 环境变量
-        injectSkillEnvironmentVariables(pb.environment());
-
-        return pb.command().toArray(new String[0]);
+        return new String[]{"sh", "-lc", command};
     }
 
     /**

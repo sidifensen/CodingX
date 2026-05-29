@@ -1350,6 +1350,8 @@ public class ChatApplicationService {
      * @return 工具执行结果。
      */
     private ChatToolExecutionResult executeModelToolCall(SendChatMessageCommand command, Long runId, AiToolCall toolCall) {
+        Optional<Path> previousWorkingDirectory = ChatToolExecutionContext.currentToolWorkingDirectory();
+        Map<String, Path> previousSkillDirectories = ChatToolExecutionContext.currentSkillDirectories();
         Path workspacePath = resolveToolWorkingDirectory(command);
         if (workspacePath != null) {
             ChatToolExecutionContext.bindToolWorkingDirectory(workspacePath);
@@ -1396,8 +1398,30 @@ public class ChatApplicationService {
             publishLocalToolCallError(command.conversationId(), toolCall, startedAt, exception);
             throw exception;
         } finally {
-            ChatToolExecutionContext.clear();
+            restoreToolExecutionContext(previousWorkingDirectory, previousSkillDirectories);
         }
+    }
+
+    /**
+     * 恢复本次工具调用前的线程上下文，避免连续工具调用丢失由外层聊天执行器绑定的 skill 目录。
+     *
+     * @param previousWorkingDirectory 调用前的工具工作目录。
+     * @param previousSkillDirectories 调用前的 skill 目录映射。
+     */
+    private void restoreToolExecutionContext(
+        Optional<Path> previousWorkingDirectory,
+        Map<String, Path> previousSkillDirectories
+    ) {
+        if (previousWorkingDirectory.isPresent()) {
+            ChatToolExecutionContext.bindToolWorkingDirectory(previousWorkingDirectory.get());
+        } else {
+            ChatToolExecutionContext.bindToolWorkingDirectory(null);
+        }
+        if (previousSkillDirectories == null || previousSkillDirectories.isEmpty()) {
+            ChatToolExecutionContext.bindSkillDirectories(Map.of());
+            return;
+        }
+        ChatToolExecutionContext.bindSkillDirectories(previousSkillDirectories);
     }
 
     /**
@@ -2183,5 +2207,4 @@ public class ChatApplicationService {
     }
 
 }
-
 

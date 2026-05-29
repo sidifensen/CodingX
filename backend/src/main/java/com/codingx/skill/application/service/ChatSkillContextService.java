@@ -10,12 +10,14 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.core.io.ClassPathResource;
 
@@ -24,6 +26,7 @@ import org.springframework.core.io.ClassPathResource;
  */
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class ChatSkillContextService {
 
     private static final String ROOT_SKILL_MANIFEST = "SKILL.md";
@@ -59,20 +62,26 @@ public class ChatSkillContextService {
 
         StringBuilder contentBuilder = new StringBuilder();
         int loadedSkillCount = 0;
+        List<String> loadedSkillCodes = new ArrayList<>();
+        List<String> skippedSkillCodes = new ArrayList<>();
         for (String skillCode : normalizedCodes) {
             if (loadedSkillCount >= MAX_SKILL_CONTEXT_COUNT || contentBuilder.length() >= MAX_TOTAL_CONTEXT_CHARS) {
-                break;
+                skippedSkillCodes.add(skillCode + ":超过上下文上限");
+                continue;
             }
             ChatSkill skill = chatSkillRepository.findBySkillCode(skillCode);
             if (skill == null) {
+                skippedSkillCodes.add(skillCode + ":配置不存在");
                 continue;
             }
             String manifestContent = readSkillManifest(skill);
             if (StrUtil.isBlank(manifestContent)) {
+                skippedSkillCodes.add(skillCode + ":SKILL.md为空或读取失败");
                 continue;
             }
             String normalizedManifest = StrUtil.subPre(manifestContent.trim(), MAX_SINGLE_MANIFEST_CHARS);
             if (StrUtil.isBlank(normalizedManifest)) {
+                skippedSkillCodes.add(skillCode + ":SKILL.md为空");
                 continue;
             }
             contentBuilder
@@ -84,11 +93,21 @@ public class ChatSkillContextService {
                 .append(normalizedManifest)
                 .append("\n\n");
             loadedSkillCount++;
+            loadedSkillCodes.add(skill.getSkillCode());
         }
 
         if (contentBuilder.isEmpty()) {
+            log.warn("技能上下文未生效: 选择技能={}, 跳过技能={}", normalizedCodes, skippedSkillCodes);
             return "";
         }
+        log.info(
+            "技能上下文已生效: 选择数={}, 生效数={}, 生效技能={}, 跳过技能={}, 上下文长度={}",
+            normalizedCodes.size(),
+            loadedSkillCodes.size(),
+            loadedSkillCodes,
+            skippedSkillCodes,
+            contentBuilder.length()
+        );
         return """
             用户已显式选择以下技能，这些技能就是本轮任务意图的一部分。
             请优先按已选技能的说明文档判断和执行当前问题，不要因为用户正文较短或像闲聊就忽略已选技能。

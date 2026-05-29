@@ -534,6 +534,76 @@ class ChatApplicationToolCallFlowTest {
     }
 
     /**
+     * 同一次聊天请求中的连续工具调用必须持续继承已绑定 skill 目录，避免第二次调用起丢失 CLAUDE_SKILL_DIR。
+     *
+     * @param tempDir 测试临时目录。
+     * @throws Exception 执行失败时抛出。
+     */
+    @Test
+    void sendMessageKeepsSkillDirectoriesAcrossMultipleToolCalls(@TempDir Path tempDir) throws Exception {
+        Long runId = 9401008L;
+        ChatExecutionContext.start(runId);
+        Path skillDir = tempDir.resolve("codingx-skills").resolve("web-access");
+        Files.createDirectories(skillDir);
+        ChatConversation conversation = ChatConversation.create(8L, "Skill Tool Context", 1002L, ChatConversationStatus.ACTIVE);
+        when(chatConversationRepository.requireById(8L)).thenReturn(conversation);
+        when(chatMessageRepository.findByConversationId(8L)).thenReturn(new ArrayList<>());
+        when(chatAttachmentService.requireOwnedAttachments(any(), eq(8L), eq(1002L))).thenReturn(List.of());
+        when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+            new ConversationRewriteResult("连续调用技能工具", false, List.of("连续调用技能工具"))
+        );
+        when(conversationIntentService.route("连续调用技能工具", false)).thenReturn(
+            new ConversationIntentDecision("chat.normal", ConversationIntentAction.DIRECT, null)
+        );
+        when(chatIntentNodeRepository.findByIntentCode("chat.normal")).thenReturn(null);
+        when(chatSkillContextService.buildSkillContext(any())).thenReturn("web-access skill context");
+        when(chatExpertContextService.buildExpertContext(any())).thenReturn("");
+        when(conversationSummaryService.buildModelHistory(any(), any())).thenAnswer(invocation -> invocation.getArgument(1));
+        when(conversationTitleService.generateTitle(any(), any())).thenReturn("技能工具调用");
+        when(llmResponseCleaner.clean(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(chatToolSpecService.listModelVisibleToolSpecs()).thenReturn(List.of(
+            new ChatToolSpec(
+                "test_sync_tool",
+                "同步测试工具",
+                Map.of("type", "object", "properties", Map.of("message", Map.of("type", "string")))
+            )
+        ));
+        List<Map<String, Path>> observedSkillDirectories = new ArrayList<>();
+        when(chatToolExecutionService.execute(eq("test_sync_tool"), any())).thenAnswer(invocation -> {
+            observedSkillDirectories.add(ChatToolExecutionContext.currentSkillDirectories());
+            return new ChatToolExecutionResult("test_sync_tool", "技能工具已执行", Map.of("ok", true));
+        });
+        AtomicInteger modelRound = new AtomicInteger();
+        doAnswer(invocation -> {
+            AiChatClient.ToolAwareStreamHandler handler = invocation.getArgument(3);
+            if (modelRound.incrementAndGet() == 1) {
+                handler.onToolCall(new AiToolCall("call-skill-1", "test_sync_tool", "{\"message\":\"first\"}"));
+                handler.onToolCall(new AiToolCall("call-skill-2", "test_sync_tool", "{\"message\":\"second\"}"));
+                handler.onComplete();
+                return null;
+            }
+            handler.onDelta("技能工具调用完成。");
+            handler.onComplete();
+            return null;
+        }).when(aiChatClient).streamChatWithTools(any(), eq(false), any(), any());
+
+        ChatToolExecutionContext.bindSkillDirectories(Map.of("web-access", skillDir));
+        try {
+            chatApplicationService.sendMessage(
+                new SendChatMessageCommand(8L, "连续调用技能工具", false, List.of(), List.of("web-access"), null, null, List.of()),
+                1002L
+            );
+        } finally {
+            ChatExecutionContext.clear();
+            ChatToolExecutionContext.clear();
+        }
+
+        Map<String, Path> expectedSkillDirectories = Map.of("web-access", skillDir.toAbsolutePath().normalize());
+        assertEquals(List.of(expectedSkillDirectories, expectedSkillDirectories), observedSkillDirectories);
+        verify(chatStreamPublisher).publishAssistantCompleted(eq(8L), any(), eq("技能工具调用完成。"), eq("技能工具调用"));
+    }
+
+    /**
      * 图片附件已通过多模态请求体交给视觉模型时，不应继续暴露 view_image。
      * 否则模型会把上传图片误当成本地路径工具调用，导致用户明明上传了图片却返回“图片不存在”。
      */

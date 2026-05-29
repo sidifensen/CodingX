@@ -32,6 +32,8 @@ public class RuntimeSettingService {
     private static final String TYPE_LONG = "LONG";
     private static final String TYPE_DECIMAL = "DECIMAL";
     private static final String TYPE_STRING = "STRING";
+    private static final int DEFAULT_CHAT_TOOL_MAX_ROUNDS = 10;
+    private static final int HARD_CHAT_TOOL_MAX_ROUNDS = 20;
 
     private final ChatRuntimeSettingRepository chatRuntimeSettingRepository;
     private final RuntimeProperties runtimeProperties;
@@ -334,11 +336,12 @@ public class RuntimeSettingService {
 
     /**
      * 获取本地工具调用允许的最大轮次。
-     * 这是防止模型反复工具调用不收敛的保护阈值，默认值调高到 10 轮。
+     * 这是防止模型反复工具调用不收敛的保护阈值；数据库可配置，但必须保留硬上限防止误配拖垮执行线程。
      * @return 最大工具调用轮次。
      */
     public int chatToolMaxRounds() {
-        return getInt("chat.tool.max_rounds", 10);
+        int configuredMaxRounds = getInt("chat.tool.max_rounds", DEFAULT_CHAT_TOOL_MAX_ROUNDS);
+        return Math.min(HARD_CHAT_TOOL_MAX_ROUNDS, Math.max(1, configuredMaxRounds));
     }
 
     /**

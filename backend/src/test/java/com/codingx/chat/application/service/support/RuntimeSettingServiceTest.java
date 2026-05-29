@@ -75,6 +75,32 @@ class RuntimeSettingServiceTest {
     }
 
     /**
+     * 工具轮次配置必须保留代码硬上限，避免管理端或脚本误配成超大值后让模型工具循环长期占用线程。
+     */
+    @Test
+    void chatToolMaxRoundsClampsMisconfiguredLargeValue() {
+        when(chatRuntimeSettingRepository.findAll()).thenReturn(List.of(
+            ChatRuntimeSetting.builder()
+                .id(1L)
+                .settingKey("chat.tool.max_rounds")
+                .settingValue("10000")
+                .valueType("INTEGER")
+                .categoryCode("chat.tool")
+                .description("本地工具调用最大轮次")
+                .sortNo(10)
+                .restartRequired(false)
+                .createdAt(LocalDateTime.now())
+                .updatedAt(LocalDateTime.now())
+                .deleted(0)
+                .build()
+        ));
+
+        runtimeSettingService.init();
+
+        assertEquals(20, runtimeSettingService.chatToolMaxRounds());
+    }
+
+    /**
      * 系统配置缺失时，应回退到代码内置默认值 10。
      */
     @Test

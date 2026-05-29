@@ -453,6 +453,20 @@ public class ChatStreamExecutionService {
 
         if (!skillDirs.isEmpty()) {
             ChatToolExecutionContext.bindSkillDirectories(skillDirs);
+            log.info(
+                "技能运行目录已生效: 选择数={}, 生效数={}, 生效技能={}, 临时根={}",
+                command.skillCodes().size(),
+                skillDirs.size(),
+                skillDirs,
+                tempSkillRoot
+            );
+        } else {
+            log.warn(
+                "技能运行目录未生效: 选择技能={}, 本地运行={}, skillPaths={}",
+                command.skillCodes(),
+                command.localRuntime(),
+                command.skillPaths()
+            );
         }
 
         return tempSkillRoot;

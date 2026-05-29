@@ -567,6 +567,33 @@ class CodexBuiltinChatToolExecutorTest {
     }
 
     /**
+     * shell_command 必须继承当前聊天绑定的单个 skill 目录，确保技能脚本可通过 CLAUDE_SKILL_DIR 定位。
+     *
+     * @param tempDir 测试临时目录。
+     * @throws Exception 执行失败时抛出。
+     */
+    @Test
+    void shellCommandShouldExposeSingleSkillDirectoryEnvironment(@TempDir Path tempDir) throws Exception {
+        Path projectRoot = tempDir.resolve("workspace");
+        Path skillDir = tempDir.resolve("skills").resolve("web-access");
+        Files.createDirectories(projectRoot);
+        Files.createDirectories(skillDir);
+        ChatToolExecutionContext.bindToolWorkingDirectory(projectRoot);
+        ChatToolExecutionContext.bindSkillDirectories(Map.of("web-access", skillDir));
+        try {
+            ChatToolExecutionResult result = codexBuiltinChatToolExecutor.execute(
+                "shell_command",
+                JSONUtil.toJsonStr(Map.of("command", echoClaudeSkillDirCommand(), "timeoutMs", 10000))
+            );
+
+            assertEquals(0, result.metadata().get("exitCode"));
+            assertTrue(result.content().contains(skillDir.toAbsolutePath().normalize().toString()));
+        } finally {
+            ChatToolExecutionContext.clear();
+        }
+    }
+
+    /**
      * shell_command 的 timeout 必须约束整个进程生命周期，不能被同步读取输出阻塞绕过。
      *
      * @param tempDir 测试临时目录。
@@ -889,6 +916,19 @@ class CodexBuiltinChatToolExecutorTest {
         } finally {
             ChatToolExecutionContext.clear();
         }
+    }
+
+    /**
+     * 按当前测试操作系统生成读取单技能环境变量的命令。
+     *
+     * @return 可交给 shell_command 执行的命令。
+     */
+    private static String echoClaudeSkillDirCommand() {
+        String osName = System.getProperty("os.name", "").toLowerCase();
+        if (osName.contains("win")) {
+            return "if (-not $env:CLAUDE_SKILL_DIR) { exit 2 }; Write-Output $env:CLAUDE_SKILL_DIR";
+        }
+        return "test -n \"$CLAUDE_SKILL_DIR\" || exit 2; printf '%s' \"$CLAUDE_SKILL_DIR\"";
     }
 
     /**

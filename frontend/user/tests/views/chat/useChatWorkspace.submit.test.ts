@@ -325,6 +325,14 @@ describe('useChatWorkspace submit behavior', () => {
     );
 
     await act(async () => {
+      streamReaders[0].readQueue.shift()?.resolve({ done: true, value: undefined });
+    });
+
+    await waitFor(() => {
+      expect(conversationsRequestCount).toBe(2);
+    });
+
+    await act(async () => {
       result.current.setInputValue('第三个请求');
     });
     await act(async () => {
@@ -336,8 +344,6 @@ describe('useChatWorkspace submit behavior', () => {
     });
 
     await act(async () => {
-      streamReaders[1].readQueue.shift()?.resolve({ done: true, value: undefined });
-      streamReaders[0].readQueue.shift()?.resolve({ done: true, value: undefined });
       resolveConversationsAfterFinish?.(
         new Response(
           JSON.stringify({
@@ -359,6 +365,22 @@ describe('useChatWorkspace submit behavior', () => {
     });
     await act(async () => {
       await firstSubmitPromise;
+    });
+
+    const persistedStoreAfterSlowReplay = JSON.parse(
+      window.localStorage.getItem('codingx.chat.workspace.conversations.v1') ?? '{}',
+    );
+    const persistedContentsAfterSlowReplay =
+      persistedStoreAfterSlowReplay.snapshots?.['cloud::__no_workspace__']
+        ?.conversationRecords?.['2001']?.messages?.map(
+          (message: { content?: string }) => message.content,
+        ) ?? [];
+    expect(persistedContentsAfterSlowReplay).toEqual(
+      expect.arrayContaining(['第二个请求', '第二个回答']),
+    );
+
+    await act(async () => {
+      streamReaders[1].readQueue.shift()?.resolve({ done: true, value: undefined });
     });
   });
 

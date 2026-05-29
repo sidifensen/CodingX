@@ -1569,8 +1569,21 @@ export function useChatWorkspace(
         ) {
           return;
         }
+        const didFinishStream = finishedStreamSessionIdsRef.current.has(streamSessionId);
         finishedStreamSessionIdsRef.current.delete(streamSessionId);
+        if (didFinishStream && streamSessionId !== streamSessionSeedRef.current) {
+          // 关键约束：用户可能在本轮 finish 后立刻发送下一轮；旧流的慢回放只允许清理自身，
+          // 不能再用旧消息接口结果覆盖新一轮已写入的本地消息区和刷新快照。
+          refreshWorkspaceGroups('all');
+          return;
+        }
         const nextConversations = await loadConversations(token, effectiveWorkspaceId);
+        if (didFinishStream && streamSessionId !== streamSessionSeedRef.current) {
+          // 关键约束：旧流可能已进入慢会话列表请求后，用户才发起下一轮；
+          // 慢请求返回后仍需二次拦截，避免继续回放并覆盖当前会话快照。
+          refreshWorkspaceGroups('all');
+          return;
+        }
         const nextConversationId = streamStateRef.current?.conversationId ?? activeConversationId;
         if (nextConversationId) {
           await selectConversation(

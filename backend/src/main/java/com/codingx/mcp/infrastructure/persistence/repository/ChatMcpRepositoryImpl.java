@@ -1,17 +1,13 @@
 package com.codingx.mcp.infrastructure.persistence.repository;
 
-import cn.hutool.core.util.IdUtil;
 import cn.hutool.core.util.StrUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.codingx.mcp.domain.model.ChatMcp;
 import com.codingx.mcp.domain.repository.ChatMcpRepository;
 import com.codingx.mcp.infrastructure.persistence.dataobject.ChatMcpDO;
-import com.codingx.mcp.infrastructure.persistence.dataobject.TaskMcpDO;
 import com.codingx.mcp.infrastructure.persistence.mapper.ChatMcpMapper;
-import com.codingx.mcp.infrastructure.persistence.mapper.TaskMcpMapper;
 import java.time.LocalDateTime;
-import java.util.LinkedHashSet;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Repository;
@@ -24,7 +20,6 @@ import org.springframework.stereotype.Repository;
 public class ChatMcpRepositoryImpl implements ChatMcpRepository {
 
     private final ChatMcpMapper chatMcpMapper;
-    private final TaskMcpMapper taskMcpMapper;
 
     @Override
     public List<ChatMcp> findAll() {
@@ -101,53 +96,13 @@ public class ChatMcpRepositoryImpl implements ChatMcpRepository {
 
     @Override
     public List<ChatMcp> findByTaskId(Long taskId) {
-        if (taskId == null) {
-            return List.of();
-        }
-        List<String> mcpCodes = taskMcpMapper.selectList(new LambdaQueryWrapper<TaskMcpDO>()
-                .eq(TaskMcpDO::getTaskId, taskId)
-                .orderByAsc(TaskMcpDO::getId))
-            .stream()
-            .map(TaskMcpDO::getMcpCode)
-            .filter(StrUtil::isNotBlank)
-            .toList();
-        if (mcpCodes.isEmpty()) {
-            return List.of();
-        }
-        return chatMcpMapper.selectList(new LambdaQueryWrapper<ChatMcpDO>()
-                .in(ChatMcpDO::getMcpCode, mcpCodes)
-                .eq(ChatMcpDO::getDeleted, 0)
-                .orderByAsc(ChatMcpDO::getSortNo)
-                .orderByAsc(ChatMcpDO::getMcpCode))
-            .stream()
-            .map(this::toDomain)
-            .toList();
+        // task_mcp 已迁移到 chat_execution_step；保留旧接口为空实现，避免误访问已删除表。
+        return List.of();
     }
 
     @Override
     public void bindTaskMcps(Long taskId, List<String> mcpCodes) {
-        if (taskId == null) {
-            return;
-        }
-        taskMcpMapper.delete(new LambdaQueryWrapper<TaskMcpDO>().eq(TaskMcpDO::getTaskId, taskId));
-        if (mcpCodes == null || mcpCodes.isEmpty()) {
-            return;
-        }
-        LocalDateTime now = LocalDateTime.now();
-        LinkedHashSet<String> uniqueCodes = new LinkedHashSet<>();
-        for (String mcpCode : mcpCodes) {
-            if (StrUtil.isNotBlank(mcpCode)) {
-                uniqueCodes.add(mcpCode.trim());
-            }
-        }
-        for (String mcpCode : uniqueCodes) {
-            TaskMcpDO dataObject = new TaskMcpDO();
-            dataObject.setId(IdUtil.getSnowflakeNextId());
-            dataObject.setTaskId(taskId);
-            dataObject.setMcpCode(mcpCode);
-            dataObject.setCreatedAt(now);
-            taskMcpMapper.insert(dataObject);
-        }
+        // task_mcp 已删除，新运行上下文统一由 ChatRunContextStepSupport 写入 chat_execution_step。
     }
 
     private LambdaQueryWrapper<ChatMcpDO> baseListWrapper() {

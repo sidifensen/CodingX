@@ -6,6 +6,7 @@ import com.codingx.chat.application.command.CreateConversationCommand;
 import com.codingx.chat.application.command.SendChatMessageCommand;
 import com.codingx.chat.application.service.ChatApplicationService;
 import com.codingx.chat.application.service.ChatAttachmentService;
+import com.codingx.chat.application.service.ChatCapabilityMentionSupport;
 import com.codingx.chat.application.service.ChatConversationApplicationService;
 import com.codingx.mcp.application.service.ChatMcpQueryService;
 import com.codingx.chat.application.service.ChatReactionService;
@@ -18,8 +19,6 @@ import com.codingx.chat.domain.model.ChatMessageFeedback;
 import com.codingx.chat.domain.repository.ChatExecutionRunRepository;
 import com.codingx.chat.domain.repository.ChatMessageFeedbackRepository;
 import com.codingx.mcp.domain.model.ChatMcp;
-import com.codingx.skill.domain.model.ChatSkill;
-import com.codingx.skill.domain.repository.ChatSkillRepository;
 import com.codingx.chat.interfaces.request.ChatMessageFeedbackRequest;
 import com.codingx.chat.interfaces.request.BatchUpdateConversationRequest;
 import com.codingx.chat.interfaces.request.ConversationPinRequest;
@@ -89,7 +88,6 @@ public class ChatController {
     private final ChatReactionService chatReactionService;
     private final ChatMessageFeedbackRepository chatMessageFeedbackRepository;
     private final ChatMcpQueryService chatMcpQueryService;
-    private final ChatSkillRepository chatSkillRepository;
     private final WorkspaceRepositoryImpl workspaceRepositoryImpl;
     private final ChatExecutionRunRepository chatExecutionRunRepository;
     private final TaskRepository taskRepository;
@@ -541,14 +539,8 @@ public class ChatController {
         List<ChatAttachmentResponse> attachments = chatAttachmentService.listByMessageId(message.getId()).stream()
             .map(this::toAttachmentResponse)
             .toList();
-        // 业务约束：消息气泡回放依赖技能编码，按 runId 读取当次绑定技能避免生成完成后丢失。
-        List<String> skillCodes = message.getRunId() == null
-            ? List.of()
-            : chatSkillRepository.findByTaskId(message.getRunId()).stream()
-                .map(ChatSkill::getSkillCode)
-                .filter(StrUtil::isNotBlank)
-                .distinct()
-                .toList();
+        // 业务约束：技能标记现在随用户消息正文持久化，避免回放依赖已移除的 task_skill 表。
+        List<String> skillCodes = ChatCapabilityMentionSupport.parseSkillCodes(message.getContent());
         // 查询当前用户对该消息的投票状态；公开分享页没有登录用户时保持为空。
         Integer userVote = currentUserId == null
             ? null

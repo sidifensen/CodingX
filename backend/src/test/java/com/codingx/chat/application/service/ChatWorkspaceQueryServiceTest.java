@@ -100,9 +100,17 @@ class ChatWorkspaceQueryServiceTest {
         when(chatExecutionRunRepository.findByConversationId(2001L)).thenReturn(List.of(
             run(5002L, LocalDateTime.of(2026, 5, 15, 10, 5))
         ));
-        when(chatSkillRepository.findByTaskId(5002L)).thenReturn(List.of(
-            ChatSkill.builder().id(1L).skillCode("conversation-core").displayName("会话核心").category("核心能力").enabled(1).sortNo(1).build()
+        when(chatExecutionStepRepository.findByRunId(5002L)).thenReturn(List.of(
+            ChatExecutionStep.builder()
+                .id(21L)
+                .runId(5002L)
+                .stepType("runtime_context")
+                .metadataJson("{\"skillCodes\":[\"conversation-core\"]}")
+                .build()
         ));
+        when(chatSkillRepository.findBySkillCode("conversation-core")).thenReturn(
+            ChatSkill.builder().id(1L).skillCode("conversation-core").displayName("会话核心").category("核心能力").enabled(1).sortNo(1).build()
+        );
 
         List<ChatSkill> skills = chatWorkspaceQueryService.listCurrentSkills(2001L);
 
@@ -118,9 +126,17 @@ class ChatWorkspaceQueryServiceTest {
         when(chatExecutionRunRepository.findByConversationId(2001L)).thenReturn(List.of(
             run(5002L, LocalDateTime.of(2026, 5, 15, 10, 5))
         ));
-        when(chatMcpRepository.findByTaskId(5002L)).thenReturn(List.of(
-            ChatMcp.builder().id(1L).mcpCode("weather_query").displayName("天气查询").category("天气").enabled(1).sortNo(1).build()
+        when(chatExecutionStepRepository.findByRunId(5002L)).thenReturn(List.of(
+            ChatExecutionStep.builder()
+                .id(22L)
+                .runId(5002L)
+                .stepType("runtime_context")
+                .metadataJson("{\"mcpCodes\":[\"weather_query\"]}")
+                .build()
         ));
+        when(chatMcpRepository.findByMcpCode("weather_query")).thenReturn(
+            ChatMcp.builder().id(1L).mcpCode("weather_query").displayName("天气查询").category("天气").enabled(1).sortNo(1).build()
+        );
 
         List<ChatMcp> mcps = chatWorkspaceQueryService.listCurrentMcps(2001L);
 

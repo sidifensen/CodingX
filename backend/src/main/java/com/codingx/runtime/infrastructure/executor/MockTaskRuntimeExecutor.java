@@ -1,11 +1,7 @@
 package com.codingx.runtime.infrastructure.executor;
 import cn.hutool.core.thread.ThreadUtil;
-import com.codingx.event.domain.model.TaskEvent;
-import com.codingx.event.domain.repository.TaskEventRepository;
 import com.codingx.runtime.domain.service.TaskRuntimeExecutor;
 import com.codingx.task.domain.model.Task;
-import com.codingx.task.domain.model.TaskArtifact;
-import com.codingx.task.domain.repository.TaskArtifactRepository;
 import com.codingx.task.domain.repository.TaskRepository;
 import com.codingx.task.domain.service.TaskStreamPublisher;
 import java.util.concurrent.CompletableFuture;
@@ -35,16 +31,6 @@ public class MockTaskRuntimeExecutor implements TaskRuntimeExecutor {
      * TaskRepository 依赖。
      */
     private final TaskRepository taskRepository;
-
-    /**
-     * TaskEventRepository 依赖。
-     */
-    private final TaskEventRepository taskEventRepository;
-
-    /**
-     * TaskArtifactRepository 依赖。
-     */
-    private final TaskArtifactRepository taskArtifactRepository;
 
     /**
      * TaskStreamPublisher 依赖。
@@ -87,7 +73,6 @@ public class MockTaskRuntimeExecutor implements TaskRuntimeExecutor {
             task.complete(summary);
             taskRepository.save(task);
             appendEvent(task, "task-summary", "Task summary", summary);
-            taskArtifactRepository.save(TaskArtifact.create(task.getId(), "summary", "summary.txt", summary, null));
             taskStreamPublisher.publishSummary(task.getId(), summary);
             taskStreamPublisher.publishCompleted(task.getId(), task.getStatus().name());
         } catch (Exception exception) {
@@ -107,7 +92,7 @@ public class MockTaskRuntimeExecutor implements TaskRuntimeExecutor {
      * @param content 输入参数。
      */
     private void appendEvent(Task task, String eventType, String title, String content) {
-        taskEventRepository.save(TaskEvent.create(task.getId(), eventType, taskEventRepository.nextSequence(task.getId()), title, content, null));
+        // task_event 已删除；Mock 运行过程只通过 SSE 推给前端，避免本地联调写入旧过程表。
     }
 
     /**

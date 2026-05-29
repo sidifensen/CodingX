@@ -3851,7 +3851,7 @@ function parseSkillMessage(rawQuestion: string): {
   let remainingQuestion = rawQuestion.trim();
   const parsedSkillCodes: string[] = [];
   while (true) {
-    const skillMatch = remainingQuestion.match(/^@([a-zA-Z0-9_-]+)\s*(.*)$/);
+    const skillMatch = remainingQuestion.match(/^@([a-zA-Z0-9_.:-]+)\s*(.*)$/);
     if (!skillMatch) {
       break;
     }

@@ -178,9 +178,7 @@ public class ChatStreamExecutionService {
             .createdAt(now)
             .updatedAt(now)
             .build());
-        // 步骤：派发入口固定先写入本次 MCP 与技能绑定，保证工作区“当前能力上下文”可在回放接口中稳定读取。
-        chatMcpRepository.bindTaskMcps(runId, command.mcpCodes());
-        chatSkillRepository.bindTaskSkills(runId, command.skillCodes());
+        // 步骤：MCP 与技能选择由应用服务写入 chat_execution_step，派发层只保留专家旧表兼容。
         chatExpertRepository.bindTaskExpert(runId, command.expertCode());
         com.codingx.chat.domain.model.ChatTraceRun traceRun = conversationTraceRecordService.startTrace("chat-entry", command.conversationId(), userId);
         AtomicReference<Future<?>> futureRef = new AtomicReference<>();

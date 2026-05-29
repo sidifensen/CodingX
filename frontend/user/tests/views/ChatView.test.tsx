@@ -493,9 +493,9 @@ describe('ChatView', () => {
   });
 
   /**
-   * 用户消息绑定技能时，应在消息气泡内保留技能气泡展示，避免流式结束后技能信息消失。
+   * 用户消息绑定技能时，应在消息气泡内保留技能气泡展示，并隐藏落库内容中的技能标记。
    */
-  it('应在用户消息气泡内展示技能气泡', async () => {
+  it('应在用户消息气泡内展示技能气泡且正文不重复技能标记', async () => {
     render(
       <ChatView
         isAuthenticated={true}
@@ -515,9 +515,9 @@ describe('ChatView', () => {
               id: '311',
               conversationId: '2001',
               role: 'USER',
-              content: '这是什么',
+              content: '@frontend-design-3.0 这是什么',
               status: 'COMPLETED',
-              skillCodes: ['codebase-migrate'],
+              skillCodes: ['frontend-design-3.0'],
             } as any,
             {
               id: '312',
@@ -534,7 +534,9 @@ describe('ChatView', () => {
       />,
     );
 
-    expect(screen.getByTestId('message-skill-chip-311-codebase-migrate')).toBeInTheDocument();
+    expect(screen.getByTestId('message-skill-chip-311-frontend-design-3.0')).toBeInTheDocument();
+    expect(screen.getByText('这是什么')).toBeInTheDocument();
+    expect(screen.queryByText('@frontend-design-3.0 这是什么')).not.toBeInTheDocument();
   });
 
   /**

@@ -4,6 +4,7 @@ import com.codingx.chat.domain.model.ChatExecutionRun;
 import com.codingx.chat.domain.model.ChatExecutionStep;
 import com.codingx.chat.domain.model.ChatMessageArtifact;
 import com.codingx.chat.domain.model.ChatMessageReference;
+import com.codingx.chat.application.service.ChatRunContextStepSupport;
 import com.codingx.expert.domain.model.ChatExpert;
 import com.codingx.expert.domain.repository.ChatExpertRepository;
 import com.codingx.skill.domain.model.ChatSkill;
@@ -42,6 +43,10 @@ public class ChatWorkspaceQueryService {
     public List<ChatExecutionStep> listSteps(Long conversationId) {
         return latestRun(conversationId)
             .map(run -> chatExecutionStepRepository.findByRunId(run.getId()))
+            .map(steps -> steps.stream()
+                // 运行上下文只服务后端恢复 current skills/mcps，不展示为用户过程步骤。
+                .filter(step -> !ChatRunContextStepSupport.STEP_TYPE.equalsIgnoreCase(step.getStepType()))
+                .toList())
             .orElse(List.of());
     }
 
@@ -74,8 +79,11 @@ public class ChatWorkspaceQueryService {
      */
     public List<ChatSkill> listCurrentSkills(Long conversationId) {
         return latestRun(conversationId)
-            // 历史运行记录可能未补齐 taskId；此时回退 runId，兼容旧数据与单测构造。
-            .map(run -> chatSkillRepository.findByTaskId(run.getTaskId() == null ? run.getId() : run.getTaskId()))
+            .map(run -> ChatRunContextStepSupport.parseContext(chatExecutionStepRepository.findByRunId(run.getId())).skillCodes())
+            .map(skillCodes -> skillCodes.stream()
+                .map(chatSkillRepository::findBySkillCode)
+                .filter(skill -> skill != null)
+                .toList())
             .orElse(List.of());
     }
 
@@ -86,8 +94,11 @@ public class ChatWorkspaceQueryService {
      */
     public List<ChatMcp> listCurrentMcps(Long conversationId) {
         return latestRun(conversationId)
-            // 历史运行记录可能未补齐 taskId；此时回退 runId，兼容旧数据与单测构造。
-            .map(run -> chatMcpRepository.findByTaskId(run.getTaskId() == null ? run.getId() : run.getTaskId()))
+            .map(run -> ChatRunContextStepSupport.parseContext(chatExecutionStepRepository.findByRunId(run.getId())).mcpCodes())
+            .map(mcpCodes -> mcpCodes.stream()
+                .map(chatMcpRepository::findByMcpCode)
+                .filter(mcp -> mcp != null)
+                .toList())
             .orElse(List.of());
     }
 
@@ -98,7 +109,15 @@ public class ChatWorkspaceQueryService {
      */
     public List<ChatExpert> listCurrentExperts(Long conversationId) {
         return latestRun(conversationId)
-            .map(run -> chatExpertRepository.findByTaskId(run.getTaskId() == null ? run.getId() : run.getTaskId()))
+            .map(run -> {
+                ChatRunContextStepSupport.RunContext context =
+                    ChatRunContextStepSupport.parseContext(chatExecutionStepRepository.findByRunId(run.getId()));
+                if (context.expertCode() != null) {
+                    ChatExpert expert = chatExpertRepository.findByExpertCode(context.expertCode());
+                    return expert == null ? List.<ChatExpert>of() : List.of(expert);
+                }
+                return chatExpertRepository.findByTaskId(run.getTaskId() == null ? run.getId() : run.getTaskId());
+            })
             .orElse(List.of());
     }
 

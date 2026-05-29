@@ -917,7 +917,7 @@ export default function ChatView({
     setDeleteSelectionState({ isActive: false, selectedAssistantMessageIds: [] });
     setEditingUserMessage({
       messageId: message.id,
-      content: message.content,
+      content: stripLeadingSkillMentions(message.content, message.skillCodes),
       isSubmitting: false,
       errorMessage: '',
     });
@@ -2167,7 +2167,14 @@ export function SharedChatView({
                           : 'bg-transparent text-[#191817] dark:text-foreground'
                       }`}
                     >
-                      <MarkdownMessage content={message.content} messageId={`shared-${message.id}`} />
+                      <MarkdownMessage
+                        content={
+                          message.role === 'USER'
+                            ? stripLeadingSkillMentions(message.content, message.skillCodes)
+                            : message.content
+                        }
+                        messageId={`shared-${message.id}`}
+                      />
                     </div>
                   </article>
                 ))}
@@ -3098,6 +3105,32 @@ type ShareSelectionRound = {
 };
 
 /**
+ * 从用户可见正文里剥离后端持久化的开头技能标记，保留 chip 承担技能展示职责。
+ * 关键约束：只剥离已绑定在消息上的 skillCodes，避免误删用户正常输入的 @内容。
+ */
+function stripLeadingSkillMentions(content: string, skillCodes?: string[]) {
+  if (!skillCodes || skillCodes.length === 0) {
+    return content;
+  }
+  const removableSkillCodes = new Set(skillCodes.map((skillCode) => skillCode.trim()).filter(Boolean));
+  if (removableSkillCodes.size === 0) {
+    return content;
+  }
+
+  let remainingContent = content.replace(/^\s+/, '');
+  let hasRemovedMention = false;
+  while (remainingContent.length > 0) {
+    const mentionMatch = remainingContent.match(/^@([a-zA-Z0-9_.:-]+)(?=\s|$)/);
+    if (!mentionMatch || !removableSkillCodes.has(mentionMatch[1])) {
+      break;
+    }
+    hasRemovedMention = true;
+    remainingContent = remainingContent.slice(mentionMatch[0].length).replace(/^\s+/, '');
+  }
+  return hasRemovedMention ? remainingContent : content;
+}
+
+/**
  * 只有已落库的消息才能进入分享范围，临时乐观消息只适合本地渲染。
  * @param message 消息对象。
  * @returns 是否可进入分享选择。
@@ -3303,7 +3336,9 @@ function ShareSelectionRoundCard({
                 onPreviewImage={onPreviewImage}
               />
             ) : null}
-            <div className="whitespace-pre-wrap">{userMessage.content}</div>
+            <div className="whitespace-pre-wrap">
+              {stripLeadingSkillMentions(userMessage.content, userMessage.skillCodes)}
+            </div>
           </div>
         ) : null}
       </div>
@@ -3465,7 +3500,11 @@ function ShareConversationDialog({
               <div className="mb-1 text-[11px] font-medium text-muted">
                 {message.role === 'USER' ? '用户' : 'CodingX'}
               </div>
-              <div className="whitespace-pre-wrap text-sm leading-6">{message.content}</div>
+              <div className="whitespace-pre-wrap text-sm leading-6">
+                {message.role === 'USER'
+                  ? stripLeadingSkillMentions(message.content, message.skillCodes)
+                  : message.content}
+              </div>
             </div>
           ))}
         </div>
@@ -3522,7 +3561,8 @@ function UserMessageBubble({
   onPreviewImage: (src: string, alt: string) => void;
 }) {
   const hasAttachments = Boolean(message.attachments?.length);
-  const hasTextContent = content.trim().length > 0;
+  const visibleContent = stripLeadingSkillMentions(content, message.skillCodes);
+  const hasTextContent = visibleContent.trim().length > 0;
 
   return (
     <div className="chat-user-message-shell">
@@ -3580,7 +3620,7 @@ function UserMessageBubble({
               ) : null}
               {hasTextContent ? (
                 <div className="whitespace-pre-wrap text-sm leading-6">
-                  {content}
+                  {visibleContent}
                 </div>
               ) : null}
             </div>
@@ -3590,7 +3630,7 @@ function UserMessageBubble({
       {!editState ? (
         <UserMessageActions
           messageId={message.id}
-          content={content}
+          content={visibleContent}
           onStartEdit={onStartEdit}
           onStartDelete={onStartDelete}
         />
@@ -4072,7 +4112,7 @@ function tokenizeInputForPreview(
   }
   const segments: InputPreviewSegment[] = [];
   let cursor = 0;
-  const tokenPattern = /@([a-zA-Z0-9_-]+)/g;
+  const tokenPattern = /@([a-zA-Z0-9_.:-]+)/g;
   for (const match of rawInput.matchAll(tokenPattern)) {
     const fullToken = match[0];
     const skillCode = match[1];
@@ -4121,7 +4161,7 @@ function extractSkillTokens(rawInput: string): SkillTokenRange[] {
     return [];
   }
   const tokens: SkillTokenRange[] = [];
-  const tokenPattern = /@([a-zA-Z0-9_-]+)/g;
+  const tokenPattern = /@([a-zA-Z0-9_.:-]+)/g;
   for (const match of rawInput.matchAll(tokenPattern)) {
     const fullToken = match[0];
     const tokenStart = match.index ?? -1;

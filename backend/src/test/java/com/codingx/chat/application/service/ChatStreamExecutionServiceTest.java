@@ -142,8 +142,8 @@ class ChatStreamExecutionServiceTest {
         assertTrue(elapsedMs < 100, "dispatch should return immediately");
         assertTrue(started.await(1, TimeUnit.SECONDS), "background task should start");
         verify(conversationTraceRecordService).startTrace("chat-entry", 1001L, 2001L);
-        verify(chatMcpRepository).bindTaskMcps(any(Long.class), eq(java.util.List.of()));
-        verify(chatSkillRepository).bindTaskSkills(any(Long.class), eq(java.util.List.of()));
+        verify(chatMcpRepository, never()).bindTaskMcps(any(Long.class), any());
+        verify(chatSkillRepository, never()).bindTaskSkills(any(Long.class), any());
         verify(chatExpertRepository).bindTaskExpert(any(Long.class), eq(null));
         verify(chatRuntimeGuardService).registerCancellation(eq(1001L), any(Long.class), any(Runnable.class));
 
@@ -187,8 +187,8 @@ class ChatStreamExecutionServiceTest {
         }
 
         assertTrue(captured.await(1, TimeUnit.SECONDS), "background task should receive forwarded login id");
-        verify(chatMcpRepository).bindTaskMcps(any(Long.class), eq(java.util.List.of()));
-        verify(chatSkillRepository).bindTaskSkills(any(Long.class), eq(java.util.List.of()));
+        verify(chatMcpRepository, never()).bindTaskMcps(any(Long.class), any());
+        verify(chatSkillRepository, never()).bindTaskSkills(any(Long.class), any());
         verify(chatExpertRepository).bindTaskExpert(any(Long.class), eq(null));
     }
 
@@ -229,8 +229,8 @@ class ChatStreamExecutionServiceTest {
 
         assertTrue(captured.await(1, TimeUnit.SECONDS), "background task should capture run id");
         assertEquals(savedRunId.get(), observedRunId.get(), "background task should reuse dispatch run id");
-        verify(chatMcpRepository).bindTaskMcps(savedRunId.get(), java.util.List.of());
-        verify(chatSkillRepository).bindTaskSkills(savedRunId.get(), java.util.List.of());
+        verify(chatMcpRepository, never()).bindTaskMcps(any(Long.class), any());
+        verify(chatSkillRepository, never()).bindTaskSkills(any(Long.class), any());
         verify(chatExpertRepository).bindTaskExpert(savedRunId.get(), null);
     }
 
@@ -267,8 +267,8 @@ class ChatStreamExecutionServiceTest {
 
         assertTrue(captured.await(1, TimeUnit.SECONDS), "background task should capture trace context");
         assertEquals("trace-1", observedTraceId.get());
-        verify(chatMcpRepository).bindTaskMcps(any(Long.class), eq(java.util.List.of()));
-        verify(chatSkillRepository).bindTaskSkills(any(Long.class), eq(java.util.List.of()));
+        verify(chatMcpRepository, never()).bindTaskMcps(any(Long.class), any());
+        verify(chatSkillRepository, never()).bindTaskSkills(any(Long.class), any());
         verify(chatExpertRepository).bindTaskExpert(any(Long.class), eq(null));
     }
 
@@ -313,8 +313,8 @@ class ChatStreamExecutionServiceTest {
         assertTrue(captured.await(1, TimeUnit.SECONDS), "failed run should be updated to ERROR");
         verify(chatExecutionRunRepository, org.mockito.Mockito.atLeast(2)).save(any(ChatExecutionRun.class));
         verify(conversationTraceRecordService).finishTrace("trace-error", runIdRef.get(), "ERROR", "boom");
-        verify(chatMcpRepository).bindTaskMcps(any(Long.class), eq(java.util.List.of()));
-        verify(chatSkillRepository).bindTaskSkills(any(Long.class), eq(java.util.List.of()));
+        verify(chatMcpRepository, never()).bindTaskMcps(any(Long.class), any());
+        verify(chatSkillRepository, never()).bindTaskSkills(any(Long.class), any());
         verify(chatExpertRepository).bindTaskExpert(any(Long.class), eq(null));
     }
 
@@ -362,11 +362,11 @@ class ChatStreamExecutionServiceTest {
     }
 
     /**
-     * 派发入口应把消息级 MCP 与技能绑定同时写入，确保工作台可回放“当前能力上下文”。
+     * 派发入口不再写旧 MCP/技能绑定表，当前能力上下文改由应用服务写入 chat_execution_step。
      * @throws Exception 等待后台线程执行时抛出。
      */
     @Test
-    void dispatchBindsBothMcpAndSkillSelections() throws Exception {
+    void dispatchDoesNotWriteLegacyMcpAndSkillBindings() throws Exception {
         CountDownLatch captured = new CountDownLatch(1);
         ChatStreamExecutionService service = new ChatStreamExecutionService(
             chatApplicationService,
@@ -401,8 +401,8 @@ class ChatStreamExecutionServiceTest {
         ), 2001L);
 
         assertTrue(captured.await(1, TimeUnit.SECONDS), "background task should start with explicit selections");
-        verify(chatMcpRepository).bindTaskMcps(any(Long.class), eq(java.util.List.of("weather_query")));
-        verify(chatSkillRepository).bindTaskSkills(any(Long.class), eq(java.util.List.of("agent-browser")));
+        verify(chatMcpRepository, never()).bindTaskMcps(any(Long.class), any());
+        verify(chatSkillRepository, never()).bindTaskSkills(any(Long.class), any());
         verify(chatExpertRepository).bindTaskExpert(any(Long.class), eq(null));
     }
 

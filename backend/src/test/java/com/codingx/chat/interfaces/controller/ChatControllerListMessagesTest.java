@@ -16,8 +16,6 @@ import com.codingx.chat.domain.repository.ChatMessageFeedbackRepository;
 import com.codingx.chat.domain.model.ChatAttachment;
 import com.codingx.chat.domain.model.ChatMessage;
 import com.codingx.chat.domain.model.ChatMessageStatus;
-import com.codingx.skill.domain.model.ChatSkill;
-import com.codingx.skill.domain.repository.ChatSkillRepository;
 import com.codingx.config.GlobalExceptionHandler;
 import com.codingx.mcp.domain.repository.ChatMcpRepository;
 import java.util.List;
@@ -56,9 +54,6 @@ class ChatControllerListMessagesTest {
     private ChatMessageFeedbackRepository chatMessageFeedbackRepository;
 
     @Mock
-    private ChatSkillRepository chatSkillRepository;
-
-    @Mock
     private ChatMcpRepository chatMcpRepository;
     @Mock
     private ChatMcpQueryService chatMcpQueryService;
@@ -71,24 +66,17 @@ class ChatControllerListMessagesTest {
      */
     @Test
     void listMessagesSerializesLongIdentifiersAsStrings() throws Exception {
-        ChatMessage assistantMessage = ChatMessage.create(
+        ChatMessage userMessage = ChatMessage.create(
             2055117513431715840L,
             2055114974648864768L,
-            com.codingx.chat.domain.model.ChatMessageRole.ASSISTANT,
-            "历史回答",
+            com.codingx.chat.domain.model.ChatMessageRole.USER,
+            "@weather_query 历史问题",
             ChatMessageStatus.COMPLETED,
             null,
             null,
             null
         ).attachRun(2055117498822955008L);
-        when(chatConversationApplicationService.listMessages(2055114974648864768L, 1002L)).thenReturn(List.of(assistantMessage));
-        when(chatSkillRepository.findByTaskId(2055117498822955008L)).thenReturn(List.of(
-            ChatSkill.builder()
-                .id(7101L)
-                .skillCode("weather_query")
-                .displayName("天气查询")
-                .build()
-        ));
+        when(chatConversationApplicationService.listMessages(2055114974648864768L, 1002L)).thenReturn(List.of(userMessage));
         when(chatAttachmentService.listByMessageId(2055117513431715840L)).thenReturn(List.of(
             ChatAttachment.builder()
                 .id(2055117513431715999L)

@@ -173,11 +173,14 @@ public class ChatApplicationService {
             .orElseThrow(() -> new ForbiddenException(ErrorMessageCatalog.CHAT_CONVERSATION_FORBIDDEN));
         Long sourceRunId = lastAssistantMessage.getRunId() != null ? lastAssistantMessage.getRunId() : resolveRegenerateSourceRunId(conversation);
         List<String> selectedSkillCodes = loadSelectedSkillCodes(sourceRunId);
+        if (selectedSkillCodes.isEmpty()) {
+            selectedSkillCodes = ChatCapabilityMentionSupport.parseSkillCodes(lastUserMessage.getContent());
+        }
         List<String> selectedMcpCodes = loadSelectedMcpCodes(sourceRunId);
         String selectedExpertCode = loadSelectedExpertCode(sourceRunId);
         SendChatMessageCommand command = new SendChatMessageCommand(
             conversationId,
-            lastUserMessage.getContent(),
+            ChatCapabilityMentionSupport.stripLeadingMentions(lastUserMessage.getContent()),
             false,
             selectedMcpCodes,
             selectedSkillCodes,
@@ -232,9 +235,7 @@ public class ChatApplicationService {
             history.add(requestMessage);
         }
         ConversationRewriteResult rewriteResult = conversationRewriteService.rewriteResult(
-            history.stream().filter(message -> message.getRole() == ChatMessageRole.USER)
-                .map(ChatMessage::getContent)
-                .toList(),
+            plainUserContents(history),
             command.content()
         );
         List<SearchReferenceCandidate> searchReferences = List.of();
@@ -247,7 +248,7 @@ public class ChatApplicationService {
             subQuestionDecisions,
             ConversationIntentAction.CLARIFY
         );
-        if (clarifyDecision.isPresent()) {
+        if (clarifyDecision.isPresent() && CollUtil.isEmpty(command.skillCodes())) {
             intentDecision = clarifyDecision.get().intentDecision();
             ChatMessage assistantMessage = ChatMessage.assistantMessage(
                 command.conversationId(),
@@ -259,7 +260,7 @@ public class ChatApplicationService {
             ).attachRun(runId);
             chatMessageRepository.save(assistantMessage);
             history.add(assistantMessage);
-            conversation.rename(conversationTitleService.generateTitle(conversation, history));
+            conversation.rename(conversationTitleService.generateTitle(conversation, plainAiMessages(history)));
             conversation.touch();
             conversation.recordLastRunId(runId);
             chatConversationRepository.save(conversation);
@@ -268,7 +269,7 @@ public class ChatApplicationService {
             chatStreamPublisher.publishAssistantCompleted(command.conversationId(), assistantMessage.getId(), assistantMessage.getContent(), conversation.getTitle());
             return;
         }
-        if (isSingleDirectReply(subQuestionDecisions)) {
+        if (isSingleDirectReply(subQuestionDecisions) && CollUtil.isEmpty(command.skillCodes())) {
             ChatMessage assistantMessage = ChatMessage.assistantMessage(
                 command.conversationId(),
                 intentDecision.reply(),
@@ -279,7 +280,7 @@ public class ChatApplicationService {
             ).attachRun(runId);
             chatMessageRepository.save(assistantMessage);
             history.add(assistantMessage);
-            conversation.rename(conversationTitleService.generateTitle(conversation, history));
+            conversation.rename(conversationTitleService.generateTitle(conversation, plainAiMessages(history)));
             conversation.touch();
             conversation.recordLastRunId(runId);
             chatConversationRepository.save(conversation);
@@ -304,7 +305,7 @@ public class ChatApplicationService {
             ).attachRun(runId);
             chatMessageRepository.save(assistantMessage);
             history.add(assistantMessage);
-            conversation.rename(conversationTitleService.generateTitle(conversation, history));
+            conversation.rename(conversationTitleService.generateTitle(conversation, plainAiMessages(history)));
             conversation.touch();
             conversation.recordLastRunId(runId);
             chatConversationRepository.save(conversation);
@@ -329,7 +330,7 @@ public class ChatApplicationService {
             ).attachRun(runId);
             chatMessageRepository.save(assistantMessage);
             history.add(assistantMessage);
-            conversation.rename(conversationTitleService.generateTitle(conversation, history));
+            conversation.rename(conversationTitleService.generateTitle(conversation, plainAiMessages(history)));
             conversation.touch();
             conversation.recordLastRunId(runId);
             chatConversationRepository.save(conversation);
@@ -361,7 +362,7 @@ public class ChatApplicationService {
         final String[] selectedProvider = new String[1];
         final String[] selectedModel = new String[1];
         List<ChatMessage> aiHistory = buildAiHistory(
-            conversationSummaryService.buildModelHistory(command.conversationId(), history),
+            conversationSummaryService.buildModelHistory(command.conversationId(), plainAiMessages(history)),
             intentDecision,
             command.conversationId(),
             command.skillCodes(),
@@ -465,8 +466,8 @@ public class ChatApplicationService {
         applyThinkingRuntimeState(assistantMessage, thinkingStartedAt.get(), thinkingBuilder.toString());
         chatMessageRepository.save(assistantMessage);
         history.add(assistantMessage);
-        conversation.rename(conversationTitleService.generateTitle(conversation, history));
-        conversationSummaryService.refreshSummaryIfNeeded(conversation, history);
+        conversation.rename(conversationTitleService.generateTitle(conversation, plainAiMessages(history)));
+        conversationSummaryService.refreshSummaryIfNeeded(conversation, plainAiMessages(history));
         conversation.touch();
         conversation.recordLastRunId(runId);
         chatConversationRepository.save(conversation);
@@ -520,11 +521,7 @@ public class ChatApplicationService {
         if (sourceRunId == null) {
             return List.of();
         }
-        return chatSkillRepository.findByTaskId(sourceRunId).stream()
-            .map(ChatSkill::getSkillCode)
-            .filter(StrUtil::isNotBlank)
-            .distinct()
-            .toList();
+        return ChatRunContextStepSupport.parseContext(chatExecutionStepRepository.findByRunId(sourceRunId)).skillCodes();
     }
 
     /**
@@ -536,11 +533,7 @@ public class ChatApplicationService {
         if (sourceRunId == null) {
             return List.of();
         }
-        return chatMcpRepository.findByTaskId(sourceRunId).stream()
-            .map(ChatMcp::getMcpCode)
-            .filter(StrUtil::isNotBlank)
-            .distinct()
-            .toList();
+        return ChatRunContextStepSupport.parseContext(chatExecutionStepRepository.findByRunId(sourceRunId)).mcpCodes();
     }
 
     /**
@@ -551,6 +544,10 @@ public class ChatApplicationService {
     private String loadSelectedExpertCode(Long sourceRunId) {
         if (sourceRunId == null) {
             return null;
+        }
+        String contextExpertCode = ChatRunContextStepSupport.parseContext(chatExecutionStepRepository.findByRunId(sourceRunId)).expertCode();
+        if (StrUtil.isNotBlank(contextExpertCode)) {
+            return contextExpertCode;
         }
         return chatExpertRepository.findByTaskId(sourceRunId).stream()
             .map(ChatExpert::getExpertCode)
@@ -567,9 +564,35 @@ public class ChatApplicationService {
      * @param selectedExpertCode 绑定的专家编码。
      */
     private void bindSelectedContextToRun(Long runId, List<String> selectedMcpCodes, List<String> selectedSkillCodes, String selectedExpertCode) {
-        chatMcpRepository.bindTaskMcps(runId, selectedMcpCodes);
-        chatSkillRepository.bindTaskSkills(runId, selectedSkillCodes);
+        saveRunCapabilityContext(runId, selectedMcpCodes, selectedSkillCodes, selectedExpertCode);
         chatExpertRepository.bindTaskExpert(runId, selectedExpertCode);
+    }
+
+    /**
+     * 将本轮能力选择写入 chat_execution_step 隐藏上下文步骤，替代旧 task_skill/task_mcp 表。
+     * @param runId 运行标识。
+     * @param selectedMcpCodes MCP 编码。
+     * @param selectedSkillCodes 技能编码。
+     * @param selectedExpertCode 专家编码。
+     */
+    private void saveRunCapabilityContext(
+        Long runId,
+        List<String> selectedMcpCodes,
+        List<String> selectedSkillCodes,
+        String selectedExpertCode
+    ) {
+        if (runId == null) {
+            return;
+        }
+        List<ChatExecutionStep> existingSteps = chatExecutionStepRepository.findByRunId(runId);
+        ChatExecutionStep existingContextStep = ChatRunContextStepSupport.findContextStep(existingSteps).orElse(null);
+        chatExecutionStepRepository.save(ChatRunContextStepSupport.buildStep(
+            runId,
+            selectedMcpCodes,
+            selectedSkillCodes,
+            selectedExpertCode,
+            existingContextStep
+        ));
     }
 
     /**
@@ -608,24 +631,28 @@ public class ChatApplicationService {
             throw new ForbiddenException(ErrorMessageCatalog.CHAT_CONVERSATION_FORBIDDEN);
         }
         chatRuntimeGuardService.ensureAccepted(command.conversationId());
+        List<String> selectedSkillCodes = ChatCapabilityMentionSupport.mergeSkillCodes(command.skillCodes(), command.content());
+        String plainQuestion = ChatCapabilityMentionSupport.stripLeadingMentions(command.content());
+        saveRunCapabilityContext(runId, command.mcpCodes(), selectedSkillCodes, command.expertCode());
         List<ChatMessage> history = new ArrayList<>(chatMessageRepository.findByConversationId(command.conversationId()));
         List<ChatAttachment> validatedAttachments = chatAttachmentService.requireOwnedAttachments(
             command.attachmentIds(),
             command.conversationId(),
             userId
         );
-        ChatMessage userMessage = ChatMessage.userMessage(command.conversationId(), command.content()).attachRun(runId);
+        ChatMessage userMessage = ChatMessage.userMessage(
+            command.conversationId(),
+            ChatCapabilityMentionSupport.formatContentWithSkillMentions(selectedSkillCodes, plainQuestion)
+        ).attachRun(runId);
         chatMessageRepository.save(userMessage);
         for (ChatAttachment attachment : validatedAttachments) {
             chatAttachmentService.bindToMessage(attachment, command.conversationId(), userMessage.getId(), runId);
         }
-        chatStreamPublisher.publishUserMessage(command.conversationId(), userMessage.getContent());
+        chatStreamPublisher.publishUserMessage(command.conversationId(), plainQuestion);
         history.add(userMessage);
         ConversationRewriteResult rewriteResult = conversationRewriteService.rewriteResult(
-            history.stream().filter(message -> message.getRole() == com.codingx.chat.domain.model.ChatMessageRole.USER)
-                .map(ChatMessage::getContent)
-                .toList(),
-            command.content()
+            plainUserContents(history),
+            plainQuestion
         );
         List<SearchReferenceCandidate> searchReferences = List.of();
         String rewrittenQuestion = rewriteResult.rewrite();
@@ -637,7 +664,7 @@ public class ChatApplicationService {
             subQuestionDecisions,
             ConversationIntentAction.CLARIFY
         );
-        if (clarifyDecision.isPresent()) {
+        if (clarifyDecision.isPresent() && selectedSkillCodes.isEmpty()) {
             intentDecision = clarifyDecision.get().intentDecision();
             ChatMessage assistantMessage = ChatMessage.assistantMessage(
                 command.conversationId(),
@@ -649,7 +676,7 @@ public class ChatApplicationService {
             ).attachRun(runId);
             chatMessageRepository.save(assistantMessage);
             history.add(assistantMessage);
-            conversation.rename(conversationTitleService.generateTitle(conversation, history));
+            conversation.rename(conversationTitleService.generateTitle(conversation, plainAiMessages(history)));
             conversation.touch();
             conversation.recordLastRunId(runId);
             chatConversationRepository.save(conversation);
@@ -658,7 +685,7 @@ public class ChatApplicationService {
             chatStreamPublisher.publishAssistantCompleted(command.conversationId(), assistantMessage.getId(), assistantMessage.getContent(), conversation.getTitle());
             return;
         }
-        if (isSingleDirectReply(subQuestionDecisions)) {
+        if (isSingleDirectReply(subQuestionDecisions) && selectedSkillCodes.isEmpty()) {
             ChatMessage assistantMessage = ChatMessage.assistantMessage(
                 command.conversationId(),
                 intentDecision.reply(),
@@ -669,7 +696,7 @@ public class ChatApplicationService {
             ).attachRun(runId);
             chatMessageRepository.save(assistantMessage);
             history.add(assistantMessage);
-            conversation.rename(conversationTitleService.generateTitle(conversation, history));
+            conversation.rename(conversationTitleService.generateTitle(conversation, plainAiMessages(history)));
             conversation.touch();
             conversation.recordLastRunId(runId);
             chatConversationRepository.save(conversation);
@@ -694,7 +721,7 @@ public class ChatApplicationService {
             ).attachRun(runId);
             chatMessageRepository.save(assistantMessage);
             history.add(assistantMessage);
-            conversation.rename(conversationTitleService.generateTitle(conversation, history));
+            conversation.rename(conversationTitleService.generateTitle(conversation, plainAiMessages(history)));
             conversation.touch();
             conversation.recordLastRunId(runId);
             chatConversationRepository.save(conversation);
@@ -719,7 +746,7 @@ public class ChatApplicationService {
             ).attachRun(runId);
             chatMessageRepository.save(assistantMessage);
             history.add(assistantMessage);
-            conversation.rename(conversationTitleService.generateTitle(conversation, history));
+            conversation.rename(conversationTitleService.generateTitle(conversation, plainAiMessages(history)));
             conversation.touch();
             conversation.recordLastRunId(runId);
             chatConversationRepository.save(conversation);
@@ -751,17 +778,17 @@ public class ChatApplicationService {
         final String[] selectedProvider = new String[1];
         final String[] selectedModel = new String[1];
         List<ChatMessage> aiHistory = buildAiHistory(
-            conversationSummaryService.buildModelHistory(command.conversationId(), history),
+            conversationSummaryService.buildModelHistory(command.conversationId(), plainAiMessages(history)),
             intentDecision,
             command.conversationId(),
-            command.skillCodes(),
+            selectedSkillCodes,
             command.expertCode(),
             searchReferences
         );
         log.info(
             "模型调用: 深度思考={}, 技能数={}, 专家={}, 历史条数={}, 搜索引用数={}",
             command.deepThinking(),
-            sizeOf(command.skillCodes()),
+            sizeOf(selectedSkillCodes),
             command.expertCode(),
             aiHistory.size(),
             searchReferences.size()
@@ -855,8 +882,8 @@ public class ChatApplicationService {
         applyThinkingRuntimeState(assistantMessage, thinkingStartedAt.get(), thinkingBuilder.toString());
         chatMessageRepository.save(assistantMessage);
         history.add(assistantMessage);
-        conversation.rename(conversationTitleService.generateTitle(conversation, history));
-        conversationSummaryService.refreshSummaryIfNeeded(conversation, history);
+        conversation.rename(conversationTitleService.generateTitle(conversation, plainAiMessages(history)));
+        conversationSummaryService.refreshSummaryIfNeeded(conversation, plainAiMessages(history));
         conversation.touch();
         conversation.recordLastRunId(runId);
         chatConversationRepository.save(conversation);
@@ -875,19 +902,21 @@ public class ChatApplicationService {
     private void sendLocalOnlyMessage(SendChatMessageCommand command, Long userId) {
         Long runId = currentRunId(command.conversationId());
         chatRuntimeGuardService.ensureAccepted(command.conversationId());
+        List<String> selectedSkillCodes = ChatCapabilityMentionSupport.mergeSkillCodes(command.skillCodes(), command.content());
+        String plainQuestion = ChatCapabilityMentionSupport.stripLeadingMentions(command.content());
         List<ChatMessage> history = new ArrayList<>();
-        ChatMessage userMessage = ChatMessage.userMessage(command.conversationId(), command.content()).attachRun(runId);
+        ChatMessage userMessage = ChatMessage.userMessage(command.conversationId(), plainQuestion).attachRun(runId);
         history.add(userMessage);
         chatStreamPublisher.publishUserMessage(command.conversationId(), userMessage.getContent());
         ConversationRewriteResult rewriteResult = conversationRewriteService.rewriteResult(
-            List.of(command.content()),
-            command.content()
+            List.of(plainQuestion),
+            plainQuestion
         );
         String rewrittenQuestion = rewriteResult.rewrite();
         boolean mcpEnabled = command.mcpCodes() != null && !command.mcpCodes().isEmpty();
         ConversationIntentDecision intentDecision = conversationIntentService.route(rewrittenQuestion, mcpEnabled);
         logChatDecision("本地消息", command, runId, intentDecision, rewriteResult);
-        if (intentDecision.action() == ConversationIntentAction.CLARIFY) {
+        if (intentDecision.action() == ConversationIntentAction.CLARIFY && selectedSkillCodes.isEmpty()) {
             chatStreamPublisher.publishAssistantCompleted(
                 command.conversationId(),
                 intentDecision.reply(),
@@ -895,7 +924,7 @@ public class ChatApplicationService {
             );
             return;
         }
-        if (intentDecision.action() == ConversationIntentAction.DIRECT && StrUtil.isNotBlank(intentDecision.reply())) {
+        if (intentDecision.action() == ConversationIntentAction.DIRECT && StrUtil.isNotBlank(intentDecision.reply()) && selectedSkillCodes.isEmpty()) {
             chatStreamPublisher.publishAssistantCompleted(
                 command.conversationId(),
                 intentDecision.reply(),
@@ -921,14 +950,14 @@ public class ChatApplicationService {
             history,
             intentDecision,
             command.conversationId(),
-            command.skillCodes(),
+            selectedSkillCodes,
             command.expertCode(),
             List.of()
         );
         log.info(
             "模型调用: 深度思考={}, 技能数={}, 专家={}, 历史条数={}, 搜索引用数={}",
             command.deepThinking(),
-            sizeOf(command.skillCodes()),
+            sizeOf(selectedSkillCodes),
             command.expertCode(),
             aiHistory.size(),
             0
@@ -1132,6 +1161,7 @@ public class ChatApplicationService {
         // 轮次上限由系统配置控制，避免模型在工具-回灌链路里无限循环。
         int maxToolRounds = Math.max(1, runtimeSettingService.chatToolMaxRounds());
         int publishedAssistantContextLength = 0;
+        Map<String, ChatToolExecutionResult> executedToolResults = new LinkedHashMap<>();
         for (int round = 0; round < maxToolRounds; round++) {
             List<AiToolCall> toolCalls = new ArrayList<>();
             log.info("模型工具轮次: 轮次={}", round + 1);
@@ -1176,11 +1206,24 @@ public class ChatApplicationService {
             }
             for (AiToolCall toolCall : toolCalls) {
                 ChatToolExecutionResult toolResult;
-                try {
-                    toolResult = executeModelToolCall(command, runId, toolCall);
-                } catch (RuntimeException exception) {
-                    streamError[0] = exception;
-                    return;
+                String toolCallKey = deduplicateToolCallKey(toolCall);
+                ChatToolExecutionResult previousToolResult = executedToolResults.get(toolCallKey);
+                if (previousToolResult != null) {
+                    toolResult = buildDuplicateToolCallResult(toolCall, previousToolResult);
+                    log.warn(
+                        "重复本地工具调用已跳过: 轮次={}, 工具={}, 参数长度={}",
+                        round + 1,
+                        toolCall.toolCode(),
+                        StrUtil.length(toolCall.arguments())
+                    );
+                } else {
+                    try {
+                        toolResult = executeModelToolCall(command, runId, toolCall);
+                    } catch (RuntimeException exception) {
+                        streamError[0] = exception;
+                        return;
+                    }
+                    executedToolResults.put(toolCallKey, toolResult);
                 }
                 String toolEvidenceContext = buildLocalToolEvidenceContext(toolResult);
                 currentHistory.add(ChatMessage.create(
@@ -1624,6 +1667,46 @@ public class ChatApplicationService {
         return contextBuilder.toString().trim();
     }
 
+    /**
+     * 构造本轮工具调用去重键，避免模型在同一参数下反复执行同一个本地工具。
+     * @param toolCall 模型工具调用。
+     * @return 去重键。
+     */
+    private String deduplicateToolCallKey(AiToolCall toolCall) {
+        if (toolCall == null) {
+            return "";
+        }
+        return StrUtil.blankToDefault(toolCall.toolCode(), "unknown") + "\n" + StrUtil.blankToDefault(toolCall.arguments(), "");
+    }
+
+    /**
+     * 对重复工具调用只回灌上一轮结果，不再次触发外部进程或浏览器操作。
+     * @param toolCall 当前重复工具调用。
+     * @param previousToolResult 上一次同参工具结果。
+     * @return 用于提示模型收口的工具结果。
+     */
+    private ChatToolExecutionResult buildDuplicateToolCallResult(AiToolCall toolCall, ChatToolExecutionResult previousToolResult) {
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        if (previousToolResult.metadata() != null) {
+            metadata.putAll(previousToolResult.metadata());
+        }
+        metadata.put("duplicateSkipped", true);
+        metadata.put("duplicateToolCode", StrUtil.blankToDefault(toolCall.toolCode(), "unknown"));
+        String content = """
+            重复工具调用已跳过：同一工具和参数在本轮已经执行过。
+
+            上一次工具输出：
+            %s
+
+            必须直接依据上一次工具输出回答用户，不要再次调用相同工具。
+            """.formatted(StrUtil.blankToDefault(previousToolResult.content(), ""));
+        return new ChatToolExecutionResult(
+            StrUtil.blankToDefault(toolCall.toolCode(), previousToolResult.toolCode()),
+            content,
+            metadata
+        );
+    }
+
     private void recordExecutionOutcome(
         ChatConversation conversation,
         Long requestMessageId,
@@ -1678,6 +1761,32 @@ public class ChatApplicationService {
     }
 
     /**
+     * 构造模型可消费的历史消息副本，剥离用户消息开头的 @skill 标记。
+     * @param history 原始历史。
+     * @return 模型输入历史。
+     */
+    private List<ChatMessage> plainAiMessages(List<ChatMessage> history) {
+        if (history == null || history.isEmpty()) {
+            return List.of();
+        }
+        return history.stream()
+            .map(ChatCapabilityMentionSupport::toPlainAiMessage)
+            .toList();
+    }
+
+    /**
+     * 提取纯用户问题列表，避免 rewrite/intent 把 @skill 当成自然语言。
+     * @param history 原始历史。
+     * @return 纯文本用户问题。
+     */
+    private List<String> plainUserContents(List<ChatMessage> history) {
+        return plainAiMessages(history).stream()
+            .filter(message -> message.getRole() == ChatMessageRole.USER)
+            .map(ChatMessage::getContent)
+            .toList();
+    }
+
+    /**
      * 为系统意图补充专用 system prompt，其余链路沿用原始会话历史。
      * @param history 原始会话历史。
      * @param intentDecision 意图决策。
@@ -1729,7 +1838,7 @@ public class ChatApplicationService {
             null,
             null
         ));
-        aiHistory.addAll(history);
+        aiHistory.addAll(plainAiMessages(history));
         return aiHistory;
     }
 
@@ -2207,4 +2316,3 @@ public class ChatApplicationService {
     }
 
 }
-

@@ -1,20 +1,16 @@
 package com.codingx.skill.infrastructure.persistence.repository;
 
 import cn.hutool.core.util.StrUtil;
-import cn.hutool.core.util.IdUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.codingx.skill.domain.model.ChatSkill;
 import com.codingx.skill.domain.repository.ChatSkillRepository;
 import com.codingx.skill.infrastructure.persistence.dataobject.ChatSkillDO;
-import com.codingx.skill.infrastructure.persistence.dataobject.TaskSkillDO;
 import com.codingx.skill.infrastructure.persistence.mapper.ChatSkillMapper;
-import com.codingx.skill.infrastructure.persistence.mapper.TaskSkillMapper;
 import com.codingx.chat.interfaces.response.PageResult;
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.LinkedHashSet;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Repository;
 
@@ -26,7 +22,6 @@ import org.springframework.stereotype.Repository;
 public class ChatSkillRepositoryImpl implements ChatSkillRepository {
 
     private final ChatSkillMapper chatSkillMapper;
-    private final TaskSkillMapper taskSkillMapper;
 
     @Override
     public List<ChatSkill> findAll() {
@@ -124,54 +119,13 @@ public class ChatSkillRepositoryImpl implements ChatSkillRepository {
 
     @Override
     public List<ChatSkill> findByTaskId(Long taskId) {
-        if (taskId == null) {
-            return List.of();
-        }
-        List<String> skillCodes = taskSkillMapper.selectList(new LambdaQueryWrapper<TaskSkillDO>()
-                .eq(TaskSkillDO::getTaskId, taskId)
-                .orderByAsc(TaskSkillDO::getId))
-            .stream()
-            .map(TaskSkillDO::getSkillCode)
-            .filter(StrUtil::isNotBlank)
-            .toList();
-        if (skillCodes.isEmpty()) {
-            return List.of();
-        }
-        return chatSkillMapper.selectList(new LambdaQueryWrapper<ChatSkillDO>()
-                .in(ChatSkillDO::getSkillCode, skillCodes)
-                .eq(ChatSkillDO::getDeleted, 0)
-                .orderByAsc(ChatSkillDO::getSortNo)
-                .orderByAsc(ChatSkillDO::getSkillCode))
-            .stream()
-            .map(this::toDomain)
-            .toList();
+        // task_skill 已迁移到 chat_execution_step；保留旧接口为空实现，避免误访问已删除表。
+        return List.of();
     }
 
     @Override
     public void bindTaskSkills(Long taskId, List<String> skillCodes) {
-        if (taskId == null) {
-            return;
-        }
-        taskSkillMapper.delete(new LambdaQueryWrapper<TaskSkillDO>()
-            .eq(TaskSkillDO::getTaskId, taskId));
-        if (skillCodes == null || skillCodes.isEmpty()) {
-            return;
-        }
-        LocalDateTime now = LocalDateTime.now();
-        LinkedHashSet<String> uniqueCodes = new LinkedHashSet<>();
-        for (String skillCode : skillCodes) {
-            if (StrUtil.isNotBlank(skillCode)) {
-                uniqueCodes.add(skillCode.trim());
-            }
-        }
-        for (String skillCode : uniqueCodes) {
-            TaskSkillDO dataObject = new TaskSkillDO();
-            dataObject.setId(IdUtil.getSnowflakeNextId());
-            dataObject.setTaskId(taskId);
-            dataObject.setSkillCode(skillCode);
-            dataObject.setCreatedAt(now);
-            taskSkillMapper.insert(dataObject);
-        }
+        // task_skill 已删除，新运行上下文统一由 ChatRunContextStepSupport 写入 chat_execution_step。
     }
 
     private LambdaQueryWrapper<ChatSkillDO> baseListWrapper() {

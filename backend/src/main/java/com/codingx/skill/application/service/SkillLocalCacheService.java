@@ -8,6 +8,7 @@ import com.codingx.common.exception.BusinessException;
 import com.codingx.common.storage.RustFsSkillPackageClient;
 import com.codingx.skill.domain.model.ChatSkill;
 import com.codingx.skill.domain.repository.ChatSkillRepository;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -23,6 +24,10 @@ import org.springframework.stereotype.Service;
 @Service
 @RequiredArgsConstructor
 public class SkillLocalCacheService {
+
+    private static final String WEB_ACCESS_SKILL_CODE = "web-access";
+    private static final String WEB_ACCESS_DEFAULT_BROWSER = "chrome";
+    private static final String WEB_ACCESS_BROWSER_KEY = "WEB_ACCESS_BROWSER";
 
     private final ChatSkillRepository chatSkillRepository;
     private final RustFsSkillPackageClient rustFsSkillPackageClient;
@@ -67,6 +72,7 @@ public class SkillLocalCacheService {
                 Files.write(targetFile, content);
             }
 
+            configureWebAccessDefaultBrowser(skillCode, tempDir);
             log.info("Skill 文件已下载到临时目录: skillCode={}, tempDir={}", skillCode, tempDir);
             return tempDir;
 
@@ -81,6 +87,34 @@ public class SkillLocalCacheService {
                 "SKILL_DOWNLOAD_FAILED",
                 ErrorMessageCatalog.CHAT_SKILL_DOWNLOAD_FAILED_PREFIX + exception.getMessage()
             );
+        }
+    }
+
+    /**
+     * web-access 在云端运行时每轮都会下载到新的临时目录，无法复用上一次的 config.env。
+     * 为避免模型每次都停下来询问浏览器偏好，默认绑定当前桌面调试链路使用的 Chrome。
+     * @param skillCode skill 编码。
+     * @param tempDir skill 临时目录。
+     */
+    private void configureWebAccessDefaultBrowser(String skillCode, Path tempDir) {
+        if (!StrUtil.equalsIgnoreCase(WEB_ACCESS_SKILL_CODE, skillCode) || tempDir == null) {
+            return;
+        }
+        Path configFile = tempDir.resolve("config.env");
+        try {
+            String content = Files.exists(configFile) ? Files.readString(configFile, StandardCharsets.UTF_8) : "";
+            if (content.lines().anyMatch(line -> StrUtil.startWithIgnoreCase(line.trim(), WEB_ACCESS_BROWSER_KEY + "="))) {
+                return;
+            }
+            String separator = content.isBlank() || content.endsWith("\n") || content.endsWith("\r\n")
+                ? ""
+                : System.lineSeparator();
+            String nextContent = content + separator + WEB_ACCESS_BROWSER_KEY + "=" + WEB_ACCESS_DEFAULT_BROWSER + System.lineSeparator();
+            Files.writeString(configFile, nextContent, StandardCharsets.UTF_8);
+            log.info("web-access 默认浏览器配置已写入: skillCode={}, browser={}, config={}", skillCode, WEB_ACCESS_DEFAULT_BROWSER, configFile);
+        } catch (Exception exception) {
+            // 配置失败不阻断技能加载；后续 check-deps 会输出明确诊断，便于现场排查。
+            log.warn("web-access 默认浏览器配置写入失败: skillCode={}, config={}", skillCode, configFile, exception);
         }
     }
 }

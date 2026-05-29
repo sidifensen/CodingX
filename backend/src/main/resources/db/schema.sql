@@ -99,44 +99,6 @@ COMMENT ON COLUMN task.created_at IS '记录创建时间';
 COMMENT ON COLUMN task.updated_at IS '记录最后更新时间';
 COMMENT ON COLUMN task.deleted IS '逻辑删除标记，0 表示未删除，1 表示已删除';
 
-CREATE TABLE IF NOT EXISTS task_event (
-    id BIGINT PRIMARY KEY,
-    task_id BIGINT NOT NULL,
-    event_type VARCHAR(64) NOT NULL,
-    sequence_no BIGINT NOT NULL,
-    title VARCHAR(255) NOT NULL,
-    content TEXT,
-    metadata_json TEXT,
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-COMMENT ON TABLE task_event IS '任务事件表，按顺序记录任务执行过程中的阶段事件与附加元数据';
-COMMENT ON COLUMN task_event.id IS '任务事件主键 ID';
-COMMENT ON COLUMN task_event.task_id IS '所属任务 ID';
-COMMENT ON COLUMN task_event.event_type IS '事件类型';
-COMMENT ON COLUMN task_event.sequence_no IS '事件顺序号，用于保持时间线顺序';
-COMMENT ON COLUMN task_event.title IS '事件标题';
-COMMENT ON COLUMN task_event.content IS '事件详细内容';
-COMMENT ON COLUMN task_event.metadata_json IS '事件附加元数据 JSON 文本';
-COMMENT ON COLUMN task_event.created_at IS '事件创建时间';
-
-CREATE TABLE IF NOT EXISTS task_artifact (
-    id BIGINT PRIMARY KEY,
-    task_id BIGINT NOT NULL,
-    artifact_type VARCHAR(64) NOT NULL,
-    name VARCHAR(255) NOT NULL,
-    content TEXT,
-    storage_path VARCHAR(512),
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-COMMENT ON TABLE task_artifact IS '任务产物表，存储任务生成的文档、内容或文件路径';
-COMMENT ON COLUMN task_artifact.id IS '任务产物主键 ID';
-COMMENT ON COLUMN task_artifact.task_id IS '所属任务 ID';
-COMMENT ON COLUMN task_artifact.artifact_type IS '产物类型';
-COMMENT ON COLUMN task_artifact.name IS '产物名称';
-COMMENT ON COLUMN task_artifact.content IS '产物文本内容';
-COMMENT ON COLUMN task_artifact.storage_path IS '产物文件存储路径';
-COMMENT ON COLUMN task_artifact.created_at IS '产物创建时间';
-
 CREATE TABLE IF NOT EXISTS chat_conversation (
     id BIGINT PRIMARY KEY,
     title VARCHAR(255) NOT NULL,
@@ -771,30 +733,6 @@ COMMENT ON COLUMN expert.created_at IS '创建时间';
 COMMENT ON COLUMN expert.updated_at IS '更新时间';
 COMMENT ON COLUMN expert.deleted IS '是否删除 0正常 1删除';
 
-CREATE TABLE IF NOT EXISTS task_mcp (
-    id BIGINT PRIMARY KEY,
-    task_id BIGINT NOT NULL,
-    mcp_code VARCHAR(128) NOT NULL,
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-COMMENT ON TABLE task_mcp IS '任务MCP绑定表';
-COMMENT ON COLUMN task_mcp.id IS '主键ID';
-COMMENT ON COLUMN task_mcp.task_id IS '任务ID';
-COMMENT ON COLUMN task_mcp.mcp_code IS 'MCP编码';
-COMMENT ON COLUMN task_mcp.created_at IS '创建时间';
-
-CREATE TABLE IF NOT EXISTS task_skill (
-    id BIGINT PRIMARY KEY,
-    task_id BIGINT NOT NULL,
-    skill_code VARCHAR(128) NOT NULL,
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-COMMENT ON TABLE task_skill IS '任务技能绑定表';
-COMMENT ON COLUMN task_skill.id IS '主键ID';
-COMMENT ON COLUMN task_skill.task_id IS '任务ID';
-COMMENT ON COLUMN task_skill.skill_code IS '技能编码';
-COMMENT ON COLUMN task_skill.created_at IS '创建时间';
-
 CREATE TABLE IF NOT EXISTS task_expert (
     id BIGINT PRIMARY KEY,
     task_id BIGINT NOT NULL,
@@ -810,8 +748,6 @@ COMMENT ON COLUMN task_expert.created_at IS '创建时间';
 CREATE INDEX IF NOT EXISTS idx_task_created_by ON task (created_by, created_at DESC);
 CREATE UNIQUE INDEX IF NOT EXISTS uk_sys_user_email ON sys_user (email) WHERE email IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_task_status ON task (status, created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_task_event_task_seq ON task_event (task_id, sequence_no ASC);
-CREATE INDEX IF NOT EXISTS idx_task_artifact_task ON task_artifact (task_id, created_at ASC);
 CREATE INDEX IF NOT EXISTS idx_chat_conversation_user ON chat_conversation (created_by, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_chat_conversation_workspace_user ON chat_conversation (created_by, workspace_id, pinned DESC, updated_at DESC, id DESC);
 CREATE INDEX IF NOT EXISTS idx_chat_conversation_user_pinned_updated ON chat_conversation (created_by, pinned DESC, updated_at DESC, id DESC);
@@ -844,9 +780,5 @@ CREATE INDEX IF NOT EXISTS idx_tool_enabled_sort ON tool (enabled, sort_no ASC);
 CREATE INDEX IF NOT EXISTS idx_skill_enabled_sort ON skill (enabled, sort_no ASC);
 CREATE INDEX IF NOT EXISTS idx_skill_uploaded_at ON skill (uploaded_at DESC);
 CREATE INDEX IF NOT EXISTS idx_expert_enabled_sort ON expert (enabled, sort_no ASC);
-CREATE INDEX IF NOT EXISTS idx_task_mcp_task ON task_mcp (task_id, created_at ASC);
-CREATE INDEX IF NOT EXISTS idx_task_mcp_mcp_code ON task_mcp (mcp_code);
-CREATE INDEX IF NOT EXISTS idx_task_skill_task ON task_skill (task_id, created_at ASC);
-CREATE INDEX IF NOT EXISTS idx_task_skill_skill_code ON task_skill (skill_code);
 CREATE INDEX IF NOT EXISTS idx_task_expert_task ON task_expert (task_id, created_at ASC);
 CREATE INDEX IF NOT EXISTS idx_task_expert_code ON task_expert (expert_code);

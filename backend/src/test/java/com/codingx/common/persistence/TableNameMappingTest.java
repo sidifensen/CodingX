@@ -3,9 +3,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.codingx.chat.infrastructure.persistence.dataobject.ChatConversationDO;
 import com.codingx.chat.infrastructure.persistence.dataobject.ChatMessageDO;
-import com.codingx.event.infrastructure.persistence.dataobject.TaskEventDO;
 import com.codingx.task.infrastructure.persistence.dataobject.TaskDO;
-import com.codingx.task.infrastructure.persistence.dataobject.TaskArtifactDO;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -20,8 +18,6 @@ class TableNameMappingTest {
     void persistenceObjectsUsePrefixFreeTableNames() {
 
         assertEquals("task", tableNameOf(TaskDO.class));
-        assertEquals("task_event", tableNameOf(TaskEventDO.class));
-        assertEquals("task_artifact", tableNameOf(TaskArtifactDO.class));
         assertEquals("chat_conversation", tableNameOf(ChatConversationDO.class));
         assertEquals("chat_message", tableNameOf(ChatMessageDO.class));
     }

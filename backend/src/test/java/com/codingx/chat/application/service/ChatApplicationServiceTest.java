@@ -14,6 +14,7 @@ import com.codingx.chat.application.command.SendChatMessageCommand;
 import com.codingx.chat.domain.model.ChatConversation;
 import com.codingx.chat.domain.model.ChatConversationStatus;
 import com.codingx.chat.domain.model.ChatExecutionRun;
+import com.codingx.chat.domain.model.ChatExecutionStep;
 import com.codingx.chat.domain.model.ChatTraceRun;
 import com.codingx.chat.domain.model.ChatAttachment;
 import com.codingx.chat.domain.model.ChatMessage;
@@ -451,6 +452,52 @@ class ChatApplicationServiceTest {
     }
 
     /**
+     * 选中技能时，数据库消息正文必须保留 @skill 标记，但模型历史仍使用剥离后的自然语言正文。
+     */
+    @Test
+    void sendMessagePersistsSkillMentionButUsesPlainQuestionForAiHistory() {
+        bindRunContext();
+        ChatConversation conversation = ChatConversation.create(1L, "Default", 1002L, ChatConversationStatus.ACTIVE);
+        when(chatConversationRepository.requireById(1L)).thenReturn(conversation);
+        when(chatMessageRepository.findByConversationId(1L)).thenReturn(new ArrayList<>());
+        when(chatAttachmentService.requireOwnedAttachments(any(), eq(1L), eq(1002L))).thenReturn(List.of());
+        when(conversationRewriteService.rewriteResult(any(), eq("这是啥"))).thenReturn(
+            new ConversationRewriteResult("这是啥", false, List.of("这是啥"))
+        );
+        when(conversationIntentService.route("这是啥", false)).thenReturn(
+            new ConversationIntentDecision("chat.normal", ConversationIntentAction.DIRECT, null)
+        );
+        when(chatIntentNodeRepository.findByIntentCode("chat.normal")).thenReturn(null);
+        when(chatSkillContextService.buildSkillContext(List.of("web-access"))).thenReturn("web-access skill context");
+        when(conversationSummaryService.buildModelHistory(any(), any())).thenAnswer(invocation -> invocation.getArgument(1));
+        when(llmResponseCleaner.clean(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(conversationTitleService.generateTitle(any(), any())).thenReturn("技能对话");
+        doAnswer(invocation -> {
+            @SuppressWarnings("unchecked")
+            List<ChatMessage> aiHistory = invocation.getArgument(0, List.class);
+            ChatMessage userMessageInAiHistory = aiHistory.stream()
+                .filter(message -> message.getRole() == ChatMessageRole.USER)
+                .findFirst()
+                .orElseThrow();
+            assertEquals("这是啥", userMessageInAiHistory.getContent());
+            AiChatClient.StreamHandler handler = invocation.getArgument(2);
+            handler.onDelta("已按网页技能处理");
+            handler.onComplete();
+            return null;
+        }).when(aiChatClient).streamChat(any(), eq(false), any());
+
+        chatApplicationService.sendMessage(
+            new SendChatMessageCommand(1L, "这是啥", false, List.of(), List.of("web-access")),
+            1002L
+        );
+
+        ArgumentCaptor<ChatMessage> messageCaptor = ArgumentCaptor.forClass(ChatMessage.class);
+        verify(chatMessageRepository, org.mockito.Mockito.times(2)).save(messageCaptor.capture());
+        assertEquals("@web-access 这是啥", messageCaptor.getAllValues().getFirst().getContent());
+        ChatExecutionContext.clear();
+    }
+
+    /**
      * 本地运行态的聊天历史由客户端快照负责，后端只做临时推理与 SSE 推送。
      * 关键约束：不得读取或写入 chat_conversation/chat_message，避免本地历史默认进入云端数据库。
      */
@@ -603,14 +650,13 @@ class ChatApplicationServiceTest {
             ChatMessage.create(11L, 1L, ChatMessageRole.USER, "第一条问题", ChatMessageStatus.COMPLETED, null, null, null).attachRun(9001L),
             ChatMessage.create(12L, 1L, ChatMessageRole.ASSISTANT, "旧答案", ChatMessageStatus.COMPLETED, null, null, null).attachRun(9001L)
         ));
-        when(chatSkillRepository.findByTaskId(9001L)).thenReturn(List.of(
-            ChatSkill.builder().skillCode("web-read").displayName("网页读取").build()
-        ));
-        when(chatMcpRepository.findByTaskId(9001L)).thenReturn(List.of(
-            ChatMcp.builder().mcpCode("weather_query").displayName("天气查询").build()
-        ));
-        when(chatExpertRepository.findByTaskId(9001L)).thenReturn(List.of(
-            ChatExpert.builder().expertCode("solution-architect").displayName("解决方案架构师").build()
+        when(chatExecutionStepRepository.findByRunId(9001L)).thenReturn(List.of(
+            ChatExecutionStep.builder()
+                .id(7001L)
+                .runId(9001L)
+                .stepType("runtime_context")
+                .metadataJson("{\"skillCodes\":[\"web-read\"],\"mcpCodes\":[\"weather_query\"],\"expertCode\":\"solution-architect\"}")
+                .build()
         ));
         when(conversationTraceRecordService.startTrace(eq("chat-regenerate"), eq(1L), eq(1002L))).thenReturn(
             ChatTraceRun.builder().traceId("trace-1").conversationId(1L).taskId(9001L).userId(1002L).status("RUNNING").build()
@@ -638,8 +684,15 @@ class ChatApplicationServiceTest {
 
         chatApplicationService.regenerateLastAssistantMessage(1L, 1002L);
 
-        verify(chatSkillRepository).bindTaskSkills(any(Long.class), eq(List.of("web-read")));
-        verify(chatMcpRepository).bindTaskMcps(any(Long.class), eq(List.of("weather_query")));
+        ArgumentCaptor<ChatExecutionStep> contextStepCaptor = ArgumentCaptor.forClass(ChatExecutionStep.class);
+        verify(chatExecutionStepRepository, org.mockito.Mockito.atLeastOnce()).save(contextStepCaptor.capture());
+        assertTrue(
+            contextStepCaptor.getAllValues().stream().anyMatch(step ->
+                "runtime_context".equals(step.getStepType())
+                    && step.getMetadataJson().contains("web-read")
+                    && step.getMetadataJson().contains("weather_query")
+            )
+        );
         verify(chatExpertRepository).bindTaskExpert(any(Long.class), eq("solution-architect"));
         verify(chatStreamPublisher).publishAssistantCompleted(1L, "新答案", "新答案");
         ChatExecutionContext.clear();

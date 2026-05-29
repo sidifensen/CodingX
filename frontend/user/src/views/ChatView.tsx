@@ -3611,20 +3611,21 @@ function UserMessageBubble({
           ) : null}
           {(message.skillCodes && message.skillCodes.length > 0) || hasTextContent ? (
             <div className="chat-user-message-bubble rounded-[20px] px-4 py-2">
-              {message.skillCodes && message.skillCodes.length > 0 ? (
-                <div className="mb-2">
+              {/* 技能 chip 是用户消息正文的结构化前缀，必须和正文处在同一个内容流里。 */}
+              <div className="chat-user-message-inline-content flex flex-wrap items-center gap-x-1.5 gap-y-1 text-sm leading-6">
+                {message.skillCodes && message.skillCodes.length > 0 ? (
                   <MessageSkillChips
                     messageId={message.id}
                     skillCodes={message.skillCodes}
                     skillNameMap={skillNameMap}
                   />
-                </div>
-              ) : null}
-              {hasTextContent ? (
-                <div className="whitespace-pre-wrap text-sm leading-6">
-                  {visibleContent}
-                </div>
-              ) : null}
+                ) : null}
+                {hasTextContent ? (
+                  <span className="min-w-0 whitespace-pre-wrap leading-6 [overflow-wrap:anywhere]">
+                    {visibleContent}
+                  </span>
+                ) : null}
+              </div>
             </div>
           ) : null}
         </>
@@ -4052,14 +4053,14 @@ function MessageSkillChips({
     return null;
   }
   return (
-    <div className="mb-2 flex flex-wrap gap-1.5">
+    <>
       {skillCodes.map((skillCode) => {
         const displayName = resolveSkillChipLabel(skillCode, skillNameMap);
         return (
           <span
             key={`${messageId}-${skillCode}`}
             data-testid={`message-skill-chip-${messageId}-${skillCode}`}
-            className="inline-flex items-center rounded-md border border-border/70 bg-surface-container/82 px-2 py-0.5 text-[12px] text-foreground"
+            className="inline-flex shrink-0 items-center rounded-md border border-border/70 bg-surface-container/82 px-2 py-0.5 text-[12px] leading-5 text-foreground"
             title={displayName}
           >
             <Sparkles size={12} className="mr-1 shrink-0 text-muted" />
@@ -4067,7 +4068,7 @@ function MessageSkillChips({
           </span>
         );
       })}
-    </div>
+    </>
   );
 }
 

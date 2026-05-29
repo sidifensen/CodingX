@@ -534,7 +534,12 @@ describe('ChatView', () => {
       />,
     );
 
-    expect(screen.getByTestId('message-skill-chip-311-frontend-design-3.0')).toBeInTheDocument();
+    const skillChip = screen.getByTestId('message-skill-chip-311-frontend-design-3.0');
+    const inlineContent = skillChip.closest('.chat-user-message-inline-content');
+    expect(skillChip).toBeInTheDocument();
+    expect(inlineContent).toBeTruthy();
+    expect(within(inlineContent as HTMLElement).getByText('这是什么')).toBeInTheDocument();
+    expect(skillChip.closest('.mb-2')).toBeNull();
     expect(screen.getByText('这是什么')).toBeInTheDocument();
     expect(screen.queryByText('@frontend-design-3.0 这是什么')).not.toBeInTheDocument();
   });

@@ -21,6 +21,7 @@ import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
@@ -650,5 +651,122 @@ class CodexBuiltinChatToolExecutorTest {
             codexBuiltinChatToolExecutor.execute("spawn_agents_on_csv", "{\"csvPath\":\"" + csvPath.toString().replace("\\", "\\\\") + "\"}").toolCode()
         );
         assertEquals("report_agent_job_result", codexBuiltinChatToolExecutor.execute("report_agent_job_result", "{\"jobId\":\"job-1\",\"summary\":\"ok\"}").toolCode());
+    }
+
+    /**
+     * Electron 本地运行时常见任务会混合命令、补丁、图片、CSV、计划与代理类工具。
+     * 此烟测逐个调用执行器注册的所有工具，确保新增工具不会只注册但入口不可用。
+     *
+     * @param tempDir 测试临时目录。
+     * @throws Exception 执行失败时抛出。
+     */
+    @Test
+    void allRegisteredToolsShouldAcceptRepresentativeElectronSmokeInputs(@TempDir Path tempDir) throws Exception {
+        Path projectRoot = tempDir.resolve("workspace");
+        Files.createDirectories(projectRoot);
+        Path imagePath = tempDir.resolve("smoke.png");
+        BufferedImage image = new BufferedImage(2, 2, BufferedImage.TYPE_INT_RGB);
+        ImageIO.write(image, "png", imagePath.toFile());
+        Path csvPath = tempDir.resolve("agents.csv");
+        Files.writeString(csvPath, "name\nsmoke-agent\n", StandardCharsets.UTF_8);
+        String htmlPatch = """
+            *** Begin Patch
+            *** Add File: smoke.html
+            +<!doctype html>
+            +<html lang="zh-CN">
+            +<head><meta charset="UTF-8"><title>工具烟测</title></head>
+            +<body><main>electron smoke</main></body>
+            +</html>
+            *** End Patch
+            """;
+        List<String> invokedToolCodes = new ArrayList<>();
+        when(chatMcpRepository.findAll()).thenReturn(List.of(ChatMcp.builder().mcpCode("weather_query").displayName("天气").build()));
+        when(chatMcpRepository.findByMcpCode("weather_query")).thenReturn(ChatMcp.builder().mcpCode("weather_query").displayName("天气").build());
+        when(chatSkillRepository.findAll()).thenReturn(List.of(ChatSkill.builder().skillCode("browser").displayName("浏览器").build()));
+        when(chatToolRepository.findAll()).thenReturn(List.of(ChatTool.builder().toolCode("shell_command").displayName("Shell").build()));
+
+        ChatToolExecutionContext.bindToolWorkingDirectory(projectRoot);
+        try {
+            ChatToolExecutionResult shellResult = executeAndRecord(
+                invokedToolCodes,
+                "shell_command",
+                "{\"command\":\"Set-Content -Path smoke-file.txt -Value electron-smoke\",\"timeoutMs\":10000}"
+            );
+            executeAndRecord(invokedToolCodes, "apply_patch", JSONUtil.toJsonStr(Map.of("patch", htmlPatch)));
+            executeAndRecord(invokedToolCodes, "list_mcp_resources", "{}");
+            executeAndRecord(invokedToolCodes, "list_mcp_resource_templates", "{}");
+            executeAndRecord(invokedToolCodes, "read_mcp_resource", "{\"uri\":\"mcp://configs/weather_query\"}");
+            executeAndRecord(
+                invokedToolCodes,
+                "update_plan",
+                "{\"planId\":\"electron-smoke\",\"steps\":[{\"step\":\"调用所有工具\",\"status\":\"in_progress\"}]}"
+            );
+            executeAndRecord(invokedToolCodes, "request_user_input", "{\"question\":\"是否继续工具烟测？\"}");
+            executeAndRecord(invokedToolCodes, "view_image", "{\"path\":\"" + imagePath.toString().replace("\\", "\\\\") + "\"}");
+            ChatToolExecutionResult spawnResult = executeAndRecord(invokedToolCodes, "spawn_agent", "{\"prompt\":\"检查 Electron 工具\"}");
+            String agentId = String.valueOf(spawnResult.metadata().get("agentId"));
+            executeAndRecord(invokedToolCodes, "send_input", "{\"target\":\"" + agentId + "\",\"message\":\"继续\"}");
+            executeAndRecord(invokedToolCodes, "wait_agent", "{\"agentId\":\"" + agentId + "\"}");
+            executeAndRecord(invokedToolCodes, "close_agent", "{\"agentId\":\"" + agentId + "\"}");
+            executeAndRecord(invokedToolCodes, "resume_agent", "{\"agentId\":\"" + agentId + "\"}");
+            executeAndRecord(invokedToolCodes, "tool_search", "{\"keyword\":\"Shell\"}");
+            executeAndRecord(invokedToolCodes, "request_plugin_install", "{\"plugin\":\"browser-use\"}");
+            executeAndRecord(invokedToolCodes, "request_permissions", "{\"command\":\"Get-ChildItem\"}");
+            ChatToolExecutionResult execResult = executeAndRecord(
+                invokedToolCodes,
+                "exec_command",
+                "{\"command\":\"$line = [Console]::In.ReadLine(); Set-Content -Path stdin-smoke.txt -Value $line\"}"
+            );
+            String sessionId = String.valueOf(execResult.metadata().get("sessionId"));
+            executeAndRecord(
+                invokedToolCodes,
+                "write_stdin",
+                "{\"sessionId\":\"" + sessionId + "\",\"text\":\"from-smoke\",\"waitMs\":3000}"
+            );
+            codexBuiltinChatToolExecutor.execute("create_goal", "{\"goalId\":\"electron-smoke\",\"title\":\"工具烟测前置目标\"}");
+            executeAndRecord(invokedToolCodes, "get_goal", "{\"goalId\":\"electron-smoke\"}");
+            executeAndRecord(invokedToolCodes, "create_goal", "{\"goalId\":\"electron-smoke\",\"title\":\"工具烟测\"}");
+            executeAndRecord(invokedToolCodes, "update_goal", "{\"goalId\":\"electron-smoke\",\"status\":\"done\"}");
+            executeAndRecord(invokedToolCodes, "send_message", "{\"target\":\"" + agentId + "\",\"message\":\"别名消息\"}", "send_input");
+            executeAndRecord(invokedToolCodes, "followup_task", "{\"agentId\":\"" + agentId + "\",\"task\":\"补充 HTML 验证\"}");
+            executeAndRecord(invokedToolCodes, "list_agents", "{}");
+            executeAndRecord(
+                invokedToolCodes,
+                "spawn_agents_on_csv",
+                "{\"csvPath\":\"" + csvPath.toString().replace("\\", "\\\\") + "\"}"
+            );
+            executeAndRecord(invokedToolCodes, "report_agent_job_result", "{\"jobId\":\"job-smoke\",\"summary\":\"ok\"}");
+            executeAndRecord(invokedToolCodes, "test_sync_tool", "{\"message\":\"ping\"}");
+
+            assertEquals(0, shellResult.metadata().get("exitCode"));
+            assertTrue(Files.exists(projectRoot.resolve("smoke-file.txt")));
+            assertTrue(Files.readString(projectRoot.resolve("stdin-smoke.txt"), StandardCharsets.UTF_8).contains("from-smoke"));
+            assertTrue(Files.readString(projectRoot.resolve("smoke.html"), StandardCharsets.UTF_8).contains("electron smoke"));
+            assertEquals(codexBuiltinChatToolExecutor.toolCodes(), invokedToolCodes);
+        } finally {
+            ChatToolExecutionContext.clear();
+        }
+    }
+
+    /**
+     * 执行指定工具并记录实际覆盖到的工具编码，便于全量烟测发现注册但未测的工具。
+     */
+    private ChatToolExecutionResult executeAndRecord(List<String> invokedToolCodes, String toolCode, String question) {
+        return executeAndRecord(invokedToolCodes, toolCode, question, toolCode);
+    }
+
+    /**
+     * 执行指定工具并记录实际覆盖到的工具编码，兼容 send_message 这类入口别名。
+     */
+    private ChatToolExecutionResult executeAndRecord(
+        List<String> invokedToolCodes,
+        String toolCode,
+        String question,
+        String expectedResultToolCode
+    ) {
+        ChatToolExecutionResult result = codexBuiltinChatToolExecutor.execute(toolCode, question);
+        invokedToolCodes.add(toolCode);
+        assertEquals(expectedResultToolCode, result.toolCode());
+        return result;
     }
 }

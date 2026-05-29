@@ -680,7 +680,7 @@ COMMENT ON COLUMN tool.sort_no IS '排序字段';
 COMMENT ON COLUMN tool.created_at IS '创建时间';
 COMMENT ON COLUMN tool.updated_at IS '更新时间';
 COMMENT ON COLUMN tool.deleted IS '是否删除 0正常 1删除';
--- 默认 Codex 本地可执行工具编码示例：shell_command、exec_command、write_stdin、apply_patch、update_plan、view_image、tool_search、test_sync_tool。
+-- 默认 Codex 本地可执行工具编码示例：read、write、edit、bash、grep、find、ls、update_plan、view_image、tool_search、test_sync_tool。
 -- 依赖真实 Codex session 的多代理、插件和 MCP resource 工具需保持禁用，避免管理端展示假可用。
 
 CREATE TABLE IF NOT EXISTS skill (

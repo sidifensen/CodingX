@@ -34,6 +34,8 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
+import java.nio.file.PathMatcher;
+import java.nio.file.StandardOpenOption;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -48,6 +50,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Stream;
 import javax.imageio.ImageIO;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
@@ -63,6 +66,7 @@ import org.springframework.stereotype.Component;
 public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
 
     private static final List<String> TOOL_CODES = List.of(
+        "read", "write", "edit", "bash", "grep", "find", "ls",
         "shell_command", "apply_patch", "list_mcp_resources", "list_mcp_resource_templates", "read_mcp_resource",
         "update_plan", "request_user_input", "view_image", "spawn_agent", "send_input", "wait_agent", "close_agent",
         "resume_agent", "tool_search", "request_plugin_install", "request_permissions", "exec_command", "write_stdin",
@@ -96,6 +100,13 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
         String normalizedCode = normalizeToolCode(toolCode);
         ToolInput input = parseInput(question);
         return switch (normalizedCode) {
+            case "read" -> executeRead(input);
+            case "write" -> executeWrite(input);
+            case "edit" -> executeEdit(input);
+            case "bash" -> executeBash(input);
+            case "grep" -> executeGrep(input);
+            case "find" -> executeFind(input);
+            case "ls" -> executeLs(input);
             case "shell_command" -> executeShellCommand(input);
             case "exec_command" -> executeExecCommand(input);
             case "write_stdin" -> executeWriteStdin(input);
@@ -134,7 +145,7 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
         if (StrUtil.isBlank(command)) {
             throw new BusinessException("CHAT_TOOL_INVALID_COMMAND", ErrorMessageCatalog.CHAT_TOOL_COMMAND_REQUIRED);
         }
-        long timeoutMs = normalizeTimeout(input.object().getLong("timeoutMs", 10000L));
+        long timeoutMs = extractTimeoutMs(input);
         Path workingDirectory = resolveToolWorkingDirectory();
         CommandExecution execution = runCommand(command, timeoutMs, workingDirectory);
         Map<String, Object> metadata = new LinkedHashMap<>();
@@ -149,6 +160,16 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
             execution.output(),
             metadata
         );
+    }
+
+    /**
+     * OpenClaw 风格 bash 工具：对模型暴露短名称，内部复用统一命令执行边界。
+     * @param input 工具输入。
+     * @return 命令执行结果。
+     */
+    private ChatToolExecutionResult executeBash(ToolInput input) {
+        ChatToolExecutionResult result = executeShellCommand(input);
+        return new ChatToolExecutionResult("bash", result.content(), result.metadata());
     }
 
     /**
@@ -233,6 +254,225 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
                 "CHAT_TOOL_WRITE_STDIN_FAILED",
                 ErrorMessageCatalog.CHAT_TOOL_STDIN_WRITE_FAILED_PREFIX + exception.getMessage()
             );
+        }
+    }
+
+    /**
+     * 读取当前 workspace 内的文本文件内容。
+     * @param input 工具输入。
+     * @return 文件内容与路径元数据。
+     */
+    private ChatToolExecutionResult executeRead(ToolInput input) {
+        Path workingDirectory = resolveToolWorkingDirectory();
+        Path filePath = resolveWorkspacePath(workingDirectory, extractPath(input, "path"));
+        if (!Files.isRegularFile(filePath)) {
+            throw new BusinessException("CHAT_TOOL_FILE_NOT_FOUND", "文件不存在");
+        }
+        try {
+            String content = Files.readString(filePath, StandardCharsets.UTF_8);
+            Integer offset = input.object().getInt("offset");
+            Integer limit = input.object().getInt("limit");
+            String slicedContent = sliceLines(content, offset, limit);
+            Map<String, Object> metadata = workspaceFileMetadata(workingDirectory, filePath);
+            metadata.put("length", content.length());
+            metadata.put("truncated", !StrUtil.equals(content, slicedContent));
+            return new ChatToolExecutionResult("read", slicedContent, metadata);
+        } catch (Exception exception) {
+            throw new BusinessException("CHAT_TOOL_READ_FAILED", "读取文件失败: " + exception.getMessage());
+        }
+    }
+
+    /**
+     * 写入当前 workspace 内的文本文件，必要时自动创建父目录。
+     * @param input 工具输入。
+     * @return 写入结果。
+     */
+    private ChatToolExecutionResult executeWrite(ToolInput input) {
+        Path workingDirectory = resolveToolWorkingDirectory();
+        Path filePath = resolveWorkspacePath(workingDirectory, extractPath(input, "path"));
+        String content = input.object().getStr("content");
+        if (content == null) {
+            content = input.raw();
+        }
+        try {
+            Path parent = filePath.getParent();
+            if (parent != null) {
+                Files.createDirectories(parent);
+            }
+            Files.writeString(
+                filePath,
+                content,
+                StandardCharsets.UTF_8,
+                StandardOpenOption.CREATE,
+                StandardOpenOption.TRUNCATE_EXISTING
+            );
+            Map<String, Object> metadata = workspaceFileMetadata(workingDirectory, filePath);
+            metadata.put("bytes", Files.size(filePath));
+            return new ChatToolExecutionResult("write", "文件已写入", metadata);
+        } catch (Exception exception) {
+            throw new BusinessException("CHAT_TOOL_WRITE_FAILED", "写入文件失败: " + exception.getMessage());
+        }
+    }
+
+    /**
+     * 基于精确文本替换编辑当前 workspace 内的文件。
+     * @param input 工具输入。
+     * @return 编辑结果。
+     */
+    private ChatToolExecutionResult executeEdit(ToolInput input) {
+        Path workingDirectory = resolveToolWorkingDirectory();
+        Path filePath = resolveWorkspacePath(workingDirectory, extractPath(input, "path"));
+        String oldText = prefer(input.object().getStr("old_text"), input.object().getStr("oldText"));
+        String newText = prefer(input.object().getStr("new_text"), input.object().getStr("newText"));
+        if (StrUtil.isEmpty(oldText)) {
+            throw new BusinessException("CHAT_TOOL_EDIT_OLD_TEXT_REQUIRED", "请提供 old_text");
+        }
+        if (newText == null) {
+            throw new BusinessException("CHAT_TOOL_EDIT_NEW_TEXT_REQUIRED", "请提供 new_text");
+        }
+        if (!Files.isRegularFile(filePath)) {
+            throw new BusinessException("CHAT_TOOL_FILE_NOT_FOUND", "文件不存在");
+        }
+        try {
+            String content = Files.readString(filePath, StandardCharsets.UTF_8);
+            int occurrences = countOccurrences(content, oldText);
+            if (occurrences == 0) {
+                throw new BusinessException("CHAT_TOOL_EDIT_TEXT_NOT_FOUND", "未找到要替换的文本");
+            }
+            boolean replaceAll = getBooleanOption(input, "replaceAll", "replace_all", false);
+            if (!replaceAll && occurrences > 1) {
+                throw new BusinessException("CHAT_TOOL_EDIT_TEXT_NOT_UNIQUE", "要替换的文本不唯一，请提供更精确的 old_text");
+            }
+            int firstMatchIndex = content.indexOf(oldText);
+            String updated = replaceAll
+                ? content.replace(oldText, newText)
+                : content.substring(0, firstMatchIndex) + newText + content.substring(firstMatchIndex + oldText.length());
+            if (StrUtil.equals(content, updated)) {
+                throw new BusinessException("CHAT_TOOL_EDIT_NO_CHANGES", "编辑未产生变更");
+            }
+            Files.writeString(filePath, updated, StandardCharsets.UTF_8, StandardOpenOption.TRUNCATE_EXISTING);
+            Map<String, Object> metadata = workspaceFileMetadata(workingDirectory, filePath);
+            metadata.put("replaceAll", replaceAll);
+            metadata.put("occurrences", occurrences);
+            metadata.put("firstChangedLine", firstChangedLine(content, updated));
+            return new ChatToolExecutionResult("edit", "文件已编辑", metadata);
+        } catch (BusinessException exception) {
+            throw exception;
+        } catch (Exception exception) {
+            throw new BusinessException("CHAT_TOOL_EDIT_FAILED", "编辑文件失败: " + exception.getMessage());
+        }
+    }
+
+    /**
+     * 在当前 workspace 内按文本正则检索文件内容。
+     * @param input 工具输入。
+     * @return 匹配行列表。
+     */
+    private ChatToolExecutionResult executeGrep(ToolInput input) {
+        String pattern = input.object().getStr("pattern");
+        if (StrUtil.isBlank(pattern)) {
+            throw new BusinessException("CHAT_TOOL_GREP_PATTERN_REQUIRED", "请提供 pattern");
+        }
+        Path workingDirectory = resolveToolWorkingDirectory();
+        Path searchRoot = resolveWorkspacePath(workingDirectory, StrUtil.blankToDefault(input.object().getStr("path"), "."));
+        boolean ignoreCase = getBooleanOption(input, "ignoreCase", "ignore_case", false);
+        boolean literal = getBooleanOption(input, "literal", "literal", false);
+        int flags = ignoreCase ? Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE : 0;
+        Pattern compiledPattern = Pattern.compile(literal ? Pattern.quote(pattern) : pattern, flags);
+        String glob = input.object().getStr("glob");
+        PathMatcher globMatcher = StrUtil.isBlank(glob) ? null : searchRoot.getFileSystem().getPathMatcher("glob:" + glob);
+        int maxResults = normalizeIntOption(input, "maxResults", "limit", 100, 500);
+        int context = normalizeIntOption(input, "context", null, 0, 20);
+        List<String> matches = new ArrayList<>();
+        try (Stream<Path> stream = Files.walk(searchRoot)) {
+            List<Path> files = stream
+                .filter(Files::isRegularFile)
+                .filter(file -> matchesGlob(searchRoot, file, globMatcher))
+                .sorted()
+                .toList();
+            for (Path file : files) {
+                collectGrepMatches(workingDirectory, file, compiledPattern, maxResults, context, matches);
+                if (matches.size() >= maxResults) {
+                    break;
+                }
+            }
+        } catch (Exception exception) {
+            throw new BusinessException("CHAT_TOOL_GREP_FAILED", "内容搜索失败: " + exception.getMessage());
+        }
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("pattern", pattern);
+        metadata.put("path", toWorkspaceRelativePath(workingDirectory, searchRoot));
+        metadata.put("glob", glob);
+        metadata.put("count", matches.size());
+        return new ChatToolExecutionResult("grep", matches.isEmpty() ? "No matches found" : String.join("\n", matches), metadata);
+    }
+
+    /**
+     * 在当前 workspace 内按 glob 模式查找文件路径。
+     * @param input 工具输入。
+     * @return 匹配路径列表。
+     */
+    private ChatToolExecutionResult executeFind(ToolInput input) {
+        String pattern = StrUtil.blankToDefault(input.object().getStr("pattern"), "*");
+        Path workingDirectory = resolveToolWorkingDirectory();
+        Path searchRoot = resolveWorkspacePath(workingDirectory, StrUtil.blankToDefault(input.object().getStr("path"), "."));
+        if (!Files.isDirectory(searchRoot)) {
+            throw new BusinessException("CHAT_TOOL_DIRECTORY_NOT_FOUND", "目录不存在");
+        }
+        PathMatcher matcher = searchRoot.getFileSystem().getPathMatcher("glob:" + pattern);
+        int maxResults = normalizeIntOption(input, "maxResults", "limit", 200, 1000);
+        List<String> matches = new ArrayList<>();
+        try (Stream<Path> stream = Files.walk(searchRoot)) {
+            stream
+                .filter(path -> !path.equals(searchRoot))
+                .filter(Files::isRegularFile)
+                .filter(path -> matcher.matches(path.getFileName()) || matcher.matches(searchRoot.relativize(path)))
+                .sorted()
+                .limit(maxResults)
+                .map(path -> toWorkspaceRelativePath(workingDirectory, path))
+                .forEach(matches::add);
+        } catch (Exception exception) {
+            throw new BusinessException("CHAT_TOOL_FIND_FAILED", "查找文件失败: " + exception.getMessage());
+        }
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("pattern", pattern);
+        metadata.put("path", toWorkspaceRelativePath(workingDirectory, searchRoot));
+        metadata.put("count", matches.size());
+        return new ChatToolExecutionResult("find", matches.isEmpty() ? "No files found matching pattern" : String.join("\n", matches), metadata);
+    }
+
+    /**
+     * 列出当前 workspace 内目录内容。
+     * @param input 工具输入。
+     * @return 目录项列表。
+     */
+    private ChatToolExecutionResult executeLs(ToolInput input) {
+        Path workingDirectory = resolveToolWorkingDirectory();
+        Path directory = resolveWorkspacePath(workingDirectory, StrUtil.blankToDefault(input.object().getStr("path"), "."));
+        if (!Files.isDirectory(directory)) {
+            throw new BusinessException("CHAT_TOOL_DIRECTORY_NOT_FOUND", "目录不存在");
+        }
+        int limit = normalizeIntOption(input, "limit", null, 500, 1000);
+        try (Stream<Path> stream = Files.list(directory)) {
+            List<Path> paths = stream
+                .sorted((left, right) -> left.getFileName().toString().compareToIgnoreCase(right.getFileName().toString()))
+                .toList();
+            List<String> entries = paths.stream()
+                .limit(limit)
+                .map(path -> path.getFileName() + (Files.isDirectory(path) ? "/" : ""))
+                .toList();
+            Map<String, Object> metadata = new LinkedHashMap<>();
+            metadata.put("path", toWorkspaceRelativePath(workingDirectory, directory));
+            metadata.put("count", entries.size());
+            metadata.put("totalCount", paths.size());
+            metadata.put("workingDirectory", workingDirectory.toString());
+            String content = entries.isEmpty() ? "(empty directory)" : String.join("\n", entries);
+            if (paths.size() > entries.size()) {
+                content += "\n\n[" + limit + " entries limit reached. Use limit=" + Math.min(limit * 2, 1000) + " for more]";
+            }
+            return new ChatToolExecutionResult("ls", content, metadata);
+        } catch (Exception exception) {
+            throw new BusinessException("CHAT_TOOL_LS_FAILED", "列目录失败: " + exception.getMessage());
         }
     }
 
@@ -1634,6 +1874,23 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
     }
 
     /**
+     * 解析命令超时配置；短工具兼容 OpenClaw 的 timeout 秒级参数，旧工具继续支持 timeoutMs。
+     * @param input 工具输入。
+     * @return 毫秒级有界超时时间。
+     */
+    private long extractTimeoutMs(ToolInput input) {
+        Long timeoutMs = input.object().getLong("timeoutMs");
+        if (timeoutMs != null) {
+            return normalizeTimeout(timeoutMs);
+        }
+        Long timeoutSeconds = input.object().getLong("timeout");
+        if (timeoutSeconds != null) {
+            return normalizeTimeout(timeoutSeconds * 1000L);
+        }
+        return normalizeTimeout(null);
+    }
+
+    /**
      * 规范化交互命令等待时间，避免一次 stdin 写入长期占用聊天线程。
      * @param waitMs 原始等待时间。
      * @return 有界等待时间。
@@ -1756,6 +2013,205 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
             .map(Path::toAbsolutePath)
             .map(Path::normalize)
             .orElseGet(() -> Path.of("").toAbsolutePath().normalize());
+    }
+
+    /**
+     * 解析模型传入的工作区相对路径，并拒绝访问当前 workspace 之外的文件。
+     * @param workingDirectory 当前工具工作目录。
+     * @param rawPath 原始路径。
+     * @return 规范化后的真实路径。
+     */
+    private Path resolveWorkspacePath(Path workingDirectory, String rawPath) {
+        if (StrUtil.isBlank(rawPath)) {
+            throw new BusinessException("CHAT_TOOL_PATH_REQUIRED", "请提供 path");
+        }
+        try {
+            Path normalizedWorkingDirectory = workingDirectory.toAbsolutePath().normalize();
+            Path requestedPath = Path.of(rawPath);
+            Path resolvedPath = requestedPath.isAbsolute()
+                ? requestedPath.toAbsolutePath().normalize()
+                : normalizedWorkingDirectory.resolve(requestedPath).toAbsolutePath().normalize();
+            if (!resolvedPath.startsWith(normalizedWorkingDirectory)) {
+                throw new BusinessException("CHAT_TOOL_PATH_OUT_OF_BOUND", "路径越界，已拒绝执行");
+            }
+            return resolvedPath;
+        } catch (InvalidPathException exception) {
+            throw new BusinessException("CHAT_TOOL_PATH_INVALID", "路径格式无效: " + exception.getMessage());
+        }
+    }
+
+    /**
+     * 从 JSON 或普通文本中提取路径，普通文本模式用于兼容模型直接传入文件名。
+     * @param input 工具输入。
+     * @param fieldName JSON 字段名。
+     * @return 路径文本。
+     */
+    private String extractPath(ToolInput input, String fieldName) {
+        return prefer(input.object().getStr(fieldName), input.raw());
+    }
+
+    /**
+     * 生成文件工具统一元数据，便于前端和模型确认实际操作位置。
+     * @param workingDirectory 当前工具工作目录。
+     * @param filePath 文件路径。
+     * @return 元数据。
+     */
+    private Map<String, Object> workspaceFileMetadata(Path workingDirectory, Path filePath) {
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("path", toWorkspaceRelativePath(workingDirectory, filePath));
+        metadata.put("absolutePath", filePath.toString());
+        metadata.put("workingDirectory", workingDirectory.toString());
+        return metadata;
+    }
+
+    /**
+     * 将工作区内路径转换为正斜杠相对路径，降低 Windows 路径对模型后续调用的干扰。
+     */
+    private String toWorkspaceRelativePath(Path workingDirectory, Path path) {
+        Path normalizedWorkingDirectory = workingDirectory.toAbsolutePath().normalize();
+        Path normalizedPath = path.toAbsolutePath().normalize();
+        if (normalizedPath.equals(normalizedWorkingDirectory)) {
+            return ".";
+        }
+        return normalizedWorkingDirectory.relativize(normalizedPath).toString().replace('\\', '/');
+    }
+
+    /**
+     * 按 1-indexed 行号截取 read 输出，兼容 OpenClaw 的 offset/limit 语义。
+     */
+    private String sliceLines(String content, Integer offset, Integer limit) {
+        if (offset == null && limit == null) {
+            return StrUtil.maxLength(content, MAX_BUFFER_LENGTH);
+        }
+        String[] lines = content.split("\\R", -1);
+        int startLine = offset == null || offset <= 0 ? 1 : offset;
+        int fromIndex = startLine - 1;
+        int toIndex = lines.length;
+        if (limit != null && limit > 0) {
+            toIndex = Math.min(fromIndex + limit, lines.length);
+        }
+        if (fromIndex >= lines.length) {
+            throw new BusinessException("CHAT_TOOL_READ_OFFSET_OUT_OF_RANGE", "offset 超出文件总行数");
+        }
+        String result = String.join("\n", java.util.Arrays.copyOfRange(lines, fromIndex, toIndex));
+        if (limit != null && limit > 0 && toIndex < lines.length) {
+            result += "\n\n[" + (lines.length - toIndex) + " more lines in file. Use offset=" + (toIndex + 1) + " to continue.]";
+        }
+        return StrUtil.maxLength(result, MAX_BUFFER_LENGTH);
+    }
+
+    /**
+     * 统计非重叠文本出现次数，用于保证 edit 默认只处理唯一匹配。
+     */
+    private int countOccurrences(String content, String target) {
+        int count = 0;
+        int fromIndex = 0;
+        while (fromIndex < content.length()) {
+            int nextIndex = content.indexOf(target, fromIndex);
+            if (nextIndex < 0) {
+                break;
+            }
+            count++;
+            fromIndex = nextIndex + target.length();
+        }
+        return count;
+    }
+
+    /**
+     * 返回首个发生变更的 1-indexed 行号，便于模型后续 read 精准定位。
+     */
+    private int firstChangedLine(String oldContent, String newContent) {
+        String[] oldLines = oldContent.split("\\R", -1);
+        String[] newLines = newContent.split("\\R", -1);
+        int lineCount = Math.min(oldLines.length, newLines.length);
+        for (int index = 0; index < lineCount; index++) {
+            if (!StrUtil.equals(oldLines[index], newLines[index])) {
+                return index + 1;
+            }
+        }
+        return lineCount + 1;
+    }
+
+    /**
+     * 判断文件是否满足 grep 的 glob 过滤，glob 同时匹配文件名与搜索根相对路径。
+     */
+    private boolean matchesGlob(Path searchRoot, Path file, PathMatcher globMatcher) {
+        if (globMatcher == null) {
+            return true;
+        }
+        Path relativePath = Files.isDirectory(searchRoot) ? searchRoot.relativize(file) : file.getFileName();
+        return globMatcher.matches(file.getFileName()) || globMatcher.matches(relativePath);
+    }
+
+    /**
+     * 收集单个文本文件的正则匹配行；二进制或非 UTF-8 文件跳过，不中断整次 grep。
+     */
+    private void collectGrepMatches(
+        Path workingDirectory,
+        Path file,
+        Pattern compiledPattern,
+        int maxResults,
+        int context,
+        List<String> matches
+    ) {
+        try {
+            List<String> lines = Files.readAllLines(file, StandardCharsets.UTF_8);
+            for (int lineIndex = 0; lineIndex < lines.size() && matches.size() < maxResults; lineIndex++) {
+                String line = lines.get(lineIndex);
+                if (compiledPattern.matcher(line).find()) {
+                    appendGrepMatchLines(workingDirectory, file, lines, lineIndex, context, maxResults, matches);
+                }
+            }
+        } catch (Exception ignored) {
+            // 读取失败通常意味着二进制或非 UTF-8 文件，继续扫描其他文件。
+        }
+    }
+
+    /**
+     * 追加 grep 命中行及可选上下文行，上下文行使用 path-line-content 形态区分。
+     */
+    private void appendGrepMatchLines(
+        Path workingDirectory,
+        Path file,
+        List<String> lines,
+        int lineIndex,
+        int context,
+        int maxResults,
+        List<String> matches
+    ) {
+        int fromIndex = Math.max(0, lineIndex - context);
+        int toIndex = Math.min(lines.size() - 1, lineIndex + context);
+        String relativePath = toWorkspaceRelativePath(workingDirectory, file);
+        for (int index = fromIndex; index <= toIndex && matches.size() < maxResults; index++) {
+            boolean matchedLine = index == lineIndex;
+            String separator = matchedLine ? ":" : "-";
+            matches.add(relativePath + separator + (index + 1) + separator + lines.get(index));
+        }
+    }
+
+    /**
+     * 读取整数参数并处理兼容别名，防止模型混用 maxResults 与 OpenClaw 的 limit。
+     */
+    private int normalizeIntOption(ToolInput input, String primaryKey, String aliasKey, int defaultValue, int maxValue) {
+        Integer value = input.object().getInt(primaryKey);
+        if (value == null && StrUtil.isNotBlank(aliasKey)) {
+            value = input.object().getInt(aliasKey);
+        }
+        if (value == null || value <= 0) {
+            return defaultValue;
+        }
+        return Math.min(value, maxValue);
+    }
+
+    /**
+     * 读取布尔参数并处理 camelCase 与 snake_case 兼容别名。
+     */
+    private boolean getBooleanOption(ToolInput input, String primaryKey, String aliasKey, boolean defaultValue) {
+        Boolean value = input.object().getBool(primaryKey);
+        if (value == null && StrUtil.isNotBlank(aliasKey)) {
+            value = input.object().getBool(aliasKey);
+        }
+        return value == null ? defaultValue : value;
     }
 
     private String[] resolveShellCommand(String command) {
@@ -2062,4 +2518,3 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
     private record PlanStep(String step, String status) {
     }
 }
-

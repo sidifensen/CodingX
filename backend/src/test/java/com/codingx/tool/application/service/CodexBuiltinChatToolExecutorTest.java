@@ -1,6 +1,7 @@
 package com.codingx.tool.application.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -439,6 +440,133 @@ class CodexBuiltinChatToolExecutorTest {
     }
 
     /**
+     * OpenClaw 风格短工具名应在当前 workspace 内完成常用文件与命令操作。
+     *
+     * @param tempDir 测试临时目录。
+     * @throws Exception 执行失败时抛出。
+     */
+    @Test
+    void shortToolNamesShouldOperateInsideBoundWorkspace(@TempDir Path tempDir) throws Exception {
+        Path projectRoot = tempDir.resolve("workspace");
+        Files.createDirectories(projectRoot.resolve("src"));
+        Files.writeString(projectRoot.resolve("src").resolve("App.java"), "class App {}\n", StandardCharsets.UTF_8);
+        ChatToolExecutionContext.bindToolWorkingDirectory(projectRoot);
+        try {
+            ChatToolExecutionResult writeResult = codexBuiltinChatToolExecutor.execute(
+                "write",
+                JSONUtil.toJsonStr(Map.of("path", "notes/todo.txt", "content", "alpha\nbeta\n"))
+            );
+            ChatToolExecutionResult readResult = codexBuiltinChatToolExecutor.execute(
+                "read",
+                JSONUtil.toJsonStr(Map.of("path", "notes/todo.txt"))
+            );
+            ChatToolExecutionResult editResult = codexBuiltinChatToolExecutor.execute(
+                "edit",
+                JSONUtil.toJsonStr(Map.of("path", "notes/todo.txt", "oldText", "beta", "newText", "done"))
+            );
+            ChatToolExecutionResult bashResult = codexBuiltinChatToolExecutor.execute(
+                "bash",
+                JSONUtil.toJsonStr(Map.of("command", "Get-Content -Path notes/todo.txt", "timeoutMs", 10000))
+            );
+            ChatToolExecutionResult grepResult = codexBuiltinChatToolExecutor.execute(
+                "grep",
+                JSONUtil.toJsonStr(Map.of("pattern", "class App", "path", "src"))
+            );
+            ChatToolExecutionResult findResult = codexBuiltinChatToolExecutor.execute(
+                "find",
+                JSONUtil.toJsonStr(Map.of("pattern", "*.java", "path", "src"))
+            );
+            ChatToolExecutionResult lsResult = codexBuiltinChatToolExecutor.execute(
+                "ls",
+                JSONUtil.toJsonStr(Map.of("path", "."))
+            );
+
+            assertEquals("write", writeResult.toolCode());
+            assertEquals("read", readResult.toolCode());
+            assertEquals("edit", editResult.toolCode());
+            assertEquals("bash", bashResult.toolCode());
+            assertEquals("grep", grepResult.toolCode());
+            assertEquals("find", findResult.toolCode());
+            assertEquals("ls", lsResult.toolCode());
+            assertTrue(readResult.content().contains("alpha"));
+            assertTrue(Files.readString(projectRoot.resolve("notes").resolve("todo.txt"), StandardCharsets.UTF_8).contains("done"));
+            assertTrue(bashResult.content().contains("done"));
+            assertTrue(grepResult.content().contains("src/App.java"));
+            assertTrue(findResult.content().contains("src/App.java"));
+            assertTrue(lsResult.content().contains("notes"));
+        } finally {
+            ChatToolExecutionContext.clear();
+        }
+    }
+
+    /**
+     * 短工具参数应兼容 OpenClaw 的常用调用习惯，降低模型从参考项目迁移时的参数学习成本。
+     *
+     * @param tempDir 测试临时目录。
+     * @throws Exception 执行失败时抛出。
+     */
+    @Test
+    void shortToolNamesShouldAcceptOpenClawCompatibleArguments(@TempDir Path tempDir) throws Exception {
+        Path projectRoot = tempDir.resolve("workspace");
+        Files.createDirectories(projectRoot.resolve("src").resolve("nested"));
+        Files.writeString(projectRoot.resolve("src").resolve("App.java"), "first\nAlpha[1]\nthird\n", StandardCharsets.UTF_8);
+        Files.writeString(projectRoot.resolve("src").resolve("notes.md"), "Alpha[1]\n", StandardCharsets.UTF_8);
+        Files.writeString(projectRoot.resolve("src").resolve("nested").resolve("Child.java"), "child\n", StandardCharsets.UTF_8);
+        Files.writeString(projectRoot.resolve("duplicate.txt"), "same\nsame\n", StandardCharsets.UTF_8);
+        ChatToolExecutionContext.bindToolWorkingDirectory(projectRoot);
+        try {
+            ChatToolExecutionResult readResult = codexBuiltinChatToolExecutor.execute(
+                "read",
+                JSONUtil.toJsonStr(Map.of("path", "src/App.java", "offset", 2, "limit", 1))
+            );
+            ChatToolExecutionResult editResult = codexBuiltinChatToolExecutor.execute(
+                "edit",
+                JSONUtil.toJsonStr(Map.of("path", "src/App.java", "old_text", "Alpha[1]", "new_text", "Beta[2]"))
+            );
+            BusinessException duplicateEditException = assertThrows(
+                BusinessException.class,
+                () -> codexBuiltinChatToolExecutor.execute(
+                    "edit",
+                    JSONUtil.toJsonStr(Map.of("path", "duplicate.txt", "old_text", "same", "new_text", "done"))
+                )
+            );
+            ChatToolExecutionResult grepResult = codexBuiltinChatToolExecutor.execute(
+                "grep",
+                JSONUtil.toJsonStr(Map.of(
+                    "pattern", "beta[2]",
+                    "path", "src",
+                    "glob", "*.java",
+                    "ignore_case", true,
+                    "literal", true,
+                    "limit", 1
+                ))
+            );
+            ChatToolExecutionResult findResult = codexBuiltinChatToolExecutor.execute(
+                "find",
+                JSONUtil.toJsonStr(Map.of("pattern", "*", "path", "src", "limit", 10))
+            );
+            ChatToolExecutionResult lsResult = codexBuiltinChatToolExecutor.execute(
+                "ls",
+                JSONUtil.toJsonStr(Map.of("path", "src", "limit", 10))
+            );
+
+            assertTrue(readResult.content().startsWith("Alpha[1]"));
+            assertTrue(readResult.content().contains("Use offset=3"));
+            assertEquals(2, editResult.metadata().get("firstChangedLine"));
+            assertTrue(duplicateEditException.getMessage().contains("文本不唯一"));
+            assertEquals("same\nsame\n", Files.readString(projectRoot.resolve("duplicate.txt"), StandardCharsets.UTF_8));
+            assertTrue(grepResult.content().contains("src/App.java:2:Beta[2]"));
+            assertFalse(grepResult.content().contains("notes.md"));
+            assertTrue(findResult.content().contains("src/App.java"));
+            assertFalse(findResult.content().lines().anyMatch("src/nested"::equals));
+            assertTrue(lsResult.content().contains("nested/"));
+            assertFalse(lsResult.content().contains("[dir]"));
+        } finally {
+            ChatToolExecutionContext.clear();
+        }
+    }
+
+    /**
      * shell_command 的 timeout 必须约束整个进程生命周期，不能被同步读取输出阻塞绕过。
      *
      * @param tempDir 测试临时目录。
@@ -687,6 +815,21 @@ class CodexBuiltinChatToolExecutorTest {
 
         ChatToolExecutionContext.bindToolWorkingDirectory(projectRoot);
         try {
+            executeAndRecord(invokedToolCodes, "write", JSONUtil.toJsonStr(Map.of("path", "short-tools.txt", "content", "hello tools\n")));
+            executeAndRecord(invokedToolCodes, "read", JSONUtil.toJsonStr(Map.of("path", "short-tools.txt")));
+            executeAndRecord(
+                invokedToolCodes,
+                "edit",
+                JSONUtil.toJsonStr(Map.of("path", "short-tools.txt", "oldText", "hello", "newText", "updated"))
+            );
+            executeAndRecord(
+                invokedToolCodes,
+                "bash",
+                JSONUtil.toJsonStr(Map.of("command", "Get-Content -Path short-tools.txt", "timeoutMs", 10000))
+            );
+            executeAndRecord(invokedToolCodes, "grep", JSONUtil.toJsonStr(Map.of("pattern", "updated", "path", ".")));
+            executeAndRecord(invokedToolCodes, "find", JSONUtil.toJsonStr(Map.of("pattern", "*.txt", "path", ".")));
+            executeAndRecord(invokedToolCodes, "ls", JSONUtil.toJsonStr(Map.of("path", ".")));
             ChatToolExecutionResult shellResult = executeAndRecord(
                 invokedToolCodes,
                 "shell_command",

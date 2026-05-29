@@ -22,11 +22,19 @@ class ChatToolSpecServiceTest {
     void listModelVisibleSpecsOnlyIncludesEnabledRegisteredExecutors() {
         ChatToolRepository repository = new InMemoryChatToolRepository(List.of(
             ChatTool.builder()
-                .toolCode("shell_command")
-                .displayName("Shell 命令执行")
-                .description("在本地工作区执行命令")
+                .toolCode("read")
+                .displayName("读取文件")
+                .description("读取文件内容")
                 .enabled(1)
                 .sortNo(1)
+                .deleted(0)
+                .build(),
+            ChatTool.builder()
+                .toolCode("bash")
+                .displayName("执行命令")
+                .description("执行命令")
+                .enabled(1)
+                .sortNo(2)
                 .deleted(0)
                 .build(),
             ChatTool.builder()
@@ -34,7 +42,7 @@ class ChatToolSpecServiceTest {
                 .displayName("创建子代理")
                 .description("暂未适配真实 Java 子代理运行时")
                 .enabled(0)
-                .sortNo(2)
+                .sortNo(3)
                 .deleted(0)
                 .build(),
             ChatTool.builder()
@@ -42,14 +50,14 @@ class ChatToolSpecServiceTest {
                 .displayName("假工具")
                 .description("数据库中存在但没有执行器")
                 .enabled(1)
-                .sortNo(3)
+                .sortNo(4)
                 .deleted(0)
                 .build()
         ));
         ChatToolExecutor executor = new ChatToolExecutor() {
             @Override
             public List<String> toolCodes() {
-                return List.of("shell_command", "spawn_agent");
+                return List.of("read", "bash", "spawn_agent");
             }
 
             @Override
@@ -64,11 +72,51 @@ class ChatToolSpecServiceTest {
         List<ChatToolSpec> specs = service.listModelVisibleToolSpecs();
         List<String> names = specs.stream().map(ChatToolSpec::name).toList();
 
-        assertEquals(List.of("shell_command"), names);
-        ChatToolSpec shellSpec = specs.getFirst();
-        assertTrue(shellSpec.description().contains("本地工作区"));
-        assertTrue(shellSpec.parameters().containsKey("properties"));
-        assertFalse(shellSpec.parameters().isEmpty());
+        assertEquals(List.of("read", "bash"), names);
+        ChatToolSpec readSpec = specs.getFirst();
+        assertTrue(readSpec.description().contains("读取文件"));
+        assertTrue(readSpec.parameters().containsKey("properties"));
+        assertFalse(readSpec.parameters().isEmpty());
+    }
+
+    /**
+     * OpenClaw 风格短工具名应直接暴露给模型，避免模型还要学习 shell_command/apply_patch 等内部实现名。
+     */
+    @Test
+    void listModelVisibleSpecsIncludesOpenClawStyleShortToolNames() {
+        List<String> shortToolCodes = List.of("read", "write", "edit", "bash", "grep", "find", "ls");
+        ChatToolRepository repository = new InMemoryChatToolRepository(shortToolCodes.stream()
+            .map(toolCode -> ChatTool.builder()
+                .toolCode(toolCode)
+                .displayName(toolCode)
+                .description(toolCode + " 工具")
+                .enabled(1)
+                .sortNo(shortToolCodes.indexOf(toolCode) + 1)
+                .deleted(0)
+                .build())
+            .toList());
+        ChatToolExecutor executor = new ChatToolExecutor() {
+            @Override
+            public List<String> toolCodes() {
+                return shortToolCodes;
+            }
+
+            @Override
+            public ChatToolExecutionResult execute(String toolCode, String question) {
+                return new ChatToolExecutionResult(toolCode, "ok", Map.of());
+            }
+        };
+        ChatToolRegistry registry = new ChatToolRegistry(List.of(executor));
+        registry.init();
+        ChatToolSpecService service = new ChatToolSpecService(repository, registry);
+
+        List<ChatToolSpec> specs = service.listModelVisibleToolSpecs();
+
+        assertEquals(shortToolCodes, specs.stream().map(ChatToolSpec::name).toList());
+        for (ChatToolSpec spec : specs) {
+            assertTrue(spec.parameters().containsKey("properties"));
+            assertTrue(String.valueOf(spec.description()).contains(spec.name()));
+        }
     }
 
     /**
@@ -80,8 +128,8 @@ class ChatToolSpecServiceTest {
     void shellCommandSpecShouldTellModelToUsePowerShellSyntax() {
         ChatToolRepository repository = new InMemoryChatToolRepository(List.of(
             ChatTool.builder()
-                .toolCode("shell_command")
-                .displayName("Shell 命令执行")
+                .toolCode("bash")
+                .displayName("命令执行")
                 .description("在当前工作区执行终端命令")
                 .enabled(1)
                 .sortNo(1)
@@ -91,7 +139,7 @@ class ChatToolSpecServiceTest {
         ChatToolExecutor executor = new ChatToolExecutor() {
             @Override
             public List<String> toolCodes() {
-                return List.of("shell_command");
+                return List.of("bash");
             }
 
             @Override
@@ -103,12 +151,12 @@ class ChatToolSpecServiceTest {
         registry.init();
         ChatToolSpecService service = new ChatToolSpecService(repository, registry);
 
-        ChatToolSpec shellSpec = service.listModelVisibleToolSpecs().getFirst();
-        Map<String, Object> properties = (Map<String, Object>) shellSpec.parameters().get("properties");
+        ChatToolSpec bashSpec = service.listModelVisibleToolSpecs().getFirst();
+        Map<String, Object> properties = (Map<String, Object>) bashSpec.parameters().get("properties");
         Map<String, Object> commandSchema = (Map<String, Object>) properties.get("command");
         String commandDescription = String.valueOf(commandSchema.get("description"));
 
-        assertTrue(shellSpec.description().contains("Windows PowerShell"));
+        assertTrue(bashSpec.description().contains("Windows PowerShell"));
         assertTrue(commandDescription.contains("Windows PowerShell"));
         assertTrue(commandDescription.contains("mkdir -p"));
         assertTrue(commandDescription.contains("Set-Content"));
@@ -118,15 +166,15 @@ class ChatToolSpecServiceTest {
     }
 
     /**
-     * apply_patch 的模型说明必须强调当前工作目录路径边界，避免模型继续编造 C:\workspace 这类虚拟根路径。
+     * write 的模型说明必须强调当前工作目录路径边界，避免模型继续编造 C:\workspace 这类虚拟根路径。
      */
     @Test
     @SuppressWarnings("unchecked")
-    void applyPatchSpecShouldTellModelToUseWorkspaceRelativePaths() {
+    void writeSpecShouldTellModelToUseWorkspaceRelativePaths() {
         ChatToolRepository repository = new InMemoryChatToolRepository(List.of(
             ChatTool.builder()
-                .toolCode("apply_patch")
-                .displayName("应用补丁")
+                .toolCode("write")
+                .displayName("写文件")
                 .description("在当前工作区写入文件")
                 .enabled(1)
                 .sortNo(1)
@@ -136,7 +184,7 @@ class ChatToolSpecServiceTest {
         ChatToolExecutor executor = new ChatToolExecutor() {
             @Override
             public List<String> toolCodes() {
-                return List.of("apply_patch");
+                return List.of("write");
             }
 
             @Override
@@ -148,15 +196,14 @@ class ChatToolSpecServiceTest {
         registry.init();
         ChatToolSpecService service = new ChatToolSpecService(repository, registry);
 
-        ChatToolSpec patchSpec = service.listModelVisibleToolSpecs().getFirst();
-        Map<String, Object> properties = (Map<String, Object>) patchSpec.parameters().get("properties");
-        Map<String, Object> patchSchema = (Map<String, Object>) properties.get("patch");
-        String patchDescription = String.valueOf(patchSchema.get("description"));
+        ChatToolSpec writeSpec = service.listModelVisibleToolSpecs().getFirst();
+        Map<String, Object> properties = (Map<String, Object>) writeSpec.parameters().get("properties");
+        Map<String, Object> pathSchema = (Map<String, Object>) properties.get("path");
+        String pathDescription = String.valueOf(pathSchema.get("description"));
 
-        assertTrue(patchSpec.description().contains("当前工具工作目录"));
-        assertTrue(patchDescription.contains("相对路径"));
-        assertTrue(patchDescription.contains("diary/index.html"));
-        assertTrue(patchDescription.contains("C:\\workspace"));
+        assertTrue(writeSpec.description().contains("当前工具工作目录"));
+        assertTrue(pathDescription.contains("相对路径"));
+        assertTrue(pathDescription.contains("工作区外"));
     }
 
     /**

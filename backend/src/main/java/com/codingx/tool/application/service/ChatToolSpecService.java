@@ -20,10 +20,13 @@ import org.springframework.stereotype.Service;
 public class ChatToolSpecService {
 
     private static final List<String> MODEL_VISIBLE_LOCAL_TOOLS = List.of(
-        "shell_command",
-        "exec_command",
-        "write_stdin",
-        "apply_patch",
+        "read",
+        "write",
+        "edit",
+        "bash",
+        "grep",
+        "find",
+        "ls",
         "update_plan",
         "view_image",
         "tool_search",
@@ -37,6 +40,9 @@ public class ChatToolSpecService {
         """.trim();
     private static final String APPLY_PATCH_MODEL_GUIDANCE = """
         补丁路径必须基于当前工具工作目录；优先使用相对路径，例如 diary/index.html。不要编造 C:\\workspace 等虚拟根目录；如果已经从工具结果拿到工作目录内绝对路径，也必须确认它属于当前工作目录。
+        """.trim();
+    private static final String WORKSPACE_PATH_GUIDANCE = """
+        路径必须位于当前工具工作目录内；优先使用相对路径，不要访问 .. 或工作区外绝对路径。
         """.trim();
 
     private final ChatToolRepository chatToolRepository;
@@ -78,6 +84,64 @@ public class ChatToolSpecService {
      */
     private Map<String, Object> parametersFor(String toolCode) {
         return switch (toolCode) {
+            case "read" -> objectSchema(
+                Map.of(
+                    "path", stringSchema("要读取的文件路径。" + WORKSPACE_PATH_GUIDANCE),
+                    "offset", numberSchema("可选，从第几行开始读取，1 表示第一行；0 会兼容为第一行"),
+                    "limit", numberSchema("可选，最多读取多少行")
+                ),
+                List.of("path")
+            );
+            case "write" -> objectSchema(
+                Map.of(
+                    "path", stringSchema("要写入的文件路径。" + WORKSPACE_PATH_GUIDANCE),
+                    "content", stringSchema("完整文件内容；写入会覆盖目标文件，必要时自动创建父目录")
+                ),
+                List.of("path", "content")
+            );
+            case "edit" -> objectSchema(
+                Map.of(
+                    "path", stringSchema("要编辑的文件路径。" + WORKSPACE_PATH_GUIDANCE),
+                    "old_text", stringSchema("文件中必须精确且唯一存在的原文本；兼容 oldText"),
+                    "new_text", stringSchema("替换后的新文本；兼容 newText"),
+                    "replace_all", Map.of("type", "boolean", "description", "是否替换所有匹配项，默认 false；兼容 replaceAll")
+                ),
+                List.of("path", "old_text", "new_text")
+            );
+            case "bash" -> objectSchema(
+                Map.of(
+                    "command", stringSchema("要在当前本地工作区执行的命令。" + SHELL_COMMAND_MODEL_GUIDANCE),
+                    "timeout", numberSchema("可选，命令超时时间，单位秒，最大 60；兼容 timeoutMs 毫秒参数")
+                ),
+                List.of("command")
+            );
+            case "grep" -> objectSchema(
+                Map.of(
+                    "pattern", stringSchema("搜索模式，默认按 Java 正则匹配；literal=true 时按字面量匹配"),
+                    "path", stringSchema("可选，搜索目录或文件路径。" + WORKSPACE_PATH_GUIDANCE),
+                    "glob", stringSchema("可选，文件 glob 过滤，例如 *.java"),
+                    "ignore_case", Map.of("type", "boolean", "description", "是否忽略大小写；兼容 ignoreCase"),
+                    "literal", Map.of("type", "boolean", "description", "是否把 pattern 当作字面量"),
+                    "context", numberSchema("可选，展示命中行前后的上下文行数，最大 20"),
+                    "limit", numberSchema("可选，最大返回条数，默认 100，最大 500；兼容 maxResults")
+                ),
+                List.of("pattern")
+            );
+            case "find" -> objectSchema(
+                Map.of(
+                    "pattern", stringSchema("glob 模式，例如 *.java 或 **/*.ts"),
+                    "path", stringSchema("可选，搜索目录路径。" + WORKSPACE_PATH_GUIDANCE),
+                    "limit", numberSchema("可选，最大返回条数，默认 200，最大 1000；兼容 maxResults")
+                ),
+                List.of("pattern")
+            );
+            case "ls" -> objectSchema(
+                Map.of(
+                    "path", stringSchema("可选，要列出的目录路径，默认当前工作目录。" + WORKSPACE_PATH_GUIDANCE),
+                    "limit", numberSchema("可选，最大返回条目数，默认 500，最大 1000")
+                ),
+                List.of()
+            );
             case "shell_command" -> objectSchema(
                 Map.of(
                     "command", stringSchema("要在当前本地工作区执行的命令。" + SHELL_COMMAND_MODEL_GUIDANCE),
@@ -140,6 +204,12 @@ public class ChatToolSpecService {
         String baseDescription = StrUtil.blankToDefault(tool.getDescription(), tool.getDisplayName());
         if (StrUtil.equals(toolCode, "shell_command")) {
             return baseDescription + "。" + SHELL_COMMAND_MODEL_GUIDANCE;
+        }
+        if (StrUtil.equals(toolCode, "bash")) {
+            return baseDescription + "。" + SHELL_COMMAND_MODEL_GUIDANCE;
+        }
+        if (List.of("read", "write", "edit", "grep", "find", "ls").contains(toolCode)) {
+            return baseDescription + "。" + WORKSPACE_PATH_GUIDANCE;
         }
         if (StrUtil.equals(toolCode, "exec_command")) {
             return baseDescription + "。" + EXEC_COMMAND_MODEL_GUIDANCE;

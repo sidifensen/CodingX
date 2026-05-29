@@ -22,6 +22,13 @@ import org.springframework.stereotype.Service;
 public class ChatToolUserService {
 
     private static final Set<String> USER_ALLOWED_TOOL_CODES = Set.of(
+        "read",
+        "write",
+        "edit",
+        "bash",
+        "grep",
+        "find",
+        "ls",
         "shell_command",
         "exec_command",
         "write_stdin",
@@ -34,6 +41,9 @@ public class ChatToolUserService {
     );
 
     private static final Set<String> HIGH_RISK_TOOL_CODES = Set.of(
+        "write",
+        "edit",
+        "bash",
         "shell_command",
         "exec_command",
         "write_stdin",
@@ -129,6 +139,9 @@ public class ChatToolUserService {
         if (!HIGH_RISK_TOOL_CODES.contains(normalizedToolCode)) {
             return false;
         }
+        if ("write".equals(normalizedToolCode) || "edit".equals(normalizedToolCode) || "apply_patch".equals(normalizedToolCode)) {
+            return true;
+        }
         String normalizedQuestion = extractRiskDetectionText(question).toLowerCase(Locale.ROOT);
         if (StrUtil.isBlank(normalizedQuestion)) {
             return true;
@@ -138,7 +151,7 @@ public class ChatToolUserService {
                 return true;
             }
         }
-        return "apply_patch".equals(normalizedToolCode);
+        return false;
     }
 
     /**

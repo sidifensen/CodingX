@@ -100,7 +100,34 @@ class ChatSkillContextServiceTest {
         assertTrue(context.contains("不要因为用户正文较短或像闲聊就忽略已选技能"));
         assertTrue(context.contains("当用户正文使用“这个”“这些”“它”“有什么区别”等指代"));
         assertTrue(context.contains("默认先指向本轮已选技能"));
-        assertTrue(context.contains("如果缺少 URL、页面、附件或其他必要目标"));
+        assertTrue(context.contains("当用户只问“这是什么”“这是啥”“介绍一下”“有什么用”等短句"));
+        assertTrue(context.contains("直接概括该技能用途、典型场景和限制"));
+        assertTrue(context.contains("如果用户明确要求执行技能任务但缺少 URL、页面、附件或其他必要目标"));
+    }
+
+    /**
+     * 用户只问“这是什么”时，后端应能直接用技能简介生成确定性回答，不再交给模型猜测指代对象。
+     */
+    @Test
+    void buildSkillIntroReplySummarizesSelectedSkillForShortDeicticQuestion() {
+        when(chatSkillRepository.findBySkillCode("web-access")).thenReturn(
+            ChatSkill.builder()
+                .id(8105L)
+                .skillCode("web-access")
+                .displayName("联网访问")
+                .sourceType("built-in")
+                .enabled(1)
+                .packageStorageFormat("zip")
+                .storageKey(null)
+                .build()
+        );
+
+        String reply = chatSkillContextService.buildSkillIntroReply(List.of("web-access"));
+
+        assertTrue(reply.contains("这是你当前选中的技能"));
+        assertTrue(reply.contains("`web-access`（联网访问）"));
+        assertTrue(reply.contains("所有联网操作必须通过此 skill 处理"));
+        assertTrue(reply.contains("如果要执行它"));
     }
 
     /**

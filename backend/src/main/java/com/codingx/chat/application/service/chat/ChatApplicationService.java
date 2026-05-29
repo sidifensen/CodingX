@@ -69,6 +69,9 @@ import org.springframework.stereotype.Service;
 @Slf4j
 public class ChatApplicationService {
 
+    private static final int PROMPT_CONTEXT_LOG_PREVIEW_LENGTH = 1_800;
+    private static final String SKILL_INTRO_INTENT_CODE = "skill.intro";
+
     /** web-access 技能只注入技能上下文，不应触发系统内置联网搜索链路。 */
     private static final String WEB_ACCESS_SKILL_CODE = "web-access";
 
@@ -236,6 +239,21 @@ public class ChatApplicationService {
     ) {
         if (history.stream().noneMatch(message -> message.getId().equals(requestMessage.getId()))) {
             history.add(requestMessage);
+        }
+        Optional<String> regeneratedSkillIntroReply = resolveSkillIntroReply(
+            command.skillCodes(),
+            ChatCapabilityMentionSupport.stripLeadingMentions(requestMessage.getContent()),
+            CollUtil.isNotEmpty(chatAttachmentService.listByMessageId(requestMessage.getId()))
+        );
+        if (regeneratedSkillIntroReply.isPresent()) {
+            completeDirectAssistantReply(
+                conversation,
+                history,
+                requestMessage.getId(),
+                regeneratedSkillIntroReply.get(),
+                SKILL_INTRO_INTENT_CODE
+            );
+            return;
         }
         ConversationRewriteResult rewriteResult = conversationRewriteService.rewriteResult(
             plainUserContents(history),
@@ -656,6 +674,21 @@ public class ChatApplicationService {
         }
         chatStreamPublisher.publishUserMessage(command.conversationId(), plainQuestion);
         history.add(userMessage);
+        Optional<String> skillIntroReply = resolveSkillIntroReply(
+            selectedSkillCodes,
+            plainQuestion,
+            CollUtil.isNotEmpty(validatedAttachments)
+        );
+        if (skillIntroReply.isPresent()) {
+            completeDirectAssistantReply(
+                conversation,
+                history,
+                userMessage.getId(),
+                skillIntroReply.get(),
+                SKILL_INTRO_INTENT_CODE
+            );
+            return;
+        }
         ConversationRewriteResult rewriteResult = conversationRewriteService.rewriteResult(
             plainUserContents(history),
             plainQuestion
@@ -917,6 +950,15 @@ public class ChatApplicationService {
         ChatMessage userMessage = ChatMessage.userMessage(command.conversationId(), plainQuestion).attachRun(runId);
         history.add(userMessage);
         chatStreamPublisher.publishUserMessage(command.conversationId(), userMessage.getContent());
+        Optional<String> localSkillIntroReply = resolveSkillIntroReply(selectedSkillCodes, plainQuestion, false);
+        if (localSkillIntroReply.isPresent()) {
+            chatStreamPublisher.publishAssistantCompleted(
+                command.conversationId(),
+                localSkillIntroReply.get(),
+                resolveLocalConversationTitle(command)
+            );
+            return;
+        }
         ConversationRewriteResult rewriteResult = conversationRewriteService.rewriteResult(
             List.of(plainQuestion),
             plainQuestion
@@ -1049,10 +1091,123 @@ public class ChatApplicationService {
     }
 
     /**
+     * 已选技能配合“这是什么/这是啥”等短句时，用户是在问技能本身，直接用技能简介收口。
+     */
+    private Optional<String> resolveSkillIntroReply(List<String> selectedSkillCodes, String plainQuestion, boolean hasAttachments) {
+        if (hasAttachments || CollUtil.isEmpty(selectedSkillCodes) || !isSelectedSkillIntroQuestion(plainQuestion)) {
+            return Optional.empty();
+        }
+        String reply = chatSkillContextService.buildSkillIntroReply(selectedSkillCodes);
+        return StrUtil.isBlank(reply) ? Optional.empty() : Optional.of(reply);
+    }
+
+    private boolean isSelectedSkillIntroQuestion(String question) {
+        String normalizedQuestion = StrUtil.blankToDefault(question, "")
+            .replaceAll("[\\p{Punct}\\s，。？！、：；“”‘’（）【】《》]+", "")
+            .toLowerCase(java.util.Locale.ROOT);
+        return StrUtil.equalsAny(
+            normalizedQuestion,
+            "这是什么",
+            "这是啥",
+            "这啥",
+            "这个是什么",
+            "这个是啥",
+            "它是什么",
+            "它是啥",
+            "介绍一下",
+            "介绍下",
+            "有什么用",
+            "这个有什么用",
+            "这是干什么的",
+            "这个是干什么的"
+        );
+    }
+
+    /**
+     * 保存确定性直答并完成 run/trace 收口，复用普通短路分支的持久化语义。
+     */
+    private void completeDirectAssistantReply(
+        ChatConversation conversation,
+        List<ChatMessage> history,
+        Long requestMessageId,
+        String reply,
+        String intentCode
+    ) {
+        Long runId = currentRunId(conversation.getId());
+        ChatMessage assistantMessage = ChatMessage.assistantMessage(
+            conversation.getId(),
+            reply,
+            ChatMessageStatus.COMPLETED,
+            null,
+            null,
+            null
+        ).attachRun(runId);
+        chatMessageRepository.save(assistantMessage);
+        history.add(assistantMessage);
+        conversation.rename(conversationTitleService.generateTitle(conversation, plainAiMessages(history)));
+        conversation.touch();
+        conversation.recordLastRunId(runId);
+        chatConversationRepository.save(conversation);
+        recordExecutionOutcome(conversation, requestMessageId, assistantMessage.getId(), intentCode, false, false, ChatMessageStatus.COMPLETED, null);
+        finishTrace(runId, "SUCCESS", null);
+        chatStreamPublisher.publishAssistantCompleted(conversation.getId(), assistantMessage.getId(), assistantMessage.getContent(), conversation.getTitle());
+    }
+
+    /**
      * 日志文本只保留短预览，避免用户长输入或模型参数撑大单行日志。
      */
     private String logPreview(String text) {
         return StrUtil.maxLength(text, 120);
+    }
+
+    /**
+     * 提示词日志保留系统规则与技能 front matter 简介，避免完整技能执行文档撑爆日志。
+     */
+    private String promptContextLogPreview(String systemPrompt) {
+        String normalizedPrompt = StrUtil.trimToEmpty(systemPrompt);
+        if (StrUtil.isBlank(normalizedPrompt) || !normalizedPrompt.contains("## /")) {
+            return StrUtil.maxLength(normalizedPrompt, PROMPT_CONTEXT_LOG_PREVIEW_LENGTH);
+        }
+        StringBuilder previewBuilder = new StringBuilder();
+        boolean inSkillBlock = false;
+        boolean skillIntroComplete = false;
+        int frontMatterFenceCount = 0;
+        int fallbackSkillLineCount = 0;
+        for (String line : normalizedPrompt.split("\\R", -1)) {
+            if (line.startsWith("## /")) {
+                inSkillBlock = true;
+                skillIntroComplete = false;
+                frontMatterFenceCount = 0;
+                fallbackSkillLineCount = 0;
+                appendPromptLogLine(previewBuilder, line);
+                continue;
+            }
+            if (!inSkillBlock) {
+                appendPromptLogLine(previewBuilder, line);
+                continue;
+            }
+            if (skillIntroComplete) {
+                continue;
+            }
+            appendPromptLogLine(previewBuilder, line);
+            String trimmedLine = line.trim();
+            if ("---".equals(trimmedLine)) {
+                frontMatterFenceCount++;
+                skillIntroComplete = frontMatterFenceCount >= 2;
+            } else if (frontMatterFenceCount == 0 && StrUtil.isNotBlank(trimmedLine)) {
+                // 非标准技能文档没有 front matter 时，最多保留几行简介，避免整段说明进入 info 日志。
+                fallbackSkillLineCount++;
+                skillIntroComplete = fallbackSkillLineCount >= 8;
+            }
+        }
+        return StrUtil.maxLength(previewBuilder.toString().trim(), PROMPT_CONTEXT_LOG_PREVIEW_LENGTH);
+    }
+
+    private void appendPromptLogLine(StringBuilder builder, String line) {
+        if (!builder.isEmpty()) {
+            builder.append('\n');
+        }
+        builder.append(line);
     }
 
     /**
@@ -1070,10 +1225,9 @@ public class ChatApplicationService {
             .orElse(null);
         if (systemMessage != null && StrUtil.isNotBlank(systemMessage.getContent())) {
             String systemPrompt = systemMessage.getContent();
-            log.info("提示词上下文: 系统提示词长度={}, 预览={}",
+            log.info("提示词上下文: 系统提示词长度={}, 预览:\n{}",
                 systemPrompt.length(),
-                logPreview(systemPrompt));
-            log.debug("提示词上下文完整内容:\n{}", systemPrompt);
+                promptContextLogPreview(systemPrompt));
         } else {
             log.info("提示词上下文: 无系统提示词");
         }

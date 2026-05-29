@@ -12,11 +12,12 @@
 
 1. `ChatStreamController` 合并显式 `skillCodes` 与结构化技能命令，生成 `SendChatMessageCommand`。
 2. `ChatApplicationService` 合并正文前缀与请求参数里的技能码，用户消息落库前用 `ChatCapabilityMentionSupport` 加上 `@skill` 前缀。
-3. 改写、意图识别、标题、摘要和模型历史使用剥离前缀后的纯正文，避免把 `@skill` 当自然语言。
-4. `ChatSkillContextService` 读取已选技能根级 `SKILL.md` 并追加到系统提示，日志会输出技能上下文是否生效；当用户正文使用“这个”“这些”“有什么区别”等指代时，提示词会要求模型先按已选技能理解。
-5. `SkillLocalCacheService` 为云端临时下载的 `web-access` 写入 `WEB_ACCESS_BROWSER=chrome`，避免每轮新目录都要求用户重新选择浏览器。
-6. 本轮技能、MCP、专家上下文写入隐藏的 `chat_execution_step(step_type=runtime_context)`，旧的 `task_skill`、`task_mcp`、`task_event`、`task_artifact` 表不再使用。
-7. 前端用户消息展示时只在 chip 里显示技能码，正文剥离开头 `@skill`，复制、编辑和分享预览也使用可见正文。
+3. 当本轮已选技能且用户只问“这是什么”“这是啥”“有什么用”等短句时，`ChatApplicationService` 直接用技能简介生成回答，避免模型把短指代误判为缺少页面、链接或附件。
+4. 改写、意图识别、标题、摘要和模型历史使用剥离前缀后的纯正文，避免把 `@skill` 当自然语言。
+5. `ChatSkillContextService` 读取已选技能根级 `SKILL.md` 并追加到系统提示，日志会输出技能上下文是否生效；当用户正文使用“这个”“这些”“有什么区别”等指代，或只问“这是什么”“这是啥”等短句时，提示词会要求模型先按已选技能理解。
+6. `SkillLocalCacheService` 为云端临时下载的 `web-access` 写入 `WEB_ACCESS_BROWSER=chrome`，避免每轮新目录都要求用户重新选择浏览器。
+7. 本轮技能、MCP、专家上下文写入隐藏的 `chat_execution_step(step_type=runtime_context)`，旧的 `task_skill`、`task_mcp`、`task_event`、`task_artifact` 表不再使用。
+8. 前端用户消息展示时只在 chip 里显示技能码，正文剥离开头 `@skill`，复制、编辑和分享预览也使用可见正文。
 
 ## 关键文件
 
@@ -34,7 +35,9 @@
 
 `chat_message.content` 是用户可审计输入，不再把技能选择隐藏在独立绑定表里。模型侧不能直接使用这个持久化内容，因为 `@web-access 这是啥` 会干扰改写、意图和回答，因此所有入模历史都会经过 `ChatCapabilityMentionSupport.toPlainAiMessage` 剥离前缀。
 
-由于入模用户正文会剥离开头 `@skill`，技能系统提示必须补足指代关系：`@web-access 这是啥` 入模正文虽然是“这是啥”，但“这个”默认指向本轮已选的 `web-access`；多个技能同时选中时，“这个和这个有什么区别”默认按已选技能列表进行解释或对比。
+由于入模用户正文会剥离开头 `@skill`，技能系统提示必须补足指代关系：`@web-access 这是啥` 入模正文虽然是“这是啥”，但“这个”默认指向本轮已选的 `web-access`；`@web-access 这是什么` 会按“询问已选技能本身”处理，后端优先从 `SKILL.md` 的 `description` 或技能配置简介生成确定性直答；多个技能同时选中时，“这个和这个有什么区别”默认按已选技能列表进行解释或对比。
+
+提示词上下文日志只打印可读预览，覆盖原始系统提示词和技能简介，完整技能文档仍会进入模型上下文，但不会在 `info` 日志中整段输出。
 
 `chat_execution_step.runtime_context` 只服务运行回放和重新生成上下文恢复，不向前端普通步骤列表展示。重新生成时优先读取上一轮 `runtime_context`，缺失时回退解析用户消息前缀。
 

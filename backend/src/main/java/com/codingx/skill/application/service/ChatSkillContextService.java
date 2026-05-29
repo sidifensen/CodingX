@@ -37,6 +37,7 @@ public class ChatSkillContextService {
     private static final int MAX_SKILL_CONTEXT_COUNT = 6;
     private static final int MAX_SINGLE_MANIFEST_CHARS = 8_000;
     private static final int MAX_TOTAL_CONTEXT_CHARS = 24_000;
+    private static final int MAX_SKILL_INTRO_DESCRIPTION_CHARS = 260;
 
     private final ChatSkillRepository chatSkillRepository;
     private final RustFsSkillPackageClient rustFsSkillPackageClient;
@@ -47,15 +48,7 @@ public class ChatSkillContextService {
      * @return 可直接作为系统提示注入模型的文本；无有效技能时返回空字符串。
      */
     public String buildSkillContext(List<String> selectedSkillCodes) {
-        if (CollUtil.isEmpty(selectedSkillCodes)) {
-            return "";
-        }
-        LinkedHashSet<String> normalizedCodes = new LinkedHashSet<>();
-        for (String skillCode : selectedSkillCodes) {
-            if (StrUtil.isNotBlank(skillCode)) {
-                normalizedCodes.add(skillCode.trim());
-            }
-        }
+        LinkedHashSet<String> normalizedCodes = normalizeSelectedSkillCodes(selectedSkillCodes);
         if (normalizedCodes.isEmpty()) {
             return "";
         }
@@ -112,11 +105,117 @@ public class ChatSkillContextService {
             用户已显式选择以下技能，这些技能就是本轮任务意图的一部分。
             请优先按已选技能的说明文档判断和执行当前问题，不要因为用户正文较短或像闲聊就忽略已选技能。
             运行时会从模型可见的用户正文开头剥离 @skill 前缀；当用户正文使用“这个”“这些”“它”“有什么区别”等指代时，默认先指向本轮已选技能，多技能时按已选技能列表进行解释或对比。
-            如果缺少 URL、页面、附件或其他必要目标，应围绕已选技能追问缺失信息，或在可用工具允许时先获取上下文；不要转成关于助手或普通闲聊回答。
+            当用户只问“这是什么”“这是啥”“介绍一下”“有什么用”等短句时，默认是在询问已选技能本身，应直接概括该技能用途、典型场景和限制；不要先要求用户补充 URL、页面或文件。
+            如果用户明确要求执行技能任务但缺少 URL、页面、附件或其他必要目标，应围绕已选技能追问缺失信息，或在可用工具允许时先获取上下文；不要转成关于助手或普通闲聊回答。
             若技能内容确实与当前问题无关，只说明缺少可执行目标，不要生硬引用技能文档。
 
             %s
             """.formatted(contentBuilder.toString().trim());
+    }
+
+    /**
+     * 构建已选技能的用户可读简介，用于“这是什么/这是啥”这类短句的确定性直答。
+     * @param selectedSkillCodes 当前消息选择的技能编码。
+     * @return 简短说明；无有效技能时返回空字符串。
+     */
+    public String buildSkillIntroReply(List<String> selectedSkillCodes) {
+        LinkedHashSet<String> normalizedCodes = normalizeSelectedSkillCodes(selectedSkillCodes);
+        if (normalizedCodes.isEmpty()) {
+            return "";
+        }
+        List<String> introLines = new ArrayList<>();
+        for (String skillCode : normalizedCodes) {
+            ChatSkill skill = chatSkillRepository.findBySkillCode(skillCode);
+            if (skill == null) {
+                continue;
+            }
+            String description = resolveSkillDescription(skill);
+            String displayName = StrUtil.blankToDefault(skill.getDisplayName(), skill.getSkillCode());
+            introLines.add("`" + skill.getSkillCode() + "`（" + displayName + "）：" + description);
+        }
+        if (introLines.isEmpty()) {
+            return "";
+        }
+        if (introLines.size() == 1) {
+            return "这是你当前选中的技能：" + introLines.getFirst()
+                + "\n\n如果要执行它，请继续给出这个技能要处理的具体目标或问题。";
+        }
+        return "你当前选中了这些技能：\n- "
+            + String.join("\n- ", introLines)
+            + "\n\n如果你想比较它们，可以直接问“有什么区别”；如果要执行其中一个，请说明具体目标。";
+    }
+
+    private LinkedHashSet<String> normalizeSelectedSkillCodes(List<String> selectedSkillCodes) {
+        LinkedHashSet<String> normalizedCodes = new LinkedHashSet<>();
+        if (CollUtil.isEmpty(selectedSkillCodes)) {
+            return normalizedCodes;
+        }
+        for (String skillCode : selectedSkillCodes) {
+            if (StrUtil.isNotBlank(skillCode)) {
+                normalizedCodes.add(skillCode.trim());
+            }
+        }
+        return normalizedCodes;
+    }
+
+    private String resolveSkillDescription(ChatSkill skill) {
+        String description = skill.getDescription();
+        if (StrUtil.isBlank(description)) {
+            description = extractManifestDescription(readSkillManifest(skill));
+        }
+        String normalizedDescription = normalizeIntroText(description);
+        return StrUtil.isBlank(normalizedDescription)
+            ? "该技能用于扩展当前对话能力，具体规则已注入本轮上下文"
+            : StrUtil.maxLength(normalizedDescription, MAX_SKILL_INTRO_DESCRIPTION_CHARS);
+    }
+
+    private String extractManifestDescription(String manifestContent) {
+        if (StrUtil.isBlank(manifestContent)) {
+            return "";
+        }
+        StringBuilder descriptionBuilder = new StringBuilder();
+        boolean collectingDescription = false;
+        for (String line : manifestContent.split("\\R", -1)) {
+            String trimmedLine = line.trim();
+            if (trimmedLine.startsWith("description:")) {
+                collectingDescription = true;
+                String inlineDescription = cleanYamlDescriptionValue(trimmedLine.substring("description:".length()));
+                if (StrUtil.isNotBlank(inlineDescription)) {
+                    descriptionBuilder.append(inlineDescription);
+                }
+                continue;
+            }
+            if (!collectingDescription) {
+                continue;
+            }
+            if (StrUtil.isBlank(trimmedLine)) {
+                continue;
+            }
+            if (!Character.isWhitespace(line.charAt(0)) || "---".equals(trimmedLine)) {
+                break;
+            }
+            if (!descriptionBuilder.isEmpty()) {
+                descriptionBuilder.append(' ');
+            }
+            descriptionBuilder.append(trimmedLine);
+        }
+        return descriptionBuilder.toString();
+    }
+
+    private String cleanYamlDescriptionValue(String rawValue) {
+        String value = StrUtil.trimToEmpty(rawValue);
+        if (StrUtil.equalsAny(value, ">", "|")) {
+            return "";
+        }
+        value = StrUtil.removePrefix(value, "\"");
+        value = StrUtil.removeSuffix(value, "\"");
+        value = StrUtil.removePrefix(value, "'");
+        value = StrUtil.removeSuffix(value, "'");
+        return value;
+    }
+
+    private String normalizeIntroText(String text) {
+        return StrUtil.blankToDefault(text, "").replaceAll("\\s+", " ").trim();
     }
 
     /**

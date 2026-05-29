@@ -28,6 +28,7 @@ import com.codingx.chat.domain.port.AiChatClient;
 import com.codingx.chat.domain.port.ChatStreamPublisher;
 import com.codingx.common.error.ErrorMessageCatalog;
 import com.codingx.common.exception.ConflictException;
+import java.util.Map;
 import com.codingx.common.exception.ForbiddenException;
 import com.codingx.expert.application.service.ChatExpertContextService;
 import com.codingx.expert.domain.model.ChatExpert;
@@ -474,7 +475,7 @@ class ChatApplicationServiceTest {
         }).when(aiChatClient).streamChat(any(), org.mockito.ArgumentMatchers.anyBoolean(), any());
 
         chatApplicationService.sendMessage(
-            SendChatMessageCommand.localOnly(9901L, "分析本地代码", false, List.of(), List.of(), null, "D:/code/test", List.of()),
+            SendChatMessageCommand.localOnly(9901L, "分析本地代码", false, List.of(), List.of(), Map.of(), null, "D:/code/test", List.of(), false),
             1002L
         );
 
@@ -515,7 +516,7 @@ class ChatApplicationServiceTest {
         }).when(aiChatClient).streamChat(any(), org.mockito.ArgumentMatchers.anyBoolean(), any());
 
         chatApplicationService.sendMessage(
-            SendChatMessageCommand.localOnly(9902L, "搜索本地依赖资料", false, List.of(), List.of(), null, "D:/code/test", List.of()),
+            SendChatMessageCommand.localOnly(9902L, "搜索本地依赖资料", false, List.of(), List.of(), Map.of(), null, "D:/code/test", List.of(), false),
             1002L
         );
 

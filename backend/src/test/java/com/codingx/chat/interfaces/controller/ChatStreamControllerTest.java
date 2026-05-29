@@ -13,7 +13,7 @@ import static org.mockito.Mockito.when;
 import cn.dev33.satoken.stp.StpUtil;
 import com.codingx.chat.application.command.CreateConversationCommand;
 import com.codingx.chat.application.service.ChatConversationApplicationService;
-import com.codingx.chat.application.service.ChatStreamExecutionService;
+import com.codingx.chat.application.service.chat.ChatStreamExecutionService;
 import com.codingx.chat.application.service.ChatWorkspaceBindingService;
 import com.codingx.mcp.application.service.ChatMcpQueryService;
 import com.codingx.chat.domain.model.ChatConversation;
@@ -208,6 +208,8 @@ class ChatStreamControllerTest {
                 null,
                 null,
                 null,
+                null,
+                null,
                 null
             );
 
@@ -243,6 +245,7 @@ class ChatStreamControllerTest {
                 null,
                 6001L,
                 false,
+                null,
                 null,
                 null,
                 null,
@@ -294,6 +297,7 @@ class ChatStreamControllerTest {
                 null,
                 null,
                 false,
+                null,
                 null,
                 null,
                 null,
@@ -380,6 +384,8 @@ class ChatStreamControllerTest {
                 false,
                 "weather_query",
                 "agent-browser,weather_query",
+                null,
+                null,
                 null,
                 null,
                 """
@@ -561,6 +567,8 @@ class ChatStreamControllerTest {
                 null,
                 null,
                 null,
+                null,
+                null,
                 "9001,9002,9002,invalid"
             );
 
@@ -610,7 +618,9 @@ class ChatStreamControllerTest {
                 false,
                 null,
                 null,
+                null,
                 "solution-architect",
+                null,
                 null,
                 null,
                 null

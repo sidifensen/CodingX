@@ -5,7 +5,7 @@ import cn.hutool.core.util.StrUtil;
 import com.codingx.chat.application.command.CreateConversationCommand;
 import com.codingx.chat.application.command.SendChatMessageCommand;
 import com.codingx.chat.application.service.ChatConversationApplicationService;
-import com.codingx.chat.application.service.ChatStreamExecutionService;
+import com.codingx.chat.application.service.chat.ChatStreamExecutionService;
 import com.codingx.chat.application.service.ChatWorkspaceBindingService;
 import com.codingx.chat.domain.model.ChatConversation;
 import com.codingx.skill.domain.repository.ChatSkillRepository;
@@ -208,6 +208,7 @@ public class ChatStreamController {
             deepThinking,
             mcpCodes,
             skillCodes,
+            null,
             expertCode,
             null,
             repositoryPath,
@@ -232,7 +233,7 @@ public class ChatStreamController {
         String mcpCodes,
         String skillCodes
     ) {
-        return streamChat(question, conversationId, null, deepThinking, mcpCodes, skillCodes, null, null, null, null, null);
+        return streamChat(question, conversationId, null, deepThinking, mcpCodes, skillCodes, null, null, null, null, null, null);
     }
 
     /**
@@ -253,7 +254,7 @@ public class ChatStreamController {
         String skillCodes,
         String messages
     ) {
-        return streamChat(question, conversationId, null, deepThinking, mcpCodes, skillCodes, null, null, null, messages, null);
+        return streamChat(question, conversationId, null, deepThinking, mcpCodes, skillCodes, null, null, null, null, messages, null);
     }
 
     /**
@@ -276,7 +277,7 @@ public class ChatStreamController {
         String repositoryPath,
         String messages
     ) {
-        return streamChat(question, conversationId, null, deepThinking, mcpCodes, skillCodes, null, null, repositoryPath, messages, null);
+        return streamChat(question, conversationId, null, deepThinking, mcpCodes, skillCodes, null, null, null, repositoryPath, messages, null);
     }
 
     /**
@@ -387,6 +388,7 @@ public class ChatStreamController {
             expertCode,
             normalizedRepositoryPath,
             attachmentIds,
+            false,
             localRuntime
         );
     }

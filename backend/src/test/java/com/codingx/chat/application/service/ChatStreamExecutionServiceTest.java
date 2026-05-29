@@ -11,6 +11,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.when;
 
 import com.codingx.chat.application.command.SendChatMessageCommand;
+import com.codingx.chat.application.service.chat.ChatStreamExecutionService;
 import com.codingx.chat.domain.model.ChatConversation;
 import com.codingx.chat.domain.model.ChatConversationStatus;
 import com.codingx.chat.domain.model.ChatExecutionRun;
@@ -474,9 +475,11 @@ class ChatStreamExecutionServiceTest {
             false,
             java.util.List.of(),
             java.util.List.of(),
+            java.util.Map.of(),
             null,
             "D:/code/test",
-            java.util.List.of()
+            java.util.List.of(),
+            false
         );
         org.mockito.Mockito.doAnswer(invocation -> {
             started.countDown();

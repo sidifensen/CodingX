@@ -3,7 +3,11 @@ package com.codingx.chat.application.service.chat;
 import cn.hutool.core.util.StrUtil;
 import com.codingx.chat.application.command.SendChatMessageCommand;
 import com.codingx.chat.application.service.ChatApplicationService;
+import com.codingx.chat.application.service.ChatExecutionContext;
+import com.codingx.chat.application.service.ChatRuntimeGuardService;
 import com.codingx.chat.application.service.ChatWorkspaceBindingService;
+import com.codingx.chat.application.service.ConversationTraceRecordService;
+import com.codingx.chat.application.service.ConversationTraceContext;
 import com.codingx.chat.domain.model.ChatExecutionRun;
 import com.codingx.chat.domain.model.ChatTraceRun;
 import com.codingx.chat.domain.repository.ChatConversationRepository;
@@ -48,6 +52,7 @@ public class ChatStreamExecutionService {
     private final TaskRepository taskRepository;
     private final ChatStreamPublisher chatStreamPublisher;
     private final ExecutorService executor;
+    private final com.codingx.skill.application.service.SkillLocalCacheService skillLocalCacheService;
 
     /**
      * 注入可替换执行器，便于测试与后续线程池治理。
@@ -68,6 +73,7 @@ public class ChatStreamExecutionService {
         ChatWorkspaceBindingService chatWorkspaceBindingService,
         TaskRepository taskRepository,
         ChatStreamPublisher chatStreamPublisher,
+        com.codingx.skill.application.service.SkillLocalCacheService skillLocalCacheService,
         @Qualifier("chatStreamExecutor")
         ExecutorService executor
     ) {
@@ -82,6 +88,7 @@ public class ChatStreamExecutionService {
         this.chatWorkspaceBindingService = chatWorkspaceBindingService;
         this.taskRepository = taskRepository;
         this.chatStreamPublisher = chatStreamPublisher;
+        this.skillLocalCacheService = skillLocalCacheService;
         this.executor = executor;
     }
 
@@ -113,6 +120,7 @@ public class ChatStreamExecutionService {
             chatWorkspaceBindingService,
             taskRepository,
             new NoopChatStreamPublisher(),
+            null,
             executor
         );
     }
@@ -432,10 +440,6 @@ public class ChatStreamExecutionService {
             } else {
                 // 云端运行时：从 RustFS 下载到临时目录
                 try {
-                    com.codingx.skill.application.service.SkillLocalCacheService skillLocalCacheService =
-                        org.springframework.context.ApplicationContextProvider.getBean(
-                            com.codingx.skill.application.service.SkillLocalCacheService.class
-                        );
                     Path skillPath = skillLocalCacheService.downloadSkillToTemp(skillCode);
                     skillDirs.put(skillCode, skillPath);
                     if (tempSkillRoot == null) {

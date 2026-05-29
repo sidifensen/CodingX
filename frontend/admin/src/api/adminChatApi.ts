@@ -780,12 +780,15 @@ export class AdminChatApi {
    * 上传技能包并由后端自动解析 SKILL.md 元信息。
    * @param file 技能包文件（zip 或 skill）。
    * @param category 可选分类。
+   * @param directoryFiles 目录文件列表。
+   * @param forceOverwrite 是否强制覆盖同名技能。
    * @returns 解析后的技能配置。
    */
   static async uploadSkillPackage(
     file: File | null,
     category?: string,
     directoryFiles?: File[],
+    forceOverwrite?: boolean,
   ): Promise<AdminSkill> {
     const formData = new FormData();
     const hasDirectoryFiles = Array.isArray(directoryFiles) && directoryFiles.length > 0;
@@ -802,6 +805,9 @@ export class AdminChatApi {
     }
     if (category && category.trim()) {
       formData.append('category', category.trim());
+    }
+    if (forceOverwrite) {
+      formData.append('forceOverwrite', 'true');
     }
     return this.request<AdminSkill>('/api/admin/skills/upload', {
       method: 'POST',

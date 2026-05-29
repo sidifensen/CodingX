@@ -127,7 +127,7 @@ public class AdminChatSkillService {
     }
 
     /**
-     * 删除技能。
+     * 物理删除技能，同时删除 rustfs 中的文件。
      * @param id 主键。
      */
     public void delete(Long id) {
@@ -135,7 +135,23 @@ public class AdminChatSkillService {
         if (existing == null) {
             throw new NotFoundException(ErrorMessageCatalog.CHAT_SKILL_NOT_FOUND);
         }
-        chatSkillRepository.softDeleteById(id);
+
+        // 如果有存储键，先删除 rustfs 中的文件
+        if (StrUtil.isNotBlank(existing.getStorageKey())) {
+            try {
+                if (StrUtil.equals(existing.getPackageStorageFormat(), STORAGE_FORMAT_DIRECTORY)) {
+                    rustFsSkillPackageClient.deleteDirectory(existing.getStorageKey());
+                } else {
+                    rustFsSkillPackageClient.deleteObject(existing.getStorageKey());
+                }
+            } catch (Exception exception) {
+                // 记录日志但不阻塞删除流程
+                throw new BusinessException("CHAT_SKILL_DELETE_STORAGE_FAILED", "删除技能存储文件失败：" + exception.getMessage());
+            }
+        }
+
+        // 物理删除数据库记录
+        chatSkillRepository.deleteById(id);
     }
 
     /**
@@ -145,7 +161,7 @@ public class AdminChatSkillService {
      * @return 新增或更新后的技能。
      */
     public ChatSkill uploadSkillPackage(MultipartFile file, String category) {
-        return uploadSkillPackage(file, List.of(), category);
+        return uploadSkillPackage(file, List.of(), category, false);
     }
 
     /**
@@ -153,9 +169,10 @@ public class AdminChatSkillService {
      * @param file 单文件上传（zip/skill），与 files 二选一。
      * @param files 多文件上传（目录上传）。
      * @param category 可选分类。
+     * @param forceOverwrite 是否强制覆盖同名技能。
      * @return 新增或更新后的技能。
      */
-    public ChatSkill uploadSkillPackage(MultipartFile file, List<MultipartFile> files, String category) {
+    public ChatSkill uploadSkillPackage(MultipartFile file, List<MultipartFile> files, String category, Boolean forceOverwrite) {
         List<UploadedSkillFile> uploadedFiles = resolveUploadedFiles(file, files);
         UploadedSkillFile manifestFile = requireRootSkillManifest(uploadedFiles);
         SkillManifest manifest = parseSkillManifest(new String(manifestFile.bytes(), StandardCharsets.UTF_8));
@@ -168,9 +185,25 @@ public class AdminChatSkillService {
             throw new BusinessException("CHAT_SKILL_UPLOAD_DUPLICATE", ErrorMessageCatalog.CHAT_SKILL_UPLOAD_DUPLICATE);
         }
 
+        // 检查是否存在同名 storage_key
+        String baseStorageKey = buildBaseStorageKey(normalizedSkillCode);
+        boolean storageKeyExists = checkStorageKeyExists(baseStorageKey);
+
+        if (storageKeyExists && !Boolean.TRUE.equals(forceOverwrite)) {
+            throw new BusinessException("CHAT_SKILL_STORAGE_KEY_DUPLICATE", "技能存储键已存在，是否覆盖？");
+        }
+
+        // 如果强制覆盖且存在同名，添加时间戳后缀
         String storageKey;
+        if (storageKeyExists && Boolean.TRUE.equals(forceOverwrite)) {
+            String timestamp = String.valueOf(System.currentTimeMillis());
+            storageKey = baseStorageKey + "-" + timestamp;
+        } else {
+            storageKey = baseStorageKey;
+        }
+
         try {
-            storageKey = rustFsSkillPackageClient.uploadDirectory(toStorageFiles(uploadedFiles), normalizedSkillCode);
+            rustFsSkillPackageClient.uploadDirectoryWithKey(toStorageFiles(uploadedFiles), storageKey);
         } catch (Exception exception) {
             throw new BusinessException("CHAT_SKILL_UPLOAD_FAILED", ErrorMessageCatalog.CHAT_SKILL_UPLOAD_FAILED);
         }
@@ -248,6 +281,15 @@ public class AdminChatSkillService {
         } catch (Exception exception) {
             throw new NotFoundException(ErrorMessageCatalog.CHAT_SKILL_PACKAGE_FILE_NOT_FOUND);
         }
+
+        // 检查是否为图片文件
+        if (looksLikeImage(normalizedPath)) {
+            // 图片文件返回 base64 编码
+            String base64Content = "data:image/" + getImageExtension(normalizedPath) + ";base64," +
+                java.util.Base64.getEncoder().encodeToString(entryBytes);
+            return new SkillPackageFileContent(normalizedPath, base64Content, false);
+        }
+
         if (looksLikeBinary(entryBytes)) {
             throw new BusinessException("CHAT_SKILL_PACKAGE_BINARY_FILE", ErrorMessageCatalog.CHAT_SKILL_PACKAGE_BINARY_FILE);
         }
@@ -543,6 +585,29 @@ public class AdminChatSkillService {
         return normalized;
     }
 
+    /**
+     * 构建基础存储键（不含时间戳）。
+     * @param skillCode 技能编码。
+     * @return 基础存储键。
+     */
+    private String buildBaseStorageKey(String skillCode) {
+        return "chat-skills/packages/" + skillCode;
+    }
+
+    /**
+     * 检查存储键是否已存在。
+     * @param storageKey 存储键。
+     * @return 是否存在。
+     */
+    private boolean checkStorageKeyExists(String storageKey) {
+        try {
+            List<RustFsSkillPackageClient.SkillObjectMetadata> objects = rustFsSkillPackageClient.listDirectory(storageKey);
+            return !objects.isEmpty();
+        } catch (Exception exception) {
+            return false;
+        }
+    }
+
     private ChatSkill requireSkillById(Long id) {
         ChatSkill skill = chatSkillRepository.findById(id);
         if (skill == null) {
@@ -699,6 +764,29 @@ public class AdminChatSkillService {
             }
         }
         return false;
+    }
+
+    private boolean looksLikeImage(String path) {
+        String lowerPath = path.toLowerCase(Locale.ROOT);
+        return lowerPath.endsWith(".jpg") || lowerPath.endsWith(".jpeg") ||
+               lowerPath.endsWith(".png") || lowerPath.endsWith(".gif") ||
+               lowerPath.endsWith(".webp") || lowerPath.endsWith(".svg");
+    }
+
+    private String getImageExtension(String path) {
+        String lowerPath = path.toLowerCase(Locale.ROOT);
+        if (lowerPath.endsWith(".jpg") || lowerPath.endsWith(".jpeg")) {
+            return "jpeg";
+        } else if (lowerPath.endsWith(".png")) {
+            return "png";
+        } else if (lowerPath.endsWith(".gif")) {
+            return "gif";
+        } else if (lowerPath.endsWith(".webp")) {
+            return "webp";
+        } else if (lowerPath.endsWith(".svg")) {
+            return "svg+xml";
+        }
+        return "jpeg";
     }
 
     private record SkillManifest(String name, String description) {

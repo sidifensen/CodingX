@@ -37,7 +37,7 @@ rustfs:
   access-key: ${RUSTFS_ACCESS_KEY:rustfsadmin} # RustFS 访问密钥
   secret-key: ${RUSTFS_SECRET_KEY:rustfsadmin} # RustFS 秘密密钥
   region: ${RUSTFS_REGION:us-east-1} # RustFS 区域
-  bucket: ${RUSTFS_BUCKET:codingx-skills} # RustFS 存储桶名称
+  bucket: ${RUSTFS_BUCKET:codingx} # RustFS 存储桶名称
   skill-prefix: ${RUSTFS_SKILL_PREFIX:chat-skills/packages} # 技能文件前缀路径
   attachment-prefix: ${RUSTFS_ATTACHMENT_PREFIX:chat/attachments} # 附件文件前缀路径
 

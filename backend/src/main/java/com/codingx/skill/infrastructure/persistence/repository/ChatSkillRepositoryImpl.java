@@ -118,6 +118,11 @@ public class ChatSkillRepositoryImpl implements ChatSkillRepository {
     }
 
     @Override
+    public void deleteById(Long id) {
+        chatSkillMapper.deleteById(id);
+    }
+
+    @Override
     public List<ChatSkill> findByTaskId(Long taskId) {
         if (taskId == null) {
             return List.of();

@@ -117,13 +117,9 @@
     background-clip: padding-box;
   }
 
-  /* 仅缩短聊天主内容区右侧滚动条的可视轨道，避免整条从顶部贯穿到底部。 */
+  /* 聊天主内容区只在顶部避开标题按钮；底部由输入区参与布局，不再裁切滚动条轨道。 */
   .chat-scroll-region::-webkit-scrollbar-track-piece:start {
     margin-top: 96px;
-  }
-
-  .chat-scroll-region::-webkit-scrollbar-track-piece:end {
-    margin-bottom: 180px;
   }
 
   /* 用户消息气泡自带悬浮操作区，亮暗主题均使用统一令牌，避免透明叠底影响阅读。 */

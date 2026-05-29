@@ -67,10 +67,8 @@ export default function ChatView({
 }: ChatViewProps) {
   // 关键约束：只有用户仍停留在消息尾部附近时才自动跟随，避免流式生成期间抢夺用户手动上滑。
   const AUTO_SCROLL_BOTTOM_THRESHOLD = 48;
-  // 步骤：基准底部留白用于兜底，避免在首帧测量前消息末尾与输入区发生重叠。
-  const CHAT_INPUT_BASE_SAFE_BOTTOM = 160;
-  // 步骤：在输入区高度基础上再补偿额外空隙，确保最后一条消息与操作栏保持可读间距。
-  const CHAT_INPUT_EXTRA_SAFE_GAP = 24;
+  // 输入区参与底部布局后，消息区只需要短间距，避免绝对覆盖导致底部消息不可达。
+  const CHAT_SCROLL_BOTTOM_GAP = 24;
   const {
     runtimeTargets,
     activeRuntimeTarget,
@@ -156,8 +154,6 @@ export default function ChatView({
   const chatInputRef = React.useRef<HTMLTextAreaElement | null>(null);
   const inputPreviewRef = React.useRef<HTMLDivElement | null>(null);
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
-  const chatInputDockRef = React.useRef<HTMLDivElement | null>(null);
-  const [chatInputSafeBottom, setChatInputSafeBottom] = React.useState(CHAT_INPUT_BASE_SAFE_BOTTOM);
   const [previewAttachment, setPreviewAttachment] = React.useState<{
     src: string;
     alt: string;
@@ -793,35 +789,6 @@ export default function ChatView({
   }, [messages, scrollToLatestMessage]);
 
   /**
-   * 动态测量底部输入栏高度，并同步到消息滚动区底部留白。
-   * 避免输入栏因多行文本增高后遮挡最后一条消息。
-   */
-  React.useEffect(() => {
-    const inputDockElement = chatInputDockRef.current;
-    if (!inputDockElement) {
-      return undefined;
-    }
-
-    const syncChatInputSafeBottom = () => {
-      const measuredHeight = inputDockElement.offsetHeight;
-      const nextSafeBottom = Math.max(
-        CHAT_INPUT_BASE_SAFE_BOTTOM,
-        measuredHeight + CHAT_INPUT_EXTRA_SAFE_GAP,
-      );
-      setChatInputSafeBottom(nextSafeBottom);
-    };
-
-    syncChatInputSafeBottom();
-    const resizeObserver = new ResizeObserver(syncChatInputSafeBottom);
-    resizeObserver.observe(inputDockElement);
-    window.addEventListener('resize', syncChatInputSafeBottom);
-    return () => {
-      resizeObserver.disconnect();
-      window.removeEventListener('resize', syncChatInputSafeBottom);
-    };
-  }, []);
-
-  /**
    * 根据输入内容动态计算输入框高度，保持 1 行起步、最多 9 行后内部滚动。
    */
   React.useEffect(() => {
@@ -1016,12 +983,12 @@ export default function ChatView({
         <div
           ref={chatScrollRegionRef}
           data-testid="chat-scroll-region"
-          className="chat-scroll-region relative flex-1 overflow-y-auto px-4 pt-6 md:px-8 md:pt-20"
+          className="chat-scroll-region relative min-h-0 flex-1 overflow-y-auto px-4 pt-6 md:px-8 md:pt-20"
           onScroll={handleChatScroll}
           style={{
-            paddingBottom: `${chatInputSafeBottom}px`,
+            paddingBottom: `${CHAT_SCROLL_BOTTOM_GAP}px`,
             scrollPaddingTop: '96px',
-            scrollPaddingBottom: `${chatInputSafeBottom}px`,
+            scrollPaddingBottom: `${CHAT_SCROLL_BOTTOM_GAP}px`,
           }}
         >
           {showLandingState ? (
@@ -1215,7 +1182,7 @@ export default function ChatView({
                         <div
                           ref={latestMessageAnchorRef}
                           data-testid="latest-message-anchor"
-                          className="h-0 scroll-mb-[160px] md:scroll-mb-[180px]"
+                          className="h-0 scroll-mb-6"
                         />
                       ) : null}
                     </div>
@@ -1234,9 +1201,8 @@ export default function ChatView({
 
         {!shareSelectionState.isActive && !deleteSelectionState.isActive ? (
           <div
-            ref={chatInputDockRef}
             data-testid="chat-input-dock"
-            className="absolute bottom-0 left-0 right-0 z-30 bg-background px-4 pb-6 pt-4 shadow-[0_-18px_42px_rgba(0,0,0,0.18)] md:px-8"
+            className="relative z-30 shrink-0 bg-background px-4 pb-6 pt-4 md:px-8"
           >
             <div className="mx-auto max-w-4xl">
             {streamQueueState ? (
@@ -1246,7 +1212,8 @@ export default function ChatView({
             ) : null}
             <form
               onSubmit={(event) => void handleSubmit(event)}
-              className="rounded-[24px] border border-border bg-surface shadow-[0_20px_64px_rgba(0,0,0,0.12)]"
+              // 业务意图：只保留输入操作栏自身边界，外层 dock 不再额外包装成卡片或分区。
+              className="rounded-[24px] border border-border bg-surface"
             >
               <div ref={selectorLayerRef} className="px-4 pb-2 pt-3">
                 <div className="relative mb-2">
@@ -1386,6 +1353,8 @@ export default function ChatView({
                         ) : filteredSkills.length ? (
                           filteredSkills.map((skill) => {
                             const isSelected = selectedSkillCodes.includes(skill.skillCode);
+                            // 技能说明优先展示给用户理解用途；缺少描述时再回退编码，避免空白行影响列表扫读。
+                            const skillDescription = skill.description?.trim() || skill.skillCode;
                             return (
                               <button
                                 key={skill.skillCode}
@@ -1409,8 +1378,8 @@ export default function ChatView({
                                       {skill.displayName}
                                     </span>
                                   </span>
-                                  <span className="mt-1 block truncate font-mono text-[11px] text-muted">
-                                    /{skill.skillCode}
+                                  <span className="mt-1 block truncate text-[11px] text-muted">
+                                    {skillDescription}
                                   </span>
                                 </span>
                                 {isSelected ? (
@@ -2642,6 +2611,7 @@ function resolveOptimisticCitationReferences(
 function isOptimisticUserMessageId(messageId: string) {
   return messageId.startsWith('optimistic-user-') || messageId.startsWith('optimistic-edit-user-');
 }
+
 /**
  * 反查当前助手消息对应的用户提问消息 ID。
  * 搜索来源挂在提问消息上，因此正文里的引用编号必须回溯到上一条用户消息。
@@ -3518,15 +3488,6 @@ function UserMessageBubble({
         </div>
       ) : (
         <>
-          {message.skillCodes && message.skillCodes.length > 0 ? (
-            <div className="chat-user-message-bubble rounded-[20px] px-4 py-2">
-              <MessageSkillChips
-                messageId={message.id}
-                skillCodes={message.skillCodes}
-                skillNameMap={skillNameMap}
-              />
-            </div>
-          ) : null}
           {hasAttachments ? (
             <MessageAttachmentList
               attachments={message.attachments ?? []}
@@ -3534,11 +3495,22 @@ function UserMessageBubble({
               onPreviewImage={onPreviewImage}
             />
           ) : null}
-          {hasTextContent ? (
+          {(message.skillCodes && message.skillCodes.length > 0) || hasTextContent ? (
             <div className="chat-user-message-bubble rounded-[20px] px-4 py-2">
-              <div className="whitespace-pre-wrap text-sm leading-6">
-                {content}
-              </div>
+              {message.skillCodes && message.skillCodes.length > 0 ? (
+                <div className="mb-2">
+                  <MessageSkillChips
+                    messageId={message.id}
+                    skillCodes={message.skillCodes}
+                    skillNameMap={skillNameMap}
+                  />
+                </div>
+              ) : null}
+              {hasTextContent ? (
+                <div className="whitespace-pre-wrap text-sm leading-6">
+                  {content}
+                </div>
+              ) : null}
             </div>
           ) : null}
         </>

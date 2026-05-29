@@ -52,16 +52,19 @@ public class AdminChatSkillController {
     /**
      * 上传技能包并自动解析技能元信息。
      * @param file 技能包文件。
+     * @param files 技能文件列表（目录上传）。
      * @param category 可选分类。
+     * @param forceOverwrite 是否强制覆盖同名技能。
      * @return 解析后的技能记录。
      */
     @PostMapping("/upload")
     public ApiResponse<ChatSkill> uploadSkillPackage(
         @RequestParam(value = "file", required = false) MultipartFile file,
         @RequestParam(value = "files", required = false) List<MultipartFile> files,
-        @RequestParam(value = "category", required = false) String category
+        @RequestParam(value = "category", required = false) String category,
+        @RequestParam(value = "forceOverwrite", required = false, defaultValue = "false") Boolean forceOverwrite
     ) {
-        return ApiResponse.success(adminChatSkillService.uploadSkillPackage(file, files, category));
+        return ApiResponse.success(adminChatSkillService.uploadSkillPackage(file, files, category, forceOverwrite));
     }
 
     /**

@@ -98,6 +98,38 @@ public class RustFsSkillPackageClient {
     }
 
     /**
+     * 使用指定的存储键上传技能文件。
+     * @param fileObjects 技能文件集合，path 为目录内相对路径。
+     * @param storageKey 完整的存储键（不含时间戳）。
+     * @return 存储键。
+     */
+    public String uploadDirectoryWithKey(List<SkillFileObject> fileObjects, String storageKey) {
+        ensureBucketExists();
+        if (fileObjects == null || fileObjects.isEmpty()) {
+            throw new IllegalArgumentException(ErrorMessageCatalog.CHAT_SKILL_FILE_LIST_REQUIRED);
+        }
+        List<SkillFileObject> sortedFiles = fileObjects.stream()
+            .sorted(Comparator.comparing(SkillFileObject::path))
+            .toList();
+        // 上传前先清空旧对象，避免删除文件后残留脏数据。
+        deleteDirectory(storageKey);
+        for (SkillFileObject fileObject : sortedFiles) {
+            String normalizedPath = normalizeRelativePath(fileObject.path());
+            String key = storageKey + "/" + normalizedPath;
+            byte[] bytes = fileObject.bytes() == null ? new byte[0] : fileObject.bytes();
+            rustFsS3Client.putObject(
+                PutObjectRequest.builder()
+                    .bucket(bucketName)
+                    .key(key)
+                    .contentType(StrUtil.blankToDefault(fileObject.contentType(), guessContentType(normalizedPath)))
+                    .build(),
+                RequestBody.fromBytes(bytes)
+            );
+        }
+        return storageKey;
+    }
+
+    /**
      * 根据对象键下载技能包字节。
      * @param objectKey 对象键。
      * @return 技能包字节。

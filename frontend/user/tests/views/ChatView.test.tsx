@@ -199,6 +199,7 @@ describe('ChatView', () => {
     const citationLink = await screen.findByRole('link', { name: '[R1]' });
     expect(citationLink).toHaveAttribute('href', 'https://example.com/live');
   });
+
   /**
    * 已登录发送消息时应调用工作台提交动作。
    */
@@ -537,9 +538,9 @@ describe('ChatView', () => {
   });
 
   /**
-   * 消息滚动区需要固定底部安全留白，避免滚动条到底后仍可继续被压缩。
+   * 输入区应参与主列布局，消息滚动区只保留短间距，避免绝对覆盖导致底部内容和滚动条不可达。
    */
-  it('应按输入区高度动态设置消息滚动区底部留白', async () => {
+  it('应让输入区占据底部布局而不是覆盖消息滚动区', async () => {
     render(
       <ChatView isAuthenticated={true} onRequireLogin={vi.fn()} workspace={createWorkspace()} />,
     );
@@ -547,12 +548,15 @@ describe('ChatView', () => {
     const scrollRegion = screen.getByTestId('chat-scroll-region');
     const inputDock = screen.getByTestId('chat-input-dock');
     expect(scrollRegion).toHaveStyle({
-      paddingBottom: '160px',
-      scrollPaddingBottom: '160px',
+      paddingBottom: '24px',
+      scrollPaddingBottom: '24px',
     });
+    expect(scrollRegion).toHaveClass('min-h-0');
     expect(inputDock).toBeInTheDocument();
+    expect(inputDock).toHaveClass('shrink-0');
     expect(inputDock).toHaveClass('z-30');
     expect(inputDock).toHaveClass('bg-background');
+    expect(inputDock).not.toHaveClass('absolute');
     expect(inputDock).not.toHaveClass('bg-background/88');
   });
 
@@ -1831,6 +1835,10 @@ describe('ChatView', () => {
     const selectorPanel = screen.getByTestId('skill-selector-panel');
     expect(selectorPanel).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '选择技能 销售查询' })).toBeInTheDocument();
+    // 技能列表第二行展示业务描述，并用单行截断承接长描述，避免继续展示内部斜杠命令。
+    const skillDescription = within(selectorPanel).getByText('查询销售汇总、排名、趋势与明细');
+    expect(skillDescription).toHaveClass('truncate');
+    expect(within(selectorPanel).queryByText('/sales_query')).not.toBeInTheDocument();
   });
 
   /**

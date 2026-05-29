@@ -64,6 +64,12 @@ public interface ChatSkillRepository {
     void softDeleteById(Long id);
 
     /**
+     * 物理删除技能。
+     * @param id 主键。
+     */
+    void deleteById(Long id);
+
+    /**
      * 按运行任务标识读取绑定技能。
      * @param taskId 任务标识（当前等价于 runId）。
      * @return 技能列表。

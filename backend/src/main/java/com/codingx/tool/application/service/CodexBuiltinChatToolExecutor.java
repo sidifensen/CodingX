@@ -460,7 +460,7 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
     }
 
     /**
-     * 规范化 standalone 文件头，剥离时间戳后再做工作区路径约束。
+     * 规范化标准 diff 文件头，剥离时间戳后再做工作区路径约束。
      */
     private String normalizeGitFileHeaderPathToken(Path workingDirectory, String headerBody) {
         String pathToken = extractGitFileHeaderPathToken(headerBody);

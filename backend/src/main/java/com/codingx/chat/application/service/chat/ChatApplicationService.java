@@ -376,6 +376,7 @@ public class ChatApplicationService {
             aiHistory.size(),
             searchReferences.size()
         );
+        logPromptContext(aiHistory);
         tokenCounterService.estimateConversationTokens(aiHistory);
         final Long activeRunId = runId;
         try {
@@ -765,6 +766,7 @@ public class ChatApplicationService {
             aiHistory.size(),
             searchReferences.size()
         );
+        logPromptContext(aiHistory);
         tokenCounterService.estimateConversationTokens(aiHistory);
         final Long activeRunId = runId;
         try {
@@ -1016,6 +1018,30 @@ public class ChatApplicationService {
     }
 
     /**
+     * 打印提示词上下文内容，用于调试和追踪模型输入。
+     * @param aiHistory 包含系统提示词和历史消息的完整上下文。
+     */
+    private void logPromptContext(List<ChatMessage> aiHistory) {
+        if (aiHistory == null || aiHistory.isEmpty()) {
+            log.info("提示词上下文: 空");
+            return;
+        }
+        ChatMessage systemMessage = aiHistory.stream()
+            .filter(msg -> msg.getRole() == ChatMessageRole.SYSTEM)
+            .findFirst()
+            .orElse(null);
+        if (systemMessage != null && StrUtil.isNotBlank(systemMessage.getContent())) {
+            String systemPrompt = systemMessage.getContent();
+            log.info("提示词上下文: 系统提示词长度={}, 预览={}",
+                systemPrompt.length(),
+                logPreview(systemPrompt));
+            log.debug("提示词上下文完整内容:\n{}", systemPrompt);
+        } else {
+            log.info("提示词上下文: 无系统提示词");
+        }
+    }
+
+    /**
      * 回填本轮 assistant 消息的思考正文与耗时。
      * 只在确实收到 thinking 增量时写入，避免普通消息或空思考内容污染消息表。
      *
@@ -1133,17 +1159,20 @@ public class ChatApplicationService {
             // 失败收口、finish 事件和消息落库都依赖这两个缓冲保留工具调用前已经到达的内容。
             if (builder.length() > publishedAssistantContextLength) {
                 // 将已展示给用户的正文同步给下一轮模型，避免工具回灌后重复输出相同开场白。
+                String publishedContent = buildPublishedAssistantContentContext(builder.toString());
                 currentHistory.add(ChatMessage.create(
                     cn.hutool.core.util.IdUtil.getSnowflakeNextId(),
                     command.conversationId(),
                     ChatMessageRole.SYSTEM,
-                    buildPublishedAssistantContentContext(builder.toString()),
+                    publishedContent,
                     ChatMessageStatus.COMPLETED,
                     null,
                     null,
                     null
                 ).attachRun(runId));
                 publishedAssistantContextLength = builder.length();
+                log.info("提示词上下文变化: 轮次={}, 类型=已发布内容, 长度={}", round + 1, publishedContent.length());
+                log.debug("提示词上下文变化内容:\n{}", publishedContent);
             }
             for (AiToolCall toolCall : toolCalls) {
                 ChatToolExecutionResult toolResult;
@@ -1153,16 +1182,20 @@ public class ChatApplicationService {
                     streamError[0] = exception;
                     return;
                 }
+                String toolEvidenceContext = buildLocalToolEvidenceContext(toolResult);
                 currentHistory.add(ChatMessage.create(
                     cn.hutool.core.util.IdUtil.getSnowflakeNextId(),
                     command.conversationId(),
                     ChatMessageRole.SYSTEM,
-                    buildLocalToolEvidenceContext(toolResult),
+                    toolEvidenceContext,
                     ChatMessageStatus.COMPLETED,
                     null,
                     null,
                     null
                 ).attachRun(runId));
+                log.info("提示词上下文变化: 轮次={}, 类型=工具结果, 工具={}, 长度={}",
+                    round + 1, toolCall.toolCode(), toolEvidenceContext.length());
+                log.debug("提示词上下文变化内容:\n{}", toolEvidenceContext);
             }
         }
         // 连续工具调用仍未结束时，用明确异常提示用户收敛工具调用策略。

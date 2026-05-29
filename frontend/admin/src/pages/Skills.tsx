@@ -52,6 +52,7 @@ export function Skills() {
   const [dialogMode, setDialogMode] = useState<SkillDialogMode>('create');
   const [viewMode, setViewMode] = useState<SkillViewMode>('list');
   const [editingSkill, setEditingSkill] = useState<AdminSkill | null>(null);
+  const [deleteConfirmSkill, setDeleteConfirmSkill] = useState<AdminSkill | null>(null);
 
   const skills = pageData?.records ?? [];
   const current = pageData?.current ?? pageNo;
@@ -110,6 +111,45 @@ export function Skills() {
       return;
     }
     setPreviewSkill(skill);
+  };
+
+  /**
+   * 切换技能启用/禁用状态。
+   * @param skill 目标技能。
+   */
+  const handleToggleEnabled = async (skill: AdminSkill) => {
+    if (!skill.id) {
+      return;
+    }
+    try {
+      const newEnabled = skill.enabled === 0 ? 1 : 0;
+      await AdminChatApi.updateSkill(skill.id, { ...skill, enabled: newEnabled });
+      await loadSkills(pageNo);
+    } catch (error) {
+      setErrorMessage(extractErrorMessage(error, '更新技能状态失败'));
+    }
+  };
+
+  /**
+   * 删除技能（物理删除，同时删除 rustfs 中的文件）。
+   * @param skill 目标技能。
+   */
+  const handleDeleteSkill = (skill: AdminSkill) => {
+    setDeleteConfirmSkill(skill);
+  };
+
+  const confirmDeleteSkill = async () => {
+    if (!deleteConfirmSkill?.id) {
+      return;
+    }
+    try {
+      await AdminChatApi.deleteSkill(deleteConfirmSkill.id);
+      setDeleteConfirmSkill(null);
+      await loadSkills(pageNo);
+    } catch (error) {
+      setErrorMessage(extractErrorMessage(error, '删除技能失败'));
+      setDeleteConfirmSkill(null);
+    }
   };
 
   return (
@@ -182,6 +222,8 @@ export function Skills() {
             onChangePage={setPageNo}
             onEditSkill={openEditDialog}
             onPreviewSkill={openPackagePreviewDialog}
+            onToggleEnabled={handleToggleEnabled}
+            onDeleteSkill={handleDeleteSkill}
           />
         ) : (
           isLoading ? (
@@ -193,6 +235,8 @@ export function Skills() {
               skills={skills}
               onEditSkill={openEditDialog}
               onPreviewSkill={openPackagePreviewDialog}
+              onToggleEnabled={handleToggleEnabled}
+              onDeleteSkill={handleDeleteSkill}
             />
           )
         )
@@ -230,6 +274,14 @@ export function Skills() {
           onClose={() => setPreviewSkill(null)}
         />
       ) : null}
+
+      {deleteConfirmSkill ? (
+        <DeleteConfirmDialog
+          skill={deleteConfirmSkill}
+          onClose={() => setDeleteConfirmSkill(null)}
+          onConfirm={confirmDeleteSkill}
+        />
+      ) : null}
     </div>
   );
 }
@@ -243,6 +295,8 @@ function SkillListView({
   onChangePage,
   onEditSkill,
   onPreviewSkill,
+  onToggleEnabled,
+  onDeleteSkill,
 }: {
   skills: AdminSkill[];
   current: number;
@@ -252,6 +306,8 @@ function SkillListView({
   onChangePage: (page: number) => void;
   onEditSkill: (skill: AdminSkill) => void;
   onPreviewSkill: (skill: AdminSkill) => void;
+  onToggleEnabled: (skill: AdminSkill) => void;
+  onDeleteSkill: (skill: AdminSkill) => void;
 }) {
   // 对齐 Trace 管理加载体验：仅在首屏加载且无记录时渲染骨架行。
   const showEmptyState = !loading && skills.length === 0;
@@ -301,7 +357,7 @@ function SkillListView({
                   <td className="px-md py-sm">
                     <span
                       className={[
-                        'rounded px-2 py-1 text-[11px]',
+                        'inline-block whitespace-nowrap rounded px-2 py-1 text-[11px]',
                         skill.enabled === 0
                           ? 'bg-surface-container text-secondary'
                           : 'bg-primary/15 text-primary',
@@ -314,20 +370,41 @@ function SkillListView({
                     <div className="inline-flex gap-xs">
                       <button
                         type="button"
+                        aria-label={`${skill.enabled === 0 ? '启用' : '禁用'}技能 ${skill.skillCode}`}
+                        className={[
+                          'whitespace-nowrap rounded-md border px-sm py-1 text-[12px] transition-colors',
+                          skill.enabled === 0
+                            ? 'border-primary bg-primary/10 text-primary hover:bg-primary/20'
+                            : 'border-border-hairline bg-surface-container-low text-ink hover:bg-surface-container',
+                        ].join(' ')}
+                        onClick={() => handleToggleEnabled(skill)}
+                      >
+                        {skill.enabled === 0 ? '启用' : '禁用'}
+                      </button>
+                      <button
+                        type="button"
                         aria-label={`资源预览 ${skill.skillCode}`}
                         disabled={!skill.id || !skill.storageKey}
-                        className="rounded-md border border-border-hairline bg-surface-container-low px-sm py-1 text-[12px] text-ink transition-colors hover:bg-surface-container disabled:cursor-not-allowed disabled:opacity-45"
+                        className="whitespace-nowrap rounded-md border border-border-hairline bg-surface-container-low px-sm py-1 text-[12px] text-ink transition-colors hover:bg-surface-container disabled:cursor-not-allowed disabled:opacity-45"
                         onClick={() => onPreviewSkill(skill)}
                       >
-                        资源预览
+                        预览
                       </button>
                       <button
                         type="button"
                         aria-label={`编辑技能 ${skill.skillCode}`}
-                        className="rounded-md border border-border-strong bg-surface-container-lowest px-sm py-1 text-[12px] text-ink transition-colors hover:bg-surface-container-low"
+                        className="whitespace-nowrap rounded-md border border-border-strong bg-surface-container-lowest px-sm py-1 text-[12px] text-ink transition-colors hover:bg-surface-container-low"
                         onClick={() => onEditSkill(skill)}
                       >
                         编辑
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={`删除技能 ${skill.skillCode}`}
+                        className="whitespace-nowrap rounded-md border border-error bg-error/10 px-sm py-1 text-[12px] text-error transition-colors hover:bg-error/20"
+                        onClick={() => handleDeleteSkill(skill)}
+                      >
+                        删除
                       </button>
                     </div>
                   </td>
@@ -354,10 +431,14 @@ function SkillCardView({
   skills,
   onEditSkill,
   onPreviewSkill,
+  onToggleEnabled,
+  onDeleteSkill,
 }: {
   skills: AdminSkill[];
   onEditSkill: (skill: AdminSkill) => void;
   onPreviewSkill: (skill: AdminSkill) => void;
+  onToggleEnabled: (skill: AdminSkill) => void;
+  onDeleteSkill: (skill: AdminSkill) => void;
 }) {
   if (skills.length === 0) {
     return (
@@ -392,20 +473,41 @@ function SkillCardView({
           <div className="mt-md flex justify-end gap-xs">
             <button
               type="button"
+              aria-label={`${skill.enabled === 0 ? '启用' : '禁用'}技能 ${skill.skillCode}`}
+              className={[
+                'whitespace-nowrap rounded-lg border px-sm py-1.5 text-[12px] transition-colors',
+                skill.enabled === 0
+                  ? 'border-primary bg-primary/10 text-primary hover:bg-primary/20'
+                  : 'border-border-hairline bg-surface-container-low text-ink hover:bg-surface-container',
+              ].join(' ')}
+              onClick={() => onToggleEnabled(skill)}
+            >
+              {skill.enabled === 0 ? '启用' : '禁用'}
+            </button>
+            <button
+              type="button"
               aria-label={`资源预览 ${skill.skillCode}`}
               disabled={!skill.id || !skill.storageKey}
-              className="rounded-lg border border-border-hairline bg-surface-container-low px-sm py-1.5 text-[12px] text-ink transition-colors hover:bg-surface-container disabled:cursor-not-allowed disabled:opacity-45"
+              className="whitespace-nowrap rounded-lg border border-border-hairline bg-surface-container-low px-sm py-1.5 text-[12px] text-ink transition-colors hover:bg-surface-container disabled:cursor-not-allowed disabled:opacity-45"
               onClick={() => onPreviewSkill(skill)}
             >
-              资源预览
+              预览
             </button>
             <button
               type="button"
               aria-label={`编辑技能 ${skill.skillCode}`}
-              className="rounded-lg border border-border-strong bg-surface-container-lowest px-sm py-1.5 text-[12px] text-ink transition-colors hover:bg-surface-container-low"
+              className="whitespace-nowrap rounded-lg border border-border-strong bg-surface-container-lowest px-sm py-1.5 text-[12px] text-ink transition-colors hover:bg-surface-container-low"
               onClick={() => onEditSkill(skill)}
             >
               编辑
+            </button>
+            <button
+              type="button"
+              aria-label={`删除技能 ${skill.skillCode}`}
+              className="whitespace-nowrap rounded-lg border border-error bg-error/10 px-sm py-1.5 text-[12px] text-error transition-colors hover:bg-error/20"
+              onClick={() => onDeleteSkill(skill)}
+            >
+              删除
             </button>
           </div>
         </div>
@@ -552,9 +654,9 @@ function SkillPackagePreviewDialog({ skill, onClose }: SkillPackagePreviewDialog
         </div>
 
         <div className="grid h-[72vh] grid-cols-1 gap-0 lg:grid-cols-[340px_1fr]">
-          <aside className="border-r border-border-hairline bg-surface-container-low">
-            <div className="border-b border-border-hairline px-md py-sm text-[12px] text-secondary">文件目录</div>
-            <div className="h-full overflow-y-auto px-xs py-xs">
+          <aside className="flex h-full flex-col border-r border-border-hairline bg-surface-container-low">
+            <div className="shrink-0 border-b border-border-hairline px-md py-sm text-[12px] text-secondary">文件目录</div>
+            <div className="min-h-0 flex-1 overflow-y-auto px-xs py-xs">
               {loadingEntries ? (
                 <div className="px-sm py-sm text-[12px] text-secondary">目录加载中...</div>
               ) : entriesError ? (
@@ -619,9 +721,19 @@ function SkillPackagePreviewDialog({ skill, onClose }: SkillPackagePreviewDialog
                       文件较大，已截断到 128KB 进行预览。
                     </div>
                   ) : null}
-                  <pre className="min-h-[320px] whitespace-pre-wrap break-words rounded-lg border border-border-hairline bg-surface-container px-md py-md font-data-mono text-[12px] leading-relaxed text-ink">
-                    {fileContent.content}
-                  </pre>
+                  {fileContent.content.startsWith('data:image/') ? (
+                    <div className="flex justify-center rounded-lg border border-border-hairline bg-surface-container p-md">
+                      <img
+                        src={fileContent.content}
+                        alt={fileContent.path}
+                        className="max-h-[600px] max-w-full object-contain"
+                      />
+                    </div>
+                  ) : (
+                    <pre className="min-h-[320px] whitespace-pre-wrap break-words rounded-lg border border-border-hairline bg-surface-container px-md py-md font-data-mono text-[12px] leading-relaxed text-ink">
+                      {fileContent.content}
+                    </pre>
+                  )}
                 </div>
               ) : (
                 <div className="px-md py-md text-[12px] text-secondary">请选择左侧文件进行在线预览。</div>
@@ -816,6 +928,7 @@ function SkillUploadDialog({ onClose, onUploaded }: SkillUploadDialogProps) {
   const [errorMessage, setErrorMessage] = React.useState('');
   const [migrationMessage, setMigrationMessage] = React.useState('');
   const [migrating, setMigrating] = React.useState(false);
+  const [showOverwriteConfirm, setShowOverwriteConfirm] = React.useState(false);
 
   React.useEffect(() => {
     if (!folderInputRef.current) {
@@ -832,16 +945,31 @@ function SkillUploadDialog({ onClose, onUploaded }: SkillUploadDialogProps) {
       setErrorMessage('请选择技能包文件或文件夹');
       return;
     }
+    await uploadSkill(false);
+  };
+
+  const uploadSkill = async (forceOverwrite: boolean) => {
     setSubmitting(true);
     try {
-      await AdminChatApi.uploadSkillPackage(file, category, directoryFiles);
+      await AdminChatApi.uploadSkillPackage(file, category, directoryFiles, forceOverwrite);
       await onUploaded();
       onClose();
     } catch (error) {
-      setErrorMessage(extractErrorMessage(error, '技能包上传失败'));
+      const errorMsg = extractErrorMessage(error, '技能包上传失败');
+      // 检查是否是重名错误
+      if (errorMsg.includes('技能存储键已存在') || errorMsg.includes('CHAT_SKILL_STORAGE_KEY_DUPLICATE')) {
+        setShowOverwriteConfirm(true);
+      } else {
+        setErrorMessage(errorMsg);
+      }
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const handleConfirmOverwrite = async () => {
+    setShowOverwriteConfirm(false);
+    await uploadSkill(true);
   };
 
   /**
@@ -987,6 +1115,49 @@ function SkillUploadDialog({ onClose, onUploaded }: SkillUploadDialogProps) {
           </div>
         </form>
       </div>
+
+      {showOverwriteConfirm ? (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-ink/45 px-md py-lg">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="确认覆盖同名技能"
+            className="w-full max-w-md overflow-hidden rounded-2xl border border-border-hairline bg-surface-container-lowest shadow-2xl"
+          >
+            <div className="border-b border-border-hairline bg-surface-container-lowest px-lg py-md">
+              <h3 className="font-title-md text-title-md text-ink">检测到同名技能</h3>
+            </div>
+
+            <div className="space-y-md p-lg">
+              <p className="text-body-md text-ink">
+                已存在同名的技能存储键，是否继续上传？
+              </p>
+              <p className="text-body-sm text-secondary">
+                选择继续将在存储键后添加时间戳后缀以避免冲突。
+              </p>
+            </div>
+
+            <div className="flex justify-end gap-sm border-t border-border-hairline bg-surface-container-low px-lg py-md">
+              <button
+                type="button"
+                onClick={() => setShowOverwriteConfirm(false)}
+                disabled={submitting}
+                className="rounded-lg border border-border-strong bg-surface-container-lowest px-lg py-2 font-button text-button text-ink hover:bg-surface-container-low disabled:opacity-60"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmOverwrite}
+                disabled={submitting}
+                className="rounded-lg bg-primary px-lg py-2 font-button text-button text-on-primary hover:bg-primary/90 disabled:opacity-60"
+              >
+                {submitting ? '上传中...' : '继续上传'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -1145,4 +1316,74 @@ function extractErrorMessage(error: unknown, fallback: string): string {
     return error.message || fallback;
   }
   return fallback;
+}
+
+interface DeleteConfirmDialogProps {
+  skill: AdminSkill;
+  onClose: () => void;
+  onConfirm: () => void;
+}
+
+/**
+ * 删除确认对话框。
+ */
+function DeleteConfirmDialog({ skill, onClose, onConfirm }: DeleteConfirmDialogProps) {
+  const [deleting, setDeleting] = React.useState(false);
+
+  const handleConfirm = async () => {
+    setDeleting(true);
+    try {
+      await onConfirm();
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/45 px-md py-lg">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="删除技能确认"
+        className="w-full max-w-md overflow-hidden rounded-2xl border border-border-hairline bg-surface-container-lowest shadow-2xl"
+      >
+        <div className="border-b border-border-hairline bg-surface-container-lowest px-lg py-md">
+          <h3 className="font-title-md text-title-md text-ink">确认删除技能</h3>
+        </div>
+
+        <div className="space-y-md p-lg">
+          <p className="text-body-md text-ink">
+            确定要删除技能 <span className="font-medium text-primary">{skill.displayName}</span> 吗？
+          </p>
+          <p className="text-body-sm text-secondary">
+            此操作将物理删除技能记录，并删除 RustFS 中的所有相关文件，无法恢复。
+          </p>
+          {skill.storageKey ? (
+            <p className="rounded-lg border border-border-hairline bg-surface-container-low px-sm py-sm font-data-mono text-[11px] text-secondary">
+              存储键: {skill.storageKey}
+            </p>
+          ) : null}
+        </div>
+
+        <div className="flex justify-end gap-sm border-t border-border-hairline bg-surface-container-low px-lg py-md">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={deleting}
+            className="rounded-lg border border-border-strong bg-surface-container-lowest px-lg py-2 font-button text-button text-ink hover:bg-surface-container-low disabled:opacity-60"
+          >
+            取消
+          </button>
+          <button
+            type="button"
+            onClick={handleConfirm}
+            disabled={deleting}
+            className="rounded-lg bg-error px-lg py-2 font-button text-button text-on-error hover:bg-error/90 disabled:opacity-60"
+          >
+            {deleting ? '删除中...' : '确认删除'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }

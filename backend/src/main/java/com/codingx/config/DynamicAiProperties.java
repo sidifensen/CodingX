@@ -62,14 +62,6 @@ public class DynamicAiProperties {
     }
 
     /**
-     * 获取系统提示词。
-     * @return 系统提示词。
-     */
-    public String systemPrompt() {
-        return runtimeSettingService.getString("ai.system_prompt", aiProperties.getSystemPrompt());
-    }
-
-    /**
      * 合并 provider 配置，并允许系统配置覆盖基础地址与密钥。
      * @return provider 映射。
      */

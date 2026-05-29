@@ -250,7 +250,6 @@ VALUES
     (7058, 'ai.chat_model', 'deepseek-ai/DeepSeek-V4-Flash', NULL, FALSE, NULL, NULL, NULL, 'STRING', 'ai', 'AI 默认聊天模型名称', 90, FALSE, 0),
     (7059, 'ai.connect_timeout_ms', '10000', NULL, FALSE, NULL, NULL, NULL, 'INTEGER', 'ai', 'AI 连接超时毫秒', 100, FALSE, 0),
     (7068, 'ai.read_timeout_ms', '120000', NULL, FALSE, NULL, NULL, NULL, 'INTEGER', 'ai', 'AI 读取超时毫秒', 110, FALSE, 0),
-    (7073, 'ai.system_prompt', 'You are the CodingX assistant. Be concise, practical, and safe.', NULL, FALSE, NULL, NULL, NULL, 'STRING', 'ai', 'AI 默认系统提示词', 120, FALSE, 0),
     (7074, 'ai.providers.siliconflow.base_url', 'https://api.siliconflow.cn', NULL, FALSE, NULL, NULL, NULL, 'STRING', 'ai.providers', '硅基流动接口地址', 130, FALSE, 0),
     (7075, 'ai.providers.siliconflow.api_key', '', NULL, TRUE, '', 'AES_GCM', 'v1', 'STRING', 'ai.providers', '硅基流动接口密钥', 140, FALSE, 0),
     (7076, 'ai.providers.bailian.base_url', 'https://dashscope.aliyuncs.com', NULL, FALSE, NULL, NULL, NULL, 'STRING', 'ai.providers', '百炼接口地址', 150, FALSE, 0),

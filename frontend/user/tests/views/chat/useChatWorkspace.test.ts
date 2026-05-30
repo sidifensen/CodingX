@@ -1679,6 +1679,150 @@ describe('useChatWorkspace', () => {
   });
 
   /**
+   * 刷新恢复命中本地快照且会话仍在运行时，不能只做静态回放，必须续接会话 SSE。
+   */
+  it('刷新恢复运行中会话快照时应重新订阅会话流', async () => {
+    window.localStorage.setItem(
+      'codingx.auth.session',
+      JSON.stringify({
+        token: 'token-123',
+        userId: '1002',
+        username: 'user',
+        displayName: 'CodingX User',
+        userType: 'USER',
+      }),
+    );
+    window.history.replaceState(window.history.state, '', '/?conversationId=2001');
+    window.localStorage.setItem(
+      'codingx.chat.workspace.conversations.v1',
+      JSON.stringify({
+        version: 1,
+        snapshots: {
+          'cloud::__no_workspace__': {
+            workspacePath: null,
+            workspaceLabel: '云端历史记录',
+            runtimeTarget: 'cloud',
+            lastOpenedAt: Date.now(),
+            activeConversationId: '2001',
+            conversations: [
+              {
+                id: '2001',
+                title: '刷新运行中会话',
+                status: 'ACTIVE',
+                activeTaskId: '9001',
+                activeTaskStatus: 'RUNNING',
+              },
+            ],
+            conversationRecords: {
+              '2001': {
+                owned: true,
+                messages: [
+                  {
+                    id: '1001',
+                    conversationId: '2001',
+                    role: 'USER',
+                    content: '开始后台任务',
+                    status: 'COMPLETED',
+                  },
+                  {
+                    id: '1002',
+                    conversationId: '2001',
+                    role: 'ASSISTANT',
+                    content: '已有输出',
+                    status: 'streaming',
+                  },
+                ],
+                executionSteps: [],
+                references: [],
+                artifacts: [],
+                currentExperts: [],
+                currentSkills: [],
+                currentMcps: [],
+              },
+            },
+          },
+        },
+      }),
+    );
+
+    const streamUrls: string[] = [];
+    const streamReadQueue: Array<{
+      resolve: (value: ReadableStreamReadResult<Uint8Array>) => void;
+      reject: (reason?: unknown) => void;
+    }> = [];
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === '/api/chat/conversations') {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            code: 'OK',
+            message: 'success',
+            data: [
+              {
+                id: '2001',
+                title: '刷新运行中会话',
+                status: 'ACTIVE',
+                activeTaskId: '9001',
+                activeTaskStatus: 'RUNNING',
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      if (
+        url === '/api/chat/sample-questions' ||
+        url === '/api/chat/experts' ||
+        url === '/api/chat/skills' ||
+        url === '/api/chat/mcps'
+      ) {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (url === '/api/chat/conversations/2001/stream') {
+        streamUrls.push(url);
+        const reader = {
+          read: vi.fn(
+            () =>
+              new Promise<ReadableStreamReadResult<Uint8Array>>((resolve, reject) => {
+                streamReadQueue.push({ resolve, reject });
+              }),
+          ),
+        };
+        return {
+          ok: true,
+          status: 200,
+          body: {
+            getReader: () => reader,
+          },
+        } as unknown as Response;
+      }
+      throw new Error(`Unhandled fetch in refresh running snapshot stream test: ${url}`);
+    });
+
+    const { result } = renderHook(() => useChatWorkspace(true));
+
+    await waitFor(() => {
+      expect(result.current.activeConversationId).toBe('2001');
+      expect(result.current.messages.find((message) => message.role === 'ASSISTANT')?.content).toBe('已有输出');
+    });
+    await waitFor(() => {
+      expect(streamUrls).toEqual(['/api/chat/conversations/2001/stream']);
+      expect(streamReadQueue.length).toBeGreaterThan(0);
+    });
+
+    await act(async () => {
+      streamReadQueue.shift()?.resolve({ done: true, value: undefined });
+    });
+    await waitFor(() => {
+      expect(result.current.isBootstrapping).toBe(false);
+    });
+  });
+
+  /**
    * 本地 token 存在时会在鉴权完成前先执行一次初始化；鉴权从未完成切到已完成后，
    * 第二轮初始化不应把第一轮已经恢复好的 URL 会话清空回首页。
    */

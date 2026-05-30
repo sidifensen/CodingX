@@ -16,6 +16,7 @@
 - [系统联网搜索禁用守卫](chat/web-search-disable-guard.md)
 - [聊天流式提交与引用链接](chat/stream-submit-citation.md)
 - [聊天流式完成收尾与发送解锁](chat/stream-finish-submit-unlock.md)
+- [聊天后台任务续流](chat/background-stream-resume.md)
 - [系统配置与密钥统一化](chat/system-config-secret-unification.md)
 - [聊天技能上下文持久化](chat/skill-context-persistence.md)
 

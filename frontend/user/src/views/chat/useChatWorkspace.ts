@@ -343,6 +343,14 @@ function markActiveTaskCompletionSeen(
 type WorkspaceGroupQueryMode = 'runtime-only' | 'all';
 
 /**
+ * 恢复运行中会话时用于跳过已在本地展示过的流式前缀，避免后端缓冲回放造成正文重复。
+ */
+interface StreamResumeSkipState {
+  remainingContent: string;
+  remainingThinkingContent: string;
+}
+
+/**
  * 统一判断 MCP 是否允许用户在会话中启用。
  * 关键约束：后端显式返回禁用或不可用时，前端必须强制剔除，不允许进入可选列表。
  * @param mcp MCP 配置。
@@ -529,6 +537,7 @@ export function useChatWorkspace(
   const activeConversationIdRef = useRef<string | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const streamMcpCallsRef = useRef<Record<string, McpCallItem[]>>({});
+  const streamResumeSkipRef = useRef<Record<string, StreamResumeSkipState>>({});
   const streamSessionSeedRef = useRef(0);
   const activeStreamSessionIdRef = useRef<number | null>(null);
   const finishedStreamSessionIdsRef = useRef<Set<number>>(new Set());
@@ -613,6 +622,47 @@ export function useChatWorkspace(
       messagesRef.current = nextMessages;
       return nextMessages;
     });
+  };
+
+  /**
+   * 恢复运行中会话时，后端会回放运行期缓冲；若本地快照已有部分正文，需要跳过已展示前缀。
+   * @param assistantMessageId 当前恢复流助手消息标识。
+   * @param field 需要消费的跳过字段。
+   * @param delta 本次 SSE 增量。
+   * @returns 真正需要追加到界面的增量。
+   */
+  const consumeResumeReplayPrefix = (
+    assistantMessageId: string,
+    field: keyof StreamResumeSkipState,
+    delta: string,
+  ) => {
+    if (!delta) {
+      return '';
+    }
+    const skipState = streamResumeSkipRef.current[assistantMessageId];
+    if (!skipState) {
+      return delta;
+    }
+    const remaining = skipState[field];
+    if (!remaining) {
+      return delta;
+    }
+    if (remaining.startsWith(delta)) {
+      skipState[field] = remaining.slice(delta.length);
+      return '';
+    }
+    const bufferedOffset = remaining.indexOf(delta);
+    if (bufferedOffset >= 0) {
+      skipState[field] = remaining.slice(bufferedOffset + delta.length);
+      return '';
+    }
+    if (delta.startsWith(remaining)) {
+      skipState[field] = '';
+      return delta.slice(remaining.length);
+    }
+    // 缓冲窗口可能已经从本地已看内容之后开始；一旦无法对齐，后续事件按 live 增量处理。
+    skipState[field] = '';
+    return delta;
   };
 
   /**
@@ -778,7 +828,11 @@ export function useChatWorkspace(
    * 当后端通过 meta 下发新会话 ID 时，立即写入当前分区会话列表，避免列表依赖后续刷新才出现。
    * @param conversationId 会话标识。
    */
-  const upsertConversationFromStreamMeta = (conversationId: string, conversationTitle?: string) => {
+  const upsertConversationFromStreamMeta = (
+    conversationId: string,
+    conversationTitle?: string,
+    activeTaskId?: string,
+  ) => {
     if (!conversationId) {
       return;
     }
@@ -795,6 +849,9 @@ export function useChatWorkspace(
             title: conversationTitle && conversationTitle.trim().length > 0
               ? conversationTitle
               : existingConversation.title,
+            // meta 是后台任务已创建的第一手信号；本地会话必须立即带上运行态，供离开后点回时恢复 SSE。
+            activeTaskId: activeTaskId ?? existingConversation.activeTaskId,
+            activeTaskStatus: activeTaskId ? 'RUNNING' : existingConversation.activeTaskStatus,
           }
         : {
             id: conversationId,
@@ -803,6 +860,8 @@ export function useChatWorkspace(
                 ? conversationTitle
                 : '新会话',
             status: 'ACTIVE',
+            activeTaskId,
+            activeTaskStatus: activeTaskId ? 'RUNNING' : undefined,
             workspaceType: activeRuntimeTarget === 'local' ? 'LOCAL' : undefined,
           };
     const nextConversations = upsertConversationToTop(
@@ -1422,6 +1481,16 @@ export function useChatWorkspace(
           {},
       });
       refreshWorkspaceGroups('all');
+      if (selectedConversation && isConversationTaskRunning(selectedConversation)) {
+        resumeRunningConversationStream(token, conversationId, conversationList, nextReplayMessagesWithPanels, {
+          executionSteps: nextSteps,
+          references: nextReferences,
+          artifacts: nextArtifacts,
+          currentExperts: nextCurrentExperts,
+          currentSkills: nextCurrentSkills,
+          currentMcps: nextCurrentMcps,
+        });
+      }
       return;
     }
     persistConversationState(conversationId, conversationList, {
@@ -1433,6 +1502,16 @@ export function useChatWorkspace(
       currentSkills: nextCurrentSkills,
       currentMcps: nextCurrentMcps,
     });
+    if (selectedConversation && isConversationTaskRunning(selectedConversation)) {
+      resumeRunningConversationStream(token, conversationId, conversationList, nextReplayMessagesWithPanels, {
+        executionSteps: nextSteps,
+        references: nextReferences,
+        artifacts: nextArtifacts,
+        currentExperts: nextCurrentExperts,
+        currentSkills: nextCurrentSkills,
+        currentMcps: nextCurrentMcps,
+      });
+    }
   };
 
   /**
@@ -1641,6 +1720,128 @@ export function useChatWorkspace(
   };
 
   /**
+   * 为已经在后台运行的会话重新建立 SSE 订阅，恢复离开页面期间仍在输出的内容。
+   * 业务约束：这是“续接查看”，不是新提交任务；断开本地订阅不能取消后端后台任务。
+   * @param token 当前登录令牌。
+   * @param conversationId 会话标识。
+   * @param conversationList 当前会话列表快照。
+   * @param replayMessages 已回放的消息列表。
+   */
+  const resumeRunningConversationStream = (
+    token: string,
+    conversationId: string,
+    conversationList: ConversationItem[],
+    replayMessages: ChatMessageItem[],
+    playbackState: {
+      executionSteps: ExecutionStepItem[];
+      references: ReferenceItem[];
+      artifacts: ArtifactItem[];
+      currentExperts: CurrentExpertItem[];
+      currentSkills: CurrentSkillItem[];
+      currentMcps: CurrentMcpItem[];
+    },
+  ) => {
+    if (activeStreamSessionIdRef.current != null || abortControllerRef.current != null) {
+      return;
+    }
+    const existingStreamingAssistant = [...replayMessages]
+      .reverse()
+      .find((message) => message.role === 'ASSISTANT' && message.status === 'streaming');
+    const resumedAssistantId =
+      existingStreamingAssistant?.id ?? `resumed-assistant-${Date.now()}`;
+    const resumedMessages =
+      existingStreamingAssistant != null
+        ? replayMessages
+        : [
+            ...replayMessages,
+            {
+              id: resumedAssistantId,
+              conversationId,
+              role: 'ASSISTANT',
+              content: '',
+              processCards: [],
+              timelineItems: [],
+              status: 'streaming',
+            } satisfies ChatMessageItem,
+          ];
+    const streamSessionId = createStreamSessionId();
+    const streamAbortController = new AbortController();
+    activeStreamSessionIdRef.current = streamSessionId;
+    abortControllerRef.current = streamAbortController;
+    streamMcpCallsRef.current[resumedAssistantId] = existingStreamingAssistant?.mcpCalls ?? [];
+    streamResumeSkipRef.current[resumedAssistantId] = {
+      // 后端会回放运行期完整缓冲；若本地已有半截输出，恢复流时先跳过这段前缀，避免重复拼接。
+      remainingContent: existingStreamingAssistant?.content ?? '',
+      remainingThinkingContent: existingStreamingAssistant?.thinkingContent ?? '',
+    };
+    streamStateRef.current = {
+      conversationId,
+      activeMessageId: resumedAssistantId,
+    };
+    setIsStreaming(true);
+    setStreamError('');
+    hideStreamQueueState();
+    setMessages(resumedMessages);
+    persistConversationState(conversationId, conversationList, {
+      messages: resumedMessages,
+      executionSteps: playbackState.executionSteps,
+      references: playbackState.references,
+      artifacts: playbackState.artifacts,
+      currentExperts: playbackState.currentExperts,
+      currentSkills: playbackState.currentSkills,
+      currentMcps: playbackState.currentMcps,
+    });
+
+    void (async () => {
+      try {
+        const response = await fetch(
+          `/api/chat/conversations/${encodeURIComponent(conversationId)}/stream`,
+          {
+            headers: {
+              satoken: token,
+            },
+            signal: streamAbortController.signal,
+          },
+        );
+        await ChatApi.assertStreamAuthorized(response);
+        await consumeSseStream(response, resumedAssistantId, streamSessionId);
+        const didFinishStream = finishedStreamSessionIdsRef.current.has(streamSessionId);
+        finishedStreamSessionIdsRef.current.delete(streamSessionId);
+        if (didFinishStream) {
+          const nextConversations = await loadConversations(token, workspaceId);
+          await selectConversation(
+            conversationId,
+            nextConversations,
+            streamMcpCallsRef.current[resumedAssistantId],
+            true,
+            true,
+          );
+        }
+      } catch (error) {
+        if (error instanceof DOMException && error.name === 'AbortError') {
+          return;
+        }
+        if (error instanceof ChatApi.UnauthorizedError) {
+          onUnauthorizedRef.current?.();
+          return;
+        }
+        setStreamError(error instanceof Error ? error.message : UserErrorMessages.CHAT_REQUEST_FAILED);
+      } finally {
+        finishedStreamSessionIdsRef.current.delete(streamSessionId);
+        delete streamMcpCallsRef.current[resumedAssistantId];
+        delete streamResumeSkipRef.current[resumedAssistantId];
+        if (abortControllerRef.current === streamAbortController) {
+          abortControllerRef.current = null;
+        }
+        if (isActiveStreamSession(streamSessionId)) {
+          activeStreamSessionIdRef.current = null;
+          setIsStreaming(false);
+        }
+      }
+    })();
+  };
+
+  /**
    * 对当前会话发起取消请求。
    */
   const cancelCurrentStream = async () => {
@@ -1689,19 +1890,13 @@ export function useChatWorkspace(
   const startNewConversation = async (
     createContext?: WorkspaceConversationCreateContext,
   ) => {
-    const token = currentToken();
-    const runningConversationId = streamStateRef.current?.conversationId ?? activeConversationId;
-
+    // 离开当前会话只断开本地 SSE 订阅；后台任务是否停止必须由“停止生成”显式触发。
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
     }
-    if (isStreaming && token && runningConversationId) {
-      try {
-        await ChatApi.cancelConversation(token, runningConversationId);
-      } catch {
-        // 步骤：新建流程以清空本地上下文为主，取消失败不应阻断用户回到首页空态。
-      }
-    }
+    // 新建态表示用户已经离开当前流；推进会话版本，拦截旧 finish 链路后续的慢回放。
+    streamSessionSeedRef.current += 1;
+    finishedStreamSessionIdsRef.current.clear();
 
     abortControllerRef.current = null;
     activeStreamSessionIdRef.current = null;
@@ -2346,12 +2541,13 @@ export function useChatWorkspace(
     if (eventName === 'meta' && isRecord(payload)) {
       const conversationId = String(payload.conversationId ?? '');
       if (conversationId) {
+        const taskId = payload.taskId == null ? undefined : String(payload.taskId);
         streamStateRef.current = {
           conversationId,
           activeMessageId: optimisticAssistantId,
         };
         setActiveConversationId(conversationId);
-        upsertConversationFromStreamMeta(conversationId);
+        upsertConversationFromStreamMeta(conversationId, undefined, taskId);
         // 业务约束：流式过程中一旦后端分配了新会话 ID，需立刻写入 URL 以支持刷新恢复。
         writeConversationIdToUrl(conversationId);
       }
@@ -2398,6 +2594,14 @@ export function useChatWorkspace(
 
     if (eventName === 'message' && isRecord(payload) && payload.type === 'response') {
       const delta = String(payload.delta ?? '');
+      const nextDelta = consumeResumeReplayPrefix(
+        optimisticAssistantId,
+        'remainingContent',
+        delta,
+      );
+      if (!nextDelta) {
+        return;
+      }
       setMessages((previousMessages) =>
         previousMessages.map((message) =>
           message.id === optimisticAssistantId
@@ -2407,7 +2611,7 @@ export function useChatWorkspace(
                 const nextProcessCards = finalizeCardsByType(currentProcessCards, ['analysis']);
                 return {
                   ...message,
-                  content: `${message.content}${delta}`,
+                  content: `${message.content}${nextDelta}`,
                   processCards: nextProcessCards,
                   timelineItems: appendContentToTimeline(
                     syncProcessCardsToTimeline(
@@ -2415,7 +2619,7 @@ export function useChatWorkspace(
                       currentProcessCards,
                       nextProcessCards,
                     ),
-                    delta,
+                    nextDelta,
                   ),
                 };
               })()
@@ -2427,6 +2631,14 @@ export function useChatWorkspace(
 
     if (eventName === 'thinking' && isRecord(payload) && payload.type === 'thinking') {
       const delta = String(payload.delta ?? '');
+      const nextDelta = consumeResumeReplayPrefix(
+        optimisticAssistantId,
+        'remainingThinkingContent',
+        delta,
+      );
+      if (!nextDelta) {
+        return;
+      }
       setMessages((previousMessages) =>
         previousMessages.map((message) =>
           message.id === optimisticAssistantId
@@ -2434,8 +2646,8 @@ export function useChatWorkspace(
                 const currentProcessCards = message.processCards ?? [];
                 const thinkingCardId = resolveThinkingProcessCardId(currentProcessCards);
                 const existingThinkingCard = currentProcessCards.find((card) => card.id === thinkingCardId);
-                const nextThinkingSummary = `${existingThinkingCard?.summary ?? ''}${delta}`;
-                const nextThinkingContent = `${message.thinkingContent ?? ''}${delta}`;
+                const nextThinkingSummary = `${existingThinkingCard?.summary ?? ''}${nextDelta}`;
+                const nextThinkingContent = `${message.thinkingContent ?? ''}${nextDelta}`;
                 const nextProcessCards = upsertProcessCard(
                   currentProcessCards,
                   buildAnalysisProcessCard(
@@ -3424,6 +3636,20 @@ export function useChatWorkspace(
       currentSkills: record.currentSkills,
       currentMcps: record.currentMcps,
     });
+    const selectedConversation = snapshot.conversations.find((item) => item.id === conversationId);
+    if (selectedConversation && isConversationTaskRunning(selectedConversation)) {
+      const token = currentToken();
+      if (token) {
+        resumeRunningConversationStream(token, conversationId, snapshot.conversations, replayMessages, {
+          executionSteps: record.executionSteps,
+          references: record.references,
+          artifacts: record.artifacts,
+          currentExperts: record.currentExperts ?? [],
+          currentSkills: record.currentSkills,
+          currentMcps: record.currentMcps,
+        });
+      }
+    }
   }
 
   /**

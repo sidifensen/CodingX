@@ -11,6 +11,7 @@ owned_paths:
 related_docs:
   - docs/superpowers/memory/chat/message-process-timeline-module-card.md
   - docs/superpowers/memory/chat/message-process-timeline-contract.md
+  - docs/superpowers/memory/chat/background-stream-resume-contract.md
   - docs/superpowers/memory/admin/workspace-management-module-card.md
   - docs/superpowers/memory/admin/workspace-management-contract.md
   - docs/superpowers/memory/lessons/stream-replay-stale-closure-overwrites-content.md
@@ -30,6 +31,8 @@ status: active
   - 聊天主消息区过程时间线的职责边界与扩展点
 - `docs/superpowers/memory/chat/message-process-timeline-contract.md`
   - 主消息区过程卡片与 SSE 事件映射契约
+- `docs/superpowers/memory/chat/background-stream-resume-contract.md`
+  - 聊天后台任务断开后继续执行、SSE 缓冲和前端续流恢复契约
   - `docs/superpowers/memory/lessons/stream-replay-stale-closure-overwrites-content.md`
     - 流式收敛回放不能用旧闭包覆盖刚生成完的 assistant 正文
   - `docs/superpowers/memory/lessons/chat-citation-links-must-not-wait-for-slow-replay-panels.md`

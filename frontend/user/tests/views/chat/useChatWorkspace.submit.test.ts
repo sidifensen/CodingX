@@ -385,6 +385,285 @@ describe('useChatWorkspace submit behavior', () => {
   });
 
   /**
+   * finish 后用户立即进入新建态时，旧流的慢速历史回放不能重新选中旧会话。
+   * 业务边界：离开页面是本地订阅脱离，不能被旧异步链路当作“继续查看旧会话”覆盖。
+   */
+  it('新建对话后应忽略旧流finish后的慢回放选中', async () => {
+    const streamReaders: Array<{
+      readQueue: Array<{
+        resolve: (value: ReadableStreamReadResult<Uint8Array>) => void;
+        reject: (reason?: unknown) => void;
+      }>;
+      read: ReturnType<typeof vi.fn>;
+    }> = [];
+    let conversationsRequestCount = 0;
+    let resolveConversationsAfterFinish: ((response: Response) => void) | null = null;
+    const conversationsAfterFinish = new Promise<Response>((resolve) => {
+      resolveConversationsAfterFinish = resolve;
+    });
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === '/api/chat/conversations') {
+        conversationsRequestCount += 1;
+        if (conversationsRequestCount === 1) {
+          return new Response(
+            JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+            { status: 200 },
+          );
+        }
+        return conversationsAfterFinish;
+      }
+      if (
+        url === '/api/chat/sample-questions' ||
+        url === '/api/chat/experts' ||
+        url === '/api/chat/skills' ||
+        url === '/api/chat/mcps' ||
+        url === '/api/chat/conversations/2001/messages' ||
+        url === '/api/chat/conversations/2001/steps' ||
+        url === '/api/chat/conversations/2001/references' ||
+        url === '/api/chat/conversations/2001/artifacts' ||
+        url === '/api/chat/conversations/2001/current-skills' ||
+        url === '/api/chat/conversations/2001/current-mcps' ||
+        url === '/api/chat/conversations/2001/current-experts'
+      ) {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (url.includes('/api/chat/stream')) {
+        const readQueue: Array<{
+          resolve: (value: ReadableStreamReadResult<Uint8Array>) => void;
+          reject: (reason?: unknown) => void;
+        }> = [];
+        const reader = {
+          readQueue,
+          read: vi.fn(
+            () =>
+              new Promise<ReadableStreamReadResult<Uint8Array>>((resolve, reject) => {
+                readQueue.push({ resolve, reject });
+              }),
+          ),
+        };
+        streamReaders.push(reader);
+        return {
+          ok: true,
+          status: 200,
+          body: {
+            getReader: () => reader,
+          },
+        } as unknown as Response;
+      }
+      throw new Error(`Unhandled fetch in finish start-new replay race test: ${url}`);
+    });
+
+    const { result } = renderHook(() => useChatWorkspace(true));
+    await waitFor(() => {
+      expect(result.current.isBootstrapping).toBe(false);
+    });
+
+    await act(async () => {
+      result.current.setInputValue('旧会话请求');
+    });
+    const submitPromise = result.current.submitMessage();
+
+    await waitFor(() => {
+      expect(streamReaders[0]?.readQueue.length).toBeGreaterThan(0);
+    });
+
+    await act(async () => {
+      streamReaders[0].readQueue.shift()?.resolve({
+        done: false,
+        value: new TextEncoder().encode(
+          'event:finish\ndata:{"conversationId":"2001","assistantMessageId":"3001","content":"旧会话回答","title":"旧会话"}\n\n',
+        ),
+      });
+    });
+    await waitFor(() => {
+      expect(result.current.isStreaming).toBe(false);
+    });
+
+    await act(async () => {
+      await result.current.startNewConversation();
+    });
+    expect(result.current.activeConversationId).toBeNull();
+    expect(result.current.messages).toEqual([]);
+
+    await act(async () => {
+      streamReaders[0].readQueue.shift()?.resolve({ done: true, value: undefined });
+    });
+    await act(async () => {
+      await submitPromise;
+    });
+
+    expect(resolveConversationsAfterFinish).not.toBeNull();
+    expect(conversationsRequestCount).toBe(1);
+    expect(result.current.activeConversationId).toBeNull();
+    expect(result.current.messages).toEqual([]);
+  });
+
+  /**
+   * 已有会话里继续提问后立即新建时，旧提交闭包中的 activeConversationId 不能把页面拉回旧会话。
+   */
+  it('已有会话提交完成后新建应阻止旧闭包重新选中原会话', async () => {
+    const streamReaders: Array<{
+      readQueue: Array<{
+        resolve: (value: ReadableStreamReadResult<Uint8Array>) => void;
+        reject: (reason?: unknown) => void;
+      }>;
+      read: ReturnType<typeof vi.fn>;
+    }> = [];
+    let conversationsRequestCount = 0;
+    let resolveConversationsAfterFinish: ((response: Response) => void) | null = null;
+    const conversationsAfterFinish = new Promise<Response>((resolve) => {
+      resolveConversationsAfterFinish = resolve;
+    });
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === '/api/chat/conversations') {
+        conversationsRequestCount += 1;
+        if (conversationsRequestCount === 1) {
+          return new Response(
+            JSON.stringify({
+              success: true,
+              code: 'OK',
+              message: 'success',
+              data: [
+                {
+                  id: '2001',
+                  title: '原会话',
+                  status: 'ACTIVE',
+                  lastRunId: '5001',
+                },
+              ],
+            }),
+            { status: 200 },
+          );
+        }
+        return conversationsAfterFinish;
+      }
+      if (url === '/api/chat/conversations/2001/messages') {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            code: 'OK',
+            message: 'success',
+            data: [
+              {
+                id: '1001',
+                conversationId: '2001',
+                role: 'USER',
+                content: '原问题',
+                status: 'COMPLETED',
+              },
+              {
+                id: '1002',
+                conversationId: '2001',
+                role: 'ASSISTANT',
+                content: '原回答',
+                status: 'COMPLETED',
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      if (
+        url === '/api/chat/sample-questions' ||
+        url === '/api/chat/experts' ||
+        url === '/api/chat/skills' ||
+        url === '/api/chat/mcps' ||
+        url === '/api/chat/conversations/2001/steps' ||
+        url === '/api/chat/conversations/2001/references' ||
+        url === '/api/chat/conversations/2001/artifacts' ||
+        url === '/api/chat/conversations/2001/current-skills' ||
+        url === '/api/chat/conversations/2001/current-mcps' ||
+        url === '/api/chat/conversations/2001/current-experts'
+      ) {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (url.includes('/api/chat/stream')) {
+        const readQueue: Array<{
+          resolve: (value: ReadableStreamReadResult<Uint8Array>) => void;
+          reject: (reason?: unknown) => void;
+        }> = [];
+        const reader = {
+          readQueue,
+          read: vi.fn(
+            () =>
+              new Promise<ReadableStreamReadResult<Uint8Array>>((resolve, reject) => {
+                readQueue.push({ resolve, reject });
+              }),
+          ),
+        };
+        streamReaders.push(reader);
+        return {
+          ok: true,
+          status: 200,
+          body: {
+            getReader: () => reader,
+          },
+        } as unknown as Response;
+      }
+      throw new Error(`Unhandled fetch in existing conversation finish start-new race test: ${url}`);
+    });
+
+    const { result } = renderHook(() => useChatWorkspace(true));
+    await waitFor(() => {
+      expect(result.current.isBootstrapping).toBe(false);
+    });
+    await act(async () => {
+      await result.current.selectConversation('2001', result.current.conversations);
+    });
+    await waitFor(() => {
+      expect(result.current.activeConversationId).toBe('2001');
+    });
+
+    await act(async () => {
+      result.current.setInputValue('继续追问');
+    });
+    const submitPromise = result.current.submitMessage();
+    await waitFor(() => {
+      expect(streamReaders[0]?.readQueue.length).toBeGreaterThan(0);
+    });
+
+    await act(async () => {
+      streamReaders[0].readQueue.shift()?.resolve({
+        done: false,
+        value: new TextEncoder().encode(
+          'event:finish\ndata:{"conversationId":"2001","assistantMessageId":"3001","content":"追问回答","title":"原会话"}\n\n',
+        ),
+      });
+    });
+    await waitFor(() => {
+      expect(result.current.isStreaming).toBe(false);
+    });
+
+    await act(async () => {
+      await result.current.startNewConversation();
+    });
+    expect(result.current.activeConversationId).toBeNull();
+    expect(result.current.messages).toEqual([]);
+
+    await act(async () => {
+      streamReaders[0].readQueue.shift()?.resolve({ done: true, value: undefined });
+    });
+    await act(async () => {
+      await submitPromise;
+    });
+
+    expect(resolveConversationsAfterFinish).not.toBeNull();
+    expect(conversationsRequestCount).toBe(1);
+    expect(result.current.activeConversationId).toBeNull();
+    expect(result.current.messages).toEqual([]);
+  });
+
+  /**
    * token 丢失时不应静默失败，应提示登录失效并触发未授权回调，避免用户误判“发送键无响应”。
    */
   it('应在token缺失时提示登录失效并触发未授权回调', async () => {
@@ -423,5 +702,527 @@ describe('useChatWorkspace submit behavior', () => {
     expect(result.current.streamError).toBe('登录已失效，请重新登录');
     expect(onUnauthorized).toHaveBeenCalledTimes(1);
     expect(result.current.isStreaming).toBe(false);
+  });
+
+  /**
+   * 离开当前会话只应断开本地 SSE 订阅，后台任务必须继续运行，不能等同于显式停止生成。
+   */
+  it('切到新建会话时不应取消正在后台运行的任务', async () => {
+    const readQueue: Array<{
+      resolve: (value: ReadableStreamReadResult<Uint8Array>) => void;
+      reject: (reason?: unknown) => void;
+    }> = [];
+    const cancelRequests: string[] = [];
+    const mockReader = {
+      read: vi.fn(() => {
+        return new Promise<ReadableStreamReadResult<Uint8Array>>((resolve, reject) => {
+          readQueue.push({ resolve, reject });
+        });
+      }),
+    };
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url === '/api/chat/conversations') {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (
+        url === '/api/chat/sample-questions' ||
+        url === '/api/chat/experts' ||
+        url === '/api/chat/skills' ||
+        url === '/api/chat/mcps'
+      ) {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (url === '/api/chat/conversations/2001/cancel') {
+        cancelRequests.push(`${init?.method ?? 'GET'} ${url}`);
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: null }),
+          { status: 200 },
+        );
+      }
+      if (url.includes('/api/chat/stream')) {
+        return {
+          ok: true,
+          status: 200,
+          body: {
+            getReader: () => mockReader,
+          },
+        } as unknown as Response;
+      }
+      throw new Error(`Unhandled fetch in start-new background task test: ${url}`);
+    });
+
+    const { result } = renderHook(() => useChatWorkspace(true));
+    await waitFor(() => {
+      expect(result.current.isBootstrapping).toBe(false);
+    });
+
+    await act(async () => {
+      result.current.setInputValue('请持续输出一段内容');
+    });
+    const submitPromise = result.current.submitMessage();
+    await waitFor(() => {
+      expect(readQueue.length).toBeGreaterThan(0);
+    });
+
+    await act(async () => {
+      readQueue.shift()?.resolve({
+        done: false,
+        value: new TextEncoder().encode(
+          'event:meta\ndata:{"conversationId":"2001","taskId":"9001"}\n\n',
+        ),
+      });
+    });
+    await waitFor(() => {
+      expect(result.current.activeConversationId).toBe('2001');
+    });
+
+    await act(async () => {
+      await result.current.startNewConversation();
+    });
+
+    expect(cancelRequests).toEqual([]);
+
+    await act(async () => {
+      readQueue.shift()?.resolve({ done: true, value: undefined });
+    });
+    await act(async () => {
+      await submitPromise;
+    });
+  });
+
+  /**
+   * 新会话流式 meta 创建的本地侧栏条目也必须携带运行态；否则离开后点回只会静态回放，无法续接后台输出。
+   */
+  it('重新打开由流式 meta 创建的运行中会话时应续接会话流', async () => {
+    const submitReadQueue: Array<{
+      resolve: (value: ReadableStreamReadResult<Uint8Array>) => void;
+      reject: (reason?: unknown) => void;
+    }> = [];
+    const resumeReadQueue: Array<{
+      resolve: (value: ReadableStreamReadResult<Uint8Array>) => void;
+      reject: (reason?: unknown) => void;
+    }> = [];
+    const streamUrls: string[] = [];
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === '/api/chat/conversations') {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (
+        url === '/api/chat/sample-questions' ||
+        url === '/api/chat/experts' ||
+        url === '/api/chat/skills' ||
+        url === '/api/chat/mcps' ||
+        url === '/api/chat/conversations/2001/steps' ||
+        url === '/api/chat/conversations/2001/references' ||
+        url === '/api/chat/conversations/2001/artifacts' ||
+        url === '/api/chat/conversations/2001/current-skills' ||
+        url === '/api/chat/conversations/2001/current-mcps' ||
+        url === '/api/chat/conversations/2001/current-experts'
+      ) {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (url === '/api/chat/conversations/2001/messages') {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            code: 'OK',
+            message: 'success',
+            data: [
+              {
+                id: '1001',
+                conversationId: '2001',
+                role: 'USER',
+                content: '开始后台任务',
+                status: 'COMPLETED',
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      if (url.includes('/api/chat/stream')) {
+        const reader = {
+          read: vi.fn(
+            () =>
+              new Promise<ReadableStreamReadResult<Uint8Array>>((resolve, reject) => {
+                submitReadQueue.push({ resolve, reject });
+              }),
+          ),
+        };
+        return {
+          ok: true,
+          status: 200,
+          body: {
+            getReader: () => reader,
+          },
+        } as unknown as Response;
+      }
+      if (url === '/api/chat/conversations/2001/stream') {
+        streamUrls.push(url);
+        const reader = {
+          read: vi.fn(
+            () =>
+              new Promise<ReadableStreamReadResult<Uint8Array>>((resolve, reject) => {
+                resumeReadQueue.push({ resolve, reject });
+              }),
+          ),
+        };
+        return {
+          ok: true,
+          status: 200,
+          body: {
+            getReader: () => reader,
+          },
+        } as unknown as Response;
+      }
+      throw new Error(`Unhandled fetch in meta-created conversation resume test: ${url}`);
+    });
+
+    const { result } = renderHook(() => useChatWorkspace(true));
+    await waitFor(() => {
+      expect(result.current.isBootstrapping).toBe(false);
+    });
+
+    await act(async () => {
+      result.current.setInputValue('请持续输出一段内容');
+    });
+    const submitPromise = result.current.submitMessage();
+    await waitFor(() => {
+      expect(submitReadQueue.length).toBeGreaterThan(0);
+    });
+
+    await act(async () => {
+      submitReadQueue.shift()?.resolve({
+        done: false,
+        value: new TextEncoder().encode(
+          'event:meta\ndata:{"conversationId":"2001","taskId":"9001"}\n\n',
+        ),
+      });
+    });
+    await waitFor(() => {
+      expect(result.current.conversations[0]).toEqual(
+        expect.objectContaining({
+          id: '2001',
+          activeTaskId: '9001',
+          activeTaskStatus: 'RUNNING',
+        }),
+      );
+    });
+
+    await act(async () => {
+      await result.current.startNewConversation();
+    });
+    await act(async () => {
+      await result.current.selectConversation('2001', result.current.conversations);
+    });
+
+    await waitFor(() => {
+      expect(streamUrls).toEqual(['/api/chat/conversations/2001/stream']);
+      expect(resumeReadQueue.length).toBeGreaterThan(0);
+    });
+
+    await act(async () => {
+      resumeReadQueue.shift()?.resolve({ done: true, value: undefined });
+      submitReadQueue.shift()?.resolve({ done: true, value: undefined });
+    });
+    await act(async () => {
+      await submitPromise;
+    });
+  });
+
+  /**
+   * 重新打开仍在运行的会话时，应订阅会话 SSE 续接后台输出，而不是只做一次静态回放。
+   */
+  it('打开运行中会话时应重新订阅会话流并继续追加输出', async () => {
+    const streamReaders: Array<{
+      readQueue: Array<{
+        resolve: (value: ReadableStreamReadResult<Uint8Array>) => void;
+        reject: (reason?: unknown) => void;
+      }>;
+      read: ReturnType<typeof vi.fn>;
+    }> = [];
+    const streamUrls: string[] = [];
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === '/api/chat/conversations') {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            code: 'OK',
+            message: 'success',
+            data: [
+              {
+                id: '2001',
+                title: '后台运行会话',
+                status: 'ACTIVE',
+                activeTaskId: '9001',
+                activeTaskStatus: 'RUNNING',
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      if (url === '/api/chat/conversations/2001/messages') {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            code: 'OK',
+            message: 'success',
+            data: [
+              {
+                id: '1001',
+                conversationId: '2001',
+                role: 'USER',
+                content: '开始后台任务',
+                status: 'COMPLETED',
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      if (
+        url === '/api/chat/sample-questions' ||
+        url === '/api/chat/experts' ||
+        url === '/api/chat/skills' ||
+        url === '/api/chat/mcps' ||
+        url === '/api/chat/conversations/2001/steps' ||
+        url === '/api/chat/conversations/2001/references' ||
+        url === '/api/chat/conversations/2001/artifacts' ||
+        url === '/api/chat/conversations/2001/current-skills' ||
+        url === '/api/chat/conversations/2001/current-mcps' ||
+        url === '/api/chat/conversations/2001/current-experts'
+      ) {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (url === '/api/chat/conversations/2001/stream') {
+        streamUrls.push(url);
+        const readQueue: Array<{
+          resolve: (value: ReadableStreamReadResult<Uint8Array>) => void;
+          reject: (reason?: unknown) => void;
+        }> = [];
+        const reader = {
+          readQueue,
+          read: vi.fn(
+            () =>
+              new Promise<ReadableStreamReadResult<Uint8Array>>((resolve, reject) => {
+                readQueue.push({ resolve, reject });
+              }),
+          ),
+        };
+        streamReaders.push(reader);
+        return {
+          ok: true,
+          status: 200,
+          body: {
+            getReader: () => reader,
+          },
+        } as unknown as Response;
+      }
+      throw new Error(`Unhandled fetch in running conversation resume test: ${url}`);
+    });
+
+    const { result } = renderHook(() => useChatWorkspace(true));
+    await waitFor(() => {
+      expect(result.current.isBootstrapping).toBe(false);
+    });
+
+    await act(async () => {
+      await result.current.selectConversation('2001', result.current.conversations);
+    });
+
+    await waitFor(() => {
+      expect(streamUrls).toEqual(['/api/chat/conversations/2001/stream']);
+      expect(streamReaders[0]?.readQueue.length).toBeGreaterThan(0);
+    });
+
+    await act(async () => {
+      streamReaders[0].readQueue.shift()?.resolve({
+        done: false,
+        value: new TextEncoder().encode(
+          'event:message\ndata:{"type":"response","delta":"继续输出"}\n\n',
+        ),
+      });
+    });
+
+    await waitFor(() => {
+      const assistantMessage = result.current.messages.find((message) => message.role === 'ASSISTANT');
+      expect(assistantMessage).toEqual(
+        expect.objectContaining({
+          content: '继续输出',
+          status: 'streaming',
+        }),
+      );
+    });
+
+    await act(async () => {
+      streamReaders[0].readQueue.shift()?.resolve({ done: true, value: undefined });
+    });
+  });
+
+  /**
+   * 恢复运行中会话时，后端会回放运行期缓冲；本地已有的半截输出不能被重复拼接。
+   */
+  it('恢复运行中会话时应跳过本地已展示的缓冲前缀', async () => {
+    const streamReaders: Array<{
+      readQueue: Array<{
+        resolve: (value: ReadableStreamReadResult<Uint8Array>) => void;
+        reject: (reason?: unknown) => void;
+      }>;
+      read: ReturnType<typeof vi.fn>;
+    }> = [];
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === '/api/chat/conversations') {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            code: 'OK',
+            message: 'success',
+            data: [
+              {
+                id: '2001',
+                title: '后台运行会话',
+                status: 'ACTIVE',
+                activeTaskId: '9001',
+                activeTaskStatus: 'RUNNING',
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      if (url === '/api/chat/conversations/2001/messages') {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            code: 'OK',
+            message: 'success',
+            data: [
+              {
+                id: '1001',
+                conversationId: '2001',
+                role: 'USER',
+                content: '开始后台任务',
+                status: 'completed',
+              },
+              {
+                id: '1002',
+                conversationId: '2001',
+                role: 'ASSISTANT',
+                content: '已有半截',
+                status: 'streaming',
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      if (
+        url === '/api/chat/sample-questions' ||
+        url === '/api/chat/experts' ||
+        url === '/api/chat/skills' ||
+        url === '/api/chat/mcps' ||
+        url === '/api/chat/conversations/2001/steps' ||
+        url === '/api/chat/conversations/2001/references' ||
+        url === '/api/chat/conversations/2001/artifacts' ||
+        url === '/api/chat/conversations/2001/current-skills' ||
+        url === '/api/chat/conversations/2001/current-mcps' ||
+        url === '/api/chat/conversations/2001/current-experts'
+      ) {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (url === '/api/chat/conversations/2001/stream') {
+        const readQueue: Array<{
+          resolve: (value: ReadableStreamReadResult<Uint8Array>) => void;
+          reject: (reason?: unknown) => void;
+        }> = [];
+        const reader = {
+          readQueue,
+          read: vi.fn(
+            () =>
+              new Promise<ReadableStreamReadResult<Uint8Array>>((resolve, reject) => {
+                readQueue.push({ resolve, reject });
+              }),
+          ),
+        };
+        streamReaders.push(reader);
+        return {
+          ok: true,
+          status: 200,
+          body: {
+            getReader: () => reader,
+          },
+        } as unknown as Response;
+      }
+      throw new Error(`Unhandled fetch in running conversation resume prefix test: ${url}`);
+    });
+
+    const { result } = renderHook(() => useChatWorkspace(true));
+    await waitFor(() => {
+      expect(result.current.isBootstrapping).toBe(false);
+    });
+
+    await act(async () => {
+      await result.current.selectConversation('2001', result.current.conversations);
+    });
+    await waitFor(() => {
+      expect(streamReaders[0]?.readQueue.length).toBeGreaterThan(0);
+    });
+
+    await act(async () => {
+      streamReaders[0].readQueue.shift()?.resolve({
+        done: false,
+        value: new TextEncoder().encode(
+          'event:message\ndata:{"type":"response","delta":"已有半截"}\n\n',
+        ),
+      });
+    });
+
+    expect(result.current.messages.find((message) => message.role === 'ASSISTANT')?.content).toBe('已有半截');
+
+    await act(async () => {
+      streamReaders[0].readQueue.shift()?.resolve({
+        done: false,
+        value: new TextEncoder().encode(
+          'event:message\ndata:{"type":"response","delta":"新增输出"}\n\n',
+        ),
+      });
+    });
+
+    await waitFor(() => {
+      expect(result.current.messages.find((message) => message.role === 'ASSISTANT')?.content).toBe(
+        '已有半截新增输出',
+      );
+    });
+
+    await act(async () => {
+      streamReaders[0].readQueue.shift()?.resolve({ done: true, value: undefined });
+    });
   });
 });

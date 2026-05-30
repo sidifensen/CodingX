@@ -756,21 +756,35 @@ const adminAntdThemeOverrideCss = `
     width: 100%;
   }
 
-  .admin-tool-intent-category-summary {
+  .admin-tool-intent-category-toggle.ant-btn > span.admin-tool-intent-category-summary {
     align-items: center;
-    display: grid;
+    display: grid !important;
     gap: 8px;
     grid-template-columns: minmax(0, 1fr) max-content;
     min-width: 0;
     width: 100%;
   }
 
-  .admin-tool-intent-category-summary > span:first-child {
+  .admin-tool-intent-category-name {
     display: block;
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  .admin-tool-intent-category-count.ant-tag {
+    align-self: center;
+    line-height: 18px;
+    min-width: 22px;
+    text-align: center;
+    white-space: nowrap;
+  }
+
+  .admin-tool-intent-node-list {
+    border-left: 1px solid var(--theme-border-hairline);
+    margin-left: 28px;
+    padding: 8px 8px 10px 10px !important;
   }
 
   .admin-tool-intent-tool-button.ant-btn {

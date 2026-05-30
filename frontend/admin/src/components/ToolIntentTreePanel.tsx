@@ -104,8 +104,8 @@ export function ToolIntentTreePanel({
                     onClick={() => toggleCategory(group.key)}
                   >
                     <span className="admin-tool-intent-category-summary">
-                      <span className="font-medium text-ink">{group.label}</span>
-                      <Tag className="m-0">{group.rows.length}</Tag>
+                      <span className="admin-tool-intent-category-name font-medium text-ink">{group.label}</span>
+                      <Tag className="admin-tool-intent-category-count m-0">{group.rows.length}</Tag>
                     </span>
                   </Button>
                   {isExpanded ? (

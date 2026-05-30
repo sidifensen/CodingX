@@ -176,6 +176,58 @@ class AiModelSelectorTest {
     }
 
     /**
+     * 动态候选池生效时，系统配置表里的默认模型 ID 应继续作为首选排序指针。
+     */
+    @Test
+    void selectChatCandidatesUsesDynamicDefaultModelPointerWithDynamicCandidates() {
+        AiProperties properties = buildProperties(
+            candidate("static-deepseek", "deepseek", "deepseek-chat", 1, false)
+        );
+        DynamicAiProperties dynamicAiProperties = Mockito.mock(DynamicAiProperties.class);
+        Mockito.when(dynamicAiProperties.chatCandidates()).thenReturn(List.of(
+            candidate("priority-first", "siliconflow", "model-a", 1, false),
+            candidate("configured-default", "siliconflow", "model-b", 9, false)
+        ));
+        Mockito.when(dynamicAiProperties.defaultChatModel()).thenReturn("configured-default");
+        Mockito.when(dynamicAiProperties.deepThinkingChatModel()).thenReturn("configured-thinking");
+        Mockito.when(dynamicAiProperties.providers()).thenReturn(Map.of(
+            "siliconflow", provider("https://api.siliconflow.cn", "test-key")
+        ));
+
+        AiModelSelector selector = new AiModelSelector(properties, null, dynamicAiProperties);
+
+        List<AiModelTarget> targets = selector.selectChatCandidates(null, false);
+
+        assertEquals("configured-default", targets.getFirst().id());
+    }
+
+    /**
+     * 动态候选池生效时，深度思考首选模型也应从系统配置表读取。
+     */
+    @Test
+    void selectChatCandidatesUsesDynamicDeepThinkingModelPointerWithDynamicCandidates() {
+        AiProperties properties = buildProperties(
+            candidate("static-deepseek", "deepseek", "deepseek-chat", 1, false)
+        );
+        DynamicAiProperties dynamicAiProperties = Mockito.mock(DynamicAiProperties.class);
+        Mockito.when(dynamicAiProperties.chatCandidates()).thenReturn(List.of(
+            candidate("thinking-priority-first", "siliconflow", "model-a", 1, true),
+            candidate("configured-thinking", "siliconflow", "model-b", 9, true)
+        ));
+        Mockito.when(dynamicAiProperties.defaultChatModel()).thenReturn("configured-default");
+        Mockito.when(dynamicAiProperties.deepThinkingChatModel()).thenReturn("configured-thinking");
+        Mockito.when(dynamicAiProperties.providers()).thenReturn(Map.of(
+            "siliconflow", provider("https://api.siliconflow.cn", "test-key")
+        ));
+
+        AiModelSelector selector = new AiModelSelector(properties, null, dynamicAiProperties);
+
+        List<AiModelTarget> targets = selector.selectChatCandidates(null, true);
+
+        assertEquals("configured-thinking", targets.getFirst().id());
+    }
+
+    /**
      * 生成测试配置，避免依赖 Spring 配置绑定。
      * @param candidates 候选模型。
      * @return 测试配置。

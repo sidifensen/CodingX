@@ -131,6 +131,9 @@ public class AiModelSelector {
         if (CollUtil.isNotEmpty(dynamicCandidates)) {
             AiProperties.ChatModelGroup dynamicGroup = new AiProperties.ChatModelGroup();
             dynamicGroup.setCandidates(dynamicCandidates);
+            // 动态候选池来自系统配置表，默认模型仍作为候选池内的首选排序指针保留。
+            dynamicGroup.setDefaultModel(dynamicAiProperties.defaultChatModel());
+            dynamicGroup.setDeepThinkingModel(dynamicAiProperties.deepThinkingChatModel());
             return dynamicGroup;
         }
         if (CollUtil.isNotEmpty(configured.getCandidates())) {

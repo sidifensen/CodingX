@@ -62,6 +62,24 @@ public class DynamicAiProperties {
     }
 
     /**
+     * 获取普通聊天首选候选 ID；该值只作为候选池排序指针，不替代候选池本身。
+     * @return 普通聊天首选候选 ID。
+     */
+    public String defaultChatModel() {
+        String fallback = aiProperties.getChat() == null ? null : aiProperties.getChat().getDefaultModel();
+        return runtimeSettingService.getString("ai.chat.default_model", fallback);
+    }
+
+    /**
+     * 获取深度思考首选候选 ID；该值必须指向候选池中的 supports_thinking 候选。
+     * @return 深度思考首选候选 ID。
+     */
+    public String deepThinkingChatModel() {
+        String fallback = aiProperties.getChat() == null ? null : aiProperties.getChat().getDeepThinkingModel();
+        return runtimeSettingService.getString("ai.chat.deep_thinking_model", fallback);
+    }
+
+    /**
      * 合并 provider 配置，并允许系统配置覆盖基础地址与密钥。
      * @return provider 映射。
      */

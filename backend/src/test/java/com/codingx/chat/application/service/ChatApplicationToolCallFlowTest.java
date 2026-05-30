@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -601,6 +602,60 @@ class ChatApplicationToolCallFlowTest {
         Map<String, Path> expectedSkillDirectories = Map.of("web-access", skillDir.toAbsolutePath().normalize());
         assertEquals(List.of(expectedSkillDirectories, expectedSkillDirectories), observedSkillDirectories);
         verify(chatStreamPublisher).publishAssistantCompleted(eq(8L), any(), eq("技能工具调用完成。"), eq("技能工具调用"));
+    }
+
+    /**
+     * 技能编码只是上下文选择，不是模型可执行工具；模型伪造 web-access 工具调用时应忽略并继续生成回答。
+     */
+    @Test
+    void sendMessageIgnoresSkillCodeToolCallWhenNotInVisibleToolSpecs() {
+        Long runId = 9401009L;
+        ChatExecutionContext.start(runId);
+        ChatConversation conversation = ChatConversation.create(9L, "Skill Is Not Tool", 1002L, ChatConversationStatus.ACTIVE);
+        when(chatConversationRepository.requireById(9L)).thenReturn(conversation);
+        when(chatMessageRepository.findByConversationId(9L)).thenReturn(new ArrayList<>());
+        when(chatAttachmentService.requireOwnedAttachments(any(), eq(9L), eq(1002L))).thenReturn(List.of());
+        when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+            new ConversationRewriteResult("帮我打开小红书", false, List.of("帮我打开小红书"))
+        );
+        when(conversationIntentService.route("帮我打开小红书", false)).thenReturn(
+            new ConversationIntentDecision("chat.normal", ConversationIntentAction.DIRECT, null)
+        );
+        when(chatIntentNodeRepository.findByIntentCode("chat.normal")).thenReturn(null);
+        when(chatSkillContextService.buildSkillContext(List.of("web-access"))).thenReturn("web-access skill context");
+        when(chatExpertContextService.buildExpertContext(any())).thenReturn("");
+        when(conversationSummaryService.buildModelHistory(any(), any())).thenAnswer(invocation -> invocation.getArgument(1));
+        when(conversationTitleService.generateTitle(any(), any())).thenReturn("技能不是工具");
+        when(llmResponseCleaner.clean(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(chatToolSpecService.listModelVisibleToolSpecs()).thenReturn(List.of(
+            new ChatToolSpec("test_sync_tool", "同步测试工具", Map.of("type", "object"))
+        ));
+        AtomicInteger modelRound = new AtomicInteger();
+        doAnswer(invocation -> {
+            AiChatClient.ToolAwareStreamHandler handler = invocation.getArgument(3);
+            if (modelRound.incrementAndGet() == 1) {
+                handler.onToolCall(new AiToolCall("call-skill-as-tool", "web-access", "{\"query\":\"打开小红书\"}"));
+                handler.onComplete();
+                return null;
+            }
+            handler.onDelta("web-access 是已选技能，我会按技能说明继续处理。");
+            handler.onComplete();
+            return null;
+        }).when(aiChatClient).streamChatWithTools(any(), eq(false), any(), any());
+
+        chatApplicationService.sendMessage(
+            new SendChatMessageCommand(9L, "帮我打开小红书", false, List.of(), List.of("web-access"), null, null, List.of()),
+            1002L
+        );
+
+        verify(chatToolExecutionService, never()).execute(eq("web-access"), any());
+        verify(chatStreamPublisher).publishAssistantCompleted(
+            eq(9L),
+            any(),
+            eq("web-access 是已选技能，我会按技能说明继续处理。"),
+            eq("技能不是工具")
+        );
+        ChatExecutionContext.clear();
     }
 
     /**

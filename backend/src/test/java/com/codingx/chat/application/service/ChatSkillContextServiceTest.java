@@ -98,6 +98,8 @@ class ChatSkillContextServiceTest {
 
         assertTrue(context.contains("用户已显式选择以下技能"));
         assertTrue(context.contains("不要因为用户正文较短或像闲聊就忽略已选技能"));
+        assertTrue(context.contains("技能编码不是可执行工具名"));
+        assertTrue(context.contains("禁止把 /skill 或 skill code 当作 tool_call 名称"));
         assertTrue(context.contains("当用户正文使用“这个”“这些”“它”“有什么区别”等指代"));
         assertTrue(context.contains("默认先指向本轮已选技能"));
         assertTrue(context.contains("当用户只问“这是什么”“这是啥”“介绍一下”“有什么用”等短句"));

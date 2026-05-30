@@ -45,9 +45,11 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ForkJoinPool;
@@ -1351,6 +1353,10 @@ public class ChatApplicationService {
                 );
                 return;
             }
+            toolCalls = filterAllowedToolCalls(toolCalls, toolSpecs, currentHistory, command.conversationId(), runId, round + 1);
+            if (toolCalls.isEmpty()) {
+                continue;
+            }
             // 工具重入后模型会继续追加同一条助手消息；已流出的正文和真实 thinking 不能清空。
             // 失败收口、finish 事件和消息落库都依赖这两个缓冲保留工具调用前已经到达的内容。
             if (builder.length() > publishedAssistantContextLength) {
@@ -1412,6 +1418,76 @@ public class ChatApplicationService {
         streamError[0] = new IllegalStateException("本地工具调用轮次超过上限，请收敛工具调用后重试");
     }
 
+    /**
+     * 只允许执行本轮 schema 明确暴露的工具，避免模型把技能编码、MCP 编码或自然语言误当成本地工具名。
+     */
+    private List<AiToolCall> filterAllowedToolCalls(
+        List<AiToolCall> toolCalls,
+        List<ChatToolSpec> visibleToolSpecs,
+        List<ChatMessage> currentHistory,
+        Long conversationId,
+        Long runId,
+        int round
+    ) {
+        if (CollUtil.isEmpty(toolCalls)) {
+            return List.of();
+        }
+        Set<String> allowedToolCodes = visibleToolSpecs == null
+            ? Set.of()
+            : visibleToolSpecs.stream()
+                .map(ChatToolSpec::name)
+                .filter(StrUtil::isNotBlank)
+                .map(this::normalizeToolCode)
+                .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+        List<AiToolCall> allowedToolCalls = new ArrayList<>();
+        List<String> blockedToolCodes = new ArrayList<>();
+        for (AiToolCall toolCall : toolCalls) {
+            String normalizedToolCode = normalizeToolCode(toolCall == null ? null : toolCall.toolCode());
+            if (allowedToolCodes.contains(normalizedToolCode)) {
+                allowedToolCalls.add(toolCall);
+                continue;
+            }
+            blockedToolCodes.add(StrUtil.blankToDefault(toolCall == null ? null : toolCall.toolCode(), "unknown"));
+        }
+        if (blockedToolCodes.isEmpty()) {
+            return allowedToolCalls;
+        }
+        String guidance = buildInvalidToolCallGuidance(blockedToolCodes, allowedToolCodes);
+        currentHistory.add(ChatMessage.create(
+            cn.hutool.core.util.IdUtil.getSnowflakeNextId(),
+            conversationId,
+            ChatMessageRole.SYSTEM,
+            guidance,
+            ChatMessageStatus.COMPLETED,
+            null,
+            null,
+            null
+        ).attachRun(runId));
+        log.warn(
+            "模型伪工具调用已忽略: 轮次={}, 工具={}, 可见工具={}",
+            round,
+            blockedToolCodes,
+            allowedToolCodes
+        );
+        return allowedToolCalls;
+    }
+
+    private String buildInvalidToolCallGuidance(List<String> blockedToolCodes, Set<String> allowedToolCodes) {
+        return """
+            模型刚才请求调用的工具未在本轮可见工具 schema 中，已被后端忽略。
+            被忽略的工具：%s
+            本轮允许的工具：%s
+
+            重要约束：技能编码不是工具名，不能用 skill code 发起 tool_call。请根据当前已选技能说明继续回答；只有确实需要且工具在允许列表中时，才能调用允许列表里的本地工具。
+            """.formatted(
+            String.join("、", blockedToolCodes),
+            allowedToolCodes.isEmpty() ? "无" : String.join("、", allowedToolCodes)
+        );
+    }
+
+    private String normalizeToolCode(String toolCode) {
+        return StrUtil.trimToEmpty(toolCode).toLowerCase(java.util.Locale.ROOT);
+    }
     /**
      * 构造已流式输出正文的模型上下文，约束下一轮工具回灌只继续未完成步骤。
      */

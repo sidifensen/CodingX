@@ -739,6 +739,24 @@ export function useChatWorkspace(
   };
 
   /**
+   * 用户切换到其他会话时只脱离当前页面的 SSE 订阅，不取消后端后台任务。
+   * 关键约束：旧流后续迟到事件必须被会话编号拦截，不能再覆盖新打开的会话主区或 URL。
+   */
+  const detachActiveStreamSubscription = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    abortControllerRef.current = null;
+    activeStreamSessionIdRef.current = null;
+    submitMessageInFlightRef.current = null;
+    finishedStreamSessionIdsRef.current.clear();
+    streamStateRef.current = null;
+    setIsStreaming(false);
+    setIsCancelling(false);
+    hideStreamQueueState();
+  };
+
+  /**
    * 延迟展示排队提示，避免 queued 紧接 queue-accepted 时出现黄色提示闪烁。
    * @param position 当前排队位置。
    */
@@ -1310,6 +1328,9 @@ export function useChatWorkspace(
     const token = currentToken();
     if (!token) {
       return;
+    }
+    if (activeConversationId !== conversationId) {
+      detachActiveStreamSubscription();
     }
     setActiveConversationId(conversationId);
     if (syncUrl) {

@@ -644,6 +644,12 @@ function ConversationHistory({
                               onMouseLeave={() => setHoveredActionId(null)}
                             >
                               <div
+                                data-testid={`sidebar-conversation-row-${conversation.id}`}
+                                onClick={() => {
+                                  if (!isBatchMode) {
+                                    void selectConversation();
+                                  }
+                                }}
                                 className={`group flex cursor-pointer items-center justify-between gap-3 rounded-xl border px-3 py-1.5 transition-[border-color,background-color,box-shadow] duration-200 ${
                                   isActive
                                     ? 'border-border-selected bg-surface-selected shadow-sm'
@@ -675,9 +681,10 @@ function ConversationHistory({
                                 ) : null}
                                 <button
                                   type="button"
-                                  onClick={() =>
-                                    void selectConversation()
-                                  }
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    void selectConversation();
+                                  }}
                                   disabled={isBatchMode}
                                   className={`min-w-0 flex-1 cursor-pointer pl-3 text-left ${
                                     isActive ? 'text-foreground' : 'text-muted hover:text-foreground'
@@ -704,7 +711,6 @@ function ConversationHistory({
                                     onTouchStart={() => startLongPress(conversation.id)}
                                     onTouchEnd={clearLongPress}
                                     onTouchCancel={clearLongPress}
-                                    onClick={() => void selectConversation()}
                                   >
                                     {isTaskRunning ? (
                                       <span

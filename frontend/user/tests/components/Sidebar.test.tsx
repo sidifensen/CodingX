@@ -214,6 +214,26 @@ describe('Sidebar conversation collapse behavior', () => {
     );
   });
 
+  it('点击会话行空白区域也应切换会话', () => {
+    const props = createSidebarProps();
+    render(<Sidebar {...props} />);
+
+    const conversationButton = screen.getByRole('button', { name: '会话 1' });
+    const conversationRow = conversationButton.closest('[data-testid="sidebar-conversation-row-conversation-1"]');
+    expect(conversationRow).not.toBeNull();
+
+    fireEvent.click(conversationRow as Element);
+
+    expect(props.onSelectConversation).toHaveBeenCalledWith(
+      'conversation-1',
+      expect.objectContaining({
+        partitionKey: 'local::d:/code/codingx',
+        runtimeTarget: 'local',
+        workspacePath: 'D:/code/CodingX',
+      }),
+    );
+  });
+
   it('运行中的后台任务应在右侧显示执行图标并隐藏时间', () => {
     // 业务意图：用户切换会话后仍能从列表右侧看出哪条会话正在后台执行。
     const props = createSidebarProps({

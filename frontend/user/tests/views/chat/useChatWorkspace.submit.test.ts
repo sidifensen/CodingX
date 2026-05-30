@@ -1082,6 +1082,168 @@ describe('useChatWorkspace submit behavior', () => {
   });
 
   /**
+   * 从运行中会话切走时，只应断开当前页面订阅；旧流后续事件不能再把主区和 URL 拉回旧会话。
+   */
+  it('切到其他会话时应脱离旧运行流并立即显示目标会话', async () => {
+    const submitReadQueue: Array<{
+      resolve: (value: ReadableStreamReadResult<Uint8Array>) => void;
+      reject: (reason?: unknown) => void;
+    }> = [];
+    const streamAbortSignals: AbortSignal[] = [];
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url === '/api/chat/conversations') {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            code: 'OK',
+            message: 'success',
+            data: [
+              {
+                id: '2002',
+                title: '目标会话',
+                status: 'ACTIVE',
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      if (url === '/api/chat/conversations/2002/messages') {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            code: 'OK',
+            message: 'success',
+            data: [
+              {
+                id: 'target-user',
+                conversationId: '2002',
+                role: 'USER',
+                content: '目标会话问题',
+                status: 'COMPLETED',
+              },
+              {
+                id: 'target-assistant',
+                conversationId: '2002',
+                role: 'ASSISTANT',
+                content: '目标会话回答',
+                status: 'COMPLETED',
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      if (
+        url === '/api/chat/sample-questions' ||
+        url === '/api/chat/experts' ||
+        url === '/api/chat/skills' ||
+        url === '/api/chat/mcps' ||
+        url === '/api/chat/conversations/2002/steps' ||
+        url === '/api/chat/conversations/2002/references' ||
+        url === '/api/chat/conversations/2002/artifacts' ||
+        url === '/api/chat/conversations/2002/current-skills' ||
+        url === '/api/chat/conversations/2002/current-mcps' ||
+        url === '/api/chat/conversations/2002/current-experts'
+      ) {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (url.includes('/api/chat/stream')) {
+        if (init?.signal) {
+          streamAbortSignals.push(init.signal);
+        }
+        const abortSignal = init?.signal;
+        const reader = {
+          read: vi.fn(
+            () => {
+              if (abortSignal?.aborted) {
+                return Promise.reject(new DOMException('Aborted', 'AbortError'));
+              }
+              return new Promise<ReadableStreamReadResult<Uint8Array>>((resolve, reject) => {
+                submitReadQueue.push({ resolve, reject });
+                abortSignal?.addEventListener(
+                  'abort',
+                  () => reject(new DOMException('Aborted', 'AbortError')),
+                  { once: true },
+                );
+              });
+            },
+          ),
+        };
+        return {
+          ok: true,
+          status: 200,
+          body: {
+            getReader: () => reader,
+          },
+        } as unknown as Response;
+      }
+      throw new Error(`Unhandled fetch in switch-away running stream test: ${url}`);
+    });
+
+    const { result } = renderHook(() => useChatWorkspace(true));
+    await waitFor(() => {
+      expect(result.current.isBootstrapping).toBe(false);
+    });
+
+    await act(async () => {
+      result.current.setInputValue('启动旧会话后台流');
+    });
+    const submitPromise = result.current.submitMessage();
+    await waitFor(() => {
+      expect(submitReadQueue.length).toBeGreaterThan(0);
+    });
+
+    await act(async () => {
+      submitReadQueue.shift()?.resolve({
+        done: false,
+        value: new TextEncoder().encode(
+          'event:meta\ndata:{"conversationId":"2001","taskId":"9001"}\n\n',
+        ),
+      });
+    });
+    await waitFor(() => {
+      expect(result.current.activeConversationId).toBe('2001');
+    });
+
+    await act(async () => {
+      await result.current.selectConversation('2002', result.current.conversations);
+    });
+
+    expect(streamAbortSignals[0]?.aborted).toBe(true);
+    expect(result.current.activeConversationId).toBe('2002');
+    expect(result.current.isStreaming).toBe(false);
+    expect(result.current.messages.some((message) => message.content === '目标会话回答')).toBe(true);
+
+    await act(async () => {
+      submitReadQueue.shift()?.resolve({
+        done: false,
+        value: new TextEncoder().encode(
+          'event:message\ndata:{"type":"response","delta":"旧流迟到输出"}\n\n',
+        ),
+      });
+      submitReadQueue.shift()?.resolve({
+        done: false,
+        value: new TextEncoder().encode(
+          'event:finish\ndata:{"conversationId":"2001","content":"旧流完成","title":"旧会话"}\n\n',
+        ),
+      });
+      submitReadQueue.shift()?.resolve({ done: true, value: undefined });
+    });
+    await act(async () => {
+      await submitPromise;
+    });
+
+    expect(result.current.activeConversationId).toBe('2002');
+    expect(result.current.messages.some((message) => message.content === '旧流完成')).toBe(false);
+  });
+
+  /**
    * 恢复运行中会话时，后端会回放运行期缓冲；本地已有的半截输出不能被重复拼接。
    */
   it('恢复运行中会话时应跳过本地已展示的缓冲前缀', async () => {

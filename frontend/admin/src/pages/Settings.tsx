@@ -1,6 +1,11 @@
 import React from 'react';
 import clsx from 'clsx';
+import { DownOutlined, ReloadOutlined, SaveOutlined, SearchOutlined, UndoOutlined } from '@ant-design/icons';
+import { Alert, Button, Empty, Input, Select, Space, Spin, Tag, Typography } from 'antd';
+import type { ColumnsType } from 'antd/es/table';
+
 import { AdminChatApi, AdminRuntimeSetting } from '../api/adminChatApi';
+import { AdminDataTable } from '../components/AdminDataTable';
 import {
   buildCandidateRows,
   buildProviderRows,
@@ -347,89 +352,66 @@ function inputTypeByValueType(valueType?: string): React.HTMLInputTypeAttribute 
     <div className="w-full space-y-md p-lg">
       <div className="flex flex-col gap-md xl:flex-row xl:items-end xl:justify-between">
         <div>
-          <h2 className="font-headline-md text-headline-md text-ink">系统配置</h2>
-          <p className="mt-1 text-secondary">支持分组卡片、目录导航、紧凑表格三种视图，适配配置规模增长。</p>
+          <Typography.Title level={2} style={{ margin: 0 }}>系统配置</Typography.Title>
+          <Typography.Text type="secondary">支持分组卡片、目录导航、紧凑表格三种视图，适配配置规模增长。</Typography.Text>
         </div>
-        <div className="flex flex-wrap items-center gap-sm">
-          <button
-            type="button"
-            className="rounded-lg border border-border-strong bg-surface-container-lowest px-md py-2 text-button text-ink hover:bg-surface-container-low"
-            onClick={() => void loadSettings()}
-          >
+        <Space wrap>
+          <Button aria-label="刷新配置" icon={<ReloadOutlined />} onClick={() => void loadSettings()}>
             刷新配置
-          </button>
-          <button
-            type="button"
-            className="rounded-lg border border-border-strong bg-surface-container-lowest px-md py-2 text-button text-ink hover:bg-surface-container-low"
-            onClick={restoreDraft}
-          >
+          </Button>
+          <Button aria-label="取消更改" icon={<UndoOutlined />} onClick={restoreDraft}>
             取消更改
-          </button>
-          <button
-            type="button"
-            onClick={() => void saveDraft()}
-            disabled={saving}
-            className="rounded-lg bg-ink px-lg py-2 text-button text-on-ink disabled:cursor-not-allowed disabled:opacity-60"
-          >
+          </Button>
+          <Button aria-label="保存覆盖配置" icon={<SaveOutlined />} loading={saving} type="primary" onClick={() => void saveDraft()}>
             {saving ? '保存中...' : '保存覆盖配置'}
-          </button>
-        </div>
+          </Button>
+        </Space>
       </div>
 
       {/* 视图切换与搜索入口合并在同一卡片内，减少视线往返并压缩顶部占位。 */}
       <section className="rounded-2xl border border-border-hairline bg-surface-container-lowest p-md shadow-sm">
         <div className="flex flex-col gap-sm xl:flex-row xl:items-center xl:justify-between">
-          <div className="flex flex-wrap gap-xs">
+          <Space.Compact>
             {VIEW_MODE_META.map((item) => (
-              <button
+              <Button
                 key={item.mode}
-                type="button"
+                aria-label={item.label}
                 aria-pressed={viewMode === item.mode}
+                type={viewMode === item.mode ? 'primary' : 'default'}
                 onClick={() => setViewMode(item.mode)}
-                className={clsx(
-                  'rounded-lg px-sm py-2 text-[12px] transition-colors',
-                  viewMode === item.mode
-                    ? 'bg-ink text-on-ink'
-                    : 'border border-border-hairline bg-surface-container-low text-secondary hover:text-ink',
-                )}
               >
                 {item.label}
-              </button>
+              </Button>
             ))}
-          </div>
+          </Space.Compact>
           <div className="w-full xl:w-[420px]">
-            <div className="flex items-center gap-sm rounded-lg border border-border-hairline bg-surface-container-low px-sm py-2">
-              <span className="material-symbols-outlined text-[18px] text-secondary">search</span>
-              <input
-                value={searchKeyword}
-                onChange={(event) => setSearchKeyword(event.target.value)}
-                placeholder="按配置键、描述、值搜索"
-                className="w-full bg-transparent text-ink outline-none placeholder:text-secondary"
-              />
-            </div>
+            <Input
+              allowClear
+              prefix={<SearchOutlined />}
+              value={searchKeyword}
+              onChange={(event) => setSearchKeyword(event.target.value)}
+              placeholder="按配置键、描述、值搜索"
+            />
           </div>
         </div>
       </section>
 
       {errorMessage ? (
-        <p className="rounded-lg border border-error/40 bg-error-container/40 px-sm py-xs text-body-sm text-error">
-          {errorMessage}
-        </p>
+        <Alert showIcon type="error" message={errorMessage} />
       ) : null}
 
       {successMessage ? (
-        <p className="rounded-lg border border-status-running-border bg-status-running-bg px-sm py-xs text-body-sm text-status-running">
-          {successMessage}
-        </p>
+        <Alert showIcon type="success" message={successMessage} />
       ) : null}
 
       {loading ? (
-        <section className="rounded-2xl border border-border-hairline bg-surface-container-lowest px-lg py-xl text-center text-secondary">
-          加载中...
+        <section className="rounded-2xl border border-border-hairline bg-surface-container-lowest px-lg py-xl text-center">
+          <Spin />
+          <Typography.Paragraph className="mt-sm" type="secondary">加载中...</Typography.Paragraph>
         </section>
       ) : filteredCategories.length === 0 ? (
-        <section className="rounded-2xl border border-border-hairline bg-surface-container-lowest px-lg py-xl text-center text-secondary">
-          没有匹配到配置项，请调整筛选条件。
+        <section className="rounded-2xl border border-border-hairline bg-surface-container-lowest px-lg py-xl">
+          <Empty description="没有匹配到配置项，请调整筛选条件。" />
         </section>
       ) : viewMode === 'cards' ? (
         <CardModeView
@@ -487,9 +469,11 @@ function CardModeView({
         // 分组卡片默认展开，方便快速浏览全部配置；手动收起后仅由本地状态控制，不影响保存数据。
         return (
           <div key={category.categoryCode} className="rounded-2xl border border-border-hairline bg-surface-container-lowest shadow-sm">
-            <button
-              type="button"
-              className="flex w-full items-center justify-between gap-sm px-lg py-md text-left hover:bg-surface-container-low"
+            <Button
+              block
+              className="h-auto justify-between px-lg py-md text-left"
+              icon={<DownOutlined rotate={expanded ? 0 : -90} />}
+              iconPosition="end"
               onClick={() => onToggleCategory(category.categoryCode)}
             >
               <div className="min-w-0">
@@ -499,10 +483,7 @@ function CardModeView({
                   {modified > 0 ? ` · 已修改 ${modified} 项` : ''}
                 </p>
               </div>
-              <span className="material-symbols-outlined text-secondary">
-                {expanded ? 'expand_more' : 'chevron_right'}
-              </span>
-            </button>
+            </Button>
             {expanded ? (
               <div className="grid gap-sm border-t border-border-hairline p-md md:grid-cols-2">
                 {candidateSlots.length > 0 ? (
@@ -547,13 +528,12 @@ function CardModeView({
                           </span>
                         ) : null}
                       </div>
-                      <input
+                      <Input
                         data-testid={`setting-value-${setting.settingKey}`}
                         type={inputTypeByValueType(setting.valueType)}
                         value={setting.settingValue}
                         onChange={(event) => onChangeSettingValue(setting.settingKey, event.target.value)}
                         placeholder={secretPlaceholder(setting)}
-                        className="w-full rounded-lg border border-border-hairline bg-surface-container-lowest px-3 py-2 text-body-sm text-ink outline-none transition-colors focus:border-border-strong"
                       />
                       {setting.secret ? (
                         <p className="mt-2 text-[11px] text-secondary">留空表示保持不变，输入新值后会重新加密保存。</p>
@@ -591,23 +571,21 @@ function NavigatorModeView({
             const summary = overviewByCategory.get(category.categoryCode);
             const selected = category.categoryCode === activeCategory.categoryCode;
             return (
-              <button
+              <Button
+                block
                 key={category.categoryCode}
-                type="button"
                 onClick={() => onSelectCategory(category.categoryCode)}
-                className={clsx(
-                  'w-full rounded-lg border px-sm py-sm text-left transition-colors',
-                  selected
-                    ? 'border-border-strong bg-surface-container text-ink'
-                    : 'border-transparent text-secondary hover:bg-surface-container-low',
-                )}
+                type={selected ? 'primary' : 'default'}
+                className="h-auto justify-start px-sm py-sm text-left"
               >
-                <p className="font-medium">{category.categoryLabel}</p>
-                <p className="mt-1 text-[11px]">
-                  {summary?.total ?? category.settings.length} 项
-                  {summary && summary.modified > 0 ? ` · 改动 ${summary.modified}` : ''}
-                </p>
-              </button>
+                <span>
+                  <span className="block font-medium">{category.categoryLabel}</span>
+                  <span className="mt-1 block text-[11px]">
+                    {summary?.total ?? category.settings.length} 项
+                    {summary && summary.modified > 0 ? ` · 改动 ${summary.modified}` : ''}
+                  </span>
+                </span>
+              </Button>
             );
           })}
         </div>
@@ -659,13 +637,12 @@ function NavigatorModeView({
                   ) : null}
                 </div>
                 <p className="mb-2 break-all text-[11px] text-secondary">{setting.settingKey}</p>
-                <input
+                <Input
                   data-testid={`setting-value-${setting.settingKey}`}
                   type={inputTypeByValueType(setting.valueType)}
                   value={setting.settingValue}
                   onChange={(event) => onChangeSettingValue(setting.settingKey, event.target.value)}
                   placeholder={secretPlaceholder(setting)}
-                  className="w-full rounded-lg border border-border-hairline bg-surface-container-lowest px-3 py-2 text-body-sm text-ink outline-none transition-colors focus:border-border-strong"
                 />
                 {setting.secret ? (
                   <p className="mt-2 text-[11px] text-secondary">留空表示保持不变，输入新值后会重新加密保存。</p>
@@ -689,6 +666,16 @@ function CandidateTableEditor({
   onChangeSettingValue: (settingKey: string, nextValue: string) => void;
 }) {
   const rows = buildCandidateRows(settings);
+  const columns: ColumnsType<(typeof rows)[number]> = [
+    { title: '槽位', dataIndex: 'slot', width: 80 },
+    { title: '模型ID', width: 220, render: (_, row) => <StructuredSettingInput setting={row.idSetting} onChangeSettingValue={onChangeSettingValue} /> },
+    { title: 'Provider', width: 180, render: (_, row) => <StructuredSettingInput setting={row.providerSetting} onChangeSettingValue={onChangeSettingValue} /> },
+    { title: '模型名称', width: 240, render: (_, row) => <StructuredSettingInput setting={row.modelSetting} onChangeSettingValue={onChangeSettingValue} /> },
+    { title: '优先级', width: 130, render: (_, row) => <StructuredSettingInput setting={row.prioritySetting} onChangeSettingValue={onChangeSettingValue} type="number" /> },
+    { title: '启用', width: 120, render: (_, row) => <StructuredBooleanInput setting={row.enabledSetting} onChangeSettingValue={onChangeSettingValue} /> },
+    { title: '思考', width: 120, render: (_, row) => <StructuredBooleanInput setting={row.supportsThinkingSetting} onChangeSettingValue={onChangeSettingValue} /> },
+    { title: '视觉', width: 120, render: (_, row) => <StructuredBooleanInput setting={row.supportsVisionSetting} onChangeSettingValue={onChangeSettingValue} /> },
+  ];
   return (
     <div className="md:col-span-2 rounded-xl border border-dashed border-border-hairline bg-surface-container-low p-md">
       <div className="mb-3 flex items-center justify-between gap-sm">
@@ -700,61 +687,25 @@ function CandidateTableEditor({
           共 {rows.length} 个候选
         </span>
       </div>
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[1080px] border-collapse text-left">
-          <thead>
-            <tr className="border-b border-border-hairline bg-surface-container-lowest">
-              <th className="px-sm py-sm text-[12px] text-secondary">槽位</th>
-              <th className="px-sm py-sm text-[12px] text-secondary">模型ID</th>
-              <th className="px-sm py-sm text-[12px] text-secondary">Provider</th>
-              <th className="px-sm py-sm text-[12px] text-secondary">模型名称</th>
-              <th className="px-sm py-sm text-[12px] text-secondary">优先级</th>
-              <th className="px-sm py-sm text-[12px] text-secondary">启用</th>
-              <th className="px-sm py-sm text-[12px] text-secondary">思考</th>
-              <th className="px-sm py-sm text-[12px] text-secondary">视觉</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border-hairline">
-            {rows.map((row) => {
-              const rowModified = [
-                row.idSetting,
-                row.providerSetting,
-                row.modelSetting,
-                row.prioritySetting,
-                row.enabledSetting,
-                row.supportsThinkingSetting,
-                row.supportsVisionSetting,
-              ].some((setting) => setting && modifiedSettingKeys.has(setting.settingKey));
-              return (
-                <tr key={row.slot} className={rowModified ? 'bg-status-pending-bg/30' : ''}>
-                  <td className="px-sm py-sm align-top text-[12px] text-secondary">{row.slot}</td>
-                  <td className="px-sm py-sm">
-                    <StructuredSettingInput setting={row.idSetting} onChangeSettingValue={onChangeSettingValue} />
-                  </td>
-                  <td className="px-sm py-sm">
-                    <StructuredSettingInput setting={row.providerSetting} onChangeSettingValue={onChangeSettingValue} />
-                  </td>
-                  <td className="px-sm py-sm">
-                    <StructuredSettingInput setting={row.modelSetting} onChangeSettingValue={onChangeSettingValue} />
-                  </td>
-                  <td className="px-sm py-sm">
-                    <StructuredSettingInput setting={row.prioritySetting} onChangeSettingValue={onChangeSettingValue} type="number" />
-                  </td>
-                  <td className="px-sm py-sm">
-                    <StructuredBooleanInput setting={row.enabledSetting} onChangeSettingValue={onChangeSettingValue} />
-                  </td>
-                  <td className="px-sm py-sm">
-                    <StructuredBooleanInput setting={row.supportsThinkingSetting} onChangeSettingValue={onChangeSettingValue} />
-                  </td>
-                  <td className="px-sm py-sm">
-                    <StructuredBooleanInput setting={row.supportsVisionSetting} onChangeSettingValue={onChangeSettingValue} />
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+      <AdminDataTable
+        columns={columns}
+        dataSource={rows}
+        pagination={false}
+        rowClassName={(row) => {
+          const rowModified = [
+            row.idSetting,
+            row.providerSetting,
+            row.modelSetting,
+            row.prioritySetting,
+            row.enabledSetting,
+            row.supportsThinkingSetting,
+            row.supportsVisionSetting,
+          ].some((setting) => setting && modifiedSettingKeys.has(setting.settingKey));
+          return rowModified ? 'bg-status-pending-bg/30' : '';
+        }}
+        rowKey="slot"
+        scroll={{ x: 1080 }}
+      />
     </div>
   );
 }
@@ -769,6 +720,13 @@ function ProviderTableEditor({
   onChangeSettingValue: (settingKey: string, nextValue: string) => void;
 }) {
   const rows = buildProviderRows(settings);
+  const columns: ColumnsType<(typeof rows)[number]> = [
+    { title: '中文名', dataIndex: 'code', width: 140, render: (code: string) => <Typography.Text strong>{providerTitle(code)}</Typography.Text> },
+    { title: 'Provider', dataIndex: 'code', width: 120 },
+    { title: '基础地址', width: 260, render: (_, row) => <StructuredSettingInput setting={row.baseUrlSetting} onChangeSettingValue={onChangeSettingValue} /> },
+    { title: '聊天端点', width: 220, render: (_, row) => <StructuredSettingInput setting={row.chatEndpointSetting} onChangeSettingValue={onChangeSettingValue} /> },
+    { title: 'API Key', width: 260, render: (_, row) => <StructuredSettingInput setting={row.apiKeySetting} onChangeSettingValue={onChangeSettingValue} /> },
+  ];
   return (
     <div className="md:col-span-2 rounded-xl border border-dashed border-border-hairline bg-surface-container-low p-md">
       <div className="mb-3 flex items-center justify-between gap-sm">
@@ -780,41 +738,19 @@ function ProviderTableEditor({
           共 {rows.length} 个提供商
         </span>
       </div>
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[960px] border-collapse text-left">
-          <thead>
-            <tr className="border-b border-border-hairline bg-surface-container-lowest">
-              <th className="px-sm py-sm text-[12px] text-secondary">中文名</th>
-              <th className="px-sm py-sm text-[12px] text-secondary">Provider</th>
-              <th className="px-sm py-sm text-[12px] text-secondary">基础地址</th>
-              <th className="px-sm py-sm text-[12px] text-secondary">聊天端点</th>
-              <th className="px-sm py-sm text-[12px] text-secondary">API Key</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border-hairline">
-            {rows.map((row) => {
-              const rowModified = [row.baseUrlSetting, row.apiKeySetting, row.chatEndpointSetting].some(
-                (setting) => setting && modifiedSettingKeys.has(setting.settingKey),
-              );
-              return (
-                <tr key={row.code} className={rowModified ? 'bg-status-pending-bg/30' : ''}>
-                  <td className="px-sm py-sm align-top text-[12px] font-medium text-ink">{providerTitle(row.code)}</td>
-                  <td className="px-sm py-sm align-top text-[12px] text-secondary">{row.code}</td>
-                  <td className="px-sm py-sm">
-                    <StructuredSettingInput setting={row.baseUrlSetting} onChangeSettingValue={onChangeSettingValue} />
-                  </td>
-                  <td className="px-sm py-sm">
-                    <StructuredSettingInput setting={row.chatEndpointSetting} onChangeSettingValue={onChangeSettingValue} />
-                  </td>
-                  <td className="px-sm py-sm">
-                    <StructuredSettingInput setting={row.apiKeySetting} onChangeSettingValue={onChangeSettingValue} />
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+      <AdminDataTable
+        columns={columns}
+        dataSource={rows}
+        pagination={false}
+        rowClassName={(row) => {
+          const rowModified = [row.baseUrlSetting, row.apiKeySetting, row.chatEndpointSetting].some(
+            (setting) => setting && modifiedSettingKeys.has(setting.settingKey),
+          );
+          return rowModified ? 'bg-status-pending-bg/30' : '';
+        }}
+        rowKey="code"
+        scroll={{ x: 960 }}
+      />
     </div>
   );
 }
@@ -832,13 +768,12 @@ function StructuredSettingInput({
     return <span className="text-[12px] text-secondary">-</span>;
   }
   return (
-    <input
+    <Input
       data-testid={`setting-value-${setting.settingKey}`}
       type={type}
       value={setting.settingValue}
       onChange={(event) => onChangeSettingValue(setting.settingKey, event.target.value)}
       placeholder={secretPlaceholder(setting)}
-      className="w-full rounded-lg border border-border-hairline bg-surface-container-lowest px-3 py-1.5 text-[12px] text-ink outline-none transition-colors focus:border-border-strong"
     />
   );
 }
@@ -854,15 +789,16 @@ function StructuredBooleanInput({
     return <span className="text-[12px] text-secondary">-</span>;
   }
   return (
-    <select
+    <Select
+      className="w-full"
       data-testid={`setting-value-${setting.settingKey}`}
       value={setting.settingValue}
-      onChange={(event) => onChangeSettingValue(setting.settingKey, event.target.value)}
-      className="w-full rounded-lg border border-border-hairline bg-surface-container-lowest px-3 py-1.5 text-[12px] text-ink outline-none transition-colors focus:border-border-strong"
-    >
-      <option value="true">true</option>
-      <option value="false">false</option>
-    </select>
+      options={[
+        { value: 'true', label: 'true' },
+        { value: 'false', label: 'false' },
+      ]}
+      onChange={(value) => onChangeSettingValue(setting.settingKey, value)}
+    />
   );
 }
 
@@ -875,79 +811,65 @@ function CompactModeView({
   onChangeSettingValue,
   inputTypeByValueType,
 }: CompactModeViewProps) {
+  const columns: ColumnsType<CompactModeViewProps['rows'][number]> = [
+    { title: '分类', dataIndex: 'categoryLabel', width: 160 },
+    { title: '配置键', dataIndex: ['setting', 'settingKey'], width: 280, render: (_, row) => <Typography.Text className="font-data-mono text-[12px]">{row.setting.settingKey}</Typography.Text> },
+    { title: '说明', dataIndex: ['setting', 'description'], width: 260, render: (_, row) => row.setting.description ?? '-' },
+    {
+      title: '当前值',
+      key: 'value',
+      width: 320,
+      render: (_, row) => (
+        <Input
+          data-testid={`setting-value-${row.setting.settingKey}`}
+          type={inputTypeByValueType(row.setting.valueType)}
+          value={row.setting.settingValue}
+          onChange={(event) => onChangeSettingValue(row.setting.settingKey, event.target.value)}
+          placeholder={secretPlaceholder(row.setting)}
+        />
+      ),
+    },
+    {
+      title: '状态',
+      key: 'status',
+      width: 180,
+      render: (_, row) => {
+        const modified = modifiedSettingKeys.has(row.setting.settingKey);
+        return (
+          <Space size={4} wrap>
+            {modified ? <Tag color="warning">已修改</Tag> : <Tag>未改动</Tag>}
+            {row.setting.restartRequired ? <Tag color="warning">重启生效</Tag> : null}
+          </Space>
+        );
+      },
+    },
+  ];
+
   return (
     <section className="rounded-2xl border border-border-hairline bg-surface-container-lowest shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-sm border-b border-border-hairline px-lg py-md">
         <h3 className="font-title-md text-title-md text-ink">紧凑编辑表格</h3>
-        <label className="inline-flex items-center gap-xs text-[12px] text-secondary">
-          分类筛选
-          <select
+        <Space align="center">
+          <Typography.Text type="secondary">分类筛选</Typography.Text>
+          <Select
             value={tableCategoryFilter}
-            onChange={(event) => onChangeTableCategoryFilter(event.target.value)}
-            className="rounded-lg border border-border-hairline bg-surface-container-lowest px-sm py-1.5 text-ink outline-none"
-          >
-            <option value="all">全部分类</option>
-            {categories.map((category) => (
-              <option key={category.categoryCode} value={category.categoryCode}>
-                {category.categoryLabel}
-              </option>
-            ))}
-          </select>
-        </label>
+            style={{ minWidth: 180 }}
+            options={[
+              { value: 'all', label: '全部分类' },
+              ...categories.map((category) => ({ value: category.categoryCode, label: category.categoryLabel })),
+            ]}
+            onChange={onChangeTableCategoryFilter}
+          />
+        </Space>
       </div>
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[1100px] border-collapse text-left">
-          <thead>
-            <tr className="border-b border-border-hairline bg-surface-container-low">
-              <th className="px-md py-sm text-[12px] text-secondary">分类</th>
-              <th className="px-md py-sm text-[12px] text-secondary">配置键</th>
-              <th className="px-md py-sm text-[12px] text-secondary">说明</th>
-              <th className="px-md py-sm text-[12px] text-secondary">当前值</th>
-              <th className="px-md py-sm text-[12px] text-secondary">状态</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border-hairline">
-            {rows.map((row) => {
-              const modified = modifiedSettingKeys.has(row.setting.settingKey);
-              return (
-                <tr key={row.setting.settingKey} className={modified ? 'bg-status-pending-bg/35' : ''}>
-                  <td className="px-md py-sm text-[12px] text-secondary">{row.categoryLabel}</td>
-                  <td className="px-md py-sm font-data-mono text-[12px] text-ink">{row.setting.settingKey}</td>
-                  <td className="px-md py-sm text-[12px] text-secondary">{row.setting.description ?? '-'}</td>
-                  <td className="px-md py-sm">
-                    <input
-                      data-testid={`setting-value-${row.setting.settingKey}`}
-                      type={inputTypeByValueType(row.setting.valueType)}
-                      value={row.setting.settingValue}
-                      onChange={(event) => onChangeSettingValue(row.setting.settingKey, event.target.value)}
-                      placeholder={secretPlaceholder(row.setting)}
-                      className="w-full rounded-lg border border-border-hairline bg-surface-container-lowest px-3 py-1.5 text-[12px] text-ink outline-none transition-colors focus:border-border-strong"
-                    />
-                  </td>
-                  <td className="px-md py-sm">
-                    <div className="flex flex-wrap items-center gap-xs">
-                      {modified ? (
-                        <span className="rounded-full border border-status-pending-border bg-status-pending-bg px-2 py-0.5 text-[11px] text-status-pending">
-                          已修改
-                        </span>
-                      ) : (
-                        <span className="rounded-full border border-border-hairline bg-surface-container-low px-2 py-0.5 text-[11px] text-secondary">
-                          未改动
-                        </span>
-                      )}
-                      {row.setting.restartRequired ? (
-                        <span className="rounded-full border border-status-pending-border bg-status-pending-bg px-2 py-0.5 text-[11px] text-status-pending">
-                          重启生效
-                        </span>
-                      ) : null}
-                    </div>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+      <AdminDataTable
+        columns={columns}
+        dataSource={rows}
+        pagination={false}
+        rowClassName={(row) => (modifiedSettingKeys.has(row.setting.settingKey) ? 'bg-status-pending-bg/35' : '')}
+        rowKey={(row) => row.setting.settingKey}
+        scroll={{ x: 1100 }}
+      />
     </section>
   );
 }

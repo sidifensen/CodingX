@@ -1,7 +1,10 @@
 import React, { useState } from 'react';
+import { DeleteOutlined, EditOutlined, PlusOutlined, SaveOutlined } from '@ant-design/icons';
+import { Alert, Button, Form, Input, InputNumber, Modal, Space, Switch, Tag, Typography } from 'antd';
+import type { ColumnsType } from 'antd/es/table';
 
 import { AdminChatApi, AdminExpert, AdminPageResult } from '../api/adminChatApi';
-import { DataTableCard } from '../components/DataTableCard';
+import { AdminDataTable, AdminTableActions } from '../components/AdminDataTable';
 
 const EXPERT_PAGE_SIZE = 10;
 
@@ -45,7 +48,6 @@ export function Experts() {
 
   const experts = pageData?.records ?? [];
   const current = pageData?.current ?? pageNo;
-  const pages = pageData?.pages ?? 1;
   const total = pageData?.total ?? 0;
 
   const loadExperts = React.useCallback(async (currentPage = pageNo) => {
@@ -69,138 +71,138 @@ export function Experts() {
     void loadExperts(pageNo);
   }, [loadExperts, pageNo]);
 
-  return (
-    <div className="w-full p-lg">
-      <div className="mb-lg flex flex-wrap items-end justify-between gap-md">
+  const columns = React.useMemo<ColumnsType<AdminExpert>>(() => [
+    {
+      title: '专家',
+      dataIndex: 'displayName',
+      width: 260,
+      render: (_, expert) => (
         <div>
-          <h2 className="font-headline-md text-headline-md text-ink">专家管理 (Experts)</h2>
-          <p className="mt-1 text-secondary">维护聊天专家角色、示例问题与系统提示词。</p>
+          <Typography.Text strong>{expert.displayName}</Typography.Text>
+          <Typography.Paragraph className="mb-0" ellipsis={{ rows: 2 }} type="secondary">
+            {expert.description || '暂无描述'}
+          </Typography.Paragraph>
         </div>
-        <button
-          type="button"
+      ),
+    },
+    {
+      title: '编码',
+      dataIndex: 'expertCode',
+      width: 180,
+      render: (value: string) => <Typography.Text code>/{value}</Typography.Text>,
+    },
+    {
+      title: '分类',
+      dataIndex: 'category',
+      width: 140,
+      render: (value?: string) => value || '未分类',
+    },
+    {
+      title: '示例问题',
+      dataIndex: 'presetQuestion',
+      width: 320,
+      ellipsis: true,
+      render: (value?: string) => value || '未配置',
+    },
+    {
+      title: '状态',
+      dataIndex: 'enabled',
+      width: 110,
+      render: (value: number) => value === 0 ? <Tag>禁用</Tag> : <Tag color="success">启用</Tag>,
+    },
+    {
+      title: '操作',
+      key: 'actions',
+      fixed: 'right',
+      width: 180,
+      align: 'right',
+      render: (_, expert) => (
+        <AdminTableActions
+          actions={[
+            {
+              key: 'edit',
+              label: '编辑',
+              ariaLabel: `编辑专家 ${expert.expertCode}`,
+              icon: <EditOutlined />,
+              onClick: () => {
+                setDialogMode('edit');
+                setEditingExpert(expert);
+                setDialogOpen(true);
+              },
+            },
+            {
+              key: 'delete',
+              label: '删除',
+              ariaLabel: `删除专家 ${expert.expertCode}`,
+              danger: true,
+              icon: <DeleteOutlined />,
+              onClick: async () => {
+                if (expert.id == null) {
+                  return;
+                }
+                await AdminChatApi.deleteExpert(expert.id);
+                await loadExperts(pageNo);
+              },
+            },
+          ]}
+        />
+      ),
+    },
+  ], [loadExperts, pageNo]);
+
+  return (
+    <div className="w-full space-y-lg p-lg">
+      <header className="flex flex-wrap items-end justify-between gap-md">
+        <div>
+          <Typography.Title level={2} style={{ margin: 0 }}>专家管理 (Experts)</Typography.Title>
+          <Typography.Text type="secondary">维护聊天专家角色、示例问题与系统提示词。</Typography.Text>
+        </div>
+        <Button
           aria-label="创建新专家"
-          className="flex items-center gap-xs rounded-lg bg-primary px-lg py-2 font-button text-button text-on-primary transition-transform hover:shadow-md active:scale-95"
+          icon={<PlusOutlined />}
+          type="primary"
           onClick={() => {
             setDialogMode('create');
             setEditingExpert(null);
             setDialogOpen(true);
           }}
         >
-          <span className="material-symbols-outlined text-[18px]">add</span>
           创建新专家
-        </button>
-      </div>
+        </Button>
+      </header>
 
-      {errorMessage ? (
-        <div className="rounded-xl border border-error bg-error-container px-4 py-6 text-sm text-on-error-container">
-          {errorMessage}
-        </div>
-      ) : null}
+      {errorMessage ? <Alert showIcon type="error" message={errorMessage} /> : null}
 
-      <DataTableCard
-        scrollTestId="experts-table-scroll"
+      <AdminDataTable<AdminExpert>
+        columns={columns}
+        dataSource={experts}
         loading={isLoading}
-        loadingText="专家加载中..."
-        summaryText={`第 ${current} / ${Math.max(1, pages)} 页，共 ${total.toLocaleString('zh-CN')} 条`}
-        paginationCurrent={current}
-        paginationPages={pages}
-        onPaginationChange={setPageNo}
-        tableContent={(
-          <table className="w-full min-w-[1280px] border-collapse text-left">
-            <thead>
-              <tr className="border-b border-border-hairline bg-surface-container-low">
-                <th className="sticky top-0 z-10 bg-surface-container-low px-md py-sm text-[12px] text-secondary">专家</th>
-                <th className="sticky top-0 z-10 bg-surface-container-low px-md py-sm text-[12px] text-secondary">编码</th>
-                <th className="sticky top-0 z-10 bg-surface-container-low px-md py-sm text-[12px] text-secondary">分类</th>
-                <th className="sticky top-0 z-10 bg-surface-container-low px-md py-sm text-[12px] text-secondary">示例问题</th>
-                <th className="sticky top-0 z-10 bg-surface-container-low px-md py-sm text-[12px] text-secondary">状态</th>
-                <th className="sticky top-0 z-10 bg-surface-container-low px-md py-sm text-right text-[12px] text-secondary">操作</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border-hairline">
-              {!isLoading && experts.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="px-md py-lg text-center text-sm text-secondary">
-                    暂无专家数据
-                  </td>
-                </tr>
-              ) : (
-                experts.map((expert) => (
-                  <tr
-                    key={expert.id ?? expert.expertCode}
-                    className="text-[13px] text-ink transition-colors hover:bg-surface-container-low"
-                  >
-                    <td className="px-md py-sm">
-                      <div className="font-medium text-ink">{expert.displayName}</div>
-                      <p className="line-clamp-2 text-[12px] text-secondary">{expert.description || '暂无描述'}</p>
-                    </td>
-                    <td className="px-md py-sm font-data-mono text-[12px] text-secondary">/{expert.expertCode}</td>
-                    <td className="px-md py-sm text-secondary">{expert.category || '未分类'}</td>
-                    <td className="px-md py-sm text-secondary">{expert.presetQuestion || '未配置'}</td>
-                    <td className="px-md py-sm">
-                      <span
-                        className={[
-                          'rounded px-2 py-1 text-[11px]',
-                          expert.enabled === 0 ? 'bg-surface-container text-secondary' : 'bg-primary/15 text-primary',
-                        ].join(' ')}
-                      >
-                        {expert.enabled === 0 ? '禁用' : '启用'}
-                      </span>
-                    </td>
-                    <td className="px-md py-sm text-right">
-                      <div className="inline-flex gap-xs">
-                        <button
-                          type="button"
-                          aria-label={`编辑专家 ${expert.expertCode}`}
-                          className="rounded-md border border-border-strong bg-surface-container-lowest px-sm py-1 text-[12px] text-ink transition-colors hover:bg-surface-container-low"
-                          onClick={() => {
-                            setDialogMode('edit');
-                            setEditingExpert(expert);
-                            setDialogOpen(true);
-                          }}
-                        >
-                          编辑
-                        </button>
-                        <button
-                          type="button"
-                          aria-label={`删除专家 ${expert.expertCode}`}
-                          className="rounded-md border border-error/30 bg-error-container px-sm py-1 text-[12px] text-on-error-container transition-colors hover:opacity-90"
-                          onClick={async () => {
-                            if (expert.id == null) {
-                              return;
-                            }
-                            await AdminChatApi.deleteExpert(expert.id);
-                            await loadExperts(pageNo);
-                          }}
-                        >
-                          删除
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        )}
+        locale={{ emptyText: isLoading ? '专家加载中...' : '暂无专家数据' }}
+        pagination={{
+          current,
+          pageSize: EXPERT_PAGE_SIZE,
+          total,
+          onChange: (nextPage) => setPageNo(nextPage),
+        }}
+        rowKey={(expert) => String(expert.id ?? expert.expertCode)}
+        scroll={{ x: 1280 }}
       />
 
-      {dialogOpen ? (
-        <ExpertEditDialog
-          mode={dialogMode}
-          expert={editingExpert}
-          onClose={() => setDialogOpen(false)}
-          onSubmit={async (payload) => {
-            if (dialogMode === 'edit' && editingExpert?.id != null) {
-              await AdminChatApi.updateExpert(editingExpert.id, payload);
-            } else {
-              await AdminChatApi.createExpert(payload);
-            }
-            setDialogOpen(false);
-            await loadExperts(pageNo);
-          }}
-        />
-      ) : null}
+      <ExpertEditDialog
+        mode={dialogMode}
+        expert={editingExpert}
+        open={dialogOpen}
+        onClose={() => setDialogOpen(false)}
+        onSubmit={async (payload) => {
+          if (dialogMode === 'edit' && editingExpert?.id != null) {
+            await AdminChatApi.updateExpert(editingExpert.id, payload);
+          } else {
+            await AdminChatApi.createExpert(payload);
+          }
+          setDialogOpen(false);
+          await loadExperts(pageNo);
+        }}
+      />
     </div>
   );
 }
@@ -208,11 +210,13 @@ export function Experts() {
 function ExpertEditDialog({
   mode,
   expert,
+  open,
   onClose,
   onSubmit,
 }: {
   mode: ExpertDialogMode;
   expert: AdminExpert | null;
+  open: boolean;
   onClose: () => void;
   onSubmit: (payload: AdminExpert) => Promise<void>;
 }) {
@@ -220,12 +224,18 @@ function ExpertEditDialog({
   const [saving, setSaving] = React.useState(false);
   const [formError, setFormError] = React.useState('');
 
+  React.useEffect(() => {
+    if (open) {
+      setForm(toExpertForm(expert));
+      setFormError('');
+    }
+  }, [expert, open]);
+
   const updateField = (field: keyof ExpertFormState, value: string | boolean) => {
     setForm((previous) => ({ ...previous, [field]: value }));
   };
 
-  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
+  const handleSubmit = async () => {
     setFormError('');
     if (!form.expertCode.trim() || !form.displayName.trim() || !form.systemPrompt.trim()) {
       setFormError('请至少填写专家编码、名称和提示词');
@@ -242,138 +252,93 @@ function ExpertEditDialog({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/45 px-md py-lg">
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label={mode === 'create' ? '新增专家' : '编辑专家'}
-        className="flex max-h-[88vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-border-hairline bg-surface-container-lowest shadow-2xl"
-      >
-        <div className="flex items-start justify-between gap-md border-b border-border-hairline bg-surface-container-lowest px-lg py-md">
-          <div>
-            <h3 className="font-title-md text-title-md text-ink">{mode === 'create' ? '新增专家' : '编辑专家'}</h3>
-            <p className="mt-1 text-body-sm text-secondary">维护专家编码、示例问题和提示词。</p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-lg px-sm py-xs text-secondary transition-colors hover:bg-surface-container-low hover:text-ink"
-            aria-label="关闭专家弹窗"
+    <Modal
+      destroyOnHidden
+      className="overflow-hidden"
+      footer={(
+        <Space>
+          <Button disabled={saving} onClick={onClose}>取消</Button>
+          <Button
+            aria-label={mode === 'create' ? '创建专家' : '保存修改'}
+            icon={<SaveOutlined />}
+            loading={saving}
+            type="primary"
+            onClick={handleSubmit}
           >
-            <span className="material-symbols-outlined text-[20px]">close</span>
-          </button>
-        </div>
-
-        {/* 业务意图：弹窗外壳固定高度，只让中间表单区滚动，避免标题和操作按钮随着内容一起滑走。 */}
-        <form className="flex min-h-0 flex-1 flex-col" onSubmit={handleSubmit}>
-          <div
-            data-testid="expert-edit-dialog-body"
-            className="min-h-0 flex-1 space-y-lg overflow-y-auto overscroll-y-contain p-lg"
-          >
-            {formError ? (
-              <div className="rounded-xl border border-error bg-error-container px-md py-sm text-sm text-on-error-container">
-                {formError}
-              </div>
-            ) : null}
-
-            <div className="grid gap-md md:grid-cols-2">
-              <TextField id="expert-code" label="专家编码" value={form.expertCode} disabled={mode === 'edit'} onChange={(value) => updateField('expertCode', value)} />
-              <TextField id="expert-display-name" label="专家名称" value={form.displayName} onChange={(value) => updateField('displayName', value)} />
-              <TextField id="expert-category" label="分类" value={form.category} onChange={(value) => updateField('category', value)} />
-              <TextField id="expert-sort-no" label="排序" type="number" value={form.sortNo} onChange={(value) => updateField('sortNo', value)} />
-              <TextField id="expert-tags-json" label="标签JSON" value={form.tagsJson} onChange={(value) => updateField('tagsJson', value)} />
-              <label className="flex items-center gap-sm rounded-xl border border-border-hairline bg-surface-container-lowest px-md py-sm text-ink">
-                <input type="checkbox" checked={form.enabled} onChange={(event) => updateField('enabled', event.target.checked)} />
-                启用专家
-              </label>
-            </div>
-
-            <TextAreaField id="expert-description" label="专家描述" value={form.description} rows={3} onChange={(value) => updateField('description', value)} />
-            <TextAreaField id="expert-preset-question" label="示例问题" value={form.presetQuestion} rows={3} onChange={(value) => updateField('presetQuestion', value)} />
-            <TextAreaField id="expert-system-prompt" label="系统提示词" value={form.systemPrompt} rows={8} onChange={(value) => updateField('systemPrompt', value)} />
+            {mode === 'create' ? '创建专家' : '保存修改'}
+          </Button>
+        </Space>
+      )}
+      open={open}
+      title={mode === 'create' ? '新增专家' : '编辑专家'}
+      width={760}
+      onCancel={onClose}
+    >
+      <Typography.Paragraph type="secondary">维护专家编码、示例问题和提示词。</Typography.Paragraph>
+      <div data-testid="expert-edit-dialog-body" className="max-h-[60vh] overflow-y-auto overscroll-y-contain pr-sm">
+        {formError ? <Alert className="mb-md" showIcon type="error" message={formError} /> : null}
+        <Form layout="vertical">
+          <div className="grid gap-md md:grid-cols-2">
+            <Form.Item label="专家编码" required>
+              <Input
+                aria-label="专家编码"
+                disabled={mode === 'edit'}
+                value={form.expertCode}
+                onChange={(event) => updateField('expertCode', event.target.value)}
+              />
+            </Form.Item>
+            <Form.Item label="专家名称" required>
+              <Input
+                aria-label="专家名称"
+                value={form.displayName}
+                onChange={(event) => updateField('displayName', event.target.value)}
+              />
+            </Form.Item>
+            <Form.Item label="分类">
+              <Input aria-label="分类" value={form.category} onChange={(event) => updateField('category', event.target.value)} />
+            </Form.Item>
+            <Form.Item label="排序">
+              <InputNumber
+                aria-label="排序"
+                className="w-full"
+                value={Number(form.sortNo)}
+                onChange={(value) => updateField('sortNo', String(value ?? 0))}
+              />
+            </Form.Item>
+            <Form.Item label="标签JSON">
+              <Input aria-label="标签JSON" value={form.tagsJson} onChange={(event) => updateField('tagsJson', event.target.value)} />
+            </Form.Item>
+            <Form.Item label="启用专家">
+              <Switch checked={form.enabled} onChange={(checked) => updateField('enabled', checked)} />
+            </Form.Item>
           </div>
-
-          <div className="flex flex-wrap justify-end gap-sm border-t border-border-hairline bg-surface-container-lowest px-lg py-md">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={saving}
-              className="rounded-lg border border-border-strong bg-surface-container-lowest px-lg py-2 font-button text-button text-ink hover:bg-surface-container-low disabled:opacity-60"
-            >
-              取消
-            </button>
-            <button
-              type="submit"
-              disabled={saving}
-              className="rounded-lg bg-primary px-lg py-2 font-button text-button text-on-primary disabled:opacity-60"
-            >
-              {saving ? '保存中...' : mode === 'create' ? '创建专家' : '保存修改'}
-            </button>
-          </div>
-        </form>
+          <Form.Item label="专家描述">
+            <Input.TextArea
+              aria-label="专家描述"
+              rows={3}
+              value={form.description}
+              onChange={(event) => updateField('description', event.target.value)}
+            />
+          </Form.Item>
+          <Form.Item label="示例问题">
+            <Input.TextArea
+              aria-label="示例问题"
+              rows={3}
+              value={form.presetQuestion}
+              onChange={(event) => updateField('presetQuestion', event.target.value)}
+            />
+          </Form.Item>
+          <Form.Item label="系统提示词" required>
+            <Input.TextArea
+              aria-label="系统提示词"
+              rows={8}
+              value={form.systemPrompt}
+              onChange={(event) => updateField('systemPrompt', event.target.value)}
+            />
+          </Form.Item>
+        </Form>
       </div>
-    </div>
-  );
-}
-
-function TextField({
-  id,
-  label,
-  value,
-  disabled,
-  type = 'text',
-  onChange,
-}: {
-  id: string;
-  label: string;
-  value: string;
-  disabled?: boolean;
-  type?: string;
-  onChange: (value: string) => void;
-}) {
-  return (
-    <div>
-      <label htmlFor={id} className="mb-1 block text-[12px] font-medium text-secondary">
-        {label}
-      </label>
-      <input
-        id={id}
-        type={type}
-        value={value}
-        disabled={disabled}
-        className="w-full rounded-lg border border-border-hairline bg-surface-container-lowest px-3 py-2 text-ink outline-none transition-colors focus:border-border-strong disabled:cursor-not-allowed disabled:opacity-60"
-        onChange={(event) => onChange(event.target.value)}
-      />
-    </div>
-  );
-}
-
-function TextAreaField({
-  id,
-  label,
-  value,
-  rows,
-  onChange,
-}: {
-  id: string;
-  label: string;
-  value: string;
-  rows: number;
-  onChange: (value: string) => void;
-}) {
-  return (
-    <div>
-      <label htmlFor={id} className="mb-1 block text-[12px] font-medium text-secondary">
-        {label}
-      </label>
-      <textarea
-        id={id}
-        rows={rows}
-        value={value}
-        className="w-full rounded-lg border border-border-hairline bg-surface-container-lowest px-3 py-2 text-ink outline-none transition-colors focus:border-border-strong"
-        onChange={(event) => onChange(event.target.value)}
-      />
-    </div>
+    </Modal>
   );
 }
 

@@ -1,6 +1,8 @@
 import React from 'react';
 import { Link, useParams } from 'react-router-dom';
 import clsx from 'clsx';
+import { ArrowLeftOutlined, CloseOutlined, ReloadOutlined } from '@ant-design/icons';
+import { Button } from 'antd';
 
 import { AdminChatApi, type AdminTraceDetail, type AdminTraceNode } from '../../api/adminChatApi';
 import {
@@ -164,9 +166,9 @@ export function TraceDetailPage() {
           <div className="text-secondary text-[12px]">首页 / 链路追踪 / 详情</div>
           <Link
             to="/traces"
-            className="inline-flex items-center gap-xs rounded-lg border border-border-strong bg-surface-container-lowest px-md py-1.5 text-button font-button text-ink hover:bg-surface-container-low"
+            className="inline-flex"
           >
-            返回列表
+            <Button icon={<ArrowLeftOutlined />}>返回列表</Button>
           </Link>
         </div>
         <div className="rounded-xl border border-border-hairline bg-surface-container-lowest px-lg py-xl text-center text-secondary">
@@ -196,17 +198,17 @@ export function TraceDetailPage() {
         <div className="flex items-center gap-xs">
           <Link
             to="/traces"
-            className="inline-flex items-center gap-xs rounded-lg border border-border-strong bg-surface-container-lowest px-md py-1.5 text-button font-button text-ink hover:bg-surface-container-low"
+            className="inline-flex"
           >
-            返回列表
+            <Button icon={<ArrowLeftOutlined />}>返回列表</Button>
           </Link>
-          <button
-            type="button"
-            className="inline-flex items-center gap-xs rounded-lg border border-border-strong bg-surface-container-lowest px-md py-1.5 text-button font-button text-ink hover:bg-surface-container-low"
+          <Button
+            aria-label="刷新链路详情"
+            icon={<ReloadOutlined />}
             onClick={() => void loadDetail(traceId)}
           >
             刷新
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -424,13 +426,14 @@ function NodeDetailPanel({
             </span>
           </div>
         </div>
-        <button
-          type="button"
-          className="inline-flex h-8 items-center justify-center rounded-md border border-border-hairline px-sm text-secondary hover:bg-surface-container-low hover:text-ink"
+        <Button
+          aria-label="关闭节点详情"
+          icon={<CloseOutlined />}
+          size="small"
           onClick={onClose}
         >
           关闭
-        </button>
+        </Button>
       </div>
       <div className="space-y-md px-lg py-md">
         <div className="grid grid-cols-1 gap-sm text-[12px] text-secondary md:grid-cols-2">

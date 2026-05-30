@@ -1,8 +1,10 @@
 import React from 'react';
-import { Badge, Button, Space, Table, Tag, Typography } from 'antd';
+import { DeleteOutlined, EditOutlined, PlusOutlined, ExperimentOutlined } from '@ant-design/icons';
+import { Badge, Tag, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 
 import type { AdminMcpConfig } from '../../api/adminChatApi';
+import { AdminDataTable, AdminTableActions } from '../../components/AdminDataTable';
 import { MCP_TABLE_PAGE_SIZE, type UnifiedMcpRow } from './mcpTypes';
 import { toBadgeStatus } from './mcpUtils';
 
@@ -94,39 +96,40 @@ export function McpTable({
       width: 230,
       align: 'right',
       render: (_, row) => (
-        <Space size="small">
-          <Button
-            aria-label={`测试 ${row.mcpCode}`}
-            loading={pingingToolId === row.mcpCode}
-            size="small"
-            onClick={() => onPing(row.mcpCode)}
-          >
-            测试
-          </Button>
-          <Button
-            aria-label={`编辑配置 ${row.mcpCode}`}
-            size="small"
-            onClick={() => row.config ? onEdit(row.config) : onCreateWithCode(row.mcpCode)}
-          >
-            {row.config ? '编辑' : '补配置'}
-          </Button>
-          <Button
-            aria-label={`删除配置 ${row.mcpCode}`}
-            danger
-            disabled={!row.config}
-            size="small"
-            onClick={() => row.config ? onDelete(row.config) : undefined}
-          >
-            删除
-          </Button>
-        </Space>
+        <AdminTableActions
+          actions={[
+            {
+              key: 'ping',
+              label: '测试',
+              ariaLabel: `测试 ${row.mcpCode}`,
+              icon: <ExperimentOutlined />,
+              loading: pingingToolId === row.mcpCode,
+              onClick: () => onPing(row.mcpCode),
+            },
+            {
+              key: 'edit',
+              label: row.config ? '编辑' : '补配置',
+              ariaLabel: `编辑配置 ${row.mcpCode}`,
+              icon: row.config ? <EditOutlined /> : <PlusOutlined />,
+              onClick: () => row.config ? onEdit(row.config) : onCreateWithCode(row.mcpCode),
+            },
+            {
+              key: 'delete',
+              label: '删除',
+              ariaLabel: `删除配置 ${row.mcpCode}`,
+              danger: true,
+              disabled: !row.config,
+              icon: <DeleteOutlined />,
+              onClick: () => row.config ? onDelete(row.config) : undefined,
+            },
+          ]}
+        />
       ),
     },
   ], [onCreateWithCode, onDelete, onEdit, onPing, pingingToolId]);
 
   return (
-    <Table<UnifiedMcpRow>
-      bordered
+    <AdminDataTable<UnifiedMcpRow>
       columns={columns}
       dataSource={rows}
       loading={loading}
@@ -134,8 +137,6 @@ export function McpTable({
       pagination={{
         current: currentPage,
         pageSize: MCP_TABLE_PAGE_SIZE,
-        showSizeChanger: false,
-        showTotal: () => `第 ${currentPage} / ${pageCount} 页，共 ${rows.length.toLocaleString('zh-CN')} 条`,
         total: rows.length,
         onChange: onPageChange,
       }}

@@ -1,4 +1,20 @@
 import React, { useState } from 'react';
+import {
+  AppstoreOutlined,
+  CloseOutlined,
+  DeleteOutlined,
+  EditOutlined,
+  EyeOutlined,
+  FileTextOutlined,
+  FolderOpenOutlined,
+  PlusOutlined,
+  SaveOutlined,
+  StopOutlined,
+  SyncOutlined,
+  UploadOutlined,
+} from '@ant-design/icons';
+import { Alert, Avatar, Button, Card, Empty, Form, Input, Modal, Space, Spin, Switch, Tag, Typography, Upload } from 'antd';
+import type { ColumnsType } from 'antd/es/table';
 
 import {
   AdminChatApi,
@@ -7,7 +23,7 @@ import {
   AdminSkillPackageEntry,
   AdminSkillPackageFileContent,
 } from '../api/adminChatApi';
-import { DataTableCard } from '../components/DataTableCard';
+import { AdminDataTable, AdminTableActions } from '../components/AdminDataTable';
 
 type SkillDialogMode = 'create' | 'edit';
 type SkillViewMode = 'list' | 'card';
@@ -156,59 +172,50 @@ export function Skills() {
     <div className="w-full p-lg">
       <div className="mb-lg flex flex-wrap items-end justify-between gap-md">
         <div>
-          <h2 className="font-headline-md text-headline-md text-ink">技能管理 (Skills)</h2>
-          <p className="mt-1 text-secondary">管理应用内部搭载的各类型代理技能与上传技能包。</p>
+          <Typography.Title level={2} style={{ margin: 0 }}>技能管理 (Skills)</Typography.Title>
+          <Typography.Text type="secondary">管理应用内部搭载的各类型代理技能与上传技能包。</Typography.Text>
         </div>
-        <div className="flex flex-wrap items-center gap-sm">
-          <div className="flex items-center rounded-lg border border-border-hairline bg-surface-container-lowest p-1">
-            <button
-              type="button"
+        <Space wrap>
+          <Space.Compact>
+            <Button
               aria-label="列表视图"
-              className={[
-                'rounded-md px-sm py-1.5 text-[12px] transition-colors',
-                viewMode === 'list' ? 'bg-primary text-on-primary' : 'text-secondary hover:bg-surface-container-low hover:text-ink',
-              ].join(' ')}
+              aria-pressed={viewMode === 'list'}
+              icon={<AppstoreOutlined />}
+              type={viewMode === 'list' ? 'primary' : 'default'}
               onClick={() => setViewMode('list')}
             >
               列表
-            </button>
-            <button
-              type="button"
+            </Button>
+            <Button
               aria-label="卡片视图"
-              className={[
-                'rounded-md px-sm py-1.5 text-[12px] transition-colors',
-                viewMode === 'card' ? 'bg-primary text-on-primary' : 'text-secondary hover:bg-surface-container-low hover:text-ink',
-              ].join(' ')}
+              aria-pressed={viewMode === 'card'}
+              icon={<AppstoreOutlined />}
+              type={viewMode === 'card' ? 'primary' : 'default'}
               onClick={() => setViewMode('card')}
             >
               卡片
-            </button>
-          </div>
-          <button
-            type="button"
+            </Button>
+          </Space.Compact>
+          <Button
             aria-label="上传技能包"
-            className="flex items-center gap-xs rounded-lg border border-border-strong bg-surface-container-lowest px-lg py-2 font-button text-button text-ink transition-colors hover:bg-surface-container-low active:scale-95"
+            icon={<UploadOutlined />}
             onClick={() => setUploadDialogOpen(true)}
           >
-            <span className="material-symbols-outlined text-[18px]">upload_file</span>
             上传技能包
-          </button>
-          <button
-            type="button"
+          </Button>
+          <Button
             aria-label="创建新技能"
-            className="flex items-center gap-xs rounded-lg bg-primary px-lg py-2 font-button text-button text-on-primary transition-transform hover:shadow-md active:scale-95"
+            icon={<PlusOutlined />}
+            type="primary"
             onClick={openCreateDialog}
           >
-            <span className="material-symbols-outlined text-[18px]">add</span>
             创建新技能
-          </button>
-        </div>
+          </Button>
+        </Space>
       </div>
 
       {errorMessage ? (
-        <div className="rounded-xl border border-error bg-error-container px-4 py-6 text-sm text-on-error-container">
-          {errorMessage}
-        </div>
+        <Alert className="mb-lg" showIcon type="error" message={errorMessage} />
       ) : null}
 
       {!errorMessage ? (
@@ -227,8 +234,9 @@ export function Skills() {
           />
         ) : (
           isLoading ? (
-            <div className="rounded-xl border border-border-hairline bg-surface-container-lowest px-4 py-6 text-sm text-secondary">
-              技能加载中...
+            <div className="rounded-xl border border-border-hairline bg-surface-container-lowest px-4 py-6 text-center">
+              <Spin />
+              <Typography.Paragraph className="mt-sm" type="secondary">技能加载中...</Typography.Paragraph>
             </div>
           ) : (
             <SkillCardView
@@ -310,120 +318,102 @@ function SkillListView({
   onDeleteSkill: (skill: AdminSkill) => void;
 }) {
   // 对齐 Trace 管理加载体验：仅在首屏加载且无记录时渲染骨架行。
-  const showEmptyState = !loading && skills.length === 0;
   const showSkeletonRows = loading && skills.length === 0;
+  const columns: ColumnsType<AdminSkill> = [
+    {
+      title: '技能',
+      key: 'skill',
+      width: 280,
+      render: (_, skill) => (
+        <div>
+          <Typography.Text strong>{skill.displayName}</Typography.Text>
+          <Typography.Paragraph className="mb-0 line-clamp-2 text-[12px]" type="secondary">
+            {skill.description || '暂无描述'}
+          </Typography.Paragraph>
+        </div>
+      ),
+    },
+    {
+      title: '编码',
+      dataIndex: 'skillCode',
+      width: 180,
+      render: (value: string) => <Typography.Text className="font-data-mono text-[12px]" type="secondary">/{value}</Typography.Text>,
+    },
+    { title: '分类', dataIndex: 'category', width: 140, render: (value?: string) => value || '未分类' },
+    { title: '来源', dataIndex: 'sourceType', width: 140, render: (value?: string) => <Tag>{value || 'built-in'}</Tag> },
+    {
+      title: '状态',
+      dataIndex: 'enabled',
+      width: 100,
+      render: (value?: number) => value === 0 ? <Tag>禁用</Tag> : <Tag color="success">启用</Tag>,
+    },
+    {
+      title: '操作',
+      key: 'actions',
+      align: 'right',
+      fixed: 'right',
+      width: 300,
+      render: (_, skill) => (
+        <AdminTableActions
+          actions={[
+            {
+              key: 'toggle',
+              label: skill.enabled === 0 ? '启用' : '禁用',
+              ariaLabel: `${skill.enabled === 0 ? '启用' : '禁用'}技能 ${skill.skillCode}`,
+              icon: <StopOutlined />,
+              onClick: () => onToggleEnabled(skill),
+            },
+            {
+              key: 'preview',
+              label: '预览',
+              ariaLabel: `资源预览 ${skill.skillCode}`,
+              disabled: !skill.id || !skill.storageKey,
+              icon: <EyeOutlined />,
+              onClick: () => onPreviewSkill(skill),
+            },
+            {
+              key: 'edit',
+              label: '编辑',
+              ariaLabel: `编辑技能 ${skill.skillCode}`,
+              icon: <EditOutlined />,
+              onClick: () => onEditSkill(skill),
+            },
+            {
+              key: 'delete',
+              label: '删除',
+              ariaLabel: `删除技能 ${skill.skillCode}`,
+              danger: true,
+              icon: <DeleteOutlined />,
+              onClick: () => onDeleteSkill(skill),
+            },
+          ]}
+        />
+      ),
+    },
+  ];
 
   return (
-    <DataTableCard
-      scrollTestId="skills-table-scroll"
-      loading={loading}
-      loadingText="技能加载中..."
-      summaryText={`第 ${current} / ${Math.max(1, pages)} 页，共 ${total.toLocaleString('zh-CN')} 条`}
-      paginationCurrent={current}
-      paginationPages={pages}
-      onPaginationChange={onChangePage}
-      tableContent={(
-        <table className="w-full min-w-[1160px] border-collapse text-left">
-          <thead>
-            <tr className="border-b border-border-hairline bg-surface-container-low">
-              <th className="sticky top-0 z-10 bg-surface-container-low px-md py-sm text-[12px] text-secondary">技能</th>
-              <th className="sticky top-0 z-10 bg-surface-container-low px-md py-sm text-[12px] text-secondary">编码</th>
-              <th className="sticky top-0 z-10 bg-surface-container-low px-md py-sm text-[12px] text-secondary">分类</th>
-              <th className="sticky top-0 z-10 bg-surface-container-low px-md py-sm text-[12px] text-secondary">来源</th>
-              <th className="sticky top-0 z-10 bg-surface-container-low px-md py-sm text-[12px] text-secondary">状态</th>
-              <th className="sticky top-0 z-10 bg-surface-container-low px-md py-sm text-right text-[12px] text-secondary">操作</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border-hairline">
-            {showEmptyState ? (
-              <tr>
-                <td colSpan={6} className="px-md py-lg text-center text-sm text-secondary">
-                  暂无技能数据
-                </td>
-              </tr>
-            ) : (
-              skills.map((skill) => (
-                <tr
-                  key={skill.id ?? skill.skillCode}
-                  className="text-[13px] text-ink transition-colors hover:bg-surface-container-low"
-                >
-                  <td className="px-md py-sm">
-                    <div className="font-medium text-ink">{skill.displayName}</div>
-                    <p className="line-clamp-2 text-[12px] text-secondary">{skill.description || '暂无描述'}</p>
-                  </td>
-                  <td className="px-md py-sm font-data-mono text-[12px] text-secondary">/{skill.skillCode}</td>
-                  <td className="px-md py-sm text-secondary">{skill.category || '未分类'}</td>
-                  <td className="px-md py-sm text-secondary">{skill.sourceType || 'built-in'}</td>
-                  <td className="px-md py-sm">
-                    <span
-                      className={[
-                        'inline-block whitespace-nowrap rounded px-2 py-1 text-[11px]',
-                        skill.enabled === 0
-                          ? 'bg-surface-container text-secondary'
-                          : 'bg-primary/15 text-primary',
-                      ].join(' ')}
-                    >
-                      {skill.enabled === 0 ? '禁用' : '启用'}
-                    </span>
-                  </td>
-                  <td className="px-md py-sm text-right">
-                    <div className="inline-flex gap-xs">
-                      <button
-                        type="button"
-                        aria-label={`${skill.enabled === 0 ? '启用' : '禁用'}技能 ${skill.skillCode}`}
-                        className={[
-                          'whitespace-nowrap rounded-md border px-sm py-1 text-[12px] transition-colors',
-                          skill.enabled === 0
-                            ? 'border-primary bg-primary/10 text-primary hover:bg-primary/20'
-                            : 'border-border-hairline bg-surface-container-low text-ink hover:bg-surface-container',
-                        ].join(' ')}
-                        onClick={() => handleToggleEnabled(skill)}
-                      >
-                        {skill.enabled === 0 ? '启用' : '禁用'}
-                      </button>
-                      <button
-                        type="button"
-                        aria-label={`资源预览 ${skill.skillCode}`}
-                        disabled={!skill.id || !skill.storageKey}
-                        className="whitespace-nowrap rounded-md border border-border-hairline bg-surface-container-low px-sm py-1 text-[12px] text-ink transition-colors hover:bg-surface-container disabled:cursor-not-allowed disabled:opacity-45"
-                        onClick={() => onPreviewSkill(skill)}
-                      >
-                        预览
-                      </button>
-                      <button
-                        type="button"
-                        aria-label={`编辑技能 ${skill.skillCode}`}
-                        className="whitespace-nowrap rounded-md border border-border-strong bg-surface-container-lowest px-sm py-1 text-[12px] text-ink transition-colors hover:bg-surface-container-low"
-                        onClick={() => onEditSkill(skill)}
-                      >
-                        编辑
-                      </button>
-                      <button
-                        type="button"
-                        aria-label={`删除技能 ${skill.skillCode}`}
-                        className="whitespace-nowrap rounded-md border border-error bg-error/10 px-sm py-1 text-[12px] text-error transition-colors hover:bg-error/20"
-                        onClick={() => handleDeleteSkill(skill)}
-                      >
-                        删除
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))
-            )}
-            {showSkeletonRows
-              ? Array.from({ length: 10 }, (_, index) => (
-                <tr key={`skills-loading-row-${index}`} data-testid="skills-loading-skeleton-row">
-                  <td colSpan={6} className="px-lg py-md">
-                    <div className="h-6 w-full animate-pulse rounded bg-surface-container-low" />
-                  </td>
-                </tr>
-              ))
-              : null}
-          </tbody>
-        </table>
-      )}
-    />
+    <section className="rounded-xl border border-border-hairline bg-surface-container-lowest p-md shadow-sm">
+      {showSkeletonRows
+        ? Array.from({ length: 10 }, (_, index) => (
+          <span key={`skills-loading-row-${index}`} data-testid="skills-loading-skeleton-row" className="sr-only" />
+        ))
+        : null}
+      <AdminDataTable
+        columns={columns}
+        dataSource={skills}
+        loading={loading}
+        locale={{ emptyText: loading ? '技能加载中...' : '暂无技能数据' }}
+        pagination={{
+          current,
+          pageSize: SKILL_PAGE_SIZE,
+          total,
+          onChange: onChangePage,
+        }}
+        rowKey={(skill) => String(skill.id ?? skill.skillCode)}
+        scroll={{ x: 1160 }}
+      />
+    </section>
   );
 }
 
@@ -442,75 +432,60 @@ function SkillCardView({
 }) {
   if (skills.length === 0) {
     return (
-      <div className="rounded-xl border border-border-hairline bg-surface-container-lowest px-4 py-6 text-sm text-secondary">
-        暂无技能数据
-      </div>
+      <Empty className="rounded-xl border border-border-hairline bg-surface-container-lowest px-4 py-6" description="暂无技能数据" />
     );
   }
 
   return (
     <div className="grid grid-cols-1 gap-md md:grid-cols-2 lg:grid-cols-3">
       {skills.map((skill) => (
-        <div
+        <Card
           key={skill.id ?? skill.skillCode}
-          className="group relative overflow-hidden rounded-xl border border-border-hairline bg-surface-container-lowest p-lg transition-all hover:border-border-strong hover:shadow-md"
-        >
-          <div className="absolute top-0 right-0 h-16 w-16 bg-gradient-to-bl from-surface-container-low to-transparent opacity-50 mix-blend-multiply transition-opacity group-hover:opacity-100" />
-          <div className="relative mb-md flex items-start justify-between">
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-border-hairline bg-surface-container transition-colors group-hover:bg-primary group-hover:text-on-primary">
-              <span className="material-symbols-outlined text-[24px]">extension</span>
-            </div>
-            <span className="rounded border border-border-hairline bg-surface-container-low px-2 py-1 font-data-mono text-[10px] text-secondary">
-              {skill.sourceType || 'built-in'}
-            </span>
-          </div>
-          <h3 className="mb-1 font-title-md text-ink transition-colors group-hover:text-primary">{skill.displayName}</h3>
-          <p className="mb-lg line-clamp-2 text-[12px] text-secondary">{skill.description || '暂无描述'}</p>
-          <div className="mt-auto flex items-center justify-between text-[12px] text-secondary">
-            <span>{skill.category || '未分类'}</span>
-            <span className="font-data-mono">/{skill.skillCode}</span>
-          </div>
-          <div className="mt-md flex justify-end gap-xs">
-            <button
-              type="button"
+          className="admin-skill-card"
+          actions={[
+            <Button
+              key="toggle"
               aria-label={`${skill.enabled === 0 ? '启用' : '禁用'}技能 ${skill.skillCode}`}
-              className={[
-                'whitespace-nowrap rounded-lg border px-sm py-1.5 text-[12px] transition-colors',
-                skill.enabled === 0
-                  ? 'border-primary bg-primary/10 text-primary hover:bg-primary/20'
-                  : 'border-border-hairline bg-surface-container-low text-ink hover:bg-surface-container',
-              ].join(' ')}
+              icon={<StopOutlined />}
+              type="text"
               onClick={() => onToggleEnabled(skill)}
             >
               {skill.enabled === 0 ? '启用' : '禁用'}
-            </button>
-            <button
-              type="button"
+            </Button>,
+            <Button
+              key="preview"
               aria-label={`资源预览 ${skill.skillCode}`}
               disabled={!skill.id || !skill.storageKey}
-              className="whitespace-nowrap rounded-lg border border-border-hairline bg-surface-container-low px-sm py-1.5 text-[12px] text-ink transition-colors hover:bg-surface-container disabled:cursor-not-allowed disabled:opacity-45"
+              icon={<EyeOutlined />}
+              type="text"
               onClick={() => onPreviewSkill(skill)}
             >
               预览
-            </button>
-            <button
-              type="button"
-              aria-label={`编辑技能 ${skill.skillCode}`}
-              className="whitespace-nowrap rounded-lg border border-border-strong bg-surface-container-lowest px-sm py-1.5 text-[12px] text-ink transition-colors hover:bg-surface-container-low"
-              onClick={() => onEditSkill(skill)}
-            >
+            </Button>,
+            <Button key="edit" aria-label={`编辑技能 ${skill.skillCode}`} icon={<EditOutlined />} type="text" onClick={() => onEditSkill(skill)}>
               编辑
-            </button>
-            <button
-              type="button"
-              aria-label={`删除技能 ${skill.skillCode}`}
-              className="whitespace-nowrap rounded-lg border border-error bg-error/10 px-sm py-1.5 text-[12px] text-error transition-colors hover:bg-error/20"
-              onClick={() => onDeleteSkill(skill)}
-            >
+            </Button>,
+            <Button key="delete" aria-label={`删除技能 ${skill.skillCode}`} danger icon={<DeleteOutlined />} type="text" onClick={() => onDeleteSkill(skill)}>
               删除
-            </button>
-          </div>
-        </div>
+            </Button>,
+          ]}
+        >
+          <Card.Meta
+            avatar={<Avatar icon={<AppstoreOutlined />} />}
+            title={skill.displayName}
+            description={(
+              <Space direction="vertical" size={8}>
+                <Typography.Paragraph className="mb-0 line-clamp-2" type="secondary">{skill.description || '暂无描述'}</Typography.Paragraph>
+                <Space wrap size={6}>
+                  <Tag>{skill.sourceType || 'built-in'}</Tag>
+                  <Tag>{skill.category || '未分类'}</Tag>
+                  <Tag color={skill.enabled === 0 ? undefined : 'success'}>{skill.enabled === 0 ? '禁用' : '启用'}</Tag>
+                  <Typography.Text className="font-data-mono text-[12px]" type="secondary">/{skill.skillCode}</Typography.Text>
+                </Space>
+              </Space>
+            )}
+          />
+        </Card>
       ))}
     </div>
   );
@@ -643,14 +618,12 @@ function SkillPackagePreviewDialog({ skill, onClose }: SkillPackagePreviewDialog
             </p>
             <p className="mt-1 text-[12px] text-secondary">对象键：{skill.storageKey || '未配置'}</p>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-lg px-sm py-xs text-secondary transition-colors hover:bg-surface-container-low hover:text-ink"
+          <Button
             aria-label="关闭资源预览"
-          >
-            <span className="material-symbols-outlined text-[20px]">close</span>
-          </button>
+            icon={<CloseOutlined />}
+            onClick={onClose}
+            type="text"
+          />
         </div>
 
         <div
@@ -674,16 +647,19 @@ function SkillPackagePreviewDialog({ skill, onClose }: SkillPackagePreviewDialog
                 <div className="px-sm py-sm text-[12px] text-secondary">目录为空</div>
               ) : (
                 treeRows.map((row) => (
-                  <button
+                  <Button
                     key={row.path}
-                    type="button"
+                    aria-label={row.directory ? `切换目录 ${row.name}` : `预览文件 ${row.name}`}
+                    block
                     className={[
-                      'flex w-full items-center gap-xs rounded-md px-sm py-1.5 text-left text-[12px] transition-colors',
+                      'h-auto w-full justify-start rounded-md px-sm py-1.5 text-left text-[12px] transition-colors',
                       selectedPath === row.path
                         ? 'bg-primary/15 text-primary'
                         : 'text-ink hover:bg-surface-container-lowest',
                     ].join(' ')}
+                    icon={row.directory ? <FolderOpenOutlined /> : <FileTextOutlined />}
                     style={{ paddingLeft: `${8 + row.depth * 16}px` }}
+                    type="text"
                     onClick={() => {
                       if (row.directory) {
                         toggleDirectory(row.path);
@@ -692,18 +668,11 @@ function SkillPackagePreviewDialog({ skill, onClose }: SkillPackagePreviewDialog
                       void loadFileContent(row.path);
                     }}
                   >
-                    {row.directory ? (
-                      <span className="material-symbols-outlined text-[16px] text-secondary">
-                        {expandedPaths.has(row.path) ? 'folder_open' : 'folder'}
-                      </span>
-                    ) : (
-                      <span className="material-symbols-outlined text-[16px] text-secondary">description</span>
-                    )}
                     <span className="truncate">{row.name}</span>
                     {!row.directory && row.size != null ? (
                       <span className="ml-auto shrink-0 font-data-mono text-[10px] text-secondary">{formatBytes(row.size)}</span>
                     ) : null}
-                  </button>
+                  </Button>
                 ))
               )}
             </div>
@@ -824,21 +793,17 @@ function SkillEditDialog({ mode, skill, onClose, onSubmit }: SkillEditDialogProp
             <h3 className="font-title-md text-title-md text-ink">{mode === 'create' ? '新增技能' : '编辑技能'}</h3>
             <p className="mt-1 text-body-sm text-secondary">维护技能编码、展示信息、启用状态和排序。</p>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-lg px-sm py-xs text-secondary transition-colors hover:bg-surface-container-low hover:text-ink"
+          <Button
             aria-label="关闭技能弹窗"
-          >
-            <span className="material-symbols-outlined text-[20px]">close</span>
-          </button>
+            icon={<CloseOutlined />}
+            onClick={onClose}
+            type="text"
+          />
         </div>
 
         <form className="space-y-lg p-lg" onSubmit={handleSubmit}>
           {formError ? (
-            <div className="rounded-xl border border-error bg-error-container px-md py-sm text-sm text-on-error-container">
-              {formError}
-            </div>
+            <Alert showIcon type="error" message={formError} />
           ) : null}
 
           <fieldset className="rounded-xl border border-border-hairline bg-surface-container-low p-md">
@@ -873,14 +838,14 @@ function SkillEditDialog({ mode, skill, onClose, onSubmit }: SkillEditDialogProp
                 type="number"
                 onChange={(value) => updateField('sortNo', value)}
               />
-              <label className="flex items-center gap-sm rounded-xl border border-border-hairline bg-surface-container-lowest px-md py-sm text-ink">
-                <input
-                  type="checkbox"
+              <Form.Item className="mb-0" label="启用状态">
+                <Switch
                   checked={form.enabled}
-                  onChange={(event) => updateField('enabled', event.target.checked)}
+                  checkedChildren="启用"
+                  unCheckedChildren="停用"
+                  onChange={(checked) => updateField('enabled', checked)}
                 />
-                启用技能
-              </label>
+              </Form.Item>
             </div>
           </fieldset>
 
@@ -896,21 +861,22 @@ function SkillEditDialog({ mode, skill, onClose, onSubmit }: SkillEditDialogProp
           </fieldset>
 
           <div className="flex flex-wrap justify-end gap-sm">
-            <button
-              type="button"
+            <Button
               onClick={onClose}
               disabled={saving}
-              className="rounded-lg border border-border-strong bg-surface-container-lowest px-lg py-2 font-button text-button text-ink hover:bg-surface-container-low disabled:opacity-60"
             >
               取消
-            </button>
-            <button
-              type="submit"
+            </Button>
+            <Button
+              aria-label={mode === 'create' ? '创建技能' : '保存修改'}
+              htmlType="submit"
+              icon={<SaveOutlined />}
+              loading={saving}
               disabled={saving}
-              className="rounded-lg bg-primary px-lg py-2 font-button text-button text-on-primary disabled:opacity-60"
+              type="primary"
             >
-              {saving ? '保存中...' : mode === 'create' ? '创建技能' : '保存修改'}
-            </button>
+              {mode === 'create' ? '创建技能' : '保存修改'}
+            </Button>
           </div>
         </form>
       </div>
@@ -929,21 +895,12 @@ interface SkillUploadDialogProps {
 function SkillUploadDialog({ onClose, onUploaded }: SkillUploadDialogProps) {
   const [file, setFile] = React.useState<File | null>(null);
   const [directoryFiles, setDirectoryFiles] = React.useState<File[]>([]);
-  const folderInputRef = React.useRef<HTMLInputElement | null>(null);
   const [category, setCategory] = React.useState('');
   const [submitting, setSubmitting] = React.useState(false);
   const [errorMessage, setErrorMessage] = React.useState('');
   const [migrationMessage, setMigrationMessage] = React.useState('');
   const [migrating, setMigrating] = React.useState(false);
   const [showOverwriteConfirm, setShowOverwriteConfirm] = React.useState(false);
-
-  React.useEffect(() => {
-    if (!folderInputRef.current) {
-      return;
-    }
-    folderInputRef.current.setAttribute('webkitdirectory', '');
-    folderInputRef.current.setAttribute('directory', '');
-  }, []);
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -1012,77 +969,80 @@ function SkillUploadDialog({ onClose, onUploaded }: SkillUploadDialogProps) {
             <h3 className="font-title-md text-title-md text-ink">上传技能包</h3>
             <p className="mt-1 text-body-sm text-secondary">支持上传文件夹（推荐）或 zip/.skill 压缩包，均需包含根级 SKILL.md。</p>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-lg px-sm py-xs text-secondary transition-colors hover:bg-surface-container-low hover:text-ink"
+          <Button
             aria-label="关闭上传弹窗"
-          >
-            <span className="material-symbols-outlined text-[20px]">close</span>
-          </button>
+            icon={<CloseOutlined />}
+            onClick={onClose}
+            type="text"
+          />
         </div>
 
         <form className="space-y-lg p-lg" onSubmit={handleSubmit}>
           {errorMessage ? (
-            <div className="rounded-xl border border-error bg-error-container px-md py-sm text-sm text-on-error-container">
-              {errorMessage}
-            </div>
+            <Alert showIcon type="error" message={errorMessage} />
           ) : null}
           {migrationMessage ? (
-            <div className="rounded-xl border border-border-hairline bg-surface-container px-md py-sm text-sm text-ink">
-              {migrationMessage}
-            </div>
+            <Alert showIcon type="success" message={migrationMessage} />
           ) : null}
           <fieldset className="rounded-xl border border-border-hairline bg-surface-container-low p-md">
             <legend className="px-xs font-title-sm text-ink">文件与分类</legend>
             <div className="space-y-md">
-              <div>
-                <label htmlFor="skill-package-file" className="mb-1 block text-[12px] font-medium text-secondary">
-                  技能包文件
-                </label>
-                <input
-                  id="skill-package-file"
-                  aria-label="技能包文件"
-                  type="file"
+              <Form.Item className="mb-0" label="技能包文件">
+                <Upload
                   accept=".zip,.skill"
-                  className="block w-full rounded-lg border border-border-hairline bg-surface-container-lowest px-3 py-2 text-ink file:mr-sm file:rounded-md file:border-0 file:bg-surface-container file:px-sm file:py-1.5 file:text-ink"
-                  onChange={(event) => {
-                    const selectedFile = event.target.files?.[0] ?? null;
-                    setFile(selectedFile);
-                    if (selectedFile) {
-                      setDirectoryFiles([]);
-                    }
+                  beforeUpload={(selectedFile) => {
+                    setFile(selectedFile as File);
+                    setDirectoryFiles([]);
+                    return false;
                   }}
-                />
+                  fileList={file ? [{ uid: file.name, name: file.name, status: 'done' }] : []}
+                  maxCount={1}
+                  onRemove={() => {
+                    setFile(null);
+                  }}
+                >
+                  <Button aria-label="技能包文件" icon={<UploadOutlined />}>选择技能包文件</Button>
+                </Upload>
                 <p className="mt-1 text-[12px] text-secondary">
                   仅支持 .zip / .skill，且压缩包根目录必须包含 SKILL.md
                 </p>
-              </div>
-              <div>
-                <label htmlFor="skill-package-folder" className="mb-1 block text-[12px] font-medium text-secondary">
-                  技能文件夹
-                </label>
-                <input
-                  ref={folderInputRef}
-                  id="skill-package-folder"
-                  aria-label="技能文件夹"
-                  type="file"
+              </Form.Item>
+              <Form.Item className="mb-0" label="技能文件夹">
+                <Upload
+                  beforeUpload={(_, selectedFiles) => {
+                    const nextFiles = selectedFiles as File[];
+                    setDirectoryFiles(nextFiles);
+                    if (nextFiles.length > 0) {
+                      setFile(null);
+                    }
+                    return false;
+                  }}
+                  directory
+                  fileList={directoryFiles.map((directoryFile) => ({
+                    uid: directoryFile.name,
+                    name: directoryFile.name,
+                    status: 'done',
+                  }))}
                   multiple
-                  // 使用浏览器目录选择能力，文件名将携带相对路径供后端复原目录结构。
-                  // 通过 ref 动态设置目录属性，避免 JSX 类型约束报错。
-                  className="block w-full rounded-lg border border-border-hairline bg-surface-container-lowest px-3 py-2 text-ink file:mr-sm file:rounded-md file:border-0 file:bg-surface-container file:px-sm file:py-1.5 file:text-ink"
-                  onChange={(event) => {
-                    const selectedFiles = Array.from(event.target.files ?? []);
+                  onChange={(info) => {
+                    const selectedFiles = info.fileList
+                      .map((item) => item.originFileObj)
+                      .filter((item): item is File => Boolean(item));
                     setDirectoryFiles(selectedFiles);
                     if (selectedFiles.length > 0) {
                       setFile(null);
                     }
                   }}
-                />
+                  onRemove={(removedFile) => {
+                    setDirectoryFiles((previous) => previous.filter((item) => item.name !== removedFile.name));
+                  }}
+                >
+                  <Button aria-label="技能文件夹" icon={<FolderOpenOutlined />}>选择技能文件夹</Button>
+                </Upload>
                 <p className="mt-1 text-[12px] text-secondary">
                   优先推荐上传文件夹，文件夹根目录需包含 SKILL.md
                 </p>
-              </div>
+              </Form.Item>
               <TextField
                 id="skill-upload-category"
                 label="分类（可选）"
@@ -1093,32 +1053,33 @@ function SkillUploadDialog({ onClose, onUploaded }: SkillUploadDialogProps) {
           </fieldset>
 
           <div className="flex flex-wrap items-center justify-between gap-sm">
-            <button
-              type="button"
+            <Button
               aria-label="迁移历史技能包"
               disabled={submitting || migrating}
+              icon={<SyncOutlined />}
+              loading={migrating}
               onClick={() => {
                 void handleMigratePackages();
               }}
-              className="rounded-lg border border-border-hairline bg-surface-container px-lg py-2 font-button text-button text-ink hover:bg-surface-container-low disabled:opacity-60"
             >
-              {migrating ? '迁移中...' : '迁移历史技能包'}
-            </button>
-            <button
-              type="button"
+              迁移历史技能包
+            </Button>
+            <Button
               onClick={onClose}
               disabled={submitting}
-              className="rounded-lg border border-border-strong bg-surface-container-lowest px-lg py-2 font-button text-button text-ink hover:bg-surface-container-low disabled:opacity-60"
             >
               取消
-            </button>
-            <button
-              type="submit"
+            </Button>
+            <Button
+              aria-label="确认上传"
+              htmlType="submit"
               disabled={submitting}
-              className="rounded-lg bg-primary px-lg py-2 font-button text-button text-on-primary disabled:opacity-60"
+              icon={<UploadOutlined />}
+              loading={submitting}
+              type="primary"
             >
-              {submitting ? '上传中...' : '确认上传'}
-            </button>
+              确认上传
+            </Button>
           </div>
         </form>
       </div>
@@ -1145,22 +1106,20 @@ function SkillUploadDialog({ onClose, onUploaded }: SkillUploadDialogProps) {
             </div>
 
             <div className="flex justify-end gap-sm border-t border-border-hairline bg-surface-container-low px-lg py-md">
-              <button
-                type="button"
+              <Button
                 onClick={() => setShowOverwriteConfirm(false)}
                 disabled={submitting}
-                className="rounded-lg border border-border-strong bg-surface-container-lowest px-lg py-2 font-button text-button text-ink hover:bg-surface-container-low disabled:opacity-60"
               >
                 取消
-              </button>
-              <button
-                type="button"
+              </Button>
+              <Button
                 onClick={handleConfirmOverwrite}
                 disabled={submitting}
-                className="rounded-lg bg-primary px-lg py-2 font-button text-button text-on-primary hover:bg-primary/90 disabled:opacity-60"
+                loading={submitting}
+                type="primary"
               >
-                {submitting ? '上传中...' : '继续上传'}
-              </button>
+                继续上传
+              </Button>
             </div>
           </div>
         </div>
@@ -1187,20 +1146,21 @@ function TextField({
   onChange: (value: string) => void;
 }) {
   return (
-    <div>
-      <label htmlFor={id} className="mb-1 block text-[12px] font-medium text-secondary">
-        {label}
-      </label>
-      <input
+    <Form.Item
+      className="mb-0"
+      help={error}
+      htmlFor={id}
+      label={label}
+      validateStatus={error ? 'error' : undefined}
+    >
+      <Input
         id={id}
         type={type}
         value={value}
         disabled={disabled}
-        className="w-full rounded-lg border border-border-hairline bg-surface-container-lowest px-3 py-2 text-ink outline-none transition-colors focus:border-border-strong disabled:cursor-not-allowed disabled:opacity-60"
         onChange={(event) => onChange(event.target.value)}
       />
-      {error ? <p className="mt-1 text-[12px] text-error">{error}</p> : null}
-    </div>
+    </Form.Item>
   );
 }
 
@@ -1218,18 +1178,14 @@ function TextAreaField({
   onChange: (value: string) => void;
 }) {
   return (
-    <div>
-      <label htmlFor={id} className="mb-1 block text-[12px] font-medium text-secondary">
-        {label}
-      </label>
-      <textarea
+    <Form.Item className="mb-0" htmlFor={id} label={label}>
+      <Input.TextArea
         id={id}
         rows={rows}
         value={value}
-        className="w-full rounded-lg border border-border-hairline bg-surface-container-lowest px-3 py-2 text-ink outline-none transition-colors focus:border-border-strong"
         onChange={(event) => onChange(event.target.value)}
       />
-    </div>
+    </Form.Item>
   );
 }
 
@@ -1347,50 +1303,32 @@ function DeleteConfirmDialog({ skill, onClose, onConfirm }: DeleteConfirmDialogP
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/45 px-md py-lg">
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label="删除技能确认"
-        className="w-full max-w-md overflow-hidden rounded-2xl border border-border-hairline bg-surface-container-lowest shadow-2xl"
-      >
-        <div className="border-b border-border-hairline bg-surface-container-lowest px-lg py-md">
-          <h3 className="font-title-md text-title-md text-ink">确认删除技能</h3>
-        </div>
-
-        <div className="space-y-md p-lg">
-          <p className="text-body-md text-ink">
-            确定要删除技能 <span className="font-medium text-primary">{skill.displayName}</span> 吗？
-          </p>
-          <p className="text-body-sm text-secondary">
-            此操作将物理删除技能记录，并删除 RustFS 中的所有相关文件，无法恢复。
-          </p>
-          {skill.storageKey ? (
-            <p className="rounded-lg border border-border-hairline bg-surface-container-low px-sm py-sm font-data-mono text-[11px] text-secondary">
-              存储键: {skill.storageKey}
-            </p>
-          ) : null}
-        </div>
-
-        <div className="flex justify-end gap-sm border-t border-border-hairline bg-surface-container-low px-lg py-md">
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={deleting}
-            className="rounded-lg border border-border-strong bg-surface-container-lowest px-lg py-2 font-button text-button text-ink hover:bg-surface-container-low disabled:opacity-60"
-          >
-            取消
-          </button>
-          <button
-            type="button"
-            onClick={handleConfirm}
-            disabled={deleting}
-            className="rounded-lg bg-error px-lg py-2 font-button text-button text-on-error hover:bg-error/90 disabled:opacity-60"
-          >
-            {deleting ? '删除中...' : '确认删除'}
-          </button>
-        </div>
+    <Modal
+      centered
+      closeIcon={<CloseOutlined aria-hidden="true" />}
+      cancelText="取消"
+      maskTransitionName=""
+      okButtonProps={{ danger: true, icon: <DeleteOutlined />, 'aria-label': '确认删除', loading: deleting }}
+      okText="确认删除"
+      open
+      title="删除技能确认"
+      transitionName=""
+      onCancel={onClose}
+      onOk={() => void handleConfirm()}
+    >
+      <div className="space-y-md">
+        <Typography.Paragraph className="mb-0">
+          确定要删除技能 <span className="font-medium text-primary">{skill.displayName}</span> 吗？
+        </Typography.Paragraph>
+        <Typography.Paragraph className="mb-0" type="secondary">
+          此操作将物理删除技能记录，并删除 RustFS 中的所有相关文件，无法恢复。
+        </Typography.Paragraph>
+        {skill.storageKey ? (
+          <Typography.Paragraph className="rounded-lg border border-border-hairline bg-surface-container-low px-sm py-sm font-data-mono text-[11px]" type="secondary">
+            存储键: {skill.storageKey}
+          </Typography.Paragraph>
+        ) : null}
       </div>
-    </div>
+    </Modal>
   );
 }

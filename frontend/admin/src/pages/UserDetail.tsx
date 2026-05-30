@@ -1,6 +1,13 @@
 import React from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import clsx from 'clsx';
+import {
+  ArrowLeftOutlined,
+  EditOutlined,
+  KeyOutlined,
+  PoweroffOutlined,
+  SaveOutlined,
+} from '@ant-design/icons';
+import { Alert, Avatar, Button, Descriptions, Form, Input, Modal, Select, Space, Spin, Tag, Typography } from 'antd';
 
 import { AdminUserApi } from '../api/adminUserApi';
 import { AdminUserDetail, AdminUserStatus, AdminUserUpdatePayload } from '../types/adminUser';
@@ -144,157 +151,69 @@ export function UserDetail() {
   };
 
   return (
-    <div className="p-lg w-full">
-      <div className="mb-lg flex items-center gap-xs">
-        <button
-          onClick={() => navigate(-1)}
-          className="text-secondary hover:text-ink transition-colors flex items-center gap-xs active:scale-95 group"
-        >
-          <span className="material-symbols-outlined text-[18px] group-hover:-translate-x-1 transition-transform">arrow_back</span>
-          返回用户列表
-        </button>
-      </div>
+    <div className="w-full space-y-lg p-lg">
+      <Button icon={<ArrowLeftOutlined />} onClick={() => navigate(-1)}>返回用户列表</Button>
 
-      {errorMessage ? (
-        <div className="mb-lg rounded-xl border border-error bg-error-container px-md py-sm text-sm text-on-error-container">{errorMessage}</div>
-      ) : null}
-
-      {isLoading ? (
-        <div className="rounded-xl border border-border-hairline bg-surface-container-lowest px-lg py-lg text-secondary">用户详情加载中...</div>
-      ) : null}
+      {errorMessage ? <Alert showIcon type="error" message={errorMessage} /> : null}
+      {isLoading ? <Spin tip="用户详情加载中..." /> : null}
 
       {!isLoading && user ? (
         <>
-          <div className="mb-xl flex justify-between items-start bg-surface-container-lowest p-xl rounded-2xl border border-border-hairline shadow-sm">
-            <div className="flex gap-xl items-center">
-              <img
-                className="w-24 h-24 rounded-full border-4 border-surface-container-low shadow-sm bg-surface-container object-cover"
-                src={user.avatarUrl || fallbackAvatar(user.username)}
-                alt="User"
-              />
-              <div className="space-y-sm">
-                <h2 className="font-headline-md text-headline-md text-ink flex items-center gap-md">
-                  {user.displayName}
-                  <span
-                    className={clsx(
-                      'px-2 py-0.5 rounded text-[11px] font-bold uppercase border',
-                      user.userType === 'ADMIN' ? 'bg-primary text-on-primary border-primary' : 'bg-surface-container-low text-secondary border-border-strong',
-                    )}
-                  >
-                    {user.userTypeLabel || toUserTypeLabel(user.userType)}
-                  </span>
-                  <span className={clsx('px-2 py-0.5 rounded text-[11px] font-bold border', toStatusBadgeClass(user.status))}>
-                    {user.statusLabel || toStatusLabel(user.status)}
-                  </span>
-                </h2>
-                <div className="text-secondary flex items-center gap-xl">
-                  <span className="flex items-center gap-1.5">
-                    <span className="material-symbols-outlined text-[18px]">mail</span> {user.email || '-'}
-                  </span>
-                  <span className="flex items-center gap-1.5">
-                    <span className="material-symbols-outlined text-[18px]">badge</span> {user.id}
-                  </span>
-                </div>
+          <section className="flex flex-col gap-lg rounded-2xl border border-border-hairline bg-surface-container-lowest p-xl lg:flex-row lg:items-start lg:justify-between">
+            <Space size="large" align="start">
+              <Avatar size={96} src={user.avatarUrl || fallbackAvatar(user.username)} />
+              <div>
+                <Space wrap>
+                  <Typography.Title level={2} style={{ margin: 0 }}>{user.displayName}</Typography.Title>
+                  <Tag color={user.userType === 'ADMIN' ? 'default' : undefined}>{user.userTypeLabel || toUserTypeLabel(user.userType)}</Tag>
+                  <Tag color={toStatusColor(user.status)}>{user.statusLabel || toStatusLabel(user.status)}</Tag>
+                </Space>
+                <div className="mt-sm text-secondary">{user.email || '-'} · {user.id}</div>
               </div>
-            </div>
-            <div className="flex items-center gap-sm">
-              <button
-                type="button"
-                className="border border-border-strong bg-surface-container-lowest px-md py-2 rounded-lg text-ink hover:bg-surface-container-low transition-colors active:scale-95 text-body-sm font-medium shadow-sm"
-                onClick={openEditDialog}
-              >
-                编辑信息
-              </button>
-              <button
-                type="button"
-                className="border border-border-strong bg-surface-container-lowest px-md py-2 rounded-lg text-ink hover:bg-surface-container-low transition-colors active:scale-95 text-body-sm font-medium shadow-sm"
-                onClick={() => setIsResetDialogOpen(true)}
-              >
-                重置密码
-              </button>
-              <button
-                type="button"
-                className="border border-error bg-error/5 text-error px-md py-2 rounded-lg hover:bg-error hover:text-on-error transition-colors active:scale-95 text-body-sm font-medium"
-                onClick={() => void handleToggleStatus()}
-              >
+            </Space>
+            <Space wrap>
+              <Button icon={<EditOutlined />} onClick={openEditDialog}>编辑信息</Button>
+              <Button aria-label="重置密码" icon={<KeyOutlined />} onClick={() => setIsResetDialogOpen(true)}>重置密码</Button>
+              <Button danger icon={<PoweroffOutlined />} onClick={() => void handleToggleStatus()}>
                 {user.status === 'ACTIVE' ? '冻结账户' : '启用账户'}
-              </button>
-            </div>
-          </div>
+              </Button>
+            </Space>
+          </section>
 
-          <div className="grid grid-cols-3 gap-lg">
-            <div className="col-span-1 space-y-lg">
-              <div className="bg-surface-container-lowest border border-border-hairline rounded-xl p-lg shadow-sm">
-                <h3 className="font-title-sm text-ink mb-md flex items-center gap-2">
-                  <span className="material-symbols-outlined text-[20px] text-secondary">info</span> 基础信息
-                </h3>
-                <div className="space-y-md">
-                  <InfoRow label="注册时间" value={formatDateTime(user.createdAt)} />
-                  <InfoRow label="最后登录时间" value={formatDateTime(user.lastLoginAt)} />
-                  <InfoRow label="登录 IP" value={user.lastLoginIp || '-'} mono />
-                  <InfoRow label="手机号" value={user.phone || '-'} />
-                  <InfoRow label="用户名" value={user.username} mono />
-                </div>
-              </div>
-            </div>
-
-            <div className="col-span-2 space-y-lg">
-              <div className="bg-surface-container-lowest border border-border-hairline rounded-xl p-lg shadow-sm">
-                <div className="flex justify-between items-center mb-md">
-                  <h3 className="font-title-sm text-ink flex items-center gap-2">
-                    <span className="material-symbols-outlined text-[20px] text-secondary">admin_panel_settings</span> 账户状态
-                  </h3>
-                </div>
-                <div className="space-y-sm">
-                  <StatePill label="当前状态" value={user.statusLabel || toStatusLabel(user.status)} className={toStatusTextClass(user.status)} />
-                  <StatePill label="用户类型" value={user.userTypeLabel || toUserTypeLabel(user.userType)} className="text-secondary" />
-                  <StatePill label="更新时间" value={formatDateTime(user.updatedAt)} className="text-secondary" />
-                </div>
-              </div>
-            </div>
-          </div>
+          <Descriptions
+            bordered
+            column={{ xs: 1, md: 2 }}
+            items={[
+              { key: 'createdAt', label: '注册时间', children: formatDateTime(user.createdAt) },
+              { key: 'lastLoginAt', label: '最后登录时间', children: formatDateTime(user.lastLoginAt) },
+              { key: 'lastLoginIp', label: '登录 IP', children: user.lastLoginIp || '-' },
+              { key: 'phone', label: '手机号', children: user.phone || '-' },
+              { key: 'username', label: '用户名', children: user.username },
+              { key: 'updatedAt', label: '更新时间', children: formatDateTime(user.updatedAt) },
+            ]}
+          />
         </>
       ) : null}
 
-      {isEditDialogOpen ? (
-        <EditUserDialog
-          form={editForm}
-          errorMessage={editError}
-          editing={isEditing}
-          onClose={() => setIsEditDialogOpen(false)}
-          onChange={(field, value) => setEditForm((previous) => ({ ...previous, [field]: value }))}
-          onSubmit={() => void handleSaveEdit()}
-        />
-      ) : null}
+      <EditUserDialog
+        form={editForm}
+        errorMessage={editError}
+        editing={isEditing}
+        open={isEditDialogOpen}
+        onClose={() => setIsEditDialogOpen(false)}
+        onChange={(field, value) => setEditForm((previous) => ({ ...previous, [field]: value }))}
+        onSubmit={() => void handleSaveEdit()}
+      />
 
-      {isResetDialogOpen ? (
-        <ResetPasswordDialog
-          newPassword={newPassword}
-          errorMessage={resetError}
-          resetting={isResetting}
-          onClose={() => setIsResetDialogOpen(false)}
-          onChange={setNewPassword}
-          onSubmit={() => void handleResetPassword()}
-        />
-      ) : null}
-    </div>
-  );
-}
-
-function InfoRow({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
-  return (
-    <div className="flex flex-col">
-      <span className="text-secondary text-[12px] mb-1">{label}</span>
-      <span className={clsx('font-medium text-ink', mono ? 'font-data-mono text-tertiary-container' : '')}>{value}</span>
-    </div>
-  );
-}
-
-function StatePill({ label, value, className }: { label: string; value: string; className: string }) {
-  return (
-    <div className="p-md flex justify-between items-center bg-surface-container-low rounded-lg border border-border-hairline">
-      <span className="text-secondary">{label}</span>
-      <span className={clsx('font-medium', className)}>{value}</span>
+      <ResetPasswordDialog
+        errorMessage={resetError}
+        newPassword={newPassword}
+        open={isResetDialogOpen}
+        resetting={isResetting}
+        onChange={setNewPassword}
+        onClose={() => setIsResetDialogOpen(false)}
+        onSubmit={() => void handleResetPassword()}
+      />
     </div>
   );
 }
@@ -303,6 +222,7 @@ function EditUserDialog({
   form,
   errorMessage,
   editing,
+  open,
   onClose,
   onChange,
   onSubmit,
@@ -310,76 +230,58 @@ function EditUserDialog({
   form: EditUserFormState;
   errorMessage: string;
   editing: boolean;
+  open: boolean;
   onClose: () => void;
   onChange: (field: keyof EditUserFormState, value: string) => void;
   onSubmit: () => void;
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/45 px-md py-lg">
-      <div role="dialog" aria-modal="true" aria-label="编辑用户信息" className="w-full max-w-2xl rounded-2xl border border-border-hairline bg-surface-container-lowest shadow-2xl">
-        <div className="flex items-start justify-between gap-md border-b border-border-hairline px-lg py-md">
-          <div>
-            <h3 className="font-title-md text-title-md text-ink">编辑用户信息</h3>
-            <p className="mt-1 text-body-sm text-secondary">维护用户基础资料、类型和状态。</p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-lg px-sm py-xs text-secondary transition-colors hover:bg-surface-container-low hover:text-ink"
-            aria-label="关闭编辑用户弹窗"
-          >
-            <span className="material-symbols-outlined text-[20px]">close</span>
-          </button>
-        </div>
-
-        <div className="space-y-md p-lg">
-          {errorMessage ? <div className="rounded-xl border border-error bg-error-container px-md py-sm text-sm text-on-error-container">{errorMessage}</div> : null}
-          <div className="grid gap-md md:grid-cols-2">
-            <DialogTextField label="展示名称" value={form.displayName} onChange={(value) => onChange('displayName', value)} />
-            <DialogTextField label="邮箱" value={form.email} onChange={(value) => onChange('email', value)} />
-            <DialogTextField label="手机号" value={form.phone} onChange={(value) => onChange('phone', value)} />
-            <DialogTextField label="头像地址" value={form.avatarUrl} onChange={(value) => onChange('avatarUrl', value)} />
-            <DialogSelectField
-              label="用户类型"
-              value={form.userType}
-              options={[
-                { value: 'ADMIN', label: '管理员' },
-                { value: 'USER', label: '普通用户' },
-              ]}
-              onChange={(value) => onChange('userType', value)}
-            />
-            <DialogSelectField
-              label="状态"
-              value={form.status}
-              options={[
-                { value: 'ACTIVE', label: '正常' },
-                { value: 'DISABLED', label: '禁用' },
-                { value: 'PENDING', label: '待审核' },
-              ]}
-              onChange={(value) => onChange('status', value)}
-            />
-          </div>
-          <div className="flex justify-end gap-sm pt-sm">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={editing}
-              className="rounded-lg border border-border-strong bg-surface-container-lowest px-lg py-2 font-button text-button text-ink hover:bg-surface-container-low disabled:opacity-60"
-            >
-              取消
-            </button>
-            <button
-              type="button"
-              onClick={onSubmit}
-              disabled={editing}
-              className="rounded-lg bg-primary px-lg py-2 font-button text-button text-on-primary disabled:opacity-60"
-            >
-              {editing ? '保存中...' : '保存修改'}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
+    <Modal
+      destroyOnHidden
+      confirmLoading={editing}
+      okText="保存修改"
+      open={open}
+      title="编辑用户信息"
+      onCancel={onClose}
+      onOk={onSubmit}
+    >
+      {errorMessage ? <Alert className="mb-md" showIcon type="error" message={errorMessage} /> : null}
+      <Form layout="vertical">
+        <Form.Item label="展示名称" required>
+          <Input aria-label="展示名称" value={form.displayName} onChange={(event) => onChange('displayName', event.target.value)} />
+        </Form.Item>
+        <Form.Item label="邮箱">
+          <Input aria-label="邮箱" value={form.email} onChange={(event) => onChange('email', event.target.value)} />
+        </Form.Item>
+        <Form.Item label="手机号">
+          <Input aria-label="手机号" value={form.phone} onChange={(event) => onChange('phone', event.target.value)} />
+        </Form.Item>
+        <Form.Item label="头像地址">
+          <Input aria-label="头像地址" value={form.avatarUrl} onChange={(event) => onChange('avatarUrl', event.target.value)} />
+        </Form.Item>
+        <Form.Item label="用户类型">
+          <Select
+            value={form.userType}
+            options={[
+              { value: 'ADMIN', label: '管理员' },
+              { value: 'USER', label: '普通用户' },
+            ]}
+            onChange={(value) => onChange('userType', value)}
+          />
+        </Form.Item>
+        <Form.Item label="状态">
+          <Select
+            value={form.status}
+            options={[
+              { value: 'ACTIVE', label: '正常' },
+              { value: 'DISABLED', label: '禁用' },
+              { value: 'PENDING', label: '待审核' },
+            ]}
+            onChange={(value) => onChange('status', value)}
+          />
+        </Form.Item>
+      </Form>
+    </Modal>
   );
 }
 
@@ -387,6 +289,7 @@ function ResetPasswordDialog({
   newPassword,
   errorMessage,
   resetting,
+  open,
   onClose,
   onChange,
   onSubmit,
@@ -394,120 +297,41 @@ function ResetPasswordDialog({
   newPassword: string;
   errorMessage: string;
   resetting: boolean;
+  open: boolean;
   onClose: () => void;
   onChange: (value: string) => void;
   onSubmit: () => void;
 }) {
-  // 关键约束：显式使用 rem 宽度，避免 max-w-lg 在当前主题下被 spacing token 覆盖成 24px。
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/45 px-md py-lg">
-      <div role="dialog" aria-modal="true" aria-label="重置用户密码" className="w-full max-w-[32rem] rounded-2xl border border-border-hairline bg-surface-container-lowest shadow-2xl">
-        <div className="flex items-start justify-between gap-md border-b border-border-hairline px-lg py-md">
-          <div>
-            <h3 className="font-title-md text-title-md text-ink">重置用户密码</h3>
-            <p className="mt-1 text-body-sm text-secondary">请输入新的登录密码并确认重置。</p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-lg px-sm py-xs text-secondary transition-colors hover:bg-surface-container-low hover:text-ink"
-            aria-label="关闭重置密码弹窗"
-          >
-            <span className="material-symbols-outlined text-[20px]">close</span>
-          </button>
-        </div>
-        <div className="space-y-md p-lg">
-          {errorMessage ? <div className="rounded-xl border border-error bg-error-container px-md py-sm text-sm text-on-error-container">{errorMessage}</div> : null}
-          <DialogTextField label="新密码" type="password" value={newPassword} onChange={onChange} />
-          <div className="flex justify-end gap-sm pt-sm">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={resetting}
-              className="rounded-lg border border-border-strong bg-surface-container-lowest px-lg py-2 font-button text-button text-ink hover:bg-surface-container-low disabled:opacity-60"
-            >
-              取消
-            </button>
-            <button
-              type="button"
-              onClick={onSubmit}
-              disabled={resetting}
-              className="rounded-lg border border-error bg-error-container px-lg py-2 font-button text-button text-on-error-container disabled:opacity-60"
-            >
-              {resetting ? '重置中...' : '确认重置'}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function DialogTextField({
-  label,
-  value,
-  type = 'text',
-  onChange,
-}: {
-  label: string;
-  value: string;
-  type?: string;
-  onChange: (value: string) => void;
-}) {
-  return (
-    <div>
-      <label className="mb-1 block text-[12px] font-medium text-secondary">{label}</label>
-      <input
-        aria-label={label}
-        type={type}
-        value={value}
-        className="w-full rounded-lg border border-border-hairline bg-surface-container-lowest px-3 py-2 text-ink outline-none transition-colors focus:border-border-strong"
-        onChange={(event) => onChange(event.target.value)}
-      />
-    </div>
-  );
-}
-
-function DialogSelectField({
-  label,
-  value,
-  options,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  options: Array<{ value: string; label: string }>;
-  onChange: (value: string) => void;
-}) {
-  return (
-    <div>
-      <label className="mb-1 block text-[12px] font-medium text-secondary">{label}</label>
-      <select
-        aria-label={label}
-        value={value}
-        className="w-full rounded-lg border border-border-hairline bg-surface-container-lowest px-3 py-2 text-ink outline-none transition-colors focus:border-border-strong"
-        onChange={(event) => onChange(event.target.value)}
-      >
-        {options.map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </select>
-    </div>
+    <Modal
+      destroyOnHidden
+      confirmLoading={resetting}
+      okButtonProps={{ danger: true, icon: <SaveOutlined />, 'aria-label': '确认重置' }}
+      okText="确认重置"
+      open={open}
+      title="重置用户密码"
+      onCancel={onClose}
+      onOk={onSubmit}
+    >
+      <Typography.Paragraph type="secondary">请输入新的登录密码并确认重置。</Typography.Paragraph>
+      {errorMessage ? <Alert className="mb-md" showIcon type="error" message={errorMessage} /> : null}
+      <Form layout="vertical">
+        <Form.Item label="新密码" required>
+          <Input.Password
+            aria-label="新密码"
+            value={newPassword}
+            onChange={(event) => onChange(event.target.value)}
+          />
+        </Form.Item>
+      </Form>
+    </Modal>
   );
 }
 
 function toStatusLabel(status: string): string {
-  if (status === 'ACTIVE') {
-    return '正常';
-  }
-  if (status === 'DISABLED') {
-    return '禁用';
-  }
-  if (status === 'PENDING') {
-    return '待审核';
-  }
+  if (status === 'ACTIVE') return '正常';
+  if (status === 'DISABLED') return '禁用';
+  if (status === 'PENDING') return '待审核';
   return status;
 }
 
@@ -519,33 +343,16 @@ function normalizeStatus(status: string): AdminUserStatus {
 }
 
 function toUserTypeLabel(userType: string): string {
-  if (userType === 'ADMIN') {
-    return '管理员';
-  }
-  if (userType === 'USER') {
-    return '普通用户';
-  }
+  if (userType === 'ADMIN') return '管理员';
+  if (userType === 'USER') return '普通用户';
   return userType;
 }
 
-function toStatusBadgeClass(status: string): string {
-  if (status === 'ACTIVE') {
-    return 'bg-status-running-bg text-status-running border-status-running-border';
-  }
-  if (status === 'DISABLED') {
-    return 'bg-status-failed-bg text-status-failed border-status-failed-border';
-  }
-  return 'bg-status-pending-bg text-status-pending border-status-pending-border';
-}
-
-function toStatusTextClass(status: string): string {
-  if (status === 'ACTIVE') {
-    return 'text-status-running';
-  }
-  if (status === 'DISABLED') {
-    return 'text-status-failed';
-  }
-  return 'text-status-pending';
+function toStatusColor(status: string): string | undefined {
+  if (status === 'ACTIVE') return 'success';
+  if (status === 'DISABLED') return 'error';
+  if (status === 'PENDING') return 'warning';
+  return undefined;
 }
 
 function formatDateTime(value?: string | null): string {
@@ -563,7 +370,7 @@ function fallbackAvatar(seed: string): string {
   return `https://api.dicebear.com/9.x/thumbs/svg?seed=${encodeURIComponent(seed)}`;
 }
 
-function extractErrorMessage(error: unknown, fallback: string): string {
+function extractErrorMessage(error: unknown, fallback: string) {
   if (error instanceof Error) {
     return error.message || fallback;
   }

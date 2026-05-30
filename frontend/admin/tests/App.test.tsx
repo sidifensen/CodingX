@@ -56,6 +56,6 @@ describe('Admin App auth guard', () => {
 
     render(<App />);
 
-    expect(screen.getByRole('alert')).toHaveTextContent('登录已失效，请重新登录');
+    expect(screen.getAllByRole('alert').some((alert) => alert.textContent?.includes('登录已失效，请重新登录'))).toBe(true);
   });
 });

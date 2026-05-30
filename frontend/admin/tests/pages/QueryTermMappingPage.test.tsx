@@ -121,7 +121,8 @@ describe('QueryTermMappingPage', () => {
     const dialog = await screen.findByTestId('mapping-edit-dialog');
 
     fireEvent.change(within(dialog).getByTestId('mapping-target-term-input'), { target: { value: 'OA平台' } });
-    fireEvent.change(within(dialog).getByTestId('mapping-enabled-select'), { target: { value: 'false' } });
+    fireEvent.mouseDown(within(dialog).getByTestId('mapping-enabled-select').querySelector('.ant-select-selector')!);
+    fireEvent.click(await screen.findByTitle('禁用'));
     fireEvent.click(within(dialog).getByTestId('mapping-save-btn'));
 
     await waitFor(() => {

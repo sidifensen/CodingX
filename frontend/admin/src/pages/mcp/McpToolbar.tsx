@@ -1,3 +1,4 @@
+import { PlusOutlined, ReloadOutlined } from '@ant-design/icons';
 import { Button, Space, Typography } from 'antd';
 
 interface McpToolbarProps {
@@ -21,10 +22,10 @@ export function McpToolbar({ loading, onRefresh, onCreate }: McpToolbarProps) {
         </Typography.Text>
       </div>
       <Space wrap>
-        <Button aria-label="刷新列表" loading={loading} onClick={onRefresh}>
+        <Button aria-label="刷新列表" icon={<ReloadOutlined />} loading={loading} onClick={onRefresh}>
           刷新列表
         </Button>
-        <Button type="primary" onClick={onCreate}>
+        <Button aria-label="新增MCP配置" icon={<PlusOutlined />} type="primary" onClick={onCreate}>
           新增MCP配置
         </Button>
       </Space>

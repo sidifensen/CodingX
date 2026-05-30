@@ -75,9 +75,8 @@ describe('WorkspacePage', () => {
     renderWorkspacePage();
     await screen.findByRole('heading', { name: '工作空间管理' });
 
-    fireEvent.change(screen.getByLabelText('运行目标'), {
-      target: { value: 'local' },
-    });
+    fireEvent.mouseDown(screen.getByRole('combobox', { name: '运行目标' }));
+    fireEvent.click(await screen.findByTitle('本地'));
     fireEvent.click(screen.getByRole('button', { name: '筛选' }));
 
     await waitFor(() => {

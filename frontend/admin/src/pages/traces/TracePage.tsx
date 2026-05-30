@@ -1,4 +1,6 @@
 import React from 'react';
+import { ApartmentOutlined, ClockCircleOutlined, HeartOutlined, ReloadOutlined, RiseOutlined, SearchOutlined } from '@ant-design/icons';
+import { Button, Input, Space } from 'antd';
 
 import { AdminChatApi, type AdminTraceRun, type AdminTraceRunPageResult } from '../../api/adminChatApi';
 import { TRACE_PAGE_SIZE, normalizeStatus, percentile } from './traceUtils';
@@ -87,14 +89,14 @@ export function TracePage() {
       key: 'status',
       title: '成功 / 失败 / 运行中',
       value: `${traceStats.successCount} / ${traceStats.failedCount} / ${traceStats.runningCount}`,
-      icon: <span className="material-symbols-outlined text-[18px]">monitor_heart</span>,
+      icon: <HeartOutlined />,
       tone: 'emerald',
     },
     {
       key: 'successRate',
       title: '成功率',
       value: `${traceStats.successRate}%`,
-      icon: <span className="material-symbols-outlined text-[18px]">trending_up</span>,
+      icon: <RiseOutlined />,
       tone: 'cyan',
     },
     {
@@ -102,7 +104,7 @@ export function TracePage() {
       title: '平均耗时',
       value: avgDurationMetric.value,
       unit: avgDurationMetric.unit,
-      icon: <span className="material-symbols-outlined text-[18px]">schedule</span>,
+      icon: <ClockCircleOutlined />,
       tone: 'indigo',
     },
     {
@@ -110,7 +112,7 @@ export function TracePage() {
       title: 'P95 耗时',
       value: p95DurationMetric.value,
       unit: p95DurationMetric.unit,
-      icon: <span className="material-symbols-outlined text-[18px]">layers</span>,
+      icon: <ApartmentOutlined />,
       tone: 'amber',
     },
   ];
@@ -133,28 +135,20 @@ export function TracePage() {
             独立列表页聚焦运行检索，点击任意运行记录进入详情页分析慢节点与失败节点
           </p>
         </div>
-        <div className="flex items-center gap-xs">
-          <input
+        <Space>
+          <Input
             value={traceIdFilter}
             onChange={(event) => setTraceIdFilter(event.target.value)}
             placeholder="搜索 Trace Id"
-            className="h-10 w-[320px] rounded-lg border border-border-hairline bg-surface-container-lowest px-3 text-ink outline-none transition-colors focus:border-border-strong"
+            style={{ width: 320 }}
           />
-          <button
-            type="button"
-            className="h-10 rounded-lg bg-ink px-lg text-button font-button text-on-ink hover:opacity-90 transition-opacity"
-            onClick={handleSearch}
-          >
+          <Button aria-label="查询" icon={<SearchOutlined />} type="primary" onClick={handleSearch}>
             查询
-          </button>
-          <button
-            type="button"
-            className="h-10 rounded-lg border border-border-strong bg-surface-container-lowest px-lg text-button font-button text-ink hover:bg-surface-container-low transition-colors"
-            onClick={handleRefresh}
-          >
+          </Button>
+          <Button aria-label="刷新" icon={<ReloadOutlined />} onClick={handleRefresh}>
             刷新
-          </button>
-        </div>
+          </Button>
+        </Space>
       </header>
 
       <section className="shrink-0 grid grid-cols-1 gap-sm xl:grid-cols-4">

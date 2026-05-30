@@ -244,14 +244,14 @@ describe('Skills page', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '上传技能包' }));
     const dialog = await screen.findByRole('dialog', { name: '上传技能包' });
-    const fileInput = within(dialog).getByLabelText('技能包文件') as HTMLInputElement;
+    const fileInput = dialog.querySelector('input[type="file"][accept=".zip,.skill"]') as HTMLInputElement;
     const file = new File(['zip-binary'], 'pdf-processing.skill', { type: 'application/octet-stream' });
     fireEvent.change(fileInput, { target: { files: [file] } });
     fireEvent.change(within(dialog).getByLabelText('分类（可选）'), { target: { value: '文档处理' } });
     fireEvent.click(within(dialog).getByRole('button', { name: '确认上传' }));
 
     await waitFor(() => {
-      expect(AdminChatApi.uploadSkillPackage).toHaveBeenCalledWith(file, '文档处理', []);
+      expect(AdminChatApi.uploadSkillPackage).toHaveBeenCalledWith(file, '文档处理', [], false);
     });
     await waitFor(() => {
       expect(AdminChatApi.listSkills).toHaveBeenCalledTimes(2);
@@ -267,7 +267,8 @@ describe('Skills page', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '上传技能包' }));
     const dialog = await screen.findByRole('dialog', { name: '上传技能包' });
-    const folderInput = within(dialog).getByLabelText('技能文件夹') as HTMLInputElement;
+    const folderInput = Array.from(dialog.querySelectorAll('input[type="file"]'))
+      .find((input) => input.getAttribute('webkitdirectory') != null) as HTMLInputElement;
     const fileA = new File(['manifest'], 'SKILL.md', { type: 'text/markdown' });
     const fileB = new File(['prompt'], 'prompt.txt', { type: 'text/plain' });
     fireEvent.change(folderInput, { target: { files: [fileA, fileB] } });
@@ -275,7 +276,7 @@ describe('Skills page', () => {
     fireEvent.click(within(dialog).getByRole('button', { name: '确认上传' }));
 
     await waitFor(() => {
-      expect(AdminChatApi.uploadSkillPackage).toHaveBeenCalledWith(null, '文档处理', [fileA, fileB]);
+      expect(AdminChatApi.uploadSkillPackage).toHaveBeenCalledWith(null, '文档处理', [fileA, fileB], false);
     });
   });
 
@@ -304,8 +305,8 @@ describe('Skills page', () => {
     await screen.findByText('/weather_query');
 
     fireEvent.click(screen.getByRole('button', { name: '列表视图' }));
-    expect(screen.getByText('编码')).toBeInTheDocument();
-    expect(screen.getByText('状态')).toBeInTheDocument();
+    expect(screen.getAllByText('编码').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('状态').length).toBeGreaterThan(0);
 
     fireEvent.click(screen.getByRole('button', { name: '资源预览 weather_query' }));
     const dialog = await screen.findByRole('dialog', { name: '技能包资源预览 weather_query' });

@@ -1,3 +1,5 @@
+import { LoginOutlined, LockOutlined, UserOutlined } from '@ant-design/icons';
+import { Alert, Button, Form, Input, Typography } from 'antd';
 import React, { useEffect, useState } from 'react';
 
 /**
@@ -29,69 +31,45 @@ export function AdminLoginPage({
     setPassword(defaultPassword);
   }, [defaultUsername, defaultPassword]);
 
-  /**
-   * 处理登录表单提交。
-   * @param event 表单提交事件对象。
-   */
-  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
+  const handleSubmit = async () => {
     await onSubmit({ username, password });
   };
 
   return (
-    <div className="min-h-screen bg-background text-on-surface flex items-center justify-center p-6">
-      <div className="w-full max-w-[28rem] rounded-2xl border border-border-hairline bg-surface-container-lowest p-8 shadow-[0_30px_80px_rgba(0,0,0,0.16)]">
+    <div className="flex min-h-screen items-center justify-center bg-background p-6 text-on-surface">
+      <section className="w-full max-w-[28rem] rounded-2xl border border-border-hairline bg-surface-container-lowest p-8 shadow-[0_30px_80px_rgba(0,0,0,0.16)]">
         <div className="mb-6">
-          <h1 className="font-headline-md text-headline-md font-bold text-ink">CodingX 管理端登录</h1>
-          <p className="mt-2 text-body-sm text-secondary">仅管理员账号可登录后台管理系统</p>
+          <Typography.Title level={1} style={{ margin: 0 }}>CodingX 管理端登录</Typography.Title>
+          <Typography.Text type="secondary">仅管理员账号可登录后台管理系统</Typography.Text>
         </div>
 
-        <form className="space-y-4" onSubmit={handleSubmit}>
-          <div className="space-y-2">
-            <label htmlFor="admin-login-username" className="block text-body-sm font-medium text-ink">
-              账号
-            </label>
-            <input
-              id="admin-login-username"
-              type="text"
-              value={username}
-              onChange={(event) => setUsername(event.target.value)}
+        <Form layout="vertical" onFinish={handleSubmit}>
+          <Form.Item label="账号" required>
+            <Input
               autoComplete="username"
-              className="w-full rounded-xl border border-border-strong bg-surface px-3 py-2.5 text-body-sm text-ink outline-none transition-colors focus:border-primary"
+              prefix={<UserOutlined />}
+              value={username}
               placeholder="请输入管理员账号"
+              onChange={(event) => setUsername(event.target.value)}
             />
-          </div>
-
-          <div className="space-y-2">
-            <label htmlFor="admin-login-password" className="block text-body-sm font-medium text-ink">
-              密码
-            </label>
-            <input
-              id="admin-login-password"
-              type="password"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
+          </Form.Item>
+          <Form.Item label="密码" required>
+            <Input.Password
               autoComplete="current-password"
-              className="w-full rounded-xl border border-border-strong bg-surface px-3 py-2.5 text-body-sm text-ink outline-none transition-colors focus:border-primary"
+              prefix={<LockOutlined />}
+              value={password}
               placeholder="请输入密码"
+              onChange={(event) => setPassword(event.target.value)}
             />
-          </div>
+          </Form.Item>
 
-          {errorMessage ? (
-            <p className="rounded-lg border border-error/30 bg-error-container px-3 py-2 text-body-sm text-on-error-container">
-              {errorMessage}
-            </p>
-          ) : null}
+          {errorMessage ? <Alert className="mb-md" showIcon type="error" message={errorMessage} /> : null}
 
-          <button
-            type="submit"
-            className="w-full rounded-xl bg-primary px-4 py-2.5 text-button text-on-primary transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
-            disabled={isSubmitting}
-          >
+          <Button block htmlType="submit" icon={<LoginOutlined />} loading={isSubmitting} type="primary">
             {isSubmitting ? '登录中...' : '登录管理端'}
-          </button>
-        </form>
-      </div>
+          </Button>
+        </Form>
+      </section>
     </div>
   );
 }

@@ -52,10 +52,10 @@ describe('TracePage', () => {
     expect(await screen.findByRole('heading', { name: '链路追踪' })).toBeInTheDocument();
     expect(screen.queryByText('运行列表')).not.toBeInTheDocument();
     expect(screen.queryByText('按时间倒序查看运行记录，通过操作按钮进入独立详情页')).not.toBeInTheDocument();
-    expect(screen.getByText('Trace Name')).toBeInTheDocument();
-    expect(screen.getByText('Trace Id')).toBeInTheDocument();
-    expect(screen.getByText('会话ID / TaskID')).toBeInTheDocument();
-    expect(screen.getByText('执行时间')).toBeInTheDocument();
+    expect(screen.getAllByText('Trace Name').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Trace Id').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('会话ID / TaskID').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('执行时间').length).toBeGreaterThan(0);
     expect(screen.getByText('chat-entry')).toBeInTheDocument();
     expect(AdminChatApi.listTraces).toHaveBeenCalled();
   });
@@ -104,11 +104,11 @@ describe('TracePage', () => {
       .mockResolvedValueOnce({
         records: [
           {
-            traceId: 'trace-6',
+            traceId: 'trace-2',
             traceName: 'chat-entry',
-            conversationId: '1006',
-            taskId: '2006',
-            userId: '3006',
+            conversationId: '1002',
+            taskId: '2002',
+            userId: '3002',
             username: 'admin',
             status: 'SUCCESS',
             durationMs: 5000,
@@ -117,7 +117,7 @@ describe('TracePage', () => {
         ],
         total: 77,
         size: 10,
-        current: 6,
+        current: 2,
         pages: 8,
       } as any);
 
@@ -129,18 +129,16 @@ describe('TracePage', () => {
 
     await screen.findByRole('heading', { name: '链路追踪' });
     expect(screen.getByText('第 1 / 8 页，共 77 条')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '第 1 页' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '第 2 页' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '第 3 页' })).toBeInTheDocument();
-    expect(screen.getByText('...')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '第 8 页' })).toBeInTheDocument();
+    expect(screen.getByTitle('1')).toBeInTheDocument();
+    expect(screen.getByTitle('2')).toBeInTheDocument();
+    expect(screen.getByTitle('3')).toBeInTheDocument();
+    expect(screen.getByTitle('8')).toBeInTheDocument();
 
-    fireEvent.change(screen.getByLabelText('前往页码'), { target: { value: '6' } });
-    fireEvent.click(screen.getByRole('button', { name: '前往' }));
+    fireEvent.click(screen.getByRole('button', { name: '第 2 页' }));
 
     await waitFor(() =>
       expect(AdminChatApi.listTraces).toHaveBeenLastCalledWith(
-        expect.objectContaining({ current: 6, size: 10 }),
+        expect.objectContaining({ current: 2, size: 10 }),
       ),
     );
   });
@@ -190,7 +188,7 @@ describe('TracePage', () => {
                   current: 2,
                   pages: 8,
                 }),
-              20,
+              200,
             ),
           ),
       );

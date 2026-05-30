@@ -193,6 +193,41 @@ const adminAntdThemeOverrideCss = `
     background-color: var(--theme-surface-container-low) !important;
   }
 
+  .admin-data-table.ant-table-wrapper .ant-table,
+  .admin-data-table.ant-table-wrapper .ant-table-container {
+    border-inline-start: 0 !important;
+  }
+
+  .admin-data-table.ant-table-wrapper .ant-table-cell,
+  .admin-data-table.ant-table-wrapper .ant-table-thead > tr > th,
+  .admin-data-table.ant-table-wrapper .ant-table-tbody > tr > td {
+    border-inline-end: 0 !important;
+    padding: 14px 16px !important;
+  }
+
+  .admin-data-table.ant-table-wrapper .ant-table-thead > tr > th::before {
+    display: none !important;
+  }
+
+  .admin-data-table .ant-table-pagination {
+    padding-inline: 8px;
+  }
+
+  .admin-data-table .admin-pagination-page-button {
+    background: transparent;
+    border: 0;
+    color: inherit;
+    cursor: pointer;
+    height: 100%;
+    min-width: 100%;
+    padding: 0;
+  }
+
+  .admin-table-actions .ant-btn {
+    align-items: center;
+    display: inline-flex;
+  }
+
   .ant-input-affix-wrapper,
   .ant-input-affix-wrapper.ant-input-outlined,
   .ant-input-affix-wrapper.ant-input-affix-wrapper,

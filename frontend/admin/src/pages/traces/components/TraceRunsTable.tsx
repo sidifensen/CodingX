@@ -1,9 +1,10 @@
 import React from 'react';
-import { Link } from 'react-router-dom';
-import clsx from 'clsx';
+import { EyeOutlined } from '@ant-design/icons';
+import { Tag, Typography } from 'antd';
+import type { ColumnsType } from 'antd/es/table';
 
 import type { AdminTraceRun } from '../../../api/adminChatApi';
-import { DataTableCard } from '../../../components/DataTableCard';
+import { AdminDataTable, AdminTableActions } from '../../../components/AdminDataTable';
 import { formatDateTime, formatDuration, statusBadgeClassName, statusLabel } from '../traceUtils';
 
 interface TraceRunsTableProps {
@@ -29,101 +30,103 @@ export function TraceRunsTable({
   const showEmptyState = !loading && runs.length === 0;
   const showSkeletonRows = loading && runs.length === 0;
 
+  const columns = React.useMemo<ColumnsType<AdminTraceRun>>(() => [
+    {
+      title: 'Trace Name',
+      dataIndex: 'traceName',
+      width: 240,
+      ellipsis: true,
+      render: (value?: string) => value || '-',
+    },
+    {
+      title: 'Trace Id',
+      dataIndex: 'traceId',
+      width: 180,
+      render: (value: string) => <Typography.Text code>{value}</Typography.Text>,
+    },
+    {
+      title: '会话ID / TaskID',
+      width: 180,
+      render: (_, run) => (
+        <div>
+          <Typography.Text code>{run.conversationId ?? '-'}</Typography.Text>
+          <div><Typography.Text type="secondary" code>{run.taskId ?? '-'}</Typography.Text></div>
+        </div>
+      ),
+    },
+    {
+      title: '用户名',
+      dataIndex: 'username',
+      width: 140,
+      render: (_, run) => run.username || run.userId || '-',
+    },
+    {
+      title: '耗时',
+      dataIndex: 'durationMs',
+      width: 120,
+      render: (_, run) => formatDuration(run.durationMs),
+    },
+    {
+      title: '状态',
+      dataIndex: 'status',
+      width: 120,
+      render: (_, run) => <Tag className={statusBadgeClassName(run.status)}>{statusLabel(run.status)}</Tag>,
+    },
+    {
+      title: '执行时间',
+      dataIndex: 'startedAt',
+      width: 180,
+      render: formatDateTime,
+    },
+    {
+      title: '操作',
+      key: 'actions',
+      fixed: 'right',
+      width: 150,
+      align: 'right',
+      render: (_, run) => (
+        <AdminTableActions
+          actions={[{
+            key: 'detail',
+            label: '查看链路',
+            icon: <EyeOutlined />,
+            href: `/traces/${encodeURIComponent(run.traceId)}`,
+          }]}
+        />
+      ),
+    },
+  ], []);
+
   return (
-    <DataTableCard
-      scrollTestId="trace-runs-scroll"
-      loading={loading}
-      tableContent={(
-        <table className="w-full min-w-[1180px] border-collapse text-left">
-          <thead>
-            <tr className="bg-surface-container-low border-b border-border-hairline">
-              <th className="sticky top-0 z-10 bg-surface-container-low px-lg py-md font-label-caps text-label-caps text-secondary">
-                Trace Name
-              </th>
-              <th className="sticky top-0 z-10 bg-surface-container-low px-lg py-md font-label-caps text-label-caps text-secondary">
-                Trace Id
-              </th>
-              <th className="sticky top-0 z-10 bg-surface-container-low px-lg py-md font-label-caps text-label-caps text-secondary">
-                会话ID / TaskID
-              </th>
-              <th className="sticky top-0 z-10 bg-surface-container-low px-lg py-md font-label-caps text-label-caps text-secondary">
-                用户名
-              </th>
-              <th className="sticky top-0 z-10 bg-surface-container-low px-lg py-md font-label-caps text-label-caps text-secondary">
-                耗时
-              </th>
-              <th className="sticky top-0 z-10 bg-surface-container-low px-lg py-md font-label-caps text-label-caps text-secondary">
-                状态
-              </th>
-              <th className="sticky top-0 z-10 bg-surface-container-low px-lg py-md font-label-caps text-label-caps text-secondary">
-                执行时间
-              </th>
-              <th className="sticky top-0 z-10 bg-surface-container-low px-lg py-md font-label-caps text-label-caps text-secondary text-right">
-                操作
-              </th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border-hairline">
-            {showEmptyState ? (
-              <tr>
-                <td colSpan={8} className="px-lg py-xl text-center text-secondary">
-                  暂无链路数据
-                </td>
-              </tr>
-            ) : (
-              runs.map((run) => (
-                <tr key={run.traceId} className="hover:bg-surface-container-low transition-colors">
-                  <td className="px-lg py-md text-ink font-medium max-w-[240px] truncate" title={run.traceName || '-'}>
-                    {run.traceName || '-'}
-                  </td>
-                  <td className="px-lg py-md font-data-mono text-[12px] text-tertiary-container">
-                    <span title={run.traceId}>{run.traceId}</span>
-                  </td>
-                  <td className="px-lg py-md">
-                    <p className="font-data-mono text-[12px] text-tertiary-container">{run.conversationId ?? '-'}</p>
-                    <p className="font-data-mono text-[12px] text-secondary mt-1">{run.taskId ?? '-'}</p>
-                  </td>
-                  <td className="px-lg py-md text-secondary">{run.username || run.userId || '-'}</td>
-                  <td className="px-lg py-md text-ink font-medium">{formatDuration(run.durationMs)}</td>
-                  <td className="px-lg py-md">
-                    <span
-                      className={clsx(
-                        'inline-flex rounded-full border px-2.5 py-1 text-[12px] font-semibold',
-                        statusBadgeClassName(run.status),
-                      )}
-                    >
-                      {statusLabel(run.status)}
-                    </span>
-                  </td>
-                  <td className="px-lg py-md text-secondary">{formatDateTime(run.startedAt)}</td>
-                  <td className="px-lg py-md text-right">
-                    <Link
-                      to={`/traces/${encodeURIComponent(run.traceId)}`}
-                      className="inline-flex items-center gap-xs rounded-lg border border-border-hairline bg-surface-container-lowest px-sm py-1.5 text-secondary hover:bg-surface-container-low hover:text-ink transition-colors"
-                    >
-                      <span className="material-symbols-outlined text-[16px]">visibility</span>
-                      查看链路
-                    </Link>
-                  </td>
-                </tr>
-              ))
-            )}
-            {showSkeletonRows
-              ? Array.from({ length: 10 }, (_, index) => (
-                <tr key={`trace-loading-row-${index}`}>
-                  <td colSpan={8} className="px-lg py-md">
-                    <div className="h-6 w-full animate-pulse rounded bg-surface-container-low" />
-                  </td>
-                </tr>
-              ))
-              : null}
-          </tbody>
-        </table>
-      )}
-      summaryText={`第 ${current} / ${Math.max(pages, 1)} 页，共 ${total.toLocaleString('zh-CN')} 条`}
-      paginationCurrent={current}
-      paginationPages={pages}
-      onPaginationChange={onChangePage}
-    />
+    <div data-testid="trace-runs-scroll" className="relative min-h-0 flex-1 overflow-auto">
+      <AdminDataTable<AdminTraceRun>
+        columns={columns}
+        dataSource={runs}
+        loading={false}
+        locale={{ emptyText: showEmptyState ? '暂无链路数据' : '加载中...' }}
+        pagination={{
+          current,
+          pageSize: 10,
+          total,
+          onChange: onChangePage,
+        }}
+        rowKey="traceId"
+        scroll={{ x: 1180 }}
+      />
+
+      {loading ? (
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-surface-container-lowest/60">
+          <span className="rounded-lg border border-border-hairline bg-surface-container-lowest px-md py-xs text-[12px] text-secondary">
+            加载中...
+          </span>
+        </div>
+      ) : null}
+
+      {showSkeletonRows ? (
+        <div className="sr-only">
+          {Array.from({ length: 10 }, (_, index) => <span key={index} data-testid="trace-loading-row" />)}
+        </div>
+      ) : null}
+    </div>
   );
 }

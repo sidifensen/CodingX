@@ -2,22 +2,45 @@ import React, { useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import clsx from 'clsx';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
+import {
+  ApartmentOutlined,
+  AppstoreOutlined,
+  BellOutlined,
+  BulbOutlined,
+  CodeOutlined,
+  DashboardOutlined,
+  FolderOpenOutlined,
+  LikeOutlined,
+  LogoutOutlined,
+  MenuFoldOutlined,
+  MenuUnfoldOutlined,
+  MoonOutlined,
+  NodeIndexOutlined,
+  ProfileOutlined,
+  SearchOutlined,
+  SettingOutlined,
+  SunOutlined,
+  TeamOutlined,
+  ToolOutlined,
+} from '@ant-design/icons';
+import { Avatar, Button, Dropdown } from 'antd';
+import type { MenuProps } from 'antd';
 
 const navItems = [
-  { path: '/', icon: 'dashboard', label: '工作台' },
-  { path: '/users', icon: 'group', label: '用户管理' },
-  { path: '/tasks', icon: 'assignment', label: '会话管理' },
-  { path: '/workspaces', icon: 'workspaces', label: '工作空间' },
-  { path: '/skills', icon: 'extension', label: '技能管理' },
-  { path: '/experts', icon: 'psychology', label: '专家管理' },
-  { path: '/tools', icon: 'build_circle', label: '工具管理' },
-  { path: '/mcp', icon: 'terminal', label: 'MCP管理' },
-  { path: '/traces', icon: 'account_tree', label: 'Trace管理' },
-  { path: '/feedbacks', icon: 'thumbs_up_down', label: '反馈管理' },
-  { path: '/intent-tree', icon: 'schema', label: '意图树' },
-  { path: '/query-term-mappings', icon: 'manage_search', label: '关键词映射' },
-  { path: '/settings', icon: 'settings', label: '系统配置' },
-  { path: '/notifications', icon: 'notifications', label: '通知中心' },
+  { path: '/', icon: <DashboardOutlined />, label: '工作台' },
+  { path: '/users', icon: <TeamOutlined />, label: '用户管理' },
+  { path: '/tasks', icon: <ProfileOutlined />, label: '会话管理' },
+  { path: '/workspaces', icon: <FolderOpenOutlined />, label: '工作空间' },
+  { path: '/skills', icon: <AppstoreOutlined />, label: '技能管理' },
+  { path: '/experts', icon: <BulbOutlined />, label: '专家管理' },
+  { path: '/tools', icon: <ToolOutlined />, label: '工具管理' },
+  { path: '/mcp', icon: <CodeOutlined />, label: 'MCP管理' },
+  { path: '/traces', icon: <NodeIndexOutlined />, label: 'Trace管理' },
+  { path: '/feedbacks', icon: <LikeOutlined />, label: '反馈管理' },
+  { path: '/intent-tree', icon: <ApartmentOutlined />, label: '意图树' },
+  { path: '/query-term-mappings', icon: <SearchOutlined />, label: '关键词映射' },
+  { path: '/settings', icon: <SettingOutlined />, label: '系统配置' },
+  { path: '/notifications', icon: <BellOutlined />, label: '通知中心' },
 ];
 
 interface SidebarProps {
@@ -33,7 +56,33 @@ interface SidebarProps {
  * 渲染管理端侧边栏，并承载主题切换与退出登录入口。
  */
 function Sidebar({ isCollapsed, setIsCollapsed, isDarkMode, toggleTheme, onLogout, isAuthSubmitting }: SidebarProps) {
-  const [showUserMenu, setShowUserMenu] = useState(false);
+  const userMenuItems: MenuProps['items'] = [
+    {
+      key: 'theme',
+      icon: isDarkMode ? <SunOutlined /> : <MoonOutlined />,
+      label: isDarkMode ? '切换为浅色模式' : '切换为深色模式',
+    },
+    {
+      key: 'logout',
+      danger: true,
+      disabled: isAuthSubmitting,
+      icon: <LogoutOutlined />,
+      label: isAuthSubmitting ? '退出中...' : '退出登录',
+    },
+  ];
+
+  /**
+   * AntD Dropdown 统一承载主题与登出操作，避免侧栏共享壳层继续维护自绘浮层。
+   */
+  const handleUserMenuClick: MenuProps['onClick'] = async ({ key }) => {
+    if (key === 'theme') {
+      toggleTheme();
+      return;
+    }
+    if (key === 'logout') {
+      await onLogout();
+    }
+  };
 
   return (
     <aside
@@ -52,13 +101,14 @@ function Sidebar({ isCollapsed, setIsCollapsed, isDarkMode, toggleTheme, onLogou
           <h1 className="font-headline-sm text-headline-sm font-bold text-ink tracking-tight">CodingX</h1>
           <p className="font-label-caps text-label-caps text-secondary uppercase tracking-widest mt-1">管理后台</p>
         </div>
-        <button
+        <Button
+          aria-label={isCollapsed ? '展开菜单' : '收起菜单'}
+          icon={isCollapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
           onClick={() => setIsCollapsed(!isCollapsed)}
-          className="text-secondary hover:text-ink transition-colors p-1 flex items-center justify-center rounded-md hover:bg-surface-container shrink-0"
+          className="shrink-0"
           title={isCollapsed ? '展开菜单' : '收起菜单'}
-        >
-          <span className="material-symbols-outlined">{isCollapsed ? 'menu' : 'menu_open'}</span>
-        </button>
+          type="text"
+        />
       </div>
       <nav className="flex-1 space-y-1">
         {navItems.map((item) => (
@@ -78,10 +128,7 @@ function Sidebar({ isCollapsed, setIsCollapsed, isDarkMode, toggleTheme, onLogou
           >
             {({ isActive }) => (
               <>
-                <span
-                  className={clsx('material-symbols-outlined text-[20px] shrink-0', !isActive && 'group-hover:text-ink transition-colors')}
-                  style={{ fontVariationSettings: isActive ? "'FILL' 1" : "'FILL' 0" }}
-                >
+                <span className={clsx('text-[20px] shrink-0', !isActive && 'group-hover:text-ink transition-colors')}>
                   {item.icon}
                 </span>
                 <span
@@ -99,58 +146,25 @@ function Sidebar({ isCollapsed, setIsCollapsed, isDarkMode, toggleTheme, onLogou
         ))}
       </nav>
       <div className={clsx('mt-auto pt-md border-t border-border-hairline', isCollapsed ? 'px-2' : 'px-sm')}>
-        <div className="relative">
-          <div
-            className={clsx('flex items-center gap-sm p-xs rounded hover:bg-surface-container transition-colors cursor-pointer', isCollapsed && 'justify-center px-0')}
-            onClick={() => setShowUserMenu(!showUserMenu)}
+        <Dropdown menu={{ items: userMenuItems, onClick: handleUserMenuClick }} placement="topLeft" trigger={['click']}>
+          <Button
+            aria-label="打开管理员菜单"
+            block
+            className={clsx('h-auto justify-start p-xs', isCollapsed && 'justify-center px-0')}
+            type="text"
           >
-            <img
+            <Avatar
               alt="Admin"
-              className="w-8 h-8 rounded-full border border-border-hairline object-cover shrink-0"
+              className="shrink-0 border border-border-hairline"
+              size={32}
               src="https://lh3.googleusercontent.com/aida-public/AB6AXuC2qit7t9_Op2BaG4q_XjoEvUAYkJURwqCFfB87WntE80FvjvZIhLKxM6ywbUA4jcYsmW8YKSzsMu4OhCy55GnLGcY1R3ZhovU6LrpiG-x1RvceypvpHAz11cx-MWR5GBBQWcla3xMHN5Pwp7_vWacYmOakdSnmHSvK0BXO2ps2b6qAZn4hTwNSopDeHE17Kt8tEuYKdDeEJZeSuOrVJbDz23qACFMPNAgIlgBlAS8wUOI_wiGtPh7SAGbvDa0sj6mfJEp1Mslec_A"
             />
             <div className={clsx('overflow-hidden whitespace-nowrap transition-all duration-300', isCollapsed ? 'w-0 opacity-0' : 'w-[120px] opacity-100')}>
               <p className="font-bold text-ink font-body-sm text-body-sm truncate">管理员</p>
               <p className="text-[10px] text-secondary truncate">admin@codingx.io</p>
             </div>
-          </div>
-          <AnimatePresence>
-            {showUserMenu && (
-              <motion.div
-                initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                transition={{ duration: 0.15 }}
-                className={clsx(
-                  'absolute bottom-full mb-2 bg-surface-container-lowest border border-border-hairline rounded-lg shadow-lg py-1 z-50',
-                  isCollapsed ? 'left-0 w-48' : 'left-0 w-full',
-                )}
-              >
-                <button
-                  onClick={() => {
-                    toggleTheme();
-                    setShowUserMenu(false);
-                  }}
-                  className="w-full text-left px-4 py-2 hover:bg-surface-container-low text-ink flex items-center gap-2 transition-colors"
-                >
-                  <span className="material-symbols-outlined text-[18px]">{isDarkMode ? 'light_mode' : 'dark_mode'}</span>
-                  {isDarkMode ? '切换为浅色模式' : '切换为深色模式'}
-                </button>
-                <button
-                  onClick={async () => {
-                    setShowUserMenu(false);
-                    await onLogout();
-                  }}
-                  disabled={isAuthSubmitting}
-                  className="w-full text-left px-4 py-2 hover:bg-surface-container-low text-error flex items-center gap-2 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
-                >
-                  <span className="material-symbols-outlined text-[18px]">logout</span>
-                  {isAuthSubmitting ? '退出中...' : '退出登录'}
-                </button>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
+          </Button>
+        </Dropdown>
       </div>
     </aside>
   );

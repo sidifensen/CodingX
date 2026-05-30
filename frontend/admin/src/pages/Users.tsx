@@ -1,9 +1,17 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import clsx from 'clsx';
+import {
+  CheckCircleOutlined,
+  EyeOutlined,
+  PlayCircleOutlined,
+  PlusOutlined,
+  StopOutlined,
+} from '@ant-design/icons';
+import { Alert, Avatar, Button, Form, Input, Modal, Segmented, Select, Space, Statistic, Tag, Typography } from 'antd';
+import type { ColumnsType } from 'antd/es/table';
 
 import { AdminUserApi } from '../api/adminUserApi';
-import { DataTableCard } from '../components/DataTableCard';
+import { AdminDataTable, AdminTableActions } from '../components/AdminDataTable';
 import {
   AdminUserCreatePayload,
   AdminUserPageResult,
@@ -35,7 +43,7 @@ const emptyCreateUserForm: CreateUserDialogState = {
 };
 
 /**
- * 管理端用户管理页：对接真实后端并提供新增/审核/启停操作。
+ * 管理端用户管理页：对接真实后端并提供新增、审核、启停与详情跳转。
  */
 export function Users() {
   const navigate = useNavigate();
@@ -88,8 +96,7 @@ export function Users() {
   }, [pageResult]);
 
   /**
-   * 处理审核通过动作。
-   * @param userId 用户 ID。
+   * 审核通过后刷新当前页，保证列表状态与后端一致。
    */
   const handleApprove = async (userId: string | number) => {
     try {
@@ -101,8 +108,7 @@ export function Users() {
   };
 
   /**
-   * 处理启用/禁用切换。
-   * @param user 当前用户。
+   * 用户启停直接调用状态接口，操作列按钮文案随当前状态反转。
    */
   const handleToggleStatus = async (user: AdminUserSummary) => {
     const nextStatus: AdminUserStatus = user.status === 'ACTIVE' ? 'DISABLED' : 'ACTIVE';
@@ -114,9 +120,6 @@ export function Users() {
     }
   };
 
-  /**
-   * 处理新增用户提交。
-   */
   const handleCreateUser = async () => {
     setCreateFormError('');
     if (!createForm.username.trim() || !createForm.displayName.trim() || !createForm.password.trim()) {
@@ -145,14 +148,6 @@ export function Users() {
     }
   };
 
-  const onSelectFilter = (nextFilter: UserFilterTab) => {
-    setFilter(nextFilter);
-    setPageResult((previous) => ({ ...previous, current: 1 }));
-  };
-
-  /**
-   * 表格底部摘要：统一在 DataTableCard 底部展示当前分页区间。
-   */
   const tableSummaryText = React.useMemo(() => {
     if (pageResult.total <= 0) {
       return '显示 0 条，共 0 条';
@@ -162,192 +157,170 @@ export function Users() {
     return `显示 ${start}-${end} 条，共 ${pageResult.total} 条`;
   }, [pageResult]);
 
+  const columns = React.useMemo<ColumnsType<AdminUserSummary>>(() => [
+    {
+      title: '用户',
+      dataIndex: 'displayName',
+      width: 260,
+      render: (_, user) => (
+        <Space>
+          <Avatar src={user.avatarUrl || fallbackAvatar(user)} />
+          <div>
+            <Typography.Text strong>{user.displayName}</Typography.Text>
+            <div className="text-[12px] text-secondary">{user.email || `${user.username}@codingx.local`}</div>
+          </div>
+        </Space>
+      ),
+    },
+    {
+      title: '角色',
+      dataIndex: 'userType',
+      width: 120,
+      render: (_, user) => (
+        <Tag color={user.userType === 'ADMIN' ? 'default' : undefined}>
+          {user.userTypeLabel || toUserTypeLabel(user.userType)}
+        </Tag>
+      ),
+    },
+    {
+      title: '状态',
+      dataIndex: 'status',
+      width: 120,
+      render: (_, user) => <Tag color={toStatusColor(user.status)}>{user.statusLabel || toStatusLabel(user.status)}</Tag>,
+    },
+    {
+      title: '最近登录',
+      dataIndex: 'lastLoginAt',
+      width: 190,
+      render: formatDateTime,
+    },
+    {
+      title: '创建时间',
+      dataIndex: 'createdAt',
+      width: 190,
+      render: formatDateTime,
+    },
+    {
+      title: '操作',
+      key: 'actions',
+      fixed: 'right',
+      width: 260,
+      align: 'right',
+      render: (_, user) => (
+        <AdminTableActions
+          actions={[
+            ...(user.status === 'PENDING'
+              ? [{
+                key: 'approve',
+                label: '审核通过',
+                icon: <CheckCircleOutlined />,
+                type: 'primary' as const,
+                onClick: (event) => {
+                  event.stopPropagation();
+                  void handleApprove(user.id);
+                },
+              }]
+              : [{
+                key: 'detail',
+                label: '详情',
+                icon: <EyeOutlined />,
+                onClick: (event) => {
+                  event.stopPropagation();
+                  navigate(`/users/${user.id}`);
+                },
+              }]),
+            {
+              key: 'toggle',
+              label: user.status === 'ACTIVE' ? '禁用' : '启用',
+              ariaLabel: user.status === 'ACTIVE' ? '禁用用户' : '启用用户',
+              danger: user.status === 'ACTIVE',
+              icon: user.status === 'ACTIVE' ? <StopOutlined /> : <PlayCircleOutlined />,
+              onClick: (event) => {
+                event.stopPropagation();
+                void handleToggleStatus(user);
+              },
+            },
+          ]}
+        />
+      ),
+    },
+  ], [handleApprove, handleToggleStatus, navigate]);
+
   return (
-    <div className="p-lg w-full">
-      <div className="mb-lg flex justify-between items-end">
+    <div className="w-full space-y-lg p-lg">
+      <header className="flex flex-col gap-sm lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <h2 className="font-headline-md text-headline-md text-ink">用户管理</h2>
-          <p className="text-secondary mt-1">管理系统内的所有用户账户、角色分配及其活跃状态。</p>
+          <Typography.Title level={2} style={{ margin: 0 }}>用户管理</Typography.Title>
+          <Typography.Text type="secondary">管理系统内的所有用户账户、角色分配及其活跃状态。</Typography.Text>
         </div>
-        <button
-          type="button"
-          className="bg-primary text-on-primary px-lg py-2 rounded-lg font-button text-button flex items-center gap-xs active:scale-95 transition-transform"
+        <Button
+          icon={<PlusOutlined />}
+          type="primary"
           onClick={() => {
             setCreateForm(emptyCreateUserForm);
             setCreateFormError('');
             setIsCreateDialogOpen(true);
           }}
         >
-          <span className="material-symbols-outlined text-[18px]">person_add</span>
           新增用户
-        </button>
-      </div>
+        </Button>
+      </header>
 
-      {errorMessage ? (
-        <div className="mb-lg rounded-xl border border-error bg-error-container px-md py-sm text-sm text-on-error-container">
-          {errorMessage}
-        </div>
-      ) : null}
+      {errorMessage ? <Alert showIcon type="error" message={errorMessage} /> : null}
 
-      <div className="bg-surface-container-lowest border border-border-hairline rounded-xl p-md mb-lg">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-md">
-            <span className="font-label-caps text-label-caps text-secondary">状态筛选</span>
-            <div className="flex bg-surface-container-low p-1 rounded-lg">
-              {(['全部', '正常', '禁用', '待审核'] as UserFilterTab[]).map((tab) => (
-                <button
-                  key={tab}
-                  onClick={() => onSelectFilter(tab)}
-                  className={clsx(
-                    'px-lg py-1.5 rounded-md text-body-sm transition-all',
-                    filter === tab ? 'text-primary font-bold bg-surface-container-lowest shadow-sm' : 'text-secondary hover:text-ink',
-                  )}
-                >
-                  {tab}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
+      <section className="rounded-xl border border-border-hairline bg-surface-container-lowest p-md">
+        <Space wrap>
+          <Typography.Text type="secondary">状态筛选</Typography.Text>
+          <Segmented<UserFilterTab>
+            options={['全部', '正常', '禁用', '待审核']}
+            value={filter}
+            onChange={(nextFilter) => {
+              setFilter(nextFilter);
+              setPageResult((previous) => ({ ...previous, current: 1 }));
+            }}
+          />
+        </Space>
+      </section>
 
-      <div className="grid grid-cols-12 gap-md mb-lg">
-        <StatCard title="总用户数" value={String(userStats.total)} extra="" extraClassName="text-status-running" />
-        <StatCard title="正常用户" value={String(userStats.active)} extra="" extraClassName="text-status-running" />
-        <StatCard title="待审核" value={String(userStats.pending)} extra="需处理" extraClassName="text-status-pending" />
-        <StatCard title="已禁用" value={String(userStats.disabled)} extra="" extraClassName="text-secondary" />
-      </div>
+      <section className="grid gap-md md:grid-cols-4">
+        <MetricItem title="总用户数" value={userStats.total} />
+        <MetricItem title="正常用户" value={userStats.active} />
+        <MetricItem title="待审核" value={userStats.pending} />
+        <MetricItem title="已禁用" value={userStats.disabled} />
+      </section>
 
-      <DataTableCard
-        scrollTestId="users-table-scroll"
-        summaryTestId="users-table-summary"
-        loading={isLoading}
-        loadingText="用户加载中..."
-        summaryText={tableSummaryText}
-        paginationCurrent={pageResult.current}
-        paginationPages={Math.max(pageResult.pages, 1)}
-        onPaginationChange={(nextPage) => {
-          void loadUsers(nextPage, pageResult.size, filter);
-        }}
-        tableContent={(
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="bg-surface-container-low border-b border-border-hairline">
-                <th className="px-lg py-md font-label-caps text-label-caps text-secondary border-b border-border-hairline">用户</th>
-                <th className="px-lg py-md font-label-caps text-label-caps text-secondary border-b border-border-hairline">角色</th>
-                <th className="px-lg py-md font-label-caps text-label-caps text-secondary border-b border-border-hairline">状态</th>
-                <th className="px-lg py-md font-label-caps text-label-caps text-secondary border-b border-border-hairline">最近登录</th>
-                <th className="px-lg py-md font-label-caps text-label-caps text-secondary border-b border-border-hairline">创建时间</th>
-                <th className="px-lg py-md font-label-caps text-label-caps text-secondary border-b border-border-hairline text-right">操作</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border-hairline">
-              {pageResult.records.length === 0 ? (
-                <tr>
-                  <td className="px-lg py-lg text-secondary" colSpan={6}>
-                    当前筛选条件下暂无用户
-                  </td>
-                </tr>
-              ) : (
-                pageResult.records.map((user) => (
-                  <tr
-                    key={String(user.id)}
-                    className="hover:bg-surface-container-low transition-colors group cursor-pointer"
-                    onClick={() => navigate(`/users/${user.id}`)}
-                  >
-                    <td className="px-lg py-md">
-                      <div className="flex items-center gap-md">
-                        <img
-                          className="w-10 h-10 rounded-full border border-border-hairline bg-surface-container-low object-cover"
-                          src={user.avatarUrl || fallbackAvatar(user)}
-                          alt="User"
-                        />
-                        <div>
-                          <div className="font-title-md text-ink leading-tight group-hover:text-status-preview transition-colors">{user.displayName}</div>
-                          <div className="text-secondary text-[12px]">{user.email || `${user.username}@codingx.local`}</div>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-lg py-md">
-                      <span
-                        className={clsx(
-                          'px-2 py-0.5 rounded text-[11px] font-bold uppercase',
-                          user.userType === 'ADMIN' ? 'bg-primary text-on-primary' : 'border border-border-strong text-secondary',
-                        )}
-                      >
-                        {user.userTypeLabel || toUserTypeLabel(user.userType)}
-                      </span>
-                    </td>
-                    <td className="px-lg py-md">
-                      <div className="flex items-center gap-xs">
-                        <div className={clsx('w-2 h-2 rounded-full', toStatusDotClass(user.status))}></div>
-                        <span className={clsx('font-medium', toStatusTextClass(user.status))}>{user.statusLabel || toStatusLabel(user.status)}</span>
-                      </div>
-                    </td>
-                    <td className="px-lg py-md font-data-mono text-secondary">{formatDateTime(user.lastLoginAt)}</td>
-                    <td className="px-lg py-md font-data-mono text-secondary">{formatDateTime(user.createdAt)}</td>
-                    <td className="px-lg py-md text-right">
-                      <div className="flex items-center justify-end gap-md">
-                        {user.status === 'PENDING' ? (
-                          <button
-                            className="text-primary hover:underline transition-colors font-bold"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              void handleApprove(user.id);
-                            }}
-                          >
-                            审核通过
-                          </button>
-                        ) : (
-                          <button
-                            className="text-secondary hover:text-ink transition-colors font-medium"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              navigate(`/users/${user.id}`);
-                            }}
-                          >
-                            详情
-                          </button>
-                        )}
-                        <button
-                          type="button"
-                          aria-label={user.status === 'ACTIVE' ? '禁用用户' : '启用用户'}
-                          className={clsx(
-                            'w-10 h-5 rounded-full relative cursor-pointer hover:opacity-80 transition-opacity',
-                            user.status === 'ACTIVE' ? 'bg-ink' : 'bg-surface-container-highest',
-                          )}
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            void handleToggleStatus(user);
-                          }}
-                        >
-                          <span
-                            className={clsx(
-                              'absolute top-1 w-3 h-3 bg-surface-container-lowest rounded-full shadow-sm transition-all',
-                              user.status === 'ACTIVE' ? 'right-1' : 'left-1',
-                            )}
-                          />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        )}
-      />
-
-      {isCreateDialogOpen ? (
-        <CreateUserDialog
-          form={createForm}
-          formError={createFormError}
-          creating={isCreating}
-          onChange={(field, value) => setCreateForm((previous) => ({ ...previous, [field]: value }))}
-          onClose={() => setIsCreateDialogOpen(false)}
-          onSubmit={() => void handleCreateUser()}
+      <div data-testid="users-table-scroll">
+        <span data-testid="users-table-summary" className="sr-only">{tableSummaryText}</span>
+        <AdminDataTable<AdminUserSummary>
+          columns={columns}
+          dataSource={pageResult.records}
+          loading={isLoading}
+          locale={{ emptyText: isLoading ? '用户加载中...' : '当前筛选条件下暂无用户' }}
+          pagination={{
+            current: pageResult.current,
+            pageSize: pageResult.size,
+            total: pageResult.total,
+            onChange: (nextPage) => {
+              void loadUsers(nextPage, pageResult.size, filter);
+            },
+          }}
+          rowKey={(user) => String(user.id)}
+          scroll={{ x: 1120 }}
+          onRow={(user) => ({
+            onClick: () => navigate(`/users/${user.id}`),
+          })}
         />
-      ) : null}
+      </div>
+
+      <CreateUserDialog
+        form={createForm}
+        formError={createFormError}
+        creating={isCreating}
+        open={isCreateDialogOpen}
+        onChange={(field, value) => setCreateForm((previous) => ({ ...previous, [field]: value }))}
+        onClose={() => setIsCreateDialogOpen(false)}
+        onSubmit={() => void handleCreateUser()}
+      />
     </div>
   );
 }
@@ -356,6 +329,7 @@ function CreateUserDialog({
   form,
   formError,
   creating,
+  open,
   onChange,
   onClose,
   onSubmit,
@@ -363,38 +337,42 @@ function CreateUserDialog({
   form: CreateUserDialogState;
   formError: string;
   creating: boolean;
+  open: boolean;
   onChange: (field: keyof CreateUserDialogState, value: string) => void;
   onClose: () => void;
   onSubmit: () => void;
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/45 px-md py-lg">
-      <div role="dialog" aria-modal="true" aria-label="新增用户" className="w-full max-w-2xl rounded-2xl border border-border-hairline bg-surface-container-lowest shadow-2xl">
-        <div className="flex items-start justify-between gap-md border-b border-border-hairline px-lg py-md">
-          <div>
-            <h3 className="font-title-md text-title-md text-ink">新增用户</h3>
-            <p className="mt-1 text-body-sm text-secondary">填写基础账号信息，创建后可在详情页继续维护。</p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-lg px-sm py-xs text-secondary transition-colors hover:bg-surface-container-low hover:text-ink"
-            aria-label="关闭新增用户弹窗"
-          >
-            <span className="material-symbols-outlined text-[20px]">close</span>
-          </button>
-        </div>
-
-        <div className="space-y-md p-lg">
-          {formError ? <div className="rounded-xl border border-error bg-error-container px-md py-sm text-sm text-on-error-container">{formError}</div> : null}
-          <div className="grid gap-md md:grid-cols-2">
-            <DialogTextField label="用户名" value={form.username} onChange={(value) => onChange('username', value)} />
-            <DialogTextField label="展示名称" value={form.displayName} onChange={(value) => onChange('displayName', value)} />
-            <DialogTextField label="初始密码" type="password" value={form.password} onChange={(value) => onChange('password', value)} />
-            <DialogTextField label="邮箱" value={form.email} onChange={(value) => onChange('email', value)} />
-            <DialogTextField label="手机号" value={form.phone} onChange={(value) => onChange('phone', value)} />
-            <DialogSelectField
-              label="状态"
+    <Modal
+      destroyOnHidden
+      confirmLoading={creating}
+      okText="创建用户"
+      open={open}
+      title="新增用户"
+      onCancel={onClose}
+      onOk={onSubmit}
+    >
+      <Typography.Paragraph type="secondary">填写基础账号信息，创建后可在详情页继续维护。</Typography.Paragraph>
+      {formError ? <Alert className="mb-md" showIcon type="error" message={formError} /> : null}
+      <Form layout="vertical">
+        <div className="grid gap-md md:grid-cols-2">
+          <Form.Item label="用户名" required>
+            <Input value={form.username} onChange={(event) => onChange('username', event.target.value)} />
+          </Form.Item>
+          <Form.Item label="展示名称" required>
+            <Input value={form.displayName} onChange={(event) => onChange('displayName', event.target.value)} />
+          </Form.Item>
+          <Form.Item label="初始密码" required>
+            <Input.Password value={form.password} onChange={(event) => onChange('password', event.target.value)} />
+          </Form.Item>
+          <Form.Item label="邮箱">
+            <Input value={form.email} onChange={(event) => onChange('email', event.target.value)} />
+          </Form.Item>
+          <Form.Item label="手机号">
+            <Input value={form.phone} onChange={(event) => onChange('phone', event.target.value)} />
+          </Form.Item>
+          <Form.Item label="状态">
+            <Select
               value={form.status}
               options={[
                 { value: 'ACTIVE', label: '正常' },
@@ -403,92 +381,17 @@ function CreateUserDialog({
               ]}
               onChange={(value) => onChange('status', value)}
             />
-          </div>
-          <div className="flex justify-end gap-sm pt-sm">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={creating}
-              className="rounded-lg border border-border-strong bg-surface-container-lowest px-lg py-2 font-button text-button text-ink hover:bg-surface-container-low disabled:opacity-60"
-            >
-              取消
-            </button>
-            <button
-              type="button"
-              onClick={onSubmit}
-              disabled={creating}
-              className="rounded-lg bg-primary px-lg py-2 font-button text-button text-on-primary disabled:opacity-60"
-            >
-              {creating ? '创建中...' : '创建用户'}
-            </button>
-          </div>
+          </Form.Item>
         </div>
-      </div>
-    </div>
+      </Form>
+    </Modal>
   );
 }
 
-function DialogTextField({
-  label,
-  value,
-  type = 'text',
-  onChange,
-}: {
-  label: string;
-  value: string;
-  type?: string;
-  onChange: (value: string) => void;
-}) {
+function MetricItem({ title, value }: { title: string; value: number }) {
   return (
-    <div>
-      <label className="mb-1 block text-[12px] font-medium text-secondary">{label}</label>
-      <input
-        type={type}
-        value={value}
-        className="w-full rounded-lg border border-border-hairline bg-surface-container-lowest px-3 py-2 text-ink outline-none transition-colors focus:border-border-strong"
-        onChange={(event) => onChange(event.target.value)}
-      />
-    </div>
-  );
-}
-
-function DialogSelectField({
-  label,
-  value,
-  options,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  options: Array<{ value: string; label: string }>;
-  onChange: (value: string) => void;
-}) {
-  return (
-    <div>
-      <label className="mb-1 block text-[12px] font-medium text-secondary">{label}</label>
-      <select
-        value={value}
-        className="w-full rounded-lg border border-border-hairline bg-surface-container-lowest px-3 py-2 text-ink outline-none transition-colors focus:border-border-strong"
-        onChange={(event) => onChange(event.target.value)}
-      >
-        {options.map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </select>
-    </div>
-  );
-}
-
-function StatCard({ title, value, extra, extraClassName }: { title: string; value: string; extra: string; extraClassName: string }) {
-  return (
-    <div className="col-span-3 bg-surface-container-lowest border border-border-hairline p-md rounded-xl shadow-sm">
-      <p className="font-label-caps text-label-caps text-secondary mb-1">{title}</p>
-      <div className="flex items-baseline gap-xs">
-        <h3 className="font-metric-lg text-metric-lg text-ink">{value}</h3>
-        {extra ? <span className={clsx('text-[12px] font-bold', extraClassName)}>{extra}</span> : null}
-      </div>
+    <div className="rounded-xl border border-border-hairline bg-surface-container-lowest p-md">
+      <Statistic title={title} value={value} />
     </div>
   );
 }
@@ -519,6 +422,19 @@ function toStatusLabel(status: string): string {
   return status;
 }
 
+function toStatusColor(status: string): string | undefined {
+  if (status === 'ACTIVE') {
+    return 'success';
+  }
+  if (status === 'DISABLED') {
+    return 'error';
+  }
+  if (status === 'PENDING') {
+    return 'warning';
+  }
+  return undefined;
+}
+
 function toUserTypeLabel(userType: string): string {
   if (userType === 'ADMIN') {
     return '管理员';
@@ -527,26 +443,6 @@ function toUserTypeLabel(userType: string): string {
     return '普通用户';
   }
   return userType;
-}
-
-function toStatusDotClass(status: string): string {
-  if (status === 'ACTIVE') {
-    return 'bg-status-running';
-  }
-  if (status === 'DISABLED') {
-    return 'bg-status-failed';
-  }
-  return 'bg-status-pending';
-}
-
-function toStatusTextClass(status: string): string {
-  if (status === 'ACTIVE') {
-    return 'text-status-running';
-  }
-  if (status === 'DISABLED') {
-    return 'text-status-failed';
-  }
-  return 'text-status-pending';
 }
 
 function formatDateTime(value?: string | null): string {

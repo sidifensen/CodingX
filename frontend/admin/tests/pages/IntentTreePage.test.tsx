@@ -60,6 +60,11 @@ const intentTreeFixture = [
   },
 ] as any;
 
+async function selectAntdOption(label: string, optionText: string, scope: HTMLElement) {
+  fireEvent.mouseDown(within(scope).getByLabelText(label));
+  fireEvent.click(await screen.findByText(optionText));
+}
+
 describe('IntentTreePage', () => {
   beforeEach(() => {
     vi.mocked(AdminChatApi.listIntentTree).mockResolvedValue(intentTreeFixture);
@@ -167,9 +172,7 @@ describe('IntentTreePage', () => {
     fireEvent.change(within(dialog).getByLabelText('意图标识'), {
       target: { value: 'external-tool' },
     });
-    fireEvent.change(within(dialog).getByLabelText('节点类型'), {
-      target: { value: '2' },
-    });
+    await selectAntdOption('节点类型', 'MCP - 工具调用', dialog);
     fireEvent.click(within(dialog).getByRole('button', { name: '创建节点' }));
 
     expect(await within(dialog).findByText('MCP 类型必须填写 MCP 工具ID')).toBeInTheDocument();
@@ -185,7 +188,7 @@ describe('IntentTreePage', () => {
     const pageShell = screen.getByTestId('intent-tree-page-shell');
     const overlay = await screen.findByTestId('intent-delete-dialog-overlay');
     expect(pageShell.contains(overlay)).toBe(false);
-    expect(overlay.parentElement).toBe(document.body);
+    expect(document.body.contains(overlay)).toBe(true);
   });
 
   it('calls delete API when confirming deletion', async () => {

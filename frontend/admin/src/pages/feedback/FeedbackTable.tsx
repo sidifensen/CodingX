@@ -1,8 +1,10 @@
 import React from 'react';
-import { Button, Table, Tag } from 'antd';
+import { EyeOutlined } from '@ant-design/icons';
+import { Tag } from 'antd';
 import type { TableProps } from 'antd';
 
 import type { AdminChatMessageFeedback } from '../../api/adminChatApi';
+import { AdminDataTable, AdminTableActions } from '../../components/AdminDataTable';
 import type { FeedbackPaginationState } from './feedbackPagination';
 
 interface FeedbackTableProps {
@@ -66,21 +68,24 @@ export function FeedbackTable({ records, loading, pagination, onPageChange }: Fe
       width: 100,
       align: 'right',
       render: (_, item) => (
-        <Button
-          aria-label={`查看 ${item.id}`}
-          href={`/feedbacks/${item.id}`}
-          size="small"
-          type="link"
-        >
-          查看
-        </Button>
+        <AdminTableActions
+          actions={[
+            {
+              key: 'view',
+              label: '查看',
+              ariaLabel: `查看 ${item.id}`,
+              href: `/feedbacks/${item.id}`,
+              icon: <EyeOutlined />,
+              type: 'link',
+            },
+          ]}
+        />
       ),
     },
   ], []);
 
   return (
-    <Table<AdminChatMessageFeedback>
-      bordered
+    <AdminDataTable<AdminChatMessageFeedback>
       columns={columns}
       dataSource={records}
       loading={loading}
@@ -88,8 +93,6 @@ export function FeedbackTable({ records, loading, pagination, onPageChange }: Fe
       pagination={{
         current,
         pageSize,
-        showSizeChanger: false,
-        showTotal: () => `第 ${current} / ${Math.max(1, pages)} 页，共 ${total.toLocaleString('zh-CN')} 条`,
         total,
         onChange: onPageChange,
       }}

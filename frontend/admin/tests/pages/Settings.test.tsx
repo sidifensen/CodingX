@@ -187,8 +187,8 @@ describe('Settings page', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '紧凑表格' }));
 
-    expect(await screen.findByText('配置键')).toBeInTheDocument();
-    expect(screen.getByText('当前值')).toBeInTheDocument();
+    expect((await screen.findAllByText('配置键')).length).toBeGreaterThan(0);
+    expect(screen.getAllByText('当前值').length).toBeGreaterThan(0);
   });
 
   it('tracks edits and saves the modified draft', async () => {

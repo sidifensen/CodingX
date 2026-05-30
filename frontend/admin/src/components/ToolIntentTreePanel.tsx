@@ -1,5 +1,14 @@
 import React from 'react';
 
+import {
+  DeleteOutlined,
+  DownOutlined,
+  EditOutlined,
+  PlayCircleOutlined,
+  RightOutlined,
+  ThunderboltOutlined,
+} from '@ant-design/icons';
+import { Button, Empty, Space, Tag } from 'antd';
 import clsx from 'clsx';
 
 import { AdminChatTool, AdminChatToolHealthView } from '../api/adminChatApi';
@@ -79,44 +88,40 @@ export function ToolIntentTreePanel({
         </div>
         <div data-testid="tool-intent-tree-scroll" className="space-y-sm p-md xl:flex-1 xl:min-h-0 xl:overflow-y-auto">
           {rows.length === 0 ? (
-            <div className="rounded-xl bg-surface-container-low px-lg py-xl text-center text-secondary">
-              暂无工具配置
-            </div>
+            <Empty className="rounded-xl bg-surface-container-low px-lg py-xl" description="暂无工具配置" />
           ) : (
             categoryGroups.map((group) => {
               const isExpanded = expandedMap[group.key] ?? true;
               return (
                 <div key={group.key} className="rounded-xl border border-border-hairline bg-surface-container-lowest">
-                  <button
-                    type="button"
+                  <Button
                     aria-label={`${isExpanded ? '收起' : '展开'}分类 ${group.label}`}
-                    className="flex w-full items-center justify-between gap-sm px-md py-sm text-left hover:bg-surface-container-low"
+                    block
+                    className="h-auto justify-between px-md py-sm text-left"
+                    icon={isExpanded ? <DownOutlined /> : <RightOutlined />}
+                    type="text"
                     onClick={() => toggleCategory(group.key)}
                   >
                     <span className="font-medium text-ink">{group.label}</span>
-                    <span className="inline-flex items-center gap-xs text-[12px] text-secondary">
-                      <span>{group.rows.length}</span>
-                      <span className="material-symbols-outlined text-[18px]">
-                        {isExpanded ? 'expand_more' : 'chevron_right'}
-                      </span>
-                    </span>
-                  </button>
+                    <Tag className="m-0">{group.rows.length}</Tag>
+                  </Button>
                   {isExpanded ? (
                     <div className="space-y-xs border-t border-border-hairline p-sm">
                       {group.rows.map((row) => {
                         const isSelected =
                           normalizeToolCode(row.toolCode) === normalizeToolCode(selectedToolCode);
                         return (
-                          <button
+                          <Button
                             key={row.toolCode}
-                            type="button"
                             aria-label={`选择工具 ${resolveToolDisplayName(row)}`}
+                            block
                             className={clsx(
-                              'w-full rounded-lg border px-sm py-sm text-left transition-colors',
+                              'h-auto w-full rounded-lg border px-sm py-sm text-left transition-colors',
                               isSelected
                                 ? 'border-border-strong bg-surface-container text-ink shadow-sm'
                                 : 'border-transparent text-secondary hover:bg-surface-container-low hover:text-ink',
                             )}
+                            type="text"
                             onClick={() => onSelectTool(row.toolCode)}
                           >
                             <div className="flex items-start justify-between gap-xs">
@@ -126,16 +131,16 @@ export function ToolIntentTreePanel({
                                   /{row.toolCode}
                                 </p>
                               </div>
-                              <span
+                              <Tag
                                 className={clsx(
-                                  'shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-medium',
+                                  'm-0 shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-medium',
                                   statusBadgeClass(row.health?.status),
                                 )}
                               >
                                 {row.health?.statusLabel || '未接入'}
-                              </span>
+                              </Tag>
                             </div>
-                          </button>
+                          </Button>
                         );
                       })}
                     </div>
@@ -162,60 +167,58 @@ export function ToolIntentTreePanel({
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-xs">
                   <h4 className="font-title-md text-title-md text-ink">{resolveToolDisplayName(selectedRow)}</h4>
-                  <span className={clsx('rounded-full border px-2 py-0.5 text-[11px] font-medium', statusBadgeClass(selectedRow.health?.status))}>
+                  <Tag className={clsx('m-0 rounded-full border px-2 py-0.5 text-[11px] font-medium', statusBadgeClass(selectedRow.health?.status))}>
                     {selectedRow.health?.statusLabel || '未接入'}
-                  </span>
-                  <span
+                  </Tag>
+                  <Tag
                     className={clsx(
-                      'rounded-full border px-2 py-0.5 text-[11px] font-medium',
+                      'm-0 rounded-full border px-2 py-0.5 text-[11px] font-medium',
                       selectedRow.config?.enabled === 0
                         ? 'border-border-hairline bg-surface-container-low text-secondary'
                         : 'border-border-strong bg-surface-container text-ink',
                     )}
                   >
                     {selectedRow.config?.enabled === 0 ? '停用' : '启用'}
-                  </span>
+                  </Tag>
                 </div>
                 <p className="mt-1 font-data-mono text-[12px] text-secondary">/{selectedRow.toolCode}</p>
               </div>
 
-              <div className="flex flex-wrap gap-xs">
-                <button
-                  type="button"
+              <Space wrap size={8}>
+                <Button
                   aria-label={`探测工具 ${selectedRow.toolCode}`}
-                  className="rounded-lg border border-border-hairline bg-surface-container-lowest px-md py-2 text-button font-button text-secondary transition-colors hover:bg-surface-container-low hover:text-ink disabled:opacity-60"
+                  icon={<ThunderboltOutlined />}
                   onClick={() => onPingTool(selectedRow.toolCode)}
+                  loading={pingingToolCode === selectedRow.toolCode}
                   disabled={pingingToolCode === selectedRow.toolCode}
                 >
-                  {pingingToolCode === selectedRow.toolCode ? '探测中...' : '探测'}
-                </button>
-                <button
-                  type="button"
+                  探测
+                </Button>
+                <Button
                   aria-label={`调用工具 ${selectedRow.toolCode}`}
-                  className="rounded-lg border border-border-strong bg-surface-container-lowest px-md py-2 text-button font-button text-ink hover:bg-surface-container-low"
+                  icon={<PlayCircleOutlined />}
                   onClick={() => onInvokeTool(selectedRow.toolCode, selectedRow.health?.sampleQuestion)}
                 >
                   调用
-                </button>
-                <button
-                  type="button"
+                </Button>
+                <Button
                   aria-label={`编辑工具 ${selectedRow.toolCode}`}
-                  className="rounded-lg border border-border-strong bg-surface-container-lowest px-md py-2 text-button font-button text-ink hover:bg-surface-container-low disabled:opacity-60"
+                  icon={<EditOutlined />}
                   onClick={() => (selectedRow.config ? onEditTool(selectedRow.config) : null)}
                   disabled={!selectedRow.config}
                 >
                   编辑
-                </button>
-                <button
-                  type="button"
+                </Button>
+                <Button
                   aria-label={`删除工具 ${selectedRow.toolCode}`}
-                  className="rounded-lg border border-error bg-error-container px-md py-2 text-button font-button text-on-error-container hover:opacity-90 disabled:opacity-60"
+                  danger
+                  icon={<DeleteOutlined />}
                   onClick={() => (selectedRow.config ? onDeleteTool(selectedRow.config) : null)}
                   disabled={!selectedRow.config}
                 >
                   删除
-                </button>
-              </div>
+                </Button>
+              </Space>
             </div>
 
             <div className="grid gap-sm md:grid-cols-2">
@@ -234,7 +237,7 @@ export function ToolIntentTreePanel({
             </div>
           </div>
         ) : (
-          <div className="p-xl text-center text-secondary">请先在左侧选择工具节点</div>
+          <Empty className="p-xl" image={Empty.PRESENTED_IMAGE_SIMPLE} description="请先在左侧选择工具节点" />
         )}
       </section>
     </div>
@@ -297,4 +300,3 @@ function statusBadgeClass(status?: string): string {
       return 'border-border-hairline bg-surface-container-low text-secondary';
   }
 }
-

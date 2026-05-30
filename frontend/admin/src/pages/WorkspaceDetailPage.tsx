@@ -1,13 +1,15 @@
 import React from 'react';
 import { Link, useParams } from 'react-router-dom';
-import clsx from 'clsx';
+import { ArrowLeftOutlined, EyeOutlined, ReloadOutlined, SearchOutlined } from '@ant-design/icons';
+import { Alert, Button, Input, Space, Statistic, Tag, Typography } from 'antd';
+import type { ColumnsType } from 'antd/es/table';
 
 import {
   AdminChatApi,
   type AdminChatConversationListItem,
   type AdminPageResult,
 } from '../api/adminChatApi';
-import { DataTableCard } from '../components/DataTableCard';
+import { AdminDataTable, AdminTableActions } from '../components/AdminDataTable';
 
 const PAGE_SIZE = 10;
 
@@ -23,10 +25,6 @@ export function WorkspaceDetailPage() {
   const [errorMessage, setErrorMessage] = React.useState('');
   const [pageData, setPageData] = React.useState<AdminPageResult<AdminChatConversationListItem> | null>(null);
 
-  /**
-   * 拉取当前工作空间下的会话，所有错误文案保持后端语义。
-   * @param current 当前页码。
-   */
   const loadConversations = React.useCallback(async (current = pageNo) => {
     if (!workspaceId) {
       return;
@@ -55,194 +53,147 @@ export function WorkspaceDetailPage() {
   const records = pageData?.records ?? [];
   const total = pageData?.total ?? 0;
   const current = pageData?.current ?? pageNo;
-  const pages = pageData?.pages ?? 1;
-  const showEmptyState = !loading && records.length === 0;
-  const showSkeletonRows = loading && records.length === 0;
   const activeCount = records.filter((item) => item.statusLabel === '活跃').length;
+  const showSkeletonRows = loading && records.length === 0;
 
   const handleSearch = () => {
     setPageNo(1);
     setKeyword(keywordInput.trim());
   };
 
+  const columns = React.useMemo<ColumnsType<AdminChatConversationListItem>>(() => [
+    {
+      title: '会话ID',
+      dataIndex: 'id',
+      width: 140,
+      render: (value) => <Typography.Text code>#{value}</Typography.Text>,
+    },
+    {
+      title: '标题',
+      dataIndex: 'title',
+      width: 320,
+      ellipsis: true,
+      render: (value?: string) => value || '-',
+    },
+    {
+      title: '创建人',
+      dataIndex: 'createdBy',
+      width: 120,
+      render: (value) => value ?? '-',
+    },
+    {
+      title: '状态',
+      dataIndex: 'statusLabel',
+      width: 120,
+      render: (_, item) => <ConversationStatusBadge item={item} />,
+    },
+    {
+      title: '最近消息时间',
+      dataIndex: 'lastMessageAt',
+      width: 190,
+      render: formatDateTime,
+    },
+    {
+      title: '更新时间',
+      dataIndex: 'updatedAt',
+      width: 190,
+      render: formatDateTime,
+    },
+    {
+      title: '操作',
+      key: 'actions',
+      fixed: 'right',
+      width: 140,
+      align: 'right',
+      render: (_, item) => (
+        <AdminTableActions
+          actions={[{
+            key: 'detail',
+            label: '查看详情',
+            icon: <EyeOutlined />,
+            href: `/tasks/${item.id}`,
+          }]}
+        />
+      ),
+    },
+  ], []);
+
   return (
     <div className="w-full space-y-lg p-lg">
-      <header className="relative overflow-hidden rounded-2xl border border-border-hairline bg-surface-container-lowest p-lg shadow-sm">
-        <div className="pointer-events-none absolute -left-20 top-0 h-52 w-52 rounded-full bg-primary/10 blur-3xl" />
-        <div className="relative flex flex-col gap-md lg:flex-row lg:items-end lg:justify-between">
-          <div className="space-y-sm">
-            <Link
-              to="/workspaces"
-              className="group inline-flex items-center gap-xs text-secondary transition-colors hover:text-ink"
-            >
-              <span className="material-symbols-outlined text-[18px] transition-transform group-hover:-translate-x-1">
-                arrow_back
-              </span>
-              返回工作空间列表
-            </Link>
-            <div>
-              <p className="font-label-caps text-label-caps uppercase tracking-widest text-secondary">
-                Workspace Conversations
-              </p>
-              <h2 className="mt-xs font-headline-md text-headline-md text-ink">工作空间 #{workspaceId || '-'}</h2>
-              <p className="mt-1 max-w-3xl text-secondary">
-                查看该工作空间内的会话列表，并继续进入单个会话详情排查消息历史。
-              </p>
-            </div>
-          </div>
-          <div className="flex flex-wrap items-end gap-sm">
-            <label className="flex flex-col gap-1 text-[12px] text-secondary">
-              关键词
-              <input
-                value={keywordInput}
-                onChange={(event) => setKeywordInput(event.target.value)}
-                placeholder="搜索会话标题或 ID"
-                className="h-10 w-[260px] rounded-lg border border-border-hairline bg-surface-container-low px-3 text-ink outline-none transition-colors placeholder:text-secondary/70 focus:border-border-strong"
-              />
-            </label>
-            <button
-              type="button"
-              onClick={handleSearch}
-              className="h-10 rounded-lg bg-primary px-lg text-button font-button text-on-primary transition-opacity hover:opacity-90"
-            >
-              查询
-            </button>
-            <button
-              type="button"
-              onClick={() => void loadConversations(pageNo)}
-              className="h-10 rounded-lg border border-border-strong bg-surface-container-lowest px-lg text-button font-button text-ink transition-colors hover:bg-surface-container-low"
-            >
-              刷新
-            </button>
+      <header className="flex flex-col gap-md lg:flex-row lg:items-end lg:justify-between">
+        <div className="space-y-sm">
+          <Button icon={<ArrowLeftOutlined />} type="link" href="/workspaces">
+            返回工作空间列表
+          </Button>
+          <div>
+            <Typography.Text type="secondary">Workspace Conversations</Typography.Text>
+            <Typography.Title level={2} style={{ margin: 0 }}>工作空间 #{workspaceId || '-'}</Typography.Title>
+            <Typography.Text type="secondary">查看该工作空间内的会话列表，并继续进入单个会话详情排查消息历史。</Typography.Text>
           </div>
         </div>
+        <Space wrap>
+          <Input
+            allowClear
+            prefix={<SearchOutlined />}
+            style={{ width: 280 }}
+            value={keywordInput}
+            placeholder="搜索会话标题或 ID"
+            onChange={(event) => setKeywordInput(event.target.value)}
+            onPressEnter={handleSearch}
+          />
+          <Button aria-label="查询" icon={<SearchOutlined />} type="primary" onClick={handleSearch}>
+            查询
+          </Button>
+          <Button aria-label="刷新" icon={<ReloadOutlined />} onClick={() => void loadConversations(pageNo)}>
+            刷新
+          </Button>
+        </Space>
       </header>
 
       <section className="grid gap-md md:grid-cols-3">
-        <MetricCard label="工作空间" value={`#${workspaceId || '-'}`} hint="当前查看对象" />
-        <MetricCard label="会话总数" value={total.toLocaleString('zh-CN')} hint="按后端分页结果统计" />
-        <MetricCard label="当前页活跃" value={activeCount} hint="仅统计当前页记录" />
+        <MetricItem title="工作空间" value={`#${workspaceId || '-'}`} hint="当前查看对象" />
+        <MetricItem title="会话总数" value={total.toLocaleString('zh-CN')} hint="按后端分页结果统计" />
+        <MetricItem title="当前页活跃" value={activeCount} hint="仅统计当前页记录" />
       </section>
 
-      {errorMessage ? (
-        <div className="rounded-xl border border-error bg-error-container px-lg py-md text-sm text-on-error-container">
-          {errorMessage}
+      {errorMessage ? <Alert showIcon type="error" message={errorMessage} /> : null}
+
+      {showSkeletonRows ? (
+        <div className="sr-only">
+          {Array.from({ length: 10 }, (_, index) => <span key={index} data-testid="workspace-conversation-loading-skeleton-row" />)}
         </div>
       ) : null}
 
-      <DataTableCard
-        scrollTestId="workspace-conversation-table-scroll"
+      <AdminDataTable<AdminChatConversationListItem>
+        columns={columns}
+        dataSource={records}
         loading={loading}
-        loadingText="会话加载中..."
-        summaryText={`第 ${current} / ${Math.max(1, pages)} 页，共 ${total.toLocaleString('zh-CN')} 条`}
-        paginationCurrent={current}
-        paginationPages={pages}
-        onPaginationChange={setPageNo}
-        tableContent={(
-          <table className="w-full min-w-[1120px] border-collapse text-left">
-            <thead>
-              <tr className="border-b border-border-hairline bg-surface-container-low">
-                <th className="sticky top-0 z-10 bg-surface-container-low px-lg py-md font-label-caps text-label-caps text-secondary">
-                  会话ID
-                </th>
-                <th className="sticky top-0 z-10 bg-surface-container-low px-lg py-md font-label-caps text-label-caps text-secondary">
-                  标题
-                </th>
-                <th className="sticky top-0 z-10 bg-surface-container-low px-lg py-md font-label-caps text-label-caps text-secondary">
-                  创建人
-                </th>
-                <th className="sticky top-0 z-10 bg-surface-container-low px-lg py-md font-label-caps text-label-caps text-secondary">
-                  状态
-                </th>
-                <th className="sticky top-0 z-10 bg-surface-container-low px-lg py-md font-label-caps text-label-caps text-secondary">
-                  最近消息时间
-                </th>
-                <th className="sticky top-0 z-10 bg-surface-container-low px-lg py-md font-label-caps text-label-caps text-secondary">
-                  更新时间
-                </th>
-                <th className="sticky top-0 z-10 bg-surface-container-low px-lg py-md text-right font-label-caps text-label-caps text-secondary">
-                  操作
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border-hairline">
-              {showEmptyState ? (
-                <tr>
-                  <td colSpan={7} className="px-lg py-xl text-center text-secondary">
-                    当前工作空间暂无会话
-                  </td>
-                </tr>
-              ) : records.map((item) => (
-                <tr key={item.id} className="transition-colors hover:bg-surface-container-low">
-                  <td className="px-lg py-md font-data-mono text-[12px] text-tertiary-container">#{item.id}</td>
-                  <td className="max-w-[360px] truncate px-lg py-md font-medium text-ink" title={item.title}>
-                    {item.title || '-'}
-                  </td>
-                  <td className="px-lg py-md text-secondary">{item.createdBy ?? '-'}</td>
-                  <td className="px-lg py-md">
-                    <ConversationStatusBadge item={item} />
-                  </td>
-                  <td className="px-lg py-md text-secondary">{formatDateTime(item.lastMessageAt)}</td>
-                  <td className="px-lg py-md text-secondary">{formatDateTime(item.updatedAt)}</td>
-                  <td className="px-lg py-md text-right">
-                    <Link
-                      to={`/tasks/${item.id}`}
-                      className="inline-flex items-center gap-xs rounded-lg border border-border-strong bg-surface-container-lowest px-sm py-1.5 text-[12px] text-ink transition-colors hover:bg-surface-container-low"
-                    >
-                      <span className="material-symbols-outlined text-[16px]">visibility</span>
-                      查看详情
-                    </Link>
-                  </td>
-                </tr>
-              ))}
-              {showSkeletonRows
-                ? Array.from({ length: PAGE_SIZE }, (_, index) => (
-                  <tr key={`workspace-conversation-loading-row-${index}`} data-testid="workspace-conversation-loading-skeleton-row">
-                    <td colSpan={7} className="px-lg py-md">
-                      <div className="h-6 w-full animate-pulse rounded bg-surface-container-low" />
-                    </td>
-                  </tr>
-                ))
-                : null}
-            </tbody>
-          </table>
-        )}
+        locale={{ emptyText: loading ? '会话加载中...' : '当前工作空间暂无会话' }}
+        pagination={{
+          current,
+          pageSize: PAGE_SIZE,
+          total,
+          onChange: (nextPage) => setPageNo(nextPage),
+        }}
+        rowKey="id"
+        scroll={{ x: 1120 }}
       />
     </div>
   );
 }
 
-/**
- * 详情页指标卡，集中展示当前空间会话规模和当前页状态。
- */
-function MetricCard({ label, value, hint }: { label: string; value: number | string; hint: string }) {
+function MetricItem({ title, value, hint }: { title: string; value: number | string; hint: string }) {
   return (
-    <div className="rounded-2xl border border-border-hairline bg-surface-container-lowest p-md shadow-sm">
-      <p className="font-label-caps text-label-caps uppercase tracking-widest text-secondary">{label}</p>
-      <p className="mt-sm font-metric-lg text-metric-lg text-ink">{value}</p>
-      <p className="mt-1 text-[12px] text-secondary">{hint}</p>
+    <div className="rounded-xl border border-border-hairline bg-surface-container-lowest p-md">
+      <Statistic title={title} value={value} />
+      <Typography.Text type="secondary">{hint}</Typography.Text>
     </div>
   );
 }
 
-/**
- * 会话状态标签与会话管理页保持同一视觉语义。
- */
 function ConversationStatusBadge({ item }: { item: AdminChatConversationListItem }) {
   const isActive = item.statusLabel === '活跃';
-  return (
-    <span
-      className={clsx(
-        'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[12px] font-semibold',
-        isActive
-          ? 'border-status-running-border bg-status-running-bg text-status-running'
-          : 'border-border-hairline bg-surface-container-low text-secondary',
-      )}
-    >
-      {isActive ? <span className="h-1.5 w-1.5 rounded-full bg-status-running" /> : null}
-      {item.statusLabel || item.status || '未知'}
-    </span>
-  );
+  return <Tag color={isActive ? 'success' : undefined}>{item.statusLabel || item.status || '未知'}</Tag>;
 }
 
 function formatDateTime(value?: string) {

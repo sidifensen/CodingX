@@ -1,5 +1,16 @@
 import React from 'react';
-import { createPortal } from 'react-dom';
+import {
+  CloseOutlined,
+  DeleteOutlined,
+  DownOutlined,
+  EditOutlined,
+  FolderAddOutlined,
+  PlusOutlined,
+  ReloadOutlined,
+  SaveOutlined,
+} from '@ant-design/icons';
+import { Alert, Button, Empty, Form, Input, Modal, Select, Space, Spin, Switch, Tag, Tree, Typography } from 'antd';
+import type { DataNode } from 'antd/es/tree';
 
 import { AdminChatApi, AdminIntentNode } from '../api/adminChatApi';
 
@@ -352,33 +363,23 @@ export function IntentTreePage() {
     >
       <div className="flex flex-col gap-md lg:flex-row lg:items-start lg:justify-between">
         <div>
-          <h2 className="font-headline-md text-headline-md text-ink">意图树配置</h2>
-          <p className="text-secondary mt-1">
+          <Typography.Title level={2} style={{ margin: 0 }}>意图树配置</Typography.Title>
+          <Typography.Paragraph className="mt-1 mb-0" type="secondary">
             维护管理端意图层级、检索参数与 MCP 工具绑定，运行时仍兼容 intentType。
-          </p>
+          </Typography.Paragraph>
         </div>
-        <div className="flex flex-wrap gap-sm">
-          <button
-            type="button"
-            className="rounded-lg border border-border-strong bg-surface-container-lowest px-lg py-2 text-button font-button text-ink shadow-sm transition-colors hover:bg-surface-container-low"
-            onClick={() => void reload()}
-          >
+        <Space wrap>
+          <Button aria-label="刷新" icon={<ReloadOutlined />} onClick={() => void reload()}>
             刷新
-          </button>
-          <button
-            type="button"
-            className="rounded-lg bg-ink px-lg py-2 text-button font-button text-on-ink shadow-sm transition-transform active:scale-95"
-            onClick={() => openCreateDialog(null)}
-          >
+          </Button>
+          <Button aria-label="新建根节点" icon={<PlusOutlined />} type="primary" onClick={() => openCreateDialog(null)}>
             新建根节点
-          </button>
-        </div>
+          </Button>
+        </Space>
       </div>
 
       {errorMessage ? (
-        <div className="rounded-xl border border-error bg-error-container px-lg py-md text-sm text-on-error-container">
-          {errorMessage}
-        </div>
+        <Alert showIcon type="error" message={errorMessage} />
       ) : null}
 
       <div className="grid grid-cols-1 gap-lg xl:flex-1 xl:min-h-0 xl:grid-cols-[minmax(320px,0.95fr)_minmax(0,1.25fr)] xl:overflow-hidden">
@@ -389,39 +390,27 @@ export function IntentTreePage() {
           <div className="border-b border-border-hairline px-lg py-md">
             <div className="flex flex-col gap-sm lg:flex-row lg:items-start lg:justify-between">
               <div>
-                <h3 className="font-title-md text-title-md text-ink">意图树结构</h3>
-                <p className="mt-1 text-body-sm text-secondary">
+                <Typography.Title level={4} style={{ margin: 0 }}>意图树结构</Typography.Title>
+                <Typography.Paragraph className="mt-1 mb-0" type="secondary">
                   点击节点查看详情，徽标展示层级与运行类型。
-                </p>
+                </Typography.Paragraph>
               </div>
-              <div className="inline-flex items-center rounded-lg border border-border-hairline bg-surface-container-low p-1">
-                <button
-                  type="button"
+              <Space.Compact>
+                <Button
                   aria-pressed={treeViewMode === 'tree'}
-                  className={[
-                    'rounded-md px-sm py-1 text-[12px] font-medium transition-colors',
-                    treeViewMode === 'tree'
-                      ? 'bg-surface-container text-ink shadow-sm'
-                      : 'text-secondary hover:bg-surface-container-lowest hover:text-ink',
-                  ].join(' ')}
+                  type={treeViewMode === 'tree' ? 'primary' : 'default'}
                   onClick={() => setTreeViewMode('tree')}
                 >
                   树形结构
-                </button>
-                <button
-                  type="button"
+                </Button>
+                <Button
                   aria-pressed={treeViewMode === 'cascade'}
-                  className={[
-                    'rounded-md px-sm py-1 text-[12px] font-medium transition-colors',
-                    treeViewMode === 'cascade'
-                      ? 'bg-surface-container text-ink shadow-sm'
-                      : 'text-secondary hover:bg-surface-container-lowest hover:text-ink',
-                  ].join(' ')}
+                  type={treeViewMode === 'cascade' ? 'primary' : 'default'}
                   onClick={() => setTreeViewMode('cascade')}
                 >
                   分栏级联
-                </button>
-              </div>
+                </Button>
+              </Space.Compact>
             </div>
           </div>
           <div
@@ -432,31 +421,27 @@ export function IntentTreePage() {
             ].join(' ')}
           >
             {loading ? (
-              <div className="rounded-xl bg-surface-container-low px-lg py-xl text-center text-secondary">
-                加载中...
+              <div className="rounded-xl bg-surface-container-low px-lg py-xl text-center">
+                <Spin />
+                <Typography.Paragraph className="mt-sm mb-0" type="secondary">加载中...</Typography.Paragraph>
               </div>
             ) : tree.length === 0 ? (
-              <div className="rounded-xl bg-surface-container-low px-lg py-xl text-center text-secondary">
-                暂无节点，请先创建根节点。
-              </div>
+              <Empty className="rounded-xl bg-surface-container-low px-lg py-xl" description="暂无节点，请先创建根节点。" />
             ) : (
               treeViewMode === 'tree' ? (
-                tree.map((node) => (
-                  <IntentTreeNode
-                    key={node.intentCode}
-                    node={node}
-                    depth={0}
-                    selectedCode={selectedCode}
-                    expandedMap={expandedMap}
-                    onToggle={(intentCode) =>
-                      setExpandedMap((previous) => ({
-                        ...previous,
-                        [intentCode]: !(previous[intentCode] ?? true),
-                      }))
-                    }
-                    onSelect={setSelectedCode}
-                  />
-                ))
+                <IntentAntdTree
+                  nodes={tree}
+                  selectedCode={selectedCode}
+                  expandedMap={expandedMap}
+                  onToggle={(intentCode) =>
+                    setExpandedMap((previous) => ({
+                      ...previous,
+                      [intentCode]: !(previous[intentCode] ?? true),
+                    }))
+                  }
+                  onExpand={(nextExpandedMap) => setExpandedMap(nextExpandedMap)}
+                  onSelect={setSelectedCode}
+                />
               ) : (
                 <IntentCascadeColumns
                   columns={cascadeColumns}
@@ -522,88 +507,118 @@ export function IntentTreePage() {
   );
 }
 
-interface IntentTreeNodeProps {
-  node: AdminIntentNode;
-  depth: number;
+interface IntentTreeDataNode extends DataNode {
+  key: string;
+  title: string;
+  rawNode: AdminIntentNode;
+  children?: IntentTreeDataNode[];
+}
+
+interface IntentAntdTreeProps {
+  nodes: AdminIntentNode[];
   selectedCode: string | null;
   expandedMap: Record<string, boolean>;
   onToggle: (intentCode: string) => void;
+  onExpand: (expandedMap: Record<string, boolean>) => void;
   onSelect: (intentCode: string) => void;
 }
 
-function IntentTreeNode({
-  node,
-  depth,
-  selectedCode,
-  expandedMap,
-  onToggle,
-  onSelect,
-}: IntentTreeNodeProps) {
-  const children = node.children ?? [];
-  const hasChildren = children.length > 0;
-  const isExpanded = expandedMap[node.intentCode] ?? true;
-  const isSelected = selectedCode === node.intentCode;
+/**
+ * AntD Tree 承载意图层级；节点标题保留业务徽标和显式选择/展开按钮，兼容键盘与测试可访问名称。
+ */
+function IntentAntdTree({ nodes, selectedCode, expandedMap, onToggle, onExpand, onSelect }: IntentAntdTreeProps) {
+  const treeData = React.useMemo(() => buildIntentTreeData(nodes, expandedMap), [expandedMap, nodes]);
+  const expandableKeys = React.useMemo(() => collectExpandableIntentKeys(nodes), [nodes]);
+  const expandedKeys = React.useMemo(
+    () => expandableKeys.filter((key) => expandedMap[key] ?? true),
+    [expandableKeys, expandedMap],
+  );
 
   return (
-    <div>
-      <div
-        className={[
-          'flex items-center gap-xs rounded-xl border px-sm py-sm transition-colors',
-          isSelected
-            ? 'border-border-strong bg-surface-container text-ink shadow-sm'
-            : 'border-transparent text-secondary hover:bg-surface-container-low hover:text-ink',
-        ].join(' ')}
-        style={{ marginLeft: depth * 18 }}
-      >
-        {hasChildren ? (
-          <button
-            type="button"
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-ink transition-colors hover:bg-surface-container-high"
-            aria-label={`${isExpanded ? '收起' : '展开'} ${node.name}`}
-            onClick={() => onToggle(node.intentCode)}
-          >
-            <span className="material-symbols-outlined text-[18px]">
-              {isExpanded ? 'expand_more' : 'chevron_right'}
-            </span>
-          </button>
-        ) : (
-          <span className="h-7 w-7 shrink-0" />
-        )}
-
-        <button
-          type="button"
-          aria-label={`选择节点 ${node.name}`}
-          className="min-w-0 flex-1 text-left"
-          onClick={() => onSelect(node.intentCode)}
-        >
-          <span className="block truncate font-medium text-ink">{node.name}</span>
-          <span className="mt-0.5 block truncate font-data-mono text-[11px] text-secondary">
-            {node.intentCode}
-          </span>
-        </button>
-
-        <div className="flex shrink-0 flex-wrap justify-end gap-xs">
-          <IntentBadge>{resolveLevelLabel(node.level)}</IntentBadge>
-          <IntentBadge tone={resolveKind(node) === 2 ? 'strong' : 'soft'}>
-            {resolveKindLabel(resolveKind(node))}
-          </IntentBadge>
-        </div>
-      </div>
-      {hasChildren && isExpanded
-        ? children.map((child) => (
-            <IntentTreeNode
-              key={child.intentCode}
-              node={child}
-              depth={depth + 1}
-              selectedCode={selectedCode}
-              expandedMap={expandedMap}
-              onToggle={onToggle}
-              onSelect={onSelect}
-            />
-          ))
-        : null}
-    </div>
+    <Tree<IntentTreeDataNode>
+      blockNode
+      className="admin-intent-tree"
+      expandedKeys={expandedKeys}
+      key={expandedKeys.join('|') || 'intent-tree-collapsed'}
+      selectedKeys={selectedCode ? [selectedCode] : []}
+      showLine
+      switcherIcon={<DownOutlined />}
+      treeData={treeData}
+      titleRender={(treeNode) => {
+        const node = treeNode.rawNode;
+        const children = node.children ?? [];
+        const hasChildren = children.length > 0;
+        const isExpanded = expandedMap[node.intentCode] ?? true;
+        return (
+          <div className="flex min-w-0 items-center gap-xs">
+            {hasChildren ? (
+              <Button
+                aria-label={`${isExpanded ? '收起' : '展开'} ${node.name}`}
+                icon={<DownOutlined rotate={isExpanded ? 0 : -90} />}
+                size="small"
+                type="text"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onToggle(node.intentCode);
+                }}
+              />
+            ) : (
+              <span className="inline-block h-6 w-6 shrink-0" />
+            )}
+            <Button
+              aria-label={`选择节点 ${node.name}`}
+              className="min-w-0 flex-1 justify-start px-xs"
+              type="text"
+              onClick={(event) => {
+                event.stopPropagation();
+                onSelect(node.intentCode);
+              }}
+            >
+              <span className="min-w-0 text-left">
+                <span className="block truncate font-medium text-ink">{node.name}</span>
+                <span className="mt-0.5 block truncate font-data-mono text-[11px] text-secondary">{node.intentCode}</span>
+              </span>
+            </Button>
+            <Space className="shrink-0" size={4} wrap>
+              <IntentBadge>{resolveLevelLabel(node.level)}</IntentBadge>
+              <IntentBadge tone={resolveKind(node) === 2 ? 'strong' : 'soft'}>{resolveKindLabel(resolveKind(node))}</IntentBadge>
+            </Space>
+          </div>
+        );
+      }}
+      onExpand={(keys) => {
+        const expandedSet = new Set(keys.map(String));
+        const nextMap: Record<string, boolean> = {};
+        expandableKeys.forEach((key) => {
+          nextMap[key] = expandedSet.has(key);
+        });
+        onExpand(nextMap);
+      }}
+      onSelect={(_, info) => {
+        onSelect(info.node.rawNode.intentCode);
+      }}
+    />
   );
+}
+
+function buildIntentTreeData(nodes: AdminIntentNode[], expandedMap: Record<string, boolean>): IntentTreeDataNode[] {
+  return nodes.map((node) => ({
+    key: node.intentCode,
+    title: node.name,
+    rawNode: node,
+    // AntD Tree 的折叠动画会短暂保留子节点 DOM；按展开状态裁剪 children，保证折叠后测试与读屏结构都立即收敛。
+    children: expandedMap[node.intentCode] ?? true ? buildIntentTreeData(node.children ?? [], expandedMap) : undefined,
+  }));
+}
+
+function collectExpandableIntentKeys(nodes: AdminIntentNode[]): string[] {
+  return nodes.flatMap((node) => {
+    const children = node.children ?? [];
+    if (children.length === 0) {
+      return [];
+    }
+    return [node.intentCode, ...collectExpandableIntentKeys(children)];
+  });
 }
 
 interface IntentCascadeColumnsProps {
@@ -636,12 +651,12 @@ function IntentCascadeColumns({
               const isSelected = selectedCode === node.intentCode;
               const inPath = selectedPathCodes.has(node.intentCode);
               return (
-                <button
+                <Button
                   key={node.intentCode}
-                  type="button"
                   aria-label={`级联选择 ${node.name}`}
+                  block
                   className={[
-                    'w-full rounded-lg border px-sm py-sm text-left transition-colors',
+                    'h-auto w-full rounded-lg border px-sm py-sm text-left transition-colors',
                     isSelected
                       ? 'border-border-strong bg-surface-container text-ink shadow-sm'
                       : inPath
@@ -664,7 +679,7 @@ function IntentCascadeColumns({
                       </IntentBadge>
                     </div>
                   </div>
-                </button>
+                </Button>
               );
             })}
           </div>
@@ -707,29 +722,17 @@ function IntentNodeDetail({ node, onCreateChild, onEdit, onDelete }: IntentNodeD
           </div>
           <p className="mt-1 font-data-mono text-[12px] text-secondary">{node.intentCode}</p>
         </div>
-        <div className="flex flex-wrap gap-xs">
-          <button
-            type="button"
-            className="rounded-lg bg-ink px-md py-2 text-button font-button text-on-ink"
-            onClick={onCreateChild}
-          >
+        <Space wrap size={8}>
+          <Button aria-label="新建子节点" icon={<FolderAddOutlined />} type="primary" onClick={onCreateChild}>
             新建子节点
-          </button>
-          <button
-            type="button"
-            className="rounded-lg border border-border-strong bg-surface-container-lowest px-md py-2 text-button font-button text-ink hover:bg-surface-container-low"
-            onClick={onEdit}
-          >
+          </Button>
+          <Button aria-label="编辑节点" icon={<EditOutlined />} onClick={onEdit}>
             编辑节点
-          </button>
-          <button
-            type="button"
-            className="rounded-lg border border-error bg-error-container px-md py-2 text-button font-button text-on-error-container hover:opacity-90"
-            onClick={onDelete}
-          >
+          </Button>
+          <Button aria-label="删除节点" danger icon={<DeleteOutlined />} onClick={onDelete}>
             删除节点
-          </button>
-        </div>
+          </Button>
+        </Space>
       </div>
 
       <div className="grid gap-sm md:grid-cols-2">
@@ -780,9 +783,9 @@ function IntentBadge({ children, tone = 'muted' }: { children: React.ReactNode; 
         : 'border-border-hairline bg-surface-container-low text-secondary';
 
   return (
-    <span className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${toneClass}`}>
+    <Tag className={`m-0 rounded-full border px-2 py-0.5 text-[11px] font-medium ${toneClass}`}>
       {children}
-    </span>
+    </Tag>
   );
 }
 
@@ -836,8 +839,7 @@ function IntentNodeDialog({
     return Object.keys(nextErrors).length === 0;
   };
 
-  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
+  const handleSubmit = async () => {
     setFormError('');
     if (!validate()) {
       return;
@@ -854,212 +856,194 @@ function IntentNodeDialog({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/45 px-md py-lg">
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="intent-node-dialog-title"
-        className="max-h-[88vh] w-full max-w-3xl overflow-y-auto rounded-2xl border border-border-hairline bg-surface-container-lowest shadow-2xl"
-      >
-        <div className="sticky top-0 z-10 flex items-start justify-between gap-md border-b border-border-hairline bg-surface-container-lowest px-lg py-md">
-          <div>
-            <h3 id="intent-node-dialog-title" className="font-title-md text-title-md text-ink">
-              {mode === 'create' ? '新建意图节点' : '编辑意图节点'}
-            </h3>
-            <p className="mt-1 text-body-sm text-secondary">
-              按统一配置台分组维护基础信息、示例、Prompt 与高级参数。
-            </p>
-          </div>
-          <button
-            type="button"
-            className="rounded-lg px-sm py-xs text-secondary hover:bg-surface-container-low hover:text-ink"
-            onClick={onClose}
-            aria-label="关闭弹窗"
-          >
-            <span className="material-symbols-outlined text-[20px]">close</span>
-          </button>
-        </div>
+    <Modal
+      centered
+      closeIcon={<CloseOutlined aria-hidden="true" />}
+      footer={null}
+      maskTransitionName=""
+      open
+      title={mode === 'create' ? '新建意图节点' : '编辑意图节点'}
+      transitionName=""
+      width={800}
+      onCancel={onClose}
+    >
+      <Form className="space-y-lg" layout="vertical" onFinish={() => void handleSubmit()}>
+        <Typography.Paragraph className="mb-0" type="secondary">
+          按统一配置台分组维护基础信息、示例、Prompt 与高级参数。
+        </Typography.Paragraph>
+        {formError ? (
+          <Alert showIcon type="error" message={formError} />
+        ) : null}
 
-        <form className="space-y-lg p-lg" onSubmit={handleSubmit}>
-          {formError ? (
-            <div className="rounded-xl border border-error bg-error-container px-md py-sm text-sm text-on-error-container">
-              {formError}
-            </div>
-          ) : null}
-
-          <fieldset className="rounded-xl border border-border-hairline bg-surface-container-low p-md">
-            <legend className="px-xs font-title-sm text-ink">基础信息</legend>
-            <div className="grid gap-md md:grid-cols-2">
-              <TextField
-                id="intent-node-name"
-                label="节点名称"
-                value={form.name}
-                error={fieldErrors.name}
-                onChange={(value) => updateField('name', value)}
-              />
-              <TextField
-                id="intent-node-code"
-                label="意图标识"
-                value={form.intentCode}
-                error={fieldErrors.intentCode}
-                disabled={mode === 'edit'}
-                onChange={(value) => updateField('intentCode', value)}
-              />
-              <SelectField
-                id="intent-node-level"
-                label="节点层级"
-                value={form.level}
-                onChange={(value) => updateField('level', value)}
-                options={LEVEL_OPTIONS.map((option) => ({
-                  value: String(option.value),
-                  label: `${option.label} - ${option.description}`,
-                }))}
-              />
-              <SelectField
-                id="intent-node-kind"
-                label="节点类型"
-                value={form.kind}
-                onChange={(value) => updateField('kind', value)}
-                options={KIND_OPTIONS.map((option) => ({
-                  value: String(option.value),
-                  label: `${option.label} - ${option.description}`,
-                }))}
-              />
-              <SelectField
-                id="intent-node-parent"
-                label="父节点"
-                value={form.parentCode}
-                onChange={(value) => updateField('parentCode', value)}
-                options={[
-                  { value: ROOT_PARENT, label: 'ROOT' },
-                  ...filteredTreeOptions.map((option) => ({ value: option.value, label: option.label })),
-                ]}
-              />
-              {kind === 0 ? (
-                <>
-                  <TextField
-                    id="intent-node-search-scope"
-                    label="搜索域标识"
-                    value={form.searchScopeId}
-                    onChange={(value) => updateField('searchScopeId', value)}
-                  />
-                  <TextField
-                    id="intent-node-collection"
-                    label="Collection"
-                    value={form.collectionName}
-                    onChange={(value) => updateField('collectionName', value)}
-                  />
-                </>
-              ) : null}
-              {kind === 2 ? (
+        <fieldset className="rounded-xl border border-border-hairline bg-surface-container-low p-md">
+          <legend className="px-xs font-title-sm text-ink">基础信息</legend>
+          <div className="grid gap-md md:grid-cols-2">
+            <TextField
+              id="intent-node-name"
+              label="节点名称"
+              value={form.name}
+              error={fieldErrors.name}
+              onChange={(value) => updateField('name', value)}
+            />
+            <TextField
+              id="intent-node-code"
+              label="意图标识"
+              value={form.intentCode}
+              error={fieldErrors.intentCode}
+              disabled={mode === 'edit'}
+              onChange={(value) => updateField('intentCode', value)}
+            />
+            <SelectField
+              id="intent-node-level"
+              label="节点层级"
+              value={form.level}
+              onChange={(value) => updateField('level', value)}
+              options={LEVEL_OPTIONS.map((option) => ({
+                value: String(option.value),
+                label: `${option.label} - ${option.description}`,
+              }))}
+            />
+            <SelectField
+              id="intent-node-kind"
+              label="节点类型"
+              value={form.kind}
+              onChange={(value) => updateField('kind', value)}
+              options={KIND_OPTIONS.map((option) => ({
+                value: String(option.value),
+                label: `${option.label} - ${option.description}`,
+              }))}
+            />
+            <SelectField
+              id="intent-node-parent"
+              label="父节点"
+              value={form.parentCode}
+              onChange={(value) => updateField('parentCode', value)}
+              options={[
+                { value: ROOT_PARENT, label: 'ROOT' },
+                ...filteredTreeOptions.map((option) => ({ value: option.value, label: option.label })),
+              ]}
+            />
+            {kind === 0 ? (
+              <>
                 <TextField
-                  id="intent-node-mcp"
-                  label="MCP 工具ID"
-                  value={form.mcpToolId}
-                  error={fieldErrors.mcpToolId}
-                  onChange={(value) => updateField('mcpToolId', value)}
+                  id="intent-node-search-scope"
+                  label="搜索域标识"
+                  value={form.searchScopeId}
+                  onChange={(value) => updateField('searchScopeId', value)}
                 />
-              ) : null}
-            </div>
-          </fieldset>
-
-          <fieldset className="rounded-xl border border-border-hairline bg-surface-container-low p-md">
-            <legend className="px-xs font-title-sm text-ink">描述与示例</legend>
-            <div className="space-y-md">
-              <TextAreaField
-                id="intent-node-description"
-                label="描述"
-                value={form.description}
-                rows={3}
-                onChange={(value) => updateField('description', value)}
-              />
-              <TextAreaField
-                id="intent-node-examples"
-                label="示例问题"
-                value={form.examplesText}
-                rows={4}
-                onChange={(value) => updateField('examplesText', value)}
-              />
-            </div>
-          </fieldset>
-
-          <fieldset className="rounded-xl border border-border-hairline bg-surface-container-low p-md">
-            <legend className="px-xs font-title-sm text-ink">Prompt 配置</legend>
-            <div className="space-y-md">
-              <TextAreaField
-                id="intent-node-prompt-snippet"
-                label="Prompt 片段"
-                value={form.promptSnippet}
-                rows={3}
-                onChange={(value) => updateField('promptSnippet', value)}
-              />
-              <TextAreaField
-                id="intent-node-prompt-template"
-                label="Prompt 模板"
-                value={form.promptTemplate}
-                rows={4}
-                onChange={(value) => updateField('promptTemplate', value)}
-              />
-              {kind === 2 ? (
-                <TextAreaField
-                  id="intent-node-param-prompt"
-                  label="参数提取提示词"
-                  value={form.paramPromptTemplate}
-                  rows={3}
-                  onChange={(value) => updateField('paramPromptTemplate', value)}
+                <TextField
+                  id="intent-node-collection"
+                  label="Collection"
+                  value={form.collectionName}
+                  onChange={(value) => updateField('collectionName', value)}
                 />
-              ) : null}
-            </div>
-          </fieldset>
-
-          <fieldset className="rounded-xl border border-border-hairline bg-surface-container-low p-md">
-            <legend className="px-xs font-title-sm text-ink">高级设置</legend>
-            <div className="grid gap-md md:grid-cols-3">
+              </>
+            ) : null}
+            {kind === 2 ? (
               <TextField
-                id="intent-node-topk"
-                label="节点 TopK"
-                type="number"
-                value={form.topK}
-                onChange={(value) => updateField('topK', value)}
+                id="intent-node-mcp"
+                label="MCP 工具ID"
+                value={form.mcpToolId}
+                error={fieldErrors.mcpToolId}
+                onChange={(value) => updateField('mcpToolId', value)}
               />
-              <TextField
-                id="intent-node-sort"
-                label="排序"
-                type="number"
-                value={form.sortOrder}
-                onChange={(value) => updateField('sortOrder', value)}
-              />
-              <label className="flex items-center gap-sm rounded-xl border border-border-hairline bg-surface-container-lowest px-md py-sm text-ink">
-                <input
-                  type="checkbox"
-                  checked={form.enabled}
-                  onChange={(event) => updateField('enabled', event.target.checked)}
-                />
-                启用节点
-              </label>
-            </div>
-          </fieldset>
-
-          <div className="flex flex-wrap justify-end gap-sm">
-            <button
-              type="button"
-              className="rounded-lg border border-border-strong bg-surface-container-lowest px-lg py-2 text-button font-button text-ink hover:bg-surface-container-low"
-              onClick={onClose}
-              disabled={saving}
-            >
-              取消
-            </button>
-            <button
-              type="submit"
-              className="rounded-lg bg-ink px-lg py-2 text-button font-button text-on-ink disabled:opacity-60"
-              disabled={saving}
-            >
-              {saving ? '保存中...' : mode === 'create' ? '创建节点' : '保存节点'}
-            </button>
+            ) : null}
           </div>
-        </form>
-      </div>
-    </div>
+        </fieldset>
+
+        <fieldset className="rounded-xl border border-border-hairline bg-surface-container-low p-md">
+          <legend className="px-xs font-title-sm text-ink">描述与示例</legend>
+          <div className="space-y-md">
+            <TextAreaField
+              id="intent-node-description"
+              label="描述"
+              value={form.description}
+              rows={3}
+              onChange={(value) => updateField('description', value)}
+            />
+            <TextAreaField
+              id="intent-node-examples"
+              label="示例问题"
+              value={form.examplesText}
+              rows={4}
+              onChange={(value) => updateField('examplesText', value)}
+            />
+          </div>
+        </fieldset>
+
+        <fieldset className="rounded-xl border border-border-hairline bg-surface-container-low p-md">
+          <legend className="px-xs font-title-sm text-ink">Prompt 配置</legend>
+          <div className="space-y-md">
+            <TextAreaField
+              id="intent-node-prompt-snippet"
+              label="Prompt 片段"
+              value={form.promptSnippet}
+              rows={3}
+              onChange={(value) => updateField('promptSnippet', value)}
+            />
+            <TextAreaField
+              id="intent-node-prompt-template"
+              label="Prompt 模板"
+              value={form.promptTemplate}
+              rows={4}
+              onChange={(value) => updateField('promptTemplate', value)}
+            />
+            {kind === 2 ? (
+              <TextAreaField
+                id="intent-node-param-prompt"
+                label="参数提取提示词"
+                value={form.paramPromptTemplate}
+                rows={3}
+                onChange={(value) => updateField('paramPromptTemplate', value)}
+              />
+            ) : null}
+          </div>
+        </fieldset>
+
+        <fieldset className="rounded-xl border border-border-hairline bg-surface-container-low p-md">
+          <legend className="px-xs font-title-sm text-ink">高级设置</legend>
+          <div className="grid gap-md md:grid-cols-3">
+            <TextField
+              id="intent-node-topk"
+              label="节点 TopK"
+              type="number"
+              value={form.topK}
+              onChange={(value) => updateField('topK', value)}
+            />
+            <TextField
+              id="intent-node-sort"
+              label="排序"
+              type="number"
+              value={form.sortOrder}
+              onChange={(value) => updateField('sortOrder', value)}
+            />
+            <Form.Item className="mb-0" label="启用状态">
+              <Switch
+                checked={form.enabled}
+                checkedChildren="启用"
+                unCheckedChildren="停用"
+                onChange={(checked) => updateField('enabled', checked)}
+              />
+            </Form.Item>
+          </div>
+        </fieldset>
+
+        <div className="flex flex-wrap justify-end gap-sm">
+          <Button onClick={onClose} disabled={saving}>
+            取消
+          </Button>
+          <Button
+            aria-label={mode === 'create' ? '创建节点' : '保存节点'}
+            htmlType="submit"
+            type="primary"
+            icon={<SaveOutlined />}
+            loading={saving}
+          >
+            {mode === 'create' ? '创建节点' : '保存节点'}
+          </Button>
+        </div>
+      </Form>
+    </Modal>
   );
 }
 
@@ -1082,20 +1066,21 @@ function TextField({
   onChange,
 }: BaseFieldProps & { type?: string }) {
   return (
-    <div>
-      <label htmlFor={id} className="mb-1 block text-[12px] font-medium text-secondary">
-        {label}
-      </label>
-      <input
+    <Form.Item
+      className="mb-0"
+      help={error}
+      htmlFor={id}
+      label={label}
+      validateStatus={error ? 'error' : undefined}
+    >
+      <Input
         id={id}
         type={type}
         value={value}
         disabled={disabled}
-        className="w-full rounded-lg border border-border-hairline bg-surface-container-lowest px-3 py-2 text-ink outline-none transition-colors focus:border-border-strong disabled:cursor-not-allowed disabled:opacity-60"
         onChange={(event) => onChange(event.target.value)}
       />
-      {error ? <p className="mt-1 text-[12px] text-error">{error}</p> : null}
-    </div>
+    </Form.Item>
   );
 }
 
@@ -1107,23 +1092,15 @@ function SelectField({
   onChange,
 }: BaseFieldProps & { options: Array<{ value: string; label: string }> }) {
   return (
-    <div>
-      <label htmlFor={id} className="mb-1 block text-[12px] font-medium text-secondary">
-        {label}
-      </label>
-      <select
+    <Form.Item className="mb-0" htmlFor={id} label={label}>
+      <Select
         id={id}
         value={value}
-        className="w-full rounded-lg border border-border-hairline bg-surface-container-lowest px-3 py-2 text-ink outline-none transition-colors focus:border-border-strong"
-        onChange={(event) => onChange(event.target.value)}
-      >
-        {options.map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </select>
-    </div>
+        options={options}
+        popupMatchSelectWidth={false}
+        onChange={onChange}
+      />
+    </Form.Item>
   );
 }
 
@@ -1135,18 +1112,14 @@ function TextAreaField({
   onChange,
 }: Omit<BaseFieldProps, 'error' | 'disabled'> & { rows: number }) {
   return (
-    <div>
-      <label htmlFor={id} className="mb-1 block text-[12px] font-medium text-secondary">
-        {label}
-      </label>
-      <textarea
+    <Form.Item className="mb-0" htmlFor={id} label={label}>
+      <Input.TextArea
         id={id}
         rows={rows}
         value={value}
-        className="w-full rounded-lg border border-border-hairline bg-surface-container-lowest px-3 py-2 text-ink outline-none transition-colors focus:border-border-strong"
         onChange={(event) => onChange(event.target.value)}
       />
-    </div>
+    </Form.Item>
   );
 }
 
@@ -1159,43 +1132,24 @@ function DeleteConfirmDialog({
   onCancel: () => void;
   onConfirm: () => void;
 }) {
-  // 关键约束：删除确认弹窗通过 Portal 挂载到 body，避免受页面动画容器 transform/overflow 影响导致遮罩宽度异常。
-  // 关键约束：显式使用 rem 宽度，避免 max-w-md 在当前主题下被 spacing token 覆盖成 16px。
-  return createPortal(
-    <div
+  return (
+    <Modal
+      centered
+      closeIcon={<CloseOutlined aria-hidden="true" />}
+      cancelText="取消"
       data-testid="intent-delete-dialog-overlay"
-      className="fixed inset-0 z-[1200] flex items-center justify-center bg-ink/45 px-md"
+      maskTransitionName=""
+      okButtonProps={{ danger: true, icon: <DeleteOutlined />, 'aria-label': '确认删除' }}
+      okText="确认删除"
+      open
+      title="删除意图节点"
+      transitionName=""
+      onCancel={onCancel}
+      onOk={onConfirm}
     >
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="delete-intent-dialog-title"
-        className="w-full max-w-[28rem] rounded-2xl border border-border-hairline bg-surface-container-lowest p-lg shadow-2xl"
-      >
-        <h3 id="delete-intent-dialog-title" className="font-title-md text-title-md text-ink">
-          删除意图节点
-        </h3>
-        <p className="mt-sm text-body-sm text-secondary">
-          将删除节点「{node.name}」。如后端检测到子节点或运行时引用，会返回中文错误提示。
-        </p>
-        <div className="mt-lg flex justify-end gap-sm">
-          <button
-            type="button"
-            className="rounded-lg border border-border-strong bg-surface-container-lowest px-lg py-2 text-button font-button text-ink hover:bg-surface-container-low"
-            onClick={onCancel}
-          >
-            取消
-          </button>
-          <button
-            type="button"
-            className="rounded-lg border border-error bg-error-container px-lg py-2 text-button font-button text-on-error-container hover:opacity-90"
-            onClick={onConfirm}
-          >
-            确认删除
-          </button>
-        </div>
-      </div>
-    </div>,
-    document.body,
+      <Typography.Paragraph className="mb-0" type="secondary">
+        将删除节点「{node.name}」。如后端检测到子节点或运行时引用，会返回中文错误提示。
+      </Typography.Paragraph>
+    </Modal>
   );
 }

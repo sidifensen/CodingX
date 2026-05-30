@@ -77,36 +77,39 @@ export function ToolIntentTreePanel({
   };
 
   return (
-    <div className="grid grid-cols-1 gap-lg xl:grid-cols-[minmax(320px,0.95fr)_minmax(0,1.25fr)]">
+    <div className="admin-tool-intent-layout grid grid-cols-1 gap-lg xl:grid-cols-[minmax(360px,0.95fr)_minmax(0,1.25fr)]">
       <section
         aria-label="工具意图树"
-        className="rounded-2xl border border-border-hairline bg-surface-container-lowest shadow-sm xl:flex xl:min-h-0 xl:flex-col xl:overflow-hidden"
+        className="admin-tool-intent-tree-panel rounded-2xl border border-border-hairline bg-surface-container-lowest shadow-sm xl:flex xl:min-h-0 xl:flex-col xl:overflow-hidden"
       >
         <div className="border-b border-border-hairline px-lg py-md">
           <h3 className="font-title-md text-title-md text-ink">工具意图树</h3>
           <p className="mt-1 text-body-sm text-secondary">按分类组织工具节点，便于快速定位和筛选。</p>
         </div>
-        <div data-testid="tool-intent-tree-scroll" className="space-y-sm p-md xl:flex-1 xl:min-h-0 xl:overflow-y-auto">
+        <div data-testid="tool-intent-tree-scroll" className="admin-tool-intent-tree-scroll space-y-sm p-md xl:flex-1 xl:min-h-0 xl:overflow-y-auto">
           {rows.length === 0 ? (
             <Empty className="rounded-xl bg-surface-container-low px-lg py-xl" description="暂无工具配置" />
           ) : (
             categoryGroups.map((group) => {
               const isExpanded = expandedMap[group.key] ?? true;
               return (
-                <div key={group.key} className="rounded-xl border border-border-hairline bg-surface-container-lowest">
+                <div key={group.key} className="admin-tool-intent-category rounded-xl border border-border-hairline bg-surface-container-lowest">
+                  {/* AntD Button 会包一层内部 span，这些稳定类名用于保证树节点内容始终全宽左对齐。 */}
                   <Button
                     aria-label={`${isExpanded ? '收起' : '展开'}分类 ${group.label}`}
                     block
-                    className="h-auto justify-between px-md py-sm text-left"
+                    className="admin-tool-intent-category-toggle h-auto text-left"
                     icon={isExpanded ? <DownOutlined /> : <RightOutlined />}
                     type="text"
                     onClick={() => toggleCategory(group.key)}
                   >
-                    <span className="font-medium text-ink">{group.label}</span>
-                    <Tag className="m-0">{group.rows.length}</Tag>
+                    <span className="admin-tool-intent-category-summary">
+                      <span className="font-medium text-ink">{group.label}</span>
+                      <Tag className="m-0">{group.rows.length}</Tag>
+                    </span>
                   </Button>
                   {isExpanded ? (
-                    <div className="space-y-xs border-t border-border-hairline p-sm">
+                    <div className="admin-tool-intent-node-list space-y-xs border-t border-border-hairline p-sm">
                       {group.rows.map((row) => {
                         const isSelected =
                           normalizeToolCode(row.toolCode) === normalizeToolCode(selectedToolCode);
@@ -116,18 +119,18 @@ export function ToolIntentTreePanel({
                             aria-label={`选择工具 ${resolveToolDisplayName(row)}`}
                             block
                             className={clsx(
-                              'h-auto w-full rounded-lg border px-sm py-sm text-left transition-colors',
+                              'admin-tool-intent-tool-button',
                               isSelected
-                                ? 'border-border-strong bg-surface-container text-ink shadow-sm'
-                                : 'border-transparent text-secondary hover:bg-surface-container-low hover:text-ink',
+                                ? 'admin-tool-intent-tool-button-selected'
+                                : '',
                             )}
                             type="text"
                             onClick={() => onSelectTool(row.toolCode)}
                           >
-                            <div className="flex items-start justify-between gap-xs">
-                              <div className="min-w-0">
-                                <p className="truncate font-medium text-ink">{resolveToolDisplayName(row)}</p>
-                                <p className="mt-0.5 truncate font-data-mono text-[11px] text-secondary">
+                            <div className="admin-tool-intent-tool-row">
+                              <div className="admin-tool-intent-tool-copy">
+                                <p className="admin-tool-intent-tool-name">{resolveToolDisplayName(row)}</p>
+                                <p className="admin-tool-intent-tool-code">
                                   /{row.toolCode}
                                 </p>
                               </div>

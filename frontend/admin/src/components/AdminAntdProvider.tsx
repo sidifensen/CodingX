@@ -697,6 +697,162 @@ const adminAntdThemeOverrideCss = `
     }
   }
 
+  /* 工具管理意图树同样使用 AntD Button 渲染树节点，必须接管内部 span 宽度，否则节点内容会被默认居中。 */
+  .admin-tool-intent-layout,
+  .admin-tool-intent-tree-panel {
+    min-width: 0;
+  }
+
+  .admin-tool-intent-tree-scroll {
+    scrollbar-gutter: stable;
+    scrollbar-width: thin;
+    scrollbar-color: var(--theme-scrollbar-thumb) var(--theme-scrollbar-track);
+  }
+
+  .admin-tool-intent-tree-scroll::-webkit-scrollbar {
+    height: 10px;
+    width: 10px;
+  }
+
+  .admin-tool-intent-tree-scroll::-webkit-scrollbar-track {
+    background: var(--theme-scrollbar-track);
+  }
+
+  .admin-tool-intent-tree-scroll::-webkit-scrollbar-thumb {
+    background: var(--theme-scrollbar-thumb);
+    border: 2px solid var(--theme-scrollbar-track);
+    border-radius: 999px;
+  }
+
+  .admin-tool-intent-category-toggle.ant-btn {
+    align-items: center !important;
+    background: transparent !important;
+    border: 0 !important;
+    color: var(--theme-ink) !important;
+    display: flex !important;
+    height: auto;
+    justify-content: flex-start !important;
+    min-height: 44px;
+    min-width: 0;
+    padding: 10px 12px !important;
+    text-align: left;
+    white-space: normal;
+    width: 100%;
+  }
+
+  .admin-tool-intent-category-toggle.ant-btn:hover {
+    background: var(--theme-surface-container-low) !important;
+  }
+
+  .admin-tool-intent-category-toggle.ant-btn .ant-btn-icon {
+    color: var(--theme-secondary);
+    flex: 0 0 auto;
+  }
+
+  .admin-tool-intent-category-toggle.ant-btn > span:not(.ant-btn-icon) {
+    display: block;
+    flex: 1 1 auto;
+    min-width: 0;
+    width: 100%;
+  }
+
+  .admin-tool-intent-category-summary {
+    align-items: center;
+    display: grid;
+    gap: 8px;
+    grid-template-columns: minmax(0, 1fr) max-content;
+    min-width: 0;
+    width: 100%;
+  }
+
+  .admin-tool-intent-category-summary > span:first-child {
+    display: block;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .admin-tool-intent-tool-button.ant-btn {
+    align-items: center !important;
+    background: transparent !important;
+    border: 1px solid transparent !important;
+    border-radius: 10px;
+    box-shadow: none !important;
+    color: var(--theme-secondary) !important;
+    display: flex !important;
+    height: auto;
+    justify-content: flex-start !important;
+    min-height: 58px;
+    min-width: 0;
+    padding: 8px 10px !important;
+    text-align: left;
+    white-space: normal;
+    width: 100%;
+  }
+
+  .admin-tool-intent-tool-button.ant-btn:hover {
+    background: var(--theme-surface-container-low) !important;
+    border-color: var(--theme-border-hairline) !important;
+    color: var(--theme-ink) !important;
+  }
+
+  .admin-tool-intent-tool-button-selected.ant-btn {
+    background: var(--theme-surface-container) !important;
+    border-color: var(--theme-border-strong) !important;
+    box-shadow: inset 3px 0 0 var(--theme-primary) !important;
+    color: var(--theme-ink) !important;
+  }
+
+  .admin-tool-intent-tool-button.ant-btn > span:not(.ant-btn-icon) {
+    display: block;
+    min-width: 0;
+    width: 100%;
+  }
+
+  .admin-tool-intent-tool-row {
+    align-items: center;
+    display: grid;
+    gap: 8px;
+    grid-template-columns: minmax(0, 1fr) max-content;
+    min-width: 0;
+    text-align: left;
+    width: 100%;
+  }
+
+  .admin-tool-intent-tool-copy {
+    min-width: 0;
+  }
+
+  .admin-tool-intent-tool-name,
+  .admin-tool-intent-tool-code {
+    display: block;
+    margin: 0;
+    min-width: 0;
+    overflow: hidden;
+    text-align: left;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .admin-tool-intent-tool-name {
+    color: var(--theme-ink);
+    font-weight: 600;
+  }
+
+  .admin-tool-intent-tool-code {
+    color: var(--theme-secondary);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    margin-top: 2px;
+  }
+
+  @media (max-width: 640px) {
+    .admin-tool-intent-tool-row {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+
   .ant-pagination,
   .ant-pagination .ant-pagination-total-text,
   .ant-pagination .ant-pagination-item a {

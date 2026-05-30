@@ -273,7 +273,12 @@ describe('Tools page', () => {
     const detailPanel = screen.getByRole('region', { name: '工具详情' });
 
     expect(within(treePanel).getByText('终端')).toBeInTheDocument();
-    fireEvent.click(within(treePanel).getByRole('button', { name: '选择工具 补丁编辑' }));
+    expect(within(treePanel).getByRole('button', { name: '收起分类 代码编辑' })).toHaveClass(
+      'admin-tool-intent-category-toggle',
+    );
+    const applyPatchButton = within(treePanel).getByRole('button', { name: '选择工具 补丁编辑' });
+    expect(applyPatchButton).toHaveClass('admin-tool-intent-tool-button');
+    fireEvent.click(applyPatchButton);
 
     expect(within(detailPanel).getByText('/apply_patch')).toBeInTheDocument();
     fireEvent.click(within(detailPanel).getByRole('button', { name: '探测工具 apply_patch' }));

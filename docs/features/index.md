@@ -14,6 +14,7 @@
 - [AI 路由默认策略](chat/ai-routing-defaults.md)
 - [AI 模型故障切换策略](chat/ai-model-failover.md)
 - [联网搜索权威时效排序](chat/web-search-authoritative-latest.md)
+- [联网搜索提供方顺序与故障切换](chat/web-search-provider-fallback.md)
 - [系统联网搜索禁用守卫](chat/web-search-disable-guard.md)
 - [聊天流式提交与引用链接](chat/stream-submit-citation.md)
 - [聊天流式完成收尾与发送解锁](chat/stream-finish-submit-unlock.md)

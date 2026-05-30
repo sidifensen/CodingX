@@ -216,6 +216,104 @@ class RuntimeSettingServiceTest {
     }
 
     /**
+     * 未配置 provider_order 时应使用内置默认顺序，确保新环境升级后天然具备多 provider 兜底能力。
+     */
+    @Test
+    void webSearchProviderOrderFallsBackToDomesticDefault() {
+        when(chatRuntimeSettingRepository.findAll()).thenReturn(List.of());
+
+        runtimeSettingService.init();
+
+        assertEquals(
+            List.of("tavily", "serpapi", "exa", "duckduckgo_html", "bing_html"),
+            runtimeSettingService.webSearchProviderOrder()
+        );
+    }
+
+    /**
+     * provider_order 允许按运维策略自由调整，读取时需清理空白项并保持顺序。
+     */
+    @Test
+    void webSearchProviderOrderReadsConfiguredValue() {
+        when(chatRuntimeSettingRepository.findAll()).thenReturn(List.of(
+            setting("web_search.provider_order", "exa, tavily, ,duckduckgo_html")
+        ));
+
+        runtimeSettingService.init();
+
+        assertEquals(List.of("exa", "tavily", "duckduckgo_html"), runtimeSettingService.webSearchProviderOrder());
+    }
+
+    /**
+     * provider 级地址与密钥应优先读取 web_search.providers.<provider>.*，密钥读取必须走解密链路。
+     */
+    @Test
+    void webSearchProviderConfigReadsProviderScopedValues() {
+        when(chatRuntimeSettingRepository.findAll()).thenReturn(List.of(
+            setting("web_search.providers.tavily.base_url", "https://api.tavily.test/search"),
+            ChatRuntimeSetting.builder()
+                .settingKey("web_search.providers.tavily.api_key")
+                .settingValue("")
+                .encryptedValue("cipher-tavily-key")
+                .secret(true)
+                .valueType("STRING")
+                .categoryCode("search.providers")
+                .description("Tavily 搜索接口密钥")
+                .build()
+        ));
+        when(configCryptoService.decrypt("cipher-tavily-key")).thenReturn("plain-tavily-key");
+
+        runtimeSettingService.init();
+
+        assertEquals("https://api.tavily.test/search", runtimeSettingService.webSearchProviderBaseUrl("tavily"));
+        assertEquals("plain-tavily-key", runtimeSettingService.webSearchProviderApiKey("tavily"));
+    }
+
+    /**
+     * 旧版单 provider 配置仍需兼容：provider 名匹配旧 web_search.provider 时回退到旧 base_url/api_key。
+     */
+    @Test
+    void webSearchProviderConfigFallsBackToLegacySingleProvider() {
+        when(chatRuntimeSettingRepository.findAll()).thenReturn(List.of(
+            setting("web_search.provider", "serpapi"),
+            setting("web_search.base_url", "https://legacy.example/search"),
+            ChatRuntimeSetting.builder()
+                .settingKey("web_search.api_key")
+                .settingValue("")
+                .encryptedValue("cipher-legacy-key")
+                .secret(true)
+                .valueType("STRING")
+                .categoryCode("search")
+                .description("联网搜索接口密钥")
+                .build()
+        ));
+        when(configCryptoService.decrypt("cipher-legacy-key")).thenReturn("plain-legacy-key");
+
+        runtimeSettingService.init();
+
+        assertEquals("https://legacy.example/search", runtimeSettingService.webSearchProviderBaseUrl("serpapi"));
+        assertEquals("plain-legacy-key", runtimeSettingService.webSearchProviderApiKey("serpapi"));
+        assertEquals("", runtimeSettingService.webSearchProviderBaseUrl("tavily"));
+        assertEquals("", runtimeSettingService.webSearchProviderApiKey("tavily"));
+    }
+
+    /**
+     * 联网搜索熔断参数由系统配置表读取，缺失时使用代码默认值。
+     */
+    @Test
+    void webSearchCircuitBreakerReadsConfiguredValues() {
+        when(chatRuntimeSettingRepository.findAll()).thenReturn(List.of(
+            setting("web_search.failure_threshold", "4"),
+            setting("web_search.open_duration_ms", "45000")
+        ));
+
+        runtimeSettingService.init();
+
+        assertEquals(4, runtimeSettingService.webSearchFailureThreshold());
+        assertEquals(45_000L, runtimeSettingService.webSearchOpenDurationMs());
+    }
+
+    /**
      * AI 候选池和 provider endpoint 依赖按前缀聚合读取，系统配置服务必须返回同前缀下的完整键值映射。
      */
     @Test
@@ -277,5 +375,22 @@ class RuntimeSettingServiceTest {
 
         assertTrue(prefixedValues.containsKey("ai.providers.siliconflow.api_key"));
         assertEquals("plain-provider-key", prefixedValues.get("ai.providers.siliconflow.api_key"));
+    }
+
+    /**
+     * 构造普通字符串配置，减少测试样板并保持每个用例只关注业务差异。
+     * @param key 配置键。
+     * @param value 配置值。
+     * @return 运行时配置记录。
+     */
+    private ChatRuntimeSetting setting(String key, String value) {
+        return ChatRuntimeSetting.builder()
+            .settingKey(key)
+            .settingValue(value)
+            .secret(false)
+            .valueType("STRING")
+            .categoryCode("search")
+            .description("测试配置")
+            .build();
     }
 }

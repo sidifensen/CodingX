@@ -33,6 +33,10 @@ status: active
   - 主消息区过程卡片与 SSE 事件映射契约
 - `docs/superpowers/memory/chat/background-stream-resume-contract.md`
   - 聊天后台任务断开后继续执行、SSE 缓冲和前端续流恢复契约
+- `docs/superpowers/memory/chat/web-search-module-card.md`
+  - 聊天联网搜索运行时的通道、系统配置和后处理边界
+- `docs/superpowers/memory/chat/web-search-runtime-contract.md`
+  - 联网搜索从系统配置到标准来源候选的运行时契约
   - `docs/superpowers/memory/lessons/stream-replay-stale-closure-overwrites-content.md`
     - 流式收敛回放不能用旧闭包覆盖刚生成完的 assistant 正文
   - `docs/superpowers/memory/lessons/chat-citation-links-must-not-wait-for-slow-replay-panels.md`
@@ -64,7 +68,8 @@ status: active
 
 当前主要缺口：
 
-- MCP / 搜索 / 思考统一事件模型仍以前端运行时聚合为主，未形成数据库级持久化协议
+- MCP / 思考统一事件模型仍以前端运行时聚合为主，未形成数据库级持久化协议
+- 搜索多 provider fallback、HTML 搜索源解析和 provider 级可观测性仍需按需求逐步沉淀
 - 聊天页历史回放和本地快照的长期演化规则尚未独立成 runbook
 - 模型 tool-call 流程与本地工具执行结果回灌仍需实现端到端契约
 - 管理端 Dashboard 统计当前仍依赖应用层聚合，尚未沉淀大数据量场景的查询优化规范

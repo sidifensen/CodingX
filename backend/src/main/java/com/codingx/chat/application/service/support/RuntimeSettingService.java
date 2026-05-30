@@ -13,6 +13,7 @@ import com.codingx.config.RuntimeProperties;
 import jakarta.annotation.PostConstruct;
 import java.util.List;
 import java.util.LinkedHashMap;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import lombok.RequiredArgsConstructor;
@@ -34,6 +35,13 @@ public class RuntimeSettingService {
     private static final String TYPE_STRING = "STRING";
     private static final int DEFAULT_CHAT_TOOL_MAX_ROUNDS = 10;
     private static final int HARD_CHAT_TOOL_MAX_ROUNDS = 20;
+    private static final List<String> DEFAULT_WEB_SEARCH_PROVIDER_ORDER = List.of(
+        "tavily",
+        "serpapi",
+        "exa",
+        "duckduckgo_html",
+        "bing_html"
+    );
 
     private final ChatRuntimeSettingRepository chatRuntimeSettingRepository;
     private final RuntimeProperties runtimeProperties;
@@ -297,6 +305,74 @@ public class RuntimeSettingService {
     }
 
     /**
+     * 获取联网搜索 provider 尝试顺序，空配置回退到内置多 provider 顺序。
+     * @return provider 编码列表。
+     */
+    public List<String> webSearchProviderOrder() {
+        String raw = getString("web_search.provider_order", "");
+        if (StrUtil.isBlank(raw)) {
+            return DEFAULT_WEB_SEARCH_PROVIDER_ORDER;
+        }
+        List<String> providers = StrUtil.splitTrim(raw, ",")
+            .stream()
+            .map(provider -> provider.toLowerCase(Locale.ROOT))
+            .filter(StrUtil::isNotBlank)
+            .toList();
+        return providers.isEmpty() ? DEFAULT_WEB_SEARCH_PROVIDER_ORDER : providers;
+    }
+
+    /**
+     * 获取指定联网搜索 provider 的接口地址；provider 级配置缺失时兼容旧单 provider 配置。
+     * @param provider provider 编码。
+     * @return 接口地址。
+     */
+    public String webSearchProviderBaseUrl(String provider) {
+        String normalizedProvider = normalizeProvider(provider);
+        String scopedValue = getString("web_search.providers." + normalizedProvider + ".base_url", "");
+        if (StrUtil.isNotBlank(scopedValue)) {
+            return scopedValue;
+        }
+        return StrUtil.equals(normalizedProvider, normalizeProvider(webSearchProvider())) ? webSearchBaseUrl() : "";
+    }
+
+    /**
+     * 获取指定联网搜索 provider 的 API Key；敏感配置由 rawValue 统一解密。
+     * @param provider provider 编码。
+     * @return API Key。
+     */
+    public String webSearchProviderApiKey(String provider) {
+        String normalizedProvider = normalizeProvider(provider);
+        String scopedValue = optionalSecretString("web_search.providers." + normalizedProvider + ".api_key", "");
+        if (StrUtil.isNotBlank(scopedValue)) {
+            return scopedValue;
+        }
+        if (!StrUtil.equals(normalizedProvider, normalizeProvider(webSearchProvider()))) {
+            return "";
+        }
+        String legacyValue = optionalSecretString("web_search.api_key", "");
+        if (StrUtil.isNotBlank(legacyValue)) {
+            return legacyValue;
+        }
+        return cache.containsKey("web_search.api_key") ? "" : webSearchApiKey();
+    }
+
+    /**
+     * 获取联网搜索 provider 连续失败熔断阈值。
+     * @return 连续失败阈值。
+     */
+    public int webSearchFailureThreshold() {
+        return getInt("web_search.failure_threshold", 2);
+    }
+
+    /**
+     * 获取联网搜索 provider 熔断打开时长毫秒。
+     * @return 熔断打开时长。
+     */
+    public long webSearchOpenDurationMs() {
+        return getLong("web_search.open_duration_ms", 30_000L);
+    }
+
+    /**
      * 获取联网搜索最大候选数。
      * @return 最大候选数。
      */
@@ -548,6 +624,33 @@ public class RuntimeSettingService {
             return configCryptoService.decrypt(setting.getEncryptedValue());
         }
         return setting.getSettingValue();
+    }
+
+    /**
+     * 读取可选敏感配置；provider 级密钥槽位允许暂未填写，此时返回回退值以便搜索链路跳过该 provider。
+     * @param key 配置键。
+     * @param fallback 回退值。
+     * @return 配置值。
+     */
+    private String optionalSecretString(String key, String fallback) {
+        ChatRuntimeSetting setting = cache.get(key);
+        if (setting == null) {
+            return fallback;
+        }
+        if (Boolean.TRUE.equals(setting.getSecret()) && StrUtil.isBlank(setting.getEncryptedValue())) {
+            return fallback;
+        }
+        String raw = rawValue(key);
+        return StrUtil.isBlank(raw) ? fallback : raw.trim();
+    }
+
+    /**
+     * 归一化 provider 编码，避免大小写与空白导致 provider 级配置读取失败。
+     * @param provider provider 编码。
+     * @return 小写 provider 编码。
+     */
+    private String normalizeProvider(String provider) {
+        return StrUtil.blankToDefault(provider, "").trim().toLowerCase(Locale.ROOT);
     }
 
     /**

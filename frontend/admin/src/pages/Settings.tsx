@@ -349,7 +349,7 @@ function inputTypeByValueType(valueType?: string): React.HTMLInputTypeAttribute 
   }
 
   return (
-    <div className="w-full space-y-md p-lg">
+    <div className="admin-settings-page w-full space-y-md p-lg">
       <div className="flex flex-col gap-md xl:flex-row xl:items-end xl:justify-between">
         <div>
           <Typography.Title level={2} style={{ margin: 0 }}>系统配置</Typography.Title>
@@ -460,7 +460,7 @@ function CardModeView({
   inputTypeByValueType,
 }: CardModeViewProps) {
   return (
-    <section className="space-y-md">
+    <section className="admin-settings-card-view space-y-md" data-testid="settings-card-view">
       {categories.map((category) => {
         const expanded = expandedCategories[category.categoryCode] ?? true;
         const modified = category.settings.filter((setting) => modifiedSettingKeys.has(setting.settingKey)).length;
@@ -471,7 +471,7 @@ function CardModeView({
           <div key={category.categoryCode} className="rounded-2xl border border-border-hairline bg-surface-container-lowest shadow-sm">
             <Button
               block
-              className="h-auto justify-between px-lg py-md text-left"
+              className="admin-settings-category-toggle h-auto px-lg py-md text-left"
               icon={<DownOutlined rotate={expanded ? 0 : -90} />}
               iconPosition="end"
               onClick={() => onToggleCategory(category.categoryCode)}
@@ -485,7 +485,10 @@ function CardModeView({
               </div>
             </Button>
             {expanded ? (
-              <div className="grid gap-sm border-t border-border-hairline p-md md:grid-cols-2">
+              <div
+                className="admin-settings-field-grid border-t border-border-hairline p-md"
+                data-testid={`settings-category-grid-${category.categoryCode}`}
+              >
                 {candidateSlots.length > 0 ? (
                   <CandidateTableEditor
                     settings={category.settings}
@@ -506,7 +509,7 @@ function CardModeView({
                     <div
                       key={setting.settingKey}
                       className={clsx(
-                        'rounded-xl border px-md py-sm transition-colors',
+                        'admin-settings-field-card rounded-xl border px-md py-sm transition-colors',
                         modified
                           ? 'border-status-pending-border bg-status-pending-bg/40'
                           : 'border-border-hairline bg-surface-container-low',
@@ -563,8 +566,14 @@ function NavigatorModeView({
   const candidateSlots = activeCategory.categoryCode === 'ai.candidates' ? summarizeCandidateSlots(activeCategory.settings) : [];
   const providerRows = activeCategory.categoryCode === 'ai.providers' ? buildProviderRows(activeCategory.settings) : [];
   return (
-    <section className="grid gap-md xl:grid-cols-[280px_minmax(0,1fr)]">
-      <aside className="rounded-2xl border border-border-hairline bg-surface-container-lowest p-sm shadow-sm">
+    <section
+      className="admin-settings-navigator grid gap-md xl:grid-cols-[320px_minmax(0,1fr)] 2xl:grid-cols-[340px_minmax(0,1fr)]"
+      data-testid="settings-navigator-layout"
+    >
+      <aside
+        className="admin-settings-category-nav rounded-2xl border border-border-hairline bg-surface-container-lowest p-sm shadow-sm"
+        data-testid="settings-category-nav"
+      >
         <p className="px-sm py-xs text-[12px] text-secondary">配置分类</p>
         <div className="space-y-1">
           {categories.map((category) => {
@@ -576,11 +585,11 @@ function NavigatorModeView({
                 key={category.categoryCode}
                 onClick={() => onSelectCategory(category.categoryCode)}
                 type={selected ? 'primary' : 'default'}
-                className="h-auto justify-start px-sm py-sm text-left"
+                className="admin-settings-category-button h-auto px-sm py-sm text-left"
               >
-                <span>
-                  <span className="block font-medium">{category.categoryLabel}</span>
-                  <span className="mt-1 block text-[11px]">
+                <span className="admin-settings-category-button-content">
+                  <span className="admin-settings-category-label">{category.categoryLabel}</span>
+                  <span className="admin-settings-category-count">
                     {summary?.total ?? category.settings.length} 项
                     {summary && summary.modified > 0 ? ` · 改动 ${summary.modified}` : ''}
                   </span>
@@ -591,12 +600,12 @@ function NavigatorModeView({
         </div>
       </aside>
 
-      <div className="rounded-2xl border border-border-hairline bg-surface-container-lowest shadow-sm">
+      <div className="admin-settings-detail-panel rounded-2xl border border-border-hairline bg-surface-container-lowest shadow-sm">
         <div className="border-b border-border-hairline px-lg py-md">
           <h3 className="font-title-md text-title-md text-ink">{activeCategory.categoryLabel}</h3>
           <p className="mt-1 text-[12px] text-secondary">{activeCategory.categoryCode}</p>
         </div>
-        <div className="grid gap-sm p-md md:grid-cols-2">
+        <div className="admin-settings-field-grid p-md" data-testid="settings-active-field-grid">
           {candidateSlots.length > 0 ? (
             <CandidateTableEditor
               settings={activeCategory.settings}
@@ -617,7 +626,7 @@ function NavigatorModeView({
               <div
                 key={setting.settingKey}
                 className={clsx(
-                  'rounded-xl border px-md py-sm transition-colors',
+                  'admin-settings-field-card rounded-xl border px-md py-sm transition-colors',
                   modified
                     ? 'border-status-pending-border bg-status-pending-bg/40'
                     : 'border-border-hairline bg-surface-container-low',
@@ -677,7 +686,7 @@ function CandidateTableEditor({
     { title: '视觉', width: 120, render: (_, row) => <StructuredBooleanInput setting={row.supportsVisionSetting} onChangeSettingValue={onChangeSettingValue} /> },
   ];
   return (
-    <div className="md:col-span-2 rounded-xl border border-dashed border-border-hairline bg-surface-container-low p-md">
+    <div className="admin-settings-table-editor rounded-xl border border-dashed border-border-hairline bg-surface-container-low p-md">
       <div className="mb-3 flex items-center justify-between gap-sm">
         <div>
           <p className="text-[12px] font-medium text-ink">候选模型表格编辑</p>
@@ -728,7 +737,7 @@ function ProviderTableEditor({
     { title: 'API Key', width: 260, render: (_, row) => <StructuredSettingInput setting={row.apiKeySetting} onChangeSettingValue={onChangeSettingValue} /> },
   ];
   return (
-    <div className="md:col-span-2 rounded-xl border border-dashed border-border-hairline bg-surface-container-low p-md">
+    <div className="admin-settings-table-editor rounded-xl border border-dashed border-border-hairline bg-surface-container-low p-md">
       <div className="mb-3 flex items-center justify-between gap-sm">
         <div>
           <p className="text-[12px] font-medium text-ink">AI 提供商表格编辑</p>

@@ -282,6 +282,421 @@ const adminAntdThemeOverrideCss = `
     color: var(--theme-ink) !important;
   }
 
+  /* 意图树左侧使用 AntD Tree/Button，但由页面级行布局接管宽度、选中态和对齐，避免组件默认居中规则互相叠加。 */
+  .admin-intent-tree-scroll {
+    scrollbar-gutter: stable;
+    scrollbar-width: thin;
+    scrollbar-color: var(--theme-scrollbar-thumb) var(--theme-scrollbar-track);
+  }
+
+  .admin-intent-tree-scroll::-webkit-scrollbar {
+    height: 10px;
+    width: 10px;
+  }
+
+  .admin-intent-tree-scroll::-webkit-scrollbar-track {
+    background: var(--theme-scrollbar-track);
+  }
+
+  .admin-intent-tree-scroll::-webkit-scrollbar-thumb {
+    background: var(--theme-scrollbar-thumb);
+    border: 2px solid var(--theme-scrollbar-track);
+    border-radius: 999px;
+  }
+
+  .admin-intent-tree-scroll::-webkit-scrollbar-thumb:hover {
+    background: var(--theme-scrollbar-thumb-hover);
+  }
+
+  .admin-intent-tree.ant-tree {
+    background: transparent !important;
+    color: var(--theme-ink) !important;
+  }
+
+  .admin-intent-tree .ant-tree-list-holder-inner {
+    gap: 6px;
+  }
+
+  .admin-intent-tree .ant-tree-treenode {
+    align-items: stretch;
+    display: flex;
+    padding: 0 !important;
+    width: 100%;
+  }
+
+  .admin-intent-tree .ant-tree-indent {
+    align-self: stretch;
+    display: inline-flex;
+    flex: 0 0 auto;
+    min-height: 48px;
+  }
+
+  .admin-intent-tree .ant-tree-indent-unit {
+    width: 14px;
+  }
+
+  .admin-intent-tree .ant-tree-switcher {
+    display: none !important;
+    min-width: 0 !important;
+    width: 0 !important;
+  }
+
+  .admin-intent-tree .ant-tree-node-content-wrapper {
+    background: transparent !important;
+    border-radius: 10px;
+    flex: 1 1 auto;
+    height: auto;
+    line-height: normal;
+    min-width: 0;
+    padding: 0 !important;
+  }
+
+  .admin-intent-tree .ant-tree-node-content-wrapper:hover,
+  .admin-intent-tree .ant-tree-node-content-wrapper.ant-tree-node-selected {
+    background: transparent !important;
+  }
+
+  .admin-intent-tree .ant-tree-title {
+    display: block;
+    min-width: 0;
+    width: 100%;
+  }
+
+  .admin-intent-tree-row {
+    align-items: center;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 10px;
+    color: var(--theme-ink);
+    display: grid;
+    gap: 8px;
+    grid-template-columns: 30px minmax(0, 1fr) max-content;
+    min-height: 48px;
+    padding: 6px 8px;
+    transition: background-color 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+    width: 100%;
+  }
+
+  .admin-intent-tree-row:hover {
+    background: var(--theme-surface-container-low);
+    border-color: var(--theme-border-hairline);
+  }
+
+  .admin-intent-tree-row-selected {
+    background: var(--theme-surface-container);
+    border-color: var(--theme-border-strong);
+    box-shadow: inset 3px 0 0 var(--theme-primary);
+  }
+
+  .admin-intent-tree-toggle.ant-btn {
+    align-items: center !important;
+    background: transparent !important;
+    border: 0 !important;
+    color: var(--theme-secondary) !important;
+    display: inline-flex !important;
+    height: 28px;
+    justify-content: center !important;
+    min-width: 28px;
+    padding: 0 !important;
+    width: 28px;
+  }
+
+  .admin-intent-tree-toggle.ant-btn:hover {
+    background: var(--theme-surface-container-lowest) !important;
+    color: var(--theme-ink) !important;
+  }
+
+  .admin-intent-tree-toggle-placeholder {
+    display: block;
+    height: 28px;
+    width: 28px;
+  }
+
+  .admin-intent-tree-select.ant-btn {
+    align-items: center !important;
+    background: transparent !important;
+    border: 0 !important;
+    box-shadow: none !important;
+    color: inherit !important;
+    display: flex !important;
+    height: auto;
+    justify-content: flex-start !important;
+    min-width: 0;
+    padding: 0 !important;
+    text-align: left;
+    width: 100%;
+  }
+
+  .admin-intent-tree-select.ant-btn > span:not(.ant-btn-icon) {
+    display: block;
+    min-width: 0;
+    width: 100%;
+  }
+
+  .admin-intent-tree-label,
+  .admin-intent-cascade-label {
+    display: block;
+    line-height: 1.25;
+    min-width: 0;
+    text-align: left;
+    width: 100%;
+  }
+
+  .admin-intent-tree-name,
+  .admin-intent-cascade-name {
+    color: var(--theme-ink);
+    display: block;
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .admin-intent-tree-code,
+  .admin-intent-cascade-code {
+    color: var(--theme-secondary);
+    display: block;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    margin-top: 2px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .admin-intent-tree-badges,
+  .admin-intent-cascade-badges {
+    align-items: center;
+    display: flex;
+    flex: 0 0 auto;
+    flex-wrap: wrap;
+    gap: 4px;
+    justify-content: flex-end;
+    min-width: 0;
+  }
+
+  .admin-intent-cascade {
+    align-items: flex-start;
+  }
+
+  .admin-intent-cascade-column {
+    display: flex;
+    flex: 1 0 200px;
+    flex-direction: column;
+    max-width: 250px;
+    min-width: 200px;
+    overflow: hidden;
+  }
+
+  .admin-intent-cascade-column-header {
+    background: var(--theme-surface-container-lowest);
+    flex: 0 0 auto;
+  }
+
+  .admin-intent-cascade-column-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: visible;
+    scrollbar-width: thin;
+    scrollbar-color: var(--theme-scrollbar-thumb) var(--theme-scrollbar-track);
+  }
+
+  .admin-intent-cascade-column-body::-webkit-scrollbar {
+    width: 10px;
+  }
+
+  .admin-intent-cascade-column-body::-webkit-scrollbar-track {
+    background: var(--theme-scrollbar-track);
+  }
+
+  .admin-intent-cascade-column-body::-webkit-scrollbar-thumb {
+    background: var(--theme-scrollbar-thumb);
+    border: 2px solid var(--theme-scrollbar-track);
+    border-radius: 999px;
+  }
+
+  .admin-intent-cascade-item.ant-btn {
+    align-items: center !important;
+    background: transparent !important;
+    border: 1px solid transparent !important;
+    border-radius: 10px;
+    box-shadow: none !important;
+    color: var(--theme-secondary) !important;
+    display: flex !important;
+    height: auto;
+    justify-content: flex-start !important;
+    min-height: 76px;
+    padding: 8px 10px !important;
+    text-align: left;
+    white-space: normal;
+    width: 100%;
+  }
+
+  .admin-intent-cascade-item.ant-btn:hover {
+    background: var(--theme-surface-container-lowest) !important;
+    border-color: var(--theme-border-hairline) !important;
+    color: var(--theme-ink) !important;
+  }
+
+  .admin-intent-cascade-item.ant-btn > span:not(.ant-btn-icon) {
+    display: block;
+    min-width: 0;
+    width: 100%;
+  }
+
+  .admin-intent-cascade-item-selected.ant-btn {
+    background: var(--theme-surface-container) !important;
+    border-color: var(--theme-border-strong) !important;
+    color: var(--theme-ink) !important;
+    box-shadow: inset 3px 0 0 var(--theme-primary) !important;
+  }
+
+  .admin-intent-cascade-item-path.ant-btn {
+    background: var(--theme-surface-container-lowest) !important;
+    border-color: var(--theme-border-hairline) !important;
+    color: var(--theme-ink) !important;
+  }
+
+  .admin-intent-cascade-row {
+    align-items: center;
+    display: grid;
+    gap: 6px;
+    grid-template-columns: minmax(0, 1fr);
+    min-width: 0;
+    width: 100%;
+  }
+
+  .admin-intent-cascade-badges {
+    justify-content: flex-start;
+  }
+
+  @media (max-width: 640px) {
+    .admin-intent-tree-row {
+      grid-template-columns: 30px minmax(0, 1fr);
+    }
+
+    .admin-intent-tree-badges {
+      grid-column: 2;
+      justify-content: flex-start;
+    }
+
+    .admin-intent-cascade-badges {
+      grid-column: 1;
+    }
+  }
+
+  /* 系统配置页在宽屏下需要把配置项铺满主内容区，避免 AntD Button 默认居中和半宽网格造成内容过窄。 */
+  .admin-settings-navigator,
+  .admin-settings-detail-panel,
+  .admin-settings-category-nav {
+    min-width: 0;
+  }
+
+  .admin-settings-category-button.ant-btn,
+  .admin-settings-category-toggle.ant-btn {
+    align-items: center !important;
+    display: flex !important;
+    height: auto;
+    justify-content: space-between !important;
+    min-width: 0;
+    text-align: left;
+    white-space: normal;
+    width: 100%;
+  }
+
+  .admin-settings-category-button.ant-btn {
+    min-height: 52px;
+  }
+
+  .admin-settings-category-toggle.ant-btn {
+    min-height: 64px;
+    padding: 14px 18px !important;
+  }
+
+  .admin-settings-category-toggle.ant-btn p {
+    margin: 0;
+  }
+
+  .admin-settings-category-button.ant-btn > span:not(.ant-btn-icon),
+  .admin-settings-category-toggle.ant-btn > span:not(.ant-btn-icon) {
+    display: block;
+    flex: 1 1 auto;
+    min-width: 0;
+    width: 100%;
+  }
+
+  .admin-settings-category-toggle.ant-btn .ant-btn-icon {
+    color: var(--theme-secondary);
+    flex: 0 0 auto;
+    margin-inline-start: 16px;
+  }
+
+  .admin-settings-category-button-content {
+    align-items: center;
+    display: grid;
+    gap: 8px;
+    grid-template-columns: minmax(0, 1fr) max-content;
+    min-width: 0;
+    width: 100%;
+  }
+
+  .admin-settings-category-label {
+    display: block;
+    font-weight: 600;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .admin-settings-category-count {
+    color: var(--theme-secondary);
+    display: block;
+    font-size: 11px;
+    white-space: nowrap;
+  }
+
+  .admin-settings-category-button.ant-btn-primary .admin-settings-category-count {
+    color: var(--theme-on-primary);
+    opacity: 0.78;
+  }
+
+  .admin-settings-field-grid {
+    display: grid;
+    gap: 12px;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr));
+    width: 100%;
+  }
+
+  .admin-settings-field-card {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .admin-settings-table-editor {
+    grid-column: 1 / -1;
+    min-width: 0;
+    overflow: hidden;
+    width: 100%;
+  }
+
+  @media (min-width: 1536px) {
+    .admin-settings-field-grid {
+      grid-template-columns: repeat(auto-fit, minmax(min(100%, 520px), 1fr));
+    }
+  }
+
+  @media (max-width: 768px) {
+    .admin-settings-category-button-content {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 2px;
+    }
+
+    .admin-settings-category-count {
+      white-space: normal;
+    }
+  }
+
   .ant-pagination,
   .ant-pagination .ant-pagination-total-text,
   .ant-pagination .ant-pagination-item a {

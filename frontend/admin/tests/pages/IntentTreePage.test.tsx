@@ -93,6 +93,12 @@ describe('IntentTreePage', () => {
     expect(within(treePanel).getByText('企业知识')).toBeInTheDocument();
     expect(within(treePanel).getByText('DOMAIN')).toBeInTheDocument();
     expect(within(treePanel).getByText('SEARCH')).toBeInTheDocument();
+    expect(within(treePanel).getByTestId('intent-tree-node-biz-root')).toHaveClass(
+      'admin-intent-tree-row-selected',
+    );
+    expect(within(treePanel).getByRole('button', { name: '选择节点 企业知识' })).toHaveClass(
+      'admin-intent-tree-select',
+    );
     expect(within(detailPanel).getByText('ROOT')).toBeInTheDocument();
     expect(within(detailPanel).getByText('corp_docs')).toBeInTheDocument();
     expect(within(detailPanel).getByText('企业有哪些报销制度？')).toBeInTheDocument();
@@ -150,6 +156,12 @@ describe('IntentTreePage', () => {
     fireEvent.click(within(treePanel).getByRole('button', { name: '分栏级联' }));
 
     expect(within(treePanel).getByTestId('intent-cascade-columns')).toBeInTheDocument();
+    expect(within(treePanel).getByTestId('intent-cascade-column-0')).toHaveClass(
+      'admin-intent-cascade-column',
+    );
+    expect(within(treePanel).getByRole('button', { name: '级联选择 企业知识' })).toHaveClass(
+      'admin-intent-cascade-item',
+    );
     expect(within(treePanel).queryByRole('button', { name: '收起 企业知识' })).not.toBeInTheDocument();
 
     fireEvent.click(within(treePanel).getByRole('button', { name: '级联选择 报销制度' }));

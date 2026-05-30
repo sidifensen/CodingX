@@ -184,6 +184,19 @@ describe('Settings page', () => {
 
     await screen.findByRole('heading', { name: '系统配置' });
     expect(screen.getByText('聊天执行器')).toBeInTheDocument();
+    expect(screen.getByTestId('settings-navigator-layout')).toHaveClass('admin-settings-navigator');
+
+    const searchCategoryButton = screen.getByRole('button', { name: /搜索链路/ });
+    expect(searchCategoryButton).toHaveClass('admin-settings-category-button');
+    fireEvent.click(searchCategoryButton);
+
+    expect(screen.getByTestId('settings-active-field-grid')).toHaveClass('admin-settings-field-grid');
+    expect(screen.getByTestId('setting-value-search.top_k').closest('.admin-settings-field-card')).not.toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: '分组卡片' }));
+    expect(screen.getByTestId('settings-card-view')).toHaveClass('admin-settings-card-view');
+    expect(screen.getByRole('button', { name: /模型候选池/ })).toHaveClass('admin-settings-category-toggle');
+    expect(screen.getByTestId('settings-category-grid-search')).toHaveClass('admin-settings-field-grid');
 
     fireEvent.click(screen.getByRole('button', { name: '紧凑表格' }));
 

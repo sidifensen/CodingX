@@ -417,6 +417,7 @@ export function IntentTreePage() {
             data-testid="intent-tree-list-scroll"
             className={[
               'p-md xl:flex-1 xl:min-h-0 xl:overflow-y-auto',
+              'admin-intent-tree-scroll',
               treeViewMode === 'tree' ? 'space-y-xs' : '',
             ].join(' ')}
           >
@@ -541,7 +542,6 @@ function IntentAntdTree({ nodes, selectedCode, expandedMap, onToggle, onExpand, 
       expandedKeys={expandedKeys}
       key={expandedKeys.join('|') || 'intent-tree-collapsed'}
       selectedKeys={selectedCode ? [selectedCode] : []}
-      showLine
       switcherIcon={<DownOutlined />}
       treeData={treeData}
       titleRender={(treeNode) => {
@@ -549,11 +549,20 @@ function IntentAntdTree({ nodes, selectedCode, expandedMap, onToggle, onExpand, 
         const children = node.children ?? [];
         const hasChildren = children.length > 0;
         const isExpanded = expandedMap[node.intentCode] ?? true;
+        const isSelected = selectedCode === node.intentCode;
         return (
-          <div className="flex min-w-0 items-center gap-xs">
+          <div
+            data-testid={`intent-tree-node-${node.intentCode}`}
+            className={[
+              'admin-intent-tree-row',
+              hasChildren ? 'admin-intent-tree-row-branch' : 'admin-intent-tree-row-leaf',
+              isSelected ? 'admin-intent-tree-row-selected' : '',
+            ].join(' ')}
+          >
             {hasChildren ? (
               <Button
                 aria-label={`${isExpanded ? '收起' : '展开'} ${node.name}`}
+                className="admin-intent-tree-toggle"
                 icon={<DownOutlined rotate={isExpanded ? 0 : -90} />}
                 size="small"
                 type="text"
@@ -563,26 +572,26 @@ function IntentAntdTree({ nodes, selectedCode, expandedMap, onToggle, onExpand, 
                 }}
               />
             ) : (
-              <span className="inline-block h-6 w-6 shrink-0" />
+              <span className="admin-intent-tree-toggle-placeholder" />
             )}
             <Button
               aria-label={`选择节点 ${node.name}`}
-              className="min-w-0 flex-1 justify-start px-xs"
+              className="admin-intent-tree-select"
               type="text"
               onClick={(event) => {
                 event.stopPropagation();
                 onSelect(node.intentCode);
               }}
             >
-              <span className="min-w-0 text-left">
-                <span className="block truncate font-medium text-ink">{node.name}</span>
-                <span className="mt-0.5 block truncate font-data-mono text-[11px] text-secondary">{node.intentCode}</span>
+              <span className="admin-intent-tree-label">
+                <span className="admin-intent-tree-name">{node.name}</span>
+                <span className="admin-intent-tree-code">{node.intentCode}</span>
               </span>
             </Button>
-            <Space className="shrink-0" size={4} wrap>
+            <div className="admin-intent-tree-badges">
               <IntentBadge>{resolveLevelLabel(node.level)}</IntentBadge>
               <IntentBadge tone={resolveKind(node) === 2 ? 'strong' : 'soft'}>{resolveKindLabel(resolveKind(node))}</IntentBadge>
-            </Space>
+            </div>
           </div>
         );
       }}
@@ -635,18 +644,22 @@ function IntentCascadeColumns({
   onSelect,
 }: IntentCascadeColumnsProps) {
   return (
-    <div data-testid="intent-cascade-columns" className="flex h-full min-h-0 gap-sm overflow-x-auto pb-xs">
+    <div
+      data-testid="intent-cascade-columns"
+      className="admin-intent-cascade admin-intent-tree-scroll flex items-start gap-sm overflow-x-auto pb-xs"
+    >
       {columns.map((column, columnIndex) => (
         <div
           key={`cascade-column-${columnIndex}`}
-          className="min-w-[220px] flex-1 rounded-xl border border-border-hairline bg-surface-container-low"
+          data-testid={`intent-cascade-column-${columnIndex}`}
+          className="admin-intent-cascade-column min-w-[200px] flex-1 rounded-xl border border-border-hairline bg-surface-container-low"
         >
-          <div className="border-b border-border-hairline px-sm py-xs">
+          <div className="admin-intent-cascade-column-header border-b border-border-hairline px-sm py-xs">
             <p className="text-[12px] font-medium text-secondary">
               {columnIndex === 0 ? 'ROOT' : `第 ${columnIndex + 1} 级`}
             </p>
           </div>
-          <div className="space-y-xs p-sm">
+          <div className="admin-intent-cascade-column-body space-y-xs p-sm">
             {column.map((node) => {
               const isSelected = selectedCode === node.intentCode;
               const inPath = selectedPathCodes.has(node.intentCode);
@@ -656,23 +669,24 @@ function IntentCascadeColumns({
                   aria-label={`级联选择 ${node.name}`}
                   block
                   className={[
-                    'h-auto w-full rounded-lg border px-sm py-sm text-left transition-colors',
+                    'admin-intent-cascade-item',
                     isSelected
-                      ? 'border-border-strong bg-surface-container text-ink shadow-sm'
+                      ? 'admin-intent-cascade-item-selected'
                       : inPath
-                        ? 'border-border-hairline bg-surface-container-lowest text-ink'
-                        : 'border-transparent text-secondary hover:bg-surface-container-lowest hover:text-ink',
+                        ? 'admin-intent-cascade-item-path'
+                        : '',
                   ].join(' ')}
+                  type="text"
                   onClick={() => onSelect(node.intentCode)}
                 >
-                  <div className="flex items-start justify-between gap-xs">
-                    <div className="min-w-0">
-                      <span className="block truncate font-medium text-ink">{node.name}</span>
-                      <span className="mt-0.5 block truncate font-data-mono text-[11px] text-secondary">
+                  <div className="admin-intent-cascade-row">
+                    <div className="admin-intent-cascade-label">
+                      <span className="admin-intent-cascade-name">{node.name}</span>
+                      <span className="admin-intent-cascade-code">
                         {node.intentCode}
                       </span>
                     </div>
-                    <div className="flex shrink-0 flex-wrap justify-end gap-xs">
+                    <div className="admin-intent-cascade-badges">
                       <IntentBadge>{resolveLevelLabel(node.level)}</IntentBadge>
                       <IntentBadge tone={resolveKind(node) === 2 ? 'strong' : 'soft'}>
                         {resolveKindLabel(resolveKind(node))}

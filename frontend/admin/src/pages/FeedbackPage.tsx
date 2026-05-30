@@ -13,6 +13,7 @@ export function FeedbackPage() {
   const [pageNo, setPageNo] = React.useState(1);
   const [keywordInput, setKeywordInput] = React.useState('');
   const [keyword, setKeyword] = React.useState('');
+  const [voteFilterInput, setVoteFilterInput] = React.useState<0 | 1 | -1>(0);
   const [voteFilter, setVoteFilter] = React.useState<0 | 1 | -1>(0);
   const [loading, setLoading] = React.useState(false);
   const [errorMessage, setErrorMessage] = React.useState('');
@@ -45,13 +46,13 @@ export function FeedbackPage() {
   }, [loadData, pageNo]);
 
   const records = pageData?.records ?? [];
-  const total = pageData?.total ?? 0;
-  const current = pageData?.current ?? pageNo;
-  const pages = pageData?.pages ?? Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const paginationState = normalizeFeedbackPagination(pageData, records.length, PAGE_SIZE, pageNo);
+  const { current, pages, pageSize, total } = paginationState;
 
   const handleFilter = () => {
     setPageNo(1);
     setKeyword(keywordInput.trim());
+    setVoteFilter(voteFilterInput);
   };
 
   const columns: TableProps<AdminChatMessageFeedback>['columns'] = [
@@ -147,8 +148,8 @@ export function FeedbackPage() {
                 { label: '仅点踩', value: -1 },
               ]}
               style={{ width: 140 }}
-              value={voteFilter}
-              onChange={(value) => setVoteFilter(value as 0 | 1 | -1)}
+              value={voteFilterInput}
+              onChange={(value) => setVoteFilterInput(value as 0 | 1 | -1)}
             />
           </Form.Item>
           <Form.Item>
@@ -176,7 +177,7 @@ export function FeedbackPage() {
         locale={{ emptyText: loading ? '加载中...' : '暂无反馈记录' }}
         pagination={{
           current,
-          pageSize: PAGE_SIZE,
+          pageSize,
           showSizeChanger: false,
           showTotal: () => `第 ${current} / ${Math.max(1, pages)} 页，共 ${total.toLocaleString('zh-CN')} 条`,
           total,
@@ -215,4 +216,47 @@ function extractErrorMessage(error: unknown, fallback: string): string {
     return error.message || fallback;
   }
   return fallback;
+}
+
+function normalizeFeedbackPagination(
+  pageData: AdminPageResult<AdminChatMessageFeedback> | null,
+  recordCount: number,
+  fallbackSize: number,
+  fallbackCurrent: number,
+): { current: number; pages: number; pageSize: number; total: number } {
+  if (!pageData) {
+    return { current: fallbackCurrent, pages: 1, pageSize: fallbackSize, total: 0 };
+  }
+  const rawTotal = Number(pageData.total);
+  const rawPages = Number(pageData.pages);
+  const rawSize = Number(pageData.size);
+  const rawCurrent = Number(pageData.current);
+  const safeSize = Number.isFinite(rawSize) && rawSize > 0 ? rawSize : fallbackSize;
+
+  /**
+   * 部分历史/降级接口会返回 records，但 total/pages 都是 0；此时按“一页完整数据”
+   * 展示，避免 AntD 根据 dataSource 长度在前端拆出并不存在的第 2 页。
+   */
+  if (recordCount > 0 && (!Number.isFinite(rawTotal) || rawTotal <= 0) && (!Number.isFinite(rawPages) || rawPages <= 0)) {
+    return {
+      current: 1,
+      pages: 1,
+      pageSize: Math.max(safeSize, recordCount),
+      total: recordCount,
+    };
+  }
+
+  const total = Number.isFinite(rawTotal) && rawTotal >= 0 ? rawTotal : recordCount;
+  const pageSize = safeSize;
+  const pages = Number.isFinite(rawPages) && rawPages > 0
+    ? rawPages
+    : Math.max(1, Math.ceil(Math.max(total, recordCount) / Math.max(1, pageSize)));
+  // 后端分页结果可能在筛选收窄后短暂返回越界页码，展示层统一夹到有效范围。
+  const current = Math.min(Math.max(1, Number.isFinite(rawCurrent) ? rawCurrent : fallbackCurrent), Math.max(1, pages));
+  return {
+    current,
+    pages,
+    pageSize,
+    total,
+  };
 }

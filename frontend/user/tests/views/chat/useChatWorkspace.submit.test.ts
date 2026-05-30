@@ -799,6 +799,123 @@ describe('useChatWorkspace submit behavior', () => {
   });
 
   /**
+   * 浏览器刷新会中断当前页面的 SSE 连接，但后端任务仍在运行；此时不能把本地半截回答标记为用户停止。
+   */
+  it('刷新页面时应只脱离本地流并保留后台运行快照', async () => {
+    const readQueue: Array<{
+      resolve: (value: ReadableStreamReadResult<Uint8Array>) => void;
+      reject: (reason?: unknown) => void;
+    }> = [];
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === '/api/chat/conversations') {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (
+        url === '/api/chat/sample-questions' ||
+        url === '/api/chat/experts' ||
+        url === '/api/chat/skills' ||
+        url === '/api/chat/mcps'
+      ) {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (url.includes('/api/chat/stream')) {
+        return {
+          ok: true,
+          status: 200,
+          body: {
+            getReader: () => ({
+              read: vi.fn(
+                () =>
+                  new Promise<ReadableStreamReadResult<Uint8Array>>((resolve, reject) => {
+                    readQueue.push({ resolve, reject });
+                  }),
+              ),
+            }),
+          },
+        } as unknown as Response;
+      }
+      throw new Error(`Unhandled fetch in refresh detach stream test: ${url}`);
+    });
+
+    const { result } = renderHook(() => useChatWorkspace(true));
+    await waitFor(() => {
+      expect(result.current.isBootstrapping).toBe(false);
+    });
+
+    await act(async () => {
+      result.current.setInputValue('请持续输出一段内容');
+    });
+    const submitPromise = result.current.submitMessage();
+    await waitFor(() => {
+      expect(readQueue.length).toBeGreaterThan(0);
+    });
+
+    await act(async () => {
+      readQueue.shift()?.resolve({
+        done: false,
+        value: new TextEncoder().encode(
+          'event:meta\ndata:{"conversationId":"2001","taskId":"9001"}\n\n',
+        ),
+      });
+    });
+    await waitFor(() => {
+      expect(result.current.activeConversationId).toBe('2001');
+    });
+
+    await act(async () => {
+      readQueue.shift()?.resolve({
+        done: false,
+        value: new TextEncoder().encode(
+          'event:message\ndata:{"type":"response","delta":"刷新前输出"}\n\n',
+        ),
+      });
+    });
+    await waitFor(() => {
+      expect(result.current.messages.find((message) => message.role === 'ASSISTANT')?.content)
+        .toBe('刷新前输出');
+    });
+
+    window.dispatchEvent(new Event('pagehide'));
+    await act(async () => {
+      readQueue.shift()?.reject(new DOMException('Aborted', 'AbortError'));
+    });
+    await act(async () => {
+      await submitPromise;
+    });
+
+    const assistantMessage = result.current.messages.find((message) => message.role === 'ASSISTANT');
+    expect(result.current.streamError).not.toBe('已停止当前生成');
+    expect(assistantMessage).toEqual(
+      expect.objectContaining({
+        content: '刷新前输出',
+        status: 'streaming',
+      }),
+    );
+    const persistedStore = JSON.parse(
+      window.localStorage.getItem('codingx.chat.workspace.conversations.v1') ?? '{}',
+    );
+    const persistedMessages =
+      persistedStore.snapshots?.['cloud::__no_workspace__']?.conversationRecords?.['2001']
+        ?.messages ?? [];
+    expect(persistedMessages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          content: '刷新前输出',
+          status: 'streaming',
+        }),
+      ]),
+    );
+  });
+
+  /**
    * 新会话流式 meta 创建的本地侧栏条目也必须携带运行态；否则离开后点回只会静态回放，无法续接后台输出。
    */
   it('重新打开由流式 meta 创建的运行中会话时应续接会话流', async () => {

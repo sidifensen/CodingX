@@ -541,12 +541,31 @@ export function useChatWorkspace(
   const streamSessionSeedRef = useRef(0);
   const activeStreamSessionIdRef = useRef<number | null>(null);
   const finishedStreamSessionIdsRef = useRef<Set<number>>(new Set());
+  const detachedStreamSessionIdsRef = useRef<Set<number>>(new Set());
   const submitLockSeedRef = useRef(0);
   const submitMessageInFlightRef = useRef<number | null>(null);
   const streamQueueTimerRef = useRef<number | null>(null);
   const skipNextRuntimeSyncRef = useRef(false);
+  const activeRuntimeTargetRef = useRef(activeRuntimeTarget);
+  const workspacePathRef = useRef(workspacePath);
+  const conversationsRef = useRef<ConversationItem[]>([]);
   const messagesRef = useRef<ChatMessageItem[]>([]);
+  const executionStepsRef = useRef<ExecutionStepItem[]>([]);
+  const referencesRef = useRef<ReferenceItem[]>([]);
+  const artifactsRef = useRef<ArtifactItem[]>([]);
+  const currentExpertsRef = useRef<CurrentExpertItem[]>([]);
+  const currentSkillsRef = useRef<CurrentSkillItem[]>([]);
+  const currentMcpsRef = useRef<CurrentMcpItem[]>([]);
+  activeRuntimeTargetRef.current = activeRuntimeTarget;
+  workspacePathRef.current = workspacePath;
+  conversationsRef.current = conversations;
   messagesRef.current = messages;
+  executionStepsRef.current = executionSteps;
+  referencesRef.current = references;
+  artifactsRef.current = artifacts;
+  currentExpertsRef.current = currentExperts;
+  currentSkillsRef.current = currentSkills;
+  currentMcpsRef.current = currentMcps;
 
   /**
    * 保护正在流式生成的助手消息，避免慢回放或列表刷新用旧消息快照覆盖实时输出。
@@ -743,6 +762,8 @@ export function useChatWorkspace(
    * 关键约束：旧流后续迟到事件必须被会话编号拦截，不能再覆盖新打开的会话主区或 URL。
    */
   const detachActiveStreamSubscription = () => {
+    markActiveStreamDetached();
+    persistActiveStreamSnapshot();
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
     }
@@ -843,6 +864,49 @@ export function useChatWorkspace(
     activeStreamSessionIdRef.current === streamSessionId;
 
   /**
+   * 标记当前流只是本地页面脱离，用于区分刷新/切换与用户显式停止生成。
+   */
+  const markActiveStreamDetached = () => {
+    const streamSessionId = activeStreamSessionIdRef.current;
+    if (streamSessionId == null) {
+      return;
+    }
+    detachedStreamSessionIdsRef.current.add(streamSessionId);
+  };
+
+  /**
+   * 刷新或卸载前同步保存当前半截输出，确保新页面能按真实会话继续恢复后台任务。
+   */
+  function persistActiveStreamSnapshot() {
+    const activeStreamState = streamStateRef.current;
+    const conversationId = activeStreamState?.conversationId;
+    if (!conversationId || conversationId === 'pending-conversation') {
+      return;
+    }
+    saveConversationRecordToWorkspace(
+      activeRuntimeTargetRef.current,
+      workspacePathRef.current,
+      conversationId,
+      conversationsRef.current,
+      {
+        messages: messagesRef.current,
+        executionSteps: executionStepsRef.current,
+        references: referencesRef.current,
+        artifacts: artifactsRef.current,
+        currentExperts: currentExpertsRef.current,
+        currentSkills: currentSkillsRef.current,
+        currentMcps: currentMcpsRef.current,
+      },
+    );
+  }
+
+  /**
+   * 判断 AbortError 是否来自页面生命周期或本地订阅脱离，而非用户点击“停止生成”。
+   */
+  const isDetachedStreamAbort = (streamSessionId: number) =>
+    detachedStreamSessionIdsRef.current.has(streamSessionId);
+
+  /**
    * 当后端通过 meta 下发新会话 ID 时，立即写入当前分区会话列表，避免列表依赖后续刷新才出现。
    * @param conversationId 会话标识。
    */
@@ -850,16 +914,17 @@ export function useChatWorkspace(
     conversationId: string,
     conversationTitle?: string,
     activeTaskId?: string,
+    previousConversationId = streamStateRef.current?.conversationId,
   ) => {
     if (!conversationId) {
-      return;
+      return conversationsRef.current;
     }
-    const previousConversationId = streamStateRef.current?.conversationId;
+    const currentConversations = conversationsRef.current;
     const shouldRenameLocalConversation =
       activeRuntimeTarget === 'local' &&
       previousConversationId != null &&
       previousConversationId !== conversationId;
-    const existingConversation = conversations.find((conversation) => conversation.id === conversationId);
+    const existingConversation = currentConversations.find((conversation) => conversation.id === conversationId);
     const nextConversation: ConversationItem =
       existingConversation
         ? {
@@ -884,10 +949,11 @@ export function useChatWorkspace(
           };
     const nextConversations = upsertConversationToTop(
       shouldRenameLocalConversation
-        ? conversations.filter((conversation) => conversation.id !== previousConversationId)
-        : conversations,
+        ? currentConversations.filter((conversation) => conversation.id !== previousConversationId)
+        : currentConversations,
       nextConversation,
     );
+    conversationsRef.current = nextConversations;
     setConversations(nextConversations);
     upsertWorkspaceSnapshot(activeRuntimeTarget, workspacePath ?? null, {
       conversations: nextConversations,
@@ -898,6 +964,47 @@ export function useChatWorkspace(
           : getDefaultWorkspaceLabel(activeRuntimeTarget),
     });
     refreshWorkspaceGroups('all');
+    return nextConversations;
+  };
+
+  /**
+   * 后端首次下发真实会话 ID 后，把乐观消息迁移到真实会话快照，避免刷新只能恢复空会话壳。
+   */
+  const persistStreamMetaConversationRecord = (
+    conversationId: string,
+    previousConversationId: string | undefined,
+    optimisticAssistantId: string,
+    conversationList: ConversationItem[],
+  ) => {
+    const nextMessages = messagesRef.current.map((message) => {
+      const messageConversationId = message.conversationId ?? '';
+      const shouldMoveToRealConversation =
+        message.id === optimisticAssistantId ||
+        messageConversationId === 'pending-conversation' ||
+        (previousConversationId != null && messageConversationId === previousConversationId);
+      return shouldMoveToRealConversation
+        ? {
+            ...message,
+            conversationId,
+          }
+        : message;
+    });
+    setMessages(nextMessages);
+    saveConversationRecordToWorkspace(
+      activeRuntimeTargetRef.current,
+      workspacePathRef.current,
+      conversationId,
+      conversationList,
+      {
+        messages: nextMessages,
+        executionSteps: executionStepsRef.current,
+        references: referencesRef.current,
+        artifacts: artifactsRef.current,
+        currentExperts: currentExpertsRef.current,
+        currentSkills: currentSkillsRef.current,
+        currentMcps: currentMcpsRef.current,
+      },
+    );
   };
 
   /**
@@ -1011,8 +1118,17 @@ export function useChatWorkspace(
   }, [isAuthenticated, activeWorkspacePartitionKey]);
 
   useEffect(() => {
+    const detachForPageLifecycle = () => {
+      markActiveStreamDetached();
+      persistActiveStreamSnapshot();
+    };
+    window.addEventListener('pagehide', detachForPageLifecycle);
+    window.addEventListener('beforeunload', detachForPageLifecycle);
     return () => {
+      detachForPageLifecycle();
       clearStreamQueueTimer();
+      window.removeEventListener('pagehide', detachForPageLifecycle);
+      window.removeEventListener('beforeunload', detachForPageLifecycle);
     };
   }, []);
 
@@ -1139,6 +1255,8 @@ export function useChatWorkspace(
       return;
     }
     // 环境切换后按该环境默认工作空间重新开新会话，避免上下文串线。
+    markActiveStreamDetached();
+    persistActiveStreamSnapshot();
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
     }
@@ -1700,6 +1818,10 @@ export function useChatWorkspace(
           return;
         }
         if (error instanceof DOMException && error.name === 'AbortError') {
+          if (isDetachedStreamAbort(streamSessionId)) {
+            persistActiveStreamSnapshot();
+            return;
+          }
           setMessages((previousMessages) =>
             previousMessages.map((message) =>
               message.id === optimisticAssistantId
@@ -1724,6 +1846,7 @@ export function useChatWorkspace(
         }
       } finally {
         finishedStreamSessionIdsRef.current.delete(streamSessionId);
+        detachedStreamSessionIdsRef.current.delete(streamSessionId);
         delete streamMcpCallsRef.current[optimisticAssistantId];
         if (abortControllerRef.current === streamAbortController) {
           abortControllerRef.current = null;
@@ -1912,6 +2035,8 @@ export function useChatWorkspace(
     createContext?: WorkspaceConversationCreateContext,
   ) => {
     // 离开当前会话只断开本地 SSE 订阅；后台任务是否停止必须由“停止生成”显式触发。
+    markActiveStreamDetached();
+    persistActiveStreamSnapshot();
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
     }
@@ -2062,6 +2187,8 @@ export function useChatWorkspace(
       await ChatApi.deleteConversationMessages(token, targetConversationId, replacedMessageIds);
     }
 
+    markActiveStreamDetached();
+    persistActiveStreamSnapshot();
     abortControllerRef.current?.abort();
     const streamSessionId = createStreamSessionId();
     activeStreamSessionIdRef.current = streamSessionId;
@@ -2152,6 +2279,10 @@ export function useChatWorkspace(
         return;
       }
       if (error instanceof DOMException && error.name === 'AbortError') {
+        if (isDetachedStreamAbort(streamSessionId)) {
+          persistActiveStreamSnapshot();
+          return;
+        }
         setStreamError('已停止当前生成');
       } else if (error instanceof ChatApi.UnauthorizedError) {
         onUnauthorizedRef.current?.();
@@ -2171,6 +2302,7 @@ export function useChatWorkspace(
         );
       }
     } finally {
+      detachedStreamSessionIdsRef.current.delete(streamSessionId);
       delete streamMcpCallsRef.current[optimisticAssistantId];
       if (abortControllerRef.current === streamAbortController) {
         abortControllerRef.current = null;
@@ -2371,6 +2503,8 @@ export function useChatWorkspace(
     if (!previousUserMessage) {
       return;
     }
+    markActiveStreamDetached();
+    persistActiveStreamSnapshot();
     abortControllerRef.current?.abort();
     const streamSessionId = createStreamSessionId();
     activeStreamSessionIdRef.current = streamSessionId;
@@ -2439,6 +2573,10 @@ export function useChatWorkspace(
         return;
       }
       if (error instanceof DOMException && error.name === 'AbortError') {
+        if (isDetachedStreamAbort(streamSessionId)) {
+          persistActiveStreamSnapshot();
+          return;
+        }
         setStreamError('已停止当前生成');
       } else if (error instanceof ChatApi.UnauthorizedError) {
         onUnauthorizedRef.current?.();
@@ -2458,6 +2596,7 @@ export function useChatWorkspace(
         );
       }
     } finally {
+      detachedStreamSessionIdsRef.current.delete(streamSessionId);
       delete streamMcpCallsRef.current[optimisticAssistantId];
       if (abortControllerRef.current === streamAbortController) {
         abortControllerRef.current = null;
@@ -2479,6 +2618,8 @@ export function useChatWorkspace(
    * 清空前端工作台状态，避免退出登录后仍显示上个用户会话。
    */
   const resetWorkspace = () => {
+    markActiveStreamDetached();
+    persistActiveStreamSnapshot();
     abortControllerRef.current?.abort();
     activeStreamSessionIdRef.current = null;
     setConversations([]);
@@ -2563,12 +2704,24 @@ export function useChatWorkspace(
       const conversationId = String(payload.conversationId ?? '');
       if (conversationId) {
         const taskId = payload.taskId == null ? undefined : String(payload.taskId);
+        const previousConversationId = streamStateRef.current?.conversationId;
         streamStateRef.current = {
           conversationId,
           activeMessageId: optimisticAssistantId,
         };
         setActiveConversationId(conversationId);
-        upsertConversationFromStreamMeta(conversationId, undefined, taskId);
+        const nextConversations = upsertConversationFromStreamMeta(
+          conversationId,
+          undefined,
+          taskId,
+          previousConversationId,
+        );
+        persistStreamMetaConversationRecord(
+          conversationId,
+          previousConversationId,
+          optimisticAssistantId,
+          nextConversations,
+        );
         // 业务约束：流式过程中一旦后端分配了新会话 ID，需立刻写入 URL 以支持刷新恢复。
         writeConversationIdToUrl(conversationId);
       }

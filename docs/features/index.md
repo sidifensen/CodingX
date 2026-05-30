@@ -12,6 +12,7 @@
 - [本地会话云端持久化](chat/cloud-persisted-local-chat.md)
 - [本地工具运行时](chat/local-tool-runtime.md)
 - [AI 路由默认策略](chat/ai-routing-defaults.md)
+- [AI 模型故障切换策略](chat/ai-model-failover.md)
 - [联网搜索权威时效排序](chat/web-search-authoritative-latest.md)
 - [系统联网搜索禁用守卫](chat/web-search-disable-guard.md)
 - [聊天流式提交与引用链接](chat/stream-submit-citation.md)

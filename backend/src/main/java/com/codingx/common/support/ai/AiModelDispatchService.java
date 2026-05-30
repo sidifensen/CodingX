@@ -10,7 +10,6 @@ import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.CompletionException;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -21,7 +20,8 @@ public class AiModelDispatchService {
     private final Map<String, AiProviderClient> providerClients;
     private final AiProviderHealthRegistry healthRegistry;
     private final AiModelSelector aiModelSelector;
-    private final List<String> lastAttemptedProviders = new ArrayList<>();
+    private volatile List<String> lastAttemptedProviders = List.of();
+    private final ThreadLocal<List<String>> currentThreadAttemptedProviders = ThreadLocal.withInitial(List::of);
 
     /**
      * 使用 AI 配置装配路由层默认依赖。
@@ -98,7 +98,8 @@ public class AiModelDispatchService {
      * @param handler 下游流式处理器。
      */
     public void streamChat(AiConversationRequest request, AiStreamHandler handler) {
-        lastAttemptedProviders.clear();
+        List<String> attemptedProviders = new ArrayList<>();
+        publishAttemptSnapshot(attemptedProviders);
         Throwable lastError = null;
         List<AiModelTarget> targets = aiModelSelector.selectChatCandidates(
             request.preferredModel(),
@@ -114,7 +115,9 @@ public class AiModelDispatchService {
             if (providerClient == null) {
                 continue;
             }
-            lastAttemptedProviders.add(providerClient.provider());
+            // 单次调度的尝试顺序必须保存在请求局部变量中，避免单例 Bean 下并发请求互相清空或拼接。
+            attemptedProviders.add(providerClient.provider());
+            publishAttemptSnapshot(attemptedProviders);
             FirstTokenAwaiter awaiter = new FirstTokenAwaiter();
             FirstTokenBufferingHandler bufferingHandler = new FirstTokenBufferingHandler(handler, awaiter);
             AiStreamSession session;
@@ -150,16 +153,20 @@ public class AiModelDispatchService {
                 } catch (CompletionException completionException) {
                     healthRegistry.markFailure(modelId);
                     Throwable cause = completionException.getCause() == null ? completionException : completionException.getCause();
+                    publishAttemptSnapshot(attemptedProviders);
                     throw new IllegalStateException(ErrorMessageCatalog.AI_STREAM_FAILED_AFTER_FIRST_TOKEN, cause);
                 }
                 healthRegistry.markSuccess(modelId);
+                publishAttemptSnapshot(attemptedProviders);
                 return;
             } catch (InterruptedException exception) {
                 Thread.currentThread().interrupt();
                 session.cancel();
+                publishAttemptSnapshot(attemptedProviders);
                 throw new IllegalStateException(ErrorMessageCatalog.AI_ROUTING_INTERRUPTED, exception);
             }
         }
+        publishAttemptSnapshot(attemptedProviders);
         IllegalStateException exception = new IllegalStateException(ErrorMessageCatalog.AI_NO_AVAILABLE_PROVIDER);
         if (lastError != null) {
             exception.initCause(lastError);
@@ -173,7 +180,21 @@ public class AiModelDispatchService {
      * @return provider 顺序列表。
      */
     public List<String> getLastAttemptedProviders() {
+        List<String> currentThreadSnapshot = currentThreadAttemptedProviders.get();
+        if (!currentThreadSnapshot.isEmpty()) {
+            return List.copyOf(currentThreadSnapshot);
+        }
         return List.copyOf(lastAttemptedProviders);
+    }
+
+    /**
+     * 发布本次调度的尝试顺序快照；线程局部快照服务当前调用方，全局快照服务跨线程观测。
+     * @param attemptedProviders 当前请求已尝试 provider。
+     */
+    private void publishAttemptSnapshot(List<String> attemptedProviders) {
+        List<String> snapshot = List.copyOf(attemptedProviders);
+        currentThreadAttemptedProviders.set(snapshot);
+        lastAttemptedProviders = snapshot;
     }
 
     /**

@@ -33,6 +33,40 @@ class AiModelSelectorTest {
     }
 
     /**
+     * 未显式指定 preferredModel 时，应沿用模型组默认模型作为首选目标。
+     */
+    @Test
+    void selectChatCandidatesPrefersConfiguredDefaultModelWhenRequestHasNoPreference() {
+        AiProperties properties = buildProperties(
+            candidate("low-priority-default", "deepseek", "deepseek-chat", 10, false),
+            candidate("high-priority-fallback", "stub", "stub-chat", 1, false)
+        );
+        properties.getChat().setDefaultModel("low-priority-default");
+        AiModelSelector selector = new AiModelSelector(properties);
+
+        List<AiModelTarget> targets = selector.selectChatCandidates(null, false);
+
+        assertEquals("low-priority-default", targets.getFirst().id());
+    }
+
+    /**
+     * 深度思考模式未显式指定模型时，应优先使用模型组配置的 deepThinkingModel。
+     */
+    @Test
+    void selectChatCandidatesPrefersConfiguredDeepThinkingModelWhenThinkingEnabled() {
+        AiProperties properties = buildProperties(
+            candidate("thinking-priority-one", "deepseek", "deepseek-thinking-a", 1, true),
+            candidate("thinking-configured", "deepseek", "deepseek-thinking-b", 9, true)
+        );
+        properties.getChat().setDeepThinkingModel("thinking-configured");
+        AiModelSelector selector = new AiModelSelector(properties);
+
+        List<AiModelTarget> targets = selector.selectChatCandidates(null, true);
+
+        assertEquals("thinking-configured", targets.getFirst().id());
+    }
+
+    /**
      * 深度思考模式下应优先筛选支持 thinking 的候选。
      */
     @Test

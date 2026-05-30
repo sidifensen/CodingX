@@ -12,6 +12,8 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -207,25 +209,108 @@ class AiModelDispatchServiceTest {
     }
 
     /**
+     * 候选 provider 没有注册客户端时，应跳过该候选并继续尝试后续模型。
+     */
+    @Test
+    void streamChatSkipsCandidateWhenProviderClientIsMissing() {
+        RecordingProvider healthyProvider = RecordingProvider.success("secondary", "qwen-plus", List.of("fallback"));
+        AiModelDispatchService service = new AiModelDispatchService(
+            List.of(healthyProvider),
+            new AiProviderHealthRegistry(2, 30_000L),
+            new AiModelSelector(minimalProperties())
+        );
+        List<String> deltas = new ArrayList<>();
+
+        service.streamChat(AiConversationRequest.builder()
+            .messages(List.of(ChatMessage.userMessage(1L, "你好")))
+            .stream(true)
+            .build(), new AiStreamHandler() {
+            @Override
+            public void onContentDelta(String delta) {
+                deltas.add(delta);
+            }
+        });
+
+        assertEquals(List.of("secondary"), service.getLastAttemptedProviders());
+        assertEquals(List.of("fallback"), deltas);
+    }
+
+    /**
+     * 调度服务是单例 Bean，单次请求的尝试记录必须隔离，不能被并发请求交叉清空或拼接。
+     */
+    @Test
+    void streamChatKeepsAttemptedProviderSnapshotIsolatedAcrossConcurrentRequests() throws Exception {
+        CountDownLatch primaryStarted = new CountDownLatch(2);
+        CountDownLatch releaseProviders = new CountDownLatch(1);
+        RecordingProvider slowPrimary = RecordingProvider.blockingSuccess(
+            "primary",
+            "deepseek-chat",
+            List.of("primary"),
+            primaryStarted,
+            releaseProviders
+        );
+        RecordingProvider secondary = RecordingProvider.success("secondary", "qwen-plus", List.of("secondary"));
+        AiModelDispatchService service = new AiModelDispatchService(
+            List.of(slowPrimary, secondary),
+            new AiProviderHealthRegistry(2, 30_000L),
+            new AiModelSelector(minimalProperties())
+        );
+
+        CompletableFuture<List<String>> first = CompletableFuture.supplyAsync(() -> {
+            service.streamChat(AiConversationRequest.builder()
+                .messages(List.of(ChatMessage.userMessage(1L, "一号请求")))
+                .stream(true)
+                .build(), new AiStreamHandler() {});
+            return service.getLastAttemptedProviders();
+        });
+        CompletableFuture<List<String>> second = CompletableFuture.supplyAsync(() -> {
+            service.streamChat(AiConversationRequest.builder()
+                .messages(List.of(ChatMessage.userMessage(2L, "二号请求")))
+                .stream(true)
+                .build(), new AiStreamHandler() {});
+            return service.getLastAttemptedProviders();
+        });
+
+        assertTrue(primaryStarted.await(1, TimeUnit.SECONDS));
+        releaseProviders.countDown();
+
+        assertEquals(List.of("primary"), first.get(1, TimeUnit.SECONDS));
+        assertEquals(List.of("primary"), second.get(1, TimeUnit.SECONDS));
+        assertEquals(List.of("primary"), service.getLastAttemptedProviders());
+    }
+
+    /**
      * 用于验证路由行为的内存 provider。
      */
     private record RecordingProvider(
         String providerName,
         String modelName,
         Mode mode,
-        List<String> deltas
+        List<String> deltas,
+        CountDownLatch started,
+        CountDownLatch release
     ) implements AiProviderClient {
 
         private static RecordingProvider failing(String providerName, String modelName) {
-            return new RecordingProvider(providerName, modelName, Mode.FAIL, List.of());
+            return new RecordingProvider(providerName, modelName, Mode.FAIL, List.of(), null, null);
         }
 
         private static RecordingProvider probeFailure(String providerName, String modelName) {
-            return new RecordingProvider(providerName, modelName, Mode.PROBE_FAIL, List.of());
+            return new RecordingProvider(providerName, modelName, Mode.PROBE_FAIL, List.of(), null, null);
         }
 
         private static RecordingProvider success(String providerName, String modelName, List<String> deltas) {
-            return new RecordingProvider(providerName, modelName, Mode.SUCCESS, deltas);
+            return new RecordingProvider(providerName, modelName, Mode.SUCCESS, deltas, null, null);
+        }
+
+        private static RecordingProvider blockingSuccess(
+            String providerName,
+            String modelName,
+            List<String> deltas,
+            CountDownLatch started,
+            CountDownLatch release
+        ) {
+            return new RecordingProvider(providerName, modelName, Mode.BLOCKING_SUCCESS, deltas, started, release);
         }
 
         @Override
@@ -244,6 +329,23 @@ class AiModelDispatchServiceTest {
                 handler.onError(new IllegalStateException(providerName + " probe failed"));
                 future.completeExceptionally(new IllegalStateException(providerName + " probe failed"));
                 return new AiStreamSession(() -> {}, future);
+            }
+            if (mode == Mode.BLOCKING_SUCCESS) {
+                handler.onContentDelta(deltas.getFirst());
+                if (started != null) {
+                    started.countDown();
+                }
+                try {
+                    if (release != null) {
+                        release.await(1, TimeUnit.SECONDS);
+                    }
+                    handler.onComplete();
+                    future.complete(null);
+                } catch (InterruptedException exception) {
+                    Thread.currentThread().interrupt();
+                    future.completeExceptionally(exception);
+                }
+                return new AiStreamSession(() -> future.cancel(true), future);
             }
             for (String delta : deltas) {
                 handler.onContentDelta(delta);
@@ -338,6 +440,7 @@ class AiModelDispatchServiceTest {
     private enum Mode {
         SUCCESS,
         FAIL,
-        PROBE_FAIL
+        PROBE_FAIL,
+        BLOCKING_SUCCESS
     }
 }

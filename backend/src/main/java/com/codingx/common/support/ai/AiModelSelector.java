@@ -174,7 +174,10 @@ public class AiModelSelector {
         if (StrUtil.isNotBlank(preferredModel)) {
             return preferredModel;
         }
-        return null;
+        if (thinkingEnabled && StrUtil.isNotBlank(group.getDeepThinkingModel())) {
+            return group.getDeepThinkingModel();
+        }
+        return group.getDefaultModel();
     }
 
     /**

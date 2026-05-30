@@ -5,6 +5,7 @@ import type { ColumnsType } from 'antd/es/table';
 
 import { AdminChatApi, AdminExpert, AdminPageResult } from '../api/adminChatApi';
 import { AdminDataTable, AdminTableActions } from '../components/AdminDataTable';
+import { useAdminMessage } from '../components/AdminMessageContext';
 
 const EXPERT_PAGE_SIZE = 10;
 
@@ -38,6 +39,7 @@ const emptyExpertForm: ExpertFormState = {
  * 管理端专家管理页：支持分页列表和新增编辑。
  */
 export function Experts() {
+  const adminMessage = useAdminMessage();
   const [pageNo, setPageNo] = useState(1);
   const [pageData, setPageData] = useState<AdminPageResult<AdminExpert> | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -201,6 +203,7 @@ export function Experts() {
           }
           setDialogOpen(false);
           await loadExperts(pageNo);
+          void adminMessage.success(dialogMode === 'edit' ? '专家已保存' : '专家已创建');
         }}
       />
     </div>
@@ -220,14 +223,13 @@ function ExpertEditDialog({
   onClose: () => void;
   onSubmit: (payload: AdminExpert) => Promise<void>;
 }) {
+  const adminMessage = useAdminMessage();
   const [form, setForm] = React.useState<ExpertFormState>(() => toExpertForm(expert));
   const [saving, setSaving] = React.useState(false);
-  const [formError, setFormError] = React.useState('');
 
   React.useEffect(() => {
     if (open) {
       setForm(toExpertForm(expert));
-      setFormError('');
     }
   }, [expert, open]);
 
@@ -236,16 +238,15 @@ function ExpertEditDialog({
   };
 
   const handleSubmit = async () => {
-    setFormError('');
     if (!form.expertCode.trim() || !form.displayName.trim() || !form.systemPrompt.trim()) {
-      setFormError('请至少填写专家编码、名称和提示词');
+      void adminMessage.warning('请至少填写专家编码、名称和提示词');
       return;
     }
     setSaving(true);
     try {
       await onSubmit(toExpertPayload(form, expert));
     } catch (error) {
-      setFormError(extractErrorMessage(error, mode === 'create' ? '新增专家失败' : '保存专家失败'));
+      void adminMessage.error(extractErrorMessage(error, mode === 'create' ? '新增专家失败' : '保存专家失败'));
     } finally {
       setSaving(false);
     }
@@ -276,7 +277,6 @@ function ExpertEditDialog({
     >
       <Typography.Paragraph type="secondary">维护专家编码、示例问题和提示词。</Typography.Paragraph>
       <div data-testid="expert-edit-dialog-body" className="max-h-[60vh] overflow-y-auto overscroll-y-contain pr-sm">
-        {formError ? <Alert className="mb-md" showIcon type="error" message={formError} /> : null}
         <Form layout="vertical">
           <div className="grid gap-md md:grid-cols-2">
             <Form.Item label="专家编码" required>

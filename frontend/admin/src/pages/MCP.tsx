@@ -2,6 +2,7 @@ import React from 'react';
 import { Alert } from 'antd';
 
 import { AdminChatApi, type AdminMcpConfig, type AdminMcpToolView } from '../api/adminChatApi';
+import { useAdminMessage } from '../components/AdminMessageContext';
 import { McpConfigModal } from './mcp/McpConfigModal';
 import { McpDeleteModal } from './mcp/McpDeleteModal';
 import { McpPingResultModal } from './mcp/McpPingResultModal';
@@ -14,6 +15,7 @@ import { McpToolbar } from './mcp/McpToolbar';
  * 管理端 MCP 页面：同时承载数据库配置管理和在线探测能力。
  */
 export function MCP() {
+  const adminMessage = useAdminMessage();
   const [configs, setConfigs] = React.useState<AdminMcpConfig[]>([]);
   const [tools, setTools] = React.useState<AdminMcpToolView[]>([]);
   const [configLoading, setConfigLoading] = React.useState(true);
@@ -168,6 +170,7 @@ export function MCP() {
           }
           setDialogOpen(false);
           await loadConfigs();
+          void adminMessage.success(dialogMode === 'edit' ? 'MCP 配置已保存' : 'MCP 配置已创建');
         }}
       />
 
@@ -176,7 +179,7 @@ export function MCP() {
         onCancel={() => setDeleteTarget(null)}
         onConfirm={async () => {
           if (deleteTarget?.id == null) {
-            setConfigErrorMessage('MCP 配置缺少主键，无法删除');
+            void adminMessage.error('MCP 配置缺少主键，无法删除');
             setDeleteTarget(null);
             return;
           }
@@ -184,8 +187,9 @@ export function MCP() {
             await AdminChatApi.deleteMcpConfig(deleteTarget.id);
             setDeleteTarget(null);
             await loadConfigs();
+            void adminMessage.success('MCP 配置已删除');
           } catch (error) {
-            setConfigErrorMessage(extractErrorMessage(error, '删除 MCP 配置失败'));
+            void adminMessage.error(extractErrorMessage(error, '删除 MCP 配置失败'));
           }
         }}
       />

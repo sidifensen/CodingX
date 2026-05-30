@@ -13,6 +13,7 @@ import { Alert, Button, Empty, Form, Input, Modal, Select, Space, Spin, Switch, 
 import type { DataNode } from 'antd/es/tree';
 
 import { AdminChatApi, AdminIntentNode } from '../api/adminChatApi';
+import { useAdminMessage } from '../components/AdminMessageContext';
 
 const ROOT_PARENT = '__ROOT__';
 
@@ -285,6 +286,7 @@ function extractErrorMessage(error: unknown, fallback: string): string {
 }
 
 export function IntentTreePage() {
+  const adminMessage = useAdminMessage();
   const [tree, setTree] = React.useState<AdminIntentNode[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [errorMessage, setErrorMessage] = React.useState('');
@@ -351,8 +353,9 @@ export function IntentTreePage() {
       await AdminChatApi.deleteIntent(deleteTarget.id);
       setDeleteTarget(null);
       await reload();
+      void adminMessage.success('意图节点已删除');
     } catch (error) {
-      setErrorMessage(extractErrorMessage(error, '删除节点失败'));
+      void adminMessage.error(extractErrorMessage(error, '删除节点失败'));
     }
   };
 
@@ -493,6 +496,7 @@ export function IntentTreePage() {
             }
             setDialogOpen(false);
             await reload();
+            void adminMessage.success(dialogMode === 'edit' ? '意图节点已保存' : '意图节点已创建');
           }}
         />
       ) : null}
@@ -820,11 +824,11 @@ function IntentNodeDialog({
   onClose,
   onSubmit,
 }: IntentNodeDialogProps) {
+  const adminMessage = useAdminMessage();
   const [form, setForm] = React.useState<IntentFormState>(() =>
     mode === 'edit' && editingNode ? defaultFormFromNode(editingNode) : defaultFormForCreate(parentNode),
   );
   const [saving, setSaving] = React.useState(false);
-  const [formError, setFormError] = React.useState('');
   const [fieldErrors, setFieldErrors] = React.useState<Record<string, string>>({});
 
   const filteredTreeOptions =
@@ -854,7 +858,6 @@ function IntentNodeDialog({
   };
 
   const handleSubmit = async () => {
-    setFormError('');
     if (!validate()) {
       return;
     }
@@ -863,7 +866,7 @@ function IntentNodeDialog({
     try {
       await onSubmit(buildPayload(form, editingNode));
     } catch (error) {
-      setFormError(extractErrorMessage(error, mode === 'create' ? '创建节点失败' : '保存节点失败'));
+      void adminMessage.error(extractErrorMessage(error, mode === 'create' ? '创建节点失败' : '保存节点失败'));
     } finally {
       setSaving(false);
     }
@@ -885,10 +888,6 @@ function IntentNodeDialog({
         <Typography.Paragraph className="mb-0" type="secondary">
           按统一配置台分组维护基础信息、示例、Prompt 与高级参数。
         </Typography.Paragraph>
-        {formError ? (
-          <Alert showIcon type="error" message={formError} />
-        ) : null}
-
         <fieldset className="rounded-xl border border-border-hairline bg-surface-container-low p-md">
           <legend className="px-xs font-title-sm text-ink">基础信息</legend>
           <div className="grid gap-md md:grid-cols-2">

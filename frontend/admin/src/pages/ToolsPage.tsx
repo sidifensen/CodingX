@@ -37,6 +37,7 @@ import {
   AdminChatToolInvokeView,
 } from '../api/adminChatApi';
 import { AdminDataTable, AdminTableActions } from '../components/AdminDataTable';
+import { useAdminMessage } from '../components/AdminMessageContext';
 import { ToolIntentTreePanel } from '../components/ToolIntentTreePanel';
 
 type ToolDialogMode = 'create' | 'edit';
@@ -74,6 +75,7 @@ const TOOL_TABLE_PAGE_SIZE = 10;
  * 管理端工具管理页：独立维护 chat_tool 表，并合并执行器健康状态展示。
  */
 export function ToolsPage() {
+  const adminMessage = useAdminMessage();
   const [tools, setTools] = React.useState<AdminChatTool[]>([]);
   const [toolHealthViews, setToolHealthViews] = React.useState<AdminChatToolHealthView[]>([]);
   const [configLoading, setConfigLoading] = React.useState(true);
@@ -90,7 +92,6 @@ export function ToolsPage() {
   const [invoking, setInvoking] = React.useState(false);
   const [invokeQuestion, setInvokeQuestion] = React.useState('');
   const [invokeResult, setInvokeResult] = React.useState<AdminChatToolInvokeView | null>(null);
-  const [invokeErrorMessage, setInvokeErrorMessage] = React.useState('');
   const [viewMode, setViewMode] = React.useState<ToolViewMode>('list');
   const [pageNo, setPageNo] = React.useState(1);
   const [selectedToolCode, setSelectedToolCode] = React.useState<string | null>(null);
@@ -167,7 +168,6 @@ export function ToolsPage() {
     setInvokeDialogToolCode(toolCode);
     setInvokeQuestion(sampleQuestion ?? '');
     setInvokeResult(null);
-    setInvokeErrorMessage('');
   };
 
   const handlePing = async (toolCode: string) => {
@@ -195,13 +195,13 @@ export function ToolsPage() {
       return;
     }
     setInvoking(true);
-    setInvokeErrorMessage('');
     try {
       const result = await AdminChatApi.invokeTool(invokeDialogToolCode, invokeQuestion.trim() || undefined);
       setInvokeResult(result);
       await loadToolHealthViews();
+      void adminMessage.success(result.message || '工具调用成功');
     } catch (error) {
-      setInvokeErrorMessage(extractErrorMessage(error, '调用工具失败'));
+      void adminMessage.error(extractErrorMessage(error, '调用工具失败'));
     } finally {
       setInvoking(false);
     }
@@ -209,18 +209,18 @@ export function ToolsPage() {
 
   const handleToggleToolEnabled = async (tool: AdminChatTool) => {
     if (tool.id == null) {
-      setConfigErrorMessage('工具配置缺少主键，无法切换状态');
+      void adminMessage.error('工具配置缺少主键，无法切换状态');
       return;
     }
-    setConfigErrorMessage('');
     try {
       await AdminChatApi.updateTool(tool.id, {
         ...tool,
         enabled: tool.enabled === 0 ? 1 : 0,
       });
       await Promise.all([loadTools(), loadToolHealthViews()]);
+      void adminMessage.success(tool.enabled === 0 ? '工具已启用' : '工具已禁用');
     } catch (error) {
-      setConfigErrorMessage(extractErrorMessage(error, tool.enabled === 0 ? '启用工具失败' : '禁用工具失败'));
+      void adminMessage.error(extractErrorMessage(error, tool.enabled === 0 ? '启用工具失败' : '禁用工具失败'));
     }
   };
 
@@ -438,6 +438,7 @@ export function ToolsPage() {
           }
           setDialogOpen(false);
           await Promise.all([loadTools(), loadToolHealthViews()]);
+          void adminMessage.success(dialogMode === 'edit' ? '工具配置已保存' : '工具配置已创建');
         }}
       />
 
@@ -446,7 +447,7 @@ export function ToolsPage() {
         onCancel={() => setDeleteTarget(null)}
         onConfirm={async () => {
           if (deleteTarget?.id == null) {
-            setConfigErrorMessage('工具配置缺少主键，无法删除');
+            void adminMessage.error('工具配置缺少主键，无法删除');
             setDeleteTarget(null);
             return;
           }
@@ -454,8 +455,9 @@ export function ToolsPage() {
             await AdminChatApi.deleteTool(deleteTarget.id);
             setDeleteTarget(null);
             await Promise.all([loadTools(), loadToolHealthViews()]);
+            void adminMessage.success('工具配置已删除');
           } catch (error) {
-            setConfigErrorMessage(extractErrorMessage(error, '删除工具配置失败'));
+            void adminMessage.error(extractErrorMessage(error, '删除工具配置失败'));
           }
         }}
       />
@@ -467,13 +469,11 @@ export function ToolsPage() {
         question={invokeQuestion}
         invoking={invoking}
         result={invokeResult}
-        errorMessage={invokeErrorMessage}
         onChangeQuestion={setInvokeQuestion}
         onClose={() => {
           setInvokeDialogToolCode(null);
           setInvokeQuestion('');
           setInvokeResult(null);
-          setInvokeErrorMessage('');
         }}
         onInvoke={() => void handleInvoke()}
       />
@@ -493,16 +493,15 @@ interface ToolEditDialogProps {
  * 工具配置编辑弹窗：使用 AntD Form 控件承载校验与暗色主题样式。
  */
 function ToolEditDialog({ mode, open, tool, onClose, onSubmit }: ToolEditDialogProps) {
+  const adminMessage = useAdminMessage();
   const [form, setForm] = React.useState<ToolFormState>(() => toToolForm(tool));
   const [saving, setSaving] = React.useState(false);
-  const [formError, setFormError] = React.useState('');
   const [fieldErrors, setFieldErrors] = React.useState<Record<string, string>>({});
 
   React.useEffect(() => {
     if (open) {
       setForm(toToolForm(tool));
       setFieldErrors({});
-      setFormError('');
     }
   }, [open, tool]);
 
@@ -524,7 +523,6 @@ function ToolEditDialog({ mode, open, tool, onClose, onSubmit }: ToolEditDialogP
   };
 
   const handleSubmit = async () => {
-    setFormError('');
     if (!validate()) {
       return;
     }
@@ -533,7 +531,7 @@ function ToolEditDialog({ mode, open, tool, onClose, onSubmit }: ToolEditDialogP
     try {
       await onSubmit(toToolPayload(form, tool));
     } catch (error) {
-      setFormError(extractErrorMessage(error, mode === 'create' ? '新增工具配置失败' : '保存工具配置失败'));
+      void adminMessage.error(extractErrorMessage(error, mode === 'create' ? '新增工具配置失败' : '保存工具配置失败'));
     } finally {
       setSaving(false);
     }
@@ -561,7 +559,6 @@ function ToolEditDialog({ mode, open, tool, onClose, onSubmit }: ToolEditDialogP
       title={mode === 'create' ? '新增工具配置' : '编辑工具配置'}
       onCancel={onClose}
     >
-      {formError ? <Alert className="mb-md" showIcon type="error" message={formError} /> : null}
       <Form layout="vertical">
         <div className="grid gap-md md:grid-cols-2">
           <Form.Item htmlFor="tool-code" label="工具编码" required validateStatus={fieldErrors.toolCode ? 'error' : undefined} help={fieldErrors.toolCode}>
@@ -675,7 +672,6 @@ function InvokeToolDialog({
   question,
   invoking,
   result,
-  errorMessage,
   onChangeQuestion,
   onClose,
   onInvoke,
@@ -684,7 +680,6 @@ function InvokeToolDialog({
   question: string;
   invoking: boolean;
   result: AdminChatToolInvokeView | null;
-  errorMessage: string;
   onChangeQuestion: (value: string) => void;
   onClose: () => void;
   onInvoke: () => void;
@@ -717,7 +712,6 @@ function InvokeToolDialog({
             />
           </Form.Item>
         </Form>
-        {errorMessage ? <Alert showIcon type="error" message={errorMessage} /> : null}
         {result ? (
           <Descriptions
             bordered

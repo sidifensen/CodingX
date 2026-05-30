@@ -10,6 +10,7 @@ import {
 import { Alert, Avatar, Button, Descriptions, Form, Input, Modal, Select, Space, Spin, Tag, Typography } from 'antd';
 
 import { AdminUserApi } from '../api/adminUserApi';
+import { useAdminMessage } from '../components/AdminMessageContext';
 import { AdminUserDetail, AdminUserStatus, AdminUserUpdatePayload } from '../types/adminUser';
 
 interface EditUserFormState {
@@ -34,6 +35,7 @@ const emptyEditUserForm: EditUserFormState = {
  * 管理端用户详情页：展示并维护单个用户信息。
  */
 export function UserDetail() {
+  const adminMessage = useAdminMessage();
   const { id = '' } = useParams();
   const navigate = useNavigate();
   const [user, setUser] = React.useState<AdminUserDetail | null>(null);
@@ -43,11 +45,9 @@ export function UserDetail() {
   const [isEditDialogOpen, setIsEditDialogOpen] = React.useState(false);
   const [editForm, setEditForm] = React.useState<EditUserFormState>(emptyEditUserForm);
   const [isEditing, setIsEditing] = React.useState(false);
-  const [editError, setEditError] = React.useState('');
 
   const [isResetDialogOpen, setIsResetDialogOpen] = React.useState(false);
   const [newPassword, setNewPassword] = React.useState('');
-  const [resetError, setResetError] = React.useState('');
   const [isResetting, setIsResetting] = React.useState(false);
 
   const loadUser = React.useCallback(async () => {
@@ -83,7 +83,6 @@ export function UserDetail() {
       status: normalizeStatus(user.status),
       avatarUrl: user.avatarUrl ?? '',
     });
-    setEditError('');
     setIsEditDialogOpen(true);
   };
 
@@ -91,9 +90,8 @@ export function UserDetail() {
     if (!id) {
       return;
     }
-    setEditError('');
     if (!editForm.displayName.trim()) {
-      setEditError('展示名称不能为空');
+      void adminMessage.warning('展示名称不能为空');
       return;
     }
     const payload: AdminUserUpdatePayload = {
@@ -109,8 +107,9 @@ export function UserDetail() {
       await AdminUserApi.updateUser(id, payload);
       setIsEditDialogOpen(false);
       await loadUser();
+      void adminMessage.success('用户信息已保存');
     } catch (error) {
-      setEditError(extractErrorMessage(error, '保存用户信息失败'));
+      void adminMessage.error(extractErrorMessage(error, '保存用户信息失败'));
     } finally {
       setIsEditing(false);
     }
@@ -124,8 +123,9 @@ export function UserDetail() {
     try {
       await AdminUserApi.updateUserStatus(id, nextStatus);
       await loadUser();
+      void adminMessage.success(nextStatus === 'ACTIVE' ? '用户已启用' : '用户已禁用');
     } catch (error) {
-      setErrorMessage(extractErrorMessage(error, '状态更新失败'));
+      void adminMessage.error(extractErrorMessage(error, '状态更新失败'));
     }
   };
 
@@ -133,9 +133,8 @@ export function UserDetail() {
     if (!id) {
       return;
     }
-    setResetError('');
     if (!newPassword.trim()) {
-      setResetError('新密码不能为空');
+      void adminMessage.warning('新密码不能为空');
       return;
     }
     setIsResetting(true);
@@ -143,8 +142,9 @@ export function UserDetail() {
       await AdminUserApi.resetPassword(id, newPassword.trim());
       setIsResetDialogOpen(false);
       setNewPassword('');
+      void adminMessage.success('密码已重置');
     } catch (error) {
-      setResetError(extractErrorMessage(error, '重置密码失败'));
+      void adminMessage.error(extractErrorMessage(error, '重置密码失败'));
     } finally {
       setIsResetting(false);
     }
@@ -197,7 +197,6 @@ export function UserDetail() {
 
       <EditUserDialog
         form={editForm}
-        errorMessage={editError}
         editing={isEditing}
         open={isEditDialogOpen}
         onClose={() => setIsEditDialogOpen(false)}
@@ -206,7 +205,6 @@ export function UserDetail() {
       />
 
       <ResetPasswordDialog
-        errorMessage={resetError}
         newPassword={newPassword}
         open={isResetDialogOpen}
         resetting={isResetting}
@@ -220,7 +218,6 @@ export function UserDetail() {
 
 function EditUserDialog({
   form,
-  errorMessage,
   editing,
   open,
   onClose,
@@ -228,7 +225,6 @@ function EditUserDialog({
   onSubmit,
 }: {
   form: EditUserFormState;
-  errorMessage: string;
   editing: boolean;
   open: boolean;
   onClose: () => void;
@@ -245,7 +241,6 @@ function EditUserDialog({
       onCancel={onClose}
       onOk={onSubmit}
     >
-      {errorMessage ? <Alert className="mb-md" showIcon type="error" message={errorMessage} /> : null}
       <Form layout="vertical">
         <Form.Item label="展示名称" required>
           <Input aria-label="展示名称" value={form.displayName} onChange={(event) => onChange('displayName', event.target.value)} />
@@ -287,7 +282,6 @@ function EditUserDialog({
 
 function ResetPasswordDialog({
   newPassword,
-  errorMessage,
   resetting,
   open,
   onClose,
@@ -295,7 +289,6 @@ function ResetPasswordDialog({
   onSubmit,
 }: {
   newPassword: string;
-  errorMessage: string;
   resetting: boolean;
   open: boolean;
   onClose: () => void;
@@ -314,7 +307,6 @@ function ResetPasswordDialog({
       onOk={onSubmit}
     >
       <Typography.Paragraph type="secondary">请输入新的登录密码并确认重置。</Typography.Paragraph>
-      {errorMessage ? <Alert className="mb-md" showIcon type="error" message={errorMessage} /> : null}
       <Form layout="vertical">
         <Form.Item label="新密码" required>
           <Input.Password

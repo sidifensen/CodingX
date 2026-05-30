@@ -24,6 +24,7 @@ import {
   AdminSkillPackageFileContent,
 } from '../api/adminChatApi';
 import { AdminDataTable, AdminTableActions } from '../components/AdminDataTable';
+import { useAdminMessage } from '../components/AdminMessageContext';
 
 type SkillDialogMode = 'create' | 'edit';
 type SkillViewMode = 'list' | 'card';
@@ -58,6 +59,7 @@ const emptySkillForm: SkillFormState = {
  * 管理端技能管理页：支持列表/卡片切换、上传、编辑以及技能包在线预览。
  */
 export function Skills() {
+  const adminMessage = useAdminMessage();
   const [pageNo, setPageNo] = useState(1);
   const [pageData, setPageData] = useState<AdminPageResult<AdminSkill> | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -141,8 +143,9 @@ export function Skills() {
       const newEnabled = skill.enabled === 0 ? 1 : 0;
       await AdminChatApi.updateSkill(skill.id, { ...skill, enabled: newEnabled });
       await loadSkills(pageNo);
+      void adminMessage.success(newEnabled === 1 ? '技能已启用' : '技能已禁用');
     } catch (error) {
-      setErrorMessage(extractErrorMessage(error, '更新技能状态失败'));
+      void adminMessage.error(extractErrorMessage(error, '更新技能状态失败'));
     }
   };
 
@@ -162,8 +165,9 @@ export function Skills() {
       await AdminChatApi.deleteSkill(deleteConfirmSkill.id);
       setDeleteConfirmSkill(null);
       await loadSkills(pageNo);
+      void adminMessage.success('技能已删除');
     } catch (error) {
-      setErrorMessage(extractErrorMessage(error, '删除技能失败'));
+      void adminMessage.error(extractErrorMessage(error, '删除技能失败'));
       setDeleteConfirmSkill(null);
     }
   };
@@ -263,6 +267,7 @@ export function Skills() {
             }
             setDialogOpen(false);
             await loadSkills(pageNo);
+            void adminMessage.success(dialogMode === 'edit' ? '技能已保存' : '技能已创建');
           }}
         />
       ) : null}
@@ -733,9 +738,9 @@ interface SkillEditDialogProps {
  * 技能新增/编辑弹窗，统一表单与校验逻辑。
  */
 function SkillEditDialog({ mode, skill, onClose, onSubmit }: SkillEditDialogProps) {
+  const adminMessage = useAdminMessage();
   const [form, setForm] = React.useState<SkillFormState>(() => toSkillForm(skill));
   const [saving, setSaving] = React.useState(false);
-  const [formError, setFormError] = React.useState('');
   const [fieldErrors, setFieldErrors] = React.useState<Record<string, string>>({});
 
   /**
@@ -765,7 +770,6 @@ function SkillEditDialog({ mode, skill, onClose, onSubmit }: SkillEditDialogProp
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    setFormError('');
     if (!validate()) {
       return;
     }
@@ -774,7 +778,7 @@ function SkillEditDialog({ mode, skill, onClose, onSubmit }: SkillEditDialogProp
     try {
       await onSubmit(toSkillPayload(form, skill));
     } catch (error) {
-      setFormError(extractErrorMessage(error, mode === 'create' ? '新增技能失败' : '保存技能失败'));
+      void adminMessage.error(extractErrorMessage(error, mode === 'create' ? '新增技能失败' : '保存技能失败'));
     } finally {
       setSaving(false);
     }
@@ -802,10 +806,6 @@ function SkillEditDialog({ mode, skill, onClose, onSubmit }: SkillEditDialogProp
         </div>
 
         <form className="space-y-lg p-lg" onSubmit={handleSubmit}>
-          {formError ? (
-            <Alert showIcon type="error" message={formError} />
-          ) : null}
-
           <fieldset className="rounded-xl border border-border-hairline bg-surface-container-low p-md">
             <legend className="px-xs font-title-sm text-ink">基础信息</legend>
             <div className="grid gap-md md:grid-cols-2">
@@ -893,20 +893,18 @@ interface SkillUploadDialogProps {
  * 上传技能包弹窗：提交 zip/skill 文件并交由后端解析 SKILL.md。
  */
 function SkillUploadDialog({ onClose, onUploaded }: SkillUploadDialogProps) {
+  const adminMessage = useAdminMessage();
   const [file, setFile] = React.useState<File | null>(null);
   const [directoryFiles, setDirectoryFiles] = React.useState<File[]>([]);
   const [category, setCategory] = React.useState('');
   const [submitting, setSubmitting] = React.useState(false);
-  const [errorMessage, setErrorMessage] = React.useState('');
-  const [migrationMessage, setMigrationMessage] = React.useState('');
   const [migrating, setMigrating] = React.useState(false);
   const [showOverwriteConfirm, setShowOverwriteConfirm] = React.useState(false);
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    setErrorMessage('');
     if (!file && directoryFiles.length === 0) {
-      setErrorMessage('请选择技能包文件或文件夹');
+      void adminMessage.warning('请选择技能包文件或文件夹');
       return;
     }
     await uploadSkill(false);
@@ -917,6 +915,7 @@ function SkillUploadDialog({ onClose, onUploaded }: SkillUploadDialogProps) {
     try {
       await AdminChatApi.uploadSkillPackage(file, category, directoryFiles, forceOverwrite);
       await onUploaded();
+      void adminMessage.success('技能包上传成功');
       onClose();
     } catch (error) {
       const errorMsg = extractErrorMessage(error, '技能包上传失败');
@@ -924,7 +923,7 @@ function SkillUploadDialog({ onClose, onUploaded }: SkillUploadDialogProps) {
       if (errorMsg.includes('技能存储键已存在') || errorMsg.includes('CHAT_SKILL_STORAGE_KEY_DUPLICATE')) {
         setShowOverwriteConfirm(true);
       } else {
-        setErrorMessage(errorMsg);
+        void adminMessage.error(errorMsg);
       }
     } finally {
       setSubmitting(false);
@@ -937,20 +936,18 @@ function SkillUploadDialog({ onClose, onUploaded }: SkillUploadDialogProps) {
   };
 
   /**
-   * 执行历史技能包迁移，并在弹窗内展示迁移摘要。
+   * 执行历史技能包迁移，并使用 AntD message 给出一次性摘要，避免在上传弹窗内堆叠反馈块。
    */
   const handleMigratePackages = async () => {
-    setMigrationMessage('');
-    setErrorMessage('');
     setMigrating(true);
     try {
       const summary = await AdminChatApi.migrateSkillPackages();
       const failureCount = summary.failures?.length ?? 0;
       const firstFailure = failureCount > 0 ? `；失败示例：${summary.failures[0].skillCode}（${summary.failures[0].reason}）` : '';
-      setMigrationMessage(`迁移完成：总计 ${summary.total}，成功 ${summary.migrated}，跳过 ${summary.skipped}，失败 ${failureCount}${firstFailure}`);
+      void adminMessage.success(`迁移完成：总计 ${summary.total}，成功 ${summary.migrated}，跳过 ${summary.skipped}，失败 ${failureCount}${firstFailure}`);
       await onUploaded();
     } catch (error) {
-      setErrorMessage(extractErrorMessage(error, '历史技能包迁移失败'));
+      void adminMessage.error(extractErrorMessage(error, '历史技能包迁移失败'));
     } finally {
       setMigrating(false);
     }
@@ -978,12 +975,6 @@ function SkillUploadDialog({ onClose, onUploaded }: SkillUploadDialogProps) {
         </div>
 
         <form className="space-y-lg p-lg" onSubmit={handleSubmit}>
-          {errorMessage ? (
-            <Alert showIcon type="error" message={errorMessage} />
-          ) : null}
-          {migrationMessage ? (
-            <Alert showIcon type="success" message={migrationMessage} />
-          ) : null}
           <fieldset className="rounded-xl border border-border-hairline bg-surface-container-low p-md">
             <legend className="px-xs font-title-sm text-ink">文件与分类</legend>
             <div className="space-y-md">

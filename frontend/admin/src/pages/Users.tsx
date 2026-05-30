@@ -12,6 +12,7 @@ import type { ColumnsType } from 'antd/es/table';
 
 import { AdminUserApi } from '../api/adminUserApi';
 import { AdminDataTable, AdminTableActions } from '../components/AdminDataTable';
+import { useAdminMessage } from '../components/AdminMessageContext';
 import {
   AdminUserCreatePayload,
   AdminUserPageResult,
@@ -46,6 +47,7 @@ const emptyCreateUserForm: CreateUserDialogState = {
  * 管理端用户管理页：对接真实后端并提供新增、审核、启停与详情跳转。
  */
 export function Users() {
+  const adminMessage = useAdminMessage();
   const navigate = useNavigate();
   const [filter, setFilter] = React.useState<UserFilterTab>('全部');
   const [pageResult, setPageResult] = React.useState<AdminUserPageResult>({
@@ -60,7 +62,6 @@ export function Users() {
   const [isCreateDialogOpen, setIsCreateDialogOpen] = React.useState(false);
   const [createForm, setCreateForm] = React.useState<CreateUserDialogState>(emptyCreateUserForm);
   const [isCreating, setIsCreating] = React.useState(false);
-  const [createFormError, setCreateFormError] = React.useState('');
 
   const loadUsers = React.useCallback(
     async (nextCurrent = pageResult.current, nextSize = pageResult.size, nextFilter: UserFilterTab = filter) => {
@@ -102,8 +103,9 @@ export function Users() {
     try {
       await AdminUserApi.approveUser(userId);
       await loadUsers(pageResult.current, pageResult.size, filter);
+      void adminMessage.success('用户审核已通过');
     } catch (error) {
-      setErrorMessage(extractErrorMessage(error, '审核通过失败'));
+      void adminMessage.error(extractErrorMessage(error, '审核通过失败'));
     }
   };
 
@@ -115,15 +117,15 @@ export function Users() {
     try {
       await AdminUserApi.updateUserStatus(user.id, nextStatus);
       await loadUsers(pageResult.current, pageResult.size, filter);
+      void adminMessage.success(nextStatus === 'ACTIVE' ? '用户已启用' : '用户已禁用');
     } catch (error) {
-      setErrorMessage(extractErrorMessage(error, '状态更新失败'));
+      void adminMessage.error(extractErrorMessage(error, '状态更新失败'));
     }
   };
 
   const handleCreateUser = async () => {
-    setCreateFormError('');
     if (!createForm.username.trim() || !createForm.displayName.trim() || !createForm.password.trim()) {
-      setCreateFormError('用户名、展示名称和初始密码不能为空');
+      void adminMessage.warning('用户名、展示名称和初始密码不能为空');
       return;
     }
     setIsCreating(true);
@@ -141,8 +143,9 @@ export function Users() {
       setIsCreateDialogOpen(false);
       setCreateForm(emptyCreateUserForm);
       await loadUsers(1, pageResult.size, filter);
+      void adminMessage.success('用户已创建');
     } catch (error) {
-      setCreateFormError(extractErrorMessage(error, '新增用户失败'));
+      void adminMessage.error(extractErrorMessage(error, '新增用户失败'));
     } finally {
       setIsCreating(false);
     }
@@ -258,7 +261,6 @@ export function Users() {
           type="primary"
           onClick={() => {
             setCreateForm(emptyCreateUserForm);
-            setCreateFormError('');
             setIsCreateDialogOpen(true);
           }}
         >
@@ -314,7 +316,6 @@ export function Users() {
 
       <CreateUserDialog
         form={createForm}
-        formError={createFormError}
         creating={isCreating}
         open={isCreateDialogOpen}
         onChange={(field, value) => setCreateForm((previous) => ({ ...previous, [field]: value }))}
@@ -327,7 +328,6 @@ export function Users() {
 
 function CreateUserDialog({
   form,
-  formError,
   creating,
   open,
   onChange,
@@ -335,7 +335,6 @@ function CreateUserDialog({
   onSubmit,
 }: {
   form: CreateUserDialogState;
-  formError: string;
   creating: boolean;
   open: boolean;
   onChange: (field: keyof CreateUserDialogState, value: string) => void;
@@ -353,7 +352,6 @@ function CreateUserDialog({
       onOk={onSubmit}
     >
       <Typography.Paragraph type="secondary">填写基础账号信息，创建后可在详情页继续维护。</Typography.Paragraph>
-      {formError ? <Alert className="mb-md" showIcon type="error" message={formError} /> : null}
       <Form layout="vertical">
         <div className="grid gap-md md:grid-cols-2">
           <Form.Item label="用户名" required>

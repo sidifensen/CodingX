@@ -2,6 +2,8 @@ import React from 'react';
 import { ConfigProvider, theme } from 'antd';
 import zhCN from 'antd/locale/zh_CN';
 
+import { AdminMessageProvider } from './AdminMessageContext';
+
 interface AdminAntdProviderProps {
   children: React.ReactNode;
 }
@@ -126,7 +128,9 @@ export function AdminAntdProvider({ children }: AdminAntdProviderProps) {
         },
       }}
     >
-      {children}
+      <AdminMessageProvider>
+        {children}
+      </AdminMessageProvider>
     </ConfigProvider>
   );
 }
@@ -265,6 +269,20 @@ const adminAntdThemeOverrideCss = `
     background-color: var(--theme-primary) !important;
     border-color: var(--theme-primary) !important;
     color: var(--theme-on-primary) !important;
+  }
+
+  .ant-message .ant-message-notice-content {
+    background: var(--theme-surface-container-lowest) !important;
+    border: 1px solid var(--theme-border-hairline) !important;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18) !important;
+    color: var(--theme-ink) !important;
+  }
+
+  .ant-message .ant-message-custom-content {
+    align-items: center;
+    color: var(--theme-ink) !important;
+    display: inline-flex;
+    gap: 8px;
   }
 
   :root.dark .ant-input-affix-wrapper.ant-input-outlined,

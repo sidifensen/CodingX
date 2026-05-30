@@ -1,5 +1,6 @@
 import '@testing-library/jest-dom/vitest';
 
+import { message } from 'antd';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -47,7 +48,10 @@ const skillFixture = [
 ] as const;
 
 describe('Skills page', () => {
+  let messageSuccessSpy: ReturnType<typeof vi.spyOn>;
+
   beforeEach(() => {
+    messageSuccessSpy = vi.spyOn(message, 'success').mockImplementation(() => undefined as never);
     vi.mocked(AdminChatApi.listSkills).mockResolvedValue({
       records: [...skillFixture],
       total: 22,
@@ -87,6 +91,7 @@ describe('Skills page', () => {
 
   afterEach(() => {
     cleanup();
+    messageSuccessSpy.mockRestore();
     vi.clearAllMocks();
   });
 
@@ -294,7 +299,8 @@ describe('Skills page', () => {
     await waitFor(() => {
       expect(AdminChatApi.migrateSkillPackages).toHaveBeenCalledTimes(1);
     });
-    expect(within(dialog).getByText('迁移完成：总计 2，成功 1，跳过 1，失败 0')).toBeInTheDocument();
+    expect(messageSuccessSpy).toHaveBeenCalledWith('迁移完成：总计 2，成功 1，跳过 1，失败 0');
+    expect(within(dialog).queryByText('迁移完成：总计 2，成功 1，跳过 1，失败 0')).not.toBeInTheDocument();
   });
 
   /**

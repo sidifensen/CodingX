@@ -17,6 +17,7 @@ import {
   AdminQueryTermMappingPayload,
 } from '../api/adminChatApi';
 import { AdminDataTable, AdminTableActions } from '../components/AdminDataTable';
+import { useAdminMessage } from '../components/AdminMessageContext';
 
 const PAGE_SIZE = 10;
 
@@ -51,6 +52,7 @@ const emptyForm: MappingFormState = {
  * 关键词映射管理页：配置查询归一化映射规则，支持分页检索与 CRUD。
  */
 export function QueryTermMappingPage() {
+  const adminMessage = useAdminMessage();
   const [pageData, setPageData] = React.useState<AdminPageResult<AdminQueryTermMapping> | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [errorMessage, setErrorMessage] = React.useState('');
@@ -63,7 +65,6 @@ export function QueryTermMappingPage() {
   const [editingItem, setEditingItem] = React.useState<AdminQueryTermMapping | null>(null);
 
   const [form, setForm] = React.useState<MappingFormState>(emptyForm);
-  const [formError, setFormError] = React.useState('');
   const [fieldErrors, setFieldErrors] = React.useState<Record<string, string>>({});
   const [saving, setSaving] = React.useState(false);
 
@@ -94,7 +95,6 @@ export function QueryTermMappingPage() {
     if (!dialogOpen) {
       setForm(emptyForm);
       setFieldErrors({});
-      setFormError('');
       return;
     }
     if (dialogMode === 'edit' && editingItem) {
@@ -165,7 +165,6 @@ export function QueryTermMappingPage() {
   });
 
   const handleSubmit = async () => {
-    setFormError('');
     if (!validate()) {
       return;
     }
@@ -181,8 +180,9 @@ export function QueryTermMappingPage() {
         await loadData(pageNo, keyword);
       }
       setDialogOpen(false);
+      void adminMessage.success(dialogMode === 'create' ? '映射规则已创建' : '映射规则已保存');
     } catch (error) {
-      setFormError(extractErrorMessage(error, '保存映射规则失败'));
+      void adminMessage.error(extractErrorMessage(error, '保存映射规则失败'));
     } finally {
       setSaving(false);
     }
@@ -194,14 +194,14 @@ export function QueryTermMappingPage() {
       return;
     }
     setDeleting(true);
-    setErrorMessage('');
     try {
       await AdminChatApi.deleteMapping(deleteTarget.id);
       setDeleteTarget(null);
       setPageNo(1);
       await loadData(1, keyword);
+      void adminMessage.success('映射规则已删除');
     } catch (error) {
-      setErrorMessage(extractErrorMessage(error, '删除映射规则失败'));
+      void adminMessage.error(extractErrorMessage(error, '删除映射规则失败'));
     } finally {
       setDeleting(false);
     }
@@ -305,7 +305,6 @@ export function QueryTermMappingPage() {
         mode={dialogMode}
         form={form}
         fieldErrors={fieldErrors}
-        formError={formError}
         open={dialogOpen}
         saving={saving}
         onChange={updateField}
@@ -336,7 +335,6 @@ function MappingEditDialog({
   mode,
   form,
   fieldErrors,
-  formError,
   open,
   saving,
   onClose,
@@ -346,7 +344,6 @@ function MappingEditDialog({
   mode: MappingDialogMode;
   form: MappingFormState;
   fieldErrors: Record<string, string>;
-  formError: string;
   open: boolean;
   saving: boolean;
   onClose: () => void;
@@ -371,7 +368,6 @@ function MappingEditDialog({
       onCancel={onClose}
     >
       <div>
-        {formError ? <Alert className="mb-md" showIcon type="error" message={formError} /> : null}
         <Form layout="vertical">
           <Form.Item label="原始词" required validateStatus={fieldErrors.sourceTerm ? 'error' : undefined} help={fieldErrors.sourceTerm}>
             <Input

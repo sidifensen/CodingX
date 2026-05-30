@@ -5,6 +5,7 @@ import { Alert, Button, Empty, Input, Select, Space, Spin, Tag, Typography } fro
 import type { ColumnsType } from 'antd/es/table';
 
 import { AdminChatApi, AdminRuntimeSetting } from '../api/adminChatApi';
+import { useAdminMessage } from '../components/AdminMessageContext';
 import { AdminDataTable } from '../components/AdminDataTable';
 import {
   buildCandidateRows,
@@ -110,12 +111,12 @@ function providerTitle(code: string): string {
  * 系统配置管理页：提供多种展示模式，降低配置项增多后的浏览和维护成本。
  */
 export function Settings() {
+  const adminMessage = useAdminMessage();
   const [settings, setSettings] = React.useState<AdminRuntimeSetting[]>([]);
   const [draftSettings, setDraftSettings] = React.useState<AdminRuntimeSetting[]>([]);
   const [saving, setSaving] = React.useState(false);
   const [loading, setLoading] = React.useState(true);
   const [errorMessage, setErrorMessage] = React.useState<string | null>(null);
-  const [successMessage, setSuccessMessage] = React.useState<string | null>(null);
   // 默认进入目录导航视图，并与顶部切换按钮首项顺序保持一致。
   const [viewMode, setViewMode] = React.useState<SettingsViewMode>('navigator');
   const [searchKeyword, setSearchKeyword] = React.useState('');
@@ -310,7 +311,6 @@ export function Settings() {
   function restoreDraft() {
     setDraftSettings(settings);
     setErrorMessage(null);
-    setSuccessMessage(null);
   }
 
   async function saveDraft() {
@@ -319,11 +319,10 @@ export function Settings() {
       const saved = await AdminChatApi.saveSettings(draftSettings);
       setSettings(saved);
       setDraftSettings(saved);
-      setSuccessMessage('系统配置已保存并刷新缓存');
       setErrorMessage(null);
+      void adminMessage.success('系统配置已保存并刷新缓存');
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : '保存系统配置失败');
-      setSuccessMessage(null);
+      void adminMessage.error(error instanceof Error ? error.message : '保存系统配置失败');
     } finally {
       setSaving(false);
     }
@@ -400,9 +399,6 @@ function inputTypeByValueType(valueType?: string): React.HTMLInputTypeAttribute 
         <Alert showIcon type="error" message={errorMessage} />
       ) : null}
 
-      {successMessage ? (
-        <Alert showIcon type="success" message={successMessage} />
-      ) : null}
 
       {loading ? (
         <section className="rounded-2xl border border-border-hairline bg-surface-container-lowest px-lg py-xl text-center">

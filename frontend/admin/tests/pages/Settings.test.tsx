@@ -1,5 +1,6 @@
 import '@testing-library/jest-dom/vitest';
 
+import { message } from 'antd';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -49,6 +50,26 @@ const mockSettings = [
   },
   {
     id: '4',
+    settingKey: 'ai.chat.default_model',
+    settingValue: 'qwen-plus',
+    valueType: 'STRING',
+    categoryCode: 'ai.routing',
+    description: '模型路由默认模型ID',
+    sortNo: 4,
+    restartRequired: false,
+  },
+  {
+    id: '5',
+    settingKey: 'ai.chat.deep_thinking_model',
+    settingValue: 'qwen3-max',
+    valueType: 'STRING',
+    categoryCode: 'ai.routing',
+    description: '模型路由深度思考模型ID',
+    sortNo: 5,
+    restartRequired: false,
+  },
+  {
+    id: '6',
     settingKey: 'chat.intent.guidance.enabled',
     settingValue: 'true',
     valueType: 'BOOLEAN',
@@ -58,7 +79,7 @@ const mockSettings = [
     restartRequired: false,
   },
   {
-    id: '5',
+    id: '7',
     settingKey: 'chat.intent.guidance.ambiguity_score_ratio',
     settingValue: '0.8',
     valueType: 'DECIMAL',
@@ -68,7 +89,7 @@ const mockSettings = [
     restartRequired: false,
   },
   {
-    id: '6',
+    id: '8',
     settingKey: 'ai.providers.siliconflow.api_key',
     settingValue: '',
     valueType: 'STRING',
@@ -80,7 +101,7 @@ const mockSettings = [
     maskedValue: 'sk-****',
   },
   {
-    id: '7',
+    id: '9',
     settingKey: 'ai.chat.candidates.10.id',
     settingValue: 'siliconflow-deepseek-v4-flash',
     valueType: 'STRING',
@@ -90,7 +111,7 @@ const mockSettings = [
     restartRequired: false,
   },
   {
-    id: '8',
+    id: '10',
     settingKey: 'ai.chat.candidates.10.provider',
     settingValue: 'siliconflow',
     valueType: 'STRING',
@@ -100,7 +121,7 @@ const mockSettings = [
     restartRequired: false,
   },
   {
-    id: '9',
+    id: '11',
     settingKey: 'ai.chat.candidates.10.model',
     settingValue: 'deepseek-ai/DeepSeek-V4-Flash',
     valueType: 'STRING',
@@ -110,7 +131,7 @@ const mockSettings = [
     restartRequired: false,
   },
   {
-    id: '10',
+    id: '12',
     settingKey: 'ai.chat.candidates.10.priority',
     settingValue: '1',
     valueType: 'INTEGER',
@@ -120,7 +141,7 @@ const mockSettings = [
     restartRequired: false,
   },
   {
-    id: '11',
+    id: '13',
     settingKey: 'ai.chat.candidates.20.id',
     settingValue: 'qwen-plus',
     valueType: 'STRING',
@@ -130,7 +151,7 @@ const mockSettings = [
     restartRequired: false,
   },
   {
-    id: '12',
+    id: '14',
     settingKey: 'ai.chat.candidates.20.provider',
     settingValue: 'bailian',
     valueType: 'STRING',
@@ -140,7 +161,7 @@ const mockSettings = [
     restartRequired: false,
   },
   {
-    id: '13',
+    id: '15',
     settingKey: 'ai.chat.candidates.20.model',
     settingValue: 'qwen-plus-latest',
     valueType: 'STRING',
@@ -150,7 +171,7 @@ const mockSettings = [
     restartRequired: false,
   },
   {
-    id: '14',
+    id: '16',
     settingKey: 'ai.chat.candidates.20.priority',
     settingValue: '2',
     valueType: 'INTEGER',
@@ -169,13 +190,17 @@ vi.mock('@/api/adminChatApi', () => ({
 }));
 
 describe('Settings page', () => {
+  let messageSuccessSpy: ReturnType<typeof vi.spyOn>;
+
   beforeEach(() => {
+    messageSuccessSpy = vi.spyOn(message, 'success').mockImplementation(() => undefined as never);
     vi.mocked(AdminChatApi.listSettings).mockResolvedValue([...mockSettings] as never);
     vi.mocked(AdminChatApi.saveSettings).mockResolvedValue([...mockSettings] as never);
   });
 
   afterEach(() => {
     cleanup();
+    messageSuccessSpy.mockRestore();
     vi.clearAllMocks();
   });
 
@@ -227,6 +252,8 @@ describe('Settings page', () => {
         ]),
       );
     });
+    expect(messageSuccessSpy).toHaveBeenCalledWith('系统配置已保存并刷新缓存');
+    expect(screen.queryByText('系统配置已保存并刷新缓存')).not.toBeInTheDocument();
   });
 
   it('keeps the focused setting input active after editing a value', async () => {
@@ -255,6 +282,19 @@ describe('Settings page', () => {
     expect(screen.getByDisplayValue('0.8')).toHaveAttribute('type', 'number');
   });
 
+  it('shows default model pointers in the AI base configuration category', async () => {
+    render(<Settings />);
+
+    await screen.findByRole('heading', { name: '系统配置' });
+    fireEvent.click(screen.getByRole('button', { name: /AI 基础配置/ }));
+
+    // 默认模型实际仍是候选池 ID 指针，但管理端入口应放在 AI 基础配置里方便配置。
+    expect(screen.getByText('模型路由默认模型ID')).toBeInTheDocument();
+    expect(screen.getByTestId('setting-value-ai.chat.default_model')).toHaveValue('qwen-plus');
+    expect(screen.getByText('模型路由深度思考模型ID')).toBeInTheDocument();
+    expect(screen.getByTestId('setting-value-ai.chat.deep_thinking_model')).toHaveValue('qwen3-max');
+  });
+
   it('shows AI provider category and keeps secret inputs empty with preserve hint', async () => {
     render(<Settings />);
 
@@ -275,6 +315,29 @@ describe('Settings page', () => {
     expect(screen.getByText('候选模型表格编辑')).toBeInTheDocument();
     expect(screen.getByTestId('setting-value-ai.chat.candidates.10.id')).toHaveValue('siliconflow-deepseek-v4-flash');
     expect(screen.getByTestId('setting-value-ai.chat.candidates.20.id')).toHaveValue('qwen-plus');
+  });
+
+  it('sorts candidate rows by priority instead of slot number', async () => {
+    vi.mocked(AdminChatApi.listSettings).mockResolvedValue(
+      mockSettings.map((setting) => {
+        if (setting.settingKey === 'ai.chat.candidates.10.priority') {
+          return { ...setting, settingValue: '2' };
+        }
+        if (setting.settingKey === 'ai.chat.candidates.20.priority') {
+          return { ...setting, settingValue: '1' };
+        }
+        return setting;
+      }) as never,
+    );
+
+    render(<Settings />);
+
+    await screen.findByRole('heading', { name: '系统配置' });
+    fireEvent.click(screen.getByRole('button', { name: /模型候选池/ }));
+
+    const candidateInputs = screen.getAllByTestId(/setting-value-ai\.chat\.candidates\.\d+\.id/);
+    expect(candidateInputs[0]).toHaveValue('qwen-plus');
+    expect(candidateInputs[1]).toHaveValue('siliconflow-deepseek-v4-flash');
   });
 
   it('reorders other candidates when one priority is raised', async () => {

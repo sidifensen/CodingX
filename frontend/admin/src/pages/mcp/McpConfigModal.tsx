@@ -1,7 +1,8 @@
 import React from 'react';
-import { Alert, Form, Input, InputNumber, Modal, Switch } from 'antd';
+import { Form, Input, InputNumber, Modal, Switch } from 'antd';
 
 import type { AdminMcpConfig } from '../../api/adminChatApi';
+import { useAdminMessage } from '../../components/AdminMessageContext';
 import type { McpDialogMode, McpFormValues } from './mcpTypes';
 import { extractErrorMessage, toMcpFormValues, toMcpPayload } from './mcpUtils';
 
@@ -17,20 +18,18 @@ interface McpConfigModalProps {
  * MCP 配置弹窗：使用 AntD Modal/Form 统一新增与编辑交互。
  */
 export function McpConfigModal({ open, mode, config, onCancel, onSubmit }: McpConfigModalProps) {
+  const adminMessage = useAdminMessage();
   const [form] = Form.useForm<McpFormValues>();
   const [saving, setSaving] = React.useState(false);
-  const [formError, setFormError] = React.useState('');
 
   React.useEffect(() => {
     if (!open) {
       return;
     }
-    setFormError('');
     form.setFieldsValue(toMcpFormValues(config));
   }, [config, form, open]);
 
   const handleSubmit = async () => {
-    setFormError('');
     try {
       const values = await form.validateFields();
       setSaving(true);
@@ -39,7 +38,7 @@ export function McpConfigModal({ open, mode, config, onCancel, onSubmit }: McpCo
       if (isAntdValidationError(error)) {
         return;
       }
-      setFormError(extractErrorMessage(error, mode === 'create' ? '新增MCP配置失败' : '保存MCP配置失败'));
+      void adminMessage.error(extractErrorMessage(error, mode === 'create' ? '新增MCP配置失败' : '保存MCP配置失败'));
     } finally {
       setSaving(false);
     }
@@ -58,9 +57,6 @@ export function McpConfigModal({ open, mode, config, onCancel, onSubmit }: McpCo
       onCancel={onCancel}
       onOk={() => void handleSubmit()}
     >
-      {formError ? (
-        <Alert showIcon type="error" message={formError} style={{ marginBottom: 16 }} />
-      ) : null}
       <Form<McpFormValues>
         form={form}
         layout="vertical"

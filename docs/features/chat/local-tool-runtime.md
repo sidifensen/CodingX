@@ -18,7 +18,8 @@
 4. 聊天执行前通过 `ChatToolExecutionContext` 绑定当前本地工作区，工具结果元数据回显实际工作目录。
 5. `CodexBuiltinChatToolExecutor` 执行命令、补丁、计划、资源读取、图片读取、目标状态、权限申请、插件申请与进程内子代理状态工具；标准 diff 中若出现当前工作区内的绝对路径，会在应用前规范化为相对路径，工作区外路径继续拒绝。
 6. 工具输出会作为系统证据追加给下一轮模型生成，证据中单独写出真实 `workingDirectory` 和后续路径约束；前端同步展示 start、complete 或 error 过程卡片。
-7. `ChatSkillContextService` 读取已选技能说明并加入系统提示；若缺少 URL、页面、附件等必要目标，模型应围绕已选技能追问或尝试获取上下文，而不是转成普通闲聊回答。
+7. 如果工具回灌前模型已经向用户流式输出正文，后端会把已发布正文写入下一轮系统上下文，并在后续 `onDelta` 发布前跳过严格匹配的重复前缀，避免模型重复开场白时前端和落库内容出现两份相同正文。
+8. `ChatSkillContextService` 读取已选技能说明并加入系统提示；若缺少 URL、页面、附件等必要目标，模型应围绕已选技能追问或尝试获取上下文，而不是转成普通闲聊回答。
 
 ## 关键文件
 
@@ -40,6 +41,8 @@
 
 `chat.tool.max_rounds` 默认值为 10，运行时会把有效值限制在 1 到 20 之间，防止管理端或脚本误配成超大值后让工具循环长期占用聊天执行线程。
 
+工具调用循环会记录“下一轮需要跳过的已发布正文前缀”。当模型第一轮先输出解释文本再请求工具，第二轮收到工具证据后又从同一段解释文本开始时，`ChatApplicationService` 只发布未重复的剩余 delta；完全重复的 delta 不进入 SSE，也不会追加到最终 `ChatMessage.content`。该去重只做严格前缀匹配，遇到不匹配内容会立即清空跳过状态并原样输出，避免误删真实新回答。
+
 `apply_patch` 以当前工具工作目录为写入边界。模型如果拿到工具输出中的真实工作目录，例如 `D:\`，后续补丁应写 `diary/index.html` 或工作目录内的绝对路径；如果补丁指向 `C:\workspace\...` 这类不属于当前工作目录的路径，后端会按越界路径拒绝执行，避免误写用户未授权目录。标准 diff 新增文件块里若模型漏写 hunk 内容行开头的 `+`，执行器只会在 `--- /dev/null` 且旧文件行号为 0 的新增文件 hunk 内补齐新增标记，避免误改普通修改补丁。若模型把已存在的同名普通文件继续写成 `new file mode`，执行器会把该新增块转换为整文件替换补丁，支持用户反复生成 `weather.html` 这类单文件页面；即使该补丁缺少 `diff --git` 文件块头，或 `+++ b/file` 文件头携带制表符分隔的时间戳，仍会先剥离元数据并进入同名覆盖兜底，避免 `already exists in working directory` 阻断工具链路。
 
 `spawn_agent`、`send_input`、`wait_agent`、`close_agent`、`resume_agent`、`list_agents`、`spawn_agents_on_csv` 与 `report_agent_job_result` 当前提供后端进程内状态模拟，用于验证模型工具编排、管理端探测和链路调试，不启动真实外部 Codex 子进程。历史数据库若仍保留这些工具的禁用状态，会由迁移脚本统一启用，避免接口层在执行器可用时返回“工具已禁用”。
@@ -55,3 +58,4 @@
 - `mvn -Dtest=ChatRuntimePersistenceStructureTest#codexRuntimeToolMigrationEnablesImplementedTools test`
 - `mvn -Dtest=ChatRuntimePersistenceStructureTest#shellCommandRuntimeMigrationClarifiesPowerShellSyntax test`
 - `mvn -Dtest=ChatSkillContextServiceTest test`
+- `mvn -Dtest=ChatApplicationServiceTest#sendMessageSkipsRepeatedPublishedPrefixAfterToolCall test`

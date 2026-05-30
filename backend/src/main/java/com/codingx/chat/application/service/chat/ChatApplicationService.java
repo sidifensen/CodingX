@@ -1301,6 +1301,7 @@ public class ChatApplicationService {
     ) {
         List<ChatToolSpec> toolSpecs = resolveModelVisibleToolSpecs(initialAiHistory, currentMessageAttachments);
         List<ChatMessage> currentHistory = new ArrayList<>(initialAiHistory);
+        AtomicReference<String> pendingPublishedContentPrefix = new AtomicReference<>("");
         log.info(
             "模型工具决策: 可见工具数={}, 调用模式={}",
             toolSpecs.size(),
@@ -1317,7 +1318,8 @@ public class ChatApplicationService {
                 selectedProvider,
                 selectedModel,
                 activeRunId,
-                null
+                null,
+                pendingPublishedContentPrefix
             ));
             return;
         }
@@ -1337,7 +1339,8 @@ public class ChatApplicationService {
                 selectedProvider,
                 selectedModel,
                 activeRunId,
-                toolCalls
+                toolCalls,
+                pendingPublishedContentPrefix
             ));
             if (streamError[0] != null || toolCalls.isEmpty()) {
                 log.info(
@@ -1352,6 +1355,7 @@ public class ChatApplicationService {
             // 失败收口、finish 事件和消息落库都依赖这两个缓冲保留工具调用前已经到达的内容。
             if (builder.length() > publishedAssistantContextLength) {
                 // 将已展示给用户的正文同步给下一轮模型，避免工具回灌后重复输出相同开场白。
+                pendingPublishedContentPrefix.set(builder.toString());
                 String publishedContent = buildPublishedAssistantContentContext(builder.toString());
                 currentHistory.add(ChatMessage.create(
                     cn.hutool.core.util.IdUtil.getSnowflakeNextId(),
@@ -1491,6 +1495,7 @@ public class ChatApplicationService {
      * @param selectedModel 模型输出容器。
      * @param activeRunId 当前运行标识。
      * @param toolCalls 工具调用收集器；为空时表示普通流式模式。
+     * @param pendingPublishedContentPrefix 工具回灌后下一轮模型需要跳过的已发布正文前缀。
      * @return 可传给模型客户端的流处理器。
      */
     private AiChatClient.ToolAwareStreamHandler buildStreamHandler(
@@ -1502,7 +1507,8 @@ public class ChatApplicationService {
         String[] selectedProvider,
         String[] selectedModel,
         Long activeRunId,
-        List<AiToolCall> toolCalls
+        List<AiToolCall> toolCalls,
+        AtomicReference<String> pendingPublishedContentPrefix
     ) {
         return new AiChatClient.ToolAwareStreamHandler() {
             @Override
@@ -1516,8 +1522,12 @@ public class ChatApplicationService {
                 if (chatRuntimeGuardService.isCancelled(command.conversationId(), activeRunId)) {
                     return;
                 }
-                builder.append(delta);
-                chatStreamPublisher.publishAssistantDelta(command.conversationId(), delta);
+                String publishableDelta = consumePublishedContentPrefix(delta, pendingPublishedContentPrefix);
+                if (StrUtil.isEmpty(publishableDelta)) {
+                    return;
+                }
+                builder.append(publishableDelta);
+                chatStreamPublisher.publishAssistantDelta(command.conversationId(), publishableDelta);
             }
 
             @Override
@@ -1546,6 +1556,36 @@ public class ChatApplicationService {
                 streamError[0] = throwable;
             }
         };
+    }
+
+    /**
+     * 消费工具回灌后模型重复输出的已发布正文前缀，保证 SSE、内存缓冲和最终落库内容不重复。
+     *
+     * @param delta 当前模型正文增量。
+     * @param pendingPublishedContentPrefix 仍需要跳过的已发布正文前缀。
+     * @return 应继续发布的新正文；完全重复时返回空串。
+     */
+    private String consumePublishedContentPrefix(
+        String delta,
+        AtomicReference<String> pendingPublishedContentPrefix
+    ) {
+        if (StrUtil.isEmpty(delta) || pendingPublishedContentPrefix == null) {
+            return StrUtil.blankToDefault(delta, "");
+        }
+        String pendingPrefix = StrUtil.blankToDefault(pendingPublishedContentPrefix.get(), "");
+        if (StrUtil.isEmpty(pendingPrefix)) {
+            return delta;
+        }
+        if (pendingPrefix.startsWith(delta)) {
+            pendingPublishedContentPrefix.set(pendingPrefix.substring(delta.length()));
+            return "";
+        }
+        if (delta.startsWith(pendingPrefix)) {
+            pendingPublishedContentPrefix.set("");
+            return delta.substring(pendingPrefix.length());
+        }
+        pendingPublishedContentPrefix.set("");
+        return delta;
     }
 
     /**

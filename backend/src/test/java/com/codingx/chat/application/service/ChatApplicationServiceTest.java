@@ -27,6 +27,7 @@ import com.codingx.chat.domain.repository.ChatIntentNodeRepository;
 import com.codingx.chat.domain.repository.ChatMessageRepository;
 import com.codingx.chat.domain.port.AiChatClient;
 import com.codingx.chat.domain.port.ChatStreamPublisher;
+import com.codingx.common.support.ai.AiToolCall;
 import com.codingx.common.error.ErrorMessageCatalog;
 import com.codingx.common.exception.ConflictException;
 import java.util.Map;
@@ -40,7 +41,9 @@ import com.codingx.skill.application.service.ChatSkillContextService;
 import com.codingx.skill.domain.model.ChatSkill;
 import com.codingx.skill.domain.repository.ChatSkillRepository;
 import com.codingx.tool.application.service.ChatToolExecutionService;
+import com.codingx.tool.application.service.ChatToolExecutionResult;
 import com.codingx.tool.application.service.ChatToolSpecService;
+import com.codingx.tool.application.service.ChatToolSpec;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -636,6 +639,62 @@ class ChatApplicationServiceTest {
         verify(searchReferenceCollector).collect(eq(9001001L), any(Long.class), eq(1L), any());
         verify(documentArtifactService).createDocxArtifact(eq(9001001L), any(Long.class), eq(1L), eq("搜索结果整理中"));
         verify(chatStreamPublisher).publishAssistantCompleted(1L, "截至当前检索，Java 24 已发布", "联网搜索结果");
+        ChatExecutionContext.clear();
+    }
+
+    /**
+     * 工具回灌后的模型续写可能重复第一轮已流式输出的开场白，后端必须在发布前跳过重复前缀。
+     */
+    @Test
+    void sendMessageSkipsRepeatedPublishedPrefixAfterToolCall() {
+        bindRunContext();
+        ChatConversation conversation = ChatConversation.create(1L, "Default", 1002L, ChatConversationStatus.ACTIVE);
+        when(chatConversationRepository.requireById(1L)).thenReturn(conversation);
+        when(chatMessageRepository.findByConversationId(1L)).thenReturn(new ArrayList<>());
+        when(chatAttachmentService.requireOwnedAttachments(any(), eq(1L), eq(1002L))).thenReturn(List.of());
+        when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+            new ConversationRewriteResult("帮我创建 HTML 游戏", false, List.of("帮我创建 HTML 游戏"))
+        );
+        when(conversationIntentService.route("帮我创建 HTML 游戏", false)).thenReturn(
+            new ConversationIntentDecision("chat.normal", ConversationIntentAction.DIRECT, null)
+        );
+        when(chatIntentNodeRepository.findByIntentCode("chat.normal")).thenReturn(null);
+        when(chatSkillContextService.buildSkillContext(any())).thenReturn("");
+        when(chatExpertContextService.buildExpertContext(any())).thenReturn("");
+        when(chatToolSpecService.listModelVisibleToolSpecs()).thenReturn(List.of(
+            new ChatToolSpec("shell_command", "执行命令", Map.of())
+        ));
+        when(runtimeSettingService.chatToolMaxRounds()).thenReturn(2);
+        when(chatToolExecutionService.execute(eq("shell_command"), any())).thenReturn(
+            new ChatToolExecutionResult("shell_command", "文件已写入", Map.of("exitCode", 0))
+        );
+        when(conversationSummaryService.buildModelHistory(any(), any())).thenAnswer(invocation -> invocation.getArgument(1));
+        when(llmResponseCleaner.clean(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(conversationTitleService.generateTitle(any(), any())).thenReturn("HTML 游戏");
+        AtomicInteger modelRound = new AtomicInteger();
+        doAnswer(invocation -> {
+            AiChatClient.ToolAwareStreamHandler handler = invocation.getArgument(3);
+            if (modelRound.incrementAndGet() == 1) {
+                handler.onDelta("我将为你创建 HTML 游戏。");
+                handler.onToolCall(new AiToolCall("call-1", "shell_command", "{\"command\":\"write index.html\"}"));
+                handler.onComplete();
+                return null;
+            }
+            handler.onDelta("我将为你创建 HTML 游戏。");
+            handler.onDelta("\n\n已创建完成。");
+            handler.onComplete();
+            return null;
+        }).when(aiChatClient).streamChatWithTools(any(), eq(false), any(), any());
+
+        chatApplicationService.sendMessage(new SendChatMessageCommand(1L, "帮我创建 HTML 游戏", false), 1002L);
+
+        ArgumentCaptor<String> deltaCaptor = ArgumentCaptor.forClass(String.class);
+        verify(chatStreamPublisher, org.mockito.Mockito.times(2)).publishAssistantDelta(eq(1L), deltaCaptor.capture());
+        assertEquals(List.of("我将为你创建 HTML 游戏。", "\n\n已创建完成。"), deltaCaptor.getAllValues());
+        ArgumentCaptor<ChatMessage> messageCaptor = ArgumentCaptor.forClass(ChatMessage.class);
+        verify(chatMessageRepository, org.mockito.Mockito.times(2)).save(messageCaptor.capture());
+        assertEquals("我将为你创建 HTML 游戏。\n\n已创建完成。", messageCaptor.getAllValues().get(1).getContent());
+        verify(chatStreamPublisher).publishAssistantCompleted(1L, "我将为你创建 HTML 游戏。\n\n已创建完成。", "HTML 游戏");
         ChatExecutionContext.clear();
     }
 

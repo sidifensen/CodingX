@@ -88,8 +88,8 @@ describe('MCP page', () => {
     vi.clearAllMocks();
   });
 
-  it('loads MCP config and tools from backend api', async () => {
-    render(<MCP />);
+  it('loads MCP config and tools from backend api in an Ant Design table', async () => {
+    const { container } = render(<MCP />);
 
     expect(await screen.findByRole('heading', { name: 'MCP 管理' })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'MCP 列表' })).not.toBeInTheDocument();
@@ -101,9 +101,11 @@ describe('MCP page', () => {
     expect(screen.getByText('/code_search')).toBeInTheDocument();
     expect(screen.queryAllByText('weather_query')).toHaveLength(0);
     expect(screen.getAllByText('可用').length).toBeGreaterThanOrEqual(1);
+    expect(container.querySelector('.ant-table')).toBeInTheDocument();
+    expect(container.querySelector('.ant-btn')).toBeInTheDocument();
   });
 
-  it('shows trace-style skeleton rows while MCP table is loading', async () => {
+  it('shows Ant Design table loading state while MCP table is loading', async () => {
     let resolveListMcpConfigs: ((value: any) => void) | undefined;
     let resolveListMcpTools: ((value: any) => void) | undefined;
     vi.mocked(AdminChatApi.listMcpConfigs).mockImplementationOnce(
@@ -119,7 +121,9 @@ describe('MCP page', () => {
 
     render(<MCP />);
     expect(await screen.findByRole('heading', { name: 'MCP 管理' })).toBeInTheDocument();
-    expect(screen.getAllByTestId('mcp-loading-skeleton-row')).toHaveLength(10);
+    await waitFor(() => {
+      expect(document.querySelector('.ant-spin')).toBeInTheDocument();
+    });
 
     resolveListMcpConfigs?.([...mcpConfigFixture]);
     resolveListMcpTools?.([...mcpToolFixture]);
@@ -132,6 +136,8 @@ describe('MCP page', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '新增MCP配置' }));
     const dialog = await screen.findByRole('dialog', { name: '新增MCP配置' });
+    expect(document.querySelector('.ant-modal')).toBeInTheDocument();
+    expect(dialog.querySelector('.ant-form')).toBeInTheDocument();
     fireEvent.change(within(dialog).getByLabelText('MCP编码'), { target: { value: 'weather_query' } });
     fireEvent.change(within(dialog).getByLabelText('MCP名称'), { target: { value: '天气查询' } });
     fireEvent.change(within(dialog).getByLabelText('分类'), { target: { value: '天气' } });
@@ -180,13 +186,14 @@ describe('MCP page', () => {
     });
   });
 
-  it('renders delete dialog via body portal to avoid layout clipping by page containers', async () => {
+  it('renders delete dialog through Ant Design modal portal to avoid layout clipping', async () => {
     render(<MCP />);
 
     fireEvent.click(await screen.findByRole('button', { name: '删除配置 weather_query' }));
-    const overlay = await screen.findByTestId('mcp-delete-dialog-overlay');
+    const dialog = await screen.findByRole('dialog', { name: '删除MCP配置' });
 
-    expect(overlay.parentElement).toBe(document.body);
+    expect(dialog.closest('.ant-modal')).toBeInTheDocument();
+    expect(document.body.querySelector('.ant-modal-root')).toBeInTheDocument();
   });
 
   it('opens in-page dialog to show ping result instead of browser alert', async () => {
@@ -199,13 +206,13 @@ describe('MCP page', () => {
     expect(screen.getByText('weather_query 可用')).toBeInTheDocument();
     expect(AdminChatApi.pingMcpTool).toHaveBeenCalledWith('weather_query');
 
-    fireEvent.click(screen.getByRole('button', { name: '关闭结果弹窗' }));
+    fireEvent.click(screen.getByRole('button', { name: '知道了' }));
     await waitFor(() =>
       expect(screen.queryByRole('dialog', { name: '工具探测结果' })).not.toBeInTheDocument(),
     );
   });
 
-  it('uses paginated table card and supports page navigation', async () => {
+  it('uses Ant Design table pagination and supports page navigation', async () => {
     vi.mocked(AdminChatApi.listMcpConfigs).mockResolvedValue(
       Array.from({ length: 12 }, (_, index) => ({
         id: 8000 + index,
@@ -225,7 +232,7 @@ describe('MCP page', () => {
     expect(screen.getByText('第 1 / 2 页，共 12 条')).toBeInTheDocument();
     expect(screen.queryByText('/mcp_11')).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: '第 2 页' }));
+    fireEvent.click(await screen.findByTitle('2'));
     expect(await screen.findByText('/mcp_11')).toBeInTheDocument();
     expect(screen.queryByText('/mcp_1')).not.toBeInTheDocument();
   });

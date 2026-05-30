@@ -194,6 +194,9 @@ const adminAntdThemeOverrideCss = `
   }
 
   .ant-input-affix-wrapper,
+  .ant-input-affix-wrapper.ant-input-outlined,
+  .ant-input-affix-wrapper.ant-input-affix-wrapper,
+  .ant-select.ant-select-outlined:not(.ant-select-customize-input) .ant-select-selector,
   .ant-select .ant-select-selector {
     background: var(--theme-surface-container-lowest) !important;
     background-color: var(--theme-surface-container-lowest) !important;
@@ -202,6 +205,7 @@ const adminAntdThemeOverrideCss = `
   }
 
   .ant-input,
+  .ant-input-affix-wrapper .ant-input,
   .ant-select-selection-item,
   .ant-select-item,
   .ant-empty-description,
@@ -213,7 +217,8 @@ const adminAntdThemeOverrideCss = `
     color: var(--theme-secondary) !important;
   }
 
-  .ant-btn-default {
+  .ant-btn-default,
+  .ant-btn.ant-btn-default {
     background: var(--theme-surface-container-lowest) !important;
     background-color: var(--theme-surface-container-lowest) !important;
     border-color: var(--theme-border-strong) !important;
@@ -225,6 +230,21 @@ const adminAntdThemeOverrideCss = `
     background-color: var(--theme-primary) !important;
     border-color: var(--theme-primary) !important;
     color: var(--theme-on-primary) !important;
+  }
+
+  :root.dark .ant-input-affix-wrapper.ant-input-outlined,
+  :root.dark .ant-input-affix-wrapper.ant-input-affix-wrapper,
+  :root.dark .ant-select.ant-select-outlined:not(.ant-select-customize-input) .ant-select-selector,
+  :root.dark .ant-btn.ant-btn-default {
+    background: var(--theme-surface-container-lowest) !important;
+    background-color: var(--theme-surface-container-lowest) !important;
+    border-color: var(--theme-border-strong) !important;
+    color: var(--theme-ink) !important;
+  }
+
+  :root.dark .ant-input-affix-wrapper .ant-input,
+  :root.dark .ant-select-selection-item {
+    color: var(--theme-ink) !important;
   }
 
   .ant-pagination,

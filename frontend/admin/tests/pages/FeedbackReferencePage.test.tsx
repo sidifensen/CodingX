@@ -37,8 +37,8 @@ describe('FeedbackReferencePage', () => {
     vi.clearAllMocks();
   });
 
-  it('loads references from feedback id and renders source rows', async () => {
-    render(
+  it('loads references in an Ant Design table and renders source rows', async () => {
+    const { container } = render(
       <MemoryRouter initialEntries={['/feedbacks/9001/references']}>
         <Routes>
           <Route path="/feedbacks/:feedbackId/references" element={<FeedbackReferencePage />} />
@@ -49,7 +49,24 @@ describe('FeedbackReferencePage', () => {
     expect(await screen.findByRole('heading', { name: '反馈引用来源' })).toBeInTheDocument();
     expect(screen.getByText('报销制度说明')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: '打开来源 报销制度说明' })).toHaveAttribute('href', 'https://example.com/policy');
+    expect(screen.getByRole('link', { name: '打开来源 报销制度说明' })).toHaveAttribute('target', '_blank');
+    expect(screen.getByRole('link', { name: '打开来源 报销制度说明' })).toHaveAttribute('rel', 'noreferrer');
     expect(screen.getByRole('link', { name: '返回反馈详情' })).toHaveAttribute('href', '/feedbacks/9001');
+    expect(container.querySelector('.ant-table')).toBeInTheDocument();
+  });
+
+  it('shows backend error message when feedback references request fails', async () => {
+    vi.mocked(AdminChatApi.listFeedbackReferences).mockRejectedValueOnce(new Error('后端错误'));
+
+    const { container } = render(
+      <MemoryRouter initialEntries={['/feedbacks/9001/references']}>
+        <Routes>
+          <Route path="/feedbacks/:feedbackId/references" element={<FeedbackReferencePage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText('后端错误')).toBeInTheDocument();
+    expect(container.querySelector('.ant-alert-error')).toBeInTheDocument();
   });
 });
-

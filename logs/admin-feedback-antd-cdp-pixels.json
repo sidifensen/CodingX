@@ -1,0 +1,305 @@
+﻿{
+    "capturedAt":  "2026-05-30T03:13:43.0768757+08:00",
+    "notes":  "Pixel samples are taken from CDP screenshots to verify rendered colors for the actual user-visible AntD feedback pages.",
+    "pages":  [
+                  {
+                      "label":  "list-dark",
+                      "file":  "D:\\code\\CodingX\\logs\\admin-feedback-antd-list-dark.png",
+                      "samples":  {
+                                      "input":  {
+                                                    "x":  1500,
+                                                    "y":  92,
+                                                    "rgb":  [
+                                                                50,
+                                                                50,
+                                                                50
+                                                            ],
+                                                    "hex":  "#323232",
+                                                    "luma":  50
+                                                },
+                                      "select":  {
+                                                     "x":  1920,
+                                                     "y":  92,
+                                                     "rgb":  [
+                                                                 13,
+                                                                 13,
+                                                                 13
+                                                             ],
+                                                     "hex":  "#0D0D0D",
+                                                     "luma":  13
+                                                 },
+                                      "primaryButton":  {
+                                                            "x":  2100,
+                                                            "y":  92,
+                                                            "rgb":  [
+                                                                        85,
+                                                                        85,
+                                                                        85
+                                                                    ],
+                                                            "hex":  "#555555",
+                                                            "luma":  85
+                                                        },
+                                      "defaultButton":  {
+                                                            "x":  2205,
+                                                            "y":  92,
+                                                            "rgb":  [
+                                                                        77,
+                                                                        77,
+                                                                        77
+                                                                    ],
+                                                            "hex":  "#4D4D4D",
+                                                            "luma":  77
+                                                        },
+                                      "tableCell":  {
+                                                        "x":  500,
+                                                        "y":  245,
+                                                        "rgb":  [
+                                                                    13,
+                                                                    13,
+                                                                    13
+                                                                ],
+                                                        "hex":  "#0D0D0D",
+                                                        "luma":  13
+                                                    },
+                                      "pageBackground":  {
+                                                             "x":  300,
+                                                             "y":  1180,
+                                                             "rgb":  [
+                                                                         18,
+                                                                         18,
+                                                                         18
+                                                                     ],
+                                                             "hex":  "#121212",
+                                                             "luma":  18
+                                                         },
+                                      "tableHeader":  {
+                                                          "x":  500,
+                                                          "y":  180,
+                                                          "rgb":  [
+                                                                      21,
+                                                                      21,
+                                                                      21
+                                                                  ],
+                                                          "hex":  "#151515",
+                                                          "luma":  21
+                                                      }
+                                  }
+                  },
+                  {
+                      "label":  "detail-dark",
+                      "file":  "D:\\code\\CodingX\\logs\\admin-feedback-antd-detail-dark.png",
+                      "samples":  {
+                                      "primaryButton":  {
+                                                            "x":  2150,
+                                                            "y":  60,
+                                                            "rgb":  [
+                                                                        89,
+                                                                        89,
+                                                                        89
+                                                                    ],
+                                                            "hex":  "#595959",
+                                                            "luma":  89
+                                                        },
+                                      "descriptionsContent":  {
+                                                                  "x":  520,
+                                                                  "y":  210,
+                                                                  "rgb":  [
+                                                                              12,
+                                                                              12,
+                                                                              12
+                                                                          ],
+                                                                  "hex":  "#0C0C0C",
+                                                                  "luma":  12
+                                                              },
+                                      "defaultButton":  {
+                                                            "x":  1980,
+                                                            "y":  60,
+                                                            "rgb":  [
+                                                                        12,
+                                                                        12,
+                                                                        12
+                                                                    ],
+                                                            "hex":  "#0C0C0C",
+                                                            "luma":  12
+                                                        },
+                                      "cardBackground":  {
+                                                             "x":  360,
+                                                             "y":  150,
+                                                             "rgb":  [
+                                                                         22,
+                                                                         22,
+                                                                         22
+                                                                     ],
+                                                             "hex":  "#161616",
+                                                             "luma":  22
+                                                         },
+                                      "pageBackground":  {
+                                                             "x":  300,
+                                                             "y":  1180,
+                                                             "rgb":  [
+                                                                         18,
+                                                                         18,
+                                                                         18
+                                                                     ],
+                                                             "hex":  "#121212",
+                                                             "luma":  18
+                                                         },
+                                      "descriptionsLabel":  {
+                                                                "x":  360,
+                                                                "y":  210,
+                                                                "rgb":  [
+                                                                            22,
+                                                                            22,
+                                                                            22
+                                                                        ],
+                                                                "hex":  "#161616",
+                                                                "luma":  22
+                                                            }
+                                  }
+                  },
+                  {
+                      "label":  "references-dark",
+                      "file":  "D:\\code\\CodingX\\logs\\admin-feedback-antd-references-dark.png",
+                      "samples":  {
+                                      "cardBackground":  {
+                                                             "x":  360,
+                                                             "y":  155,
+                                                             "rgb":  [
+                                                                         20,
+                                                                         20,
+                                                                         20
+                                                                     ],
+                                                             "hex":  "#141414",
+                                                             "luma":  20
+                                                         },
+                                      "defaultButton":  {
+                                                            "x":  2030,
+                                                            "y":  60,
+                                                            "rgb":  [
+                                                                        16,
+                                                                        16,
+                                                                        16
+                                                                    ],
+                                                            "hex":  "#101010",
+                                                            "luma":  16
+                                                        },
+                                      "tableHeader":  {
+                                                          "x":  500,
+                                                          "y":  185,
+                                                          "rgb":  [
+                                                                      20,
+                                                                      20,
+                                                                      20
+                                                                  ],
+                                                          "hex":  "#141414",
+                                                          "luma":  20
+                                                      },
+                                      "pageBackground":  {
+                                                             "x":  300,
+                                                             "y":  1180,
+                                                             "rgb":  [
+                                                                         18,
+                                                                         18,
+                                                                         18
+                                                                     ],
+                                                             "hex":  "#121212",
+                                                             "luma":  18
+                                                         },
+                                      "emptyCell":  {
+                                                        "x":  1280,
+                                                        "y":  250,
+                                                        "rgb":  [
+                                                                    40,
+                                                                    44,
+                                                                    44
+                                                                ],
+                                                        "hex":  "#282C2C",
+                                                        "luma":  43.15
+                                                    }
+                                  }
+                  },
+                  {
+                      "label":  "list-light",
+                      "file":  "D:\\code\\CodingX\\logs\\admin-feedback-antd-list-light.png",
+                      "samples":  {
+                                      "input":  {
+                                                    "x":  1500,
+                                                    "y":  92,
+                                                    "rgb":  [
+                                                                222,
+                                                                223,
+                                                                224
+                                                            ],
+                                                    "hex":  "#DEDFE0",
+                                                    "luma":  222.86
+                                                },
+                                      "select":  {
+                                                     "x":  1920,
+                                                     "y":  92,
+                                                     "rgb":  [
+                                                                 251,
+                                                                 251,
+                                                                 251
+                                                             ],
+                                                     "hex":  "#FBFBFB",
+                                                     "luma":  251
+                                                 },
+                                      "primaryButton":  {
+                                                            "x":  2100,
+                                                            "y":  92,
+                                                            "rgb":  [
+                                                                        183,
+                                                                        183,
+                                                                        183
+                                                                    ],
+                                                            "hex":  "#B7B7B7",
+                                                            "luma":  183
+                                                        },
+                                      "defaultButton":  {
+                                                            "x":  2205,
+                                                            "y":  92,
+                                                            "rgb":  [
+                                                                        189,
+                                                                        189,
+                                                                        189
+                                                                    ],
+                                                            "hex":  "#BDBDBD",
+                                                            "luma":  189
+                                                        },
+                                      "tableCell":  {
+                                                        "x":  500,
+                                                        "y":  245,
+                                                        "rgb":  [
+                                                                    251,
+                                                                    251,
+                                                                    251
+                                                                ],
+                                                        "hex":  "#FBFBFB",
+                                                        "luma":  251
+                                                    },
+                                      "pageBackground":  {
+                                                             "x":  300,
+                                                             "y":  1180,
+                                                             "rgb":  [
+                                                                         249,
+                                                                         249,
+                                                                         249
+                                                                     ],
+                                                             "hex":  "#F9F9F9",
+                                                             "luma":  249
+                                                         },
+                                      "tableHeader":  {
+                                                          "x":  500,
+                                                          "y":  180,
+                                                          "rgb":  [
+                                                                      247,
+                                                                      247,
+                                                                      247
+                                                                  ],
+                                                          "hex":  "#F7F7F7",
+                                                          "luma":  247
+                                                      }
+                                  }
+                  }
+              ]
+}

@@ -44,7 +44,7 @@ describe('FeedbackPage', () => {
     vi.clearAllMocks();
   });
 
-  it('renders feedback rows and allows jumping to detail page', async () => {
+  it('renders feedback rows in an Ant Design table and allows jumping to detail page', async () => {
     const { container } = render(
       <MemoryRouter>
         <FeedbackPage />
@@ -55,10 +55,12 @@ describe('FeedbackPage', () => {
     expect(screen.getByText('helpful')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: '查看 9001' })).toHaveAttribute('href', '/feedbacks/9001');
     expect(screen.getByText('第 1 / 1 页，共 1 条')).toBeInTheDocument();
-    expect(container.querySelector('section.rounded-xl.border.border-border-hairline.bg-surface-container-lowest.shadow-sm')).toBeInTheDocument();
+    expect(container.querySelector('.ant-table')).toBeInTheDocument();
+    expect(container.querySelector('.ant-form')).toBeInTheDocument();
+    expect(container.querySelector('.ant-select')).toBeInTheDocument();
   });
 
-  it('shows trace-style skeleton rows while feedback table is loading', async () => {
+  it('shows Ant Design table loading state while feedback table is loading', async () => {
     let resolveListFeedbacks: ((value: any) => void) | undefined;
     vi.mocked(AdminChatApi.listFeedbacks).mockImplementationOnce(
       () => new Promise((resolve) => {
@@ -73,7 +75,9 @@ describe('FeedbackPage', () => {
     );
 
     expect(await screen.findByRole('heading', { name: '反馈管理' })).toBeInTheDocument();
-    expect(screen.getAllByTestId('feedback-loading-skeleton-row')).toHaveLength(10);
+    await waitFor(() => {
+      expect(document.querySelector('.ant-spin')).toBeInTheDocument();
+    });
 
     resolveListFeedbacks?.({
       records: [
@@ -104,15 +108,27 @@ describe('FeedbackPage', () => {
     );
     await screen.findByRole('heading', { name: '反馈管理' });
 
-    fireEvent.change(screen.getByLabelText('投票筛选'), {
-      target: { value: '-1' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: '筛选' }));
+    fireEvent.mouseDown(screen.getByRole('combobox', { name: '投票筛选' }));
+    fireEvent.click(await screen.findByTitle('仅点踩'));
+    fireEvent.click(screen.getByRole('button', { name: /筛\s*选/ }));
 
     await waitFor(() => {
       expect(AdminChatApi.listFeedbacks).toHaveBeenLastCalledWith(
         expect.objectContaining({ vote: -1 }),
       );
     });
+  });
+
+  it('shows backend error message when feedback list request fails', async () => {
+    vi.mocked(AdminChatApi.listFeedbacks).mockRejectedValueOnce(new Error('后端错误'));
+
+    const { container } = render(
+      <MemoryRouter>
+        <FeedbackPage />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText('后端错误')).toBeInTheDocument();
+    expect(container.querySelector('.ant-alert-error')).toBeInTheDocument();
   });
 });

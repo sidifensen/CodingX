@@ -54,6 +54,10 @@ status: active
   - 管理端 Dashboard 控制台的职责边界、布局承载与图表实现约束
 - `docs/superpowers/memory/admin/dashboard-console-contract.md`
   - 管理端 Dashboard 聚合接口、时间窗口与趋势分桶契约
+- `docs/superpowers/memory/admin/feedback-management-module-card.md`
+  - 管理端反馈管理三页的职责边界、入口与常见陷阱
+- `docs/superpowers/memory/admin/feedback-management-contract.md`
+  - 管理端反馈列表、详情、引用来源 API 与前端消费契约
 
 当前主要缺口：
 

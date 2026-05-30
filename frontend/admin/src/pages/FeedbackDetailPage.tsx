@@ -1,10 +1,11 @@
 import React from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Alert, Button, Card, Descriptions, Skeleton, Space, Tag, Typography } from 'antd';
+import { useParams } from 'react-router-dom';
 
 import { AdminChatApi, type AdminChatMessageFeedbackDetail } from '../api/adminChatApi';
 
 /**
- * 管理端反馈详情页：聚合展示反馈本体与关联消息上下文。
+ * 管理端反馈详情页：使用 Ant Design Descriptions 聚合展示反馈本体与关联消息上下文。
  */
 export function FeedbackDetailPage() {
   const { feedbackId = '' } = useParams();
@@ -34,56 +35,73 @@ export function FeedbackDetailPage() {
   return (
     <div className="w-full space-y-lg p-lg">
       <header className="flex flex-wrap items-center justify-between gap-sm">
-        <h2 className="font-headline-md text-headline-md text-ink">反馈详情 #{feedbackId || '-'}</h2>
-        <div className="flex items-center gap-sm">
-          <Link
-            to="/feedbacks"
-            className="rounded-lg border border-border-strong bg-surface-container-lowest px-md py-2 text-[12px] text-ink transition-colors hover:bg-surface-container-low"
-          >
+        <Typography.Title level={2} style={{ margin: 0 }}>
+          反馈详情 #{feedbackId || '-'}
+        </Typography.Title>
+        <Space wrap>
+          <Button href="/feedbacks">
             返回列表
-          </Link>
-          <Link
-            to={`/feedbacks/${feedbackId}/references`}
-            className="rounded-lg bg-primary px-md py-2 text-[12px] text-on-primary transition-opacity hover:opacity-90"
-          >
+          </Button>
+          <Button href={`/feedbacks/${feedbackId}/references`} type="primary">
             查看引用来源
-          </Link>
-        </div>
+          </Button>
+        </Space>
       </header>
 
-      {loading ? <div className="text-secondary">加载中...</div> : null}
       {errorMessage ? (
-        <div className="rounded-xl border border-error bg-error-container px-lg py-md text-sm text-on-error-container">
-          {errorMessage}
-        </div>
+        <Alert showIcon type="error" message={errorMessage} />
+      ) : null}
+
+      {loading && !detail ? (
+        <Card>
+          <Skeleton active paragraph={{ rows: 6 }} />
+        </Card>
       ) : null}
 
       {detail ? (
-        <section className="space-y-md rounded-2xl border border-border-hairline bg-surface-container-lowest p-lg shadow-sm">
-          <InfoRow label="会话ID" value={String(detail.conversationId ?? '-')} />
-          <InfoRow label="会话标题" value={detail.conversationTitle || '-'} />
-          <InfoRow label="消息ID" value={String(detail.messageId ?? '-')} />
-          <InfoRow label="消息角色" value={detail.messageRole || '-'} />
-          <InfoRow label="反馈投票" value={detail.vote === 1 ? '点赞' : detail.vote === -1 ? '点踩' : '-'} />
-          <InfoRow label="反馈原因" value={detail.reason || '-'} />
-          <InfoRow label="反馈评论" value={detail.comment || '-'} />
-          <div className="space-y-xs rounded-xl border border-border-hairline bg-surface-container-low p-md">
-            <h3 className="text-[12px] font-medium text-secondary">关联消息内容</h3>
-            <p className="whitespace-pre-wrap text-body-sm text-ink">{detail.messageContent || '-'}</p>
-          </div>
-        </section>
+        <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+          <Card>
+            <Descriptions
+              bordered
+              column={{ xs: 1, md: 2 }}
+              items={[
+                { key: 'conversationId', label: '会话ID', children: formatValue(detail.conversationId) },
+                { key: 'conversationTitle', label: '会话标题', children: formatValue(detail.conversationTitle) },
+                { key: 'messageId', label: '消息ID', children: formatValue(detail.messageId) },
+                { key: 'messageRole', label: '消息角色', children: formatValue(detail.messageRole) },
+                { key: 'vote', label: '反馈投票', children: renderVoteTag(detail.vote) },
+                { key: 'reason', label: '反馈原因', children: formatValue(detail.reason) },
+                { key: 'comment', label: '反馈评论', children: formatValue(detail.comment) },
+              ]}
+              size="middle"
+            />
+          </Card>
+          <Card title="关联消息内容">
+            <Typography.Paragraph style={{ margin: 0, whiteSpace: 'pre-wrap' }}>
+              {detail.messageContent || '-'}
+            </Typography.Paragraph>
+          </Card>
+        </Space>
       ) : null}
     </div>
   );
 }
 
-function InfoRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="grid gap-sm border-b border-border-hairline pb-sm last:border-b-0 last:pb-0 md:grid-cols-[160px_1fr]">
-      <span className="text-[12px] text-secondary">{label}</span>
-      <span className="text-body-sm text-ink">{value}</span>
-    </div>
-  );
+function renderVoteTag(vote?: number) {
+  if (vote === 1) {
+    return <Tag color="success">点赞</Tag>;
+  }
+  if (vote === -1) {
+    return <Tag color="error">点踩</Tag>;
+  }
+  return <Tag>-</Tag>;
+}
+
+function formatValue(value: unknown): string {
+  if (value === null || value === undefined || value === '') {
+    return '-';
+  }
+  return String(value);
 }
 
 function extractErrorMessage(error: unknown, fallback: string): string {
@@ -92,4 +110,3 @@ function extractErrorMessage(error: unknown, fallback: string): string {
   }
   return fallback;
 }
-

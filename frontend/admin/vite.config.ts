@@ -68,6 +68,7 @@ export default defineConfig({
     globals: true,
     css: true,
     include: ['tests/**/*.test.ts', 'tests/**/*.test.tsx'],
+    setupFiles: ['tests/setup.ts'],
   },
   // 步骤：为暂存区文件提供统一检查入口。
   staged: {

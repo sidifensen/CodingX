@@ -24,6 +24,7 @@ import { FeedbackPage } from './pages/FeedbackPage';
 import { FeedbackDetailPage } from './pages/FeedbackDetailPage';
 import { FeedbackReferencePage } from './pages/FeedbackReferencePage';
 import { GlobalAuthNotice } from './components/GlobalAuthNotice';
+import { AdminAntdProvider } from './components/AdminAntdProvider';
 
 /**
  * @license
@@ -51,61 +52,63 @@ export default function App() {
   };
 
   return (
-    <Router>
-      <GlobalAuthNotice message={errorMessage} onClose={clearErrorMessage} />
-      <Routes>
-        <Route
-          path="/login"
-          element={
-            isAuthenticated ? (
-              <Navigate to="/" replace />
-            ) : (
-              <AdminLoginPage
-                isSubmitting={isSubmitting}
-                errorMessage={errorMessage}
-                defaultUsername={loginDefaultUsername}
-                defaultPassword={loginDefaultPassword}
-                onSubmit={handleLoginSubmit}
-              />
-            )
-          }
-        />
-        <Route
-          path="/"
-          element={
-            isBootstrapping ? (
-              <AdminGuardLoading />
-            ) : isAuthenticated ? (
-              <Layout onLogout={logout} isAuthSubmitting={isSubmitting} />
-            ) : (
-              <Navigate to="/login" replace />
-            )
-          }
-        >
-          <Route index element={<Dashboard />} />
-          <Route path="users" element={<Users />} />
-          <Route path="users/:id" element={<UserDetail />} />
-          <Route path="tasks" element={<Tasks />} />
-          <Route path="tasks/:id" element={<TaskDetail />} />
-          <Route path="workspaces" element={<WorkspacePage />} />
-          <Route path="workspaces/:workspaceId" element={<WorkspaceDetailPage />} />
-          <Route path="skills" element={<Skills />} />
-          <Route path="experts" element={<Experts />} />
-          <Route path="tools" element={<ToolsPage />} />
-          <Route path="mcp" element={<MCP />} />
-          <Route path="traces" element={<TracePage />} />
-          <Route path="traces/:traceId" element={<TraceDetailPage />} />
-          <Route path="intent-tree" element={<IntentTreePage />} />
-          <Route path="query-term-mappings" element={<QueryTermMappingPage />} />
-          <Route path="feedbacks" element={<FeedbackPage />} />
-          <Route path="feedbacks/:feedbackId" element={<FeedbackDetailPage />} />
-          <Route path="feedbacks/:feedbackId/references" element={<FeedbackReferencePage />} />
-          <Route path="settings" element={<Settings />} />
-          <Route path="notifications" element={<Notifications />} />
-        </Route>
-        <Route path="*" element={<Navigate to={isAuthenticated ? '/' : '/login'} replace />} />
-      </Routes>
-    </Router>
+    <AdminAntdProvider>
+      <Router>
+        <GlobalAuthNotice message={errorMessage} onClose={clearErrorMessage} />
+        <Routes>
+          <Route
+            path="/login"
+            element={
+              isAuthenticated ? (
+                <Navigate to="/" replace />
+              ) : (
+                <AdminLoginPage
+                  isSubmitting={isSubmitting}
+                  errorMessage={errorMessage}
+                  defaultUsername={loginDefaultUsername}
+                  defaultPassword={loginDefaultPassword}
+                  onSubmit={handleLoginSubmit}
+                />
+              )
+            }
+          />
+          <Route
+            path="/"
+            element={
+              isBootstrapping ? (
+                <AdminGuardLoading />
+              ) : isAuthenticated ? (
+                <Layout onLogout={logout} isAuthSubmitting={isSubmitting} />
+              ) : (
+                <Navigate to="/login" replace />
+              )
+            }
+          >
+            <Route index element={<Dashboard />} />
+            <Route path="users" element={<Users />} />
+            <Route path="users/:id" element={<UserDetail />} />
+            <Route path="tasks" element={<Tasks />} />
+            <Route path="tasks/:id" element={<TaskDetail />} />
+            <Route path="workspaces" element={<WorkspacePage />} />
+            <Route path="workspaces/:workspaceId" element={<WorkspaceDetailPage />} />
+            <Route path="skills" element={<Skills />} />
+            <Route path="experts" element={<Experts />} />
+            <Route path="tools" element={<ToolsPage />} />
+            <Route path="mcp" element={<MCP />} />
+            <Route path="traces" element={<TracePage />} />
+            <Route path="traces/:traceId" element={<TraceDetailPage />} />
+            <Route path="intent-tree" element={<IntentTreePage />} />
+            <Route path="query-term-mappings" element={<QueryTermMappingPage />} />
+            <Route path="feedbacks" element={<FeedbackPage />} />
+            <Route path="feedbacks/:feedbackId" element={<FeedbackDetailPage />} />
+            <Route path="feedbacks/:feedbackId/references" element={<FeedbackReferencePage />} />
+            <Route path="settings" element={<Settings />} />
+            <Route path="notifications" element={<Notifications />} />
+          </Route>
+          <Route path="*" element={<Navigate to={isAuthenticated ? '/' : '/login'} replace />} />
+        </Routes>
+      </Router>
+    </AdminAntdProvider>
   );
 }
 

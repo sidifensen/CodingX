@@ -40,8 +40,8 @@ describe('FeedbackDetailPage', () => {
     vi.clearAllMocks();
   });
 
-  it('loads detail and provides link to references page', async () => {
-    render(
+  it('loads detail in Ant Design descriptions and provides link to references page', async () => {
+    const { container } = render(
       <MemoryRouter initialEntries={['/feedbacks/9001']}>
         <Routes>
           <Route path="/feedbacks/:feedbackId" element={<FeedbackDetailPage />} />
@@ -53,5 +53,22 @@ describe('FeedbackDetailPage', () => {
     expect(screen.getByText('差旅报销说明')).toBeInTheDocument();
     expect(screen.getByText('请准备以下报销材料')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: '查看引用来源' })).toHaveAttribute('href', '/feedbacks/9001/references');
+    expect(container.querySelector('.ant-descriptions')).toBeInTheDocument();
+    expect(container.querySelector('.ant-card')).toBeInTheDocument();
+  });
+
+  it('shows backend error message when feedback detail request fails', async () => {
+    vi.mocked(AdminChatApi.getFeedbackDetail).mockRejectedValueOnce(new Error('后端错误'));
+
+    const { container } = render(
+      <MemoryRouter initialEntries={['/feedbacks/9001']}>
+        <Routes>
+          <Route path="/feedbacks/:feedbackId" element={<FeedbackDetailPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText('后端错误')).toBeInTheDocument();
+    expect(container.querySelector('.ant-alert-error')).toBeInTheDocument();
   });
 });

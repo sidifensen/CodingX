@@ -4,7 +4,7 @@
 - Source spec: docs/superpowers/specs/2026-05-30-134945-chat-background-stream-resume-design.md
 - Source plan: docs/superpowers/plans/2026-05-30-134945-chat-background-stream-resume.md
 - Source acceptance: docs/superpowers/acceptance/2026-05-30-134945-chat-background-stream-resume.md
-- Formal commits: pending final `fix(chat): 修复后台任务断开后的续流恢复`
+- Formal commits: 9046ba79a59a300dca1d22f5cee833f7ed968f5a
 - Created docs: 1
 - Updated docs: 1
 - Deferred docs: 0

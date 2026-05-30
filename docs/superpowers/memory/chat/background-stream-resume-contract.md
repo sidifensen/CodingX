@@ -16,7 +16,7 @@ related_docs:
 entrypoints:
   - frontend/user/src/views/chat/useChatWorkspace.ts
   - backend/src/main/java/com/codingx/chat/infrastructure/stream/ChatSseRegistry.java
-last_verified_commit: pending-final-commit
+last_verified_commit: 9046ba79a59a300dca1d22f5cee833f7ed968f5a
 status: active
 ---
 

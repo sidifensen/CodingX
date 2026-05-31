@@ -1,7 +1,7 @@
 package com.codingx.chat.application.service;
 
 /**
- * 表示一次意图分流的决策结果。
+ * 意图分流决策结果，决定聊天链路继续模型生成、触发澄清、执行搜索或调用工具。
  *
  * @param intentCode 命中的意图编码，可为空；为空表示未能匹配到明确意图。
  * @param action 意图处理动作，决定聊天链路继续对话、澄清、搜索或调用工具。

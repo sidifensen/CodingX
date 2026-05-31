@@ -7,7 +7,7 @@ import java.time.LocalDateTime;
 import lombok.Data;
 
 /**
- * 定义 Trace 根链路表的数据对象映射。
+ * Trace 根链路数据对象，对应 chat_trace_run 表，记录一次聊天链路的入口、状态和耗时。
  */
 @Data
 @TableName("chat_trace_run")

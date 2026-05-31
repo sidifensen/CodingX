@@ -125,12 +125,16 @@ public final class ChatRunContextStepSupport {
     }
 
     /**
-     * 表示一次运行选择的能力上下文。
-     * @param mcpCodes MCP 编码。
-     * @param skillCodes 技能编码。
-     * @param expertCode 专家编码。
+     * 本次聊天运行选择的能力上下文，来自流式入口解析后的 MCP、技能和专家选择。
+     * @param mcpCodes 本轮选中的 MCP 编码列表，已去重并过滤空白值。
+     * @param skillCodes 本轮选中的技能编码列表，已去重并过滤空白值。
+     * @param expertCode 本轮选中的专家编码，可为空；为空表示不绑定专家提示词。
      */
-    public record RunContext(List<String> mcpCodes, List<String> skillCodes, String expertCode) {
+    public record RunContext(
+        List<String> mcpCodes, // 本轮选中的 MCP 编码列表，已去重并过滤空白值。
+        List<String> skillCodes, // 本轮选中的技能编码列表，已去重并过滤空白值。
+        String expertCode // 本轮选中的专家编码，可为空；为空表示不绑定专家提示词。
+    ) {
         public static RunContext empty() {
             return new RunContext(List.of(), List.of(), null);
         }

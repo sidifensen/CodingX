@@ -5,7 +5,7 @@ import com.codingx.chat.infrastructure.persistence.dataobject.ChatTraceNodeDO;
 import org.apache.ibatis.annotations.Mapper;
 
 /**
- * 定义 Trace 节点 Mapper 操作。
+ * Trace 节点 Mapper，继承 MyBatis-Plus 通用 CRUD 能力，负责读写 chat_trace_node 表。
  */
 @Mapper
 public interface ChatTraceNodeMapper extends BaseMapper<ChatTraceNodeDO> {

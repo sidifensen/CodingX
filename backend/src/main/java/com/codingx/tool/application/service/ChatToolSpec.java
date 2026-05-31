@@ -3,7 +3,7 @@ package com.codingx.tool.application.service;
 import java.util.Map;
 
 /**
- * 描述一个可暴露给模型自主调用的本地工具。
+ * 可暴露给模型自主调用的本地工具规格，统一描述工具编码、说明和函数参数 Schema。
  * 只有真实注册且启用的 Java 执行器才能生成该结构，避免模型看到数据库里的占位工具。
  *
  * @param name 暴露给模型的工具编码，必须能匹配已注册执行器。

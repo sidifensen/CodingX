@@ -1,12 +1,15 @@
 package com.codingx.chat.infrastructure.runtime;
 
 /**
- * 表示一次队列门控申请的结果。
+ * 队列门控申请结果，决定聊天请求是立即执行、进入排队还是被拒绝。
+ * @param allowed true 表示已获得执行资格，false 表示需要排队或直接拒绝。
+ * @param reason 未获得执行资格时的原因编码；queued 表示进入队列，其他值表示拒绝原因。
+ * @param queuePosition 当前队列位置，从 1 开始；非排队场景为空。
  */
 public record QueueAcquireResult(
-    boolean allowed,
-    String reason,
-    Integer queuePosition
+    boolean allowed, // true 表示已获得执行资格，false 表示需要排队或直接拒绝。
+    String reason, // 未获得执行资格时的原因编码；queued 表示进入队列，其他值表示拒绝原因。
+    Integer queuePosition // 当前队列位置，从 1 开始；非排队场景为空。
 ) {
 
     /**

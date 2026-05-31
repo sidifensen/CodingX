@@ -8,7 +8,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 /**
- * 表示一次聊天链路的根 Trace 记录。
+ * 聊天链路根 Trace 记录，聚合一次请求的入口、状态、耗时和关联会话信息。
  */
 @Getter
 @Builder(toBuilder = true)

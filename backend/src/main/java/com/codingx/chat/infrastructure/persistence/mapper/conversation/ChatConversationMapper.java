@@ -4,7 +4,7 @@ import com.codingx.chat.infrastructure.persistence.dataobject.ChatConversationDO
 import org.apache.ibatis.annotations.Mapper;
 
 /**
- * 定义 ChatConversationMapper 的 Mapper 操作。
+ * 聊天会话 Mapper，继承 MyBatis-Plus 通用 CRUD 能力，负责读写 chat_conversation 表。
  */
 @Mapper
 public interface ChatConversationMapper extends BaseMapper<ChatConversationDO> {

@@ -7,7 +7,7 @@ import java.time.LocalDateTime;
 import lombok.Data;
 
 /**
- * 定义 Trace 节点表的数据对象映射。
+ * Trace 节点数据对象，对应 chat_trace_node 表，记录一次链路中单个服务、仓储或工具节点的执行状态。
  */
 @Data
 @TableName("chat_trace_node")

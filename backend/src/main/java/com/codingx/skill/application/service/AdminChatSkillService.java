@@ -34,18 +34,40 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
 /**
- * 提供聊天技能后台管理服务。
+ * 管理端聊天技能应用服务，负责技能配置、技能包上传、预览和历史包迁移。
  */
 @Service
 @RequiredArgsConstructor
 public class AdminChatSkillService {
 
+    /**
+     * 管理端文件预览最大字节数，超过后只返回前缀内容并标记 truncated。
+     */
     private static final int MAX_PREVIEW_BYTES = 128 * 1024;
+
+    /**
+     * 技能包根级清单文件名，上传和迁移都以该文件作为技能元信息来源。
+     */
     private static final String ROOT_SKILL_MANIFEST = "SKILL.md";
+
+    /**
+     * 目录化技能包存储格式。
+     */
     private static final String STORAGE_FORMAT_DIRECTORY = "directory";
+
+    /**
+     * 历史压缩包技能包存储格式。
+     */
     private static final String STORAGE_FORMAT_ZIP = "zip";
 
+    /**
+     * 技能仓储，用于技能配置查询、保存和删除。
+     */
     private final ChatSkillRepository chatSkillRepository;
+
+    /**
+     * 技能包对象存储客户端，用于上传目录、下载历史包和读取预览文件。
+     */
     private final RustFsSkillPackageClient rustFsSkillPackageClient;
 
     /**
@@ -53,6 +75,7 @@ public class AdminChatSkillService {
      * @return 技能列表。
      */
     public List<ChatSkill> listAll() {
+        // 步骤 1：管理端和运行时复用同一仓储排序规则读取全部未删除技能。
         return chatSkillRepository.findAll();
     }
 
@@ -63,6 +86,7 @@ public class AdminChatSkillService {
      * @return 技能分页结果。
      */
     public PageResult<ChatSkill> pageSkills(int current, int size) {
+        // 步骤 1：分页边界和排序由仓储层统一处理，服务层不重复组装 PageResult。
         return chatSkillRepository.pageQuery(current, size);
     }
 
@@ -72,11 +96,14 @@ public class AdminChatSkillService {
      * @return 新增后的技能。
      */
     public ChatSkill create(ChatSkill request) {
+        // 步骤 1：校验技能编码和展示名称必填，避免保存不可用配置。
         validateRequired(request);
+        // 步骤 2：技能编码去首尾空格后参与唯一性校验。
         String normalizedSkillCode = request.getSkillCode().trim();
         if (chatSkillRepository.existsBySkillCode(normalizedSkillCode, null)) {
             throw new BusinessException("CHAT_SKILL_DUPLICATE_CODE", ErrorMessageCatalog.CHAT_SKILL_DUPLICATE_CODE);
         }
+        // 步骤 3：补齐新增技能默认值，手工创建默认视为 built-in 且使用目录化格式。
         LocalDateTime now = LocalDateTime.now();
         ChatSkill persisted = request.toBuilder()
             .id(IdUtil.getSnowflakeNextId())
@@ -90,6 +117,7 @@ public class AdminChatSkillService {
             .updatedAt(now)
             .deleted(0)
             .build();
+        // 步骤 4：保存后返回持久化领域对象，Controller 直接透传给管理端。
         chatSkillRepository.save(persisted);
         return persisted;
     }
@@ -101,15 +129,18 @@ public class AdminChatSkillService {
      * @return 更新后的技能。
      */
     public ChatSkill update(Long id, ChatSkill request) {
+        // 步骤 1：先读取旧记录，缺失时返回技能不存在。
         ChatSkill existing = chatSkillRepository.findById(id);
         if (existing == null) {
             throw new NotFoundException(ErrorMessageCatalog.CHAT_SKILL_NOT_FOUND);
         }
+        // 步骤 2：校验必填字段和技能编码唯一性，排除当前技能主键。
         validateRequired(request);
         String normalizedSkillCode = request.getSkillCode().trim();
         if (chatSkillRepository.existsBySkillCode(normalizedSkillCode, id)) {
             throw new BusinessException("CHAT_SKILL_DUPLICATE_CODE", ErrorMessageCatalog.CHAT_SKILL_DUPLICATE_CODE);
         }
+        // 步骤 3：保留创建时间、删除标记和未显式覆盖的来源/启用/排序/存储格式。
         ChatSkill persisted = request.toBuilder()
             .id(id)
             .skillCode(normalizedSkillCode)
@@ -122,6 +153,7 @@ public class AdminChatSkillService {
             .updatedAt(LocalDateTime.now())
             .deleted(existing.getDeleted())
             .build();
+        // 步骤 4：保存更新后的技能配置。
         chatSkillRepository.save(persisted);
         return persisted;
     }
@@ -131,12 +163,13 @@ public class AdminChatSkillService {
      * @param id 主键。
      */
     public void delete(Long id) {
+        // 步骤 1：先读取技能记录，避免对不存在技能执行对象存储删除。
         ChatSkill existing = chatSkillRepository.findById(id);
         if (existing == null) {
             throw new NotFoundException(ErrorMessageCatalog.CHAT_SKILL_NOT_FOUND);
         }
 
-        // 如果有存储键，先删除 rustfs 中的文件
+        // 步骤 2：存在存储键时先删除对象存储资源，目录化技能按目录前缀删除，历史包按单对象删除。
         if (StrUtil.isNotBlank(existing.getStorageKey())) {
             try {
                 if (StrUtil.equals(existing.getPackageStorageFormat(), STORAGE_FORMAT_DIRECTORY)) {
@@ -145,12 +178,12 @@ public class AdminChatSkillService {
                     rustFsSkillPackageClient.deleteObject(existing.getStorageKey());
                 }
             } catch (Exception exception) {
-                // 记录日志但不阻塞删除流程
+                // 步骤 3：对象存储删除失败时阻断数据库删除，避免出现数据库记录丢失但文件残留。
                 throw new BusinessException("CHAT_SKILL_DELETE_STORAGE_FAILED", "删除技能存储文件失败：" + exception.getMessage());
             }
         }
 
-        // 物理删除数据库记录
+        // 步骤 4：对象存储删除成功后物理删除数据库记录。
         chatSkillRepository.deleteById(id);
     }
 
@@ -161,6 +194,7 @@ public class AdminChatSkillService {
      * @return 新增或更新后的技能。
      */
     public ChatSkill uploadSkillPackage(MultipartFile file, String category) {
+        // 步骤 1：兼容旧单文件上传入口，默认没有目录文件且不强制覆盖同名存储键。
         return uploadSkillPackage(file, List.of(), category, false);
     }
 
@@ -173,19 +207,23 @@ public class AdminChatSkillService {
      * @return 新增或更新后的技能。
      */
     public ChatSkill uploadSkillPackage(MultipartFile file, List<MultipartFile> files, String category, Boolean forceOverwrite) {
+        // 步骤 1：统一解析 zip/skill 单文件或目录上传文件，并折叠单根目录。
         List<UploadedSkillFile> uploadedFiles = resolveUploadedFiles(file, files);
+        // 步骤 2：读取根级 SKILL.md 并解析 name/description 元信息。
         UploadedSkillFile manifestFile = requireRootSkillManifest(uploadedFiles);
         SkillManifest manifest = parseSkillManifest(new String(manifestFile.bytes(), StandardCharsets.UTF_8));
         String normalizedSkillCode = normalizeSkillCode(manifest.name());
+        // 步骤 3：计算目录总大小和内容摘要，用于展示与重复上传检测。
         long packageSize = uploadedFiles.stream().mapToLong(item -> item.bytes().length).sum();
         String packageChecksum = calculateDirectoryChecksum(uploadedFiles);
 
+        // 步骤 4：同技能且内容摘要未变化时拒绝重复上传，避免对象存储重复写入。
         ChatSkill existing = chatSkillRepository.findBySkillCode(normalizedSkillCode);
         if (existing != null && StrUtil.equals(existing.getPackageChecksum(), packageChecksum)) {
             throw new BusinessException("CHAT_SKILL_UPLOAD_DUPLICATE", ErrorMessageCatalog.CHAT_SKILL_UPLOAD_DUPLICATE);
         }
 
-        // 检查是否存在同名 storage_key
+        // 步骤 5：检查目标目录存储键是否已存在，未显式覆盖时返回可确认的业务异常。
         String baseStorageKey = buildBaseStorageKey(normalizedSkillCode);
         boolean storageKeyExists = checkStorageKeyExists(baseStorageKey);
 
@@ -193,7 +231,7 @@ public class AdminChatSkillService {
             throw new BusinessException("CHAT_SKILL_STORAGE_KEY_DUPLICATE", "技能存储键已存在，是否覆盖？");
         }
 
-        // 如果强制覆盖且存在同名，添加时间戳后缀
+        // 步骤 6：强制覆盖时使用时间戳后缀生成新目录，避免直接破坏已有线上包。
         String storageKey;
         if (storageKeyExists && Boolean.TRUE.equals(forceOverwrite)) {
             String timestamp = String.valueOf(System.currentTimeMillis());
@@ -202,12 +240,14 @@ public class AdminChatSkillService {
             storageKey = baseStorageKey;
         }
 
+        // 步骤 7：按确定后的 storageKey 上传目录化对象集合。
         try {
             rustFsSkillPackageClient.uploadDirectoryWithKey(toStorageFiles(uploadedFiles), storageKey);
         } catch (Exception exception) {
             throw new BusinessException("CHAT_SKILL_UPLOAD_FAILED", ErrorMessageCatalog.CHAT_SKILL_UPLOAD_FAILED);
         }
 
+        // 步骤 8：读取当前登录管理员作为上传人，并写入技能配置和包元数据。
         Long loginUserId = StpUtil.getLoginIdAsLong();
         LocalDateTime now = LocalDateTime.now();
 
@@ -230,6 +270,7 @@ public class AdminChatSkillService {
             .updatedAt(now)
             .deleted(0)
             .build();
+        // 步骤 9：新增或覆盖保存技能配置。
         chatSkillRepository.save(persisted);
         return persisted;
     }
@@ -240,10 +281,13 @@ public class AdminChatSkillService {
      * @return 技能包条目列表（目录优先）。
      */
     public List<SkillPackageEntry> listPackageEntries(Long id) {
+        // 步骤 1：读取技能并在必要时惰性迁移历史压缩包。
         ChatSkill skill = migrateLegacyPackageIfRequired(requireSkillById(id));
+        // 步骤 2：列出目录化对象存储中的文件元数据。
         List<RustFsSkillPackageClient.SkillObjectMetadata> objects = listSkillDirectory(skill);
         LinkedHashSet<String> directoryPaths = new LinkedHashSet<>();
         List<SkillPackageEntry> fileEntries = new ArrayList<>();
+        // 步骤 3：按文件路径补齐所有父级目录节点，同时收集文件节点。
         for (RustFsSkillPackageClient.SkillObjectMetadata objectMetadata : objects) {
             String normalizedPath = normalizeArchivePath(objectMetadata.relativePath());
             if (StrUtil.isBlank(normalizedPath)) {
@@ -252,6 +296,7 @@ public class AdminChatSkillService {
             collectDirectoryPaths(normalizedPath, directoryPaths);
             fileEntries.add(new SkillPackageEntry(normalizedPath, extractName(normalizedPath), false, objectMetadata.size()));
         }
+        // 步骤 4：目录节点排在文件节点前，再按路径稳定排序。
         List<SkillPackageEntry> entries = new ArrayList<>();
         for (String directoryPath : directoryPaths) {
             entries.add(new SkillPackageEntry(directoryPath, extractName(directoryPath), true, null));
@@ -270,11 +315,14 @@ public class AdminChatSkillService {
      * @return 预览内容与截断标记。
      */
     public SkillPackageFileContent readPackageFileContent(Long id, String path) {
+        // 步骤 1：读取技能并在必要时惰性迁移历史压缩包。
         ChatSkill skill = migrateLegacyPackageIfRequired(requireSkillById(id));
+        // 步骤 2：规范化文件相对路径，空路径直接拒绝。
         String normalizedPath = normalizeArchivePath(path);
         if (StrUtil.isBlank(normalizedPath)) {
             throw new BusinessException("CHAT_SKILL_PACKAGE_INVALID_PATH", ErrorMessageCatalog.CHAT_SKILL_PACKAGE_PATH_REQUIRED);
         }
+        // 步骤 3：从目录化存储读取文件内容，不存在时返回文件未找到。
         byte[] entryBytes;
         try {
             entryBytes = rustFsSkillPackageClient.downloadDirectoryFile(skill.getStorageKey(), normalizedPath);
@@ -282,17 +330,18 @@ public class AdminChatSkillService {
             throw new NotFoundException(ErrorMessageCatalog.CHAT_SKILL_PACKAGE_FILE_NOT_FOUND);
         }
 
-        // 检查是否为图片文件
+        // 步骤 4：图片文件以 data URL 返回，便于管理端直接预览。
         if (looksLikeImage(normalizedPath)) {
-            // 图片文件返回 base64 编码
             String base64Content = "data:image/" + getImageExtension(normalizedPath) + ";base64," +
                 java.util.Base64.getEncoder().encodeToString(entryBytes);
             return new SkillPackageFileContent(normalizedPath, base64Content, false);
         }
 
+        // 步骤 5：非图片二进制文件拒绝在线预览，避免前端展示乱码。
         if (looksLikeBinary(entryBytes)) {
             throw new BusinessException("CHAT_SKILL_PACKAGE_BINARY_FILE", ErrorMessageCatalog.CHAT_SKILL_PACKAGE_BINARY_FILE);
         }
+        // 步骤 6：文本预览超过上限时截断并标记 truncated。
         boolean truncated = entryBytes.length > MAX_PREVIEW_BYTES;
         int previewLength = Math.min(entryBytes.length, MAX_PREVIEW_BYTES);
         String content = new String(ArrayUtil.sub(entryBytes, 0, previewLength), StandardCharsets.UTF_8);
@@ -305,6 +354,7 @@ public class AdminChatSkillService {
      * @return 迁移统计。
      */
     public SkillPackageMigrationSummary migrateUploadedSkillPackages() {
+        // 步骤 1：只处理已经落对象存储的技能，兼容 uploaded 和 built-in 来源。
         List<ChatSkill> storedSkills = chatSkillRepository.findAll()
             .stream()
             .filter(skill -> StrUtil.isNotBlank(skill.getStorageKey()))
@@ -314,6 +364,7 @@ public class AdminChatSkillService {
         int skipped = 0;
         List<SkillPackageMigrationFailure> failures = new ArrayList<>();
 
+        // 步骤 2：目录化技能直接跳过，历史压缩包逐个迁移并记录失败明细。
         for (ChatSkill skill : storedSkills) {
             if (!isLegacyArchiveStorage(skill)) {
                 skipped++;
@@ -331,6 +382,7 @@ public class AdminChatSkillService {
             }
         }
 
+        // 步骤 3：返回迁移总数、成功数、跳过数和失败列表供管理端展示。
         return new SkillPackageMigrationSummary(storedSkills.size(), migrated, skipped, failures);
     }
 

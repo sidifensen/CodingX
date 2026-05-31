@@ -17,6 +17,9 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 public class ChatSkillController {
 
+    /**
+     * 用户侧技能查询服务，承接启用技能读取逻辑。
+     */
     private final ChatSkillQueryService chatSkillQueryService;
 
     /**
@@ -25,6 +28,7 @@ public class ChatSkillController {
      */
     @GetMapping
     public ApiResponse<List<ChatSkill>> listEnabledSkills() {
+        // 步骤 1：用户侧只读取启用技能，不暴露管理端上传和迁移能力。
         return ApiResponse.success(chatSkillQueryService.listEnabledSkills());
     }
 }

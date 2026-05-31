@@ -82,8 +82,6 @@ class AdminChatSkillServiceTest {
     @Test
     void uploadSkillPackageParsesSkillManifestAndPersistsDirectory() {
         when(chatSkillRepository.findBySkillCode("pdf-processing")).thenReturn(null);
-        when(rustFsSkillPackageClient.uploadDirectory(any(), eq("pdf-processing")))
-            .thenReturn("chat-skills/packages/pdf-processing-100");
 
         try (MockedStatic<StpUtil> stpUtilMockedStatic = org.mockito.Mockito.mockStatic(StpUtil.class)) {
             stpUtilMockedStatic.when(StpUtil::getLoginIdAsLong).thenReturn(9527L);
@@ -104,6 +102,7 @@ class AdminChatSkillServiceTest {
             assertEquals("directory", saved.getPackageStorageFormat());
             assertEquals("pdf-processing", saved.getPackageFileName());
             verify(chatSkillRepository).save(any(ChatSkill.class));
+            verify(rustFsSkillPackageClient).uploadDirectoryWithKey(any(), eq("chat-skills/packages/pdf-processing"));
         }
     }
 
@@ -131,8 +130,6 @@ class AdminChatSkillServiceTest {
     @Test
     void uploadSkillPackageWithFolderFilesPersistsDirectoryStorage() {
         when(chatSkillRepository.findBySkillCode("meeting-notes")).thenReturn(null);
-        when(rustFsSkillPackageClient.uploadDirectory(any(), eq("meeting-notes")))
-            .thenReturn("chat-skills/packages/meeting-notes");
 
         try (MockedStatic<StpUtil> stpUtilMockedStatic = org.mockito.Mockito.mockStatic(StpUtil.class)) {
             stpUtilMockedStatic.when(StpUtil::getLoginIdAsLong).thenReturn(9527L);
@@ -155,13 +152,13 @@ class AdminChatSkillServiceTest {
                 "prompt-template".getBytes(StandardCharsets.UTF_8)
             );
 
-            ChatSkill saved = adminChatSkillService.uploadSkillPackage(null, List.of(skillManifest, promptTemplate), "文档处理");
+            ChatSkill saved = adminChatSkillService.uploadSkillPackage(null, List.of(skillManifest, promptTemplate), "文档处理", false);
 
             assertEquals("meeting-notes", saved.getSkillCode());
             assertEquals("directory", saved.getPackageStorageFormat());
             assertEquals("folder-upload", saved.getPackageFileName());
             assertEquals("chat-skills/packages/meeting-notes", saved.getStorageKey());
-            verify(rustFsSkillPackageClient).uploadDirectory(any(), eq("meeting-notes"));
+            verify(rustFsSkillPackageClient).uploadDirectoryWithKey(any(), eq("chat-skills/packages/meeting-notes"));
         }
     }
 
@@ -212,10 +209,11 @@ class AdminChatSkillServiceTest {
 
             BusinessException exception = assertThrows(
                 BusinessException.class,
-                () -> adminChatSkillService.uploadSkillPackage(null, List.of(skillManifest, promptTemplate), "文档处理")
+                () -> adminChatSkillService.uploadSkillPackage(null, List.of(skillManifest, promptTemplate), "文档处理", false)
             );
             assertEquals("CHAT_SKILL_UPLOAD_DUPLICATE", exception.getCode());
             verify(rustFsSkillPackageClient, never()).uploadDirectory(any(), any());
+            verify(rustFsSkillPackageClient, never()).uploadDirectoryWithKey(any(), any());
             verify(chatSkillRepository, never()).save(any(ChatSkill.class));
         }
     }
@@ -308,10 +306,10 @@ class AdminChatSkillServiceTest {
             .deleted(0)
             .build();
         when(chatSkillRepository.findById(7103L)).thenReturn(uploadedSkill);
-        when(rustFsSkillPackageClient.downloadDirectoryFile("chat-skills/packages/meeting-notes", "assets/logo.png"))
+        when(rustFsSkillPackageClient.downloadDirectoryFile("chat-skills/packages/meeting-notes", "assets/model.bin"))
             .thenReturn(new byte[] {1, 2, 0, 3, 4});
 
-        assertThrows(BusinessException.class, () -> adminChatSkillService.readPackageFileContent(7103L, "assets/logo.png"));
+        assertThrows(BusinessException.class, () -> adminChatSkillService.readPackageFileContent(7103L, "assets/model.bin"));
     }
 
     /**

@@ -1,6 +1,7 @@
 package com.codingx.admin.interfaces.controller;
 
 import com.codingx.skill.application.service.AdminChatSkillService;
+import com.codingx.skill.application.service.SkillPackageViewService;
 import com.codingx.skill.domain.model.ChatSkill;
 import com.codingx.skill.interfaces.response.AdminSkillPackageEntryResponse;
 import com.codingx.skill.interfaces.response.AdminSkillPackageFileContentResponse;
@@ -28,7 +29,15 @@ import org.springframework.web.multipart.MultipartFile;
 @RequiredArgsConstructor
 public class AdminChatSkillController {
 
+    /**
+     * 管理端技能应用服务，承接技能 CRUD、上传、迁移和包内容读取。
+     */
     private final AdminChatSkillService adminChatSkillService;
+
+    /**
+     * 技能包视图服务，负责把服务层内部结果转换为接口响应对象。
+     */
+    private final SkillPackageViewService skillPackageViewService;
 
     /**
      * 分页查询技能列表，默认每页 10 条，供管理端技能页分页展示。
@@ -41,11 +50,18 @@ public class AdminChatSkillController {
         @RequestParam(defaultValue = "1") int current,
         @RequestParam(defaultValue = "10") int size
     ) {
+        // 步骤 1：分页参数直接传给应用服务，排序和分页边界由仓储层处理。
         return ApiResponse.success(adminChatSkillService.pageSkills(current, size));
     }
 
+    /**
+     * 新增手工配置的聊天技能。
+     * @param request 技能配置请求。
+     * @return 新增后的技能记录。
+     */
     @PostMapping
     public ApiResponse<ChatSkill> createSkill(@RequestBody ChatSkill request) {
+        // 步骤 1：应用服务负责必填校验、技能编码去重和默认值补齐。
         return ApiResponse.<ChatSkill>success(adminChatSkillService.create(request));
     }
 
@@ -64,6 +80,7 @@ public class AdminChatSkillController {
         @RequestParam(value = "category", required = false) String category,
         @RequestParam(value = "forceOverwrite", required = false, defaultValue = "false") Boolean forceOverwrite
     ) {
+        // 步骤 1：上传服务负责解析 zip/skill 或目录上传内容，并处理同名存储键覆盖策略。
         return ApiResponse.success(adminChatSkillService.uploadSkillPackage(file, files, category, forceOverwrite));
     }
 
@@ -73,19 +90,10 @@ public class AdminChatSkillController {
      */
     @PostMapping("/migrate-packages")
     public ApiResponse<AdminSkillPackageMigrationSummaryResponse> migrateSkillPackages() {
+        // 步骤 1：应用服务负责筛选历史压缩包技能并执行目录化迁移。
         AdminChatSkillService.SkillPackageMigrationSummary summary = adminChatSkillService.migrateUploadedSkillPackages();
-        return ApiResponse.success(new AdminSkillPackageMigrationSummaryResponse(
-            summary.total(),
-            summary.migrated(),
-            summary.skipped(),
-            summary.failures().stream()
-                .map(item -> new AdminSkillPackageMigrationSummaryResponse.FailureItem(
-                    item.skillId(),
-                    item.skillCode(),
-                    item.reason()
-                ))
-                .toList()
-        ));
+        // 步骤 2：迁移统计响应由视图服务生成，Controller 不再拆解失败项。
+        return ApiResponse.success(skillPackageViewService.toMigrationSummaryResponse(summary));
     }
 
     /**
@@ -95,16 +103,10 @@ public class AdminChatSkillController {
      */
     @GetMapping("/{id}/package/entries")
     public ApiResponse<List<AdminSkillPackageEntryResponse>> listPackageEntries(@PathVariable Long id) {
-        List<AdminSkillPackageEntryResponse> responses = adminChatSkillService.listPackageEntries(id)
-            .stream()
-            .map(entry -> new AdminSkillPackageEntryResponse(
-                entry.path(),
-                entry.name(),
-                entry.directory(),
-                entry.size()
-            ))
-            .toList();
-        return ApiResponse.success(responses);
+        // 步骤 1：应用服务负责必要的历史包惰性迁移和目录排序。
+        List<AdminChatSkillService.SkillPackageEntry> entries = adminChatSkillService.listPackageEntries(id);
+        // 步骤 2：目录树响应由视图服务统一投影。
+        return ApiResponse.success(skillPackageViewService.toEntryResponses(entries));
     }
 
     /**
@@ -118,22 +120,34 @@ public class AdminChatSkillController {
         @PathVariable Long id,
         @RequestParam("path") String path
     ) {
+        // 步骤 1：应用服务负责路径规范化、二进制拦截、图片 data URL 和文本截断。
         AdminChatSkillService.SkillPackageFileContent content = adminChatSkillService.readPackageFileContent(id, path);
-        return ApiResponse.success(new AdminSkillPackageFileContentResponse(
-            content.path(),
-            content.content(),
-            content.truncated()
-        ));
+        // 步骤 2：文件预览响应由视图服务统一生成。
+        return ApiResponse.success(skillPackageViewService.toFileContentResponse(content));
     }
 
+    /**
+     * 更新技能基础配置。
+     * @param id 技能主键。
+     * @param request 技能配置请求。
+     * @return 更新后的技能记录。
+     */
     @PutMapping("/{id}")
     public ApiResponse<ChatSkill> updateSkill(@PathVariable Long id, @RequestBody ChatSkill request) {
+        // 步骤 1：应用服务负责读取旧记录、校验编码唯一性并保留不可覆盖字段。
         return ApiResponse.<ChatSkill>success(adminChatSkillService.update(id, request));
     }
 
+    /**
+     * 删除技能配置及其对象存储资源。
+     * @param id 技能主键。
+     * @return 删除成功提示。
+     */
     @DeleteMapping("/{id}")
     public ApiResponse<Void> deleteSkill(@PathVariable Long id) {
+        // 步骤 1：应用服务负责删除对象存储资源和数据库记录。
         adminChatSkillService.delete(id);
+        // 步骤 2：删除成功后只返回统一中文提示。
         return ApiResponse.successMessage("删除成功");
     }
 }

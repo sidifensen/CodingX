@@ -15,8 +15,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.codingx.chat.interfaces.response.PageResult;
 import com.codingx.config.GlobalExceptionHandler;
 import com.codingx.skill.application.service.AdminChatSkillService;
+import com.codingx.skill.application.service.SkillPackageViewService;
 import com.codingx.skill.domain.model.ChatSkill;
 import com.codingx.admin.interfaces.controller.AdminChatSkillController;
+import com.codingx.skill.interfaces.response.AdminSkillPackageEntryResponse;
+import com.codingx.skill.interfaces.response.AdminSkillPackageFileContentResponse;
+import com.codingx.skill.interfaces.response.AdminSkillPackageMigrationSummaryResponse;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -36,6 +40,9 @@ class AdminChatSkillControllerTest {
 
     @Mock
     private AdminChatSkillService adminChatSkillService;
+
+    @Mock
+    private SkillPackageViewService skillPackageViewService;
 
     @InjectMocks
     private AdminChatSkillController adminChatSkillController;
@@ -158,7 +165,7 @@ class AdminChatSkillControllerTest {
      */
     @Test
     void uploadSkillPackageReturnsParsedSkill() throws Exception {
-        when(adminChatSkillService.uploadSkillPackage(any(), any(), any())).thenReturn(
+        when(adminChatSkillService.uploadSkillPackage(any(), any(), any(), eq(false))).thenReturn(
             ChatSkill.builder()
                 .id(7110L)
                 .skillCode("pdf-processing")
@@ -183,6 +190,8 @@ class AdminChatSkillControllerTest {
             .andExpect(jsonPath("$.success").value(true))
             .andExpect(jsonPath("$.data.skillCode").value("pdf-processing"))
             .andExpect(jsonPath("$.data.sourceType").value("uploaded"));
+
+        verify(adminChatSkillService).uploadSkillPackage(any(), any(), any(), eq(false));
     }
 
     /**
@@ -190,7 +199,7 @@ class AdminChatSkillControllerTest {
      */
     @Test
     void uploadSkillPackageWithFolderFilesReturnsParsedSkill() throws Exception {
-        when(adminChatSkillService.uploadSkillPackage(any(), any(), any())).thenReturn(
+        when(adminChatSkillService.uploadSkillPackage(any(), any(), any(), eq(false))).thenReturn(
             ChatSkill.builder()
                 .id(7111L)
                 .skillCode("meeting-notes")
@@ -211,6 +220,8 @@ class AdminChatSkillControllerTest {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.success").value(true))
             .andExpect(jsonPath("$.data.skillCode").value("meeting-notes"));
+
+        verify(adminChatSkillService).uploadSkillPackage(any(), any(), eq("文档处理"), eq(false));
     }
 
     /**
@@ -218,10 +229,16 @@ class AdminChatSkillControllerTest {
      */
     @Test
     void listPackageEntriesReturnsResourceTree() throws Exception {
-        when(adminChatSkillService.listPackageEntries(7110L)).thenReturn(List.of(
+        List<AdminChatSkillService.SkillPackageEntry> entries = List.of(
             new AdminChatSkillService.SkillPackageEntry("templates", "templates", true, null),
             new AdminChatSkillService.SkillPackageEntry("templates/prompt.txt", "prompt.txt", false, 128L)
-        ));
+        );
+        List<AdminSkillPackageEntryResponse> responses = List.of(
+            new AdminSkillPackageEntryResponse("templates", "templates", true, null),
+            new AdminSkillPackageEntryResponse("templates/prompt.txt", "prompt.txt", false, 128L)
+        );
+        when(adminChatSkillService.listPackageEntries(7110L)).thenReturn(entries);
+        when(skillPackageViewService.toEntryResponses(entries)).thenReturn(responses);
 
         mockMvc().perform(get("/api/admin/skills/7110/package/entries"))
             .andExpect(status().isOk())
@@ -230,6 +247,8 @@ class AdminChatSkillControllerTest {
             .andExpect(jsonPath("$.data[0].directory").value(true))
             .andExpect(jsonPath("$.data[1].name").value("prompt.txt"))
             .andExpect(jsonPath("$.data[1].size").value(128));
+
+        verify(skillPackageViewService).toEntryResponses(entries);
     }
 
     /**
@@ -237,12 +256,18 @@ class AdminChatSkillControllerTest {
      */
     @Test
     void readPackageFileContentReturnsTextPreview() throws Exception {
-        when(adminChatSkillService.readPackageFileContent(7110L, "templates/prompt.txt"))
-            .thenReturn(new AdminChatSkillService.SkillPackageFileContent(
-                "templates/prompt.txt",
-                "prompt-content",
-                false
-            ));
+        AdminChatSkillService.SkillPackageFileContent content = new AdminChatSkillService.SkillPackageFileContent(
+            "templates/prompt.txt",
+            "prompt-content",
+            false
+        );
+        AdminSkillPackageFileContentResponse response = new AdminSkillPackageFileContentResponse(
+            "templates/prompt.txt",
+            "prompt-content",
+            false
+        );
+        when(adminChatSkillService.readPackageFileContent(7110L, "templates/prompt.txt")).thenReturn(content);
+        when(skillPackageViewService.toFileContentResponse(content)).thenReturn(response);
 
         mockMvc().perform(get("/api/admin/skills/7110/package/file-content")
                 .param("path", "templates/prompt.txt"))
@@ -251,6 +276,8 @@ class AdminChatSkillControllerTest {
             .andExpect(jsonPath("$.data.path").value("templates/prompt.txt"))
             .andExpect(jsonPath("$.data.content").value("prompt-content"))
             .andExpect(jsonPath("$.data.truncated").value(false));
+
+        verify(skillPackageViewService).toFileContentResponse(content);
     }
 
     /**
@@ -258,13 +285,20 @@ class AdminChatSkillControllerTest {
      */
     @Test
     void migrateSkillPackagesReturnsSummary() throws Exception {
-        when(adminChatSkillService.migrateUploadedSkillPackages())
-            .thenReturn(new AdminChatSkillService.SkillPackageMigrationSummary(
-                3,
-                2,
-                1,
-                List.of(new AdminChatSkillService.SkillPackageMigrationFailure(7101L, "legacy-skill", "测试失败"))
-            ));
+        AdminChatSkillService.SkillPackageMigrationSummary summary = new AdminChatSkillService.SkillPackageMigrationSummary(
+            3,
+            2,
+            1,
+            List.of(new AdminChatSkillService.SkillPackageMigrationFailure(7101L, "legacy-skill", "测试失败"))
+        );
+        AdminSkillPackageMigrationSummaryResponse response = new AdminSkillPackageMigrationSummaryResponse(
+            3,
+            2,
+            1,
+            List.of(new AdminSkillPackageMigrationSummaryResponse.FailureItem(7101L, "legacy-skill", "测试失败"))
+        );
+        when(adminChatSkillService.migrateUploadedSkillPackages()).thenReturn(summary);
+        when(skillPackageViewService.toMigrationSummaryResponse(summary)).thenReturn(response);
 
         mockMvc().perform(post("/api/admin/skills/migrate-packages"))
             .andExpect(status().isOk())
@@ -273,6 +307,8 @@ class AdminChatSkillControllerTest {
             .andExpect(jsonPath("$.data.migrated").value(2))
             .andExpect(jsonPath("$.data.skipped").value(1))
             .andExpect(jsonPath("$.data.failures[0].skillCode").value("legacy-skill"));
+
+        verify(skillPackageViewService).toMigrationSummaryResponse(summary);
     }
 
     /**

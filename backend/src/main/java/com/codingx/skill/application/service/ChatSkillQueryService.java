@@ -13,6 +13,9 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class ChatSkillQueryService {
 
+    /**
+     * 技能仓储，用于读取当前启用的聊天技能配置。
+     */
     private final ChatSkillRepository chatSkillRepository;
 
     /**
@@ -20,6 +23,7 @@ public class ChatSkillQueryService {
      * @return 启用技能列表。
      */
     public List<ChatSkill> listEnabledSkills() {
+        // 步骤 1：只返回 enabled=1 且未删除的技能，排序规则由仓储统一处理。
         return chatSkillRepository.findAllEnabled();
     }
 }

@@ -17,7 +17,6 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 /**
@@ -25,7 +24,6 @@ import org.springframework.stereotype.Service;
  */
 @Service
 @RequiredArgsConstructor
-@Slf4j
 public class RuntimeSettingService {
 
     private static final String TYPE_BOOLEAN = "BOOLEAN";
@@ -79,7 +77,6 @@ public class RuntimeSettingService {
         }
         cache.clear();
         cache.putAll(next);
-        log.info("Runtime settings cache refreshed, size={}", cache.size());
     }
 
     /**

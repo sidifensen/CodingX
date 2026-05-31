@@ -18,7 +18,26 @@ vi.mock('@ant-design/plots', () => ({
   Area: (props: { ['data-testid']?: string }) => <div data-testid={props['data-testid'] ?? 'mock-area-chart'} />,
   Line: (props: { ['data-testid']?: string }) => <div data-testid={props['data-testid'] ?? 'mock-line-chart'} />,
   Column: (props: { ['data-testid']?: string }) => <div data-testid={props['data-testid'] ?? 'mock-column-chart'} />,
-  Pie: (props: { ['data-testid']?: string }) => <div data-testid={props['data-testid'] ?? 'mock-pie-chart'} />,
+  Pie: (props: {
+    ['data-testid']?: string;
+    data?: Array<{ type: string; value: number }>;
+    tooltip?: {
+      items?: Array<(datum: { type: string; value: number }) => { name: string; value: string }>;
+    };
+  }) => {
+    const tooltipItem = props.tooltip?.items?.[0]?.(props.data?.[0] ?? { type: '', value: 0 });
+
+    return (
+      <div data-testid={props['data-testid'] ?? 'mock-pie-chart'}>
+        {tooltipItem ? (
+          <span data-testid="dashboard-success-ring-tooltip-preview">
+            {tooltipItem.name}
+            {tooltipItem.value}
+          </span>
+        ) : null}
+      </div>
+    );
+  },
 }));
 
 describe('Dashboard page', () => {
@@ -128,5 +147,18 @@ describe('Dashboard page', () => {
     await waitFor(() => {
       expect(AdminChatApi.getDashboard).toHaveBeenLastCalledWith('7d');
     });
+  });
+
+  /**
+   * AI 性能环图的 AntV tooltip 必须显式输出名称和值，避免默认项在主题覆盖后只剩色块不可读。
+   */
+  it('provides readable tooltip text for the AI performance ring', async () => {
+    render(
+      <MemoryRouter>
+        <Dashboard />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByTestId('dashboard-success-ring-tooltip-preview')).toHaveTextContent('成功率83.3%');
   });
 });

@@ -53,13 +53,27 @@ export function AdminDataTable<RecordType extends object>({
       return pagination;
     }
     const safePageSize = Math.max(1, pagination.pageSize);
-    const pages = Math.max(1, Math.ceil(pagination.total / safePageSize));
+    /**
+     * AntD 会把它推导出的实时 total 传给 showTotal；这里必须优先使用回调参数，
+     * 不能只闭包读取 pagination.total，否则在数据源长度与外部 total 短暂不一致时
+     * 会出现“页码已更新，摘要仍停留旧值”的错位。
+     */
+    const resolveTotal = (total?: number) => {
+      if (typeof total === 'number' && Number.isFinite(total)) {
+        return total;
+      }
+      return pagination.total;
+    };
     return {
       current: pagination.current,
       pageSize: safePageSize,
       total: pagination.total,
       showSizeChanger: pagination.showSizeChanger ?? false,
-      showTotal: () => `第 ${pagination.current} / ${pages} 页，共 ${pagination.total.toLocaleString('zh-CN')} 条`,
+      showTotal: (total) => {
+        const liveTotal = resolveTotal(total);
+        const livePages = Math.max(1, Math.ceil(liveTotal / safePageSize));
+        return `第 ${pagination.current} / ${livePages} 页，共 ${liveTotal.toLocaleString('zh-CN')} 条`;
+      },
       itemRender: (page, type, originalElement) => {
         if (type !== 'page') {
           return originalElement;

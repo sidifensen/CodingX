@@ -459,6 +459,7 @@ function writeViewRouteToUrl(view: ViewType) {
 
 /**
  * 从浏览器地址解析公开分享路由，兼容千问风格 `/share/chat/{token}`。
+ * 分享链接本身只保留 token；`messages` 查询参数仅作为旧链接和手工传入的兼容入口。
  * @param pathname 当前路径。
  * @param search 查询参数。
  * @returns 分享路由参数或 null。

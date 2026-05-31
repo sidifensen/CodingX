@@ -339,4 +339,33 @@ describe('Skills page', () => {
     });
     expect(within(dialog).getByText('# Skill Manifest')).toBeInTheDocument();
   });
+
+  /**
+   * 文件目录树需要用稳定的自绘层级结构展示缩进，避免 AntD Button 图标槽导致父子层级错位。
+   */
+  it('renders package explorer hierarchy with stable indentation markers', async () => {
+    vi.mocked(AdminChatApi.listSkillPackageEntries).mockResolvedValueOnce([
+      { path: 'references', name: 'references', directory: true, size: null },
+      { path: 'references/site-patterns', name: 'site-patterns', directory: true, size: null },
+      { path: 'references/cdp-api.md', name: 'cdp-api.md', directory: false, size: 4600 },
+      { path: 'SKILL.md', name: 'SKILL.md', directory: false, size: 1200 },
+    ] as any);
+
+    render(<Skills />);
+    await screen.findByText('/weather_query');
+    fireEvent.click(screen.getByRole('button', { name: '资源预览 weather_query' }));
+
+    const dialog = await screen.findByRole('dialog', { name: '技能包资源预览 weather_query' });
+    const referencesRow = await within(dialog).findByTestId('skill-package-tree-row-references');
+    const nestedDirectoryRow = within(dialog).getByTestId('skill-package-tree-row-references/site-patterns');
+    const nestedFileRow = within(dialog).getByTestId('skill-package-tree-row-references/cdp-api.md');
+
+    expect(referencesRow).toHaveAttribute('data-depth', '0');
+    expect(nestedDirectoryRow).toHaveAttribute('data-depth', '1');
+    expect(nestedFileRow).toHaveAttribute('data-depth', '1');
+    expect(referencesRow).not.toHaveClass('ant-btn');
+    expect(within(referencesRow).getByTestId('skill-package-tree-expander')).toBeInTheDocument();
+    expect(within(nestedDirectoryRow).getByTestId('skill-package-tree-depth-spacer')).toHaveStyle({ width: '18px' });
+    expect(within(nestedFileRow).getByText('4.5KB')).toBeInTheDocument();
+  });
 });

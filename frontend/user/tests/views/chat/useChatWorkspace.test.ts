@@ -2732,7 +2732,7 @@ describe('useChatWorkspace', () => {
             message: 'conversation shared',
             data: {
               shareToken: 'share_xxx',
-              shareUrl: '/share/chat/share_xxx?messages=101%2C102',
+              shareUrl: '/share/chat/share_xxx',
             },
           }),
           { status: 200 },
@@ -2770,7 +2770,7 @@ describe('useChatWorkspace', () => {
         messageIds: ['101', '102'],
       });
       expect(shareUrl).toBe(
-        new URL('/share/chat/share_xxx?messages=101%2C102', window.location.origin).toString(),
+        new URL('/share/chat/share_xxx', window.location.origin).toString(),
       );
     });
 

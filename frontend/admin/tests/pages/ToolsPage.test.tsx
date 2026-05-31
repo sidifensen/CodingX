@@ -263,6 +263,16 @@ describe('Tools page', () => {
     expect(screen.queryByText('/tool_1')).not.toBeInTheDocument();
   });
 
+  it('keeps header actions and table overflow inside the page viewport', async () => {
+    render(<ToolsPage />);
+
+    await screen.findByText('/shell_command');
+
+    expect(screen.getByTestId('tools-header-actions')).toHaveClass('max-w-full');
+    expect(screen.getByTestId('tools-table-section')).toHaveClass('min-w-0', 'overflow-hidden');
+    expect(document.querySelector('.admin-tools-table')).toBeInTheDocument();
+  });
+
   it('supports switching to intent tree view and selecting tool nodes', async () => {
     render(<ToolsPage />);
     await screen.findByText('/shell_command');

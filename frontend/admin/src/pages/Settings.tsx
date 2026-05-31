@@ -81,6 +81,16 @@ const CATEGORY_LABELS: Record<string, string> = {
   'ai.routing': '模型路由',
 };
 
+const AI_BASE_SETTING_KEYS = new Set(['ai.chat.default_model', 'ai.chat.deep_thinking_model']);
+
+function displayCategoryCode(setting: AdminRuntimeSetting): string {
+  // 默认模型是候选池首选指针，运营上属于 AI 基础配置，避免管理员误以为没有配置入口。
+  if (AI_BASE_SETTING_KEYS.has(setting.settingKey)) {
+    return 'ai';
+  }
+  return setting.categoryCode ?? 'general';
+}
+
 function secretPlaceholder(setting: AdminRuntimeSetting): string | undefined {
   if (setting.secret !== true) {
     return undefined;
@@ -164,7 +174,7 @@ export function Settings() {
     draftSettings
       .slice()
       .sort((left, right) => {
-        const categoryCompare = String(left.categoryCode ?? '').localeCompare(String(right.categoryCode ?? ''));
+        const categoryCompare = displayCategoryCode(left).localeCompare(displayCategoryCode(right));
         if (categoryCompare !== 0) {
           return categoryCompare;
         }
@@ -175,7 +185,7 @@ export function Settings() {
         return left.settingKey.localeCompare(right.settingKey);
       })
       .forEach((setting) => {
-        const categoryCode = setting.categoryCode ?? 'general';
+        const categoryCode = displayCategoryCode(setting);
         const bucket = grouped.get(categoryCode) ?? [];
         bucket.push(setting);
         grouped.set(categoryCode, bucket);
@@ -398,7 +408,6 @@ function inputTypeByValueType(valueType?: string): React.HTMLInputTypeAttribute 
       {errorMessage ? (
         <Alert showIcon type="error" message={errorMessage} />
       ) : null}
-
 
       {loading ? (
         <section className="rounded-2xl border border-border-hairline bg-surface-container-lowest px-lg py-xl text-center">

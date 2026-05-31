@@ -1423,6 +1423,20 @@ public class ChatApplicationService {
                 return;
             }
             if (toolCalls.isEmpty()) {
+                if (!executedToolResults.isEmpty() && isProgressOnlyToolRoundContent(deferredContentDeltas)) {
+                    logSuppressedToolRoundContent(round + 1, deferredContentDeltas);
+                    currentHistory.add(ChatMessage.create(
+                        cn.hutool.core.util.IdUtil.getSnowflakeNextId(),
+                        command.conversationId(),
+                        ChatMessageRole.SYSTEM,
+                        buildProgressOnlyToolRoundGuidance(),
+                        ChatMessageStatus.COMPLETED,
+                        null,
+                        null,
+                        null
+                    ).attachRun(runId));
+                    continue;
+                }
                 flushDeferredAssistantDeltas(command.conversationId(), builder, deferredContentDeltas);
                 return;
             }
@@ -1513,6 +1527,52 @@ public class ChatApplicationService {
             .mapToInt(StrUtil::length)
             .sum();
         log.info("模型工具轮次正文已隐藏: 轮次={}, 增量数={}, 长度={}", round, deferredContentDeltas.size(), contentLength);
+    }
+
+    /**
+     * 判断工具回灌后的无工具调用轮次是否只有内部进度文案。
+     * 关键约束：工具已执行后，模型可能输出“正在执行页面信息读取...”并结束流；该内容不是用户答案，不能发布为最终消息。
+     *
+     * @param deferredContentDeltas 本轮模型正文增量。
+     * @return 是否只包含短进度说明。
+     */
+    private boolean isProgressOnlyToolRoundContent(List<String> deferredContentDeltas) {
+        if (CollUtil.isEmpty(deferredContentDeltas)) {
+            return false;
+        }
+        String content = StrUtil.trimToEmpty(String.join("", deferredContentDeltas));
+        if (StrUtil.isBlank(content) || content.length() > 80) {
+            return false;
+        }
+        String normalizedContent = content.replaceAll("\\s+", "");
+        boolean hasProgressPrefix = normalizedContent.startsWith("正在执行")
+            || normalizedContent.startsWith("正在读取")
+            || normalizedContent.startsWith("正在获取")
+            || normalizedContent.startsWith("正在检查")
+            || normalizedContent.startsWith("正在打开")
+            || normalizedContent.startsWith("正在访问")
+            || normalizedContent.startsWith("正在处理")
+            || normalizedContent.startsWith("正在加载")
+            || normalizedContent.startsWith("现在执行")
+            || normalizedContent.startsWith("接下来我将");
+        boolean hasProgressSuffix = normalizedContent.endsWith("...")
+            || normalizedContent.endsWith("…")
+            || normalizedContent.endsWith("中")
+            || normalizedContent.endsWith("中...");
+        return hasProgressPrefix && hasProgressSuffix;
+    }
+
+    /**
+     * 构造工具进度句被隐藏后的纠偏提示，要求模型基于已有工具证据直接给出用户可见结果。
+     *
+     * @return 系统提示词。
+     */
+    private String buildProgressOnlyToolRoundGuidance() {
+        return """
+            上一轮模型只输出了内部进度说明，没有给出用户可见的最终答案。
+            后端已隐藏该进度说明；请基于前面已经追加的工具结果，直接输出面向用户的最终回答。
+            不要再输出“正在执行”“正在读取”“请稍等”等过程文案；如果信息不足，应说明缺少哪些目标或权限。
+            """;
     }
 
     /**

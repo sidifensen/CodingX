@@ -219,12 +219,14 @@ export function Layout({ onLogout, isAuthSubmitting }: LayoutProps) {
         isAuthSubmitting={isAuthSubmitting}
       />
       <div
+        data-testid="admin-main-shell"
         className={clsx(
-          'relative flex h-screen min-h-0 w-full flex-1 flex-col transition-all duration-300',
-          isCollapsed ? 'ml-[68px]' : 'ml-[200px]',
+          'relative flex h-screen min-h-0 min-w-0 flex-col transition-all duration-300',
+          // 侧边栏固定定位不参与文档流，主壳层必须扣除侧栏宽度，避免 w-full + margin-left 撑出页面级横向溢出。
+          isCollapsed ? 'ml-[68px] w-[calc(100vw-68px)]' : 'ml-[200px] w-[calc(100vw-200px)]',
         )}
       >
-        <main className="relative flex-1 min-h-0 w-full overflow-y-auto overflow-x-hidden">
+        <main className="relative min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden">
           <AnimatePresence mode="wait">
             <motion.div
               key={location.pathname}

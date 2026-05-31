@@ -2144,7 +2144,15 @@ describe('ChatView', () => {
     );
 
     expect(screen.getByTestId('input-rich-preview')).toBeInTheDocument();
-    expect(screen.getByTestId('selected-skill-chip-sales_query')).toBeInTheDocument();
+    const skillChipSlot = screen.getByTestId('selected-skill-chip-slot-sales_query');
+    expect(skillChipSlot).not.toHaveClass('min-w-[8rem]');
+    expect(skillChipSlot).not.toHaveClass('pr-7');
+    const skillChip = screen.getByTestId('selected-skill-chip-sales_query');
+    expect(skillChip).toBeInTheDocument();
+    expect(skillChip).toHaveClass('group');
+    expect(skillChip).toHaveClass('right-0');
+    expect(within(skillChip).getByTestId('selected-skill-chip-icon-sales_query')).toBeInTheDocument();
+    expect(within(skillChip).getByTestId('remove-selected-skill-chip-sales_query')).toHaveClass('pointer-events-none');
     expect(screen.getByTestId('input-rich-preview')).toContainElement(
       screen.getByText('@sales_query', { selector: 'span.invisible.whitespace-pre' }),
     );

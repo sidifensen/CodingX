@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import {
   AppstoreOutlined,
+  CaretDownOutlined,
+  CaretRightOutlined,
   CloseOutlined,
   DeleteOutlined,
   EditOutlined,
@@ -652,19 +654,18 @@ function SkillPackagePreviewDialog({ skill, onClose }: SkillPackagePreviewDialog
                 <div className="px-sm py-sm text-[12px] text-secondary">目录为空</div>
               ) : (
                 treeRows.map((row) => (
-                  <Button
+                  <button
                     key={row.path}
                     aria-label={row.directory ? `切换目录 ${row.name}` : `预览文件 ${row.name}`}
-                    block
                     className={[
-                      'h-auto w-full justify-start rounded-md px-sm py-1.5 text-left text-[12px] transition-colors',
+                      'flex min-h-8 w-full items-center gap-1.5 rounded-md px-sm py-1.5 text-left text-[12px] transition-colors',
                       selectedPath === row.path
                         ? 'bg-primary/15 text-primary'
                         : 'text-ink hover:bg-surface-container-lowest',
                     ].join(' ')}
-                    icon={row.directory ? <FolderOpenOutlined /> : <FileTextOutlined />}
-                    style={{ paddingLeft: `${8 + row.depth * 16}px` }}
-                    type="text"
+                    data-depth={row.depth}
+                    data-testid={`skill-package-tree-row-${row.path}`}
+                    type="button"
                     onClick={() => {
                       if (row.directory) {
                         toggleDirectory(row.path);
@@ -673,11 +674,32 @@ function SkillPackagePreviewDialog({ skill, onClose }: SkillPackagePreviewDialog
                       void loadFileContent(row.path);
                     }}
                   >
-                    <span className="truncate">{row.name}</span>
+                    <span
+                      aria-hidden="true"
+                      className="shrink-0"
+                      data-testid="skill-package-tree-depth-spacer"
+                      style={{ width: `${row.depth * 18}px` }}
+                    />
+                    {row.directory ? (
+                      <span
+                        aria-hidden="true"
+                        className="flex h-4 w-4 shrink-0 items-center justify-center text-[10px] text-secondary"
+                        data-testid="skill-package-tree-expander"
+                      >
+                        {expandedPaths.has(row.path) ? <CaretDownOutlined /> : <CaretRightOutlined />}
+                      </span>
+                    ) : (
+                      // 文件行保留展开箭头占位，确保文件图标与同级目录图标垂直对齐。
+                      <span aria-hidden="true" className="h-4 w-4 shrink-0" />
+                    )}
+                    <span className="flex h-4 w-4 shrink-0 items-center justify-center text-[14px]">
+                      {row.directory ? <FolderOpenOutlined /> : <FileTextOutlined />}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate">{row.name}</span>
                     {!row.directory && row.size != null ? (
-                      <span className="ml-auto shrink-0 font-data-mono text-[10px] text-secondary">{formatBytes(row.size)}</span>
+                      <span className="shrink-0 font-data-mono text-[10px] text-secondary">{formatBytes(row.size)}</span>
                     ) : null}
-                  </Button>
+                  </button>
                 ))
               )}
             </div>

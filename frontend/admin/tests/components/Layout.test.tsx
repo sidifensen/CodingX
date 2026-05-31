@@ -20,9 +20,13 @@ describe('Layout', () => {
       </MemoryRouter>,
     );
 
+    const shell = screen.getByTestId('admin-main-shell');
     const main = screen.getByRole('main');
 
+    expect(shell).toHaveClass('min-w-0');
+    expect(shell).toHaveClass('w-[calc(100vw-200px)]');
     expect(main).toHaveClass('min-h-0');
+    expect(main).toHaveClass('min-w-0');
     expect(main).toHaveClass('overflow-y-auto');
     expect(main).toHaveClass('overflow-x-hidden');
   });

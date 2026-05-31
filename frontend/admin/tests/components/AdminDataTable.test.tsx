@@ -41,6 +41,31 @@ describe('AdminDataTable', () => {
     expect(screen.getByText('第 1 / 1 页，共 1 条')).toBeInTheDocument();
   });
 
+  it('uses the live pagination total when the table falls back to local row count', () => {
+    const onChangePage = vi.fn();
+
+    const rows = Array.from({ length: 105 }, (_, index) => ({
+      id: index + 1,
+      name: `演示数据 ${index + 1}`,
+    }));
+
+    render(
+      <AdminDataTable<DemoRow>
+        columns={columns}
+        dataSource={rows}
+        pagination={{
+          current: 1,
+          pageSize: 10,
+          total: 0,
+          onChange: onChangePage,
+        }}
+        rowKey="id"
+      />,
+    );
+
+    expect(screen.getByText('第 1 / 11 页，共 105 条')).toBeInTheDocument();
+  });
+
   it('renders action buttons with Ant Design icons', () => {
     const onView = vi.fn();
     const onEdit = vi.fn();

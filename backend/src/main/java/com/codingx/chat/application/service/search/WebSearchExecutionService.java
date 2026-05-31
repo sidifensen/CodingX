@@ -93,7 +93,7 @@ public class WebSearchExecutionService {
 
         // 步骤 6：记录聚合前后的规模指标，便于排查通道可用性和后处理过滤效果。
         log.info(
-            "搜索聚合: 问题={}, 通道数={}, 原始结果数={}, 最终结果数={}",
+            "搜索聚合/完成: 问题={}, 通道数={}, 原始结果数={}, 最终结果数={}",
             StrUtil.maxLength(question, 120),
             enabledChannels.size(),
             merged.size(),

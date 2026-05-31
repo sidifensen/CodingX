@@ -371,6 +371,7 @@ export default function ChatView({
 
   /**
    * 根据已选消息生成分享链接，并展示千问风格预览弹窗。
+   * 分享 URL 只返回 token 路径，选中消息继续由公开页请求阶段处理，避免复制出来的链接越来越长。
    */
   const confirmShareSelection = async () => {
     const shareableSelectedMessageIds = resolveShareSelectionMessageIds(
@@ -1644,15 +1645,22 @@ export default function ChatView({
                               segment.type === 'skill' ? (
                                 <span
                                   key={`${segment.skillCode}-${segment.start}-${index}`}
+                                  data-testid={`selected-skill-chip-slot-${segment.skillCode}`}
                                   className="relative inline-flex max-w-full align-baseline"
                                 >
-                                  {/* 步骤：保留 token 原始宽度作为占位，确保 textarea 光标位置与技能气泡末尾对齐。 */}
+                                  {/* 步骤：保留 token 原始宽度，确保 textarea 光标位置与技能标记末尾对齐。 */}
                                   <span className="invisible whitespace-pre">{segment.rawToken}</span>
                                   <span
                                     data-testid={`selected-skill-chip-${segment.skillCode}`}
-                                    className="pointer-events-auto absolute inset-y-0 left-0 right-0 inline-flex h-6 items-center overflow-hidden rounded-md border border-border/70 bg-surface-container/82 px-1.5 text-[12px] font-normal text-foreground"
+                                    className="group pointer-events-auto absolute inset-y-0 left-0 right-0 inline-flex h-6 items-center gap-1 overflow-hidden rounded-md border border-border/70 bg-surface-container/82 px-1.5 text-[12px] font-normal text-foreground"
                                     title={segment.displayName}
                                   >
+                                    {/* 输入区技能标记与历史消息技能气泡共用星光图标语义，避免用户误判为普通文本标签。 */}
+                                    <Sparkles
+                                      size={12}
+                                      data-testid={`selected-skill-chip-icon-${segment.skillCode}`}
+                                      className="shrink-0 text-muted"
+                                    />
                                     <span className="min-w-0 truncate">{segment.displayName}</span>
                                     <button
                                       type="button"
@@ -1667,7 +1675,7 @@ export default function ChatView({
                                         event.stopPropagation();
                                         removeSkillTokenFromInput(segment.skillCode);
                                       }}
-                                      className="ml-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-muted transition-colors hover:bg-surface hover:text-foreground"
+                                      className="pointer-events-none absolute right-1 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-surface-container text-muted opacity-0 transition-[opacity,background-color,color] hover:bg-surface hover:text-foreground group-hover:pointer-events-auto group-hover:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100"
                                     >
                                       <X size={10} />
                                     </button>

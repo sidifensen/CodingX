@@ -41,12 +41,16 @@ export function TraceRunsTable({
     {
       title: 'Trace Id',
       dataIndex: 'traceId',
-      width: 180,
-      render: (value: string) => <Typography.Text code>{value}</Typography.Text>,
+      width: 240,
+      render: (value: string) => (
+        <span className="inline-block whitespace-nowrap">
+          <Typography.Text code>{value}</Typography.Text>
+        </span>
+      ),
     },
     {
       title: '会话ID / TaskID',
-      width: 180,
+      width: 240,
       render: (_, run) => (
         <div>
           <Typography.Text code>{run.conversationId ?? '-'}</Typography.Text>
@@ -75,7 +79,7 @@ export function TraceRunsTable({
     {
       title: '执行时间',
       dataIndex: 'startedAt',
-      width: 180,
+      width: 240,
       render: formatDateTime,
     },
     {
@@ -111,7 +115,7 @@ export function TraceRunsTable({
           onChange: onChangePage,
         }}
         rowKey="traceId"
-        scroll={{ x: 1180 }}
+        scroll={{ x: 1240 }}
       />
 
       {loading ? (

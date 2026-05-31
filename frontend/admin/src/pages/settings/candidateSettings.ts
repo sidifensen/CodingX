@@ -74,7 +74,19 @@ export function buildCandidateRows(settings: AdminRuntimeSetting[]): CandidateRo
     }
     rows.set(slot, row);
   });
-  return Array.from(rows.values()).sort((left, right) => Number(left.slot) - Number(right.slot));
+  return Array.from(rows.values()).sort((left, right) => {
+    // 候选池的真实尝试顺序由优先级决定，槽位号只作为配置键稳定标识和兜底排序。
+    const priorityCompare = candidatePriority(left) - candidatePriority(right);
+    if (priorityCompare !== 0) {
+      return priorityCompare;
+    }
+    return Number(left.slot) - Number(right.slot);
+  });
+}
+
+function candidatePriority(row: CandidateRow): number {
+  const priority = Number(row.prioritySetting?.settingValue);
+  return Number.isFinite(priority) ? priority : Number.MAX_SAFE_INTEGER;
 }
 
 export function summarizeCandidateSlots(settings: AdminRuntimeSetting[]): CandidateSlotSummary[] {

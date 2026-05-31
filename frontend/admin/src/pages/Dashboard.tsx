@@ -554,7 +554,15 @@ function buildRingConfig(data: Array<{ type: string; value: number }>) {
     innerRadius: 0.74,
     color: ['#10b981', 'rgba(148,163,184,0.18)'],
     legend: false,
-    tooltip: buildTooltipTheme(),
+    tooltip: buildTooltipTheme({
+      items: [
+        // 环图默认 tooltip 在当前主题覆盖下只露出色块，显式输出名称和值保证悬浮层可读。
+        (datum: { type: string; value: number }) => ({
+          name: datum.type,
+          value: `${datum.value.toFixed(1)}%`,
+        }),
+      ],
+    }),
     label: {
       position: 'center',
       text: `${data[0]?.value.toFixed(1) ?? '0.0'}%`,
@@ -619,16 +627,32 @@ function buildTooltipTheme(overrides?: Record<string, unknown>) {
         borderRadius: '16px',
         border: '1px solid var(--theme-border-hairline)',
         background: 'var(--theme-surface-container-lowest)',
+        color: 'var(--theme-ink)',
+        padding: '10px 12px',
         boxShadow: '0 18px 42px rgba(15,23,42,0.18)',
       },
       'g2-tooltip-title': {
         color: 'var(--theme-ink)',
+      },
+      'g2-tooltip-list-item': {
+        color: 'var(--theme-ink)',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '8px',
       },
       'g2-tooltip-list-item-name': {
         color: 'var(--theme-secondary)',
       },
       'g2-tooltip-list-item-value': {
         color: 'var(--theme-ink)',
+        fontWeight: 700,
+      },
+      'g2-tooltip-name': {
+        color: 'var(--theme-secondary)',
+      },
+      'g2-tooltip-value': {
+        color: 'var(--theme-ink)',
+        fontWeight: 700,
       },
     },
   };

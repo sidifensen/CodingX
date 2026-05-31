@@ -271,6 +271,44 @@
   .skill-package-tree-scroll::-webkit-scrollbar-thumb:hover {
     background: var(--theme-scrollbar-thumb-hover);
   }
+
+  /* AntV 图表 tooltip 会挂到图表容器外，必须用主题令牌兜底覆盖默认浅色皮肤。 */
+  .g2-tooltip {
+    background: var(--theme-surface-container-lowest) !important;
+    border: 1px solid var(--theme-border-hairline) !important;
+    border-radius: 16px !important;
+    box-shadow: 0 18px 42px rgba(15, 23, 42, 0.18) !important;
+    color: var(--theme-ink) !important;
+    padding: 10px 12px !important;
+  }
+
+  .g2-tooltip-title,
+  .g2-tooltip-list,
+  .g2-tooltip-list-item {
+    color: var(--theme-ink) !important;
+  }
+
+  .g2-tooltip-list-item {
+    align-items: center !important;
+    display: flex !important;
+    gap: 8px !important;
+  }
+
+  .g2-tooltip-list-item-name,
+  .g2-tooltip-list-item-name-label,
+  .g2-tooltip-name {
+    color: var(--theme-secondary) !important;
+  }
+
+  .g2-tooltip-list-item-value,
+  .g2-tooltip-value {
+    color: var(--theme-ink) !important;
+    font-weight: 700 !important;
+  }
+
+  .g2-tooltip-list-item-marker {
+    flex: 0 0 auto !important;
+  }
 }
 
 @layer utilities {

@@ -420,7 +420,7 @@ describe('ChatApi', () => {
   });
 
   /**
-   * 选择轮次分享时应把消息 ID 放入请求体，后端据此生成带过滤参数的公开链接。
+   * 选择轮次分享时仍可提交消息 ID，但后端返回的公开链接应保持短链接形式。
    */
   it('应携带选中消息生成分享链接', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
@@ -431,7 +431,7 @@ describe('ChatApi', () => {
           message: 'conversation shared',
           data: {
             shareToken: 'share_xxx',
-            shareUrl: '/share/chat/share_xxx?messages=101%2C102',
+            shareUrl: '/share/chat/share_xxx',
           },
         }),
         { status: 200 },
@@ -449,7 +449,7 @@ describe('ChatApi', () => {
         body: JSON.stringify({ messageIds: ['101', '102'] }),
       }),
     );
-    expect(result.shareUrl).toBe('/share/chat/share_xxx?messages=101%2C102');
+    expect(result.shareUrl).toBe('/share/chat/share_xxx');
   });
 
   /**

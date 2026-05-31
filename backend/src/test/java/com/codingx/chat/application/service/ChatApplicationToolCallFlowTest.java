@@ -332,6 +332,78 @@ class ChatApplicationToolCallFlowTest {
     }
 
     /**
+     * 工具回灌后的模型可能只输出“正在执行...”这类进度句且不再发起 tool_call；这不是最终答案。
+     *
+     * @param tempDir 本地 workspace 临时目录。
+     * @throws Exception 执行失败时抛出。
+     */
+    @Test
+    void sendMessageSuppressesProgressOnlyFinalRoundAfterToolCall(@TempDir Path tempDir) throws Exception {
+        Long runId = 9401010L;
+        ChatExecutionContext.start(runId);
+        try {
+            Path workspace = tempDir.resolve("repo");
+            Files.createDirectories(workspace);
+            ChatConversation conversation = ChatConversation.create(10L, "Progress Only", 1002L, ChatConversationStatus.ACTIVE);
+            when(chatConversationRepository.requireById(10L)).thenReturn(conversation);
+            when(chatMessageRepository.findByConversationId(10L)).thenReturn(new ArrayList<>());
+            when(chatAttachmentService.requireOwnedAttachments(any(), eq(10L), eq(1002L))).thenReturn(List.of());
+            when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+                new ConversationRewriteResult("访问订阅页", false, List.of("访问订阅页"))
+            );
+            when(conversationIntentService.route("访问订阅页", false)).thenReturn(
+                new ConversationIntentDecision("chat.normal", ConversationIntentAction.DIRECT, null)
+            );
+            when(chatIntentNodeRepository.findByIntentCode("chat.normal")).thenReturn(null);
+            when(chatSkillContextService.buildSkillContext(List.of("web-access"))).thenReturn("web-access skill context");
+            when(chatExpertContextService.buildExpertContext(any())).thenReturn("");
+            when(conversationSummaryService.buildModelHistory(any(), any())).thenAnswer(invocation -> invocation.getArgument(1));
+            when(conversationTitleService.generateTitle(any(), any())).thenReturn("订阅页信息");
+            when(llmResponseCleaner.clean(any())).thenAnswer(invocation -> invocation.getArgument(0));
+            when(chatToolSpecService.listModelVisibleToolSpecs()).thenReturn(List.of(
+                new ChatToolSpec("test_sync_tool", "同步测试工具", Map.of("type", "object"))
+            ));
+            when(chatToolExecutionService.execute(eq("test_sync_tool"), eq("{\"message\":\"open\"}"))).thenReturn(
+                new ChatToolExecutionResult("test_sync_tool", "页面标题 Lucen Subscriptions", Map.of("ok", true))
+            );
+            AtomicInteger modelRound = new AtomicInteger();
+            doAnswer(invocation -> {
+                AiChatClient.ToolAwareStreamHandler handler = invocation.getArgument(3);
+                int round = modelRound.incrementAndGet();
+                if (round == 1) {
+                    handler.onToolCall(new AiToolCall("call-open", "test_sync_tool", "{\"message\":\"open\"}"));
+                    handler.onComplete();
+                    return null;
+                }
+                if (round == 2) {
+                    handler.onDelta("正在执行页面信息读取...");
+                    handler.onComplete();
+                    return null;
+                }
+                handler.onDelta("订阅页已打开，页面标题是 Lucen Subscriptions。");
+                handler.onComplete();
+                return null;
+            }).when(aiChatClient).streamChatWithTools(any(), eq(false), any(), any());
+
+            chatApplicationService.sendMessage(
+                new SendChatMessageCommand(10L, "访问订阅页", false, List.of(), List.of("web-access"), null, workspace.toString(), List.of()),
+                1002L
+            );
+
+            verify(chatStreamPublisher, never()).publishAssistantDelta(10L, "正在执行页面信息读取...");
+            verify(chatStreamPublisher).publishAssistantDelta(10L, "订阅页已打开，页面标题是 Lucen Subscriptions。");
+            verify(chatStreamPublisher).publishAssistantCompleted(
+                eq(10L),
+                any(),
+                eq("订阅页已打开，页面标题是 Lucen Subscriptions。"),
+                eq("订阅页信息")
+            );
+        } finally {
+            ChatExecutionContext.clear();
+        }
+    }
+
+    /**
      * 深度思考内容是模型真实返回的 reasoning，工具回灌轮次不能清空已收到的 thinking。
      *
      * @param tempDir 本地 workspace 临时目录。

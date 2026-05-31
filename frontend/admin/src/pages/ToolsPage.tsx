@@ -347,12 +347,12 @@ export function ToolsPage() {
 
   return (
     <div className="w-full space-y-lg p-lg">
-      <header className="flex flex-col gap-sm lg:flex-row lg:items-end lg:justify-between">
-        <div>
+      <header className="flex min-w-0 flex-col gap-sm lg:flex-row lg:items-end lg:justify-between">
+        <div className="min-w-0">
           <Typography.Title level={2} style={{ margin: 0 }}>工具管理</Typography.Title>
           <Typography.Text type="secondary">独立维护 chat_tool 工具目录，预置 Codex CLI 工具清单。</Typography.Text>
         </div>
-        <Space wrap>
+        <Space className="max-w-full justify-start lg:justify-end" data-testid="tools-header-actions" wrap>
           <Space.Compact>
             <Button
               aria-label="列表视图"
@@ -391,13 +391,14 @@ export function ToolsPage() {
       ) : null}
 
       {viewMode === 'list' ? (
-        <section className="rounded-xl border border-border-hairline bg-surface-container-lowest p-md shadow-sm">
+        <section data-testid="tools-table-section" className="min-w-0 overflow-hidden rounded-xl border border-border-hairline bg-surface-container-lowest p-md shadow-sm">
           {showSkeletonRows
             ? Array.from({ length: 10 }, (_, index) => (
               <span key={`tools-loading-row-${index}`} data-testid="tools-loading-skeleton-row" className="sr-only" />
             ))
             : null}
           <AdminDataTable<UnifiedToolRow>
+            className="admin-tools-table"
             columns={columns}
             dataSource={pagedRows}
             loading={isTableLoading}
@@ -409,7 +410,7 @@ export function ToolsPage() {
               onChange: (nextPage) => setPageNo(nextPage),
             }}
             rowKey={(row) => row.toolCode}
-            scroll={{ x: 1420 }}
+            scroll={{ x: 1740 }}
           />
         </section>
       ) : (

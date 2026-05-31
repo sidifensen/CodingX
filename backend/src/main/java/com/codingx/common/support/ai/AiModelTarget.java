@@ -9,9 +9,9 @@ import com.codingx.config.AiProperties;
  * @param provider provider 连接配置。
  */
 public record AiModelTarget(
-    String id,
-    AiProperties.ChatCandidate candidate,
-    AiProperties.Provider provider
+    String id, // 本次路由使用的模型候选唯一标识。
+    AiProperties.ChatCandidate candidate, // 聊天候选配置，包含 provider、model、优先级和能力标记。
+    AiProperties.Provider provider // provider 连接配置，包含 baseUrl、apiKey 和 endpoint 信息。
 ) {
 }
 

@@ -11,6 +11,9 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 public class DynamicAiRoutingProperties {
 
+    /**
+     * 运行时配置服务，用于从系统配置表读取模型路由熔断和首包等待参数。
+     */
     private final RuntimeSettingService runtimeSettingService;
 
     /**
@@ -18,6 +21,7 @@ public class DynamicAiRoutingProperties {
      * @return 连续失败阈值。
      */
     public int failureThreshold() {
+        // 步骤 1：路由层只读取运行时配置值，默认值和类型兜底由 RuntimeSettingService 统一处理。
         return runtimeSettingService.aiFailureThreshold();
     }
 
@@ -26,6 +30,7 @@ public class DynamicAiRoutingProperties {
      * @return 熔断打开时长毫秒。
      */
     public long openDurationMs() {
+        // 步骤 1：熔断打开时长由系统配置动态控制，避免重启后端才能调整路由恢复窗口。
         return runtimeSettingService.aiOpenDurationMs();
     }
 
@@ -34,6 +39,7 @@ public class DynamicAiRoutingProperties {
      * @return 首包等待超时毫秒。
      */
     public long firstPacketTimeoutMs() {
+        // 步骤 1：首包等待超时由系统配置动态控制，供模型调度层决定 fallback 窗口。
         return runtimeSettingService.aiFirstPacketTimeoutMs();
     }
 

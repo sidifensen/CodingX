@@ -17,10 +17,29 @@ import java.util.concurrent.TimeUnit;
  */
 public class AiModelDispatchService {
 
+    /**
+     * Provider 客户端映射，按 provider 编码定位具体模型调用实现。
+     */
     private final Map<String, AiProviderClient> providerClients;
+
+    /**
+     * Provider 健康注册表，用于记录模型失败并控制熔断窗口。
+     */
     private final AiProviderHealthRegistry healthRegistry;
+
+    /**
+     * 模型选择器，用于按首选模型、思考模式和附件能力生成候选顺序。
+     */
     private final AiModelSelector aiModelSelector;
+
+    /**
+     * 最近一次调度尝试过的 provider 列表，用于跨线程测试和问题定位。
+     */
     private volatile List<String> lastAttemptedProviders = List.of();
+
+    /**
+     * 当前线程本次调度尝试过的 provider 列表，避免并发请求互相覆盖观测结果。
+     */
     private final ThreadLocal<List<String>> currentThreadAttemptedProviders = ThreadLocal.withInitial(List::of);
 
     /**
@@ -59,6 +78,8 @@ public class AiModelDispatchService {
         DynamicAiRoutingProperties dynamicProperties,
         DynamicAiProperties dynamicAiProperties
     ) {
+        // 步骤 1：根据动态路由配置或静态选择配置构造健康注册表。
+        // 步骤 2：模型选择器同时持有静态和动态 AI 配置，保证候选池可运行时更新。
         this(
             providerClients,
             new AiProviderHealthRegistry(
@@ -84,10 +105,12 @@ public class AiModelDispatchService {
         AiProviderHealthRegistry healthRegistry,
         AiModelSelector aiModelSelector
     ) {
+        // 步骤 1：将 provider 客户端按 provider 编码放入有序映射，保留配置注入顺序。
         this.providerClients = new LinkedHashMap<>();
         for (AiProviderClient providerClient : CollUtil.emptyIfNull(providerClients)) {
             this.providerClients.put(providerClient.provider(), providerClient);
         }
+        // 步骤 2：健康注册表和模型选择器可由测试显式注入，便于覆盖 fallback 场景。
         this.healthRegistry = healthRegistry;
         this.aiModelSelector = aiModelSelector;
     }
@@ -98,9 +121,11 @@ public class AiModelDispatchService {
      * @param handler 下游流式处理器。
      */
     public void streamChat(AiConversationRequest request, AiStreamHandler handler) {
+        // 步骤 1：初始化本次请求的 provider 尝试快照，避免复用上一次调用结果。
         List<String> attemptedProviders = new ArrayList<>();
         publishAttemptSnapshot(attemptedProviders);
         Throwable lastError = null;
+        // 步骤 2：按首选模型、思考模式和附件能力生成本次有序模型候选。
         List<AiModelTarget> targets = aiModelSelector.selectChatCandidates(
             request.preferredModel(),
             request.thinkingEnabled(),
@@ -108,6 +133,7 @@ public class AiModelDispatchService {
         );
         for (AiModelTarget target : targets) {
             String modelId = target.id();
+            // 步骤 3：熔断中的模型直接跳过，避免请求继续打到短期不可用 provider。
             if (!healthRegistry.allowCall(modelId)) {
                 continue;
             }
@@ -115,13 +141,14 @@ public class AiModelDispatchService {
             if (providerClient == null) {
                 continue;
             }
-            // 单次调度的尝试顺序必须保存在请求局部变量中，避免单例 Bean 下并发请求互相清空或拼接。
+            // 步骤 4：记录本次尝试顺序；请求局部变量避免单例 Bean 下并发请求互相污染。
             attemptedProviders.add(providerClient.provider());
             publishAttemptSnapshot(attemptedProviders);
             FirstTokenAwaiter awaiter = new FirstTokenAwaiter();
             FirstTokenBufferingHandler bufferingHandler = new FirstTokenBufferingHandler(handler, awaiter);
             AiStreamSession session;
             try {
+                // 步骤 5：启动 provider 流式请求；启动阶段异常表示首包前失败，可尝试下一个候选。
                 session = providerClient.streamChat(request, target, bufferingHandler);
             } catch (Exception exception) {
                 healthRegistry.markFailure(modelId);
@@ -129,6 +156,7 @@ public class AiModelDispatchService {
                 continue;
             }
             if (session == null) {
+                // 步骤 6：provider 返回空 session 视为首包前失败，标记失败后继续 fallback。
                 healthRegistry.markFailure(modelId);
                 lastError = new IllegalStateException(
                     providerClient.provider() + "/" + target.candidate().getModel()
@@ -138,6 +166,7 @@ public class AiModelDispatchService {
             }
 
             try {
+                // 步骤 7：等待首包结果，超时、错误或无内容都取消当前 session 并尝试下一个候选。
                 FirstTokenAwaiter.Result result = awaiter.await(aiModelSelector.firstPacketTimeoutMs(), TimeUnit.MILLISECONDS);
                 if (!result.isSuccess()) {
                     healthRegistry.markFailure(modelId);
@@ -146,9 +175,11 @@ public class AiModelDispatchService {
                     continue;
                 }
 
+                // 步骤 8：首包成功后再向下游提交缓存事件，避免失败候选污染最终响应。
                 handler.onMetadata(providerClient.provider(), target.candidate().getModel());
                 bufferingHandler.commit();
                 try {
+                    // 步骤 9：首包后异常说明响应已开始，不能再 fallback，转换为可观察错误。
                     session.completion().join();
                 } catch (CompletionException completionException) {
                     healthRegistry.markFailure(modelId);
@@ -156,16 +187,19 @@ public class AiModelDispatchService {
                     publishAttemptSnapshot(attemptedProviders);
                     throw new IllegalStateException(ErrorMessageCatalog.AI_STREAM_FAILED_AFTER_FIRST_TOKEN, cause);
                 }
+                // 步骤 10：完整流式会话成功后标记健康并结束路由。
                 healthRegistry.markSuccess(modelId);
                 publishAttemptSnapshot(attemptedProviders);
                 return;
             } catch (InterruptedException exception) {
+                // 步骤 11：线程中断时取消当前 session 并恢复中断标记。
                 Thread.currentThread().interrupt();
                 session.cancel();
                 publishAttemptSnapshot(attemptedProviders);
                 throw new IllegalStateException(ErrorMessageCatalog.AI_ROUTING_INTERRUPTED, exception);
             }
         }
+        // 步骤 12：所有候选都不可用时通知 handler 并抛出统一无可用 provider 错误。
         publishAttemptSnapshot(attemptedProviders);
         IllegalStateException exception = new IllegalStateException(ErrorMessageCatalog.AI_NO_AVAILABLE_PROVIDER);
         if (lastError != null) {
@@ -205,6 +239,7 @@ public class AiModelDispatchService {
      * @return 失败原因。
      */
     private Throwable errorForResult(FirstTokenAwaiter.Result result, String provider, String model) {
+        // 步骤 1：把首包等待结果转换成带 provider/model 上下文的异常，方便日志定位。
         return switch (result.getType()) {
             case ERROR -> result.getError() == null
                 ? new IllegalStateException(
@@ -227,15 +262,18 @@ public class AiModelDispatchService {
      * @return 命中的 provider 客户端。
      */
     private AiProviderClient resolveProviderClient(String providerName) {
+        // 步骤 1：优先按 provider 编码精确匹配客户端。
         AiProviderClient exactMatch = providerClients.get(providerName);
         if (exactMatch != null) {
             return exactMatch;
         }
+        // 步骤 2：providerName 带后缀时允许前缀匹配，兼容同类 provider 的扩展编码。
         for (Map.Entry<String, AiProviderClient> entry : providerClients.entrySet()) {
             if (providerName != null && providerName.startsWith(entry.getKey())) {
                 return entry.getValue();
             }
         }
+        // 步骤 3：最终回退通用 OpenAI-compatible 客户端，兼容动态 provider 配置。
         return providerClients.get("openai-compatible");
     }
 }

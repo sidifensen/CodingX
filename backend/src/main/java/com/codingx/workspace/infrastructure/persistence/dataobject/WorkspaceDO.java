@@ -75,7 +75,7 @@ public class WorkspaceDO {
     private LocalDateTime updatedAt;
 
     /**
-     * 逻辑删除标记。
+     * 逻辑删除标记，1 表示已删除。
      */
     @TableField("deleted")
     private Integer deleted;

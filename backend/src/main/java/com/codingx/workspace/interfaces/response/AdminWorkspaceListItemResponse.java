@@ -19,16 +19,16 @@ import lombok.Builder;
  */
 @Builder
 public record AdminWorkspaceListItemResponse(
-    Long id,
-    String name,
-    String repositoryUrl,
-    String branchName,
-    String workingDirectory,
-    String runtimeTarget,
-    String runtimeTargetLabel,
-    Long createdBy,
-    Long conversationCount,
-    LocalDateTime createdAt,
-    LocalDateTime updatedAt
+    Long id, // 工作空间主键。
+    String name, // 工作空间名称。
+    String repositoryUrl, // 关联仓库地址，可为空。
+    String branchName, // 关联分支名称，可为空。
+    String workingDirectory, // 本地运行时工作目录，可为空。
+    String runtimeTarget, // 运行目标编码，例如 cloud 或 local。
+    String runtimeTargetLabel, // 运行目标中文展示文案。
+    Long createdBy, // 创建人用户标识。
+    Long conversationCount, // 关联未删除会话数量。
+    LocalDateTime createdAt, // 创建时间。
+    LocalDateTime updatedAt // 最近更新时间。
 ) {
 }

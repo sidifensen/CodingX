@@ -27,31 +27,31 @@ import org.mockito.junit.jupiter.MockitoExtension;
 class TaskCommandApplicationServiceTest {
 
     /**
-     * TaskRepository 依赖。
+     * 任务仓储，用于验证命令服务保存和读取任务聚合。
      */
     @Mock
     private TaskRepository taskRepository;
 
     /**
-     * WorkspaceRepository 依赖。
+     * 工作空间仓储，用于验证创建任务时的空间存在性校验。
      */
     @Mock
     private WorkspaceRepository workspaceRepository;
 
     /**
-     * TaskRuntimeExecutor 依赖。
+     * 任务运行时执行器，用于验证启动任务后会触发执行。
      */
     @Mock
     private TaskRuntimeExecutor taskRuntimeExecutor;
 
     /**
-     * TaskCommandApplicationService 依赖。
+     * 被测任务命令应用服务。
      */
     @InjectMocks
     private TaskCommandApplicationService taskCommandApplicationService;
 
     /**
-     * 创建 createTaskPersistsCreatedTask 所需数据并返回结果。
+     * 创建任务应持久化 CREATED 状态任务并保留技能编码。
      */
     @Test
     void createTaskPersistsCreatedTask() {
@@ -65,7 +65,7 @@ class TaskCommandApplicationServiceTest {
     }
 
     /**
-     * 启动 startTaskLoadsAndDelegatesToRuntime 处理的流程。
+     * 启动任务应加载任务、保存 RUNNING 状态并委托运行时执行。
      */
     @Test
     void startTaskLoadsAndDelegatesToRuntime() {
@@ -78,7 +78,7 @@ class TaskCommandApplicationServiceTest {
     }
 
     /**
-     * 启动 startTaskRejectsNonOwnerOperator 处理的流程。
+     * 非创建人启动任务时应抛出禁止操作异常。
      */
     @Test
     void startTaskRejectsNonOwnerOperator() {

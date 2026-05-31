@@ -21,19 +21,19 @@ import org.mockito.junit.jupiter.MockitoExtension;
 class TaskQueryApplicationServiceTest {
 
     /**
-     * TaskRepository 依赖。
+     * 任务仓储，用于验证查询服务只读取当前用户可见任务。
      */
     @Mock
     private TaskRepository taskRepository;
 
     /**
-     * TaskQueryApplicationService 依赖。
+     * 被测任务查询应用服务。
      */
     @InjectMocks
     private TaskQueryApplicationService taskQueryApplicationService;
 
     /**
-     * 获取 getTaskReturnsOwnedTask 对应的结果。
+     * 查询本人任务详情时应返回任务聚合。
      */
     @Test
     void getTaskReturnsOwnedTask() {
@@ -45,7 +45,7 @@ class TaskQueryApplicationServiceTest {
     }
 
     /**
-     * 获取 getTaskRejectsNonOwner 对应的结果。
+     * 查询他人任务详情时应抛出禁止访问异常。
      */
     @Test
     void getTaskRejectsNonOwner() {
@@ -61,7 +61,7 @@ class TaskQueryApplicationServiceTest {
     }
 
     /**
-     * 返回 listTasksOnlyUsesCurrentOwner 需要的结果集合。
+     * 列表查询应只使用当前用户作为创建人条件。
      */
     @Test
     void listTasksOnlyUsesCurrentOwner() {

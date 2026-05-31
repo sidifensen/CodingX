@@ -9,7 +9,7 @@ import org.junit.jupiter.api.Test;
 class TaskTest {
 
     /**
-     * 启动 startMovesTaskFromCreatedToRunning 处理的流程。
+     * 启动任务应把 CREATED 状态切换为 RUNNING。
      */
     @Test
     void startMovesTaskFromCreatedToRunning() {
@@ -28,7 +28,7 @@ class TaskTest {
     }
 
     /**
-     * 将 completeRequiresRunningStatus 处理的流程标记为完成。
+     * 未启动任务不能直接标记完成。
      */
     @Test
     void completeRequiresRunningStatus() {
@@ -37,7 +37,7 @@ class TaskTest {
     }
 
     /**
-     * 将 failStoresErrorAndMovesTaskToFailed 处理的流程标记为失败。
+     * 运行中任务失败时应记录错误文案并切换为 FAILED。
      */
     @Test
     void failStoresErrorAndMovesTaskToFailed() {

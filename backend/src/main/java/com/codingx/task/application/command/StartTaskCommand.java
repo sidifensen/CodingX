@@ -1,10 +1,10 @@
 package com.codingx.task.application.command;
 
 /**
- * 定义 StartTaskCommand 使用的数据载体。
+ * 启动任务的应用层命令。
  */
 public record StartTaskCommand(
-    Long taskId, // 关联任务标识。
-    Long operatorId // operatorId 字段。
+    Long taskId, // 待启动任务标识。
+    Long operatorId // 当前操作用户标识，用于校验任务归属。
 ) {
 }

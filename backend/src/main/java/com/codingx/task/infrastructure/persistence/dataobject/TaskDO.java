@@ -6,94 +6,51 @@ import java.time.LocalDateTime;
 import lombok.Data;
 
 /**
- * 定义 TaskDO 的数据库字段映射。
+ * 任务表的数据对象映射。
  */
 @Data
 @TableName("task")
 public class TaskDO {
 
     @TableId("id")
+    private Long id; // 任务主键。
 
-    /**
-     * 主键标识。
-     */
-    private Long id;
     @TableField("title")
+    private String title; // 任务标题。
 
-    /**
-     * 展示标题。
-     */
-    private String title;
     @TableField("description")
+    private String description; // 任务说明，可为空。
 
-    /**
-     * 详细描述。
-     */
-    private String description;
     @TableField("status")
+    private String status; // 任务状态，映射 TaskStatus 枚举。
 
-    /**
-     * 当前状态值。
-     */
-    private String status;
     @TableField("runtime_type")
+    private String runtimeType; // 任务运行时类型，映射 RuntimeType 枚举。
 
-    /**
-     * 运行时类型。
-     */
-    private String runtimeType;
     @TableField("workspace_id")
+    private Long workspaceId; // 任务关联工作空间标识，可为空。
 
-    /**
-     * 关联工作区标识。
-     */
-    private Long workspaceId;
     @TableField("created_by")
+    private Long createdBy; // 任务创建人用户标识。
 
-    /**
-     * 创建人用户标识。
-     */
-    private Long createdBy;
     @TableField("started_at")
+    private LocalDateTime startedAt; // 任务开始执行时间，未启动时为空。
 
-    /**
-     * 开始时间。
-     */
-    private LocalDateTime startedAt;
     @TableField("finished_at")
+    private LocalDateTime finishedAt; // 任务完成或失败时间，未终结时为空。
 
-    /**
-     * 完成时间。
-     */
-    private LocalDateTime finishedAt;
     @TableField("error_message")
+    private String errorMessage; // 任务失败时的错误文案，非失败状态可为空。
 
-    /**
-     * 错误信息。
-     */
-    private String errorMessage;
     @TableField("summary")
+    private String summary; // 任务成功后的执行摘要，可为空。
 
-    /**
-     * 摘要内容。
-     */
-    private String summary;
     @TableField("created_at")
+    private LocalDateTime createdAt; // 数据创建时间。
 
-    /**
-     * 创建时间。
-     */
-    private LocalDateTime createdAt;
     @TableField("updated_at")
+    private LocalDateTime updatedAt; // 数据最近更新时间。
 
-    /**
-     * 最后更新时间。
-     */
-    private LocalDateTime updatedAt;
     @TableField("deleted")
-
-    /**
-     * 逻辑删除标记。
-     */
-    private Integer deleted;
+    private Integer deleted; // 逻辑删除标记，1 表示已删除。
 }

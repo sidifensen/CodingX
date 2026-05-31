@@ -6,6 +6,7 @@ import com.codingx.task.application.command.CreateTaskCommand;
 import com.codingx.task.application.command.StartTaskCommand;
 import com.codingx.task.application.service.TaskCommandApplicationService;
 import com.codingx.task.application.service.TaskQueryApplicationService;
+import com.codingx.task.application.service.TaskViewService;
 import com.codingx.task.domain.model.Task;
 import com.codingx.task.interfaces.request.CreateTaskRequest;
 import com.codingx.task.interfaces.response.TaskResponse;
@@ -20,7 +21,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 负责处理 TaskController 的 HTTP 请求并调用应用服务。
+ * 任务 HTTP 控制器，只负责协议适配和应用服务调用。
  */
 @RestController
 @RequestMapping("/api/tasks")
@@ -28,77 +29,73 @@ import org.springframework.web.bind.annotation.RestController;
 public class TaskController {
 
     /**
-     * TaskCommandApplicationService 依赖。
+     * 任务命令应用服务，承接创建和启动等会修改任务状态的业务入口。
      */
     private final TaskCommandApplicationService taskCommandApplicationService;
 
     /**
-     * TaskQueryApplicationService 依赖。
+     * 任务查询应用服务，承接任务列表与详情的归属校验和读取。
      */
     private final TaskQueryApplicationService taskQueryApplicationService;
 
     /**
-     * 创建 createTask 所需数据并返回结果。
-     * @param request 输入参数。
-     * @return 输入参数。
+     * 任务视图服务，负责把领域对象转换为接口响应，避免 Controller 手写字段映射。
+     */
+    private final TaskViewService taskViewService;
+
+    /**
+     * 创建任务并返回前端展示模型。
+     * @param request 创建任务请求。
+     * @return 新任务响应。
      */
     @PostMapping
     public ApiResponse<TaskResponse> createTask(@Valid @RequestBody CreateTaskRequest request) {
+        // 步骤 1：读取当前登录用户并把 HTTP 请求体转换为应用层 command。
         Long userId = StpUtil.getLoginIdAsLong();
         Task task = taskCommandApplicationService.createTask(
             new CreateTaskCommand(request.title(), request.description(), request.runtimeType(), request.workspaceId(), request.skillCodes()),
             userId
         );
-        return ApiResponse.success(toResponse(task));
+        // 步骤 2：由视图服务投影响应，Controller 不关心任务字段映射细节。
+        return ApiResponse.success(taskViewService.toResponse(task));
     }
 
     /**
-     * 启动 startTask 处理的流程。
-     * @param taskId 输入参数。
-     * @return 输入参数。
+     * 启动指定任务。
+     * @param taskId 任务标识。
+     * @return 启动结果。
      */
     @PostMapping("/{taskId}/start")
     public ApiResponse<Void> startTask(@PathVariable Long taskId) {
+        // 步骤 1：把路径任务标识和当前用户标识交给命令服务做归属校验和状态流转。
         taskCommandApplicationService.startTask(new StartTaskCommand(taskId, StpUtil.getLoginIdAsLong()));
+        // 步骤 2：启动成功后只返回统一中文提示，任务进度由 SSE 接口继续推送。
         return ApiResponse.successMessage(ErrorMessageCatalog.TASK_STARTED);
     }
 
     /**
-     * 返回 listTasks 需要的结果集合。
-     * @return 输入参数。
+     * 查询当前用户创建的任务列表。
+     * @return 任务响应列表。
      */
     @GetMapping
     public ApiResponse<List<TaskResponse>> listTasks() {
+        // 步骤 1：查询服务按当前用户过滤任务，避免 Controller 直接接触仓储条件。
         Long userId = StpUtil.getLoginIdAsLong();
-        return ApiResponse.success(taskQueryApplicationService.listTasks(userId).stream().map(this::toResponse).toList());
+        List<Task> tasks = taskQueryApplicationService.listTasks(userId);
+        // 步骤 2：视图服务保持查询顺序并转换响应字段。
+        return ApiResponse.success(taskViewService.toResponses(tasks));
     }
 
     /**
-     * 获取 getTask 对应的结果。
-     * @param taskId 输入参数。
-     * @return 输入参数。
+     * 查询指定任务详情。
+     * @param taskId 任务标识。
+     * @return 任务响应。
      */
     @GetMapping("/{taskId}")
     public ApiResponse<TaskResponse> getTask(@PathVariable Long taskId) {
-        return ApiResponse.success(toResponse(taskQueryApplicationService.getTask(taskId, StpUtil.getLoginIdAsLong())));
-    }
-
-    /**
-     * 执行 toResponse 定义的处理逻辑。
-     * @param task 输入参数。
-     * @return 输入参数。
-     */
-    private TaskResponse toResponse(Task task) {
-        return new TaskResponse(
-            task.getId(),
-            task.getTitle(),
-            task.getDescription(),
-            task.getStatus(),
-            task.getRuntimeType(),
-            task.getWorkspaceId(),
-            task.getCreatedBy(),
-            task.getSummary(),
-            task.getErrorMessage()
-        );
+        // 步骤 1：查询服务负责校验当前用户是否有权访问任务。
+        Task task = taskQueryApplicationService.getTask(taskId, StpUtil.getLoginIdAsLong());
+        // 步骤 2：详情响应仍统一走视图服务，避免列表和详情字段映射分叉。
+        return ApiResponse.success(taskViewService.toResponse(task));
     }
 }

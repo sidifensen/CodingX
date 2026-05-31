@@ -61,7 +61,14 @@ public class ChatToolUserService {
         "format"
     );
 
+    /**
+     * 工具配置仓储，用于确认用户态工具是否存在且已启用。
+     */
     private final ChatToolRepository chatToolRepository;
+
+    /**
+     * 工具执行服务，负责按工具编码分派到真实执行器。
+     */
     private final ChatToolExecutionService chatToolExecutionService;
 
     /**
@@ -82,11 +89,14 @@ public class ChatToolUserService {
      * @return 执行结果。
      */
     public ChatToolExecutionResult invokeForCurrentUser(String toolCode, String question, boolean confirmHighRisk) {
+        // 步骤 1：用户态工具调用必须先确认登录态，后续权限判断都基于当前登录用户。
         StpUtil.checkLogin();
+        // 步骤 2：工具编码统一小写后依次校验白名单、启用状态和高风险确认。
         String normalizedToolCode = normalizeToolCode(toolCode);
         ensureToolWhitelisted(normalizedToolCode);
         ensureToolEnabled(normalizedToolCode);
         ensureHighRiskConfirmed(normalizedToolCode, question, confirmHighRisk);
+        // 步骤 3：校验通过后只传递规范化编码给执行层，避免大小写差异导致注册表找不到执行器。
         return chatToolExecutionService.execute(normalizedToolCode, question);
     }
 

@@ -27,8 +27,19 @@ public class AdminChatToolService {
 
     private static final DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
+    /**
+     * 工具配置仓储，承接管理端配置的查询、保存和逻辑删除。
+     */
     private final ChatToolRepository chatToolRepository;
+
+    /**
+     * 工具注册表，负责判断数据库配置是否已经接入真实执行器。
+     */
     private final ChatToolRegistry chatToolRegistry;
+
+    /**
+     * 工具执行服务，负责管理端探测和手动调用工具。
+     */
     private final ChatToolExecutionService chatToolExecutionService;
 
     /**
@@ -45,11 +56,13 @@ public class AdminChatToolService {
      * @return 新增后的工具配置。
      */
     public ChatTool create(ChatTool request) {
+        // 步骤 1：先校验必填字段和工具编码唯一性，避免保存不可调用或重复的配置。
         validateRequired(request);
         String normalizedToolCode = request.getToolCode().trim();
         if (chatToolRepository.existsByToolCode(normalizedToolCode, null)) {
             throw new BusinessException("CHAT_TOOL_DUPLICATE_CODE", ErrorMessageCatalog.CHAT_TOOL_DUPLICATE_CODE);
         }
+        // 步骤 2：补齐默认来源、启用状态、排序和审计字段后落库。
         LocalDateTime now = LocalDateTime.now();
         ChatTool persisted = request.toBuilder()
             .id(IdUtil.getSnowflakeNextId())
@@ -73,15 +86,18 @@ public class AdminChatToolService {
      * @return 更新后的工具配置。
      */
     public ChatTool update(Long id, ChatTool request) {
+        // 步骤 1：先读取旧配置，缺失时返回统一不存在错误。
         ChatTool existing = chatToolRepository.findById(id);
         if (existing == null) {
             throw new NotFoundException(ErrorMessageCatalog.CHAT_TOOL_CONFIG_NOT_FOUND);
         }
+        // 步骤 2：校验新编码与必填项，允许当前记录复用自己的工具编码。
         validateRequired(request);
         String normalizedToolCode = request.getToolCode().trim();
         if (chatToolRepository.existsByToolCode(normalizedToolCode, id)) {
             throw new BusinessException("CHAT_TOOL_DUPLICATE_CODE", ErrorMessageCatalog.CHAT_TOOL_DUPLICATE_CODE);
         }
+        // 步骤 3：空值字段沿用旧配置，避免局部更新把来源、启用状态或排序误清空。
         ChatTool persisted = request.toBuilder()
             .id(id)
             .toolCode(normalizedToolCode)
@@ -129,6 +145,7 @@ public class AdminChatToolService {
      * @return 探测结果。
      */
     public ToolHealthView pingTool(String toolCode) {
+        // 步骤 1：探测前先读取配置；配置不存在或禁用时不进入执行器。
         ChatTool configuredTool = requireConfiguredTool(toolCode);
         if (!isEnabled(configuredTool)) {
             return toHealthView(configuredTool, null).toBuilder()
@@ -143,6 +160,7 @@ public class AdminChatToolService {
         long startedAt = System.currentTimeMillis();
         String normalizedCode = normalizeToolCode(configuredTool.getToolCode());
         try {
+            // 步骤 2：使用固定样例问题探测真实执行器，成功时截断返回内容作为健康说明。
             ChatToolExecutionResult result = chatToolExecutionService.execute(normalizedCode, sampleQuestionFor(normalizedCode));
             long durationMs = Math.max(1, System.currentTimeMillis() - startedAt);
             String content = StrUtil.blankToDefault(result.content(), "");
@@ -158,6 +176,7 @@ public class AdminChatToolService {
                 .durationMs(durationMs)
                 .build();
         } catch (Exception exception) {
+            // 步骤 3：探测异常只影响当前工具健康状态，返回失败视图而不是中断整个管理端页面。
             long durationMs = Math.max(1, System.currentTimeMillis() - startedAt);
             return toHealthView(configuredTool, null).toBuilder()
                 .ok(false)
@@ -177,10 +196,12 @@ public class AdminChatToolService {
      * @return 执行结果。
      */
     public ToolInvokeView invokeTool(String toolCode, String question) {
+        // 步骤 1：管理端手动调用仍需确认工具存在且启用，避免绕过配置开关。
         ChatTool configuredTool = requireConfiguredTool(toolCode);
         if (!isEnabled(configuredTool)) {
             throw new BusinessException("CHAT_TOOL_DISABLED", ErrorMessageCatalog.CHAT_TOOL_DISABLED);
         }
+        // 步骤 2：调用内容为空时回退样例问题，并记录执行耗时供管理端排障。
         long startedAt = System.currentTimeMillis();
         String normalizedCode = normalizeToolCode(configuredTool.getToolCode());
         ChatToolExecutionResult result = chatToolExecutionService.execute(normalizedCode, StrUtil.blankToDefault(question, sampleQuestionFor(normalizedCode)));
@@ -329,18 +350,18 @@ public class AdminChatToolService {
      */
     @Builder(toBuilder = true)
     public record ToolHealthView(
-        String toolCode,
-        String displayName,
-        String category,
-        String source,
-        String status,
-        String statusLabel,
-        boolean ok,
-        String message,
-        String description,
-        String sampleQuestion,
-        String checkedAt,
-        Long durationMs
+        String toolCode, // 工具编码，来自配置表。
+        String displayName, // 工具展示名称。
+        String category, // 工具分类，用于管理端分组。
+        String source, // 工具来源类型。
+        String status, // 健康状态编码，例如 healthy、degraded、failed。
+        String statusLabel, // 健康状态中文文案。
+        boolean ok, // 是否可用，只有启用且存在执行器时为 true。
+        String message, // 管理端展示的健康说明或失败原因。
+        String description, // 工具能力描述。
+        String sampleQuestion, // 探测该工具时使用的样例问题。
+        String checkedAt, // 最近一次探测时间，格式为 yyyy-MM-dd HH:mm:ss。
+        Long durationMs // 最近一次探测耗时，单位毫秒。
     ) {
     }
 
@@ -361,17 +382,17 @@ public class AdminChatToolService {
      */
     @Builder
     public record ToolInvokeView(
-        String toolCode,
-        String displayName,
-        boolean ok,
-        String status,
-        String statusLabel,
-        String message,
-        String requestQuestion,
-        String content,
-        Map<String, Object> metadata,
-        String checkedAt,
-        Long durationMs
+        String toolCode, // 工具编码，来自配置表。
+        String displayName, // 工具展示名称。
+        boolean ok, // 本次调用是否成功。
+        String status, // 调用状态编码，成功时为 success。
+        String statusLabel, // 调用状态中文文案。
+        String message, // 管理端展示的调用说明。
+        String requestQuestion, // 实际传给执行器的调用参数。
+        String content, // 执行器返回的文本内容。
+        Map<String, Object> metadata, // 执行器返回的结构化附加信息，缺省为空 Map。
+        String checkedAt, // 调用完成时间，格式为 yyyy-MM-dd HH:mm:ss。
+        Long durationMs // 本次调用耗时，单位毫秒。
     ) {
     }
 }

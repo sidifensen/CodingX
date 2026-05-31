@@ -11,10 +11,10 @@ import java.util.List;
  * @param pages 总页数。
  */
 public record AdminWorkspacePage(
-    List<AdminWorkspaceRecord> records,
-    Long total,
-    Long size,
-    Long current,
-    Long pages
+    List<AdminWorkspaceRecord> records, // 当前页工作空间记录，空页返回空列表。
+    Long total, // 符合查询条件的总记录数。
+    Long size, // 当前分页大小。
+    Long current, // 当前页码。
+    Long pages // 按 total 和 size 计算出的总页数。
 ) {
 }

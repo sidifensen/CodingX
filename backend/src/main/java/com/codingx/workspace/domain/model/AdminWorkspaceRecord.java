@@ -16,15 +16,15 @@ import java.time.LocalDateTime;
  * @param updatedAt 更新时间。
  */
 public record AdminWorkspaceRecord(
-    Long id,
-    String name,
-    String repositoryUrl,
-    String branchName,
-    String workingDirectory,
-    String runtimeTarget,
-    Long createdBy,
-    Long conversationCount,
-    LocalDateTime createdAt,
-    LocalDateTime updatedAt
+    Long id, // 工作空间主键，管理端详情、筛选和跳转使用。
+    String name, // 工作空间展示名称。
+    String repositoryUrl, // 关联代码仓库地址，可为空。
+    String branchName, // 工作空间当前关联分支，可为空。
+    String workingDirectory, // 本地工作空间目录，可为空；仅 local 运行目标通常有值。
+    String runtimeTarget, // 运行目标编码，区分 cloud、local 等执行环境。
+    Long createdBy, // 工作空间创建人用户标识。
+    Long conversationCount, // 该工作空间下未删除会话数量。
+    LocalDateTime createdAt, // 工作空间创建时间。
+    LocalDateTime updatedAt // 工作空间最近更新时间。
 ) {
 }

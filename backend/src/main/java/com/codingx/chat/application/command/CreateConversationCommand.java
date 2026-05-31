@@ -1,11 +1,15 @@
 package com.codingx.chat.application.command;
 
 /**
- * 定义 CreateConversationCommand 使用的数据载体。
+ * 创建会话的应用层命令，承接 HTTP 请求和流式入口传入的会话初始化参数。
+ *
+ * @param title 用户输入或前端预填的会话标题，可为空；为空时应用服务回退默认标题。
+ * @param workspaceId 目标工作空间主键，可为空；为空时按 runtimeTarget 绑定默认空间。
+ * @param runtimeTarget 运行目标编码，可为空；用于在未传 workspaceId 时区分云端或本地默认空间。
  */
 public record CreateConversationCommand(
-    String title, // 展示标题。
-    Long workspaceId, // 工作空间标识。
+    String title, // 用户输入或前端预填的会话标题，可为空；为空时应用服务回退默认标题。
+    Long workspaceId, // 目标工作空间主键，可为空；为空时按 runtimeTarget 绑定默认空间。
     String runtimeTarget // 运行目标，未传 workspaceId 时用于选择默认云端或本地历史空间。
 ) {
 

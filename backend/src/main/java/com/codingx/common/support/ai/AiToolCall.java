@@ -9,8 +9,8 @@ package com.codingx.common.support.ai;
  * @param arguments 工具参数 JSON 字符串。
  */
 public record AiToolCall(
-    String callId,
-    String toolCode,
-    String arguments
+    String callId, // 模型侧工具调用唯一标识，可为空；为空时解析器会生成兜底 ID。
+    String toolCode, // 工具编码，来自模型返回的 function.name，用于匹配后端工具定义。
+    String arguments // 工具参数原始 JSON 字符串，可为空字符串；由工具执行层负责解析和校验。
 ) {
 }

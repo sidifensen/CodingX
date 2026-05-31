@@ -4,10 +4,10 @@ import java.util.List;
 
 /**
  * 技能包迁移结果响应，供管理端展示迁移进度与失败项。
- * @param total 参与迁移的技能总数。
- * @param migrated 成功迁移为目录化存储的技能数量。
- * @param skipped 已经是目录格式而跳过的技能数量。
- * @param failures 迁移失败项列表。
+ * @param total 本次扫描到需要检查存储形态的技能总数。
+ * @param migrated 成功从历史压缩包迁移为目录化存储的技能数量。
+ * @param skipped 已经是目录化存储而跳过的技能数量。
+ * @param failures 迁移失败项列表，空列表表示没有失败项。
  */
 public record AdminSkillPackageMigrationSummaryResponse(
     int total, // 本次扫描到需要检查存储形态的技能总数。

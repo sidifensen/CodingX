@@ -5,7 +5,7 @@ import com.codingx.workspace.infrastructure.persistence.dataobject.WorkspaceDO;
 import org.apache.ibatis.annotations.Mapper;
 
 /**
- * 定义 WorkspaceMapper 的 Mapper 操作。
+ * 工作空间表 Mapper，继承 MyBatis-Plus 通用 CRUD 能力。
  */
 @Mapper
 public interface WorkspaceMapper extends BaseMapper<WorkspaceDO> {

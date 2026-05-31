@@ -3,7 +3,7 @@ package com.codingx.tool.application.service;
 import java.util.List;
 
 /**
- * 定义 chat_tool 内置工具执行器最小契约。
+ * chat_tool 内置工具执行器契约，屏蔽具体本地工具实现差异。
  */
 public interface ChatToolExecutor {
 
@@ -15,8 +15,8 @@ public interface ChatToolExecutor {
 
     /**
      * 执行指定工具。
-     * @param toolCode 工具编码。
-     * @param question 测试问题或指令。
+     * @param toolCode 工具编码，必须属于 toolCodes 返回的集合。
+     * @param question 测试问题、自然语言指令或结构化 JSON 参数。
      * @return 工具执行结果。
      */
     ChatToolExecutionResult execute(String toolCode, String question);

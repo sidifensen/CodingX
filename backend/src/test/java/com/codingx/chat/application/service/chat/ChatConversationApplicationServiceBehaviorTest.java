@@ -19,11 +19,13 @@ import com.codingx.chat.domain.model.ChatMessageStatus;
 import com.codingx.chat.domain.repository.ChatConversationRepository;
 import com.codingx.chat.domain.repository.ChatMessageRepository;
 import com.codingx.chat.application.service.ChatConversationApplicationService;
+import com.codingx.chat.interfaces.response.ConversationShareResponse;
 import com.codingx.common.error.ErrorMessageCatalog;
 import com.codingx.common.exception.ForbiddenException;
 import com.codingx.workspace.domain.repository.WorkspaceRepository;
 import com.codingx.workspace.infrastructure.repository.WorkspaceRepositoryImpl;
 import java.time.LocalDateTime;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
@@ -78,6 +80,22 @@ class ChatConversationApplicationServiceBehaviorTest {
     }
 
     @Test
+    void shareConversationBuildsUrlWithNormalizedMessageIdsInApplicationService() {
+        ChatConversation conversation = ChatConversation.create(1L, "分享测试", 1002L, ChatConversationStatus.ACTIVE);
+        conversation.restoreSharingState(false, "share-token");
+        when(chatConversationRepository.requireById(1L)).thenReturn(conversation);
+
+        ConversationShareResponse response = chatConversationApplicationService.shareConversation(
+            1L,
+            1002L,
+            Arrays.asList(4L, null, -1L, 2L, 4L)
+        );
+
+        assertEquals("share-token", response.shareToken());
+        assertEquals("/share/chat/share-token?messages=4%2C2", response.shareUrl());
+    }
+
+    @Test
     void shareConversationLookupIsReadOnlyForPublicViewer() {
         ChatConversation conversation = ChatConversation.create(1L, "公开分享", 1002L, ChatConversationStatus.ACTIVE);
         conversation.restoreSharingState(false, "share-token");
@@ -112,6 +130,26 @@ class ChatConversationApplicationServiceBehaviorTest {
         assertEquals(2, messages.size());
         assertEquals(2L, messages.get(0).getId());
         assertEquals(4L, messages.get(1).getId());
+    }
+
+    @Test
+    void loadSharedConversationParsesMessageQueryAndIgnoresInvalidValues() {
+        ChatConversation conversation = ChatConversation.create(1L, "公开分享", 1002L, ChatConversationStatus.ACTIVE);
+        conversation.restoreSharingState(false, "share-token");
+        when(chatConversationRepository.findByShareToken("share-token")).thenReturn(Optional.of(conversation));
+        when(chatMessageRepository.findByConversationId(1L)).thenReturn(List.of(
+            ChatMessage.create(2L, 1L, ChatMessageRole.USER, "第一问", ChatMessageStatus.COMPLETED, null, null, null),
+            ChatMessage.create(3L, 1L, ChatMessageRole.ASSISTANT, "第一答", ChatMessageStatus.COMPLETED, null, null, null),
+            ChatMessage.create(4L, 1L, ChatMessageRole.USER, "第二问", ChatMessageStatus.COMPLETED, null, null, null)
+        ));
+
+        ChatConversationApplicationService.SharedConversationContent content =
+            chatConversationApplicationService.loadSharedConversation("share-token", "4,bad,2,-1,4");
+
+        assertEquals(1L, content.conversation().getId());
+        assertEquals(2, content.messages().size());
+        assertEquals(2L, content.messages().get(0).getId());
+        assertEquals(4L, content.messages().get(1).getId());
     }
 
     @Test

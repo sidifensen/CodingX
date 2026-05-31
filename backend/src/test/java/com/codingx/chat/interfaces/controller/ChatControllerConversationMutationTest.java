@@ -19,6 +19,7 @@ import com.codingx.chat.domain.model.ChatMessageStatus;
 import com.codingx.chat.interfaces.request.SendChatMessageRequest;
 import com.codingx.chat.interfaces.response.ChatConversationResponse;
 import com.codingx.chat.interfaces.response.ChatMessageResponse;
+import com.codingx.chat.interfaces.response.ConversationShareResponse;
 import com.codingx.chat.interfaces.response.SharedConversationResponse;
 import com.codingx.common.error.ErrorMessageCatalog;
 import com.codingx.common.model.ApiResponse;
@@ -251,19 +252,20 @@ class ChatControllerConversationMutationTest {
      */
     @Test
     void shareConversationBuildsUrlWithSelectedMessageIds() throws Exception {
-        when(chatConversationApplicationService.generateShareToken(2001L, 1002L)).thenReturn("share-token");
+        when(chatConversationApplicationService.shareConversation(2001L, 1002L, List.of(101L, 102L)))
+            .thenReturn(new ConversationShareResponse("share-token", "/share/chat/share-token?messages=101%2C102"));
         try (MockedStatic<cn.dev33.satoken.stp.StpUtil> mocked = Mockito.mockStatic(cn.dev33.satoken.stp.StpUtil.class)) {
             mocked.when(cn.dev33.satoken.stp.StpUtil::getLoginIdAsLong).thenReturn(1002L);
 
-            ApiResponse<?> response = chatController.shareConversation(
+            ApiResponse<ConversationShareResponse> response = chatController.shareConversation(
                 2001L,
                 new com.codingx.chat.interfaces.request.ShareConversationRequest(List.of(101L, 102L))
             );
 
             assertEquals(true, response.success());
-            java.lang.reflect.Method shareUrlAccessor = response.data().getClass().getDeclaredMethod("shareUrl");
-            shareUrlAccessor.setAccessible(true);
-            assertEquals("/share/chat/share-token?messages=101%2C102", shareUrlAccessor.invoke(response.data()));
+            assertEquals("share-token", response.data().shareToken());
+            assertEquals("/share/chat/share-token?messages=101%2C102", response.data().shareUrl());
+            verify(chatConversationApplicationService).shareConversation(2001L, 1002L, List.of(101L, 102L));
         }
     }
 
@@ -274,11 +276,12 @@ class ChatControllerConversationMutationTest {
     void getSharedConversationDoesNotRequireLoginWhenMappingMessages() {
         ChatConversation conversation = ChatConversation.create(2001L, "公开分享", 1002L, ChatConversationStatus.ACTIVE);
         conversation.restoreSharingState(false, "share-token");
-        when(chatConversationApplicationService.requireSharedConversation("share-token")).thenReturn(conversation);
         List<ChatMessage> sharedMessages = List.of(
             ChatMessage.create(101L, 2001L, ChatMessageRole.USER, "第一问", ChatMessageStatus.COMPLETED, null, null, null),
             ChatMessage.create(102L, 2001L, ChatMessageRole.ASSISTANT, "第一答", ChatMessageStatus.COMPLETED, null, null, null)
         );
+        ChatConversationApplicationService.SharedConversationContent content =
+            new ChatConversationApplicationService.SharedConversationContent(conversation, sharedMessages);
         SharedConversationResponse sharedResponse = new SharedConversationResponse(
             new ChatConversationResponse(2001L, "公开分享", ChatConversationStatus.ACTIVE, null, null, false, "share-token", true, null, null, ChatConversationResponse.WorkspaceType.CLOUD, null, null, null, null, null),
             List.of(
@@ -286,12 +289,13 @@ class ChatControllerConversationMutationTest {
                 new ChatMessageResponse(102L, 2001L, ChatMessageRole.ASSISTANT, "第一答", null, null, ChatMessageStatus.COMPLETED, null, null, null, null, List.of(), List.of(), null)
             )
         );
-        when(chatConversationApplicationService.listSharedMessages("share-token", List.of(101L, 102L))).thenReturn(sharedMessages);
-        when(chatConversationViewService.toSharedConversationResponse(conversation, sharedMessages)).thenReturn(sharedResponse);
+        when(chatConversationApplicationService.loadSharedConversation("share-token", "101,102")).thenReturn(content);
+        when(chatConversationViewService.toSharedConversationResponse(content)).thenReturn(sharedResponse);
 
         ApiResponse<?> response = chatController.getSharedConversation("share-token", "101,102");
 
         assertEquals(true, response.success());
-        verify(chatConversationViewService).toSharedConversationResponse(conversation, sharedMessages);
+        verify(chatConversationApplicationService).loadSharedConversation("share-token", "101,102");
+        verify(chatConversationViewService).toSharedConversationResponse(content);
     }
 }

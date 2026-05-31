@@ -10,15 +10,19 @@ import com.codingx.chat.domain.model.ChatMessage;
 import com.codingx.chat.domain.model.ChatMessageRole;
 import com.codingx.chat.domain.repository.ChatConversationRepository;
 import com.codingx.chat.domain.repository.ChatMessageRepository;
+import com.codingx.chat.interfaces.response.ConversationShareResponse;
 import com.codingx.common.error.ErrorMessageCatalog;
 import com.codingx.common.exception.ForbiddenException;
 import com.codingx.common.exception.NotFoundException;
 import com.codingx.workspace.domain.repository.WorkspaceRepository;
 import com.codingx.workspace.infrastructure.persistence.dataobject.WorkspaceDO;
 import com.codingx.workspace.infrastructure.repository.WorkspaceRepositoryImpl;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -231,8 +235,23 @@ public class ChatConversationApplicationService {
             conversation.touch();
             chatConversationRepository.save(conversation);
         }
-        // 步骤 3：返回分享令牌，Controller 负责组装对外 URL。
+        // 步骤 3：返回分享令牌，分享响应入口会继续组装对外 URL。
         return conversation.getShareToken();
+    }
+
+    /**
+     * 生成公开分享令牌和前端分享路径，消息范围过滤规则由应用层统一维护。
+     * @param conversationId 会话标识。
+     * @param userId 当前用户标识。
+     * @param messageIds 前端选择公开分享的消息标识列表，可为空。
+     * @return 分享响应，包含令牌和前端路径。
+     */
+    public ConversationShareResponse shareConversation(Long conversationId, Long userId, List<Long> messageIds) {
+        // 步骤 1：复用令牌生成逻辑完成归属校验，已有令牌保持稳定不重复生成。
+        String shareToken = generateShareToken(conversationId, userId);
+        // 步骤 2：按应用层规则过滤消息范围并生成 URL，Controller 不再拼接业务参数。
+        String shareUrl = buildConversationShareUrl(shareToken, messageIds);
+        return new ConversationShareResponse(shareToken, shareUrl);
     }
 
     /**
@@ -244,6 +263,21 @@ public class ChatConversationApplicationService {
         // 步骤 1：按分享令牌查找未删除会话，找不到时返回统一分享不存在文案。
         return chatConversationRepository.findByShareToken(shareToken)
             .orElseThrow(() -> new NotFoundException(ErrorMessageCatalog.CHAT_CONVERSATION_SHARE_NOT_FOUND));
+    }
+
+    /**
+     * 公开分享页加载会话与消息回放，查询参数解析和非法值兜底均在应用层处理。
+     * @param shareToken 分享令牌。
+     * @param rawMessageIds 逗号分隔消息标识，可为空。
+     * @return 公开分享会话和消息回放载体。
+     */
+    public SharedConversationContent loadSharedConversation(String shareToken, String rawMessageIds) {
+        // 步骤 1：先校验分享令牌并加载只读会话骨架。
+        ChatConversation conversation = requireSharedConversation(shareToken);
+        // 步骤 2：解析 URL 查询参数中的消息范围，非法值直接忽略，避免公开接口因脏参数失败。
+        List<Long> selectedMessageIds = parseSharedMessageIds(rawMessageIds);
+        // 步骤 3：按选择范围过滤消息，过滤后仍保持原会话消息顺序。
+        return new SharedConversationContent(conversation, listSharedMessages(conversation, selectedMessageIds));
     }
 
     /**
@@ -266,6 +300,11 @@ public class ChatConversationApplicationService {
     public List<ChatMessage> listSharedMessages(String shareToken, List<Long> messageIds) {
         // 步骤 1：加载分享会话并读取完整消息，后续只在内存中按选择范围过滤。
         ChatConversation conversation = requireSharedConversation(shareToken);
+        return listSharedMessages(conversation, messageIds);
+    }
+
+    private List<ChatMessage> listSharedMessages(ChatConversation conversation, List<Long> messageIds) {
+        // 步骤 1：读取完整消息回放；无筛选条件时直接返回完整分享内容。
         List<ChatMessage> messages = chatMessageRepository.findByConversationId(conversation.getId());
         if (messageIds == null || messageIds.isEmpty()) {
             return messages;
@@ -368,11 +407,79 @@ public class ChatConversationApplicationService {
     }
 
     /**
+     * 解析公开分享页传入的消息过滤参数，非法值直接忽略，避免公开接口因 URL 脏参数失败。
+     * @param rawMessageIds 逗号分隔的消息标识。
+     * @return 规范化消息标识列表。
+     */
+    private List<Long> parseSharedMessageIds(String rawMessageIds) {
+        // 步骤 1：缺少 messages 参数时表示公开整段会话。
+        if (StrUtil.isBlank(rawMessageIds)) {
+            return List.of();
+        }
+        // 步骤 2：逐个解析正数消息 ID，非法数字忽略并去重，保证公开接口稳定可访问。
+        return StrUtil.splitTrim(rawMessageIds, ',').stream()
+            .map(this::parsePositiveLongOrNull)
+            .filter(messageId -> messageId != null && messageId > 0)
+            .distinct()
+            .toList();
+    }
+
+    private Long parsePositiveLongOrNull(String value) {
+        // 步骤 1：单个消息 ID 解析失败时返回 null，由上层过滤，不抛异常中断公开访问。
+        try {
+            return Long.parseLong(value);
+        } catch (NumberFormatException exception) {
+            return null;
+        }
+    }
+
+    /**
+     * 构造前端公开分享页地址，选中的消息范围以查询参数保留给公开页过滤。
+     * @param shareToken 分享令牌。
+     * @param messageIds 选中的消息标识。
+     * @return 前端公开分享页路径。
+     */
+    private String buildConversationShareUrl(String shareToken, List<Long> messageIds) {
+        // 步骤 1：分享链接只接受正数消息 ID，避免脏请求参数污染公开访问地址。
+        List<Long> normalizedMessageIds = normalizePositiveIds(messageIds);
+        if (normalizedMessageIds.isEmpty()) {
+            return "/share/chat/" + shareToken;
+        }
+
+        // 步骤 2：多消息 ID 统一 URL 编码，公开页再按 messages 参数恢复筛选范围。
+        String joinedMessageIds = normalizedMessageIds.stream()
+            .map(String::valueOf)
+            .collect(Collectors.joining(","));
+        return "/share/chat/" + shareToken + "?messages=" + URLEncoder.encode(joinedMessageIds, StandardCharsets.UTF_8);
+    }
+
+    private List<Long> normalizePositiveIds(List<Long> ids) {
+        // 步骤 1：过滤空值、非正数和重复值，保留前端选择顺序用于生成可预测 URL。
+        return ids == null
+            ? List.of()
+            : ids.stream()
+                .filter(id -> id != null && id > 0)
+                .distinct()
+                .toList();
+    }
+
+    /**
      * 生成短分享令牌，避免暴露会话 ID。
      * @return 分享令牌。
      */
     private String buildShareToken() {
         // 步骤 1：分享令牌不暴露会话 ID，UUID 加短随机串降低碰撞概率。
         return "share_" + IdUtil.fastSimpleUUID() + RandomUtil.randomString(8);
+    }
+
+    /**
+     * 公开分享会话与消息的应用层载体，视图服务负责转换为接口响应。
+     * @param conversation 分享令牌对应的会话记录。
+     * @param messages 分享范围内的消息回放，已按原会话顺序过滤。
+     */
+    public record SharedConversationContent(
+        ChatConversation conversation,
+        List<ChatMessage> messages
+    ) {
     }
 }

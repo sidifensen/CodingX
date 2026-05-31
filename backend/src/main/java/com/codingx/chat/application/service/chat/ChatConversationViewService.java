@@ -8,6 +8,7 @@ import com.codingx.chat.domain.model.ChatMessage;
 import com.codingx.chat.domain.model.ChatMessageFeedback;
 import com.codingx.chat.domain.repository.ChatExecutionRunRepository;
 import com.codingx.chat.domain.repository.ChatMessageFeedbackRepository;
+import com.codingx.chat.application.service.ChatConversationApplicationService.SharedConversationContent;
 import com.codingx.chat.interfaces.response.ChatAttachmentResponse;
 import com.codingx.chat.interfaces.response.ChatConversationResponse;
 import com.codingx.chat.interfaces.response.ChatMessageResponse;
@@ -85,6 +86,16 @@ public class ChatConversationViewService {
 
         // 步骤 3：返回会话元信息与消息回放，前端只负责展示，不再补业务字段。
         return new SharedConversationResponse(conversationResponse, messageResponses);
+    }
+
+    /**
+     * 将应用层已完成分享令牌校验和消息过滤的载体转换为公开分享响应。
+     * @param content 公开分享会话与消息载体。
+     * @return 公开分享页响应。
+     */
+    public SharedConversationResponse toSharedConversationResponse(SharedConversationContent content) {
+        // 步骤 1：应用层负责加载和过滤，视图层只负责统一投影为接口响应。
+        return toSharedConversationResponse(content.conversation(), content.messages());
     }
 
     /**

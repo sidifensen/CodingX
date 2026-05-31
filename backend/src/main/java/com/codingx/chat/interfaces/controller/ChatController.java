@@ -3,22 +3,13 @@ package com.codingx.chat.interfaces.controller;
 import cn.dev33.satoken.stp.StpUtil;
 import cn.hutool.core.util.StrUtil;
 import com.codingx.chat.application.command.CreateConversationCommand;
-import com.codingx.chat.application.command.SendChatMessageCommand;
 import com.codingx.chat.application.service.ChatApplicationService;
-import com.codingx.chat.application.service.ChatAttachmentService;
-import com.codingx.chat.application.service.ChatCapabilityMentionSupport;
 import com.codingx.chat.application.service.ChatConversationApplicationService;
-import com.codingx.mcp.application.service.ChatMcpQueryService;
+import com.codingx.chat.application.service.ChatConversationViewService;
 import com.codingx.chat.application.service.ChatReactionService;
 import com.codingx.chat.application.service.ChatRuntimeGuardService;
-import com.codingx.chat.domain.model.ChatAttachment;
 import com.codingx.chat.domain.model.ChatConversation;
-import com.codingx.chat.domain.model.ChatExecutionRun;
 import com.codingx.chat.domain.model.ChatMessage;
-import com.codingx.chat.domain.model.ChatMessageFeedback;
-import com.codingx.chat.domain.repository.ChatExecutionRunRepository;
-import com.codingx.chat.domain.repository.ChatMessageFeedbackRepository;
-import com.codingx.mcp.domain.model.ChatMcp;
 import com.codingx.chat.interfaces.request.ChatMessageFeedbackRequest;
 import com.codingx.chat.interfaces.request.BatchUpdateConversationRequest;
 import com.codingx.chat.interfaces.request.ConversationPinRequest;
@@ -27,21 +18,16 @@ import com.codingx.chat.interfaces.request.DeleteChatMessagesRequest;
 import com.codingx.chat.interfaces.request.RenameConversationRequest;
 import com.codingx.chat.interfaces.request.SendChatMessageRequest;
 import com.codingx.chat.interfaces.request.ShareConversationRequest;
-import com.codingx.chat.interfaces.response.ChatAttachmentResponse;
 import com.codingx.chat.interfaces.response.ChatConversationResponse;
 import com.codingx.chat.interfaces.response.ChatMessageResponse;
+import com.codingx.chat.interfaces.response.SharedConversationResponse;
 import com.codingx.common.error.ErrorMessageCatalog;
 import com.codingx.common.model.ApiResponse;
 import com.codingx.common.idempotent.IdempotentSubmit;
-import com.codingx.task.domain.model.Task;
-import com.codingx.task.domain.repository.TaskRepository;
-import com.codingx.workspace.infrastructure.persistence.dataobject.WorkspaceDO;
-import com.codingx.workspace.infrastructure.repository.WorkspaceRepositoryImpl;
 import jakarta.validation.Valid;
-import java.nio.charset.StandardCharsets;
 import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
-import java.util.Optional;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ContentDisposition;
@@ -67,64 +53,67 @@ import org.springframework.web.bind.annotation.RequestParam;
 public class ChatController {
 
     /**
-     * ChatConversationApplicationService 依赖。
+     * 会话应用服务，承接会话创建、列表读取、分享、删除和置顶等会话级业务操作。
      */
     private final ChatConversationApplicationService chatConversationApplicationService;
 
     /**
-     * ChatApplicationService 依赖。
+     * 聊天主流程服务，负责发送、重新生成等会话执行链路。
      */
     private final ChatApplicationService chatApplicationService;
 
     /**
-     * ChatRuntimeGuardService 依赖。
+     * 会话视图服务，负责把领域对象投影为接口响应，避免控制器直接查询仓储。
+     */
+    private final ChatConversationViewService chatConversationViewService;
+
+    /**
+     * 运行态守卫服务，负责取消当前会话执行。
      */
     private final ChatRuntimeGuardService chatRuntimeGuardService;
-    private final ChatAttachmentService chatAttachmentService;
 
     /**
-     * ChatReactionService 依赖。
+     * 消息反馈服务，负责点赞、点踩和反馈原因提交。
      */
     private final ChatReactionService chatReactionService;
-    private final ChatMessageFeedbackRepository chatMessageFeedbackRepository;
-    private final ChatMcpQueryService chatMcpQueryService;
-    private final WorkspaceRepositoryImpl workspaceRepositoryImpl;
-    private final ChatExecutionRunRepository chatExecutionRunRepository;
-    private final TaskRepository taskRepository;
 
     /**
-     * 创建 createConversation 所需数据并返回结果。
-     * @param request 输入参数。
-     * @return 输入参数。
+     * 创建会话并返回前端可展示的会话摘要。
+     * @param request 创建会话请求。
+     * @return 新会话响应。
      */
     @PostMapping
     public ApiResponse<ChatConversationResponse> createConversation(@RequestBody CreateConversationRequest request) {
+        Long userId = StpUtil.getLoginIdAsLong();
         ChatConversation conversation = chatConversationApplicationService.createConversation(
             new CreateConversationCommand(request.title(), request.workspaceId()),
-            StpUtil.getLoginIdAsLong()
+            userId
         );
-        return ApiResponse.success(toConversationResponse(conversation));
+        return ApiResponse.success(chatConversationViewService.toConversationResponse(conversation, userId));
     }
 
     /**
-     * 返回 listConversations 需要的结果集合。
-     * @return 输入参数。
+     * 查询当前用户的会话列表。
+     * @param workspaceId 工作空间过滤条件，缺省时读取云端历史范围。
+     * @return 会话响应列表。
      */
     @GetMapping
     public ApiResponse<List<ChatConversationResponse>> listConversations(@RequestParam(required = false) Long workspaceId) {
-        return ApiResponse.success(chatConversationApplicationService.listConversations(StpUtil.getLoginIdAsLong(), workspaceId)
-            .stream().map(this::toConversationResponse).toList());
+        Long userId = StpUtil.getLoginIdAsLong();
+        List<ChatConversation> conversations = chatConversationApplicationService.listConversations(userId, workspaceId);
+        return ApiResponse.success(chatConversationViewService.toConversationResponses(conversations, userId));
     }
 
     /**
-     * 返回 listMessages 需要的结果集合。
-     * @param conversationId 输入参数。
-     * @return 输入参数。
+     * 查询会话消息列表。
+     * @param conversationId 会话标识。
+     * @return 消息响应列表。
      */
     @GetMapping("/{conversationId}/messages")
     public ApiResponse<List<ChatMessageResponse>> listMessages(@PathVariable Long conversationId) {
-        return ApiResponse.success(chatConversationApplicationService.listMessages(conversationId, StpUtil.getLoginIdAsLong())
-            .stream().map(this::toMessageResponse).toList());
+        Long userId = StpUtil.getLoginIdAsLong();
+        List<ChatMessage> messages = chatConversationApplicationService.listMessages(conversationId, userId);
+        return ApiResponse.success(chatConversationViewService.toMessageResponses(messages, userId));
     }
 
     /**
@@ -138,18 +127,15 @@ public class ChatController {
         @RequestParam(required = false) String messages
     ) {
         ChatConversation conversation = chatConversationApplicationService.requireSharedConversation(shareToken);
-        List<ChatMessageResponse> sharedMessages = chatConversationApplicationService.listSharedMessages(shareToken, parseSharedMessageIds(messages))
-            .stream()
-            .map(this::toSharedMessageResponse)
-            .toList();
-        return ApiResponse.success(new SharedConversationResponse(toSharedConversationResponse(conversation), sharedMessages));
+        List<ChatMessage> sharedMessages = chatConversationApplicationService.listSharedMessages(shareToken, parseSharedMessageIds(messages));
+        return ApiResponse.success(chatConversationViewService.toSharedConversationResponse(conversation, sharedMessages));
     }
 
     /**
-     * 发送 sendMessage 处理的消息或请求。
-     * @param conversationId 输入参数。
-     * @param request 输入参数。
-     * @return 输入参数。
+     * 发送同步聊天消息。
+     * @param conversationId 会话标识。
+     * @param request 消息请求。
+     * @return 发送结果。
      */
     @PostMapping("/{conversationId}/messages")
     @IdempotentSubmit(
@@ -160,35 +146,13 @@ public class ChatController {
         leaseTimeMs = 30000
     )
     public ApiResponse<Void> sendMessage(@PathVariable Long conversationId, @Valid @RequestBody SendChatMessageRequest request) {
-        // 同步入口只接受前端显式选择的技能，避免把全部启用技能无差别塞入模型上下文。
-        List<String> selectedSkillCodes = request.skillCodes() == null ? List.of() : request.skillCodes().stream()
-            .map(code -> StrUtil.trimToEmpty(code))
-            .filter(StrUtil::isNotBlank)
-            .distinct()
-            .collect(Collectors.toList());
-        List<String> selectedMcpCodes = chatMcpQueryService.listEnabledMcps().stream()
-            .filter(mcp -> mcp.getAvailable() == null || Boolean.TRUE.equals(mcp.getAvailable()))
-            .map(ChatMcp::getMcpCode)
-            .filter(StrUtil::isNotBlank)
-            .collect(Collectors.toList());
-        // 同步入口需要显式收口门控，避免异常或成功路径遗漏释放导致后续请求被误判 busy。
-        try {
-            chatApplicationService.sendMessage(
-                new SendChatMessageCommand(
-                    conversationId,
-                    request.content(),
-                    false,
-                    selectedMcpCodes,
-                    selectedSkillCodes,
-                    null,
-                    null,
-                    request.attachmentIds() == null ? List.of() : request.attachmentIds()
-                ),
-                StpUtil.getLoginIdAsLong()
-            );
-        } finally {
-            chatRuntimeGuardService.completeConversation(conversationId);
-        }
+        chatApplicationService.sendSynchronousMessage(
+            conversationId,
+            request.content(),
+            request.skillCodes(),
+            request.attachmentIds(),
+            StpUtil.getLoginIdAsLong()
+        );
         return ApiResponse.successMessage(ErrorMessageCatalog.CHAT_MESSAGE_PROCESSED);
     }
 
@@ -337,235 +301,6 @@ public class ChatController {
     }
 
     /**
-     * 执行 toConversationResponse 定义的处理逻辑。
-     * @param conversation 输入参数。
-     * @return 输入参数。
-     */
-    private ChatConversationResponse toConversationResponse(ChatConversation conversation) {
-        return toConversationResponse(StpUtil.getLoginIdAsLong(), conversation);
-    }
-
-    /**
-     * 转换会话响应，允许公开分享页跳过 workspace 权限校验。
-     * @param currentUserId 当前用户标识，可为空。
-     * @param conversation 会话对象。
-     * @return 响应对象。
-     */
-    private ChatConversationResponse toConversationResponse(Long currentUserId, ChatConversation conversation) {
-        Optional<WorkspaceDO> workspaceOptional = currentUserId == null
-            ? workspaceRepositoryImpl.findOwnedWorkspaceById(conversation.getWorkspaceId(), conversation.getCreatedBy())
-            : workspaceRepositoryImpl.findOwnedWorkspaceById(conversation.getWorkspaceId(), currentUserId);
-        WorkspaceDO workspace = workspaceOptional.orElse(null);
-        ConversationTaskProjection taskProjection = resolveTaskProjection(conversation);
-        return new ChatConversationResponse(
-            conversation.getId(),
-            conversation.getTitle(),
-            conversation.getStatus(),
-            conversation.getLastMessageAt(),
-            conversation.getLastRunId(),
-            conversation.getPinned(),
-            conversation.getShareToken(),
-            conversation.getTaskCompletionRead(),
-            conversation.getWorkspaceId(),
-            workspace == null ? null : workspace.getName(),
-            resolveWorkspaceType(workspace),
-            taskProjection.activeTaskId(),
-            taskProjection.activeTaskStatus(),
-            taskProjection.lastTaskId(),
-            taskProjection.lastTaskStatus(),
-            taskProjection.lastTaskFinishedAt()
-        );
-    }
-
-    /**
-     * 公开分享页专用会话响应，避免依赖当前登录态。
-     * @param conversation 会话对象。
-     * @return 响应对象。
-     */
-    private ChatConversationResponse toSharedConversationResponse(ChatConversation conversation) {
-        Optional<WorkspaceDO> workspaceOptional = workspaceRepositoryImpl.findOwnedWorkspaceById(
-            conversation.getWorkspaceId(),
-            conversation.getCreatedBy()
-        );
-        WorkspaceDO workspace = workspaceOptional.orElse(null);
-        ConversationTaskProjection taskProjection = resolveTaskProjection(conversation);
-        return new ChatConversationResponse(
-            conversation.getId(),
-            conversation.getTitle(),
-            conversation.getStatus(),
-            conversation.getLastMessageAt(),
-            conversation.getLastRunId(),
-            conversation.getPinned(),
-            conversation.getShareToken(),
-            conversation.getTaskCompletionRead(),
-            conversation.getWorkspaceId(),
-            workspace == null ? null : workspace.getName(),
-            resolveWorkspaceType(workspace),
-            taskProjection.activeTaskId(),
-            taskProjection.activeTaskStatus(),
-            taskProjection.lastTaskId(),
-            taskProjection.lastTaskStatus(),
-            taskProjection.lastTaskFinishedAt()
-        );
-    }
-
-    /**
-     * 从最新执行 run 与任务表中投影会话级后台任务状态，供侧栏恢复运行与完成提醒。
-     * @param conversation 会话对象。
-     * @return 任务投影。
-     */
-    private ConversationTaskProjection resolveTaskProjection(ChatConversation conversation) {
-        if (conversation.getLastRunId() == null) {
-            return ConversationTaskProjection.empty();
-        }
-        ChatExecutionRun latestRun = chatExecutionRunRepository.findByConversationId(conversation.getId()).stream()
-            .filter(run -> conversation.getLastRunId().equals(run.getId()) || conversation.getLastRunId().equals(run.getTaskId()))
-            .findFirst()
-            .orElse(null);
-        Long taskId = latestRun != null && latestRun.getTaskId() != null
-            ? latestRun.getTaskId()
-            : conversation.getLastRunId();
-        Task task = taskRepository.findById(taskId).orElse(null);
-        String taskStatus = task != null
-            ? task.getStatus().name()
-            : latestRun == null ? null : normalizeRunStatus(latestRun.getStatus(), latestRun.getQueueStatus());
-        java.time.LocalDateTime finishedAt = task != null && task.getFinishedAt() != null
-            ? task.getFinishedAt()
-            : latestRun == null ? null : latestRun.getFinishedAt();
-        if (isActiveTaskStatus(taskStatus)) {
-            return new ConversationTaskProjection(taskId, "RUNNING", taskId, "RUNNING", finishedAt);
-        }
-        if (isTerminalTaskStatus(taskStatus)) {
-            return new ConversationTaskProjection(null, null, taskId, taskStatus, finishedAt);
-        }
-        if (latestRun != null && isActiveRunStatus(latestRun)) {
-            return new ConversationTaskProjection(taskId, "RUNNING", taskId, "RUNNING", finishedAt);
-        }
-        return new ConversationTaskProjection(null, null, taskId, taskStatus, finishedAt);
-    }
-
-    /**
-     * 将运行记录状态折算成前端可理解的后台任务状态。
-     * @param runStatus 执行 run 状态。
-     * @param queueStatus 排队状态。
-     * @return 任务状态。
-     */
-    private String normalizeRunStatus(String runStatus, String queueStatus) {
-        if (StrUtil.equalsAnyIgnoreCase(runStatus, "COMPLETED", "SUCCESS")) {
-            return "SUCCEEDED";
-        }
-        if (StrUtil.equalsAnyIgnoreCase(runStatus, "RUNNING") || StrUtil.equalsAnyIgnoreCase(queueStatus, "WAITING", "ACQUIRED")) {
-            return "RUNNING";
-        }
-        if (StrUtil.isNotBlank(runStatus)) {
-            return "FAILED";
-        }
-        return null;
-    }
-
-    /**
-     * 判断任务状态是否仍代表后台执行中。
-     * @param taskStatus 任务状态。
-     * @return 是否运行中。
-     */
-    private boolean isActiveTaskStatus(String taskStatus) {
-        return StrUtil.equalsAnyIgnoreCase(taskStatus, "RUNNING");
-    }
-
-    /**
-     * 判断任务表状态是否已经终结；终态必须优先于历史 run 的队列残留状态。
-     * @param taskStatus 任务状态。
-     * @return 是否终态。
-     */
-    private boolean isTerminalTaskStatus(String taskStatus) {
-        return StrUtil.equalsAnyIgnoreCase(taskStatus, "SUCCEEDED", "FAILED");
-    }
-
-    /**
-     * 判断 run 或队列状态是否仍代表后台执行中。
-     * @param run 执行 run。
-     * @return 是否运行中。
-     */
-    private boolean isActiveRunStatus(ChatExecutionRun run) {
-        if (StrUtil.equalsAnyIgnoreCase(run.getStatus(), "RUNNING")) {
-            return true;
-        }
-        if (StrUtil.isNotBlank(run.getStatus())) {
-            return false;
-        }
-        return StrUtil.equalsAnyIgnoreCase(run.getQueueStatus(), "WAITING", "ACQUIRED");
-    }
-
-    /**
-     * 解析会话空间类型，前端据此区分云端与本地会话展示分组。
-     * @param workspace 工作空间记录。
-     * @return 空间类型，缺失时默认 CLOUD。
-     */
-    private ChatConversationResponse.WorkspaceType resolveWorkspaceType(WorkspaceDO workspace) {
-        if (workspace == null) {
-            return ChatConversationResponse.WorkspaceType.CLOUD;
-        }
-        if (WorkspaceRepositoryImpl.RUNTIME_TARGET_CLOUD.equalsIgnoreCase(StrUtil.blankToDefault(workspace.getRuntimeTarget(), ""))) {
-            return ChatConversationResponse.WorkspaceType.CLOUD;
-        }
-        return ChatConversationResponse.WorkspaceType.LOCAL;
-    }
-
-    /**
-     * 执行 toMessageResponse 定义的处理逻辑。
-     * @param message 输入参数。
-     * @return 输入参数。
-     */
-    private ChatMessageResponse toMessageResponse(ChatMessage message) {
-        return toMessageResponse(message, StpUtil.getLoginIdAsLong());
-    }
-
-    /**
-     * 公开分享页消息响应不依赖登录态，避免匿名访问只读页面时触发 Sa-Token 上下文读取。
-     * @param message 消息领域对象。
-     * @return 公开分享页消息响应。
-     */
-    private ChatMessageResponse toSharedMessageResponse(ChatMessage message) {
-        return toMessageResponse(message, null);
-    }
-
-    /**
-     * 将消息领域对象转换为接口响应；匿名场景不查询用户反馈状态。
-     * @param message 消息领域对象。
-     * @param currentUserId 当前登录用户标识，公开访问时为空。
-     * @return 消息响应。
-     */
-    private ChatMessageResponse toMessageResponse(ChatMessage message, Long currentUserId) {
-        List<ChatAttachmentResponse> attachments = chatAttachmentService.listByMessageId(message.getId()).stream()
-            .map(this::toAttachmentResponse)
-            .toList();
-        // 业务约束：技能标记现在随用户消息正文持久化，避免回放依赖已移除的 task_skill 表。
-        List<String> skillCodes = ChatCapabilityMentionSupport.parseSkillCodes(message.getContent());
-        // 查询当前用户对该消息的投票状态；公开分享页没有登录用户时保持为空。
-        Integer userVote = currentUserId == null
-            ? null
-            : chatMessageFeedbackRepository.findByMessageIdAndUserId(message.getId(), currentUserId)
-                .map(ChatMessageFeedback::getVote)
-                .orElse(null);
-        return new ChatMessageResponse(
-            message.getId(),
-            message.getConversationId(),
-            message.getRole(),
-            message.getContent(),
-            message.getThinkingContent(),
-            message.getThinkingDuration(),
-            message.getStatus(),
-            message.getProvider(),
-            message.getModel(),
-            message.getErrorMessage(),
-            message.getCreatedAt(),
-            attachments,
-            skillCodes,
-            userVote
-        );
-    }
-
-    /**
      * 解析公开分享页传入的消息过滤参数，非法值直接忽略，避免公开接口因 URL 脏参数失败。
      * @param rawMessageIds 逗号分隔的消息标识。
      * @return 规范化消息标识列表。
@@ -588,12 +323,13 @@ public class ChatController {
     }
 
     /**
-     * 构造前端公开分享页地址；选中消息通过查询参数传递，避免新增分享明细表。
+     * 构造前端公开分享页地址，选中的消息范围以查询参数保留给公开页过滤。
      * @param shareToken 分享令牌。
      * @param messageIds 选中的消息标识。
      * @return 前端公开分享页路径。
      */
     private String buildConversationShareUrl(String shareToken, List<Long> messageIds) {
+        // 步骤 1：分享链接只接受正数消息 ID，避免脏请求参数污染公开访问地址。
         List<Long> normalizedMessageIds = messageIds == null ? List.of() : messageIds.stream()
             .filter(messageId -> messageId != null && messageId > 0)
             .distinct()
@@ -601,41 +337,12 @@ public class ChatController {
         if (normalizedMessageIds.isEmpty()) {
             return "/share/chat/" + shareToken;
         }
+
+        // 步骤 2：多消息 ID 统一 URL 编码，公开页再按 messages 参数恢复筛选范围。
         String joinedMessageIds = normalizedMessageIds.stream()
             .map(String::valueOf)
-            .collect(java.util.stream.Collectors.joining(","));
+            .collect(Collectors.joining(","));
         return "/share/chat/" + shareToken + "?messages=" + URLEncoder.encode(joinedMessageIds, StandardCharsets.UTF_8);
-    }
-
-    /**
-     * 会话列表中的后台任务投影。
-     * @param activeTaskId 当前运行任务标识。
-     * @param activeTaskStatus 当前运行任务状态。
-     * @param lastTaskId 最近任务标识。
-     * @param lastTaskStatus 最近任务状态。
-     * @param lastTaskFinishedAt 最近任务完成时间。
-     */
-    private record ConversationTaskProjection(
-        Long activeTaskId,
-        String activeTaskStatus,
-        Long lastTaskId,
-        String lastTaskStatus,
-        java.time.LocalDateTime lastTaskFinishedAt
-    ) {
-        private static ConversationTaskProjection empty() {
-            return new ConversationTaskProjection(null, null, null, null, null);
-        }
-    }
-
-    /**
-     * 公开分享页返回会话元信息与消息列表。
-     * @param conversation 会话响应。
-     * @param messages 消息列表。
-     */
-    private record SharedConversationResponse(
-        ChatConversationResponse conversation,
-        List<ChatMessageResponse> messages
-    ) {
     }
 
     /**
@@ -647,27 +354,5 @@ public class ChatController {
         String shareToken,
         String shareUrl
     ) {
-    }
-
-    /**
-     * 将附件领域对象转换为接口响应对象。
-     * @param attachment 附件领域对象。
-     * @return 附件响应。
-     */
-    private ChatAttachmentResponse toAttachmentResponse(ChatAttachment attachment) {
-        return new ChatAttachmentResponse(
-            attachment.getId(),
-            attachment.getConversationId(),
-            attachment.getMessageId(),
-            attachment.getAttachmentType(),
-            attachment.getFileName(),
-            attachment.getFileExt(),
-            attachment.getMimeType(),
-            attachment.getFileSize(),
-            attachment.getPreviewUrl(),
-            attachment.getContentSummary(),
-            attachment.getStatus(),
-            attachment.getCreatedAt()
-        );
     }
 }

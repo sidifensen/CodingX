@@ -7,25 +7,23 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.codingx.chat.application.service.ChatApplicationService;
-import com.codingx.chat.application.service.ChatAttachmentService;
 import com.codingx.chat.application.service.ChatConversationApplicationService;
+import com.codingx.chat.application.service.ChatConversationViewService;
 import com.codingx.chat.application.service.ChatReactionService;
 import com.codingx.chat.application.service.ChatRuntimeGuardService;
-import com.codingx.mcp.application.service.ChatMcpQueryService;
 import com.codingx.chat.domain.model.ChatConversation;
 import com.codingx.chat.domain.model.ChatConversationStatus;
 import com.codingx.chat.domain.model.ChatMessage;
 import com.codingx.chat.domain.model.ChatMessageRole;
 import com.codingx.chat.domain.model.ChatMessageStatus;
 import com.codingx.chat.interfaces.request.SendChatMessageRequest;
+import com.codingx.chat.interfaces.response.ChatConversationResponse;
+import com.codingx.chat.interfaces.response.ChatMessageResponse;
+import com.codingx.chat.interfaces.response.SharedConversationResponse;
 import com.codingx.common.error.ErrorMessageCatalog;
-import com.codingx.chat.domain.repository.ChatMessageFeedbackRepository;
-import com.codingx.skill.domain.repository.ChatSkillRepository;
 import com.codingx.common.model.ApiResponse;
-import com.codingx.mcp.domain.repository.ChatMcpRepository;
-import com.codingx.workspace.infrastructure.repository.WorkspaceRepositoryImpl;
+import java.util.Arrays;
 import java.util.List;
-import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -47,30 +45,34 @@ class ChatControllerConversationMutationTest {
     private ChatApplicationService chatApplicationService;
 
     @Mock
-    private ChatRuntimeGuardService chatRuntimeGuardService;
+    private ChatConversationViewService chatConversationViewService;
 
     @Mock
-    private ChatAttachmentService chatAttachmentService;
+    private ChatRuntimeGuardService chatRuntimeGuardService;
 
     @Mock
     private ChatReactionService chatReactionService;
 
-    @Mock
-    private ChatMessageFeedbackRepository chatMessageFeedbackRepository;
-
-    @Mock
-    private ChatSkillRepository chatSkillRepository;
-
-    @Mock
-    private ChatMcpRepository chatMcpRepository;
-    @Mock
-    private ChatMcpQueryService chatMcpQueryService;
-
-    @Mock
-    private WorkspaceRepositoryImpl workspaceRepositoryImpl;
-
     @InjectMocks
     private ChatController chatController;
+
+    /**
+     * Controller 只能做 HTTP 协议适配，业务查询与持久化依赖必须下沉到应用服务。
+     */
+    @Test
+    void controllerDoesNotDependOnRepositoriesOrPersistenceInfrastructure() {
+        List<String> illegalFields = Arrays.stream(ChatController.class.getDeclaredFields())
+            .filter(field -> {
+                String typeName = field.getType().getName();
+                return typeName.contains(".domain.repository.")
+                    || typeName.contains(".infrastructure.repository.")
+                    || typeName.contains(".infrastructure.persistence.");
+            })
+            .map(field -> field.getName() + ":" + field.getType().getName())
+            .toList();
+
+        assertEquals(List.of(), illegalFields);
+    }
 
     /**
      * 重命名接口应转发新标题并返回成功响应。
@@ -126,10 +128,29 @@ class ChatControllerConversationMutationTest {
     @Test
     void createConversationDelegatesWorkspaceIdToApplicationService() {
         ChatConversation conversation = ChatConversation.create(2001L, "新会话", 1002L, 3001L, ChatConversationStatus.ACTIVE);
+        ChatConversationResponse conversationResponse = new ChatConversationResponse(
+            2001L,
+            "新会话",
+            ChatConversationStatus.ACTIVE,
+            null,
+            null,
+            false,
+            null,
+            true,
+            3001L,
+            null,
+            ChatConversationResponse.WorkspaceType.CLOUD,
+            null,
+            null,
+            null,
+            null,
+            null
+        );
         when(chatConversationApplicationService.createConversation(
             new com.codingx.chat.application.command.CreateConversationCommand("新会话", 3001L),
             1002L
         )).thenReturn(conversation);
+        when(chatConversationViewService.toConversationResponse(conversation, 1002L)).thenReturn(conversationResponse);
         try (MockedStatic<cn.dev33.satoken.stp.StpUtil> mocked = Mockito.mockStatic(cn.dev33.satoken.stp.StpUtil.class)) {
             mocked.when(cn.dev33.satoken.stp.StpUtil::getLoginIdAsLong).thenReturn(1002L);
 
@@ -143,67 +164,45 @@ class ChatControllerConversationMutationTest {
                 new com.codingx.chat.application.command.CreateConversationCommand("新会话", 3001L),
                 1002L
             );
+            verify(chatConversationViewService).toConversationResponse(conversation, 1002L);
         }
     }
 
     /**
-     * 同步发送消息完成后应释放会话门控，避免并发槽位被同步入口长期占用。
+     * 同步发送消息应把 HTTP 请求参数转发给聊天主流程服务，业务编排由 service 负责。
      */
     @Test
-    void sendMessageReleasesConversationGuardAfterSyncProcessing() {
-        when(chatMcpQueryService.listEnabledMcps()).thenReturn(java.util.List.of());
+    void sendMessageDelegatesToApplicationService() {
         try (MockedStatic<cn.dev33.satoken.stp.StpUtil> mocked = Mockito.mockStatic(cn.dev33.satoken.stp.StpUtil.class)) {
             mocked.when(cn.dev33.satoken.stp.StpUtil::getLoginIdAsLong).thenReturn(1002L);
 
-            ApiResponse<Void> response = chatController.sendMessage(2001L, new SendChatMessageRequest("请搜索最新 Java 版本", null));
+            ApiResponse<Void> response = chatController.sendMessage(
+                2001L,
+                new SendChatMessageRequest("请搜索最新 Java 版本", List.of(), List.of())
+            );
 
             assertEquals(true, response.success());
             assertEquals(ErrorMessageCatalog.CHAT_MESSAGE_PROCESSED, response.message());
-            verify(chatApplicationService).sendMessage(
-                new com.codingx.chat.application.command.SendChatMessageCommand(
-                    2001L,
-                    "请搜索最新 Java 版本",
-                    false,
-                    java.util.List.of(),
-                    java.util.List.of(),
-                    null,
-                    null,
-                    java.util.List.of()
-                ),
-                1002L
-            );
-            verify(chatRuntimeGuardService).completeConversation(2001L);
+            verify(chatApplicationService).sendSynchronousMessage(2001L, "请搜索最新 Java 版本", List.of(), List.of(), 1002L);
         }
     }
 
     /**
-     * 同步发送消息抛错时也应释放会话门控，避免异常路径造成后续请求被误判 busy。
+     * 同步发送消息异常应原样向上抛出，由全局异常处理器统一返回 ApiResponse。
      */
     @Test
-    void sendMessageReleasesConversationGuardWhenSyncProcessingFails() {
-        when(chatMcpQueryService.listEnabledMcps()).thenReturn(java.util.List.of());
-        doThrow(new IllegalStateException("boom")).when(chatApplicationService).sendMessage(
-            new com.codingx.chat.application.command.SendChatMessageCommand(
-                2001L,
-                "请搜索最新 Java 版本",
-                false,
-                java.util.List.of(),
-                java.util.List.of(),
-                null,
-                null,
-                java.util.List.of()
-            ),
-            1002L
-        );
+    void sendMessagePropagatesApplicationServiceFailure() {
+        doThrow(new IllegalStateException("boom")).when(chatApplicationService)
+            .sendSynchronousMessage(2001L, "请搜索最新 Java 版本", List.of(), List.of(), 1002L);
         try (MockedStatic<cn.dev33.satoken.stp.StpUtil> mocked = Mockito.mockStatic(cn.dev33.satoken.stp.StpUtil.class)) {
             mocked.when(cn.dev33.satoken.stp.StpUtil::getLoginIdAsLong).thenReturn(1002L);
 
             assertThrows(
                 IllegalStateException.class,
-                () -> chatController.sendMessage(2001L, new SendChatMessageRequest("请搜索最新 Java 版本", null))
+                () -> chatController.sendMessage(2001L, new SendChatMessageRequest("请搜索最新 Java 版本", List.of(), List.of()))
             );
 
-            verify(chatRuntimeGuardService).completeConversation(2001L);
+            verify(chatApplicationService).sendSynchronousMessage(2001L, "请搜索最新 Java 版本", List.of(), List.of(), 1002L);
         }
     }
 
@@ -212,7 +211,6 @@ class ChatControllerConversationMutationTest {
      */
     @Test
     void sendMessageUsesExplicitSkillCodesFromRequest() {
-        when(chatMcpQueryService.listEnabledMcps()).thenReturn(java.util.List.of());
         try (MockedStatic<cn.dev33.satoken.stp.StpUtil> mocked = Mockito.mockStatic(cn.dev33.satoken.stp.StpUtil.class)) {
             mocked.when(cn.dev33.satoken.stp.StpUtil::getLoginIdAsLong).thenReturn(1002L);
 
@@ -222,17 +220,11 @@ class ChatControllerConversationMutationTest {
             );
 
             assertEquals(true, response.success());
-            verify(chatApplicationService).sendMessage(
-                new com.codingx.chat.application.command.SendChatMessageCommand(
-                    2001L,
-                    "请用已选技能帮我查一下网页",
-                    false,
-                    java.util.List.of(),
-                    java.util.List.of("web-access", "code_search"),
-                    null,
-                    null,
-                    java.util.List.of()
-                ),
+            verify(chatApplicationService).sendSynchronousMessage(
+                2001L,
+                "请用已选技能帮我查一下网页",
+                List.of("web-access", "code_search"),
+                List.of(),
                 1002L
             );
         }
@@ -283,17 +275,23 @@ class ChatControllerConversationMutationTest {
         ChatConversation conversation = ChatConversation.create(2001L, "公开分享", 1002L, ChatConversationStatus.ACTIVE);
         conversation.restoreSharingState(false, "share-token");
         when(chatConversationApplicationService.requireSharedConversation("share-token")).thenReturn(conversation);
-        when(chatConversationApplicationService.listSharedMessages("share-token", List.of(101L, 102L))).thenReturn(List.of(
+        List<ChatMessage> sharedMessages = List.of(
             ChatMessage.create(101L, 2001L, ChatMessageRole.USER, "第一问", ChatMessageStatus.COMPLETED, null, null, null),
             ChatMessage.create(102L, 2001L, ChatMessageRole.ASSISTANT, "第一答", ChatMessageStatus.COMPLETED, null, null, null)
-        ));
-        when(chatAttachmentService.listByMessageId(101L)).thenReturn(List.of());
-        when(chatAttachmentService.listByMessageId(102L)).thenReturn(List.of());
-        when(workspaceRepositoryImpl.findOwnedWorkspaceById(null, 1002L)).thenReturn(Optional.empty());
+        );
+        SharedConversationResponse sharedResponse = new SharedConversationResponse(
+            new ChatConversationResponse(2001L, "公开分享", ChatConversationStatus.ACTIVE, null, null, false, "share-token", true, null, null, ChatConversationResponse.WorkspaceType.CLOUD, null, null, null, null, null),
+            List.of(
+                new ChatMessageResponse(101L, 2001L, ChatMessageRole.USER, "第一问", null, null, ChatMessageStatus.COMPLETED, null, null, null, null, List.of(), List.of(), null),
+                new ChatMessageResponse(102L, 2001L, ChatMessageRole.ASSISTANT, "第一答", null, null, ChatMessageStatus.COMPLETED, null, null, null, null, List.of(), List.of(), null)
+            )
+        );
+        when(chatConversationApplicationService.listSharedMessages("share-token", List.of(101L, 102L))).thenReturn(sharedMessages);
+        when(chatConversationViewService.toSharedConversationResponse(conversation, sharedMessages)).thenReturn(sharedResponse);
 
         ApiResponse<?> response = chatController.getSharedConversation("share-token", "101,102");
 
         assertEquals(true, response.success());
-        verify(chatMessageFeedbackRepository, Mockito.never()).findByMessageIdAndUserId(Mockito.anyLong(), Mockito.anyLong());
+        verify(chatConversationViewService).toSharedConversationResponse(conversation, sharedMessages);
     }
 }

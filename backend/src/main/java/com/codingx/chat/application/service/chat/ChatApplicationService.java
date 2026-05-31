@@ -26,6 +26,7 @@ import com.codingx.expert.domain.model.ChatExpert;
 import com.codingx.expert.domain.repository.ChatExpertRepository;
 import com.codingx.expert.application.service.ChatExpertContextService;
 import com.codingx.mcp.application.service.ChatMcpExecutionService;
+import com.codingx.mcp.application.service.ChatMcpQueryService;
 import com.codingx.mcp.application.executor.ChatMcpProgressListener;
 import com.codingx.mcp.application.executor.ChatMcpToolResult;
 import com.codingx.mcp.domain.model.ChatMcp;
@@ -106,6 +107,8 @@ public class ChatApplicationService {
 
     /** MCP 执行服务，调用已配置工具并返回结构化工具结果 */
     private final ChatMcpExecutionService chatMcpExecutionService;
+    /** MCP 查询服务，负责按当前执行器注册状态收敛用户侧可用 MCP 列表 */
+    private final ChatMcpQueryService chatMcpQueryService;
     /** MCP 配置仓储，读取工具启用状态与展示信息 */
     private final ChatMcpRepository chatMcpRepository;
     /** 技能绑定仓储，供重新生成时复用原始 run 的技能选择 */
@@ -143,6 +146,55 @@ public class ChatApplicationService {
     private final ChatToolExecutionService chatToolExecutionService;
     /** 会话 workspace 绑定服务，负责把本地空间映射为真实仓库目录 */
     private final ChatWorkspaceBindingService chatWorkspaceBindingService;
+
+    /**
+     * 处理 HTTP 同步入口发送消息的协议适配逻辑。
+     * @param conversationId 会话标识。
+     * @param content 用户输入内容。
+     * @param skillCodes 前端显式选择的技能编码。
+     * @param attachmentIds 前端上传并绑定的附件主键。
+     * @param userId 当前登录用户标识。
+     */
+    public void sendSynchronousMessage(
+        Long conversationId,
+        String content,
+        List<String> skillCodes,
+        List<Long> attachmentIds,
+        Long userId
+    ) {
+        // 步骤 1：同步入口只接收前端显式选择的技能，统一去空、去重后进入运行上下文。
+        List<String> selectedSkillCodes = skillCodes == null ? List.of() : skillCodes.stream()
+            .map(StrUtil::trimToEmpty)
+            .filter(StrUtil::isNotBlank)
+            .distinct()
+            .toList();
+
+        // 步骤 2：按当前可执行 MCP 注册表收敛模型可见 MCP，避免把不可执行配置暴露给一次消息。
+        List<String> selectedMcpCodes = chatMcpQueryService.listEnabledMcps().stream()
+            .filter(mcp -> mcp.getAvailable() == null || Boolean.TRUE.equals(mcp.getAvailable()))
+            .map(ChatMcp::getMcpCode)
+            .filter(StrUtil::isNotBlank)
+            .toList();
+
+        // 步骤 3：复用聊天主流程发送命令，并确保成功或异常路径都释放同步入口的会话门控。
+        try {
+            sendMessage(
+                new SendChatMessageCommand(
+                    conversationId,
+                    content,
+                    false,
+                    selectedMcpCodes,
+                    selectedSkillCodes,
+                    null,
+                    null,
+                    attachmentIds == null ? List.of() : attachmentIds
+                ),
+                userId
+            );
+        } finally {
+            chatRuntimeGuardService.completeConversation(conversationId);
+        }
+    }
 
     /**
      * 重新生成最后一条助手回复，复用原始会话上下文但不重复插入用户消息。

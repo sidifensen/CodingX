@@ -4,15 +4,11 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.Mockito.verify;
 
 import com.codingx.chat.application.service.ChatApplicationService;
-import com.codingx.chat.application.service.ChatAttachmentService;
 import com.codingx.chat.application.service.ChatConversationApplicationService;
+import com.codingx.chat.application.service.ChatConversationViewService;
 import com.codingx.chat.application.service.ChatRuntimeGuardService;
-import com.codingx.mcp.application.service.ChatMcpQueryService;
 import com.codingx.common.error.ErrorMessageCatalog;
-import com.codingx.skill.domain.repository.ChatSkillRepository;
 import com.codingx.common.model.ApiResponse;
-import com.codingx.mcp.domain.repository.ChatMcpRepository;
-import com.codingx.workspace.infrastructure.repository.WorkspaceRepositoryImpl;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -26,39 +22,28 @@ import org.mockito.junit.jupiter.MockitoExtension;
 class ChatControllerCancelTest {
 
     /**
-     * 会话应用服务依赖。
+     * 会话应用服务，满足控制器构造依赖，本测试不触发会话业务。
      */
     @Mock
     private ChatConversationApplicationService chatConversationApplicationService;
 
     /**
-     * 聊天应用服务依赖。
+     * 聊天主流程服务，满足控制器构造依赖，本测试不触发发送或重新生成。
      */
     @Mock
     private ChatApplicationService chatApplicationService;
 
     /**
-     * 运行保护服务依赖。
+     * 会话视图服务，满足控制器构造依赖，本测试不触发响应投影。
+     */
+    @Mock
+    private ChatConversationViewService chatConversationViewService;
+
+    /**
+     * 运行保护服务，取消接口应把会话标识转发到该服务。
      */
     @Mock
     private ChatRuntimeGuardService chatRuntimeGuardService;
-
-    @Mock
-    private ChatAttachmentService chatAttachmentService;
-
-    /**
-     * 技能仓储依赖。
-     */
-    @Mock
-    private ChatSkillRepository chatSkillRepository;
-
-    @Mock
-    private ChatMcpRepository chatMcpRepository;
-    @Mock
-    private ChatMcpQueryService chatMcpQueryService;
-
-    @Mock
-    private WorkspaceRepositoryImpl workspaceRepositoryImpl;
 
     /**
      * 被测控制器。

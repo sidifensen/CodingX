@@ -5,12 +5,12 @@ import jakarta.validation.constraints.NotBlank;
 import java.util.List;
 
 /**
- * 定义 SendChatMessageRequest 使用的数据载体。
+ * 用户发送聊天消息的 HTTP 请求体。
  */
 public record SendChatMessageRequest(
-    @NotBlank(message = ErrorMessageCatalog.CHAT_MESSAGE_CONTENT_REQUIRED) String content, // 主体内容。
-    List<String> skillCodes, // 当前会话选择的技能编码。
-    List<Long> attachmentIds // 关联附件主键列表。
+    @NotBlank(message = ErrorMessageCatalog.CHAT_MESSAGE_CONTENT_REQUIRED) String content, // 用户输入正文，不能为空。
+    List<String> skillCodes, // 前端显式选择的技能编码；未传时服务层按空列表处理。
+    List<Long> attachmentIds // 本次消息关联的附件主键列表；未传时服务层按空列表处理。
 ) {
 
     /**

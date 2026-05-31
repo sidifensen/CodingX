@@ -7,17 +7,16 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import cn.dev33.satoken.stp.StpUtil;
 import com.codingx.chat.application.service.ChatApplicationService;
-import com.codingx.chat.application.service.ChatAttachmentService;
 import com.codingx.chat.application.service.ChatConversationApplicationService;
+import com.codingx.chat.application.service.ChatConversationViewService;
 import com.codingx.chat.application.service.ChatReactionService;
 import com.codingx.chat.application.service.ChatRuntimeGuardService;
-import com.codingx.mcp.application.service.ChatMcpQueryService;
-import com.codingx.chat.domain.repository.ChatMessageFeedbackRepository;
-import com.codingx.chat.domain.model.ChatAttachment;
 import com.codingx.chat.domain.model.ChatMessage;
+import com.codingx.chat.domain.model.ChatMessageRole;
 import com.codingx.chat.domain.model.ChatMessageStatus;
+import com.codingx.chat.interfaces.response.ChatAttachmentResponse;
+import com.codingx.chat.interfaces.response.ChatMessageResponse;
 import com.codingx.config.GlobalExceptionHandler;
-import com.codingx.mcp.domain.repository.ChatMcpRepository;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -42,21 +41,13 @@ class ChatControllerListMessagesTest {
     private ChatApplicationService chatApplicationService;
 
     @Mock
+    private ChatConversationViewService chatConversationViewService;
+
+    @Mock
     private ChatRuntimeGuardService chatRuntimeGuardService;
 
     @Mock
-    private ChatAttachmentService chatAttachmentService;
-
-    @Mock
     private ChatReactionService chatReactionService;
-
-    @Mock
-    private ChatMessageFeedbackRepository chatMessageFeedbackRepository;
-
-    @Mock
-    private ChatMcpRepository chatMcpRepository;
-    @Mock
-    private ChatMcpQueryService chatMcpQueryService;
 
     @InjectMocks
     private ChatController chatController;
@@ -76,25 +67,38 @@ class ChatControllerListMessagesTest {
             null,
             null
         ).attachRun(2055117498822955008L);
-        when(chatConversationApplicationService.listMessages(2055114974648864768L, 1002L)).thenReturn(List.of(userMessage));
-        when(chatAttachmentService.listByMessageId(2055117513431715840L)).thenReturn(List.of(
-            ChatAttachment.builder()
-                .id(2055117513431715999L)
-                .messageId(2055117513431715840L)
-                .conversationId(2055114974648864768L)
-                .attachmentType("image")
-                .fileName("demo.png")
-                .fileExt("png")
-                .mimeType("image/png")
-                .fileSize(2048L)
-                .previewUrl("/api/chat/attachments/2055117513431715999/content")
-                .status("UPLOADED")
-                .createdAt(java.time.LocalDateTime.now())
-                .updatedAt(java.time.LocalDateTime.now())
-                .uploadedBy(1002L)
-                .deleted(0)
-                .build()
+        List<ChatMessage> messages = List.of(userMessage);
+        List<ChatMessageResponse> responses = List.of(new ChatMessageResponse(
+            2055117513431715840L,
+            2055114974648864768L,
+            ChatMessageRole.USER,
+            "@weather_query 历史问题",
+            null,
+            null,
+            ChatMessageStatus.COMPLETED,
+            null,
+            null,
+            null,
+            null,
+            List.of(new ChatAttachmentResponse(
+                2055117513431715999L,
+                2055114974648864768L,
+                2055117513431715840L,
+                "image",
+                "demo.png",
+                "png",
+                "image/png",
+                2048L,
+                "/api/chat/attachments/2055117513431715999/content",
+                null,
+                "UPLOADED",
+                java.time.LocalDateTime.now()
+            )),
+            List.of("weather_query"),
+            null
         ));
+        when(chatConversationApplicationService.listMessages(2055114974648864768L, 1002L)).thenReturn(messages);
+        when(chatConversationViewService.toMessageResponses(messages, 1002L)).thenReturn(responses);
 
         try (MockedStatic<StpUtil> mocked = Mockito.mockStatic(StpUtil.class)) {
             mocked.when(StpUtil::getLoginIdAsLong).thenReturn(1002L);

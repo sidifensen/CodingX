@@ -5,14 +5,12 @@ import static org.mockito.Mockito.verify;
 
 import com.codingx.chat.application.service.ChatApplicationService;
 import com.codingx.chat.application.service.ChatConversationApplicationService;
+import com.codingx.chat.application.service.ChatConversationViewService;
 import com.codingx.chat.application.service.ChatReactionService;
 import com.codingx.chat.application.service.ChatRuntimeGuardService;
 import com.codingx.common.error.ErrorMessageCatalog;
-import com.codingx.skill.domain.repository.ChatSkillRepository;
 import com.codingx.chat.interfaces.request.ChatMessageFeedbackRequest;
 import com.codingx.common.model.ApiResponse;
-import com.codingx.mcp.domain.repository.ChatMcpRepository;
-import com.codingx.workspace.infrastructure.repository.WorkspaceRepositoryImpl;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -29,28 +27,34 @@ import cn.dev33.satoken.stp.StpUtil;
 class ChatReactionControllerTest {
 
     /**
-     * 反馈服务依赖。
+     * 会话应用服务，满足控制器构造依赖，本测试不触发会话业务。
      */
     @Mock
     private ChatConversationApplicationService chatConversationApplicationService;
 
+    /**
+     * 聊天主流程服务，满足控制器构造依赖，本测试不触发发送或重新生成。
+     */
     @Mock
     private ChatApplicationService chatApplicationService;
 
+    /**
+     * 会话视图服务，满足控制器构造依赖，本测试不触发响应投影。
+     */
+    @Mock
+    private ChatConversationViewService chatConversationViewService;
+
+    /**
+     * 运行保护服务，满足控制器构造依赖，本测试不触发取消逻辑。
+     */
     @Mock
     private ChatRuntimeGuardService chatRuntimeGuardService;
 
+    /**
+     * 消息反馈服务，提交接口应把投票和原因转发到该服务。
+     */
     @Mock
     private ChatReactionService chatReactionService;
-
-    @Mock
-    private ChatMcpRepository chatMcpRepository;
-
-    @Mock
-    private ChatSkillRepository chatSkillRepository;
-
-    @Mock
-    private WorkspaceRepositoryImpl workspaceRepositoryImpl;
 
     /**
      * 被测控制器。

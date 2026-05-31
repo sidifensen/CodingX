@@ -7,23 +7,14 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import cn.dev33.satoken.stp.StpUtil;
 import com.codingx.chat.application.service.ChatApplicationService;
-import com.codingx.chat.application.service.ChatAttachmentService;
 import com.codingx.chat.application.service.ChatConversationApplicationService;
+import com.codingx.chat.application.service.ChatConversationViewService;
 import com.codingx.chat.application.service.ChatReactionService;
 import com.codingx.chat.application.service.ChatRuntimeGuardService;
-import com.codingx.chat.domain.model.ChatExecutionRun;
-import com.codingx.chat.domain.repository.ChatExecutionRunRepository;
-import com.codingx.mcp.application.service.ChatMcpQueryService;
 import com.codingx.chat.domain.model.ChatConversation;
 import com.codingx.chat.domain.model.ChatConversationStatus;
-import com.codingx.task.domain.model.RuntimeType;
-import com.codingx.task.domain.model.Task;
-import com.codingx.task.domain.repository.TaskRepository;
-import com.codingx.workspace.infrastructure.persistence.dataobject.WorkspaceDO;
-import com.codingx.workspace.infrastructure.repository.WorkspaceRepositoryImpl;
-import com.codingx.skill.domain.repository.ChatSkillRepository;
+import com.codingx.chat.interfaces.response.ChatConversationResponse;
 import com.codingx.config.GlobalExceptionHandler;
-import com.codingx.mcp.domain.repository.ChatMcpRepository;
 import java.time.LocalDateTime;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -37,7 +28,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 /**
- * 验证会话列表接口会返回前端真实回放所需的 lastRunId 字段。
+ * 验证会话列表控制器的序列化契约。
  */
 @ExtendWith(MockitoExtension.class)
 class ChatControllerListConversationsTest {
@@ -49,47 +40,38 @@ class ChatControllerListConversationsTest {
     private ChatApplicationService chatApplicationService;
 
     @Mock
+    private ChatConversationViewService chatConversationViewService;
+
+    @Mock
     private ChatRuntimeGuardService chatRuntimeGuardService;
 
     @Mock
-    private ChatAttachmentService chatAttachmentService;
-
-    @Mock
     private ChatReactionService chatReactionService;
-
-    @Mock
-    private ChatSkillRepository chatSkillRepository;
-
-    @Mock
-    private ChatMcpRepository chatMcpRepository;
-    @Mock
-    private ChatMcpQueryService chatMcpQueryService;
-
-    @Mock
-    private ChatExecutionRunRepository chatExecutionRunRepository;
-
-    @Mock
-    private TaskRepository taskRepository;
-
-    @Mock
-    private WorkspaceRepositoryImpl workspaceRepositoryImpl;
 
     @InjectMocks
     private ChatController chatController;
 
     /**
-     * 会话列表应包含 lastRunId，供前端判断右栏是否已有回放数据。
+     * 会话列表应包含 lastRunId 和工作空间字段，供前端恢复右栏回放。
      */
     @Test
     void listConversationsReturnsLastRunId() throws Exception {
         ChatConversation conversation = ChatConversation.create(2001L, "Default Demo Conversation", 1002L, 3001L, ChatConversationStatus.ACTIVE);
         conversation.restoreRuntimeState(LocalDateTime.of(2026, 5, 15, 0, 36, 58), 2054964195115945984L);
-        when(chatConversationApplicationService.listConversations(1002L, 3001L)).thenReturn(List.of(conversation));
-        WorkspaceDO workspace = new WorkspaceDO();
-        workspace.setId(3001L);
-        workspace.setName("CodingX");
-        workspace.setRuntimeTarget(WorkspaceRepositoryImpl.RUNTIME_TARGET_LOCAL);
-        when(workspaceRepositoryImpl.findOwnedWorkspaceById(3001L, 1002L)).thenReturn(java.util.Optional.of(workspace));
+        List<ChatConversation> conversations = List.of(conversation);
+        when(chatConversationApplicationService.listConversations(1002L, 3001L)).thenReturn(conversations);
+        when(chatConversationViewService.toConversationResponses(conversations, 1002L)).thenReturn(List.of(
+            response(
+                2001L,
+                "Default Demo Conversation",
+                3001L,
+                2054964195115945984L,
+                ChatConversationResponse.WorkspaceType.LOCAL,
+                null,
+                null,
+                true
+            )
+        ));
 
         try (MockedStatic<StpUtil> mocked = Mockito.mockStatic(StpUtil.class)) {
             mocked.when(StpUtil::getLoginIdAsLong).thenReturn(1002L);
@@ -105,13 +87,26 @@ class ChatControllerListConversationsTest {
     }
 
     /**
-     * 会话列表中的超大 Long ID 应序列化为字符串，避免浏览器 Number 精度丢失后无法正确切换历史会话。
+     * 会话列表中的超大 Long ID 应序列化为字符串，避免浏览器 Number 精度丢失。
      */
     @Test
     void listConversationsSerializesLongIdentifiersAsStrings() throws Exception {
         ChatConversation conversation = ChatConversation.create(2055114974648864768L, "历史会话", 1002L, 7001L, ChatConversationStatus.ACTIVE);
         conversation.restoreRuntimeState(LocalDateTime.of(2026, 5, 15, 10, 36, 58), 2055114974682419200L);
-        when(chatConversationApplicationService.listConversations(1002L, 3001L)).thenReturn(List.of(conversation));
+        List<ChatConversation> conversations = List.of(conversation);
+        when(chatConversationApplicationService.listConversations(1002L, 3001L)).thenReturn(conversations);
+        when(chatConversationViewService.toConversationResponses(conversations, 1002L)).thenReturn(List.of(
+            response(
+                2055114974648864768L,
+                "历史会话",
+                7001L,
+                2055114974682419200L,
+                ChatConversationResponse.WorkspaceType.CLOUD,
+                null,
+                null,
+                true
+            )
+        ));
 
         try (MockedStatic<StpUtil> mocked = Mockito.mockStatic(StpUtil.class)) {
             mocked.when(StpUtil::getLoginIdAsLong).thenReturn(1002L);
@@ -125,31 +120,26 @@ class ChatControllerListConversationsTest {
     }
 
     /**
-     * 会话列表应暴露最新后台任务状态，供侧栏运行图标与完成提醒使用。
+     * 会话列表应透出视图服务投影好的任务状态与提醒已读状态。
      */
     @Test
-    void listConversationsReturnsTaskStatusProjection() throws Exception {
+    void listConversationsReturnsTaskProjectionFromViewService() throws Exception {
         Long taskId = 2054964195115945984L;
         ChatConversation conversation = ChatConversation.create(2001L, "后台任务会话", 1002L, 3001L, ChatConversationStatus.ACTIVE);
-        conversation.restoreRuntimeState(LocalDateTime.of(2026, 5, 25, 10, 0, 0), taskId);
-        when(chatConversationApplicationService.listConversations(1002L, 3001L)).thenReturn(List.of(conversation));
-        when(chatExecutionRunRepository.findByConversationId(2001L)).thenReturn(List.of(
-            ChatExecutionRun.builder()
-                .id(taskId)
-                .conversationId(2001L)
-                .taskId(taskId)
-                .status("RUNNING")
-                .queueStatus("ACQUIRED")
-                .build()
+        List<ChatConversation> conversations = List.of(conversation);
+        when(chatConversationApplicationService.listConversations(1002L, 3001L)).thenReturn(conversations);
+        when(chatConversationViewService.toConversationResponses(conversations, 1002L)).thenReturn(List.of(
+            response(
+                2001L,
+                "后台任务会话",
+                3001L,
+                taskId,
+                ChatConversationResponse.WorkspaceType.LOCAL,
+                taskId,
+                "RUNNING",
+                false
+            )
         ));
-        when(taskRepository.findById(taskId)).thenReturn(java.util.Optional.of(
-            Task.create(taskId, "后台任务会话", "聊天任务", RuntimeType.LOCAL, 3001L, 1002L)
-        ));
-        WorkspaceDO workspace = new WorkspaceDO();
-        workspace.setId(3001L);
-        workspace.setName("CodingX");
-        workspace.setRuntimeTarget(WorkspaceRepositoryImpl.RUNTIME_TARGET_LOCAL);
-        when(workspaceRepositoryImpl.findOwnedWorkspaceById(3001L, 1002L)).thenReturn(java.util.Optional.of(workspace));
 
         try (MockedStatic<StpUtil> mocked = Mockito.mockStatic(StpUtil.class)) {
             mocked.when(StpUtil::getLoginIdAsLong).thenReturn(1002L);
@@ -158,74 +148,41 @@ class ChatControllerListConversationsTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data[0].activeTaskId").value("2054964195115945984"))
                 .andExpect(jsonPath("$.data[0].activeTaskStatus").value("RUNNING"))
-                .andExpect(jsonPath("$.data[0].lastTaskId").value("2054964195115945984"))
-                .andExpect(jsonPath("$.data[0].lastTaskStatus").value("RUNNING"));
-        }
-    }
-
-    /**
-     * 会话列表应返回任务完成提醒已读状态，前端刷新后必须以该字段作为提醒圆点的权威来源。
-     */
-    @Test
-    void listConversationsReturnsTaskCompletionReadState() throws Exception {
-        ChatConversation conversation = ChatConversation.create(2001L, "待查看后台任务会话", 1002L, 3001L, ChatConversationStatus.ACTIVE);
-        conversation.markTaskCompletionUnread();
-        when(chatConversationApplicationService.listConversations(1002L, 3001L)).thenReturn(List.of(conversation));
-        WorkspaceDO workspace = new WorkspaceDO();
-        workspace.setId(3001L);
-        workspace.setName("CodingX");
-        workspace.setRuntimeTarget(WorkspaceRepositoryImpl.RUNTIME_TARGET_LOCAL);
-        when(workspaceRepositoryImpl.findOwnedWorkspaceById(3001L, 1002L)).thenReturn(java.util.Optional.of(workspace));
-
-        try (MockedStatic<StpUtil> mocked = Mockito.mockStatic(StpUtil.class)) {
-            mocked.when(StpUtil::getLoginIdAsLong).thenReturn(1002L);
-
-            mockMvc().perform(get("/api/chat/conversations").param("workspaceId", "3001"))
-                .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data[0].taskCompletionRead").value(false));
         }
     }
 
     /**
-     * 任务表终态优先于 run 的队列状态，避免历史 ACQUIRED 队列标记让侧栏持续显示运行图标。
+     * 构造会话响应，测试只关心控制器序列化，不重复验证视图服务业务投影。
      */
-    @Test
-    void listConversationsDoesNotTreatCompletedTaskAsActiveWhenRunQueueStillAcquired() throws Exception {
-        Long taskId = 2054964195115945984L;
-        ChatConversation conversation = ChatConversation.create(2001L, "已完成后台任务会话", 1002L, 3001L, ChatConversationStatus.ACTIVE);
-        conversation.restoreRuntimeState(LocalDateTime.of(2026, 5, 25, 10, 0, 0), taskId);
-        when(chatConversationApplicationService.listConversations(1002L, 3001L)).thenReturn(List.of(conversation));
-        when(chatExecutionRunRepository.findByConversationId(2001L)).thenReturn(List.of(
-            ChatExecutionRun.builder()
-                .id(taskId)
-                .conversationId(2001L)
-                .taskId(taskId)
-                .status("COMPLETED")
-                .queueStatus("ACQUIRED")
-                .finishedAt(LocalDateTime.of(2026, 5, 25, 10, 2, 0))
-                .build()
-        ));
-        Task completedTask = Task.create(taskId, "已完成后台任务会话", "聊天任务", RuntimeType.LOCAL, 3001L, 1002L);
-        completedTask.start();
-        completedTask.complete("done");
-        when(taskRepository.findById(taskId)).thenReturn(java.util.Optional.of(completedTask));
-        WorkspaceDO workspace = new WorkspaceDO();
-        workspace.setId(3001L);
-        workspace.setName("CodingX");
-        workspace.setRuntimeTarget(WorkspaceRepositoryImpl.RUNTIME_TARGET_LOCAL);
-        when(workspaceRepositoryImpl.findOwnedWorkspaceById(3001L, 1002L)).thenReturn(java.util.Optional.of(workspace));
-
-        try (MockedStatic<StpUtil> mocked = Mockito.mockStatic(StpUtil.class)) {
-            mocked.when(StpUtil::getLoginIdAsLong).thenReturn(1002L);
-
-            mockMvc().perform(get("/api/chat/conversations").param("workspaceId", "3001"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data[0].activeTaskId").doesNotExist())
-                .andExpect(jsonPath("$.data[0].activeTaskStatus").doesNotExist())
-                .andExpect(jsonPath("$.data[0].lastTaskId").value("2054964195115945984"))
-                .andExpect(jsonPath("$.data[0].lastTaskStatus").value("SUCCEEDED"))
-                .andExpect(jsonPath("$.data[0].lastTaskFinishedAt").exists());
-        }
+    private ChatConversationResponse response(
+        Long id,
+        String title,
+        Long workspaceId,
+        Long lastRunId,
+        ChatConversationResponse.WorkspaceType workspaceType,
+        Long activeTaskId,
+        String activeTaskStatus,
+        Boolean taskCompletionRead
+    ) {
+        return new ChatConversationResponse(
+            id,
+            title,
+            ChatConversationStatus.ACTIVE,
+            LocalDateTime.of(2026, 5, 15, 0, 36, 58),
+            lastRunId,
+            false,
+            null,
+            taskCompletionRead,
+            workspaceId,
+            "CodingX",
+            workspaceType,
+            activeTaskId,
+            activeTaskStatus,
+            activeTaskId,
+            activeTaskStatus,
+            null
+        );
     }
 
     /**

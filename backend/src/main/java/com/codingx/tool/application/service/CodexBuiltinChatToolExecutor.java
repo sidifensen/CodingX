@@ -176,15 +176,18 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
      * 启动后台命令会话，返回 sessionId 供 write_stdin 使用。
      */
     private ChatToolExecutionResult executeExecCommand(ToolInput input) {
+        // 步骤 1：解析并校验命令文本，空命令直接返回中文业务错误。
         String command = extractCommand(input);
         if (StrUtil.isBlank(command)) {
             throw new BusinessException("CHAT_TOOL_INVALID_COMMAND", ErrorMessageCatalog.CHAT_TOOL_COMMAND_REQUIRED);
         }
         try {
+            // 步骤 2：在当前工具工作目录启动真实进程，并注入已绑定 skill 目录环境变量。
             ProcessBuilder pb = new ProcessBuilder(resolveShellCommand(command));
             pb.directory(resolveToolWorkingDirectory().toFile());
             injectSkillEnvironmentVariables(pb.environment());
             Process process = pb.start();
+            // 步骤 3：登记可交互会话和 stdin writer，后续 write_stdin 通过 sessionId 找回进程。
             String sessionId = "cmd-" + UUID.fastUUID().toString(true);
             CommandSession session = new CommandSession(
                 sessionId,
@@ -195,8 +198,10 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
                 LocalDateTime.now()
             );
             commandSessions.put(sessionId, session);
+            // 步骤 4：异步监听 stdout/stderr，避免交互进程输出缓冲区阻塞。
             watchProcessOutput(session, process.getInputStream());
             watchProcessOutput(session, process.getErrorStream());
+            // 步骤 5：返回 sessionId、工作目录和启动状态，供模型继续写入输入或检查结果。
             Map<String, Object> metadata = new LinkedHashMap<>();
             metadata.put("sessionId", sessionId);
             metadata.put("command", command);
@@ -220,6 +225,7 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
      * 向后台命令会话写入标准输入。
      */
     private ChatToolExecutionResult executeWriteStdin(ToolInput input) {
+        // 步骤 1：从 JSON 或自然语言文本中解析 sessionId，并确认会话仍在注册表中。
         String sessionId = prefer(input.object().getStr("sessionId"), ReUtil.get("sessionId[:=]\\s*([\\w-]+)", input.raw(), 1));
         if (StrUtil.isBlank(sessionId)) {
             throw new BusinessException("CHAT_TOOL_SESSION_REQUIRED", ErrorMessageCatalog.CHAT_TOOL_SESSION_ID_REQUIRED);
@@ -228,15 +234,18 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
         if (session == null) {
             throw new BusinessException("CHAT_TOOL_SESSION_NOT_FOUND", ErrorMessageCatalog.CHAT_TOOL_SESSION_NOT_FOUND);
         }
+        // 步骤 2：解析要写入的文本，空输入直接拒绝，避免向交互进程发送无意义换行。
         String text = prefer(input.object().getStr("text"), ReUtil.get("text[:=]\\s*(.+)", input.raw(), 1));
         if (StrUtil.isBlank(text)) {
             throw new BusinessException("CHAT_TOOL_TEXT_REQUIRED", ErrorMessageCatalog.CHAT_TOOL_TEXT_REQUIRED);
         }
         try {
+            // 步骤 3：写入一行 stdin 并刷新，按调用参数可等待进程输出稳定。
             session.writer().write(text);
             session.writer().newLine();
             session.writer().flush();
             waitForInteractiveCommandIfRequested(session, normalizeWaitMs(input.object().getLong("waitMs", 0L)));
+            // 步骤 4：返回会话存活状态、输出快照和可选退出码，供模型判断下一步动作。
             Map<String, Object> metadata = new LinkedHashMap<>();
             metadata.put("sessionId", sessionId);
             metadata.put("alive", session.process().isAlive());
@@ -320,6 +329,7 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
      * @return 编辑结果。
      */
     private ChatToolExecutionResult executeEdit(ToolInput input) {
+        // 步骤 1：解析目标文件和精确替换文本，路径必须限制在当前工具工作目录内。
         Path workingDirectory = resolveToolWorkingDirectory();
         Path filePath = resolveWorkspacePath(workingDirectory, extractPath(input, "path"));
         String oldText = prefer(input.object().getStr("old_text"), input.object().getStr("oldText"));
@@ -334,6 +344,7 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
             throw new BusinessException("CHAT_TOOL_FILE_NOT_FOUND", "文件不存在");
         }
         try {
+            // 步骤 2：读取文件并统计 old_text 出现次数，默认要求唯一命中以避免误改多处。
             String content = Files.readString(filePath, StandardCharsets.UTF_8);
             int occurrences = countOccurrences(content, oldText);
             if (occurrences == 0) {
@@ -343,6 +354,7 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
             if (!replaceAll && occurrences > 1) {
                 throw new BusinessException("CHAT_TOOL_EDIT_TEXT_NOT_UNIQUE", "要替换的文本不唯一，请提供更精确的 old_text");
             }
+            // 步骤 3：根据 replaceAll 决定替换全部还是首个命中，未产生变更时直接报错。
             int firstMatchIndex = content.indexOf(oldText);
             String updated = replaceAll
                 ? content.replace(oldText, newText)
@@ -350,6 +362,7 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
             if (StrUtil.equals(content, updated)) {
                 throw new BusinessException("CHAT_TOOL_EDIT_NO_CHANGES", "编辑未产生变更");
             }
+            // 步骤 4：写回文件并返回相对路径、命中次数和首个变更行，方便前端展示修改结果。
             Files.writeString(filePath, updated, StandardCharsets.UTF_8, StandardOpenOption.TRUNCATE_EXISTING);
             Map<String, Object> metadata = workspaceFileMetadata(workingDirectory, filePath);
             metadata.put("replaceAll", replaceAll);
@@ -369,6 +382,7 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
      * @return 匹配行列表。
      */
     private ChatToolExecutionResult executeGrep(ToolInput input) {
+        // 步骤 1：解析搜索表达式、路径、大小写、字面量和 glob 过滤参数。
         String pattern = input.object().getStr("pattern");
         if (StrUtil.isBlank(pattern)) {
             throw new BusinessException("CHAT_TOOL_GREP_PATTERN_REQUIRED", "请提供 pattern");
@@ -385,6 +399,7 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
         int context = normalizeIntOption(input, "context", null, 0, 20);
         List<String> matches = new ArrayList<>();
         try (Stream<Path> stream = Files.walk(searchRoot)) {
+            // 步骤 2：遍历当前 workspace 内满足 glob 的文件，并按稳定顺序逐个收集匹配行。
             List<Path> files = stream
                 .filter(Files::isRegularFile)
                 .filter(file -> matchesGlob(searchRoot, file, globMatcher))
@@ -399,6 +414,7 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
         } catch (Exception exception) {
             throw new BusinessException("CHAT_TOOL_GREP_FAILED", "内容搜索失败: " + exception.getMessage());
         }
+        // 步骤 3：返回匹配结果和搜索参数元数据，空结果使用固定文本便于模型判断未命中。
         Map<String, Object> metadata = new LinkedHashMap<>();
         metadata.put("pattern", pattern);
         metadata.put("path", toWorkspaceRelativePath(workingDirectory, searchRoot));
@@ -534,10 +550,12 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
      * @param patchText patch 文本。
      */
     private void applyGitStylePatch(Path workingDirectory, String patchText) {
+        // 步骤 1：将 patch 写入临时文件，并把路径规范化到当前工具工作目录语义。
         Path tempPatch = null;
         try {
             tempPatch = Files.createTempFile("chat-tool-", ".patch");
             FileUtil.writeUtf8String(normalizeGitPatchWorkspacePaths(workingDirectory, patchText), tempPatch.toFile());
+            // 步骤 2：先执行 git apply --check，提前暴露冲突或路径越界问题，不直接修改文件。
             CommandExecution checkExecution = runCommand(
                 "git apply --check \"" + tempPatch.toAbsolutePath() + "\"",
                 10000L,
@@ -549,6 +567,7 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
                     StrUtil.blankToDefault(checkExecution.output(), ErrorMessageCatalog.CHAT_TOOL_PATCH_CHECK_FAILED)
                 );
             }
+            // 步骤 3：检查通过后再执行 git apply，失败时保留 git 输出给模型修正 patch。
             CommandExecution applyExecution = runCommand(
                 "git apply \"" + tempPatch.toAbsolutePath() + "\"",
                 10000L,
@@ -569,6 +588,7 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
             );
         } finally {
             if (tempPatch != null) {
+                // 步骤 4：无论应用成功或失败都删除临时 patch 文件，避免工作目录残留工具文件。
                 FileUtil.del(tempPatch.toFile());
             }
         }
@@ -1014,6 +1034,7 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
      * @param patchText Codex 补丁文本。
      */
     private void applyCodexStylePatch(Path workingDirectory, String patchText) {
+        // 步骤 1：定位 Begin Patch 边界，允许输入前面包含模型解释性文本。
         String[] lines = patchText.split("\n", -1);
         int lineIndex = 0;
         while (lineIndex < lines.length && !StrUtil.equals(lines[lineIndex], "*** Begin Patch")) {
@@ -1028,6 +1049,7 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
             if (StrUtil.equals(line, "*** End Patch")) {
                 return;
             }
+            // 步骤 2：解析 Update File，可选 Move to 和后续变更行交给专用更新函数处理。
             if (StrUtil.startWith(line, "*** Update File: ")) {
                 String filePath = StrUtil.removePrefix(line, "*** Update File: ").trim();
                 lineIndex++;
@@ -1044,6 +1066,7 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
                 applyCodexUpdateFile(workingDirectory, filePath, moveToPath, updateLines);
                 continue;
             }
+            // 步骤 3：解析 Add File，把所有非边界行作为新增文件内容。
             if (StrUtil.startWith(line, "*** Add File: ")) {
                 String filePath = StrUtil.removePrefix(line, "*** Add File: ").trim();
                 lineIndex++;
@@ -1055,6 +1078,7 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
                 applyCodexAddFile(workingDirectory, filePath, addLines);
                 continue;
             }
+            // 步骤 4：解析 Delete File，删除前仍通过 resolvePatchTargetPath 保证路径不越界。
             if (StrUtil.startWith(line, "*** Delete File: ")) {
                 String filePath = StrUtil.removePrefix(line, "*** Delete File: ").trim();
                 Path targetPath = resolvePatchTargetPath(workingDirectory, filePath);
@@ -1064,6 +1088,7 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
             }
             lineIndex++;
         }
+        // 步骤 5：遍历结束仍未遇到 End Patch 时视为格式错误，防止半截补丁静默成功。
         throw new BusinessException("CHAT_TOOL_APPLY_PATCH_FAILED", ErrorMessageCatalog.CHAT_TOOL_PATCH_END_MISSING);
     }
 
@@ -1715,6 +1740,7 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
      * 按 CSV 批量创建子代理。
      */
     private ChatToolExecutionResult executeSpawnAgentsOnCsv(ToolInput input) {
+        // 步骤 1：从 JSON 或原始文本中解析 CSV 路径，并确认文件存在。
         String csvPath = StrUtil.blankToDefault(input.object().getStr("csvPath"), findCsvPath(input.raw()));
         if (StrUtil.isBlank(csvPath)) {
             throw new BusinessException("CHAT_TOOL_CSV_REQUIRED", ErrorMessageCatalog.CHAT_TOOL_CSV_PATH_REQUIRED);
@@ -1725,6 +1751,7 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
         }
         List<Map<String, Object>> created = new ArrayList<>();
         try {
+            // 步骤 2：逐行读取 CSV，每行创建一个完成态子代理会话，记录原始行号和种子字段。
             CsvReader reader = CsvUtil.getReader();
             CsvData data = reader.read(path.toFile());
             for (CsvRow row : data.getRows()) {
@@ -1742,11 +1769,13 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
                 created.add(Map.of("agentId", agentId, "row", row.getOriginalLineNumber(), "seed", firstColumn));
             }
         } catch (Exception exception) {
+            // 步骤 3：CSV 读取或解析失败时返回统一中文错误，保留底层异常摘要。
             throw new BusinessException(
                 "CHAT_TOOL_CSV_PARSE_FAILED",
                 ErrorMessageCatalog.CHAT_TOOL_CSV_PARSE_FAILED_PREFIX + exception.getMessage()
             );
         }
+        // 步骤 4：返回本次创建的子代理摘要，供模型继续读取或汇总。
         return new ChatToolExecutionResult(
             "spawn_agents_on_csv",
             "批量子代理创建完成",
@@ -1787,10 +1816,12 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
     }
 
     private ToolInput parseInput(String rawInput) {
+        // 步骤 1：空输入统一转换为空 JSON 对象，降低各工具解析分支的判空成本。
         String raw = StrUtil.trimToEmpty(rawInput);
         if (StrUtil.isBlank(raw)) {
             return new ToolInput("", JSONUtil.createObj());
         }
+        // 步骤 2：优先尝试 JSON 对象格式，结构化参数能保留路径、布尔值和数组字段。
         if (raw.startsWith("{")) {
             try {
                 JSON json = JSONUtil.parse(raw);
@@ -1801,10 +1832,12 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
                 // 回退到普通文本模式。
             }
         }
+        // 步骤 3：JSON 解析失败或输入不是对象时回退普通文本，具体工具再按正则或默认字段解析。
         return new ToolInput(raw, JSONUtil.createObj());
     }
 
     private List<PlanStep> parsePlanSteps(ToolInput input) {
+        // 步骤 1：优先读取结构化 steps 数组，保持前端或模型传入的状态字段。
         JSONArray stepsArray = input.object().getJSONArray("steps");
         if (stepsArray != null && !stepsArray.isEmpty()) {
             List<PlanStep> steps = new ArrayList<>();
@@ -1817,6 +1850,7 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
             }
             return steps;
         }
+        // 步骤 2：没有结构化数组时回退逐行解析原始文本，支持 [x]、[~] 和 completed/in_progress 标记。
         String raw = input.raw();
         if (StrUtil.isBlank(raw)) {
             return List.of();
@@ -1837,6 +1871,7 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
             String step = trimmed.replaceFirst("^\\[[^\\]]+\\]\\s*", "");
             steps.add(new PlanStep(step, status));
         }
+        // 步骤 3：返回按原始顺序解析的计划步骤，空行已过滤。
         return steps;
     }
 
@@ -1914,6 +1949,7 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
      * @return 命令执行结果。
      */
     private CommandExecution runCommand(String command, long timeoutMs, Path workingDirectory) {
+        // 步骤 1：在指定工作目录启动 shell 进程，并注入当前聊天绑定的 skill 目录环境变量。
         long start = System.currentTimeMillis();
         try {
             ProcessBuilder processBuilder = new ProcessBuilder(resolveShellCommand(command))
@@ -1923,10 +1959,12 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
             Process process = processBuilder.start();
             StringBuilder stdoutBuffer = new StringBuilder();
             StringBuilder stderrBuffer = new StringBuilder();
+            // 步骤 2：并行读取 stdout/stderr，避免子进程因为管道缓冲区写满而阻塞。
             Thread stdoutReader = startProcessOutputReader(process.getInputStream(), stdoutBuffer);
             Thread stderrReader = startProcessOutputReader(process.getErrorStream(), stderrBuffer);
             boolean finished = process.waitFor(timeoutMs, TimeUnit.MILLISECONDS);
             if (!finished) {
+                // 步骤 3：超时时强制杀掉进程并返回超时标记，调用方据此决定是否重试或缩短命令。
                 process.destroyForcibly();
                 process.waitFor(1, TimeUnit.SECONDS);
                 joinReader(stdoutReader);
@@ -1938,12 +1976,14 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
                     System.currentTimeMillis() - start
                 );
             }
+            // 步骤 4：正常结束时等待读线程收口，合并 stdout/stderr 和退出码返回给工具调用方。
             joinReader(stdoutReader);
             joinReader(stderrReader);
             int exitCode = process.exitValue();
             String output = buildCommandOutput(snapshotOutput(stdoutBuffer), snapshotOutput(stderrBuffer), exitCode);
             return new CommandExecution(output, exitCode, false, System.currentTimeMillis() - start);
         } catch (Exception exception) {
+            // 步骤 5：命令启动或等待阶段异常统一转换为业务异常，避免泄露底层实现细节。
             throw new BusinessException(
                 "CHAT_TOOL_COMMAND_FAILED",
                 ErrorMessageCatalog.CHAT_TOOL_COMMAND_EXECUTE_FAILED_PREFIX + exception.getMessage()

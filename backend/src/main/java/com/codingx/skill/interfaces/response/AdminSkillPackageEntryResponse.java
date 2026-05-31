@@ -8,10 +8,10 @@ package com.codingx.skill.interfaces.response;
  * @param size 文件字节大小，目录节点为 null。
  */
 public record AdminSkillPackageEntryResponse(
-    String path,
-    String name,
-    boolean directory,
-    Long size
+    String path, // 技能包内规范化相对路径，目录和文件都使用该路径定位。
+    String name, // 文件或目录名称，取自 path 最后一段。
+    boolean directory, // true 表示目录节点，false 表示文件节点。
+    Long size // 文件字节大小，目录节点固定为 null。
 ) {
 }
 

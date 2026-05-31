@@ -10,10 +10,10 @@ import java.util.List;
  * @param failures 迁移失败项列表。
  */
 public record AdminSkillPackageMigrationSummaryResponse(
-    int total,
-    int migrated,
-    int skipped,
-    List<FailureItem> failures
+    int total, // 本次扫描到需要检查存储形态的技能总数。
+    int migrated, // 成功从历史压缩包迁移为目录化存储的技能数量。
+    int skipped, // 已经是目录化存储而跳过的技能数量。
+    List<FailureItem> failures // 迁移失败项列表，空列表表示没有失败项。
 ) {
 
     /**
@@ -23,9 +23,9 @@ public record AdminSkillPackageMigrationSummaryResponse(
      * @param reason 返回给管理端展示的中文失败原因。
      */
     public record FailureItem(
-        Long skillId,
-        String skillCode,
-        String reason
+        Long skillId, // 迁移失败的技能主键。
+        String skillCode, // 迁移失败的技能编码。
+        String reason // 返回给管理端展示的中文失败原因。
     ) {
     }
 }

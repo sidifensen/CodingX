@@ -9,10 +9,10 @@ import lombok.Builder;
  */
 @Builder
 public record AdminUserPageView(
-    List<User> records,
-    Long total,
-    Long current,
-    Long size,
-    Long pages
+    List<User> records, // 当前页用户领域对象列表，空页返回空列表。
+    Long total, // 符合筛选条件的用户总数。
+    Long current, // 当前页码。
+    Long size, // 每页条数。
+    Long pages // 按 total 和 size 计算出的总页数。
 ) {
 }

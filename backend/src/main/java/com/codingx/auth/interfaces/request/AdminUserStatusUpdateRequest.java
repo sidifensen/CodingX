@@ -5,6 +5,6 @@ package com.codingx.auth.interfaces.request;
  * @param status 目标状态，只允许 ACTIVE、DISABLED 或 PENDING。
  */
 public record AdminUserStatusUpdateRequest(
-    String status
+    String status // 目标用户状态枚举名称，只允许 ACTIVE、DISABLED 或 PENDING。
 ) {
 }

@@ -12,13 +12,13 @@ package com.codingx.auth.interfaces.request;
  * @param avatarUrl 头像地址，可为空。
  */
 public record AdminUserCreateRequest(
-    String username,
-    String displayName,
-    String password,
-    String userType,
-    String status,
-    String email,
-    String phone,
-    String avatarUrl
+    String username, // 管理端填写的登录用户名，创建后作为账号唯一标识。
+    String displayName, // 用户展示名称，前端会话和管理端列表都会展示。
+    String password, // 初始明文密码，仅用于创建时生成哈希，禁止持久化明文。
+    String userType, // 用户类型枚举名称，可为空；服务层为空时默认普通用户。
+    String status, // 初始用户状态枚举名称，可为空；服务层按可写状态解析。
+    String email, // 用户邮箱，可为空；非空时服务层会做唯一性检查。
+    String phone, // 用户手机号，可为空；当前只做首尾空白规整。
+    String avatarUrl // 用户头像地址，可为空；当前只做首尾空白规整。
 ) {
 }

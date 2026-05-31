@@ -5,6 +5,6 @@ package com.codingx.auth.interfaces.request;
  * @param newPassword 新密码明文，服务层会转换为哈希后保存。
  */
 public record AdminUserResetPasswordRequest(
-    String newPassword
+    String newPassword // 新密码明文，仅用于重置时生成哈希，服务层禁止保存明文。
 ) {
 }

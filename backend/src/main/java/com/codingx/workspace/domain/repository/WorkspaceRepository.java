@@ -4,13 +4,13 @@ import com.codingx.workspace.domain.model.AdminWorkspacePage;
 import com.codingx.workspace.domain.model.AdminWorkspaceQuery;
 
 /**
- * 定义 WorkspaceRepository 的仓储契约。
+ * 工作空间仓储端口，隔离业务层对工作空间存在性校验和管理端分页查询的持久化细节。
  */
 public interface WorkspaceRepository {
 
     /**
-     * 校验 ensureExists 需要的前置条件。
-     * @param workspaceId 输入参数。
+     * 校验工作空间存在，不存在时由实现抛出业务异常。
+     * @param workspaceId 工作空间标识。
      */
     void ensureExists(Long workspaceId);
 

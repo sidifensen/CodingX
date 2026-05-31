@@ -16,7 +16,7 @@ import org.springframework.stereotype.Service;
 public class ConversationTitleService {
 
     /**
-     * 模型客户端依赖。
+     * AI 聊天客户端，用于在会话仍为默认标题时根据消息内容生成展示标题。
      */
     private final AiChatClient aiChatClient;
 
@@ -28,8 +28,10 @@ public class ConversationTitleService {
      */
     public String generateTitle(ChatConversation conversation, List<ChatMessage> messages) {
         if (!ErrorMessageCatalog.CHAT_CONVERSATION_DEFAULT_TITLE.equals(conversation.getTitle())) {
+            // 步骤 1：用户或历史流程已有非默认标题时直接复用，避免模型覆盖人工命名。
             return conversation.getTitle();
         }
+        // 步骤 2：默认标题才调用模型客户端生成短标题，降低不必要的模型调用次数。
         return aiChatClient.generateTitle(messages);
     }
 }

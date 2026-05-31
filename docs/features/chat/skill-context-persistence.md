@@ -15,7 +15,7 @@
 3. 当本轮已选技能且用户只问“这是什么”“这是啥”“有什么用”等短句时，`ChatApplicationService` 直接用技能简介生成回答，避免模型把短指代误判为缺少页面、链接或附件。
 4. 改写、意图识别、标题、摘要和模型历史使用剥离前缀后的纯正文，避免把 `@skill` 当自然语言。
 5. `ChatSkillContextService` 读取已选技能根级 `SKILL.md` 并追加到系统提示，日志会输出技能上下文是否生效；当用户正文使用“这个”“这些”“有什么区别”等指代，或只问“这是什么”“这是啥”等短句时，提示词会要求模型先按已选技能理解。
-6. 模型工具调用只允许执行本轮真实暴露的工具 schema；若模型把 `web-access` 这类 skill code 伪造成 tool_call，后端会忽略该调用并回灌“技能编码不是工具名”的约束。
+6. 模型工具调用只允许执行本轮真实暴露的工具 schema；若模型把 `web-access` 这类 skill code 伪造成 tool_call，后端仅忽略这个错误的 tool_call，并回灌“已选技能仍然有效、技能编码不是工具名”的约束。
 7. `SkillLocalCacheService` 为云端临时下载的 `web-access` 写入 `WEB_ACCESS_BROWSER=chrome`，避免每轮新目录都要求用户重新选择浏览器。
 8. 本轮技能、MCP、专家上下文写入隐藏的 `chat_execution_step(step_type=runtime_context)`，旧的 `task_skill`、`task_mcp`、`task_event`、`task_artifact` 表不再使用。
 9. 前端用户消息展示时只在 chip 里显示技能码，正文剥离开头 `@skill`，复制、编辑和分享预览也使用可见正文。
@@ -40,7 +40,7 @@
 
 提示词上下文日志只打印可读预览，覆盖原始系统提示词和技能简介，完整技能文档仍会进入模型上下文，但不会在 `info` 日志中整段输出。
 
-`web-access` 是技能编码，不是本地工具编码。工具循环会用 `ChatToolSpecService` 返回的本轮可见工具 schema 做白名单校验，只有白名单内的 `tool_call` 才会进入 `ChatToolExecutionService`；被模型伪造出来的 skill code tool_call 会被记录为“模型伪工具调用已忽略”，然后通过系统上下文要求模型继续按技能说明回答。
+`web-access` 是技能编码，不是本地工具编码。工具循环会用 `ChatToolSpecService` 返回的本轮可见工具 schema 做白名单校验，只有白名单内的 `tool_call` 才会进入 `ChatToolExecutionService`；被模型伪造出来的 skill code tool_call 会被记录为“模型伪工具调用已忽略”，然后通过系统上下文强调只忽略错误 tool_call，已选技能仍然有效，要求模型继续按技能说明回答，不能对用户说技能不可用或被忽略。
 
 `chat_execution_step.runtime_context` 只服务运行回放和重新生成上下文恢复，不向前端普通步骤列表展示。重新生成时优先读取上一轮 `runtime_context`，缺失时回退解析用户消息前缀。
 

@@ -1472,13 +1472,21 @@ public class ChatApplicationService {
         return allowedToolCalls;
     }
 
+    /**
+     * 构造伪工具调用纠偏提示，重点区分“错误 tool_call 被忽略”和“已选技能仍然有效”。
+     * 模型容易把 skill code 当成本地工具名调用，这里只拦截该工具调用，不否定技能上下文本身。
+     */
     private String buildInvalidToolCallGuidance(List<String> blockedToolCodes, Set<String> allowedToolCodes) {
         return """
-            模型刚才请求调用的工具未在本轮可见工具 schema 中，已被后端忽略。
-            被忽略的工具：%s
-            本轮允许的工具：%s
+            模型刚才把技能编码、MCP 编码或普通文本当成本地工具名发起 tool_call。后端仅忽略这个错误的 tool_call；技能选择和技能上下文仍然保留。
+            被忽略的 tool_call 名称：%s
+            本轮真实可调用的本地工具：%s
 
-            重要约束：技能编码不是工具名，不能用 skill code 发起 tool_call。请根据当前已选技能说明继续回答；只有确实需要且工具在允许列表中时，才能调用允许列表里的本地工具。
+            继续执行要求：
+            - 已选技能仍然有效，必须继续按已选技能说明理解和回答用户请求。
+            - 不要告诉用户这个技能失效、未选中或被系统跳过；对用户应继续按已选技能处理请求。
+            - 不要再用 skill code 发起 tool_call；只有确实需要且名称在真实可调用工具列表中时，才调用这些本地工具。
+            - 如果当前运行环境确实缺少完成浏览器或联网操作的能力，只说明缺少可用执行能力，并给出可执行替代或追问缺失目标。
             """.formatted(
             String.join("、", blockedToolCodes),
             allowedToolCodes.isEmpty() ? "无" : String.join("、", allowedToolCodes)

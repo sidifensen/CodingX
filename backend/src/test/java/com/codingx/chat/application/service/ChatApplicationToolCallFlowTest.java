@@ -2,6 +2,8 @@ package com.codingx.chat.application.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
@@ -632,12 +634,26 @@ class ChatApplicationToolCallFlowTest {
         ));
         AtomicInteger modelRound = new AtomicInteger();
         doAnswer(invocation -> {
+            @SuppressWarnings("unchecked")
+            List<ChatMessage> history = invocation.getArgument(0);
             AiChatClient.ToolAwareStreamHandler handler = invocation.getArgument(3);
             if (modelRound.incrementAndGet() == 1) {
                 handler.onToolCall(new AiToolCall("call-skill-as-tool", "web-access", "{\"query\":\"打开小红书\"}"));
                 handler.onComplete();
                 return null;
             }
+            String invalidToolGuidance = history.stream()
+                .filter(message -> message.getRole() == ChatMessageRole.SYSTEM)
+                .map(ChatMessage::getContent)
+                .filter(content -> content.contains("web-access") && content.contains("tool_call"))
+                .reduce((first, second) -> second)
+                .orElse("");
+            assertTrue(invalidToolGuidance.contains("仅忽略这个错误的 tool_call"));
+            assertTrue(invalidToolGuidance.contains("已选技能仍然有效"));
+            assertTrue(invalidToolGuidance.contains("不要告诉用户"));
+            assertFalse(invalidToolGuidance.contains("不可用"));
+            assertFalse(invalidToolGuidance.contains("web-access 不可用"));
+            assertFalse(invalidToolGuidance.contains("技能被忽略"));
             handler.onDelta("web-access 是已选技能，我会按技能说明继续处理。");
             handler.onComplete();
             return null;

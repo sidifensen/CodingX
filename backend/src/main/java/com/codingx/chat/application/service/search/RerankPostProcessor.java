@@ -12,6 +12,7 @@ import org.springframework.stereotype.Component;
 @Order(100)
 public class RerankPostProcessor implements SearchResultPostProcessor {
 
+    /** 运行时配置服务，用于读取搜索结果重排开关。 */
     private final RuntimeSettingService runtimeSettingService;
 
     public RerankPostProcessor(RuntimeSettingService runtimeSettingService) {

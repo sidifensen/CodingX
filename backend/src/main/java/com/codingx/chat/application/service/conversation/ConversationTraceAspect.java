@@ -18,6 +18,7 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 public class ConversationTraceAspect {
 
+    /** Trace 记录服务，用于把被注解方法的开始、成功和失败状态写入链路节点。 */
     private final ConversationTraceRecordService conversationTraceRecordService;
 
     /**

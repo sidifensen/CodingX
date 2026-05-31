@@ -46,7 +46,9 @@ public class WorkspaceRepositoryImpl implements WorkspaceRepository {
      */
     public static final String DEFAULT_LOCAL_WORKSPACE_NAME = "本地历史记录";
 
+    /** 工作空间 Mapper，用于读写 workspace 表并支持管理端分页。 */
     private final WorkspaceMapper workspaceMapper;
+    /** 会话 Mapper，用于按工作空间统计未删除会话数量。 */
     private final ChatConversationMapper chatConversationMapper;
 
     /**
@@ -152,10 +154,12 @@ public class WorkspaceRepositoryImpl implements WorkspaceRepository {
      * @return 默认云端空间记录。
      */
     public WorkspaceDO ensureDefaultCloudWorkspace(Long userId, String preferredName) {
+        // 步骤 1：先查找用户默认云端空间，已存在时直接复用，避免重复创建历史归档空间。
         WorkspaceDO existing = findDefaultCloudWorkspace(userId);
         if (existing != null) {
             return existing;
         }
+        // 步骤 2：构造默认云端 workspace 数据，名称优先使用候选展示名兜底。
         LocalDateTime now = LocalDateTime.now();
         WorkspaceDO workspace = new WorkspaceDO();
         workspace.setId(IdUtil.getSnowflakeNextId());
@@ -167,6 +171,7 @@ public class WorkspaceRepositoryImpl implements WorkspaceRepository {
         workspace.setUpdatedAt(now);
         workspace.setDeleted(0);
         try {
+            // 步骤 3：尝试插入新空间；并发唯一约束冲突时回查并复用已落库记录。
             workspaceMapper.insert(workspace);
             return workspace;
         } catch (Exception ignored) {
@@ -185,10 +190,12 @@ public class WorkspaceRepositoryImpl implements WorkspaceRepository {
      * @return 默认本地空间记录。
      */
     public WorkspaceDO ensureDefaultLocalWorkspace(Long userId) {
+        // 步骤 1：先查找用户默认本地历史空间，存在时不再创建新记录。
         WorkspaceDO existing = findDefaultLocalWorkspace(userId);
         if (existing != null) {
             return existing;
         }
+        // 步骤 2：构造默认本地 workspace，运行目标固定为 local 且不绑定具体目录。
         LocalDateTime now = LocalDateTime.now();
         WorkspaceDO workspace = new WorkspaceDO();
         workspace.setId(IdUtil.getSnowflakeNextId());
@@ -199,6 +206,7 @@ public class WorkspaceRepositoryImpl implements WorkspaceRepository {
         workspace.setUpdatedAt(now);
         workspace.setDeleted(0);
         try {
+            // 步骤 3：插入失败时按并发创建处理，回查可复用记录后再决定是否抛出原异常。
             workspaceMapper.insert(workspace);
             return workspace;
         } catch (Exception ignored) {
@@ -219,11 +227,13 @@ public class WorkspaceRepositoryImpl implements WorkspaceRepository {
      * @return 本地目录工作空间记录。
      */
     public WorkspaceDO ensureLocalWorkspace(Long userId, String normalizedWorkingDirectory, String workspaceName) {
+        // 步骤 1：先统一目录分隔符并按用户+路径查找既有本地 workspace。
         String normalizedPath = StrUtil.trimToEmpty(normalizedWorkingDirectory).replace('\\', '/');
         WorkspaceDO existing = findLocalWorkspaceByPath(userId, normalizedPath);
         if (existing != null) {
             return existing;
         }
+        // 步骤 2：没有既有记录时创建新的本地目录 workspace，名称为空则使用默认本地名称。
         LocalDateTime now = LocalDateTime.now();
         WorkspaceDO workspace = new WorkspaceDO();
         workspace.setId(IdUtil.getSnowflakeNextId());
@@ -235,6 +245,7 @@ public class WorkspaceRepositoryImpl implements WorkspaceRepository {
         workspace.setUpdatedAt(now);
         workspace.setDeleted(0);
         try {
+            // 步骤 3：插入时如遇并发创建同一路径，回查复用并避免重复项目。
             workspaceMapper.insert(workspace);
             return workspace;
         } catch (Exception ignored) {

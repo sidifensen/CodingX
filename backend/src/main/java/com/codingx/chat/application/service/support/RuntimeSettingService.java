@@ -43,12 +43,19 @@ public class RuntimeSettingService {
         "bing_html"
     );
 
+    /** 运行时配置仓储，用于读取和刷新数据库覆盖配置。 */
     private final ChatRuntimeSettingRepository chatRuntimeSettingRepository;
+    /** 运行时默认配置，用于数据库未配置时回退队列和搜索基础参数。 */
     private final RuntimeProperties runtimeProperties;
+    /** 聊天执行器默认配置，用于回退工具轮次和执行保护参数。 */
     private final ChatExecutorRuntimeProperties chatExecutorRuntimeProperties;
+    /** 会话记忆默认配置，用于回退摘要开关、触发阈值和保留消息数。 */
     private final ChatMemoryProperties chatMemoryProperties;
+    /** AI 默认配置，用于回退 provider、模型、联网搜索和重排参数。 */
     private final AiProperties aiProperties;
+    /** 配置加密服务，用于保存和读取敏感运行时配置时执行加解密。 */
     private final ConfigCryptoService configCryptoService;
+    /** 配置缓存，key 为 settingKey，value 为数据库覆盖配置快照。 */
     private final Map<String, ChatRuntimeSetting> cache = new ConcurrentHashMap<>();
 
     /**

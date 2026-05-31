@@ -22,6 +22,7 @@ public class AiPromptExecutionService {
 
     private static final Long INTERNAL_CONVERSATION_ID = 0L;
 
+    /** 模型调度服务，用于选择可用模型并执行非流式 Prompt 请求。 */
     private final AiModelDispatchService aiModelDispatchService;
 
     /**

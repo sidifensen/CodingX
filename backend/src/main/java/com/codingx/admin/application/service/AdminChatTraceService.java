@@ -20,8 +20,11 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class AdminChatTraceService {
 
+    /** Trace 运行仓储，用于读取链路根记录和分页列表。 */
     private final ChatTraceRunRepository chatTraceRunRepository;
+    /** Trace 节点仓储，用于读取并规范化链路节点层级。 */
     private final ChatTraceNodeRepository chatTraceNodeRepository;
+    /** 用户仓储，用于把链路记录中的用户 ID 转换为管理端展示名。 */
     private final UserRepository userRepository;
 
     public ConversationTraceView getTrace(String traceId) {

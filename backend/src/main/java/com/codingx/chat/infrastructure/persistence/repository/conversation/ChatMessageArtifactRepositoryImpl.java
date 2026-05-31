@@ -16,6 +16,7 @@ import org.springframework.stereotype.Repository;
 @RequiredArgsConstructor
 public class ChatMessageArtifactRepositoryImpl implements ChatMessageArtifactRepository {
 
+    /** 消息产物 Mapper，用于读写 chat_message_artifact 表的文件产物记录。 */
     private final ChatMessageArtifactMapper chatMessageArtifactMapper;
 
     @Override

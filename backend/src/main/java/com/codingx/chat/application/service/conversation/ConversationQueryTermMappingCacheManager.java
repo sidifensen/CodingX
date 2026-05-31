@@ -15,7 +15,9 @@ public class ConversationQueryTermMappingCacheManager {
 
     private static final long CACHE_TTL_MILLIS = 60_000L;
 
+    /** 查询词映射规则缓存，使用原子引用保证刷新时读线程看到完整快照。 */
     private final AtomicReference<List<ChatQueryTermMapping>> cachedMappings = new AtomicReference<>(List.of());
+    /** 缓存过期时间点，volatile 保证多线程读取时能感知最新刷新窗口。 */
     private volatile Instant expiresAt = Instant.EPOCH;
 
     /**

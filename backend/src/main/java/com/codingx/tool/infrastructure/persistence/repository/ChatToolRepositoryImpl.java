@@ -19,6 +19,7 @@ import org.springframework.stereotype.Repository;
 @RequiredArgsConstructor
 public class ChatToolRepositoryImpl implements ChatToolRepository {
 
+    /** 工具 Mapper，用于读写 chat_tool 表中的工具配置。 */
     private final ChatToolMapper chatToolMapper;
 
     @Override

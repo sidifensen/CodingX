@@ -10,7 +10,9 @@ import org.springframework.stereotype.Component;
 @Component
 public class ChatRunControlService {
 
+    /** 运行态存储，用于在内存或 Redis 中维护会话活跃和取消状态。 */
     private final ChatRuntimeStateStore chatRuntimeStateStore;
+    /** 当前进程内会话运行句柄缓存，用于取消和防止旧 run 回写新会话状态。 */
     private final Map<Long, ChatRunSession> sessions = new ConcurrentHashMap<>();
 
     /**
@@ -121,8 +123,11 @@ public class ChatRunControlService {
      */
     private static final class ChatRunSession {
 
+        /** 当前会话正在执行的 run 标识，用于防止旧 run 覆盖新 run。 */
         private final Long runId;
+        /** 取消动作句柄，用于中断模型流或后台任务。 */
         private final Runnable cancelAction;
+        /** 取消状态标记，跨模型流线程读取时需要保持可见。 */
         private volatile boolean cancelled;
 
         private ChatRunSession(Long runId, Runnable cancelAction) {

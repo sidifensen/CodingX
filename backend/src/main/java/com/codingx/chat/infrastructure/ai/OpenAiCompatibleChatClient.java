@@ -41,8 +41,11 @@ public class OpenAiCompatibleChatClient implements AiProviderClient {
 
     private static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
 
+    /** HTTP 客户端，用于向 OpenAI 兼容 provider 发起流式请求。 */
     private final OkHttpClient okHttpClient;
+    /** OpenAI 风格流解析器，用于把 SSE 数据块转换为统一增量事件。 */
     private final OpenAiStyleStreamParser openAiStyleStreamParser;
+    /** 附件服务，用于读取用户上传附件并转换为模型请求内容。 */
     private final ChatAttachmentService chatAttachmentService;
 
     @Override

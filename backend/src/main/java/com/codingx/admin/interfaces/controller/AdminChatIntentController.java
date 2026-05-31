@@ -22,6 +22,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 public class AdminChatIntentController {
 
+    /** 意图管理服务，负责意图树 CRUD、排序和兼容列表查询。 */
     private final AdminChatIntentService adminChatIntentService;
 
     /**

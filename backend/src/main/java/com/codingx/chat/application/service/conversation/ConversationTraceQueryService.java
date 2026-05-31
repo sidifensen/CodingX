@@ -14,7 +14,9 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class ConversationTraceQueryService {
 
+    /** Trace 运行仓储，用于读取指定 traceId 的根运行记录。 */
     private final ChatTraceRunRepository chatTraceRunRepository;
+    /** Trace 节点仓储，用于读取并规范化指定 traceId 的节点集合。 */
     private final ChatTraceNodeRepository chatTraceNodeRepository;
 
     /**

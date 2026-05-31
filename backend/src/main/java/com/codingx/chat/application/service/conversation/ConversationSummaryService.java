@@ -20,8 +20,11 @@ import org.springframework.stereotype.Service;
 @Service
 public class ConversationSummaryService {
 
+    /** 摘要阈值判断器，用于决定当前历史长度是否需要压缩。 */
     private final ConversationDigestService conversationDigestService;
+    /** 会话摘要仓储，用于读取最新摘要并持久化新的覆盖点。 */
     private final ChatConversationSummaryRepository chatConversationSummaryRepository;
+    /** 运行时配置服务，用于控制摘要开关和保留消息数量。 */
     private final RuntimeSettingService runtimeSettingService;
 
     /**

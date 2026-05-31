@@ -17,6 +17,7 @@ import org.springframework.stereotype.Repository;
 @RequiredArgsConstructor
 public class ChatAttachmentRepositoryImpl implements ChatAttachmentRepository {
 
+    /** 附件 Mapper，用于执行 chat_attachment 表的查询、插入和更新。 */
     private final ChatAttachmentMapper chatAttachmentMapper;
 
     @Override

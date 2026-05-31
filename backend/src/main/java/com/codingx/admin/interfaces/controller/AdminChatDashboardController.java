@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 public class AdminChatDashboardController {
 
+    /** Dashboard 聚合服务，负责按时间窗口统计聊天运行指标。 */
     private final AdminChatDashboardService adminChatDashboardService;
 
     @GetMapping

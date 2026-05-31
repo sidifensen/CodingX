@@ -15,8 +15,11 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class DocumentArtifactService {
 
+    /** 消息产物仓储，用于保存文档产物与消息、run 的关联关系。 */
     private final ChatMessageArtifactRepository chatMessageArtifactRepository;
+    /** 流事件发布器，用于在产物生成后通知前端工作区刷新。 */
     private final com.codingx.chat.domain.port.ChatStreamPublisher chatStreamPublisher;
+    /** 文件存储服务，用于写入可下载文档内容并返回存储键。 */
     private final FileStorageService fileStorageService;
 
     /**

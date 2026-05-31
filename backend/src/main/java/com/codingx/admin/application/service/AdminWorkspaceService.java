@@ -23,7 +23,9 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class AdminWorkspaceService {
 
+    /** 工作空间仓储，用于管理端只读分页和存在性校验。 */
     private final WorkspaceRepository workspaceRepository;
+    /** 会话仓储，用于按工作空间反查会话列表和会话状态。 */
     private final ChatConversationRepository chatConversationRepository;
 
     /**

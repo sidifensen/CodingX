@@ -12,6 +12,7 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 public class ChatMcpToolRegistry {
 
+    /** MCP 执行器集合，用于按工具标识定位具体执行实现。 */
     private final List<ChatMcpToolExecutor> executors;
 
     /**

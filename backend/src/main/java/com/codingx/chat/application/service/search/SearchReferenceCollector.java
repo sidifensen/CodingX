@@ -16,7 +16,9 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class SearchReferenceCollector {
 
+    /** 消息引用仓储，用于把本轮搜索来源持久化到消息和 run 维度。 */
     private final ChatMessageReferenceRepository chatMessageReferenceRepository;
+    /** 流事件发布器，用于向前端推送来源列表更新事件。 */
     private final com.codingx.chat.domain.port.ChatStreamPublisher chatStreamPublisher;
 
     /**

@@ -40,18 +40,31 @@ import com.codingx.chat.infrastructure.stream.NoopChatStreamPublisher;
 @Slf4j
 public class ChatStreamExecutionService {
 
+    /** 聊天主应用服务，承接异步任务中真正的消息处理链路。 */
     private final ChatApplicationService chatApplicationService;
+    /** 运行态守卫服务，用于提交前检查会话是否已有执行中任务。 */
     private final ChatRuntimeGuardService chatRuntimeGuardService;
+    /** Trace 记录服务，用于异步任务失败或本地执行时收口链路状态。 */
     private final ConversationTraceRecordService conversationTraceRecordService;
+    /** 执行运行仓储，用于恢复重新生成时的原始 run 上下文。 */
     private final ChatExecutionRunRepository chatExecutionRunRepository;
+    /** MCP 配置仓储，用于根据历史 run 恢复已选 MCP 工具。 */
     private final ChatMcpRepository chatMcpRepository;
+    /** 技能仓储，用于根据历史 run 恢复已选技能编码。 */
     private final ChatSkillRepository chatSkillRepository;
+    /** 专家仓储，用于根据历史 run 恢复已选专家编码。 */
     private final ChatExpertRepository chatExpertRepository;
+    /** 会话仓储，用于校验会话归属并读取运行目标和工作空间绑定。 */
     private final ChatConversationRepository chatConversationRepository;
+    /** 工作空间绑定服务，用于把本地任务和会话映射到真实仓库目录。 */
     private final ChatWorkspaceBindingService chatWorkspaceBindingService;
+    /** 任务仓储，用于本地任务场景绑定和更新任务完成状态。 */
     private final TaskRepository taskRepository;
+    /** 流事件发布器，用于向前端推送异步执行开始、失败和完成事件。 */
     private final ChatStreamPublisher chatStreamPublisher;
+    /** 聊天后台执行器，隔离 HTTP/SSE 入口线程与实际模型执行线程。 */
     private final ExecutorService executor;
+    /** 技能本地缓存服务，用于本地任务启动前同步可用技能包。 */
     private final com.codingx.skill.application.service.SkillLocalCacheService skillLocalCacheService;
 
     /**
@@ -245,6 +258,7 @@ public class ChatStreamExecutionService {
      * @param userId 当前用户标识。
      */
     private void dispatchLocalOnly(Long taskId, SendChatMessageCommand command, Long userId) {
+        // 步骤 1：本地运行以 taskId 作为临时 runId，只注册取消句柄，不写入任务、run 或 Trace 表。
         Long runId = taskId;
         AtomicReference<Future<?>> futureRef = new AtomicReference<>();
         chatRuntimeGuardService.registerCancellation(command.conversationId(), runId, () -> {
@@ -256,6 +270,7 @@ public class ChatStreamExecutionService {
         Future<?> future = executor.submit(() -> {
             Path tempSkillRoot = null;
             try {
+                // 步骤 2：进入后台线程后绑定运行上下文、工具工作目录和临时技能目录，再复用主聊天链路执行。
                 ChatExecutionContext.start(runId);
                 bindToolWorkingDirectory(command, userId);
                 tempSkillRoot = bindSkillDirectories(command);
@@ -263,6 +278,7 @@ public class ChatStreamExecutionService {
                 chatApplicationService.sendMessage(command, userId);
                 log.info("聊天执行结束: runId={}, 会话={}, 状态=SUCCESS", runId, command.conversationId());
             } finally {
+                // 步骤 3：无论执行成功、失败或取消，都清理临时目录、运行锁和线程上下文，避免污染下一次本地运行。
                 if (tempSkillRoot != null) {
                     try {
                         cn.hutool.core.io.FileUtil.del(tempSkillRoot.toFile());
@@ -383,6 +399,7 @@ public class ChatStreamExecutionService {
      * @param userId 当前用户标识。
      */
     private void bindToolWorkingDirectory(SendChatMessageCommand command, Long userId) {
+        // 步骤 1：优先使用本次消息显式携带的仓库目录，显式参数非法时再回退历史绑定。
         if (StrUtil.isNotBlank(command.repositoryPath())) {
             try {
                 ChatToolExecutionContext.bindToolWorkingDirectory(Path.of(command.repositoryPath()));
@@ -391,6 +408,7 @@ public class ChatStreamExecutionService {
                 // repositoryPath 非法时回退用户默认绑定，避免单次异常参数阻断对话链路。
             }
         }
+        // 步骤 2：显式目录不可用时按会话 workspaceId 查询持久化工作空间目录。
         Optional<com.codingx.chat.domain.model.ChatConversation> conversationOptional =
             java.util.Optional.ofNullable(command.conversationId())
                 .flatMap(conversationId -> {
@@ -409,6 +427,7 @@ public class ChatStreamExecutionService {
                 return;
             }
         }
+        // 步骤 3：会话没有绑定 workspace 时退回用户级目录绑定；仍无目录则让工具链路自行按默认工作区处理。
         Optional<Path> boundRepositoryPath = chatWorkspaceBindingService.findRepositoryPathByUserId(userId);
         boundRepositoryPath.ifPresent(ChatToolExecutionContext::bindToolWorkingDirectory);
     }

@@ -21,6 +21,7 @@ import org.springframework.stereotype.Repository;
 @RequiredArgsConstructor
 public class ChatQueryTermMappingRepositoryImpl implements ChatQueryTermMappingRepository {
 
+    /** 查询词映射 Mapper，用于读写术语归一化规则和管理端分页数据。 */
     private final ChatQueryTermMappingMapper chatQueryTermMappingMapper;
 
     @Override

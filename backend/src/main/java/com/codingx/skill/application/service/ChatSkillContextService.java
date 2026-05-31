@@ -39,7 +39,9 @@ public class ChatSkillContextService {
     private static final int MAX_TOTAL_CONTEXT_CHARS = 24_000;
     private static final int MAX_SKILL_INTRO_DESCRIPTION_CHARS = 260;
 
+    /** 技能仓储，用于按技能编码读取启用配置和存储位置。 */
     private final ChatSkillRepository chatSkillRepository;
+    /** 技能包存储客户端，用于从 RustFS 读取远程技能包内容。 */
     private final RustFsSkillPackageClient rustFsSkillPackageClient;
 
     /**
@@ -124,10 +126,12 @@ public class ChatSkillContextService {
      * @return 简短说明；无有效技能时返回空字符串。
      */
     public String buildSkillIntroReply(List<String> selectedSkillCodes) {
+        // 步骤 1：先标准化并去重技能编码；无有效选择时不生成介绍文本。
         LinkedHashSet<String> normalizedCodes = normalizeSelectedSkillCodes(selectedSkillCodes);
         if (normalizedCodes.isEmpty()) {
             return "";
         }
+        // 步骤 2：按用户选择顺序读取技能配置，并优先使用配置描述或 SKILL.md 描述兜底。
         List<String> introLines = new ArrayList<>();
         for (String skillCode : normalizedCodes) {
             ChatSkill skill = chatSkillRepository.findBySkillCode(skillCode);
@@ -141,6 +145,7 @@ public class ChatSkillContextService {
         if (introLines.isEmpty()) {
             return "";
         }
+        // 步骤 3：单技能返回直接说明，多技能返回列表和后续引导，避免短句被误判为闲聊。
         if (introLines.size() == 1) {
             return "这是你当前选中的技能：" + introLines.getFirst()
                 + "\n\n如果要执行它，请继续给出这个技能要处理的具体目标或问题。";
@@ -175,11 +180,13 @@ public class ChatSkillContextService {
     }
 
     private String extractManifestDescription(String manifestContent) {
+        // 步骤 1：空 manifest 无法提取描述，直接回退为空字符串。
         if (StrUtil.isBlank(manifestContent)) {
             return "";
         }
         StringBuilder descriptionBuilder = new StringBuilder();
         boolean collectingDescription = false;
+        // 步骤 2：扫描 YAML front matter 中的 description 字段，兼容行内值和缩进多行值。
         for (String line : manifestContent.split("\\R", -1)) {
             String trimmedLine = line.trim();
             if (trimmedLine.startsWith("description:")) {
@@ -199,6 +206,7 @@ public class ChatSkillContextService {
             if (!Character.isWhitespace(line.charAt(0)) || "---".equals(trimmedLine)) {
                 break;
             }
+            // 步骤 3：多行描述按空格拼接，避免换行直接进入聊天简介。
             if (!descriptionBuilder.isEmpty()) {
                 descriptionBuilder.append(' ');
             }
@@ -295,10 +303,12 @@ public class ChatSkillContextService {
     }
 
     private byte[] readManifestFromZip(String storageKey) {
+        // 步骤 1：下载历史 zip 技能包，后续在内存中扫描 SKILL.md，避免落盘。
         byte[] archiveBytes = rustFsSkillPackageClient.download(storageKey);
         byte[] nestedManifestBytes = null;
         try (ZipInputStream zipInputStream = new ZipInputStream(new ByteArrayInputStream(archiveBytes), StandardCharsets.UTF_8)) {
             ZipEntry entry;
+            // 步骤 2：逐个读取文件条目并规范化路径，优先返回根目录 SKILL.md。
             while ((entry = zipInputStream.getNextEntry()) != null) {
                 if (entry.isDirectory()) {
                     continue;
@@ -316,8 +326,10 @@ public class ChatSkillContextService {
                 }
             }
         } catch (IOException exception) {
+            // 步骤 3：压缩包损坏或编码异常时按“未读到 manifest”处理，调用方会跳过该技能。
             return new byte[0];
         }
+        // 步骤 4：没有根目录 SKILL.md 时允许使用第一份嵌套 SKILL.md 兼容旧包结构。
         return nestedManifestBytes == null ? new byte[0] : nestedManifestBytes;
     }
 

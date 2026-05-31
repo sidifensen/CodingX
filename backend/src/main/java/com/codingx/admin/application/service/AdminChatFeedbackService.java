@@ -26,9 +26,13 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class AdminChatFeedbackService {
 
+    /** 反馈仓储，用于分页查询、详情定位和反馈记录校验。 */
     private final ChatMessageFeedbackRepository chatMessageFeedbackRepository;
+    /** 消息引用仓储，用于按反馈关联消息回溯搜索来源证据。 */
     private final ChatMessageReferenceRepository chatMessageReferenceRepository;
+    /** 消息仓储，用于补齐反馈所属消息内容和角色信息。 */
     private final ChatMessageRepository chatMessageRepository;
+    /** 会话仓储，用于补齐反馈所属会话标题和上下文信息。 */
     private final ChatConversationRepository chatConversationRepository;
 
     /**

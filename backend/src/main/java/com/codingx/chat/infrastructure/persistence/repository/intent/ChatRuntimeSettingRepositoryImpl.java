@@ -16,6 +16,7 @@ import org.springframework.stereotype.Repository;
 @RequiredArgsConstructor
 public class ChatRuntimeSettingRepositoryImpl implements ChatRuntimeSettingRepository {
 
+    /** 运行时配置 Mapper，用于读写 chat_runtime_setting 表并兼容旧结构查询。 */
     private final ChatRuntimeSettingMapper chatRuntimeSettingMapper;
 
     @Override

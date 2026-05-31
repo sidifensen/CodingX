@@ -17,7 +17,9 @@ import org.springframework.stereotype.Service;
 @Service
 public class PromptTemplateLoader {
 
+    /** Prompt 文件目录，用于测试场景从指定目录读取模板。 */
     private final Path promptDirectory;
+    /** Spring 资源加载器，用于运行期从 classpath 加载 Prompt 模板。 */
     private final ResourceLoader resourceLoader;
 
     /**

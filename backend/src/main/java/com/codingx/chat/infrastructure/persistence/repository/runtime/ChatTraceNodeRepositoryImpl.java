@@ -16,6 +16,7 @@ import org.springframework.stereotype.Repository;
 @RequiredArgsConstructor
 public class ChatTraceNodeRepositoryImpl implements ChatTraceNodeRepository {
 
+    /** Trace 节点 Mapper，用于读写 chat_trace_node 表的链路节点。 */
     private final ChatTraceNodeMapper chatTraceNodeMapper;
 
     @Override

@@ -11,6 +11,7 @@ import org.springframework.stereotype.Component;
 @Order(300)
 public class TopKTruncationPostProcessor implements SearchResultPostProcessor {
 
+    /** 运行时配置服务，用于读取搜索结果 TopK 截断数量。 */
     private final RuntimeSettingService runtimeSettingService;
 
     public TopKTruncationPostProcessor(RuntimeSettingService runtimeSettingService) {

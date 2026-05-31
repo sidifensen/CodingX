@@ -21,6 +21,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 public class ChatMessageFeedbackController {
 
+    /** 反馈应用服务，负责权限校验、投票保存和旧路径兼容处理。 */
     private final ChatReactionService chatReactionService;
 
     /**

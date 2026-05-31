@@ -27,12 +27,19 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class ChatWorkspaceQueryService {
 
+    /** 执行运行仓储，用于定位会话最新一次 run 及其绑定的上下文。 */
     private final ChatExecutionRunRepository chatExecutionRunRepository;
+    /** 执行步骤仓储，用于回放右侧工作区的过程步骤。 */
     private final ChatExecutionStepRepository chatExecutionStepRepository;
+    /** 消息引用仓储，用于回放最新 run 生成的搜索来源。 */
     private final ChatMessageReferenceRepository chatMessageReferenceRepository;
+    /** 消息产物仓储，用于回放最新 run 生成的文档或文件产物。 */
     private final ChatMessageArtifactRepository chatMessageArtifactRepository;
+    /** MCP 仓储，用于把 run 上下文中的 MCP 编码还原为展示对象。 */
     private final ChatMcpRepository chatMcpRepository;
+    /** 技能仓储，用于把 run 上下文中的技能编码还原为展示对象。 */
     private final ChatSkillRepository chatSkillRepository;
+    /** 专家仓储，用于把 run 上下文中的专家编码还原为展示对象。 */
     private final ChatExpertRepository chatExpertRepository;
 
     /**

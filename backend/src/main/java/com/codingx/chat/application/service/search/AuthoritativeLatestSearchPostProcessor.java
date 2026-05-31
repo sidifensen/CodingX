@@ -116,8 +116,10 @@ public class AuthoritativeLatestSearchPostProcessor implements SearchResultPostP
      * 从候选内容中提取可比较日期，作为没有清晰版本号时的次级新鲜度信号。
      */
     private LocalDate newestDate(SearchReferenceCandidate candidate) {
+        // 步骤 1：合并标题、URL 和摘要作为日期证据源，避免只看单个字段漏掉新鲜度信号。
         String evidence = evidenceText(candidate);
         LocalDate newest = LocalDate.MIN;
+        // 步骤 2：优先提取完整年月日，精度最高的日期直接参与比较。
         Matcher dateMatcher = ISO_DATE_PATTERN.matcher(evidence);
         while (dateMatcher.find()) {
             LocalDate parsed = parseDate(dateMatcher.group(1), dateMatcher.group(2), dateMatcher.group(3));
@@ -125,6 +127,7 @@ public class AuthoritativeLatestSearchPostProcessor implements SearchResultPostP
                 newest = parsed;
             }
         }
+        // 步骤 3：再提取年月格式，缺失日时按当月 1 日处理，作为次级新鲜度信号。
         Matcher monthMatcher = YEAR_MONTH_PATTERN.matcher(evidence);
         while (monthMatcher.find()) {
             LocalDate parsed = parseDate(monthMatcher.group(1), monthMatcher.group(2), "1");
@@ -132,6 +135,7 @@ public class AuthoritativeLatestSearchPostProcessor implements SearchResultPostP
                 newest = parsed;
             }
         }
+        // 步骤 4：最后提取年份，缺失月日时按当年 1 月 1 日处理，避免老资料完全无日期评分。
         Matcher yearMatcher = YEAR_PATTERN.matcher(evidence);
         while (yearMatcher.find()) {
             LocalDate parsed = parseDate(yearMatcher.group(1), "1", "1");

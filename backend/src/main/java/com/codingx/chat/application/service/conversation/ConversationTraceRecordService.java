@@ -18,7 +18,9 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class ConversationTraceRecordService {
 
+    /** Trace 运行仓储，用于创建、更新和关闭一次会话执行链路。 */
     private final ChatTraceRunRepository chatTraceRunRepository;
+    /** Trace 节点仓储，用于写入每个注解节点的状态、耗时和错误信息。 */
     private final ChatTraceNodeRepository chatTraceNodeRepository;
 
     /**

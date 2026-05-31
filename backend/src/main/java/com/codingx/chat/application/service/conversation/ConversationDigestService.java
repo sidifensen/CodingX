@@ -8,6 +8,7 @@ import org.springframework.stereotype.Service;
 @Service
 public class ConversationDigestService {
 
+    /** 运行时配置服务，用于读取会话摘要触发阈值；测试构造场景允许为空并回退默认值。 */
     private final RuntimeSettingService runtimeSettingService;
 
     /**

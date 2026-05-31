@@ -18,6 +18,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 public class AdminChatMcpController {
 
+    /** MCP 工具探测服务，负责读取注册工具清单并执行健康检查。 */
     private final AdminChatMcpService adminChatMcpService;
 
     /**

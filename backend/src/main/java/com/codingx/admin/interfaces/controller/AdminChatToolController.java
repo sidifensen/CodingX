@@ -25,6 +25,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 public class AdminChatToolController {
 
+    /** 工具管理服务，承接工具配置 CRUD、探测和手动调用逻辑。 */
     private final AdminChatToolService adminChatToolService;
 
     /**

@@ -16,6 +16,7 @@ import org.springframework.stereotype.Repository;
 @RequiredArgsConstructor
 public class ChatConversationSummaryRepositoryImpl implements ChatConversationSummaryRepository {
 
+    /** 会话摘要 Mapper，用于读写 chat_conversation_summary 表的摘要覆盖点。 */
     private final ChatConversationSummaryMapper chatConversationSummaryMapper;
 
     @Override

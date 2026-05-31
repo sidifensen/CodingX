@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 public class ChatTraceController {
 
+    /** Trace 查询服务，负责读取根链路和节点集合。 */
     private final ConversationTraceQueryService conversationTraceQueryService;
 
     /**

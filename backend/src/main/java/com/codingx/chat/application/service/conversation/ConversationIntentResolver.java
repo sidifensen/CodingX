@@ -25,7 +25,9 @@ import org.springframework.stereotype.Service;
 @Slf4j
 public class ConversationIntentResolver {
 
+    /** Prompt 模板加载器，用于渲染意图分类提示词。 */
     private final PromptTemplateLoader promptTemplateLoader;
+    /** AI Prompt 执行服务，用于调用模型生成意图候选和分数。 */
     private final AiPromptExecutionService aiPromptExecutionService;
 
     /**
@@ -130,6 +132,7 @@ public class ConversationIntentResolver {
      * @return 排序后的候选。
      */
     private List<ConversationIntentCandidate> parseCandidates(String raw, Map<String, ChatIntentNode> nodeByCode) {
+        // 步骤 1：先移除模型可能包裹的 Markdown 代码块，并过滤空文本或明显非 JSON 输出。
         String cleanedRaw = stripMarkdownCodeFence(raw);
         if (StrUtil.isBlank(cleanedRaw)) {
             return List.of();
@@ -137,6 +140,7 @@ public class ConversationIntentResolver {
         if (!looksLikeJson(cleanedRaw)) {
             return List.of();
         }
+        // 步骤 2：兼容数组根节点和 {results: []} 两种模型返回结构，其他结构直接视为无候选。
         JSONArray array;
         Object parsed = JSONUtil.parse(cleanedRaw);
         if (parsed instanceof JSONArray jsonArray) {
@@ -146,6 +150,7 @@ public class ConversationIntentResolver {
         } else {
             return List.of();
         }
+        // 步骤 3：逐条校验候选 id 与 score，只有能映射到启用节点的结果才参与排序。
         List<ConversationIntentCandidate> candidates = new ArrayList<>();
         for (Object entry : array) {
             if (!(entry instanceof JSONObject item)) {
@@ -167,10 +172,12 @@ public class ConversationIntentResolver {
      * 清理模型常见的 markdown 代码块包裹，复用 ragent 的“先清洗再解析 JSON”思路。
      */
     private String stripMarkdownCodeFence(String raw) {
+        // 步骤 1：空文本或非 fenced code block 直接返回，避免不必要的字符串拆分。
         String value = StrUtil.trim(raw);
         if (StrUtil.isBlank(value) || !value.startsWith("```")) {
             return value;
         }
+        // 步骤 2：确认首尾围栏都存在；结构不完整时保留原文本供后续解析失败兜底。
         String[] lines = value.split("\\R", -1);
         if (lines.length < 2 || !StrUtil.trim(lines[0]).startsWith("```")) {
             return value;
@@ -185,6 +192,7 @@ public class ConversationIntentResolver {
         if (endFenceLine <= 0) {
             return value;
         }
+        // 步骤 3：仅提取围栏内部内容，保留原始换行以兼容格式化 JSON。
         StringBuilder builder = new StringBuilder();
         for (int index = 1; index < endFenceLine; index++) {
             if (!builder.isEmpty()) {

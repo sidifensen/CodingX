@@ -79,16 +79,26 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
         "^@@ -(\\d+)(?:,\\d+)? \\+(\\d+)(?:,\\d+)? @@(.*)$"
     );
 
+    /** 工具配置仓储，用于内置工具读取管理端工具配置和启用态。 */
     private final ChatToolRepository chatToolRepository;
+    /** MCP 配置仓储，用于内置 MCP 资源工具模拟 MCP 清单读取。 */
     private final ChatMcpRepository chatMcpRepository;
+    /** 技能仓储，用于工具搜索时返回当前系统已配置技能。 */
     private final ChatSkillRepository chatSkillRepository;
 
+    /** 子代理会话缓存，用于模拟 spawn/wait/send/close 等代理生命周期操作。 */
     private final Map<String, AgentSession> agentSessions = new ConcurrentHashMap<>();
+    /** 后台命令会话缓存，用于 exec_command 与 write_stdin 之间复用进程句柄。 */
     private final Map<String, CommandSession> commandSessions = new ConcurrentHashMap<>();
+    /** 目标状态缓存，用于 get_goal/create_goal/update_goal 内置工具共享当前目标。 */
     private final Map<String, GoalState> goals = new ConcurrentHashMap<>();
+    /** 计划步骤缓存，用于 update_plan 工具保存会话级任务进度。 */
     private final Map<String, List<PlanStep>> plans = new ConcurrentHashMap<>();
+    /** 插件安装请求记录，用于返回 request_plugin_install 调用历史。 */
     private final List<Map<String, Object>> pluginInstallRequests = new CopyOnWriteArrayList<>();
+    /** 权限请求记录，用于返回 request_permissions 调用历史。 */
     private final List<Map<String, Object>> permissionRequests = new CopyOnWriteArrayList<>();
+    /** 子任务上报记录，用于 report_agent_job_result 工具保存异步结果。 */
     private final List<Map<String, Object>> jobReports = new CopyOnWriteArrayList<>();
     @Override
     public List<String> toolCodes() {
@@ -297,6 +307,7 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
      * @return 写入结果。
      */
     private ChatToolExecutionResult executeWrite(ToolInput input) {
+        // 步骤 1：解析当前工具工作目录和目标路径，路径约束统一由 resolveWorkspacePath 保证不越界。
         Path workingDirectory = resolveToolWorkingDirectory();
         Path filePath = resolveWorkspacePath(workingDirectory, extractPath(input, "path"));
         String content = input.object().getStr("content");
@@ -304,6 +315,7 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
             content = input.raw();
         }
         try {
+            // 步骤 2：写入前补齐父目录，并以 UTF-8 覆盖写入文件内容。
             Path parent = filePath.getParent();
             if (parent != null) {
                 Files.createDirectories(parent);
@@ -315,6 +327,7 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
                 StandardOpenOption.CREATE,
                 StandardOpenOption.TRUNCATE_EXISTING
             );
+            // 步骤 3：返回工作区相对路径和写入字节数，供模型和前端确认写入结果。
             Map<String, Object> metadata = workspaceFileMetadata(workingDirectory, filePath);
             metadata.put("bytes", Files.size(filePath));
             return new ChatToolExecutionResult("write", "文件已写入", metadata);
@@ -429,6 +442,7 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
      * @return 匹配路径列表。
      */
     private ChatToolExecutionResult executeFind(ToolInput input) {
+        // 步骤 1：解析 glob 模式和搜索根目录，根目录必须存在且位于当前 workspace 内。
         String pattern = StrUtil.blankToDefault(input.object().getStr("pattern"), "*");
         Path workingDirectory = resolveToolWorkingDirectory();
         Path searchRoot = resolveWorkspacePath(workingDirectory, StrUtil.blankToDefault(input.object().getStr("path"), "."));
@@ -439,6 +453,7 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
         int maxResults = normalizeIntOption(input, "maxResults", "limit", 200, 1000);
         List<String> matches = new ArrayList<>();
         try (Stream<Path> stream = Files.walk(searchRoot)) {
+            // 步骤 2：递归遍历普通文件，按文件名或相对路径匹配 glob，并限制最大返回数量。
             stream
                 .filter(path -> !path.equals(searchRoot))
                 .filter(Files::isRegularFile)
@@ -450,6 +465,7 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
         } catch (Exception exception) {
             throw new BusinessException("CHAT_TOOL_FIND_FAILED", "查找文件失败: " + exception.getMessage());
         }
+        // 步骤 3：返回匹配路径和查询元数据，空结果使用固定文案便于模型识别。
         Map<String, Object> metadata = new LinkedHashMap<>();
         metadata.put("pattern", pattern);
         metadata.put("path", toWorkspaceRelativePath(workingDirectory, searchRoot));
@@ -463,6 +479,7 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
      * @return 目录项列表。
      */
     private ChatToolExecutionResult executeLs(ToolInput input) {
+        // 步骤 1：解析待列举目录并校验目录存在，避免把文件路径当目录读取。
         Path workingDirectory = resolveToolWorkingDirectory();
         Path directory = resolveWorkspacePath(workingDirectory, StrUtil.blankToDefault(input.object().getStr("path"), "."));
         if (!Files.isDirectory(directory)) {
@@ -470,6 +487,7 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
         }
         int limit = normalizeIntOption(input, "limit", null, 500, 1000);
         try (Stream<Path> stream = Files.list(directory)) {
+            // 步骤 2：按文件名稳定排序并按 limit 截断，目录项追加斜杠提示类型。
             List<Path> paths = stream
                 .sorted((left, right) -> left.getFileName().toString().compareToIgnoreCase(right.getFileName().toString()))
                 .toList();
@@ -482,6 +500,7 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
             metadata.put("count", entries.size());
             metadata.put("totalCount", paths.size());
             metadata.put("workingDirectory", workingDirectory.toString());
+            // 步骤 3：返回目录内容和截断提示，帮助模型在大目录下继续分页查看。
             String content = entries.isEmpty() ? "(empty directory)" : String.join("\n", entries);
             if (paths.size() > entries.size()) {
                 content += "\n\n[" + limit + " entries limit reached. Use limit=" + Math.min(limit * 2, 1000) + " for more]";
@@ -496,6 +515,7 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
      * 按 patch 文本真实应用到工作目录，并返回差异摘要，供前端确认改动结果。
      */
     private ChatToolExecutionResult executeApplyPatch(ToolInput input) {
+        // 步骤 1：优先读取结构化 patch 字段，缺失时从原始文本中提取 patch 块。
         String patchText = prefer(input.object().getStr("patch"), extractPatchBlock(input.raw()));
         if (StrUtil.isBlank(patchText)) {
             throw new BusinessException("CHAT_TOOL_PATCH_REQUIRED", ErrorMessageCatalog.CHAT_TOOL_PATCH_REQUIRED);
@@ -503,12 +523,14 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
         Path workingDirectory = resolveToolWorkingDirectory();
         long startedAt = System.currentTimeMillis();
         try {
+            // 步骤 2：将 patch 应用到当前工具工作目录，内部会统一处理 Codex patch 和 git diff patch。
             applyPatchText(workingDirectory, patchText);
             CommandExecution diffExecution = runCommand(
                 "git diff -- .",
                 10000L,
                 workingDirectory
             );
+            // 步骤 3：应用成功后读取 git diff 预览，作为工具结果元数据返回给调用方核对。
             Map<String, Object> metadata = new LinkedHashMap<>();
             metadata.put("applied", Boolean.TRUE);
             metadata.put("exitCode", 0);
@@ -627,6 +649,7 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
      * 关键约束：只处理 `--- /dev/null` 且旧文件行号为 0 的新增文件 hunk，避免误改普通 diff。
      */
     private List<String> normalizeBareNewFileGitPatchLines(List<String> lines) {
+        // 步骤 1：复制原始行，逐块识别 `--- /dev/null` 表示的新增文件 diff。
         List<String> normalizedLines = new ArrayList<>(lines);
         boolean newFileBlock = false;
         int lineIndex = 0;
@@ -643,11 +666,13 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
                 continue;
             }
             Matcher matcher = GIT_HUNK_HEADER_PATTERN.matcher(line);
+            // 步骤 2：仅修复新增文件且旧文件起始行为 0 的 hunk，普通修改块保持原样。
             if (!newFileBlock || !matcher.matches() || !StrUtil.equals(matcher.group(1), "0")) {
                 lineIndex++;
                 continue;
             }
             int hunkLineIndex = lineIndex + 1;
+            // 步骤 3：给漏掉前缀的新增内容行补 `+`，避免 git apply 把内容当作上下文行。
             while (hunkLineIndex < normalizedLines.size() && !isGitPatchHunkBoundary(normalizedLines.get(hunkLineIndex))) {
                 String hunkLine = normalizedLines.get(hunkLineIndex);
                 if (!StrUtil.startWith(hunkLine, "+") && !StrUtil.startWith(hunkLine, "\\ No newline")) {
@@ -665,6 +690,7 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
      * 业务意图：模型生成 weather.html 等单文件页面时常忽略目标已存在，继续输出 `new file mode`。
      */
     private List<String> normalizeExistingFileNewFileGitPatchLines(Path workingDirectory, List<String> lines) {
+        // 步骤 1：按 diff 文件块遍历，既支持带 diff --git 的块，也支持只有 ---/+++ 的 unified diff。
         List<String> normalizedLines = new ArrayList<>(lines.size());
         int lineIndex = 0;
         while (lineIndex < lines.size()) {
@@ -679,6 +705,7 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
                 continue;
             }
             if (isStandaloneGitFileHeaderAt(lines, lineIndex)) {
+                // 步骤 2：识别独立文件头块，并交给同名文件覆盖重写逻辑处理。
                 int blockEndIndex = lineIndex + 2;
                 while (blockEndIndex < lines.size()
                     && !StrUtil.startWith(lines.get(blockEndIndex), "diff --git ")
@@ -693,6 +720,7 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
             normalizedLines.add(lines.get(lineIndex));
             lineIndex++;
         }
+        // 步骤 3：返回重写后的完整 patch 行集合，未命中同名文件覆盖时保持原样。
         return normalizedLines;
     }
 
@@ -810,6 +838,7 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
      * 提取新增文件 hunk 的新文件内容，供同名文件覆盖场景生成整文件替换补丁。
      */
     private GitPatchTextContent collectNewFileGitPatchContent(List<String> blockLines) {
+        // 步骤 1：进入新增文件 hunk 后收集新文件侧内容，同时记录文件尾换行状态。
         List<String> contentLines = new ArrayList<>();
         boolean inHunk = false;
         boolean trailingNewline = true;
@@ -824,10 +853,12 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
                 continue;
             }
             if (StrUtil.startWith(line, "@@ ")) {
+                // 步骤 2：遇到新的 hunk 头时重置上一行归属，防止无换行标记误应用到下一块。
                 lastLineBelongsToNewFile = false;
                 continue;
             }
             if (StrUtil.startWith(line, "+") || StrUtil.startWith(line, " ")) {
+                // 步骤 3：新增行和上下文行都属于新文件内容，剥离 diff 前缀后保存。
                 contentLines.add(StrUtil.subSuf(line, 1));
                 trailingNewline = true;
                 lastLineBelongsToNewFile = true;
@@ -839,6 +870,7 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
                 lastLineBelongsToNewFile = false;
             }
         }
+        // 步骤 4：返回内容行和尾换行标记，供整文件替换 patch 复原边界。
         return new GitPatchTextContent(contentLines, trailingNewline);
     }
 
@@ -904,6 +936,7 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
      * 按 hunk 实际 +/-/空格行重算行数，修复模型把 @@ 里的行数写成示意值导致 git apply 拒绝的问题。
      */
     private List<String> normalizeGitPatchHunkHeaders(List<String> lines) {
+        // 步骤 1：复制 patch 行并逐个定位 hunk header，非 hunk 行保持原样。
         List<String> normalizedLines = new ArrayList<>(lines);
         int lineIndex = 0;
         while (lineIndex < normalizedLines.size()) {
@@ -915,12 +948,14 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
             int oldLineCount = 0;
             int newLineCount = 0;
             int hunkLineIndex = lineIndex + 1;
+            // 步骤 2：统计当前 hunk 内旧侧和新侧实际行数，直到遇到下一个边界。
             while (hunkLineIndex < normalizedLines.size() && !isGitPatchHunkBoundary(normalizedLines.get(hunkLineIndex))) {
                 GitHunkLineCount lineCount = countGitPatchHunkLine(normalizedLines.get(hunkLineIndex));
                 oldLineCount += lineCount.oldLineCount();
                 newLineCount += lineCount.newLineCount();
                 hunkLineIndex++;
             }
+            // 步骤 3：用真实行数重写 hunk header，修复模型输出的示意行数。
             normalizedLines.set(
                 lineIndex,
                 "@@ -" + matcher.group(1) + "," + oldLineCount
@@ -1100,6 +1135,7 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
      * @param updateLines 变更行集合。
      */
     private void applyCodexUpdateFile(Path workingDirectory, String filePath, String moveToPath, List<String> updateLines) {
+        // 步骤 1：先解析并校验源文件必须存在且是普通文件，避免 Update File 误创建新文件。
         Path sourcePath = resolvePatchTargetPath(workingDirectory, filePath);
         if (!Files.exists(sourcePath) || !Files.isRegularFile(sourcePath)) {
             throw new BusinessException(
@@ -1108,12 +1144,14 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
             );
         }
         try {
+            // 步骤 2：读取源文件并按 Codex hunk 规则应用变更内容。
             String originalContent = normalizeLineEnding(Files.readString(sourcePath, StandardCharsets.UTF_8));
             String updatedContent = applyCodexHunks(originalContent, updateLines);
             Path targetPath = moveToPath == null ? sourcePath : resolvePatchTargetPath(workingDirectory, moveToPath);
             if (targetPath.getParent() != null) {
                 Files.createDirectories(targetPath.getParent());
             }
+            // 步骤 3：写入目标文件；如果是移动操作，写入成功后删除原文件。
             Files.writeString(targetPath, updatedContent, StandardCharsets.UTF_8);
             if (moveToPath != null && !sourcePath.equals(targetPath)) {
                 FileUtil.del(sourcePath.toFile());
@@ -1310,10 +1348,12 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
      * 按 URI 读取 MCP/Skill/Tool 资源内容。
      */
     private ChatToolExecutionResult executeReadMcpResource(ToolInput input) {
+        // 步骤 1：优先读取结构化 URI，缺失时从原始文本中提取首个资源 URI。
         String uri = prefer(input.object().getStr("uri"), findFirstUri(input.raw()));
         if (StrUtil.isBlank(uri)) {
             throw new BusinessException("CHAT_TOOL_URI_REQUIRED", ErrorMessageCatalog.CHAT_TOOL_URI_REQUIRED);
         }
+        // 步骤 2：按 URI 命名空间路由到 MCP、Skill 或 Tool 配置仓储。
         Object data;
         if (StrUtil.equalsIgnoreCase(uri, "mcp://configs")) {
             data = chatMcpRepository.findAll();
@@ -1330,6 +1370,7 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
         } else {
             throw new BusinessException("CHAT_TOOL_URI_UNSUPPORTED", ErrorMessageCatalog.CHAT_TOOL_URI_UNSUPPORTED);
         }
+        // 步骤 3：资源不存在时返回明确业务错误，存在时把原 URI 和配置对象放入元数据。
         if (data == null) {
             throw new BusinessException("CHAT_TOOL_RESOURCE_NOT_FOUND", ErrorMessageCatalog.CHAT_TOOL_RESOURCE_NOT_FOUND);
         }
@@ -1401,15 +1442,18 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
      * @return 图片执行结果。
      */
     private ChatToolExecutionResult executeLocalImageView(String pathText) {
+        // 步骤 1：把输入路径解析为本地文件，并校验必须存在且不是目录。
         Path path = Path.of(pathText);
         if (!Files.exists(path) || !Files.isRegularFile(path)) {
             throw new BusinessException("CHAT_TOOL_IMAGE_NOT_FOUND", ErrorMessageCatalog.CHAT_TOOL_IMAGE_NOT_FOUND);
         }
         try {
+            // 步骤 2：使用 ImageIO 解析图片尺寸；无法解析说明不是受支持图片格式。
             BufferedImage image = ImageIO.read(path.toFile());
             if (image == null) {
                 throw new BusinessException("CHAT_TOOL_IMAGE_INVALID", ErrorMessageCatalog.CHAT_TOOL_IMAGE_INVALID);
             }
+            // 步骤 3：返回绝对路径、尺寸、大小和扩展名，供模型判断图片资产可用性。
             return buildImageExecutionResult(
                 path.toAbsolutePath().toString(),
                 image,
@@ -1434,10 +1478,12 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
      * @return 图片执行结果。
      */
     private ChatToolExecutionResult executeRemoteImageView(String imageUrl) {
+        // 步骤 1：直接下载远程图片字节，不落盘，避免额外临时文件生命周期问题。
         try (HttpResponse response = HttpRequest.get(imageUrl)
             .header("Accept-Encoding", "identity")
             .timeout(5000)
             .execute()) {
+            // 步骤 2：先校验 HTTP 状态，再用 ImageIO 验证响应内容确实是图片。
             int status = response.getStatus();
             if (status < 200 || status >= 300) {
                 throw new BusinessException("CHAT_TOOL_IMAGE_NOT_FOUND", ErrorMessageCatalog.CHAT_TOOL_IMAGE_NOT_FOUND);
@@ -1447,6 +1493,7 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
             if (image == null) {
                 throw new BusinessException("CHAT_TOOL_IMAGE_INVALID", ErrorMessageCatalog.CHAT_TOOL_IMAGE_INVALID);
             }
+            // 步骤 3：返回 URL、尺寸和下载字节数，保持与本地图片结果结构一致。
             return buildImageExecutionResult(
                 imageUrl,
                 image,
@@ -2487,11 +2534,17 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
      */
     private static final class AgentSession {
 
+        /** 子代理会话标识，用于后续发送输入、等待和关闭操作。 */
         private final String agentId;
+        /** 子代理状态，运行中可被 wait/close/resume 更新，需跨调用可见。 */
         private volatile String status;
+        /** 子代理启动提示词，用于审计和返回会话快照。 */
         private final String prompt;
+        /** 子代理消息缓冲，记录主会话发送的输入和模拟输出。 */
         private final List<String> messages;
+        /** 会话创建时间，用于返回代理生命周期信息。 */
         private final LocalDateTime createdAt;
+        /** 会话完成时间，代理关闭或等待完成后写入，可为空。 */
         private volatile LocalDateTime completedAt;
 
         private AgentSession(

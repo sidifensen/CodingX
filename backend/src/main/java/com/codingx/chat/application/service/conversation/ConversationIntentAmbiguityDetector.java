@@ -22,9 +22,13 @@ public class ConversationIntentAmbiguityDetector {
 
     private static final double MIN_AMBIGUITY_CANDIDATE_SCORE = 0.35D;
 
+    /** 运行时配置服务，用于读取歧义引导开关、阈值、边界和最大选项数。 */
     private final RuntimeSettingService runtimeSettingService;
+    /** Prompt 模板加载器，用于渲染歧义复核提示词。 */
     private final PromptTemplateLoader promptTemplateLoader;
+    /** AI Prompt 执行服务，用于边界分数场景的 LLM 二次确认。 */
     private final AiPromptExecutionService aiPromptExecutionService;
+    /** 意图路径解析器，用于计算系统身份、完整路径和问题中的系统名命中。 */
     private final ConversationIntentPathResolver conversationIntentPathResolver;
 
     /**
@@ -265,6 +269,9 @@ public class ConversationIntentAmbiguityDetector {
 
     /**
      * 歧义候选组，携带渲染提示所需的主题、候选和节点索引。
+     * @param topicName 展示给用户的同名主题，默认来自最高分候选节点名称。
+     * @param rankedCandidates 已按分数排序并裁剪后的候选列表，至少两个才会触发澄清。
+     * @param nodeByCode 当前启用意图节点索引，用于渲染候选完整路径。
      */
     public record AmbiguityGroup(
         String topicName,

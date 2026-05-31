@@ -19,6 +19,7 @@ import org.springframework.stereotype.Repository;
 @RequiredArgsConstructor
 public class ChatMessageFeedbackRepositoryImpl implements ChatMessageFeedbackRepository {
 
+    /** 消息反馈 Mapper，用于读写 chat_message_feedback 表并支持管理端分页过滤。 */
     private final ChatMessageFeedbackMapper chatMessageFeedbackMapper;
 
     @Override

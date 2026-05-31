@@ -14,6 +14,7 @@ public class RedisChatRuntimeStateStore implements ChatRuntimeStateStore {
     private static final String ACTIVE_PREFIX = "chat:active:";
     private static final String CANCELLED_PREFIX = "chat:cancelled:";
 
+    /** Redis 字符串模板，用于读写会话活跃态和取消态标记。 */
     private final StringRedisTemplate stringRedisTemplate;
 
     /**

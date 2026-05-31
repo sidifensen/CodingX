@@ -23,7 +23,9 @@ public class ConfigCryptoService {
     private static final int GCM_TAG_BITS = 128;
     private static final int IV_LENGTH = 12;
 
+    /** 配置加密属性，用于读取敏感运行时配置的主密钥。 */
     private final ConfigCryptoProperties configCryptoProperties;
+    /** 安全随机数生成器，用于为每次 AES-GCM 加密生成独立 IV。 */
     private final SecureRandom secureRandom = new SecureRandom();
 
     /**

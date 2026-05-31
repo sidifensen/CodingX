@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 public class AdminChatRuntimeDashboardController {
 
+    /** 运行时观测服务，负责聚合队列和线程池指标快照。 */
     private final AdminChatRuntimeDashboardService adminChatRuntimeDashboardService;
 
     /**

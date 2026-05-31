@@ -19,6 +19,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 public class AdminChatTraceController {
 
+    /** Trace 管理服务，负责链路分页、详情聚合和节点层级规范化。 */
     private final AdminChatTraceService adminChatTraceService;
 
     /**

@@ -20,7 +20,9 @@ import org.springframework.stereotype.Component;
 @Primary
 public class RoutingAiChatClient implements AiChatClient {
 
+    /** 模型调度服务，用于把旧领域接口请求路由到当前可用 provider/model。 */
     private final AiModelDispatchService aiModelDispatchService;
+    /** 附件服务，用于根据历史消息解析模型请求中的附件内容。 */
     private final ChatAttachmentService chatAttachmentService;
 
     /**

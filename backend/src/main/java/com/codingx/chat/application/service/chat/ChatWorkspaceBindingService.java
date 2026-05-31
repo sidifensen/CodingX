@@ -23,8 +23,11 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class ChatWorkspaceBindingService {
 
+    /** 用户到本地仓库路径的进程内绑定缓存，用于未显式传 workspaceId 的聊天请求快速回退。 */
     private final Map<Long, Path> repositoryPathByUserId = new ConcurrentHashMap<>();
+    /** 工作空间 Mapper，用于查询用户已持久化的本地工作空间目录。 */
     private final WorkspaceMapper workspaceMapper;
+    /** 工作空间仓储实现，用于创建或复用用户默认本地工作空间。 */
     private final WorkspaceRepositoryImpl workspaceRepositoryImpl;
 
     /**

@@ -23,6 +23,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 public class AdminChatExpertController {
 
+    /** 专家管理服务，承接专家配置的分页、创建、更新和删除逻辑。 */
     private final AdminChatExpertService adminChatExpertService;
 
     /**

@@ -45,8 +45,11 @@ public class ConfigurableWebSearchChannel implements SearchChannel {
 
     private static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
 
+    /** HTTP 客户端，用于调用 Tavily、SerpAPI、Exa 和 HTML 搜索源。 */
     private final OkHttpClient okHttpClient;
+    /** 运行时配置服务，用于读取 provider 顺序、密钥、超时和结果数量。 */
     private final RuntimeSettingService runtimeSettingService;
+    /** provider 健康注册表，用于跳过熔断中的搜索源并记录成功/失败。 */
     private final SearchProviderHealthRegistry searchProviderHealthRegistry;
 
     @Override
@@ -168,6 +171,7 @@ public class ConfigurableWebSearchChannel implements SearchChannel {
      * @return 标准化候选结果。
      */
     private List<SearchReferenceCandidate> executeProvider(ProviderConfig config, SearchRequestContext context) {
+        // 步骤 1：按 provider 类型构造 HTTP 请求，并把本轮搜索超时下沉到 OkHttp 调用级别。
         Request request = buildRequest(config, context);
         try (Response response = okHttpClient
             .newBuilder()
@@ -175,15 +179,18 @@ public class ConfigurableWebSearchChannel implements SearchChannel {
             .build()
             .newCall(request)
             .execute()) {
+            // 步骤 2：先校验 HTTP 状态和响应体，失败时统一包装为搜索不可用错误。
             if (!response.isSuccessful()) {
                 throw new IllegalStateException(ErrorMessageCatalog.WEB_SEARCH_UNAVAILABLE + "：HTTP " + response.code());
             }
             if (response.body() == null) {
                 throw new IllegalStateException(ErrorMessageCatalog.WEB_SEARCH_UNAVAILABLE);
             }
+            // 步骤 3：读取响应正文并交给 provider 协议解析器转换成标准候选。
             String body = response.body().string();
             return parseResponse(config.provider(), body);
         } catch (IOException exception) {
+            // 步骤 4：网络异常按超时和普通不可用区分，便于上层日志和错误文案归类。
             if (isTimeout(exception)) {
                 throw new IllegalStateException(ErrorMessageCatalog.WEB_SEARCH_TIMEOUT, exception);
             }
@@ -382,10 +389,12 @@ public class ConfigurableWebSearchChannel implements SearchChannel {
      * @return 标准化来源候选。
      */
     private List<SearchReferenceCandidate> parseTavilyResults(JSONObject root) {
+        // 步骤 1：读取 Tavily results 数组，缺失或为空时直接返回空候选。
         JSONArray results = root.getJSONArray("results");
         if (results == null || results.isEmpty()) {
             return List.of();
         }
+        // 步骤 2：逐条提取 URL、标题、正文摘要和 provider 分数，跳过缺少核心字段的结果。
         List<SearchReferenceCandidate> candidates = new ArrayList<>();
         for (Object item : results) {
             if (!(item instanceof JSONObject result)) {
@@ -404,6 +413,7 @@ public class ConfigurableWebSearchChannel implements SearchChannel {
                 result.getDouble("score", 0D)
             ));
         }
+        // 步骤 3：返回已标准化候选，后续去重、截断由后处理链负责。
         return candidates;
     }
 
@@ -413,10 +423,12 @@ public class ConfigurableWebSearchChannel implements SearchChannel {
      * @return 标准化来源候选。
      */
     private List<SearchReferenceCandidate> parseExaResults(JSONObject root) {
+        // 步骤 1：读取 Exa results 数组，缺失或为空时直接返回空候选。
         JSONArray results = root.getJSONArray("results");
         if (results == null || results.isEmpty()) {
             return List.of();
         }
+        // 步骤 2：逐条提取 URL、标题、正文或摘要和 provider 分数，跳过缺少核心字段的结果。
         List<SearchReferenceCandidate> candidates = new ArrayList<>();
         for (Object item : results) {
             if (!(item instanceof JSONObject result)) {
@@ -435,6 +447,7 @@ public class ConfigurableWebSearchChannel implements SearchChannel {
                 result.getDouble("score", 0D)
             ));
         }
+        // 步骤 3：返回已标准化候选，保持 Exa 原始排序给后续链路使用。
         return candidates;
     }
 
@@ -475,9 +488,11 @@ public class ConfigurableWebSearchChannel implements SearchChannel {
      * @return 标准化来源候选。
      */
     private List<SearchReferenceCandidate> parseRankedJsonResults(JSONArray results, String urlField, String titleField, String snippetField) {
+        // 步骤 1：统一处理 provider JSON 结果数组为空的情况，避免调用方重复判空。
         if (results == null || results.isEmpty()) {
             return List.of();
         }
+        // 步骤 2：按原始排名递减生成兜底分数，并跳过非对象或缺少标题/URL 的条目。
         List<SearchReferenceCandidate> candidates = new ArrayList<>();
         int total = results.size();
         int index = 0;
@@ -499,6 +514,7 @@ public class ConfigurableWebSearchChannel implements SearchChannel {
                 Math.max(0.01D, (double) (total - index + 1) / total)
             ));
         }
+        // 步骤 3：返回统一字段命名后的候选，具体 provider 字段差异在本方法参数中收敛。
         return candidates;
     }
 
@@ -598,10 +614,15 @@ public class ConfigurableWebSearchChannel implements SearchChannel {
      */
     private final class SearchHtmlParser extends HTMLEditorKit.ParserCallback {
 
+        /** HTML provider 类型，用于按 Bing 或 DuckDuckGo 的 DOM 结构选择解析规则。 */
         private final HtmlProvider provider;
+        /** 已解析出的搜索候选结果列表，按页面出现顺序保留原始相关性。 */
         private final List<SearchReferenceCandidate> candidates = new ArrayList<>();
+        /** 当前正在解析的 HTML 条目，遇到结果容器结束标签时收敛为候选结果。 */
         private HtmlResult current;
+        /** 标题文本捕获开关，仅在进入结果标题链接或标题节点时开启。 */
         private boolean captureTitle;
+        /** 摘要文本捕获开关，仅在进入结果摘要节点时开启。 */
         private boolean captureSnippet;
 
         private SearchHtmlParser(HtmlProvider provider) {
@@ -667,6 +688,7 @@ public class ConfigurableWebSearchChannel implements SearchChannel {
          * @param attributes 标签属性。
          */
         private void handleTag(HTML.Tag tag, MutableAttributeSet attributes) {
+            // 步骤 1：先识别不同 provider 的结果容器边界，进入新条目前收敛上一条结果。
             String cssClass = attribute(attributes, HTML.Attribute.CLASS);
             if (provider == HtmlProvider.BING && tag == HTML.Tag.LI && containsClass(cssClass, "b_algo")) {
                 finishCurrent();
@@ -681,6 +703,7 @@ public class ConfigurableWebSearchChannel implements SearchChannel {
             if (current == null) {
                 return;
             }
+            // 步骤 2：在结果条目内捕获第一个链接作为 URL，并按 provider 规则决定标题和摘要捕获状态。
             if (tag == HTML.Tag.A) {
                 String href = attribute(attributes, HTML.Attribute.HREF);
                 if (StrUtil.isNotBlank(href) && StrUtil.isBlank(current.url)) {
@@ -691,6 +714,7 @@ public class ConfigurableWebSearchChannel implements SearchChannel {
                     : StrUtil.isNotBlank(href);
                 captureSnippet = provider == HtmlProvider.DUCKDUCKGO && containsClass(cssClass, "result__snippet");
             }
+            // 步骤 3：Bing 摘要通常位于段落标签中，单独打开摘要捕获开关。
             if (provider == HtmlProvider.BING && tag == HTML.Tag.P) {
                 captureSnippet = true;
             }
@@ -737,8 +761,11 @@ public class ConfigurableWebSearchChannel implements SearchChannel {
      * HTML 解析过程中的临时结果。
      */
     private static final class HtmlResult {
+        /** 结果标题，来自搜索结果条目中的标题链接文本。 */
         private String title;
+        /** 结果地址，来自搜索结果条目中的首个有效链接。 */
         private String url;
+        /** 结果摘要，来自搜索结果条目的描述文本，可为空字符串。 */
         private String snippet;
     }
 }

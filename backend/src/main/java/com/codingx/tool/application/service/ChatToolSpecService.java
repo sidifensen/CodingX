@@ -45,7 +45,9 @@ public class ChatToolSpecService {
         路径必须位于当前工具工作目录内；优先使用相对路径，不要访问 .. 或工作区外绝对路径。
         """.trim();
 
+    /** 工具配置仓储，用于读取数据库中启用的工具展示和排序配置。 */
     private final ChatToolRepository chatToolRepository;
+    /** 工具执行器注册表，用于确认配置工具在后端确实存在执行实现。 */
     private final ChatToolRegistry chatToolRegistry;
 
     /**

@@ -30,18 +30,30 @@ public class ConversationQueueGate {
     private static final String QUEUE_KEY = "chat:queue:waiting";
     private static final String NOTIFY_TOPIC = "chat:queue:notify";
 
+    /** 是否启用 Redis 分布式队列门控；关闭时回退进程内门控。 */
     private final boolean useRedisQueueGate;
+    /** 默认最大并发数，运行时配置不可用时作为兜底值。 */
     private final int maxConcurrent;
+    /** 获取队列许可的最长等待时间，超过后返回繁忙错误。 */
     private final long queueAcquireTimeoutMs;
+    /** 进程内队列等待轮询间隔，用于控制等待唤醒频率。 */
     private final long queuePollIntervalMs;
+    /** Redis 许可租约时长，避免异常退出后许可永久占用。 */
     private final long queueLeaseSeconds;
+    /** Redis 许可续租间隔，用于长任务执行期间维持许可有效。 */
     private final long queueLeaseRenewIntervalMs;
+    /** Redisson 客户端，用于分布式信号量和等待队列实现。 */
     private final RedissonClient redissonClient;
+    /** 运行时配置服务，用于动态覆盖最大并发和队列参数。 */
     private final RuntimeSettingService runtimeSettingService;
 
+    /** 进程内活跃会话集合，用于无 Redis 场景下限制同一时间执行数量。 */
     private final Map<Long, Boolean> activeConversations = new ConcurrentHashMap<>();
+    /** 会话到 Redis 许可 ID 的映射，用于释放和续租分布式信号量。 */
     private final Map<Long, String> permitByConversation = new ConcurrentHashMap<>();
+    /** 进程内队列等待锁，用于本地模式下唤醒等待许可的聊天请求。 */
     private final Object inMemoryMonitor = new Object();
+    /** 许可续租调度器，用于后台刷新 Redis 信号量租约。 */
     private final ScheduledExecutorService renewScheduler;
 
     /**
@@ -293,17 +305,20 @@ public class ConversationQueueGate {
      * @return 获取结果。
      */
     private QueueAcquireResult tryAcquireWithRedisson(Long conversationId, IntConsumer queuePositionConsumer) {
+        // 步骤 1：构造当前会话的排队成员和 Redisson 信号量，并确保许可数量符合当前配置。
         String requestMember = member(conversationId);
         RScoredSortedSet<String> queue = redissonClient.getScoredSortedSet(QUEUE_KEY);
         RPermitExpirableSemaphore semaphore = redissonClient.getPermitExpirableSemaphore(SEMAPHORE_NAME);
         semaphore.trySetPermits(maxConcurrent);
 
+        // 步骤 2：同一会话已有许可时直接拒绝，避免重复请求并发写同一会话。
         if (permitByConversation.containsKey(conversationId)) {
             return QueueAcquireResult.rejected(ErrorMessageCatalog.CHAT_QUEUE_BUSY);
         }
         queue.add(System.currentTimeMillis(), requestMember);
         long deadline = System.currentTimeMillis() + queueAcquireTimeoutMs;
 
+        // 步骤 3：在超时前循环检查排名；排在可执行窗口内时尝试获取可过期许可。
         while (System.currentTimeMillis() < deadline) {
             Integer rank = queue.rank(requestMember);
             if (rank != null && rank < maxConcurrent) {
@@ -321,6 +336,7 @@ public class ConversationQueueGate {
             }
             waitForSignalOrTimeout(queuePollIntervalMs);
         }
+        // 步骤 4：超时仍未获得许可时清理等待成员，并向上层返回繁忙状态。
         queue.remove(requestMember);
         return QueueAcquireResult.rejected(ErrorMessageCatalog.CHAT_QUEUE_BUSY);
     }

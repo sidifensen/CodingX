@@ -14,7 +14,9 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class ConversationQueryTermMappingService {
 
+    /** 关键词映射仓储，用于在缓存未命中时读取启用规则。 */
     private final ChatQueryTermMappingRepository chatQueryTermMappingRepository;
+    /** 关键词映射缓存管理器，用于复用启用规则并降低改写前数据库访问频率。 */
     private final ConversationQueryTermMappingCacheManager conversationQueryTermMappingCacheManager;
 
     /**
@@ -23,14 +25,17 @@ public class ConversationQueryTermMappingService {
      * @return 归一化后的文本。
      */
     public String normalize(String text) {
+        // 步骤 1：空文本不做映射，保持调用方原始空值语义。
         if (StrUtil.isBlank(text)) {
             return text;
         }
         String normalized = text;
+        // 步骤 2：从缓存读取启用映射，缓存缺失时由仓储加载，避免每次改写都查库。
         List<ChatQueryTermMapping> mappings = conversationQueryTermMappingCacheManager.getMappings(
             chatQueryTermMappingRepository::findEnabledMappings
         );
         for (ChatQueryTermMapping mapping : mappings) {
+            // 步骤 3：仅处理启用且精确匹配的规则，非法源词或目标词直接跳过。
             if (mapping.getEnabled() == null || mapping.getEnabled() != 1) {
                 continue;
             }
@@ -43,6 +48,7 @@ public class ConversationQueryTermMappingService {
             if (StrUtil.hasBlank(source, target)) {
                 continue;
             }
+            // 步骤 4：按规则顺序逐个替换，后续规则基于上一轮归一化结果继续处理。
             normalized = applyMapping(normalized, source, target);
         }
         return normalized;

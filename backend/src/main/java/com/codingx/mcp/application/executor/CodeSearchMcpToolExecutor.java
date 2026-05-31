@@ -47,8 +47,11 @@ public class CodeSearchMcpToolExecutor implements ChatMcpToolExecutor {
         "js", "ts", "tsx", "jsx", "css", "scss", "md"
     );
 
+    /** 代码检索根目录，所有命中必须位于该目录下。 */
     private final Path searchRoot;
+    /** 最大返回命中数，用于避免工具结果挤占模型上下文。 */
     private final int maxResults;
+    /** 单文件最大扫描字节数，用于跳过大文件和二进制产物。 */
     private final long maxFileSizeBytes;
 
     /**
@@ -186,6 +189,7 @@ public class CodeSearchMcpToolExecutor implements ChatMcpToolExecutor {
      * @return 关键词列表。
      */
     private List<String> parseSearchTerms(String question) {
+        // 步骤 1：先把常见中文标点归一为空格，降低自然语言表达对分词的影响。
         String normalized = StrUtil.trimToEmpty(question)
             .replace("，", " ")
             .replace("。", " ")
@@ -195,9 +199,11 @@ public class CodeSearchMcpToolExecutor implements ChatMcpToolExecutor {
             return List.of();
         }
 
+        // 步骤 2：优先提取“查找/搜索/检索”后的主体；没有命令词时使用完整问题作为候选。
         String extracted = ReUtil.get("(?:查找|搜索|检索|找到|找下|找一下)\\s+(.+)", normalized, 1);
         String searchPayload = StrUtil.blankToDefault(extracted, normalized);
 
+        // 步骤 3：按空格拆分并过滤泛化词，最多保留 3 个关键词控制检索范围和结果噪声。
         String[] tokens = searchPayload.split("\\s+");
         LinkedHashSet<String> terms = new LinkedHashSet<>();
         for (String token : tokens) {

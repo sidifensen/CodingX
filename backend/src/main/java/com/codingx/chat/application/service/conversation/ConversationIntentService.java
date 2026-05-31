@@ -21,9 +21,13 @@ import org.springframework.stereotype.Service;
 @Slf4j
 public class ConversationIntentService {
 
+    /** 意图节点仓储，用于加载启用意图树和节点示例数据。 */
     private final ChatIntentNodeRepository chatIntentNodeRepository;
+    /** 意图分类器，用于根据问题和示例生成候选意图分数。 */
     private final ConversationIntentResolver conversationIntentResolver;
+    /** 歧义引导服务，用于在跨系统同名主题时生成澄清提示。 */
     private final ConversationIntentGuidanceService conversationIntentGuidanceService;
+    /** 天气问题解析器，用于 MCP 天气意图下判断是否缺少城市参数。 */
     private final WeatherQuestionParser weatherQuestionParser;
 
     /**

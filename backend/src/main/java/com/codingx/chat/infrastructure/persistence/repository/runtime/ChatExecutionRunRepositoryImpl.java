@@ -16,6 +16,7 @@ import org.springframework.stereotype.Repository;
 @RequiredArgsConstructor
 public class ChatExecutionRunRepositoryImpl implements ChatExecutionRunRepository {
 
+    /** 执行运行 Mapper，用于读写 chat_execution_run 表的主链路状态。 */
     private final ChatExecutionRunMapper chatExecutionRunMapper;
 
     @Override

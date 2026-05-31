@@ -19,6 +19,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 public class ChatToolController {
 
+    /** 用户态工具服务，负责按当前用户上下文执行工具并返回结构化结果。 */
     private final ChatToolUserService chatToolUserService;
 
     /**

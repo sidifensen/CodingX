@@ -13,8 +13,11 @@ import org.springframework.stereotype.Component;
 @Component
 public class SearchProviderHealthRegistry {
 
+    /** 连续失败阈值，达到后 provider 进入 OPEN 熔断状态。 */
     private final int failureThreshold;
+    /** 熔断打开持续时长，到期后允许一次 HALF_OPEN 探测。 */
     private final long openDurationMs;
+    /** provider 到健康状态的并发映射，用于跨请求共享熔断窗口。 */
     private final Map<String, HealthState> healthStates = new ConcurrentHashMap<>();
 
     /**
@@ -50,6 +53,7 @@ public class SearchProviderHealthRegistry {
      * @return 是否允许当前调用。
      */
     public boolean allowCall(String provider) {
+        // 步骤 1：空 provider 无法维护健康状态，直接拒绝调用。
         if (provider == null) {
             return false;
         }
@@ -57,6 +61,7 @@ public class SearchProviderHealthRegistry {
         AtomicBoolean allowed = new AtomicBoolean(false);
         healthStates.compute(provider, (ignored, current) -> {
             HealthState state = current == null ? new HealthState() : current;
+            // 步骤 2：OPEN 状态未到期时继续拒绝；到期后转 HALF_OPEN 并允许一次探测。
             if (state.status == Status.OPEN) {
                 if (state.openUntil > now) {
                     return state;
@@ -66,6 +71,7 @@ public class SearchProviderHealthRegistry {
                 allowed.set(true);
                 return state;
             }
+            // 步骤 3：HALF_OPEN 同一时间只允许一个探测请求，避免故障源被并发打满。
             if (state.status == Status.HALF_OPEN) {
                 if (state.halfOpenInFlight) {
                     return state;
@@ -74,6 +80,7 @@ public class SearchProviderHealthRegistry {
                 allowed.set(true);
                 return state;
             }
+            // 步骤 4：CLOSED 状态正常放行，由调用方根据执行结果回写成功或失败。
             allowed.set(true);
             return state;
         });
@@ -141,9 +148,13 @@ public class SearchProviderHealthRegistry {
      * 内部健康状态对象。
      */
     private static final class HealthState {
+        /** 连续失败次数，达到阈值后进入 OPEN 状态并清零。 */
         private int consecutiveFailures;
+        /** OPEN 状态截止时间戳，当前时间超过该值后允许半开探测。 */
         private long openUntil;
+        /** 半开探测占用标记，避免同一 provider 同时放行多个试探请求。 */
         private boolean halfOpenInFlight;
+        /** 当前熔断状态，默认 CLOSED 表示 provider 可正常调用。 */
         private Status status = Status.CLOSED;
     }
 

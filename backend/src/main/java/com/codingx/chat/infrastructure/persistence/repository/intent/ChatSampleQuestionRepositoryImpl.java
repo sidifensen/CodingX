@@ -16,6 +16,7 @@ import org.springframework.stereotype.Repository;
 @RequiredArgsConstructor
 public class ChatSampleQuestionRepositoryImpl implements ChatSampleQuestionRepository {
 
+    /** 示例问题 Mapper，用于读取首页欢迎区启用问题配置。 */
     private final ChatSampleQuestionMapper chatSampleQuestionMapper;
 
     @Override

@@ -18,6 +18,7 @@ import org.springframework.stereotype.Repository;
 @RequiredArgsConstructor
 public class ChatIntentNodeRepositoryImpl implements ChatIntentNodeRepository {
 
+    /** 意图节点 Mapper，用于维护 chat_intent_node 表中的树形配置。 */
     private final ChatIntentNodeMapper chatIntentNodeMapper;
 
     @Override

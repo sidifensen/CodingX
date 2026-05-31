@@ -22,6 +22,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 public class AdminChatMcpConfigController {
 
+    /** MCP 配置服务，负责管理端 MCP 配置的增删改查。 */
     private final AdminChatMcpConfigService adminChatMcpConfigService;
 
     /**

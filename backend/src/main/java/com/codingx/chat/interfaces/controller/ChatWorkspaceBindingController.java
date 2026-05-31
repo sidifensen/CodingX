@@ -20,6 +20,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 public class ChatWorkspaceBindingController {
 
+    /** 工作空间绑定服务，负责校验本地目录并写入当前用户绑定关系。 */
     private final ChatWorkspaceBindingService chatWorkspaceBindingService;
 
     /**

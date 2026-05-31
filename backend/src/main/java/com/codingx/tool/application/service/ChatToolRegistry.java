@@ -19,7 +19,9 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 public class ChatToolRegistry {
 
+    /** 工具执行器集合，用于启动时构建工具编码到执行器的映射。 */
     private final List<ChatToolExecutor> executors;
+    /** 工具编码到执行器的索引，启动后只读，保持注册顺序便于诊断。 */
     private final Map<String, ChatToolExecutor> executorByCode = new LinkedHashMap<>();
 
     /**

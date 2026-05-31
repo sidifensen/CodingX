@@ -16,6 +16,7 @@ import org.springframework.stereotype.Repository;
 @RequiredArgsConstructor
 public class ChatExecutionStepRepositoryImpl implements ChatExecutionStepRepository {
 
+    /** 执行步骤 Mapper，用于读写 chat_execution_step 表的过程步骤。 */
     private final ChatExecutionStepMapper chatExecutionStepMapper;
 
     @Override

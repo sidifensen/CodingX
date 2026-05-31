@@ -22,6 +22,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 public class AdminChatFeedbackController {
 
+    /** 反馈管理服务，负责反馈分页、详情聚合和来源回溯。 */
     private final AdminChatFeedbackService adminChatFeedbackService;
 
     /**

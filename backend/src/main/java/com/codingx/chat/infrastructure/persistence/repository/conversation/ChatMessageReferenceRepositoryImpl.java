@@ -16,6 +16,7 @@ import org.springframework.stereotype.Repository;
 @RequiredArgsConstructor
 public class ChatMessageReferenceRepositoryImpl implements ChatMessageReferenceRepository {
 
+    /** 消息引用 Mapper，用于读写搜索来源并按 run/message 维度回放。 */
     private final ChatMessageReferenceMapper chatMessageReferenceMapper;
 
     @Override

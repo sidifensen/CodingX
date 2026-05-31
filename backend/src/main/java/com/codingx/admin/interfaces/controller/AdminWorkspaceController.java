@@ -20,6 +20,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 public class AdminWorkspaceController {
 
+    /** 工作空间管理服务，负责只读分页和空间下会话查询。 */
     private final AdminWorkspaceService adminWorkspaceService;
 
     /**

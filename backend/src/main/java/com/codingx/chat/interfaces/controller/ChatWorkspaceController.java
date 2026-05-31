@@ -23,6 +23,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 public class ChatWorkspaceController {
 
+    /** 工作区查询服务，负责回放步骤、来源、产物和当前能力绑定。 */
     private final ChatWorkspaceQueryService chatWorkspaceQueryService;
 
     @GetMapping("/{conversationId}/steps")

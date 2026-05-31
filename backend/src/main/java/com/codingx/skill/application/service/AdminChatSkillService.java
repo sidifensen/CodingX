@@ -586,13 +586,16 @@ public class AdminChatSkillService {
     }
 
     private SkillManifest parseSkillManifest(String markdown) {
+        // 步骤 1：技能包必须以 YAML front matter 开头，缺失时直接判定为非法包。
         if (StrUtil.isBlank(markdown) || !markdown.startsWith("---")) {
             throw new BusinessException("CHAT_SKILL_UPLOAD_INVALID", ErrorMessageCatalog.CHAT_SKILL_MANIFEST_YAML_REQUIRED);
         }
+        // 步骤 2：按 front matter 边界切出 YAML 块，结构不完整时拒绝上传。
         String[] segments = markdown.split("---", 3);
         if (segments.length < 3) {
             throw new BusinessException("CHAT_SKILL_UPLOAD_INVALID", ErrorMessageCatalog.CHAT_SKILL_MANIFEST_YAML_INVALID);
         }
+        // 步骤 3：逐行解析 name/description 字段，忽略空行、注释和无法识别的扩展字段。
         String yamlBlock = segments[1];
         String name = null;
         String description = null;
@@ -613,6 +616,7 @@ public class AdminChatSkillService {
                 description = value;
             }
         }
+        // 步骤 4：name 是技能唯一编码生成的基础，缺失时必须阻断上传。
         if (StrUtil.isBlank(name)) {
             throw new BusinessException("CHAT_SKILL_UPLOAD_INVALID", ErrorMessageCatalog.CHAT_SKILL_MANIFEST_NAME_REQUIRED);
         }
@@ -783,6 +787,7 @@ public class AdminChatSkillService {
     }
 
     private String normalizeArchivePath(String originalPath) {
+        // 步骤 1：统一路径分隔符并去掉 zip 内常见的 ./ 和首尾斜杠。
         String normalizedPath = StrUtil.blankToDefault(originalPath, "")
             .replace("\\", "/")
             .trim();
@@ -794,6 +799,7 @@ public class AdminChatSkillService {
         if (StrUtil.isBlank(normalizedPath)) {
             return "";
         }
+        // 步骤 2：按路径段逐一校验，禁止空段、当前目录和上级目录越界写入。
         List<String> segments = StrUtil.split(normalizedPath, '/');
         if (CollUtil.isEmpty(segments)) {
             return "";
@@ -806,6 +812,7 @@ public class AdminChatSkillService {
             }
             sanitizedSegments.add(sanitizedSegment);
         }
+        // 步骤 3：使用清洗后的路径段重新拼接，作为对象存储内的稳定相对路径。
         return StrUtil.join("/", sanitizedSegments);
     }
 
@@ -856,15 +863,41 @@ public class AdminChatSkillService {
     private record UploadedSkillFile(String path, byte[] bytes, String contentType) {
     }
 
+    /**
+     * 技能包目录项。
+     * @param path 包内归一化路径，目录以普通路径表示。
+     * @param name 当前条目展示名，来自路径最后一段。
+     * @param directory 是否为目录，true 表示仅用于树形展示。
+     * @param size 文件大小，目录或未知大小时可为空。
+     */
     public record SkillPackageEntry(String path, String name, boolean directory, Long size) {
     }
 
+    /**
+     * 技能包文件内容视图。
+     * @param path 包内归一化路径。
+     * @param content 文本内容或图片 data URL，二进制不可预览时返回提示文本。
+     * @param truncated 内容是否因展示长度限制被截断。
+     */
     public record SkillPackageFileContent(String path, String content, boolean truncated) {
     }
 
+    /**
+     * 技能包迁移失败明细。
+     * @param skillId 技能主键，可能为空表示迁移前无法定位记录。
+     * @param skillCode 技能编码，用于管理端定位失败技能。
+     * @param reason 失败原因，中文短语或异常摘要。
+     */
     public record SkillPackageMigrationFailure(Long skillId, String skillCode, String reason) {
     }
 
+    /**
+     * 技能包迁移汇总。
+     * @param total 扫描到的待处理技能总数。
+     * @param migrated 成功迁移数量。
+     * @param skipped 跳过数量，包含已迁移或无需迁移的记录。
+     * @param failures 失败明细列表，按处理顺序保留。
+     */
     public record SkillPackageMigrationSummary(int total, int migrated, int skipped, List<SkillPackageMigrationFailure> failures) {
     }
 }

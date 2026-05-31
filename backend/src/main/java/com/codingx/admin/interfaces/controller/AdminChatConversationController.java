@@ -20,6 +20,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 public class AdminChatConversationController {
 
+    /** 管理端会话服务，承接列表分页、详情聚合和状态转换业务。 */
     private final AdminChatConversationService adminChatConversationService;
 
     /**

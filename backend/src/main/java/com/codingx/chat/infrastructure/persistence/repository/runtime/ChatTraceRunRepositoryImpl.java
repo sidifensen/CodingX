@@ -19,6 +19,7 @@ import org.springframework.stereotype.Repository;
 @RequiredArgsConstructor
 public class ChatTraceRunRepositoryImpl implements ChatTraceRunRepository {
 
+    /** Trace 根记录 Mapper，用于读写 chat_trace_run 表并支持管理端分页。 */
     private final ChatTraceRunMapper chatTraceRunMapper;
 
     @Override

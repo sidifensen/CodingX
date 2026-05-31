@@ -18,8 +18,11 @@ public class ConversationRewriteService {
 
     private static final int LOG_QUESTION_PREVIEW_LENGTH = 300;
 
+    /** Prompt 模板加载器，用于读取问题改写阶段的系统提示词。 */
     private final PromptTemplateLoader promptTemplateLoader;
+    /** AI Prompt 执行服务，用于生成结构化改写结果和子问题拆分。 */
     private final AiPromptExecutionService aiPromptExecutionService;
+    /** 查询词映射服务，用于模型改写前先做业务术语归一化。 */
     private final ConversationQueryTermMappingService conversationQueryTermMappingService;
 
     /**

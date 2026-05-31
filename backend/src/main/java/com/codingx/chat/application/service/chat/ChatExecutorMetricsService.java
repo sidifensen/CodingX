@@ -12,7 +12,9 @@ import org.springframework.stereotype.Service;
 @Service
 public class ChatExecutorMetricsService {
 
+    /** 聊天流式执行线程池，用于统计 SSE 后台任务的活跃线程和排队情况。 */
     private final ExecutorService chatStreamExecutor;
+    /** 搜索执行线程池，用于统计多子问题检索任务的资源占用情况。 */
     private final ExecutorService searchExecutor;
 
     public ChatExecutorMetricsService(

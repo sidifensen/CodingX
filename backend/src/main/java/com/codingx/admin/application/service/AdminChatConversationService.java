@@ -25,8 +25,11 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class AdminChatConversationService {
 
+    /** 会话仓储，用于管理端分页、详情和会话归属状态查询。 */
     private final ChatConversationRepository chatConversationRepository;
+    /** 消息仓储，用于回放会话消息并组装管理端详情页。 */
     private final ChatMessageRepository chatMessageRepository;
+    /** 附件服务，用于把消息附件转换为管理端可展示结构。 */
     private final ChatAttachmentService chatAttachmentService;
 
     /**

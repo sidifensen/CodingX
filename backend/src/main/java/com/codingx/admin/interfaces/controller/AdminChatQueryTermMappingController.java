@@ -25,6 +25,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 public class AdminChatQueryTermMappingController {
 
+    /** 关键词映射管理服务，负责映射规则分页、创建、更新和删除。 */
     private final AdminChatQueryTermMappingService adminChatQueryTermMappingService;
 
     /**

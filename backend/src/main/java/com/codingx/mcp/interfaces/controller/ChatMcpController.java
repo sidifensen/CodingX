@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 public class ChatMcpController {
 
+    /** MCP 查询服务，负责返回当前用户可见的启用 MCP 配置。 */
     private final ChatMcpQueryService chatMcpQueryService;
 
     /**

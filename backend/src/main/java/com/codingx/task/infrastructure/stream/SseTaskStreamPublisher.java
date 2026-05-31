@@ -38,6 +38,8 @@ public class SseTaskStreamPublisher implements TaskStreamPublisher {
      */
     @Override
     public void publishLog(Long taskId, String title, String content) {
+        // 步骤 1：日志事件保留标题和正文，便于前端按时间线展示执行过程。
+        // 步骤 2：按任务标识广播给所有当前订阅者。
         taskSseRegistry.publish(taskId, "task-log", Map.of("taskId", taskId, "title", title, "content", content));
     }
 
@@ -48,6 +50,8 @@ public class SseTaskStreamPublisher implements TaskStreamPublisher {
      */
     @Override
     public void publishSummary(Long taskId, String summary) {
+        // 步骤 1：摘要事件只携带最新摘要内容，前端据此刷新任务结果区。
+        // 步骤 2：发布器不持久化摘要，最终状态由任务仓储负责保存。
         taskSseRegistry.publish(taskId, "task-summary", Map.of("taskId", taskId, "summary", summary));
     }
 
@@ -58,6 +62,8 @@ public class SseTaskStreamPublisher implements TaskStreamPublisher {
      */
     @Override
     public void publishError(Long taskId, String message) {
+        // 步骤 1：错误事件携带返回给前端的中文错误文案。
+        // 步骤 2：任务是否进入失败终态由运行时和领域对象处理，发布器只负责推送。
         taskSseRegistry.publish(taskId, "task-error", Map.of("taskId", taskId, "message", message));
     }
 
@@ -68,6 +74,8 @@ public class SseTaskStreamPublisher implements TaskStreamPublisher {
      */
     @Override
     public void publishCompleted(Long taskId, String status) {
+        // 步骤 1：完成事件携带最终状态，通知前端关闭加载态或停止重连。
+        // 步骤 2：同一任务多连接订阅时由注册表负责广播。
         taskSseRegistry.publish(taskId, "task-completed", Map.of("taskId", taskId, "status", status));
     }
 }

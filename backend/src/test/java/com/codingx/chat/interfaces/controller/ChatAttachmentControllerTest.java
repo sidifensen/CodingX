@@ -11,8 +11,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.codingx.chat.application.service.ChatAttachmentService;
-import com.codingx.chat.application.service.RuntimeSettingService;
+import com.codingx.chat.application.service.ChatLightweightViewService;
 import com.codingx.chat.domain.model.ChatAttachment;
+import com.codingx.chat.interfaces.response.ChatAttachmentResponse;
+import com.codingx.chat.interfaces.response.ChatAttachmentUploadCapabilitiesResponse;
 import com.codingx.config.GlobalExceptionHandler;
 import java.time.LocalDateTime;
 import org.junit.jupiter.api.Test;
@@ -34,7 +36,7 @@ class ChatAttachmentControllerTest {
     private ChatAttachmentService chatAttachmentService;
 
     @Mock
-    private RuntimeSettingService runtimeSettingService;
+    private ChatLightweightViewService chatLightweightViewService;
 
     @InjectMocks
     private ChatAttachmentController chatAttachmentController;
@@ -46,6 +48,20 @@ class ChatAttachmentControllerTest {
     void uploadReturnsAttachmentPayload() throws Exception {
         ChatAttachment attachment = sampleAttachment();
         when(chatAttachmentService.upload(any(), eq(2001L))).thenReturn(attachment);
+        when(chatLightweightViewService.toAttachmentResponse(attachment)).thenReturn(new ChatAttachmentResponse(
+            3001L,
+            2001L,
+            null,
+            "image",
+            "demo.png",
+            "png",
+            "image/png",
+            128L,
+            "/api/chat/attachments/3001/content",
+            null,
+            "UPLOADED",
+            LocalDateTime.of(2026, 5, 19, 15, 0, 0)
+        ));
 
         mockMvc().perform(multipart("/api/chat/attachments/upload")
                 .file(new MockMultipartFile("file", "demo.png", "image/png", new byte[] {1, 2, 3}))
@@ -55,6 +71,8 @@ class ChatAttachmentControllerTest {
             .andExpect(jsonPath("$.data.id").value("3001"))
             .andExpect(jsonPath("$.data.previewUrl").value("/api/chat/attachments/3001/content"))
             .andExpect(jsonPath("$.data.attachmentType").value("image"));
+
+        verify(chatLightweightViewService).toAttachmentResponse(attachment);
     }
 
     /**
@@ -79,12 +97,16 @@ class ChatAttachmentControllerTest {
      */
     @Test
     void capabilitiesReturnsTenMbLimit() throws Exception {
-        when(runtimeSettingService.chatAttachmentMaxFileSizeBytes()).thenReturn(10L * 1024L * 1024L);
+        when(chatLightweightViewService.toUploadCapabilitiesResponse()).thenReturn(
+            new ChatAttachmentUploadCapabilitiesResponse(10L * 1024L * 1024L, 9L)
+        );
         mockMvc().perform(get("/api/chat/attachments/upload-capabilities"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.success").value(true))
             .andExpect(jsonPath("$.data.maxFileSizeBytes").value(10L * 1024L * 1024L))
             .andExpect(jsonPath("$.data.maxFileCount").value(9));
+
+        verify(chatLightweightViewService).toUploadCapabilitiesResponse();
     }
 
     private MockMvc mockMvc() {

@@ -13,6 +13,9 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class ChatSampleQuestionService {
 
+    /**
+     * 示例问题仓储，用于按启用状态和排序号读取欢迎区问题。
+     */
     private final ChatSampleQuestionRepository chatSampleQuestionRepository;
 
     /**
@@ -20,6 +23,7 @@ public class ChatSampleQuestionService {
      * @return 示例问题列表。
      */
     public List<ChatSampleQuestion> listEnabledQuestions() {
+        // 步骤 1：仓储层统一过滤 enabled/deleted 状态并按 sortNo 排序。
         return chatSampleQuestionRepository.findEnabledQuestions();
     }
 }

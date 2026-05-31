@@ -7,8 +7,8 @@ package com.codingx.chat.interfaces.response;
  * @param category 分类标签。
  */
 public record ChatSampleQuestionResponse(
-    Long id,
-    String questionText,
-    String category
+    Long id, // 示例问题主键，前端用于列表 key。
+    String questionText, // 欢迎区展示的问题正文。
+    String category // 示例问题分类标签，可用于前端分组展示。
 ) {
 }

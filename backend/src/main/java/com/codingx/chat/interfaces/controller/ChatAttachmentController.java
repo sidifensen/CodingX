@@ -1,11 +1,11 @@
 package com.codingx.chat.interfaces.controller;
 
 import com.codingx.chat.application.service.ChatAttachmentService;
-import com.codingx.chat.application.service.RuntimeSettingService;
+import com.codingx.chat.application.service.ChatLightweightViewService;
 import com.codingx.chat.domain.model.ChatAttachment;
 import com.codingx.chat.interfaces.response.ChatAttachmentResponse;
+import com.codingx.chat.interfaces.response.ChatAttachmentUploadCapabilitiesResponse;
 import com.codingx.common.model.ApiResponse;
-import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -26,8 +26,15 @@ import org.springframework.web.multipart.MultipartFile;
 @RequiredArgsConstructor
 public class ChatAttachmentController {
 
+    /**
+     * 附件应用服务，负责上传校验、对象存储写入、权限校验和文件下载。
+     */
     private final ChatAttachmentService chatAttachmentService;
-    private final RuntimeSettingService runtimeSettingService;
+
+    /**
+     * 轻量视图服务，负责附件元数据和上传能力响应投影。
+     */
+    private final ChatLightweightViewService chatLightweightViewService;
 
     /**
      * 上传单个附件，返回附件元数据。
@@ -40,8 +47,10 @@ public class ChatAttachmentController {
         @RequestParam("file") MultipartFile file,
         @RequestParam(value = "conversationId", required = false) Long conversationId
     ) {
+        // 步骤 1：上传、大小校验、类型校验和对象存储写入统一交给应用服务。
         ChatAttachment attachment = chatAttachmentService.upload(file, conversationId);
-        return ApiResponse.success(toResponse(attachment));
+        // 步骤 2：附件响应字段由视图服务生成，Controller 不再拆解领域对象。
+        return ApiResponse.success(chatLightweightViewService.toAttachmentResponse(attachment));
     }
 
     /**
@@ -51,8 +60,11 @@ public class ChatAttachmentController {
      */
     @GetMapping("/{attachmentId}/content")
     public ResponseEntity<byte[]> content(@PathVariable Long attachmentId) {
+        // 步骤 1：应用服务读取附件并校验当前登录用户拥有访问权限。
         ChatAttachment attachment = chatAttachmentService.requireOwnedAttachment(attachmentId);
+        // 步骤 2：应用服务从对象存储下载二进制内容，异常统一转换为业务错误。
         byte[] bytes = chatAttachmentService.downloadContent(attachment);
+        // 步骤 3：Controller 只做 HTTP 协议适配，补齐 Content-Type 和 inline 文件名头。
         String mimeType = attachment.getMimeType() == null ? MediaType.APPLICATION_OCTET_STREAM_VALUE : attachment.getMimeType();
         String safeFileName = attachment.getFileName() == null ? "attachment.bin" : attachment.getFileName();
         return ResponseEntity.ok()
@@ -66,28 +78,8 @@ public class ChatAttachmentController {
      * @return 允许类型描述。
      */
     @GetMapping("/upload-capabilities")
-    public ApiResponse<Map<String, Object>> capabilities() {
-        long maxFileSizeBytes = runtimeSettingService.chatAttachmentMaxFileSizeBytes();
-        return ApiResponse.success(Map.of(
-            "maxFileSizeBytes", maxFileSizeBytes,
-            "maxFileCount", 9L
-        ));
-    }
-
-    private ChatAttachmentResponse toResponse(ChatAttachment attachment) {
-        return new ChatAttachmentResponse(
-            attachment.getId(),
-            attachment.getConversationId(),
-            attachment.getMessageId(),
-            attachment.getAttachmentType(),
-            attachment.getFileName(),
-            attachment.getFileExt(),
-            attachment.getMimeType(),
-            attachment.getFileSize(),
-            attachment.getPreviewUrl(),
-            attachment.getContentSummary(),
-            attachment.getStatus(),
-            attachment.getCreatedAt()
-        );
+    public ApiResponse<ChatAttachmentUploadCapabilitiesResponse> capabilities() {
+        // 步骤 1：上传能力由视图服务读取运行时配置并生成响应，Controller 不直接拼装 Map。
+        return ApiResponse.success(chatLightweightViewService.toUploadCapabilitiesResponse());
     }
 }

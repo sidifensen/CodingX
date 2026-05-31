@@ -12,12 +12,12 @@ import lombok.Data;
 @Data
 @TableName("chat_sample_question")
 public class ChatSampleQuestionDO {
-    @TableId("id") private Long id;
-    @TableField("question_text") private String questionText;
-    @TableField("category") private String category;
-    @TableField("enabled") private Integer enabled;
-    @TableField("sort_no") private Integer sortNo;
-    @TableField("created_at") private LocalDateTime createdAt;
-    @TableField("updated_at") private LocalDateTime updatedAt;
-    @TableField("deleted") private Integer deleted;
+    @TableId("id") private Long id; // 示例问题主键。
+    @TableField("question_text") private String questionText; // 欢迎区展示的问题文案。
+    @TableField("category") private String category; // 问题分类标签。
+    @TableField("enabled") private Integer enabled; // 启用状态，1 表示展示。
+    @TableField("sort_no") private Integer sortNo; // 排序号，数值越小越靠前。
+    @TableField("created_at") private LocalDateTime createdAt; // 创建时间。
+    @TableField("updated_at") private LocalDateTime updatedAt; // 最近更新时间。
+    @TableField("deleted") private Integer deleted; // 逻辑删除标记，1 表示已删除。
 }

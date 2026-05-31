@@ -17,6 +17,9 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 public class ChatExpertController {
 
+    /**
+     * 专家查询服务，负责读取用户侧可选专家列表。
+     */
     private final ChatExpertQueryService chatExpertQueryService;
 
     /**
@@ -25,6 +28,7 @@ public class ChatExpertController {
      */
     @GetMapping
     public ApiResponse<List<ChatExpert>> listEnabledExperts() {
+        // 步骤 1：Controller 只做 HTTP 响应封装，专家筛选和排序交给查询服务。
         return ApiResponse.success(chatExpertQueryService.listEnabledExperts());
     }
 }

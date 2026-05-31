@@ -24,11 +24,20 @@ import org.springframework.stereotype.Repository;
 @RequiredArgsConstructor
 public class ChatExpertRepositoryImpl implements ChatExpertRepository {
 
+    /**
+     * 专家配置 Mapper，负责访问 expert 表。
+     */
     private final ChatExpertMapper chatExpertMapper;
+
+    /**
+     * 任务专家绑定 Mapper，负责访问 task_expert 兼容绑定表。
+     */
     private final TaskExpertMapper taskExpertMapper;
 
     @Override
     public List<ChatExpert> findAll() {
+        // 步骤 1：按基础列表条件读取未删除专家配置。
+        // 步骤 2：转换为领域对象，避免应用层直接依赖 MyBatis 数据对象。
         return chatExpertMapper.selectList(baseListWrapper())
             .stream()
             .map(this::toDomain)
@@ -37,10 +46,12 @@ public class ChatExpertRepositoryImpl implements ChatExpertRepository {
 
     @Override
     public PageResult<ChatExpert> pageQuery(int current, int size) {
+        // 步骤 1：页码和分页大小做最小边界保护，避免传入 0 或负数。
         Page<ChatExpertDO> page = chatExpertMapper.selectPage(
             new Page<>(Math.max(1, current), Math.max(1, size)),
             baseListWrapper()
         );
+        // 步骤 2：分页记录逐条转换为领域对象，分页元数据保持 MyBatis 查询结果。
         return PageResult.<ChatExpert>builder()
             .records(page.getRecords().stream().map(this::toDomain).toList())
             .total(page.getTotal())
@@ -60,9 +71,11 @@ public class ChatExpertRepositoryImpl implements ChatExpertRepository {
 
     @Override
     public ChatExpert findById(Long id) {
+        // 步骤 1：空主键直接返回 null，交由应用服务转换为业务异常。
         if (id == null) {
             return null;
         }
+        // 步骤 2：只查询未删除专家，避免管理端误编辑逻辑删除数据。
         ChatExpertDO dataObject = chatExpertMapper.selectOne(new LambdaQueryWrapper<ChatExpertDO>()
             .eq(ChatExpertDO::getId, id)
             .eq(ChatExpertDO::getDeleted, 0)
@@ -96,7 +109,9 @@ public class ChatExpertRepositoryImpl implements ChatExpertRepository {
 
     @Override
     public void save(ChatExpert expert) {
+        // 步骤 1：领域对象先映射为数据对象，保持持久化细节隔离。
         ChatExpertDO dataObject = toDataObject(expert);
+        // 步骤 2：数据库不存在时插入，已存在时按主键更新。
         if (chatExpertMapper.selectById(expert.getId()) == null) {
             chatExpertMapper.insert(dataObject);
             return;
@@ -117,9 +132,11 @@ public class ChatExpertRepositoryImpl implements ChatExpertRepository {
 
     @Override
     public List<ChatExpert> findByTaskId(Long taskId) {
+        // 步骤 1：空任务主键没有可查询上下文，直接返回空列表。
         if (taskId == null) {
             return List.of();
         }
+        // 步骤 2：先读取任务绑定的专家编码，过滤空编码以兼容历史脏数据。
         List<String> expertCodes = taskExpertMapper.selectList(new LambdaQueryWrapper<TaskExpertDO>()
                 .eq(TaskExpertDO::getTaskId, taskId)
                 .orderByAsc(TaskExpertDO::getId))
@@ -130,6 +147,7 @@ public class ChatExpertRepositoryImpl implements ChatExpertRepository {
         if (expertCodes.isEmpty()) {
             return List.of();
         }
+        // 步骤 3：按专家编码读取未删除专家配置，并按专家排序规则输出。
         return chatExpertMapper.selectList(new LambdaQueryWrapper<ChatExpertDO>()
                 .in(ChatExpertDO::getExpertCode, expertCodes)
                 .eq(ChatExpertDO::getDeleted, 0)
@@ -142,14 +160,18 @@ public class ChatExpertRepositoryImpl implements ChatExpertRepository {
 
     @Override
     public void bindTaskExpert(Long taskId, String expertCode) {
+        // 步骤 1：空任务主键无法绑定专家，直接忽略兼容旧调用。
         if (taskId == null) {
             return;
         }
+        // 步骤 2：任务只允许绑定一个专家，写入前先清理旧绑定。
         taskExpertMapper.delete(new LambdaQueryWrapper<TaskExpertDO>()
             .eq(TaskExpertDO::getTaskId, taskId));
+        // 步骤 3：空专家编码表示取消绑定，不再插入新记录。
         if (StrUtil.isBlank(expertCode)) {
             return;
         }
+        // 步骤 4：写入新的任务专家绑定关系。
         TaskExpertDO dataObject = new TaskExpertDO();
         dataObject.setId(IdUtil.getSnowflakeNextId());
         dataObject.setTaskId(taskId);

@@ -19,15 +19,29 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 public class AdminChatSettingsController {
 
+    /**
+     * 管理端运行时配置服务，负责配置校验、加密、批量保存和缓存刷新。
+     */
     private final AdminChatSettingsService adminChatSettingsService;
 
+    /**
+     * 查询所有聊天运行时配置。
+     * @return 管理端可展示的配置列表。
+     */
     @GetMapping
     public ApiResponse<List<ChatRuntimeSetting>> listSettings() {
+        // 步骤 1：配置读取和敏感项脱敏统一交给服务层处理。
         return ApiResponse.success(adminChatSettingsService.listAllSettings());
     }
 
+    /**
+     * 保存单条聊天运行时配置。
+     * @param setting 待保存配置。
+     * @return 保存后的管理端展示配置。
+     */
     @PostMapping
     public ApiResponse<ChatRuntimeSetting> saveSetting(@RequestBody ChatRuntimeSetting setting) {
+        // 步骤 1：服务层负责参数校验、敏感配置加密和运行时缓存刷新。
         return ApiResponse.success(adminChatSettingsService.save(setting));
     }
 
@@ -38,11 +52,7 @@ public class AdminChatSettingsController {
      */
     @PostMapping("/batch")
     public ApiResponse<List<ChatRuntimeSetting>> saveSettings(@RequestBody List<ChatRuntimeSetting> settings) {
-        if (settings != null) {
-            for (ChatRuntimeSetting setting : settings) {
-                adminChatSettingsService.save(setting);
-            }
-        }
-        return ApiResponse.success(adminChatSettingsService.listAllSettings());
+        // 步骤 1：批量循环、空集合处理和最新列表读取全部下沉到服务层。
+        return ApiResponse.success(adminChatSettingsService.saveAll(settings));
     }
 }

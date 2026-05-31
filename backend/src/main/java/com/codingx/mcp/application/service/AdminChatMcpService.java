@@ -27,7 +27,14 @@ public class AdminChatMcpService {
 
     private static final DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
+    /**
+     * MCP 工具注册表，用于确认配置项是否已经接入真实执行器。
+     */
     private final ChatMcpToolRegistry chatMcpToolRegistry;
+
+    /**
+     * MCP 配置仓储，用于读取管理端维护的配置态。
+     */
     private final ChatMcpRepository chatMcpRepository;
 
     /**
@@ -36,8 +43,10 @@ public class AdminChatMcpService {
      * @return MCP 工具视图列表。
      */
     public List<McpToolHealthView> listTools() {
+        // 步骤 1：先把运行期执行器按 toolId 建立索引，后续逐条配置可快速判断接入状态。
         Map<String, ChatMcpToolExecutor> executorMap = chatMcpToolRegistry.all().stream()
             .collect(Collectors.toMap(ChatMcpToolExecutor::toolId, Function.identity(), (left, right) -> left));
+        // 步骤 2：按管理端配置排序返回健康视图，未接入执行器的配置也要展示失败状态。
         return chatMcpRepository.findAll().stream()
             .sorted(Comparator.comparing(ChatMcp::getSortNo, Comparator.nullsLast(Comparator.naturalOrder()))
                 .thenComparing(ChatMcp::getMcpCode, Comparator.nullsLast(String::compareToIgnoreCase)))
@@ -52,17 +61,21 @@ public class AdminChatMcpService {
      * @return 探测结果。
      */
     public McpToolHealthView pingTool(String toolId) {
+        // 步骤 1：记录探测开始时间，用于最终健康视图展示耗时。
         long startedAt = System.currentTimeMillis();
+        // 步骤 2：探测必须基于未删除配置，避免直接探测历史配置或脏 ID。
         ChatMcp configuredMcp = chatMcpRepository.findByMcpCode(toolId);
         if (configuredMcp == null || configuredMcp.getDeleted() != null && configuredMcp.getDeleted() == 1) {
             throw new BusinessException("CHAT_MCP_NOT_FOUND", ErrorMessageCatalog.CHAT_MCP_CONFIG_NOT_FOUND);
         }
+        // 步骤 3：注册表没有执行器时会抛出未接入异常，管理端据此定位配置问题。
         ChatMcpToolExecutor executor = chatMcpToolRegistry.require(toolId);
         String message;
         String status;
         String statusLabel;
         boolean ok;
         try {
+            // 步骤 4：使用固定样例问题探测真实执行器，空响应视为不可用。
             String sampleQuestion = sampleQuestionFor(toolId);
             ChatMcpToolResult result = executor.execute(sampleQuestion);
             if (result == null || result.content() == null || result.content().isBlank()) {
@@ -73,6 +86,7 @@ public class AdminChatMcpService {
             statusLabel = "可用";
             message = toolId + " 可用";
         } catch (Exception exception) {
+            // 步骤 5：执行异常不会继续向外抛出，而是转换为失败健康视图供管理端展示。
             ok = false;
             status = "failed";
             statusLabel = "异常";
@@ -81,6 +95,7 @@ public class AdminChatMcpService {
                 : exception.getMessage();
         }
 
+        // 步骤 6：把探测结果合并回配置视图，保留配置态字段和最新探测状态。
         long durationMs = Math.max(1, System.currentTimeMillis() - startedAt);
         return toConfiguredView(configuredMcp, executor).toBuilder()
             .ok(ok)
@@ -100,6 +115,7 @@ public class AdminChatMcpService {
      * @return 视图对象。
      */
     private McpToolHealthView toConfiguredView(ChatMcp configuredMcp, ChatMcpToolExecutor executor) {
+        // 步骤 1：同时考虑配置启用状态和执行器接入状态，避免启用但无执行器的能力被误认为可用。
         String toolId = configuredMcp.getMcpCode();
         boolean enabled = configuredMcp.getEnabled() != null && configuredMcp.getEnabled() == 1;
         boolean hasExecutor = executor != null;
@@ -119,6 +135,7 @@ public class AdminChatMcpService {
             statusLabel = "未接入";
             message = toolId + " 缺少执行器";
         }
+        // 步骤 2：返回管理端可直接展示的健康视图，默认耗时为 0，真实探测会覆盖。
         return McpToolHealthView.builder()
             .toolId(toolId)
             .displayName(configuredMcp.getDisplayName())
@@ -167,18 +184,18 @@ public class AdminChatMcpService {
      */
     @Builder(toBuilder = true)
     public record McpToolHealthView(
-        String toolId,
-        String displayName,
-        String category,
-        String source,
-        String status,
-        String statusLabel,
-        boolean ok,
-        String message,
-        String description,
-        String sampleQuestion,
-        String checkedAt,
-        Long durationMs
+        String toolId, // MCP 工具标识，来自配置表 mcp_code。
+        String displayName, // MCP 展示名称。
+        String category, // MCP 分类，用于管理端筛选和用户侧分组。
+        String source, // MCP 来源类型。
+        String status, // 健康状态编码，例如 healthy、degraded、failed。
+        String statusLabel, // 健康状态中文文案。
+        boolean ok, // 是否可用，只有启用且执行器探测成功时为 true。
+        String message, // 管理端展示的状态说明或失败原因。
+        String description, // MCP 能力说明。
+        String sampleQuestion, // 健康探测使用的样例问题。
+        String checkedAt, // 最近探测时间，格式为 yyyy-MM-dd HH:mm:ss。
+        Long durationMs // 最近探测耗时，单位毫秒。
     ) {
     }
 }

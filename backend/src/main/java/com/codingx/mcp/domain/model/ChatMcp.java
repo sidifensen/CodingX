@@ -16,20 +16,64 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
 public class ChatMcp {
 
+    /**
+     * MCP 配置主键。
+     */
     private Long id;
+
+    /**
+     * MCP 编码，聊天运行时和执行器注册表通过该编码绑定能力。
+     */
     private String mcpCode;
+
+    /**
+     * MCP 展示名称。
+     */
     private String displayName;
+
+    /**
+     * MCP 能力说明，供管理端和用户侧展示。
+     */
     private String description;
+
+    /**
+     * MCP 分类，用于管理端筛选和用户侧分组展示。
+     */
     private String category;
+
+    /**
+     * MCP 来源类型，区分内置能力和外部扩展。
+     */
     private String sourceType;
+
+    /**
+     * 启用状态，1 表示允许聊天运行时使用。
+     */
     private Integer enabled;
+
     /**
      * 用户侧运行时可用状态（非持久化字段）。
      * true 表示当前服务实例存在对应执行器，可被用户开启。
      */
     private Boolean available;
+
+    /**
+     * 排序号，数值越小越靠前。
+     */
     private Integer sortNo;
+
+    /**
+     * 配置创建时间。
+     */
     private LocalDateTime createdAt;
+
+    /**
+     * 配置最近更新时间。
+     */
     private LocalDateTime updatedAt;
+
+    /**
+     * 逻辑删除标记，1 表示已删除。
+     */
     private Integer deleted;
 }

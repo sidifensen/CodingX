@@ -19,10 +19,15 @@ import org.springframework.stereotype.Repository;
 @RequiredArgsConstructor
 public class ChatMcpRepositoryImpl implements ChatMcpRepository {
 
+    /**
+     * MCP MyBatis Mapper，负责访问 mcp 配置表。
+     */
     private final ChatMcpMapper chatMcpMapper;
 
     @Override
     public List<ChatMcp> findAll() {
+        // 步骤 1：复用基础列表条件，只读取未删除配置。
+        // 步骤 2：逐条转换为领域对象，available 运行态字段由查询服务补齐。
         return chatMcpMapper.selectList(baseListWrapper())
             .stream()
             .map(this::toDomain)
@@ -39,9 +44,11 @@ public class ChatMcpRepositoryImpl implements ChatMcpRepository {
 
     @Override
     public ChatMcp findById(Long id) {
+        // 步骤 1：空主键直接返回 null，交由应用服务转换为业务异常。
         if (id == null) {
             return null;
         }
+        // 步骤 2：按主键和未删除条件查单条配置，避免读到逻辑删除数据。
         ChatMcpDO dataObject = chatMcpMapper.selectOne(new LambdaQueryWrapper<ChatMcpDO>()
             .eq(ChatMcpDO::getId, id)
             .eq(ChatMcpDO::getDeleted, 0)
@@ -75,7 +82,9 @@ public class ChatMcpRepositoryImpl implements ChatMcpRepository {
 
     @Override
     public void save(ChatMcp chatMcp) {
+        // 步骤 1：领域对象先映射为数据对象，保持表字段与领域字段隔离。
         ChatMcpDO dataObject = toDataObject(chatMcp);
+        // 步骤 2：数据库不存在时插入，已存在时按主键覆盖更新。
         if (chatMcpMapper.selectById(chatMcp.getId()) == null) {
             chatMcpMapper.insert(dataObject);
             return;

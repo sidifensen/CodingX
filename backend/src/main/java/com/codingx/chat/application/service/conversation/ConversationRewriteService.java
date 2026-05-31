@@ -41,14 +41,17 @@ public class ConversationRewriteService {
      */
     @ConversationTraceNode(name = "rewrite-with-split", type = "REWRITE")
     public ConversationRewriteResult rewriteResult(List<String> history, String question) {
+        // 步骤 1：空问题直接返回原值，避免把无效输入送入模型改写。
         if (StrUtil.isBlank(question)) {
             return new ConversationRewriteResult(question, false, List.of());
         }
+        // 步骤 2：先做查询词映射归一化；明显无需改写的问题走快速旁路，降低主链路延迟。
         String normalizedQuestion = conversationQueryTermMappingService.normalize(question);
         if (shouldBypassPromptRewrite(history, normalizedQuestion)) {
             logRewriteResult(question, normalizedQuestion);
             return new ConversationRewriteResult(normalizedQuestion, false, List.of(normalizedQuestion));
         }
+        // 步骤 3：组装 Prompt 并解析模型 JSON 结果，解析失败时回退归一化问题。
         String prompt = promptTemplateLoader.load("rewrite");
         String userPrompt = buildRewriteInput(history, normalizedQuestion);
         try {
@@ -58,6 +61,7 @@ public class ConversationRewriteService {
                 logRewriteFallback(question, normalizedQuestion, "模型未返回 JSON 改写结果");
                 return new ConversationRewriteResult(normalizedQuestion, false, List.of(normalizedQuestion));
             }
+            // 步骤 4：规范化 rewrite、should_split 和 sub_questions，保证下游总能拿到至少一个问题。
             String rewrite = StrUtil.trim(root.getStr("rewrite"));
             boolean shouldSplit = Boolean.TRUE.equals(root.getBool("should_split"));
             List<String> subQuestions = root.getJSONArray("sub_questions") == null
@@ -73,6 +77,7 @@ public class ConversationRewriteService {
             logRewriteResult(question, resolvedRewrite);
             return new ConversationRewriteResult(resolvedRewrite, resolvedShouldSplit, resolvedSubQuestions);
         } catch (Exception exception) {
+            // 步骤 5：模型异常或 JSON 字段异常统一降级，保留堆栈供后端排查。
             logRewriteFallback(question, normalizedQuestion, "改写结果解析失败", exception);
             return new ConversationRewriteResult(normalizedQuestion, false, List.of(normalizedQuestion));
         }
@@ -153,6 +158,7 @@ public class ConversationRewriteService {
      * 清理 markdown fenced code block，保持和意图解析链路一致的 JSON 读取入口。
      */
     private String stripMarkdownCodeFence(String raw) {
+        // 步骤 1：仅处理看起来以 fenced code block 开头的文本，普通 JSON 或普通文本原样返回。
         String value = StrUtil.trim(raw);
         if (StrUtil.isBlank(value) || !value.startsWith("```")) {
             return value;
@@ -161,6 +167,7 @@ public class ConversationRewriteService {
         if (lines.length < 2 || !StrUtil.trim(lines[0]).startsWith("```")) {
             return value;
         }
+        // 步骤 2：从尾部查找闭合 fence；找不到闭合标记时不做截断，避免误删模型输出。
         int endFenceLine = -1;
         for (int index = lines.length - 1; index > 0; index--) {
             if (StrUtil.trim(lines[index]).startsWith("```")) {
@@ -171,6 +178,7 @@ public class ConversationRewriteService {
         if (endFenceLine <= 0) {
             return value;
         }
+        // 步骤 3：只拼接 fence 内部内容，供 Hutool JSON 解析器读取。
         StringBuilder builder = new StringBuilder();
         for (int index = 1; index < endFenceLine; index++) {
             if (!builder.isEmpty()) {

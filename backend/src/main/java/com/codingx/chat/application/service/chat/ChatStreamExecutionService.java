@@ -141,6 +141,7 @@ public class ChatStreamExecutionService {
      * @param userId 当前用户标识。
      */
     public void dispatch(Long taskId, SendChatMessageCommand command, Long userId) {
+        // 步骤 1：本地临时运行不创建任务、run 和 Trace，直接派发内存级执行链路。
         if (command.localOnly()) {
             log.info(
                 "聊天派发: runId={}, 会话={}, 模式=本地, 深度思考={}, MCP数={}, 技能数={}, 专家={}",
@@ -154,6 +155,7 @@ public class ChatStreamExecutionService {
             dispatchLocalOnly(taskId, command, userId);
             return;
         }
+        // 步骤 2：云端运行先落库任务和执行 run，保证前端 meta、后台任务和执行时间线使用同一个主键。
         Long runId = taskId;
         LocalDateTime now = LocalDateTime.now();
         log.info(
@@ -178,7 +180,7 @@ public class ChatStreamExecutionService {
             .createdAt(now)
             .updatedAt(now)
             .build());
-        // 步骤：MCP 与技能选择由应用服务写入 chat_execution_step，派发层只保留专家旧表兼容。
+        // 步骤 3：MCP 与技能选择由应用服务写入 chat_execution_step，派发层只保留专家旧表兼容。
         chatExpertRepository.bindTaskExpert(runId, command.expertCode());
         com.codingx.chat.domain.model.ChatTraceRun traceRun = conversationTraceRecordService.startTrace("chat-entry", command.conversationId(), userId);
         AtomicReference<Future<?>> futureRef = new AtomicReference<>();
@@ -191,6 +193,7 @@ public class ChatStreamExecutionService {
         Future<?> future = executor.submit(() -> {
             Path tempSkillRoot = null;
             try {
+                // 步骤 4：工作线程绑定 run、Trace、工具目录和 skill 目录后，进入聊天应用服务主链路。
                 ChatExecutionContext.start(runId);
                 ConversationTraceContext.bind(traceRun);
                 bindToolWorkingDirectory(command, userId);
@@ -200,20 +203,24 @@ public class ChatStreamExecutionService {
                 log.info("聊天执行结束: runId={}, 会话={}, 状态=SUCCESS", runId, command.conversationId());
                 markTaskFinished(task, command.conversationId(), null);
             } catch (ConflictException exception) {
+                // 步骤 5：队列或运行门控拒绝时记录 REJECTED，前端按业务冲突展示而不是系统错误。
                 markRunRejected(runId, command.conversationId(), exception.getMessage());
                 markTaskFinished(task, command.conversationId(), exception);
                 throw exception;
             } catch (IllegalStateException exception) {
+                // 步骤 6：已知运行态异常写入失败状态并通过 SSE 告知前端，保留原异常继续向线程池传播。
                 markRunFailed(runId, command.conversationId(), exception);
                 markTaskFinished(task, command.conversationId(), exception);
                 chatStreamPublisher.publishError(command.conversationId(), exception.getMessage());
                 throw exception;
             } catch (Throwable throwable) {
+                // 步骤 7：未知异常统一写入失败终态，避免任务和 run 长时间停留在 RUNNING。
                 markRunFailed(runId, command.conversationId(), throwable);
                 markTaskFinished(task, command.conversationId(), throwable);
                 chatStreamPublisher.publishError(command.conversationId(), throwable.getMessage());
                 throw throwable;
             } finally {
+                // 步骤 8：释放云端临时 skill 目录、会话运行锁和线程上下文，防止影响后续请求。
                 if (tempSkillRoot != null) {
                     try {
                         cn.hutool.core.io.FileUtil.del(tempSkillRoot.toFile());
@@ -412,6 +419,7 @@ public class ChatStreamExecutionService {
      * @return 云端运行时创建的临时目录根路径，本地运行时返回 null。
      */
     private Path bindSkillDirectories(SendChatMessageCommand command) {
+        // 步骤 1：没有选择技能时不绑定目录，后续工具执行只使用默认工作目录。
         if (command.skillCodes() == null || command.skillCodes().isEmpty()) {
             return null;
         }
@@ -419,6 +427,7 @@ public class ChatStreamExecutionService {
         java.util.Map<String, Path> skillDirs = new java.util.HashMap<>();
         Path tempSkillRoot = null;
 
+        // 步骤 2：本地运行读取前端传入路径，云端运行从对象存储下载到临时目录。
         for (String skillCode : command.skillCodes()) {
             if (command.localRuntime() && command.skillPaths() != null) {
                 // 本地运行时：使用前端传来的路径
@@ -449,6 +458,7 @@ public class ChatStreamExecutionService {
             }
         }
 
+        // 步骤 3：仅在至少一个 skill 目录可用时绑定上下文，否则保留日志方便排查选择与路径不一致问题。
         if (!skillDirs.isEmpty()) {
             ChatToolExecutionContext.bindSkillDirectories(skillDirs);
             log.info(
@@ -467,6 +477,7 @@ public class ChatStreamExecutionService {
             );
         }
 
+        // 步骤 4：返回云端临时根目录，外层 finally 负责清理；本地目录由用户机器管理，不能删除。
         return tempSkillRoot;
     }
 

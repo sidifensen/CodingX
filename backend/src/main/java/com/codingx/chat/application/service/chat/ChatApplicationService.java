@@ -207,11 +207,13 @@ public class ChatApplicationService {
      * @param userId 当前用户标识。
      */
     public void regenerateLastAssistantMessage(Long conversationId, Long userId) {
+        // 步骤 1：校验会话归属和运行门控，避免越权用户或并发请求触发重新生成。
         ChatConversation conversation = chatConversationRepository.requireById(conversationId);
         if (!conversation.getCreatedBy().equals(userId)) {
             throw new ForbiddenException(ErrorMessageCatalog.CHAT_CONVERSATION_FORBIDDEN);
         }
         chatRuntimeGuardService.ensureAccepted(conversationId);
+        // 步骤 2：创建新的 run 与 Trace，重新生成必须独立记录执行链路，不能覆盖原 run。
         Long runId = IdUtil.getSnowflakeNextId();
         ChatExecutionContext.start(runId);
         ChatTraceRun traceRun = conversationTraceRecordService.startTrace("chat-regenerate", conversationId, userId);
@@ -226,11 +228,13 @@ public class ChatApplicationService {
             .createdAt(now)
             .updatedAt(now)
             .build());
+        // 步骤 3：读取原会话历史，定位最近一条用户消息和助手消息作为重新生成的输入来源。
         List<ChatMessage> history = new ArrayList<>(chatMessageRepository.findByConversationId(conversationId));
         ChatMessage lastUserMessage = findLastMessageByRole(history, ChatMessageRole.USER)
             .orElseThrow(() -> new ForbiddenException(ErrorMessageCatalog.CHAT_CONVERSATION_FORBIDDEN));
         ChatMessage lastAssistantMessage = findLastMessageByRole(history, ChatMessageRole.ASSISTANT)
             .orElseThrow(() -> new ForbiddenException(ErrorMessageCatalog.CHAT_CONVERSATION_FORBIDDEN));
+        // 步骤 4：恢复原 run 选择的技能、MCP 与专家上下文；老数据缺失时回退解析用户消息里的技能 mention。
         Long sourceRunId = lastAssistantMessage.getRunId() != null ? lastAssistantMessage.getRunId() : resolveRegenerateSourceRunId(conversation);
         List<String> selectedSkillCodes = loadSelectedSkillCodes(sourceRunId);
         if (selectedSkillCodes.isEmpty()) {
@@ -250,6 +254,7 @@ public class ChatApplicationService {
         );
         bindSelectedContextToRun(runId, selectedMcpCodes, selectedSkillCodes, selectedExpertCode);
         try {
+            // 步骤 5：复用正常聊天执行链路生成新助手消息，失败时统一写入 run 与 Trace 终态。
             processRegeneratedMessage(command, conversation, history, lastUserMessage, runId);
         } catch (RuntimeException exception) {
             LocalDateTime failedAt = LocalDateTime.now();
@@ -266,6 +271,7 @@ public class ChatApplicationService {
             conversationTraceRecordService.finishTrace(traceRun.getTraceId(), runId, "ERROR", exception.getMessage());
             throw exception;
         } finally {
+            // 步骤 6：释放会话运行锁和线程上下文，防止后续聊天请求继承本次 runId。
             chatRuntimeGuardService.completeConversation(conversationId, runId);
             ChatExecutionContext.clear();
         }
@@ -692,6 +698,7 @@ public class ChatApplicationService {
      * @param userId 当前用户标识，用于会话权限校验
      */
     public void sendMessage(SendChatMessageCommand command, Long userId) {
+        // 步骤 1：先处理输入校验和本地临时模式分流，本地模式不进入云端落库链路。
         if (StrUtil.isBlank(command.content())) {
             throw new IllegalArgumentException(ErrorMessageCatalog.CHAT_MESSAGE_CONTENT_REQUIRED);
         }
@@ -699,6 +706,7 @@ public class ChatApplicationService {
             sendLocalOnlyMessage(command, userId);
             return;
         }
+        // 步骤 2：校验会话归属和运行门控，并把本轮能力选择写入 run 上下文。
         Long runId = currentRunId(command.conversationId());
         ChatConversation conversation = chatConversationRepository.requireById(command.conversationId());
         if (!conversation.getCreatedBy().equals(userId)) {
@@ -714,6 +722,7 @@ public class ChatApplicationService {
             command.conversationId(),
             userId
         );
+        // 步骤 3：写入用户消息和附件绑定，再通过 SSE 立即回传用户输入，保证前端历史先落地。
         ChatMessage userMessage = ChatMessage.userMessage(
             command.conversationId(),
             ChatCapabilityMentionSupport.formatContentWithSkillMentions(selectedSkillCodes, plainQuestion)
@@ -739,6 +748,7 @@ public class ChatApplicationService {
             );
             return;
         }
+        // 步骤 4：改写问题并执行意图分流，多子问题会在后续分别触发搜索或 MCP。
         ConversationRewriteResult rewriteResult = conversationRewriteService.rewriteResult(
             plainUserContents(history),
             plainQuestion
@@ -752,6 +762,7 @@ public class ChatApplicationService {
         );
         ConversationIntentDecision intentDecision = primaryIntentDecision(subQuestionDecisions);
         logChatDecision("发送消息", command, runId, intentDecision, rewriteResult);
+        // 步骤 5：优先处理无需进入模型的短路分支，包括澄清、直答和 MCP 未启用提示。
         Optional<SubQuestionIntentDecision> clarifyDecision = firstDecisionWithAction(
             subQuestionDecisions,
             ConversationIntentAction.CLARIFY
@@ -847,6 +858,7 @@ public class ChatApplicationService {
             chatStreamPublisher.publishAssistantCompleted(command.conversationId(), assistantMessage.getId(), assistantMessage.getContent(), conversation.getTitle());
             return;
         }
+        // 步骤 6：执行可用的 MCP 和搜索分支，搜索引用会同时写入引用表并生成文档产物占位。
         long nextSequenceNo = executeMcpDecisions(subQuestionDecisions, command, runId, history, 1L);
         List<String> searchQuestions = searchQuestions(subQuestionDecisions);
         if (CollUtil.isNotEmpty(searchQuestions)) {
@@ -859,6 +871,7 @@ public class ChatApplicationService {
             searchReferenceCollector.collect(runId, userMessage.getId(), command.conversationId(), searchReferences);
             documentArtifactService.createDocxArtifact(runId, userMessage.getId(), command.conversationId(), "搜索结果整理中");
         }
+        // 步骤 7：组装模型上下文，包含摘要裁剪后的历史、能力上下文、专家提示和搜索引用。
         StringBuilder builder = new StringBuilder();
         StringBuilder thinkingBuilder = new StringBuilder();
         AtomicReference<LocalDateTime> thinkingStartedAt = new AtomicReference<>();
@@ -885,6 +898,7 @@ public class ChatApplicationService {
         tokenCounterService.estimateConversationTokens(aiHistory);
         final Long activeRunId = runId;
         try {
+            // 步骤 8：进入支持工具调用的模型循环，流式内容、thinking 与工具事件都会写入缓冲区或 SSE。
             runAiToolAwareLoop(
                 command,
                 runId,
@@ -899,6 +913,7 @@ public class ChatApplicationService {
                 validatedAttachments
             );
         } catch (RuntimeException exception) {
+            // 步骤 9：模型循环中被用户取消时记录取消态，否则继续抛出交由外层异常处理。
             if (chatRuntimeGuardService.isCancelled(command.conversationId(), activeRunId)) {
                 ChatMessage cancelledMessage = ChatMessage.assistantMessage(
                     command.conversationId(),
@@ -919,6 +934,7 @@ public class ChatApplicationService {
             }
             throw exception;
         }
+        // 步骤 10：模型循环结束后再次检查取消状态，覆盖流结束与取消请求竞态。
         if (chatRuntimeGuardService.isCancelled(command.conversationId(), activeRunId)) {
             ChatMessage cancelledMessage = ChatMessage.assistantMessage(
                 command.conversationId(),
@@ -937,6 +953,7 @@ public class ChatApplicationService {
             finishTrace(runId, "CANCELLED", null);
             return;
         }
+        // 步骤 11：流式异常时保留已经生成的部分回答，并把错误状态写入消息、run 和 Trace。
         if (streamError[0] != null) {
 
             ChatMessage failedMessage = ChatMessage.assistantMessage(
@@ -958,6 +975,7 @@ public class ChatApplicationService {
             finishTrace(runId, "ERROR", streamError[0].getMessage());
             return;
         }
+        // 步骤 12：正常完成时保存助手消息、刷新标题和摘要，最后发布完成事件给前端。
         ChatMessage assistantMessage = ChatMessage.assistantMessage(
             command.conversationId(),
             StrUtil.blankToDefault(llmResponseCleaner.clean(builder.toString()), ""),
@@ -988,6 +1006,7 @@ public class ChatApplicationService {
      * @param userId 当前用户标识，预留给后续本地权限约束，当前不落库。
      */
     private void sendLocalOnlyMessage(SendChatMessageCommand command, Long userId) {
+        // 步骤 1：初始化本地临时 run 和内存历史，仅用于 SSE 路由和本轮模型输入。
         Long runId = currentRunId(command.conversationId());
         chatRuntimeGuardService.ensureAccepted(command.conversationId());
         List<String> selectedSkillCodes = ChatCapabilityMentionSupport.mergeSkillCodes(command.skillCodes(), command.content());
@@ -996,6 +1015,7 @@ public class ChatApplicationService {
         ChatMessage userMessage = ChatMessage.userMessage(command.conversationId(), plainQuestion).attachRun(runId);
         history.add(userMessage);
         chatStreamPublisher.publishUserMessage(command.conversationId(), userMessage.getContent());
+        // 步骤 2：本地模式也允许技能介绍、澄清、直答和 MCP 未启用提示短路，避免不必要模型调用。
         Optional<String> localSkillIntroReply = resolveSkillIntroReply(selectedSkillCodes, plainQuestion, false);
         if (localSkillIntroReply.isPresent()) {
             chatStreamPublisher.publishAssistantCompleted(
@@ -1005,6 +1025,7 @@ public class ChatApplicationService {
             );
             return;
         }
+        // 步骤 3：改写并路由本地问题，但不写入云端消息、run、Trace 或任务表。
         ConversationRewriteResult rewriteResult = conversationRewriteService.rewriteResult(
             List.of(plainQuestion),
             plainQuestion
@@ -1037,6 +1058,7 @@ public class ChatApplicationService {
             );
             return;
         }
+        // 步骤 4：组装本地模型上下文并进入工具感知模型循环，结果只通过 SSE 返回。
         StringBuilder builder = new StringBuilder();
         StringBuilder thinkingBuilder = new StringBuilder();
         AtomicReference<LocalDateTime> thinkingStartedAt = new AtomicReference<>();
@@ -1075,11 +1097,13 @@ public class ChatApplicationService {
                 List.of()
             );
         } catch (RuntimeException exception) {
+            // 步骤 5：取消时直接结束本地临时链路，非取消异常继续抛给外层统一处理。
             if (chatRuntimeGuardService.isCancelled(command.conversationId(), runId)) {
                 return;
             }
             throw exception;
         }
+        // 步骤 6：根据取消、流错误或正常完成三种终态向前端发布最终事件。
         if (chatRuntimeGuardService.isCancelled(command.conversationId(), runId)) {
             return;
         }
@@ -1210,10 +1234,12 @@ public class ChatApplicationService {
      * 提示词日志保留系统规则与技能 front matter 简介，避免完整技能执行文档撑爆日志。
      */
     private String promptContextLogPreview(String systemPrompt) {
+        // 步骤 1：没有技能块时直接截断完整提示词，减少日志中的长文本。
         String normalizedPrompt = StrUtil.trimToEmpty(systemPrompt);
         if (StrUtil.isBlank(normalizedPrompt) || !normalizedPrompt.contains("## /")) {
             return StrUtil.maxLength(normalizedPrompt, PROMPT_CONTEXT_LOG_PREVIEW_LENGTH);
         }
+        // 步骤 2：逐行扫描技能块，只保留标题和 front matter 简介，避免完整技能文档进入日志。
         StringBuilder previewBuilder = new StringBuilder();
         boolean inSkillBlock = false;
         boolean skillIntroComplete = false;
@@ -1246,6 +1272,7 @@ public class ChatApplicationService {
                 skillIntroComplete = fallbackSkillLineCount >= 8;
             }
         }
+        // 步骤 3：最终仍按统一长度截断，防止多个技能简介叠加撑大单行日志。
         return StrUtil.maxLength(previewBuilder.toString().trim(), PROMPT_CONTEXT_LOG_PREVIEW_LENGTH);
     }
 
@@ -1712,6 +1739,7 @@ public class ChatApplicationService {
      * @return 工具执行结果。
      */
     private ChatToolExecutionResult executeModelToolCall(SendChatMessageCommand command, Long runId, AiToolCall toolCall) {
+        // 步骤 1：保存调用前线程上下文，再按当前消息绑定本地 workspace，防止工具执行目录错乱。
         Optional<Path> previousWorkingDirectory = ChatToolExecutionContext.currentToolWorkingDirectory();
         Map<String, Path> previousSkillDirectories = ChatToolExecutionContext.currentSkillDirectories();
         Path workspacePath = resolveToolWorkingDirectory(command);
@@ -1721,6 +1749,7 @@ public class ChatApplicationService {
         LocalDateTime startedAt = LocalDateTime.now();
         publishLocalToolCallEvent(command.conversationId(), toolCall, "start", startedAt, null, null);
         try {
+            // 步骤 2：执行模型指定工具，并把工具输出转成 chat_execution_step 供前端时间线展示。
             ChatToolExecutionResult toolResult = chatToolExecutionService.execute(toolCall.toolCode(), toolCall.arguments());
             ChatExecutionStep toolStep = ChatExecutionStep.builder()
                 .id(cn.hutool.core.util.IdUtil.getSnowflakeNextId())
@@ -1745,12 +1774,15 @@ public class ChatApplicationService {
                     "content", toolStep.getContent()
                 ));
             }
+            // 步骤 3：发布工具完成事件并返回工具内容给模型循环，模型可继续基于结果生成回答。
             publishLocalToolCallEvent(command.conversationId(), toolCall, "complete", startedAt, LocalDateTime.now(), toolResult);
             return toolResult;
         } catch (RuntimeException exception) {
+            // 步骤 4：工具执行失败时先通知前端工具错误，再把异常交给模型循环外层收口。
             publishLocalToolCallError(command.conversationId(), toolCall, startedAt, exception);
             throw exception;
         } finally {
+            // 步骤 5：恢复进入工具前的线程上下文，避免后续工具调用沿用错误目录。
             restoreToolExecutionContext(previousWorkingDirectory, previousSkillDirectories);
         }
     }

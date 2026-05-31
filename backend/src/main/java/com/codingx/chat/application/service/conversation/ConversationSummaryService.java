@@ -46,6 +46,7 @@ public class ConversationSummaryService {
      * @return 新增或更新后的摘要。
      */
     public Optional<ChatConversationSummary> refreshSummaryIfNeeded(ChatConversation conversation, List<ChatMessage> history) {
+        // 步骤 1：先检查摘要开关和历史阈值，未达到条件时不触碰摘要表。
         if (!runtimeSettingService.summaryEnabled()) {
             return Optional.empty();
         }
@@ -61,6 +62,7 @@ public class ConversationSummaryService {
         if (summarizeCandidates.isEmpty()) {
             return Optional.empty();
         }
+        // 步骤 2：计算本轮摘要覆盖点；已有摘要已覆盖到该消息时直接跳过，避免重复压缩。
         Long cutoffMessageId = summarizeCandidates.getLast().getId();
         LocalDateTime now = LocalDateTime.now();
         Optional<ChatConversationSummary> existingOptional = chatConversationSummaryRepository.findLatestByConversationId(conversation.getId());
@@ -72,10 +74,12 @@ public class ConversationSummaryService {
         if (incrementalMessages.isEmpty()) {
             return Optional.empty();
         }
+        // 步骤 3：只把新增待压缩消息合并进既有摘要，摘要为空时不写入无意义记录。
         String summaryContent = buildSummaryContent(existingOptional.map(ChatConversationSummary::getContent).orElse(""), incrementalMessages);
         if (StrUtil.isBlank(summaryContent)) {
             return Optional.empty();
         }
+        // 步骤 4：存在摘要则更新覆盖点，否则新建摘要记录并继承会话归属用户。
         ChatConversationSummary summary = existingOptional
             .map(existing -> existing.toBuilder()
                 .content(summaryContent)

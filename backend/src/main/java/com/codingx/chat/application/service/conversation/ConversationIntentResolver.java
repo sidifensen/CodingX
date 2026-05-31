@@ -52,6 +52,7 @@ public class ConversationIntentResolver {
      */
     @ConversationTraceNode(name = "intent-classify", type = "INTENT")
     public List<ConversationIntentCandidate> resolveCandidates(String question, List<ChatIntentNode> nodes, List<ChatIntentExample> examples) {
+        // 步骤 1：先校验输入并建立节点、示例和父子关系索引，只让叶子节点参与最终分类。
         if (StrUtil.isBlank(question) || nodes == null || nodes.isEmpty()) {
             return List.of();
         }
@@ -74,6 +75,7 @@ public class ConversationIntentResolver {
         if (leafNodes.isEmpty()) {
             return List.of();
         }
+        // 步骤 2：把叶子意图与示例渲染进分类 Prompt，交给模型返回候选分数。
         String prompt = promptTemplateLoader.render("intent-classify", Map.of(
             "intent_list", buildIntentList(leafNodes, nodeByCode, examplesByCode)
         ));
@@ -83,6 +85,7 @@ public class ConversationIntentResolver {
             logIntentCandidates("模型", question, candidates);
             return candidates;
         } catch (Exception exception) {
+            // 步骤 3：模型不可用或输出异常时降级到配置文本匹配，避免意图链路完全中断。
             List<ConversationIntentCandidate> candidates = fallbackCandidates(question, leafNodes, nodeByCode, examplesByCode);
             log.warn(
                 "意图识别失败，使用兜底候选: 问题={}, 候选数={}",
@@ -262,6 +265,7 @@ public class ConversationIntentResolver {
         Map<String, ChatIntentNode> nodeByCode,
         List<String> examples
     ) {
+        // 步骤 1：优先用示例文本做强匹配，完全一致和互相包含给最高兜底分。
         for (String example : examples) {
             String normalizedExample = normalizeText(example);
             if (StrUtil.isBlank(normalizedExample)) {
@@ -274,6 +278,7 @@ public class ConversationIntentResolver {
                 return 0.92D;
             }
         }
+        // 步骤 2：示例未命中时汇总节点路径、描述、类型和工具标识作为可配置语义文本。
         String configuredText = normalizeText(buildConfiguredFallbackText(node, nodeByCode, examples));
         if (StrUtil.isBlank(configuredText)) {
             return 0D;
@@ -282,6 +287,7 @@ public class ConversationIntentResolver {
         if (StrUtil.isNotBlank(normalizedName) && normalizedQuestion.contains(normalizedName)) {
             return 0.82D;
         }
+        // 步骤 3：中文短句按二元字符片段统计命中数量，并转换成兜底分数。
         int matchedUnits = countMatchedTextUnits(normalizedQuestion, configuredText);
         if (matchedUnits >= 3) {
             return 0.78D;

@@ -2219,9 +2219,19 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
     private String[] resolveShellCommand(String command) {
         String osName = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
         if (osName.contains("win")) {
-            return new String[]{"powershell", "-NoProfile", "-Command", command};
+            return new String[]{"powershell", "-NoProfile", "-Command", bridgePowerShellSkillEnvironment(command)};
         }
         return new String[]{"sh", "-lc", command};
+    }
+
+    /**
+     * Windows 下工具命令通过 PowerShell 执行，而部分技能文档使用 bash 风格的 ${CLAUDE_SKILL_DIR}。
+     * 这里把注入到进程环境中的 CLAUDE_SKILL_DIR* 同步成同名 PowerShell 变量，兼容技能脚本路径写法。
+     */
+    private String bridgePowerShellSkillEnvironment(String command) {
+        return """
+            Get-ChildItem Env: | Where-Object { $_.Name -like 'CLAUDE_SKILL_DIR*' } | ForEach-Object { Set-Variable -Name $_.Name -Value $_.Value -Scope Local }; %s
+            """.formatted(command);
     }
 
     /**

@@ -594,6 +594,36 @@ class CodexBuiltinChatToolExecutorTest {
     }
 
     /**
+     * Windows 服务端实际使用 PowerShell，但很多技能文档沿用 bash 风格的 ${CLAUDE_SKILL_DIR}。
+     * 执行器需要兼容该写法，避免 web-access 前置检查被解析到 D:\scripts 一类错误路径。
+     *
+     * @param tempDir 测试临时目录。
+     * @throws Exception 执行失败时抛出。
+     */
+    @Test
+    void shellCommandShouldResolveSkillDirectoryWithBraceVariableSyntax(@TempDir Path tempDir) throws Exception {
+        Path projectRoot = tempDir.resolve("workspace");
+        Path skillDir = tempDir.resolve("skills").resolve("web-access");
+        Path scriptFile = skillDir.resolve("scripts").resolve("check-deps.mjs");
+        Files.createDirectories(projectRoot);
+        Files.createDirectories(scriptFile.getParent());
+        Files.writeString(scriptFile, "console.log('ok');", StandardCharsets.UTF_8);
+        ChatToolExecutionContext.bindToolWorkingDirectory(projectRoot);
+        ChatToolExecutionContext.bindSkillDirectories(Map.of("web-access", skillDir));
+        try {
+            ChatToolExecutionResult result = codexBuiltinChatToolExecutor.execute(
+                "shell_command",
+                JSONUtil.toJsonStr(Map.of("command", checkSkillScriptByBraceVariableCommand(), "timeoutMs", 10000))
+            );
+
+            assertEquals(0, result.metadata().get("exitCode"));
+            assertTrue(result.content().contains("skill-ok"));
+        } finally {
+            ChatToolExecutionContext.clear();
+        }
+    }
+
+    /**
      * shell_command 的 timeout 必须约束整个进程生命周期，不能被同步读取输出阻塞绕过。
      *
      * @param tempDir 测试临时目录。
@@ -929,6 +959,19 @@ class CodexBuiltinChatToolExecutorTest {
             return "if (-not $env:CLAUDE_SKILL_DIR) { exit 2 }; Write-Output $env:CLAUDE_SKILL_DIR";
         }
         return "test -n \"$CLAUDE_SKILL_DIR\" || exit 2; printf '%s' \"$CLAUDE_SKILL_DIR\"";
+    }
+
+    /**
+     * 按技能文档里的 ${CLAUDE_SKILL_DIR}/scripts 写法生成路径检查命令。
+     *
+     * @return 可交给 shell_command 执行的命令。
+     */
+    private static String checkSkillScriptByBraceVariableCommand() {
+        String osName = System.getProperty("os.name", "").toLowerCase();
+        if (osName.contains("win")) {
+            return "if (-not (Test-Path \"${CLAUDE_SKILL_DIR}/scripts/check-deps.mjs\")) { exit 3 }; Write-Output skill-ok";
+        }
+        return "test -f \"${CLAUDE_SKILL_DIR}/scripts/check-deps.mjs\" || exit 3; printf 'skill-ok'";
     }
 
     /**

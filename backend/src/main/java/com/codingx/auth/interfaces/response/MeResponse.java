@@ -2,12 +2,12 @@ package com.codingx.auth.interfaces.response;
 import com.codingx.auth.domain.model.UserType;
 
 /**
- * 定义 MeResponse 使用的数据载体。
+ * 当前登录用户响应体，只暴露前端身份展示所需字段。
  */
 public record MeResponse(
-    Long userId, // userId 字段。
+    Long userId, // 当前登录用户主键。
     String username, // 登录用户名。
-    String displayName, // 展示名称。
-    UserType userType // 用户类型。
+    String displayName, // 用户展示名称。
+    UserType userType // 用户类型，用于前端判断可访问入口。
 ) {
 }

@@ -2,16 +2,14 @@ package com.codingx.admin.interfaces.controller;
 
 import com.codingx.auth.application.service.AdminUserManagementService;
 import com.codingx.auth.application.service.AdminUserPageView;
-import com.codingx.auth.domain.model.User;
+import com.codingx.auth.application.service.UserViewService;
 import com.codingx.auth.interfaces.request.AdminUserCreateRequest;
 import com.codingx.auth.interfaces.request.AdminUserResetPasswordRequest;
 import com.codingx.auth.interfaces.request.AdminUserStatusUpdateRequest;
 import com.codingx.auth.interfaces.request.AdminUserUpdateRequest;
 import com.codingx.auth.interfaces.response.AdminUserDetailResponse;
 import com.codingx.auth.interfaces.response.AdminUserPageResponse;
-import com.codingx.auth.interfaces.response.AdminUserSummaryResponse;
 import com.codingx.common.model.ApiResponse;
-import cn.hutool.core.util.StrUtil;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -30,7 +28,15 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 public class AdminUserController {
 
+    /**
+     * 管理端用户应用服务，承接权限校验、用户查询和用户状态变更。
+     */
     private final AdminUserManagementService adminUserManagementService;
+
+    /**
+     * 用户视图服务，负责把用户领域对象转换为管理端响应结构。
+     */
+    private final UserViewService userViewService;
 
     /**
      * 分页查询用户。
@@ -47,14 +53,10 @@ public class AdminUserController {
         @RequestParam(defaultValue = "ALL") String status,
         @RequestParam(required = false) String keyword
     ) {
+        // 步骤 1：分页、状态和关键词过滤交给应用服务处理，Controller 不直接访问仓储。
         AdminUserPageView pageView = adminUserManagementService.listUsers(current, size, status, keyword);
-        return ApiResponse.success(AdminUserPageResponse.builder()
-            .records(pageView.records().stream().map(this::toSummary).toList())
-            .total(pageView.total())
-            .current(pageView.current())
-            .size(pageView.size())
-            .pages(pageView.pages())
-            .build());
+        // 步骤 2：分页响应和中文展示标签由视图服务统一生成。
+        return ApiResponse.success(userViewService.toAdminPageResponse(pageView));
     }
 
     /**
@@ -64,7 +66,9 @@ public class AdminUserController {
      */
     @GetMapping("/{id}")
     public ApiResponse<AdminUserDetailResponse> getUser(@PathVariable Long id) {
-        return ApiResponse.success(toDetail(adminUserManagementService.getUserDetail(id)));
+        // 步骤 1：应用服务负责管理员权限校验和用户存在性校验。
+        // 步骤 2：详情响应由视图服务生成，避免 Controller 持有字段映射规则。
+        return ApiResponse.success(userViewService.toAdminDetail(adminUserManagementService.getUserDetail(id)));
     }
 
     /**
@@ -74,7 +78,9 @@ public class AdminUserController {
      */
     @PostMapping
     public ApiResponse<AdminUserDetailResponse> createUser(@RequestBody AdminUserCreateRequest request) {
-        return ApiResponse.success(toDetail(adminUserManagementService.createUser(request)));
+        // 步骤 1：应用服务负责校验输入、保存用户并创建默认工作空间。
+        // 步骤 2：新增后的用户详情由视图服务统一投影。
+        return ApiResponse.success(userViewService.toAdminDetail(adminUserManagementService.createUser(request)));
     }
 
     /**
@@ -85,7 +91,9 @@ public class AdminUserController {
      */
     @PutMapping("/{id}")
     public ApiResponse<AdminUserDetailResponse> updateUser(@PathVariable Long id, @RequestBody AdminUserUpdateRequest request) {
-        return ApiResponse.success(toDetail(adminUserManagementService.updateUser(id, request)));
+        // 步骤 1：应用服务负责校验邮箱唯一性、状态合法性并保存资料。
+        // 步骤 2：更新后的用户详情由视图服务统一投影。
+        return ApiResponse.success(userViewService.toAdminDetail(adminUserManagementService.updateUser(id, request)));
     }
 
     /**
@@ -96,7 +104,9 @@ public class AdminUserController {
      */
     @PostMapping("/{id}/status")
     public ApiResponse<Void> updateUserStatus(@PathVariable Long id, @RequestBody AdminUserStatusUpdateRequest request) {
+        // 步骤 1：应用服务负责管理员权限校验和目标状态解析。
         adminUserManagementService.updateUserStatus(id, request.status());
+        // 步骤 2：状态更新成功后返回统一中文提示。
         return ApiResponse.successMessage("状态更新成功");
     }
 
@@ -107,7 +117,9 @@ public class AdminUserController {
      */
     @PostMapping("/{id}/approve")
     public ApiResponse<Void> approveUser(@PathVariable Long id) {
+        // 步骤 1：应用服务只允许 PENDING 用户进入审核通过流转。
         adminUserManagementService.approveUser(id);
+        // 步骤 2：审核成功后返回管理端提示文案。
         return ApiResponse.successMessage("审核通过");
     }
 
@@ -119,58 +131,9 @@ public class AdminUserController {
      */
     @PostMapping("/{id}/reset-password")
     public ApiResponse<Void> resetPassword(@PathVariable Long id, @RequestBody AdminUserResetPasswordRequest request) {
+        // 步骤 1：应用服务负责校验新密码并写入加密后的密码哈希。
         adminUserManagementService.resetPassword(id, request.newPassword());
+        // 步骤 2：密码重置成功后不返回密码相关数据。
         return ApiResponse.successMessage("密码重置成功");
-    }
-
-    private AdminUserSummaryResponse toSummary(User user) {
-        return new AdminUserSummaryResponse(
-            user.getId(),
-            user.getUsername(),
-            user.getDisplayName(),
-            user.getEmail(),
-            user.getPhone(),
-            user.getAvatarUrl(),
-            user.getUserType().name(),
-            toUserTypeLabel(user),
-            user.getStatus().name(),
-            toStatusLabel(user),
-            user.getLastLoginAt(),
-            user.getCreatedAt()
-        );
-    }
-
-    private AdminUserDetailResponse toDetail(User user) {
-        return new AdminUserDetailResponse(
-            user.getId(),
-            user.getUsername(),
-            user.getDisplayName(),
-            user.getEmail(),
-            user.getPhone(),
-            user.getAvatarUrl(),
-            user.getUserType().name(),
-            toUserTypeLabel(user),
-            user.getStatus().name(),
-            toStatusLabel(user),
-            user.getLastLoginAt(),
-            user.getLastLoginIp(),
-            user.getCreatedAt(),
-            user.getUpdatedAt()
-        );
-    }
-
-    private String toStatusLabel(User user) {
-        return switch (user.getStatus()) {
-            case ACTIVE -> "正常";
-            case DISABLED -> "禁用";
-            case PENDING -> "待审核";
-        };
-    }
-
-    private String toUserTypeLabel(User user) {
-        return switch (user.getUserType()) {
-            case ADMIN -> "管理员";
-            case USER -> StrUtil.equalsAnyIgnoreCase(user.getStatus().name(), "PENDING") ? "待审核用户" : "普通用户";
-        };
     }
 }

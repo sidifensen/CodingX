@@ -5,21 +5,21 @@ import com.codingx.auth.application.service.AdminUserPageView;
 import java.util.Optional;
 
 /**
- * 定义 UserRepository 的仓储契约。
+ * 用户仓储契约，隔离认证领域对象与具体持久化实现。
  */
 public interface UserRepository {
 
     /**
-     * 查询 findById 需要的数据。
-     * @param id 输入参数。
-     * @return 输入参数。
+     * 按主键查询未逻辑删除的用户。
+     * @param id 用户主键。
+     * @return 用户领域对象，用户不存在时为空。
      */
     Optional<User> findById(Long id);
 
     /**
-     * 查询 findByUsername 需要的数据。
-     * @param username 输入参数。
-     * @return 输入参数。
+     * 按登录用户名查询未逻辑删除的用户。
+     * @param username 登录用户名。
+     * @return 用户领域对象，用户不存在时为空。
      */
     Optional<User> findByUsername(String username);
 
@@ -42,8 +42,8 @@ public interface UserRepository {
     boolean existsByEmail(String email, Long excludeUserId);
 
     /**
-     * 持久化 save 处理的状态。
-     * @param user 输入参数。
+     * 保存用户聚合，新增和更新由基础设施层根据主键存在性判断。
+     * @param user 用户领域对象。
      */
     void save(User user);
 }

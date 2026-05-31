@@ -2,14 +2,14 @@ package com.codingx.auth.domain.service;
 import com.codingx.auth.domain.model.User;
 
 /**
- * 定义 AuthSessionGateway 的领域服务契约。
+ * 认证会话网关契约，隔离应用服务与具体登录态框架。
  */
 public interface AuthSessionGateway {
 
     /**
-     * 校验当前用户并返回登录结果。
-     * @param user 输入参数。
-     * @return 输入参数。
+     * 为指定用户创建登录会话。
+     * @param user 已通过凭证校验的用户。
+     * @return 当前会话访问令牌。
      */
     String login(User user);
 
@@ -19,8 +19,8 @@ public interface AuthSessionGateway {
     void logoutCurrent();
 
     /**
-     * 返回当前登录用户信息。
-     * @return 输入参数。
+     * 读取当前请求绑定的登录用户标识。
+     * @return 当前登录用户主键。
      */
     Long currentLoginId();
 

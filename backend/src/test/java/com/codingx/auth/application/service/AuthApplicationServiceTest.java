@@ -26,31 +26,31 @@ import org.mockito.junit.jupiter.MockitoExtension;
 class AuthApplicationServiceTest {
 
     /**
-     * UserRepository 依赖。
+     * 用户仓储测试替身，用于控制账号查询和保存结果。
      */
     @Mock
     private UserRepository userRepository;
 
     /**
-     * passwordHasher 字段。
+     * 密码哈希测试替身，用于模拟密码匹配结果。
      */
     @Mock
     private PasswordHasher passwordHasher;
 
     /**
-     * AuthSessionGateway 依赖。
+     * 会话网关测试替身，用于模拟请求 IP 和登录令牌。
      */
     @Mock
     private AuthSessionGateway authSessionGateway;
 
     /**
-     * AuthApplicationService 依赖。
+     * 被测认证应用服务。
      */
     @InjectMocks
     private AuthApplicationService authApplicationService;
 
     /**
-     * 校验当前用户并返回登录结果。
+     * 活跃用户凭证正确时应创建会话并更新登录审计信息。
      */
     @Test
     void loginCreatesSessionForActiveUser() {
@@ -66,7 +66,7 @@ class AuthApplicationServiceTest {
     }
 
     /**
-     * 校验当前用户并返回登录结果。
+     * 密码错误时应拒绝登录且不创建会话。
      */
     @Test
     void loginRejectsWrongPassword() {

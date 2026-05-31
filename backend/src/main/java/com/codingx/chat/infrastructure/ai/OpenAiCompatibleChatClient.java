@@ -52,6 +52,7 @@ public class OpenAiCompatibleChatClient implements AiProviderClient {
 
     @Override
     public AiStreamSession streamChat(AiConversationRequest request, AiModelTarget target, AiStreamHandler handler) {
+        // 步骤 1：校验 provider 与 API Key，避免把错误配置延迟到网络请求阶段才暴露。
         String providerName = target.candidate().getProvider();
         if (!supportsProvider(providerName)) {
             throw new IllegalStateException(ErrorMessageCatalog.AI_PROVIDER_UNSUPPORTED + "：" + providerName);
@@ -59,6 +60,7 @@ public class OpenAiCompatibleChatClient implements AiProviderClient {
         if (StrUtil.isBlank(resolveApiKey(target))) {
             throw new IllegalStateException(ErrorMessageCatalog.AI_API_KEY_NOT_CONFIGURED + "：" + providerName);
         }
+        // 步骤 2：组装 OpenAI 兼容请求体和 OkHttp 请求，completion 用于路由层等待流式收口。
         JSONObject requestBody = buildRequestBody(request, target);
         AtomicBoolean cancelled = new AtomicBoolean(false);
         CompletableFuture<Void> completion = new CompletableFuture<>();
@@ -71,6 +73,7 @@ public class OpenAiCompatibleChatClient implements AiProviderClient {
         Call call = okHttpClient.newCall(httpRequest);
         CompletableFuture.runAsync(() -> {
             try (Response response = call.execute()) {
+                // 步骤 3：检查 HTTP 状态与响应体，失败时保留状态码和响应内容便于后端排查。
                 if (!response.isSuccessful()) {
                     String body = response.body() != null ? response.body().string() : "";
                     throw new IllegalStateException(ErrorMessageCatalog.AI_REQUEST_FAILED + "：HTTP " + response.code() + " " + body);
@@ -81,6 +84,7 @@ public class OpenAiCompatibleChatClient implements AiProviderClient {
                 }
                 BufferedSource source = responseBody.source();
                 OpenAiStyleStreamParser.StreamState streamState = openAiStyleStreamParser.newStreamState();
+                // 步骤 4：把 OpenAI SSE 片段转发给统一处理器，取消后停止向上游回调，避免旧流污染新候选。
                 OpenAiStyleStreamParser.StreamConsumer streamConsumer = new OpenAiStyleStreamParser.StreamConsumer() {
                     @Override
                     public void onContentDelta(String delta) {
@@ -117,9 +121,11 @@ public class OpenAiCompatibleChatClient implements AiProviderClient {
                     }
                     openAiStyleStreamParser.parseChunk(line + "\n", streamState, streamConsumer);
                 }
+                // 步骤 5：读取结束后 flush 累积状态并完成 Future，让路由层能准确判断流式会话已收口。
                 openAiStyleStreamParser.flush(streamState, streamConsumer);
                 completion.complete(null);
             } catch (IOException exception) {
+                // 步骤 6：网络异常只在未取消时上报给业务处理器；取消导致的 IOException 不再打扰前端。
                 if (!cancelled.get()) {
                     handler.onError(exception);
                 }
@@ -127,6 +133,7 @@ public class OpenAiCompatibleChatClient implements AiProviderClient {
             }
         });
         return new AiStreamSession(() -> {
+            // 步骤 7：候选 fallback 或用户取消时同时标记取消并中断真实 HTTP 调用。
             cancelled.set(true);
             // 业务约束：首包超时 fallback 时必须打断真实网络读，避免旧 provider 持续占用连接与后台线程。
             call.cancel();
@@ -187,11 +194,13 @@ public class OpenAiCompatibleChatClient implements AiProviderClient {
      * @return JSON 消息对象。
      */
     private Object toMessagePayload(ChatMessage message, java.util.List<ChatAttachment> attachments) {
+        // 步骤 1：先筛出属于当前消息的附件，避免把同会话其他消息附件误注入模型。
         java.util.List<ChatAttachment> messageAttachments = attachments == null
             ? java.util.List.of()
             : attachments.stream()
                 .filter(attachment -> attachment.getMessageId() != null && attachment.getMessageId().equals(message.getId()))
                 .toList();
+        // 步骤 2：用户消息存在附件时使用 OpenAI 多模态 content 数组，支持文本、附件摘要和图片 data URL。
         if (message.getRole() == ChatMessageRole.USER && !messageAttachments.isEmpty()) {
             java.util.List<Object> contentItems = new java.util.ArrayList<>();
             if (StrUtil.isNotBlank(message.getContent())) {
@@ -216,12 +225,14 @@ public class OpenAiCompatibleChatClient implements AiProviderClient {
                     .set("type", "image_url")
                     .set("image_url", JSONUtil.createObj().set("url", dataUrl)));
             }
+            // 步骤 3：附件内容至少生成一个 content item 时返回多模态结构，否则回退普通文本消息。
             if (!contentItems.isEmpty()) {
                 return JSONUtil.createObj()
                     .set("role", message.getRole().name().toLowerCase())
                     .set("content", contentItems);
             }
         }
+        // 步骤 4：非用户消息或无有效附件时使用普通 role/content 结构，兼容所有 OpenAI 风格 provider。
         return JSONUtil.createObj()
             .set("role", message.getRole().name().toLowerCase())
             .set("content", message.getContent());

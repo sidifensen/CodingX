@@ -402,6 +402,7 @@ public class AdminChatSkillService {
      * 统一解析上传输入，输出目录化文件集合。
      */
     private List<UploadedSkillFile> resolveUploadedFiles(MultipartFile file, List<MultipartFile> files) {
+        // 步骤 1：识别单压缩包上传和目录多文件上传两种模式，二者不能同时出现。
         boolean hasSingleFile = file != null && !file.isEmpty();
         List<MultipartFile> folderFiles = files == null ? List.of() : files.stream().filter(item -> item != null && !item.isEmpty()).toList();
         boolean hasFolderFiles = CollUtil.isNotEmpty(folderFiles);
@@ -413,6 +414,7 @@ public class AdminChatSkillService {
             throw new BusinessException("CHAT_SKILL_UPLOAD_INVALID", ErrorMessageCatalog.CHAT_SKILL_UPLOAD_FILE_REQUIRED);
         }
 
+        // 步骤 2：单文件模式只允许 zip/skill 压缩包，读取失败时返回统一上传失败文案。
         if (hasSingleFile) {
             validateArchiveUploadFile(file);
             try {
@@ -422,6 +424,7 @@ public class AdminChatSkillService {
             }
         }
 
+        // 步骤 3：目录上传模式逐个读取相对路径和文件字节，空路径文件跳过，读取失败直接中断。
         List<UploadedSkillFile> directoryFiles = new ArrayList<>();
         for (MultipartFile multipartFile : folderFiles) {
             String relativePath = normalizeArchivePath(StrUtil.blankToDefault(multipartFile.getOriginalFilename(), multipartFile.getName()));
@@ -434,6 +437,7 @@ public class AdminChatSkillService {
                 throw new BusinessException("CHAT_SKILL_UPLOAD_FAILED", ErrorMessageCatalog.CHAT_SKILL_UPLOAD_DIRECTORY_READ_FAILED);
             }
         }
+        // 步骤 4：统一做路径标准化和安全校验，保证后续存储层只处理目录化文件集合。
         return normalizeUploadedSkillFiles(directoryFiles);
     }
 
@@ -697,6 +701,7 @@ public class AdminChatSkillService {
      * 单技能迁移：下载 zip，解压上传目录，更新记录并删除旧对象。
      */
     private ChatSkill migrateSkillPackageToDirectory(ChatSkill legacySkill) {
+        // 步骤 1：先下载历史压缩包；下载失败不修改数据库记录，保证迁移可重试。
         byte[] archiveBytes;
         try {
             archiveBytes = rustFsSkillPackageClient.download(legacySkill.getStorageKey());
@@ -704,9 +709,11 @@ public class AdminChatSkillService {
             throw new BusinessException("CHAT_SKILL_PACKAGE_DOWNLOAD_FAILED", ErrorMessageCatalog.CHAT_SKILL_PACKAGE_DOWNLOAD_FAILED);
         }
 
+        // 步骤 2：解压并校验根目录存在 SKILL.md，避免把不完整包迁移成目录格式。
         List<UploadedSkillFile> uploadedFiles = normalizeUploadedSkillFiles(readZipEntries(archiveBytes));
         requireRootSkillManifest(uploadedFiles);
 
+        // 步骤 3：把目录化文件重新上传到对象存储，上传失败时保留旧压缩包记录。
         String newStorageKey;
         try {
             newStorageKey = rustFsSkillPackageClient.uploadDirectory(toStorageFiles(uploadedFiles), legacySkill.getSkillCode());
@@ -714,6 +721,7 @@ public class AdminChatSkillService {
             throw new BusinessException("CHAT_SKILL_UPLOAD_FAILED", ErrorMessageCatalog.CHAT_SKILL_PACKAGE_MIGRATE_UPLOAD_FAILED);
         }
 
+        // 步骤 4：计算目录化包大小和校验和，更新技能记录为 directory 存储格式。
         long packageSize = uploadedFiles.stream().mapToLong(item -> item.bytes().length).sum();
         String packageChecksum = calculateDirectoryChecksum(uploadedFiles);
         LocalDateTime now = LocalDateTime.now();
@@ -728,6 +736,7 @@ public class AdminChatSkillService {
             .build();
         chatSkillRepository.save(migratedSkill);
 
+        // 步骤 5：数据库已指向新目录对象后删除旧压缩包；删除失败需要暴露给调用方人工处理。
         try {
             rustFsSkillPackageClient.deleteObject(legacySkill.getStorageKey());
         } catch (Exception exception) {

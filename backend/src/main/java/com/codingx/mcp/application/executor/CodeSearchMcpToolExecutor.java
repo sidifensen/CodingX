@@ -101,12 +101,14 @@ public class CodeSearchMcpToolExecutor implements ChatMcpToolExecutor {
      */
     @Override
     public ChatMcpToolResult execute(String question) {
+        // 步骤 1：从自然语言中抽取检索词，缺少关键词时返回可操作的中文提示。
         String safeQuestion = StrUtil.blankToDefault(question, "");
         List<String> terms = parseSearchTerms(safeQuestion);
         if (terms.isEmpty()) {
             return new ChatMcpToolResult(toolId(), "请提供要检索的代码关键词，例如：查找 sendMessage 实现", Map.of("error", true));
         }
 
+        // 步骤 2：检查检索根目录，目录缺失时不要继续遍历，避免返回误导性空结果。
         if (!Files.exists(searchRoot) || !Files.isDirectory(searchRoot)) {
             return new ChatMcpToolResult(toolId(), "代码目录不存在，无法执行检索", Map.of(
                 "error", true,
@@ -118,6 +120,7 @@ public class CodeSearchMcpToolExecutor implements ChatMcpToolExecutor {
         int scannedFiles = 0;
         int skippedFiles = 0;
         try (Stream<Path> stream = Files.walk(searchRoot)) {
+            // 步骤 3：遍历允许的代码文件，跳过排除目录和超大文件，控制工具执行成本。
             for (Path filePath : stream.toList()) {
                 if (hits.size() >= maxResults) {
                     break;
@@ -135,6 +138,7 @@ public class CodeSearchMcpToolExecutor implements ChatMcpToolExecutor {
                     continue;
                 }
                 try {
+                    // 步骤 4：逐行匹配所有关键词，命中后记录相对路径、行号和行摘要。
                     List<String> lines = Files.readAllLines(filePath, StandardCharsets.UTF_8);
                     for (int index = 0; index < lines.size(); index++) {
                         String line = lines.get(index);
@@ -150,6 +154,7 @@ public class CodeSearchMcpToolExecutor implements ChatMcpToolExecutor {
                 }
             }
         } catch (Exception exception) {
+            // 步骤 5：目录遍历级异常视为整次检索失败，并把根目录和错误摘要写入 metadata。
             return new ChatMcpToolResult(toolId(), "代码检索执行失败，请稍后重试", Map.of(
                 "error", true,
                 "message", StrUtil.blankToDefault(exception.getMessage(), "unknown"),
@@ -157,6 +162,7 @@ public class CodeSearchMcpToolExecutor implements ChatMcpToolExecutor {
             ));
         }
 
+        // 步骤 6：汇总检索元数据，供前端或模型判断结果覆盖范围和跳过文件数量。
         Map<String, Object> metadata = new LinkedHashMap<>();
         metadata.put("root", searchRoot.toString());
         metadata.put("terms", terms);
@@ -166,6 +172,7 @@ public class CodeSearchMcpToolExecutor implements ChatMcpToolExecutor {
         metadata.put("maxResults", maxResults);
         metadata.put("maxFileSizeBytes", maxFileSizeBytes);
 
+        // 步骤 7：根据是否命中返回用户可读结果；未命中时提示用户换更具体关键词。
         if (hits.isEmpty()) {
             return new ChatMcpToolResult(toolId(), "未找到匹配代码，请尝试更具体的关键词", metadata);
         }

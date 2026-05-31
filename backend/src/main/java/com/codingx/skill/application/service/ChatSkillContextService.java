@@ -48,11 +48,13 @@ public class ChatSkillContextService {
      * @return 可直接作为系统提示注入模型的文本；无有效技能时返回空字符串。
      */
     public String buildSkillContext(List<String> selectedSkillCodes) {
+        // 步骤 1：去重并标准化用户选择的技能编码，没有有效编码时不注入任何技能提示。
         LinkedHashSet<String> normalizedCodes = normalizeSelectedSkillCodes(selectedSkillCodes);
         if (normalizedCodes.isEmpty()) {
             return "";
         }
 
+        // 步骤 2：按顺序加载技能配置和 SKILL.md，超过数量或字符上限的技能进入跳过列表。
         StringBuilder contentBuilder = new StringBuilder();
         int loadedSkillCount = 0;
         List<String> loadedSkillCodes = new ArrayList<>();
@@ -89,10 +91,12 @@ public class ChatSkillContextService {
             loadedSkillCodes.add(skill.getSkillCode());
         }
 
+        // 步骤 3：没有任何技能成功加载时返回空字符串并打印跳过原因，避免注入空模板。
         if (contentBuilder.isEmpty()) {
             log.warn("技能上下文未生效: 选择技能={}, 跳过技能={}", normalizedCodes, skippedSkillCodes);
             return "";
         }
+        // 步骤 4：构造系统提示，明确已选技能是本轮任务意图的一部分，防止模型忽略短句技能问题。
         log.info(
             "技能上下文已生效: 选择数={}, 生效数={}, 生效技能={}, 跳过技能={}, 上下文长度={}",
             normalizedCodes.size(),

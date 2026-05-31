@@ -67,11 +67,13 @@ public class ConfigurableWebSearchChannel implements SearchChannel {
 
     @Override
     public List<SearchReferenceCandidate> search(SearchRequestContext context) {
+        // 步骤 1：先检查联网搜索总开关和问题内容，未启用时直接让上层走不可用兜底。
         if (!runtimeSettingService.webSearchEnabled() || StrUtil.isBlank(context.question())) {
             throw new IllegalStateException(ErrorMessageCatalog.WEB_SEARCH_UNAVAILABLE);
         }
         List<String> attemptedProviders = new ArrayList<>();
         RuntimeException lastFailure = null;
+        // 步骤 2：按动态配置的 provider 顺序逐个尝试，配置缺失或熔断中的 provider 直接跳过。
         for (String provider : orderedProviders()) {
             ProviderConfig config = providerConfig(provider);
             if (config == null) {
@@ -84,6 +86,7 @@ public class ConfigurableWebSearchChannel implements SearchChannel {
             }
             attemptedProviders.add(provider);
             try {
+                // 步骤 3：调用当前 provider；空结果视为失败并进入下一个候选 provider。
                 List<SearchReferenceCandidate> candidates = executeProvider(config, context);
                 if (candidates.isEmpty()) {
                     searchProviderHealthRegistry.markFailure(provider);
@@ -100,6 +103,7 @@ public class ConfigurableWebSearchChannel implements SearchChannel {
                 );
                 return candidates;
             } catch (RuntimeException exception) {
+                // 步骤 4：单 provider 异常不立刻中断搜索，记录健康状态后继续尝试后续 provider。
                 searchProviderHealthRegistry.markFailure(provider);
                 lastFailure = exception;
                 log.warn(
@@ -110,6 +114,7 @@ public class ConfigurableWebSearchChannel implements SearchChannel {
                 );
             }
         }
+        // 步骤 5：所有 provider 均不可用时统一抛出中文不可用错误，并保留最后一次失败作为 cause。
         IllegalStateException exception = new IllegalStateException(ErrorMessageCatalog.WEB_SEARCH_UNAVAILABLE);
         if (lastFailure != null) {
             exception.initCause(lastFailure);

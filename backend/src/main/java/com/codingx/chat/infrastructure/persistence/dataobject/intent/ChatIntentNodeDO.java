@@ -7,7 +7,7 @@ import java.time.LocalDateTime;
 import lombok.Data;
 
 /**
- * 定义意图树节点表的数据对象映射，显式保留运行时字段与管理端扩展字段。
+ * 意图树节点表的数据对象映射，显式保留运行时识别配置与管理端扩展配置。
  */
 @Data
 @TableName("chat_intent_node")
@@ -30,7 +30,7 @@ public class ChatIntentNodeDO {
     @TableField("prompt_snippet") private String promptSnippet; // 管理端展示用提示词片段。
     @TableField("enabled") private Integer enabled; // 启用状态，1 表示参与运行时识别。
     @TableField("sort_no") private Integer sortNo; // 排序号，数值越小越靠前。
-    @TableField("sort_order") private Integer sortOrder; // 兼容历史排序字段。
+    @TableField("sort_order") private Integer sortOrder; // 兼容历史排序值，旧管理端仍可能读取该列。
     @TableField("created_at") private LocalDateTime createdAt; // 节点创建时间。
     @TableField("updated_at") private LocalDateTime updatedAt; // 节点最近更新时间。
     @TableField("deleted") private Integer deleted; // 逻辑删除标记，1 表示已删除。

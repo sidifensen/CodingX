@@ -50,7 +50,7 @@ public class WorkspaceDO {
     private String runtimeTarget;
 
     /**
-     * 空间类型的兼容内存字段。
+     * 兼容旧调用方的空间类型内存值。
      * 业务语义已经统一由 runtime_target 承载，这里仅保留给上层对象复用，不再映射数据库列。
      */
     @TableField(exist = false)

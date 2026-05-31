@@ -2,7 +2,7 @@ package com.codingx.auth.interfaces.response;
 import com.codingx.auth.domain.model.UserType;
 
 /**
- * 当前登录用户响应体，只暴露前端身份展示所需字段。
+ * 当前登录用户响应体，只暴露前端身份展示和入口权限判断所需的信息。
  */
 public record MeResponse(
     Long userId, // 当前登录用户主键。

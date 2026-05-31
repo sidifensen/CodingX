@@ -420,10 +420,6 @@ public class ChatApplicationService {
         long nextSequenceNo = executeMcpDecisions(subQuestionDecisions, command, runId, history, 1L);
         List<String> searchQuestions = searchQuestions(subQuestionDecisions);
         if (CollUtil.isNotEmpty(searchQuestions)) {
-            log.info(
-                "搜索决策: 子问题数={}",
-                searchQuestions.size()
-            );
             searchReferences = executeSearchQuestions(
                 searchQuestions,
                 runId,
@@ -854,10 +850,6 @@ public class ChatApplicationService {
         long nextSequenceNo = executeMcpDecisions(subQuestionDecisions, command, runId, history, 1L);
         List<String> searchQuestions = searchQuestions(subQuestionDecisions);
         if (CollUtil.isNotEmpty(searchQuestions)) {
-            log.info(
-                "搜索决策: 子问题数={}",
-                searchQuestions.size()
-            );
             searchReferences = executeSearchQuestions(
                 searchQuestions,
                 runId,
@@ -1355,7 +1347,6 @@ public class ChatApplicationService {
     ) {
         List<ChatToolSpec> toolSpecs = resolveModelVisibleToolSpecs(initialAiHistory, currentMessageAttachments);
         List<ChatMessage> currentHistory = new ArrayList<>(initialAiHistory);
-        AtomicReference<String> pendingPublishedContentPrefix = new AtomicReference<>("");
         log.info(
             "模型工具决策: 可见工具数={}, 调用模式={}",
             toolSpecs.size(),
@@ -1373,17 +1364,16 @@ public class ChatApplicationService {
                 selectedModel,
                 activeRunId,
                 null,
-                pendingPublishedContentPrefix
+                null
             ));
             return;
         }
         // 轮次上限由系统配置控制，避免模型在工具-回灌链路里无限循环。
         int maxToolRounds = Math.max(1, runtimeSettingService.chatToolMaxRounds());
-        int publishedAssistantContextLength = 0;
         Map<String, ChatToolExecutionResult> executedToolResults = new LinkedHashMap<>();
         for (int round = 0; round < maxToolRounds; round++) {
             List<AiToolCall> toolCalls = new ArrayList<>();
-            log.info("模型工具轮次: 轮次={}", round + 1);
+            List<String> deferredContentDeltas = new ArrayList<>();
             aiChatClient.streamChatWithTools(currentHistory, command.deepThinking(), toolSpecs, buildStreamHandler(
                 command,
                 builder,
@@ -1394,41 +1384,28 @@ public class ChatApplicationService {
                 selectedModel,
                 activeRunId,
                 toolCalls,
-                pendingPublishedContentPrefix
+                deferredContentDeltas
             ));
-            if (streamError[0] != null || toolCalls.isEmpty()) {
-                log.info(
-                    "模型工具轮次结束: 轮次={}, 工具调用数={}, 流错误={}",
-                    round + 1,
-                    toolCalls.size(),
-                    streamError[0] == null ? null : streamError[0].getMessage()
-                );
+            log.info(
+                "模型工具轮次: 轮次={}, 工具调用数={}, 流错误={}",
+                round + 1,
+                toolCalls.size(),
+                streamError[0] == null ? null : streamError[0].getMessage()
+            );
+            if (streamError[0] != null) {
+                return;
+            }
+            if (toolCalls.isEmpty()) {
+                flushDeferredAssistantDeltas(command.conversationId(), builder, deferredContentDeltas);
                 return;
             }
             toolCalls = filterAllowedToolCalls(toolCalls, toolSpecs, currentHistory, command.conversationId(), runId, round + 1);
             if (toolCalls.isEmpty()) {
+                logSuppressedToolRoundContent(round + 1, deferredContentDeltas);
                 continue;
             }
-            // 工具重入后模型会继续追加同一条助手消息；已流出的正文和真实 thinking 不能清空。
-            // 失败收口、finish 事件和消息落库都依赖这两个缓冲保留工具调用前已经到达的内容。
-            if (builder.length() > publishedAssistantContextLength) {
-                // 将已展示给用户的正文同步给下一轮模型，避免工具回灌后重复输出相同开场白。
-                pendingPublishedContentPrefix.set(builder.toString());
-                String publishedContent = buildPublishedAssistantContentContext(builder.toString());
-                currentHistory.add(ChatMessage.create(
-                    cn.hutool.core.util.IdUtil.getSnowflakeNextId(),
-                    command.conversationId(),
-                    ChatMessageRole.SYSTEM,
-                    publishedContent,
-                    ChatMessageStatus.COMPLETED,
-                    null,
-                    null,
-                    null
-                ).attachRun(runId));
-                publishedAssistantContextLength = builder.length();
-                log.info("提示词上下文变化: 轮次={}, 类型=已发布内容, 长度={}", round + 1, publishedContent.length());
-                log.debug("提示词上下文变化内容:\n{}", publishedContent);
-            }
+            // 工具调用轮次中的正文通常是“现在执行”“接下来调用工具”等中间过程，不能作为最终用户回答暴露。
+            logSuppressedToolRoundContent(round + 1, deferredContentDeltas);
             for (AiToolCall toolCall : toolCalls) {
                 ChatToolExecutionResult toolResult;
                 String toolCallKey = deduplicateToolCallKey(toolCall);
@@ -1461,13 +1438,54 @@ public class ChatApplicationService {
                     null,
                     null
                 ).attachRun(runId));
-                log.info("提示词上下文变化: 轮次={}, 类型=工具结果, 工具={}, 长度={}",
-                    round + 1, toolCall.toolCode(), toolEvidenceContext.length());
+                log.info(
+                    "本地工具: 轮次={}, 工具={}, 输出={}, 上下文={}",
+                    round + 1,
+                    toolCall.toolCode(),
+                    StrUtil.length(toolResult.content()),
+                    StrUtil.length(toolEvidenceContext)
+                );
                 log.debug("提示词上下文变化内容:\n{}", toolEvidenceContext);
             }
         }
         // 连续工具调用仍未结束时，用明确异常提示用户收敛工具调用策略。
         streamError[0] = new IllegalStateException("本地工具调用轮次超过上限，请收敛工具调用后重试");
+    }
+
+    /**
+     * 将确认不再发起工具调用的模型正文回放给用户，并同步追加到最终助手消息缓冲。
+     *
+     * @param conversationId 当前会话标识。
+     * @param builder 最终助手消息正文缓冲。
+     * @param deferredContentDeltas 本轮模型产生但尚未对用户可见的正文增量。
+     */
+    private void flushDeferredAssistantDeltas(Long conversationId, StringBuilder builder, List<String> deferredContentDeltas) {
+        if (CollUtil.isEmpty(deferredContentDeltas)) {
+            return;
+        }
+        for (String delta : deferredContentDeltas) {
+            if (StrUtil.isEmpty(delta)) {
+                continue;
+            }
+            builder.append(delta);
+            chatStreamPublisher.publishAssistantDelta(conversationId, delta);
+        }
+    }
+
+    /**
+     * 记录被丢弃的工具轮次正文长度，用于排查模型把内部执行说明写进正文的情况。
+     *
+     * @param round 工具调用轮次。
+     * @param deferredContentDeltas 本轮待丢弃的正文增量。
+     */
+    private void logSuppressedToolRoundContent(int round, List<String> deferredContentDeltas) {
+        if (CollUtil.isEmpty(deferredContentDeltas)) {
+            return;
+        }
+        int contentLength = deferredContentDeltas.stream()
+            .mapToInt(StrUtil::length)
+            .sum();
+        log.info("模型工具轮次正文已隐藏: 轮次={}, 增量数={}, 长度={}", round, deferredContentDeltas.size(), contentLength);
     }
 
     /**
@@ -1548,17 +1566,6 @@ public class ChatApplicationService {
     private String normalizeToolCode(String toolCode) {
         return StrUtil.trimToEmpty(toolCode).toLowerCase(java.util.Locale.ROOT);
     }
-    /**
-     * 构造已流式输出正文的模型上下文，约束下一轮工具回灌只继续未完成步骤。
-     */
-    private String buildPublishedAssistantContentContext(String content) {
-        return """
-            本轮助手已经向用户流式输出过以下正文：
-            %s
-
-            后续回答必须承接这些已输出内容，不要重复输出上述正文或相同含义的开场白；只继续调用必要工具或补充尚未完成的最终结果。
-            """.formatted(content);
-    }
 
     /**
      * 根据当前模型上下文裁剪可见工具；图片附件已作为多模态内容入模时，隐藏 view_image。
@@ -1631,7 +1638,7 @@ public class ChatApplicationService {
      * @param selectedModel 模型输出容器。
      * @param activeRunId 当前运行标识。
      * @param toolCalls 工具调用收集器；为空时表示普通流式模式。
-     * @param pendingPublishedContentPrefix 工具回灌后下一轮模型需要跳过的已发布正文前缀。
+     * @param deferredContentDeltas 工具模式下的正文延迟缓冲；为空时立即发布给用户。
      * @return 可传给模型客户端的流处理器。
      */
     private AiChatClient.ToolAwareStreamHandler buildStreamHandler(
@@ -1644,7 +1651,7 @@ public class ChatApplicationService {
         String[] selectedModel,
         Long activeRunId,
         List<AiToolCall> toolCalls,
-        AtomicReference<String> pendingPublishedContentPrefix
+        List<String> deferredContentDeltas
     ) {
         return new AiChatClient.ToolAwareStreamHandler() {
             @Override
@@ -1658,12 +1665,15 @@ public class ChatApplicationService {
                 if (chatRuntimeGuardService.isCancelled(command.conversationId(), activeRunId)) {
                     return;
                 }
-                String publishableDelta = consumePublishedContentPrefix(delta, pendingPublishedContentPrefix);
-                if (StrUtil.isEmpty(publishableDelta)) {
+                if (StrUtil.isEmpty(delta)) {
                     return;
                 }
-                builder.append(publishableDelta);
-                chatStreamPublisher.publishAssistantDelta(command.conversationId(), publishableDelta);
+                if (deferredContentDeltas != null) {
+                    deferredContentDeltas.add(delta);
+                    return;
+                }
+                builder.append(delta);
+                chatStreamPublisher.publishAssistantDelta(command.conversationId(), delta);
             }
 
             @Override
@@ -1695,36 +1705,6 @@ public class ChatApplicationService {
     }
 
     /**
-     * 消费工具回灌后模型重复输出的已发布正文前缀，保证 SSE、内存缓冲和最终落库内容不重复。
-     *
-     * @param delta 当前模型正文增量。
-     * @param pendingPublishedContentPrefix 仍需要跳过的已发布正文前缀。
-     * @return 应继续发布的新正文；完全重复时返回空串。
-     */
-    private String consumePublishedContentPrefix(
-        String delta,
-        AtomicReference<String> pendingPublishedContentPrefix
-    ) {
-        if (StrUtil.isEmpty(delta) || pendingPublishedContentPrefix == null) {
-            return StrUtil.blankToDefault(delta, "");
-        }
-        String pendingPrefix = StrUtil.blankToDefault(pendingPublishedContentPrefix.get(), "");
-        if (StrUtil.isEmpty(pendingPrefix)) {
-            return delta;
-        }
-        if (pendingPrefix.startsWith(delta)) {
-            pendingPublishedContentPrefix.set(pendingPrefix.substring(delta.length()));
-            return "";
-        }
-        if (delta.startsWith(pendingPrefix)) {
-            pendingPublishedContentPrefix.set("");
-            return delta.substring(pendingPrefix.length());
-        }
-        pendingPublishedContentPrefix.set("");
-        return delta;
-    }
-
-    /**
      * 在当前本地 workspace 中执行模型请求的工具。
      * @param command 当前消息命令。
      * @param runId 运行标识。
@@ -1739,18 +1719,9 @@ public class ChatApplicationService {
             ChatToolExecutionContext.bindToolWorkingDirectory(workspacePath);
         }
         LocalDateTime startedAt = LocalDateTime.now();
-        log.info(
-            "本地工具执行: 工具={}",
-            toolCall.toolCode()
-        );
         publishLocalToolCallEvent(command.conversationId(), toolCall, "start", startedAt, null, null);
         try {
             ChatToolExecutionResult toolResult = chatToolExecutionService.execute(toolCall.toolCode(), toolCall.arguments());
-            log.info(
-                "本地工具完成: 工具={}, 输出长度={}",
-                toolCall.toolCode(),
-                StrUtil.length(toolResult.content())
-            );
             ChatExecutionStep toolStep = ChatExecutionStep.builder()
                 .id(cn.hutool.core.util.IdUtil.getSnowflakeNextId())
                 .runId(runId)
@@ -2644,7 +2615,7 @@ public class ChatApplicationService {
             effectiveQuestions = searchQuestions.subList(0, maxParallelQuestions);
         }
         log.info(
-            "搜索执行: 请求子问题数={}, 实际子问题数={}, 并发上限={}",
+            "搜索决策/执行: 请求子问题数={}, 实际子问题数={}, 并发上限={}",
             searchQuestions.size(),
             effectiveQuestions.size(),
             maxParallelQuestions
@@ -2685,7 +2656,6 @@ public class ChatApplicationService {
             }
         }
         List<SearchReferenceCandidate> references = new ArrayList<>(merged.values());
-        log.info("搜索完成: 引用数={}", references.size());
         return references;
     }
 

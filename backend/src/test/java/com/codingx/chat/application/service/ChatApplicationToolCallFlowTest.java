@@ -171,7 +171,12 @@ class ChatApplicationToolCallFlowTest {
         assertEquals("工具已执行", toolEvents.get(1).get("content"));
         assertEquals("工具返回：工具已执行", toolEvents.get(1).get("reactObservation"));
         assertEquals(Boolean.TRUE, ((Map<?, ?>) toolEvents.get(1).get("resultMetadata")).get("ok"));
-        verify(chatStreamPublisher).publishAssistantCompleted(1L, "已通过工具完成本地文件操作。", "本地工具调用");
+        verify(chatStreamPublisher).publishAssistantCompleted(
+            eq(1L),
+            any(),
+            eq("已通过工具完成本地文件操作。"),
+            eq("本地工具调用")
+        );
         ArgumentCaptor<ChatMessage> messageCaptor = ArgumentCaptor.forClass(ChatMessage.class);
         verify(chatMessageRepository, org.mockito.Mockito.times(2)).save(messageCaptor.capture());
         ChatMessage assistantMessage = messageCaptor.getAllValues().get(1);
@@ -182,13 +187,13 @@ class ChatApplicationToolCallFlowTest {
     }
 
     /**
-     * 模型在工具调用前已经说出的正文必须保留，工具结果回灌后继续追加后续正文。
+     * 带工具调用的模型轮次可能输出“现在执行”等内部过程正文；这些正文不能提前展示给用户。
      *
      * @param tempDir 本地 workspace 临时目录。
      * @throws Exception 执行失败时抛出。
      */
     @Test
-    void sendMessagePreservesContentBeforeAndAfterModelToolCall(@TempDir Path tempDir) throws Exception {
+    void sendMessageSuppressesToolRoundNarrationUntilFinalRound(@TempDir Path tempDir) throws Exception {
         Long runId = 9401005L;
         ChatExecutionContext.start(runId);
         Path workspace = tempDir.resolve("repo");
@@ -219,7 +224,7 @@ class ChatApplicationToolCallFlowTest {
         doAnswer(invocation -> {
             AiChatClient.ToolAwareStreamHandler handler = invocation.getArgument(3);
             if (modelRound.incrementAndGet() == 1) {
-                handler.onDelta("我先检查当前目录。\n\n");
+                handler.onDelta("现在执行：在当前 workspace 中检查目录。\n\n");
                 handler.onToolCall(new AiToolCall("call-live-1", "test_sync_tool", "{\"message\":\"pwd\"}"));
                 handler.onComplete();
                 return null;
@@ -234,28 +239,29 @@ class ChatApplicationToolCallFlowTest {
             1002L
         );
 
-        verify(chatStreamPublisher).publishAssistantDelta(5L, "我先检查当前目录。\n\n");
+        verify(chatStreamPublisher, never()).publishAssistantDelta(5L, "现在执行：在当前 workspace 中检查目录。\n\n");
         verify(chatStreamPublisher).publishAssistantDelta(5L, "目录确认后，我继续说明结果。");
         verify(chatStreamPublisher).publishAssistantCompleted(
-            5L,
-            "我先检查当前目录。\n\n目录确认后，我继续说明结果。",
-            "实时工具过程"
+            eq(5L),
+            any(),
+            eq("目录确认后，我继续说明结果。"),
+            eq("实时工具过程")
         );
         ArgumentCaptor<ChatMessage> messageCaptor = ArgumentCaptor.forClass(ChatMessage.class);
         verify(chatMessageRepository, org.mockito.Mockito.times(2)).save(messageCaptor.capture());
         ChatMessage assistantMessage = messageCaptor.getAllValues().get(1);
-        assertEquals("我先检查当前目录。\n\n目录确认后，我继续说明结果。", assistantMessage.getContent());
+        assertEquals("目录确认后，我继续说明结果。", assistantMessage.getContent());
         ChatExecutionContext.clear();
     }
 
     /**
-     * 工具回灌后的下一轮模型必须知道本轮已经流给用户的正文，避免重复输出相同开场白。
+     * 工具调用轮次正文尚未对用户可见，不能作为“已发布正文”回灌给下一轮模型。
      *
      * @param tempDir 本地 workspace 临时目录。
      * @throws Exception 执行失败时抛出。
      */
     @Test
-    void sendMessageFeedsPublishedAssistantContentIntoNextToolRound(@TempDir Path tempDir) throws Exception {
+    void sendMessageDoesNotFeedSuppressedToolRoundContentIntoNextToolRound(@TempDir Path tempDir) throws Exception {
         Long runId = 9401008L;
         ChatExecutionContext.start(runId);
         try {
@@ -289,16 +295,16 @@ class ChatApplicationToolCallFlowTest {
                 List<ChatMessage> history = invocation.getArgument(0);
                 AiChatClient.ToolAwareStreamHandler handler = invocation.getArgument(3);
                 if (modelRound.incrementAndGet() == 1) {
-                    handler.onDelta("我将为您创建一个简单的日记HTML页面。");
+                    handler.onDelta("现在执行：准备创建日记 HTML 页面。");
                     handler.onToolCall(new AiToolCall("call-repeat-1", "test_sync_tool", "{\"message\":\"mkdir\"}"));
                     handler.onComplete();
                     return null;
                 }
                 assertEquals(
-                    true,
+                    false,
                     history.stream().anyMatch(message ->
                         message.getRole() == ChatMessageRole.SYSTEM
-                            && message.getContent().contains("我将为您创建一个简单的日记HTML页面")
+                            && message.getContent().contains("现在执行：准备创建日记 HTML 页面")
                             && message.getContent().contains("不要重复输出")
                     )
                 );
@@ -313,10 +319,12 @@ class ChatApplicationToolCallFlowTest {
             );
 
             verify(aiChatClient, org.mockito.Mockito.times(2)).streamChatWithTools(any(), eq(false), any(), any());
+            verify(chatStreamPublisher, never()).publishAssistantDelta(8L, "现在执行：准备创建日记 HTML 页面。");
             verify(chatStreamPublisher).publishAssistantCompleted(
-                8L,
-                "我将为您创建一个简单的日记HTML页面。目录已准备好，接下来写入页面。",
-                "日记页面"
+                eq(8L),
+                any(),
+                eq("目录已准备好，接下来写入页面。"),
+                eq("日记页面")
             );
         } finally {
             ChatExecutionContext.clear();
@@ -464,7 +472,7 @@ class ChatApplicationToolCallFlowTest {
             verify(chatMessageRepository, org.mockito.Mockito.times(2)).save(messageCaptor.capture());
             ChatMessage failedMessage = messageCaptor.getAllValues().get(1);
             assertEquals(ChatMessageStatus.FAILED, failedMessage.getStatus());
-            assertEquals("我先执行第一轮工具。\n\n", failedMessage.getContent());
+            assertEquals("AI 回复失败", failedMessage.getContent());
             assertEquals("先规划第一步。", failedMessage.getThinkingContent());
             assertEquals("本地工具调用轮次超过上限，请收敛工具调用后重试", failedMessage.getErrorMessage());
         } finally {
@@ -532,7 +540,12 @@ class ChatApplicationToolCallFlowTest {
 
         verify(chatWorkspaceBindingService).findRepositoryPathByWorkspaceId(3001L);
         verify(chatToolExecutionService).execute("test_sync_tool", "{\"message\":\"workspace\"}");
-        verify(chatStreamPublisher).publishAssistantCompleted(2L, "已在 workspace 执行。", "workspace 工具调用");
+        verify(chatStreamPublisher).publishAssistantCompleted(
+            eq(2L),
+            any(),
+            eq("已在 workspace 执行。"),
+            eq("workspace 工具调用")
+        );
         ChatExecutionContext.clear();
     }
 
@@ -794,7 +807,7 @@ class ChatApplicationToolCallFlowTest {
         verify(chatMessageRepository, org.mockito.Mockito.times(2)).save(messageCaptor.capture());
         ChatMessage failedMessage = messageCaptor.getAllValues().get(1);
         assertEquals(ChatMessageStatus.FAILED, failedMessage.getStatus());
-        assertEquals("我先尝试调用工具。\n\n", failedMessage.getContent());
+        assertEquals("AI 回复失败", failedMessage.getContent());
         assertEquals("先判断工具可用性。", failedMessage.getThinkingContent());
         ChatExecutionContext.clear();
     }

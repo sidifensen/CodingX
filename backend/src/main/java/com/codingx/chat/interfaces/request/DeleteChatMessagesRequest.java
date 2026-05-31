@@ -7,6 +7,6 @@ import java.util.List;
  * @param messageIds 待删除消息主键列表。
  */
 public record DeleteChatMessagesRequest(
-    List<Long> messageIds
+    List<Long> messageIds // 前端选择删除的消息主键列表，可为空；服务层会过滤空值和重复值，空列表时不执行删除。
 ) {
 }

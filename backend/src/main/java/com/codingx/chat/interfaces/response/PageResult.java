@@ -14,11 +14,11 @@ import lombok.Builder;
  */
 @Builder
 public record PageResult<T>(
-    List<T> records,
-    Long total,
-    Long size,
-    Long current,
-    Long pages
+    List<T> records, // 当前页数据列表，空页返回空列表而不是 null。
+    Long total, // 符合查询条件的总记录数。
+    Long size, // 当前请求每页条数。
+    Long current, // 当前页码，沿用前端分页组件从 1 开始的约定。
+    Long pages // 按 total 和 size 计算出的总页数。
 ) {
 }
 

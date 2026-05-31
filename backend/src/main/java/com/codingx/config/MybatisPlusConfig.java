@@ -1,21 +1,23 @@
 package com.codingx.config;
+
 import com.baomidou.mybatisplus.core.incrementer.DefaultIdentifierGenerator;
 import com.baomidou.mybatisplus.core.incrementer.IdentifierGenerator;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 /**
- * 负责配置 MybatisPlusConfig 所需的 Spring Bean 与基础设施。
+ * MyBatis-Plus 基础配置，统一声明实体主键生成策略。
  */
 @Configuration
 public class MybatisPlusConfig {
 
     /**
-     * 执行 identifierGenerator 定义的处理逻辑。
-     * @return 输入参数。
+     * 创建默认雪花 ID 生成器。
+     * @return MyBatis-Plus 使用的主键生成器。
      */
     @Bean
     public IdentifierGenerator identifierGenerator() {
+        // 步骤 1：使用 MyBatis-Plus 默认实现生成 Long 主键，保持各业务表 ID 策略一致。
         return new DefaultIdentifierGenerator();
     }
 }

@@ -16,10 +16,10 @@ import java.util.Optional;
  * @param toolWorkingDirectory 工具工作目录。
  */
 record ChatExecutorContextSnapshot(
-    Long runId,
-    ChatTraceRun traceRun,
-    Deque<String> traceNodeStack,
-    Path toolWorkingDirectory
+    Long runId, // 聊天执行 runId，可为空；为空时异步线程会清理 ChatExecutionContext。
+    ChatTraceRun traceRun, // 当前 Trace 根上下文，可为空；为空时异步线程不绑定 Trace。
+    Deque<String> traceNodeStack, // Trace 节点栈快照，可为空；用于恢复异步节点父子关系。
+    Path toolWorkingDirectory // 工具工作目录，可为空；为空时异步线程不绑定本地工具目录。
 ) {
 
     /**
@@ -27,9 +27,12 @@ record ChatExecutorContextSnapshot(
      * @return 上下文快照。
      */
     static ChatExecutorContextSnapshot capture() {
+        // 步骤 1：从当前提交线程读取聊天执行上下文，缺失时用 null 表示需要清理目标线程状态。
         Optional<Long> runId = ChatExecutionContext.currentRunId();
+        // 步骤 2：捕获 Trace 根对象和节点栈，保证异步任务继续挂在同一条过程链路下。
         ChatTraceRun traceRun = ConversationTraceContext.current();
         Deque<String> traceNodeStack = ConversationTraceContext.snapshotNodeStack();
+        // 步骤 3：捕获工具工作目录，避免本地工具在异步线程中找不到会话级目录。
         Optional<Path> toolWorkingDirectory = ChatToolExecutionContext.currentToolWorkingDirectory();
         return new ChatExecutorContextSnapshot(runId.orElse(null), traceRun, traceNodeStack, toolWorkingDirectory.orElse(null));
     }
@@ -39,18 +42,24 @@ record ChatExecutorContextSnapshot(
      */
     void apply() {
         if (runId != null) {
+            // 步骤 1：有 runId 时恢复聊天执行上下文，供日志和状态回写读取当前运行编号。
             ChatExecutionContext.start(runId);
         } else {
+            // 步骤 2：快照中没有 runId 时主动清理，避免线程池旧值串到当前任务。
             ChatExecutionContext.clear();
         }
         if (traceRun != null) {
+            // 步骤 3：恢复 Trace 根对象和节点栈，确保异步节点继续保持父子层级。
             ConversationTraceContext.bind(traceRun, traceNodeStack);
         } else {
+            // 步骤 4：没有 Trace 快照时清空目标线程 Trace，避免污染非追踪任务。
             ConversationTraceContext.clear();
         }
         if (toolWorkingDirectory != null) {
+            // 步骤 5：恢复工具工作目录，供本地命令、文件读写等工具链路使用。
             ChatToolExecutionContext.bindToolWorkingDirectory(toolWorkingDirectory);
         } else {
+            // 步骤 6：没有工具目录时清理 ThreadLocal，避免复用其他会话目录。
             ChatToolExecutionContext.clear();
         }
     }
@@ -59,6 +68,7 @@ record ChatExecutorContextSnapshot(
      * 清理当前线程上下文，避免线程池复用造成串线。
      */
     static void clearCurrent() {
+        // 步骤 1：任务完成后统一清理三个 ThreadLocal 上下文，防止线程池复用造成跨会话串线。
         ChatExecutionContext.clear();
         ConversationTraceContext.clear();
         ChatToolExecutionContext.clear();

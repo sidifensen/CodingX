@@ -1,4 +1,5 @@
 package com.codingx.chat.domain.model;
+
 import cn.hutool.core.util.StrUtil;
 import com.codingx.common.error.ErrorMessageCatalog;
 import java.time.LocalDateTime;
@@ -9,7 +10,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 /**
- * 定义 ChatConversation 的核心领域状态与行为。
+ * 聊天会话领域对象，承载会话归属、列表排序、公开分享和任务完成提醒状态。
  */
 @Getter
 @Builder(toBuilder = true)
@@ -78,17 +79,20 @@ public class ChatConversation {
     private LocalDateTime updatedAt;
 
     /**
-     * 创建 create 所需数据并返回结果。
-     * @param id 输入参数。
-     * @param title 输入参数。
-     * @param createdBy 输入参数。
-     * @param status 输入参数。
-     * @return 输入参数。
+     * 创建会话领域对象。
+     * @param id 会话主键。
+     * @param title 会话标题，不允许为空白。
+     * @param createdBy 创建人用户标识。
+     * @param workspaceId 所属工作空间标识，可为空；为空表示历史未归属云端会话。
+     * @param status 会话状态。
+     * @return 初始化完成的会话领域对象。
      */
     public static ChatConversation create(Long id, String title, Long createdBy, Long workspaceId, ChatConversationStatus status) {
+        // 步骤 1：会话必须具备主键、创建人、状态和标题，缺失时拒绝创建。
         if (id == null || createdBy == null || status == null || StrUtil.isBlank(title)) {
             throw new IllegalArgumentException(ErrorMessageCatalog.CHAT_CONVERSATION_FIELDS_REQUIRED);
         }
+        // 步骤 2：新会话默认不置顶，任务完成提醒默认已读，避免创建后立即展示红点。
         return ChatConversation.builder()
             .id(id)
             .title(title)
@@ -102,20 +106,22 @@ public class ChatConversation {
 
     /**
      * 兼容旧调用方，默认不绑定工作空间。
-     * @param id 输入参数。
-     * @param title 输入参数。
-     * @param createdBy 输入参数。
-     * @param status 输入参数。
-     * @return 输入参数。
+     * @param id 会话主键。
+     * @param title 会话标题。
+     * @param createdBy 创建人用户标识。
+     * @param status 会话状态。
+     * @return 初始化完成的会话领域对象。
      */
     public static ChatConversation create(Long id, String title, Long createdBy, ChatConversationStatus status) {
+        // 步骤 1：旧路径没有 workspaceId，统一委托到完整工厂方法并传入 null。
         return create(id, title, createdBy, null, status);
     }
 
     /**
-     * 刷新 touch 处理的时间或状态。
+     * 刷新最近消息时间，供会话列表按最近活跃排序。
      */
     public void touch() {
+        // 步骤 1：每次消息写入或回复完成后刷新最近消息时间。
         this.lastMessageAt = LocalDateTime.now();
     }
 
@@ -125,8 +131,10 @@ public class ChatConversation {
      */
     public void rename(String title) {
         if (StrUtil.isBlank(title)) {
+            // 空标题不覆盖当前标题，避免模型生成失败时把会话名清空。
             return;
         }
+        // 步骤 1：只在标题有效时更新，持久化由应用服务统一触发。
         this.title = title;
     }
 
@@ -134,6 +142,7 @@ public class ChatConversation {
      * 将当前会话标记为已删除，避免历史列表继续展示。
      */
     public void markDeleted() {
+        // 步骤 1：领域状态标记为归档，仓储层仍通过 deleted 字段执行列表隐藏。
         this.status = ChatConversationStatus.ARCHIVED;
     }
 
@@ -142,6 +151,7 @@ public class ChatConversation {
      * @param lastRunId 最新执行记录标识。
      */
     public void recordLastRunId(Long lastRunId) {
+        // 步骤 1：记录最新运行编号，供会话列表和右侧工作区定位最近一次执行链路。
         this.lastRunId = lastRunId;
     }
 
@@ -150,6 +160,7 @@ public class ChatConversation {
      * @param pinned 是否置顶。
      */
     public void setPinned(Boolean pinned) {
+        // 步骤 1：仅更新置顶状态，不能与分享令牌或任务提醒状态复用。
         this.pinned = pinned;
     }
 
@@ -158,6 +169,7 @@ public class ChatConversation {
      * @param shareToken 分享令牌。
      */
     public void setShareToken(String shareToken) {
+        // 步骤 1：分享令牌只表示公开只读链接标识，不能参与置顶排序或提醒状态判断。
         this.shareToken = shareToken;
     }
 
@@ -165,6 +177,7 @@ public class ChatConversation {
      * 后台任务进入终态时重置为未读，提示用户回来查看执行结果。
      */
     public void markTaskCompletionUnread() {
+        // 步骤 1：后台任务完成后重置为未读，前端刷新后可通过数据库状态继续展示提醒。
         this.taskCompletionRead = Boolean.FALSE;
     }
 
@@ -172,6 +185,7 @@ public class ChatConversation {
      * 用户打开会话后标记任务完成提醒已读，避免刷新后重复提示。
      */
     public void markTaskCompletionRead() {
+        // 步骤 1：用户进入会话或点击提醒后标记已读，避免同一任务完成状态重复提示。
         this.taskCompletionRead = Boolean.TRUE;
     }
 

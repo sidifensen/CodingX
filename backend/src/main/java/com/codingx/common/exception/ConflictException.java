@@ -6,7 +6,7 @@ package com.codingx.common.exception;
 public class ConflictException extends BusinessException {
 
     /**
-     * 执行 ConflictException 定义的处理逻辑。
+     * 使用指定错误码创建业务冲突异常。
      * @param code 业务错误码。
      * @param message 中文错误文案。
      */

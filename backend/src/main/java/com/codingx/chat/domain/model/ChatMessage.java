@@ -1,4 +1,5 @@
 package com.codingx.chat.domain.model;
+
 import cn.hutool.core.util.IdUtil;
 import cn.hutool.core.util.StrUtil;
 import com.codingx.common.error.ErrorMessageCatalog;
@@ -10,7 +11,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 /**
- * 定义 ChatMessage 的核心领域状态与行为。
+ * 聊天消息领域对象，承载用户消息、助手回复、思考内容和模型运行元数据。
  */
 @Getter
 @Builder(toBuilder = true)
@@ -29,7 +30,7 @@ public class ChatMessage {
     private Long conversationId;
 
     /**
-     * role 字段。
+     * 消息角色，区分用户输入、助手回复等上下文身份。
      */
     private ChatMessageRole role;
 
@@ -89,26 +90,28 @@ public class ChatMessage {
     private LocalDateTime updatedAt;
 
     /**
-     * 执行 userMessage 定义的处理逻辑。
-     * @param conversationId 输入参数。
-     * @param content 输入参数。
-     * @return 输入参数。
+     * 创建用户消息。
+     * @param conversationId 会话标识。
+     * @param content 用户输入正文。
+     * @return 已初始化为完成状态的用户消息。
      */
     public static ChatMessage userMessage(Long conversationId, String content) {
+        // 步骤 1：用户消息进入上下文时即视为完成，不需要 provider/model/error 元数据。
         return create(IdUtil.getSnowflakeNextId(), conversationId, ChatMessageRole.USER, content, ChatMessageStatus.COMPLETED, null, null, null);
     }
 
     /**
-     * 执行 assistantMessage 定义的处理逻辑。
-     * @param conversationId 输入参数。
-     * @param content 输入参数。
-     * @param status 输入参数。
-     * @param provider 输入参数。
-     * @param model 输入参数。
-     * @param errorMessage 输入参数。
-     * @return 输入参数。
+     * 创建助手消息。
+     * @param conversationId 会话标识。
+     * @param content 助手回复正文或错误占位内容。
+     * @param status 消息状态，表示生成中、完成或失败等业务终态。
+     * @param provider 实际命中的模型供应商，可为空。
+     * @param model 实际命中的模型名称，可为空。
+     * @param errorMessage 失败时返回给前端展示的中文错误文案，可为空。
+     * @return 助手消息领域对象。
      */
     public static ChatMessage assistantMessage(Long conversationId, String content, ChatMessageStatus status, String provider, String model, String errorMessage) {
+        // 步骤 1：助手消息保留 provider/model/error 元数据，便于历史回放和故障排查。
         return create(IdUtil.getSnowflakeNextId(), conversationId, ChatMessageRole.ASSISTANT, content, status, provider, model, errorMessage);
     }
 
@@ -123,22 +126,25 @@ public class ChatMessage {
     }
 
     /**
-     * 创建 create 所需数据并返回结果。
-     * @param id 输入参数。
-     * @param conversationId 输入参数。
-     * @param role 输入参数。
-     * @param content 输入参数。
-     * @param status 输入参数。
-     * @param provider 输入参数。
-     * @param model 输入参数。
-     * @param errorMessage 输入参数。
-     * @return 输入参数。
+     * 创建聊天消息领域对象。
+     * @param id 消息主键。
+     * @param conversationId 会话标识。
+     * @param role 消息角色。
+     * @param content 消息正文，不允许为空白。
+     * @param status 消息状态。
+     * @param provider 实际命中的模型供应商，可为空。
+     * @param model 实际命中的模型名称，可为空。
+     * @param errorMessage 失败原因文案，可为空。
+     * @return 初始化完成的聊天消息领域对象。
      */
     public static ChatMessage create(Long id, Long conversationId, ChatMessageRole role, String content, ChatMessageStatus status, String provider, String model, String errorMessage) {
+        // 步骤 1：领域对象必须具备主键、会话、角色、状态和正文，缺失时直接拒绝创建。
         if (id == null || conversationId == null || role == null || status == null || StrUtil.isBlank(content)) {
             throw new IllegalArgumentException(ErrorMessageCatalog.CHAT_MESSAGE_FIELDS_REQUIRED);
         }
+        // 步骤 2：新建消息使用当前时间初始化创建与更新时间，持久化恢复路径会覆盖原始时间。
         LocalDateTime now = LocalDateTime.now();
+        // 步骤 3：默认 deleted=0，消息级删除只能通过仓储逻辑删除更新。
         return ChatMessage.builder()
             .id(id)
             .conversationId(conversationId)
@@ -169,9 +175,11 @@ public class ChatMessage {
         LocalDateTime createdAt,
         LocalDateTime updatedAt
     ) {
+        // 步骤 1：运行态字段来自数据库恢复，不参与新消息的必填校验。
         this.runId = runId;
         this.thinkingContent = thinkingContent;
         this.thinkingDuration = thinkingDuration;
+        // 步骤 2：保留数据库中的原始时间，避免历史回放时被当前时间覆盖。
         this.createdAt = createdAt;
         this.updatedAt = updatedAt;
     }

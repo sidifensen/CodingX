@@ -1,26 +1,27 @@
 package com.codingx.chat.infrastructure.stream;
+
 import com.codingx.chat.domain.port.ChatStreamPublisher;
 import org.springframework.stereotype.Component;
 
 /**
- * 负责 NoopChatStreamPublisher 的流式事件发布。
+ * 空实现的聊天流式事件发布器，供不需要实时推送的测试或降级场景使用。
  */
 @Component
 public class NoopChatStreamPublisher implements ChatStreamPublisher {
 
     /**
-     * 发布 publishUserMessage 处理的更新内容。
-     * @param conversationId 输入参数。
-     * @param content 输入参数。
+     * 忽略用户消息发布。
+     * @param conversationId 会话标识。
+     * @param content 用户消息正文。
      */
     @Override
     public void publishUserMessage(Long conversationId, String content) {
     }
 
     /**
-     * 发布 publishAssistantDelta 处理的更新内容。
-     * @param conversationId 输入参数。
-     * @param delta 输入参数。
+     * 忽略助手正文增量发布。
+     * @param conversationId 会话标识。
+     * @param delta 助手正文增量。
      */
     @Override
     public void publishAssistantDelta(Long conversationId, String delta) {
@@ -51,9 +52,10 @@ public class NoopChatStreamPublisher implements ChatStreamPublisher {
     }
 
     /**
-     * 发布 publishAssistantCompleted 处理的更新内容。
-     * @param conversationId 输入参数。
-     * @param content 输入参数。
+     * 忽略助手完成事件。
+     * @param conversationId 会话标识。
+     * @param content 助手完整回复。
+     * @param title 会话标题。
      */
     @Override
     public void publishAssistantCompleted(Long conversationId, String content, String title) {
@@ -85,9 +87,9 @@ public class NoopChatStreamPublisher implements ChatStreamPublisher {
     }
 
     /**
-     * 发布 publishError 处理的更新内容。
-     * @param conversationId 输入参数。
-     * @param message 输入参数。
+     * 忽略错误事件发布。
+     * @param conversationId 会话标识。
+     * @param message 错误文案。
      */
     @Override
     public void publishError(Long conversationId, String message) {

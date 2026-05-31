@@ -1,23 +1,24 @@
 package com.codingx.chat.domain.repository;
+
 import com.codingx.chat.domain.model.ChatConversation;
 import java.util.List;
 import java.util.Optional;
 
 /**
- * 定义 ChatConversationRepository 的仓储契约。
+ * 聊天会话仓储端口，负责会话聚合的加载、保存、分享查询和管理端检索。
  */
 public interface ChatConversationRepository {
 
     /**
-     * 加载 requireById 所需数据，不存在时抛出异常。
-     * @param conversationId 输入参数。
-     * @return 输入参数。
+     * 按主键加载会话，不存在或已删除时抛出业务异常。
+     * @param conversationId 会话标识。
+     * @return 会话领域对象。
      */
     ChatConversation requireById(Long conversationId);
 
     /**
-     * 持久化 save 处理的状态。
-     * @param conversation 输入参数。
+     * 保存会话聚合，存在时更新，不存在时新增。
+     * @param conversation 待持久化的会话领域对象。
      */
     void save(ChatConversation conversation);
 
@@ -28,9 +29,10 @@ public interface ChatConversationRepository {
     void deleteById(Long conversationId);
 
     /**
-     * 查询 findByCreatedBy 需要的数据。
-     * @param userId 输入参数。
-     * @return 输入参数。
+     * 查询指定用户在指定工作空间下的未删除会话。
+     * @param userId 用户标识。
+     * @param workspaceId 工作空间标识，可为空；为空时查询历史未归属云端会话。
+     * @return 按置顶、更新时间和主键倒序排列的会话列表。
      */
     List<ChatConversation> findByCreatedByAndWorkspaceId(Long userId, Long workspaceId);
 

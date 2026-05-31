@@ -1,21 +1,21 @@
 package com.codingx.chat.domain.port;
 
 /**
- * 定义 ChatStreamPublisher 的领域服务契约。
+ * 聊天流式事件发布端口，应用层只描述要发布的领域事件，具体 SSE 或空实现由基础设施层承接。
  */
 public interface ChatStreamPublisher {
 
     /**
-     * 发布 publishUserMessage 处理的更新内容。
-     * @param conversationId 输入参数。
-     * @param content 输入参数。
+     * 发布用户消息事件。
+     * @param conversationId 会话标识。
+     * @param content 用户消息正文。
      */
     void publishUserMessage(Long conversationId, String content);
 
     /**
-     * 发布 publishAssistantDelta 处理的更新内容。
-     * @param conversationId 输入参数。
-     * @param delta 输入参数。
+     * 发布助手正文增量事件。
+     * @param conversationId 会话标识。
+     * @param delta 助手回复正文增量。
      */
     void publishAssistantDelta(Long conversationId, String delta);
 
@@ -109,9 +109,9 @@ public interface ChatStreamPublisher {
     void publishQueueAccepted(Long conversationId);
 
     /**
-     * 发布 publishError 处理的更新内容。
-     * @param conversationId 输入参数。
-     * @param message 输入参数。
+     * 发布聊天执行错误事件，并结束当前流式通道。
+     * @param conversationId 会话标识。
+     * @param message 返回给前端展示的中文错误文案。
      */
     void publishError(Long conversationId, String message);
 }

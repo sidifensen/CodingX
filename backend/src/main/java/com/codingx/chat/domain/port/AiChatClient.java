@@ -1,4 +1,5 @@
 package com.codingx.chat.domain.port;
+
 import com.codingx.chat.domain.model.ChatMessage;
 import com.codingx.common.error.ErrorMessageCatalog;
 import com.codingx.common.support.ai.AiToolCall;
@@ -6,15 +7,15 @@ import com.codingx.tool.application.service.ChatToolSpec;
 import java.util.List;
 
 /**
- * 定义 AiChatClient 的领域服务契约。
+ * AI 聊天客户端端口，隔离聊天应用层与具体模型 provider、流式协议和工具调用协议。
  */
 public interface AiChatClient {
 
     /**
-     * 以流式方式处理 streamChat 的结果。
-     * @param history 输入参数。
+     * 以流式方式请求模型生成回复。
+     * @param history 会话上下文消息，按创建时间升序传入。
      * @param deepThinking 是否开启深度思考。
-     * @param handler 输入参数。
+     * @param handler 模型流式回调处理器，用于接收元信息、增量、完成和错误。
      */
     void streamChat(List<ChatMessage> history, boolean deepThinking, StreamHandler handler);
 
@@ -33,6 +34,7 @@ public interface AiChatClient {
         List<ChatToolSpec> tools,
         ToolAwareStreamHandler handler
     ) {
+        // 步骤 1：默认实现忽略工具 schema 并回退普通流式接口，保证未适配工具的 provider 仍可工作。
         streamChat(history, deepThinking, handler);
     }
 
@@ -42,15 +44,17 @@ public interface AiChatClient {
      * @return 标题文本。
      */
     default String generateTitle(List<ChatMessage> history) {
+        // 步骤 1：标题默认取第一条用户消息，避免单独调用模型生成标题带来额外延迟。
         return history.stream()
             .filter(message -> message.getRole() == com.codingx.chat.domain.model.ChatMessageRole.USER)
             .findFirst()
             .map(ChatMessage::getContent)
+            // 步骤 2：没有用户消息时使用统一默认标题，保证会话列表始终可展示。
             .orElse(ErrorMessageCatalog.CHAT_CONVERSATION_DEFAULT_TITLE);
     }
 
     /**
-     * 定义 StreamHandler 的领域服务契约。
+     * 普通模型流式回调契约。
      */
     interface StreamHandler {
 
@@ -63,8 +67,8 @@ public interface AiChatClient {
         }
 
         /**
-         * 执行 onDelta 定义的处理逻辑。
-         * @param delta 输入参数。
+         * 接收助手正文增量。
+         * @param delta 助手回复正文增量。
          */
         void onDelta(String delta);
 
@@ -76,13 +80,13 @@ public interface AiChatClient {
         }
 
         /**
-         * 执行 onComplete 定义的处理逻辑。
+         * 通知当前模型流已正常完成。
          */
         void onComplete();
 
         /**
-         * 执行 onError 定义的处理逻辑。
-         * @param throwable 输入参数。
+         * 通知当前模型流发生错误。
+         * @param throwable provider 或路由层抛出的原始异常。
          */
         default void onError(Throwable throwable) {
         }

@@ -14,7 +14,14 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class AdminChatRuntimeDashboardService {
 
+    /**
+     * 聊天运行态守卫服务，用于读取当前会话队列快照。
+     */
     private final ChatRuntimeGuardService chatRuntimeGuardService;
+
+    /**
+     * 聊天执行器指标服务，用于读取线程池运行状态。
+     */
     private final ChatExecutorMetricsService chatExecutorMetricsService;
 
     /**
@@ -22,7 +29,9 @@ public class AdminChatRuntimeDashboardService {
      * @return 运行时视图。
      */
     public AdminChatRuntimeDashboardView getRuntimeDashboard() {
+        // 步骤 1：先读取会话队列快照，包含并发限制、运行数和等待数。
         ConversationQueueSnapshot queueSnapshot = chatRuntimeGuardService.snapshot();
+        // 步骤 2：把队列快照和线程池快照组合成管理端运行时观测视图。
         return new AdminChatRuntimeDashboardView(
             new ChatRuntimeQueueDashboardView(
                 queueSnapshot.mode(),

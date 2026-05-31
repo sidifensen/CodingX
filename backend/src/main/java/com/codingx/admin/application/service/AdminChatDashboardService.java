@@ -41,20 +41,74 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class AdminChatDashboardService {
 
+    /**
+     * 分桶键格式化器，保证同一窗口内 bucketMap 的键稳定可比较。
+     */
     private static final DateTimeFormatter BUCKET_KEY_FORMATTER = DateTimeFormatter.ISO_LOCAL_DATE_TIME;
+
+    /**
+     * 24 小时窗口的横轴标签格式。
+     */
     private static final DateTimeFormatter HOUR_LABEL_FORMATTER = DateTimeFormatter.ofPattern("HH:mm");
+
+    /**
+     * 7 天和 30 天窗口的横轴标签格式。
+     */
     private static final DateTimeFormatter DAY_LABEL_FORMATTER = DateTimeFormatter.ofPattern("MM-dd");
 
+    /**
+     * 会话 Mapper，用于统计窗口内新增会话。
+     */
     private final ChatConversationMapper chatConversationMapper;
+
+    /**
+     * 消息 Mapper，用于统计窗口内新增消息。
+     */
     private final ChatMessageMapper chatMessageMapper;
+
+    /**
+     * Trace 运行记录 Mapper，用于统计链路数量、状态和耗时。
+     */
     private final ChatTraceRunMapper chatTraceRunMapper;
+
+    /**
+     * 工作空间 Mapper，用于统计当前有效工作空间总量。
+     */
     private final WorkspaceMapper workspaceMapper;
+
+    /**
+     * 意图节点仓储，用于统计当前意图配置资产数量。
+     */
     private final ChatIntentNodeRepository chatIntentNodeRepository;
+
+    /**
+     * MCP 配置仓储，用于统计当前 MCP 资产数量。
+     */
     private final ChatMcpRepository chatMcpRepository;
+
+    /**
+     * 查询词映射仓储，用于统计当前关键词映射资产数量。
+     */
     private final ChatQueryTermMappingRepository chatQueryTermMappingRepository;
+
+    /**
+     * 示例问题仓储，用于统计当前启用示例问题数量。
+     */
     private final ChatSampleQuestionRepository chatSampleQuestionRepository;
+
+    /**
+     * 技能仓储，用于统计当前技能资产数量。
+     */
     private final ChatSkillRepository chatSkillRepository;
+
+    /**
+     * 工具仓储，用于统计当前工具资产数量。
+     */
     private final ChatToolRepository chatToolRepository;
+
+    /**
+     * 专家仓储，用于统计当前专家资产数量。
+     */
     private final ChatExpertRepository chatExpertRepository;
 
     /**
@@ -63,15 +117,19 @@ public class AdminChatDashboardService {
      * @return 聚合视图。
      */
     public AdminChatDashboardView getDashboard(String rawWindow) {
+        // 步骤 1：解析前端传入的窗口编码，非法值回退到 24 小时窗口。
         DashboardWindow window = DashboardWindow.from(rawWindow);
+        // 步骤 2：按窗口对齐结束边界和起始边界，确保当前未结束分桶也能展示。
         LocalDateTime now = LocalDateTime.now();
         LocalDateTime rangeEndExclusive = window.nextBucketStart(now);
         LocalDateTime rangeStartInclusive = window.firstBucketStart(rangeEndExclusive);
 
+        // 步骤 3：分别读取会话、消息和 Trace 数据，并在应用层二次过滤时间边界。
         List<ChatConversationDO> conversations = filterConversations(loadConversations(rangeStartInclusive), rangeStartInclusive, rangeEndExclusive);
         List<ChatMessageDO> messages = filterMessages(loadMessages(rangeStartInclusive), rangeStartInclusive, rangeEndExclusive);
         List<ChatTraceRunDO> traces = filterTraces(loadTraces(rangeStartInclusive), rangeStartInclusive, rangeEndExclusive);
 
+        // 步骤 4：基于窗口内运行数据构造 KPI、资源资产、健康摘要和趋势分桶。
         AdminChatDashboardKpiView kpis = buildKpis(conversations, messages, traces);
         AdminChatDashboardResourceView resources = new AdminChatDashboardResourceView(
             chatSkillRepository.findAll().size(),
@@ -84,6 +142,7 @@ public class AdminChatDashboardService {
         );
         AdminChatDashboardPerformanceView performance = buildPerformance(traces);
 
+        // 步骤 5：返回前端 Dashboard 可直接消费的聚合视图。
         return new AdminChatDashboardView(
             window.value(),
             now.truncatedTo(ChronoUnit.SECONDS).toString(),
@@ -102,6 +161,7 @@ public class AdminChatDashboardService {
         List<ChatMessageDO> messages,
         List<ChatTraceRunDO> traces
     ) {
+        // 步骤 1：会话创建人和 Trace 用户都算作窗口内活跃用户。
         Set<Long> activeUserIds = new HashSet<>();
         for (ChatConversationDO conversation : conversations) {
             if (conversation.getCreatedBy() != null) {
@@ -113,6 +173,7 @@ public class AdminChatDashboardService {
                 activeUserIds.add(trace.getUserId());
             }
         }
+        // 步骤 2：工作空间数量是当前有效总量，其他 KPI 都来自窗口内数据。
         return new AdminChatDashboardKpiView(
             activeUserIds.size(),
             conversations.size(),
@@ -127,10 +188,12 @@ public class AdminChatDashboardService {
      * 基于链路状态计算运行健康摘要。
      */
     private AdminChatDashboardPerformanceView buildPerformance(List<ChatTraceRunDO> traces) {
+        // 步骤 1：按 Trace 终态和运行态计算成功、失败、运行中数量。
         int total = traces.size();
         int successCount = (int) traces.stream().filter(this::isSuccessTrace).count();
         int failureCount = (int) traces.stream().filter(this::isFailureTrace).count();
         int runningCount = (int) traces.stream().filter(this::isRunningTrace).count();
+        // 步骤 2：只统计正数耗时，避免未结束或脏数据拉低平均值和 P95。
         List<Long> durations = traces.stream()
             .map(ChatTraceRunDO::getDurationMs)
             .filter(duration -> duration != null && duration > 0)
@@ -140,6 +203,7 @@ public class AdminChatDashboardService {
             ? 0L
             : Math.round(durations.stream().mapToLong(Long::longValue).average().orElse(0D));
         long p95Duration = durations.isEmpty() ? 0L : durations.get(Math.max(0, (int) Math.ceil(durations.size() * 0.95D) - 1));
+        // 步骤 3：百分比在无数据时返回 0，避免前端展示 NaN。
         return new AdminChatDashboardPerformanceView(
             toPercent(successCount, total),
             toPercent(failureCount, total),
@@ -159,6 +223,7 @@ public class AdminChatDashboardService {
         List<ChatMessageDO> messages,
         List<ChatTraceRunDO> traces
     ) {
+        // 步骤 1：预先创建完整分桶，确保无数据的时间点也能返回 0 值。
         Map<String, BucketAccumulator> bucketMap = new HashMap<>();
         List<LocalDateTime> bucketStarts = new ArrayList<>();
         LocalDateTime cursor = window.firstBucketStart(rangeEndExclusive);
@@ -168,6 +233,7 @@ public class AdminChatDashboardService {
             cursor = window.increment(cursor);
         }
 
+        // 步骤 2：会话按创建时间进入对应分桶，并贡献活跃用户。
         for (ChatConversationDO conversation : conversations) {
             LocalDateTime bucketStart = window.alignBucketStart(conversation.getCreatedAt());
             BucketAccumulator bucket = bucketMap.get(bucketKey(bucketStart));
@@ -179,6 +245,7 @@ public class AdminChatDashboardService {
                 bucket.activeUserIds.add(conversation.getCreatedBy());
             }
         }
+        // 步骤 3：消息按创建时间进入对应分桶，仅贡献消息数。
         for (ChatMessageDO message : messages) {
             LocalDateTime bucketStart = window.alignBucketStart(message.getCreatedAt());
             BucketAccumulator bucket = bucketMap.get(bucketKey(bucketStart));
@@ -186,6 +253,7 @@ public class AdminChatDashboardService {
                 bucket.messageCount += 1;
             }
         }
+        // 步骤 4：Trace 优先按 startedAt 分桶，缺失时按 createdAt 分桶，并累计状态与耗时。
         for (ChatTraceRunDO trace : traces) {
             LocalDateTime timePoint = trace.getStartedAt() != null ? trace.getStartedAt() : trace.getCreatedAt();
             LocalDateTime bucketStart = window.alignBucketStart(timePoint);
@@ -208,6 +276,7 @@ public class AdminChatDashboardService {
             }
         }
 
+        // 步骤 5：按分桶起点顺序生成趋势视图，空分桶保持 0 值。
         return bucketStarts.stream()
             .map(bucketStart -> {
                 BucketAccumulator bucket = bucketMap.get(bucketKey(bucketStart));
@@ -240,6 +309,7 @@ public class AdminChatDashboardService {
     }
 
     private List<ChatMessageDO> loadMessages(LocalDateTime rangeStartInclusive) {
+        // 步骤 1：只读取窗口起点之后的未删除消息，减少后续内存过滤数据量。
         return chatMessageMapper.selectList(new LambdaQueryWrapper<ChatMessageDO>()
             .eq(ChatMessageDO::getDeleted, 0)
             .ge(ChatMessageDO::getCreatedAt, rangeStartInclusive)
@@ -247,6 +317,7 @@ public class AdminChatDashboardService {
     }
 
     private List<ChatTraceRunDO> loadTraces(LocalDateTime rangeStartInclusive) {
+        // 步骤 1：只读取窗口起点之后的未删除 Trace，后续再按 startedAt/createdAt 二次过滤。
         return chatTraceRunMapper.selectList(new LambdaQueryWrapper<ChatTraceRunDO>()
             .eq(ChatTraceRunDO::getDeleted, 0)
             .ge(ChatTraceRunDO::getCreatedAt, rangeStartInclusive)
@@ -341,8 +412,19 @@ public class AdminChatDashboardService {
         LAST_7_DAYS("7d", 7, ChronoUnit.DAYS),
         LAST_30_DAYS("30d", 30, ChronoUnit.DAYS);
 
+        /**
+         * 前端传入和响应返回的窗口编码。
+         */
         private final String value;
+
+        /**
+         * 窗口内分桶数量。
+         */
         private final int bucketCount;
+
+        /**
+         * 分桶单位，小时窗口按小时，天窗口按天。
+         */
         private final ChronoUnit unit;
 
         DashboardWindow(String value, int bucketCount, ChronoUnit unit) {
@@ -352,6 +434,7 @@ public class AdminChatDashboardService {
         }
 
         static DashboardWindow from(String rawWindow) {
+            // 步骤 1：空值和非法值都回退到 24 小时窗口，保证 Dashboard 默认可用。
             String normalized = StrUtil.blankToDefault(rawWindow, "24h").trim().toLowerCase(Locale.ROOT);
             for (DashboardWindow candidate : values()) {
                 if (candidate.value.equals(normalized)) {
@@ -370,6 +453,7 @@ public class AdminChatDashboardService {
         }
 
         LocalDateTime nextBucketStart(LocalDateTime now) {
+            // 步骤 1：小时窗口对齐到下一个整点，天窗口对齐到下一天零点。
             if (unit == ChronoUnit.HOURS) {
                 return now.truncatedTo(ChronoUnit.HOURS).plusHours(1);
             }
@@ -381,6 +465,7 @@ public class AdminChatDashboardService {
         }
 
         LocalDateTime alignBucketStart(LocalDateTime value) {
+            // 步骤 1：把任意时间点对齐到其所属分桶起点。
             if (unit == ChronoUnit.HOURS) {
                 return value.truncatedTo(ChronoUnit.HOURS);
             }
@@ -392,6 +477,7 @@ public class AdminChatDashboardService {
         }
 
         String formatLabel(LocalDateTime value) {
+            // 步骤 1：按窗口粒度选择不同横轴标签格式。
             if (unit == ChronoUnit.HOURS) {
                 return HOUR_LABEL_FORMATTER.format(value);
             }
@@ -403,12 +489,39 @@ public class AdminChatDashboardService {
      * 分桶累加器，仅服务于当前聚合过程。
      */
     private static final class BucketAccumulator {
+        /**
+         * 当前分桶内创建的会话数。
+         */
         private int conversationCount;
+
+        /**
+         * 当前分桶内创建的消息数。
+         */
         private int messageCount;
+
+        /**
+         * 当前分桶内链路数。
+         */
         private int traceCount;
+
+        /**
+         * 当前分桶内成功链路数。
+         */
         private int successCount;
+
+        /**
+         * 当前分桶内失败链路数。
+         */
         private int failedCount;
+
+        /**
+         * 当前分桶内活跃用户集合，用 Set 去重。
+         */
         private final Set<Long> activeUserIds = new HashSet<>();
+
+        /**
+         * 当前分桶内可统计的 Trace 耗时集合，用于计算平均耗时。
+         */
         private final List<Long> durationValues = new ArrayList<>();
     }
 }

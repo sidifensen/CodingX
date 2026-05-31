@@ -11,11 +11,11 @@ package com.codingx.admin.application.service;
  * @param runningTraceCount 当前窗口运行中链路数
  */
 public record AdminChatDashboardKpiView(
-    int activeUserCount,
-    int conversationCount,
-    int messageCount,
-    int workspaceCount,
-    int traceCount,
-    int runningTraceCount
+    int activeUserCount, // 当前窗口内发生会话或链路活动的用户数。
+    int conversationCount, // 当前窗口内创建的会话数。
+    int messageCount, // 当前窗口内创建的消息数。
+    int workspaceCount, // 当前未删除工作空间总数，不受窗口限制。
+    int traceCount, // 当前窗口内创建或启动的链路数。
+    int runningTraceCount // 当前窗口内仍处于运行、等待或已获取资源状态的链路数。
 ) {
 }

@@ -13,11 +13,11 @@ import java.util.List;
  * @param trendBuckets 时间分桶趋势
  */
 public record AdminChatDashboardView(
-    String window,
-    String generatedAt,
-    AdminChatDashboardKpiView kpis,
-    AdminChatDashboardResourceView resources,
-    AdminChatDashboardPerformanceView performance,
-    List<AdminChatDashboardTrendBucketView> trendBuckets
+    String window, // 当前统计窗口编码，例如 24h、7d、30d。
+    String generatedAt, // 快照生成时间，精确到秒。
+    AdminChatDashboardKpiView kpis, // 核心业务指标。
+    AdminChatDashboardResourceView resources, // 配置资产指标。
+    AdminChatDashboardPerformanceView performance, // 链路运行健康摘要。
+    List<AdminChatDashboardTrendBucketView> trendBuckets // 时间分桶趋势，按窗口起点升序排列。
 ) {
 }

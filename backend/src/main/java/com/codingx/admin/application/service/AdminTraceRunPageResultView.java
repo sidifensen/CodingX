@@ -12,10 +12,10 @@ import java.util.List;
  * @param pages 总页数。
  */
 public record AdminTraceRunPageResultView(
-    List<AdminTraceRunListItemView> records,
-    long total,
-    long size,
-    long current,
-    long pages
+    List<AdminTraceRunListItemView> records, // 当前页 Trace 列表项，已补齐 username 展示字段。
+    long total, // 符合查询条件的总记录数。
+    long size, // 当前分页大小。
+    long current, // 当前页码，从 1 开始。
+    long pages // 按 total 和 size 计算出的总页数。
 ) {
 }

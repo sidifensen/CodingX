@@ -49,6 +49,10 @@ status: active
     - 聊天任务完成提醒的已读状态必须写入本地快照，不能复用数据库置顶字段
   - `docs/superpowers/memory/lessons/built-in-skill-database-records-must-match-classpath-manifests.md`
     - 内置技能写入数据库后，必须同步提供类路径 `SKILL.md`，否则运行时上下文无法读取
+- `docs/superpowers/memory/chat/ai-routing-module-card.md`
+  - 聊天 AI 模型路由、候选池和故障切换的职责边界
+- `docs/superpowers/memory/chat/ai-routing-selection-contract.md`
+  - 聊天模型候选选择的输入、输出和排序契约
 - `docs/superpowers/memory/tool/codex-local-tool-runtime-module-card.md`
   - Codex 风格本地工具执行器的职责、入口与常见陷阱
 - `docs/superpowers/memory/tool/codex-local-tool-runtime-contract.md`

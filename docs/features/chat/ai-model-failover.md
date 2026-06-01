@@ -11,7 +11,7 @@
 ## 核心流程
 
 1. `AiModelSelector` 读取聊天候选池，过滤禁用候选；图片附件优先筛选视觉模型，深度思考模式优先筛选 thinking 模型。
-2. 未指定 `preferredModel` 时，普通模式优先系统配置 `ai.chat.default_model` 指向的候选，深度思考模式优先 `ai.chat.deep_thinking_model` 指向的候选，再按 `priority` 和候选 ID 排序。
+2. 未指定 `preferredModel` 时，不再读取默认模型指针；普通模式和深度思考模式都在能力过滤后按 `priority` 和候选 ID 排序。
 3. `AiModelDispatchService` 按候选顺序解析 provider 客户端，缺失客户端直接跳过；熔断中的模型在冷却前不参与调用。
 4. provider 返回 `AiStreamSession` 后，调度层等待首包窗口；首包前失败、超时或无内容完成会取消 session、标记模型失败并切换后续候选。
 5. 首包成功后提交缓冲事件并等待流结束；此后异常视为已输出后的失败，不再换模型接管，避免用户看到两套模型混合回答。
@@ -31,7 +31,7 @@
 
 调度尝试顺序使用请求局部变量记录，并在请求完成时发布不可变快照到 `getLastAttemptedProviders()`。这保证 `AiModelDispatchService` 作为单例 Bean 时，并发请求不会互相清空或拼接尝试记录。
 
-`ai.chat.default_model` 与 `ai.chat.deep_thinking_model` 不是独立模型配置，而是候选池里的首选 ID 指针。候选池仍由 `ai.chat.candidates.<slot>.*` 决定真实 provider、模型名、能力标记和 fallback 顺序；首选指针只解决“未显式选模型时先试哪个候选”的问题。
+默认路由顺序只由 `ai.chat.candidates.<slot>.*` 候选池决定。候选字段中的 provider、模型名、能力标记和 `priority` 一起决定真实调用目标和 fallback 顺序；只有请求显式传入 `preferredModel` 时，才会在匹配候选内临时提升该候选到首位。
 
 ## 测试与验证
 

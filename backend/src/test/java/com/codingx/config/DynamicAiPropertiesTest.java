@@ -76,36 +76,6 @@ class DynamicAiPropertiesTest {
         assertTrue(Boolean.TRUE.equals(candidates.get(1).getSupportsVision()));
     }
 
-    /**
-     * 默认模型配置应从系统配置表读取，并作为候选池里的首选 ID 使用。
-     */
-    @Test
-    void defaultChatModelReadsFromSystemSettings() {
-        AiProperties aiProperties = buildAiProperties();
-        aiProperties.getChat().setDefaultModel("static-default");
-        when(runtimeSettingService.getString("ai.chat.default_model", "static-default"))
-            .thenReturn("dynamic-default");
-
-        DynamicAiProperties dynamicAiProperties = new DynamicAiProperties(aiProperties, runtimeSettingService);
-
-        assertEquals("dynamic-default", dynamicAiProperties.defaultChatModel());
-    }
-
-    /**
-     * 深度思考默认模型配置应从系统配置表读取，避免动态候选池丢失 thinking 首选指针。
-     */
-    @Test
-    void deepThinkingChatModelReadsFromSystemSettings() {
-        AiProperties aiProperties = buildAiProperties();
-        aiProperties.getChat().setDeepThinkingModel("static-thinking");
-        when(runtimeSettingService.getString("ai.chat.deep_thinking_model", "static-thinking"))
-            .thenReturn("dynamic-thinking");
-
-        DynamicAiProperties dynamicAiProperties = new DynamicAiProperties(aiProperties, runtimeSettingService);
-
-        assertEquals("dynamic-thinking", dynamicAiProperties.deepThinkingChatModel());
-    }
-
     private AiProperties buildAiProperties() {
         AiProperties properties = new AiProperties();
         HashMap<String, AiProperties.Provider> providers = new HashMap<>();

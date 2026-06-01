@@ -49,26 +49,6 @@ const mockSettings = [
     restartRequired: false,
   },
   {
-    id: '4',
-    settingKey: 'ai.chat.default_model',
-    settingValue: 'qwen-plus',
-    valueType: 'STRING',
-    categoryCode: 'ai.routing',
-    description: '模型路由默认模型ID',
-    sortNo: 4,
-    restartRequired: false,
-  },
-  {
-    id: '5',
-    settingKey: 'ai.chat.deep_thinking_model',
-    settingValue: 'qwen3-max',
-    valueType: 'STRING',
-    categoryCode: 'ai.routing',
-    description: '模型路由深度思考模型ID',
-    sortNo: 5,
-    restartRequired: false,
-  },
-  {
     id: '6',
     settingKey: 'chat.intent.guidance.enabled',
     settingValue: 'true',
@@ -282,17 +262,16 @@ describe('Settings page', () => {
     expect(screen.getByDisplayValue('0.8')).toHaveAttribute('type', 'number');
   });
 
-  it('shows default model pointers in the AI base configuration category', async () => {
+  it('does not show default model pointers in the AI base configuration category', async () => {
     render(<Settings />);
 
     await screen.findByRole('heading', { name: '系统配置' });
-    fireEvent.click(screen.getByRole('button', { name: /AI 基础配置/ }));
 
-    // 默认模型实际仍是候选池 ID 指针，但管理端入口应放在 AI 基础配置里方便配置。
-    expect(screen.getByText('模型路由默认模型ID')).toBeInTheDocument();
-    expect(screen.getByTestId('setting-value-ai.chat.default_model')).toHaveValue('qwen-plus');
-    expect(screen.getByText('模型路由深度思考模型ID')).toBeInTheDocument();
-    expect(screen.getByTestId('setting-value-ai.chat.deep_thinking_model')).toHaveValue('qwen3-max');
+    // 默认路由顺序已收敛到候选池 priority，管理端不再提供默认模型指针入口。
+    expect(screen.queryByText('模型路由默认模型ID')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('setting-value-ai.chat.default_model')).not.toBeInTheDocument();
+    expect(screen.queryByText('模型路由深度思考模型ID')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('setting-value-ai.chat.deep_thinking_model')).not.toBeInTheDocument();
   });
 
   it('shows AI provider category and keeps secret inputs empty with preserve hint', async () => {

@@ -125,8 +125,8 @@ public class AiModelSelector {
             filteredCandidates = candidates;
             fellBackToNormalCandidates = true;
         }
-        // 步骤 4：解析首选模型，显式 preferredModel 优先，其次按普通/深度思考默认模型回退。
-        String firstChoice = resolveFirstChoiceModel(group, preferredModel, thinkingEnabled && !fellBackToNormalCandidates);
+        // 步骤 4：只保留请求显式首选模型；未指定时完全交由候选池 priority 决定默认顺序。
+        String firstChoice = resolveFirstChoiceModel(preferredModel);
         Map<String, AiProperties.Provider> providers = mergedProviders();
         // 步骤 5：按首选模型、优先级和候选 ID 排序，并过滤缺少 provider 配置的候选。
         return filteredCandidates.stream()
@@ -150,16 +150,15 @@ public class AiModelSelector {
         if (CollUtil.isNotEmpty(dynamicCandidates)) {
             AiProperties.ChatModelGroup dynamicGroup = new AiProperties.ChatModelGroup();
             dynamicGroup.setCandidates(dynamicCandidates);
-            // 动态候选池来自系统配置表，默认模型仍作为候选池内的首选排序指针保留。
-            dynamicGroup.setDefaultModel(dynamicAiProperties.defaultChatModel());
-            dynamicGroup.setDeepThinkingModel(dynamicAiProperties.deepThinkingChatModel());
+            // 动态候选池来自系统配置表；默认顺序由候选 priority 决定，不再读取默认模型指针。
             return dynamicGroup;
         }
         // 步骤 2：动态候选为空时使用静态候选池；静态也为空则返回空模型组。
         if (CollUtil.isNotEmpty(configured.getCandidates())) {
             return configured;
         }
-        return new AiProperties.ChatModelGroup();
+        // 步骤 3：历史环境可能只有 app.ai.provider/base-url/api-key/chat-model，仍需合成一个真实候选保障兼容。
+        return legacyChatGroup();
     }
 
     /**
@@ -172,7 +171,51 @@ public class AiModelSelector {
         if (dynamicAiProperties != null) {
             providers = new HashMap<>(dynamicAiProperties.providers());
         }
+        // 步骤 2：没有多 provider 配置的旧环境使用 app.ai.* 单 provider 字段补齐 provider 映射。
+        mergeLegacyProvider(providers);
         return providers;
+    }
+
+    /**
+     * 将旧式单模型配置合成为候选池，兼容还没有迁移到候选池配置的环境。
+     * @return 旧式配置生成的模型组；关键字段缺失时返回空模型组。
+     */
+    private AiProperties.ChatModelGroup legacyChatGroup() {
+        // 步骤 1：旧配置至少需要 provider 和模型名，否则无法生成可调度目标。
+        AiProperties.ChatModelGroup legacyGroup = new AiProperties.ChatModelGroup();
+        if (StrUtil.hasBlank(aiProperties.getProvider(), aiProperties.getChatModel())) {
+            return legacyGroup;
+        }
+        // 步骤 2：候选 ID 沿用模型名，保持健康熔断和历史消息记录的维度稳定。
+        AiProperties.ChatCandidate candidate = new AiProperties.ChatCandidate();
+        candidate.setId(aiProperties.getChatModel());
+        candidate.setProvider(aiProperties.getProvider());
+        candidate.setModel(aiProperties.getChatModel());
+        candidate.setPriority(100);
+        candidate.setEnabled(true);
+        candidate.setSupportsThinking(false);
+        candidate.setSupportsVision(false);
+        legacyGroup.setCandidates(List.of(candidate));
+        return legacyGroup;
+    }
+
+    /**
+     * 将旧式单 provider 字段补入 provider 映射，保证旧式候选能解析到连接配置。
+     * @param providers 当前 provider 映射。
+     */
+    private void mergeLegacyProvider(Map<String, AiProperties.Provider> providers) {
+        // 步骤 1：多 provider 已存在时不覆盖，避免旧字段污染新配置。
+        if (StrUtil.isBlank(aiProperties.getProvider()) || providers.containsKey(aiProperties.getProvider())) {
+            return;
+        }
+        // 步骤 2：旧式 provider 至少需要基础地址；API Key 可为空，由下游客户端按 provider 规则处理。
+        if (StrUtil.isBlank(aiProperties.getBaseUrl())) {
+            return;
+        }
+        AiProperties.Provider provider = new AiProperties.Provider();
+        provider.setBaseUrl(aiProperties.getBaseUrl());
+        provider.setApiKey(aiProperties.getApiKey());
+        providers.put(aiProperties.getProvider(), provider);
     }
 
     /**
@@ -190,21 +233,15 @@ public class AiModelSelector {
 
     /**
      * 决定本次路由的首选模型。
-     * @param group 模型组。
      * @param preferredModel 显式偏好模型。
-     * @param thinkingEnabled 是否开启思考模式。
      * @return 首选模型 ID。
      */
-    private String resolveFirstChoiceModel(AiProperties.ChatModelGroup group, String preferredModel, boolean thinkingEnabled) {
-        // 步骤 1：显式首选模型拥有最高优先级，通常来自前端或上游运行时选择。
+    private String resolveFirstChoiceModel(String preferredModel) {
+        // 步骤 1：显式首选模型拥有最高优先级；空值表示不插队，后续排序完全使用候选池 priority。
         if (StrUtil.isNotBlank(preferredModel)) {
             return preferredModel;
         }
-        // 步骤 2：深度思考模式优先使用 deepThinkingModel，否则使用普通默认模型。
-        if (thinkingEnabled && StrUtil.isNotBlank(group.getDeepThinkingModel())) {
-            return group.getDeepThinkingModel();
-        }
-        return group.getDefaultModel();
+        return null;
     }
 
     /**

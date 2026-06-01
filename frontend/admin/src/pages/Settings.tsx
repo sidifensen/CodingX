@@ -81,13 +81,8 @@ const CATEGORY_LABELS: Record<string, string> = {
   'ai.routing': '模型路由',
 };
 
-const AI_BASE_SETTING_KEYS = new Set(['ai.chat.default_model', 'ai.chat.deep_thinking_model']);
-
 function displayCategoryCode(setting: AdminRuntimeSetting): string {
-  // 默认模型是候选池首选指针，运营上属于 AI 基础配置，避免管理员误以为没有配置入口。
-  if (AI_BASE_SETTING_KEYS.has(setting.settingKey)) {
-    return 'ai';
-  }
+  // 后端返回的分类是系统配置的唯一分组来源，避免前端为废弃键位保留隐藏规则。
   return setting.categoryCode ?? 'general';
 }
 

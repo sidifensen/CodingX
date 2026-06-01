@@ -33,27 +33,27 @@ class AiModelSelectorTest {
     }
 
     /**
-     * 未显式指定 preferredModel 时，应沿用模型组默认模型作为首选目标。
+     * 未显式指定 preferredModel 时，应只按候选池优先级排序，历史默认模型指针不能抢占首位。
      */
     @Test
-    void selectChatCandidatesPrefersConfiguredDefaultModelWhenRequestHasNoPreference() {
+    void selectChatCandidatesUsesPriorityWhenRequestHasNoPreference() {
         AiProperties properties = buildProperties(
-            candidate("low-priority-default", "deepseek", "deepseek-chat", 10, false),
-            candidate("high-priority-fallback", "stub", "stub-chat", 1, false)
+            candidate("priority-first", "stub", "stub-chat", 1, false),
+            candidate("historical-default", "deepseek", "deepseek-chat", 10, false)
         );
-        properties.getChat().setDefaultModel("low-priority-default");
+        properties.getChat().setDefaultModel("historical-default");
         AiModelSelector selector = new AiModelSelector(properties);
 
         List<AiModelTarget> targets = selector.selectChatCandidates(null, false);
 
-        assertEquals("low-priority-default", targets.getFirst().id());
+        assertEquals("priority-first", targets.getFirst().id());
     }
 
     /**
-     * 深度思考模式未显式指定模型时，应优先使用模型组配置的 deepThinkingModel。
+     * 深度思考模式未显式指定模型时，应在 thinking 候选内按优先级排序，历史深度思考指针不能抢占首位。
      */
     @Test
-    void selectChatCandidatesPrefersConfiguredDeepThinkingModelWhenThinkingEnabled() {
+    void selectChatCandidatesUsesThinkingPriorityWhenRequestHasNoPreference() {
         AiProperties properties = buildProperties(
             candidate("thinking-priority-one", "deepseek", "deepseek-thinking-a", 1, true),
             candidate("thinking-configured", "deepseek", "deepseek-thinking-b", 9, true)
@@ -63,7 +63,7 @@ class AiModelSelectorTest {
 
         List<AiModelTarget> targets = selector.selectChatCandidates(null, true);
 
-        assertEquals("thinking-configured", targets.getFirst().id());
+        assertEquals("thinking-priority-one", targets.getFirst().id());
     }
 
     /**
@@ -176,10 +176,10 @@ class AiModelSelectorTest {
     }
 
     /**
-     * 动态候选池生效时，系统配置表里的默认模型 ID 应继续作为首选排序指针。
+     * 动态候选池生效时，无显式首选模型也应按候选优先级排序，不再读取系统默认模型指针。
      */
     @Test
-    void selectChatCandidatesUsesDynamicDefaultModelPointerWithDynamicCandidates() {
+    void selectChatCandidatesUsesDynamicCandidatePriorityWhenRequestHasNoPreference() {
         AiProperties properties = buildProperties(
             candidate("static-deepseek", "deepseek", "deepseek-chat", 1, false)
         );
@@ -188,8 +188,6 @@ class AiModelSelectorTest {
             candidate("priority-first", "siliconflow", "model-a", 1, false),
             candidate("configured-default", "siliconflow", "model-b", 9, false)
         ));
-        Mockito.when(dynamicAiProperties.defaultChatModel()).thenReturn("configured-default");
-        Mockito.when(dynamicAiProperties.deepThinkingChatModel()).thenReturn("configured-thinking");
         Mockito.when(dynamicAiProperties.providers()).thenReturn(Map.of(
             "siliconflow", provider("https://api.siliconflow.cn", "test-key")
         ));
@@ -198,14 +196,14 @@ class AiModelSelectorTest {
 
         List<AiModelTarget> targets = selector.selectChatCandidates(null, false);
 
-        assertEquals("configured-default", targets.getFirst().id());
+        assertEquals("priority-first", targets.getFirst().id());
     }
 
     /**
-     * 动态候选池生效时，深度思考首选模型也应从系统配置表读取。
+     * 动态候选池生效时，深度思考候选也应按优先级排序，不再读取系统深度思考默认指针。
      */
     @Test
-    void selectChatCandidatesUsesDynamicDeepThinkingModelPointerWithDynamicCandidates() {
+    void selectChatCandidatesUsesDynamicThinkingCandidatePriorityWhenRequestHasNoPreference() {
         AiProperties properties = buildProperties(
             candidate("static-deepseek", "deepseek", "deepseek-chat", 1, false)
         );
@@ -214,8 +212,6 @@ class AiModelSelectorTest {
             candidate("thinking-priority-first", "siliconflow", "model-a", 1, true),
             candidate("configured-thinking", "siliconflow", "model-b", 9, true)
         ));
-        Mockito.when(dynamicAiProperties.defaultChatModel()).thenReturn("configured-default");
-        Mockito.when(dynamicAiProperties.deepThinkingChatModel()).thenReturn("configured-thinking");
         Mockito.when(dynamicAiProperties.providers()).thenReturn(Map.of(
             "siliconflow", provider("https://api.siliconflow.cn", "test-key")
         ));
@@ -224,7 +220,7 @@ class AiModelSelectorTest {
 
         List<AiModelTarget> targets = selector.selectChatCandidates(null, true);
 
-        assertEquals("configured-thinking", targets.getFirst().id());
+        assertEquals("thinking-priority-first", targets.getFirst().id());
     }
 
     /**

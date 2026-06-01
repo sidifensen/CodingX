@@ -11,7 +11,7 @@ import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 
 /**
- * 验证 AI 路由默认值优先落到 SiliconFlow 的 DeepSeek / 千问候选，避免新环境或升级后继续回到百炼默认模型。
+ * 验证 AI 路由默认顺序只由候选池优先级维护，避免默认模型指针重新进入运行时配置。
  */
 class AiRoutingDefaultsConfigTest {
 
@@ -35,15 +35,15 @@ class AiRoutingDefaultsConfigTest {
     }
 
     /**
-     * init.sql 必须把默认运行时配置写成 SiliconFlow 的 DeepSeek，保证全新数据库初始化后立即生效。
+     * init.sql 必须只写入候选池默认顺序，不再写入默认模型指针。
      * @throws IOException 读取 SQL 文件失败时抛出。
      */
     @Test
-    void initSqlSeedsSiliconFlowRuntimeDefaults() throws IOException {
+    void initSqlSeedsCandidatePoolWithoutDefaultModelPointers() throws IOException {
         String initSql = Files.readString(Path.of("src/main/resources/db/init.sql"));
 
-        assertTrue(initSql.contains("ai.chat.default_model', 'siliconflow-deepseek-v4-flash'"), "初始化数据应默认写入 siliconflow-deepseek-v4-flash");
-        assertTrue(initSql.contains("ai.chat.deep_thinking_model', 'siliconflow-deepseek-v4-flash-thinking'"), "初始化数据应默认写入 siliconflow-deepseek-v4-flash-thinking");
+        assertFalse(initSql.contains("ai.chat.default_model"), "初始化数据不应继续写入普通默认模型指针");
+        assertFalse(initSql.contains("ai.chat.deep_thinking_model"), "初始化数据不应继续写入深度思考默认模型指针");
         assertTrue(initSql.contains("ai.providers.siliconflow.endpoints.chat'"), "初始化数据应包含硅基流动 chat endpoint 配置键");
         assertTrue(initSql.contains("ai.chat.candidates.10.id'"), "初始化数据应包含模型候选池扁平键");
         assertTrue(initSql.contains("ai.chat.candidates.10.provider'"), "初始化数据应包含候选 provider 扁平键");
@@ -52,11 +52,11 @@ class AiRoutingDefaultsConfigTest {
     }
 
     /**
-     * 至少有一条迁移必须覆盖历史环境里的 AI 路由默认值，避免已存在数据库继续停留在旧的 DeepSeek/百炼默认值。
+     * 至少有一条迁移必须清理历史环境里的 AI 默认模型指针，避免已存在数据库继续暴露旧配置入口。
      * @throws IOException 读取迁移文件失败时抛出。
      */
     @Test
-    void migrationUpdatesExistingRuntimeDefaultsToSiliconFlowDeepSeek() throws IOException {
+    void migrationRemovesExistingDefaultModelPointers() throws IOException {
         try (Stream<Path> migrations = Files.list(Path.of("src/main/resources/db/migration"))) {
             boolean found = migrations
                 .filter(path -> path.getFileName().toString().endsWith(".sql"))
@@ -65,20 +65,21 @@ class AiRoutingDefaultsConfigTest {
                         String content = Files.readString(path);
                         return containsAll(
                             content,
-                            "ai.chat.default_model', 'siliconflow-deepseek-v4-flash'",
-                            "ai.chat.deep_thinking_model', 'siliconflow-deepseek-v4-flash-thinking'"
+                            "ai.chat.default_model",
+                            "ai.chat.deep_thinking_model",
+                            "deleted = 1"
                         );
                     } catch (IOException exception) {
                         throw new IllegalStateException("读取迁移文件失败：" + path, exception);
                     }
                 });
 
-            assertTrue(found, "应存在一条迁移把 AI 路由默认值更新为 SiliconFlow DeepSeek");
+            assertTrue(found, "应存在一条迁移删除 AI 默认模型指针");
         }
     }
 
     /**
-     * 历史环境升级时必须补齐 provider endpoint 与候选池键位，默认模型 ID 才能解析到真实 provider。
+     * 历史环境升级时必须补齐 provider endpoint 与候选池键位，候选 priority 默认顺序才能解析到真实 provider。
      * @throws IOException 读取迁移文件失败时抛出。
      */
     @Test

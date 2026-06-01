@@ -30,6 +30,7 @@ import org.springframework.core.io.ClassPathResource;
 public class ChatSkillContextService {
 
     private static final String ROOT_SKILL_MANIFEST = "SKILL.md";
+    private static final String WEB_ACCESS_SKILL_CODE = "web-access";
     private static final String STORAGE_FORMAT_DIRECTORY = "directory";
     private static final String STORAGE_FORMAT_ZIP = "zip";
     private static final String SOURCE_TYPE_BUILT_IN = "built-in";
@@ -81,13 +82,14 @@ public class ChatSkillContextService {
                 skippedSkillCodes.add(skillCode + ":SKILL.md为空");
                 continue;
             }
+            String manifestWithRuntimeGuidance = appendSkillRuntimeGuidance(skill, normalizedManifest);
             contentBuilder
                 .append("## /")
                 .append(skill.getSkillCode())
                 .append("（")
                 .append(StrUtil.blankToDefault(skill.getDisplayName(), skill.getSkillCode()))
                 .append("）\n")
-                .append(normalizedManifest)
+                .append(manifestWithRuntimeGuidance)
                 .append("\n\n");
             loadedSkillCount++;
             loadedSkillCodes.add(skill.getSkillCode());
@@ -166,6 +168,32 @@ public class ChatSkillContextService {
             }
         }
         return normalizedCodes;
+    }
+
+    /**
+     * 为需要真实浏览器能力的第三方技能追加 CodingX 本地执行约束。
+     * 业务背景：对象存储中的 web-access 可能保留上游 curl 示例，但本项目命令工具在 Windows 环境下由
+     * PowerShell 执行；这里不改第三方包，只在注入模型上下文时补充稳定用法。
+     */
+    private String appendSkillRuntimeGuidance(ChatSkill skill, String manifestContent) {
+        // 步骤 1：仅 web-access 需要本地浏览器/CDP 运行约束，其他技能保持原始 manifest 内容。
+        if (!isWebAccessSkill(skill) || StrUtil.contains(manifestContent, "CodingX 运行时约束")) {
+            return manifestContent;
+        }
+        // 步骤 2：追加 PowerShell 专用调用方式，覆盖上游 curl 示例对模型的误导。
+        return manifestContent + """
+
+            ### CodingX 运行时约束
+
+            - 当前 CodingX 后端暴露给模型的 `bash` / `shell_command` 会在 Windows PowerShell 中执行命令，不是 Bash；先调用 node "$env:CLAUDE_SKILL_DIR\\scripts\\check-deps.mjs" 检查 Node、Chrome remote-debugging 与 CDP Proxy 状态。
+            - CDP Proxy 的 GET 请求使用 `Invoke-RestMethod -Uri 'http://localhost:3456/new?url=https://example.com'`；拿到 `targetId` 后继续用 `/info`、`/eval` 或 `/screenshot` 验证页面结果。
+            - CDP Proxy 的 POST 请求使用 `Invoke-WebRequest -Method Post -Body 'document.title' -Uri "http://localhost:3456/eval?target=$targetId"`；不要照搬上游示例里的 curl -s -X POST 和 --data-raw。
+            - 新建 tab 只代表浏览器目标已创建，不代表任务完成；必须读取页面标题、URL、DOM 文本或截图等结果，再向用户汇报。
+            """;
+    }
+
+    private boolean isWebAccessSkill(ChatSkill skill) {
+        return skill != null && StrUtil.equalsIgnoreCase(skill.getSkillCode(), WEB_ACCESS_SKILL_CODE);
     }
 
     private String resolveSkillDescription(ChatSkill skill) {

@@ -8,6 +8,7 @@ import com.codingx.common.storage.RustFsSkillPackageClient;
 import com.codingx.skill.application.service.ChatSkillContextService;
 import com.codingx.skill.domain.model.ChatSkill;
 import com.codingx.skill.domain.repository.ChatSkillRepository;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -105,6 +106,47 @@ class ChatSkillContextServiceTest {
         assertTrue(context.contains("当用户只问“这是什么”“这是啥”“介绍一下”“有什么用”等短句"));
         assertTrue(context.contains("直接概括该技能用途、典型场景和限制"));
         assertTrue(context.contains("如果用户明确要求执行技能任务但缺少 URL、页面、附件或其他必要目标"));
+    }
+
+    /**
+     * 对象存储中的 web-access 技能包仍可能带着上游 curl 示例，CodingX 必须在上下文末尾追加本地运行约束，
+     * 避免模型继续照搬 `curl --data-raw` 这类在 Windows PowerShell 中不稳定的写法。
+     */
+    @Test
+    void buildSkillContextAddsCodingXPowerShellGuidanceForStoredWebAccessManifest() {
+        when(chatSkillRepository.findBySkillCode("web-access")).thenReturn(
+            ChatSkill.builder()
+                .id(8105L)
+                .skillCode("web-access")
+                .displayName("联网访问")
+                .sourceType("uploaded")
+                .enabled(1)
+                .packageStorageFormat("directory")
+                .storageKey("chat-skills/packages/web-access")
+                .build()
+        );
+        when(rustFsSkillPackageClient.downloadDirectoryFile("chat-skills/packages/web-access", "SKILL.md")).thenReturn("""
+            ---
+            name: web-access
+            description: >
+              所有联网操作必须通过此 skill 处理。
+            ---
+
+            # web-access
+
+            使用 curl -s -X POST 和 --data-raw 调用本地代理服务。
+            """.getBytes(StandardCharsets.UTF_8));
+
+        String context = chatSkillContextService.buildSkillContext(List.of("web-access"));
+
+        assertTrue(context.contains("CodingX 运行时约束"));
+        assertTrue(context.contains("Windows PowerShell"));
+        assertTrue(context.contains("Invoke-RestMethod"));
+        assertTrue(context.contains("Invoke-WebRequest"));
+        assertTrue(context.contains("-Method Post"));
+        assertTrue(context.contains("-Body"));
+        assertTrue(context.contains("不要照搬上游示例里的 curl -s -X POST 和 --data-raw"));
+        assertTrue(context.contains("先调用 node \"$env:CLAUDE_SKILL_DIR\\scripts\\check-deps.mjs\""));
     }
 
     /**

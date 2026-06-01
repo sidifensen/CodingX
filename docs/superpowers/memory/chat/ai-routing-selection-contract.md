@@ -14,7 +14,7 @@ related_docs:
   - docs/features/chat/ai-model-failover.md
 entrypoints:
   - backend/src/main/java/com/codingx/common/support/ai/AiModelSelector.java
-last_verified_commit: 27df80c6
+last_verified_commit: 126ec2c156825e96a5f858d1b3d7df5b5d543227
 status: active
 ---
 
@@ -34,7 +34,9 @@ status: active
 - 输入包含 `preferredModel`、`thinkingEnabled` 和可选附件列表。
 - `preferredModel` 非空时拥有最高排序优先级，但仍必须匹配候选 ID 且通过 provider 装配。
 - 动态候选池非空时覆盖静态候选池；动态 provider 配置存在时覆盖静态 provider 映射。
-- 候选排序在能力过滤后执行；非空 `preferredModel` 会先提升匹配候选，未指定时只按 `priority` 和候选 ID 排序。
+- 候选排序在能力过滤后执行；非空 `preferredModel` 会先提升匹配候选。
+- 未指定 `preferredModel` 且 `thinkingEnabled=false` 时，选择器必须先排序非 thinking 候选，再把 thinking 候选作为后续 fallback；各桶内按 `priority` 和候选 ID 排序。
+- `thinkingEnabled=true` 时，选择器优先保留 `supports_thinking=true` 候选；若没有 thinking 候选再回退普通候选池。
 
 ## Invariants
 
@@ -45,4 +47,4 @@ status: active
 ## Compatibility Notes
 
 - 历史实现支持 `ai.chat.default_model` 和 `ai.chat.deep_thinking_model` 作为候选池内的首选排序指针；当前实现已通过迁移清理这两个 setting 键。
-- 未指定 `preferredModel` 时，普通聊天和 deep thinking 都完全按能力过滤后的候选 `priority` 排序，不保留独立默认模型指针。
+- 未指定 `preferredModel` 时，不保留独立默认模型指针；普通聊天先按非 thinking / thinking 分桶再看 `priority`，deep thinking 在 thinking 能力过滤后按 `priority` 排序。

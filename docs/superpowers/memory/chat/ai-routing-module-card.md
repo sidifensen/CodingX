@@ -19,7 +19,7 @@ entrypoints:
   - backend/src/main/java/com/codingx/common/support/ai/AiModelSelector.java
   - backend/src/main/java/com/codingx/common/support/ai/AiModelDispatchService.java
   - backend/src/main/java/com/codingx/config/DynamicAiProperties.java
-last_verified_commit: 27df80c6
+last_verified_commit: 126ec2c156825e96a5f858d1b3d7df5b5d543227
 status: active
 ---
 
@@ -28,7 +28,7 @@ status: active
 ## Responsibilities
 
 - 将系统配置表和静态 `AiProperties` 聚合成聊天候选模型池、provider 连接信息和路由策略。
-- 按附件能力、thinking 能力、显式首选模型、候选优先级和候选 ID 生成有序模型目标列表。
+- 按附件能力、thinking 能力、显式首选模型、普通/思考请求分桶、候选优先级和候选 ID 生成有序模型目标列表。
 - 在调度层按候选顺序执行首包探测、失败标记、熔断跳过和自动切换。
 
 ## Entry Points
@@ -43,6 +43,8 @@ status: active
 - provider 缺失时对应候选会被过滤，不能让不可调用目标进入调度层。
 - 图片附件存在时优先使用 `supports_vision=true` 候选；没有视觉候选时回退原候选池。
 - thinking 请求优先使用 `supports_thinking=true` 候选；没有 thinking 候选时回退普通候选，避免空路由。
+- 普通请求默认先尝试非 thinking 候选，thinking 候选只能作为后续 fallback 或显式 `preferredModel` 命中，避免 priority 配置误触发深度思考。
+- `AiModelDispatchService` 必须在首包缓冲前按 `thinkingEnabled` 过滤 thinking 事件；关闭深度思考时，被过滤的 reasoning 不能算可见首包，候选只返回 reasoning 时应继续 fallback。
 - 数据库 `setting` 会覆盖 YAML 骨架，修改运行时路由键位时必须同步 `init.sql`、迁移脚本、测试和功能文档。
 
 ## Extension Points
@@ -55,4 +57,5 @@ status: active
 
 - 只改 `application.yml` 不改数据库初始化与迁移会导致新旧环境路由行为分裂。
 - 把候选 ID 指针当成真实模型名会绕开 provider、能力和 fallback 配置。
+- 只在 provider 客户端丢弃 `reasoning_content` 不够；调度层首包探测也要忽略被关闭开关过滤掉的 thinking，否则空 reasoning 候选会阻断 fallback。
 - 增加候选字段时遗漏管理端设置页测试，容易造成配置入口和后端解析规则不一致。

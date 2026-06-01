@@ -180,17 +180,18 @@ public class ChatSkillContextService {
         if (!isWebAccessSkill(skill) || StrUtil.contains(manifestContent, "CodingX 运行时约束")) {
             return manifestContent;
         }
-        // 步骤 2：追加 PowerShell 专用调用方式，覆盖上游 curl 示例对模型的误导。
+        // 步骤 2：追加 PowerShell 专用调用方式与浏览器复用顺序，覆盖上游 curl 示例对模型的误导。
         return manifestContent + """
 
             ### CodingX 运行时约束
 
             - 当前 CodingX 后端暴露给模型的 `bash` / `shell_command` 会在 Windows PowerShell 中执行命令，不是 Bash；先调用 node "$env:CLAUDE_SKILL_DIR\\scripts\\check-deps.mjs" 检查 Node、Chrome remote-debugging 与 CDP Proxy 状态。
-            - CDP Proxy 的 GET 请求使用 `Invoke-RestMethod -Uri 'http://localhost:3456/new?url=https://example.com'`；拿到 `targetId` 后继续用 `/info`、`/eval` 或 `/screenshot` 验证页面结果。
+            - CDP Proxy 的 GET 请求使用 `Invoke-RestMethod -Uri 'http://localhost:3456/targets'`、`Invoke-RestMethod -Uri 'http://localhost:3456/info?target=TARGET_ID'` 等 PowerShell 写法；不要把上游 curl 示例原样搬到 PowerShell。
             - CDP Proxy 的 POST 请求使用 `Invoke-WebRequest -Method Post -Body 'document.title' -Uri "http://localhost:3456/eval?target=$targetId"`；不要照搬上游示例里的 curl -s -X POST 和 --data-raw。
-            - 按固定顺序执行 CDP：先 `/new` 获取 `targetId`，必须继续调用 `/info` 确认标题、最终 URL 和 ready 状态，再调用 `/eval` 读取 `document.title` 与 `document.body.innerText`，或用 `/screenshot` 保存证据。
+            - 连接指定网页或用户说“连接一下”时，先 `/targets` 枚举用户当前 Chrome 页面，优先复用 URL 或标题匹配的现有 tab；只有 `/targets` 中没有匹配目标时才调用 `/new` 创建后台 tab，创建时再补上 `?url=...`。
+            - 拿到可用 `targetId` 后必须继续调用 `/info` 确认标题、最终 URL 和 ready 状态，再调用 `/eval` 读取 `document.title` 与 `document.body.innerText`，或用 `/screenshot` 保存证据。
             - 只输出“已创建 tab”“准备读取页面”“正在执行 /eval”都属于中间过程，禁止在这里结束回复；没有页面标题、URL、正文摘要或截图结果时，不得向用户声明已完成。
-            - 新建 tab 只代表浏览器目标已创建，不代表任务完成；必须读取页面标题、URL、DOM 文本或截图等结果，再向用户汇报。
+            - `targetId` 只代表浏览器目标已选中或创建，不代表任务完成；如果 `/info` 返回 `about:blank`、空标题或与目标 URL 不匹配，应回到 `/targets` 重新选择现有目标或重新导航，不能把空白页当作成功结果。
             """;
     }
 

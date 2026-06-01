@@ -109,8 +109,8 @@ class ChatSkillContextServiceTest {
     }
 
     /**
-     * 对象存储中的 web-access 技能包仍可能带着上游 curl 示例，CodingX 必须在上下文末尾追加本地运行约束，
-     * 避免模型继续照搬 `curl --data-raw` 这类在 Windows PowerShell 中不稳定的写法。
+     * 对象存储中的 web-access 技能包仍可能带着上游 curl 示例，CodingX 必须在上下文末尾追加本地运行约束。
+     * 运行约束要同时覆盖 PowerShell 语法和“优先复用用户现有浏览器 tab”的业务意图，避免模型反复新建空白 tab。
      */
     @Test
     void buildSkillContextAddsCodingXPowerShellGuidanceForStoredWebAccessManifest() {
@@ -141,7 +141,9 @@ class ChatSkillContextServiceTest {
 
         assertTrue(context.contains("CodingX 运行时约束"));
         assertTrue(context.contains("Windows PowerShell"));
-        assertTrue(context.contains("按固定顺序执行 CDP"));
+        assertTrue(context.contains("先 `/targets`"));
+        assertTrue(context.contains("优先复用 URL 或标题匹配的现有 tab"));
+        assertTrue(context.contains("只有 `/targets` 中没有匹配目标时才调用 `/new`"));
         assertTrue(context.contains("必须继续调用 `/info`"));
         assertTrue(context.contains("禁止在这里结束回复"));
         assertTrue(context.contains("Invoke-RestMethod"));

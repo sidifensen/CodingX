@@ -548,6 +548,193 @@ class ChatApplicationToolCallFlowTest {
     }
 
     /**
+     * 工具回灌后模型可能只输出“现在执行 + 具体命令列表”，但没有继续发起 tool_call。
+     * 这类正文仍是内部执行计划，不是用户可见结果；后端必须隐藏并推动模型基于已有工具证据收口。
+     *
+     * @param tempDir 本地 workspace 临时目录。
+     * @throws Exception 执行失败时抛出。
+     */
+    @Test
+    void sendMessageSuppressesCommandPlanOnlyFinalRoundAfterToolCall(@TempDir Path tempDir) throws Exception {
+        Long runId = 9401013L;
+        ChatExecutionContext.start(runId);
+        try {
+            Path workspace = tempDir.resolve("repo");
+            Files.createDirectories(workspace);
+            ChatConversation conversation = ChatConversation.create(13L, "Command Plan", 1002L, ChatConversationStatus.ACTIVE);
+            when(chatConversationRepository.requireById(13L)).thenReturn(conversation);
+            when(chatMessageRepository.findByConversationId(13L)).thenReturn(new ArrayList<>());
+            when(chatAttachmentService.requireOwnedAttachments(any(), eq(13L), eq(1002L))).thenReturn(List.of());
+            when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+                new ConversationRewriteResult("连接订阅页", false, List.of("连接订阅页"))
+            );
+            when(conversationIntentService.route("连接订阅页", false)).thenReturn(
+                new ConversationIntentDecision("chat.normal", ConversationIntentAction.DIRECT, null)
+            );
+            when(chatIntentNodeRepository.findByIntentCode("chat.normal")).thenReturn(null);
+            when(chatSkillContextService.buildSkillContext(List.of("web-access"))).thenReturn("web-access skill context");
+            when(chatExpertContextService.buildExpertContext(any())).thenReturn("");
+            when(conversationSummaryService.buildModelHistory(any(), any())).thenAnswer(invocation -> invocation.getArgument(1));
+            when(conversationTitleService.generateTitle(any(), any())).thenReturn("订阅页复用");
+            when(llmResponseCleaner.clean(any())).thenAnswer(invocation -> invocation.getArgument(0));
+            when(chatToolSpecService.listModelVisibleToolSpecs()).thenReturn(List.of(
+                new ChatToolSpec("bash", "PowerShell 命令", Map.of("type", "object"))
+            ));
+            when(chatToolExecutionService.execute(eq("bash"), any())).thenAnswer(invocation -> {
+                String arguments = invocation.getArgument(1);
+                if (arguments.contains("Invoke-RestMethod -Uri")) {
+                    return new ChatToolExecutionResult("bash", "title: 我的订阅 - lucen\nurl: https://lucen.cc/subscriptions", Map.of("ok", true));
+                }
+                if (arguments.contains("document.title")) {
+                    return new ChatToolExecutionResult("bash", "我的订阅 - lucen", Map.of("ok", true));
+                }
+                if (arguments.contains("document.body.innerText")) {
+                    return new ChatToolExecutionResult("bash", "我的订阅\n套餐\n到期时间", Map.of("ok", true));
+                }
+                return new ChatToolExecutionResult("bash", "", Map.of("ok", true));
+            });
+            AtomicInteger modelRound = new AtomicInteger();
+            doAnswer(invocation -> {
+                AiChatClient.ToolAwareStreamHandler handler = invocation.getArgument(3);
+                int round = modelRound.incrementAndGet();
+                if (round == 1) {
+                    handler.onToolCall(new AiToolCall("call-targets", "bash", "{\"command\":\"Invoke-RestMethod http://localhost:3456/targets\"}"));
+                    handler.onComplete();
+                    return null;
+                }
+                if (round == 2) {
+                    handler.onDelta("""
+                        现在执行：
+                        - `Invoke-RestMethod -Uri "http://localhost:3456/info?target=0DD1D69470DAD7AF8466195E89014206"`
+                        - `Invoke-WebRequest -Method Post -Body 'document.title' -Uri "http://localhost:3456/eval?target=0DD1D69470DAD7AF8466195E89014206"`
+                        """);
+                    handler.onComplete();
+                    return null;
+                }
+                handler.onDelta("已复用现有浏览器标签页，目标 URL 为 https://lucen.cc/subscriptions。");
+                handler.onComplete();
+                return null;
+            }).when(aiChatClient).streamChatWithTools(any(), eq(false), any(), any());
+
+            chatApplicationService.sendMessage(
+                new SendChatMessageCommand(13L, "连接订阅页", false, List.of(), List.of("web-access"), null, workspace.toString(), List.of()),
+                1002L
+            );
+
+            verify(chatStreamPublisher, never()).publishAssistantDelta(
+                eq(13L),
+                org.mockito.ArgumentMatchers.contains("Invoke-RestMethod -Uri")
+            );
+            verify(chatStreamPublisher).publishAssistantDelta(
+                13L,
+                "已复用现有浏览器标签页，目标 URL 为 https://lucen.cc/subscriptions。"
+            );
+            verify(chatStreamPublisher).publishAssistantCompleted(
+                eq(13L),
+                any(),
+                eq("已复用现有浏览器标签页，目标 URL 为 https://lucen.cc/subscriptions。"),
+                eq("订阅页复用")
+            );
+        } finally {
+            ChatExecutionContext.clear();
+        }
+    }
+
+    /**
+     * web-access 场景下模型可能首轮不发工具调用，只把要执行的 CDP 命令写成正文。
+     * 后端需要把这类正文当作内部计划隐藏，并通过纠偏提示推动下一轮发起真实本地工具调用。
+     *
+     * @param tempDir 本地 workspace 临时目录。
+     * @throws Exception 执行失败时抛出。
+     */
+    @Test
+    void sendMessageSuppressesInitialCommandPlanAndRetriesToolCall(@TempDir Path tempDir) throws Exception {
+        Long runId = 9401014L;
+        ChatExecutionContext.start(runId);
+        try {
+            Path workspace = tempDir.resolve("repo");
+            Files.createDirectories(workspace);
+            ChatConversation conversation = ChatConversation.create(14L, "Initial Command Plan", 1002L, ChatConversationStatus.ACTIVE);
+            when(chatConversationRepository.requireById(14L)).thenReturn(conversation);
+            when(chatMessageRepository.findByConversationId(14L)).thenReturn(new ArrayList<>());
+            when(chatAttachmentService.requireOwnedAttachments(any(), eq(14L), eq(1002L))).thenReturn(List.of());
+            when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+                new ConversationRewriteResult("连接订阅页", false, List.of("连接订阅页"))
+            );
+            when(conversationIntentService.route("连接订阅页", false)).thenReturn(
+                new ConversationIntentDecision("chat.normal", ConversationIntentAction.DIRECT, null)
+            );
+            when(chatIntentNodeRepository.findByIntentCode("chat.normal")).thenReturn(null);
+            when(chatSkillContextService.buildSkillContext(List.of("web-access"))).thenReturn("web-access skill context");
+            when(chatExpertContextService.buildExpertContext(any())).thenReturn("");
+            when(conversationSummaryService.buildModelHistory(any(), any())).thenAnswer(invocation -> invocation.getArgument(1));
+            when(conversationTitleService.generateTitle(any(), any())).thenReturn("订阅页连接");
+            when(llmResponseCleaner.clean(any())).thenAnswer(invocation -> invocation.getArgument(0));
+            when(chatToolSpecService.listModelVisibleToolSpecs()).thenReturn(List.of(
+                new ChatToolSpec("bash", "PowerShell 命令", Map.of("type", "object"))
+            ));
+            when(chatToolExecutionService.execute(eq("bash"), any())).thenAnswer(invocation -> {
+                String arguments = invocation.getArgument(1);
+                if (arguments.contains("Invoke-RestMethod -Uri")) {
+                    return new ChatToolExecutionResult("bash", "title: 我的订阅 - lucen\nurl: https://lucen.cc/subscriptions", Map.of("ok", true));
+                }
+                if (arguments.contains("document.title")) {
+                    return new ChatToolExecutionResult("bash", "我的订阅 - lucen", Map.of("ok", true));
+                }
+                if (arguments.contains("document.body.innerText")) {
+                    return new ChatToolExecutionResult("bash", "我的订阅\n套餐\n到期时间", Map.of("ok", true));
+                }
+                return new ChatToolExecutionResult("bash", "", Map.of("ok", true));
+            });
+            AtomicInteger modelRound = new AtomicInteger();
+            doAnswer(invocation -> {
+                AiChatClient.ToolAwareStreamHandler handler = invocation.getArgument(3);
+                int round = modelRound.incrementAndGet();
+                if (round == 1) {
+                    handler.onDelta("""
+                        已确认目标页面 https://lucen.cc/subscriptions 当前已在用户浏览器中打开。
+                        为确保内容可读，我将立即执行以下操作：
+                        - Invoke-RestMethod -Uri "http://localhost:3456/info?target=0DD1D69470DAD7AF8466195E89014206"
+                        - Invoke-WebRequest -Method Post -Body 'document.title' -Uri "http://localhost:3456/eval?target=0DD1D69470DAD7AF8466195E89014206"
+                        - Invoke-WebRequest -Method Post -Body 'document.body.innerText.substring(0, 1000)' -Uri "http://localhost:3456/eval?target=0DD1D69470DAD7AF8466195E89014206"
+                        正在执行……
+                        """);
+                    handler.onComplete();
+                    return null;
+                }
+                handler.onDelta("已复用现有浏览器标签页，目标 URL 为 https://lucen.cc/subscriptions。");
+                handler.onComplete();
+                return null;
+            }).when(aiChatClient).streamChatWithTools(any(), eq(false), any(), any());
+
+            chatApplicationService.sendMessage(
+                new SendChatMessageCommand(14L, "连接订阅页", false, List.of(), List.of("web-access"), null, workspace.toString(), List.of()),
+                1002L
+            );
+
+            verify(chatStreamPublisher, never()).publishAssistantDelta(
+                eq(14L),
+                org.mockito.ArgumentMatchers.contains("Invoke-RestMethod -Uri")
+            );
+            verify(chatToolExecutionService).execute(eq("bash"), org.mockito.ArgumentMatchers.contains("Invoke-RestMethod -Uri"));
+            verify(chatToolExecutionService).execute(eq("bash"), org.mockito.ArgumentMatchers.contains("document.title"));
+            verify(chatToolExecutionService).execute(eq("bash"), org.mockito.ArgumentMatchers.contains("document.body.innerText"));
+            verify(chatStreamPublisher).publishAssistantDelta(
+                14L,
+                "已复用现有浏览器标签页，目标 URL 为 https://lucen.cc/subscriptions。"
+            );
+            verify(chatStreamPublisher).publishAssistantCompleted(
+                eq(14L),
+                any(),
+                eq("已复用现有浏览器标签页，目标 URL 为 https://lucen.cc/subscriptions。"),
+                eq("订阅页连接")
+            );
+        } finally {
+            ChatExecutionContext.clear();
+        }
+    }
+
+    /**
      * 深度思考内容是模型真实返回的 reasoning，工具回灌轮次不能清空已收到的 thinking。
      *
      * @param tempDir 本地 workspace 临时目录。

@@ -1426,6 +1426,33 @@ public class ChatApplicationService {
             if (streamError[0] != null) {
                 return;
             }
+            if (toolCalls.isEmpty() && deferredContentDeltas.isCommandPlanOnlyContent()) {
+                List<AiToolCall> inferredToolCalls = inferLocalShellToolCallsFromCommandPlan(
+                    deferredContentDeltas.content(),
+                    toolSpecs
+                );
+                if (CollUtil.isNotEmpty(inferredToolCalls)) {
+                    toolCalls.addAll(inferredToolCalls);
+                    log.info(
+                        "模型命令计划已转为本地工具调用: 轮次={}, 工具调用数={}",
+                        round + 1,
+                        inferredToolCalls.size()
+                    );
+                } else {
+                    logSuppressedToolRoundContent(round + 1, deferredContentDeltas);
+                    currentHistory.add(ChatMessage.create(
+                        cn.hutool.core.util.IdUtil.getSnowflakeNextId(),
+                        command.conversationId(),
+                        ChatMessageRole.SYSTEM,
+                        buildCommandPlanOnlyToolRoundGuidance(!executedToolResults.isEmpty()),
+                        ChatMessageStatus.COMPLETED,
+                        null,
+                        null,
+                        null
+                    ).attachRun(runId));
+                    continue;
+                }
+            }
             if (toolCalls.isEmpty()) {
                 if (!executedToolResults.isEmpty() && deferredContentDeltas.isProgressOnlyContent()) {
                     logSuppressedToolRoundContent(round + 1, deferredContentDeltas);
@@ -1525,7 +1552,13 @@ public class ChatApplicationService {
      */
     private boolean isProgressOnlyToolRoundContent(String content) {
         content = StrUtil.trimToEmpty(content);
-        if (StrUtil.isBlank(content) || content.length() > 80) {
+        if (StrUtil.isBlank(content)) {
+            return false;
+        }
+        if (isCommandPlanOnlyToolRoundContent(content)) {
+            return true;
+        }
+        if (content.length() > 80) {
             return false;
         }
         String normalizedContent = content.replaceAll("\\s+", "");
@@ -1544,6 +1577,45 @@ public class ChatApplicationService {
             || normalizedContent.endsWith("中")
             || normalizedContent.endsWith("中...");
         return hasProgressPrefix && hasProgressSuffix;
+    }
+
+    /**
+     * 判断工具回灌后的正文是否只是“下一步要执行的命令计划”。
+     * 业务约束：模型可能把 `Invoke-RestMethod` / `/info` / `/eval` 写进正文但没有发起 tool_call；
+     * 这类内容对用户来说仍是未完成的内部过程，不能落库为最终回答。
+     *
+     * @param content 本轮模型正文。
+     * @return 是否为命令计划型过程文案。
+     */
+    private boolean isCommandPlanOnlyToolRoundContent(String content) {
+        String normalizedContent = content.replaceAll("\\s+", "");
+        boolean hasPendingExecution = normalizedContent.contains("现在执行")
+            || normalizedContent.contains("正在执行")
+            || normalizedContent.contains("执行中")
+            || normalizedContent.contains("将立即执行")
+            || normalizedContent.contains("我将立即执行")
+            || normalizedContent.contains("我将执行")
+            || normalizedContent.contains("接下来将")
+            || normalizedContent.contains("下一步将");
+        boolean hasExecutionIntent = hasPendingExecution
+            || normalizedContent.contains("接下来")
+            || normalizedContent.contains("我将")
+            || normalizedContent.contains("将执行");
+        boolean hasCommandLikeText = normalizedContent.contains("Invoke-RestMethod")
+            || normalizedContent.contains("Invoke-WebRequest")
+            || normalizedContent.contains("http://localhost:3456/info")
+            || normalizedContent.contains("http://localhost:3456/eval")
+            || normalizedContent.contains("http://localhost:3456/screenshot")
+            || normalizedContent.contains("/info")
+            || normalizedContent.contains("/eval")
+            || normalizedContent.contains("/screenshot");
+        boolean hasCompletedResultEvidence = normalizedContent.contains("已执行")
+            || normalizedContent.contains("工具返回")
+            || normalizedContent.contains("返回：")
+            || normalizedContent.contains("结果：")
+            || normalizedContent.contains("返回结果")
+            || normalizedContent.contains("执行结果");
+        return hasExecutionIntent && hasCommandLikeText && (hasPendingExecution || !hasCompletedResultEvidence);
     }
 
     /**
@@ -1639,13 +1711,28 @@ public class ChatApplicationService {
         }
 
         /**
+         * 判断当前缓冲是否只是待执行命令清单；命中时必须隐藏并要求模型改为真实工具调用。
+         *
+         * @return 是否为命令计划型过程文案。
+         */
+        private boolean isCommandPlanOnlyContent() {
+            return isCommandPlanOnlyToolRoundContent(String.join("", deltas));
+        }
+
+        /**
          * 判断当前片段是否仍可能发展为短进度句；命中时继续缓冲，避免把“正在执行”半句提前推给用户。
          *
          * @return 是否仍可能是短进度说明。
          */
         private boolean isPossibleProgressOnlyContent() {
             String content = StrUtil.trimToEmpty(String.join("", deltas));
-            if (StrUtil.isBlank(content) || content.length() > 80) {
+            if (StrUtil.isBlank(content)) {
+                return false;
+            }
+            if (isCommandPlanOnlyToolRoundContent(content)) {
+                return true;
+            }
+            if (content.length() > 80) {
                 return false;
             }
             String normalizedContent = content.replaceAll("\\s+", "");
@@ -1683,6 +1770,13 @@ public class ChatApplicationService {
         }
 
         /**
+         * @return 当前轮次完整正文，用于从模型计划中提取可兜底执行的本地命令。
+         */
+        private String content() {
+            return String.join("", deltas);
+        }
+
+        /**
          * 发布单个正文增量；空增量不写入 builder，避免最终消息出现无意义片段。
          *
          * @param delta 待发布正文片段。
@@ -1707,6 +1801,122 @@ public class ChatApplicationService {
             后端已隐藏该进度说明；请基于前面已经追加的工具结果，直接输出面向用户的最终回答。
             不要再输出“正在执行”“正在读取”“请稍等”等过程文案；如果信息不足，应说明缺少哪些目标或权限。
             """;
+    }
+
+    /**
+     * 构造命令计划被隐藏后的纠偏提示，避免模型把“将执行的命令”误当成已完成结果。
+     *
+     * @param hasToolEvidence 当前轮之前是否已经有真实工具结果。
+     * @return 系统提示词。
+     */
+    private String buildCommandPlanOnlyToolRoundGuidance(boolean hasToolEvidence) {
+        String evidenceRequirement = hasToolEvidence
+            ? "如果已有工具结果已经足够回答用户，直接输出最终结果；如果还需要读取页面或执行命令，必须发起真实 tool_call。"
+            : "当前还没有任何真实工具结果；如果任务需要浏览器、联网或本地命令，必须发起真实 tool_call。";
+        return """
+            上一轮模型只把准备执行的命令写进了正文，但没有发起真实 tool_call。
+            后端已隐藏该命令计划，因为它不是用户可见的完成结果。
+            %s
+            不要再用正文列出 Invoke-RestMethod、Invoke-WebRequest、/info、/eval 等待执行命令；需要执行时只能通过本轮可见本地工具发起 tool_call。
+            """.formatted(evidenceRequirement);
+    }
+
+    /**
+     * 将模型写在正文中的 web-access CDP 命令兜底转换为真实本地工具调用。
+     * 关键约束：只接受 CDP Proxy 本地端口和 check-deps 脚本，避免把普通说明文字扩大成任意命令执行。
+     *
+     * @param content 模型本轮正文。
+     * @param toolSpecs 本轮真实暴露给模型的工具 schema。
+     * @return 可直接进入后续白名单过滤和执行流程的工具调用。
+     */
+    private List<AiToolCall> inferLocalShellToolCallsFromCommandPlan(String content, List<ChatToolSpec> toolSpecs) {
+        String shellToolName = resolveVisibleShellToolName(toolSpecs);
+        if (StrUtil.isBlank(shellToolName) || StrUtil.isBlank(content)) {
+            return List.of();
+        }
+        List<String> commands = content.lines()
+            .map(this::normalizeCommandPlanLine)
+            .filter(this::isAutoExecutableWebAccessCommand)
+            .distinct()
+            .limit(5)
+            .toList();
+        if (commands.isEmpty()) {
+            return List.of();
+        }
+        List<AiToolCall> toolCalls = new ArrayList<>();
+        for (String command : commands) {
+            String arguments = cn.hutool.json.JSONUtil.createObj()
+                .set("command", command)
+                .toString();
+            toolCalls.add(new AiToolCall(
+                "inferred-command-plan-" + cn.hutool.core.util.IdUtil.fastSimpleUUID(),
+                shellToolName,
+                arguments
+            ));
+        }
+        return toolCalls;
+    }
+
+    /**
+     * 解析模型计划清单中的单行命令，去掉 Markdown 列表、引用和反引号。
+     *
+     * @param line 原始行文本。
+     * @return 可能的 PowerShell 命令。
+     */
+    private String normalizeCommandPlanLine(String line) {
+        String normalizedLine = StrUtil.trimToEmpty(line)
+            .replace("\\\"", "\"");
+        normalizedLine = normalizedLine.replaceFirst("^[>\\s]*[-*•\\d.)、\\s]+", "");
+        normalizedLine = StrUtil.trimToEmpty(normalizedLine);
+        while (normalizedLine.startsWith("`") && normalizedLine.endsWith("`") && normalizedLine.length() > 1) {
+            normalizedLine = StrUtil.trimToEmpty(normalizedLine.substring(1, normalizedLine.length() - 1));
+        }
+        return normalizedLine;
+    }
+
+    /**
+     * 判断命令是否属于 web-access CDP 运行时允许自动兜底执行的范围。
+     *
+     * @param command 规范化后的命令文本。
+     * @return 是否可自动转换成工具调用。
+     */
+    private boolean isAutoExecutableWebAccessCommand(String command) {
+        if (StrUtil.isBlank(command)) {
+            return false;
+        }
+        String lowerCommand = command.toLowerCase(java.util.Locale.ROOT);
+        boolean supportedCommand = lowerCommand.startsWith("invoke-restmethod")
+            || lowerCommand.startsWith("invoke-webrequest")
+            || lowerCommand.startsWith("curl ")
+            || lowerCommand.startsWith("node ");
+        boolean webAccessTarget = lowerCommand.contains("localhost:3456")
+            || lowerCommand.contains("127.0.0.1:3456")
+            || lowerCommand.contains("check-deps.mjs");
+        return supportedCommand && webAccessTarget;
+    }
+
+    /**
+     * 从本轮可见工具中选择可执行 PowerShell 命令的工具名。
+     *
+     * @param toolSpecs 本轮真实暴露给模型的工具 schema。
+     * @return bash 或 shell_command；缺失时返回空字符串。
+     */
+    private String resolveVisibleShellToolName(List<ChatToolSpec> toolSpecs) {
+        if (CollUtil.isEmpty(toolSpecs)) {
+            return "";
+        }
+        Optional<String> bashTool = toolSpecs.stream()
+            .map(ChatToolSpec::name)
+            .filter(toolName -> StrUtil.equalsIgnoreCase(toolName, "bash"))
+            .findFirst();
+        if (bashTool.isPresent()) {
+            return bashTool.get();
+        }
+        return toolSpecs.stream()
+            .map(ChatToolSpec::name)
+            .filter(toolName -> StrUtil.equalsIgnoreCase(toolName, "shell_command"))
+            .findFirst()
+            .orElse("");
     }
 
     /**

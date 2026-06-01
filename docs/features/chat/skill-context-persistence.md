@@ -14,7 +14,7 @@
 2. `ChatApplicationService` 合并正文前缀与请求参数里的技能码，用户消息落库前用 `ChatCapabilityMentionSupport` 加上 `@skill` 前缀。
 3. 当本轮已选技能且用户只问“这是什么”“这是啥”“有什么用”等短句时，`ChatApplicationService` 直接用技能简介生成回答，避免模型把短指代误判为缺少页面、链接或附件。
 4. 改写、意图识别、标题、摘要和模型历史使用剥离前缀后的纯正文，避免把 `@skill` 当自然语言。
-5. `ChatSkillContextService` 读取已选技能根级 `SKILL.md` 并追加到系统提示，日志会输出技能上下文是否生效；当用户正文使用“这个”“这些”“有什么区别”等指代，或只问“这是什么”“这是啥”等短句时，提示词会要求模型先按已选技能理解。对象存储版 `web-access` 会额外追加 CodingX 运行时约束，明确当前本地工具命令在 Windows PowerShell 中执行，并要求 CDP Proxy POST 使用 `Invoke-WebRequest -Method Post -Body`，避免模型照搬上游 `curl --data-raw` 示例。
+5. `ChatSkillContextService` 读取已选技能根级 `SKILL.md` 并追加到系统提示，日志会输出技能上下文是否生效；当用户正文使用“这个”“这些”“有什么区别”等指代，或只问“这是什么”“这是啥”等短句时，提示词会要求模型先按已选技能理解。对象存储版 `web-access` 会额外追加 CodingX 运行时约束，明确当前本地工具命令在 Windows PowerShell 中执行，并要求 CDP Proxy 先通过 `/targets` 复用用户现有 Chrome tab，找不到匹配目标时才 `/new` 创建后台页。
 6. 模型工具调用只允许执行本轮真实暴露的工具 schema；若模型把 `web-access` 这类 skill code 伪造成 tool_call，后端仅忽略这个错误的 tool_call，并回灌“已选技能仍然有效、技能编码不是工具名”的约束。
 7. `SkillLocalCacheService` 为云端临时下载的 `web-access` 写入 `WEB_ACCESS_BROWSER=chrome`，避免每轮新目录都要求用户重新选择浏览器。
 8. 本轮技能、MCP、专家上下文写入隐藏的 `chat_execution_step(step_type=runtime_context)`，旧的 `task_skill`、`task_mcp`、`task_event`、`task_artifact` 表不再使用。
@@ -46,7 +46,7 @@
 
 云端 `web-access` 技能每轮从对象存储下载到新的临时目录，不能依赖上一次生成的 `config.env`。下载完成后写入 `WEB_ACCESS_BROWSER=chrome`，配合工具进程里的 `CLAUDE_SKILL_DIR` 让 `check-deps.mjs` 能直接通过。若模型重复提交完全相同的工具和参数，后端会跳过重复执行并把上一轮结果回灌给模型，避免浏览器操作被反复执行到轮次上限。
 
-`web-access` 的上游技能文档包含通用 `curl` 调用示例，但 CodingX 的 `bash` / `shell_command` 实际运行在 Windows PowerShell 中。技能上下文组装时会在该技能说明后追加项目内运行约束：先执行 `node "$env:CLAUDE_SKILL_DIR\scripts\check-deps.mjs"` 检查 Node、Chrome 和 CDP Proxy，GET 请求使用 `Invoke-RestMethod -Uri`，POST 请求使用 `Invoke-WebRequest -Method Post -Body`。浏览器验证必须按 `/new`、`/info`、`/eval` 或 `/screenshot` 的顺序拿到页面标题、最终 URL、正文摘要或截图证据；只输出 `targetId`、`已创建 tab`、`正在执行 /eval` 这类中间状态不得视为完成。
+`web-access` 的上游技能文档包含通用 `curl` 调用示例，但 CodingX 的 `bash` / `shell_command` 实际运行在 Windows PowerShell 中。技能上下文组装时会在该技能说明后追加项目内运行约束：先执行 `node "$env:CLAUDE_SKILL_DIR\scripts\check-deps.mjs"` 检查 Node、Chrome 和 CDP Proxy，GET 请求使用 `Invoke-RestMethod -Uri`，POST 请求使用 `Invoke-WebRequest -Method Post -Body`。用户要求“连接一下”某个 URL 时，模型必须先调用 `/targets` 枚举用户现有 Chrome 页面并复用 URL 或标题匹配的 tab；只有没有匹配目标时才调用 `/new` 创建后台 tab。拿到 `targetId` 后仍需用 `/info`、`/eval` 或 `/screenshot` 读取页面标题、最终 URL、正文摘要或截图证据；如果 `/info` 返回 `about:blank`、空标题或 URL 不匹配，必须重新选择目标或重新导航，不能把空白页当作成功结果。若模型只在正文里列出这些待执行命令但没有发起真实本地工具调用，后端会隐藏该计划；命令目标限定在 `localhost:3456`、`127.0.0.1:3456` 或 `check-deps.mjs` 时会自动兜底转成 `bash` 工具调用，避免把“正在执行”类文案当成最终回答。
 
 旧表数据迁移时会先按 run 聚合 `task_skill` 与 `task_mcp`，写入 `chat_execution_step.metadata_json` 的 `skillCodes`、`mcpCodes`、`expertCode` 字段；历史用户消息若尚无前缀，会补齐 `@skill`。迁移完成后删除 `task_artifact`、`task_event`、`task_mcp`、`task_skill`。
 
@@ -57,6 +57,7 @@
 - `mvn -Dtest=ChatApplicationServiceTest test`
 - `mvn -Dtest=ChatWorkspaceQueryServiceTest test`
 - `mvn -Dtest=ChatSkillContextServiceTest test`
+- `mvn -Dtest=ChatApplicationToolCallFlowTest#sendMessageSuppressesInitialCommandPlanAndRetriesToolCall test`
 - `npm run test:run -- tests/views/ChatView.test.tsx -t 应在用户消息气泡内展示技能气泡且正文不重复技能标记`
 - 运行后通过 PostgreSQL 确认四张旧表不存在，最近用户消息 `content` 包含 `@web-access`，且 `chat_execution_step` 存在 `runtime_context` 元数据。
 - 通过用户端 `/api/chat/stream` 携带 `skillCodes=web-access` 打开 `https://example.com`，工具步骤返回 `browser: ok`、`proxy: ready` 与 `title=Example Domain`。

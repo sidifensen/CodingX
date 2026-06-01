@@ -45,9 +45,9 @@ class ConfigurableWebSearchChannelTest {
             com.codingx.chat.application.service.RuntimeSettingService.class
         );
         when(runtimeSettingService.webSearchEnabled()).thenReturn(true);
-        when(runtimeSettingService.webSearchProvider()).thenReturn("serper");
-        when(runtimeSettingService.webSearchBaseUrl()).thenReturn("https://google.serper.dev/search");
-        when(runtimeSettingService.webSearchApiKey()).thenReturn("");
+        when(runtimeSettingService.webSearchProviderOrder()).thenReturn(List.of("serpapi"));
+        when(runtimeSettingService.webSearchProviderBaseUrl("serpapi")).thenReturn("https://serpapi.com/search.json");
+        when(runtimeSettingService.webSearchProviderApiKey("serpapi")).thenReturn("");
 
         ConfigurableWebSearchChannel channel = new ConfigurableWebSearchChannel(
             new OkHttpClient.Builder().readTimeout(5, TimeUnit.SECONDS).build(),
@@ -239,7 +239,6 @@ class ConfigurableWebSearchChannelTest {
         int port = httpServer.getAddress().getPort();
         com.codingx.chat.application.service.RuntimeSettingService runtimeSettingService = buildFallbackRuntimeSettingService(
             List.of("tavily", "serpapi"),
-            "tavily",
             "http://127.0.0.1:" + port + "/tavily/search",
             "http://127.0.0.1:" + port + "/serpapi/search"
         );
@@ -292,7 +291,6 @@ class ConfigurableWebSearchChannelTest {
         int port = httpServer.getAddress().getPort();
         com.codingx.chat.application.service.RuntimeSettingService runtimeSettingService = buildFallbackRuntimeSettingService(
             List.of("tavily", "exa"),
-            "tavily",
             "http://127.0.0.1:" + port + "/tavily/search",
             "http://127.0.0.1:" + port + "/exa/search"
         );
@@ -471,44 +469,25 @@ class ConfigurableWebSearchChannelTest {
     }
 
     /**
-     * 未配置 provider_order 时，仍应通过旧 web_search.provider/base_url/api_key 完成兼容调用。
+     * provider 级配置缺失时不读取旧单源配置，确保隐藏的历史配置不会继续驱动搜索请求。
      */
     @Test
-    void searchFallsBackToLegacySingleProviderConfig() throws Exception {
-        httpServer = HttpServer.create(new InetSocketAddress(0), 0);
-        httpServer.createContext("/legacy/search", exchange -> {
-            exchange.getResponseHeaders().add("Content-Type", "application/json; charset=utf-8");
-            exchange.sendResponseHeaders(200, 0);
-            try (OutputStream outputStream = exchange.getResponseBody()) {
-                writeBody(outputStream, """
-                    {
-                      "organic_results": [
-                        {
-                          "title": "Legacy SerpApi Result",
-                          "link": "https://legacy.example/result",
-                          "snippet": "Legacy snippet."
-                        }
-                      ]
-                    }
-                    """);
-            }
-        });
-        httpServer.start();
-
-        com.codingx.chat.application.service.RuntimeSettingService runtimeSettingService = buildRuntimeSettingService(
-            "serpapi",
-            "http://127.0.0.1:" + httpServer.getAddress().getPort() + "/legacy/search"
+    void searchIgnoresLegacySingleProviderConfigWhenProviderScopedConfigMissing() throws Exception {
+        com.codingx.chat.application.service.RuntimeSettingService runtimeSettingService = Mockito.mock(
+            com.codingx.chat.application.service.RuntimeSettingService.class
         );
+        when(runtimeSettingService.webSearchEnabled()).thenReturn(true);
         when(runtimeSettingService.webSearchProviderOrder()).thenReturn(List.of("serpapi"));
+        when(runtimeSettingService.webSearchProviderBaseUrl("serpapi")).thenReturn("");
+        when(runtimeSettingService.webSearchProviderApiKey("serpapi")).thenReturn("");
         ConfigurableWebSearchChannel channel = new ConfigurableWebSearchChannel(
             new OkHttpClient.Builder().readTimeout(5, TimeUnit.SECONDS).build(),
             runtimeSettingService,
             new SearchProviderHealthRegistry(2, 30_000L)
         );
 
-        List<SearchReferenceCandidate> candidates = channel.search(new SearchRequestContext("legacy"));
-
-        assertEquals("Legacy SerpApi Result", candidates.getFirst().title());
+        assertFalse(channel.isEnabled(new SearchRequestContext("legacy")));
+        assertThrows(IllegalStateException.class, () -> channel.search(new SearchRequestContext("legacy")));
     }
 
     /**
@@ -522,9 +501,6 @@ class ConfigurableWebSearchChannelTest {
             com.codingx.chat.application.service.RuntimeSettingService.class
         );
         when(runtimeSettingService.webSearchEnabled()).thenReturn(true);
-        when(runtimeSettingService.webSearchProvider()).thenReturn(provider);
-        when(runtimeSettingService.webSearchBaseUrl()).thenReturn(baseUrl);
-        when(runtimeSettingService.webSearchApiKey()).thenReturn("test-key");
         when(runtimeSettingService.webSearchProviderOrder()).thenReturn(List.of(provider));
         when(runtimeSettingService.webSearchProviderBaseUrl(provider)).thenReturn(baseUrl);
         when(runtimeSettingService.webSearchProviderApiKey(provider)).thenReturn("test-key");
@@ -537,14 +513,12 @@ class ConfigurableWebSearchChannelTest {
     /**
      * 构造带 provider 顺序的运行时搜索配置，用于验证故障切换链路。
      * @param providerOrder provider 尝试顺序。
-     * @param legacyProvider 旧配置 provider。
      * @param firstBaseUrl 第一个 provider 地址。
      * @param secondBaseUrl 第二个 provider 地址。
      * @return 运行时配置。
      */
     private com.codingx.chat.application.service.RuntimeSettingService buildFallbackRuntimeSettingService(
         List<String> providerOrder,
-        String legacyProvider,
         String firstBaseUrl,
         String secondBaseUrl
     ) {
@@ -552,7 +526,6 @@ class ConfigurableWebSearchChannelTest {
             com.codingx.chat.application.service.RuntimeSettingService.class
         );
         when(runtimeSettingService.webSearchEnabled()).thenReturn(true);
-        when(runtimeSettingService.webSearchProvider()).thenReturn(legacyProvider);
         when(runtimeSettingService.webSearchProviderOrder()).thenReturn(providerOrder);
         when(runtimeSettingService.webSearchProviderBaseUrl(providerOrder.get(0))).thenReturn(firstBaseUrl);
         when(runtimeSettingService.webSearchProviderApiKey(providerOrder.get(0))).thenReturn("test-key");

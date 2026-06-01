@@ -2,7 +2,7 @@
 
 ## 背景
 
-当前真实联网搜索由 `ConfigurableWebSearchChannel` 通过 `web_search.provider`、`web_search.base_url`、`web_search.api_key` 读取单个 provider 配置。该模型只能切换单源，不能满足按顺序自动 fallback、国内用户优先可达源、HTML 免费兜底和 provider 故障熔断需求。
+当前真实联网搜索由 `ConfigurableWebSearchChannel` 通过 `web_search.provider_order` 和 `web_search.providers.<provider>.*` 读取 provider 链路配置。该模型可以按顺序自动 fallback、优先国内可达源、使用 HTML 免费兜底并对单个 provider 做故障熔断。
 
 ## 目标
 
@@ -18,7 +18,7 @@
 ### 本次包含
 
 - 后端搜索配置读取扩展。
-- 搜索 provider 顺序解析、provider 级配置、兼容旧配置。
+- 搜索 provider 顺序解析、provider 级配置、旧单源配置下线。
 - Tavily、SerpApi、Exa、DuckDuckGo HTML、Bing HTML 请求与响应解析。
 - 搜索 provider 级健康熔断。
 - 数据库迁移脚本与 `init.sql` 初始化配置。
@@ -42,10 +42,10 @@
 - `web_search.providers.<provider>.base_url`：provider endpoint。
 - `web_search.providers.<provider>.api_key`：provider 密钥；Tavily、SerpApi、Exa 为敏感配置，HTML provider 为空。
 
-兼容旧配置：
+旧配置下线：
 
-- 若新 provider 级配置缺失，且当前 provider 等于旧 `web_search.provider`，则回退读取旧 `web_search.base_url` 和 `web_search.api_key`。
-- 旧 `web_search.provider` 继续保留在系统配置表中，但不再决定默认主链路；它只用于历史兼容。
+- 旧 `web_search.provider/base_url/api_key` 从默认系统配置中移除，并由迁移脚本标记为已删除。
+- 搜索链路不再读取旧单源配置；provider 级配置缺失时跳过该 provider 并尝试后续 provider。
 
 ## Provider 协议
 
@@ -80,7 +80,7 @@ HTML 解析必须使用 Hutool HTML 工具或结构化 DOM 方式，不能用脆
 
 - RuntimeSettingService：覆盖 provider 顺序、provider 级配置、敏感 key 解密、故障阈值和冷却时间读取。
 - SearchProviderHealthRegistry：覆盖 CLOSED / OPEN / HALF_OPEN 状态机。
-- ConfigurableWebSearchChannel：覆盖顺序 fallback、熔断跳过、Tavily、SerpApi、Exa、DuckDuckGo HTML、Bing HTML 解析、旧配置兼容。
+- ConfigurableWebSearchChannel：覆盖顺序 fallback、熔断跳过、Tavily、SerpApi、Exa、DuckDuckGo HTML、Bing HTML 解析、旧配置下线。
 - 后端编译与定向测试：`mvn -Dtest=RuntimeSettingServiceTest,SearchProviderHealthRegistryTest,ConfigurableWebSearchChannelTest test`。
 
 ## 风险

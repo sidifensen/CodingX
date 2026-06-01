@@ -126,14 +126,12 @@ public class ConfigurableWebSearchChannel implements SearchChannel {
     }
 
     /**
-     * 读取去重后的 provider 顺序；旧配置环境缺少 provider_order 时回退旧单 provider。
+     * 读取去重后的 provider 顺序；配置服务负责在缺省时提供内置默认链路。
      * @return provider 编码列表。
      */
     private List<String> orderedProviders() {
         List<String> configuredOrder = runtimeSettingService.webSearchProviderOrder();
-        List<String> source = configuredOrder == null || configuredOrder.isEmpty()
-            ? List.of(runtimeSettingService.webSearchProvider())
-            : configuredOrder;
+        List<String> source = configuredOrder == null ? List.of() : configuredOrder;
         Set<String> deduplicated = new LinkedHashSet<>();
         for (String provider : source) {
             String normalized = normalizeProvider(provider);
@@ -145,15 +143,12 @@ public class ConfigurableWebSearchChannel implements SearchChannel {
     }
 
     /**
-     * 合并 provider 级配置与旧单 provider 配置，HTML provider 不要求 API Key。
+     * 读取 provider 级配置，HTML provider 不要求 API Key。
      * @param provider provider 编码。
      * @return provider 配置；配置不可用时返回 null。
      */
     private ProviderConfig providerConfig(String provider) {
         String baseUrl = runtimeSettingService.webSearchProviderBaseUrl(provider);
-        if (StrUtil.isBlank(baseUrl) && StrUtil.equals(provider, normalizeProvider(runtimeSettingService.webSearchProvider()))) {
-            baseUrl = runtimeSettingService.webSearchBaseUrl();
-        }
         String apiKey = runtimeSettingService.webSearchProviderApiKey(provider);
         if (StrUtil.isBlank(baseUrl)) {
             return null;
@@ -243,7 +238,7 @@ public class ConfigurableWebSearchChannel implements SearchChannel {
     }
 
     /**
-     * 构造 Bing Web Search API 请求，保留旧配置兼容能力。
+     * 构造 Bing Web Search API 请求。
      * @param config provider 配置。
      * @param context 搜索上下文。
      * @return HTTP 请求。
@@ -265,7 +260,7 @@ public class ConfigurableWebSearchChannel implements SearchChannel {
     }
 
     /**
-     * 构造 Serper 搜索请求，保留旧 provider 编码兼容。
+     * 构造 Serper 搜索请求。
      * @param config provider 配置。
      * @param context 搜索上下文。
      * @return HTTP 请求。

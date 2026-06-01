@@ -232,13 +232,10 @@ VALUES
     (7042, 'code_search.max_file_size_bytes', '1048576', NULL, FALSE, NULL, NULL, NULL, 'LONG', 'code_search', '代码检索单文件最大扫描字节数', 30, TRUE, 0),
     (7067, 'chat.attachment.max_file_size_bytes', '10485760', NULL, FALSE, NULL, NULL, NULL, 'LONG', 'chat.attachment', '聊天附件上传单文件最大字节数', 10, FALSE, 0),
     (7043, 'web_search.enabled', 'false', NULL, FALSE, NULL, NULL, NULL, 'BOOLEAN', 'search', '是否启用真实联网搜索', 50, FALSE, 0),
-    (7044, 'web_search.provider', 'bing', NULL, FALSE, NULL, NULL, NULL, 'STRING', 'search', '联网搜索提供方编码', 60, FALSE, 0),
-    (7045, 'web_search.base_url', 'https://api.bing.microsoft.com/v7.0/search', NULL, FALSE, NULL, NULL, NULL, 'STRING', 'search', '联网搜索接口地址', 70, FALSE, 0),
-    (7046, 'web_search.api_key', '', NULL, TRUE, '', 'AES_GCM', 'v1', 'STRING', 'search', '联网搜索接口密钥', 80, FALSE, 0),
     (7047, 'web_search.max_results', '5', NULL, FALSE, NULL, NULL, NULL, 'INTEGER', 'search', '联网搜索单次最大候选数', 90, FALSE, 0),
     (7048, 'web_search.language', 'zh-cn', NULL, FALSE, NULL, NULL, NULL, 'STRING', 'search', '联网搜索语言代码', 100, FALSE, 0),
     (7049, 'web_search.country', 'cn', NULL, FALSE, NULL, NULL, NULL, 'STRING', 'search', '联网搜索地区代码', 110, FALSE, 0),
-    -- 联网搜索多 provider 默认顺序按国内可用性优先配置，API Key 槽位保持为空并由运维在系统配置中写入。
+    -- 联网搜索多 provider 默认顺序按国内可用性优先配置，provider 级 API Key 槽位保持为空并由运维在系统配置中写入。
     (7301, 'web_search.provider_order', 'tavily,serpapi,exa,duckduckgo_html,bing_html', NULL, FALSE, NULL, NULL, NULL, 'STRING', 'search', '联网搜索提供方尝试顺序', 120, FALSE, 0),
     (7302, 'web_search.failure_threshold', '2', NULL, FALSE, NULL, NULL, NULL, 'INTEGER', 'search', '联网搜索提供方连续失败熔断阈值', 130, FALSE, 0),
     (7303, 'web_search.open_duration_ms', '30000', NULL, FALSE, NULL, NULL, NULL, 'LONG', 'search', '联网搜索提供方熔断打开时长毫秒', 140, FALSE, 0),

@@ -28,14 +28,14 @@ status: active
 - `WebSearchExecutionService` 负责筛选启用的 `SearchChannel`，按 `getPriority()` 升序执行搜索通道，聚合结果后依次运行搜索后处理器。
 - `ConfigurableWebSearchChannel` 是当前真实联网搜索入口，通过 `RuntimeSettingService` 读取 `web_search.*` 系统配置，构造 provider 请求并映射为 `SearchReferenceCandidate`。
 - `SearchProviderHealthRegistry` 维护搜索 provider 独立三态熔断状态，语义与模型路由健康注册表一致，但不会影响 AI provider 状态。
-- `RuntimeSettingService` 将数据库 `setting` 表作为运行时配置优先来源，配置缺失时才回退 `RuntimeProperties.WebSearchProperties` 的默认值。
+- `RuntimeSettingService` 将数据库 `setting` 表作为运行时配置优先来源；联网搜索 provider 链路缺失时使用代码内置默认顺序。
 - `search` 分类下的配置种子由 `backend/src/main/resources/db/migration` 和 `backend/src/main/resources/db/init.sql` 同步维护，管理端系统配置页读取同一批配置。
 
 ## Entry Points
 
 - 聊天搜索主流程：`ChatApplicationService` 在搜索意图分支调用 `WebSearchExecutionService.search(...)`。
 - 搜索通道实现：`ConfigurableWebSearchChannel.search(...)` 对 provider 响应做协议适配。
-- 搜索配置读取：`RuntimeSettingService.webSearchEnabled()`、`webSearchProvider()`、`webSearchBaseUrl()`、`webSearchApiKey()`、`webSearchMaxResults()`、`webSearchLanguage()`、`webSearchCountry()`。
+- 搜索配置读取：`RuntimeSettingService.webSearchEnabled()`、`webSearchProviderOrder()`、`webSearchProviderBaseUrl(provider)`、`webSearchProviderApiKey(provider)`、`webSearchMaxResults()`、`webSearchLanguage()`、`webSearchCountry()`。
 - 搜索引用持久化：`SearchReferenceCollector` 将最终候选来源写入消息引用表，供前端引用和历史回放使用。
 
 ## Invariants
@@ -54,7 +54,7 @@ status: active
 
 ## Common Pitfalls
 
-- 只修改旧 `web_search.provider` 默认值只能服务历史兼容；新链路的默认尝试顺序由 `web_search.provider_order` 控制。
+- 仍然修改旧 `web_search.provider/base_url/api_key` 没有实际意义；新链路的默认尝试顺序由 `web_search.provider_order` 控制，provider 级配置才是运行时输入。
 - 只新增迁移脚本而漏改 `init.sql` 会导致新环境初始化与迁移环境配置不一致。
 - HTML 搜索源结果页结构可能变化，解析逻辑必须跳过缺失标题或链接的条目，并在无结果时安全回退到后续 provider。
-- 搜索配置的 `api_key`、provider 级密钥和 HTML 搜索源无密钥场景需要明确区分，不能要求所有 provider 都必须存在全局 `web_search.api_key`。
+- 搜索配置的 provider 级密钥和 HTML 搜索源无密钥场景需要明确区分，不能要求所有 provider 都必须存在全局密钥。

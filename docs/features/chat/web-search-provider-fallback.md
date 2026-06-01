@@ -38,7 +38,7 @@
 
 - 用户真实搜索密钥不能写入迁移脚本、`init.sql`、测试 fixture 或日志。
 - 日志只允许打印 provider 编码、尝试顺序、结果数和失败类型，不打印 API Key 或 provider 原始响应全文。
-- `web_search.provider/base_url/api_key` 保留为旧配置兼容兜底，不再作为默认顺序的唯一来源。
+- `web_search.provider/base_url/api_key` 已下线，不再展示也不再参与运行时读取；搜索顺序和 endpoint 只由 `web_search.provider_order` 与 provider 级配置控制。
 - HTML provider 依赖外部页面结构，解析失败时必须安全降级到下一个 provider。
 
 ## 测试与验证

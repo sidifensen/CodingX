@@ -172,50 +172,6 @@ class RuntimeSettingServiceTest {
     }
 
     /**
-     * 敏感配置应从密文字段解密读取，而不是继续依赖明文值。
-     */
-    @Test
-    void webSearchApiKeyDecryptsSecretValue() {
-        when(chatRuntimeSettingRepository.findAll()).thenReturn(List.of(
-            ChatRuntimeSetting.builder()
-                .settingKey("web_search.api_key")
-                .settingValue("")
-                .encryptedValue("cipher-secret")
-                .secret(true)
-                .valueType("STRING")
-                .categoryCode("search")
-                .description("联网搜索接口密钥")
-                .build()
-        ));
-        when(configCryptoService.decrypt("cipher-secret")).thenReturn("plain-secret");
-
-        runtimeSettingService.init();
-
-        assertEquals("plain-secret", runtimeSettingService.webSearchApiKey());
-    }
-
-    /**
-     * 敏感配置缺少密文时必须立即失败，避免业务静默读取空字符串。
-     */
-    @Test
-    void webSearchApiKeyThrowsWhenSecretMissingCipherText() {
-        when(chatRuntimeSettingRepository.findAll()).thenReturn(List.of(
-            ChatRuntimeSetting.builder()
-                .settingKey("web_search.api_key")
-                .settingValue("")
-                .secret(true)
-                .valueType("STRING")
-                .categoryCode("search")
-                .description("联网搜索接口密钥")
-                .build()
-        ));
-
-        runtimeSettingService.init();
-
-        assertThrows(IllegalStateException.class, () -> runtimeSettingService.webSearchApiKey());
-    }
-
-    /**
      * 未配置 provider_order 时应使用内置默认顺序，确保新环境升级后天然具备多 provider 兜底能力。
      */
     @Test
@@ -270,10 +226,10 @@ class RuntimeSettingServiceTest {
     }
 
     /**
-     * 旧版单 provider 配置仍需兼容：provider 名匹配旧 web_search.provider 时回退到旧 base_url/api_key。
+     * 旧版单 provider 配置不再参与搜索链路，避免管理端隐藏旧项后运行时仍读取历史值。
      */
     @Test
-    void webSearchProviderConfigFallsBackToLegacySingleProvider() {
+    void webSearchProviderConfigIgnoresLegacySingleProvider() {
         when(chatRuntimeSettingRepository.findAll()).thenReturn(List.of(
             setting("web_search.provider", "serpapi"),
             setting("web_search.base_url", "https://legacy.example/search"),
@@ -287,12 +243,11 @@ class RuntimeSettingServiceTest {
                 .description("联网搜索接口密钥")
                 .build()
         ));
-        when(configCryptoService.decrypt("cipher-legacy-key")).thenReturn("plain-legacy-key");
 
         runtimeSettingService.init();
 
-        assertEquals("https://legacy.example/search", runtimeSettingService.webSearchProviderBaseUrl("serpapi"));
-        assertEquals("plain-legacy-key", runtimeSettingService.webSearchProviderApiKey("serpapi"));
+        assertEquals("", runtimeSettingService.webSearchProviderBaseUrl("serpapi"));
+        assertEquals("", runtimeSettingService.webSearchProviderApiKey("serpapi"));
         assertEquals("", runtimeSettingService.webSearchProviderBaseUrl("tavily"));
         assertEquals("", runtimeSettingService.webSearchProviderApiKey("tavily"));
     }

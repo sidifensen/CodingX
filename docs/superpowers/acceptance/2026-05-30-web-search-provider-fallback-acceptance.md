@@ -18,5 +18,5 @@
 | AC-006 | 搜索 provider 熔断冷却结束后只允许一个半开探测请求，成功后恢复。 | Logic | Tavily 已 OPEN 且冷却时间已过。 | 第一次 `allowCall` 返回 true，第二次并发前返回 false；成功标记后再次返回 true。 |
 | AC-007 | Tavily、SerpApi、Exa 响应能解析为标准搜索来源候选。 | Logic | 本地 HTTP 测试服务分别返回三种 provider 响应 fixture。 | 候选结果包含标题、URL、站点名、摘要和分数，缺失标题或 URL 的条目被过滤。 |
 | AC-008 | DuckDuckGo HTML 和 Bing HTML 可作为无密钥兜底 provider。 | Logic | provider 顺序只包含 HTML provider，本地 HTTP 测试服务返回搜索结果 HTML。 | 搜索通道无需 API key 即启用，并返回标准来源候选。 |
-| AC-009 | 旧 `web_search.provider/base_url/api_key` 配置仍可兼容使用。 | Logic | 新 provider 级 base URL/key 缺失，旧配置为 `provider=serpapi` 且 key 可用。 | 搜索通道使用旧 base URL/key 请求 SerpApi 并返回结果。 |
+| AC-009 | 旧 `web_search.provider/base_url/api_key` 配置已下线，不再展示也不参与运行时。 | Data | `setting` 表中仍存在旧键历史行。 | 迁移后旧键 `deleted=1`，管理端系统配置列表不返回这些键，搜索链路只读取 provider 级配置。 |
 | AC-010 | 搜索日志不能泄露 API key。 | Logic | provider 级 key 配置为测试密钥。 | 搜索相关日志只包含 provider 编码、结果数和失败类型，不包含 key 明文。 |

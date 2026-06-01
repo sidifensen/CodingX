@@ -279,36 +279,6 @@ public class RuntimeSettingService {
     }
 
     /**
-     * 获取联网搜索 provider 编码。
-     * @return provider 编码。
-     */
-    public String webSearchProvider() {
-        RuntimeProperties.WebSearchProperties fallback = runtimeProperties.getWebSearch();
-        String fallbackValue = fallback == null ? "serper" : fallback.getProvider();
-        return getString("web_search.provider", fallbackValue);
-    }
-
-    /**
-     * 获取联网搜索接口地址。
-     * @return 接口地址。
-     */
-    public String webSearchBaseUrl() {
-        RuntimeProperties.WebSearchProperties fallback = runtimeProperties.getWebSearch();
-        String fallbackValue = fallback == null ? "" : fallback.getBaseUrl();
-        return getString("web_search.base_url", fallbackValue);
-    }
-
-    /**
-     * 获取联网搜索 API Key。
-     * @return API Key。
-     */
-    public String webSearchApiKey() {
-        RuntimeProperties.WebSearchProperties fallback = runtimeProperties.getWebSearch();
-        String fallbackValue = fallback == null ? "" : fallback.getApiKey();
-        return getString("web_search.api_key", fallbackValue);
-    }
-
-    /**
      * 获取联网搜索 provider 尝试顺序，空配置回退到内置多 provider 顺序。
      * @return provider 编码列表。
      */
@@ -326,38 +296,23 @@ public class RuntimeSettingService {
     }
 
     /**
-     * 获取指定联网搜索 provider 的接口地址；provider 级配置缺失时兼容旧单 provider 配置。
+     * 获取指定联网搜索 provider 的接口地址；只读取 provider 级配置，避免隐藏的旧单源配置继续影响搜索链路。
      * @param provider provider 编码。
      * @return 接口地址。
      */
     public String webSearchProviderBaseUrl(String provider) {
         String normalizedProvider = normalizeProvider(provider);
-        String scopedValue = getString("web_search.providers." + normalizedProvider + ".base_url", "");
-        if (StrUtil.isNotBlank(scopedValue)) {
-            return scopedValue;
-        }
-        return StrUtil.equals(normalizedProvider, normalizeProvider(webSearchProvider())) ? webSearchBaseUrl() : "";
+        return getString("web_search.providers." + normalizedProvider + ".base_url", "");
     }
 
     /**
-     * 获取指定联网搜索 provider 的 API Key；敏感配置由 rawValue 统一解密。
+     * 获取指定联网搜索 provider 的 API Key；敏感配置由 rawValue 统一解密，缺失时返回空值让链路跳过该 provider。
      * @param provider provider 编码。
      * @return API Key。
      */
     public String webSearchProviderApiKey(String provider) {
         String normalizedProvider = normalizeProvider(provider);
-        String scopedValue = optionalSecretString("web_search.providers." + normalizedProvider + ".api_key", "");
-        if (StrUtil.isNotBlank(scopedValue)) {
-            return scopedValue;
-        }
-        if (!StrUtil.equals(normalizedProvider, normalizeProvider(webSearchProvider()))) {
-            return "";
-        }
-        String legacyValue = optionalSecretString("web_search.api_key", "");
-        if (StrUtil.isNotBlank(legacyValue)) {
-            return legacyValue;
-        }
-        return cache.containsKey("web_search.api_key") ? "" : webSearchApiKey();
+        return optionalSecretString("web_search.providers." + normalizedProvider + ".api_key", "");
     }
 
     /**

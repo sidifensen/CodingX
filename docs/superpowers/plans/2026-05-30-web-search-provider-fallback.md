@@ -22,7 +22,7 @@ Add tests for default provider order, configured provider order, provider-level 
 
 - [x] **Step 2: Verify red state**
 
-Run: `cd backend && mvn -Dtest=RuntimeSettingServiceTest#webSearchProviderOrderFallsBackToDomesticDefault+webSearchProviderOrderReadsConfiguredValue+webSearchProviderConfigReadsProviderScopedValues+webSearchProviderConfigFallsBackToLegacySingleProvider+webSearchCircuitBreakerReadsConfiguredValues test`
+Run: `cd backend && mvn -Dtest=RuntimeSettingServiceTest#webSearchProviderOrderFallsBackToDomesticDefault+webSearchProviderOrderReadsConfiguredValue+webSearchProviderConfigReadsProviderScopedValues+webSearchProviderConfigIgnoresLegacySingleProvider+webSearchCircuitBreakerReadsConfiguredValues test`
 
 Expected: compilation/test failure because new methods do not exist.
 
@@ -66,7 +66,7 @@ Run the same targeted test and expect pass.
 
 - [x] **Step 1: Write failing tests**
 
-Add tests for ordered fallback, circuit breaker skip, SerpApi parsing, Exa parsing, Bing HTML parsing, DuckDuckGo HTML parsing, and legacy config fallback.
+Add tests for ordered fallback, circuit breaker skip, SerpApi parsing, Exa parsing, Bing HTML parsing, DuckDuckGo HTML parsing, and legacy config removal.
 
 - [x] **Step 2: Verify red state**
 

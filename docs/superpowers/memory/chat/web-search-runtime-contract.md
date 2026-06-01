@@ -41,8 +41,8 @@ status: active
 ## Configuration Rules
 
 - 当前稳定配置键包括：`web_search.enabled`、`web_search.provider_order`、`web_search.failure_threshold`、`web_search.open_duration_ms`、`web_search.providers.<provider>.base_url`、`web_search.providers.<provider>.api_key`、`web_search.max_results`、`web_search.language`、`web_search.country`。
-- `web_search.provider`、`web_search.base_url`、`web_search.api_key` 是旧单 provider 配置，仍作为历史兼容兜底。
-- `web_search.providers.*.api_key` 和旧 `web_search.api_key` 是敏感配置，迁移后应写入 `encrypted_value` 并保留 `masked_value` 供管理端展示。
+- `web_search.provider`、`web_search.base_url`、`web_search.api_key` 已下线，不再参与运行时读取；历史数据由迁移脚本统一标记删除。
+- `web_search.providers.*.api_key` 是敏感配置，迁移后应写入 `encrypted_value` 并保留 `masked_value` 供管理端展示。
 - 搜索质量配置 `search.top_k`、`search.rerank_enabled`、`search.timeout_ms` 与 provider 配置分离，分别服务截断、重排和超时控制。
 
 ## Invariants
@@ -55,6 +55,6 @@ status: active
 
 ## Compatibility Notes
 
-- `RuntimeSettingService` 在系统配置缺失时会回退 `RuntimeProperties.WebSearchProperties`，因此新增配置必须同时考虑数据库种子和代码默认值。
-- 旧环境可能仍存在未迁移的明文配置字段，配置仓储已包含敏感字段缺失时的兼容读取逻辑。
+- `RuntimeSettingService` 在 provider 顺序缺失时会回退内置默认链路，因此新增 provider 必须同步考虑数据库种子和代码默认值。
+- 旧环境如仍存在旧单 provider 配置，迁移脚本会将其统一标记为已删除，避免管理端继续展示。
 - 迁移脚本需要使用 `ON CONFLICT (setting_key) DO UPDATE` 保证重复执行和旧环境升级时配置元数据保持一致。

@@ -1839,8 +1839,10 @@ describe('useChatWorkspace', () => {
     );
     window.history.replaceState(window.history.state, '', '/?conversationId=2001');
 
+    const bootstrapRequestUrls: string[] = [];
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
       const url = String(input);
+      bootstrapRequestUrls.push(url);
       if (url === '/api/chat/conversations') {
         return new Response(
           JSON.stringify({
@@ -1935,6 +1937,7 @@ describe('useChatWorkspace', () => {
         (message) => message.content === '这条消息不应被第二轮初始化冲掉',
       ),
     ).toBe(true);
+    expect(bootstrapRequestUrls.filter((url) => url === '/api/chat/conversations')).toHaveLength(1);
   });
 
   /**

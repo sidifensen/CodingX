@@ -47,6 +47,8 @@ status: active
     - 分享选择只能使用已落库的数值消息 ID，临时乐观消息必须在 UI 和提交前过滤
   - `docs/superpowers/memory/lessons/chat-task-reminder-read-state-must-use-local-snapshot.md`
     - 聊天任务完成提醒的已读状态必须写入本地快照，不能复用数据库置顶字段
+  - `docs/superpowers/memory/lessons/electron-chat-bootstrap-must-be-idempotent.md`
+    - Electron 聊天首屏初始化必须按认证态和工作区上下文做幂等保护
   - `docs/superpowers/memory/lessons/built-in-skill-database-records-must-match-classpath-manifests.md`
     - 内置技能写入数据库后，必须同步提供类路径 `SKILL.md`，否则运行时上下文无法读取
 - `docs/superpowers/memory/chat/ai-routing-module-card.md`

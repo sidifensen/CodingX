@@ -546,6 +546,13 @@ export function useChatWorkspace(
   const submitMessageInFlightRef = useRef<number | null>(null);
   const streamQueueTimerRef = useRef<number | null>(null);
   const skipNextRuntimeSyncRef = useRef(false);
+  const bootstrapWorkspaceLifecycleRef = useRef<{
+    inFlightKey: string | null;
+    completedKey: string | null;
+  }>({
+    inFlightKey: null,
+    completedKey: null,
+  });
   const activeRuntimeTargetRef = useRef(activeRuntimeTarget);
   const workspacePathRef = useRef(workspacePath);
   const conversationsRef = useRef<ConversationItem[]>([]);
@@ -566,6 +573,27 @@ export function useChatWorkspace(
   currentExpertsRef.current = currentExperts;
   currentSkillsRef.current = currentSkills;
   currentMcpsRef.current = currentMcps;
+
+  /**
+   * 为首屏初始化生成稳定去重键，同一登录会话与同一工作上下文只允许触发一次 bootstrap。
+   * 这里使用 token 作为认证态签名，而不是 isAuthenticated 布尔值，避免鉴权状态从 false 切到 true
+   * 但实际登录会话未变化时，把同一轮恢复误判成两次不同初始化。
+   * @param token 当前有效登录 token。
+   * @returns 可比较的初始化上下文键。
+   */
+  const buildBootstrapWorkspaceKey = (token: string) =>
+    JSON.stringify({
+      token,
+      partitionKey: activeWorkspacePartitionKey,
+      runtimeTarget: activeRuntimeTarget,
+      workspacePath,
+      workspaceId,
+      urlConversationId: initialUrlConversationIdRef.current,
+      hostType,
+      hostBoundRepositoryPath,
+      hostWorkspaceId,
+      executionTargetsSignature,
+    });
 
   /**
    * 保护正在流式生成的助手消息，避免慢回放或列表刷新用旧消息快照覆盖实时输出。
@@ -1104,17 +1132,27 @@ export function useChatWorkspace(
   }, [activeRuntimeTarget]);
 
   useEffect(() => {
-    const hasPersistedToken = currentToken() != null;
+    const token = currentToken();
+    const hasPersistedToken = token != null;
     // 关键约束：登录态校验尚未返回但本地仍有 token 时，不能提前按“未登录”重置，
     // 否则会清空 URL 会话参数并打断刷新恢复链路。
     if (!isAuthenticated && !hasPersistedToken) {
       resetWorkspace();
       return;
     }
-    if (!activeWorkspacePartitionKey) {
+    if (!activeWorkspacePartitionKey || !token) {
+      bootstrapWorkspaceLifecycleRef.current.inFlightKey = null;
       return;
     }
-    void bootstrapWorkspace();
+    const bootstrapKey = buildBootstrapWorkspaceKey(token);
+    if (
+      bootstrapWorkspaceLifecycleRef.current.inFlightKey === bootstrapKey ||
+      bootstrapWorkspaceLifecycleRef.current.completedKey === bootstrapKey
+    ) {
+      return;
+    }
+    bootstrapWorkspaceLifecycleRef.current.inFlightKey = bootstrapKey;
+    void bootstrapWorkspace(token, bootstrapKey);
   }, [isAuthenticated, activeWorkspacePartitionKey]);
 
   useEffect(() => {
@@ -1134,12 +1172,11 @@ export function useChatWorkspace(
 
   /**
    * 加载初始会话列表并恢复显式指定会话，默认保持首页新建态。
+   * @param token 当前有效登录 token，调用方已经用于生成本轮去重 key。
+   * @param bootstrapKey 本轮初始化上下文 key，用于完成后释放同 key 门闩。
    */
-  const bootstrapWorkspace = async () => {
-    const token = currentToken();
-    if (!token) {
-      return;
-    }
+  const bootstrapWorkspace = async (token: string, bootstrapKey: string) => {
+    let didCompleteBootstrap = false;
     setIsBootstrapping(true);
     try {
       const preferredInitialConversationPartition = resolveInitialWorkspacePartition();
@@ -1235,6 +1272,7 @@ export function useChatWorkspace(
       if (!hasHydratedInitialConversationRef.current) {
         hasHydratedInitialConversationRef.current = true;
       }
+      didCompleteBootstrap = true;
     } catch (error) {
       if (error instanceof ChatApi.UnauthorizedError) {
         onUnauthorizedRef.current?.();
@@ -1242,6 +1280,12 @@ export function useChatWorkspace(
       }
       throw error;
     } finally {
+      if (bootstrapWorkspaceLifecycleRef.current.inFlightKey === bootstrapKey) {
+        bootstrapWorkspaceLifecycleRef.current.inFlightKey = null;
+      }
+      if (didCompleteBootstrap) {
+        bootstrapWorkspaceLifecycleRef.current.completedKey = bootstrapKey;
+      }
       setIsBootstrapping(false);
     }
   };

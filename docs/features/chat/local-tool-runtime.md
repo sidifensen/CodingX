@@ -19,7 +19,7 @@
 5. `CodexBuiltinChatToolExecutor` 执行命令、补丁、计划、资源读取、图片读取、目标状态、权限申请、插件申请与进程内子代理状态工具；标准 diff 中若出现当前工作区内的绝对路径，会在应用前规范化为相对路径，工作区外路径继续拒绝。
 6. 工具输出会作为系统证据追加给下一轮模型生成，证据中单独写出真实 `workingDirectory` 和后续路径约束；前端同步展示 start、complete 或 error 过程卡片。
 7. 工具调用轮次中的模型正文会先进入后端延迟缓冲；如果该轮最终包含真实工具调用，这些正文会被丢弃，只保留工具卡片和工具证据，避免“现在执行”“接下来调用工具”等内部过程文字变成用户可见回答。
-8. 当某一轮模型不再返回工具调用时，后端才把该轮正文增量写入最终助手消息并通过 SSE 发布；如果工具轮次达到上限或工具执行失败，已隐藏的中间正文不会落库为失败消息正文。
+8. 工具结果回灌后，如果后续无工具调用轮次开始输出真实最终回答，后端会立即把已确认可见的正文增量写入最终助手消息并通过 SSE 发布，保持用户端逐字/分段显示；若该轮只有“正在执行...”这类短进度说明，则继续隐藏并追加纠偏提示，让模型下一轮直接输出用户可见结果。如果工具轮次达到上限或工具执行失败，已隐藏的中间正文不会落库为失败消息正文。
 9. `ChatSkillContextService` 读取已选技能说明并加入系统提示；若缺少 URL、页面、附件等必要目标，模型应围绕已选技能追问或尝试获取上下文，而不是转成普通闲聊回答。
 
 ## 关键文件
@@ -42,7 +42,7 @@
 
 `chat.tool.max_rounds` 默认值为 10，运行时会把有效值限制在 1 到 20 之间，防止管理端或脚本误配成超大值后让工具循环长期占用聊天执行线程。
 
-工具调用循环不会把带 `tool_calls` 轮次的正文视为已发布用户内容。`ChatApplicationService` 为每个工具轮次创建延迟正文缓冲，模型返回工具调用时只执行工具并把工具结果追加到下一轮系统证据；模型没有再返回工具调用时，才把该轮缓冲正文发布到 SSE 并追加到最终 `ChatMessage.content`。这能避免模型在浏览器、联网或本地工具链路中输出的内部调试说明被前端展示，也避免把“已发布正文”提示词反向灌给模型后污染最终回答。
+工具调用循环不会把带 `tool_calls` 轮次的正文视为已发布用户内容。`ChatApplicationService` 为每个工具轮次创建延迟正文缓冲，模型返回工具调用时只执行工具并把工具结果追加到下一轮系统证据；工具回灌后的无工具调用轮次如果输出真实回答，会从首个可见增量开始实时发布到 SSE 并追加到最终 `ChatMessage.content`。缓冲器会对“正在执行”“正在读取”“现在执行”等短进度前缀保留一个判断窗口，完整命中进度句时丢弃该轮正文并让模型重答，避免进度半句提前进入用户消息。
 
 `apply_patch` 以当前工具工作目录为写入边界。模型如果拿到工具输出中的真实工作目录，例如 `D:\`，后续补丁应写 `diary/index.html` 或工作目录内的绝对路径；如果补丁指向 `C:\workspace\...` 这类不属于当前工作目录的路径，后端会按越界路径拒绝执行，避免误写用户未授权目录。标准 diff 新增文件块里若模型漏写 hunk 内容行开头的 `+`，执行器只会在 `--- /dev/null` 且旧文件行号为 0 的新增文件 hunk 内补齐新增标记，避免误改普通修改补丁。若模型把已存在的同名普通文件继续写成 `new file mode`，执行器会把该新增块转换为整文件替换补丁，支持用户反复生成 `weather.html` 这类单文件页面；即使该补丁缺少 `diff --git` 文件块头，或 `+++ b/file` 文件头携带制表符分隔的时间戳，仍会先剥离元数据并进入同名覆盖兜底，避免 `already exists in working directory` 阻断工具链路。
 
@@ -60,3 +60,4 @@
 - `mvn -Dtest=ChatRuntimePersistenceStructureTest#shellCommandRuntimeMigrationClarifiesPowerShellSyntax test`
 - `mvn -Dtest=ChatSkillContextServiceTest test`
 - `mvn -Dtest=ChatApplicationToolCallFlowTest#sendMessageSuppressesToolRoundNarrationUntilFinalRound+sendMessageDoesNotFeedSuppressedToolRoundContentIntoNextToolRound+sendMessageReportsToolRoundLimitAfterFirstToolRoundReachesLimit test`
+- `mvn -Dtest=ChatApplicationToolCallFlowTest#sendMessagePublishesFinalToolAnswerDeltasBeforeModelStreamCompletes+sendMessageSuppressesProgressOnlyFinalRoundAfterToolCall+sendMessageSuppressesSplitProgressOnlyFinalRoundAfterToolCall test`

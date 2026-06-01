@@ -1,4 +1,4 @@
-package com.codingx.chat.application.service;
+﻿package com.codingx.chat.application.service;
 import cn.hutool.core.date.DateUtil;
 import cn.hutool.core.collection.CollUtil;
 import cn.hutool.core.util.IdUtil;
@@ -1400,7 +1400,11 @@ public class ChatApplicationService {
         Map<String, ChatToolExecutionResult> executedToolResults = new LinkedHashMap<>();
         for (int round = 0; round < maxToolRounds; round++) {
             List<AiToolCall> toolCalls = new ArrayList<>();
-            List<String> deferredContentDeltas = new ArrayList<>();
+            ToolRoundContentBuffer deferredContentDeltas = new ToolRoundContentBuffer(
+                command.conversationId(),
+                builder,
+                !executedToolResults.isEmpty()
+            );
             aiChatClient.streamChatWithTools(currentHistory, command.deepThinking(), toolSpecs, buildStreamHandler(
                 command,
                 builder,
@@ -1423,7 +1427,7 @@ public class ChatApplicationService {
                 return;
             }
             if (toolCalls.isEmpty()) {
-                if (!executedToolResults.isEmpty() && isProgressOnlyToolRoundContent(deferredContentDeltas)) {
+                if (!executedToolResults.isEmpty() && deferredContentDeltas.isProgressOnlyContent()) {
                     logSuppressedToolRoundContent(round + 1, deferredContentDeltas);
                     currentHistory.add(ChatMessage.create(
                         cn.hutool.core.util.IdUtil.getSnowflakeNextId(),
@@ -1437,7 +1441,7 @@ public class ChatApplicationService {
                     ).attachRun(runId));
                     continue;
                 }
-                flushDeferredAssistantDeltas(command.conversationId(), builder, deferredContentDeltas);
+                deferredContentDeltas.flushIfNeeded();
                 return;
             }
             toolCalls = filterAllowedToolCalls(toolCalls, toolSpecs, currentHistory, command.conversationId(), runId, round + 1);
@@ -1500,47 +1504,27 @@ public class ChatApplicationService {
      * @param builder 最终助手消息正文缓冲。
      * @param deferredContentDeltas 本轮模型产生但尚未对用户可见的正文增量。
      */
-    private void flushDeferredAssistantDeltas(Long conversationId, StringBuilder builder, List<String> deferredContentDeltas) {
-        if (CollUtil.isEmpty(deferredContentDeltas)) {
+    private void logSuppressedToolRoundContent(int round, ToolRoundContentBuffer deferredContentDeltas) {
+        if (deferredContentDeltas == null || deferredContentDeltas.isEmpty()) {
             return;
         }
-        for (String delta : deferredContentDeltas) {
-            if (StrUtil.isEmpty(delta)) {
-                continue;
-            }
-            builder.append(delta);
-            chatStreamPublisher.publishAssistantDelta(conversationId, delta);
-        }
+        log.info(
+            "模型工具轮次正文已隐藏: 轮次={}, 增量数={}, 长度={}",
+            round,
+            deferredContentDeltas.size(),
+            deferredContentDeltas.length()
+        );
     }
 
     /**
-     * 记录被丢弃的工具轮次正文长度，用于排查模型把内部执行说明写进正文的情况。
-     *
-     * @param round 工具调用轮次。
-     * @param deferredContentDeltas 本轮待丢弃的正文增量。
-     */
-    private void logSuppressedToolRoundContent(int round, List<String> deferredContentDeltas) {
-        if (CollUtil.isEmpty(deferredContentDeltas)) {
-            return;
-        }
-        int contentLength = deferredContentDeltas.stream()
-            .mapToInt(StrUtil::length)
-            .sum();
-        log.info("模型工具轮次正文已隐藏: 轮次={}, 增量数={}, 长度={}", round, deferredContentDeltas.size(), contentLength);
-    }
-
-    /**
-     * 判断工具回灌后的无工具调用轮次是否只有内部进度文案。
+     * 判断工具轮次正文是否属于短进度说明。
      * 关键约束：工具已执行后，模型可能输出“正在执行页面信息读取...”并结束流；该内容不是用户答案，不能发布为最终消息。
      *
-     * @param deferredContentDeltas 本轮模型正文增量。
+     * @param content 本轮模型正文。
      * @return 是否只包含短进度说明。
      */
-    private boolean isProgressOnlyToolRoundContent(List<String> deferredContentDeltas) {
-        if (CollUtil.isEmpty(deferredContentDeltas)) {
-            return false;
-        }
-        String content = StrUtil.trimToEmpty(String.join("", deferredContentDeltas));
+    private boolean isProgressOnlyToolRoundContent(String content) {
+        content = StrUtil.trimToEmpty(content);
         if (StrUtil.isBlank(content) || content.length() > 80) {
             return false;
         }
@@ -1560,6 +1544,156 @@ public class ChatApplicationService {
             || normalizedContent.endsWith("中")
             || normalizedContent.endsWith("中...");
         return hasProgressPrefix && hasProgressSuffix;
+    }
+
+    /**
+     * 暂存工具模型轮次正文，并在工具回灌后的真实最终回答出现时切换为实时 SSE 发布。
+     * 业务意图：带 tool_call 的轮次正文通常是内部执行说明，必须隐藏；无 tool_call 的最终回答则要边生成边展示。
+     */
+    private class ToolRoundContentBuffer {
+
+        /** 当前会话标识，用于向对应 SSE 连接发布助手正文增量。 */
+        private final Long conversationId;
+
+        /** 最终助手消息正文缓冲，实时发布和延迟回放都必须同步写入。 */
+        private final StringBuilder builder;
+
+        /** 工具已经回灌后的轮次允许从“延迟缓冲”升级为“实时发布”。 */
+        private final boolean livePublishEligible;
+
+        /** 本轮模型正文增量，未发布时用于后续隐藏或一次性确认；已发布后用于日志与判断。 */
+        private final List<String> deltas = new ArrayList<>();
+
+        /** 一旦本轮出现 tool_call，正文必须保持隐藏，不能再升级为用户可见内容。 */
+        private boolean toolCallObserved;
+
+        /** 已确认本轮是用户可见的最终回答，后续 delta 直接走 SSE。 */
+        private boolean livePublishing;
+
+        /** 已经发布到用户侧的增量数量，用于避免轮次结束时重复回放。 */
+        private int publishedDeltaCount;
+
+        /**
+         * @param conversationId 当前会话标识。
+         * @param builder 最终助手消息正文缓冲。
+         * @param livePublishEligible 是否允许在本轮识别为最终回答后实时发布。
+         */
+        private ToolRoundContentBuffer(Long conversationId, StringBuilder builder, boolean livePublishEligible) {
+            this.conversationId = conversationId;
+            this.builder = builder;
+            this.livePublishEligible = livePublishEligible;
+        }
+
+        /**
+         * 接收模型正文增量；工具回灌后的非进度正文会立即 flush 已缓冲片段并切入实时发布。
+         *
+         * @param delta 模型流式正文片段。
+         */
+        private void add(String delta) {
+            deltas.add(delta);
+            if (livePublishing) {
+                publish(delta);
+                publishedDeltaCount = deltas.size();
+                return;
+            }
+            if (livePublishEligible && !toolCallObserved && !isPossibleProgressOnlyContent()) {
+                flush();
+                livePublishing = true;
+            }
+        }
+
+        /**
+         * 标记本轮已经出现工具调用；此后正文只作为内部执行说明保留，等待轮次结束后丢弃。
+         */
+        private void markToolCallObserved() {
+            toolCallObserved = true;
+        }
+
+        /**
+         * 将已经确认可见的正文发布给前端，并同步写入最终助手消息。
+         */
+        private void flush() {
+            for (String delta : deltas) {
+                publish(delta);
+            }
+            publishedDeltaCount = deltas.size();
+        }
+
+        /**
+         * 轮次结束时补发尚未发布的最终回答片段；已实时发布的轮次不重复发送。
+         */
+        private void flushIfNeeded() {
+            while (publishedDeltaCount < deltas.size()) {
+                publish(deltas.get(publishedDeltaCount));
+                publishedDeltaCount++;
+            }
+        }
+
+        /**
+         * 判断当前缓冲是否仍像“正在执行...”这类短进度句。
+         *
+         * @return 是否为短进度说明。
+         */
+        private boolean isProgressOnlyContent() {
+            return isProgressOnlyToolRoundContent(String.join("", deltas));
+        }
+
+        /**
+         * 判断当前片段是否仍可能发展为短进度句；命中时继续缓冲，避免把“正在执行”半句提前推给用户。
+         *
+         * @return 是否仍可能是短进度说明。
+         */
+        private boolean isPossibleProgressOnlyContent() {
+            String content = StrUtil.trimToEmpty(String.join("", deltas));
+            if (StrUtil.isBlank(content) || content.length() > 80) {
+                return false;
+            }
+            String normalizedContent = content.replaceAll("\\s+", "");
+            return normalizedContent.startsWith("正在执行")
+                || normalizedContent.startsWith("正在读取")
+                || normalizedContent.startsWith("正在获取")
+                || normalizedContent.startsWith("正在检查")
+                || normalizedContent.startsWith("正在打开")
+                || normalizedContent.startsWith("正在访问")
+                || normalizedContent.startsWith("正在处理")
+                || normalizedContent.startsWith("正在加载")
+                || normalizedContent.startsWith("现在执行")
+                || normalizedContent.startsWith("接下来我将");
+        }
+
+        /**
+         * @return 当前轮次是否没有任何正文增量。
+         */
+        private boolean isEmpty() {
+            return CollUtil.isEmpty(deltas);
+        }
+
+        /**
+         * @return 当前轮次正文增量数量。
+         */
+        private int size() {
+            return deltas.size();
+        }
+
+        /**
+         * @return 当前轮次正文总长度。
+         */
+        private int length() {
+            return deltas.stream().mapToInt(StrUtil::length).sum();
+        }
+
+        /**
+         * 发布单个正文增量；空增量不写入 builder，避免最终消息出现无意义片段。
+         *
+         * @param delta 待发布正文片段。
+         */
+        private void publish(String delta) {
+            if (StrUtil.isEmpty(delta)) {
+                return;
+            }
+            builder.append(delta);
+            chatStreamPublisher.publishAssistantDelta(conversationId, delta);
+        }
     }
 
     /**
@@ -1738,7 +1872,7 @@ public class ChatApplicationService {
         String[] selectedModel,
         Long activeRunId,
         List<AiToolCall> toolCalls,
-        List<String> deferredContentDeltas
+        ToolRoundContentBuffer deferredContentDeltas
     ) {
         return new AiChatClient.ToolAwareStreamHandler() {
             @Override
@@ -1777,6 +1911,9 @@ public class ChatApplicationService {
             public void onToolCall(AiToolCall toolCall) {
                 if (toolCalls != null) {
                     toolCalls.add(toolCall);
+                }
+                if (deferredContentDeltas != null) {
+                    deferredContentDeltas.markToolCallObserved();
                 }
             }
 
@@ -2788,3 +2925,4 @@ public class ChatApplicationService {
     }
 
 }
+

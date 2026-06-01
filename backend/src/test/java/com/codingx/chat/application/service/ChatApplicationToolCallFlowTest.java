@@ -404,6 +404,150 @@ class ChatApplicationToolCallFlowTest {
     }
 
     /**
+     * 工具执行后的最终回答必须沿用 SSE 增量发布，不能等模型流结束后一次性回放。
+     *
+     * @param tempDir 本地 workspace 临时目录。
+     * @throws Exception 执行失败时抛出。
+     */
+    @Test
+    void sendMessagePublishesFinalToolAnswerDeltasBeforeModelStreamCompletes(@TempDir Path tempDir) throws Exception {
+        Long runId = 9401011L;
+        ChatExecutionContext.start(runId);
+        try {
+            Path workspace = tempDir.resolve("repo");
+            Files.createDirectories(workspace);
+            ChatConversation conversation = ChatConversation.create(11L, "Live Final Answer", 1002L, ChatConversationStatus.ACTIVE);
+            when(chatConversationRepository.requireById(11L)).thenReturn(conversation);
+            when(chatMessageRepository.findByConversationId(11L)).thenReturn(new ArrayList<>());
+            when(chatAttachmentService.requireOwnedAttachments(any(), eq(11L), eq(1002L))).thenReturn(List.of());
+            when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+                new ConversationRewriteResult("搜索后流式回答", false, List.of("搜索后流式回答"))
+            );
+            when(conversationIntentService.route("搜索后流式回答", false)).thenReturn(
+                new ConversationIntentDecision("chat.normal", ConversationIntentAction.DIRECT, null)
+            );
+            when(chatIntentNodeRepository.findByIntentCode("chat.normal")).thenReturn(null);
+            when(chatSkillContextService.buildSkillContext(any())).thenReturn("");
+            when(chatExpertContextService.buildExpertContext(any())).thenReturn("");
+            when(conversationSummaryService.buildModelHistory(any(), any())).thenAnswer(invocation -> invocation.getArgument(1));
+            when(conversationTitleService.generateTitle(any(), any())).thenReturn("搜索后回答");
+            when(llmResponseCleaner.clean(any())).thenAnswer(invocation -> invocation.getArgument(0));
+            when(chatToolSpecService.listModelVisibleToolSpecs()).thenReturn(List.of(
+                new ChatToolSpec("test_sync_tool", "同步测试工具", Map.of("type", "object"))
+            ));
+            when(chatToolExecutionService.execute(eq("test_sync_tool"), eq("{\"message\":\"search\"}"))).thenReturn(
+                new ChatToolExecutionResult("test_sync_tool", "搜索结果摘要", Map.of("ok", true))
+            );
+            AtomicInteger modelRound = new AtomicInteger();
+            doAnswer(invocation -> {
+                AiChatClient.ToolAwareStreamHandler handler = invocation.getArgument(3);
+                int round = modelRound.incrementAndGet();
+                if (round == 1) {
+                    handler.onToolCall(new AiToolCall("call-search", "test_sync_tool", "{\"message\":\"search\"}"));
+                    handler.onComplete();
+                    return null;
+                }
+                handler.onDelta("第一段");
+                // 关键断言：模型流尚未 complete 时，最终回答的第一段已经发布给前端。
+                verify(chatStreamPublisher).publishAssistantDelta(11L, "第一段");
+                handler.onDelta("第二段");
+                verify(chatStreamPublisher).publishAssistantDelta(11L, "第二段");
+                handler.onComplete();
+                return null;
+            }).when(aiChatClient).streamChatWithTools(any(), eq(false), any(), any());
+
+            chatApplicationService.sendMessage(
+                new SendChatMessageCommand(11L, "搜索后流式回答", false, List.of(), List.of(), null, workspace.toString(), List.of()),
+                1002L
+            );
+
+            verify(chatStreamPublisher).publishAssistantCompleted(
+                eq(11L),
+                any(),
+                eq("第一段第二段"),
+                eq("搜索后回答")
+            );
+        } finally {
+            ChatExecutionContext.clear();
+        }
+    }
+
+    /**
+     * 进度说明可能被模型拆成多个 delta；在完整进度句确认前也不能把半句过程文案推给用户。
+     *
+     * @param tempDir 本地 workspace 临时目录。
+     * @throws Exception 执行失败时抛出。
+     */
+    @Test
+    void sendMessageSuppressesSplitProgressOnlyFinalRoundAfterToolCall(@TempDir Path tempDir) throws Exception {
+        Long runId = 9401012L;
+        ChatExecutionContext.start(runId);
+        try {
+            Path workspace = tempDir.resolve("repo");
+            Files.createDirectories(workspace);
+            ChatConversation conversation = ChatConversation.create(12L, "Split Progress", 1002L, ChatConversationStatus.ACTIVE);
+            when(chatConversationRepository.requireById(12L)).thenReturn(conversation);
+            when(chatMessageRepository.findByConversationId(12L)).thenReturn(new ArrayList<>());
+            when(chatAttachmentService.requireOwnedAttachments(any(), eq(12L), eq(1002L))).thenReturn(List.of());
+            when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+                new ConversationRewriteResult("访问订阅页", false, List.of("访问订阅页"))
+            );
+            when(conversationIntentService.route("访问订阅页", false)).thenReturn(
+                new ConversationIntentDecision("chat.normal", ConversationIntentAction.DIRECT, null)
+            );
+            when(chatIntentNodeRepository.findByIntentCode("chat.normal")).thenReturn(null);
+            when(chatSkillContextService.buildSkillContext(any())).thenReturn("");
+            when(chatExpertContextService.buildExpertContext(any())).thenReturn("");
+            when(conversationSummaryService.buildModelHistory(any(), any())).thenAnswer(invocation -> invocation.getArgument(1));
+            when(conversationTitleService.generateTitle(any(), any())).thenReturn("拆分进度");
+            when(llmResponseCleaner.clean(any())).thenAnswer(invocation -> invocation.getArgument(0));
+            when(chatToolSpecService.listModelVisibleToolSpecs()).thenReturn(List.of(
+                new ChatToolSpec("test_sync_tool", "同步测试工具", Map.of("type", "object"))
+            ));
+            when(chatToolExecutionService.execute(eq("test_sync_tool"), eq("{\"message\":\"open\"}"))).thenReturn(
+                new ChatToolExecutionResult("test_sync_tool", "页面标题 Lucen Subscriptions", Map.of("ok", true))
+            );
+            AtomicInteger modelRound = new AtomicInteger();
+            doAnswer(invocation -> {
+                AiChatClient.ToolAwareStreamHandler handler = invocation.getArgument(3);
+                int round = modelRound.incrementAndGet();
+                if (round == 1) {
+                    handler.onToolCall(new AiToolCall("call-open-split", "test_sync_tool", "{\"message\":\"open\"}"));
+                    handler.onComplete();
+                    return null;
+                }
+                if (round == 2) {
+                    handler.onDelta("正在执行");
+                    verify(chatStreamPublisher, never()).publishAssistantDelta(12L, "正在执行");
+                    handler.onDelta("页面信息读取...");
+                    handler.onComplete();
+                    return null;
+                }
+                handler.onDelta("订阅页已打开，页面标题是 Lucen Subscriptions。");
+                handler.onComplete();
+                return null;
+            }).when(aiChatClient).streamChatWithTools(any(), eq(false), any(), any());
+
+            chatApplicationService.sendMessage(
+                new SendChatMessageCommand(12L, "访问订阅页", false, List.of(), List.of(), null, workspace.toString(), List.of()),
+                1002L
+            );
+
+            verify(chatStreamPublisher, never()).publishAssistantDelta(12L, "正在执行");
+            verify(chatStreamPublisher, never()).publishAssistantDelta(12L, "页面信息读取...");
+            verify(chatStreamPublisher).publishAssistantDelta(12L, "订阅页已打开，页面标题是 Lucen Subscriptions。");
+            verify(chatStreamPublisher).publishAssistantCompleted(
+                eq(12L),
+                any(),
+                eq("订阅页已打开，页面标题是 Lucen Subscriptions。"),
+                eq("拆分进度")
+            );
+        } finally {
+            ChatExecutionContext.clear();
+        }
+    }
+
+    /**
      * 深度思考内容是模型真实返回的 reasoning，工具回灌轮次不能清空已收到的 thinking。
      *
      * @param tempDir 本地 workspace 临时目录。

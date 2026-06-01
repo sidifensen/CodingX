@@ -141,6 +141,9 @@ class ChatSkillContextServiceTest {
 
         assertTrue(context.contains("CodingX 运行时约束"));
         assertTrue(context.contains("Windows PowerShell"));
+        assertTrue(context.contains("按固定顺序执行 CDP"));
+        assertTrue(context.contains("必须继续调用 `/info`"));
+        assertTrue(context.contains("禁止在这里结束回复"));
         assertTrue(context.contains("Invoke-RestMethod"));
         assertTrue(context.contains("Invoke-WebRequest"));
         assertTrue(context.contains("-Method Post"));

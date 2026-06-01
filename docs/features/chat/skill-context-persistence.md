@@ -46,7 +46,7 @@
 
 云端 `web-access` 技能每轮从对象存储下载到新的临时目录，不能依赖上一次生成的 `config.env`。下载完成后写入 `WEB_ACCESS_BROWSER=chrome`，配合工具进程里的 `CLAUDE_SKILL_DIR` 让 `check-deps.mjs` 能直接通过。若模型重复提交完全相同的工具和参数，后端会跳过重复执行并把上一轮结果回灌给模型，避免浏览器操作被反复执行到轮次上限。
 
-`web-access` 的上游技能文档包含通用 `curl` 调用示例，但 CodingX 的 `bash` / `shell_command` 实际运行在 Windows PowerShell 中。技能上下文组装时会在该技能说明后追加项目内运行约束：先执行 `node "$env:CLAUDE_SKILL_DIR\scripts\check-deps.mjs"` 检查 Node、Chrome 和 CDP Proxy，GET 请求使用 `Invoke-RestMethod -Uri`，POST 请求使用 `Invoke-WebRequest -Method Post -Body`，创建 tab 后必须继续读取 `/info`、`/eval` 或截图结果，不能只把 `targetId` 当作完成。
+`web-access` 的上游技能文档包含通用 `curl` 调用示例，但 CodingX 的 `bash` / `shell_command` 实际运行在 Windows PowerShell 中。技能上下文组装时会在该技能说明后追加项目内运行约束：先执行 `node "$env:CLAUDE_SKILL_DIR\scripts\check-deps.mjs"` 检查 Node、Chrome 和 CDP Proxy，GET 请求使用 `Invoke-RestMethod -Uri`，POST 请求使用 `Invoke-WebRequest -Method Post -Body`。浏览器验证必须按 `/new`、`/info`、`/eval` 或 `/screenshot` 的顺序拿到页面标题、最终 URL、正文摘要或截图证据；只输出 `targetId`、`已创建 tab`、`正在执行 /eval` 这类中间状态不得视为完成。
 
 旧表数据迁移时会先按 run 聚合 `task_skill` 与 `task_mcp`，写入 `chat_execution_step.metadata_json` 的 `skillCodes`、`mcpCodes`、`expertCode` 字段；历史用户消息若尚无前缀，会补齐 `@skill`。迁移完成后删除 `task_artifact`、`task_event`、`task_mcp`、`task_skill`。
 

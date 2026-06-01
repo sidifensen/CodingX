@@ -50,6 +50,25 @@ class AiModelSelectorTest {
     }
 
     /**
+     * 普通请求未开启深度思考时，即使 thinking 候选优先级更高，也应先尝试非 thinking 候选。
+     */
+    @Test
+    void selectChatCandidatesPrefersNonThinkingCandidatesWhenThinkingDisabled() {
+        AiModelSelector selector = new AiModelSelector(buildProperties(
+            candidate("thinking-priority-first", "deepseek", "deepseek-thinking", 1, true),
+            candidate("normal-priority-second", "stub", "stub-chat", 5, false),
+            candidate("normal-priority-third", "bailian", "qwen-plus", 6, false)
+        ));
+
+        List<AiModelTarget> targets = selector.selectChatCandidates(null, false);
+
+        assertEquals(
+            List.of("normal-priority-second", "normal-priority-third", "thinking-priority-first"),
+            targets.stream().map(AiModelTarget::id).toList()
+        );
+    }
+
+    /**
      * 深度思考模式未显式指定模型时，应在 thinking 候选内按优先级排序，历史深度思考指针不能抢占首位。
      */
     @Test

@@ -209,6 +209,99 @@ class AiModelDispatchServiceTest {
     }
 
     /**
+     * 普通请求即使遇到 provider 误发 thinking 增量，调度层也不能向下游泄漏深度思考。
+     */
+    @Test
+    void streamChatSuppressesThinkingDeltaWhenThinkingDisabled() {
+        AiProviderClient noisyProvider = new AiProviderClient() {
+            @Override
+            public String provider() {
+                return "deepseek";
+            }
+
+            @Override
+            public AiStreamSession streamChat(AiConversationRequest request, AiModelTarget target, AiStreamHandler handler) {
+                handler.onThinkingDelta("不应透出的思考");
+                handler.onContentDelta("普通回答");
+                handler.onComplete();
+                return new AiStreamSession(() -> {}, CompletableFuture.completedFuture(null));
+            }
+        };
+        AiModelDispatchService service = new AiModelDispatchService(
+            List.of(noisyProvider),
+            new AiProviderHealthRegistry(2, 30_000L),
+            minimalSelectorWithCandidates(minimalPropertiesWithCandidates(
+                candidate("deepseek-thinking", "deepseek", "deepseek-thinking", 1, true)
+            ))
+        );
+        List<String> thinkingDeltas = new ArrayList<>();
+        List<String> contentDeltas = new ArrayList<>();
+
+        service.streamChat(AiConversationRequest.builder()
+            .messages(List.of(ChatMessage.userMessage(1L, "你好")))
+            .thinkingEnabled(false)
+            .stream(true)
+            .build(), new AiStreamHandler() {
+            @Override
+            public void onThinkingDelta(String delta) {
+                thinkingDeltas.add(delta);
+            }
+
+            @Override
+            public void onContentDelta(String delta) {
+                contentDeltas.add(delta);
+            }
+        });
+
+        assertEquals(List.of(), thinkingDeltas);
+        assertEquals(List.of("普通回答"), contentDeltas);
+    }
+
+    /**
+     * 普通请求下被丢弃的 thinking 不能算首包成功，否则只返回 reasoning 的候选会截断正常 fallback。
+     */
+    @Test
+    void streamChatFallsBackWhenOnlySuppressedThinkingArrives() {
+        AiProviderClient thinkingOnlyProvider = new AiProviderClient() {
+            @Override
+            public String provider() {
+                return "primary";
+            }
+
+            @Override
+            public AiStreamSession streamChat(AiConversationRequest request, AiModelTarget target, AiStreamHandler handler) {
+                handler.onThinkingDelta("不应透出的思考");
+                handler.onComplete();
+                return new AiStreamSession(() -> {}, CompletableFuture.completedFuture(null));
+            }
+        };
+        RecordingProvider fallbackProvider = RecordingProvider.success("secondary", "qwen-plus", List.of("fallback"));
+        AiModelDispatchService service = new AiModelDispatchService(
+            List.of(thinkingOnlyProvider, fallbackProvider),
+            new AiProviderHealthRegistry(2, 30_000L),
+            minimalSelectorWithCandidates(minimalPropertiesWithCandidates(
+                candidate("primary-chat", "primary", "primary-chat", 1, false),
+                candidate("qwen-plus", "secondary", "qwen-plus", 2, false)
+            ))
+        );
+        List<String> contentDeltas = new ArrayList<>();
+
+        service.streamChat(AiConversationRequest.builder()
+            .messages(List.of(ChatMessage.userMessage(1L, "你好")))
+            .thinkingEnabled(false)
+            .stream(true)
+            .build(), new AiStreamHandler() {
+            @Override
+            public void onContentDelta(String delta) {
+                contentDeltas.add(delta);
+            }
+        });
+
+        assertEquals(List.of("primary", "secondary"), service.getLastAttemptedProviders());
+        assertEquals(List.of("fallback"), contentDeltas);
+    }
+
+    /**
      * 候选 provider 没有注册客户端时，应跳过该候选并继续尝试后续模型。
      */
     @Test

@@ -1,6 +1,7 @@
 package com.codingx.chat.infrastructure.ai;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import cn.hutool.json.JSONObject;
@@ -93,6 +94,55 @@ class OpenAiCompatibleChatClientTest {
         assertTrue(sentBody.getBool("enable_thinking"), "OpenAI 兼容深度思考请求需要显式开启 enable_thinking");
         assertEquals(List.of("先拆解用户问题"), new ArrayList<>(thinkingDeltas));
         assertEquals(List.of("最终回答"), new ArrayList<>(contentDeltas));
+    }
+
+    /**
+     * 普通请求即使遇到 provider 返回 reasoning_content，也不能把它透传成深度思考事件。
+     */
+    @Test
+    void streamChatSuppressesReasoningContentWhenThinkingDisabled() throws Exception {
+        AtomicReference<String> requestBody = new AtomicReference<>("");
+        httpServer = HttpServer.create(new InetSocketAddress(0), 0);
+        httpServer.createContext("/compatible-mode/v1/chat/completions", exchange -> {
+            requestBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+            exchange.getResponseHeaders().add("Content-Type", "text/event-stream; charset=utf-8");
+            exchange.sendResponseHeaders(200, 0);
+            try (OutputStream outputStream = exchange.getResponseBody()) {
+                writeChunk(outputStream, """
+                    data: {"choices":[{"delta":{"reasoning_content":"不应展示的思考"}}]}
+
+                    data: {"choices":[{"delta":{"content":"普通回答"}}]}
+
+                    data: [DONE]
+
+                    """);
+            }
+        });
+        httpServer.start();
+
+        OpenAiCompatibleChatClient client = new OpenAiCompatibleChatClient(
+            new OkHttpClient.Builder().readTimeout(5, TimeUnit.SECONDS).build(),
+            new OpenAiStyleStreamParser(),
+            Mockito.mock(ChatAttachmentService.class)
+        );
+        List<String> thinkingDeltas = new CopyOnWriteArrayList<>();
+        List<String> contentDeltas = new CopyOnWriteArrayList<>();
+        client.streamChat(buildNormalRequest(), buildTarget(httpServer.getAddress().getPort()), new AiStreamHandler() {
+            @Override
+            public void onThinkingDelta(String delta) {
+                thinkingDeltas.add(delta);
+            }
+
+            @Override
+            public void onContentDelta(String delta) {
+                contentDeltas.add(delta);
+            }
+        }).completion().get(2, TimeUnit.SECONDS);
+
+        JSONObject sentBody = JSONUtil.parseObj(requestBody.get());
+        assertFalse(sentBody.containsKey("enable_thinking"), "普通请求不应显式开启 enable_thinking");
+        assertEquals(List.of(), new ArrayList<>(thinkingDeltas));
+        assertEquals(List.of("普通回答"), new ArrayList<>(contentDeltas));
     }
 
     /**
@@ -200,6 +250,19 @@ class OpenAiCompatibleChatClientTest {
             .preferredModel("qwen3-max")
             .stream(true)
             .thinkingEnabled(true)
+            .build();
+    }
+
+    /**
+     * 构造未开启深度思考的最小请求。
+     * @return AI 对话请求。
+     */
+    private AiConversationRequest buildNormalRequest() {
+        return AiConversationRequest.builder()
+            .messages(List.of(ChatMessage.userMessage(1L, "普通回答即可")))
+            .preferredModel("qwen3-max")
+            .stream(true)
+            .thinkingEnabled(false)
             .build();
     }
 

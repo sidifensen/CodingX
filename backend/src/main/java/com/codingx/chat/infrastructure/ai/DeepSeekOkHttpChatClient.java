@@ -142,8 +142,8 @@ public class DeepSeekOkHttpChatClient implements AiProviderClient {
 
                     @Override
                     public void onThinkingDelta(String delta) {
-                        if (!cancelled.get()) {
-                            // thinking 增量单独透传，前端可与最终正文分区展示。
+                        if (!cancelled.get() && request.thinkingEnabled()) {
+                            // thinking 增量只在用户显式开启时透传，避免普通请求展示深度思考。
                             handler.onThinkingDelta(delta);
                         }
                     }

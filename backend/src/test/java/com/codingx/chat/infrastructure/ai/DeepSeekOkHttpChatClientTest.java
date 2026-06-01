@@ -134,6 +134,52 @@ class DeepSeekOkHttpChatClientTest {
     }
 
     /**
+     * 普通请求未开启深度思考时，应丢弃上游 reasoning_content，只转发最终正文。
+     */
+    @Test
+    void streamChatSuppressesReasoningContentWhenThinkingDisabled() throws Exception {
+        httpServer = HttpServer.create(new InetSocketAddress(0), 0);
+        httpServer.createContext("/chat/completions", exchange -> {
+            exchange.getResponseHeaders().add("Content-Type", "text/event-stream; charset=utf-8");
+            exchange.sendResponseHeaders(200, 0);
+            try (OutputStream outputStream = exchange.getResponseBody()) {
+                writeChunk(outputStream, """
+                    data: {"choices":[{"delta":{"reasoning_content":"不应展示的思考"}}]}
+
+                    data: {"choices":[{"delta":{"content":"普通回答"}}]}
+
+                    data: [DONE]
+
+                    """);
+            }
+        });
+        httpServer.start();
+
+        DeepSeekOkHttpChatClient client = new DeepSeekOkHttpChatClient(
+            new OkHttpClient.Builder().readTimeout(5, TimeUnit.SECONDS).build(),
+            buildAiProperties(httpServer.getAddress().getPort()),
+            new OpenAiStyleStreamParser()
+        );
+        List<String> thinkingDeltas = new CopyOnWriteArrayList<>();
+        List<String> contentDeltas = new CopyOnWriteArrayList<>();
+
+        client.streamChat(buildRequest(), buildTarget(httpServer.getAddress().getPort()), new AiStreamHandler() {
+            @Override
+            public void onThinkingDelta(String delta) {
+                thinkingDeltas.add(delta);
+            }
+
+            @Override
+            public void onContentDelta(String delta) {
+                contentDeltas.add(delta);
+            }
+        }).completion().get(2, TimeUnit.SECONDS);
+
+        assertEquals(List.of(), new ArrayList<>(thinkingDeltas));
+        assertEquals(List.of("普通回答"), new ArrayList<>(contentDeltas));
+    }
+
+    /**
      * 统一写入单个 SSE 数据块并立即 flush，模拟上游 provider 的真实分段行为。
      * @param outputStream 响应输出流。
      * @param chunk SSE 文本块。

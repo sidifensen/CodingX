@@ -146,10 +146,11 @@ public class AiModelDispatchService {
             publishAttemptSnapshot(attemptedProviders);
             FirstTokenAwaiter awaiter = new FirstTokenAwaiter();
             FirstTokenBufferingHandler bufferingHandler = new FirstTokenBufferingHandler(handler, awaiter);
+            AiStreamHandler providerHandler = guardThinkingEvents(request, bufferingHandler);
             AiStreamSession session;
             try {
                 // 步骤 5：启动 provider 流式请求；启动阶段异常表示首包前失败，可尝试下一个候选。
-                session = providerClient.streamChat(request, target, bufferingHandler);
+                session = providerClient.streamChat(request, target, providerHandler);
             } catch (Exception exception) {
                 healthRegistry.markFailure(modelId);
                 lastError = exception;
@@ -207,6 +208,50 @@ public class AiModelDispatchService {
         }
         handler.onError(exception);
         throw exception;
+    }
+
+    /**
+     * 在调度层统一守住 thinking 展示边界，防止新 provider 或第三方 provider 误发 reasoning 事件。
+     * 该包装位于首包缓冲器之前，普通请求中的 thinking 不会被误判为可见首包。
+     * @param request 本次 AI 请求。
+     * @param delegate 原始下游处理器。
+     * @return 已按 deep thinking 开关过滤的处理器。
+     */
+    private AiStreamHandler guardThinkingEvents(AiConversationRequest request, AiStreamHandler delegate) {
+        if (request.thinkingEnabled()) {
+            return delegate;
+        }
+        return new AiStreamHandler() {
+            @Override
+            public void onMetadata(String provider, String model) {
+                delegate.onMetadata(provider, model);
+            }
+
+            @Override
+            public void onThinkingDelta(String delta) {
+                // 普通请求只丢弃 thinking 事件，不影响正文、工具调用、元信息和错误流转。
+            }
+
+            @Override
+            public void onContentDelta(String delta) {
+                delegate.onContentDelta(delta);
+            }
+
+            @Override
+            public void onToolCall(AiToolCall toolCall) {
+                delegate.onToolCall(toolCall);
+            }
+
+            @Override
+            public void onComplete() {
+                delegate.onComplete();
+            }
+
+            @Override
+            public void onError(Throwable throwable) {
+                delegate.onError(throwable);
+            }
+        };
     }
 
     /**

@@ -98,7 +98,8 @@ public class OpenAiCompatibleChatClient implements AiProviderClient {
 
                     @Override
                     public void onThinkingDelta(String delta) {
-                        if (!cancelled.get()) {
+                        if (!cancelled.get() && request.thinkingEnabled()) {
+                            // 深度思考开关是后端展示边界；普通请求即使上游返回 reasoning 也不能透出。
                             handler.onThinkingDelta(delta);
                         }
                     }

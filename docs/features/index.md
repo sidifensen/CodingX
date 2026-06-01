@@ -25,5 +25,6 @@
 ## Admin
 
 - [管理端控制台首页](admin/admin-dashboard-console.md)
+- [管理端会话消息详情](admin/admin-conversation-message-detail.md)
 - [管理端反馈管理 Ant Design 改造](admin/feedback-management-antd.md)
 - [管理端 Ant Design 页面体系](admin/admin-antd-page-system.md)

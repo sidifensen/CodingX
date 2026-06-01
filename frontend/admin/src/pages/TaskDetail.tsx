@@ -83,8 +83,10 @@ export function TaskDetail() {
           <div>
             <Typography.Title level={3}>会话消息</Typography.Title>
             <List
+              className="[&_.ant-list-items]:space-y-md"
               dataSource={detail.messages}
               locale={{ emptyText: <Empty description="当前会话暂无消息" /> }}
+              split={false}
               renderItem={(message) => <MessageItem message={message} />}
             />
           </div>
@@ -94,9 +96,14 @@ export function TaskDetail() {
   );
 }
 
+/**
+ * 会话消息项显式覆盖 AntD List.Item 默认 padding，避免长文本、Markdown 表格和附件列表贴边显示。
+ */
 function MessageItem({ message }: { message: AdminChatConversationMessage }) {
+  const attachments = message.attachments ?? [];
+
   return (
-    <List.Item className="rounded-xl border border-border-hairline bg-surface-container-lowest px-lg">
+    <List.Item className="rounded-xl border border-border-hairline bg-surface-container-lowest !p-md sm:!p-lg">
       <List.Item.Meta
         title={(
           <Space wrap>
@@ -107,28 +114,119 @@ function MessageItem({ message }: { message: AdminChatConversationMessage }) {
           </Space>
         )}
         description={(
-          <div className="space-y-sm">
-            <Typography.Paragraph className="whitespace-pre-wrap break-words text-ink">
-              {message.content || '-'}
-            </Typography.Paragraph>
+          <div className="space-y-md">
+            <Descriptions
+              bordered
+              column={{ xs: 1, md: 2, xl: 3 }}
+              items={buildMessageMetadataItems(message, attachments.length)}
+              size="small"
+            />
+            <MessageTextBlock title="消息正文" content={message.content} />
+            <MessageTextBlock title="深度思考内容" content={message.thinkingContent} />
             {message.errorMessage ? <Alert showIcon type="error" message={message.errorMessage} /> : null}
-            {message.attachments && message.attachments.length > 0 ? (
-              <List
-                size="small"
-                dataSource={message.attachments}
-                renderItem={(attachment) => (
-                  <List.Item>
-                    {attachment.fileName}
-                    {attachment.fileSize ? <Typography.Text type="secondary"> ({formatFileSize(attachment.fileSize)})</Typography.Text> : null}
-                  </List.Item>
-                )}
-              />
-            ) : null}
+            <AttachmentDetails attachments={attachments} />
           </div>
         )}
       />
     </List.Item>
   );
+}
+
+/**
+ * 消息元信息固定展示接口返回的所有轻量字段，长文本和附件交给独立区块避免挤压表格。
+ */
+function buildMessageMetadataItems(message: AdminChatConversationMessage, attachmentCount: number) {
+  return [
+    { key: 'id', label: '消息ID', children: <DetailText code value={message.id} /> },
+    { key: 'conversationId', label: '会话ID', children: <DetailText code value={message.conversationId} /> },
+    { key: 'runId', label: '运行ID', children: <DetailText code value={message.runId} /> },
+    { key: 'role', label: '角色', children: `${toRoleLabel(message.role)} (${formatNullable(message.role)})` },
+    { key: 'status', label: '状态', children: `${toMessageStatusLabel(message.status)} (${formatNullable(message.status)})` },
+    { key: 'createdAt', label: '创建时间', children: formatDateTimeFromUnknown(message.createdAt) },
+    { key: 'updatedAt', label: '更新时间', children: formatDateTimeFromUnknown(message.updatedAt) },
+    { key: 'deleted', label: '逻辑删除', children: formatDeleted(message.deleted) },
+    { key: 'provider', label: '供应商', children: <DetailText value={message.provider} /> },
+    { key: 'model', label: '模型', children: <DetailText value={message.model} /> },
+    { key: 'thinkingDuration', label: '思考耗时', children: formatDuration(message.thinkingDuration) },
+    { key: 'skillCodes', label: '技能编码', children: formatSkillCodes(message.skillCodes) },
+    { key: 'userVote', label: '用户反馈', children: formatVote(message.userVote) },
+    { key: 'attachmentCount', label: '附件数量', children: String(attachmentCount) },
+    { key: 'errorMessage', label: '错误信息', children: <DetailText value={message.errorMessage} /> },
+  ];
+}
+
+/**
+ * 消息长文本区块保留换行和 Markdown 原文，便于管理员核对持久化内容。
+ */
+function MessageTextBlock({ title, content }: { title: string; content?: string | null }) {
+  return (
+    <div className="space-y-xs">
+      <Typography.Text strong className="text-ink">{title}</Typography.Text>
+      <Typography.Paragraph className="whitespace-pre-wrap break-words text-ink" style={{ marginBottom: 0 }}>
+        {formatNullable(content)}
+      </Typography.Paragraph>
+    </div>
+  );
+}
+
+/**
+ * 附件明细展示附件响应中的全部字段；无附件时也保留空状态，避免误判为加载失败。
+ */
+function AttachmentDetails({ attachments }: { attachments: NonNullable<AdminChatConversationMessage['attachments']> }) {
+  return (
+    <div className="space-y-sm">
+      <Typography.Text strong className="text-ink">附件明细</Typography.Text>
+      {attachments.length > 0 ? (
+        <List
+          className="[&_.ant-list-items]:space-y-sm"
+          dataSource={attachments}
+          renderItem={(attachment, index) => (
+            <List.Item className="rounded-lg border border-border-hairline bg-surface-container-low !p-sm">
+              <Descriptions
+                bordered
+                column={{ xs: 1, md: 2, xl: 3 }}
+                items={buildAttachmentMetadataItems(attachment, index)}
+                size="small"
+              />
+            </List.Item>
+          )}
+          size="small"
+          split={false}
+        />
+      ) : (
+        <Typography.Text type="secondary">无附件</Typography.Text>
+      )}
+    </div>
+  );
+}
+
+function buildAttachmentMetadataItems(
+  attachment: NonNullable<AdminChatConversationMessage['attachments']>[number],
+  index: number,
+) {
+  return [
+    { key: 'index', label: '序号', children: String(index + 1) },
+    { key: 'id', label: '附件ID', children: <DetailText code value={attachment.id} /> },
+    { key: 'conversationId', label: '会话ID', children: <DetailText code value={attachment.conversationId} /> },
+    { key: 'messageId', label: '消息ID', children: <DetailText code value={attachment.messageId} /> },
+    { key: 'attachmentType', label: '附件类型', children: <DetailText value={attachment.attachmentType} /> },
+    { key: 'fileName', label: '文件名', children: <DetailText value={attachment.fileName} /> },
+    { key: 'fileExt', label: '扩展名', children: <DetailText value={attachment.fileExt} /> },
+    { key: 'mimeType', label: 'MIME', children: <DetailText value={attachment.mimeType} /> },
+    { key: 'fileSize', label: '文件大小', children: formatOptionalFileSize(attachment.fileSize) },
+    { key: 'previewUrl', label: '预览地址', children: <DetailText value={attachment.previewUrl} /> },
+    { key: 'contentSummary', label: '内容摘要', children: <DetailText value={attachment.contentSummary} /> },
+    { key: 'status', label: '状态', children: <DetailText value={attachment.status} /> },
+    { key: 'createdAt', label: '创建时间', children: formatDateTimeFromUnknown(attachment.createdAt) },
+  ];
+}
+
+function DetailText({ value, code = false }: { value: unknown; code?: boolean }) {
+  const text = formatNullable(value);
+  if (code && text !== '-') {
+    return <Typography.Text code>{text}</Typography.Text>;
+  }
+  return <Typography.Text className="whitespace-pre-wrap break-words text-ink">{text}</Typography.Text>;
 }
 
 function toRoleLabel(role: string): string {
@@ -153,6 +251,60 @@ function toMessageStatusLabel(status: string): string {
   return status || '未知状态';
 }
 
+function formatNullable(value: unknown): string {
+  if (value === null || value === undefined || value === '') {
+    return '-';
+  }
+  if (Array.isArray(value)) {
+    return value.length > 0 ? value.map((item) => String(item)).join(', ') : '-';
+  }
+  if (typeof value === 'boolean') {
+    return value ? 'true' : 'false';
+  }
+  return String(value);
+}
+
+function formatDateTimeFromUnknown(value: unknown): string {
+  if (typeof value !== 'string') {
+    return formatNullable(value);
+  }
+  return formatDateTime(value);
+}
+
+function formatDuration(value?: number): string {
+  if (!Number.isFinite(value)) {
+    return '-';
+  }
+  return `${value} 秒`;
+}
+
+function formatSkillCodes(skillCodes?: string[]): string {
+  return skillCodes && skillCodes.length > 0 ? skillCodes.join(', ') : '-';
+}
+
+function formatVote(value?: number | null): string {
+  if (value === 1) {
+    return '点赞 (1)';
+  }
+  if (value === -1) {
+    return '点踩 (-1)';
+  }
+  if (typeof value === 'number') {
+    return String(value);
+  }
+  return '未反馈';
+}
+
+function formatDeleted(value?: number): string {
+  if (value === 0) {
+    return '未删除 (0)';
+  }
+  if (value === 1) {
+    return '已删除 (1)';
+  }
+  return formatNullable(value);
+}
+
 function formatDateTime(value?: string) {
   if (!value) {
     return '-';
@@ -162,6 +314,13 @@ function formatDateTime(value?: string) {
     return value;
   }
   return date.toLocaleString('zh-CN');
+}
+
+function formatOptionalFileSize(size?: number): string {
+  if (size === null || size === undefined) {
+    return '-';
+  }
+  return formatFileSize(size);
 }
 
 function formatFileSize(size: number): string {

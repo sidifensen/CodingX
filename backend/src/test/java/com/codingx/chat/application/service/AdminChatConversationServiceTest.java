@@ -76,6 +76,13 @@ class AdminChatConversationServiceTest {
             null,
             null
         );
+        message.restoreRuntimeState(
+            6001L,
+            "用户消息没有思考内容",
+            0,
+            LocalDateTime.of(2026, 5, 16, 10, 2, 0),
+            LocalDateTime.of(2026, 5, 16, 10, 3, 0)
+        );
         when(chatConversationRepository.findById(2001L)).thenReturn(Optional.of(conversation));
         when(chatMessageRepository.findByConversationId(2001L)).thenReturn(List.of(message));
         when(chatAttachmentService.listByMessageId(3001L)).thenReturn(List.of());
@@ -85,5 +92,8 @@ class AdminChatConversationServiceTest {
         assertEquals(2001L, result.id());
         assertEquals(1, result.messages().size());
         assertEquals("怎么报销？", result.messages().getFirst().content());
+        assertEquals(6001L, result.messages().getFirst().runId());
+        assertEquals(0, result.messages().getFirst().deleted());
+        assertEquals(LocalDateTime.of(2026, 5, 16, 10, 3, 0), result.messages().getFirst().updatedAt());
     }
 }

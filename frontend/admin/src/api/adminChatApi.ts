@@ -85,6 +85,8 @@ export interface AdminChatConversationMessageAttachment {
 export interface AdminChatConversationMessage {
   id: number;
   conversationId: number;
+  // 管理端排障需要展示消息所属运行记录；旧响应缺失时允许为空。
+  runId?: number;
   role: string;
   content: string;
   thinkingContent?: string;
@@ -94,7 +96,14 @@ export interface AdminChatConversationMessage {
   model?: string;
   errorMessage?: string;
   createdAt?: string;
+  // 管理端兼容后端完整消息字段，旧响应缺失时展示为“-”。
+  updatedAt?: string;
+  deleted?: number;
   attachments?: AdminChatConversationMessageAttachment[];
+  // 后端会从用户消息正文解析技能编码，管理端详情页直接展示解析结果。
+  skillCodes?: string[];
+  // 当前用户投票值：1 点赞、-1 点踩、null/undefined 表示未反馈。
+  userVote?: number | null;
 }
 
 export interface AdminChatConversationDetail extends AdminChatConversationListItem {

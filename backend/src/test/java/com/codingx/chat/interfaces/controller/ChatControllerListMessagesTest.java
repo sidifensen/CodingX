@@ -71,6 +71,7 @@ class ChatControllerListMessagesTest {
         List<ChatMessageResponse> responses = List.of(new ChatMessageResponse(
             2055117513431715840L,
             2055114974648864768L,
+            2055117498822955008L,
             ChatMessageRole.USER,
             "@weather_query 历史问题",
             null,
@@ -78,6 +79,8 @@ class ChatControllerListMessagesTest {
             ChatMessageStatus.COMPLETED,
             null,
             null,
+            null,
+            0,
             null,
             null,
             List.of(new ChatAttachmentResponse(

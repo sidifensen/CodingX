@@ -285,8 +285,8 @@ class ChatControllerConversationMutationTest {
         SharedConversationResponse sharedResponse = new SharedConversationResponse(
             new ChatConversationResponse(2001L, "公开分享", ChatConversationStatus.ACTIVE, null, null, false, "share-token", true, null, null, ChatConversationResponse.WorkspaceType.CLOUD, null, null, null, null, null),
             List.of(
-                new ChatMessageResponse(101L, 2001L, ChatMessageRole.USER, "第一问", null, null, ChatMessageStatus.COMPLETED, null, null, null, null, List.of(), List.of(), null),
-                new ChatMessageResponse(102L, 2001L, ChatMessageRole.ASSISTANT, "第一答", null, null, ChatMessageStatus.COMPLETED, null, null, null, null, List.of(), List.of(), null)
+                new ChatMessageResponse(101L, 2001L, null, ChatMessageRole.USER, "第一问", null, null, ChatMessageStatus.COMPLETED, null, null, null, 0, null, null, List.of(), List.of(), null),
+                new ChatMessageResponse(102L, 2001L, null, ChatMessageRole.ASSISTANT, "第一答", null, null, ChatMessageStatus.COMPLETED, null, null, null, 0, null, null, List.of(), List.of(), null)
             )
         );
         when(chatConversationApplicationService.loadSharedConversation("share-token", "101,102")).thenReturn(content);

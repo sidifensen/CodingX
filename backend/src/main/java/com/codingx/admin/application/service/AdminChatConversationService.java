@@ -130,6 +130,7 @@ public class AdminChatConversationService {
         return new ChatMessageResponse(
             message.getId(),
             message.getConversationId(),
+            message.getRunId(),
             message.getRole(),
             message.getContent(),
             message.getThinkingContent(),
@@ -138,7 +139,9 @@ public class AdminChatConversationService {
             message.getProvider(),
             message.getModel(),
             message.getErrorMessage(),
+            message.getDeleted(),
             message.getCreatedAt(),
+            message.getUpdatedAt(),
             attachments,
             skillCodes,
             null

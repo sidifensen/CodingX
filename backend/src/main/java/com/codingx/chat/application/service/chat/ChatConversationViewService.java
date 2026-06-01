@@ -160,6 +160,7 @@ public class ChatConversationViewService {
         return new ChatMessageResponse(
             message.getId(),
             message.getConversationId(),
+            message.getRunId(),
             message.getRole(),
             message.getContent(),
             message.getThinkingContent(),
@@ -168,7 +169,9 @@ public class ChatConversationViewService {
             message.getProvider(),
             message.getModel(),
             message.getErrorMessage(),
+            message.getDeleted(),
             message.getCreatedAt(),
+            message.getUpdatedAt(),
             attachments,
             skillCodes,
             userVote

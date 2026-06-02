@@ -16,6 +16,9 @@ public final class ChatCapabilityMentionSupport {
 
     private static final Pattern LEADING_MENTIONS_PATTERN = Pattern.compile("^\\s*((?:@[A-Za-z0-9_.:-]+\\s*)+)");
     private static final Pattern MENTION_TOKEN_PATTERN = Pattern.compile("@([A-Za-z0-9_.:-]+)");
+    private static final Pattern STANDALONE_MENTION_TOKEN_PATTERN = Pattern.compile(
+        "(?<![A-Za-z0-9_.:-])@([A-Za-z0-9_.:-]+)(?=$|\\s|[\\p{Punct}，。？！、：；“”‘’（）【】《》])"
+    );
 
     private ChatCapabilityMentionSupport() {
     }
@@ -31,7 +34,7 @@ public final class ChatCapabilityMentionSupport {
         if (normalizedSkillCodes.isEmpty()) {
             return StrUtil.trimToEmpty(content);
         }
-        String plainContent = stripLeadingMentions(content);
+        String plainContent = stripSelectedSkillMentions(content, normalizedSkillCodes);
         String mentions = normalizedSkillCodes.stream()
             .map(skillCode -> "@" + skillCode)
             .collect(java.util.stream.Collectors.joining(" "));
@@ -79,6 +82,36 @@ public final class ChatCapabilityMentionSupport {
     }
 
     /**
+     * 剥离正文中属于本轮已选技能的能力标记，避免 UI token 残留污染意图识别和模型输入。
+     * 关键约束：只删除已选技能对应的独立 @skill token，未选中的 @ 文本仍作为用户正文保留。
+     * @param content 消息正文。
+     * @param selectedSkillCodes 本轮已选技能编码。
+     * @return 不含已选技能标记的自然语言正文。
+     */
+    public static String stripSelectedSkillMentions(String content, List<String> selectedSkillCodes) {
+        String plainContent = stripLeadingMentions(content);
+        List<String> normalizedSkillCodes = normalizeCodes(selectedSkillCodes);
+        if (normalizedSkillCodes.isEmpty() || StrUtil.isBlank(plainContent)) {
+            return plainContent;
+        }
+        // 步骤 1：仅移除已选技能 token，避免误删用户真正想表达的其他 @ 内容。
+        StringBuilder strippedContent = new StringBuilder();
+        Matcher matcher = STANDALONE_MENTION_TOKEN_PATTERN.matcher(plainContent);
+        int cursor = 0;
+        while (matcher.find()) {
+            String mentionedCode = StrUtil.trimToEmpty(matcher.group(1));
+            if (!normalizedSkillCodes.contains(mentionedCode)) {
+                continue;
+            }
+            strippedContent.append(plainContent, cursor, matcher.start());
+            cursor = matcher.end();
+        }
+        strippedContent.append(plainContent.substring(cursor));
+        // 步骤 2：能力 token 被移除后压缩空白，保证短句判断和落库展示稳定。
+        return strippedContent.toString().replaceAll("\\s+", " ").trim();
+    }
+
+    /**
      * 构造只供模型消费的消息副本；数据库中的原消息仍保留 @skill 前缀。
      * @param message 原始消息。
      * @return 模型输入消息。
@@ -87,7 +120,7 @@ public final class ChatCapabilityMentionSupport {
         if (message == null || message.getRole() != ChatMessageRole.USER) {
             return message;
         }
-        String plainContent = stripLeadingMentions(message.getContent());
+        String plainContent = stripSelectedSkillMentions(message.getContent(), parseSkillCodes(message.getContent()));
         if (StrUtil.isBlank(plainContent) || StrUtil.equals(plainContent, message.getContent())) {
             return message;
         }

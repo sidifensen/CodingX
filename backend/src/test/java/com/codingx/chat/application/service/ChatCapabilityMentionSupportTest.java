@@ -38,4 +38,32 @@ class ChatCapabilityMentionSupportTest {
         assertEquals("@web-access", persistedContent);
         assertEquals("", ChatCapabilityMentionSupport.stripLeadingMentions(persistedContent));
     }
+
+    /**
+     * 用户可能同时通过技能选择器和正文尾部输入同一个 @skill。
+     * 业务意图：尾部重复技能标记仍是能力选择，不应残留给模型触发自由发挥。
+     */
+    @Test
+    void formatSkillMentionsStripsDuplicateInlineMentionFromPlainQuestion() {
+        String persistedContent = ChatCapabilityMentionSupport.formatContentWithSkillMentions(
+            List.of("multi-search"),
+            "这是什么 @multi-search"
+        );
+
+        assertEquals("@multi-search 这是什么", persistedContent);
+        assertEquals("这是什么", ChatCapabilityMentionSupport.stripLeadingMentions(persistedContent));
+    }
+
+    /**
+     * 清理正文能力标记时只能删除已选技能，未选中的 @ 文本仍是用户真实输入。
+     */
+    @Test
+    void stripSelectedSkillMentionsPreservesUnselectedInlineMention() {
+        String plainContent = ChatCapabilityMentionSupport.stripSelectedSkillMentions(
+            "比较 @multi-search 和 @other-skill",
+            List.of("multi-search")
+        );
+
+        assertEquals("比较 和 @other-skill", plainContent);
+    }
 }

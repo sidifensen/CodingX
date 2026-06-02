@@ -501,6 +501,58 @@ class ChatApplicationServiceTest {
     }
 
     /**
+     * 选中技能后用户又在正文尾部输入同一 @skill 时，尾部标记仍属于能力选择。
+     * 业务约束：短句“这是什么”必须直接返回技能简介，不能把残留 @skill 交给模型扩写。
+     */
+    @Test
+    void sendMessageUsesSkillIntroWhenSelectedSkillMentionAppearsInline() {
+        bindRunContext();
+        String introReply = "这是你当前选中的技能：`multi-search`（multi-search）。它用于多引擎搜索。";
+        ChatConversation conversation = ChatConversation.create(1L, "Default", 1002L, ChatConversationStatus.ACTIVE);
+        when(chatConversationRepository.requireById(1L)).thenReturn(conversation);
+        when(chatMessageRepository.findByConversationId(1L)).thenReturn(new ArrayList<>());
+        when(chatAttachmentService.requireOwnedAttachments(any(), eq(1L), eq(1002L))).thenReturn(List.of());
+        when(chatSkillContextService.buildSkillIntroReply(List.of("multi-search"))).thenReturn(introReply);
+        when(conversationTitleService.generateTitle(any(), any())).thenReturn("技能介绍");
+        org.mockito.Mockito.lenient().when(conversationRewriteService.rewriteResult(any(), eq("这是什么 @multi-search"))).thenReturn(
+            new ConversationRewriteResult("这是什么 @multi-search", false, List.of("这是什么 @multi-search"))
+        );
+        org.mockito.Mockito.lenient().when(conversationIntentService.route("这是什么 @multi-search", false)).thenReturn(
+            new ConversationIntentDecision("chat.normal", ConversationIntentAction.DIRECT, null)
+        );
+        org.mockito.Mockito.lenient().when(chatIntentNodeRepository.findByIntentCode("chat.normal")).thenReturn(null);
+        org.mockito.Mockito.lenient().when(chatSkillContextService.buildSkillContext(List.of("multi-search"))).thenReturn("");
+        org.mockito.Mockito.lenient().when(conversationSummaryService.buildModelHistory(any(), any()))
+            .thenAnswer(invocation -> invocation.getArgument(1));
+        org.mockito.Mockito.lenient().when(llmResponseCleaner.clean(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        org.mockito.Mockito.lenient().doAnswer(invocation -> {
+            AiChatClient.StreamHandler handler = invocation.getArgument(2);
+            handler.onDelta("模型扩写的技能说明");
+            handler.onComplete();
+            return null;
+        }).when(aiChatClient).streamChat(any(), org.mockito.ArgumentMatchers.anyBoolean(), any());
+
+        chatApplicationService.sendMessage(
+            new SendChatMessageCommand(1L, "这是什么 @multi-search", false, List.of(), List.of("multi-search")),
+            1002L
+        );
+
+        ArgumentCaptor<ChatMessage> messageCaptor = ArgumentCaptor.forClass(ChatMessage.class);
+        ArgumentCaptor<ChatExecutionRun> runCaptor = ArgumentCaptor.forClass(ChatExecutionRun.class);
+        verify(chatMessageRepository, org.mockito.Mockito.times(2)).save(messageCaptor.capture());
+        verify(chatExecutionRunRepository).save(runCaptor.capture());
+        assertEquals("@multi-search 这是什么", messageCaptor.getAllValues().getFirst().getContent());
+        assertEquals(introReply, messageCaptor.getAllValues().get(1).getContent());
+        assertEquals("skill.intro", runCaptor.getValue().getIntentCode());
+        verify(chatStreamPublisher).publishUserMessage(1L, "这是什么");
+        verify(chatStreamPublisher).publishAssistantCompleted(eq(1L), any(Long.class), eq(introReply), eq("技能介绍"));
+        verify(conversationRewriteService, never()).rewriteResult(any(), any());
+        verify(aiChatClient, never()).streamChat(any(), org.mockito.ArgumentMatchers.anyBoolean(), any());
+        verify(aiChatClient, never()).streamChatWithTools(any(), org.mockito.ArgumentMatchers.anyBoolean(), any(), any());
+        ChatExecutionContext.clear();
+    }
+
+    /**
      * 本地运行态的聊天历史由客户端快照负责，后端只做临时推理与 SSE 推送。
      * 关键约束：不得读取或写入 chat_conversation/chat_message，避免本地历史默认进入云端数据库。
      */

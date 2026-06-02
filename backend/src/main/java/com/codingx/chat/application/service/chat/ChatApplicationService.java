@@ -244,7 +244,7 @@ public class ChatApplicationService {
         String selectedExpertCode = loadSelectedExpertCode(sourceRunId);
         SendChatMessageCommand command = new SendChatMessageCommand(
             conversationId,
-            ChatCapabilityMentionSupport.stripLeadingMentions(lastUserMessage.getContent()),
+            ChatCapabilityMentionSupport.stripSelectedSkillMentions(lastUserMessage.getContent(), selectedSkillCodes),
             false,
             selectedMcpCodes,
             selectedSkillCodes,
@@ -302,7 +302,7 @@ public class ChatApplicationService {
         }
         Optional<String> regeneratedSkillIntroReply = resolveSkillIntroReply(
             command.skillCodes(),
-            ChatCapabilityMentionSupport.stripLeadingMentions(requestMessage.getContent()),
+            ChatCapabilityMentionSupport.stripSelectedSkillMentions(requestMessage.getContent(), command.skillCodes()),
             CollUtil.isNotEmpty(chatAttachmentService.listByMessageId(requestMessage.getId()))
         );
         if (regeneratedSkillIntroReply.isPresent()) {
@@ -714,7 +714,7 @@ public class ChatApplicationService {
         }
         chatRuntimeGuardService.ensureAccepted(command.conversationId());
         List<String> selectedSkillCodes = ChatCapabilityMentionSupport.mergeSkillCodes(command.skillCodes(), command.content());
-        String plainQuestion = ChatCapabilityMentionSupport.stripLeadingMentions(command.content());
+        String plainQuestion = ChatCapabilityMentionSupport.stripSelectedSkillMentions(command.content(), selectedSkillCodes);
         saveRunCapabilityContext(runId, command.mcpCodes(), selectedSkillCodes, command.expertCode());
         List<ChatMessage> history = new ArrayList<>(chatMessageRepository.findByConversationId(command.conversationId()));
         List<ChatAttachment> validatedAttachments = chatAttachmentService.requireOwnedAttachments(
@@ -1010,7 +1010,7 @@ public class ChatApplicationService {
         Long runId = currentRunId(command.conversationId());
         chatRuntimeGuardService.ensureAccepted(command.conversationId());
         List<String> selectedSkillCodes = ChatCapabilityMentionSupport.mergeSkillCodes(command.skillCodes(), command.content());
-        String plainQuestion = ChatCapabilityMentionSupport.stripLeadingMentions(command.content());
+        String plainQuestion = ChatCapabilityMentionSupport.stripSelectedSkillMentions(command.content(), selectedSkillCodes);
         List<ChatMessage> history = new ArrayList<>();
         ChatMessage userMessage = ChatMessage.userMessage(command.conversationId(), plainQuestion).attachRun(runId);
         history.add(userMessage);

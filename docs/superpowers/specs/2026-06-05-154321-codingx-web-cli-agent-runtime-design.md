@@ -12,7 +12,7 @@ CodingX 当前已经具备 Web 聊天页、管理端、聊天 SSE、后台任务
 ## 参考边界
 
 - OpenAI Codex 可借鉴其 `core / protocol / tui / app-server` 分层、`Thread / Turn / Item / Event` 思路、富客户端与核心运行时之间的协议隔离。
-- MewCode 可借鉴其独立 CLI Coding Agent 能力清单，包括 Agent Loop、文件工具、Bash、MCP、Skill、Slash Command、权限、上下文压缩、记忆、SubAgent 与 Worktree。
+- MewCode 可借鉴其独立 CLI Coding Agent 能力清单，包括 Agent Loop、文件工具、Bash、MCP、Skill、Slash Command、权限、上下文压缩、记忆、SubAgent 与 Worktree。其公开项目页明确提供 Java / Go / Python 三个版本，Java 版本技术栈为 JDK 21、tui4j、Anthropic SDK、OpenAI SDK、MCP SDK、SnakeYAML、Java HttpClient 与 JUnit。
 - CodingX 不直接 fork 或照搬任何实现。项目已有 Java 后端、Web 用户端、Web 管理端和工具运行时，应迁移的是分层思想、事件协议与产品形态，而不是替换技术栈。
 
 ## 设计目标
@@ -190,7 +190,22 @@ Controller 只负责协议适配、鉴权入口、参数接收和响应封装。
 
 ## CLI 设计
 
-CLI 第一阶段可以用 TypeScript 或 Rust 实现。若追求快速对接现有前端/Node 生态，TypeScript 更快；若追求终端 TUI 性能、分发单文件和长期可维护性，Rust 更接近 OpenAI Codex 的路线。
+CLI 第一阶段采用 Java 实现，优先对齐 MewCode Java 版本技术栈，并与 CodingX 后端 Java 体系保持一致。Java CLI 不需要复制后端业务逻辑，只负责终端 UI、配置读取、鉴权、Agent API 通信、事件渲染和用户输入回传。
+
+建议技术栈：
+
+```text
+JDK 21       统一语言版本，便于复用现代 Java 特性和后端工程经验
+tui4j        构建终端交互界面，承载输入框、事件流、审批提示和状态栏
+HttpClient   访问后端 REST、SSE 或 WebSocket，不额外引入重型 HTTP 框架
+SnakeYAML    解析 CLI 配置、模型配置、MCP 配置、Skill/Hook 声明
+JUnit        覆盖 CLI 配置、事件解析、审批输入和渲染状态转换
+OpenAI SDK   仅作为直连模型的可选适配能力；默认由后端 Agent Runtime 调模型
+Anthropic SDK 仅作为直连模型的可选适配能力；默认由后端 Agent Runtime 调模型
+MCP SDK      用于未来 CLI 本地直连 MCP 的扩展；第一阶段优先走后端 MCP 能力
+```
+
+关键约束：CLI 默认连接 CodingX 后端，由后端统一调模型、执行工具、做审批和持久化。OpenAI SDK、Anthropic SDK 与 MCP SDK 不应让 CLI 第一阶段绕过后端运行时，否则 Web 与 CLI 会形成两套 Agent Loop，后续很难统一历史、权限和观测。
 
 建议 MVP 能力：
 
@@ -288,8 +303,8 @@ agent_approval
 
 ## 待评审问题
 
-1. CLI 第一版使用 TypeScript 还是 Rust。
-2. 第一阶段流式通道使用 SSE + REST 输入，还是直接实现 WebSocket / JSON-RPC。
-3. 新增 Agent 表是否第一阶段落库，还是先通过现有聊天与任务表做兼容映射。
-4. Web 端是先新增 Agent Console，还是先保持聊天页不变，仅供 CLI 使用新协议。
-5. 审批策略默认是偏保守还是偏效率优先。
+1. 第一阶段流式通道使用 SSE + REST 输入，还是直接实现 WebSocket / JSON-RPC。
+2. 新增 Agent 表是否第一阶段落库，还是先通过现有聊天与任务表做兼容映射。
+3. Web 端是先新增 Agent Console，还是先保持聊天页不变，仅供 CLI 使用新协议。
+4. 审批策略默认是偏保守还是偏效率优先。
+5. Java CLI 是作为当前 Maven 多模块的一部分维护，还是建立独立 `cli` 子工程并通过发布脚本分发。

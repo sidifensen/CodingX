@@ -1,5 +1,9 @@
 # 功能索引
 
+## Agent
+
+- [Java CLI 基础终端](agent/java-cli-terminal-mvp.md)
+
 ## Chat
 
 - [聊天歧义引导配置](chat/intent-guidance-config.md)

@@ -4,6 +4,7 @@ import com.codingx.cli.agent.MockAgentEventSource;
 import com.codingx.cli.command.CliCommandRunner;
 import com.codingx.cli.config.CliConfigStore;
 import com.codingx.cli.render.TerminalRenderer;
+import com.codingx.cli.tui.CodingXTuiLauncher;
 
 import java.nio.file.Path;
 
@@ -32,9 +33,11 @@ public final class CodingXCli {
     public static void main(String[] args) {
         CliCommandRunner runner = new CliCommandRunner(
             new CliConfigStore(Path.of(System.getProperty("user.home"))),
-            new MockAgentEventSource(),
-            new TerminalRenderer(),
-            Path.of(System.getProperty("user.dir"))
+            new CodingXTuiLauncher(
+                Path.of(System.getProperty("user.dir")),
+                new MockAgentEventSource(),
+                new TerminalRenderer()
+            )
         );
         CliCommandRunner.Result result = runner.run(args);
         System.out.print(result.output());

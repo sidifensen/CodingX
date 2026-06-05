@@ -1,18 +1,11 @@
 package com.codingx.cli.command;
 
-import com.codingx.cli.CodingXCli;
-import com.codingx.cli.agent.AgentEvent;
-import com.codingx.cli.agent.AgentEventSource;
 import com.codingx.cli.config.CliConfig;
 import com.codingx.cli.config.CliConfigStore;
-import com.codingx.cli.render.TerminalRenderer;
-
-import java.nio.file.Path;
-import java.util.Arrays;
-import java.util.List;
+import com.codingx.cli.tui.TuiLauncher;
 
 /**
- * CLI 命令分发器，负责把用户输入转成配置读写或 Agent 事件流渲染。
+ * CLI 命令分发器，负责把用户输入转成配置读写或 TUI 启动动作。
  */
 public class CliCommandRunner {
 
@@ -22,57 +15,47 @@ public class CliCommandRunner {
     private final CliConfigStore configStore;
 
     /**
-     * Agent 事件来源；当前注入 mock，后续替换为后端 API 客户端。
+     * TUI 启动器；任务运行只能通过该交互界面触发。
      */
-    private final AgentEventSource eventSource;
-
-    /**
-     * 终端渲染器，负责把统一事件协议转成人类可读输出。
-     */
-    private final TerminalRenderer renderer;
-
-    /**
-     * 当前命令执行目录，后续真实工具调用会以它作为项目工作区。
-     */
-    private final Path workspace;
+    private final TuiLauncher tuiLauncher;
 
     /**
      * @param configStore 用户级配置读写器。
-     * @param eventSource Agent 事件来源。
-     * @param renderer 终端事件渲染器。
-     * @param workspace 当前工作区路径。
+     * @param tuiLauncher TUI 启动器。
      */
     public CliCommandRunner(
         CliConfigStore configStore,
-        AgentEventSource eventSource,
-        TerminalRenderer renderer,
-        Path workspace
+        TuiLauncher tuiLauncher
     ) {
         this.configStore = configStore;
-        this.eventSource = eventSource;
-        this.renderer = renderer;
-        this.workspace = workspace;
+        this.tuiLauncher = tuiLauncher;
     }
 
     /**
-     * 执行 CLI 命令并返回结果；当前版本只做本地终端 MVP，不直接调用模型。
+     * 执行 CLI 命令并返回结果；任务执行入口只允许进入 TUI。
      *
      * @param args 命令行参数。
      * @return 命令结果。
      */
     public Result run(String[] args) {
         if (args.length == 0) {
-            return help();
+            return launchTui();
         }
         return switch (args[0]) {
             case "login" -> login(args);
-            case "exec" -> exec(args);
-            case "resume" -> new Result(0, "resume: 后续接入后端 AgentSession 后启用" + System.lineSeparator());
-            case "sessions" -> new Result(0, "sessions: 后续接入后端 AgentSession 后启用" + System.lineSeparator());
-            default -> exec(new String[] {"exec", String.join(" ", args)});
+            case "tui" -> launchTui();
+            case "exec" -> tuiOnly();
+            case "resume", "sessions" -> tuiOnly();
+            default -> launchTui();
         };
     }
 
+    /**
+     * 保存后端地址和 satoken；登录是配置动作，不属于任务运行入口。
+     *
+     * @param args 命令行参数。
+     * @return 登录配置写入结果。
+     */
     private Result login(String[] args) {
         if (args.length < 3) {
             return new Result(1, "用法: codingx login <serverUrl> <satoken>" + System.lineSeparator());
@@ -83,29 +66,24 @@ public class CliCommandRunner {
         return new Result(0, "登录配置已保存: " + configStore.configFile() + System.lineSeparator());
     }
 
-    private Result exec(String[] args) {
-        if (args.length < 2) {
-            return new Result(1, "用法: codingx exec <任务>" + System.lineSeparator());
-        }
-        String task = String.join(" ", Arrays.copyOfRange(args, 1, args.length)).trim();
-        if (task.isEmpty()) {
-            return new Result(1, "用法: codingx exec <任务>" + System.lineSeparator());
-        }
-
-        // MVP 中事件源直接返回快照；后续后端流式接入时这里仍只负责编排和输出。
-        List<AgentEvent> events = eventSource.startTurn(task, workspace);
-        String output = String.join(System.lineSeparator(), renderer.render(events)) + System.lineSeparator();
-        return new Result(0, output);
+    /**
+     * 启动 TUI 交互界面；默认入口和 `tui` 命令都走这里。
+     *
+     * @return 空输出的成功结果。
+     */
+    private Result launchTui() {
+        tuiLauncher.launch();
+        return new Result(0, "");
     }
 
-    private Result help() {
-        String newline = System.lineSeparator();
-        return new Result(0, CodingXCli.productName() + newline
-            + "用法:" + newline
-            + "  codingx login <serverUrl> <satoken>" + newline
-            + "  codingx exec <任务>" + newline
-            + "  codingx resume" + newline
-            + "  codingx sessions" + newline);
+    /**
+     * 拒绝非交互任务和会话命令，避免 CLI 同时存在两套产品形态。
+     *
+     * @return TUI-only 中文提示。
+     */
+    private Result tuiOnly() {
+        return new Result(1, "CodingX CLI 只支持 TUI 交互模式，请运行 codingx 或 codingx tui 后在输入框里提交任务。"
+            + System.lineSeparator());
     }
 
     /**

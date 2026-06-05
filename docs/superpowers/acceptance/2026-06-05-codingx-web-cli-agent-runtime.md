@@ -2,7 +2,7 @@
 
 **Spec:** `docs/superpowers/specs/2026-06-05-154321-codingx-web-cli-agent-runtime-design.md`
 **Date:** 2026-06-05
-**Status:** Draft
+**Status:** Approved
 
 ---
 

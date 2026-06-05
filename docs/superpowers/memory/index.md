@@ -1,14 +1,16 @@
 ---
 type: decision
-title: chat-memory-index
-summary: 记录聊天主消息区过程时间线相关的最小仓库记忆入口
+title: repository-memory-index
+summary: 记录仓库已沉淀模块、契约和经验文档的入口
 tags:
-  - chat
+  - repository
+  - memory
 owned_paths:
   - frontend/user/src/views/chat
   - frontend/user/src/views/ChatView.tsx
   - backend/src/main/java/com/codingx/chat/application/service/chat
 related_docs:
+  - docs/superpowers/memory/cli/codingx-cli-tui-module-card.md
   - docs/superpowers/memory/chat/message-process-timeline-module-card.md
   - docs/superpowers/memory/chat/message-process-timeline-contract.md
   - docs/superpowers/memory/chat/background-stream-resume-contract.md
@@ -25,7 +27,10 @@ status: active
 
 # Repository Memory
 
-当前已覆盖的聊天域记忆：
+当前已覆盖的仓库记忆：
+
+- `docs/superpowers/memory/cli/codingx-cli-tui-module-card.md`
+  - Java CLI TUI-only 入口、tui4j 状态模型、mock AgentEvent 渲染和常见验证陷阱
 
 - `docs/superpowers/memory/chat/message-process-timeline-module-card.md`
   - 聊天主消息区过程时间线的职责边界与扩展点
@@ -74,6 +79,7 @@ status: active
 
 当前主要缺口：
 
+- Java CLI 仍是 mock 事件源和基础 TUI 外壳，尚未接入真实 Agent API、MCP 工具状态和 TUI 内部会话状态机
 - MCP / 思考统一事件模型仍以前端运行时聚合为主，未形成数据库级持久化协议
 - 搜索多 provider fallback、HTML 搜索源解析和 provider 级可观测性仍需按需求逐步沉淀
 - 聊天页历史回放和本地快照的长期演化规则尚未独立成 runbook

@@ -11,6 +11,7 @@ import com.williamcallahan.tui4j.compat.bubbletea.Model;
 import com.williamcallahan.tui4j.compat.bubbletea.QuitMessage;
 import com.williamcallahan.tui4j.compat.bubbletea.UpdateResult;
 import com.williamcallahan.tui4j.compat.bubbletea.WindowSizeMessage;
+import com.williamcallahan.tui4j.compat.bubbletea.input.key.KeyType;
 import com.williamcallahan.tui4j.compat.bubbles.cursor.Cursor;
 import com.williamcallahan.tui4j.compat.bubbles.textarea.Textarea;
 import com.williamcallahan.tui4j.compat.bubbles.viewport.Viewport;
@@ -20,12 +21,12 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * CodingX TUI 的 Bubble Tea 模型，维护事件窗口、任务输入框和运行状态。
+ * CodingX TUI 的 Bubble Tea 模型，维护截图风格 header、transcript、输入框和状态栏。
  */
 public class CodingXTuiModel implements Model {
 
     /**
-     * 事件区域和输入框之间的空行间隔。
+     * 页面分区之间的空行间隔。
      */
     private static final String GAP = System.lineSeparator() + System.lineSeparator();
 
@@ -40,9 +41,19 @@ public class CodingXTuiModel implements Model {
     private final AgentEventSource eventSource;
 
     /**
-     * 事件到终端文本的渲染器，保证 TUI 与未来普通日志输出复用同一语义。
+     * 顶部品牌区渲染器。
      */
-    private final TerminalRenderer renderer;
+    private final TuiHeaderRenderer headerRenderer;
+
+    /**
+     * 截图风格 transcript 渲染器。
+     */
+    private final TuiTranscriptRenderer transcriptRenderer;
+
+    /**
+     * 底部状态栏渲染器。
+     */
+    private final TuiStatusBarRenderer statusBarRenderer;
 
     /**
      * 滚动事件窗口，用于承载助手输出、工具状态和命令输出。
@@ -60,6 +71,16 @@ public class CodingXTuiModel implements Model {
     private final List<String> timelineLines;
 
     /**
+     * 当前展示模型名；mock 阶段固定为 GLM-5.1。
+     */
+    private final String modelName;
+
+    /**
+     * 本地计划模式开关，第一阶段只影响状态栏文案。
+     */
+    private boolean planMode;
+
+    /**
      * 当前运行状态，展示在底部状态栏。
      */
     private String status;
@@ -67,23 +88,30 @@ public class CodingXTuiModel implements Model {
     /**
      * @param workspace 当前 CLI 工作区。
      * @param eventSource Agent 事件来源。
-     * @param renderer 终端事件渲染器。
+     * @param renderer 兼容旧构造链路的终端渲染器；截图风格 TUI 使用独立 transcript renderer。
      */
     public CodingXTuiModel(Path workspace, AgentEventSource eventSource, TerminalRenderer renderer) {
         this.workspace = workspace;
         this.eventSource = eventSource;
-        this.renderer = renderer;
+        this.headerRenderer = new TuiHeaderRenderer();
+        this.transcriptRenderer = new TuiTranscriptRenderer();
+        this.statusBarRenderer = new TuiStatusBarRenderer();
         this.viewport = Viewport.create(80, 18);
         this.textarea = new Textarea();
         this.timelineLines = new ArrayList<>();
+        this.modelName = "GLM-5.1";
+        this.planMode = true;
         this.status = "ready";
 
         configureTextarea();
-        appendSystemLine("CodingX TUI 已启动。输入任务后按 Enter 提交，按 Esc 或 Ctrl+C 退出。");
+        appendSystemLine("CodingX TUI ready. Type a task and press Enter.");
     }
 
+    /**
+     * 配置底部输入框的基础体验；真实任务只能从这里提交，所以保持提示、宽度和焦点稳定。
+     */
     private void configureTextarea() {
-        textarea.setPlaceholder("输入任务后按 Enter");
+        textarea.setPlaceholder("Send a message...");
         textarea.setPrompt("> ");
         textarea.setCharLimit(1000);
         textarea.setWidth(80);
@@ -123,6 +151,10 @@ public class CodingXTuiModel implements Model {
             if ("ctrl+c".equals(key) || "esc".equals(key)) {
                 return UpdateResult.from(this, QuitMessage::new);
             }
+            if ("shift+tab".equals(key) || keyPressMessage.type() == KeyType.KeyShiftTab) {
+                planMode = !planMode;
+                return UpdateResult.from(this, command);
+            }
             if ("enter".equals(key)) {
                 submitTask(textarea.value());
                 textarea.reset();
@@ -132,9 +164,15 @@ public class CodingXTuiModel implements Model {
         return UpdateResult.from(this, command);
     }
 
+    /**
+     * 根据终端尺寸重算 transcript 和输入框布局，预留 header、输入框和状态栏的固定高度。
+     *
+     * @param width 当前终端宽度。
+     * @param height 当前终端高度。
+     */
     private void resize(int width, int height) {
         int safeWidth = Math.max(width, 40);
-        int viewportHeight = Math.max(height - 8, 8);
+        int viewportHeight = Math.max(height - 10, 8);
         viewport.setWidth(safeWidth);
         viewport.setHeight(viewportHeight);
         textarea.setWidth(safeWidth);
@@ -156,13 +194,20 @@ public class CodingXTuiModel implements Model {
         status = "running";
         appendUserLine(normalizedTask);
         List<AgentEvent> events = eventSource.startTurn(normalizedTask, workspace);
-        for (String line : renderer.render(events)) {
+        for (String line : transcriptRenderer.render(events)) {
             appendLine(line);
         }
         status = events.stream().anyMatch(event -> event.eventType() == AgentEventType.ERROR) ? "error" : "completed";
         refreshViewport();
     }
 
+    /**
+     * 合并 viewport 与 textarea 的后续命令，避免任一子组件的异步更新被覆盖。
+     *
+     * @param first 第一个子组件命令，可为空。
+     * @param second 第二个子组件命令，可为空。
+     * @return 合并后的命令，可为空。
+     */
     private Command combine(Command first, Command second) {
         if (first != null && second != null) {
             return Command.batch(first, second);
@@ -173,19 +218,37 @@ public class CodingXTuiModel implements Model {
         return second;
     }
 
+    /**
+     * 追加系统提示行；使用缩进而不是日志前缀，避免破坏对话流观感。
+     *
+     * @param line 系统提示内容。
+     */
     private void appendSystemLine(String line) {
-        appendLine("[system] " + line);
+        appendLine("  " + line);
     }
 
+    /**
+     * 追加用户输入行，保持与截图风格一致的终端提示符。
+     *
+     * @param task 已清洗的用户任务文本。
+     */
     private void appendUserLine(String task) {
         appendLine("> " + task);
     }
 
+    /**
+     * 追加 transcript 行并立即刷新 viewport，保证测试直接读取 view 时能看到最新状态。
+     *
+     * @param line 已渲染的 transcript 行。
+     */
     private void appendLine(String line) {
         timelineLines.add(line);
         refreshViewport();
     }
 
+    /**
+     * 将内存中的 transcript 同步给滚动窗口，并把视口移动到底部显示最新任务结果。
+     */
     private void refreshViewport() {
         viewport.setContent(String.join(System.lineSeparator(), timelineLines));
         viewport.gotoBottom();
@@ -198,19 +261,9 @@ public class CodingXTuiModel implements Model {
      */
     @Override
     public String view() {
-        return header() + GAP
+        return headerRenderer.render(workspace, modelName) + GAP
             + viewport.view() + GAP
             + textarea.view() + GAP
-            + statusBar();
-    }
-
-    private String header() {
-        return "CodingX TUI" + System.lineSeparator()
-            + "Workspace: " + workspace + System.lineSeparator()
-            + "输入任务后按 Enter，Esc/Ctrl+C 退出";
-    }
-
-    private String statusBar() {
-        return "状态: " + status;
+            + statusBarRenderer.render(planMode, status, modelName);
     }
 }

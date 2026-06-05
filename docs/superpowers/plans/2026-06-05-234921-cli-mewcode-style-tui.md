@@ -22,7 +22,7 @@
 
 ## Task 1: Header And Status Bar Tests
 
-- [ ] Write failing tests in `CodingXTuiModelTest`:
+- [x] Write failing tests in `CodingXTuiModelTest`:
   - `initialViewShouldShowMewCodeStyleHeaderAndStatusBar`
   - assert `CodingX v0.1.0`
   - assert `GLM-5.1`
@@ -31,32 +31,32 @@
   - assert `Send a message...`
   - assert `Plan on (shift+tab to cycle)`
   - assert `Status: ready`
-- [ ] Run `cd cli && mvn -Dtest=CodingXTuiModelTest test` and verify RED because the current model does not render these strings.
-- [ ] Implement `TuiHeaderRenderer` and `TuiStatusBarRenderer`.
-- [ ] Wire renderers into `CodingXTuiModel.view()`.
-- [ ] Run `cd cli && mvn -Dtest=CodingXTuiModelTest test` and verify GREEN for the new initial-view test.
+- [x] Run `cd cli && mvn -Dtest=CodingXTuiModelTest test` and verify RED because the current model does not render these strings.
+- [x] Implement `TuiHeaderRenderer` and `TuiStatusBarRenderer`.
+- [x] Wire renderers into `CodingXTuiModel.view()`.
+- [x] Run `cd cli && mvn -Dtest=CodingXTuiModelTest test` and verify GREEN for the new initial-view test.
 
 ## Task 2: Transcript Renderer Tests
 
-- [ ] Write failing `TuiTranscriptRendererTest`:
+- [x] Write failing `TuiTranscriptRendererTest`:
   - assistant event renders as indented assistant text.
   - `TOOL_STARTED` renders `ToolSearch`.
   - `TOOL_COMPLETED` renders `(0.0s)`.
   - `TURN_COMPLETED` renders `Task completed: COMPLETED`.
   - `ERROR` renders `! Error`.
-- [ ] Run `cd cli && mvn -Dtest=TuiTranscriptRendererTest test` and verify RED because the renderer does not exist.
-- [ ] Implement `TuiTranscriptRenderer` with comments explaining mock-duration constraints.
-- [ ] Run `cd cli && mvn -Dtest=TuiTranscriptRendererTest test` and verify GREEN.
+- [x] Run `cd cli && mvn -Dtest=TuiTranscriptRendererTest test` and verify RED because the renderer does not exist.
+- [x] Implement `TuiTranscriptRenderer` with comments explaining mock-duration constraints.
+- [x] Run `cd cli && mvn -Dtest=TuiTranscriptRendererTest test` and verify GREEN.
 
 ## Task 3: Model Submission And Plan Mode
 
-- [ ] Extend `CodingXTuiModelTest` with failing tests:
+- [x] Extend `CodingXTuiModelTest` with failing tests:
   - `submitTaskShouldAppendMewCodeStyleTranscript`
   - `blankTaskShouldNotChangeTranscriptOrStatus`
   - `shiftTabShouldTogglePlanMode`
   - `errorEventsShouldSetErrorStatus`
-- [ ] Run `cd cli && mvn -Dtest=CodingXTuiModelTest test` and verify RED.
-- [ ] Update `CodingXTuiModel`:
+- [x] Run `cd cli && mvn -Dtest=CodingXTuiModelTest test` and verify RED.
+- [x] Update `CodingXTuiModel`:
   - add `modelName = "GLM-5.1"`
   - add `planMode = true`
   - toggle plan mode on `shift+tab`
@@ -64,11 +64,11 @@
   - keep `TerminalRenderer` constructor dependency only if required by existing launcher compatibility, otherwise remove it from TUI model and launcher
   - append `Synthesizing...` before completed status in mock transcript
   - keep blank task ignored
-- [ ] Run `cd cli && mvn -Dtest=CodingXTuiModelTest test` and verify GREEN.
+- [x] Run `cd cli && mvn -Dtest=CodingXTuiModelTest test` and verify GREEN.
 
 ## Task 4: Documentation And Full Verification
 
-- [ ] Update `docs/features/agent/java-cli-terminal-mvp.md` to describe screenshot-style TUI shell and mock limitations.
-- [ ] Run `cd cli && mvn test`.
-- [ ] Run `cd cli && mvn -q exec:java "-Dexec.mainClass=com.codingx.cli.CodingXCli" "-Dexec.args=exec 分析这个项目"` and verify it exits non-zero with the TUI-only message.
-- [ ] Do not run the no-arg interactive TUI in automated verification because it takes over the terminal; rely on model tests for deterministic layout coverage.
+- [x] Update `docs/features/agent/java-cli-terminal-mvp.md` to describe screenshot-style TUI shell and mock limitations.
+- [x] Run `cd cli && mvn test`.
+- [x] Run `cd cli && mvn -q exec:java "-Dexec.mainClass=com.codingx.cli.CodingXCli" "-Dexec.args=exec 分析这个项目"` and verify it exits non-zero with the TUI-only message.
+- [x] Do not run the no-arg interactive TUI in automated verification because it takes over the terminal; rely on model tests for deterministic layout coverage.

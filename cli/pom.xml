@@ -14,6 +14,7 @@
         <junit.version>5.11.4</junit.version>
         <snakeyaml.version>2.3</snakeyaml.version>
         <tui4j.version>0.3.3</tui4j.version>
+        <hutool.version>5.8.36</hutool.version>
     </properties>
 
     <dependencies>
@@ -26,6 +27,11 @@
             <groupId>org.yaml</groupId>
             <artifactId>snakeyaml</artifactId>
             <version>${snakeyaml.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>cn.hutool</groupId>
+            <artifactId>hutool-all</artifactId>
+            <version>${hutool.version}</version>
         </dependency>
         <dependency>
             <groupId>org.junit.jupiter</groupId>

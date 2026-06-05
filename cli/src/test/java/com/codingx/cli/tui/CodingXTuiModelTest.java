@@ -68,8 +68,6 @@ class CodingXTuiModelTest {
         assertTrue(view.contains("> 分析这个项目"));
         assertTrue(view.contains("我会先查看当前仓库结构"));
         assertTrue(view.contains("ToolSearch"));
-        assertTrue(view.contains("(0.0s)"));
-        assertTrue(view.contains("Synthesizing..."));
         assertTrue(view.contains("Task completed: COMPLETED"));
         assertTrue(view.contains("Status: completed"));
         assertFalse(view.contains("[tool] 工具: ls"));
@@ -122,6 +120,48 @@ class CodingXTuiModelTest {
 
         String view = model.view();
         assertTrue(view.contains("! Error"));
+        assertTrue(view.contains("Status: error"));
+    }
+
+    @Test
+    void agentEventsMessageShouldAppendStreamedTranscriptAndCompleteStatus() {
+        CodingXTuiModel model = new CodingXTuiModel(
+            tempDir.resolve("workspace"),
+            new MockAgentEventSource(),
+            new TerminalRenderer()
+        );
+
+        model.update(new AgentEventsMessage(List.of(
+            AgentEvent.of("67890", "777", 1, AgentEventType.ASSISTANT_DELTA, Map.of(
+                "delta", "这是后端流式返回"
+            )),
+            AgentEvent.of("67890", "777", 2, AgentEventType.TURN_COMPLETED, Map.of(
+                "status", "COMPLETED"
+            ))
+        )));
+
+        String view = model.view();
+        assertTrue(view.contains("这是后端流式返回"));
+        assertTrue(view.contains("Task completed: COMPLETED"));
+        assertTrue(view.contains("Status: completed"));
+    }
+
+    @Test
+    void agentEventsMessageShouldSetErrorStatusForStreamedError() {
+        CodingXTuiModel model = new CodingXTuiModel(
+            tempDir.resolve("workspace"),
+            new MockAgentEventSource(),
+            new TerminalRenderer()
+        );
+
+        model.update(new AgentEventsMessage(List.of(
+            AgentEvent.of("67890", "777", 1, AgentEventType.ERROR, Map.of(
+                "message", "请先登录"
+            ))
+        )));
+
+        String view = model.view();
+        assertTrue(view.contains("! Error: 请先登录"));
         assertTrue(view.contains("Status: error"));
     }
 

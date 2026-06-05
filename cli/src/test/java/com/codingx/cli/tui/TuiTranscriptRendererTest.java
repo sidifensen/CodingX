@@ -30,13 +30,20 @@ class TuiTranscriptRendererTest {
         TuiTranscriptRenderer renderer = new TuiTranscriptRenderer();
 
         List<String> lines = renderer.render(List.of(
-            event(AgentEventType.TOOL_STARTED, Map.of("toolId", "ls")),
-            event(AgentEventType.TOOL_COMPLETED, Map.of("toolId", "ls"))
+            event(AgentEventType.TOOL_STARTED, Map.of(
+                "toolId", "grep",
+                "displayName", "代码搜索"
+            )),
+            event(AgentEventType.TOOL_COMPLETED, Map.of(
+                "toolId", "grep",
+                "displayName", "代码搜索",
+                "rawResult", "命中 2 处"
+            ))
         ));
 
         String output = String.join("\n", lines);
-        assertTrue(output.contains("ToolSearch"));
-        assertTrue(output.contains("(0.0s)"));
+        assertTrue(output.contains("代码搜索"));
+        assertTrue(output.contains("命中 2 处"));
     }
 
     @Test

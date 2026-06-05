@@ -12,16 +12,6 @@ import java.util.List;
 public class TuiTranscriptRenderer {
 
     /**
-     * mock 阶段没有真实工具耗时，固定展示 0.0s；真实事件源接入 duration 后再替换。
-     */
-    private static final String MOCK_TOOL_DURATION = "0.0s";
-
-    /**
-     * mock 阶段没有真实综合耗时，固定展示 7s，用于先贴近截图中的阶段状态。
-     */
-    private static final String MOCK_SYNTHESIS_DURATION = "7s";
-
-    /**
      * 批量渲染事件。
      *
      * @param events Agent 事件列表。
@@ -46,10 +36,10 @@ public class TuiTranscriptRenderer {
         return switch (type) {
             case SESSION_STARTED, TURN_STARTED -> List.of();
             case ASSISTANT_DELTA -> List.of("  • " + event.payloadText("delta"));
-            case THINKING_DELTA -> List.of("  " + event.payloadText("delta"));
-            case TOOL_STARTED -> List.of("  ToolSearch...");
+            case THINKING_DELTA -> List.of("  Thinking: " + event.payloadText("delta"));
+            case TOOL_STARTED -> List.of("  " + toolName(event) + "...");
             case TOOL_OUTPUT_DELTA -> renderOutput(event.payloadText("delta"));
-            case TOOL_COMPLETED -> List.of("  ✓ ToolSearch (" + MOCK_TOOL_DURATION + ")");
+            case TOOL_COMPLETED -> renderToolCompleted(event);
             case COMMAND_STARTED -> List.of("  $ " + event.payloadText("command"));
             case COMMAND_OUTPUT_DELTA -> renderOutput(event.payloadText("delta"));
             case COMMAND_COMPLETED -> List.of("  Command exited: " + event.payloadText("exitCode"));
@@ -57,13 +47,53 @@ public class TuiTranscriptRenderer {
             case APPROVAL_REQUESTED -> List.of("  Approval required: " + event.payloadText("summary"));
             case APPROVAL_RESOLVED -> List.of("  Approval: " + event.payloadText("result"));
             case TURN_COMPLETED -> List.of(
-                "  Synthesizing...  (" + MOCK_SYNTHESIS_DURATION + ")",
                 "  Task completed: " + event.payloadText("status")
             );
             case TURN_INTERRUPTED -> List.of("  Task interrupted");
             case ERROR -> List.of("! Error: " + event.payloadText("message"));
             case UNKNOWN -> List.of("  Unknown event");
         };
+    }
+
+    /**
+     * 渲染工具完成行，并在后端提供结果或错误时追加紧凑输出，避免真实工具事件继续显示 mock 文案。
+     *
+     * @param event 工具完成事件。
+     * @return 工具完成 transcript 行。
+     */
+    private List<String> renderToolCompleted(AgentEvent event) {
+        List<String> lines = new ArrayList<>();
+        String status = event.payloadText("status");
+        if ("ERROR".equalsIgnoreCase(status)) {
+            lines.add("  ! " + toolName(event));
+            lines.addAll(renderOutput(event.payloadText("errorMessage")));
+            return lines;
+        }
+        lines.add("  ✓ " + toolName(event));
+        String rawResult = event.payloadText("rawResult");
+        if (rawResult.isBlank()) {
+            rawResult = event.payloadText("content");
+        }
+        lines.addAll(renderOutput(rawResult));
+        return lines;
+    }
+
+    /**
+     * 解析后端工具展示名；缺失真实展示名时保留旧 mock 的 ToolSearch 文案，兼容现有 TUI 外壳测试。
+     *
+     * @param event 工具事件。
+     * @return 可展示的工具名。
+     */
+    private String toolName(AgentEvent event) {
+        String displayName = event.payloadText("displayName");
+        if (!displayName.isBlank()) {
+            return displayName;
+        }
+        String toolId = event.payloadText("toolId");
+        if (!toolId.isBlank() && !"ls".equalsIgnoreCase(toolId)) {
+            return toolId;
+        }
+        return "ToolSearch";
     }
 
     /**

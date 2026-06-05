@@ -1,6 +1,6 @@
 package com.codingx.cli;
 
-import com.codingx.cli.agent.MockAgentEventSource;
+import com.codingx.cli.backend.BackendChatEventSource;
 import com.codingx.cli.command.CliCommandRunner;
 import com.codingx.cli.config.CliConfigStore;
 import com.codingx.cli.render.TerminalRenderer;
@@ -9,7 +9,7 @@ import com.codingx.cli.tui.CodingXTuiLauncher;
 import java.nio.file.Path;
 
 /**
- * CodingX 独立终端入口，第一阶段负责启动本地 CLI 命令分发。
+ * CodingX 独立终端入口，负责组装用户配置、后端聊天流事件源和 TUI 命令分发。
  */
 public final class CodingXCli {
 
@@ -31,11 +31,12 @@ public final class CodingXCli {
      * @param args 命令行参数。
      */
     public static void main(String[] args) {
+        CliConfigStore configStore = new CliConfigStore(Path.of(System.getProperty("user.home")));
         CliCommandRunner runner = new CliCommandRunner(
-            new CliConfigStore(Path.of(System.getProperty("user.home"))),
+            configStore,
             new CodingXTuiLauncher(
                 Path.of(System.getProperty("user.dir")),
-                new MockAgentEventSource(),
+                new BackendChatEventSource(configStore),
                 new TerminalRenderer()
             )
         );

@@ -4,7 +4,7 @@ import java.nio.file.Path;
 import java.util.List;
 
 /**
- * Agent 事件来源边界；MVP 使用本地 mock，后续可替换为后端 Agent API 客户端。
+ * Agent 事件来源边界；生产环境由后端聊天流客户端实现，测试可继续使用本地 mock。
  */
 public interface AgentEventSource {
 

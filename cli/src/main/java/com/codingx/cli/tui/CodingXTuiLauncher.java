@@ -40,6 +40,8 @@ public class CodingXTuiLauncher implements TuiLauncher {
     @Override
     public void launch() {
         CodingXTuiModel model = new CodingXTuiModel(workspace, eventSource, renderer);
-        new Program(model).withAltScreen().run();
+        Program program = new Program(model);
+        model.setProgram(program);
+        program.withAltScreen().run();
     }
 }

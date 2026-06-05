@@ -3,11 +3,13 @@ package com.codingx.cli.tui;
 import com.codingx.cli.agent.AgentEvent;
 import com.codingx.cli.agent.AgentEventSource;
 import com.codingx.cli.agent.AgentEventType;
+import com.codingx.cli.agent.StreamingAgentEventSource;
 import com.codingx.cli.render.TerminalRenderer;
 import com.williamcallahan.tui4j.compat.bubbletea.Command;
 import com.williamcallahan.tui4j.compat.bubbletea.KeyPressMessage;
 import com.williamcallahan.tui4j.compat.bubbletea.Message;
 import com.williamcallahan.tui4j.compat.bubbletea.Model;
+import com.williamcallahan.tui4j.compat.bubbletea.Program;
 import com.williamcallahan.tui4j.compat.bubbletea.QuitMessage;
 import com.williamcallahan.tui4j.compat.bubbletea.UpdateResult;
 import com.williamcallahan.tui4j.compat.bubbletea.WindowSizeMessage;
@@ -19,6 +21,8 @@ import com.williamcallahan.tui4j.compat.bubbles.viewport.Viewport;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /**
  * CodingX TUI 的 Bubble Tea 模型，维护截图风格 header、transcript、输入框和状态栏。
@@ -31,12 +35,12 @@ public class CodingXTuiModel implements Model {
     private static final String GAP = System.lineSeparator() + System.lineSeparator();
 
     /**
-     * 当前 CLI 工作区，后续真实 Agent API 会把它作为 session workspace。
+     * 当前 CLI 工作区，真实后端聊天流会把它作为 local runtime 的 repositoryPath。
      */
     private final Path workspace;
 
     /**
-     * Agent 事件来源；当前使用 mock，后续替换为后端事件流客户端。
+     * Agent 事件来源；生产环境是后端聊天流客户端，测试环境可替换为本地 mock。
      */
     private final AgentEventSource eventSource;
 
@@ -71,9 +75,19 @@ public class CodingXTuiModel implements Model {
     private final List<String> timelineLines;
 
     /**
-     * 当前展示模型名；mock 阶段固定为 GLM-5.1。
+     * 后端流消费线程池；真实 SSE 读取不能阻塞 tui4j 主更新循环。
+     */
+    private final ExecutorService streamExecutor;
+
+    /**
+     * 当前展示模型名；真实模型选择由后端聊天链路决定，这里先展示默认终端标签。
      */
     private final String modelName;
+
+    /**
+     * tui4j Program 引用，用于后台 SSE 线程把事件送回主更新循环。
+     */
+    private Program program;
 
     /**
      * 本地计划模式开关，第一阶段只影响状态栏文案。
@@ -99,6 +113,11 @@ public class CodingXTuiModel implements Model {
         this.viewport = Viewport.create(80, 18);
         this.textarea = new Textarea();
         this.timelineLines = new ArrayList<>();
+        this.streamExecutor = Executors.newSingleThreadExecutor(runnable -> {
+            Thread thread = new Thread(runnable, "codingx-tui-stream");
+            thread.setDaemon(true);
+            return thread;
+        });
         this.modelName = "GLM-5.1";
         this.planMode = true;
         this.status = "ready";
@@ -131,6 +150,15 @@ public class CodingXTuiModel implements Model {
     }
 
     /**
+     * 注入 tui4j Program；后台流线程只能通过 Program.send 回到主线程更新 TUI 状态。
+     *
+     * @param program 当前运行中的 tui4j Program。
+     */
+    public void setProgram(Program program) {
+        this.program = program;
+    }
+
+    /**
      * 处理按键、窗口尺寸和子组件事件。
      *
      * @param msg tui4j 消息。
@@ -138,6 +166,11 @@ public class CodingXTuiModel implements Model {
      */
     @Override
     public UpdateResult<? extends Model> update(Message msg) {
+        if (msg instanceof AgentEventsMessage agentEventsMessage) {
+            appendAgentEvents(agentEventsMessage.events());
+            return UpdateResult.from(this, null);
+        }
+
         if (msg instanceof WindowSizeMessage windowSizeMessage) {
             resize(windowSizeMessage.width(), windowSizeMessage.height());
         }
@@ -149,6 +182,7 @@ public class CodingXTuiModel implements Model {
         if (msg instanceof KeyPressMessage keyPressMessage) {
             String key = keyPressMessage.key();
             if ("ctrl+c".equals(key) || "esc".equals(key)) {
+                streamExecutor.shutdownNow();
                 return UpdateResult.from(this, QuitMessage::new);
             }
             if ("shift+tab".equals(key) || keyPressMessage.type() == KeyType.KeyShiftTab) {
@@ -193,12 +227,42 @@ public class CodingXTuiModel implements Model {
 
         status = "running";
         appendUserLine(normalizedTask);
-        List<AgentEvent> events = eventSource.startTurn(normalizedTask, workspace);
+        if (eventSource instanceof StreamingAgentEventSource streamingEventSource && program != null) {
+            // 真实后端 SSE 在后台线程消费；每个事件通过 Program.send 回到 update()，避免跨线程直接改 UI 状态。
+            streamExecutor.submit(() -> streamingEventSource.startTurn(
+                normalizedTask,
+                workspace,
+                event -> program.send(new AgentEventsMessage(List.of(event)))
+            ));
+            refreshViewport();
+            return;
+        }
+
+        // 单测和 mock 事件源仍走同步路径，便于不启动真实 Program 也能验证完整 transcript。
+        appendAgentEvents(eventSource.startTurn(normalizedTask, workspace));
+        refreshViewport();
+    }
+
+    /**
+     * 追加 Agent 事件并根据终态事件更新底部状态栏。
+     *
+     * @param events 后端或 mock 返回的事件。
+     */
+    private void appendAgentEvents(List<AgentEvent> events) {
         for (String line : transcriptRenderer.render(events)) {
             appendLine(line);
         }
-        status = events.stream().anyMatch(event -> event.eventType() == AgentEventType.ERROR) ? "error" : "completed";
-        refreshViewport();
+        if (events.stream().anyMatch(event -> event.eventType() == AgentEventType.ERROR)) {
+            status = "error";
+            return;
+        }
+        if (events.stream().anyMatch(event -> event.eventType() == AgentEventType.TURN_INTERRUPTED)) {
+            status = "interrupted";
+            return;
+        }
+        if (events.stream().anyMatch(event -> event.eventType() == AgentEventType.TURN_COMPLETED)) {
+            status = "completed";
+        }
     }
 
     /**

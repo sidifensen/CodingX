@@ -3,7 +3,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.codingx.chat.infrastructure.persistence.dataobject.ChatConversationDO;
 import com.codingx.chat.infrastructure.persistence.dataobject.ChatMessageDO;
-import com.codingx.task.infrastructure.persistence.dataobject.TaskDO;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -16,8 +15,7 @@ class TableNameMappingTest {
      */
     @Test
     void persistenceObjectsUsePrefixFreeTableNames() {
-
-        assertEquals("task", tableNameOf(TaskDO.class));
+        // 任务表已从聊天运行模型中移除；这里仅保留仍存在的持久化对象映射样例。
         assertEquals("chat_conversation", tableNameOf(ChatConversationDO.class));
         assertEquals("chat_message", tableNameOf(ChatMessageDO.class));
     }

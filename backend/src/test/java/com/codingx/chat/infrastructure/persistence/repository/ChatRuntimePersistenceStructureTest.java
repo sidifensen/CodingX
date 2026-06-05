@@ -1,6 +1,7 @@
 package com.codingx.chat.infrastructure.persistence.repository;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -101,6 +102,29 @@ class ChatRuntimePersistenceStructureTest {
             assertTrue(sql.contains("是否启用聊天歧义引导"), "配置说明必须为中文");
             assertTrue(sql.contains("DECIMAL"), "比例和边界配置必须声明为 DECIMAL 类型");
         }
+    }
+
+    /**
+     * 聊天运行状态只能由 chat_execution_run 承担，基线结构不得再保留旧任务表定义。
+     *
+     * @throws Exception schema.sql 缺失或内容不符合运行时表契约时抛出。
+     */
+    @Test
+    void schemaUsesChatExecutionRunWithoutLegacyTaskTables() throws Exception {
+        String schemaSql = Files.readString(Path.of("src/main/resources/db/schema.sql"), StandardCharsets.UTF_8);
+
+        assertTrue(
+            schemaSql.contains("CREATE TABLE IF NOT EXISTS chat_execution_run ("),
+            "聊天运行状态权威表 chat_execution_run 必须保留"
+        );
+        assertFalse(
+            schemaSql.contains("CREATE TABLE IF NOT EXISTS task ("),
+            "schema.sql 不应再定义旧 task 表"
+        );
+        assertFalse(
+            schemaSql.contains("CREATE TABLE IF NOT EXISTS task_expert ("),
+            "schema.sql 不应再定义旧 task_expert 表"
+        );
     }
 
     /**

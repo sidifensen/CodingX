@@ -1,4 +1,4 @@
-﻿package com.codingx.chat.application.service;
+package com.codingx.chat.application.service;
 import cn.hutool.core.date.DateUtil;
 import cn.hutool.core.collection.CollUtil;
 import cn.hutool.core.util.IdUtil;
@@ -22,8 +22,6 @@ import com.codingx.chat.domain.port.ChatStreamPublisher;
 import com.codingx.common.error.ErrorMessageCatalog;
 import com.codingx.common.exception.ForbiddenException;
 import com.codingx.common.support.ai.AiToolCall;
-import com.codingx.expert.domain.model.ChatExpert;
-import com.codingx.expert.domain.repository.ChatExpertRepository;
 import com.codingx.expert.application.service.ChatExpertContextService;
 import com.codingx.mcp.application.service.ChatMcpExecutionService;
 import com.codingx.mcp.application.service.ChatMcpQueryService;
@@ -113,8 +111,6 @@ public class ChatApplicationService {
     private final ChatMcpRepository chatMcpRepository;
     /** 技能绑定仓储，供重新生成时复用原始 run 的技能选择 */
     private final ChatSkillRepository chatSkillRepository;
-    /** 专家绑定仓储，供重新生成时复用原始 run 的专家选择 */
-    private final ChatExpertRepository chatExpertRepository;
     /** 附件服务，校验附件归属并绑定到当前消息 */
     private final ChatAttachmentService chatAttachmentService;
     /** 意图节点仓储，读取意图节点配置（类型、Prompt、MCP 工具映射） */
@@ -588,7 +584,8 @@ public class ChatApplicationService {
             .filter(this::isReusableRun)
             .max(Comparator.comparing(ChatExecutionRun::getCreatedAt, Comparator.nullsLast(Comparator.naturalOrder()))
                 .thenComparing(ChatExecutionRun::getId, Comparator.nullsLast(Comparator.naturalOrder())))
-            .map(run -> run.getTaskId() == null ? run.getId() : run.getTaskId())
+            // runtime_context 步骤以 chat_execution_run.id 为外键，不能再回退到兼容 taskId。
+            .map(ChatExecutionRun::getId)
             .orElse(null);
     }
 
@@ -625,15 +622,8 @@ public class ChatApplicationService {
         if (sourceRunId == null) {
             return null;
         }
-        String contextExpertCode = ChatRunContextStepSupport.parseContext(chatExecutionStepRepository.findByRunId(sourceRunId)).expertCode();
-        if (StrUtil.isNotBlank(contextExpertCode)) {
-            return contextExpertCode;
-        }
-        return chatExpertRepository.findByTaskId(sourceRunId).stream()
-            .map(ChatExpert::getExpertCode)
-            .filter(StrUtil::isNotBlank)
-            .findFirst()
-            .orElse(null);
+        // 专家选择随 run 写入隐藏 runtime_context 步骤；旧 task_expert 表已删除，缺失时不再回退。
+        return ChatRunContextStepSupport.parseContext(chatExecutionStepRepository.findByRunId(sourceRunId)).expertCode();
     }
 
     /**
@@ -645,7 +635,6 @@ public class ChatApplicationService {
      */
     private void bindSelectedContextToRun(Long runId, List<String> selectedMcpCodes, List<String> selectedSkillCodes, String selectedExpertCode) {
         saveRunCapabilityContext(runId, selectedMcpCodes, selectedSkillCodes, selectedExpertCode);
-        chatExpertRepository.bindTaskExpert(runId, selectedExpertCode);
     }
 
     /**
@@ -2486,7 +2475,9 @@ public class ChatApplicationService {
             .build();
         chatExecutionRunRepository.save(run);
         log.info(
-            "执行收口: 状态={}, 意图={}, 搜索={}, 产物={}, 错误={}",
+            "执行收口: runId={}, 会话={}, 状态={}, 意图={}, 搜索={}, 产物={}, 错误={}",
+            runId,
+            conversation.getId(),
             status,
             intentCode,
             searchEnabled,

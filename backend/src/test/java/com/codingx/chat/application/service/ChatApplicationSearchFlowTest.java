@@ -1,6 +1,7 @@
 package com.codingx.chat.application.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
@@ -9,6 +10,7 @@ import static org.mockito.Mockito.when;
 import com.codingx.chat.application.command.SendChatMessageCommand;
 import com.codingx.chat.domain.model.ChatConversation;
 import com.codingx.chat.domain.model.ChatConversationStatus;
+import com.codingx.chat.domain.model.ChatExecutionStep;
 import com.codingx.chat.domain.model.ChatIntentNode;
 import com.codingx.chat.domain.model.ChatMessage;
 import com.codingx.chat.domain.repository.ChatConversationRepository;
@@ -284,10 +286,13 @@ class ChatApplicationSearchFlowTest {
         chatApplicationService.sendMessage(new SendChatMessageCommand(1L, "请搜索 Spring Boot SSE", false), 1002L);
 
         Mockito.verify(webSearchExecutionService, Mockito.never()).search(any());
-        Mockito.verify(chatExecutionStepRepository, Mockito.never()).save(any());
+        ChatRunContextStepSupport.RunContext runContext = assertOnlyRunContextStepSaved();
+        assertEquals(List.of(), runContext.mcpCodes());
+        assertEquals(List.of(), runContext.skillCodes());
+        assertNull(runContext.expertCode());
         Mockito.verify(searchReferenceCollector, Mockito.never()).collect(any(), any(), any(), any());
         Mockito.verify(documentArtifactService, Mockito.never()).createDocxArtifact(any(), any(), any(), any());
-        verify(chatStreamPublisher).publishAssistantCompleted(1L, "普通回答", "SSE搜索");
+        verify(chatStreamPublisher).publishAssistantCompleted(eq(1L), any(Long.class), eq("普通回答"), eq("SSE搜索"));
         ChatExecutionContext.clear();
     }
 
@@ -335,12 +340,26 @@ class ChatApplicationSearchFlowTest {
         );
 
         Mockito.verify(webSearchExecutionService, Mockito.never()).search(any());
-        Mockito.verify(chatExecutionStepRepository, Mockito.never()).save(any());
+        ChatRunContextStepSupport.RunContext runContext = assertOnlyRunContextStepSaved();
+        assertEquals(List.of(), runContext.mcpCodes());
+        assertEquals(List.of("web-access"), runContext.skillCodes());
+        assertNull(runContext.expertCode());
         Mockito.verify(searchReferenceCollector, Mockito.never()).collect(any(), any(), any(), any());
         Mockito.verify(documentArtifactService, Mockito.never()).createDocxArtifact(any(), any(), any(), any());
         verify(chatSkillContextService).buildSkillContext(List.of("web-access"));
-        verify(chatStreamPublisher).publishAssistantCompleted(1L, "技能上下文回答", "技能搜索");
+        verify(chatStreamPublisher).publishAssistantCompleted(eq(1L), any(Long.class), eq("技能上下文回答"), eq("技能搜索"));
         ChatExecutionContext.clear();
+    }
+
+    /**
+     * 禁用搜索或交给技能处理时仍要保存隐藏运行上下文，但不能额外写入搜索业务步骤。
+     */
+    private ChatRunContextStepSupport.RunContext assertOnlyRunContextStepSaved() {
+        ArgumentCaptor<ChatExecutionStep> stepCaptor = ArgumentCaptor.forClass(ChatExecutionStep.class);
+        Mockito.verify(chatExecutionStepRepository, Mockito.times(1)).save(stepCaptor.capture());
+        ChatExecutionStep step = stepCaptor.getValue();
+        assertEquals(ChatRunContextStepSupport.STEP_TYPE, step.getStepType());
+        return ChatRunContextStepSupport.parseContext(List.of(step));
     }
 }
 

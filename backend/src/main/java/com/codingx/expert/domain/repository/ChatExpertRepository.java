@@ -63,17 +63,4 @@ public interface ChatExpertRepository {
      */
     void softDeleteById(Long id);
 
-    /**
-     * 按运行任务标识读取绑定专家。
-     * @param taskId 任务标识（当前等价于 runId）。
-     * @return 专家列表。
-     */
-    List<ChatExpert> findByTaskId(Long taskId);
-
-    /**
-     * 绑定任务与专家编码，会先清理旧绑定再写入新绑定。
-     * @param taskId 任务标识。
-     * @param expertCode 专家编码。
-     */
-    void bindTaskExpert(Long taskId, String expertCode);
 }

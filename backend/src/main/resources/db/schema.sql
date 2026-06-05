@@ -67,38 +67,6 @@ COMMENT ON COLUMN workspace.created_at IS '记录创建时间';
 COMMENT ON COLUMN workspace.updated_at IS '记录最后更新时间';
 COMMENT ON COLUMN workspace.deleted IS '逻辑删除标记，0 表示未删除，1 表示已删除';
 
-CREATE TABLE IF NOT EXISTS task (
-    id BIGINT PRIMARY KEY,
-    title VARCHAR(255) NOT NULL,
-    description TEXT,
-    status VARCHAR(32) NOT NULL,
-    runtime_type VARCHAR(32) NOT NULL,
-    workspace_id BIGINT,
-    created_by BIGINT,
-    started_at TIMESTAMP,
-    finished_at TIMESTAMP,
-    error_message TEXT,
-    summary TEXT,
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    deleted SMALLINT NOT NULL DEFAULT 0
-);
-COMMENT ON TABLE task IS '任务表，存储任务标题、执行状态、运行类型与结果摘要';
-COMMENT ON COLUMN task.id IS '任务主键 ID';
-COMMENT ON COLUMN task.title IS '任务标题';
-COMMENT ON COLUMN task.description IS '任务详细描述';
-COMMENT ON COLUMN task.status IS '任务当前状态';
-COMMENT ON COLUMN task.runtime_type IS '任务运行时类型';
-COMMENT ON COLUMN task.workspace_id IS '关联工作空间 ID';
-COMMENT ON COLUMN task.created_by IS '任务创建人用户 ID';
-COMMENT ON COLUMN task.started_at IS '任务开始执行时间';
-COMMENT ON COLUMN task.finished_at IS '任务执行完成时间';
-COMMENT ON COLUMN task.error_message IS '任务失败时的错误信息';
-COMMENT ON COLUMN task.summary IS '任务执行结果摘要';
-COMMENT ON COLUMN task.created_at IS '记录创建时间';
-COMMENT ON COLUMN task.updated_at IS '记录最后更新时间';
-COMMENT ON COLUMN task.deleted IS '逻辑删除标记，0 表示未删除，1 表示已删除';
-
 CREATE TABLE IF NOT EXISTS chat_conversation (
     id BIGINT PRIMARY KEY,
     title VARCHAR(255) NOT NULL,
@@ -733,21 +701,7 @@ COMMENT ON COLUMN expert.created_at IS '创建时间';
 COMMENT ON COLUMN expert.updated_at IS '更新时间';
 COMMENT ON COLUMN expert.deleted IS '是否删除 0正常 1删除';
 
-CREATE TABLE IF NOT EXISTS task_expert (
-    id BIGINT PRIMARY KEY,
-    task_id BIGINT NOT NULL,
-    expert_code VARCHAR(128) NOT NULL,
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-COMMENT ON TABLE task_expert IS '任务专家绑定表';
-COMMENT ON COLUMN task_expert.id IS '主键ID';
-COMMENT ON COLUMN task_expert.task_id IS '任务ID';
-COMMENT ON COLUMN task_expert.expert_code IS '专家编码';
-COMMENT ON COLUMN task_expert.created_at IS '创建时间';
-
-CREATE INDEX IF NOT EXISTS idx_task_created_by ON task (created_by, created_at DESC);
 CREATE UNIQUE INDEX IF NOT EXISTS uk_sys_user_email ON sys_user (email) WHERE email IS NOT NULL;
-CREATE INDEX IF NOT EXISTS idx_task_status ON task (status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_chat_conversation_user ON chat_conversation (created_by, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_chat_conversation_workspace_user ON chat_conversation (created_by, workspace_id, pinned DESC, updated_at DESC, id DESC);
 CREATE INDEX IF NOT EXISTS idx_chat_conversation_user_pinned_updated ON chat_conversation (created_by, pinned DESC, updated_at DESC, id DESC);
@@ -780,5 +734,3 @@ CREATE INDEX IF NOT EXISTS idx_tool_enabled_sort ON tool (enabled, sort_no ASC);
 CREATE INDEX IF NOT EXISTS idx_skill_enabled_sort ON skill (enabled, sort_no ASC);
 CREATE INDEX IF NOT EXISTS idx_skill_uploaded_at ON skill (uploaded_at DESC);
 CREATE INDEX IF NOT EXISTS idx_expert_enabled_sort ON expert (enabled, sort_no ASC);
-CREATE INDEX IF NOT EXISTS idx_task_expert_task ON task_expert (task_id, created_at ASC);
-CREATE INDEX IF NOT EXISTS idx_task_expert_code ON task_expert (expert_code);

@@ -14,6 +14,7 @@ import cn.dev33.satoken.stp.StpUtil;
 import com.codingx.chat.application.command.CreateConversationCommand;
 import com.codingx.chat.application.service.ChatConversationApplicationService;
 import com.codingx.chat.application.service.chat.ChatStreamExecutionService;
+import com.codingx.chat.application.service.chat.ChatStreamRequestApplicationService;
 import com.codingx.chat.application.service.ChatWorkspaceBindingService;
 import com.codingx.mcp.application.service.ChatMcpQueryService;
 import com.codingx.chat.domain.model.ChatConversation;
@@ -26,6 +27,7 @@ import com.codingx.mcp.domain.model.ChatMcp;
 import com.codingx.mcp.domain.repository.ChatMcpRepository;
 import com.codingx.skill.domain.repository.ChatSkillRepository;
 import java.util.List;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -84,10 +86,23 @@ class ChatStreamControllerTest {
     private ChatExpertRepository chatExpertRepository;
 
     /**
-     * 被测控制器。
+     * 被测应用服务，保留真实 meta 构建逻辑以覆盖 Controller 到应用层的流入口契约。
      */
     @InjectMocks
+    private ChatStreamRequestApplicationService chatStreamRequestApplicationService;
+
+    /**
+     * 被测控制器。
+     */
     private ChatStreamController chatStreamController;
+
+    /**
+     * 每个用例都使用真实应用服务构造 Controller，避免 mock 掉初始 meta 事件的兼容字段。
+     */
+    @BeforeEach
+    void setUp() {
+        chatStreamController = new ChatStreamController(chatStreamRequestApplicationService);
+    }
 
     /**
      * 单次 SSE 入口应先注册 emitter，再触发应用服务发送消息。
@@ -131,7 +146,10 @@ class ChatStreamControllerTest {
                     && command.attachmentIds().isEmpty()),
                 eq(1001L)
             );
-            // 后台任务 ID 必须与 SSE meta 中的 taskId 一致，前端才能用同一标识追踪运行态。
+            // runId 是新的运行标识，taskId 仅作为兼容字段保留，两者必须同值以避免前端分叉追踪。
+            assertEquals(taskIdCaptor.getValue(), metaPayload.get("runId"));
+            assertEquals(metaPayload.get("runId"), metaPayload.get("taskId"));
+            // 后台任务兼容 ID 必须与 SSE meta 中的 taskId 一致，旧前端才能用同一标识追踪运行态。
             assertEquals(metaPayload.get("taskId"), taskIdCaptor.getValue());
         }
     }

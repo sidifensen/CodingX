@@ -80,7 +80,7 @@ public class ChatWorkspaceQueryService {
     }
 
     /**
-     * 返回当前会话最新运行任务绑定的技能列表，供工作区展示“当前技能”。
+     * 返回当前会话最新 run 上下文记录的技能列表，供工作区展示“当前技能”。
      * @param conversationId 会话标识。
      * @return 技能列表。
      */
@@ -95,7 +95,7 @@ public class ChatWorkspaceQueryService {
     }
 
     /**
-     * 返回当前会话最新运行任务绑定的 MCP 列表，供工作区展示“当前 MCP”。
+     * 返回当前会话最新 run 上下文记录的 MCP 列表，供工作区展示“当前 MCP”。
      * @param conversationId 会话标识。
      * @return MCP 列表。
      */
@@ -110,7 +110,7 @@ public class ChatWorkspaceQueryService {
     }
 
     /**
-     * 返回当前会话最新运行任务绑定的专家列表，供工作区展示“当前专家”。
+     * 返回当前会话最新 run 上下文记录的专家列表，供工作区展示“当前专家”。
      * @param conversationId 会话标识。
      * @return 专家列表。
      */
@@ -119,11 +119,12 @@ public class ChatWorkspaceQueryService {
             .map(run -> {
                 ChatRunContextStepSupport.RunContext context =
                     ChatRunContextStepSupport.parseContext(chatExecutionStepRepository.findByRunId(run.getId()));
-                if (context.expertCode() != null) {
-                    ChatExpert expert = chatExpertRepository.findByExpertCode(context.expertCode());
-                    return expert == null ? List.<ChatExpert>of() : List.of(expert);
+                // 专家选择只从隐藏 runtime_context 步骤回放；旧 task_expert 表已删除，缺失时直接返回空。
+                if (context.expertCode() == null || context.expertCode().isBlank()) {
+                    return List.<ChatExpert>of();
                 }
-                return chatExpertRepository.findByTaskId(run.getTaskId() == null ? run.getId() : run.getTaskId());
+                ChatExpert expert = chatExpertRepository.findByExpertCode(context.expertCode());
+                return expert == null ? List.<ChatExpert>of() : List.of(expert);
             })
             .orElse(List.of());
     }

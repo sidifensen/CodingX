@@ -93,10 +93,10 @@ class ChatWorkspaceQueryServiceTest {
     }
 
     /**
-     * 当前会话存在任务技能绑定时应返回技能列表供右栏展示。
+     * 当前会话存在 run 上下文技能编码时应返回技能列表供右栏展示。
      */
     @Test
-    void listCurrentSkillsReturnsBoundSkillsFromLatestTask() {
+    void listCurrentSkillsReturnsContextSkillsFromLatestRun() {
         when(chatExecutionRunRepository.findByConversationId(2001L)).thenReturn(List.of(
             run(5002L, LocalDateTime.of(2026, 5, 15, 10, 5))
         ));
@@ -119,10 +119,10 @@ class ChatWorkspaceQueryServiceTest {
     }
 
     /**
-     * 当前会话存在任务 MCP 绑定时应返回 MCP 列表供工作区展示。
+     * 当前会话存在 run 上下文 MCP 编码时应返回 MCP 列表供工作区展示。
      */
     @Test
-    void listCurrentMcpsReturnsBoundMcpsFromLatestTask() {
+    void listCurrentMcpsReturnsContextMcpsFromLatestRun() {
         when(chatExecutionRunRepository.findByConversationId(2001L)).thenReturn(List.of(
             run(5002L, LocalDateTime.of(2026, 5, 15, 10, 5))
         ));
@@ -145,16 +145,24 @@ class ChatWorkspaceQueryServiceTest {
     }
 
     /**
-     * 当前会话存在任务专家绑定时应返回专家列表供工作区展示。
+     * 当前会话存在运行上下文专家编码时应返回专家列表供工作区展示。
      */
     @Test
-    void listCurrentExpertsReturnsBoundExpertsFromLatestTask() {
+    void listCurrentExpertsReturnsContextExpertsFromLatestRun() {
         when(chatExecutionRunRepository.findByConversationId(2001L)).thenReturn(List.of(
             run(5002L, LocalDateTime.of(2026, 5, 15, 10, 5))
         ));
-        when(chatExpertRepository.findByTaskId(5002L)).thenReturn(List.of(
-            ChatExpert.builder().id(1L).expertCode("solution-architect").displayName("解决方案架构师").category("研发架构").enabled(1).sortNo(1).build()
+        when(chatExecutionStepRepository.findByRunId(5002L)).thenReturn(List.of(
+            ChatExecutionStep.builder()
+                .id(23L)
+                .runId(5002L)
+                .stepType(ChatRunContextStepSupport.STEP_TYPE)
+                .metadataJson("{\"expertCode\":\"solution-architect\"}")
+                .build()
         ));
+        when(chatExpertRepository.findByExpertCode("solution-architect")).thenReturn(
+            ChatExpert.builder().id(1L).expertCode("solution-architect").displayName("解决方案架构师").category("研发架构").enabled(1).sortNo(1).build()
+        );
 
         List<ChatExpert> experts = chatWorkspaceQueryService.listCurrentExperts(2001L);
 

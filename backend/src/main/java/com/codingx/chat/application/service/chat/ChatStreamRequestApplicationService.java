@@ -92,16 +92,16 @@ public class ChatStreamRequestApplicationService {
         String selectedExpertCode = resolveExpertCode(request.expertCode());
         List<Long> selectedAttachmentIds = resolveAttachmentIds(request.attachmentIds());
 
-        // 步骤 4：注册 SSE 连接并先推送 meta 事件，前端据此初始化任务、会话和运行态展示。
+        // 步骤 4：注册 SSE 连接并先推送 meta 事件，前端据此初始化运行、会话和兼容任务态展示。
         SseEmitter emitter = chatSseRegistry.register(actualConversationId);
-        Long taskId = IdUtil.getSnowflakeNextId();
+        Long runId = IdUtil.getSnowflakeNextId();
         chatSseRegistry.publish(
             actualConversationId,
             "meta",
             buildMetaPayload(
                 actualConversationId,
                 deepThinkingEnabled,
-                taskId,
+                runId,
                 selectedMcpCodes,
                 selectedSkillCodes,
                 selectedExpertCode,
@@ -115,7 +115,7 @@ public class ChatStreamRequestApplicationService {
 
         // 步骤 5：构建发送命令并交给后台执行服务，Controller 不参与运行时编排。
         chatStreamExecutionService.dispatch(
-            taskId,
+            runId,
             buildSendCommand(
                 actualConversationId,
                 actualQuestion,
@@ -212,7 +212,7 @@ public class ChatStreamRequestApplicationService {
      * 构建 SSE meta 事件载荷。
      * @param conversationId 最终会话标识。
      * @param deepThinkingEnabled 是否深度思考。
-     * @param taskId 后台任务标识。
+     * @param runId 后台运行标识，兼容期同步写入 taskId。
      * @param selectedMcpCodes 本轮 MCP 编码列表。
      * @param selectedSkillCodes 本轮技能编码列表。
      * @param selectedExpertCode 本轮专家编码。
@@ -226,7 +226,7 @@ public class ChatStreamRequestApplicationService {
     private Map<String, Object> buildMetaPayload(
         Long conversationId,
         boolean deepThinkingEnabled,
-        Long taskId,
+        Long runId,
         List<String> selectedMcpCodes,
         List<String> selectedSkillCodes,
         String selectedExpertCode,
@@ -236,11 +236,13 @@ public class ChatStreamRequestApplicationService {
         ResolvedWorkspace resolvedWorkspace,
         String repositoryPath
     ) {
-        // 步骤 1：基础 meta 字段用于前端绑定任务、能力选择和运行态展示。
+        // 步骤 1：基础 meta 字段用于前端绑定运行、能力选择和运行态展示。
         Map<String, Object> metaPayload = new java.util.LinkedHashMap<>();
         metaPayload.put("conversationId", conversationId);
         metaPayload.put("deepThinking", deepThinkingEnabled);
-        metaPayload.put("taskId", taskId);
+        metaPayload.put("runId", runId);
+        // taskId 是旧前端兼容字段，值必须与 runId 同步，避免刷新续流期间出现两套标识。
+        metaPayload.put("taskId", runId);
         metaPayload.put("mcpCodes", selectedMcpCodes);
         metaPayload.put("skillCodes", selectedSkillCodes);
         metaPayload.put("expertCode", selectedExpertCode);

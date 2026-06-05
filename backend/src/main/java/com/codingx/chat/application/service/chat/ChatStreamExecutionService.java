@@ -14,12 +14,6 @@ import com.codingx.chat.domain.repository.ChatConversationRepository;
 import com.codingx.chat.domain.repository.ChatExecutionRunRepository;
 import com.codingx.chat.domain.port.ChatStreamPublisher;
 import com.codingx.common.exception.ConflictException;
-import com.codingx.expert.domain.repository.ChatExpertRepository;
-import com.codingx.skill.domain.repository.ChatSkillRepository;
-import com.codingx.mcp.domain.repository.ChatMcpRepository;
-import com.codingx.task.domain.model.RuntimeType;
-import com.codingx.task.domain.model.Task;
-import com.codingx.task.domain.repository.TaskRepository;
 import com.codingx.tool.application.service.ChatToolExecutionContext;
 import java.time.LocalDateTime;
 import java.nio.file.Path;
@@ -40,31 +34,23 @@ import com.codingx.chat.infrastructure.stream.NoopChatStreamPublisher;
 @Slf4j
 public class ChatStreamExecutionService {
 
-    /** 聊天主应用服务，承接异步任务中真正的消息处理链路。 */
+    /** 聊天主应用服务，承接后台线程中真正的消息处理链路。 */
     private final ChatApplicationService chatApplicationService;
-    /** 运行态守卫服务，用于提交前检查会话是否已有执行中任务。 */
+    /** 运行态守卫服务，用于提交前检查会话是否已有执行中的 run。 */
     private final ChatRuntimeGuardService chatRuntimeGuardService;
-    /** Trace 记录服务，用于异步任务失败或本地执行时收口链路状态。 */
+    /** Trace 记录服务，用于后台执行失败或本地执行时收口链路状态。 */
     private final ConversationTraceRecordService conversationTraceRecordService;
     /** 执行运行仓储，用于恢复重新生成时的原始 run 上下文。 */
     private final ChatExecutionRunRepository chatExecutionRunRepository;
-    /** MCP 配置仓储，用于根据历史 run 恢复已选 MCP 工具。 */
-    private final ChatMcpRepository chatMcpRepository;
-    /** 技能仓储，用于根据历史 run 恢复已选技能编码。 */
-    private final ChatSkillRepository chatSkillRepository;
-    /** 专家仓储，用于根据历史 run 恢复已选专家编码。 */
-    private final ChatExpertRepository chatExpertRepository;
     /** 会话仓储，用于校验会话归属并读取运行目标和工作空间绑定。 */
     private final ChatConversationRepository chatConversationRepository;
-    /** 工作空间绑定服务，用于把本地任务和会话映射到真实仓库目录。 */
+    /** 工作空间绑定服务，用于把本地运行和会话映射到真实仓库目录。 */
     private final ChatWorkspaceBindingService chatWorkspaceBindingService;
-    /** 任务仓储，用于本地任务场景绑定和更新任务完成状态。 */
-    private final TaskRepository taskRepository;
     /** 流事件发布器，用于向前端推送异步执行开始、失败和完成事件。 */
     private final ChatStreamPublisher chatStreamPublisher;
     /** 聊天后台执行器，隔离 HTTP/SSE 入口线程与实际模型执行线程。 */
     private final ExecutorService executor;
-    /** 技能本地缓存服务，用于本地任务启动前同步可用技能包。 */
+    /** 技能本地缓存服务，用于云端运行启动前同步可用技能包。 */
     private final com.codingx.skill.application.service.SkillLocalCacheService skillLocalCacheService;
 
     /**
@@ -79,12 +65,8 @@ public class ChatStreamExecutionService {
         ChatRuntimeGuardService chatRuntimeGuardService,
         ConversationTraceRecordService conversationTraceRecordService,
         ChatExecutionRunRepository chatExecutionRunRepository,
-        ChatMcpRepository chatMcpRepository,
-        ChatSkillRepository chatSkillRepository,
-        ChatExpertRepository chatExpertRepository,
         ChatConversationRepository chatConversationRepository,
         ChatWorkspaceBindingService chatWorkspaceBindingService,
-        TaskRepository taskRepository,
         ChatStreamPublisher chatStreamPublisher,
         com.codingx.skill.application.service.SkillLocalCacheService skillLocalCacheService,
         @Qualifier("chatStreamExecutor")
@@ -94,12 +76,8 @@ public class ChatStreamExecutionService {
         this.chatRuntimeGuardService = chatRuntimeGuardService;
         this.conversationTraceRecordService = conversationTraceRecordService;
         this.chatExecutionRunRepository = chatExecutionRunRepository;
-        this.chatMcpRepository = chatMcpRepository;
-        this.chatSkillRepository = chatSkillRepository;
-        this.chatExpertRepository = chatExpertRepository;
         this.chatConversationRepository = chatConversationRepository;
         this.chatWorkspaceBindingService = chatWorkspaceBindingService;
-        this.taskRepository = taskRepository;
         this.chatStreamPublisher = chatStreamPublisher;
         this.skillLocalCacheService = skillLocalCacheService;
         this.executor = executor;
@@ -113,12 +91,8 @@ public class ChatStreamExecutionService {
         ChatRuntimeGuardService chatRuntimeGuardService,
         ConversationTraceRecordService conversationTraceRecordService,
         ChatExecutionRunRepository chatExecutionRunRepository,
-        ChatMcpRepository chatMcpRepository,
-        ChatSkillRepository chatSkillRepository,
-        ChatExpertRepository chatExpertRepository,
         ChatConversationRepository chatConversationRepository,
         ChatWorkspaceBindingService chatWorkspaceBindingService,
-        TaskRepository taskRepository,
         ExecutorService executor
     ) {
         this(
@@ -126,12 +100,8 @@ public class ChatStreamExecutionService {
             chatRuntimeGuardService,
             conversationTraceRecordService,
             chatExecutionRunRepository,
-            chatMcpRepository,
-            chatSkillRepository,
-            chatExpertRepository,
             chatConversationRepository,
             chatWorkspaceBindingService,
-            taskRepository,
             new NoopChatStreamPublisher(),
             null,
             executor
@@ -148,28 +118,27 @@ public class ChatStreamExecutionService {
     }
 
     /**
-     * 按指定任务标识派发聊天处理，保证前端 meta、任务表与执行 run 使用同一个主键。
-     * @param taskId 后台任务标识。
+     * 按指定运行标识派发聊天处理；taskId 字段仅作为兼容列继续写入同一个 runId。
+     * @param runId 后台运行标识。
      * @param command 聊天消息命令。
      * @param userId 当前用户标识。
      */
-    public void dispatch(Long taskId, SendChatMessageCommand command, Long userId) {
-        // 步骤 1：本地临时运行不创建任务、run 和 Trace，直接派发内存级执行链路。
+    public void dispatch(Long runId, SendChatMessageCommand command, Long userId) {
+        // 步骤 1：本地临时运行不创建持久化 run 和 Trace，直接派发内存级执行链路。
         if (command.localOnly()) {
             log.info(
                 "聊天派发: runId={}, 会话={}, 模式=本地, 深度思考={}, MCP数={}, 技能数={}, 专家={}",
-                taskId,
+                runId,
                 command.conversationId(),
                 command.deepThinking(),
                 sizeOf(command.mcpCodes()),
                 sizeOf(command.skillCodes()),
                 command.expertCode()
             );
-            dispatchLocalOnly(taskId, command, userId);
+            dispatchLocalOnly(runId, command, userId);
             return;
         }
-        // 步骤 2：云端运行先落库任务和执行 run，保证前端 meta、后台任务和执行时间线使用同一个主键。
-        Long runId = taskId;
+        // 步骤 2：云端运行只落库执行 run，保证前端 meta、后台线程和执行时间线使用同一个主键。
         LocalDateTime now = LocalDateTime.now();
         log.info(
             "聊天派发: runId={}, 会话={}, 模式=云端, 深度思考={}, MCP数={}, 技能数={}, 专家={}",
@@ -180,9 +149,6 @@ public class ChatStreamExecutionService {
             sizeOf(command.skillCodes()),
             command.expertCode()
         );
-        Task task = createRunningTask(taskId, command, userId);
-        // Task 是可变领域对象，保存时使用快照，避免后续终态变更污染已持久化的运行态语义。
-        taskRepository.save(task.toBuilder().build());
         chatExecutionRunRepository.save(ChatExecutionRun.builder()
             .id(runId)
             .conversationId(command.conversationId())
@@ -193,8 +159,7 @@ public class ChatStreamExecutionService {
             .createdAt(now)
             .updatedAt(now)
             .build());
-        // 步骤 3：MCP 与技能选择由应用服务写入 chat_execution_step，派发层只保留专家旧表兼容。
-        chatExpertRepository.bindTaskExpert(runId, command.expertCode());
+        // 步骤 3：MCP、技能与专家选择由应用服务写入 chat_execution_step，派发层不再维护旧绑定表。
         com.codingx.chat.domain.model.ChatTraceRun traceRun = conversationTraceRecordService.startTrace("chat-entry", command.conversationId(), userId);
         AtomicReference<Future<?>> futureRef = new AtomicReference<>();
         chatRuntimeGuardService.registerCancellation(command.conversationId(), runId, () -> {
@@ -213,23 +178,22 @@ public class ChatStreamExecutionService {
                 tempSkillRoot = bindSkillDirectories(command);
                 log.info("聊天执行开始");
                 chatApplicationService.sendMessage(command, userId);
-                log.info("聊天执行结束: runId={}, 会话={}, 状态=SUCCESS", runId, command.conversationId());
-                markTaskFinished(task, command.conversationId(), null);
+                markConversationRunFinished(command.conversationId());
             } catch (ConflictException exception) {
                 // 步骤 5：队列或运行门控拒绝时记录 REJECTED，前端按业务冲突展示而不是系统错误。
                 markRunRejected(runId, command.conversationId(), exception.getMessage());
-                markTaskFinished(task, command.conversationId(), exception);
+                markConversationRunFinished(command.conversationId());
                 throw exception;
             } catch (IllegalStateException exception) {
                 // 步骤 6：已知运行态异常写入失败状态并通过 SSE 告知前端，保留原异常继续向线程池传播。
                 markRunFailed(runId, command.conversationId(), exception);
-                markTaskFinished(task, command.conversationId(), exception);
+                markConversationRunFinished(command.conversationId());
                 chatStreamPublisher.publishError(command.conversationId(), exception.getMessage());
                 throw exception;
             } catch (Throwable throwable) {
-                // 步骤 7：未知异常统一写入失败终态，避免任务和 run 长时间停留在 RUNNING。
+                // 步骤 7：未知异常统一写入失败终态，避免 run 长时间停留在 RUNNING。
                 markRunFailed(runId, command.conversationId(), throwable);
-                markTaskFinished(task, command.conversationId(), throwable);
+                markConversationRunFinished(command.conversationId());
                 chatStreamPublisher.publishError(command.conversationId(), throwable.getMessage());
                 throw throwable;
             } finally {
@@ -251,15 +215,14 @@ public class ChatStreamExecutionService {
     }
 
     /**
-     * 本地运行态只保留内存级执行生命周期，不写任务、run、trace 或能力绑定表。
+     * 本地运行态只保留内存级执行生命周期，不写 run、trace 或能力绑定表。
      * 业务意图：本地历史由客户端快照负责，后端只承担本次临时推理和工具执行。
-     * @param taskId 临时运行标识。
+     * @param runId 临时运行标识。
      * @param command 本地运行命令。
      * @param userId 当前用户标识。
      */
-    private void dispatchLocalOnly(Long taskId, SendChatMessageCommand command, Long userId) {
-        // 步骤 1：本地运行以 taskId 作为临时 runId，只注册取消句柄，不写入任务、run 或 Trace 表。
-        Long runId = taskId;
+    private void dispatchLocalOnly(Long runId, SendChatMessageCommand command, Long userId) {
+        // 步骤 1：本地运行只注册取消句柄，不写入 run 或 Trace 表。
         AtomicReference<Future<?>> futureRef = new AtomicReference<>();
         chatRuntimeGuardService.registerCancellation(command.conversationId(), runId, () -> {
             Future<?> future = futureRef.get();
@@ -276,7 +239,6 @@ public class ChatStreamExecutionService {
                 tempSkillRoot = bindSkillDirectories(command);
                 log.info("聊天执行开始");
                 chatApplicationService.sendMessage(command, userId);
-                log.info("聊天执行结束: runId={}, 会话={}, 状态=SUCCESS", runId, command.conversationId());
             } finally {
                 // 步骤 3：无论执行成功、失败或取消，都清理临时目录、运行锁和线程上下文，避免污染下一次本地运行。
                 if (tempSkillRoot != null) {
@@ -295,80 +257,10 @@ public class ChatStreamExecutionService {
     }
 
     /**
-     * 创建并启动聊天后台任务；任务运行时类型按本地仓库参数做最小区分。
-     * @param taskId 任务主键。
-     * @param command 聊天命令。
-     * @param userId 创建人。
-     * @return 已进入 RUNNING 的任务。
-     */
-    private Task createRunningTask(Long taskId, SendChatMessageCommand command, Long userId) {
-        Task task = Task.create(
-            taskId,
-            resolveTaskTitle(command),
-            "聊天会话后台执行任务",
-            StrUtil.isNotBlank(command.repositoryPath()) ? RuntimeType.LOCAL : RuntimeType.CLOUD,
-            resolveWorkspaceId(command.conversationId()),
-            userId,
-            command.skillCodes()
-        );
-        task.start();
-        return task;
-    }
-
-    /**
-     * 任务标题保留用户问题前缀，便于后续任务页定位来源会话。
-     * @param command 聊天命令。
-     * @return 任务标题。
-     */
-    private String resolveTaskTitle(SendChatMessageCommand command) {
-        String content = StrUtil.blankToDefault(command.content(), "聊天会话");
-        return content.length() > 40 ? content.substring(0, 40) : content;
-    }
-
-    /**
-     * 尝试读取会话工作空间，用于任务与工作空间建立弱绑定；读取失败不阻断执行。
-     * @param conversationId 会话标识。
-     * @return 工作空间标识。
-     */
-    private Long resolveWorkspaceId(Long conversationId) {
-        try {
-            com.codingx.chat.domain.model.ChatConversation conversation =
-                chatConversationRepository.requireById(conversationId);
-            return conversation == null ? null : conversation.getWorkspaceId();
-        } catch (Exception ignored) {
-            return null;
-        }
-    }
-
-    /**
-     * 根据当前 run 的最终状态收口任务表，确保客户端断开后仍可从任务状态恢复列表展示。
-     * @param task 后台任务。
-     * @param conversationId 会话标识。
-     * @param throwable 外层异常，可为空。
-     */
-    private void markTaskFinished(Task task, Long conversationId, Throwable throwable) {
-        ChatExecutionRun latestRun = chatExecutionRunRepository.findByConversationId(conversationId).stream()
-            .filter(run -> task.getId().equals(run.getTaskId()) || task.getId().equals(run.getId()))
-            .findFirst()
-            .orElse(null);
-        String status = latestRun == null ? null : latestRun.getStatus();
-        if (isRunSuccessful(status) && throwable == null) {
-            task.complete(latestRun.getStatus());
-        } else {
-            String message = throwable == null
-                ? latestRun == null ? null : latestRun.getErrorMessage()
-                : throwable.getMessage();
-            task.fail(message);
-        }
-        taskRepository.save(task.toBuilder().build());
-        markConversationTaskCompletionUnread(conversationId);
-    }
-
-    /**
-     * 后台任务收口后将会话提醒状态置为未读，供前端历史列表刷新后提示用户查看结果。
+     * 后台 run 收口后将会话提醒状态置为未读，供前端历史列表刷新后提示用户查看结果。
      * @param conversationId 会话标识。
      */
-    private void markConversationTaskCompletionUnread(Long conversationId) {
+    private void markConversationRunFinished(Long conversationId) {
         Optional<com.codingx.chat.domain.model.ChatConversation> conversationOptional =
             chatConversationRepository.findById(conversationId);
         if (conversationOptional == null || conversationOptional.isEmpty()) {
@@ -379,18 +271,9 @@ public class ChatStreamExecutionService {
             conversation.markTaskCompletionUnread();
             chatConversationRepository.save(conversation);
         } catch (Exception exception) {
-            // 提醒状态只影响侧栏提示，不能反向污染已经完成的后台任务终态。
-            log.warn("标记会话任务完成提醒未读失败，conversationId={}", conversationId, exception);
+            // 提醒状态只影响侧栏提示，不能反向污染已经完成的后台 run 终态。
+            log.warn("标记会话运行完成提醒未读失败，conversationId={}", conversationId, exception);
         }
-    }
-
-    /**
-     * 判断执行 run 是否为成功终态；未知或取消都按失败任务收口，避免列表继续显示运行中。
-     * @param status run 状态。
-     * @return 是否成功。
-     */
-    private boolean isRunSuccessful(String status) {
-        return StrUtil.equalsAnyIgnoreCase(status, "COMPLETED", "SUCCESS");
     }
 
     /**

@@ -1,6 +1,5 @@
 package com.codingx.expert.infrastructure.persistence.repository;
 
-import cn.hutool.core.util.IdUtil;
 import cn.hutool.core.util.StrUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
@@ -9,9 +8,7 @@ import com.codingx.chat.interfaces.response.PageResult;
 import com.codingx.expert.domain.model.ChatExpert;
 import com.codingx.expert.domain.repository.ChatExpertRepository;
 import com.codingx.expert.infrastructure.persistence.dataobject.ChatExpertDO;
-import com.codingx.expert.infrastructure.persistence.dataobject.TaskExpertDO;
 import com.codingx.expert.infrastructure.persistence.mapper.ChatExpertMapper;
-import com.codingx.expert.infrastructure.persistence.mapper.TaskExpertMapper;
 import java.time.LocalDateTime;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -28,11 +25,6 @@ public class ChatExpertRepositoryImpl implements ChatExpertRepository {
      * 专家配置 Mapper，负责访问 expert 表。
      */
     private final ChatExpertMapper chatExpertMapper;
-
-    /**
-     * 任务专家绑定 Mapper，负责访问 task_expert 兼容绑定表。
-     */
-    private final TaskExpertMapper taskExpertMapper;
 
     @Override
     public List<ChatExpert> findAll() {
@@ -128,56 +120,6 @@ public class ChatExpertRepositoryImpl implements ChatExpertRepository {
                 .set(ChatExpertDO::getUpdatedAt, LocalDateTime.now())
                 .eq(ChatExpertDO::getId, id)
         );
-    }
-
-    @Override
-    public List<ChatExpert> findByTaskId(Long taskId) {
-        // 步骤 1：空任务主键没有可查询上下文，直接返回空列表。
-        if (taskId == null) {
-            return List.of();
-        }
-        // 步骤 2：先读取任务绑定的专家编码，过滤空编码以兼容历史脏数据。
-        List<String> expertCodes = taskExpertMapper.selectList(new LambdaQueryWrapper<TaskExpertDO>()
-                .eq(TaskExpertDO::getTaskId, taskId)
-                .orderByAsc(TaskExpertDO::getId))
-            .stream()
-            .map(TaskExpertDO::getExpertCode)
-            .filter(StrUtil::isNotBlank)
-            .toList();
-        if (expertCodes.isEmpty()) {
-            return List.of();
-        }
-        // 步骤 3：按专家编码读取未删除专家配置，并按专家排序规则输出。
-        return chatExpertMapper.selectList(new LambdaQueryWrapper<ChatExpertDO>()
-                .in(ChatExpertDO::getExpertCode, expertCodes)
-                .eq(ChatExpertDO::getDeleted, 0)
-                .orderByAsc(ChatExpertDO::getSortNo)
-                .orderByAsc(ChatExpertDO::getExpertCode))
-            .stream()
-            .map(this::toDomain)
-            .toList();
-    }
-
-    @Override
-    public void bindTaskExpert(Long taskId, String expertCode) {
-        // 步骤 1：空任务主键无法绑定专家，直接忽略兼容旧调用。
-        if (taskId == null) {
-            return;
-        }
-        // 步骤 2：任务只允许绑定一个专家，写入前先清理旧绑定。
-        taskExpertMapper.delete(new LambdaQueryWrapper<TaskExpertDO>()
-            .eq(TaskExpertDO::getTaskId, taskId));
-        // 步骤 3：空专家编码表示取消绑定，不再插入新记录。
-        if (StrUtil.isBlank(expertCode)) {
-            return;
-        }
-        // 步骤 4：写入新的任务专家绑定关系。
-        TaskExpertDO dataObject = new TaskExpertDO();
-        dataObject.setId(IdUtil.getSnowflakeNextId());
-        dataObject.setTaskId(taskId);
-        dataObject.setExpertCode(expertCode.trim());
-        dataObject.setCreatedAt(LocalDateTime.now());
-        taskExpertMapper.insert(dataObject);
     }
 
     private LambdaQueryWrapper<ChatExpertDO> baseListWrapper() {

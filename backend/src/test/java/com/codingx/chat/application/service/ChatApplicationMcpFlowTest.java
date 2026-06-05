@@ -147,7 +147,7 @@ class ChatApplicationMcpFlowTest {
         }));
         verify(aiChatClient).streamChat(any(), eq(false), any(AiChatClient.StreamHandler.class));
         assertEquals(true, aiStreamInvoked.get());
-        verify(chatStreamPublisher).publishAssistantCompleted(1L, "根据天气工具结果，北京今日晴，当前温度 26.5°C。", "天气查询");
+        verify(chatStreamPublisher).publishAssistantCompleted(eq(1L), any(Long.class), eq("根据天气工具结果，北京今日晴，当前温度 26.5°C。"), eq("天气查询"));
         ArgumentCaptor<ChatMessage> captor = ArgumentCaptor.forClass(ChatMessage.class);
         verify(chatMessageRepository, org.mockito.Mockito.times(2)).save(captor.capture());
         assertEquals("根据天气工具结果，北京今日晴，当前温度 26.5°C。", captor.getAllValues().get(1).getContent());
@@ -204,7 +204,7 @@ class ChatApplicationMcpFlowTest {
             any(com.codingx.mcp.application.executor.ChatMcpProgressListener.class)
         );
         verify(aiChatClient).streamChat(any(), eq(false), any(AiChatClient.StreamHandler.class));
-        verify(chatStreamPublisher).publishAssistantCompleted(2L, "根据代码检索结果，命中 ChatController.java:95。", "代码定位");
+        verify(chatStreamPublisher).publishAssistantCompleted(eq(2L), any(Long.class), eq("根据代码检索结果，命中 ChatController.java:95。"), eq("代码定位"));
         ChatExecutionContext.clear();
     }
 }

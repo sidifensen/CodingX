@@ -13,8 +13,6 @@ import com.codingx.chat.interfaces.response.ChatAttachmentResponse;
 import com.codingx.chat.interfaces.response.ChatConversationResponse;
 import com.codingx.chat.interfaces.response.ChatMessageResponse;
 import com.codingx.chat.interfaces.response.SharedConversationResponse;
-import com.codingx.task.domain.model.Task;
-import com.codingx.task.domain.repository.TaskRepository;
 import com.codingx.workspace.infrastructure.persistence.dataobject.WorkspaceDO;
 import com.codingx.workspace.infrastructure.repository.WorkspaceRepositoryImpl;
 import java.util.List;
@@ -24,7 +22,7 @@ import org.springframework.stereotype.Service;
 
 /**
  * 负责把聊天领域对象投影为接口响应对象。
- * 该服务集中承接工作空间、任务状态、附件与用户反馈查询，避免 Controller 编排业务查询。
+ * 该服务集中承接工作空间、聊天 run 兼容状态、附件与用户反馈查询，避免 Controller 编排业务查询。
  */
 @Service
 @RequiredArgsConstructor
@@ -41,9 +39,6 @@ public class ChatConversationViewService {
 
     /** 执行记录仓储，用于从最近 run 还原后台任务投影。 */
     private final ChatExecutionRunRepository chatExecutionRunRepository;
-
-    /** 任务仓储，用于以任务表终态覆盖历史 run 的残留队列状态。 */
-    private final TaskRepository taskRepository;
 
     /**
      * 将当前登录用户可见的会话列表转换为接口响应。
@@ -111,7 +106,7 @@ public class ChatConversationViewService {
             : workspaceRepositoryImpl.findOwnedWorkspaceById(conversation.getWorkspaceId(), currentUserId);
         WorkspaceDO workspace = workspaceOptional.orElse(null);
 
-        // 步骤 2：从最近 run 与任务表计算会话后台任务投影，任务表终态优先于历史队列状态。
+        // 步骤 2：从最近聊天 run 计算兼容任务字段，字段名保留 Task 语义但不再读取任务表。
         ConversationTaskProjection taskProjection = resolveTaskProjection(conversation);
 
         // 步骤 3：合并会话基础字段、工作空间展示字段和任务投影字段，输出前端列表模型。
@@ -179,44 +174,37 @@ public class ChatConversationViewService {
     }
 
     /**
-     * 从最新执行 run 与任务表中投影会话级后台任务状态。
+     * 从最新聊天 run 投影会话级兼容任务状态。
      * @param conversation 会话领域对象。
-     * @return 会话后台任务投影。
+     * @return 来源于聊天 run 的会话后台任务投影。
      */
     private ConversationTaskProjection resolveTaskProjection(ChatConversation conversation) {
         if (conversation.getLastRunId() == null) {
             return ConversationTaskProjection.empty();
         }
 
-        // 步骤 1：优先用会话最近 run 或 task 标识匹配执行记录，兼容 lastRunId 存 runId 或 taskId 的历史数据。
+        // 步骤 1：优先用会话最近 run 或兼容 task 标识匹配执行记录，兼容 lastRunId 存 runId 或 taskId 的历史数据。
         ChatExecutionRun latestRun = chatExecutionRunRepository.findByConversationId(conversation.getId()).stream()
             .filter(run -> conversation.getLastRunId().equals(run.getId()) || conversation.getLastRunId().equals(run.getTaskId()))
             .findFirst()
             .orElse(null);
-        Long taskId = latestRun != null && latestRun.getTaskId() != null
-            ? latestRun.getTaskId()
-            : conversation.getLastRunId();
+        if (latestRun == null) {
+            return ConversationTaskProjection.empty();
+        }
 
-        // 步骤 2：读取任务表终态；任务表缺失时才回退到 run 状态，避免队列残留覆盖真实完成状态。
-        Task task = taskRepository.findById(taskId).orElse(null);
-        String taskStatus = task != null
-            ? task.getStatus().name()
-            : latestRun == null ? null : normalizeRunStatus(latestRun.getStatus(), latestRun.getQueueStatus());
-        java.time.LocalDateTime finishedAt = task != null && task.getFinishedAt() != null
-            ? task.getFinishedAt()
-            : latestRun == null ? null : latestRun.getFinishedAt();
+        // 步骤 2：兼容字段的标识来自聊天 run；taskId 兼容列缺失时回退到 run 自身标识。
+        Long runProjectionId = latestRun.getTaskId() != null ? latestRun.getTaskId() : latestRun.getId();
+        String runStatus = normalizeRunStatus(latestRun.getStatus(), latestRun.getQueueStatus());
+        java.time.LocalDateTime finishedAt = latestRun.getFinishedAt();
 
-        // 步骤 3：输出前端侧栏需要的运行中任务和最近任务字段；终态任务不再占用 activeTask。
-        if (isActiveTaskStatus(taskStatus)) {
-            return new ConversationTaskProjection(taskId, "RUNNING", taskId, "RUNNING", finishedAt);
+        // 步骤 3：运行中 run 同时填充 activeTask 与 lastTask；终态 run 只保留 lastTask 兼容字段。
+        if (isActiveRunProjectionStatus(runStatus)) {
+            return new ConversationTaskProjection(runProjectionId, "RUNNING", runProjectionId, "RUNNING", finishedAt);
         }
-        if (isTerminalTaskStatus(taskStatus)) {
-            return new ConversationTaskProjection(null, null, taskId, taskStatus, finishedAt);
+        if (isTerminalRunProjectionStatus(runStatus)) {
+            return new ConversationTaskProjection(null, null, runProjectionId, runStatus, finishedAt);
         }
-        if (latestRun != null && isActiveRunStatus(latestRun)) {
-            return new ConversationTaskProjection(taskId, "RUNNING", taskId, "RUNNING", finishedAt);
-        }
-        return new ConversationTaskProjection(null, null, taskId, taskStatus, finishedAt);
+        return new ConversationTaskProjection(null, null, runProjectionId, runStatus, finishedAt);
     }
 
     /**
@@ -229,46 +217,31 @@ public class ChatConversationViewService {
         if (StrUtil.equalsAnyIgnoreCase(runStatus, "COMPLETED", "SUCCESS")) {
             return "SUCCEEDED";
         }
+        if (StrUtil.equalsAnyIgnoreCase(runStatus, "ERROR", "FAILED", "REJECTED", "CANCELLED")) {
+            return "FAILED";
+        }
         if (StrUtil.equalsAnyIgnoreCase(runStatus, "RUNNING") || StrUtil.equalsAnyIgnoreCase(queueStatus, "WAITING", "ACQUIRED")) {
             return "RUNNING";
-        }
-        if (StrUtil.isNotBlank(runStatus)) {
-            return "FAILED";
         }
         return null;
     }
 
     /**
-     * 判断任务表状态是否仍代表后台执行中。
-     * @param taskStatus 任务状态。
+     * 判断聊天 run 投影状态是否仍代表后台执行中。
+     * @param runStatus run 投影后的兼容任务状态。
      * @return 是否运行中。
      */
-    private boolean isActiveTaskStatus(String taskStatus) {
-        return StrUtil.equalsAnyIgnoreCase(taskStatus, "RUNNING");
+    private boolean isActiveRunProjectionStatus(String runStatus) {
+        return StrUtil.equalsAnyIgnoreCase(runStatus, "RUNNING");
     }
 
     /**
-     * 判断任务表状态是否已经终结。
-     * @param taskStatus 任务状态。
+     * 判断聊天 run 投影状态是否已经终结。
+     * @param runStatus run 投影后的兼容任务状态。
      * @return 是否终态。
      */
-    private boolean isTerminalTaskStatus(String taskStatus) {
-        return StrUtil.equalsAnyIgnoreCase(taskStatus, "SUCCEEDED", "FAILED");
-    }
-
-    /**
-     * 判断 run 或队列状态是否仍代表后台执行中。
-     * @param run 执行 run。
-     * @return 是否运行中。
-     */
-    private boolean isActiveRunStatus(ChatExecutionRun run) {
-        if (StrUtil.equalsAnyIgnoreCase(run.getStatus(), "RUNNING")) {
-            return true;
-        }
-        if (StrUtil.isNotBlank(run.getStatus())) {
-            return false;
-        }
-        return StrUtil.equalsAnyIgnoreCase(run.getQueueStatus(), "WAITING", "ACQUIRED");
+    private boolean isTerminalRunProjectionStatus(String runStatus) {
+        return StrUtil.equalsAnyIgnoreCase(runStatus, "SUCCEEDED", "FAILED");
     }
 
     /**
@@ -309,12 +282,12 @@ public class ChatConversationViewService {
     }
 
     /**
-     * 会话列表中的后台任务投影。
-     * @param activeTaskId 当前运行任务标识。
-     * @param activeTaskStatus 当前运行任务状态。
-     * @param lastTaskId 最近任务标识。
-     * @param lastTaskStatus 最近任务状态。
-     * @param lastTaskFinishedAt 最近任务完成时间。
+     * 会话列表中的后台运行投影，字段名保留 Task 是为了兼容前端现有协议。
+     * @param activeTaskId 当前运行聊天 run 的兼容任务标识。
+     * @param activeTaskStatus 当前运行聊天 run 的兼容任务状态。
+     * @param lastTaskId 最近聊天 run 的兼容任务标识。
+     * @param lastTaskStatus 最近聊天 run 的兼容任务状态。
+     * @param lastTaskFinishedAt 最近聊天 run 的完成时间。
      */
     private record ConversationTaskProjection(
         Long activeTaskId,

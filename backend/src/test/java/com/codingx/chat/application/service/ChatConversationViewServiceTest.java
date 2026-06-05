@@ -1,6 +1,7 @@
 package com.codingx.chat.application.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -19,9 +20,6 @@ import com.codingx.chat.domain.repository.ChatMessageFeedbackRepository;
 import com.codingx.chat.interfaces.response.ChatConversationResponse;
 import com.codingx.chat.interfaces.response.ChatMessageResponse;
 import com.codingx.chat.interfaces.response.SharedConversationResponse;
-import com.codingx.task.domain.model.RuntimeType;
-import com.codingx.task.domain.model.Task;
-import com.codingx.task.domain.repository.TaskRepository;
 import com.codingx.workspace.infrastructure.persistence.dataobject.WorkspaceDO;
 import com.codingx.workspace.infrastructure.repository.WorkspaceRepositoryImpl;
 import java.time.LocalDateTime;
@@ -51,78 +49,118 @@ class ChatConversationViewServiceTest {
     @Mock
     private ChatExecutionRunRepository chatExecutionRunRepository;
 
-    @Mock
-    private TaskRepository taskRepository;
-
     @InjectMocks
     private ChatConversationViewService chatConversationViewService;
 
     /**
-     * 会话响应应合并工作空间类型和后台运行任务投影，供侧栏恢复运行态。
+     * 会话响应应从聊天 run 投影运行中的兼容任务字段，供侧栏恢复运行态。
      */
     @Test
-    void toConversationResponseReturnsWorkspaceAndRunningTaskProjection() {
-        Long taskId = 2054964195115945984L;
+    void toConversationResponseReturnsWorkspaceAndRunningRunProjection() {
+        Long runId = 2054964195115945984L;
         ChatConversation conversation = ChatConversation.create(2001L, "后台任务会话", 1002L, 3001L, ChatConversationStatus.ACTIVE);
-        conversation.restoreRuntimeState(LocalDateTime.of(2026, 5, 25, 10, 0, 0), taskId);
+        conversation.restoreRuntimeState(LocalDateTime.of(2026, 5, 25, 10, 0, 0), runId);
         WorkspaceDO workspace = new WorkspaceDO();
         workspace.setId(3001L);
         workspace.setName("CodingX");
         workspace.setRuntimeTarget(WorkspaceRepositoryImpl.RUNTIME_TARGET_LOCAL);
-        Task runningTask = Task.create(taskId, "后台任务会话", "聊天任务", RuntimeType.LOCAL, 3001L, 1002L);
-        runningTask.start();
         when(workspaceRepositoryImpl.findOwnedWorkspaceById(3001L, 1002L)).thenReturn(Optional.of(workspace));
         when(chatExecutionRunRepository.findByConversationId(2001L)).thenReturn(List.of(
             ChatExecutionRun.builder()
-                .id(taskId)
+                .id(runId)
                 .conversationId(2001L)
-                .taskId(taskId)
+                .taskId(runId)
                 .status("RUNNING")
                 .queueStatus("ACQUIRED")
                 .build()
         ));
-        when(taskRepository.findById(taskId)).thenReturn(Optional.of(runningTask));
 
         ChatConversationResponse response = chatConversationViewService.toConversationResponse(conversation, 1002L);
 
         assertEquals("CodingX", response.workspaceName());
         assertEquals(ChatConversationResponse.WorkspaceType.LOCAL, response.workspaceType());
-        assertEquals(taskId, response.activeTaskId());
+        assertEquals(runId, response.activeTaskId());
         assertEquals("RUNNING", response.activeTaskStatus());
-        assertEquals(taskId, response.lastTaskId());
+        assertEquals(runId, response.lastTaskId());
         assertEquals("RUNNING", response.lastTaskStatus());
     }
 
     /**
-     * 任务表终态应优先于历史 run 队列状态，避免已完成任务继续显示运行中。
+     * 已完成聊天 run 应直接投影为成功终态，历史队列状态不能覆盖 run 终态。
      */
     @Test
-    void toConversationResponsePrefersTerminalTaskStatusOverRunQueueStatus() {
-        Long taskId = 2054964195115945984L;
+    void toConversationResponseReturnsCompletedRunProjection() {
+        Long runId = 2054964195115945984L;
+        LocalDateTime finishedAt = LocalDateTime.of(2026, 5, 25, 10, 2, 0);
         ChatConversation conversation = ChatConversation.create(2001L, "已完成后台任务会话", 1002L, 3001L, ChatConversationStatus.ACTIVE);
-        conversation.restoreRuntimeState(LocalDateTime.of(2026, 5, 25, 10, 0, 0), taskId);
-        Task completedTask = Task.create(taskId, "已完成后台任务会话", "聊天任务", RuntimeType.LOCAL, 3001L, 1002L);
-        completedTask.start();
-        completedTask.complete("done");
+        conversation.restoreRuntimeState(LocalDateTime.of(2026, 5, 25, 10, 0, 0), runId);
         when(workspaceRepositoryImpl.findOwnedWorkspaceById(3001L, 1002L)).thenReturn(Optional.empty());
         when(chatExecutionRunRepository.findByConversationId(2001L)).thenReturn(List.of(
             ChatExecutionRun.builder()
-                .id(taskId)
+                .id(runId)
                 .conversationId(2001L)
-                .taskId(taskId)
+                .taskId(runId)
                 .status("COMPLETED")
                 .queueStatus("ACQUIRED")
-                .finishedAt(LocalDateTime.of(2026, 5, 25, 10, 2, 0))
+                .finishedAt(finishedAt)
                 .build()
         ));
-        when(taskRepository.findById(taskId)).thenReturn(Optional.of(completedTask));
 
         ChatConversationResponse response = chatConversationViewService.toConversationResponse(conversation, 1002L);
 
-        assertEquals(null, response.activeTaskId());
-        assertEquals(null, response.activeTaskStatus());
-        assertEquals(taskId, response.lastTaskId());
+        assertNull(response.activeTaskId());
+        assertNull(response.activeTaskStatus());
+        assertEquals(runId, response.lastTaskId());
         assertEquals("SUCCEEDED", response.lastTaskStatus());
+        assertEquals(finishedAt, response.lastTaskFinishedAt());
+    }
+
+    /**
+     * 失败或拒绝的聊天 run 应投影为失败终态，并保留 run 完成时间供提醒展示。
+     */
+    @Test
+    void toConversationResponseReturnsFailedRunProjectionForErrorAndRejectedRuns() {
+        Long errorRunId = 2054964195115945984L;
+        Long rejectedRunId = 2054964195115945985L;
+        LocalDateTime errorFinishedAt = LocalDateTime.of(2026, 5, 25, 10, 3, 0);
+        LocalDateTime rejectedFinishedAt = LocalDateTime.of(2026, 5, 25, 10, 4, 0);
+        ChatConversation errorConversation = ChatConversation.create(2001L, "失败后台任务会话", 1002L, 3001L, ChatConversationStatus.ACTIVE);
+        errorConversation.restoreRuntimeState(LocalDateTime.of(2026, 5, 25, 10, 0, 0), errorRunId);
+        ChatConversation rejectedConversation = ChatConversation.create(2002L, "拒绝后台任务会话", 1002L, 3001L, ChatConversationStatus.ACTIVE);
+        rejectedConversation.restoreRuntimeState(LocalDateTime.of(2026, 5, 25, 10, 1, 0), rejectedRunId);
+        when(workspaceRepositoryImpl.findOwnedWorkspaceById(3001L, 1002L)).thenReturn(Optional.empty());
+        when(chatExecutionRunRepository.findByConversationId(2001L)).thenReturn(List.of(
+            ChatExecutionRun.builder()
+                .id(errorRunId)
+                .conversationId(2001L)
+                .taskId(errorRunId)
+                .status("ERROR")
+                .finishedAt(errorFinishedAt)
+                .build()
+        ));
+        when(chatExecutionRunRepository.findByConversationId(2002L)).thenReturn(List.of(
+            ChatExecutionRun.builder()
+                .id(rejectedRunId)
+                .conversationId(2002L)
+                .taskId(rejectedRunId)
+                .status("REJECTED")
+                .finishedAt(rejectedFinishedAt)
+                .build()
+        ));
+
+        ChatConversationResponse errorResponse = chatConversationViewService.toConversationResponse(errorConversation, 1002L);
+        ChatConversationResponse rejectedResponse = chatConversationViewService.toConversationResponse(rejectedConversation, 1002L);
+
+        assertNull(errorResponse.activeTaskId());
+        assertNull(errorResponse.activeTaskStatus());
+        assertEquals(errorRunId, errorResponse.lastTaskId());
+        assertEquals("FAILED", errorResponse.lastTaskStatus());
+        assertEquals(errorFinishedAt, errorResponse.lastTaskFinishedAt());
+        assertNull(rejectedResponse.activeTaskId());
+        assertNull(rejectedResponse.activeTaskStatus());
+        assertEquals(rejectedRunId, rejectedResponse.lastTaskId());
+        assertEquals("FAILED", rejectedResponse.lastTaskStatus());
+        assertEquals(rejectedFinishedAt, rejectedResponse.lastTaskFinishedAt());
     }
 
     /**

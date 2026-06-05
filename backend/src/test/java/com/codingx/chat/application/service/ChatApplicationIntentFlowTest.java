@@ -16,6 +16,7 @@ import com.codingx.chat.domain.model.ChatMessageRole;
 import com.codingx.chat.domain.model.ChatMessageStatus;
 import com.codingx.chat.domain.repository.ChatConversationRepository;
 import com.codingx.chat.domain.repository.ChatExecutionRunRepository;
+import com.codingx.chat.domain.repository.ChatExecutionStepRepository;
 import com.codingx.chat.domain.repository.ChatIntentNodeRepository;
 import com.codingx.chat.domain.repository.ChatMessageRepository;
 import com.codingx.chat.domain.port.AiChatClient;
@@ -46,6 +47,9 @@ class ChatApplicationIntentFlowTest {
 
     @Mock
     private ChatExecutionRunRepository chatExecutionRunRepository;
+
+    @Mock
+    private ChatExecutionStepRepository chatExecutionStepRepository;
 
     @Mock
     private AiChatClient aiChatClient;
@@ -119,7 +123,7 @@ class ChatApplicationIntentFlowTest {
         verify(chatMessageRepository, org.mockito.Mockito.times(2)).save(captor.capture());
         assertEquals(ChatMessageStatus.COMPLETED, captor.getAllValues().get(1).getStatus());
         assertEquals("请补充你指的是哪一部分", captor.getAllValues().get(1).getContent());
-        verify(chatStreamPublisher).publishAssistantCompleted(1L, "请补充你指的是哪一部分", "New Conversation");
+        verify(chatStreamPublisher).publishAssistantCompleted(eq(1L), any(Long.class), eq("请补充你指的是哪一部分"), eq("New Conversation"));
         org.mockito.Mockito.verifyNoInteractions(aiChatClient);
         ChatExecutionContext.clear();
     }
@@ -167,7 +171,7 @@ class ChatApplicationIntentFlowTest {
         chatApplicationService.sendMessage(new SendChatMessageCommand(1L, "你是谁", false), 1002L);
 
         verify(aiChatClient).streamChat(any(), eq(false), any());
-        verify(chatStreamPublisher).publishAssistantCompleted(1L, "我是配置驱动的知识助手。", "关于助手");
+        verify(chatStreamPublisher).publishAssistantCompleted(eq(1L), any(Long.class), eq("我是配置驱动的知识助手。"), eq("关于助手"));
         ArgumentCaptor<ChatMessage> captor = ArgumentCaptor.forClass(ChatMessage.class);
         verify(chatMessageRepository, org.mockito.Mockito.times(2)).save(captor.capture());
         assertEquals("我是配置驱动的知识助手。", captor.getAllValues().get(1).getContent());

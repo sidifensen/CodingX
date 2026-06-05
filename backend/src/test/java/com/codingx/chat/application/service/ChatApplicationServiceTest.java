@@ -33,8 +33,6 @@ import com.codingx.common.exception.ConflictException;
 import java.util.Map;
 import com.codingx.common.exception.ForbiddenException;
 import com.codingx.expert.application.service.ChatExpertContextService;
-import com.codingx.expert.domain.model.ChatExpert;
-import com.codingx.expert.domain.repository.ChatExpertRepository;
 import com.codingx.mcp.domain.repository.ChatMcpRepository;
 import com.codingx.mcp.domain.model.ChatMcp;
 import com.codingx.skill.application.service.ChatSkillContextService;
@@ -141,8 +139,6 @@ class ChatApplicationServiceTest {
     @Mock
     private ChatSkillRepository chatSkillRepository;
 
-    @Mock
-    private ChatExpertRepository chatExpertRepository;
 
     @Mock
     private ChatAttachmentService chatAttachmentService;
@@ -238,7 +234,7 @@ class ChatApplicationServiceTest {
         verify(conversationTitleService).generateTitle(org.mockito.ArgumentMatchers.eq(conversation), any());
         verify(conversationSummaryService).buildModelHistory(org.mockito.ArgumentMatchers.eq(1L), any());
         verify(conversationSummaryService).refreshSummaryIfNeeded(org.mockito.ArgumentMatchers.eq(conversation), any());
-        verify(chatStreamPublisher).publishAssistantCompleted(1L, "Hello world", "AI搜索重构计划");
+        verify(chatStreamPublisher).publishAssistantCompleted(eq(1L), any(Long.class), eq("Hello world"), eq("AI搜索重构计划"));
         assertEquals(ChatMessageRole.ASSISTANT, captor.getAllValues().get(1).getRole());
         assertEquals("Hello world", captor.getAllValues().get(1).getContent());
         assertEquals("thinking", captor.getAllValues().get(1).getThinkingContent());
@@ -450,7 +446,7 @@ class ChatApplicationServiceTest {
         );
 
         verify(chatSkillContextService).buildSkillContext(List.of("weather_query"));
-        verify(chatStreamPublisher).publishAssistantCompleted(1L, "技能已生效", "技能对话");
+        verify(chatStreamPublisher).publishAssistantCompleted(eq(1L), any(Long.class), eq("技能已生效"), eq("技能对话"));
         ChatExecutionContext.clear();
     }
 
@@ -690,7 +686,7 @@ class ChatApplicationServiceTest {
 
         verify(searchReferenceCollector).collect(eq(9001001L), any(Long.class), eq(1L), any());
         verify(documentArtifactService).createDocxArtifact(eq(9001001L), any(Long.class), eq(1L), eq("搜索结果整理中"));
-        verify(chatStreamPublisher).publishAssistantCompleted(1L, "截至当前检索，Java 24 已发布", "联网搜索结果");
+        verify(chatStreamPublisher).publishAssistantCompleted(eq(1L), any(Long.class), eq("截至当前检索，Java 24 已发布"), eq("联网搜索结果"));
         ChatExecutionContext.clear();
     }
 
@@ -746,7 +742,7 @@ class ChatApplicationServiceTest {
         ArgumentCaptor<ChatMessage> messageCaptor = ArgumentCaptor.forClass(ChatMessage.class);
         verify(chatMessageRepository, org.mockito.Mockito.times(2)).save(messageCaptor.capture());
         assertEquals("我将为你创建 HTML 游戏。\n\n已创建完成。", messageCaptor.getAllValues().get(1).getContent());
-        verify(chatStreamPublisher).publishAssistantCompleted(1L, "我将为你创建 HTML 游戏。\n\n已创建完成。", "HTML 游戏");
+        verify(chatStreamPublisher).publishAssistantCompleted(eq(1L), any(Long.class), eq("我将为你创建 HTML 游戏。\n\n已创建完成。"), eq("HTML 游戏"));
         ChatExecutionContext.clear();
     }
 
@@ -800,13 +796,13 @@ class ChatApplicationServiceTest {
         verify(chatExecutionStepRepository, org.mockito.Mockito.atLeastOnce()).save(contextStepCaptor.capture());
         assertTrue(
             contextStepCaptor.getAllValues().stream().anyMatch(step ->
-                "runtime_context".equals(step.getStepType())
+                ChatRunContextStepSupport.STEP_TYPE.equals(step.getStepType())
                     && step.getMetadataJson().contains("web-read")
                     && step.getMetadataJson().contains("weather_query")
+                    && step.getMetadataJson().contains("solution-architect")
             )
         );
-        verify(chatExpertRepository).bindTaskExpert(any(Long.class), eq("solution-architect"));
-        verify(chatStreamPublisher).publishAssistantCompleted(1L, "新答案", "新答案");
+        verify(chatStreamPublisher).publishAssistantCompleted(eq(1L), any(Long.class), eq("新答案"), eq("新答案"));
         ChatExecutionContext.clear();
     }
 }

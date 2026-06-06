@@ -26,18 +26,18 @@ status: active
 - `CodingXCli` 是 Java CLI 进程入口，负责组装用户级配置、当前工作区、后端聊天流事件源、事件渲染器和 TUI 启动器。
 - `CliCommandRunner` 只做协议层命令分发；任务运行入口保持 TUI-only，`codingx` 和 `codingx tui` 启动全屏 TUI，`exec`、`resume`、`sessions` 返回 TUI-only 拒绝提示。
 - `CodingXTuiLauncher` 通过 tui4j `Program` 启动 alt screen，真实运行会接管终端直到用户退出。
-- `CodingXTuiModel` 维护 TUI 内存状态，包括事件窗口、任务输入框、当前工作区、运行状态、计划模式和当前模型名；它只编排输入、事件源和视图刷新，不直接承担 header、transcript、status bar 文案映射。真实后端流通过 `Program.send(AgentEventsMessage)` 回到主更新循环，后台线程不能直接修改 TUI 状态。
+- `CodingXTuiModel` 维护 TUI 内存状态，包括事件窗口、任务输入框、当前工作区、运行状态、计划模式和活动助手回答块；它只编排输入、事件源和视图刷新，不直接承担 header、transcript、status bar 文案映射。真实后端流通过 `Program.send(AgentEventsMessage)` 回到主更新循环，后台线程不能直接修改 TUI 状态。
 - `BackendChatEventSource` 读取用户主目录 `CliConfigStore`，请求现有后端 `GET /api/chat/stream`，携带 `satoken`、`runtimeTarget=local`、`repositoryPath` 和数值型 `conversationId`，再把 SSE 映射为 `AgentEvent`。
-- `TuiHeaderRenderer`、`TuiTranscriptRenderer`、`TuiStatusBarRenderer` 分别维护截图风格顶部品牌区、对话流/工具状态和底部模式栏，避免 TUI 模型继续膨胀为大而全的展示类。
+- `TuiHeaderRenderer`、`TuiTranscriptRenderer`、`TuiStatusBarRenderer` 分别维护顶部品牌区、对话流/工具状态和底部模式栏，避免 TUI 模型继续膨胀为大而全的展示类。
 
 ## Entry Points
 
 - `cli/src/main/java/com/codingx/cli/CodingXCli.java`：进程入口和依赖组装。
 - `cli/src/main/java/com/codingx/cli/command/CliCommandRunner.java`：命令分发与 TUI-only 入口约束。
 - `cli/src/main/java/com/codingx/cli/tui/CodingXTuiModel.java`：TUI 状态模型和任务提交逻辑。
-- `cli/src/main/java/com/codingx/cli/tui/TuiHeaderRenderer.java`：截图风格顶部品牌、模型、工作区和 mock MCP/tools 状态。
+- `cli/src/main/java/com/codingx/cli/tui/TuiHeaderRenderer.java`：顶部品牌、工作区和任务提示；没有真实来源时不展示模型、MCP 连接数或工具数量。
 - `cli/src/main/java/com/codingx/cli/tui/TuiTranscriptRenderer.java`：把 `AgentEvent` 转成 TUI 对话流、工具状态、命令输出、完成和错误行。
-- `cli/src/main/java/com/codingx/cli/tui/TuiStatusBarRenderer.java`：底部 `Plan on/off`、运行状态和模型名。
+- `cli/src/main/java/com/codingx/cli/tui/TuiStatusBarRenderer.java`：底部 `Plan mode` / `Chat mode`、运行状态和键盘提示。
 - `cli/src/main/java/com/codingx/cli/backend/BackendChatEventSource.java`：后端聊天流 HTTP/SSE 客户端。
 - `cli/src/main/java/com/codingx/cli/backend/SseEventParser.java`：SSE 文本事件块解析器。
 - `cli/src/main/java/com/codingx/cli/backend/BackendChatEventMapper.java`：后端聊天事件到 CLI `AgentEvent` 的映射器。
@@ -51,8 +51,9 @@ status: active
 - 生产事件源是 `BackendChatEventSource`；`MockAgentEventSource` 只用于测试和本地样例，不应重新注入 `CodingXCli.main`。
 - 后端聊天流请求必须复用 Web 端协议字段：`question`、`runtimeTarget=local`、`repositoryPath`、数值型 `conversationId` 和 `satoken` header，不能在 CLI 单独发明一套 Controller 或任务表。
 - `meta.conversationId` 或 `finish.conversationId` 到达后必须写回 `CliConfig.lastSessionId`；下一轮 TUI 输入依靠该字段续接当前后端会话。
-- `shift+tab` 目前只切换 TUI 本地 `Plan on/off` 文案，不代表真实规划策略已经接入；真实策略应从 Agent Runtime 或会话状态返回。
-- MCP 连接数和工具数当前仍是截图风格 header 文案，不能被后端或测试当作真实遥测数据读取；工具名称和结果应优先来自后端 SSE payload。
+- `shift+tab` 目前只切换 TUI 本地 `Plan mode` / `Chat mode` 文案，不代表真实规划策略已经接入；真实策略应从 Agent Runtime 或会话状态返回。
+- 模型名、MCP 连接数和工具数没有真实后端状态来源时不能在 header、footer 或测试里硬编码展示；工具名称和结果应优先来自后端 SSE payload。
+- 连续 `ASSISTANT_DELTA` 必须合并到当前活动助手回答块，直到工具、命令、完成、错误或下一条用户输入关闭该块，避免流式小片段在 TUI 里变成项目符号列表。
 
 ## Extension Points
 

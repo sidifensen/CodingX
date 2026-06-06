@@ -1,7 +1,7 @@
 package com.codingx.cli.tui;
 
 /**
- * 渲染 TUI 底部模式栏，后续真实规划策略接入时只替换状态来源。
+ * 渲染 TUI 底部状态栏，只展示当前 TUI 已真实维护的模式和运行状态。
  */
 public class TuiStatusBarRenderer {
 
@@ -10,13 +10,12 @@ public class TuiStatusBarRenderer {
      *
      * @param planMode 计划模式是否开启。
      * @param status 当前运行状态。
-     * @param modelName 当前展示模型名。
      * @return 单行状态栏文本。
      */
-    public String render(boolean planMode, String status, String modelName) {
-        String planLabel = planMode ? "Plan on" : "Plan off";
-        return planLabel + " (shift+tab to cycle)"
+    public String render(boolean planMode, String status) {
+        String planLabel = planMode ? "Plan mode" : "Chat mode";
+        return planLabel + " (Shift+Tab)"
             + "    Status: " + status
-            + "    " + modelName;
+            + "    Enter sends, Ctrl+C exits";
     }
 }

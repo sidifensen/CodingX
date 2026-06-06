@@ -25,7 +25,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /**
- * CodingX TUI 的 Bubble Tea 模型，维护截图风格 header、transcript、输入框和状态栏。
+ * CodingX TUI 的 Bubble Tea 模型，维护 header、transcript、输入框和状态栏。
  */
 public class CodingXTuiModel implements Model {
 
@@ -33,6 +33,11 @@ public class CodingXTuiModel implements Model {
      * 页面分区之间的空行间隔。
      */
     private static final String GAP = System.lineSeparator() + System.lineSeparator();
+
+    /**
+     * 输入区域最小宽度；小窗口下仍保留可读的 composer 边界。
+     */
+    private static final int MIN_COMPOSER_WIDTH = 40;
 
     /**
      * 当前 CLI 工作区，真实后端聊天流会把它作为 local runtime 的 repositoryPath。
@@ -80,14 +85,19 @@ public class CodingXTuiModel implements Model {
     private final ExecutorService streamExecutor;
 
     /**
-     * 当前展示模型名；真实模型选择由后端聊天链路决定，这里先展示默认终端标签。
-     */
-    private final String modelName;
-
-    /**
      * tui4j Program 引用，用于后台 SSE 线程把事件送回主更新循环。
      */
     private Program program;
+
+    /**
+     * 当前助手流式回答所在 transcript 行，连续 ASSISTANT_DELTA 会更新这一行而不是追加列表。
+     */
+    private int activeAssistantLineIndex;
+
+    /**
+     * 当前助手流式回答累积文本；工具、完成、错误等事件会结束该活动块。
+     */
+    private StringBuilder activeAssistantText;
 
     /**
      * 本地计划模式开关，第一阶段只影响状态栏文案。
@@ -118,20 +128,21 @@ public class CodingXTuiModel implements Model {
             thread.setDaemon(true);
             return thread;
         });
-        this.modelName = "GLM-5.1";
         this.planMode = true;
         this.status = "ready";
+        this.activeAssistantLineIndex = -1;
+        this.activeAssistantText = new StringBuilder();
 
         configureTextarea();
-        appendSystemLine("CodingX TUI ready. Type a task and press Enter.");
+        appendSystemLine("Ready. Start with a question or a concrete coding task.");
     }
 
     /**
      * 配置底部输入框的基础体验；真实任务只能从这里提交，所以保持提示、宽度和焦点稳定。
      */
     private void configureTextarea() {
-        textarea.setPlaceholder("Send a message...");
-        textarea.setPrompt("> ");
+        textarea.setPlaceholder("Describe a task or ask a question...");
+        textarea.setPrompt("  ");
         textarea.setCharLimit(1000);
         textarea.setWidth(80);
         textarea.setHeight(3);
@@ -249,8 +260,15 @@ public class CodingXTuiModel implements Model {
      * @param events 后端或 mock 返回的事件。
      */
     private void appendAgentEvents(List<AgentEvent> events) {
-        for (String line : transcriptRenderer.render(events)) {
-            appendLine(line);
+        for (AgentEvent event : events) {
+            if (event.eventType() == AgentEventType.ASSISTANT_DELTA) {
+                appendAssistantDelta(event.payloadText("delta"));
+                continue;
+            }
+            closeAssistantBlock();
+            for (String line : transcriptRenderer.render(List.of(event))) {
+                appendLine(line);
+            }
         }
         if (events.stream().anyMatch(event -> event.eventType() == AgentEventType.ERROR)) {
             status = "error";
@@ -297,7 +315,45 @@ public class CodingXTuiModel implements Model {
      * @param task 已清洗的用户任务文本。
      */
     private void appendUserLine(String task) {
+        closeAssistantBlock();
         appendLine("> " + task);
+    }
+
+    /**
+     * 将连续助手流片段合并到同一块回答中，避免 SSE 小片段在终端里变成散乱列表。
+     *
+     * @param delta 后端流式返回的助手文本片段。
+     */
+    private void appendAssistantDelta(String delta) {
+        if (delta == null || delta.isBlank()) {
+            return;
+        }
+        if (activeAssistantLineIndex < 0) {
+            activeAssistantText = new StringBuilder();
+            activeAssistantLineIndex = timelineLines.size();
+            timelineLines.add("");
+        }
+        activeAssistantText.append(delta);
+        timelineLines.set(activeAssistantLineIndex, formatAssistantLine(activeAssistantText.toString()));
+        refreshViewport();
+    }
+
+    /**
+     * 结束当前活动回答块；后续工具或新任务输出会从新的 transcript 行开始。
+     */
+    private void closeAssistantBlock() {
+        activeAssistantLineIndex = -1;
+        activeAssistantText = new StringBuilder();
+    }
+
+    /**
+     * 给助手回答添加轻量说话者标签，比项目符号列表更接近真实对话流。
+     *
+     * @param text 助手回答正文。
+     * @return transcript 可见行。
+     */
+    private String formatAssistantLine(String text) {
+        return "CodingX  " + text;
     }
 
     /**
@@ -325,9 +381,22 @@ public class CodingXTuiModel implements Model {
      */
     @Override
     public String view() {
-        return headerRenderer.render(workspace, modelName) + GAP
+        return headerRenderer.render(workspace) + GAP
             + viewport.view() + GAP
-            + textarea.view() + GAP
-            + statusBarRenderer.render(planMode, status, modelName);
+            + renderComposer() + GAP
+            + statusBarRenderer.render(planMode, status);
+    }
+
+    /**
+     * 渲染底部输入区；输入框外层只做轻量边界，不承载模型名等假状态。
+     *
+     * @return 可见 composer 文本。
+     */
+    private String renderComposer() {
+        int width = Math.max(textarea.width(), MIN_COMPOSER_WIDTH);
+        String border = "─".repeat(Math.max(width - 2, 1));
+        return "┌" + border + "┐" + System.lineSeparator()
+            + textarea.view() + System.lineSeparator()
+            + "└" + border + "┘";
     }
 }

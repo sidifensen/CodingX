@@ -7,7 +7,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 将 AgentEvent 转成截图风格 transcript 行，避免 TUI 直接展示日志式事件前缀。
+ * 将 AgentEvent 转成紧凑 transcript 行，避免 TUI 直接展示日志式事件前缀。
  */
 public class TuiTranscriptRenderer {
 
@@ -35,7 +35,7 @@ public class TuiTranscriptRenderer {
         AgentEventType type = event.eventType();
         return switch (type) {
             case SESSION_STARTED, TURN_STARTED -> List.of();
-            case ASSISTANT_DELTA -> List.of("  • " + event.payloadText("delta"));
+            case ASSISTANT_DELTA -> List.of("  " + event.payloadText("delta"));
             case THINKING_DELTA -> List.of("  Thinking: " + event.payloadText("delta"));
             case TOOL_STARTED -> List.of("  " + toolName(event) + "...");
             case TOOL_OUTPUT_DELTA -> renderOutput(event.payloadText("delta"));

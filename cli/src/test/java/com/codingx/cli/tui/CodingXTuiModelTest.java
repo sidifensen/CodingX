@@ -36,7 +36,7 @@ class CodingXTuiModelTest {
     }
 
     @Test
-    void initialViewShouldShowMewCodeStyleHeaderAndStatusBar() {
+    void initialViewShouldShowCodexStyleShellWithoutFakeModelData() {
         CodingXTuiModel model = new CodingXTuiModel(
             tempDir.resolve("workspace"),
             new MockAgentEventSource(),
@@ -45,13 +45,14 @@ class CodingXTuiModelTest {
 
         String view = model.view();
 
-        assertTrue(view.contains("CodingX v0.1.0"));
-        assertTrue(view.contains("GLM-5.1"));
+        assertTrue(view.contains("CodingX CLI v0.1.0"));
         assertTrue(view.contains(tempDir.resolve("workspace").toString()));
-        assertTrue(view.contains("Connected to 1 MCP server(s), 2 tools registered"));
-        assertTrue(view.contains("Send a message..."));
-        assertTrue(view.contains("Plan on (shift+tab to cycle)"));
+        assertTrue(view.contains("Ask CodingX to inspect, edit, or explain this workspace."));
+        assertTrue(view.contains("Describe a task or ask a question..."));
+        assertTrue(view.contains("Plan mode (Shift+Tab)"));
         assertTrue(view.contains("Status: ready"));
+        assertFalse(view.contains("GLM-5.1"));
+        assertFalse(view.contains("Connected to 1 MCP server(s), 2 tools registered"));
     }
 
     @Test
@@ -97,15 +98,15 @@ class CodingXTuiModelTest {
             new TerminalRenderer()
         );
 
-        assertTrue(model.view().contains("Plan on"));
+        assertTrue(model.view().contains("Plan mode"));
 
         model.update(new KeyPressMessage(new Key(KeyType.KeyShiftTab)));
 
-        assertTrue(model.view().contains("Plan off"));
+        assertTrue(model.view().contains("Chat mode"));
 
         model.update(new KeyPressMessage(new Key(KeyType.KeyShiftTab)));
 
-        assertTrue(model.view().contains("Plan on"));
+        assertTrue(model.view().contains("Plan mode"));
     }
 
     @Test
@@ -144,6 +145,31 @@ class CodingXTuiModelTest {
         assertTrue(view.contains("这是后端流式返回"));
         assertTrue(view.contains("Task completed: COMPLETED"));
         assertTrue(view.contains("Status: completed"));
+    }
+
+    @Test
+    void streamedAssistantDeltasShouldCoalesceIntoOneConversationBlock() {
+        CodingXTuiModel model = new CodingXTuiModel(
+            tempDir.resolve("workspace"),
+            new MockAgentEventSource(),
+            new TerminalRenderer()
+        );
+
+        model.update(new AgentEventsMessage(List.of(
+            AgentEvent.of("67890", "777", 1, AgentEventType.ASSISTANT_DELTA, Map.of(
+                "delta", "我会先看项目结构，"
+            ))
+        )));
+        model.update(new AgentEventsMessage(List.of(
+            AgentEvent.of("67890", "777", 2, AgentEventType.ASSISTANT_DELTA, Map.of(
+                "delta", "再给你改终端界面。"
+            ))
+        )));
+
+        String view = model.view();
+        assertTrue(view.contains("我会先看项目结构，再给你改终端界面。"));
+        assertFalse(view.contains("  • 我会先看项目结构，"));
+        assertFalse(view.contains("  • 再给你改终端界面。"));
     }
 
     @Test

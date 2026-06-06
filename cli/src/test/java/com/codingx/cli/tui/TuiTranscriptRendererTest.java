@@ -22,7 +22,9 @@ class TuiTranscriptRendererTest {
             "delta", "我会先查看当前仓库结构"
         ))));
 
-        assertTrue(String.join("\n", lines).contains("我会先查看当前仓库结构"));
+        String output = String.join("\n", lines);
+        assertTrue(output.contains("我会先查看当前仓库结构"));
+        assertTrue(lines.stream().noneMatch(line -> line.contains("  • ")));
     }
 
     @Test

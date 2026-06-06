@@ -2,6 +2,7 @@ package com.codingx.chat.application.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
@@ -297,10 +298,11 @@ class ChatApplicationSearchFlowTest {
     }
 
     /**
-     * 显式选择 web-access 技能时，联网能力交给技能上下文约束，避免系统搜索抢先消费用户请求。
+     * 显式选择 web-access 技能时，搜索类问题仍应使用 CodingX 系统搜索链路拿到真实证据。
+     * 业务约束：技能负责指导联网访问方式，但不能让搜索请求退化成模型空喊“正在搜索”。
      */
     @Test
-    void sendMessageWithWebAccessSkillSkipsSystemSearchFlow() {
+    void sendMessageWithWebAccessSkillStillUsesSystemSearchEvidence() {
         Long runId = 9201005L;
         ChatExecutionContext.start(runId);
         ChatConversation conversation = ChatConversation.create(1L, "New Conversation", 1002L, ChatConversationStatus.ACTIVE);
@@ -319,7 +321,7 @@ class ChatApplicationSearchFlowTest {
         when(chatExpertContextService.buildExpertContext(any())).thenReturn("");
         when(chatSkillContextService.buildSkillContext(List.of("web-access"))).thenReturn("web-access skill context");
         when(chatIntentNodeRepository.findByIntentCode("search-news")).thenReturn(null);
-        Mockito.lenient().when(webSearchExecutionService.search("搜一下今天的新闻")).thenReturn(List.of(
+        when(webSearchExecutionService.search("搜一下今天的新闻")).thenReturn(List.of(
             new SearchReferenceCandidate("今日新闻", "https://example.com/news", "Example", "news")
         ));
         when(llmResponseCleaner.clean(any())).thenAnswer(invocation -> invocation.getArgument(0));
@@ -327,9 +329,12 @@ class ChatApplicationSearchFlowTest {
         org.mockito.Mockito.doAnswer(invocation -> {
             @SuppressWarnings("unchecked")
             List<ChatMessage> aiHistory = invocation.getArgument(0, List.class);
-            assertEquals("web-access skill context", aiHistory.getFirst().getContent());
+            String systemContext = aiHistory.getFirst().getContent();
+            assertTrue(systemContext.contains("# 联网检索证据"));
+            assertTrue(systemContext.contains("标题：今日新闻"));
+            assertTrue(systemContext.contains("web-access skill context"));
             AiChatClient.StreamHandler handler = invocation.getArgument(2);
-            handler.onDelta("技能上下文回答");
+            handler.onDelta("基于搜索证据回答");
             handler.onComplete();
             return null;
         }).when(aiChatClient).streamChat(any(), org.mockito.ArgumentMatchers.anyBoolean(), any());
@@ -339,15 +344,16 @@ class ChatApplicationSearchFlowTest {
             1002L
         );
 
-        Mockito.verify(webSearchExecutionService, Mockito.never()).search(any());
-        ChatRunContextStepSupport.RunContext runContext = assertOnlyRunContextStepSaved();
+        verify(webSearchExecutionService).search("搜一下今天的新闻");
+        ChatRunContextStepSupport.RunContext runContext = assertRunContextStepSaved();
         assertEquals(List.of(), runContext.mcpCodes());
         assertEquals(List.of("web-access"), runContext.skillCodes());
         assertNull(runContext.expertCode());
-        Mockito.verify(searchReferenceCollector, Mockito.never()).collect(any(), any(), any(), any());
-        Mockito.verify(documentArtifactService, Mockito.never()).createDocxArtifact(any(), any(), any(), any());
+        verify(searchReferenceCollector).collect(any(), any(), any(), any());
+        verify(documentArtifactService).createDocxArtifact(any(), any(), any(), any());
         verify(chatSkillContextService).buildSkillContext(List.of("web-access"));
-        verify(chatStreamPublisher).publishAssistantCompleted(eq(1L), any(Long.class), eq("技能上下文回答"), eq("技能搜索"));
+        Mockito.verify(aiChatClient, Mockito.never()).streamChatWithTools(any(), org.mockito.ArgumentMatchers.anyBoolean(), any(), any());
+        verify(chatStreamPublisher).publishAssistantCompleted(eq(1L), any(Long.class), eq("基于搜索证据回答"), eq("技能搜索"));
         ChatExecutionContext.clear();
     }
 
@@ -360,6 +366,15 @@ class ChatApplicationSearchFlowTest {
         ChatExecutionStep step = stepCaptor.getValue();
         assertEquals(ChatRunContextStepSupport.STEP_TYPE, step.getStepType());
         return ChatRunContextStepSupport.parseContext(List.of(step));
+    }
+
+    /**
+     * 搜索链路会额外保存 search 步骤；这里从所有步骤中只提取隐藏的运行上下文。
+     */
+    private ChatRunContextStepSupport.RunContext assertRunContextStepSaved() {
+        ArgumentCaptor<ChatExecutionStep> stepCaptor = ArgumentCaptor.forClass(ChatExecutionStep.class);
+        Mockito.verify(chatExecutionStepRepository, Mockito.atLeastOnce()).save(stepCaptor.capture());
+        return ChatRunContextStepSupport.parseContext(stepCaptor.getAllValues());
     }
 }
 

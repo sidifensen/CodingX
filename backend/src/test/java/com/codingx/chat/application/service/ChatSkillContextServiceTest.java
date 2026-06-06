@@ -108,11 +108,11 @@ class ChatSkillContextServiceTest {
         assertTrue(context.contains("当用户正文使用“这个”“这些”“它”“有什么区别”等指代"));
         assertTrue(context.contains("默认先指向本轮已选技能"));
         assertTrue(context.contains("当用户只问“这是什么”“这是啥”等短指代"));
-        assertTrue(context.contains("最终回答只允许追问具体目标"));
-        assertTrue(context.contains("禁止输出“这是你当前选中的技能”或概括技能用途"));
-        assertTrue(context.contains("不能声称已经读取网页、连接浏览器或执行技能"));
-        assertTrue(context.contains("如果缺少 URL、页面、搜索词、附件或其他必要目标"));
-        assertTrue(context.contains("只有在可用工具实际完成后"));
+        assertTrue(context.contains("询问当前引用的已选技能本身"));
+        assertTrue(context.contains("简洁解释它能做什么、适合什么场景"));
+        assertTrue(context.contains("禁止声称已经读取网页、连接浏览器或完成联网操作"));
+        assertTrue(context.contains("如果用户要求执行技能任务但缺少 URL、当前页面、搜索词、附件或其他必要目标"));
+        assertTrue(context.contains("只有在可用工具或系统搜索实际完成后"));
     }
 
     /**

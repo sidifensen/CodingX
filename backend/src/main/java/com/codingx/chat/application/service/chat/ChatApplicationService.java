@@ -74,12 +74,6 @@ import org.springframework.stereotype.Service;
 public class ChatApplicationService {
 
     private static final int PROMPT_CONTEXT_LOG_PREVIEW_LENGTH = 1_800;
-    /** web-access 技能只注入技能上下文，不应触发系统内置联网搜索链路。 */
-    private static final String WEB_ACCESS_SKILL_CODE = "web-access";
-    /** 已选技能但用户没有提供 URL、页面或搜索词等目标时，必须明确追问，避免伪造成技能已执行。 */
-    private static final String SELECTED_SKILL_MISSING_TARGET_REPLY =
-        "我还没有执行这个技能。请给出要处理的具体目标，例如 URL、当前页面、搜索词、附件或具体操作。";
-
     /** 会话聚合仓储，负责读取与更新会话主状态（归属、标题、最后活跃时间等） */
     private final ChatConversationRepository chatConversationRepository;
     /** 消息仓储，负责会话消息历史读写与按会话回放 */
@@ -311,28 +305,12 @@ public class ChatApplicationService {
         boolean mcpEnabled = command.mcpCodes() != null && !command.mcpCodes().isEmpty();
         List<SubQuestionIntentDecision> subQuestionDecisions = normalizeSelectedSkillShortQuestionDecisions(
             suppressAutomaticSearchDecisions(
-                resolveSubQuestionDecisions(rewriteResult, mcpEnabled),
-                command.skillCodes()
+                resolveSubQuestionDecisions(rewriteResult, mcpEnabled)
             ),
             command.skillCodes()
         );
         ConversationIntentDecision intentDecision = primaryIntentDecision(subQuestionDecisions);
         logChatDecision("继续生成", command, runId, intentDecision, rewriteResult);
-        Optional<String> selectedSkillMissingTargetReply = resolveSelectedSkillMissingTargetReply(
-            command.skillCodes(),
-            command.content(),
-            CollUtil.isNotEmpty(chatAttachmentService.listByMessageId(requestMessage.getId()))
-        );
-        if (selectedSkillMissingTargetReply.isPresent()) {
-            completeDeterministicAssistantReply(
-                conversation,
-                history,
-                requestMessage.getId(),
-                selectedSkillMissingTargetReply.get(),
-                "chat.normal"
-            );
-            return;
-        }
         Optional<SubQuestionIntentDecision> clarifyDecision = firstDecisionWithAction(
             subQuestionDecisions,
             ConversationIntentAction.CLARIFY
@@ -478,7 +456,8 @@ public class ChatApplicationService {
                 selectedProvider,
                 selectedModel,
                 activeRunId,
-                List.of()
+                List.of(),
+                shouldExposeModelTools(searchReferences)
             );
         } catch (RuntimeException exception) {
             if (chatRuntimeGuardService.isCancelled(command.conversationId(), activeRunId)) {
@@ -742,29 +721,14 @@ public class ChatApplicationService {
         boolean mcpEnabled = command.mcpCodes() != null && !command.mcpCodes().isEmpty();
         List<SubQuestionIntentDecision> subQuestionDecisions = normalizeSelectedSkillShortQuestionDecisions(
             suppressAutomaticSearchDecisions(
-                resolveSubQuestionDecisions(rewriteResult, mcpEnabled),
-                selectedSkillCodes
+                resolveSubQuestionDecisions(rewriteResult, mcpEnabled)
             ),
             selectedSkillCodes
         );
         ConversationIntentDecision intentDecision = primaryIntentDecision(subQuestionDecisions);
         logChatDecision("发送消息", command, runId, intentDecision, rewriteResult);
         // 步骤 5：优先处理无需进入模型的短路分支，包括澄清、直答和 MCP 未启用提示。
-        Optional<String> selectedSkillMissingTargetReply = resolveSelectedSkillMissingTargetReply(
-            selectedSkillCodes,
-            plainQuestion,
-            CollUtil.isNotEmpty(validatedAttachments)
-        );
-        if (selectedSkillMissingTargetReply.isPresent()) {
-            completeDeterministicAssistantReply(
-                conversation,
-                history,
-                userMessage.getId(),
-                selectedSkillMissingTargetReply.get(),
-                "chat.normal"
-            );
-            return;
-        }
+        // 已选技能短指代应继续进入模型，由技能上下文解释当前引用的技能或追问执行目标。
         Optional<SubQuestionIntentDecision> clarifyDecision = firstDecisionWithAction(
             subQuestionDecisions,
             ConversationIntentAction.CLARIFY
@@ -913,7 +877,8 @@ public class ChatApplicationService {
                 selectedProvider,
                 selectedModel,
                 activeRunId,
-                validatedAttachments
+                validatedAttachments,
+                shouldExposeModelTools(searchReferences)
             );
         } catch (RuntimeException exception) {
             // 步骤 9：模型循环中被用户取消时记录取消态，否则继续抛出交由外层异常处理。
@@ -1032,19 +997,6 @@ public class ChatApplicationService {
             selectedSkillCodes
         );
         logChatDecision("本地消息", command, runId, intentDecision, rewriteResult);
-        Optional<String> localSelectedSkillMissingTargetReply = resolveSelectedSkillMissingTargetReply(
-            selectedSkillCodes,
-            plainQuestion,
-            CollUtil.isNotEmpty(command.attachmentIds())
-        );
-        if (localSelectedSkillMissingTargetReply.isPresent()) {
-            chatStreamPublisher.publishAssistantCompleted(
-                command.conversationId(),
-                localSelectedSkillMissingTargetReply.get(),
-                resolveLocalConversationTitle(command)
-            );
-            return;
-        }
         if (intentDecision.action() == ConversationIntentAction.CLARIFY && selectedSkillCodes.isEmpty()) {
             chatStreamPublisher.publishAssistantCompleted(
                 command.conversationId(),
@@ -1106,7 +1058,8 @@ public class ChatApplicationService {
                 selectedProvider,
                 selectedModel,
                 runId,
-                List.of()
+                List.of(),
+                true
             );
         } catch (RuntimeException exception) {
             // 步骤 5：取消时直接结束本地临时链路，非取消异常继续抛给外层统一处理。
@@ -1170,20 +1123,6 @@ public class ChatApplicationService {
      */
     private int sizeOf(java.util.Collection<?> values) {
         return values == null ? 0 : values.size();
-    }
-
-    /**
-     * 已选技能配合短指代且没有附件或外部目标时，只能追问目标，不能进入模型生成技能说明。
-     */
-    private Optional<String> resolveSelectedSkillMissingTargetReply(
-        List<String> selectedSkillCodes,
-        String plainQuestion,
-        boolean hasAttachments
-    ) {
-        if (hasAttachments || CollUtil.isEmpty(selectedSkillCodes) || !isSelectedSkillShortReferenceQuestion(plainQuestion)) {
-            return Optional.empty();
-        }
-        return Optional.of(SELECTED_SKILL_MISSING_TARGET_REPLY);
     }
 
     /**
@@ -1351,6 +1290,7 @@ public class ChatApplicationService {
      * @param selectedModel 实际模型输出容器。
      * @param activeRunId 当前运行标识。
      * @param currentMessageAttachments 当前用户消息已校验附件，用于调整模型可见工具。
+     * @param exposeModelTools 是否向模型暴露本地工具；搜索证据已存在时关闭工具，避免模型继续执行浏览器命令。
      */
     private void runAiToolAwareLoop(
         SendChatMessageCommand command,
@@ -1363,14 +1303,18 @@ public class ChatApplicationService {
         String[] selectedProvider,
         String[] selectedModel,
         Long activeRunId,
-        List<ChatAttachment> currentMessageAttachments
+        List<ChatAttachment> currentMessageAttachments,
+        boolean exposeModelTools
     ) {
-        List<ChatToolSpec> toolSpecs = resolveModelVisibleToolSpecs(initialAiHistory, currentMessageAttachments);
+        List<ChatToolSpec> toolSpecs = exposeModelTools
+            ? resolveModelVisibleToolSpecs(initialAiHistory, currentMessageAttachments)
+            : List.of();
         List<ChatMessage> currentHistory = new ArrayList<>(initialAiHistory);
         log.info(
-            "模型工具决策: 可见工具数={}, 调用模式={}",
+            "模型工具决策: 可见工具数={}, 调用模式={}, 工具暴露={}",
             toolSpecs.size(),
-            toolSpecs.isEmpty() ? "普通流式" : "工具调用"
+            toolSpecs.isEmpty() ? "普通流式" : "工具调用",
+            exposeModelTools
         );
         if (toolSpecs.isEmpty()) {
             // 业务约束：没有模型可见工具时必须走普通流式契约，兼容未适配工具调用的 provider 与旧测试桩。
@@ -1527,6 +1471,14 @@ public class ChatApplicationService {
         }
         // 连续工具调用仍未结束时，用明确异常提示用户收敛工具调用策略。
         streamError[0] = new IllegalStateException(loopCoordinator.maxRoundsMessage());
+    }
+
+    /**
+     * 已经拿到系统联网检索证据时，模型只负责基于证据整理最终回答。
+     * 关键约束：此时继续暴露本地工具会诱导 web-access 再跑浏览器/CDP 命令，导致搜索类问题卡在过程循环。
+     */
+    private boolean shouldExposeModelTools(List<SearchReferenceCandidate> searchReferences) {
+        return CollUtil.isEmpty(searchReferences);
     }
 
     /**
@@ -2790,7 +2742,7 @@ public class ChatApplicationService {
 
     /**
      * 已选技能下的短指代问题不能再套用“关于助手”系统意图，否则模型会被系统介绍 Prompt 带回能力说明。
-     * 业务约束：这里只降级意图和系统 Prompt；真正缺少执行目标时由前置短路分支确定性追问，不再调用模型。
+     * 业务约束：这里只降级意图和系统 Prompt；是否缺少执行目标由技能上下文约束模型解释或追问。
      */
     private List<SubQuestionIntentDecision> normalizeSelectedSkillShortQuestionDecisions(
         List<SubQuestionIntentDecision> decisions,
@@ -2938,14 +2890,14 @@ public class ChatApplicationService {
     }
 
     /**
-     * 在执行阶段统一拦截自动搜索，保证系统总开关关闭或 web-access 技能接管时不会再落搜索步骤。
+     * 在执行阶段统一拦截自动搜索，保证系统总开关关闭时不会再落搜索步骤。
+     * 关键约束：显式选择 web-access 不能禁用 CodingX 系统搜索；搜索类问题仍要先拿真实搜索证据，
+     * 再把证据和技能上下文一起交给模型总结，避免模型只输出“正在搜索”过程文案。
      * @param decisions 子问题意图决策。
-     * @param selectedSkillCodes 当前消息选择的技能编码。
      * @return 搜索决策被降级后的子问题意图决策。
      */
     private List<SubQuestionIntentDecision> suppressAutomaticSearchDecisions(
-        List<SubQuestionIntentDecision> decisions,
-        List<String> selectedSkillCodes
+        List<SubQuestionIntentDecision> decisions
     ) {
         if (CollUtil.isEmpty(decisions)) {
             return decisions;
@@ -2955,7 +2907,7 @@ public class ChatApplicationService {
         if (!hasSearchDecision) {
             return decisions;
         }
-        String disabledReason = automaticSearchDisabledReason(selectedSkillCodes);
+        String disabledReason = automaticSearchDisabledReason();
         if (StrUtil.isBlank(disabledReason)) {
             return decisions;
         }
@@ -2985,27 +2937,11 @@ public class ChatApplicationService {
     /**
      * 计算本轮自动搜索禁用原因；返回空字符串表示允许系统搜索链路执行。
      */
-    private String automaticSearchDisabledReason(List<String> selectedSkillCodes) {
+    private String automaticSearchDisabledReason() {
         if (!runtimeSettingService.webSearchEnabled()) {
             return "系统联网搜索已关闭";
         }
-        if (isWebAccessSkillSelected(selectedSkillCodes)) {
-            return "web-access 技能已选择";
-        }
         return "";
-    }
-
-    /**
-     * 判断用户是否显式选择 web-access 技能，兼容前端传参和正文标记合并后的大小写差异。
-     */
-    private boolean isWebAccessSkillSelected(List<String> selectedSkillCodes) {
-        if (CollUtil.isEmpty(selectedSkillCodes)) {
-            return false;
-        }
-        return selectedSkillCodes.stream()
-            .filter(StrUtil::isNotBlank)
-            .map(String::trim)
-            .anyMatch(skillCode -> StrUtil.equalsIgnoreCase(skillCode, WEB_ACCESS_SKILL_CODE));
     }
 
     /**

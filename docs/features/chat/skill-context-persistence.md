@@ -13,7 +13,7 @@
 1. `ChatStreamController` 合并显式 `skillCodes` 与结构化技能命令，生成 `SendChatMessageCommand`。
 2. `ChatApplicationService` 合并正文前缀与请求参数里的技能码，用户消息落库前用 `ChatCapabilityMentionSupport` 加上 `@skill` 前缀。
 3. 改写、意图识别、标题、摘要和模型历史使用剥离前缀后的纯正文，避免把 `@skill` 当自然语言。
-4. `ChatSkillContextService` 读取已选技能根级 `SKILL.md` 并追加到系统提示，日志会输出技能上下文是否生效；同时调用 `SkillRuntimeService` 解析 `.codex-skill/skill.json`、`resources/` 与 `scripts/`，把工具声明、资源文件和脚本文件追加为“技能运行时元数据”。当用户正文使用“这个”“这些”“有什么区别”等指代时，提示词只把已选技能作为上下文线索。后端不再静态拼装“这是你当前选中的技能”这类回答；当本轮已选技能且用户只问“这是什么”“这是啥”等短句、同时缺少 URL、页面、搜索词、附件或其他目标时，`ChatApplicationService` 直接回复“我还没有执行这个技能。请给出要处理的具体目标，例如 URL、当前页面、搜索词、附件或具体操作。”，不会进入模型或工具链路。对象存储版 `web-access` 会额外追加 CodingX 运行时约束，明确当前本地工具命令在 Windows PowerShell 中执行，并要求 CDP Proxy 先通过 `/targets` 复用用户现有 Chrome tab，找不到匹配目标时才 `/new` 创建后台页。
+4. `ChatSkillContextService` 读取已选技能根级 `SKILL.md` 并追加到系统提示，日志会输出技能上下文是否生效；同时调用 `SkillRuntimeService` 解析 `.codex-skill/skill.json`、`resources/` 与 `scripts/`，把工具声明、资源文件和脚本文件追加为“技能运行时元数据”。当用户正文使用“这个”“这些”“有什么区别”等指代时，提示词会先把指代对象绑定到本轮已选技能；当用户只问“这是什么”“这是啥”等短句时，模型应基于技能说明解释当前引用技能的用途，而不是被系统自我介绍意图吞掉。对象存储版 `web-access` 会额外追加 CodingX 运行时约束，明确当前本地工具命令在 Windows PowerShell 中执行，并要求 CDP Proxy 先通过 `/targets` 复用用户现有 Chrome tab，找不到匹配目标时才 `/new` 创建后台页。
 5. 聊天主流程继续按改写结果进入意图识别、模型调用和工具白名单校验；即便用户只问“这是啥”，也会保存真实助手消息与 `chat_execution_run.intent_code`，不会再落库 `skill.intro` 这类伪完成状态。
 6. 模型工具调用只允许执行本轮真实暴露的工具 schema；若模型把 `web-access` 这类 skill code 伪造成 tool_call，后端仅忽略这个错误的 tool_call，并回灌“已选技能仍然有效、技能编码不是工具名”的约束。
 7. `SkillLocalCacheService` 为云端临时下载的 `web-access` 写入 `WEB_ACCESS_BROWSER=chrome`，避免每轮新目录都要求用户重新选择浏览器。
@@ -39,7 +39,7 @@
 
 `chat_message.content` 是用户可审计输入，不再把技能选择隐藏在独立绑定表里。模型侧不能直接使用这个持久化内容，因为 `@web-access 这是啥` 会干扰改写、意图和回答，因此所有入模历史都会经过 `ChatCapabilityMentionSupport.toPlainAiMessage` 剥离前缀。
 
-由于入模用户正文会剥离开头 `@skill`，技能系统提示必须补足指代关系：带有明确目标的 `@web-access 帮我看 https://example.com` 会保留技能上下文进入模型；但 `@web-access 这是啥` 这类缺少目标的短句会在应用服务层确定性澄清，不进入模型。多个技能同时选中且用户提供了可对比对象时，“这个和这个有什么区别”默认按已选技能列表进行解释或对比。
+由于入模用户正文会剥离开头 `@skill`，技能系统提示必须补足指代关系：带有明确目标的 `@web-access 帮我看 https://example.com` 会保留技能上下文进入模型；`@web-access 这是啥` 这类短句会先解释当前引用的技能本身，不能伪造成已经执行联网操作。多个技能同时选中且用户提供了可对比对象时，“这个和这个有什么区别”默认按已选技能列表进行解释或对比；如果用户要求执行技能任务但缺少 URL、当前页面、搜索词、附件或其他必要目标，模型再围绕已选技能追问缺失信息。
 
 提示词上下文日志只打印可读预览，覆盖原始系统提示词和技能简介，完整技能文档仍会进入模型上下文，但不会在 `info` 日志中整段输出。
 
@@ -61,6 +61,7 @@
 - `mvn -Dtest=ChatCapabilityMentionSupportTest test`
 - `mvn -Dtest=ChatApplicationServiceTest test`
 - `mvn -Dtest=ChatApplicationServiceTest#sendMessageRoutesSelectedSkillShortQuestionThroughModelInsteadOfStaticIntro test`
+- `mvn -Dtest=ChatApplicationSearchFlowTest#sendMessageWithWebAccessSkillStillUsesSystemSearchEvidence,ChatApplicationServiceTest#sendMessageRoutesSelectedSkillShortQuestionThroughModelInsteadOfStaticIntro,ChatSkillContextServiceTest#buildSkillContextTreatsSelectedSkillAsActiveInstruction test`
 - `mvn -Dtest=ChatWorkspaceQueryServiceTest test`
 - `mvn -Dtest=ChatSkillContextServiceTest test`
 - `mvn -Dtest=SkillRuntimeServiceTest test`

@@ -497,8 +497,8 @@ class ChatApplicationServiceTest {
     }
 
     /**
-     * 选中技能后用户只问“这是什么”时，也不能由后端或模型输出技能介绍冒充执行结果。
-     * 业务约束：缺少 URL、页面、搜索词等目标时只允许澄清目标，不进入模型生成技能说明。
+     * 选中技能后用户只问“这是啥”时，应解释当前引用的技能，而不是误判为缺少执行目标。
+     * 业务约束：解释技能本身不需要 URL 或页面；只有执行技能任务时才需要追问目标。
      */
     @Test
     void sendMessageRoutesSelectedSkillShortQuestionThroughModelInsteadOfStaticIntro() {
@@ -507,10 +507,10 @@ class ChatApplicationServiceTest {
         when(chatConversationRepository.requireById(1L)).thenReturn(conversation);
         when(chatMessageRepository.findByConversationId(1L)).thenReturn(new ArrayList<>());
         when(chatAttachmentService.requireOwnedAttachments(any(), eq(1L), eq(1002L))).thenReturn(List.of());
-        when(conversationRewriteService.rewriteResult(any(), eq("这是什么"))).thenReturn(
-            new ConversationRewriteResult("这是什么", false, List.of("这是什么"))
+        when(conversationRewriteService.rewriteResult(any(), eq("这是啥"))).thenReturn(
+            new ConversationRewriteResult("这是啥", false, List.of("这是啥"))
         );
-        when(conversationIntentService.route("这是什么", false)).thenReturn(
+        when(conversationIntentService.route("这是啥", false)).thenReturn(
             new ConversationIntentDecision("sys-about-bot", ConversationIntentAction.DIRECT, null)
         );
         org.mockito.Mockito.lenient().when(chatIntentNodeRepository.findByIntentCode("sys-about-bot")).thenReturn(
@@ -520,10 +520,24 @@ class ChatApplicationServiceTest {
                 .promptTemplate("系统介绍 prompt：请介绍 CodingX 助手能力。")
                 .build()
         );
+        when(chatIntentNodeRepository.findByIntentCode("chat.normal")).thenReturn(null);
+        when(chatSkillContextService.buildSkillContext(List.of("web-access"))).thenReturn("web-access skill context");
+        when(chatExpertContextService.buildExpertContext(any())).thenReturn("");
+        when(conversationSummaryService.buildModelHistory(any(), any())).thenAnswer(invocation -> invocation.getArgument(1));
+        when(llmResponseCleaner.clean(any())).thenAnswer(invocation -> invocation.getArgument(0));
         when(conversationTitleService.generateTitle(any(), any())).thenReturn("技能对话");
+        doAnswer(invocation -> {
+            @SuppressWarnings("unchecked")
+            List<ChatMessage> aiHistory = invocation.getArgument(0, List.class);
+            assertTrue(aiHistory.getFirst().getContent().contains("web-access skill context"));
+            AiChatClient.StreamHandler handler = invocation.getArgument(2);
+            handler.onDelta("web-access 是联网访问技能，可以搜索、抓取网页或操作浏览器。");
+            handler.onComplete();
+            return null;
+        }).when(aiChatClient).streamChat(any(), org.mockito.ArgumentMatchers.anyBoolean(), any());
 
         chatApplicationService.sendMessage(
-            new SendChatMessageCommand(1L, "这是什么 @multi-search", false, List.of(), List.of("multi-search")),
+            new SendChatMessageCommand(1L, "这是啥 @web-access", false, List.of(), List.of("web-access")),
             1002L
         );
 
@@ -531,15 +545,14 @@ class ChatApplicationServiceTest {
         ArgumentCaptor<ChatExecutionRun> runCaptor = ArgumentCaptor.forClass(ChatExecutionRun.class);
         verify(chatMessageRepository, org.mockito.Mockito.times(2)).save(messageCaptor.capture());
         verify(chatExecutionRunRepository).save(runCaptor.capture());
-        assertEquals("@multi-search 这是什么", messageCaptor.getAllValues().getFirst().getContent());
-        assertEquals("我还没有执行这个技能。请给出要处理的具体目标，例如 URL、当前页面、搜索词、附件或具体操作。", messageCaptor.getAllValues().get(1).getContent());
+        assertEquals("@web-access 这是啥", messageCaptor.getAllValues().getFirst().getContent());
+        assertEquals("web-access 是联网访问技能，可以搜索、抓取网页或操作浏览器。", messageCaptor.getAllValues().get(1).getContent());
         assertEquals("chat.normal", runCaptor.getValue().getIntentCode());
-        verify(chatStreamPublisher).publishUserMessage(1L, "这是什么");
-        verify(chatStreamPublisher).publishAssistantCompleted(eq(1L), any(Long.class), eq("我还没有执行这个技能。请给出要处理的具体目标，例如 URL、当前页面、搜索词、附件或具体操作。"), eq("技能对话"));
-        verify(conversationRewriteService).rewriteResult(any(), eq("这是什么"));
-        verify(chatSkillContextService, never()).buildSkillContext(any());
-        verify(conversationSummaryService, never()).buildModelHistory(any(), any());
-        verify(aiChatClient, never()).streamChat(any(), org.mockito.ArgumentMatchers.anyBoolean(), any());
+        verify(chatStreamPublisher).publishUserMessage(1L, "这是啥");
+        verify(chatStreamPublisher).publishAssistantCompleted(eq(1L), any(Long.class), eq("web-access 是联网访问技能，可以搜索、抓取网页或操作浏览器。"), eq("技能对话"));
+        verify(conversationRewriteService).rewriteResult(any(), eq("这是啥"));
+        verify(chatSkillContextService).buildSkillContext(List.of("web-access"));
+        verify(conversationSummaryService).buildModelHistory(any(), any());
         verify(aiChatClient, never()).streamChatWithTools(any(), org.mockito.ArgumentMatchers.anyBoolean(), any(), any());
         ChatExecutionContext.clear();
     }

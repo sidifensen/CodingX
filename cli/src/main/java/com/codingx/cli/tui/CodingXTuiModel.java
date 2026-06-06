@@ -33,7 +33,12 @@ public class CodingXTuiModel implements Model {
     /**
      * 页面分区之间的空行间隔。
      */
-    private static final String GAP = System.lineSeparator() + System.lineSeparator();
+    private static final String GAP = "\n\n";
+
+    /**
+     * tui4j `RendererFlush` 固定按 LF 拆分逻辑行；Windows CRLF 会把 `\r` 留在行尾并破坏差量刷新。
+     */
+    private static final String RENDER_NEWLINE = "\n";
 
     /**
      * 当前 CLI 工作区，真实后端聊天流会把它作为 local runtime 的 repositoryPath。
@@ -440,7 +445,7 @@ public class CodingXTuiModel implements Model {
      * 将内存中的 transcript 同步给滚动窗口，并把视口移动到底部显示最新任务结果。
      */
     private void refreshViewport() {
-        viewport.setContent(String.join(System.lineSeparator(), timelineLines));
+        viewport.setContent(String.join(RENDER_NEWLINE, timelineLines));
         viewport.gotoBottom();
     }
 
@@ -451,16 +456,14 @@ public class CodingXTuiModel implements Model {
      */
     @Override
     public String view() {
+        String inputAndStatus = renderInputBlock() + RENDER_NEWLINE + renderStatusBar();
         List<String> sections = new ArrayList<>();
         if (!timelineLines.isEmpty()) {
             sections.add(renderTranscript());
         }
-        if (shouldRenderRunningQuestionAnchor()) {
-            sections.add(renderRunningQuestionAnchor());
-        }
-        sections.add(renderComposer());
-        sections.add(statusBarRenderer.render(planMode, status, workspace));
-        return String.join(GAP, sections);
+        // 用户消息、输入框和状态栏必须连续占用底部三行；tui4j 普通 renderer 只保留尾部可见行时不能让空行挤掉问题。
+        sections.add(inputAndStatus);
+        return wrapRendererView(String.join(GAP, sections));
     }
 
     /**
@@ -480,7 +483,7 @@ public class CodingXTuiModel implements Model {
      * @return 可见 transcript 文本。
      */
     private String renderTranscript() {
-        String transcript = String.join(System.lineSeparator(), timelineLines);
+        String transcript = String.join(RENDER_NEWLINE, timelineLines);
         if (!shouldPinLatestUserLine()) {
             return transcript;
         }
@@ -491,7 +494,7 @@ public class CodingXTuiModel implements Model {
         );
         int userLineHeight = renderedVisualLineCount(latestUserLine);
         int answerHeight = Math.max(availableTranscriptLines() - userLineHeight, 1);
-        return latestUserLine + System.lineSeparator() + renderVisualTail(currentTurnLines, answerHeight);
+        return latestUserLine + RENDER_NEWLINE + renderVisualTail(currentTurnLines, answerHeight);
     }
 
     /**
@@ -500,16 +503,52 @@ public class CodingXTuiModel implements Model {
      * @return 可见 composer 文本。
      */
     private String renderComposer() {
-        return textarea.view();
+        String taskText = normalizeRendererNewlines(textarea.value()).replace('\n', ' ').trim();
+        String composerText = taskText.isEmpty() ? "Write tests for @filename" : taskText;
+        // 真实 TTY 下 tui4j Textarea.view() 会附带光标样式和填充行；底部 composer 必须稳定为单行。
+        return truncateVisualLine("› " + composerText);
     }
 
     /**
-     * 判断是否需要在输入框上方固定展示当前问题；真实普通屏幕流式刷新时 transcript 顶部可能被尾部保留策略挤掉。
+     * 渲染底部输入块；最近问题必须紧贴输入框，避免分区空行和状态栏换行把用户刚提交的消息挤出可见区。
      *
-     * @return true 表示 running 状态下应展示当前问题固定区。
+     * @return 当前问题和 composer 组成的输入块。
      */
-    private boolean shouldRenderRunningQuestionAnchor() {
-        return isTurnRunning() && !latestUserLine.isBlank();
+    private String renderInputBlock() {
+        if (!shouldRenderCurrentQuestionAnchor()) {
+            return renderComposer();
+        }
+        return renderCurrentQuestionAnchor() + RENDER_NEWLINE + renderComposer();
+    }
+
+    /**
+     * 渲染单行状态栏；状态栏是底部控件，不应该像后端正文一样自动换行挤占用户问题和输入框。
+     *
+     * @return 当前终端宽度下的一行状态栏。
+     */
+    private String renderStatusBar() {
+        String fullStatusBar = statusBarRenderer.render(planMode, status, workspace);
+        if (renderedVisualLineCount(fullStatusBar) <= 1) {
+            return fullStatusBar;
+        }
+
+        String planLabel = planMode ? "Plan mode" : "Chat mode";
+        String compactStatusBar = "server selected · " + status + " · " + planLabel;
+        if (renderedVisualLineCount(compactStatusBar) <= 1) {
+            return compactStatusBar;
+        }
+
+        return truncateVisualLine(status + " · " + planLabel);
+    }
+
+    /**
+     * 判断是否需要在输入框上方固定展示当前问题；真实普通屏幕刷新时 transcript 顶部可能被尾部保留策略挤掉。
+     * 用户最关心的是“本轮刚提交了什么”，因此完成、错误或中断后也保留最近一次问题，直到下一次提交覆盖。
+     *
+     * @return true 表示已提交过任务，应展示当前问题固定区。
+     */
+    private boolean shouldRenderCurrentQuestionAnchor() {
+        return !latestUserLine.isBlank();
     }
 
     /**
@@ -517,8 +556,27 @@ public class CodingXTuiModel implements Model {
      *
      * @return 当前用户问题。
      */
-    private String renderRunningQuestionAnchor() {
+    private String renderCurrentQuestionAnchor() {
         return latestUserLine;
+    }
+
+    /**
+     * tui4j 标准 renderer 只按 `\n` 统计行数，但 Windows Terminal 会对超长逻辑行自动换行。
+     * 如果直接输出后端 JSON、长 Markdown 或长路径，renderer 的光标回退范围会小于真实视觉行数，后续刷新就可能覆盖用户问题。
+     *
+     * @param view 已按业务分区拼好的完整视图。
+     * @return 按当前终端宽度预换行后的视图，保证 renderer 看到的逻辑行等于终端视觉行。
+     */
+    private String wrapRendererView(String view) {
+        List<String> rows = new ArrayList<>();
+        for (String logicalLine : view.split("\\R", -1)) {
+            if (logicalLine.isEmpty()) {
+                rows.add("");
+                continue;
+            }
+            rows.addAll(wrapVisualLines(logicalLine));
+        }
+        return String.join(RENDER_NEWLINE, rows);
     }
 
     /**
@@ -549,13 +607,14 @@ public class CodingXTuiModel implements Model {
      * @return 非 transcript 区域占用行数。
      */
     private int nonTranscriptLineCount() {
-        int currentQuestionAnchorLines = shouldRenderRunningQuestionAnchor()
-            ? renderedVisualLineCount(renderRunningQuestionAnchor()) + 1
+        int currentQuestionAnchorLines = shouldRenderCurrentQuestionAnchor()
+            ? renderedVisualLineCount(renderCurrentQuestionAnchor())
             : 0;
+        int sectionGapLines = timelineLines.isEmpty() ? 0 : 1;
         return currentQuestionAnchorLines
             + renderedVisualLineCount(renderComposer())
-            + renderedVisualLineCount(statusBarRenderer.render(planMode, status, workspace))
-            + 2;
+            + renderedVisualLineCount(renderStatusBar())
+            + sectionGapLines;
     }
 
     /**
@@ -568,14 +627,14 @@ public class CodingXTuiModel implements Model {
         for (int index = 0; index < timelineLines.size(); index++) {
             appendVisualRows(rows, timelineLines.get(index), index);
         }
-        appendGapRow(rows);
-        if (shouldRenderRunningQuestionAnchor()) {
-            appendVisualRows(rows, renderRunningQuestionAnchor(), latestUserLineIndex);
+        if (!timelineLines.isEmpty()) {
             appendGapRow(rows);
         }
+        if (shouldRenderCurrentQuestionAnchor()) {
+            appendVisualRows(rows, renderCurrentQuestionAnchor(), latestUserLineIndex);
+        }
         appendVisualRows(rows, renderComposer(), -1);
-        appendGapRow(rows);
-        appendVisualRows(rows, statusBarRenderer.render(planMode, status, workspace), -1);
+        appendVisualRows(rows, renderStatusBar(), -1);
         return rows;
     }
 
@@ -595,7 +654,7 @@ public class CodingXTuiModel implements Model {
             return "";
         }
         int fromIndex = Math.max(visualLines.size() - maxLines, 0);
-        return String.join(System.lineSeparator(), visualLines.subList(fromIndex, visualLines.size()));
+        return String.join(RENDER_NEWLINE, visualLines.subList(fromIndex, visualLines.size()));
     }
 
     /**
@@ -659,10 +718,46 @@ public class CodingXTuiModel implements Model {
             return List.of();
         }
         List<String> rows = new ArrayList<>();
-        for (String logicalLine : value.lines().toList()) {
+        for (String logicalLine : normalizeRendererNewlines(value).lines().toList()) {
             appendWrappedLogicalLine(rows, logicalLine);
         }
         return rows;
+    }
+
+    /**
+     * 规范化为 tui4j renderer 可正确识别的 LF；不能把 Windows CR 留给 `RendererFlush.split("\\n")`。
+     *
+     * @param value 原始渲染文本。
+     * @return 仅包含 LF 的渲染文本。
+     */
+    private String normalizeRendererNewlines(String value) {
+        return value.replace("\r\n", RENDER_NEWLINE).replace("\r", RENDER_NEWLINE);
+    }
+
+    /**
+     * 将单行文本截断到当前终端宽度；用于状态栏这类控件，避免它变成多行正文。
+     *
+     * @param value 单行文本。
+     * @return 不超过当前终端宽度的文本。
+     */
+    private String truncateVisualLine(String value) {
+        if (value == null || value.isEmpty()) {
+            return "";
+        }
+        int maxColumns = Math.max(terminalWidth, 1);
+        StringBuilder row = new StringBuilder();
+        int columns = 0;
+        for (int offset = 0; offset < value.length(); ) {
+            int codePoint = value.codePointAt(offset);
+            int width = codePointWidth(codePoint);
+            if (columns + width > maxColumns && !row.isEmpty()) {
+                break;
+            }
+            row.appendCodePoint(codePoint);
+            columns += width;
+            offset += Character.charCount(codePoint);
+        }
+        return row.toString();
     }
 
     /**

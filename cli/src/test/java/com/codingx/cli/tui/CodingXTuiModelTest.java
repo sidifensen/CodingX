@@ -252,6 +252,71 @@ class CodingXTuiModelTest {
     }
 
     @Test
+    void completedTurnShouldKeepQuestionNearComposer() {
+        CodingXTuiModel model = new CodingXTuiModel(
+            tempDir.resolve("workspace"),
+            new MockAgentEventSource(),
+            new TerminalRenderer()
+        );
+
+        model.submitTask("完成后也要看见");
+
+        String bottomArea = lastLines(model.view(), 5);
+        assertTrue(bottomArea.contains("> 完成后也要看见"), bottomArea);
+        assertTrue(bottomArea.contains("› Write tests for @filename"), bottomArea);
+        assertTrue(bottomArea.contains("completed"), bottomArea);
+    }
+
+    @Test
+    void rendererBottomThreeLinesShouldKeepQuestionComposerAndStatusVisible() {
+        CodingXTuiModel model = new CodingXTuiModel(
+            tempDir.resolve("workspace"),
+            new MockAgentEventSource(),
+            new TerminalRenderer()
+        );
+
+        model.submitTask("三行内也要看见");
+
+        // 真实 tui4j renderer 会按终端可用高度保留视图尾部；底部三行必须同时包含本轮问题、输入框和状态。
+        String bottomArea = lastLines(model.view(), 3);
+        assertTrue(bottomArea.contains("> 三行内也要看见"), bottomArea);
+        assertTrue(bottomArea.contains("› Write tests for @filename"), bottomArea);
+        assertTrue(bottomArea.contains("completed"), bottomArea);
+    }
+
+    @Test
+    void rendererViewShouldUseLineFeedOnly() {
+        CodingXTuiModel model = new CodingXTuiModel(
+            tempDir.resolve("workspace"),
+            new MockAgentEventSource(),
+            new TerminalRenderer()
+        );
+
+        model.submitTask("不要把回车符交给 renderer");
+
+        // tui4j 的 RendererFlush 只按 LF 拆分逻辑行；Windows CRLF 会把 \r 留在行尾并破坏差量刷新。
+        assertFalse(model.view().contains("\r"), model.view());
+    }
+
+    @Test
+    void ttyComposerShouldStillKeepQuestionInBottomThreeLines() {
+        TerminalInfo.provide(() -> new TerminalInfo(true, new NoColor()));
+        CodingXTuiModel model = new CodingXTuiModel(
+            tempDir.resolve("workspace"),
+            new MockAgentEventSource(),
+            new TerminalRenderer()
+        );
+
+        model.submitTask("真实 TTY 也要看见");
+
+        // 真实终端下 tui4j textarea 会带光标样式；CodingX 底部布局仍必须稳定为问题、输入、状态三行。
+        String bottomArea = lastLines(stripAnsi(model.view()), 3);
+        assertTrue(bottomArea.contains("> 真实 TTY 也要看见"), bottomArea);
+        assertTrue(bottomArea.contains("› Write tests for @filename"), bottomArea);
+        assertTrue(bottomArea.contains("completed"), bottomArea);
+    }
+
+    @Test
     void realProgramStreamingShouldRenderSubmittedQuestionWhileRunning() throws Exception {
         ProgramStreamingEventSource eventSource = new ProgramStreamingEventSource();
         CodingXTuiModel model = new CodingXTuiModel(
@@ -315,6 +380,23 @@ class CodingXTuiModelTest {
         String visibleTerminal = lastVisualLines(model.view(), 40, 12);
         assertTrue(visibleTerminal.contains("> 长行也要看见"), visibleTerminal);
         assertTrue(visibleTerminal.contains("wrap-output-"), visibleTerminal);
+    }
+
+    @Test
+    void longBackendOutputShouldBePreWrappedBeforeStandardRendererFlushes() {
+        CodingXTuiModel model = new CodingXTuiModel(
+            tempDir.resolve("workspace"),
+            new WrappedLongLineEventSource(),
+            new TerminalRenderer()
+        );
+
+        model.update(new WindowSizeMessage(40, 1000));
+        model.submitTask("真实终端也要看见");
+
+        List<String> overWideLines = model.view().lines()
+            .filter(line -> line.length() > 40)
+            .toList();
+        assertTrue(overWideLines.isEmpty(), String.join(System.lineSeparator(), overWideLines));
     }
 
     @Test

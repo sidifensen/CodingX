@@ -4690,6 +4690,50 @@ describe('useChatWorkspace', () => {
   });
 
   /**
+   * 选中内置 Slash Command 时，应生成 builtin 类型结构化命令并把斜杠前缀从普通问题中剥离。
+   */
+  it('应在内置Slash Command场景生成builtin结构化消息', () => {
+    const requestUrl = (buildStreamRequestUrl as any)(
+      '/review 请审查当前改动',
+      '2001',
+      '3001',
+      false,
+      false,
+      [],
+      [],
+      undefined,
+      [],
+      null,
+      'local',
+      {
+        commandCode: 'review',
+        displayName: '/review',
+        commandType: 'BUILTIN',
+      },
+    );
+    const searchParams = new URLSearchParams(requestUrl.split('?')[1] ?? '');
+
+    expect(searchParams.get('question')).toBe('请审查当前改动');
+    expect(searchParams.get('runtimeTarget')).toBe('local');
+    const messagePayload = JSON.parse(searchParams.get('messages') ?? '[]');
+    expect(messagePayload).toEqual([
+      {
+        type: 'slash_command',
+        data: {
+          command: 'review',
+          command_type: 'builtin',
+        },
+      },
+      {
+        type: 'text',
+        data: {
+          content: '请审查当前改动',
+        },
+      },
+    ]);
+  });
+
+  /**
    * 本地模式应携带 workspaceId 归档到后端，同时保留目录作为工具执行上下文。
    */
   it('本地流式请求应标记local并携带workspaceId', () => {

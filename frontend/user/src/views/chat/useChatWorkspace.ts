@@ -29,6 +29,7 @@ import {
   RegenerateConversationOptions,
   SampleQuestionItem,
   ShareConversationOptions,
+  SlashCommandItem,
   StreamQueueState,
   UseChatWorkspaceOptions,
   WorkspaceConversationCreateContext,
@@ -538,6 +539,8 @@ export function useChatWorkspace(
   const [availableSkills, setAvailableSkills] = useState<ChatSkillItem[]>([]);
   const [currentSkills, setCurrentSkills] = useState<CurrentSkillItem[]>([]);
   const [selectedSkillCodes, setSelectedSkillCodesState] = useState<string[]>([]);
+  const [availableSlashCommands, setAvailableSlashCommands] = useState<SlashCommandItem[]>([]);
+  const [selectedSlashCommand, setSelectedSlashCommand] = useState<SlashCommandItem | null>(null);
   const [availableMcps, setAvailableMcps] = useState<McpItem[]>([]);
   const [currentMcps, setCurrentMcps] = useState<CurrentMcpItem[]>([]);
   const [selectedMcpCodes, setSelectedMcpCodesState] = useState<string[]>([]);
@@ -1296,6 +1299,7 @@ export function useChatWorkspace(
       const nextSampleQuestionsPromise = ChatApi.listSampleQuestions(token);
       const nextExpertsPromise = ChatApi.listExperts(token);
       const nextSkillsPromise = ChatApi.listSkills(token);
+      const nextSlashCommandsPromise = ChatApi.listSlashCommands(token);
       const nextMcpsPromise = ChatApi.listMcps(token);
 
       // 优化：技能和MCP数据独立于会话恢复，提前处理以加快UI响应
@@ -1303,8 +1307,9 @@ export function useChatWorkspace(
         nextSampleQuestionsPromise,
         nextExpertsPromise,
         nextSkillsPromise,
+        nextSlashCommandsPromise,
         nextMcpsPromise,
-      ]).then(([nextSampleQuestionsResult, nextExpertsResult, nextSkillsResult, nextMcpsResult]) => {
+      ]).then(([nextSampleQuestionsResult, nextExpertsResult, nextSkillsResult, nextSlashCommandsResult, nextMcpsResult]) => {
         if (nextSampleQuestionsResult.status === 'fulfilled') {
           setSampleQuestions(nextSampleQuestionsResult.value);
         }
@@ -1313,6 +1318,9 @@ export function useChatWorkspace(
         }
         if (nextSkillsResult.status === 'fulfilled') {
           setAvailableSkills(nextSkillsResult.value);
+        }
+        if (nextSlashCommandsResult.status === 'fulfilled') {
+          setAvailableSlashCommands(nextSlashCommandsResult.value);
         }
         const nextMcps = nextMcpsResult.status === 'fulfilled' ? nextMcpsResult.value : [];
         setAvailableMcps(nextMcps);
@@ -1827,15 +1835,18 @@ export function useChatWorkspace(
       }
       const submittedInputValue = inputValue;
       const submittedAttachments = pendingAttachments;
+      const submittedSlashCommand = selectedSlashCommand;
       // 交互约束：点击发送后立即清空输入与待发送附件，避免用户误判请求未触发。
       setInputValue('');
       setPendingAttachments([]);
+      setSelectedSlashCommand(null);
       let uploadedAttachments: ChatAttachmentItem[] = [];
       try {
         uploadedAttachments = await uploadPendingAttachments(token, activeConversationId, submittedAttachments);
       } catch (error) {
         // 上传失败时恢复发送前输入与附件，允许用户修正后重试。
         setInputValue(submittedInputValue);
+        setSelectedSlashCommand(submittedSlashCommand);
         restorePendingAttachmentsAfterUploadFailed(submittedAttachments);
         setStreamError(error instanceof Error ? error.message : UserErrorMessages.CHAT_ATTACHMENT_UPLOAD_FAILED);
         return;
@@ -1904,6 +1915,7 @@ export function useChatWorkspace(
             workspacePath,
             attachmentIds,
             activeRuntimeTarget,
+            submittedSlashCommand,
           ),
           {
             headers: {
@@ -3499,6 +3511,8 @@ export function useChatWorkspace(
     availableSkills,
     currentSkills,
     selectedSkillCodes,
+    availableSlashCommands,
+    selectedSlashCommand,
     availableMcps,
     currentMcps,
     selectedMcpCodes,
@@ -3518,6 +3532,7 @@ export function useChatWorkspace(
     clearPendingAttachments,
     setDeepThinkingEnabled,
     setSelectedSkillCodes,
+    setSelectedSlashCommand,
     setSelectedMcpCodes,
     setMcpConnected,
     setActiveRuntimeTarget,
@@ -4899,24 +4914,29 @@ export function buildStreamRequestUrl(
   attachmentIdsOrRepositoryPath?: string[] | string | null,
   maybeAttachmentIds?: string[],
   maybeSelectedExpertCodeOrRuntimeTarget?: string | null,
-  maybeRuntimeTarget?: 'cloud' | 'local',
+  maybeRuntimeTargetOrSlashCommand?: 'cloud' | 'local' | SlashCommandItem | null,
+  selectedSlashCommand?: SlashCommandItem | null,
 ) {
-  const skillMessageParseResult = parseSkillMessage(question);
-  const searchParams = new URLSearchParams({
-    question: skillMessageParseResult.question,
-  });
   let repositoryPath: string | null | undefined;
   let attachmentIds: string[] | undefined;
   let selectedExpertCode: string | null | undefined;
   let runtimeTarget: 'cloud' | 'local' | undefined;
+  let effectiveSlashCommand: SlashCommandItem | null | undefined = selectedSlashCommand;
   if (Array.isArray(attachmentIdsOrRepositoryPath)) {
     repositoryPath = repositoryPathOrSelectedExpertCode;
     attachmentIds = attachmentIdsOrRepositoryPath;
     if (maybeSelectedExpertCodeOrRuntimeTarget === 'cloud' || maybeSelectedExpertCodeOrRuntimeTarget === 'local') {
       runtimeTarget = maybeSelectedExpertCodeOrRuntimeTarget;
+      if (maybeRuntimeTargetOrSlashCommand && typeof maybeRuntimeTargetOrSlashCommand !== 'string') {
+        effectiveSlashCommand = maybeRuntimeTargetOrSlashCommand;
+      }
     } else {
       selectedExpertCode = maybeSelectedExpertCodeOrRuntimeTarget;
-      runtimeTarget = maybeRuntimeTarget;
+      if (maybeRuntimeTargetOrSlashCommand === 'cloud' || maybeRuntimeTargetOrSlashCommand === 'local') {
+        runtimeTarget = maybeRuntimeTargetOrSlashCommand;
+      } else {
+        effectiveSlashCommand = maybeRuntimeTargetOrSlashCommand ?? effectiveSlashCommand;
+      }
     }
   } else {
     repositoryPath = attachmentIdsOrRepositoryPath;
@@ -4925,8 +4945,17 @@ export function buildStreamRequestUrl(
     runtimeTarget =
       maybeSelectedExpertCodeOrRuntimeTarget === 'cloud' || maybeSelectedExpertCodeOrRuntimeTarget === 'local'
         ? maybeSelectedExpertCodeOrRuntimeTarget
-        : maybeRuntimeTarget;
+        : undefined;
+    if (maybeRuntimeTargetOrSlashCommand === 'cloud' || maybeRuntimeTargetOrSlashCommand === 'local') {
+      runtimeTarget = maybeRuntimeTargetOrSlashCommand;
+    } else {
+      effectiveSlashCommand = maybeRuntimeTargetOrSlashCommand ?? effectiveSlashCommand;
+    }
   }
+  const structuredMessageParseResult = parseStructuredChatMessage(question, effectiveSlashCommand);
+  const searchParams = new URLSearchParams({
+    question: structuredMessageParseResult.question,
+  });
   const normalizedConversationId = conversationId == null ? '' : String(conversationId).trim();
   if (
     normalizedConversationId.length > 0 &&
@@ -4959,10 +4988,99 @@ export function buildStreamRequestUrl(
   if (attachmentIds != null && attachmentIds.length > 0) {
     searchParams.set('attachmentIds', attachmentIds.join(','));
   }
-  if (skillMessageParseResult.structuredMessages.length > 0) {
-    searchParams.set('messages', JSON.stringify(skillMessageParseResult.structuredMessages));
+  if (structuredMessageParseResult.structuredMessages.length > 0) {
+    searchParams.set('messages', JSON.stringify(structuredMessageParseResult.structuredMessages));
   }
   return `/api/chat/stream?${searchParams.toString()}`;
+}
+
+/**
+ * 解析输入区命令上下文，生成后端可理解的结构化消息。
+ * @param rawQuestion 原始输入。
+ * @param selectedSlashCommand 用户端命令面板选中的内置命令。
+ * @returns 纯文本问题与结构化命令片段。
+ */
+function parseStructuredChatMessage(
+  rawQuestion: string,
+  selectedSlashCommand?: SlashCommandItem | null,
+): {
+  question: string;
+  structuredMessages: Array<Record<string, unknown>>;
+} {
+  const builtinCommand = normalizeBuiltinSlashCommand(selectedSlashCommand);
+  const questionAfterBuiltin = builtinCommand
+    ? stripLeadingSlashCommand(rawQuestion, builtinCommand.command)
+    : rawQuestion;
+  const skillMessageParseResult = parseSkillMessage(questionAfterBuiltin);
+  if (!builtinCommand) {
+    return skillMessageParseResult;
+  }
+  return {
+    question: skillMessageParseResult.question,
+    structuredMessages: [
+      {
+        type: 'slash_command',
+        data: {
+          command: builtinCommand.command,
+          command_type: builtinCommand.commandType,
+        },
+      },
+      ...ensureStructuredTextMessage(skillMessageParseResult.structuredMessages, skillMessageParseResult.question),
+    ],
+  };
+}
+
+/**
+ * 将前端命令对象规整为后端需要的内置命令结构。
+ * @param command 输入区选中的命令。
+ * @returns 规整后的命令，空命令返回 null。
+ */
+function normalizeBuiltinSlashCommand(command?: SlashCommandItem | null): { command: string; commandType: string } | null {
+  const commandCode = String(command?.commandCode ?? '').trim().replace(/^\/+/, '');
+  if (!commandCode) {
+    return null;
+  }
+  const commandType = String(command?.commandType ?? 'BUILTIN').trim().toLowerCase() || 'builtin';
+  return {
+    command: commandCode,
+    commandType,
+  };
+}
+
+/**
+ * 用户选中命令后，输入里可能仍保留 `/review` 前缀；提交前需要只把真实问题传给模型。
+ * @param rawQuestion 原始输入。
+ * @param commandCode 命令编码。
+ * @returns 去掉命令前缀后的问题。
+ */
+function stripLeadingSlashCommand(rawQuestion: string, commandCode: string): string {
+  const trimmedQuestion = rawQuestion.trim();
+  const escapedCommand = commandCode.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return trimmedQuestion.replace(new RegExp(`^/${escapedCommand}(?:\\s+|$)`, 'i'), '').trim();
+}
+
+/**
+ * 内置命令也需要携带 text 片段，确保后端不会只收到命令而丢失用户正文。
+ * @param structuredMessages 已生成的结构化消息。
+ * @param content 纯文本问题。
+ * @returns 包含 text 片段的结构化消息。
+ */
+function ensureStructuredTextMessage(
+  structuredMessages: Array<Record<string, unknown>>,
+  content: string,
+): Array<Record<string, unknown>> {
+  if (structuredMessages.some((message) => message.type === 'text')) {
+    return structuredMessages;
+  }
+  return [
+    ...structuredMessages,
+    {
+      type: 'text',
+      data: {
+        content,
+      },
+    },
+  ];
 }
 
 /**

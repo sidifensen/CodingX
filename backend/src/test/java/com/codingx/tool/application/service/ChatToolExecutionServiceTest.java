@@ -1,7 +1,15 @@
 package com.codingx.tool.application.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import com.codingx.common.exception.BusinessException;
+import com.codingx.governance.application.service.PermissionPolicyService;
+import com.codingx.governance.domain.model.GovernancePermissionAudit;
+import com.codingx.governance.domain.model.GovernancePermissionPolicy;
+import com.codingx.governance.domain.repository.GovernancePermissionAuditRepository;
+import com.codingx.governance.domain.repository.GovernancePermissionPolicyRepository;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -64,5 +72,96 @@ class ChatToolExecutionServiceTest {
         assertEquals("grep", result.toolCode());
         assertEquals("grep", result.metadata().get("canonicalToolCode"));
         assertEquals("grep", result.metadata().get("requestedToolCode"));
+    }
+
+    /**
+     * 工具执行前必须先经过权限策略判定；命中拒绝策略时不能进入真实执行器。
+     */
+    @Test
+    void executeShouldRejectToolCallWhenPermissionPolicyDenies() {
+        ChatToolExecutor shellExecutor = new ChatToolExecutor() {
+            @Override
+            public List<String> toolCodes() {
+                return List.of("shell_command");
+            }
+
+            @Override
+            public ChatToolExecutionResult execute(String toolCode, String question) {
+                return new ChatToolExecutionResult(toolCode, "不应执行", Map.of());
+            }
+        };
+        ChatToolRegistry registry = new ChatToolRegistry(List.of(shellExecutor));
+        registry.init();
+        InMemoryPermissionAuditRepository auditRepository = new InMemoryPermissionAuditRepository();
+        PermissionPolicyService permissionPolicyService = new PermissionPolicyService(
+            new InMemoryPermissionPolicyRepository(List.of(
+                GovernancePermissionPolicy.builder()
+                    .id(1L)
+                    .policyCode("deny-rm-rf")
+                    .policyName("拒绝危险删除")
+                    .commandPattern("rm -rf")
+                    .action("DENY")
+                    .riskLevel("HIGH")
+                    .enabled(1)
+                    .sortNo(1)
+                    .build()
+            )),
+            auditRepository
+        );
+        ChatToolExecutionService service = new ChatToolExecutionService(
+            registry,
+            new LocalToolAliasService(),
+            permissionPolicyService
+        );
+
+        BusinessException exception = assertThrows(
+            BusinessException.class,
+            () -> service.execute("shell_command", "{\"command\":\"rm -rf node_modules\"}")
+        );
+
+        assertEquals("GOVERNANCE_PERMISSION_DENIED", exception.getCode());
+        assertEquals(1, auditRepository.savedAudits.size());
+        assertEquals("DENIED", auditRepository.savedAudits.getFirst().getResult());
+    }
+
+    private record InMemoryPermissionPolicyRepository(List<GovernancePermissionPolicy> policies)
+        implements GovernancePermissionPolicyRepository {
+
+        @Override
+        public List<GovernancePermissionPolicy> findEnabledPolicies() {
+            return policies;
+        }
+
+        @Override
+        public List<GovernancePermissionPolicy> findAll() {
+            return policies;
+        }
+
+        @Override
+        public GovernancePermissionPolicy findById(Long id) {
+            return policies.stream().filter(policy -> policy.getId().equals(id)).findFirst().orElse(null);
+        }
+
+        @Override
+        public void save(GovernancePermissionPolicy policy) {
+        }
+
+        @Override
+        public void softDeleteById(Long id) {
+        }
+    }
+
+    private static final class InMemoryPermissionAuditRepository implements GovernancePermissionAuditRepository {
+        private final List<GovernancePermissionAudit> savedAudits = new ArrayList<>();
+
+        @Override
+        public void save(GovernancePermissionAudit audit) {
+            savedAudits.add(audit);
+        }
+
+        @Override
+        public List<GovernancePermissionAudit> findRecent(int limit) {
+            return savedAudits;
+        }
     }
 }

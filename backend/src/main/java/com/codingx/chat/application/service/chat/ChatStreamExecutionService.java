@@ -174,6 +174,7 @@ public class ChatStreamExecutionService {
                 // 步骤 4：工作线程绑定 run、Trace、工具目录和 skill 目录后，进入聊天应用服务主链路。
                 ChatExecutionContext.start(runId);
                 ConversationTraceContext.bind(traceRun);
+                ChatToolExecutionContext.bindGovernanceContext(userId, command.conversationId(), runId);
                 bindToolWorkingDirectory(command, userId);
                 tempSkillRoot = bindSkillDirectories(command);
                 log.info("聊天执行开始");
@@ -235,6 +236,7 @@ public class ChatStreamExecutionService {
             try {
                 // 步骤 2：进入后台线程后绑定运行上下文、工具工作目录和临时技能目录，再复用主聊天链路执行。
                 ChatExecutionContext.start(runId);
+                ChatToolExecutionContext.bindGovernanceContext(userId, command.conversationId(), runId);
                 bindToolWorkingDirectory(command, userId);
                 tempSkillRoot = bindSkillDirectories(command);
                 log.info("聊天执行开始");

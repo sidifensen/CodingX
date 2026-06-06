@@ -9,6 +9,7 @@ import { TaskDetail } from './pages/TaskDetail';
 import { Skills } from './pages/Skills';
 import { Experts } from './pages/Experts';
 import { ToolsPage } from './pages/ToolsPage';
+import { GovernanceCenterPage } from './pages/GovernanceCenterPage';
 import { WorkspacePage } from './pages/WorkspacePage';
 import { WorkspaceDetailPage } from './pages/WorkspaceDetailPage';
 import { MCP } from './pages/MCP';
@@ -94,6 +95,7 @@ export default function App() {
             <Route path="skills" element={<Skills />} />
             <Route path="experts" element={<Experts />} />
             <Route path="tools" element={<ToolsPage />} />
+            <Route path="governance" element={<GovernanceCenterPage />} />
             <Route path="mcp" element={<MCP />} />
             <Route path="traces" element={<TracePage />} />
             <Route path="traces/:traceId" element={<TraceDetailPage />} />

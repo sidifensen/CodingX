@@ -435,4 +435,102 @@ describe('AdminChatApi unauthorized handling', () => {
     expect(requestUrl).toContain('size=10');
     expect(requestUrl).toContain('keyword=%E9%A1%B9%E7%9B%AE');
   });
+
+  /**
+   * 治理中心权限策略接口应命中治理模块专用路径，避免复用工具管理或系统配置接口。
+   */
+  it('requests governance permission policies through admin governance api', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          success: true,
+          code: 'OK',
+          message: 'success',
+          data: [
+            {
+              id: 1,
+              policyCode: 'deny-dangerous-delete',
+              policyName: '禁止危险删除',
+              toolCode: 'shell_command',
+              commandPattern: 'rm -rf',
+              action: 'DENY',
+              riskLevel: 'HIGH',
+              enabled: 1,
+              sortNo: 10,
+            },
+          ],
+        }),
+        { status: 200 },
+      ),
+    );
+
+    const result = await AdminChatApi.listPermissionPolicies();
+
+    expect(result[0].policyCode).toBe('deny-dangerous-delete');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(String(fetchMock.mock.calls[0][0])).toContain('/api/admin/governance/permission-policies');
+  });
+
+  /**
+   * 治理中心保存接口必须继续透传后端 ApiResponse.message，页面不应改写权限策略错误语义。
+   */
+  it('keeps backend message when governance policy save fails', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          success: false,
+          code: 'BAD_REQUEST',
+          message: '策略编码不能为空',
+          data: null,
+        }),
+        { status: 400 },
+      ),
+    );
+
+    await expect(
+      AdminChatApi.createPermissionPolicy({
+        policyCode: '',
+        policyName: '空策略',
+        action: 'DENY',
+        riskLevel: 'HIGH',
+        enabled: 1,
+        sortNo: 0,
+      }),
+    ).rejects.toThrow('策略编码不能为空');
+  });
+
+  /**
+   * 项目画像扫描接口应提交工作空间 ID 与路径，供管理端主动刷新本地仓库画像。
+   */
+  it('requests project profile scan with workspace path payload', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          success: true,
+          code: 'OK',
+          message: 'success',
+          data: {
+            id: 11,
+            workspaceId: 3001,
+            workspacePath: 'D:/code/CodingX',
+            summary: 'Maven + Vite workspace',
+            status: 'COMPLETED',
+          },
+        }),
+        { status: 200 },
+      ),
+    );
+
+    const result = await AdminChatApi.scanProjectProfile({
+      workspaceId: 3001,
+      workspacePath: 'D:/code/CodingX',
+    });
+
+    expect(result.summary).toBe('Maven + Vite workspace');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(String(fetchMock.mock.calls[0][0])).toContain('/api/admin/governance/project-profiles/scan');
+    expect((fetchMock.mock.calls[0][1] as RequestInit).body).toBe(
+      JSON.stringify({ workspaceId: 3001, workspacePath: 'D:/code/CodingX' }),
+    );
+  });
 });

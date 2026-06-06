@@ -14,12 +14,14 @@ import java.util.Optional;
  * @param traceRun 当前 trace 根上下文。
  * @param traceNodeStack 当前 trace 节点栈快照，确保异步节点保留父子层级。
  * @param toolWorkingDirectory 工具工作目录。
+ * @param governanceContext 工具治理上下文，供异步工具链路写权限审计。
  */
 record ChatExecutorContextSnapshot(
     Long runId, // 聊天执行 runId，可为空；为空时异步线程会清理 ChatExecutionContext。
     ChatTraceRun traceRun, // 当前 Trace 根上下文，可为空；为空时异步线程不绑定 Trace。
     Deque<String> traceNodeStack, // Trace 节点栈快照，可为空；用于恢复异步节点父子关系。
-    Path toolWorkingDirectory // 工具工作目录，可为空；为空时异步线程不绑定本地工具目录。
+    Path toolWorkingDirectory, // 工具工作目录，可为空；为空时异步线程不绑定本地工具目录。
+    ChatToolExecutionContext.GovernanceContext governanceContext // 工具治理上下文，可为空。
 ) {
 
     /**
@@ -32,9 +34,17 @@ record ChatExecutorContextSnapshot(
         // 步骤 2：捕获 Trace 根对象和节点栈，保证异步任务继续挂在同一条过程链路下。
         ChatTraceRun traceRun = ConversationTraceContext.current();
         Deque<String> traceNodeStack = ConversationTraceContext.snapshotNodeStack();
-        // 步骤 3：捕获工具工作目录，避免本地工具在异步线程中找不到会话级目录。
+        // 步骤 3：捕获工具工作目录和治理上下文，避免异步工具链路丢失会话归属。
         Optional<Path> toolWorkingDirectory = ChatToolExecutionContext.currentToolWorkingDirectory();
-        return new ChatExecutorContextSnapshot(runId.orElse(null), traceRun, traceNodeStack, toolWorkingDirectory.orElse(null));
+        ChatToolExecutionContext.GovernanceContext governanceContext =
+            ChatToolExecutionContext.currentGovernanceContext().orElse(null);
+        return new ChatExecutorContextSnapshot(
+            runId.orElse(null),
+            traceRun,
+            traceNodeStack,
+            toolWorkingDirectory.orElse(null),
+            governanceContext
+        );
     }
 
     /**
@@ -59,8 +69,19 @@ record ChatExecutorContextSnapshot(
             // 步骤 5：恢复工具工作目录，供本地命令、文件读写等工具链路使用。
             ChatToolExecutionContext.bindToolWorkingDirectory(toolWorkingDirectory);
         } else {
-            // 步骤 6：没有工具目录时清理 ThreadLocal，避免复用其他会话目录。
-            ChatToolExecutionContext.clear();
+            // 步骤 6：没有工具目录时仅清理目录，避免影响后续治理上下文恢复。
+            ChatToolExecutionContext.bindToolWorkingDirectory(null);
+        }
+        if (governanceContext != null) {
+            // 步骤 7：恢复权限审计所需用户、会话和运行归属。
+            ChatToolExecutionContext.bindGovernanceContext(
+                governanceContext.userId(),
+                governanceContext.conversationId(),
+                governanceContext.runId()
+            );
+        } else {
+            // 步骤 8：没有治理上下文时主动清理，避免线程池旧值污染审计。
+            ChatToolExecutionContext.bindGovernanceContext(null, null, null);
         }
     }
 

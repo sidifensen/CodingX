@@ -26,6 +26,7 @@ import com.codingx.common.error.ErrorMessageCatalog;
 import com.codingx.common.exception.ForbiddenException;
 import com.codingx.common.support.ai.AiToolCall;
 import com.codingx.expert.application.service.ChatExpertContextService;
+import com.codingx.governance.application.service.HookRuleService;
 import com.codingx.mcp.application.service.ChatMcpExecutionService;
 import com.codingx.mcp.application.service.ChatMcpQueryService;
 import com.codingx.mcp.application.executor.ChatMcpProgressListener;
@@ -138,6 +139,8 @@ public class ChatApplicationService {
     private final ChatToolSpecService chatToolSpecService;
     /** 工具执行服务，承接模型发起的本地工具调用 */
     private final ChatToolExecutionService chatToolExecutionService;
+    /** Hook 规则服务，记录工具调用前后和任务完成生命周期审计 */
+    private final HookRuleService hookRuleService;
     /** 会话 workspace 绑定服务，负责把本地空间映射为真实仓库目录 */
     private final ChatWorkspaceBindingService chatWorkspaceBindingService;
     /** Agent Loop 确定性规则协调器，负责轮次、完成原因和重复工具调用判断 */
@@ -2112,6 +2115,13 @@ public class ChatApplicationService {
         }
         LocalDateTime startedAt = LocalDateTime.now();
         publishLocalToolCallEvent(command.conversationId(), toolCall, "start", startedAt, null, null);
+        triggerGovernanceHook(
+            "BEFORE_TOOL_CALL",
+            command.conversationId(),
+            runId,
+            toolCall.toolCode(),
+            toolCall.arguments()
+        );
         try {
             // 步骤 2：执行模型指定工具，并把工具输出转成 chat_execution_step 供前端时间线展示。
             ChatToolExecutionResult toolResult = chatToolExecutionService.execute(toolCall.toolCode(), toolCall.arguments());
@@ -2138,16 +2148,120 @@ public class ChatApplicationService {
                     "content", toolStep.getContent()
                 ));
             }
+            persistPlanStepsIfNeeded(command, runId, toolResult);
             // 步骤 3：发布工具完成事件并返回工具内容给模型循环，模型可继续基于结果生成回答。
             publishLocalToolCallEvent(command.conversationId(), toolCall, "complete", startedAt, LocalDateTime.now(), toolResult);
+            triggerGovernanceHook(
+                "AFTER_TOOL_CALL",
+                command.conversationId(),
+                runId,
+                toolCall.toolCode(),
+                toolResult.content()
+            );
             return toolResult;
         } catch (RuntimeException exception) {
             // 步骤 4：工具执行失败时先通知前端工具错误，再把异常交给模型循环外层收口。
             publishLocalToolCallError(command.conversationId(), toolCall, startedAt, exception);
+            triggerGovernanceHook(
+                "AFTER_TOOL_CALL",
+                command.conversationId(),
+                runId,
+                toolCall.toolCode(),
+                "工具执行失败：" + exception.getMessage()
+            );
             throw exception;
         } finally {
             // 步骤 5：恢复进入工具前的线程上下文，避免后续工具调用沿用错误目录。
             restoreToolExecutionContext(previousWorkingDirectory, previousSkillDirectories);
+        }
+    }
+
+    /**
+     * 将 update_plan 工具返回的步骤持久化为 plan 类型执行步骤，并同步推送给前端时间线。
+     */
+    private void persistPlanStepsIfNeeded(SendChatMessageCommand command, Long runId, ChatToolExecutionResult toolResult) {
+        if (command.localOnly() || toolResult == null || toolResult.metadata() == null) {
+            return;
+        }
+        Object canonicalToolCode = toolResult.metadata().get("canonicalToolCode");
+        boolean updatePlanTool = StrUtil.equalsIgnoreCase(toolResult.toolCode(), "update_plan")
+            || StrUtil.equalsIgnoreCase(String.valueOf(canonicalToolCode), "update_plan");
+        if (!updatePlanTool || !(toolResult.metadata().get("steps") instanceof Iterable<?> steps)) {
+            return;
+        }
+        long sequenceNo = 1L;
+        for (Object stepItem : steps) {
+            cn.hutool.json.JSONObject stepObject = cn.hutool.json.JSONUtil.parseObj(stepItem);
+            String title = StrUtil.blankToDefault(stepObject.getStr("step"), stepObject.getStr("title"));
+            if (StrUtil.isBlank(title)) {
+                continue;
+            }
+            String status = normalizePlanStepStatus(stepObject.getStr("status"));
+            ChatExecutionStep planStep = ChatExecutionStep.builder()
+                .id(IdUtil.getSnowflakeNextId())
+                .runId(runId)
+                .stepType("plan")
+                .stepTitle(title)
+                .stepStatus(status)
+                .sequenceNo(sequenceNo++)
+                .content(toolResult.content())
+                .metadataJson(cn.hutool.json.JSONUtil.toJsonStr(Map.of(
+                    "planId",
+                    String.valueOf(toolResult.metadata().getOrDefault("planId", "default")),
+                    "sourceTool",
+                    StrUtil.blankToDefault(toolResult.toolCode(), "update_plan")
+                )))
+                .createdAt(LocalDateTime.now())
+                .updatedAt(LocalDateTime.now())
+                .build();
+            chatExecutionStepRepository.save(planStep);
+            chatStreamPublisher.publishStep(command.conversationId(), Map.of(
+                "id", planStep.getId(),
+                "runId", planStep.getRunId(),
+                "stepType", planStep.getStepType(),
+                "stepTitle", planStep.getStepTitle(),
+                "stepStatus", planStep.getStepStatus(),
+                "sequenceNo", planStep.getSequenceNo(),
+                "content", planStep.getContent()
+            ));
+        }
+    }
+
+    /**
+     * 归一化模型传入的计划步骤状态，保持前端时间线使用既有大写状态。
+     */
+    private String normalizePlanStepStatus(String rawStatus) {
+        String status = StrUtil.trimToEmpty(rawStatus).toLowerCase(java.util.Locale.ROOT);
+        return switch (status) {
+            case "completed", "complete", "done" -> "COMPLETED";
+            case "in_progress", "running", "active" -> "RUNNING";
+            default -> "PENDING";
+        };
+    }
+
+    /**
+     * 触发治理 Hook；Hook 审计失败不能反向中断聊天主流程。
+     */
+    private void triggerGovernanceHook(
+        String triggerPoint,
+        Long conversationId,
+        Long runId,
+        String toolCode,
+        String contextText
+    ) {
+        if (hookRuleService == null) {
+            return;
+        }
+        try {
+            hookRuleService.trigger(triggerPoint, conversationId, runId, toolCode, contextText);
+        } catch (RuntimeException exception) {
+            log.warn(
+                "治理 Hook 触发失败: triggerPoint={}, conversationId={}, runId={}",
+                triggerPoint,
+                conversationId,
+                runId,
+                exception
+            );
         }
     }
 
@@ -2452,6 +2566,15 @@ public class ChatApplicationService {
             .updatedAt(java.time.LocalDateTime.now())
             .build();
         chatExecutionRunRepository.save(run);
+        if (status == ChatMessageStatus.COMPLETED) {
+            triggerGovernanceHook(
+                "TASK_COMPLETED",
+                conversation.getId(),
+                runId,
+                null,
+                "任务完成，意图=" + StrUtil.blankToDefault(intentCode, "unknown")
+            );
+        }
         log.info(
             "执行收口: runId={}, 会话={}, 状态={}, 意图={}, 搜索={}, 产物={}, 错误={}",
             runId,

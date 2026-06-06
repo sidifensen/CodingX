@@ -8,8 +8,10 @@ import com.codingx.chat.application.service.ChatConversationApplicationService;
 import com.codingx.chat.application.service.ChatWorkspaceBindingService;
 import com.codingx.chat.domain.model.ChatConversation;
 import com.codingx.chat.infrastructure.stream.ChatSseRegistry;
+import com.codingx.common.exception.BusinessException;
 import com.codingx.expert.domain.model.ChatExpert;
 import com.codingx.expert.domain.repository.ChatExpertRepository;
+import com.codingx.governance.application.service.SlashCommandService;
 import com.codingx.mcp.application.service.ChatMcpQueryService;
 import com.codingx.mcp.domain.model.ChatMcp;
 import java.util.List;
@@ -56,6 +58,11 @@ public class ChatStreamRequestApplicationService {
      * 专家配置仓储，用于校验请求传入的专家编码是否存在且已启用。
      */
     private final ChatExpertRepository chatExpertRepository;
+
+    /**
+     * Slash Command 服务，用于把用户端结构化内置命令转换为后端命令上下文。
+     */
+    private final SlashCommandService slashCommandService;
 
     /**
      * 打开单次聊天 SSE 流，并把聊天任务派发到后台执行。
@@ -429,7 +436,7 @@ public class ChatStreamRequestApplicationService {
     }
 
     /**
-     * 解析结构化消息，仅提取技能命令与正文文本，避免技能语法污染自然语言内容。
+     * 解析结构化消息，提取技能命令、内置命令和正文文本，避免前端自行改写命令语义。
      * @param messagesParam 前端传入的结构化消息 JSON。
      * @return 技能与文本解析结果。
      */
@@ -438,9 +445,10 @@ public class ChatStreamRequestApplicationService {
             return new StructuredMessageParseResult(List.of(), null);
         }
         try {
-            // 步骤 1：遍历结构化消息，只识别 slash_command(skill) 和 text 两类运行时需要的数据。
+            // 步骤 1：遍历结构化消息，识别 slash_command(skill/builtin) 与 text 两类运行时数据。
             cn.hutool.json.JSONArray messagesArray = cn.hutool.json.JSONUtil.parseArray(messagesParam);
             List<String> parsedSkillCodes = new java.util.ArrayList<>();
+            String builtinCommandCode = null;
             String parsedTextContent = null;
             for (Object messageItem : messagesArray) {
                 cn.hutool.json.JSONObject messageObject = cn.hutool.json.JSONUtil.parseObj(messageItem);
@@ -455,6 +463,9 @@ public class ChatStreamRequestApplicationService {
                     if ("skill".equalsIgnoreCase(commandType) && StrUtil.isNotBlank(command)) {
                         parsedSkillCodes.add(command);
                     }
+                    if ("builtin".equalsIgnoreCase(commandType) && StrUtil.isNotBlank(command)) {
+                        builtinCommandCode = command;
+                    }
                     continue;
                 }
                 if ("text".equalsIgnoreCase(type)) {
@@ -464,13 +475,22 @@ public class ChatStreamRequestApplicationService {
                     }
                 }
             }
-            // 步骤 2：技能编码去重后返回，正文保留最后一个 text 内容。
+            // 步骤 2：技能编码去重后返回；内置命令由后端服务拼接命令上下文。
             List<String> normalizedSkillCodes = parsedSkillCodes.stream()
                 .map(String::trim)
                 .filter(StrUtil::isNotBlank)
                 .distinct()
                 .collect(Collectors.toList());
+            if (StrUtil.isNotBlank(builtinCommandCode)) {
+                return new StructuredMessageParseResult(
+                    normalizedSkillCodes,
+                    slashCommandService.buildBuiltinCommandContent(builtinCommandCode, parsedTextContent)
+                );
+            }
             return new StructuredMessageParseResult(normalizedSkillCodes, parsedTextContent);
+        } catch (BusinessException exception) {
+            // 内置命令不可用必须返回中文业务错误，不能退回普通文本继续执行。
+            throw exception;
         } catch (Exception ignored) {
             // 结构化消息解析失败时回退到普通文本模式，避免阻断发送链路。
             return new StructuredMessageParseResult(List.of(), null);

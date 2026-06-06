@@ -23,6 +23,7 @@ import com.codingx.chat.domain.model.ChatMessage;
 import com.codingx.chat.infrastructure.stream.ChatSseRegistry;
 import com.codingx.expert.domain.model.ChatExpert;
 import com.codingx.expert.domain.repository.ChatExpertRepository;
+import com.codingx.governance.application.service.SlashCommandService;
 import com.codingx.mcp.domain.model.ChatMcp;
 import com.codingx.mcp.domain.repository.ChatMcpRepository;
 import com.codingx.skill.domain.repository.ChatSkillRepository;
@@ -84,6 +85,12 @@ class ChatStreamControllerTest {
      */
     @Mock
     private ChatExpertRepository chatExpertRepository;
+
+    /**
+     * Slash Command 服务依赖，用于把结构化内置命令转换为后端命令上下文。
+     */
+    @Mock
+    private SlashCommandService slashCommandService;
 
     /**
      * 被测应用服务，保留真实 meta 构建逻辑以覆盖 Controller 到应用层的流入口契约。
@@ -569,6 +576,61 @@ class ChatStreamControllerTest {
                     && command.skillCodes().equals(List.of("agent-browser"))
                     && command.expertCode() == null
                     && command.attachmentIds().isEmpty()),
+                eq(1001L)
+            );
+        }
+    }
+
+    /**
+     * 内置 slash command 应由后端转换为命令上下文，不能只按普通文本透传。
+     */
+    @Test
+    void streamChatParsesBuiltinSlashCommandContext() {
+        SseEmitter emitter = new SseEmitter(0L);
+        whenRegisterReturns(emitter);
+        when(chatConversationApplicationService.listMessages(5101L, 1001L)).thenReturn(List.of(
+            ChatMessage.userMessage(5101L, "历史消息")
+        ));
+        when(slashCommandService.buildBuiltinCommandContent("review", "请重点看权限模块"))
+            .thenReturn("请按代码评审方式检查当前改动。\n\n用户补充要求：\n请重点看权限模块");
+        try (MockedStatic<StpUtil> mocked = Mockito.mockStatic(StpUtil.class)) {
+            mocked.when(StpUtil::getLoginIdAsLong).thenReturn(1001L);
+
+            SseEmitter actual = chatStreamController.streamChat(
+                "/review 请重点看权限模块",
+                5101L,
+                null,
+                false,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                """
+                [
+                  {
+                    "type":"slash_command",
+                    "data":{
+                      "command":"review",
+                      "command_type":"builtin"
+                    }
+                  },
+                  {
+                    "type":"text",
+                    "data":{"content":"请重点看权限模块"}
+                  }
+                ]
+                """,
+                null
+            );
+
+            assertEquals(emitter, actual);
+            verify(chatStreamExecutionService).dispatch(
+                argThat(taskId -> taskId != null && taskId > 0),
+                argThat(command -> command.conversationId().equals(5101L)
+                    && command.content().equals("请按代码评审方式检查当前改动。\n\n用户补充要求：\n请重点看权限模块")
+                    && command.skillCodes().isEmpty()),
                 eq(1001L)
             );
         }

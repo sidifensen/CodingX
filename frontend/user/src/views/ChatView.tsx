@@ -44,6 +44,7 @@ import {
   PendingAttachmentItem,
   ProcessCardItem,
   SharedConversationPayload,
+  SlashCommandItem,
 } from './chat/types';
 import { resolveSkillChipLabel } from './chat/messagePresentation';
 
@@ -88,6 +89,8 @@ export default function ChatView({
     currentExperts,
     availableSkills,
     selectedSkillCodes,
+    availableSlashCommands,
+    selectedSlashCommand,
     availableMcps,
     selectedMcpCodes,
     isStreaming,
@@ -105,6 +108,7 @@ export default function ChatView({
     clearPendingAttachments,
     setDeepThinkingEnabled,
     setSelectedSkillCodes,
+    setSelectedSlashCommand,
     setSelectedMcpCodes,
     setMcpConnected,
     setActiveRuntimeTarget,
@@ -140,12 +144,14 @@ export default function ChatView({
   const latestMessageAnchorRef = React.useRef<HTMLDivElement | null>(null);
   const chatScrollRegionRef = React.useRef<HTMLDivElement | null>(null);
   const shouldFollowLatestMessageRef = React.useRef(true);
-  const [activeSelectorMode, setActiveSelectorMode] = React.useState<'mcp' | 'skill' | 'expert' | null>(null);
+  const [activeSelectorMode, setActiveSelectorMode] = React.useState<'mcp' | 'skill' | 'expert' | 'command' | null>(null);
   const [activeRuntimeWorkspaceMenu, setActiveRuntimeWorkspaceMenu] = React.useState<
     'runtime' | 'workspace' | null
   >(null);
   const [skillSearchKeyword, setSkillSearchKeyword] = React.useState('');
   const [activeSkillOptionIndex, setActiveSkillOptionIndex] = React.useState(-1);
+  const [slashCommandSearchKeyword, setSlashCommandSearchKeyword] = React.useState('');
+  const [activeSlashCommandOptionIndex, setActiveSlashCommandOptionIndex] = React.useState(-1);
   const [expertSearchKeyword, setExpertSearchKeyword] = React.useState('');
   const [skillSelectorSource, setSkillSelectorSource] = React.useState<'button' | 'slash' | null>(
     null,
@@ -448,6 +454,28 @@ export default function ChatView({
   }, [availableSkills, skillSearchKeyword]);
 
   /**
+   * 过滤 Slash Command 列表，斜杠后的文本仅作为命令检索词，不参与普通问题正文。
+   * @returns 过滤后的命令列表。
+   */
+  const filteredSlashCommands = React.useMemo(() => {
+    const normalizedKeyword = slashCommandSearchKeyword.trim().replace(/^\/+/, '').toLowerCase();
+    const commands = availableSlashCommands ?? [];
+    if (!normalizedKeyword) {
+      return commands;
+    }
+    return commands.filter((command) => {
+      const commandCode = (command.commandCode ?? '').toLowerCase();
+      const displayName = (command.displayName ?? '').toLowerCase();
+      const description = (command.description ?? '').toLowerCase();
+      return (
+        commandCode.includes(normalizedKeyword) ||
+        displayName.includes(normalizedKeyword) ||
+        description.includes(normalizedKeyword)
+      );
+    });
+  }, [availableSlashCommands, slashCommandSearchKeyword]);
+
+  /**
    * 技能筛选结果变化时默认高亮首项，保证 Tab 能直接确认当前最相关候选。
    */
   React.useEffect(() => {
@@ -457,6 +485,17 @@ export default function ChatView({
     }
     setActiveSkillOptionIndex(0);
   }, [activeSelectorMode, filteredSkills.length, skillSearchKeyword]);
+
+  /**
+   * 命令筛选结果变化时默认高亮首项，支持键盘快速确认。
+   */
+  React.useEffect(() => {
+    if (activeSelectorMode !== 'command' || filteredSlashCommands.length === 0) {
+      setActiveSlashCommandOptionIndex(-1);
+      return;
+    }
+    setActiveSlashCommandOptionIndex(0);
+  }, [activeSelectorMode, filteredSlashCommands.length, slashCommandSearchKeyword]);
 
   /**
    * 过滤专家列表，支持名称与编码模糊检索。
@@ -634,10 +673,6 @@ export default function ChatView({
 
       if (isSkillAlreadySelected) {
         nextInput = removeSkillTokenByCode(currentInput, skillCode);
-      } else if (skillSelectorSource === 'slash') {
-        // 步骤：斜杠只作为技能检索触发器，选中后替换为可编辑技能文本标记。
-        const remainingText = currentInput.replace(/^\s*\/[^\s]*\s*/, '');
-        nextInput = remainingText ? `${skillToken} ${remainingText}` : `${skillToken} `;
       } else {
         const textarea = chatInputRef.current;
         const selectionStart = textarea?.selectionStart ?? currentInput.length;
@@ -661,13 +696,38 @@ export default function ChatView({
 
       setInputValue(nextInput);
       syncSelectedSkillCodesFromInput(nextInput);
-      if (skillSelectorSource === 'slash') {
-        setActiveSelectorMode(null);
-        setSkillSelectorSource(null);
-        setSkillSearchKeyword('');
-      }
+      setActiveSelectorMode(null);
+      setSkillSelectorSource(null);
+      setSkillSearchKeyword('');
     },
     [inputValue, selectedSkillCodes, setInputValue, skillSelectorSource, syncSelectedSkillCodesFromInput],
+  );
+
+  /**
+   * 选择 Slash Command：命令本身写入独立状态，输入框只保留用户正文。
+   * @param command 被选中的内置命令。
+   */
+  const selectSlashCommand = React.useCallback(
+    (command: SlashCommandItem) => {
+      const commandCode = (command.commandCode ?? '').trim().replace(/^\/+/, '');
+      if (!commandCode) {
+        return;
+      }
+      const remainingText = removeLeadingSlashToken(inputValue, commandCode);
+      setSelectedSlashCommand({
+        ...command,
+        commandCode,
+        displayName: command.displayName || `/${commandCode}`,
+        commandType: command.commandType || 'BUILTIN',
+      });
+      setInputValue(remainingText);
+      setActiveSelectorMode(null);
+      setSlashCommandSearchKeyword('');
+      window.requestAnimationFrame(() => {
+        chatInputRef.current?.focus();
+      });
+    },
+    [inputValue, setInputValue, setSelectedSlashCommand],
   );
 
   /**
@@ -706,6 +766,44 @@ export default function ChatView({
       return false;
     },
     [activeSelectorMode, activeSkillOptionIndex, filteredSkills, selectSkill],
+  );
+
+  /**
+   * 处理 Slash Command 候选列表键盘交互：上下键移动高亮，Tab 直接确认当前命令。
+   * @param event 输入框或命令检索框的键盘事件。
+   * @returns 是否已消费该按键。
+   */
+  const handleSlashCommandSelectorKeyDown = React.useCallback(
+    (event: React.KeyboardEvent<HTMLElement>) => {
+      if (activeSelectorMode !== 'command' || filteredSlashCommands.length === 0) {
+        return false;
+      }
+      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+        event.preventDefault();
+        event.stopPropagation();
+        setActiveSlashCommandOptionIndex((currentIndex) => {
+          const normalizedIndex = currentIndex >= 0 ? currentIndex : 0;
+          if (event.key === 'ArrowDown') {
+            return (normalizedIndex + 1) % filteredSlashCommands.length;
+          }
+          return (normalizedIndex - 1 + filteredSlashCommands.length) % filteredSlashCommands.length;
+        });
+        return true;
+      }
+      if (event.key === 'Tab' && !event.shiftKey) {
+        const fallbackIndex = activeSlashCommandOptionIndex >= 0 ? activeSlashCommandOptionIndex : 0;
+        const targetCommand = filteredSlashCommands[fallbackIndex];
+        if (!targetCommand) {
+          return false;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+        selectSlashCommand(targetCommand);
+        return true;
+      }
+      return false;
+    },
+    [activeSelectorMode, activeSlashCommandOptionIndex, filteredSlashCommands, selectSlashCommand],
   );
 
   /**
@@ -769,23 +867,23 @@ export default function ChatView({
   }, [skillSelectorSource]);
 
   /**
-   * 监听输入框斜杠触发技能检索，支持“输入 / 即打开技能列表”。
+   * 监听输入框斜杠触发命令检索，支持“输入 / 即打开 Slash Command 列表”。
    * 关键约束：仅在输入变化时触发，避免用户手动切换 MCP/技能后被自动逻辑抢回。
    */
   React.useEffect(() => {
     const normalizedInput = inputValue.trimStart();
     if (!normalizedInput.startsWith('/')) {
       if (skillSelectorSourceRef.current === 'slash') {
-        setActiveSelectorMode((current) => (current === 'skill' ? null : current));
+        setActiveSelectorMode((current) => (current === 'command' ? null : current));
         setSkillSelectorSource(null);
-        setSkillSearchKeyword('');
+        setSlashCommandSearchKeyword('');
       }
       return;
     }
     const slashKeyword = normalizedInput.slice(1).split(/\s+/)[0] ?? '';
-    setActiveSelectorMode('skill');
+    setActiveSelectorMode('command');
     setSkillSelectorSource('slash');
-    setSkillSearchKeyword(slashKeyword);
+    setSlashCommandSearchKeyword(slashKeyword);
   }, [inputValue]);
 
   /**
@@ -1299,12 +1397,25 @@ export default function ChatView({
                           ? 'mcp-selector-panel'
                           : activeSelectorMode === 'expert'
                             ? 'expert-selector-panel'
-                            : 'skill-selector-panel'
+                            : activeSelectorMode === 'command'
+                              ? 'slash-command-selector-panel'
+                              : 'skill-selector-panel'
                       }
                       // 步骤：弹层宽度在桌面端收敛为中等尺寸，移动端仍自适应屏宽，避免视觉占用过大。
                       className="absolute bottom-[calc(100%+10px)] left-0 z-30 w-[calc(100vw-2.5rem)] max-w-[480px] rounded-2xl border border-border bg-surface px-2 py-2 shadow-[0_18px_44px_rgba(0,0,0,0.25)] md:w-[480px]"
                     >
-                      {activeSelectorMode === 'skill' ? (
+                      {activeSelectorMode === 'command' ? (
+                        <div className="mb-2 px-1">
+                          <input
+                            type="text"
+                            value={slashCommandSearchKeyword}
+                            onChange={(event) => setSlashCommandSearchKeyword(event.target.value)}
+                            onKeyDown={handleSlashCommandSelectorKeyDown}
+                            placeholder="搜索命令"
+                            className="h-8 w-full rounded-lg border border-border bg-surface-container px-3 text-xs text-foreground outline-none placeholder:text-muted"
+                          />
+                        </div>
+                      ) : activeSelectorMode === 'skill' ? (
                         <div className="mb-2 px-1">
                           <input
                             type="text"
@@ -1327,7 +1438,52 @@ export default function ChatView({
                         </div>
                       ) : null}
                       <div className="max-h-64 overflow-y-auto">
-                        {activeSelectorMode === 'mcp' ? (
+                        {activeSelectorMode === 'command' ? (
+                          filteredSlashCommands.length ? (
+                            filteredSlashCommands.map((command, index) => {
+                              const commandCode = (command.commandCode ?? '').trim().replace(/^\/+/, '');
+                              const displayName = command.displayName || `/${commandCode}`;
+                              const isKeyboardActive = index === activeSlashCommandOptionIndex;
+                              const isSelected = selectedSlashCommand?.commandCode === commandCode;
+                              return (
+                                <button
+                                  key={commandCode}
+                                  type="button"
+                                  aria-label={`选择命令 ${displayName}`}
+                                  aria-selected={isKeyboardActive}
+                                  data-slash-command-option-index={index}
+                                  onClick={() => selectSlashCommand(command)}
+                                  className={`mb-1 flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm transition-colors last:mb-0 ${
+                                    isSelected || isKeyboardActive
+                                      ? 'bg-surface-container text-foreground'
+                                      : 'text-muted hover:bg-surface-container hover:text-foreground'
+                                  }`}
+                                >
+                                  <span className="min-w-0">
+                                    <span className="flex items-center gap-1.5">
+                                      <Sparkles size={13} className="shrink-0 text-muted" />
+                                      <span className="block truncate font-mono text-foreground">
+                                        {displayName}
+                                      </span>
+                                    </span>
+                                    <span className="mt-1 block truncate text-[11px] text-muted">
+                                      {command.description?.trim() || commandCode}
+                                    </span>
+                                  </span>
+                                  {isSelected ? (
+                                    <span className="rounded-full border border-border px-2 py-0.5 text-[10px] text-muted">
+                                      已选中
+                                    </span>
+                                  ) : null}
+                                </button>
+                              );
+                            })
+                          ) : (
+                            <div className="rounded-xl bg-surface-container px-3 py-2 text-sm text-muted">
+                              未匹配到命令
+                            </div>
+                          )
+                        ) : activeSelectorMode === 'mcp' ? (
                           availableMcps.map((mcp) => {
                             const isSelected = selectedMcpCodes.includes(mcp.mcpCode);
                             const selectable = isMcpSelectable(mcp);
@@ -1515,13 +1671,9 @@ export default function ChatView({
                         setActiveSelectorMode('skill');
                         setSkillSelectorSource('button');
                         setSkillSearchKeyword('');
-                        if (!inputValue.trim()) {
-                          // 步骤：点击技能按钮时自动补斜杠，降低触发门槛并统一交互预期。
-                          setInputValue('/');
-                          window.requestAnimationFrame(() => {
-                            chatInputRef.current?.focus();
-                          });
-                        }
+                        window.requestAnimationFrame(() => {
+                          chatInputRef.current?.focus();
+                        });
                       }}
                       className="inline-flex h-7 max-w-[180px] items-center gap-1 rounded-full border border-border bg-surface-container px-3 text-xs text-foreground transition-[box-shadow,border-color,background-color] duration-200 hover:border-border-active hover:bg-surface hover:shadow-[0_8px_18px_rgba(0,0,0,0.16)]"
                     >
@@ -1558,6 +1710,28 @@ export default function ChatView({
                 </div>
                 <div className="space-y-3">
                   <div data-testid="chat-input-content-area" className="relative">
+                    {selectedSlashCommand ? (
+                      <div className="mb-2 flex min-w-0 flex-wrap items-center gap-2">
+                        <span
+                          data-testid={`selected-slash-command-chip-${selectedSlashCommand.commandCode}`}
+                          className="inline-flex max-w-full items-center gap-1 rounded-md border border-border/70 bg-surface-container/82 px-2 py-1 text-[12px] leading-5 text-foreground"
+                          title={selectedSlashCommand.description || selectedSlashCommand.displayName}
+                        >
+                          <Sparkles size={12} className="shrink-0 text-muted" />
+                          <span className="truncate font-mono">
+                            {selectedSlashCommand.displayName || `/${selectedSlashCommand.commandCode}`}
+                          </span>
+                          <button
+                            type="button"
+                            aria-label={`移除命令 ${selectedSlashCommand.displayName || `/${selectedSlashCommand.commandCode}`}`}
+                            onClick={() => setSelectedSlashCommand(null)}
+                            className="ml-1 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-muted transition-colors hover:bg-surface hover:text-foreground"
+                          >
+                            <X size={10} />
+                          </button>
+                        </span>
+                      </div>
+                    ) : null}
                     {pendingAttachments.length > 0 ? (
                       <div
                         data-testid="pending-attachment-list"
@@ -1706,6 +1880,9 @@ export default function ChatView({
                             syncSelectedSkillCodesFromInput(nextInput);
                           }}
                           onKeyDown={(event) => {
+                            if (handleSlashCommandSelectorKeyDown(event)) {
+                              return;
+                            }
                             if (handleSkillSelectorKeyDown(event)) {
                               return;
                             }
@@ -4240,6 +4417,23 @@ function removeSkillTokenByCode(rawInput: string, skillCode: string): string {
   const escapedSkillCode = skillCode.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const removeTokenPattern = new RegExp(`(?:^|\\s)@${escapedSkillCode}(?=\\s|$)`, 'g');
   return rawInput.replace(removeTokenPattern, ' ').replace(/[ \t]{2,}/g, ' ').trimStart();
+}
+
+/**
+ * 移除输入开头的 Slash Command 触发词，保留用户真正要发送给模型的正文。
+ * @param rawInput 当前输入。
+ * @param commandCode 命令编码，不含前导斜杠。
+ * @returns 去掉命令触发词后的输入。
+ */
+function removeLeadingSlashToken(rawInput: string, commandCode: string): string {
+  const escapedCommandCode = commandCode.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const normalizedInput = rawInput.trimStart();
+  const exactRemoved = normalizedInput.replace(new RegExp(`^/${escapedCommandCode}(?:\\s+|$)`, 'i'), '').trimStart();
+  if (exactRemoved !== normalizedInput) {
+    return exactRemoved;
+  }
+  // 业务意图：用户只输入 "/" 后直接点命令时，也要清掉临时触发词，避免把斜杠当正文提交。
+  return normalizedInput.replace(/^\/[^\s]*(?:\s+|$)/, '').trimStart();
 }
 
 /**

@@ -459,6 +459,118 @@ export interface AdminChatToolInvokeView {
 }
 
 /**
+ * 治理中心权限策略配置，控制本地工具调用在执行前是否允许、确认或拒绝。
+ */
+export interface AdminGovernancePermissionPolicy {
+  id?: string | number;
+  policyCode: string;
+  policyName: string;
+  toolCode?: string;
+  commandPattern?: string;
+  pathPattern?: string;
+  action: string;
+  riskLevel: string;
+  description?: string;
+  enabled?: number;
+  sortNo?: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+/**
+ * 治理中心权限判定审计记录，用于回看工具调用被哪条策略命中。
+ */
+export interface AdminGovernancePermissionAudit {
+  id?: string | number;
+  userId?: string | number;
+  conversationId?: string | number;
+  runId?: string | number;
+  toolCode?: string;
+  toolInput?: string;
+  workingDirectory?: string;
+  matchedPolicyCode?: string;
+  decision?: string;
+  riskLevel?: string;
+  result?: string;
+  message?: string;
+  createdAt?: string;
+}
+
+/**
+ * 治理中心 Hook 规则配置，当前 MVP 仅执行无副作用审计动作。
+ */
+export interface AdminGovernanceHookRule {
+  id?: string | number;
+  hookCode: string;
+  hookName: string;
+  triggerPoint: string;
+  conditionKeyword?: string;
+  actionType: string;
+  actionConfigJson?: string;
+  enabled?: number;
+  sortNo?: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+/**
+ * Hook 生命周期审计记录，记录触发点、上下文摘要和处理结果。
+ */
+export interface AdminGovernanceHookAudit {
+  id?: string | number;
+  hookCode?: string;
+  triggerPoint?: string;
+  userId?: string | number;
+  conversationId?: string | number;
+  runId?: string | number;
+  contextSummary?: string;
+  result?: string;
+  message?: string;
+  createdAt?: string;
+}
+
+/**
+ * 项目画像扫描结果，帮助软件端理解本地仓库技术栈与验证命令。
+ */
+export interface AdminGovernanceProjectProfile {
+  id?: string | number;
+  workspaceId?: string | number;
+  workspacePath: string;
+  summary?: string;
+  techStackJson?: string;
+  entrypointsJson?: string;
+  verificationCommandsJson?: string;
+  status?: string;
+  scannedAt?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+/**
+ * Slash Command 配置，用户端聊天输入区只展示启用的命令。
+ */
+export interface AdminGovernanceSlashCommand {
+  id?: string | number;
+  commandCode: string;
+  displayName: string;
+  description?: string;
+  commandType: string;
+  promptTemplate?: string;
+  enabled?: number;
+  sortNo?: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+/**
+ * 管理端项目画像扫描请求。
+ */
+export interface AdminGovernanceProjectProfileScanPayload {
+  workspaceId?: string | number | null;
+  workspacePath: string;
+}
+
+/**
  * 统一封装管理端聊天运行时后台接口。
  */
 export class AdminChatApi {
@@ -949,6 +1061,191 @@ export class AdminChatApi {
     return this.request<AdminChatToolInvokeView>(`/api/admin/tools/${encodeURIComponent(toolCode)}/invoke`, {
       method: 'POST',
       body: JSON.stringify({ question }),
+    });
+  }
+
+  /**
+   * 查询治理中心权限策略列表。
+   */
+  static async listPermissionPolicies(): Promise<AdminGovernancePermissionPolicy[]> {
+    return this.request<AdminGovernancePermissionPolicy[]>('/api/admin/governance/permission-policies');
+  }
+
+  /**
+   * 新增权限策略。
+   * @param payload 策略配置。
+   */
+  static async createPermissionPolicy(
+    payload: AdminGovernancePermissionPolicy,
+  ): Promise<AdminGovernancePermissionPolicy> {
+    return this.request<AdminGovernancePermissionPolicy>('/api/admin/governance/permission-policies', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  /**
+   * 更新权限策略。
+   * @param id 策略主键。
+   * @param payload 策略配置。
+   */
+  static async updatePermissionPolicy(
+    id: string | number,
+    payload: AdminGovernancePermissionPolicy,
+  ): Promise<AdminGovernancePermissionPolicy> {
+    return this.request<AdminGovernancePermissionPolicy>(
+      `/api/admin/governance/permission-policies/${encodeURIComponent(String(id))}`,
+      {
+        method: 'PUT',
+        body: JSON.stringify(payload),
+      },
+    );
+  }
+
+  /**
+   * 删除权限策略。
+   * @param id 策略主键。
+   */
+  static async deletePermissionPolicy(id: string | number): Promise<void> {
+    await this.request<void>(`/api/admin/governance/permission-policies/${encodeURIComponent(String(id))}`, {
+      method: 'DELETE',
+    });
+  }
+
+  /**
+   * 查询最近权限审计记录。
+   * @param limit 最大返回条数。
+   */
+  static async listPermissionAudits(limit = 50): Promise<AdminGovernancePermissionAudit[]> {
+    return this.request<AdminGovernancePermissionAudit[]>(
+      `/api/admin/governance/permission-audits?limit=${encodeURIComponent(String(limit))}`,
+    );
+  }
+
+  /**
+   * 查询 Hook 规则列表。
+   */
+  static async listHookRules(): Promise<AdminGovernanceHookRule[]> {
+    return this.request<AdminGovernanceHookRule[]>('/api/admin/governance/hook-rules');
+  }
+
+  /**
+   * 新增 Hook 规则。
+   * @param payload Hook 规则配置。
+   */
+  static async createHookRule(payload: AdminGovernanceHookRule): Promise<AdminGovernanceHookRule> {
+    return this.request<AdminGovernanceHookRule>('/api/admin/governance/hook-rules', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  /**
+   * 更新 Hook 规则。
+   * @param id Hook 规则主键。
+   * @param payload Hook 规则配置。
+   */
+  static async updateHookRule(
+    id: string | number,
+    payload: AdminGovernanceHookRule,
+  ): Promise<AdminGovernanceHookRule> {
+    return this.request<AdminGovernanceHookRule>(
+      `/api/admin/governance/hook-rules/${encodeURIComponent(String(id))}`,
+      {
+        method: 'PUT',
+        body: JSON.stringify(payload),
+      },
+    );
+  }
+
+  /**
+   * 删除 Hook 规则。
+   * @param id Hook 规则主键。
+   */
+  static async deleteHookRule(id: string | number): Promise<void> {
+    await this.request<void>(`/api/admin/governance/hook-rules/${encodeURIComponent(String(id))}`, {
+      method: 'DELETE',
+    });
+  }
+
+  /**
+   * 查询最近 Hook 审计记录。
+   * @param limit 最大返回条数。
+   */
+  static async listHookAudits(limit = 50): Promise<AdminGovernanceHookAudit[]> {
+    return this.request<AdminGovernanceHookAudit[]>(
+      `/api/admin/governance/hook-audits?limit=${encodeURIComponent(String(limit))}`,
+    );
+  }
+
+  /**
+   * 查询最近项目画像。
+   * @param limit 最大返回条数。
+   */
+  static async listProjectProfiles(limit = 20): Promise<AdminGovernanceProjectProfile[]> {
+    return this.request<AdminGovernanceProjectProfile[]>(
+      `/api/admin/governance/project-profiles?limit=${encodeURIComponent(String(limit))}`,
+    );
+  }
+
+  /**
+   * 扫描本地工作空间项目画像。
+   * @param payload 工作空间路径与可选 ID。
+   */
+  static async scanProjectProfile(
+    payload: AdminGovernanceProjectProfileScanPayload,
+  ): Promise<AdminGovernanceProjectProfile> {
+    return this.request<AdminGovernanceProjectProfile>('/api/admin/governance/project-profiles/scan', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  /**
+   * 查询治理中心 Slash Command 全量配置。
+   */
+  static async listGovernanceSlashCommands(): Promise<AdminGovernanceSlashCommand[]> {
+    return this.request<AdminGovernanceSlashCommand[]>('/api/admin/governance/slash-commands');
+  }
+
+  /**
+   * 新增 Slash Command 配置。
+   * @param payload 命令配置。
+   */
+  static async createGovernanceSlashCommand(
+    payload: AdminGovernanceSlashCommand,
+  ): Promise<AdminGovernanceSlashCommand> {
+    return this.request<AdminGovernanceSlashCommand>('/api/admin/governance/slash-commands', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  /**
+   * 更新 Slash Command 配置。
+   * @param id 命令主键。
+   * @param payload 命令配置。
+   */
+  static async updateGovernanceSlashCommand(
+    id: string | number,
+    payload: AdminGovernanceSlashCommand,
+  ): Promise<AdminGovernanceSlashCommand> {
+    return this.request<AdminGovernanceSlashCommand>(
+      `/api/admin/governance/slash-commands/${encodeURIComponent(String(id))}`,
+      {
+        method: 'PUT',
+        body: JSON.stringify(payload),
+      },
+    );
+  }
+
+  /**
+   * 删除 Slash Command 配置。
+   * @param id 命令主键。
+   */
+  static async deleteGovernanceSlashCommand(id: string | number): Promise<void> {
+    await this.request<void>(`/api/admin/governance/slash-commands/${encodeURIComponent(String(id))}`, {
+      method: 'DELETE',
     });
   }
 

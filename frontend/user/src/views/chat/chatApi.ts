@@ -17,6 +17,7 @@ import {
   SharedConversationPayload,
   SampleQuestionItem,
   ShareConversationOptions,
+  SlashCommandItem,
 } from './types';
 
 /**
@@ -231,6 +232,28 @@ export class ChatApi {
       ...item,
       id: String(item.id ?? ''),
       skillCode: String(item.skillCode ?? ''),
+    }));
+  }
+
+  /**
+   * 加载用户侧可选 Slash Command 列表。
+   * @param token 当前登录令牌。
+   * @returns Slash Command 列表。
+   */
+  static async listSlashCommands(token: string): Promise<SlashCommandItem[]> {
+    const envelope = await this.request<SlashCommandItem[]>('/api/chat/slash-commands', token);
+    return envelope.data.map((item) => ({
+      ...item,
+      id: String(item.id ?? ''),
+      commandCode: String(item.commandCode ?? ''),
+      displayName: String(item.displayName ?? (item.commandCode ? `/${item.commandCode}` : '')),
+      commandType: String(item.commandType ?? 'BUILTIN'),
+      enabled:
+        item.enabled == null
+          ? undefined
+          : Number(item.enabled) === 0
+            ? 0
+            : 1,
     }));
   }
 

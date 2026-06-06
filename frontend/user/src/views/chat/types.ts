@@ -215,6 +215,20 @@ export interface ChatSkillItem {
 }
 
 /**
+ * 描述用户输入区可选择的 Slash Command 命令。
+ */
+export interface SlashCommandItem {
+  id: string;
+  commandCode: string;
+  displayName: string;
+  description?: string;
+  commandType?: string;
+  promptTemplate?: string;
+  enabled?: number;
+  sortNo?: number;
+}
+
+/**
  * 描述会话当前运行绑定的技能项。
  */
 export interface CurrentSkillItem {
@@ -451,6 +465,8 @@ export interface ChatWorkspaceController {
   availableSkills: ChatSkillItem[];
   selectedSkillCodes: string[];
   currentSkills: CurrentSkillItem[];
+  availableSlashCommands: SlashCommandItem[];
+  selectedSlashCommand: SlashCommandItem | null;
   availableMcps: McpItem[];
   selectedMcpCodes: string[];
   currentMcps: CurrentMcpItem[];
@@ -470,6 +486,7 @@ export interface ChatWorkspaceController {
   clearPendingAttachments: () => void;
   setDeepThinkingEnabled: (value: boolean) => void;
   setSelectedSkillCodes: (skillCodes: string[] | ((previous: string[]) => string[])) => void;
+  setSelectedSlashCommand: (command: SlashCommandItem | null) => void;
   setSelectedMcpCodes: (mcpCodes: string[] | ((previous: string[]) => string[])) => void;
   setMcpConnected: (value: boolean) => void;
   setActiveRuntimeTarget: (runtimeTarget: 'cloud' | 'local') => Promise<void>;

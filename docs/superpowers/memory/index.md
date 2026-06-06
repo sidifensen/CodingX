@@ -10,6 +10,8 @@ owned_paths:
   - frontend/user/src/views/ChatView.tsx
   - backend/src/main/java/com/codingx/chat/application/service/chat
 related_docs:
+  - docs/superpowers/memory/desktop/electron-host-module-card.md
+  - docs/superpowers/memory/desktop/electron-host-contract.md
   - docs/superpowers/memory/cli/codingx-cli-tui-module-card.md
   - docs/superpowers/memory/chat/message-process-timeline-module-card.md
   - docs/superpowers/memory/chat/message-process-timeline-contract.md
@@ -31,6 +33,11 @@ status: active
 
 - `docs/superpowers/memory/cli/codingx-cli-tui-module-card.md`
   - Java CLI TUI-only 入口、tui4j 状态模型、mock AgentEvent 渲染和常见验证陷阱
+
+- `docs/superpowers/memory/desktop/electron-host-module-card.md`
+  - Electron 主进程、preload 桥接、本地能力上下文和当前权限状态边界
+- `docs/superpowers/memory/desktop/electron-host-contract.md`
+  - 桌面宿主 IPC、HostContext 与用户前端 host bridge 的消费契约
 
 - `docs/superpowers/memory/chat/message-process-timeline-module-card.md`
   - 聊天主消息区过程时间线的职责边界与扩展点
@@ -81,6 +88,7 @@ status: active
 
 - Java CLI 仍是 mock 事件源和基础 TUI 外壳，尚未接入真实 Agent API、MCP 工具状态和 TUI 内部会话状态机
 - MCP / 思考统一事件模型仍以前端运行时聚合为主，未形成数据库级持久化协议
+- Electron 本地权限仍是进程内确认状态，尚未接入后端策略、审计和管理端治理中心
 - 搜索多 provider fallback、HTML 搜索源解析和 provider 级可观测性仍需按需求逐步沉淀
 - 聊天页历史回放和本地快照的长期演化规则尚未独立成 runbook
 - 模型 tool-call 流程与本地工具执行结果回灌仍需实现端到端契约

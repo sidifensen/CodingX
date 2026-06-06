@@ -202,6 +202,47 @@ describe('ChatApi', () => {
   });
 
   /**
+   * Slash Command 目录请求应命中治理模块暴露的用户侧命令接口，并把数字主键规整为字符串。
+   */
+  it('应携带 satoken 加载Slash Command目录', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          success: true,
+          code: 'OK',
+          message: 'success',
+          data: [
+            {
+              id: 9101,
+              commandCode: 'review',
+              displayName: '/review',
+              description: '执行代码审查',
+              commandType: 'BUILTIN',
+              enabled: 1,
+              sortNo: 1,
+            },
+          ],
+        }),
+        { status: 200 },
+      ),
+    );
+
+    const result = await ChatApi.listSlashCommands('token-123');
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      '/api/chat/slash-commands',
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          satoken: 'token-123',
+        }),
+      }),
+    );
+    expect(result[0].id).toBe('9101');
+    expect(result[0].commandCode).toBe('review');
+    expect(result[0].displayName).toBe('/review');
+  });
+
+  /**
    * 专家列表请求应命中用户侧专家接口并携带鉴权头。
    */
   it('应携带 satoken 加载专家列表', async () => {

@@ -1480,6 +1480,134 @@ describe('ChatView', () => {
   });
 
   /**
+   * 输入斜杠应打开后端 Slash Command 命令目录，而不是回退到技能选择器。
+   */
+  it('应通过斜杠面板选择内置Slash Command', async () => {
+    const setSelectedSlashCommand = vi.fn();
+    const setInputValue = vi.fn();
+
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          inputValue: '/',
+          availableSlashCommands: [
+            {
+              id: '9101',
+              commandCode: 'review',
+              displayName: '/review',
+              description: '执行代码审查',
+              commandType: 'BUILTIN',
+            },
+          ],
+          selectedSlashCommand: null,
+          setSelectedSlashCommand,
+          setInputValue,
+          messages: [],
+          executionSteps: [],
+          references: [],
+          artifacts: [],
+        } as any)}
+      />,
+    );
+
+    const commandPanel = await screen.findByTestId('slash-command-selector-panel');
+    expect(commandPanel).toHaveTextContent('/review');
+    expect(commandPanel).toHaveTextContent('执行代码审查');
+    expect(screen.queryByTestId('skill-selector-panel')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '选择命令 /review' }));
+
+    expect(setSelectedSlashCommand).toHaveBeenCalledWith(
+      expect.objectContaining({
+        commandCode: 'review',
+        commandType: 'BUILTIN',
+      }),
+    );
+    expect(setInputValue).toHaveBeenCalledWith('');
+  });
+
+  /**
+   * 已选择的 Slash Command 必须在输入区形成可见标签，用户可在发送前确认当前命令上下文。
+   */
+  it('应展示已选择Slash Command标签', async () => {
+    const setSelectedSlashCommand = vi.fn();
+
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          inputValue: '请审查当前改动',
+          availableSlashCommands: [
+            {
+              id: '9101',
+              commandCode: 'review',
+              displayName: '/review',
+              description: '执行代码审查',
+              commandType: 'BUILTIN',
+            },
+          ],
+          selectedSlashCommand: {
+            id: '9101',
+            commandCode: 'review',
+            displayName: '/review',
+            description: '执行代码审查',
+            commandType: 'BUILTIN',
+          },
+          setSelectedSlashCommand,
+          messages: [],
+          executionSteps: [],
+          references: [],
+          artifacts: [],
+        } as any)}
+      />,
+    );
+
+    const commandChip = screen.getByTestId('selected-slash-command-chip-review');
+    expect(commandChip).toHaveTextContent('/review');
+    fireEvent.click(screen.getByRole('button', { name: '移除命令 /review' }));
+    expect(setSelectedSlashCommand).toHaveBeenCalledWith(null);
+  });
+
+  /**
+   * 发送后应继续调用工作区提交动作，结构化命令由 useChatWorkspace 负责拼装。
+   */
+  it('应在选择Slash Command后调用提交动作', async () => {
+    const submitMessage = vi.fn().mockResolvedValue(undefined);
+
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          inputValue: '请审查当前改动',
+          selectedSlashCommand: {
+            id: '9101',
+            commandCode: 'review',
+            displayName: '/review',
+            description: '执行代码审查',
+            commandType: 'BUILTIN',
+          },
+          setSelectedSlashCommand: vi.fn(),
+          submitMessage,
+          messages: [],
+          executionSteps: [],
+          references: [],
+          artifacts: [],
+        } as any)}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '发送消息' }));
+
+    await waitFor(() => {
+      expect(submitMessage).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  /**
    * 编辑带技能的用户消息时，必须保留技能气泡，避免用户误以为本次重发会丢失技能上下文。
    */
   it('编辑用户消息时应回填原消息技能气泡', async () => {
@@ -1970,9 +2098,9 @@ describe('ChatView', () => {
   });
 
   /**
-   * 点击技能按钮时应自动补充斜杠，便于快速触发技能检索。
+   * 技能按钮只负责打开技能目录，不再写入 Slash Command 触发符。
    */
-  it('应在点击技能按钮时自动写入斜杠', async () => {
+  it('点击技能按钮不应自动写入斜杠', async () => {
     const setInputValue = vi.fn();
 
     render(
@@ -1987,25 +2115,26 @@ describe('ChatView', () => {
     );
 
     fireEvent.click(screen.getByRole('button', { name: '打开技能列表' }));
-    expect(setInputValue).toHaveBeenCalledWith('/');
+    expect(setInputValue).not.toHaveBeenCalledWith('/');
+    expect(screen.getByTestId('skill-selector-panel')).toBeInTheDocument();
   });
 
   /**
-   * 输入框以斜杠开头时应自动弹出技能列表，并把斜杠后的关键字作为过滤词。
+   * 输入框以斜杠开头时应自动弹出 Slash Command 列表，并把斜杠后的关键字作为过滤词。
    */
-  it('应在输入斜杠时自动展开技能列表并同步过滤关键字', async () => {
+  it('应在输入斜杠时自动展开命令列表并同步过滤关键字', async () => {
     render(
       <ChatView
         isAuthenticated={true}
         onRequireLogin={vi.fn()}
         workspace={createWorkspace({
-          inputValue: '/sale',
+          inputValue: '/review',
         })}
       />,
     );
 
-    expect(screen.getByTestId('skill-selector-panel')).toBeInTheDocument();
-    expect(screen.getByPlaceholderText('搜索技能')).toHaveValue('sale');
+    expect(screen.getByTestId('slash-command-selector-panel')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('搜索命令')).toHaveValue('review');
   });
 
   /**
@@ -2019,7 +2148,7 @@ describe('ChatView', () => {
         isAuthenticated={true}
         onRequireLogin={vi.fn()}
         workspace={createWorkspace({
-          inputValue: '/web',
+          inputValue: '',
           setInputValue,
           availableSkills: [
             {
@@ -2034,6 +2163,8 @@ describe('ChatView', () => {
       />,
     );
 
+    fireEvent.click(screen.getByRole('button', { name: '打开技能列表' }));
+    fireEvent.change(screen.getByPlaceholderText('搜索技能'), { target: { value: 'web' } });
     expect(screen.getByTestId('skill-selector-panel')).toBeInTheDocument();
     fireEvent.keyDown(screen.getByPlaceholderText('输入问题，或先选择技能/MCP...'), {
       key: 'Tab',
@@ -2053,12 +2184,13 @@ describe('ChatView', () => {
         isAuthenticated={true}
         onRequireLogin={vi.fn()}
         workspace={createWorkspace({
-          inputValue: '/',
+          inputValue: '',
           setInputValue,
         })}
       />,
     );
 
+    fireEvent.click(screen.getByRole('button', { name: '打开技能列表' }));
     const textarea = screen.getByPlaceholderText('输入问题，或先选择技能/MCP...');
     expect(screen.getByRole('button', { name: '选择技能 销售查询' })).toHaveAttribute(
       'aria-selected',
@@ -2083,9 +2215,9 @@ describe('ChatView', () => {
   });
 
   /**
-   * 斜杠触发技能面板后切换到 MCP 时，应保持 MCP 面板可见，避免被自动逻辑抢回技能面板。
+   * 斜杠触发命令面板后切换到 MCP 时，应保持 MCP 面板可见，避免被自动逻辑抢回命令面板。
    */
-  it('应在斜杠输入场景支持从技能面板切换到MCP面板', async () => {
+  it('应在斜杠输入场景支持从命令面板切换到MCP面板', async () => {
     render(
       <ChatView
         isAuthenticated={true}
@@ -2096,19 +2228,19 @@ describe('ChatView', () => {
       />,
     );
 
-    expect(screen.getByTestId('skill-selector-panel')).toBeInTheDocument();
+    expect(screen.getByTestId('slash-command-selector-panel')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '打开MCP列表' }));
 
     await waitFor(() => {
       expect(screen.getByTestId('mcp-selector-panel')).toBeInTheDocument();
-      expect(screen.queryByTestId('skill-selector-panel')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('slash-command-selector-panel')).not.toBeInTheDocument();
     });
   });
 
   /**
-   * 斜杠触发技能面板后再次点击技能按钮，应允许正常关闭，避免面板锁死。
+   * 斜杠触发命令面板后点击技能按钮，应切换到技能面板，避免面板锁死。
    */
-  it('应在斜杠输入场景支持关闭技能面板', async () => {
+  it('应在斜杠输入场景支持切换到技能面板', async () => {
     render(
       <ChatView
         isAuthenticated={true}
@@ -2119,11 +2251,12 @@ describe('ChatView', () => {
       />,
     );
 
-    expect(screen.getByTestId('skill-selector-panel')).toBeInTheDocument();
+    expect(screen.getByTestId('slash-command-selector-panel')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '打开技能列表' }));
 
     await waitFor(() => {
-      expect(screen.queryByTestId('skill-selector-panel')).not.toBeInTheDocument();
+      expect(screen.getByTestId('skill-selector-panel')).toBeInTheDocument();
+      expect(screen.queryByTestId('slash-command-selector-panel')).not.toBeInTheDocument();
     });
   });
 
@@ -2151,9 +2284,9 @@ describe('ChatView', () => {
   });
 
   /**
-   * 斜杠触发选择技能后应替换为技能标记文本，而不是保留斜杠触发词。
+   * 技能按钮选择技能后应写入技能标记文本，不依赖斜杠触发词。
    */
-  it('应在斜杠触发技能选择后写入技能文本标记', async () => {
+  it('应通过技能面板写入技能文本标记', async () => {
     const setInputValue = vi.fn();
 
     render(
@@ -2161,12 +2294,13 @@ describe('ChatView', () => {
         isAuthenticated={true}
         onRequireLogin={vi.fn()}
         workspace={createWorkspace({
-          inputValue: '/sale',
+          inputValue: '',
           setInputValue,
         })}
       />,
     );
 
+    fireEvent.click(screen.getByRole('button', { name: '打开技能列表' }));
     fireEvent.click(screen.getByRole('button', { name: '选择技能 销售查询' }));
 
     expect(setInputValue).toHaveBeenCalledWith('@sales_query ');
@@ -4343,6 +4477,23 @@ function createWorkspace(overrides?: Partial<ChatWorkspaceController>): ChatWork
       },
     ],
     selectedSkillCodes: [],
+    availableSlashCommands: [
+      {
+        id: '9101',
+        commandCode: 'review',
+        displayName: '/review',
+        description: '执行代码审查',
+        commandType: 'BUILTIN',
+      },
+      {
+        id: '9102',
+        commandCode: 'fix-test',
+        displayName: '/fix-test',
+        description: '修复测试失败',
+        commandType: 'BUILTIN',
+      },
+    ],
+    selectedSlashCommand: null,
     sampleQuestions: [
       {
         id: '6001',
@@ -4397,6 +4548,7 @@ function createWorkspace(overrides?: Partial<ChatWorkspaceController>): ChatWork
     clearPendingAttachments: vi.fn(),
     setDeepThinkingEnabled: vi.fn(),
     setSelectedSkillCodes: vi.fn(),
+    setSelectedSlashCommand: vi.fn(),
     setSelectedMcpCodes: vi.fn(),
     setMcpConnected: vi.fn(),
     setActiveRuntimeTarget: vi.fn().mockResolvedValue(undefined),

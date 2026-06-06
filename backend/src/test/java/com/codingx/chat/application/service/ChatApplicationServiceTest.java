@@ -34,6 +34,7 @@ import com.codingx.common.exception.ConflictException;
 import java.util.Map;
 import com.codingx.common.exception.ForbiddenException;
 import com.codingx.expert.application.service.ChatExpertContextService;
+import com.codingx.governance.application.service.HookRuleService;
 import com.codingx.mcp.domain.repository.ChatMcpRepository;
 import com.codingx.mcp.domain.model.ChatMcp;
 import com.codingx.skill.application.service.ChatSkillContextService;
@@ -172,6 +173,9 @@ class ChatApplicationServiceTest {
 
     @Mock
     private ChatWorkspaceBindingService chatWorkspaceBindingService;
+
+    @Mock
+    private HookRuleService hookRuleService;
 
     /**
      * ChatRuntimeGuardService 依赖。
@@ -752,6 +756,82 @@ class ChatApplicationServiceTest {
         verify(chatMessageRepository, org.mockito.Mockito.times(2)).save(messageCaptor.capture());
         assertEquals("我将为你创建 HTML 游戏。\n\n已创建完成。", messageCaptor.getAllValues().get(1).getContent());
         verify(chatStreamPublisher).publishAssistantCompleted(eq(1L), any(Long.class), eq("我将为你创建 HTML 游戏。\n\n已创建完成。"), eq("HTML 游戏"));
+        ChatExecutionContext.clear();
+    }
+
+    /**
+     * update_plan 工具结果中的步骤必须落库为 plan 类型步骤，并通过 step 事件推送给前端。
+     */
+    @Test
+    void sendMessagePersistsUpdatePlanStepsAsExecutionSteps() {
+        bindRunContext();
+        ChatConversation conversation = ChatConversation.create(1L, "Default", 1002L, ChatConversationStatus.ACTIVE);
+        when(chatConversationRepository.requireById(1L)).thenReturn(conversation);
+        when(chatMessageRepository.findByConversationId(1L)).thenReturn(new ArrayList<>());
+        when(chatAttachmentService.requireOwnedAttachments(any(), eq(1L), eq(1002L))).thenReturn(List.of());
+        when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+            new ConversationRewriteResult("先制定计划", false, List.of("先制定计划"))
+        );
+        when(conversationIntentService.route("先制定计划", false)).thenReturn(
+            new ConversationIntentDecision("chat.normal", ConversationIntentAction.DIRECT, null)
+        );
+        when(chatIntentNodeRepository.findByIntentCode("chat.normal")).thenReturn(null);
+        when(chatSkillContextService.buildSkillContext(any())).thenReturn("");
+        when(chatExpertContextService.buildExpertContext(any())).thenReturn("");
+        when(chatToolSpecService.listModelVisibleToolSpecs()).thenReturn(List.of(
+            new ChatToolSpec("update_plan", "更新计划", Map.of())
+        ));
+        when(runtimeSettingService.chatToolMaxRounds()).thenReturn(2);
+        when(chatToolExecutionService.execute(eq("update_plan"), any())).thenReturn(
+            new ChatToolExecutionResult(
+                "update_plan",
+                "计划已更新，共 3 个步骤",
+                Map.of(
+                    "planId",
+                    "default",
+                    "steps",
+                    List.of(
+                        Map.of("step", "梳理需求", "status", "completed"),
+                        Map.of("step", "实现治理接口", "status", "in_progress"),
+                        Map.of("step", "验证前端交互", "status", "pending")
+                    )
+                )
+            )
+        );
+        when(conversationSummaryService.buildModelHistory(any(), any())).thenAnswer(invocation -> invocation.getArgument(1));
+        when(llmResponseCleaner.clean(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(conversationTitleService.generateTitle(any(), any())).thenReturn("计划模式");
+        AtomicInteger modelRound = new AtomicInteger();
+        doAnswer(invocation -> {
+            AiChatClient.ToolAwareStreamHandler handler = invocation.getArgument(3);
+            if (modelRound.incrementAndGet() == 1) {
+                handler.onToolCall(new AiToolCall("call-1", "update_plan", "{\"steps\":[]}"));
+                handler.onComplete();
+                return null;
+            }
+            handler.onDelta("计划已同步。");
+            handler.onComplete();
+            return null;
+        }).when(aiChatClient).streamChatWithTools(any(), eq(false), any(), any());
+
+        chatApplicationService.sendMessage(
+            new SendChatMessageCommand(1L, "先制定计划", false, List.of(), List.of(), null, null, null, List.of(), false, false, true),
+            1002L
+        );
+
+        ArgumentCaptor<ChatExecutionStep> stepCaptor = ArgumentCaptor.forClass(ChatExecutionStep.class);
+        verify(chatExecutionStepRepository, org.mockito.Mockito.atLeast(4)).save(stepCaptor.capture());
+        List<ChatExecutionStep> planSteps = stepCaptor.getAllValues().stream()
+            .filter(step -> "plan".equals(step.getStepType()))
+            .toList();
+        assertEquals(3, planSteps.size());
+        assertEquals("梳理需求", planSteps.get(0).getStepTitle());
+        assertEquals("COMPLETED", planSteps.get(0).getStepStatus());
+        assertEquals("实现治理接口", planSteps.get(1).getStepTitle());
+        assertEquals("RUNNING", planSteps.get(1).getStepStatus());
+        assertEquals("验证前端交互", planSteps.get(2).getStepTitle());
+        assertEquals("PENDING", planSteps.get(2).getStepStatus());
+        verify(chatStreamPublisher, org.mockito.Mockito.atLeast(3)).publishStep(eq(1L), any());
         ChatExecutionContext.clear();
     }
 

@@ -22,7 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 
 /**
- * TUI 模型测试，直接验证界面状态，不启动真实全屏终端。
+ * TUI 模型测试，直接验证界面状态，不启动真实交互终端。
  */
 class CodingXTuiModelTest {
 
@@ -45,12 +45,18 @@ class CodingXTuiModelTest {
 
         String view = model.view();
 
-        assertTrue(view.contains("CodingX CLI v0.1.0"));
+        assertTrue(view.contains(">_ CodingX CLI (v0.1.0)"));
+        assertTrue(view.contains("model:"));
+        assertTrue(view.contains("server selected"));
+        assertTrue(view.contains("directory:"));
         assertTrue(view.contains(tempDir.resolve("workspace").toString()));
-        assertTrue(view.contains("Ask CodingX to inspect, edit, or explain this workspace."));
-        assertTrue(view.contains("Describe a task or ask a question..."));
-        assertTrue(view.contains("Plan mode (Shift+Tab)"));
-        assertTrue(view.contains("Status: ready"));
+        assertTrue(view.contains("Tip:"));
+        assertTrue(view.contains("Build faster with CodingX."));
+        assertTrue(view.contains("› Write tests for @filename"));
+        assertTrue(view.contains("server selected ·"));
+        assertFalse(view.contains("Ready. Start with a question"));
+        assertFalse(view.contains("Status: ready"));
+        assertFalse(view.contains("Describe a task or ask a question..."));
         assertFalse(view.contains("GLM-5.1"));
         assertFalse(view.contains("Connected to 1 MCP server(s), 2 tools registered"));
     }
@@ -70,7 +76,7 @@ class CodingXTuiModelTest {
         assertTrue(view.contains("我会先查看当前仓库结构"));
         assertTrue(view.contains("ToolSearch"));
         assertTrue(view.contains("Task completed: COMPLETED"));
-        assertTrue(view.contains("Status: completed"));
+        assertTrue(view.contains("completed"));
         assertFalse(view.contains("[tool] 工具: ls"));
     }
 
@@ -87,7 +93,7 @@ class CodingXTuiModelTest {
         String view = model.view();
         assertFalse(view.contains("ToolSearch"));
         assertFalse(view.contains("Task completed"));
-        assertTrue(view.contains("Status: ready"));
+        assertTrue(view.contains("ready"));
     }
 
     @Test
@@ -121,7 +127,7 @@ class CodingXTuiModelTest {
 
         String view = model.view();
         assertTrue(view.contains("! Error"));
-        assertTrue(view.contains("Status: error"));
+        assertTrue(view.contains("error"));
     }
 
     @Test
@@ -144,7 +150,7 @@ class CodingXTuiModelTest {
         String view = model.view();
         assertTrue(view.contains("这是后端流式返回"));
         assertTrue(view.contains("Task completed: COMPLETED"));
-        assertTrue(view.contains("Status: completed"));
+        assertTrue(view.contains("completed"));
     }
 
     @Test
@@ -188,7 +194,7 @@ class CodingXTuiModelTest {
 
         String view = model.view();
         assertTrue(view.contains("! Error: 请先登录"));
-        assertTrue(view.contains("Status: error"));
+        assertTrue(view.contains("error"));
     }
 
     /**

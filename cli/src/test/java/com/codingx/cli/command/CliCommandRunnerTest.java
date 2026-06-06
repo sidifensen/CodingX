@@ -99,7 +99,7 @@ class CliCommandRunnerTest {
     }
 
     /**
-     * 测试专用 TUI 启动器，只记录启动次数，避免单测进入真实全屏终端。
+     * 测试专用 TUI 启动器，只记录启动次数，避免单测进入真实交互终端。
      */
     private static class FakeTuiLauncher implements TuiLauncher {
 

@@ -25,7 +25,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /**
- * CodingX TUI 的 Bubble Tea 模型，维护 header、transcript、输入框和状态栏。
+ * CodingX TUI 的 Bubble Tea 模型，维护启动卡片、transcript、输入框和状态栏。
  */
 public class CodingXTuiModel implements Model {
 
@@ -33,11 +33,6 @@ public class CodingXTuiModel implements Model {
      * 页面分区之间的空行间隔。
      */
     private static final String GAP = System.lineSeparator() + System.lineSeparator();
-
-    /**
-     * 输入区域最小宽度；小窗口下仍保留可读的 composer 边界。
-     */
-    private static final int MIN_COMPOSER_WIDTH = 40;
 
     /**
      * 当前 CLI 工作区，真实后端聊天流会把它作为 local runtime 的 repositoryPath。
@@ -120,7 +115,7 @@ public class CodingXTuiModel implements Model {
         this.headerRenderer = new TuiHeaderRenderer();
         this.transcriptRenderer = new TuiTranscriptRenderer();
         this.statusBarRenderer = new TuiStatusBarRenderer();
-        this.viewport = Viewport.create(80, 18);
+        this.viewport = Viewport.create(80, 1);
         this.textarea = new Textarea();
         this.timelineLines = new ArrayList<>();
         this.streamExecutor = Executors.newSingleThreadExecutor(runnable -> {
@@ -134,18 +129,17 @@ public class CodingXTuiModel implements Model {
         this.activeAssistantText = new StringBuilder();
 
         configureTextarea();
-        appendSystemLine("Ready. Start with a question or a concrete coding task.");
     }
 
     /**
      * 配置底部输入框的基础体验；真实任务只能从这里提交，所以保持提示、宽度和焦点稳定。
      */
     private void configureTextarea() {
-        textarea.setPlaceholder("Describe a task or ask a question...");
-        textarea.setPrompt("  ");
+        textarea.setPlaceholder("Write tests for @filename");
+        textarea.setPrompt("› ");
         textarea.setCharLimit(1000);
         textarea.setWidth(80);
-        textarea.setHeight(3);
+        textarea.setHeight(1);
         textarea.setShowLineNumbers(false);
         textarea.focus();
     }
@@ -210,18 +204,18 @@ public class CodingXTuiModel implements Model {
     }
 
     /**
-     * 根据终端尺寸重算 transcript 和输入框布局，预留 header、输入框和状态栏的固定高度。
+     * 根据终端尺寸重算 transcript 和输入框布局；启动页保持紧凑，不用空白 viewport 撑满屏幕。
      *
      * @param width 当前终端宽度。
      * @param height 当前终端高度。
      */
     private void resize(int width, int height) {
         int safeWidth = Math.max(width, 40);
-        int viewportHeight = Math.max(height - 10, 8);
+        int viewportHeight = Math.max(Math.min(timelineLines.size(), height - 10), 1);
         viewport.setWidth(safeWidth);
         viewport.setHeight(viewportHeight);
         textarea.setWidth(safeWidth);
-        textarea.setHeight(3);
+        textarea.setHeight(1);
         refreshViewport();
     }
 
@@ -381,22 +375,32 @@ public class CodingXTuiModel implements Model {
      */
     @Override
     public String view() {
-        return headerRenderer.render(workspace) + GAP
-            + viewport.view() + GAP
-            + renderComposer() + GAP
-            + statusBarRenderer.render(planMode, status);
+        List<String> sections = new ArrayList<>();
+        sections.add(headerRenderer.render(workspace));
+        sections.add("Tip: Build faster with CodingX.");
+        if (!timelineLines.isEmpty()) {
+            sections.add(renderTranscript());
+        }
+        sections.add(renderComposer());
+        sections.add(statusBarRenderer.render(planMode, status, workspace));
+        return String.join(GAP, sections);
     }
 
     /**
-     * 渲染底部输入区；输入框外层只做轻量边界，不承载模型名等假状态。
+     * 渲染 transcript；启动态不渲染 viewport，避免输入框被空白区域推到窗口底部。
+     *
+     * @return 可见 transcript 文本。
+     */
+    private String renderTranscript() {
+        return String.join(System.lineSeparator(), timelineLines);
+    }
+
+    /**
+     * 渲染紧凑输入行，不再给输入框增加额外边框。
      *
      * @return 可见 composer 文本。
      */
     private String renderComposer() {
-        int width = Math.max(textarea.width(), MIN_COMPOSER_WIDTH);
-        String border = "─".repeat(Math.max(width - 2, 1));
-        return "┌" + border + "┐" + System.lineSeparator()
-            + textarea.view() + System.lineSeparator()
-            + "└" + border + "┘";
+        return textarea.view();
     }
 }

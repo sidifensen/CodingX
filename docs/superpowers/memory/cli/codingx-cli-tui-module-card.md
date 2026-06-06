@@ -26,9 +26,9 @@ status: active
 - `CodingXCli` 是 Java CLI 进程入口，负责组装用户级配置、当前工作区、后端聊天流事件源、事件渲染器和 TUI 启动器。
 - `cli/pom.xml` 通过 Maven Shade Plugin 在 `package` 阶段生成 `target/codingx.jar`，Manifest 主类必须是 `com.codingx.cli.CodingXCli`；本地 `codingx` 命令依赖该 jar，不再依赖 `mvn exec:java`。
 - `script/install-codingx.ps1` 是 Windows 本地安装入口，负责打包 jar、复制到用户目录 `.codingx/bin`、生成 `codingx.cmd` / `codingx.ps1`，并把 `.codingx/bin` 写入用户级 PATH。
-- `CliCommandRunner` 只做协议层命令分发；任务运行入口保持 TUI-only，`codingx` 和 `codingx tui` 启动全屏 TUI，`exec`、`resume`、`sessions` 返回 TUI-only 拒绝提示。
-- `CodingXTuiLauncher` 通过 tui4j `Program` 启动 alt screen，真实运行会接管终端直到用户退出。
-- `CodingXTuiModel` 维护 TUI 内存状态，包括事件窗口、任务输入框、当前工作区、运行状态、计划模式和活动助手回答块；它只编排输入、事件源和视图刷新，不直接承担 header、transcript、status bar 文案映射。真实后端流通过 `Program.send(AgentEventsMessage)` 回到主更新循环，后台线程不能直接修改 TUI 状态。
+- `CliCommandRunner` 只做协议层命令分发；任务运行入口保持 TUI-only，`codingx` 和 `codingx tui` 启动普通屏幕 TUI，`exec`、`resume`、`sessions` 返回 TUI-only 拒绝提示。
+- `CodingXTuiLauncher` 通过 tui4j `Program.run()` 在普通终端屏幕运行，不进入 alt screen；真实运行时必须保留用户输入 `codingx` 的 shell 命令上下文。
+- `CodingXTuiModel` 维护 TUI 内存状态，包括 Codex 风格启动卡片、真实 transcript、单行任务输入框、当前工作区、运行状态、计划模式和活动助手回答块；它只编排输入、事件源和视图刷新，不直接承担 header、transcript、status bar 文案映射。真实后端流通过 `Program.send(AgentEventsMessage)` 回到主更新循环，后台线程不能直接修改 TUI 状态。
 - `BackendChatEventSource` 读取用户主目录 `CliConfigStore`，请求现有后端 `GET /api/chat/stream`，携带 `satoken`、`runtimeTarget=local`、`repositoryPath` 和数值型 `conversationId`，再把 SSE 映射为 `AgentEvent`。
 - `TuiHeaderRenderer`、`TuiTranscriptRenderer`、`TuiStatusBarRenderer` 分别维护顶部品牌区、对话流/工具状态和底部模式栏，避免 TUI 模型继续膨胀为大而全的展示类。
 
@@ -39,9 +39,9 @@ status: active
 - `script/install-codingx.ps1`：Windows 本地 `codingx` 命令安装脚本。
 - `cli/src/main/java/com/codingx/cli/command/CliCommandRunner.java`：命令分发与 TUI-only 入口约束。
 - `cli/src/main/java/com/codingx/cli/tui/CodingXTuiModel.java`：TUI 状态模型和任务提交逻辑。
-- `cli/src/main/java/com/codingx/cli/tui/TuiHeaderRenderer.java`：顶部品牌、工作区和任务提示；没有真实来源时不展示模型、MCP 连接数或工具数量。
+- `cli/src/main/java/com/codingx/cli/tui/TuiHeaderRenderer.java`：顶部 `>_ CodingX CLI (v0.1.0)` 启动卡片、后端选模来源和当前工作区；没有真实来源时不展示本地假模型名、MCP 连接数或工具数量。
 - `cli/src/main/java/com/codingx/cli/tui/TuiTranscriptRenderer.java`：把 `AgentEvent` 转成 TUI 对话流、工具状态、命令输出、完成和错误行。
-- `cli/src/main/java/com/codingx/cli/tui/TuiStatusBarRenderer.java`：底部 `Plan mode` / `Chat mode`、运行状态和键盘提示。
+- `cli/src/main/java/com/codingx/cli/tui/TuiStatusBarRenderer.java`：底部后端选模来源、当前工作区、运行状态和 `Plan mode` / `Chat mode` 键盘提示。
 - `cli/src/main/java/com/codingx/cli/backend/BackendChatEventSource.java`：后端聊天流 HTTP/SSE 客户端。
 - `cli/src/main/java/com/codingx/cli/backend/SseEventParser.java`：SSE 文本事件块解析器。
 - `cli/src/main/java/com/codingx/cli/backend/BackendChatEventMapper.java`：后端聊天事件到 CLI `AgentEvent` 的映射器。
@@ -51,6 +51,9 @@ status: active
 
 - CLI 任务执行只能从 TUI 输入框触发，不能重新引入 `codingx exec "<任务>"` 作为并列产品形态。
 - `codingx` 用户命令必须解析到 `.codingx/bin/codingx.cmd` 或等价启动器，并通过 `java -jar .codingx/bin/codingx.jar` 进入 CLI；不要把 `mvn exec:java` 写进用户级启动器。
+- TUI 启动器不能调用 `withAltScreen()`；启动页必须保留 shell 命令上下文，视觉上接近官方 Codex CLI 的普通屏幕启动卡片。
+- 初始视图不能追加假 transcript，也不能用大高度空白 viewport 占位；只有真实用户输入、助手输出、工具事件或错误事件出现后才渲染 transcript 区。
+- composer 必须保持单行 `› Write tests for @filename` 提示，避免旧版三行输入框和外层边框把界面撑回全屏观感。
 - `mvn package` 只能把 fat jar 输出为 `cli/target/codingx.jar`，不能在 `cli/` 根目录留下 `dependency-reduced-pom.xml` 等构建副产物。
 - `login` 是配置命令，不属于任务运行模式；它只能写用户主目录配置，不能写当前项目工作区。
 - TUI 单测不能启动真实 `Program`，应直接测试模型或使用 fake `TuiLauncher`，避免接管测试终端。
@@ -70,8 +73,8 @@ status: active
 
 ## Common Pitfalls
 
-- 不要用 `mvn exec:java` 无参数做自动验证；它会进入全屏 TUI 并阻塞自动化流程。
-- 验证本地安装时使用 `codingx exec smoke-test` 这类会立即退出的命令；直接运行 `codingx` 会进入全屏 TUI 并阻塞自动化流程。
+- 不要用 `mvn exec:java` 无参数做自动验证；它会进入交互 TUI 并阻塞自动化流程。
+- 验证本地安装时使用 `codingx exec smoke-test` 这类会立即退出的命令；直接运行 `codingx` 会进入交互 TUI 并阻塞自动化流程。
 - 更新打包逻辑后必须重新运行 `script/install-codingx.ps1`，否则用户 PATH 中的 `.codingx/bin/codingx.jar` 仍然是旧版本。
 - 不要并行运行 `mvn test` 和 `mvn exec:java` 共享 `cli/target`，Maven 构建目录竞争可能导致误判。
 - 仓库 `docs/` 被 `.gitignore` 覆盖，新建 superpowers 文档提交时需要显式 `git add -f`。

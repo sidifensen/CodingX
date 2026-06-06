@@ -2,13 +2,13 @@
 
 ## 功能用途
 
-提供 CodingX 独立 CLI 的截图风格 TUI 终端入口，让开发者输入 `codingx` 进入全屏终端后，在输入框里提交任务，并在同一界面查看类似 MewCode / Claude Code / Codex CLI 的品牌头、对话流、工具状态、输入栏和模式栏。当前版本已经把 TUI 输入对接到现有后端 `/api/chat/stream` SSE 对话流：CLI 会读取用户主目录配置中的后端地址和 satoken，以本地运行目标提交当前仓库路径，并把后端返回的流式事件映射为终端 transcript。
+提供 CodingX 独立 CLI 的 Codex 风格 TUI 终端入口，让开发者输入 `codingx` 后在普通终端屏幕中进入交互模式：shell 中的 `codingx` 命令上下文会保留，启动页只展示紧凑信息卡、Tip、单行输入提示和简洁状态行。当前版本已经把 TUI 输入对接到现有后端 `/api/chat/stream` SSE 对话流：CLI 会读取用户主目录配置中的后端地址和 satoken，以本地运行目标提交当前仓库路径，并把后端返回的流式事件映射为终端 transcript。
 
 ## 使用入口
 
 - `script/install-codingx.ps1`：本地安装入口，先在 `cli` 目录执行 `mvn -q package` 生成 `target/codingx.jar`，再复制到用户目录 `.codingx/bin` 并生成 `codingx.cmd` / `codingx.ps1`。安装脚本会把 `.codingx/bin` 写入用户级 PATH，新终端可直接输入 `codingx`。
 - `codingx login <serverUrl> <satoken>`：把后端地址和登录令牌保存到用户主目录 `.codingx/cli.yml`，避免 satoken 写进项目仓库。
-- `codingx`：默认进入 TUI 交互界面，顶部展示 `CodingX CLI v0.1.0`、当前工作区和任务提示；任务只能在 TUI 输入框里提交，并通过后端聊天流执行。CLI 不再展示没有真实来源的模型名、MCP 连接数或工具数量。
+- `codingx`：默认进入 TUI 交互界面，顶部展示 `>_ CodingX CLI (v0.1.0)` 启动卡片、后端选模提示和当前工作区；任务只能在 `› Write tests for @filename` 输入行里提交，并通过后端聊天流执行。CLI 不再展示没有真实来源的模型名、MCP 连接数或工具数量。
 - `codingx tui`：显式进入同一个 TUI 交互界面，和默认入口一致。
 - `codingx exec "<任务>"`：已移除非交互任务模式，返回中文提示，要求用户进入 TUI 后提交任务。
 - `codingx resume` / `codingx sessions`：不作为独立会话产品模式暴露，当前同样返回 TUI-only 提示；会话列表和恢复后续应在 TUI 内实现。
@@ -19,7 +19,7 @@
 2. 打包成功后，安装脚本创建用户目录 `.codingx/bin`，复制 `target/codingx.jar` 为 `.codingx/bin/codingx.jar`，再生成 `codingx.cmd` 和 `codingx.ps1` 两种 Windows 启动器。两个启动器只做一件事：把当前命令行参数原样转发给 `java -jar ~/.codingx/bin/codingx.jar`；脚本随后把 `.codingx/bin` 写入用户级 PATH，并临时补到当前 PowerShell 进程 PATH，方便安装后立即验证。
 3. 用户运行 `codingx` 命令后，Windows 通过 PATH 找到 `codingx.cmd`，`cmd` 启动 `java -jar codingx.jar`，再进入 `CodingXCli.main`。`CodingXCli` 使用用户主目录创建 `CliConfigStore`，并用当前工作目录、`BackendChatEventSource` 和 `TerminalRenderer` 组装 `CodingXTuiLauncher`；这意味着从任意仓库目录输入 `codingx` 时，后端收到的 `repositoryPath` 就是用户当前目录。
 4. 用户执行 `login` 时，`CliCommandRunner` 校验 `serverUrl` 和 `satoken` 参数数量；参数缺失时返回中文用法提示，参数完整时通过 `CliConfigStore` 使用 SnakeYAML 写入用户主目录配置。该流程不会读取或写入当前工作区文件，避免登录令牌进入 Git 仓库。
-5. 用户执行 `codingx` 或 `codingx tui` 时，`CliCommandRunner` 调用 `TuiLauncher.launch()`，真实实现通过 tui4j `Program` 和 alt screen 接管当前终端。`CodingXTuiModel` 初始化终端视图，顶部由 `TuiHeaderRenderer` 渲染品牌、工作区和一句任务提示，底部由 `TuiStatusBarRenderer` 只渲染当前模式、运行状态和键盘提示；模型名、MCP 连接数和工具数量没有后端真实字段时不会显示。
+5. 用户执行 `codingx` 或 `codingx tui` 时，`CliCommandRunner` 调用 `TuiLauncher.launch()`，真实实现通过 tui4j `Program.run()` 在普通屏幕运行，不进入 alt screen，所以用户仍能看到上一行输入的 `codingx` 命令。`CodingXTuiModel` 初始视图由 `TuiHeaderRenderer` 渲染带边框的产品卡片和当前工作区，再渲染 `Tip: Build faster with CodingX.`、单行 composer 和底部状态行；初始态不会追加假 transcript，也不会用空白 viewport 把输入行推到窗口底部。`TuiStatusBarRenderer` 只展示后端选模来源、当前工作区、运行状态和 `Plan mode` / `Chat mode` 文案；模型名、MCP 连接数和工具数量没有后端真实字段时不会显示。
 6. 用户在 `Textarea` 输入任务后按 Enter，`CodingXTuiModel` 会 trim 输入；空任务直接忽略，非空任务先追加 `> 用户任务` 并把状态切到 `running`。当事件源支持流式推送时，模型把任务文本和当前工作区传给 `BackendChatEventSource`，后端流消费线程通过 tui4j `Program.send(...)` 把每个 `AgentEvent` 送回主更新循环；连续 `ASSISTANT_DELTA` 会更新同一个助手回答块，避免后端小片段在 TUI 中变成散乱项目符号列表。
 7. `BackendChatEventSource` 每轮请求都会从 `CliConfigStore` 读取最新 `serverUrl`、`token` 和 `lastSessionId`，构造 `GET /api/chat/stream` 请求。请求固定携带 `question`、`runtimeTarget=local` 和当前工作区绝对路径 `repositoryPath`；当 `lastSessionId` 是数值字符串时，额外携带 `conversationId` 续接后端会话；token 非空时写入 `satoken` header，token 为空时交给后端返回统一登录错误。
 8. 后端返回 SSE 后，`SseEventParser` 按空行拆分 `event:` / `data:` 块，`BackendChatEventMapper` 将 `meta`、`message`、`thinking`、`tool-call`、`mcp-call`、`finish`、`reject`、`queued`、`queue-accepted`、`error`、`done` 映射为 CLI 现有 `AgentEvent`。`meta.conversationId` 或 `finish.conversationId` 到达后，事件源会把数值会话 ID 写回用户主目录配置的 `lastSessionId`，下一次 TUI 输入自然延续同一个后端会话。
@@ -32,12 +32,12 @@
 - `script/install-codingx.ps1`：Windows 本地安装脚本，负责打包、复制 jar、生成启动器和写入用户 PATH。
 - `cli/src/main/java/com/codingx/cli/CodingXCli.java`：CLI 进程入口，负责组装配置读写器和 TUI 启动器。
 - `cli/src/main/java/com/codingx/cli/command/CliCommandRunner.java`：命令解析和流程编排，覆盖 `login`、默认 TUI、显式 `tui` 和非交互命令拒绝。
-- `cli/src/main/java/com/codingx/cli/tui/TuiLauncher.java`：TUI 启动边界，便于命令层单测替换真实全屏终端。
-- `cli/src/main/java/com/codingx/cli/tui/CodingXTuiLauncher.java`：tui4j `Program` 启动器，负责进入 alt screen。
+- `cli/src/main/java/com/codingx/cli/tui/TuiLauncher.java`：TUI 启动边界，便于命令层单测替换真实终端入口。
+- `cli/src/main/java/com/codingx/cli/tui/CodingXTuiLauncher.java`：tui4j `Program` 启动器，负责在普通屏幕运行并保留 shell 命令上下文。
 - `cli/src/main/java/com/codingx/cli/tui/CodingXTuiModel.java`：TUI 状态模型，维护 header、事件窗口、输入框、任务提交、活动助手回答块、计划模式和状态栏。
-- `cli/src/main/java/com/codingx/cli/tui/TuiHeaderRenderer.java`：顶部品牌区渲染，集中展示版本、工作区和任务提示，只展示真实可确认的 UI 数据。
+- `cli/src/main/java/com/codingx/cli/tui/TuiHeaderRenderer.java`：顶部 Codex 风格启动卡片渲染，集中展示版本、后端选模来源和当前工作区，只展示真实可确认的 UI 数据。
 - `cli/src/main/java/com/codingx/cli/tui/TuiTranscriptRenderer.java`：TUI 对话流渲染，把 `AgentEvent` 转成助手消息、工具状态、命令输出、完成和错误行。
-- `cli/src/main/java/com/codingx/cli/tui/TuiStatusBarRenderer.java`：底部状态栏渲染，展示 `Plan mode` / `Chat mode`、运行状态和键盘提示，不承载模型名。
+- `cli/src/main/java/com/codingx/cli/tui/TuiStatusBarRenderer.java`：底部状态栏渲染，展示后端选模来源、当前工作区、运行状态和键盘提示，不承载本地假模型名。
 - `cli/src/main/java/com/codingx/cli/agent/AgentEvent.java`：Agent 事件信封，承载会话、轮次、序号、类型、载荷和创建时间。
 - `cli/src/main/java/com/codingx/cli/agent/StreamingAgentEventSource.java`：支持增量推送的事件源接口，TUI 用它把后端 SSE 事件实时送回主更新循环。
 - `cli/src/main/java/com/codingx/cli/backend/BackendChatEventSource.java`：真实后端聊天流客户端，负责读取 CLI 配置、构造 `/api/chat/stream` 请求、携带 `satoken`、消费 SSE 并写回最近会话。

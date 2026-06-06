@@ -28,6 +28,7 @@
 - [系统配置与密钥统一化](chat/system-config-secret-unification.md)
 - [聊天技能上下文持久化](chat/skill-context-persistence.md)
 - [Skill Runtime 技能包](chat/skill-runtime-package.md)
+- [GitHub Skill RustFS 同步](chat/github-skill-rustfs-sync.md)
 - [聊天消息操作](chat/message-actions.md)
 - [会话导出](chat/conversation-export.md)
 

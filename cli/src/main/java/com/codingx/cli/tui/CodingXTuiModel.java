@@ -455,6 +455,9 @@ public class CodingXTuiModel implements Model {
         if (!timelineLines.isEmpty()) {
             sections.add(renderTranscript());
         }
+        if (shouldRenderRunningQuestionAnchor()) {
+            sections.add(renderRunningQuestionAnchor());
+        }
         sections.add(renderComposer());
         sections.add(statusBarRenderer.render(planMode, status, workspace));
         return String.join(GAP, sections);
@@ -501,6 +504,24 @@ public class CodingXTuiModel implements Model {
     }
 
     /**
+     * 判断是否需要在输入框上方固定展示当前问题；真实普通屏幕流式刷新时 transcript 顶部可能被尾部保留策略挤掉。
+     *
+     * @return true 表示 running 状态下应展示当前问题固定区。
+     */
+    private boolean shouldRenderRunningQuestionAnchor() {
+        return isTurnRunning() && !latestUserLine.isBlank();
+    }
+
+    /**
+     * 渲染当前问题固定区；保留和 transcript 一致的 `>` 提示符，方便用户确认本轮正在回答哪条消息。
+     *
+     * @return 当前用户问题。
+     */
+    private String renderRunningQuestionAnchor() {
+        return latestUserLine;
+    }
+
+    /**
      * 判断是否需要把最近用户问题固定到可见区；只有完整视图会被普通屏幕裁剪时才启用，短回答不重复显示问题。
      *
      * @return true 表示需要固定最近用户问题。
@@ -528,7 +549,11 @@ public class CodingXTuiModel implements Model {
      * @return 非 transcript 区域占用行数。
      */
     private int nonTranscriptLineCount() {
-        return renderedVisualLineCount(renderComposer())
+        int currentQuestionAnchorLines = shouldRenderRunningQuestionAnchor()
+            ? renderedVisualLineCount(renderRunningQuestionAnchor()) + 1
+            : 0;
+        return currentQuestionAnchorLines
+            + renderedVisualLineCount(renderComposer())
             + renderedVisualLineCount(statusBarRenderer.render(planMode, status, workspace))
             + 2;
     }
@@ -544,6 +569,10 @@ public class CodingXTuiModel implements Model {
             appendVisualRows(rows, timelineLines.get(index), index);
         }
         appendGapRow(rows);
+        if (shouldRenderRunningQuestionAnchor()) {
+            appendVisualRows(rows, renderRunningQuestionAnchor(), latestUserLineIndex);
+            appendGapRow(rows);
+        }
         appendVisualRows(rows, renderComposer(), -1);
         appendGapRow(rows);
         appendVisualRows(rows, statusBarRenderer.render(planMode, status, workspace), -1);

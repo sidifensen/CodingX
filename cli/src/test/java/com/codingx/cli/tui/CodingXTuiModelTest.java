@@ -8,6 +8,7 @@ import com.codingx.cli.agent.StreamingAgentEventSource;
 import com.codingx.cli.render.TerminalRenderer;
 import com.williamcallahan.tui4j.compat.bubbletea.KeyPressMessage;
 import com.williamcallahan.tui4j.compat.bubbletea.Program;
+import com.williamcallahan.tui4j.compat.bubbletea.ProgramOption;
 import com.williamcallahan.tui4j.compat.bubbletea.UpdateResult;
 import com.williamcallahan.tui4j.compat.bubbletea.WindowSizeMessage;
 import com.williamcallahan.tui4j.compat.bubbletea.input.key.Key;
@@ -18,7 +19,11 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import java.io.ByteArrayOutputStream;
+import java.io.PipedInputStream;
+import java.io.PipedOutputStream;
 import java.nio.file.Path;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -196,6 +201,88 @@ class CodingXTuiModelTest {
 
         assertEquals(List.of("first", "second"), List.copyOf(eventSource.tasks));
         assertInOrder(model.view(), "> first", "Task completed: COMPLETED", "> second");
+    }
+
+    @Test
+    void runningStreamingAssistantDeltaShouldKeepSubmittedQuestionVisible() throws Exception {
+        DelayedStreamingEventSource eventSource = new DelayedStreamingEventSource();
+        CodingXTuiModel model = new CodingXTuiModel(
+            tempDir.resolve("workspace"),
+            eventSource,
+            new TerminalRenderer()
+        );
+        model.setProgram(new Program(model));
+
+        pressRunes(model, "你好你好");
+        model.update(new KeyPressMessage(new Key(KeyType.keyCR)));
+        eventSource.awaitTaskCount(1);
+        model.update(new AgentEventsMessage(List.of(
+            AgentEvent.of("session", "turn", 1, AgentEventType.ASSISTANT_DELTA, Map.of(
+                "delta", "你好你好，我正在处理。"
+            ))
+        )));
+
+        String view = model.view();
+        assertInOrder(view, "> 你好你好", "CodingX  你好你好，我正在处理。");
+        assertTrue(view.contains("running"), view);
+    }
+
+    @Test
+    void runningStreamingAssistantDeltaShouldKeepQuestionNearComposer() throws Exception {
+        DelayedStreamingEventSource eventSource = new DelayedStreamingEventSource();
+        CodingXTuiModel model = new CodingXTuiModel(
+            tempDir.resolve("workspace"),
+            eventSource,
+            new TerminalRenderer()
+        );
+        model.setProgram(new Program(model));
+
+        pressRunes(model, "你好你好");
+        model.update(new KeyPressMessage(new Key(KeyType.keyCR)));
+        eventSource.awaitTaskCount(1);
+        model.update(new AgentEventsMessage(List.of(
+            AgentEvent.of("session", "turn", 1, AgentEventType.ASSISTANT_DELTA, Map.of(
+                "delta", "你好你好，我正在处理。"
+            ))
+        )));
+
+        String bottomArea = lastLines(model.view(), 5);
+        assertTrue(bottomArea.contains("> 你好你好"), bottomArea);
+        assertTrue(bottomArea.contains("› Write tests for @filename"), bottomArea);
+    }
+
+    @Test
+    void realProgramStreamingShouldRenderSubmittedQuestionWhileRunning() throws Exception {
+        ProgramStreamingEventSource eventSource = new ProgramStreamingEventSource();
+        CodingXTuiModel model = new CodingXTuiModel(
+            tempDir.resolve("workspace"),
+            eventSource,
+            new TerminalRenderer()
+        );
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        PipedInputStream input = new PipedInputStream();
+        PipedOutputStream inputWriter = new PipedOutputStream(input);
+        Program program = new Program(
+            model,
+            ProgramOption.withInput(input),
+            ProgramOption.withOutput(output),
+            ProgramOption.withoutSignalHandler(),
+            ProgramOption.withoutBracketedPaste()
+        );
+        model.setProgram(program);
+        Thread programThread = new Thread(program::run, "codingx-tui-program-test");
+        programThread.start();
+
+        inputWriter.write("visible-user\r".getBytes(StandardCharsets.UTF_8));
+        inputWriter.flush();
+        eventSource.awaitTaskCount(1);
+        awaitContains(() -> lastLines(model.view(), 5), "> visible-user");
+        awaitContains(() -> stripAnsi(output.toString(StandardCharsets.UTF_8)), "> visible-user");
+
+        inputWriter.write(3);
+        inputWriter.flush();
+        programThread.join(1000);
+        assertFalse(programThread.isAlive(), "Program should quit after ctrl+c");
     }
 
     @Test
@@ -437,12 +524,37 @@ class CodingXTuiModelTest {
         /**
          * 等待后台流线程收到指定数量的任务，避免测试在异步提交前断言。
          */
-        private void awaitTaskCount(int expectedCount) throws InterruptedException {
+        protected void awaitTaskCount(int expectedCount) throws InterruptedException {
             long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(1);
             while (tasks.size() < expectedCount && System.nanoTime() < deadline) {
                 TimeUnit.MILLISECONDS.sleep(10);
             }
             assertEquals(expectedCount, tasks.size());
+        }
+    }
+
+    /**
+     * 测试运行中的后端流：先只记录任务，测试再手动推送流式回答，覆盖 running 状态下的真实可见性。
+     */
+    private static class DelayedStreamingEventSource extends NonCompletingStreamingEventSource {
+    }
+
+    /**
+     * 真实 Program.run 测试使用的流式事件源：收到任务后立即通过 consumer 推送回答增量，但不结束当前轮。
+     */
+    private static class ProgramStreamingEventSource extends NonCompletingStreamingEventSource {
+
+        @Override
+        public void startTurn(
+            String task,
+            Path workspace,
+            boolean planMode,
+            java.util.function.Consumer<AgentEvent> eventConsumer
+        ) {
+            super.startTurn(task, workspace, planMode, eventConsumer);
+            eventConsumer.accept(AgentEvent.of("session", "turn", 1, AgentEventType.ASSISTANT_DELTA, Map.of(
+                "delta", "streaming answer"
+            )));
         }
     }
 
@@ -534,5 +646,28 @@ class CodingXTuiModelTest {
         }
         int fromIndex = Math.max(visualLines.size() - lineCount, 0);
         return String.join(System.lineSeparator(), visualLines.subList(fromIndex, visualLines.size()));
+    }
+
+    /**
+     * 等待异步 Program.run 渲染或状态更新出现指定内容，避免用固定 sleep 造成不稳定测试。
+     */
+    private static void awaitContains(java.util.function.Supplier<String> supplier, String expected)
+        throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
+        String current = supplier.get();
+        while (!current.contains(expected) && System.nanoTime() < deadline) {
+            TimeUnit.MILLISECONDS.sleep(10);
+            current = supplier.get();
+        }
+        assertTrue(current.contains(expected), current);
+    }
+
+    /**
+     * 去除真实 renderer 输出中的 ANSI 控制序列，便于断言可见文本。
+     */
+    private static String stripAnsi(String value) {
+        return value
+            .replaceAll("\\u001B\\[[;?0-9]*[ -/]*[@-~]", "")
+            .replaceAll("\\u001B\\][^\\u0007]*\\u0007", "");
     }
 }

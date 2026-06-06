@@ -120,6 +120,34 @@ describe('Skills page', () => {
   });
 
   /**
+   * 过长的技能描述被列表截断时，悬停后应通过浮层展示完整内容，避免维护者只能看到省略号。
+   */
+  it('shows full skill description in a tooltip when hovering truncated list text', async () => {
+    const longDescription = '智能多引擎搜索，自动检测网络环境并按优先级切换：DuckDuckGo -> Tavily -> Bing API -> Bing 页面，失败时继续兜底。';
+    vi.mocked(AdminChatApi.listSkills).mockResolvedValueOnce({
+      records: [
+        {
+          ...skillFixture[0],
+          description: longDescription,
+        },
+      ],
+      total: 1,
+      size: 10,
+      current: 1,
+      pages: 1,
+    } as any);
+
+    render(<Skills />);
+    const description = await screen.findByTestId('skill-description-tooltip-weather_query');
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+
+    fireEvent.mouseEnter(description);
+
+    const tooltip = await screen.findByRole('tooltip');
+    expect(tooltip).toHaveTextContent(longDescription);
+  });
+
+  /**
    * 技能管理列表在首屏加载中时应展示与 Trace 管理一致的骨架行。
    */
   it('shows trace-style skeleton rows while skills list is loading', async () => {

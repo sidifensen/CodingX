@@ -13,7 +13,7 @@
 ## 核心流程
 
 1. 管理员进入会话详情页后，`TaskDetail` 读取路由中的会话 ID 并调用 `AdminChatApi.getConversationDetail`；接口失败时沿用统一错误提取逻辑展示后端中文 `message`。
-2. 后端 `AdminChatConversationService.getConversationDetail` 先读取会话元信息，再按会话 ID 查询消息列表；每条消息通过 `toMessageResponse` 补齐 `runId`、`deleted`、`createdAt`、`updatedAt`、模型元数据、思考内容、附件和技能编码。
+2. 后端 `AdminChatConversationService.getConversationDetail` 先读取会话元信息，再按会话 ID 查询消息列表；每条消息通过 `toMessageResponse` 补齐 `runId`、`deleted`、`createdAt`、`updatedAt`、模型元数据、思考内容和附件。
 3. 前端 `MessageItem` 将轻量字段放入“消息元信息”表格，将 `content`、`thinkingContent` 和附件明细分区展示；空字段统一显示 `-`，空附件显示“无附件”。
 4. 附件明细按附件响应字段逐项展示，包括附件 ID、会话 ID、消息 ID、类型、文件名、扩展名、MIME、文件大小、预览地址、内容摘要、状态和创建时间。
 

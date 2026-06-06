@@ -1,10 +1,14 @@
 package com.codingx.chat.infrastructure.persistence.repository;
 
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.codingx.chat.domain.model.ChatMessage;
 import com.codingx.chat.domain.model.ChatMessageRole;
 import com.codingx.chat.domain.model.ChatMessageStatus;
@@ -105,7 +109,12 @@ class ChatMessageRepositoryImplTest {
     void softDeleteByConversationIdAndIdsUpdatesDeletedFlagInConversationScope() {
         chatMessageRepository.softDeleteByConversationIdAndIds(1L, List.of(101L, 102L));
 
-        verify(chatMessageMapper).update(any(ChatMessageDO.class), any());
+        ArgumentCaptor<UpdateWrapper<ChatMessageDO>> wrapperCaptor = ArgumentCaptor.forClass(UpdateWrapper.class);
+        verify(chatMessageMapper).update(isNull(), wrapperCaptor.capture());
+        String sqlSet = wrapperCaptor.getValue().getSqlSet();
+        assertNotNull(sqlSet);
+        assertTrue(sqlSet.contains("deleted"));
+        assertTrue(sqlSet.contains("updated_at"));
     }
 
     /**

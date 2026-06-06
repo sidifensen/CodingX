@@ -1050,6 +1050,58 @@ export function useChatWorkspace(
   };
 
   /**
+   * 清理指定会话的运行中任务投影，确保用户停止生成后侧栏不会继续使用旧快照显示 spinner。
+   * @param conversationId 需要清理运行态的会话标识。
+   */
+  const clearConversationRunningTaskProjection = (conversationId: string | null | undefined) => {
+    const normalizedConversationId = String(conversationId ?? '').trim();
+    if (!normalizedConversationId || normalizedConversationId === 'pending-conversation') {
+      return;
+    }
+    const clearRunningFields = (conversation: ConversationItem): ConversationItem =>
+      conversation.id === normalizedConversationId
+        ? {
+            ...conversation,
+            activeTaskId: undefined,
+            activeTaskStatus: undefined,
+          }
+        : conversation;
+
+    const currentConversations = conversationsRef.current;
+    const shouldUpdateCurrentConversations = currentConversations.some(
+      (conversation) => conversation.id === normalizedConversationId,
+    );
+    const nextConversations = shouldUpdateCurrentConversations
+      ? currentConversations.map(clearRunningFields)
+      : currentConversations;
+    if (shouldUpdateCurrentConversations) {
+      conversationsRef.current = nextConversations;
+      setConversations(nextConversations);
+    }
+
+    const currentPartitionKey = buildWorkspacePartitionKey(
+      activeRuntimeTargetRef.current,
+      workspacePathRef.current ?? null,
+    );
+    const targetPartitionKey = findWorkspacePartitionByConversationId(normalizedConversationId) ?? currentPartitionKey;
+    const snapshot = readWorkspaceSnapshot(targetPartitionKey);
+    const shouldUpdateSnapshotConversations = snapshot.conversations.some(
+      (conversation) => conversation.id === normalizedConversationId,
+    );
+    const nextSnapshotConversations = shouldUpdateSnapshotConversations
+      ? snapshot.conversations.map(clearRunningFields)
+      : targetPartitionKey === currentPartitionKey
+        ? nextConversations
+        : snapshot.conversations;
+    // 侧栏分组从本地快照重建，仅更新 React 内存态不足以停止左侧任务转圈。
+    writeWorkspaceSnapshot(targetPartitionKey, {
+      ...snapshot,
+      conversations: nextSnapshotConversations,
+    });
+    refreshWorkspaceGroups('all');
+  };
+
+  /**
    * 当前工作空间分区刷新后，重新读取对应快照，保证切换目录时左侧与主区同步。
    */
   useEffect(() => {
@@ -2056,6 +2108,7 @@ export function useChatWorkspace(
     setIsStreaming(false);
     setStreamError('已停止当前生成');
     hideStreamQueueState();
+    clearConversationRunningTaskProjection(runningConversationId);
     const token = currentToken();
     if (
       !token ||
@@ -2222,6 +2275,10 @@ export function useChatWorkspace(
     const targetMessage = currentMessages[targetMessageIndex];
     const targetConversationId = targetMessage.conversationId || activeConversationIdRef.current;
     if (!targetConversationId || targetConversationId === 'pending-conversation') {
+      return;
+    }
+    if (isOptimisticUserMessageId(messageId)) {
+      await resendStoppedOptimisticUserMessage(targetMessage, targetConversationId, normalizedContent);
       return;
     }
     const replacedMessageIds = normalizePersistedMessageIds(
@@ -2547,6 +2604,10 @@ export function useChatWorkspace(
     if (!previousUserMessage) {
       return;
     }
+    if (isOptimisticAssistantMessageId(assistantMessageId)) {
+      await resendStoppedOptimisticUserMessage(previousUserMessage, conversationId, previousUserMessage.content);
+      return;
+    }
     markActiveStreamDetached();
     persistActiveStreamSnapshot();
     abortControllerRef.current?.abort();
@@ -2611,6 +2672,142 @@ export function useChatWorkspace(
       if (isActiveStreamSession(streamSessionId)) {
         await loadConversations(token);
       }
+      refreshWorkspaceGroups('all');
+    } catch (error) {
+      if (!isActiveStreamSession(streamSessionId)) {
+        return;
+      }
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        if (isDetachedStreamAbort(streamSessionId)) {
+          persistActiveStreamSnapshot();
+          return;
+        }
+        setStreamError('已停止当前生成');
+      } else if (error instanceof ChatApi.UnauthorizedError) {
+        onUnauthorizedRef.current?.();
+      } else {
+        const message = error instanceof Error ? error.message : UserErrorMessages.CHAT_REQUEST_FAILED;
+        setStreamError(message);
+        setMessages((previousMessages) =>
+          previousMessages.map((item) =>
+            item.id === optimisticAssistantId
+              ? {
+                  ...item,
+                  status: 'error',
+                  errorMessage: message,
+                }
+              : item,
+          ),
+        );
+      }
+    } finally {
+      detachedStreamSessionIdsRef.current.delete(streamSessionId);
+      delete streamMcpCallsRef.current[optimisticAssistantId];
+      if (abortControllerRef.current === streamAbortController) {
+        abortControllerRef.current = null;
+      }
+      if (isActiveStreamSession(streamSessionId)) {
+        activeStreamSessionIdRef.current = null;
+        setIsStreaming(false);
+      }
+    }
+  };
+
+  /**
+   * 停止生成后若历史回放尚未把乐观消息换成数据库主键，则直接用当前轮问题重新发起同会话流。
+   * @param sourceUserMessage 当前轮用户问题消息。
+   * @param conversationId 已确定的真实会话标识。
+   * @param content 本次要发送的问题内容。
+   */
+  const resendStoppedOptimisticUserMessage = async (
+    sourceUserMessage: ChatMessageItem,
+    conversationId: string,
+    content: string,
+  ) => {
+    const token = currentToken();
+    if (!token || !conversationId || conversationId === 'pending-conversation') {
+      return;
+    }
+    markActiveStreamDetached();
+    persistActiveStreamSnapshot();
+    abortControllerRef.current?.abort();
+    const streamSessionId = createStreamSessionId();
+    activeStreamSessionIdRef.current = streamSessionId;
+    const streamAbortController = new AbortController();
+    abortControllerRef.current = streamAbortController;
+    const optimisticUserId = `optimistic-edit-user-${Date.now()}`;
+    const optimisticAssistantId = `optimistic-edit-assistant-${Date.now()}`;
+    streamMcpCallsRef.current[optimisticAssistantId] = [];
+    streamStateRef.current = {
+      conversationId,
+      activeMessageId: optimisticAssistantId,
+    };
+    const nextMessages: ChatMessageItem[] = [
+      buildOptimisticUserMessage({
+        id: optimisticUserId,
+        conversationId,
+        content,
+        skillCodes: sourceUserMessage.skillCodes ?? selectedSkillCodes,
+        attachments: [],
+      }),
+      {
+        id: optimisticAssistantId,
+        conversationId,
+        role: 'ASSISTANT',
+        content: '',
+        processCards: [],
+        timelineItems: [],
+        status: 'streaming',
+      },
+    ];
+    setMessages(nextMessages);
+    persistConversationState(conversationId, conversationsRef.current, {
+      messages: nextMessages,
+      executionSteps,
+      references,
+      artifacts,
+      currentExperts,
+      currentSkills,
+      currentMcps,
+    });
+    setIsStreaming(true);
+    setStreamError('');
+    hideStreamQueueState();
+
+    try {
+      const response = await fetch(
+        buildStreamRequestUrl(
+          content,
+          conversationId,
+          workspaceId,
+          deepThinkingEnabled,
+          mcpConnected,
+          selectedMcpCodes,
+          sourceUserMessage.skillCodes ?? selectedSkillCodes,
+          selectedExpertCode,
+          workspacePath,
+          [],
+        ),
+        {
+          headers: {
+            satoken: token,
+          },
+          signal: streamAbortController.signal,
+        },
+      );
+      await ChatApi.assertStreamAuthorized(response);
+      await consumeSseStream(response, optimisticAssistantId, streamSessionId);
+      if (!isActiveStreamSession(streamSessionId)) {
+        return;
+      }
+      const nextConversations = await loadConversations(token);
+      await selectConversation(
+        conversationId,
+        nextConversations,
+        streamMcpCallsRef.current[optimisticAssistantId],
+        true,
+        true,
+      );
       refreshWorkspaceGroups('all');
     } catch (error) {
       if (!isActiveStreamSession(streamSessionId)) {
@@ -3097,12 +3294,12 @@ export function useChatWorkspace(
           activeMessageId: finishAssistantMessageId ?? optimisticAssistantId,
         };
         setActiveConversationId(finishConversationId);
-        upsertConversationFromStreamMeta(finishConversationId, finishTitle);
-        const existingConversation = conversations.find(
+        const conversationListAfterFinishUpsert = upsertConversationFromStreamMeta(finishConversationId, finishTitle);
+        const existingConversation = conversationListAfterFinishUpsert.find(
           (conversation) => conversation.id === finishConversationId,
         );
         nextConversationListForPersist = upsertConversationToTop(
-          conversations,
+          conversationListAfterFinishUpsert,
           existingConversation
             ? {
                 ...existingConversation,
@@ -3110,6 +3307,9 @@ export function useChatWorkspace(
                   finishTitle && finishTitle.trim().length > 0
                     ? finishTitle
                     : existingConversation.title,
+                // finish 是服务端确认输出结束的终态事件，必须同步清理 meta 阶段写入的运行投影。
+                activeTaskId: undefined,
+                activeTaskStatus: undefined,
               }
             : {
                 id: finishConversationId,
@@ -3118,9 +3318,14 @@ export function useChatWorkspace(
                     ? finishTitle
                     : '新会话',
                 status: 'ACTIVE',
+                // 兼容未收到 meta 直接收到 finish 的链路，落库会话不应带入本地运行态。
+                activeTaskId: undefined,
+                activeTaskStatus: undefined,
                 workspaceType: activeRuntimeTarget === 'local' ? 'LOCAL' : undefined,
               },
         );
+        conversationsRef.current = nextConversationListForPersist;
+        setConversations(nextConversationListForPersist);
         writeConversationIdToUrl(finishConversationId);
       }
       hideStreamQueueState();
@@ -3178,6 +3383,11 @@ export function useChatWorkspace(
 
     if (eventName === 'cancel') {
       hideStreamQueueState();
+      clearConversationRunningTaskProjection(
+        isRecord(payload)
+          ? String(payload.conversationId ?? streamStateRef.current?.conversationId ?? activeConversationIdRef.current ?? '')
+          : streamStateRef.current?.conversationId ?? activeConversationIdRef.current,
+      );
       setMessages((previousMessages) =>
         previousMessages.map((message) =>
           message.id === optimisticAssistantId
@@ -3636,12 +3846,13 @@ export function useChatWorkspace(
     const shouldKeepLandingState =
       activeConversationId == null && messages.length === 0 && !readConversationIdFromUrl();
     const fallbackWorkspacePath = workspacePath ?? null;
-    const currentSnapshot = readWorkspaceSnapshot(
-      buildWorkspacePartitionKey(activeRuntimeTarget, fallbackWorkspacePath),
-    );
+    const currentPartitionKey = buildWorkspacePartitionKey(activeRuntimeTarget, fallbackWorkspacePath);
+    const currentSnapshot = readWorkspaceSnapshot(currentPartitionKey);
     const persistedActiveConversationId = currentSnapshot.activeConversationId ?? null;
     const effectiveActiveConversationId = activeConversationId ?? persistedActiveConversationId;
     const remoteConversations = await ChatApi.listConversations(token, effectiveWorkspaceId);
+    // 远端列表请求期间，刷新恢复可能已经清理过本地消息快照；写回会话列表前必须重读，避免旧闭包覆盖修正后的记录。
+    const latestSnapshotForConversationRecords = readWorkspaceSnapshot(currentPartitionKey);
     // 关键约束：流式生成期间会话列表可能返回慢数据或空数据，不能把 meta 已写入的当前会话从侧栏快照中抹掉。
     const protectedRemoteConversations = hasActiveStreamPlayback()
       ? mergeConversationListById(remoteConversations, currentSnapshot.conversations)
@@ -3662,7 +3873,7 @@ export function useChatWorkspace(
       );
       const visibleConversationIds = new Set(visibleConversations.map((conversation) => conversation.id));
       const visibleConversationRecords = Object.fromEntries(
-        Object.entries(currentSnapshot.conversationRecords ?? {}).filter(([conversationId]) =>
+        Object.entries(latestSnapshotForConversationRecords.conversationRecords ?? {}).filter(([conversationId]) =>
           visibleConversationIds.has(conversationId),
         ),
       );
@@ -3832,7 +4043,13 @@ export function useChatWorkspace(
       await selectConversation(conversationId, snapshot.conversations, undefined, false);
       return;
     }
-    const replayMessages = patchLatestAssistantReplayPanels(record.messages, {
+    const selectedConversation = snapshot.conversations.find((item) => item.id === conversationId);
+    const shouldResumeRunningConversation =
+      selectedConversation != null && isConversationTaskRunning(selectedConversation);
+    const replaySourceMessages = shouldResumeRunningConversation
+      ? record.messages
+      : removeStaleStreamingAssistantPlaceholders(record.messages);
+    const replayMessages = patchLatestAssistantReplayPanels(replaySourceMessages, {
       previousMessages: messagesRef.current,
       executionSteps: record.executionSteps,
       references: record.references,
@@ -3845,17 +4062,28 @@ export function useChatWorkspace(
     setCurrentExperts(record.currentExperts ?? []);
     setCurrentSkills(record.currentSkills);
     setCurrentMcps(record.currentMcps);
-    persistConversationState(conversationId, snapshot.conversations, {
-      messages: replayMessages,
-      executionSteps: record.executionSteps,
-      references: record.references,
-      artifacts: record.artifacts,
-      currentExperts: record.currentExperts ?? [],
-      currentSkills: record.currentSkills,
-      currentMcps: record.currentMcps,
+    // 刷新首屏恢复时 activeWorkspacePartitionKey 可能尚未完成 React 状态同步；
+    // 这里必须直接写回正在读取的分区，才能把旧空 streaming 占位从本地快照中清掉。
+    writeWorkspaceSnapshot(partitionKey, {
+      ...snapshot,
+      activeConversationId: conversationId,
+      conversationRecords: {
+        ...snapshot.conversationRecords,
+        [conversationId]: {
+          ...record,
+          owned: record.owned ?? true,
+          messages: replayMessages,
+          executionSteps: record.executionSteps,
+          references: record.references,
+          artifacts: record.artifacts,
+          currentExperts: record.currentExperts ?? [],
+          currentSkills: record.currentSkills,
+          currentMcps: record.currentMcps,
+        },
+      },
     });
-    const selectedConversation = snapshot.conversations.find((item) => item.id === conversationId);
-    if (selectedConversation && isConversationTaskRunning(selectedConversation)) {
+    refreshWorkspaceGroups('all');
+    if (shouldResumeRunningConversation) {
       const token = currentToken();
       if (token) {
         resumeRunningConversationStream(token, conversationId, snapshot.conversations, replayMessages, {
@@ -4210,6 +4438,49 @@ function normalizePersistedMessageIds(messageIds: Array<string | null | undefine
 function normalizePersistedMessageId(messageId: unknown): string | undefined {
   const normalizedMessageId = String(messageId ?? '').trim();
   return /^\d+$/.test(normalizedMessageId) ? normalizedMessageId : undefined;
+}
+
+/**
+ * 判断用户提问是否仍是本地乐观消息 ID，停止生成后这类消息需要走会话级重发兜底。
+ * @param messageId 消息标识。
+ * @returns 是否为用户临时消息。
+ */
+function isOptimisticUserMessageId(messageId: string) {
+  return messageId.startsWith('optimistic-user-') || messageId.startsWith('optimistic-edit-user-');
+}
+
+/**
+ * 判断助手回复是否仍是本地乐观消息 ID，停止生成后这类消息无法调用消息级删除接口。
+ * @param messageId 消息标识。
+ * @returns 是否为助手临时消息。
+ */
+function isOptimisticAssistantMessageId(messageId: string) {
+  return (
+    messageId.startsWith('optimistic-assistant-') ||
+    messageId.startsWith('optimistic-edit-assistant-') ||
+    messageId.startsWith('optimistic-regenerate-assistant-') ||
+    messageId.startsWith('resumed-assistant-')
+  );
+}
+
+/**
+ * 清理终态会话快照里残留的空流式助手占位。
+ * @param messages 本地快照消息列表。
+ * @returns 去掉无内容临时流式占位后的消息列表。
+ */
+function removeStaleStreamingAssistantPlaceholders(messages: ChatMessageItem[]) {
+  return messages.filter((message) => {
+    if (message.role !== 'ASSISTANT' || message.status !== 'streaming') {
+      return true;
+    }
+    const hasVisibleContent =
+      String(message.content ?? '').trim().length > 0 ||
+      String(message.thinkingContent ?? '').trim().length > 0 ||
+      (message.processCards?.length ?? 0) > 0 ||
+      (message.timelineItems?.length ?? 0) > 0;
+    // 非运行中会话只清理本地临时空占位；真实落库消息即使状态异常也交给历史接口修正。
+    return hasVisibleContent || !isOptimisticAssistantMessageId(message.id);
+  });
 }
 
 /**

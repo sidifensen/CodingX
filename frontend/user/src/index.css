@@ -273,18 +273,54 @@
     background-color: var(--surface);
   }
 
-  /* Markdown 对比表的专用样式：让高密度信息具备更清晰的层级、分隔和阅读路径。 */
+  /* Markdown 对比表承载高密度结果，外层提供稳定滚动区并用轻量分隔建立阅读路径。 */
   .chat-markdown-table-shell {
-    border: 1px solid var(--border-subtle);
-    border-radius: 18px;
+    position: relative;
+    border: 1px solid color-mix(in srgb, var(--border-active) 45%, transparent);
+    border-radius: 16px;
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
+    scrollbar-color: color-mix(in srgb, var(--text-muted) 58%, transparent) transparent;
+    scrollbar-width: thin;
     background:
-      linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0)),
-      var(--surface-container);
+      linear-gradient(180deg, color-mix(in srgb, var(--surface-container-high) 32%, transparent), transparent 44px),
+      var(--surface);
     box-shadow:
-      0 18px 42px rgba(0, 0, 0, 0.16),
-      inset 0 1px 0 rgba(255, 255, 255, 0.04);
+      0 16px 38px rgba(0, 0, 0, 0.12),
+      inset 0 1px 0 color-mix(in srgb, var(--text-primary) 7%, transparent);
+  }
+
+  .chat-markdown-table-shell::before {
+    content: '';
+    position: absolute;
+    inset: 0 0 auto;
+    height: 3px;
+    border-radius: 16px 16px 0 0;
+    background: linear-gradient(90deg, var(--accent-breeze), var(--accent-sunset));
+    opacity: 0.72;
+    pointer-events: none;
+  }
+
+  .chat-markdown-table-shell::-webkit-scrollbar {
+    height: 8px;
+  }
+
+  .chat-markdown-table-shell::-webkit-scrollbar-track {
+    margin-inline: 12px;
+    border-radius: 999px;
+    background: transparent;
+  }
+
+  .chat-markdown-table-shell::-webkit-scrollbar-thumb {
+    border: 2px solid transparent;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--text-muted) 58%, transparent);
+    background-clip: padding-box;
+  }
+
+  .chat-markdown-table-shell::-webkit-scrollbar-thumb:hover {
+    background: color-mix(in srgb, var(--text-muted) 76%, transparent);
+    background-clip: padding-box;
   }
 
   .chat-markdown-table {
@@ -292,8 +328,8 @@
     border-spacing: 0;
     width: max-content;
     min-width: 100%;
-    font-size: 14px;
-    line-height: 1.7;
+    font-size: 13.5px;
+    line-height: 1.65;
     overflow: hidden;
     table-layout: auto;
   }
@@ -302,19 +338,26 @@
     position: sticky;
     top: 0;
     z-index: 1;
-    background: color-mix(in srgb, var(--surface-container-high) 92%, transparent);
-    backdrop-filter: blur(8px);
+    background: color-mix(in srgb, var(--surface-container-high) 74%, var(--surface));
+    backdrop-filter: blur(10px);
+    color: color-mix(in srgb, var(--text-primary) 88%, var(--accent-breeze));
   }
 
   .chat-markdown-table th,
   .chat-markdown-table td {
-    padding: 14px 16px;
+    padding: 13px 18px;
     vertical-align: top;
-    border-right: 1px solid var(--border-subtle);
-    border-bottom: 1px solid var(--border-subtle);
+    border-right: 1px solid color-mix(in srgb, var(--border-subtle) 78%, transparent);
+    border-bottom: 1px solid color-mix(in srgb, var(--border-subtle) 86%, transparent);
     white-space: nowrap;
     word-break: normal;
     overflow-wrap: normal;
+  }
+
+  .chat-markdown-table tbody td:first-child {
+    font-weight: 650;
+    color: var(--text-primary);
+    background: color-mix(in srgb, var(--surface-container-high) 24%, transparent);
   }
 
   .chat-markdown-table th:last-child,
@@ -329,15 +372,20 @@
   .chat-markdown-table tbody tr {
     transition:
       background-color 160ms ease,
-      transform 160ms ease;
+      box-shadow 160ms ease;
   }
 
   .chat-markdown-table tbody tr:nth-child(even) {
-    background: color-mix(in srgb, var(--surface-container-high) 28%, transparent);
+    background: color-mix(in srgb, var(--surface-container-high) 16%, transparent);
   }
 
   .chat-markdown-table tbody tr:hover {
-    background: color-mix(in srgb, var(--surface-selected) 40%, transparent);
+    background: color-mix(in srgb, var(--surface-selected) 28%, transparent);
+    box-shadow: inset 3px 0 0 var(--accent-breeze);
+  }
+
+  .chat-markdown-table tbody tr:hover td:first-child {
+    background: color-mix(in srgb, var(--surface-selected) 34%, transparent);
   }
 
   .chat-markdown-table p:last-child,

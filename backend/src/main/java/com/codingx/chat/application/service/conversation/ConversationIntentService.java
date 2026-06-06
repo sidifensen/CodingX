@@ -49,7 +49,7 @@ public class ConversationIntentService {
         // 步骤 1：空问题直接进入澄清分支，避免后续模型或工具链路收到无效输入。
         if (StrUtil.isBlank(question)) {
             ConversationIntentDecision decision = new ConversationIntentDecision("clarify.ambiguity", ConversationIntentAction.CLARIFY, "请补充你的具体问题");
-            logIntentDecision(question, mcpEnabled, decision);
+            logIntentDecision(question, mcpEnabled, decision, List.of());
             return decision;
         }
         // 步骤 2：加载启用意图节点和示例，先由分类器给出候选，再由歧义服务判断是否需要追问。
@@ -59,13 +59,13 @@ public class ConversationIntentService {
         String guidancePrompt = conversationIntentGuidanceService.buildGuidancePrompt(question, candidates, nodes);
         if (StrUtil.isNotBlank(guidancePrompt)) {
             ConversationIntentDecision decision = new ConversationIntentDecision("clarify.ambiguity", ConversationIntentAction.CLARIFY, guidancePrompt);
-            logIntentDecision(question, mcpEnabled, decision);
+            logIntentDecision(question, mcpEnabled, decision, candidates);
             return decision;
         }
         // 步骤 3：没有候选时回退普通直答，由后续模型生成回答而不是强行搜索或调用工具。
         if (candidates.isEmpty()) {
             ConversationIntentDecision decision = new ConversationIntentDecision("chat.normal", ConversationIntentAction.DIRECT, null);
-            logIntentDecision(question, mcpEnabled, decision);
+            logIntentDecision(question, mcpEnabled, decision, candidates);
             return decision;
         }
         // 步骤 4：按首选节点类型映射后续动作，并在 MCP 未启用或天气缺城市时提前收口。
@@ -88,7 +88,7 @@ public class ConversationIntentService {
             decision = new ConversationIntentDecision(topNode.getIntentCode(), ConversationIntentAction.DIRECT, null);
         }
         // 步骤 5：最终决策统一打印日志，方便排查本轮进入直答、搜索、MCP 或澄清分支。
-        logIntentDecision(question, mcpEnabled, decision);
+        logIntentDecision(question, mcpEnabled, decision, candidates);
         return decision;
     }
 
@@ -147,12 +147,21 @@ public class ConversationIntentService {
     /**
      * 打印最终意图路由结果，便于从日志快速判断本轮进入直答、搜索、MCP 或澄清分支。
      */
-    private void logIntentDecision(String question, boolean mcpEnabled, ConversationIntentDecision decision) {
+    private void logIntentDecision(
+        String question,
+        boolean mcpEnabled,
+        ConversationIntentDecision decision,
+        List<ConversationIntentCandidate> candidates
+    ) {
+        ConversationIntentCandidate top = candidates.isEmpty() ? null : candidates.getFirst();
         log.info(
-            "意图决策: 问题={}, 动作={}, 意图={}, MCP启用={}",
+            "意图决策: 问题={}, 动作={}, 意图={}, 首选={}, 分数={}, 候选={}, MCP={}",
             StrUtil.maxLength(question, 120),
             decision.action(),
             decision.intentCode(),
+            top == null ? null : top.node().getIntentCode(),
+            top == null ? null : top.score(),
+            candidates.size(),
             mcpEnabled
         );
     }

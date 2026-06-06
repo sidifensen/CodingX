@@ -180,10 +180,20 @@ describe('localConversationStorage', () => {
   });
 
   /**
-   * 首次创建有路径的本地快照且调用方未传标签时，也必须从路径推导名称。
+   * 首次创建有路径且包含会话的本地快照时，也必须从路径推导名称。
    */
   it('首次创建本地工作空间快照时应避免继承默认分区标签', () => {
-    const { snapshot } = upsertWorkspaceSnapshot('local', 'D:/code/DesignSystem');
+    const { snapshot } = upsertWorkspaceSnapshot('local', 'D:/code/DesignSystem', {
+      conversations: [
+        {
+          id: 'local-design-system',
+          title: '设计系统会话',
+          status: 'ACTIVE',
+          workspaceType: 'LOCAL',
+        },
+      ],
+      activeConversationId: 'local-design-system',
+    });
 
     const localGroup = listWorkspaceGroups('local').find(
       (group) => group.partitionKey === 'local::d:/code/designsystem',
@@ -191,6 +201,23 @@ describe('localConversationStorage', () => {
 
     expect(snapshot.workspaceLabel).toBe('DesignSystem');
     expect(localGroup?.workspaceLabel).toBe('DesignSystem');
+  });
+
+  /**
+   * 仅绑定过目录但没有任何会话的本地工作空间属于空缓存，侧栏不应展示成一个可展开分组。
+   */
+  it('应隐藏没有会话内容的本地工作空间分组', () => {
+    upsertWorkspaceSnapshot('local', 'D:/code/local', {
+      workspaceLabel: 'local',
+      conversations: [],
+      activeConversationId: null,
+      conversationRecords: {},
+    });
+
+    const localGroups = listWorkspaceGroups('local');
+
+    expect(localGroups.some((group) => group.partitionKey === 'local::d:/code/local')).toBe(false);
+    expect(localGroups.some((group) => group.partitionKey === 'local::__no_workspace__')).toBe(true);
   });
 
   /**

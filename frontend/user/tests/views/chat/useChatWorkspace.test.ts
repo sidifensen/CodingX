@@ -1750,8 +1750,10 @@ describe('useChatWorkspace', () => {
       resolve: (value: ReadableStreamReadResult<Uint8Array>) => void;
       reject: (reason?: unknown) => void;
     }> = [];
+    const requestUrls: string[] = [];
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
       const url = String(input);
+      requestUrls.push(url);
       if (url === '/api/chat/conversations') {
         return new Response(
           JSON.stringify({
@@ -2280,8 +2282,10 @@ describe('useChatWorkspace', () => {
       resolveStepsRequest = resolve;
     });
 
+    const requestUrls: string[] = [];
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
       const url = String(input);
+      requestUrls.push(url);
       if (url === '/api/chat/conversations') {
         return new Response(
           JSON.stringify({
@@ -4764,7 +4768,7 @@ describe('useChatWorkspace', () => {
       resolve: (value: ReadableStreamReadResult<Uint8Array>) => void;
       reject: (reason?: unknown) => void;
     }> = [];
-    const encodedMeta = new TextEncoder().encode('event:meta\ndata:{"conversationId":"2001"}\n\n');
+    const encodedMeta = new TextEncoder().encode('event:meta\ndata:{"conversationId":"2001","taskId":"9001"}\n\n');
     const encodedDelta = new TextEncoder().encode(
       'event:message\ndata:{"type":"response","delta":"第一段"}\n\n',
     );
@@ -4892,6 +4896,16 @@ describe('useChatWorkspace', () => {
       firstRead?.resolve({ done: false, value: encodedMeta });
     });
 
+    await waitFor(() => {
+      const runningConversation = result.current.conversations.find((item) => item.id === '2001');
+      const runningSidebarConversation = result.current.workspaceGroups
+        .flatMap((group) => group.conversations)
+        .find((item) => item.id === '2001');
+      expect(runningConversation?.activeTaskId).toBe('9001');
+      expect(runningConversation?.activeTaskStatus).toBe('RUNNING');
+      expect(runningSidebarConversation?.activeTaskStatus).toBe('RUNNING');
+    });
+
     await act(async () => {
       const secondRead = readQueue.shift();
       secondRead?.resolve({ done: false, value: encodedDelta });
@@ -4914,12 +4928,382 @@ describe('useChatWorkspace', () => {
     await waitFor(() => {
       expect(result.current.isStreaming).toBe(false);
       expect(result.current.streamError).toBe('已停止当前生成');
+      const stoppedConversation = result.current.conversations.find((item) => item.id === '2001');
+      const stoppedSidebarConversation = result.current.workspaceGroups
+        .flatMap((group) => group.conversations)
+        .find((item) => item.id === '2001');
+      expect(stoppedConversation?.activeTaskId).toBeUndefined();
+      expect(stoppedConversation?.activeTaskStatus).toBeUndefined();
+      expect(stoppedSidebarConversation?.activeTaskStatus).toBeUndefined();
       const assistantMessage = result.current.messages.find((item) => item.role === 'ASSISTANT');
       expect(assistantMessage?.content).toBe('第一段');
       expect(assistantMessage?.status).toBe('cancelled');
     });
 
     await submitPromise;
+  });
+
+  /**
+   * 重新生成完成后必须清理会话运行态；否则切换会话再返回时会误走续流恢复，主区重新出现“正在生成回答”。
+   */
+  it('重新生成完成后切换会话再返回不应恢复运行中续流', async () => {
+    window.localStorage.setItem(
+      'codingx.auth.session',
+      JSON.stringify({
+        token: 'token-123',
+        userId: '1002',
+        username: 'user',
+        displayName: 'CodingX User',
+        userType: 'USER',
+      }),
+    );
+
+    const readQueue: Array<{
+      resolve: (value: ReadableStreamReadResult<Uint8Array>) => void;
+      reject: (reason?: unknown) => void;
+    }> = [];
+    const encodedMeta = new TextEncoder().encode('event:meta\ndata:{"conversationId":"2001","taskId":"9001"}\n\n');
+    const encodedFinish = new TextEncoder().encode(
+      'event:finish\ndata:{"conversationId":"2001","assistantMessageId":"103","content":"重新生成完成"}\n\n',
+    );
+    const mockReader = {
+      read: vi.fn(() => {
+        return new Promise<ReadableStreamReadResult<Uint8Array>>((resolve, reject) => {
+          readQueue.push({ resolve, reject });
+        });
+      }),
+    };
+    const resumeStreamRequests: string[] = [];
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === '/api/chat/conversations') {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            code: 'OK',
+            message: 'success',
+            data: [
+              {
+                id: '2001',
+                title: '量子力学是什么',
+                status: 'ACTIVE',
+                lastRunId: '5002',
+              },
+              {
+                id: '2002',
+                title: '另一个会话',
+                status: 'ACTIVE',
+                lastRunId: '5003',
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      if (url === '/api/chat/conversations/2001/messages') {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            code: 'OK',
+            message: 'success',
+            data: [
+              {
+                id: '101',
+                conversationId: '2001',
+                role: 'USER',
+                content: '量子力学是什么',
+                status: 'COMPLETED',
+              },
+              {
+                id: '102',
+                conversationId: '2001',
+                role: 'ASSISTANT',
+                content: '旧回答',
+                status: 'COMPLETED',
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      if (url === '/api/chat/conversations/2002/messages') {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            code: 'OK',
+            message: 'success',
+            data: [
+              {
+                id: '201',
+                conversationId: '2002',
+                role: 'USER',
+                content: '另一个问题',
+                status: 'COMPLETED',
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      if (
+        url === '/api/chat/sample-questions' ||
+        url === '/api/chat/experts' ||
+        url === '/api/chat/skills' ||
+        url === '/api/chat/mcps' ||
+        url === '/api/chat/conversations/2001/steps' ||
+        url === '/api/chat/conversations/2001/references' ||
+        url === '/api/chat/conversations/2001/artifacts' ||
+        url === '/api/chat/conversations/2001/current-skills' ||
+        url === '/api/chat/conversations/2001/current-mcps' ||
+        url === '/api/chat/conversations/2001/current-experts' ||
+        url === '/api/chat/conversations/2002/steps' ||
+        url === '/api/chat/conversations/2002/references' ||
+        url === '/api/chat/conversations/2002/artifacts' ||
+        url === '/api/chat/conversations/2002/current-skills' ||
+        url === '/api/chat/conversations/2002/current-mcps' ||
+        url === '/api/chat/conversations/2002/current-experts'
+      ) {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (url === '/api/chat/conversations/2001/messages/102') {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: null }),
+          { status: 200 },
+        );
+      }
+      if (url.includes('/api/chat/stream')) {
+        return {
+          ok: true,
+          status: 200,
+          body: {
+            getReader: () => mockReader,
+          },
+        } as unknown as Response;
+      }
+      if (url === '/api/chat/conversations/2001/stream') {
+        resumeStreamRequests.push(url);
+        return new Response(
+          'event:finish\ndata:{"conversationId":"2001","assistantMessageId":"103","content":"重新生成完成"}\n\n',
+          { status: 200 },
+        );
+      }
+      throw new Error(`Unhandled fetch in regenerate restore test: ${url}`);
+    });
+
+    const { result } = renderHook(() => useChatWorkspace(true));
+
+    await waitFor(() => {
+      expect(result.current.isBootstrapping).toBe(false);
+    });
+
+    await act(async () => {
+      await result.current.selectConversation('2001');
+    });
+    await waitFor(() => {
+      expect(result.current.messages.find((message) => message.id === '102')?.content).toBe('旧回答');
+    });
+
+    let regeneratePromise: Promise<void> = Promise.resolve();
+    await act(async () => {
+      regeneratePromise = result.current.regenerateConversation('2001', { assistantMessageId: '102' });
+    });
+
+    await waitFor(() => {
+      expect(result.current.isStreaming).toBe(true);
+      expect(readQueue.length).toBeGreaterThan(0);
+    });
+
+    await act(async () => {
+      readQueue.shift()?.resolve({ done: false, value: encodedMeta });
+    });
+    await waitFor(() => {
+      const runningConversation = result.current.conversations.find((item) => item.id === '2001');
+      expect(runningConversation?.activeTaskStatus).toBe('RUNNING');
+    });
+
+    await act(async () => {
+      readQueue.shift()?.resolve({ done: false, value: encodedFinish });
+    });
+    await waitFor(() => {
+      expect(readQueue.length).toBeGreaterThan(0);
+    });
+    await act(async () => {
+      readQueue.shift()?.resolve({ done: true, value: undefined });
+    });
+    await regeneratePromise;
+
+    await waitFor(() => {
+      const finishedConversation = result.current.conversations.find((item) => item.id === '2001');
+      expect(result.current.isStreaming).toBe(false);
+      expect(finishedConversation?.activeTaskStatus).toBeUndefined();
+      expect(result.current.messages.find((message) => message.id === '103')?.content).toBe('重新生成完成');
+    });
+
+    await act(async () => {
+      await result.current.selectConversation('2002');
+    });
+    await waitFor(() => {
+      expect(result.current.activeConversationId).toBe('2002');
+    });
+
+    await act(async () => {
+      await result.current.selectConversation('2001');
+    });
+
+    await waitFor(() => {
+      expect(result.current.activeConversationId).toBe('2001');
+      expect(result.current.isStreaming).toBe(false);
+      expect(resumeStreamRequests).toEqual([]);
+      expect(result.current.messages.every((message) => message.status !== 'streaming')).toBe(true);
+    });
+  });
+
+  /**
+   * 旧快照可能在后台续流完成后仍残留空的 resumed-assistant streaming 占位；终态会话恢复时必须清掉。
+   */
+  it('恢复已完成会话快照时应移除残留的空流式助手占位', async () => {
+    window.localStorage.setItem(
+      'codingx.auth.session',
+      JSON.stringify({
+        token: 'token-123',
+        userId: '1002',
+        username: 'user',
+        displayName: 'CodingX User',
+        userType: 'USER',
+      }),
+    );
+    window.history.replaceState(window.history.state, '', '/?conversationId=2001');
+    window.localStorage.setItem(
+      'codingx.chat.workspace.conversations.v1',
+      JSON.stringify({
+        version: 1,
+        snapshots: {
+          'cloud::__no_workspace__': {
+            workspacePath: null,
+            workspaceLabel: '云端历史记录',
+            runtimeTarget: 'cloud',
+            lastOpenedAt: Date.now(),
+            activeConversationId: '2001',
+            conversations: [
+              {
+                id: '2001',
+                title: '量子力学是什么',
+                status: 'ACTIVE',
+                lastRunId: '5002',
+                lastTaskId: 'task-9001',
+                lastTaskStatus: 'SUCCEEDED',
+                lastTaskFinishedAt: '2026-06-01T19:57:03',
+              },
+            ],
+            conversationRecords: {
+              '2001': {
+                owned: true,
+                messages: [
+                  {
+                    id: '101',
+                    conversationId: '2001',
+                    role: 'USER',
+                    content: '量子力学是什么',
+                    status: 'COMPLETED',
+                  },
+                  {
+                    id: '102',
+                    conversationId: '2001',
+                    role: 'ASSISTANT',
+                    content: '量子力学是描述微观世界的基础理论。',
+                    status: 'COMPLETED',
+                  },
+                  {
+                    id: 'resumed-assistant-1780311672121',
+                    conversationId: '2001',
+                    role: 'ASSISTANT',
+                    content: '',
+                    processCards: [],
+                    timelineItems: [],
+                    status: 'streaming',
+                  },
+                ],
+                executionSteps: [],
+                references: [],
+                artifacts: [],
+                currentExperts: [],
+                currentSkills: [],
+                currentMcps: [],
+              },
+            },
+            seenTaskFinishedAtByConversationId: {},
+          },
+        },
+      }),
+    );
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === '/api/chat/conversations') {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            code: 'OK',
+            message: 'success',
+            data: [
+              {
+                id: '2001',
+                title: '量子力学是什么',
+                status: 'ACTIVE',
+                lastRunId: '5002',
+                lastTaskId: 'task-9001',
+                lastTaskStatus: 'SUCCEEDED',
+                lastTaskFinishedAt: '2026-06-01T19:57:03',
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      if (
+        url === '/api/chat/sample-questions' ||
+        url === '/api/chat/experts' ||
+        url === '/api/chat/skills' ||
+        url === '/api/chat/mcps' ||
+        url === '/api/chat/conversations/2001/messages' ||
+        url === '/api/chat/conversations/2001/steps' ||
+        url === '/api/chat/conversations/2001/references' ||
+        url === '/api/chat/conversations/2001/artifacts' ||
+        url === '/api/chat/conversations/2001/current-skills' ||
+        url === '/api/chat/conversations/2001/current-mcps' ||
+        url === '/api/chat/conversations/2001/current-experts'
+      ) {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      throw new Error(`Unhandled fetch in terminal snapshot restore test: ${url}`);
+    });
+
+    const { result } = renderHook(() => useChatWorkspace(true));
+
+    await waitFor(() => {
+      expect(result.current.isBootstrapping).toBe(false);
+      expect(result.current.activeConversationId).toBe('2001');
+    });
+
+    expect(result.current.isStreaming).toBe(false);
+    expect(result.current.messages.map((message) => message.id)).not.toContain('resumed-assistant-1780311672121');
+    expect(result.current.messages.every((message) => message.status !== 'streaming')).toBe(true);
+
+    const snapshotStore = JSON.parse(
+      window.localStorage.getItem('codingx.chat.workspace.conversations.v1') ?? '{}',
+    );
+    const persistedMessages =
+      snapshotStore?.snapshots?.['cloud::__no_workspace__']?.conversationRecords?.['2001']?.messages ?? [];
+    expect(persistedMessages.map((message: { id: string }) => message.id)).not.toContain(
+      'resumed-assistant-1780311672121',
+    );
   });
 
   /**

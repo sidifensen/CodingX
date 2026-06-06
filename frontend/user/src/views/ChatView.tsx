@@ -908,11 +908,11 @@ export default function ChatView({
   };
 
   /**
-   * 打开用户消息的内联编辑态，限制在已落库消息上，避免临时消息被重复提交。
+   * 打开用户消息的内联编辑态；停止生成后的临时用户消息仍可重发，避免历史回放前无法修改问题。
    * @param message 待编辑用户消息。
    */
   const startEditingUserMessage = React.useCallback((message: ChatMessageItem) => {
-    if (!PERSISTED_MESSAGE_ID_PATTERN.test(message.id)) {
+    if (!PERSISTED_MESSAGE_ID_PATTERN.test(message.id) && !isOptimisticUserMessageId(message.id)) {
       return;
     }
     setShareSelectionState({ isActive: false, selectedAssistantMessageIds: [] });
@@ -1161,6 +1161,12 @@ export default function ChatView({
               {messages.map((message, index) => {
                 const isAssistant = message.role === 'ASSISTANT';
                 const isLatestMessage = message.id === messages[messages.length - 1]?.id;
+                const nextAssistantMessage = !isAssistant
+                  ? messages.slice(index + 1).find((item) => item.role === 'ASSISTANT')
+                  : null;
+                const canMutateUserMessage =
+                  PERSISTED_MESSAGE_ID_PATTERN.test(message.id) ||
+                  (isOptimisticUserMessageId(message.id) && nextAssistantMessage?.status === 'cancelled');
                 const referenceMessageId = isAssistant
                   ? resolveAssistantReferenceMessageId(messages, index)
                   : null;
@@ -1202,6 +1208,7 @@ export default function ChatView({
                                 messageId={message.id}
                                 conversationId={message.conversationId}
                                 content={messageContent}
+                                status={message.status}
                                 isLatestAssistantMessage={message.id === latestAssistantMessageId}
                                 userVote={message.userVote}
                                 searchProgress={message.searchProgress}
@@ -1220,6 +1227,7 @@ export default function ChatView({
                         <UserMessageBubble
                           message={message}
                           content={messageContent}
+                          canMutateMessage={canMutateUserMessage}
                           skillNameMap={availableSkillNameMap}
                           editState={
                             editingUserMessage?.messageId === message.id
@@ -2702,6 +2710,18 @@ function isOptimisticUserMessageId(messageId: string) {
 }
 
 /**
+ * 助手回复的临时消息 ID 会在正常完成时替换成数据库主键；用户停止生成时可能短暂保留该 ID。
+ */
+function isOptimisticAssistantMessageId(messageId: string) {
+  return (
+    messageId.startsWith('optimistic-assistant-') ||
+    messageId.startsWith('optimistic-edit-assistant-') ||
+    messageId.startsWith('optimistic-regenerate-assistant-') ||
+    messageId.startsWith('resumed-assistant-')
+  );
+}
+
+/**
  * 反查当前助手消息对应的用户提问消息 ID。
  * 搜索来源挂在提问消息上，因此正文里的引用编号必须回溯到上一条用户消息。
  */
@@ -3550,6 +3570,7 @@ function ShareConversationDialog({
 function UserMessageBubble({
   message,
   content,
+  canMutateMessage,
   skillNameMap,
   editState,
   onStartEdit,
@@ -3561,6 +3582,7 @@ function UserMessageBubble({
 }: {
   message: ChatMessageItem;
   content: string;
+  canMutateMessage: boolean;
   skillNameMap: Map<string, string>;
   editState: UserMessageEditState | null;
   onStartEdit: () => void;
@@ -3579,12 +3601,22 @@ function UserMessageBubble({
       {editState ? (
         <div className="chat-user-message-bubble chat-user-message-edit-panel">
           <div className="flex min-h-[96px] w-full max-w-full flex-col gap-2">
-            <textarea
-              aria-label="编辑用户消息"
-              value={editState.content}
-              onChange={(event) => onChangeEditContent(event.target.value)}
-              className="min-h-14 flex-1 resize-none border-0 bg-transparent px-0 py-0 text-[16px] leading-7 text-foreground outline-none placeholder:text-muted"
-            />
+            <div className="chat-user-message-inline-content flex min-h-14 flex-wrap items-start gap-x-1.5 gap-y-1 text-sm leading-7">
+              {message.skillCodes && message.skillCodes.length > 0 ? (
+                // 编辑态必须回显原消息绑定的技能，避免用户误以为重发会丢失技能上下文。
+                <MessageSkillChips
+                  messageId={`${message.id}-edit`}
+                  skillCodes={message.skillCodes}
+                  skillNameMap={skillNameMap}
+                />
+              ) : null}
+              <textarea
+                aria-label="编辑用户消息"
+                value={editState.content}
+                onChange={(event) => onChangeEditContent(event.target.value)}
+                className="min-h-14 min-w-[160px] flex-1 resize-none border-0 bg-transparent px-0 py-0 text-[16px] leading-7 text-foreground outline-none placeholder:text-muted"
+              />
+            </div>
             {editState.errorMessage ? (
               <p className="text-xs text-error">{editState.errorMessage}</p>
             ) : null}
@@ -3642,6 +3674,7 @@ function UserMessageBubble({
         <UserMessageActions
           messageId={message.id}
           content={visibleContent}
+          canMutateMessage={canMutateMessage}
           onStartEdit={onStartEdit}
           onStartDelete={onStartDelete}
         />
@@ -3656,16 +3689,17 @@ function UserMessageBubble({
 function UserMessageActions({
   messageId,
   content,
+  canMutateMessage,
   onStartEdit,
   onStartDelete,
 }: {
   messageId: string;
   content: string;
+  canMutateMessage: boolean;
   onStartEdit: () => void;
   onStartDelete: () => void;
 }) {
   const [copyState, setCopyState] = React.useState<'idle' | 'copied'>('idle');
-  const canMutateMessage = PERSISTED_MESSAGE_ID_PATTERN.test(messageId);
 
   const copyContent = async () => {
     try {
@@ -3727,6 +3761,7 @@ function AssistantMessageActions({
   messageId,
   conversationId,
   content,
+  status,
   isLatestAssistantMessage,
   userVote,
   searchProgress,
@@ -3736,6 +3771,7 @@ function AssistantMessageActions({
   messageId: string;
   conversationId: string;
   content: string;
+  status?: string;
   isLatestAssistantMessage: boolean;
   userVote?: number | null;
   searchProgress?: MessageSearchProgress;
@@ -3761,10 +3797,12 @@ function AssistantMessageActions({
   // 关键约束：分享与重新生成只能作用于已落库会话，临时 pending 会话没有稳定后端上下文。
   const canOperateOnConversation =
     normalizedConversationId.length > 0 && normalizedConversationId !== 'pending-conversation';
+  const canRegenerateStoppedTemporaryMessage =
+    status === 'cancelled' && isOptimisticAssistantMessageId(messageId);
   const canRegenerateConversation =
     canOperateOnConversation &&
     isLatestAssistantMessage &&
-    PERSISTED_MESSAGE_ID_PATTERN.test(messageId);
+    (PERSISTED_MESSAGE_ID_PATTERN.test(messageId) || canRegenerateStoppedTemporaryMessage);
 
   React.useEffect(() => {
     if (!isMenuOpen) {
@@ -4667,7 +4705,7 @@ function ProcessCommandSummary({
 }
 
 /**
- * 渲染命令列表中的一行；命令本身默认可见，输出按需展开，贴近 Codex 的执行列表形态。
+ * 渲染命令列表中的一行；整行都是折叠触发区，避免用户只能命中右侧小箭头。
  */
 function ProcessCommandRunRow({
   messageId,
@@ -4684,25 +4722,29 @@ function ProcessCommandRunRow({
 
   return (
     <div className="space-y-2">
-      <div className="flex min-w-0 items-center gap-2 text-sm leading-6 text-muted">
-        <span className="min-w-0 truncate [overflow-wrap:anywhere]" title={run.command}>
+      <button
+        type="button"
+        data-testid={`process-command-run-row-${messageId}-${firstCardId}-${runSlug}`}
+        aria-expanded={isExpanded}
+        aria-controls={contentId}
+        aria-label={isExpanded ? `收起命令 ${run.command} 输出` : `展开命令 ${run.command} 输出`}
+        onClick={() => setIsExpanded((current) => !current)}
+        className="flex w-full min-w-0 items-center gap-2 rounded-md px-1 text-left text-sm leading-6 text-muted transition-colors hover:bg-surface-container hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border"
+      >
+        <span className="min-w-0 flex-1 truncate [overflow-wrap:anywhere]" title={run.command}>
           已运行 {run.command}
         </span>
-        <button
-          type="button"
+        <span
           data-testid={`process-command-run-toggle-${messageId}-${firstCardId}-${runSlug}`}
-          aria-expanded={isExpanded}
-          aria-controls={contentId}
-          aria-label={isExpanded ? `收起命令 ${run.command} 输出` : `展开命令 ${run.command} 输出`}
-          onClick={() => setIsExpanded((current) => !current)}
-          className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted transition-colors hover:bg-surface-container hover:text-foreground"
+          aria-hidden="true"
+          className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted"
         >
           <ChevronDown
             size={13}
             className={`transition-transform ${isExpanded ? 'rotate-180' : '-rotate-90'}`}
           />
-        </button>
-      </div>
+        </span>
+      </button>
       {isExpanded ? (
         <ProcessCommandBlock run={run} contentId={contentId} />
       ) : null}

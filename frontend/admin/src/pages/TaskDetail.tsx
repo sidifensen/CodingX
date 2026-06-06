@@ -148,7 +148,6 @@ function buildMessageMetadataItems(message: AdminChatConversationMessage, attach
     { key: 'provider', label: '供应商', children: <DetailText value={message.provider} /> },
     { key: 'model', label: '模型', children: <DetailText value={message.model} /> },
     { key: 'thinkingDuration', label: '思考耗时', children: formatDuration(message.thinkingDuration) },
-    { key: 'skillCodes', label: '技能编码', children: formatSkillCodes(message.skillCodes) },
     { key: 'userVote', label: '用户反馈', children: formatVote(message.userVote) },
     { key: 'attachmentCount', label: '附件数量', children: String(attachmentCount) },
     { key: 'errorMessage', label: '错误信息', children: <DetailText value={message.errorMessage} /> },
@@ -276,10 +275,6 @@ function formatDuration(value?: number): string {
     return '-';
   }
   return `${value} 秒`;
-}
-
-function formatSkillCodes(skillCodes?: string[]): string {
-  return skillCodes && skillCodes.length > 0 ? skillCodes.join(', ') : '-';
 }
 
 function formatVote(value?: number | null): string {

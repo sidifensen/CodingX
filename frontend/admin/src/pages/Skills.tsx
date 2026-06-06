@@ -15,7 +15,7 @@ import {
   SyncOutlined,
   UploadOutlined,
 } from '@ant-design/icons';
-import { Alert, Avatar, Button, Card, Empty, Form, Input, Modal, Space, Spin, Switch, Tag, Typography, Upload } from 'antd';
+import { Alert, Avatar, Button, Card, Empty, Form, Input, Modal, Space, Spin, Switch, Tag, Tooltip, Typography, Upload } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 
 import {
@@ -334,9 +334,12 @@ function SkillListView({
       render: (_, skill) => (
         <div>
           <Typography.Text strong>{skill.displayName}</Typography.Text>
-          <Typography.Paragraph className="mb-0 line-clamp-2 text-[12px]" type="secondary">
-            {skill.description || '暂无描述'}
-          </Typography.Paragraph>
+          <SkillHoverText
+            content={skill.description}
+            fallback="暂无描述"
+            testId={`skill-description-tooltip-${skill.skillCode}`}
+            className="mb-0 line-clamp-2 text-[12px]"
+          />
         </div>
       ),
     },
@@ -347,7 +350,23 @@ function SkillListView({
       render: (value: string) => <Typography.Text className="font-data-mono text-[12px]" type="secondary">/{value}</Typography.Text>,
     },
     { title: '分类', dataIndex: 'category', width: 140, render: (value?: string) => value || '未分类' },
-    { title: '来源', dataIndex: 'sourceType', width: 140, render: (value?: string) => <Tag>{value || 'built-in'}</Tag> },
+    {
+      title: '来源',
+      dataIndex: 'sourceType',
+      width: 140,
+      render: (value?: string, skill) => {
+        const sourceLabel = value?.trim() || 'built-in';
+        return (
+          <Tooltip title={sourceLabel} placement="topLeft" mouseEnterDelay={0}>
+            <Tag className="max-w-full overflow-hidden text-ellipsis whitespace-nowrap">
+              <span data-testid={`skill-source-tooltip-${skill.skillCode}`} className="cursor-help">
+                {sourceLabel}
+              </span>
+            </Tag>
+          </Tooltip>
+        );
+      },
+    },
     {
       title: '状态',
       dataIndex: 'enabled',
@@ -482,7 +501,7 @@ function SkillCardView({
             title={skill.displayName}
             description={(
               <Space direction="vertical" size={8}>
-                <Typography.Paragraph className="mb-0 line-clamp-2" type="secondary">{skill.description || '暂无描述'}</Typography.Paragraph>
+                <SkillHoverText content={skill.description} fallback="暂无描述" className="mb-0 line-clamp-2" />
                 <Space wrap size={6}>
                   <Tag>{skill.sourceType || 'built-in'}</Tag>
                   <Tag>{skill.category || '未分类'}</Tag>
@@ -495,6 +514,28 @@ function SkillCardView({
         </Card>
       ))}
     </div>
+  );
+}
+
+interface SkillHoverTextProps {
+  content?: string | null;
+  fallback: string;
+  className: string;
+  testId?: string;
+}
+
+/**
+ * 技能列表和卡片里的长文本都走统一悬浮提示，避免被截断后只能看到省略号。
+ */
+function SkillHoverText({ content, fallback, className, testId }: SkillHoverTextProps) {
+  const displayText = content?.trim() || fallback;
+
+  return (
+    <Tooltip title={displayText} placement="topLeft" mouseEnterDelay={0}>
+      <Typography.Paragraph data-testid={testId} className={`${className} cursor-help`} type="secondary">
+        {displayText}
+      </Typography.Paragraph>
+    </Tooltip>
   );
 }
 

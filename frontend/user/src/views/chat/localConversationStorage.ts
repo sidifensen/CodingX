@@ -377,6 +377,8 @@ export function listWorkspaceGroups(
     }))
     // 历史分组仅用于兼容旧数据迁移，不在左侧渲染，避免重复出现“历史记录”。
     .filter((group) => group.groupType !== 'history')
+    // 仅绑定目录但没有任何会话的工作空间属于空缓存，不应在侧栏形成“local”等空分组。
+    .filter((group) => isRenderableWorkspaceGroup(group))
     .filter((group) => (runtimeTarget ? group.runtimeTarget === runtimeTarget : true))
     .sort((left, right) => {
       // 同级分组按标签名稳定排序，确保点击/刷新后渲染顺序可预测。
@@ -386,6 +388,22 @@ export function listWorkspaceGroups(
       }
       return left.partitionKey.localeCompare(right.partitionKey, 'zh-Hans-CN');
     });
+}
+
+/**
+ * 判断工作空间分组是否有必要展示在侧栏。
+ * 默认历史入口即使没有会话也保留；普通路径工作空间必须至少有可展示会话或激活会话。
+ * @param group 工作空间分组。
+ * @returns 是否应渲染。
+ */
+function isRenderableWorkspaceGroup(group: WorkspaceConversationGroup) {
+  if (isDefaultWorkspacePartitionKey(group.partitionKey, group.runtimeTarget)) {
+    return true;
+  }
+  if (group.conversations.length > 0) {
+    return true;
+  }
+  return String(group.activeConversationId ?? '').trim().length > 0;
 }
 
 /**

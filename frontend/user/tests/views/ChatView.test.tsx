@@ -1480,6 +1480,127 @@ describe('ChatView', () => {
   });
 
   /**
+   * 编辑带技能的用户消息时，必须保留技能气泡，避免用户误以为本次重发会丢失技能上下文。
+   */
+  it('编辑用户消息时应回填原消息技能气泡', async () => {
+    const resendUserMessage = vi.fn().mockResolvedValue(undefined);
+
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          resendUserMessage,
+          availableSkills: [
+            {
+              id: '7103',
+              skillCode: 'brainstorming',
+              displayName: 'Superpowers Plus: Brainstorming',
+              description: '需求澄清与方案设计',
+              category: '协作',
+            },
+          ],
+          messages: [
+            {
+              id: '701',
+              conversationId: '2001',
+              role: 'USER',
+              content: '@brainstorming 你好',
+              status: 'COMPLETED',
+              skillCodes: ['brainstorming'],
+            },
+            {
+              id: '702',
+              conversationId: '2001',
+              role: 'ASSISTANT',
+              content: '你好，有什么可以帮你？',
+              status: 'COMPLETED',
+            },
+          ],
+          executionSteps: [],
+          references: [],
+          artifacts: [],
+        })}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId('edit-user-message-701'));
+
+    expect(screen.getByTestId('message-skill-chip-701-edit-brainstorming')).toHaveTextContent(
+      'Superpowers Plus: Brainstorming',
+    );
+    expect(screen.getByLabelText('编辑用户消息')).toHaveValue('你好');
+
+    fireEvent.click(screen.getByRole('button', { name: '发送' }));
+    await waitFor(() => {
+      expect(resendUserMessage).toHaveBeenCalledWith('701', '你好');
+    });
+  });
+
+  /**
+   * 用户停止生成时，当前轮次可能还没等到历史回放替换真实消息主键；此时仍要给最后一轮提供编辑和重新生成入口。
+   */
+  it('已停止的临时消息仍应允许编辑问题并重新生成', async () => {
+    const regenerateConversation = vi.fn().mockResolvedValue(undefined);
+    const resendUserMessage = vi.fn().mockResolvedValue(undefined);
+
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          regenerateConversation,
+          resendUserMessage,
+          messages: [
+            {
+              id: 'optimistic-user-1779773736000',
+              conversationId: '2001',
+              runId: '9001',
+              role: 'USER',
+              content: '帮我写个贪吃蛇 html',
+              status: 'COMPLETED',
+            },
+            {
+              id: 'optimistic-assistant-1779773736001',
+              conversationId: '2001',
+              runId: '9001',
+              role: 'ASSISTANT',
+              content: '',
+              processCards: [],
+              timelineItems: [],
+              status: 'cancelled',
+            },
+          ],
+          executionSteps: [],
+          references: [],
+          artifacts: [],
+        })}
+      />,
+    );
+
+    expect(screen.getByTestId('edit-user-message-optimistic-user-1779773736000')).not.toBeDisabled();
+    expect(screen.getByTestId('regenerate-message-optimistic-assistant-1779773736001')).not.toBeDisabled();
+
+    fireEvent.click(screen.getByTestId('regenerate-message-optimistic-assistant-1779773736001'));
+    await waitFor(() => {
+      expect(regenerateConversation).toHaveBeenCalledWith('2001', {
+        assistantMessageId: 'optimistic-assistant-1779773736001',
+      });
+    });
+
+    fireEvent.click(screen.getByTestId('edit-user-message-optimistic-user-1779773736000'));
+    const editor = screen.getByLabelText('编辑用户消息');
+    fireEvent.change(editor, { target: { value: '帮我重新写一个贪吃蛇 html' } });
+    fireEvent.click(screen.getByRole('button', { name: '发送' }));
+    await waitFor(() => {
+      expect(resendUserMessage).toHaveBeenCalledWith(
+        'optimistic-user-1779773736000',
+        '帮我重新写一个贪吃蛇 html',
+      );
+    });
+  });
+
+  /**
    * 分享应进入明显的轮次选择模式：聊天区卡片化、底部输入区隐藏，并默认选中触发分享的问答轮次。
    */
   it('应进入分享轮次选择模式并隐藏输入区', async () => {
@@ -3759,6 +3880,86 @@ describe('ChatView', () => {
     expect(within(tracePanel).getByText(/package\.json/)).toBeInTheDocument();
     expect(within(tracePanel).getByText('$ rg --files')).toBeInTheDocument();
     expect(within(tracePanel).getByText(/src\/App\.tsx/)).toBeInTheDocument();
+  });
+
+  /**
+   * 单条命令行本身就是用户的主要点击目标；整行点击必须与右侧箭头保持同一个展开状态。
+   */
+  it('点击整条命令行应切换命令输出折叠状态', async () => {
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          messages: [
+            {
+              id: '967b',
+              conversationId: '2001',
+              role: 'ASSISTANT',
+              content: '已经检查当前目录',
+              status: 'done',
+              processCards: [
+                {
+                  id: 'tool-call-shell-967b',
+                  type: 'tool_call',
+                  title: '行动',
+                  summary: '调用 shell_command',
+                  status: 'completed',
+                  toolId: 'shell_command',
+                  displayName: 'shell_command',
+                  presentation: 'react',
+                  details: [
+                    {
+                      label: '参数',
+                      content: '{"command":"Get-ChildItem"}',
+                    },
+                  ],
+                },
+                {
+                  id: 'tool-result-shell-967b',
+                  type: 'tool_result',
+                  title: '观察',
+                  summary: '工具返回：package.json',
+                  status: 'completed',
+                  toolId: 'shell_command',
+                  displayName: 'shell_command',
+                  presentation: 'react',
+                  details: [
+                    {
+                      label: '结果',
+                      content: 'package.json\nsrc',
+                    },
+                  ],
+                },
+              ],
+            } as any,
+          ],
+          executionSteps: [],
+          references: [],
+          artifacts: [],
+        })}
+      />,
+    );
+
+    const tracePanel = screen.getByTestId('process-trace-panel-967b');
+    fireEvent.click(screen.getByTestId('process-command-summary-toggle-967b-tool-call-shell-967b'));
+
+    const commandRow = screen.getByTestId(
+      'process-command-run-row-967b-tool-call-shell-967b-Get-ChildItem',
+    );
+
+    expect(screen.getByTestId('process-command-run-toggle-967b-tool-call-shell-967b-Get-ChildItem')).toBeInTheDocument();
+    expect(commandRow).toHaveAttribute('aria-expanded', 'false');
+    expect(within(tracePanel).queryByText('$ Get-ChildItem')).not.toBeInTheDocument();
+
+    fireEvent.click(commandRow);
+    expect(commandRow).toHaveAttribute('aria-expanded', 'true');
+    expect(within(tracePanel).getByText('$ Get-ChildItem')).toBeInTheDocument();
+    expect(within(tracePanel).getByText(/package\.json/)).toBeInTheDocument();
+
+    fireEvent.click(commandRow);
+    expect(commandRow).toHaveAttribute('aria-expanded', 'false');
+    expect(within(tracePanel).queryByText('$ Get-ChildItem')).not.toBeInTheDocument();
   });
 
   /**

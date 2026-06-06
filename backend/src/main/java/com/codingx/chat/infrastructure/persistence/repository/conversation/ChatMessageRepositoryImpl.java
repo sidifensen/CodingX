@@ -2,7 +2,7 @@ package com.codingx.chat.infrastructure.persistence.repository;
 
 import cn.hutool.core.collection.CollUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.codingx.chat.domain.model.ChatMessage;
 import com.codingx.chat.domain.model.ChatMessageRole;
 import com.codingx.chat.domain.model.ChatMessageStatus;
@@ -73,17 +73,15 @@ public class ChatMessageRepositoryImpl implements ChatMessageRepository {
             // 会话或消息列表缺失时没有可删除范围，直接返回避免生成无条件 update。
             return;
         }
-        // 步骤 1：只更新 deleted 和 updatedAt，保留原始消息内容用于审计或后续排查。
-        ChatMessageDO dataObject = new ChatMessageDO();
-        dataObject.setDeleted(1);
-        dataObject.setUpdatedAt(LocalDateTime.now());
-        // 步骤 2：更新条件必须同时限制会话和消息 ID，避免跨会话误删同 ID 集合之外的数据。
+        // 步骤 1：逻辑删除字段受 MyBatis-Plus 全局逻辑删除规则影响，必须在 wrapper 里显式 SET，避免接口返回成功但 deleted 未落库。
         chatMessageMapper.update(
-            dataObject,
-            new LambdaUpdateWrapper<ChatMessageDO>()
-                .eq(ChatMessageDO::getConversationId, conversationId)
-                .in(ChatMessageDO::getId, messageIds)
-                .eq(ChatMessageDO::getDeleted, 0)
+            null,
+            new UpdateWrapper<ChatMessageDO>()
+                .set("deleted", 1)
+                .set("updated_at", LocalDateTime.now())
+                .eq("conversation_id", conversationId)
+                .in("id", messageIds)
+                .eq("deleted", 0)
         );
     }
 

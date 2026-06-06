@@ -38,7 +38,6 @@ public class ChatSkillContextService {
     private static final int MAX_SKILL_CONTEXT_COUNT = 6;
     private static final int MAX_SINGLE_MANIFEST_CHARS = 8_000;
     private static final int MAX_TOTAL_CONTEXT_CHARS = 24_000;
-    private static final int MAX_SKILL_INTRO_DESCRIPTION_CHARS = 260;
 
     /** 技能仓储，用于按技能编码读取启用配置和存储位置。 */
     private final ChatSkillRepository chatSkillRepository;
@@ -114,47 +113,13 @@ public class ChatSkillContextService {
             请优先按已选技能的说明文档判断和执行当前问题，不要因为用户正文较短或像闲聊就忽略已选技能。
             技能编码不是可执行工具名，禁止把 /skill 或 skill code 当作 tool_call 名称；如需执行能力，应按技能文档选择当前运行环境真实可用的工具或直接给出下一步。
             运行时会从模型可见的用户正文开头剥离 @skill 前缀；当用户正文使用“这个”“这些”“它”“有什么区别”等指代时，默认先指向本轮已选技能，多技能时按已选技能列表进行解释或对比。
-            当用户只问“这是什么”“这是啥”“介绍一下”“有什么用”等短句时，默认是在询问已选技能本身，应直接概括该技能用途、典型场景和限制；不要先要求用户补充 URL、页面或文件。
-            如果用户明确要求执行技能任务但缺少 URL、页面、附件或其他必要目标，应围绕已选技能追问缺失信息，或在可用工具允许时先获取上下文；不要转成关于助手或普通闲聊回答。
+            当用户只问“这是什么”“这是啥”等短指代且缺少 URL、页面、搜索词、附件或其他必要目标时，最终回答只允许追问具体目标，禁止输出“这是你当前选中的技能”或概括技能用途。
+            只有用户明确要求介绍技能本身时，才可简述技能；否则只能把已选技能作为上下文线索，不能声称已经读取网页、连接浏览器或执行技能。
+            如果缺少 URL、页面、搜索词、附件或其他必要目标，应围绕已选技能追问缺失信息；只有在可用工具实际完成后，才能给出带有执行结果的结论。
             若技能内容确实与当前问题无关，只说明缺少可执行目标，不要生硬引用技能文档。
 
             %s
             """.formatted(contentBuilder.toString().trim());
-    }
-
-    /**
-     * 构建已选技能的用户可读简介，用于“这是什么/这是啥”这类短句的确定性直答。
-     * @param selectedSkillCodes 当前消息选择的技能编码。
-     * @return 简短说明；无有效技能时返回空字符串。
-     */
-    public String buildSkillIntroReply(List<String> selectedSkillCodes) {
-        // 步骤 1：先标准化并去重技能编码；无有效选择时不生成介绍文本。
-        LinkedHashSet<String> normalizedCodes = normalizeSelectedSkillCodes(selectedSkillCodes);
-        if (normalizedCodes.isEmpty()) {
-            return "";
-        }
-        // 步骤 2：按用户选择顺序读取技能配置，并优先使用配置描述或 SKILL.md 描述兜底。
-        List<String> introLines = new ArrayList<>();
-        for (String skillCode : normalizedCodes) {
-            ChatSkill skill = chatSkillRepository.findBySkillCode(skillCode);
-            if (skill == null) {
-                continue;
-            }
-            String description = resolveSkillDescription(skill);
-            String displayName = StrUtil.blankToDefault(skill.getDisplayName(), skill.getSkillCode());
-            introLines.add("`" + skill.getSkillCode() + "`（" + displayName + "）：" + description);
-        }
-        if (introLines.isEmpty()) {
-            return "";
-        }
-        // 步骤 3：单技能返回直接说明，多技能返回列表和后续引导，避免短句被误判为闲聊。
-        if (introLines.size() == 1) {
-            return "这是你当前选中的技能：" + introLines.getFirst()
-                + "\n\n如果要执行它，请继续给出这个技能要处理的具体目标或问题。";
-        }
-        return "你当前选中了这些技能：\n- "
-            + String.join("\n- ", introLines)
-            + "\n\n如果你想比较它们，可以直接问“有什么区别”；如果要执行其中一个，请说明具体目标。";
     }
 
     private LinkedHashSet<String> normalizeSelectedSkillCodes(List<String> selectedSkillCodes) {
@@ -197,69 +162,6 @@ public class ChatSkillContextService {
 
     private boolean isWebAccessSkill(ChatSkill skill) {
         return skill != null && StrUtil.equalsIgnoreCase(skill.getSkillCode(), WEB_ACCESS_SKILL_CODE);
-    }
-
-    private String resolveSkillDescription(ChatSkill skill) {
-        String description = skill.getDescription();
-        if (StrUtil.isBlank(description)) {
-            description = extractManifestDescription(readSkillManifest(skill));
-        }
-        String normalizedDescription = normalizeIntroText(description);
-        return StrUtil.isBlank(normalizedDescription)
-            ? "该技能用于扩展当前对话能力，具体规则已注入本轮上下文"
-            : StrUtil.maxLength(normalizedDescription, MAX_SKILL_INTRO_DESCRIPTION_CHARS);
-    }
-
-    private String extractManifestDescription(String manifestContent) {
-        // 步骤 1：空 manifest 无法提取描述，直接回退为空字符串。
-        if (StrUtil.isBlank(manifestContent)) {
-            return "";
-        }
-        StringBuilder descriptionBuilder = new StringBuilder();
-        boolean collectingDescription = false;
-        // 步骤 2：扫描 YAML front matter 中的 description 字段，兼容行内值和缩进多行值。
-        for (String line : manifestContent.split("\\R", -1)) {
-            String trimmedLine = line.trim();
-            if (trimmedLine.startsWith("description:")) {
-                collectingDescription = true;
-                String inlineDescription = cleanYamlDescriptionValue(trimmedLine.substring("description:".length()));
-                if (StrUtil.isNotBlank(inlineDescription)) {
-                    descriptionBuilder.append(inlineDescription);
-                }
-                continue;
-            }
-            if (!collectingDescription) {
-                continue;
-            }
-            if (StrUtil.isBlank(trimmedLine)) {
-                continue;
-            }
-            if (!Character.isWhitespace(line.charAt(0)) || "---".equals(trimmedLine)) {
-                break;
-            }
-            // 步骤 3：多行描述按空格拼接，避免换行直接进入聊天简介。
-            if (!descriptionBuilder.isEmpty()) {
-                descriptionBuilder.append(' ');
-            }
-            descriptionBuilder.append(trimmedLine);
-        }
-        return descriptionBuilder.toString();
-    }
-
-    private String cleanYamlDescriptionValue(String rawValue) {
-        String value = StrUtil.trimToEmpty(rawValue);
-        if (StrUtil.equalsAny(value, ">", "|")) {
-            return "";
-        }
-        value = StrUtil.removePrefix(value, "\"");
-        value = StrUtil.removeSuffix(value, "\"");
-        value = StrUtil.removePrefix(value, "'");
-        value = StrUtil.removeSuffix(value, "'");
-        return value;
-    }
-
-    private String normalizeIntroText(String text) {
-        return StrUtil.blankToDefault(text, "").replaceAll("\\s+", " ").trim();
     }
 
     /**

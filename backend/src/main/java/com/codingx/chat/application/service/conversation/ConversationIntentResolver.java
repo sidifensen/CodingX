@@ -83,19 +83,17 @@ public class ConversationIntentResolver {
         ));
         try {
             String raw = aiPromptExecutionService.complete(prompt, question);
-            List<ConversationIntentCandidate> candidates = parseCandidates(raw, nodeByCode);
-            logIntentCandidates("模型", question, candidates);
-            return candidates;
+            return parseCandidates(raw, nodeByCode);
         } catch (Exception exception) {
             // 步骤 3：模型不可用或输出异常时降级到配置文本匹配，避免意图链路完全中断。
-            List<ConversationIntentCandidate> candidates = fallbackCandidates(question, leafNodes, nodeByCode, examplesByCode);
+            List<ConversationIntentCandidate> fallbackCandidates = fallbackCandidates(question, leafNodes, nodeByCode, examplesByCode);
             log.warn(
                 "意图识别失败，使用兜底候选: 问题={}, 候选数={}",
                 StrUtil.maxLength(question, 120),
-                candidates.size(),
+                fallbackCandidates.size(),
                 exception
             );
-            return candidates;
+            return fallbackCandidates;
         }
     }
 
@@ -364,18 +362,4 @@ public class ConversationIntentResolver {
         return value == null ? "" : value.replaceAll("[\\p{Punct}\\s]+", "").toLowerCase(java.util.Locale.ROOT);
     }
 
-    /**
-     * 打印意图分类候选摘要，只保留首位候选和候选数量，避免暴露完整 Prompt 与示例数据。
-     */
-    private void logIntentCandidates(String source, String question, List<ConversationIntentCandidate> candidates) {
-        ConversationIntentCandidate top = candidates.isEmpty() ? null : candidates.getFirst();
-        log.info(
-            "意图识别: 来源={}, 问题={}, 首选={}, 分数={}, 候选数={}",
-            source,
-            StrUtil.maxLength(question, 120),
-            top == null ? null : top.node().getIntentCode(),
-            top == null ? null : top.score(),
-            candidates.size()
-        );
-    }
 }

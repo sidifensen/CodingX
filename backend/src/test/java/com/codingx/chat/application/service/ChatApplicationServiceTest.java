@@ -15,6 +15,7 @@ import com.codingx.chat.domain.model.ChatConversation;
 import com.codingx.chat.domain.model.ChatConversationStatus;
 import com.codingx.chat.domain.model.ChatExecutionRun;
 import com.codingx.chat.domain.model.ChatExecutionStep;
+import com.codingx.chat.domain.model.ChatIntentNode;
 import com.codingx.chat.domain.model.ChatTraceRun;
 import com.codingx.chat.domain.model.ChatAttachment;
 import com.codingx.chat.domain.model.ChatMessage;
@@ -138,7 +139,6 @@ class ChatApplicationServiceTest {
 
     @Mock
     private ChatSkillRepository chatSkillRepository;
-
 
     @Mock
     private ChatAttachmentService chatAttachmentService;
@@ -460,10 +460,10 @@ class ChatApplicationServiceTest {
         when(chatConversationRepository.requireById(1L)).thenReturn(conversation);
         when(chatMessageRepository.findByConversationId(1L)).thenReturn(new ArrayList<>());
         when(chatAttachmentService.requireOwnedAttachments(any(), eq(1L), eq(1002L))).thenReturn(List.of());
-        when(conversationRewriteService.rewriteResult(any(), eq("这是啥"))).thenReturn(
-            new ConversationRewriteResult("这是啥", false, List.of("这是啥"))
+        when(conversationRewriteService.rewriteResult(any(), eq("请阅读 https://example.com"))).thenReturn(
+            new ConversationRewriteResult("请阅读 https://example.com", false, List.of("请阅读 https://example.com"))
         );
-        when(conversationIntentService.route("这是啥", false)).thenReturn(
+        when(conversationIntentService.route("请阅读 https://example.com", false)).thenReturn(
             new ConversationIntentDecision("chat.normal", ConversationIntentAction.DIRECT, null)
         );
         when(chatIntentNodeRepository.findByIntentCode("chat.normal")).thenReturn(null);
@@ -478,7 +478,7 @@ class ChatApplicationServiceTest {
                 .filter(message -> message.getRole() == ChatMessageRole.USER)
                 .findFirst()
                 .orElseThrow();
-            assertEquals("这是啥", userMessageInAiHistory.getContent());
+            assertEquals("请阅读 https://example.com", userMessageInAiHistory.getContent());
             AiChatClient.StreamHandler handler = invocation.getArgument(2);
             handler.onDelta("已按网页技能处理");
             handler.onComplete();
@@ -486,47 +486,41 @@ class ChatApplicationServiceTest {
         }).when(aiChatClient).streamChat(any(), eq(false), any());
 
         chatApplicationService.sendMessage(
-            new SendChatMessageCommand(1L, "这是啥", false, List.of(), List.of("web-access")),
+            new SendChatMessageCommand(1L, "请阅读 https://example.com", false, List.of(), List.of("web-access")),
             1002L
         );
 
         ArgumentCaptor<ChatMessage> messageCaptor = ArgumentCaptor.forClass(ChatMessage.class);
         verify(chatMessageRepository, org.mockito.Mockito.times(2)).save(messageCaptor.capture());
-        assertEquals("@web-access 这是啥", messageCaptor.getAllValues().getFirst().getContent());
+        assertEquals("@web-access 请阅读 https://example.com", messageCaptor.getAllValues().getFirst().getContent());
         ChatExecutionContext.clear();
     }
 
     /**
-     * 选中技能后用户又在正文尾部输入同一 @skill 时，尾部标记仍属于能力选择。
-     * 业务约束：短句“这是什么”必须直接返回技能简介，不能把残留 @skill 交给模型扩写。
+     * 选中技能后用户只问“这是什么”时，也不能由后端或模型输出技能介绍冒充执行结果。
+     * 业务约束：缺少 URL、页面、搜索词等目标时只允许澄清目标，不进入模型生成技能说明。
      */
     @Test
-    void sendMessageUsesSkillIntroWhenSelectedSkillMentionAppearsInline() {
+    void sendMessageRoutesSelectedSkillShortQuestionThroughModelInsteadOfStaticIntro() {
         bindRunContext();
-        String introReply = "这是你当前选中的技能：`multi-search`（multi-search）。它用于多引擎搜索。";
         ChatConversation conversation = ChatConversation.create(1L, "Default", 1002L, ChatConversationStatus.ACTIVE);
         when(chatConversationRepository.requireById(1L)).thenReturn(conversation);
         when(chatMessageRepository.findByConversationId(1L)).thenReturn(new ArrayList<>());
         when(chatAttachmentService.requireOwnedAttachments(any(), eq(1L), eq(1002L))).thenReturn(List.of());
-        when(chatSkillContextService.buildSkillIntroReply(List.of("multi-search"))).thenReturn(introReply);
-        when(conversationTitleService.generateTitle(any(), any())).thenReturn("技能介绍");
-        org.mockito.Mockito.lenient().when(conversationRewriteService.rewriteResult(any(), eq("这是什么 @multi-search"))).thenReturn(
-            new ConversationRewriteResult("这是什么 @multi-search", false, List.of("这是什么 @multi-search"))
+        when(conversationRewriteService.rewriteResult(any(), eq("这是什么"))).thenReturn(
+            new ConversationRewriteResult("这是什么", false, List.of("这是什么"))
         );
-        org.mockito.Mockito.lenient().when(conversationIntentService.route("这是什么 @multi-search", false)).thenReturn(
-            new ConversationIntentDecision("chat.normal", ConversationIntentAction.DIRECT, null)
+        when(conversationIntentService.route("这是什么", false)).thenReturn(
+            new ConversationIntentDecision("sys-about-bot", ConversationIntentAction.DIRECT, null)
         );
-        org.mockito.Mockito.lenient().when(chatIntentNodeRepository.findByIntentCode("chat.normal")).thenReturn(null);
-        org.mockito.Mockito.lenient().when(chatSkillContextService.buildSkillContext(List.of("multi-search"))).thenReturn("");
-        org.mockito.Mockito.lenient().when(conversationSummaryService.buildModelHistory(any(), any()))
-            .thenAnswer(invocation -> invocation.getArgument(1));
-        org.mockito.Mockito.lenient().when(llmResponseCleaner.clean(any())).thenAnswer(invocation -> invocation.getArgument(0));
-        org.mockito.Mockito.lenient().doAnswer(invocation -> {
-            AiChatClient.StreamHandler handler = invocation.getArgument(2);
-            handler.onDelta("模型扩写的技能说明");
-            handler.onComplete();
-            return null;
-        }).when(aiChatClient).streamChat(any(), org.mockito.ArgumentMatchers.anyBoolean(), any());
+        org.mockito.Mockito.lenient().when(chatIntentNodeRepository.findByIntentCode("sys-about-bot")).thenReturn(
+            ChatIntentNode.builder()
+                .intentCode("sys-about-bot")
+                .intentType("system")
+                .promptTemplate("系统介绍 prompt：请介绍 CodingX 助手能力。")
+                .build()
+        );
+        when(conversationTitleService.generateTitle(any(), any())).thenReturn("技能对话");
 
         chatApplicationService.sendMessage(
             new SendChatMessageCommand(1L, "这是什么 @multi-search", false, List.of(), List.of("multi-search")),
@@ -538,11 +532,13 @@ class ChatApplicationServiceTest {
         verify(chatMessageRepository, org.mockito.Mockito.times(2)).save(messageCaptor.capture());
         verify(chatExecutionRunRepository).save(runCaptor.capture());
         assertEquals("@multi-search 这是什么", messageCaptor.getAllValues().getFirst().getContent());
-        assertEquals(introReply, messageCaptor.getAllValues().get(1).getContent());
-        assertEquals("skill.intro", runCaptor.getValue().getIntentCode());
+        assertEquals("我还没有执行这个技能。请给出要处理的具体目标，例如 URL、当前页面、搜索词、附件或具体操作。", messageCaptor.getAllValues().get(1).getContent());
+        assertEquals("chat.normal", runCaptor.getValue().getIntentCode());
         verify(chatStreamPublisher).publishUserMessage(1L, "这是什么");
-        verify(chatStreamPublisher).publishAssistantCompleted(eq(1L), any(Long.class), eq(introReply), eq("技能介绍"));
-        verify(conversationRewriteService, never()).rewriteResult(any(), any());
+        verify(chatStreamPublisher).publishAssistantCompleted(eq(1L), any(Long.class), eq("我还没有执行这个技能。请给出要处理的具体目标，例如 URL、当前页面、搜索词、附件或具体操作。"), eq("技能对话"));
+        verify(conversationRewriteService).rewriteResult(any(), eq("这是什么"));
+        verify(chatSkillContextService, never()).buildSkillContext(any());
+        verify(conversationSummaryService, never()).buildModelHistory(any(), any());
         verify(aiChatClient, never()).streamChat(any(), org.mockito.ArgumentMatchers.anyBoolean(), any());
         verify(aiChatClient, never()).streamChatWithTools(any(), org.mockito.ArgumentMatchers.anyBoolean(), any(), any());
         ChatExecutionContext.clear();
@@ -747,7 +743,7 @@ class ChatApplicationServiceTest {
     }
 
     /**
-     * 重新生成应复用上一轮已完成 run 的上下文绑定，并在新 run 上重新落库绑定关系。
+     * 重新生成应从上一轮 run 的隐藏上下文步骤恢复专家，并在新 run 上重新保存同一上下文。
      */
     @Test
     void regenerateLastAssistantMessageReusesPreviousRunBindings() {

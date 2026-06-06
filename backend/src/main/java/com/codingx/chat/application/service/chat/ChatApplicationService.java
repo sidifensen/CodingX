@@ -460,7 +460,7 @@ public class ChatApplicationService {
                 selectedModel,
                 activeRunId,
                 List.of(),
-                shouldExposeModelTools(searchReferences)
+                shouldExposeModelTools(searchReferences, command.skillCodes(), rewrittenQuestion)
             );
         } catch (RuntimeException exception) {
             if (chatRuntimeGuardService.isCancelled(command.conversationId(), activeRunId)) {
@@ -881,7 +881,7 @@ public class ChatApplicationService {
                 selectedModel,
                 activeRunId,
                 validatedAttachments,
-                shouldExposeModelTools(searchReferences)
+                shouldExposeModelTools(searchReferences, selectedSkillCodes, rewrittenQuestion)
             );
         } catch (RuntimeException exception) {
             // 步骤 9：模型循环中被用户取消时记录取消态，否则继续抛出交由外层异常处理。
@@ -1062,7 +1062,7 @@ public class ChatApplicationService {
                 selectedModel,
                 runId,
                 List.of(),
-                true
+                shouldExposeModelTools(List.of(), selectedSkillCodes, rewrittenQuestion)
             );
         } catch (RuntimeException exception) {
             // 步骤 5：取消时直接结束本地临时链路，非取消异常继续抛给外层统一处理。
@@ -1477,11 +1477,29 @@ public class ChatApplicationService {
     }
 
     /**
-     * 已经拿到系统联网检索证据时，模型只负责基于证据整理最终回答。
-     * 关键约束：此时继续暴露本地工具会诱导 web-access 再跑浏览器/CDP 命令，导致搜索类问题卡在过程循环。
+     * 判断本轮是否需要向模型暴露本地工具。
+     * 关键约束：
+     * 1. 已经拿到系统联网检索证据时，模型只负责基于证据整理最终回答，不能再诱导 web-access 跑 Bash/CDP 循环。
+     * 2. 用户选中技能后只问“这是啥/有什么用”时，语义是解释当前技能本身；走普通流式才能让前端逐 token 展示。
+     * 3. 带 URL、搜索词、附件或明确执行意图的技能任务仍保留工具能力，由技能上下文约束模型是否调用工具。
+     *
+     * @param searchReferences 本轮系统搜索引用。
+     * @param selectedSkillCodes 本轮已选技能编码。
+     * @param question 本轮剥离技能标记后的自然语言问题。
+     * @return 是否暴露本地工具 schema。
      */
-    private boolean shouldExposeModelTools(List<SearchReferenceCandidate> searchReferences) {
-        return CollUtil.isEmpty(searchReferences);
+    private boolean shouldExposeModelTools(
+        List<SearchReferenceCandidate> searchReferences,
+        List<String> selectedSkillCodes,
+        String question
+    ) {
+        if (CollUtil.isNotEmpty(searchReferences)) {
+            return false;
+        }
+        if (CollUtil.isNotEmpty(selectedSkillCodes) && isSelectedSkillShortReferenceQuestion(question)) {
+            return false;
+        }
+        return true;
     }
 
     /**

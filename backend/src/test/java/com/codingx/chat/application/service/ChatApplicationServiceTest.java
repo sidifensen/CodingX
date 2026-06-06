@@ -530,6 +530,9 @@ class ChatApplicationServiceTest {
         when(conversationSummaryService.buildModelHistory(any(), any())).thenAnswer(invocation -> invocation.getArgument(1));
         when(llmResponseCleaner.clean(any())).thenAnswer(invocation -> invocation.getArgument(0));
         when(conversationTitleService.generateTitle(any(), any())).thenReturn("技能对话");
+        org.mockito.Mockito.lenient().when(chatToolSpecService.listModelVisibleToolSpecs()).thenThrow(
+            new AssertionError("技能短句说明不应查询或暴露本地工具，否则前端会等工具模式缓冲结束后才看到正文")
+        );
         doAnswer(invocation -> {
             @SuppressWarnings("unchecked")
             List<ChatMessage> aiHistory = invocation.getArgument(0, List.class);

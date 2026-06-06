@@ -6,6 +6,9 @@ import com.codingx.cli.agent.AgentEventType;
 import com.codingx.cli.agent.MockAgentEventSource;
 import com.codingx.cli.render.TerminalRenderer;
 import com.williamcallahan.tui4j.compat.bubbletea.KeyPressMessage;
+import com.williamcallahan.tui4j.compat.bubbletea.Message;
+import com.williamcallahan.tui4j.compat.bubbletea.PrintLineMessage;
+import com.williamcallahan.tui4j.compat.bubbletea.UpdateResult;
 import com.williamcallahan.tui4j.compat.bubbletea.input.key.Key;
 import com.williamcallahan.tui4j.compat.bubbletea.input.key.KeyType;
 import com.williamcallahan.tui4j.compat.lipgloss.color.NoColor;
@@ -20,6 +23,8 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 /**
  * TUI 模型测试，直接验证界面状态，不启动真实交互终端。
@@ -104,10 +109,11 @@ class CodingXTuiModelTest {
         );
 
         pressRunes(model, "hello");
-        model.update(new KeyPressMessage(new Key(KeyType.keyCR)));
+        UpdateResult<?> result = model.update(new KeyPressMessage(new Key(KeyType.keyCR)));
 
         String view = model.view();
-        assertTrue(view.contains("> hello"));
+        assertPrintLine(result, "> hello");
+        assertFalse(view.contains("> hello"));
         assertTrue(view.contains("我会先查看当前仓库结构"));
         assertTrue(view.contains("› Write tests for @filename"));
     }
@@ -121,12 +127,27 @@ class CodingXTuiModelTest {
         );
 
         pressRunes(model, "hello");
-        model.update(new KeyPressMessage(new Key(KeyType.keyLF)));
+        UpdateResult<?> result = model.update(new KeyPressMessage(new Key(KeyType.keyLF)));
 
         String view = model.view();
-        assertTrue(view.contains("> hello"));
+        assertPrintLine(result, "> hello");
+        assertFalse(view.contains("> hello"));
         assertTrue(view.contains("我会先查看当前仓库结构"));
         assertTrue(view.contains("› Write tests for @filename"));
+    }
+
+    @Test
+    void keyboardSubmitShouldPrintUserInputAbovePlainScreenRenderer() {
+        CodingXTuiModel model = new CodingXTuiModel(
+            tempDir.resolve("workspace"),
+            new MockAgentEventSource(),
+            new TerminalRenderer()
+        );
+
+        pressRunes(model, "hello");
+        UpdateResult<?> result = model.update(new KeyPressMessage(new Key(KeyType.keyCR)));
+
+        assertPrintLine(result, "> hello");
     }
 
     @Test
@@ -253,6 +274,16 @@ class CodingXTuiModelTest {
         for (char rune : value.toCharArray()) {
             model.update(new KeyPressMessage(new Key(KeyType.KeyRunes, new char[]{rune})));
         }
+    }
+
+    /**
+     * 断言键盘提交会通过普通屏幕打印命令展示用户输入，避免 live view 高度变化裁掉首条用户消息。
+     */
+    private static void assertPrintLine(UpdateResult<?> result, String expectedText) {
+        assertNotNull(result.command());
+        Message message = result.command().execute();
+        PrintLineMessage printLineMessage = assertInstanceOf(PrintLineMessage.class, message);
+        assertTrue(printLineMessage.messageBody().contains(expectedText));
     }
 
     /**

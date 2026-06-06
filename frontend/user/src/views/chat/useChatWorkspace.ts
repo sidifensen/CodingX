@@ -54,6 +54,45 @@ const DEFAULT_CLOUD_WORKSPACE_LABEL = '云端历史记录';
 const DEFAULT_LOCAL_WORKSPACE_LABEL = '本地历史记录';
 const CONVERSATION_ID_QUERY_KEY = 'conversationId';
 const STREAM_QUEUE_BANNER_DELAY_MS = 250;
+const PDF_PAGE_WIDTH = 595;
+const PDF_PAGE_HEIGHT = 842;
+const PDF_PAGE_MARGIN = 48;
+const PDF_LINE_HEIGHT = 17;
+const PDF_FONT_SIZE = 12;
+const PDF_MAX_TEXT_UNITS_PER_LINE = 58;
+
+/**
+ * 描述一次导出下载的文件内容；PDF 使用二进制 BlobPart，文本类格式使用字符串 BlobPart。
+ */
+interface ConversationExportPayload {
+  content: BlobPart[];
+  mimeType: string;
+}
+
+/**
+ * 描述会话导出所需的完整回放快照，确保各格式共用同一份源数据。
+ */
+interface ConversationExportRecord {
+  id: string;
+  title: string;
+  exportedAt: string;
+  messages: ChatMessageItem[];
+  executionSteps: ExecutionStepItem[];
+  references: ReferenceItem[];
+  artifacts: ArtifactItem[];
+  currentExperts?: CurrentExpertItem[];
+  currentSkills?: CurrentSkillItem[];
+  currentMcps?: CurrentMcpItem[];
+}
+
+/**
+ * 描述已由 Canvas 渲染好的 PDF 页面图片，供二进制 PDF XObject 嵌入。
+ */
+interface PdfImagePage {
+  bytes: Uint8Array;
+  width: number;
+  height: number;
+}
 
 /**
  * 根据运行环境返回默认工作空间标题，避免本地/云端标签混淆。
@@ -2486,7 +2525,7 @@ export function useChatWorkspace(
         : `批量导出-${normalizedConversationIds.length}-会话`,
       format,
     );
-    const { content, mimeType } = serializeConversationExport(exportRecords, format);
+    const { content, mimeType } = await serializeConversationExport(exportRecords, format);
     downloadConversationExport(fileName, content, mimeType);
   };
 
@@ -3628,57 +3667,51 @@ export function useChatWorkspace(
   }
 
   /**
-   * 根据导出格式生成下载内容；Word/PDF 当前导出可读文本载体，后续可替换为真实二进制生成器。
+   * 根据导出格式生成下载内容；PDF 分支返回真实 PDF 字节，避免浏览器查看器无法加载。
    * @param exportRecords 会话导出记录。
    * @param format 导出格式。
    * @returns 下载内容与 MIME 类型。
    */
-  function serializeConversationExport(
-    exportRecords: Array<{
-      id: string;
-      title: string;
-      exportedAt: string;
-      messages: ChatMessageItem[];
-      executionSteps: ExecutionStepItem[];
-      references: ReferenceItem[];
-      artifacts: ArtifactItem[];
-    }>,
+  async function serializeConversationExport(
+    exportRecords: ConversationExportRecord[],
     format: ConversationExportFormat,
-  ) {
+  ): Promise<ConversationExportPayload> {
     if (format === 'json') {
       return {
-        content: JSON.stringify(
-          {
-            exportedAt: new Date().toISOString(),
-            count: exportRecords.length,
-            conversations: exportRecords,
-          },
-          null,
-          2,
-        ),
+        content: [
+          JSON.stringify(
+            {
+              exportedAt: new Date().toISOString(),
+              count: exportRecords.length,
+              conversations: exportRecords,
+            },
+            null,
+            2,
+          ),
+        ],
         mimeType: 'application/json;charset=utf-8',
       };
     }
     if (format === 'txt') {
       return {
-        content: serializeConversationExportAsPlainText(exportRecords),
+        content: [serializeConversationExportAsPlainText(exportRecords)],
         mimeType: 'text/plain;charset=utf-8',
       };
     }
     if (format === 'word') {
       return {
-        content: serializeConversationExportAsHtml(exportRecords),
+        content: [serializeConversationExportAsHtml(exportRecords)],
         mimeType: 'application/msword;charset=utf-8',
       };
     }
     if (format === 'pdf') {
       return {
-        content: serializeConversationExportAsPlainText(exportRecords),
-        mimeType: 'application/pdf;charset=utf-8',
+        content: [await serializeConversationExportAsPdfBytes(exportRecords)],
+        mimeType: 'application/pdf',
       };
     }
     return {
-      content: serializeConversationExportAsMarkdown(exportRecords),
+      content: [serializeConversationExportAsMarkdown(exportRecords)],
       mimeType: 'text/markdown;charset=utf-8',
     };
   }
@@ -3689,15 +3722,7 @@ export function useChatWorkspace(
    * @returns Markdown 文本。
    */
   function serializeConversationExportAsMarkdown(
-    exportRecords: Array<{
-      id: string;
-      title: string;
-      exportedAt: string;
-      messages: ChatMessageItem[];
-      executionSteps: ExecutionStepItem[];
-      references: ReferenceItem[];
-      artifacts: ArtifactItem[];
-    }>,
+    exportRecords: ConversationExportRecord[],
   ) {
     return exportRecords
       .map((record) => {
@@ -3752,12 +3777,7 @@ export function useChatWorkspace(
    * @returns 纯文本内容。
    */
   function serializeConversationExportAsPlainText(
-    exportRecords: Array<{
-      id: string;
-      title: string;
-      exportedAt: string;
-      messages: ChatMessageItem[];
-    }>,
+    exportRecords: ConversationExportRecord[],
   ) {
     return exportRecords
       .map((record) => {
@@ -3782,17 +3802,395 @@ export function useChatWorkspace(
   }
 
   /**
+   * 将导出记录序列化为合法 PDF 字节，真实浏览器优先使用图片页保证中文可读。
+   * @param exportRecords 导出记录列表。
+   * @returns PDF 文件字节。
+   */
+  async function serializeConversationExportAsPdfBytes(
+    exportRecords: ConversationExportRecord[],
+  ) {
+    const plainText = serializeConversationExportAsPlainText(exportRecords);
+    const wrappedLines = plainText
+      .split(/\r?\n/)
+      .flatMap((line) => wrapPdfTextLine(line));
+    const pages = paginatePdfLines(wrappedLines);
+    // 步骤 1：真实浏览器优先将文本绘制成页面图片，避免 PDF 查看器缺少中文字体时显示问号。
+    const imagePages = await renderPdfPagesAsJpeg(pages);
+    if (imagePages.length > 0) {
+      return buildImagePdfDocument(imagePages);
+    }
+
+    // 步骤 2：测试环境或 Canvas 不可用时保留结构化文本 PDF 兜底，确保文件仍可加载。
+    const textEncoder = new TextEncoder();
+    const objects: Array<{ id: number; body: string }> = [];
+    const catalogObjectId = 1;
+    const pagesObjectId = 2;
+    const fontObjectId = 3;
+    const cidFontObjectId = 4;
+    const firstPageObjectId = 5;
+    const pageObjectIds = pages.map((_, index) => firstPageObjectId + index * 2);
+
+    objects.push({
+      id: catalogObjectId,
+      body: `<< /Type /Catalog /Pages ${pagesObjectId} 0 R >>`,
+    });
+    objects.push({
+      id: pagesObjectId,
+      body: `<< /Type /Pages /Kids [${pageObjectIds.map((id) => `${id} 0 R`).join(' ')}] /Count ${pages.length} >>`,
+    });
+    objects.push({
+      id: fontObjectId,
+      body: `<< /Type /Font /Subtype /Type0 /BaseFont /STSong-Light /Encoding /UniGB-UCS2-H /DescendantFonts [${cidFontObjectId} 0 R] >>`,
+    });
+    objects.push({
+      id: cidFontObjectId,
+      body: '<< /Type /Font /Subtype /CIDFontType0 /BaseFont /STSong-Light /CIDSystemInfo << /Registry (Adobe) /Ordering (GB1) /Supplement 2 >> >>',
+    });
+
+    pages.forEach((pageLines, index) => {
+      const pageObjectId = firstPageObjectId + index * 2;
+      const contentObjectId = pageObjectId + 1;
+      const stream = buildPdfPageContentStream(pageLines);
+      // 步骤 1：内容流长度必须按字节计算，xref 才能让 PDF 查看器准确定位对象边界。
+      const streamLength = textEncoder.encode(stream).length;
+      objects.push({
+        id: pageObjectId,
+        body: `<< /Type /Page /Parent ${pagesObjectId} 0 R /MediaBox [0 0 ${PDF_PAGE_WIDTH} ${PDF_PAGE_HEIGHT}] /Resources << /Font << /F1 ${fontObjectId} 0 R >> >> /Contents ${contentObjectId} 0 R >>`,
+      });
+      objects.push({
+        id: contentObjectId,
+        body: `<< /Length ${streamLength} >>\nstream\n${stream}\nendstream`,
+      });
+    });
+
+    return textEncoder.encode(buildPdfDocument(objects, catalogObjectId));
+  }
+
+  /**
+   * 按页面可用高度拆分 PDF 文本，避免长会话全部挤在第一页。
+   * @param lines 已按宽度折行的文本行。
+   * @returns 分页后的文本行。
+   */
+  function paginatePdfLines(lines: string[]) {
+    const maxLinesPerPage = Math.max(
+      1,
+      Math.floor((PDF_PAGE_HEIGHT - PDF_PAGE_MARGIN * 2) / PDF_LINE_HEIGHT),
+    );
+    const sourceLines = lines.length > 0 ? lines : [' '];
+    const pages: string[][] = [];
+    for (let index = 0; index < sourceLines.length; index += maxLinesPerPage) {
+      pages.push(sourceLines.slice(index, index + maxLinesPerPage));
+    }
+    return pages;
+  }
+
+  /**
+   * 按近似视觉宽度折行；中文等宽字符按两个单位估算，降低页面右侧溢出的概率。
+   * @param rawLine 原始文本行。
+   * @returns 适合写入 PDF 页面的一组行。
+   */
+  function wrapPdfTextLine(rawLine: string) {
+    const normalizedLine = rawLine.replace(/\t/g, '  ');
+    if (!normalizedLine) {
+      return [' '];
+    }
+    const lines: string[] = [];
+    let currentLine = '';
+    let currentUnits = 0;
+    for (const character of Array.from(normalizedLine)) {
+      const nextUnits = getPdfTextUnitWidth(character);
+      if (currentLine && currentUnits + nextUnits > PDF_MAX_TEXT_UNITS_PER_LINE) {
+        lines.push(currentLine);
+        currentLine = '';
+        currentUnits = 0;
+      }
+      currentLine += character;
+      currentUnits += nextUnits;
+    }
+    if (currentLine) {
+      lines.push(currentLine);
+    }
+    return lines;
+  }
+
+  /**
+   * 估算字符在导出 PDF 中占用的宽度单位，服务于无字体度量表时的保守折行。
+   * @param character 单个 Unicode 字符。
+   * @returns 宽度单位。
+   */
+  function getPdfTextUnitWidth(character: string) {
+    const codePoint = character.codePointAt(0) ?? 0;
+    return codePoint <= 0x007f ? 1 : 2;
+  }
+
+  /**
+   * 生成单页 PDF 内容流，使用 Unicode 十六进制字符串避免括号与换行转义问题。
+   * @param lines 当前页文本行。
+   * @returns PDF 内容流文本。
+   */
+  function buildPdfPageContentStream(lines: string[]) {
+    const startY = PDF_PAGE_HEIGHT - PDF_PAGE_MARGIN;
+    const commands = [
+      'BT',
+      `/F1 ${PDF_FONT_SIZE} Tf`,
+      `1 0 0 1 ${PDF_PAGE_MARGIN} ${startY} Tm`,
+    ];
+    lines.forEach((line, index) => {
+      if (index > 0) {
+        commands.push(`0 -${PDF_LINE_HEIGHT} Td`);
+      }
+      commands.push(`<${encodePdfUnicodeHex(line)}> Tj`);
+    });
+    commands.push('ET');
+    return commands.join('\n');
+  }
+
+  /**
+   * 将 JS 字符串按 UTF-16BE 编成 PDF 十六进制文本，兼容中文会话标题和消息正文。
+   * @param value 待写入 PDF 的文本。
+   * @returns PDF hex string 内容，不包含尖括号。
+   */
+  function encodePdfUnicodeHex(value: string) {
+    let hex = '';
+    for (let index = 0; index < value.length; index += 1) {
+      hex += value.charCodeAt(index).toString(16).padStart(4, '0').toUpperCase();
+    }
+    return hex || '0020';
+  }
+
+  /**
+   * 组装 PDF 对象表、xref 与 trailer；所有偏移按 UTF-8 字节长度计算。
+   * @param objects PDF 间接对象。
+   * @param rootObjectId Catalog 对象 ID。
+   * @returns 完整 PDF 文本。
+   */
+  function buildPdfDocument(objects: Array<{ id: number; body: string }>, rootObjectId: number) {
+    const textEncoder = new TextEncoder();
+    const orderedObjects = [...objects].sort((left, right) => left.id - right.id);
+    const maxObjectId = orderedObjects.at(-1)?.id ?? 0;
+    const offsets: number[] = Array(maxObjectId + 1).fill(0);
+    let documentText = '%PDF-1.4\n';
+    for (const object of orderedObjects) {
+      offsets[object.id] = textEncoder.encode(documentText).length;
+      documentText += `${object.id} 0 obj\n${object.body}\nendobj\n`;
+    }
+    const xrefOffset = textEncoder.encode(documentText).length;
+    const xrefRows = ['0000000000 65535 f '];
+    for (let objectId = 1; objectId <= maxObjectId; objectId += 1) {
+      xrefRows.push(`${String(offsets[objectId]).padStart(10, '0')} 00000 n `);
+    }
+    documentText += [
+      `xref\n0 ${maxObjectId + 1}`,
+      ...xrefRows,
+      `trailer\n<< /Size ${maxObjectId + 1} /Root ${rootObjectId} 0 R >>`,
+      'startxref',
+      String(xrefOffset),
+      '%%EOF',
+      '',
+    ].join('\n');
+    return documentText;
+  }
+
+  /**
+   * 使用浏览器 Canvas 将每页文本渲染成 JPEG，避免 PDF 查看器因缺少中文字体显示问号。
+   * @param pages 已分页的文本行。
+   * @returns 可嵌入 PDF 的页面图片；无 Canvas 能力时返回空数组。
+   */
+  async function renderPdfPagesAsJpeg(pages: string[][]): Promise<PdfImagePage[]> {
+    if (
+      typeof document === 'undefined' ||
+      typeof navigator !== 'undefined' && /jsdom/i.test(navigator.userAgent)
+    ) {
+      return [];
+    }
+    const canvas = document.createElement('canvas');
+    let context: CanvasRenderingContext2D | null = null;
+    try {
+      context = canvas.getContext('2d');
+    } catch {
+      return [];
+    }
+    if (!context) {
+      return [];
+    }
+    const renderScale = 2;
+    canvas.width = PDF_PAGE_WIDTH * renderScale;
+    canvas.height = PDF_PAGE_HEIGHT * renderScale;
+    return pages
+      .map((lines) => renderPdfPageToJpeg(canvas, context, lines, renderScale))
+      .filter((page): page is PdfImagePage => page != null);
+  }
+
+  /**
+   * 将一页导出文本绘制为 JPEG 图片，供 PDF 图片页分支嵌入。
+   * @param canvas 复用的页面画布。
+   * @param context 画布上下文。
+   * @param lines 当前页文本行。
+   * @param renderScale 输出图片缩放倍率。
+   * @returns JPEG 页面图片；编码失败时返回 null。
+   */
+  function renderPdfPageToJpeg(
+    canvas: HTMLCanvasElement,
+    context: CanvasRenderingContext2D,
+    lines: string[],
+    renderScale: number,
+  ): PdfImagePage | null {
+    context.save();
+    context.setTransform(renderScale, 0, 0, renderScale, 0, 0);
+    context.fillStyle = '#ffffff';
+    context.fillRect(0, 0, PDF_PAGE_WIDTH, PDF_PAGE_HEIGHT);
+    context.fillStyle = '#111827';
+    context.font = `${PDF_FONT_SIZE}px "Microsoft YaHei", "PingFang SC", "SimSun", sans-serif`;
+    context.textBaseline = 'top';
+    lines.forEach((line, index) => {
+      context.fillText(line, PDF_PAGE_MARGIN, PDF_PAGE_MARGIN + index * PDF_LINE_HEIGHT);
+    });
+    context.restore();
+
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
+    if (!dataUrl.startsWith('data:image/jpeg;base64,')) {
+      return null;
+    }
+    return {
+      bytes: decodeBase64DataUrl(dataUrl),
+      width: canvas.width,
+      height: canvas.height,
+    };
+  }
+
+  /**
+   * 解码 Canvas 生成的 base64 data URL，得到可写入 PDF 图片流的字节。
+   * @param dataUrl JPEG data URL。
+   * @returns 图片字节。
+   */
+  function decodeBase64DataUrl(dataUrl: string) {
+    const base64 = dataUrl.slice(dataUrl.indexOf(',') + 1);
+    const binary = window.atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) {
+      bytes[index] = binary.charCodeAt(index);
+    }
+    return bytes;
+  }
+
+  /**
+   * 将 Canvas 页面图片组装为 PDF，每页通过一个全页 XObject 承载中文内容。
+   * @param imagePages 页面图片列表。
+   * @returns PDF 文件字节。
+   */
+  function buildImagePdfDocument(imagePages: PdfImagePage[]) {
+    const catalogObjectId = 1;
+    const pagesObjectId = 2;
+    const firstPageObjectId = 3;
+    const pageObjectIds = imagePages.map((_, index) => firstPageObjectId + index * 3);
+    const objects: Array<{ id: number; parts: Array<string | Uint8Array> }> = [
+      {
+        id: catalogObjectId,
+        parts: [`<< /Type /Catalog /Pages ${pagesObjectId} 0 R >>`],
+      },
+      {
+        id: pagesObjectId,
+        parts: [
+          `<< /Type /Pages /Kids [${pageObjectIds.map((id) => `${id} 0 R`).join(' ')}] /Count ${imagePages.length} >>`,
+        ],
+      },
+    ];
+    imagePages.forEach((imagePage, index) => {
+      const pageObjectId = firstPageObjectId + index * 3;
+      const contentObjectId = pageObjectId + 1;
+      const imageObjectId = pageObjectId + 2;
+      const imageName = `Im${index + 1}`;
+      const stream = `q\n${PDF_PAGE_WIDTH} 0 0 ${PDF_PAGE_HEIGHT} 0 0 cm\n/${imageName} Do\nQ`;
+      objects.push({
+        id: pageObjectId,
+        parts: [
+          `<< /Type /Page /Parent ${pagesObjectId} 0 R /MediaBox [0 0 ${PDF_PAGE_WIDTH} ${PDF_PAGE_HEIGHT}] /Resources << /XObject << /${imageName} ${imageObjectId} 0 R >> >> /Contents ${contentObjectId} 0 R >>`,
+        ],
+      });
+      objects.push({
+        id: contentObjectId,
+        parts: [`<< /Length ${new TextEncoder().encode(stream).length} >>\nstream\n${stream}\nendstream`],
+      });
+      objects.push({
+        id: imageObjectId,
+        parts: [
+          `<< /Type /XObject /Subtype /Image /Width ${imagePage.width} /Height ${imagePage.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${imagePage.bytes.length} >>\nstream\n`,
+          imagePage.bytes,
+          '\nendstream',
+        ],
+      });
+    });
+    return buildBinaryPdfDocument(objects, catalogObjectId);
+  }
+
+  /**
+   * 组装包含二进制流的 PDF，并按真实字节偏移生成 xref。
+   * @param objects PDF 间接对象。
+   * @param rootObjectId Catalog 对象 ID。
+   * @returns 完整 PDF 字节。
+   */
+  function buildBinaryPdfDocument(
+    objects: Array<{ id: number; parts: Array<string | Uint8Array> }>,
+    rootObjectId: number,
+  ) {
+    const textEncoder = new TextEncoder();
+    const orderedObjects = [...objects].sort((left, right) => left.id - right.id);
+    const maxObjectId = orderedObjects.at(-1)?.id ?? 0;
+    const offsets: number[] = Array(maxObjectId + 1).fill(0);
+    const chunks: Uint8Array[] = [];
+    let currentOffset = 0;
+    const appendChunk = (chunk: string | Uint8Array) => {
+      const bytes = typeof chunk === 'string' ? textEncoder.encode(chunk) : chunk;
+      chunks.push(bytes);
+      currentOffset += bytes.length;
+    };
+    appendChunk('%PDF-1.4\n');
+    orderedObjects.forEach((object) => {
+      offsets[object.id] = currentOffset;
+      appendChunk(`${object.id} 0 obj\n`);
+      object.parts.forEach(appendChunk);
+      appendChunk('\nendobj\n');
+    });
+    const xrefOffset = currentOffset;
+    const xrefRows = ['0000000000 65535 f '];
+    for (let objectId = 1; objectId <= maxObjectId; objectId += 1) {
+      xrefRows.push(`${String(offsets[objectId]).padStart(10, '0')} 00000 n `);
+    }
+    appendChunk([
+      `xref\n0 ${maxObjectId + 1}`,
+      ...xrefRows,
+      `trailer\n<< /Size ${maxObjectId + 1} /Root ${rootObjectId} 0 R >>`,
+      'startxref',
+      String(xrefOffset),
+      '%%EOF',
+      '',
+    ].join('\n'));
+    return concatUint8Arrays(chunks, currentOffset);
+  }
+
+  /**
+   * 合并 PDF 字节片段，便于测试与 Blob 下载都能读取同一份完整字节。
+   * @param chunks 字节片段。
+   * @param totalLength 总字节数。
+   * @returns 合并后的字节。
+   */
+  function concatUint8Arrays(chunks: Uint8Array[], totalLength: number) {
+    const output = new Uint8Array(totalLength);
+    let offset = 0;
+    chunks.forEach((chunk) => {
+      output.set(chunk, offset);
+      offset += chunk.length;
+    });
+    return output;
+  }
+
+  /**
    * 将导出记录序列化为 Word 可打开的 HTML 文档。
    * @param exportRecords 导出记录列表。
    * @returns HTML 文档字符串。
    */
   function serializeConversationExportAsHtml(
-    exportRecords: Array<{
-      id: string;
-      title: string;
-      exportedAt: string;
-      messages: ChatMessageItem[];
-    }>,
+    exportRecords: ConversationExportRecord[],
   ) {
     const escapeHtml = (value: string) =>
       value
@@ -3822,11 +4220,11 @@ export function useChatWorkspace(
   /**
    * 触发浏览器下载导出文件。
    * @param fileName 文件名。
-   * @param content 文件内容。
+   * @param content 文件内容，PDF 为二进制片段，其他格式为文本片段。
    * @param mimeType 文件 MIME 类型。
    */
-  function downloadConversationExport(fileName: string, content: string, mimeType: string) {
-    const blob = new Blob([content], { type: mimeType });
+  function downloadConversationExport(fileName: string, content: BlobPart[], mimeType: string) {
+    const blob = new Blob(content, { type: mimeType });
     const objectUrl = window.URL.createObjectURL(blob);
     const anchor = document.createElement('a');
     anchor.href = objectUrl;

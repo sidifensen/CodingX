@@ -29,6 +29,7 @@
 - [聊天技能上下文持久化](chat/skill-context-persistence.md)
 - [Skill Runtime 技能包](chat/skill-runtime-package.md)
 - [聊天消息操作](chat/message-actions.md)
+- [会话导出](chat/conversation-export.md)
 
 ## Admin
 

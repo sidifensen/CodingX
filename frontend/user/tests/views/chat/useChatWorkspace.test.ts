@@ -4750,6 +4750,136 @@ describe('useChatWorkspace', () => {
   });
 
   /**
+   * PDF 导出必须生成浏览器 PDF 查看器可识别的二进制内容，避免把纯文本伪装成 PDF。
+   */
+  it('导出PDF时应生成合法PDF文件头', async () => {
+    window.localStorage.setItem(
+      'codingx.auth.session',
+      JSON.stringify({
+        token: 'token-123',
+        userId: '1002',
+        username: 'user',
+        displayName: 'CodingX User',
+        userType: 'USER',
+      }),
+    );
+    window.localStorage.setItem(
+      'codingx.chat.workspace.conversations.v1',
+      JSON.stringify({
+        version: 1,
+        snapshots: {
+          'cloud::__no_workspace__': {
+            workspacePath: null,
+            workspaceLabel: '云端历史记录',
+            runtimeTarget: 'cloud',
+            lastOpenedAt: Date.now(),
+            activeConversationId: null,
+            conversations: [
+              {
+                id: '2001',
+                title: '上海今天天气',
+                status: 'ACTIVE',
+                lastRunId: '9001',
+              },
+            ],
+            conversationRecords: {
+              '2001': {
+                owned: true,
+                messages: [
+                  {
+                    id: 'm-1',
+                    conversationId: '2001',
+                    role: 'USER',
+                    content: '上海今天天气',
+                    status: 'COMPLETED',
+                  },
+                  {
+                    id: 'm-2',
+                    conversationId: '2001',
+                    role: 'ASSISTANT',
+                    content: '上海今天多云，适合出行。',
+                    status: 'COMPLETED',
+                  },
+                ],
+                executionSteps: [],
+                references: [],
+                artifacts: [],
+                currentExperts: [],
+                currentSkills: [],
+                currentMcps: [],
+              },
+            },
+          },
+        },
+      }),
+    );
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === '/api/chat/conversations') {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            code: 'OK',
+            message: 'success',
+            data: [
+              {
+                id: '2001',
+                title: '上海今天天气',
+                status: 'ACTIVE',
+                lastRunId: '9001',
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      if (
+        url === '/api/chat/sample-questions' ||
+        url === '/api/chat/experts' ||
+        url === '/api/chat/skills' ||
+        url === '/api/chat/mcps'
+      ) {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      throw new Error(`Unhandled fetch in PDF export test: ${url}`);
+    });
+
+    const exportedBlobs: Blob[] = [];
+    vi.spyOn(window.URL, 'createObjectURL').mockImplementation((blob) => {
+      exportedBlobs.push(blob as Blob);
+      return 'blob:pdf-export';
+    });
+    vi.spyOn(window.URL, 'revokeObjectURL').mockImplementation(() => undefined);
+    const anchorClicks: string[] = [];
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function clickMock() {
+      anchorClicks.push(this.download);
+    });
+
+    const { result } = renderHook(() => useChatWorkspace(true));
+
+    await waitFor(() => {
+      expect(result.current.isBootstrapping).toBe(false);
+    });
+
+    await act(async () => {
+      await result.current.exportConversation('2001', 'pdf', {
+        partitionKey: 'cloud::__no_workspace__',
+        runtimeTarget: 'cloud',
+        workspacePath: null,
+      });
+    });
+
+    expect(anchorClicks).toEqual(['上海今天天气.pdf']);
+    const pdfHeader = await exportedBlobs[0].slice(0, 5).text();
+    expect(pdfHeader).toBe('%PDF-');
+    expect(exportedBlobs[0]?.type).toBe('application/pdf');
+  });
+
+  /**
    * 停止后应立即终止当前流并保持已生成片段，避免旧流继续覆盖或清空消息。
    */
   it('应在停止生成后保留部分回答并标记为取消', async () => {

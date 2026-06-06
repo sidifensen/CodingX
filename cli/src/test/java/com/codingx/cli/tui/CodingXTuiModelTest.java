@@ -36,14 +36,14 @@ class CodingXTuiModelTest {
     }
 
     @Test
-    void initialViewShouldShowCodexStyleShellWithoutFakeModelData() {
+    void startupBannerShouldShowCodexStyleShellWithoutFakeModelData() {
         CodingXTuiModel model = new CodingXTuiModel(
             tempDir.resolve("workspace"),
             new MockAgentEventSource(),
             new TerminalRenderer()
         );
 
-        String view = model.view();
+        String view = model.startupBanner();
 
         assertTrue(view.contains(">_ CodingX CLI (v0.1.0)"));
         assertTrue(view.contains("model:"));
@@ -52,13 +52,28 @@ class CodingXTuiModelTest {
         assertTrue(view.contains(tempDir.resolve("workspace").toString()));
         assertTrue(view.contains("Tip:"));
         assertTrue(view.contains("Build faster with CodingX."));
-        assertTrue(view.contains("› Write tests for @filename"));
-        assertTrue(view.contains("server selected ·"));
         assertFalse(view.contains("Ready. Start with a question"));
         assertFalse(view.contains("Status: ready"));
         assertFalse(view.contains("Describe a task or ask a question..."));
         assertFalse(view.contains("GLM-5.1"));
         assertFalse(view.contains("Connected to 1 MCP server(s), 2 tools registered"));
+    }
+
+    @Test
+    void initialViewShouldKeepOnlyInteractiveAreaAfterStartupBannerIsPrinted() {
+        CodingXTuiModel model = new CodingXTuiModel(
+            tempDir.resolve("workspace"),
+            new MockAgentEventSource(),
+            new TerminalRenderer()
+        );
+
+        String view = model.view();
+
+        assertTrue(view.contains("› Write tests for @filename"));
+        assertTrue(view.contains("server selected ·"));
+        assertFalse(view.contains(">_ CodingX CLI (v0.1.0)"));
+        assertFalse(view.contains("Tip: Build faster with CodingX."));
+        assertTrue(view.lines().count() <= 4);
     }
 
     @Test
@@ -78,6 +93,40 @@ class CodingXTuiModelTest {
         assertTrue(view.contains("Task completed: COMPLETED"));
         assertTrue(view.contains("completed"));
         assertFalse(view.contains("[tool] 工具: ls"));
+    }
+
+    @Test
+    void keyboardEnterShouldSubmitVisibleUserInputBeforeResettingComposer() {
+        CodingXTuiModel model = new CodingXTuiModel(
+            tempDir.resolve("workspace"),
+            new MockAgentEventSource(),
+            new TerminalRenderer()
+        );
+
+        pressRunes(model, "hello");
+        model.update(new KeyPressMessage(new Key(KeyType.keyCR)));
+
+        String view = model.view();
+        assertTrue(view.contains("> hello"));
+        assertTrue(view.contains("我会先查看当前仓库结构"));
+        assertTrue(view.contains("› Write tests for @filename"));
+    }
+
+    @Test
+    void keyboardLineFeedShouldAlsoSubmitVisibleUserInputOnWindowsTerminal() {
+        CodingXTuiModel model = new CodingXTuiModel(
+            tempDir.resolve("workspace"),
+            new MockAgentEventSource(),
+            new TerminalRenderer()
+        );
+
+        pressRunes(model, "hello");
+        model.update(new KeyPressMessage(new Key(KeyType.keyLF)));
+
+        String view = model.view();
+        assertTrue(view.contains("> hello"));
+        assertTrue(view.contains("我会先查看当前仓库结构"));
+        assertTrue(view.contains("› Write tests for @filename"));
     }
 
     @Test
@@ -195,6 +244,15 @@ class CodingXTuiModelTest {
         String view = model.view();
         assertTrue(view.contains("! Error: 请先登录"));
         assertTrue(view.contains("error"));
+    }
+
+    /**
+     * 按真实键盘路径把字符送进 textarea，避免测试绕过 TUI 输入事件处理顺序。
+     */
+    private static void pressRunes(CodingXTuiModel model, String value) {
+        for (char rune : value.toCharArray()) {
+            model.update(new KeyPressMessage(new Key(KeyType.KeyRunes, new char[]{rune})));
+        }
     }
 
     /**

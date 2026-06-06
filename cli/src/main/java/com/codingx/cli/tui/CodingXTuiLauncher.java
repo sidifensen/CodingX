@@ -40,6 +40,9 @@ public class CodingXTuiLauncher implements TuiLauncher {
     @Override
     public void launch() {
         CodingXTuiModel model = new CodingXTuiModel(workspace, eventSource, renderer);
+        // 品牌卡片先写入普通 shell 输出；后续 tui4j 差量刷新只维护输入区，避免 Windows 终端裁剪掉 logo。
+        System.out.print(model.startupBanner() + System.lineSeparator() + System.lineSeparator());
+        System.out.flush();
         Program program = new Program(model);
         model.setProgram(program);
         // 保留用户输入 codingx 的 shell 上下文，避免 alt screen 把启动页撑成空白全屏。

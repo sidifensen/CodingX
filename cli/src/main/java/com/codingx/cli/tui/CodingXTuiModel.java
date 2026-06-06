@@ -180,10 +180,6 @@ public class CodingXTuiModel implements Model {
             resize(windowSizeMessage.width(), windowSizeMessage.height());
         }
 
-        UpdateResult<? extends Model> viewportResult = viewport.update(msg);
-        UpdateResult<? extends Model> textareaResult = textarea.update(msg);
-        Command command = combine(viewportResult.command(), textareaResult.command());
-
         if (msg instanceof KeyPressMessage keyPressMessage) {
             String key = keyPressMessage.key();
             if ("ctrl+c".equals(key) || "esc".equals(key)) {
@@ -192,15 +188,32 @@ public class CodingXTuiModel implements Model {
             }
             if ("shift+tab".equals(key) || keyPressMessage.type() == KeyType.KeyShiftTab) {
                 planMode = !planMode;
-                return UpdateResult.from(this, command);
+                return UpdateResult.from(this, null);
             }
-            if ("enter".equals(key)) {
+            if (isSubmitKey(keyPressMessage)) {
+                // 提交键必须先于 textarea.update() 处理；否则 LF/CR 会被 textarea 当成编辑换行，导致任务不进入 transcript。
                 submitTask(textarea.value());
                 textarea.reset();
+                return UpdateResult.from(this, null);
             }
         }
 
+        UpdateResult<? extends Model> viewportResult = viewport.update(msg);
+        UpdateResult<? extends Model> textareaResult = textarea.update(msg);
+        Command command = combine(viewportResult.command(), textareaResult.command());
         return UpdateResult.from(this, command);
+    }
+
+    /**
+     * 判断当前按键是否应提交任务；Windows/JLine 可能把回车解析为 LF(ctrl+j)，不能只识别 CR(enter)。
+     *
+     * @param keyPressMessage 键盘事件。
+     * @return true 表示提交当前输入框内容。
+     */
+    private boolean isSubmitKey(KeyPressMessage keyPressMessage) {
+        return "enter".equals(keyPressMessage.key())
+            || keyPressMessage.type() == KeyType.keyCR
+            || keyPressMessage.type() == KeyType.keyLF;
     }
 
     /**
@@ -376,14 +389,23 @@ public class CodingXTuiModel implements Model {
     @Override
     public String view() {
         List<String> sections = new ArrayList<>();
-        sections.add(headerRenderer.render(workspace));
-        sections.add("Tip: Build faster with CodingX.");
         if (!timelineLines.isEmpty()) {
             sections.add(renderTranscript());
         }
         sections.add(renderComposer());
         sections.add(statusBarRenderer.render(planMode, status, workspace));
         return String.join(GAP, sections);
+    }
+
+    /**
+     * 渲染启动阶段的固定品牌区；该内容先写入普通 shell 输出，避免 tui4j 普通屏幕渲染区高度过小时裁掉 logo。
+     *
+     * @return 启动卡片和 Tip 文本。
+     */
+    public String startupBanner() {
+        return headerRenderer.render(workspace)
+            + GAP
+            + "Tip: Build faster with CodingX.";
     }
 
     /**

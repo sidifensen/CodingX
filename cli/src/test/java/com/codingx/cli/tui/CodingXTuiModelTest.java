@@ -7,8 +7,7 @@ import com.codingx.cli.agent.MockAgentEventSource;
 import com.codingx.cli.agent.StreamingAgentEventSource;
 import com.codingx.cli.render.TerminalRenderer;
 import com.williamcallahan.tui4j.compat.bubbletea.KeyPressMessage;
-import com.williamcallahan.tui4j.compat.bubbletea.Message;
-import com.williamcallahan.tui4j.compat.bubbletea.PrintLineMessage;
+import com.williamcallahan.tui4j.compat.bubbletea.Program;
 import com.williamcallahan.tui4j.compat.bubbletea.UpdateResult;
 import com.williamcallahan.tui4j.compat.bubbletea.input.key.Key;
 import com.williamcallahan.tui4j.compat.bubbletea.input.key.KeyType;
@@ -21,11 +20,14 @@ import org.junit.jupiter.api.io.TempDir;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertInstanceOf;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 /**
  * TUI 模型测试，直接验证界面状态，不启动真实交互终端。
@@ -113,8 +115,9 @@ class CodingXTuiModelTest {
         UpdateResult<?> result = model.update(new KeyPressMessage(new Key(KeyType.keyCR)));
 
         String view = model.view();
-        assertPrintLine(result, "> hello");
-        assertFalse(view.contains("> hello"));
+        assertNull(result.command());
+        assertTrue(view.contains("> hello"));
+        assertInOrder(view, "> hello", "CodingX  我会先查看当前仓库结构");
         assertTrue(view.contains("我会先查看当前仓库结构"));
         assertTrue(view.contains("› Write tests for @filename"));
     }
@@ -131,24 +134,66 @@ class CodingXTuiModelTest {
         UpdateResult<?> result = model.update(new KeyPressMessage(new Key(KeyType.keyLF)));
 
         String view = model.view();
-        assertPrintLine(result, "> hello");
-        assertFalse(view.contains("> hello"));
+        assertNull(result.command());
+        assertTrue(view.contains("> hello"));
+        assertInOrder(view, "> hello", "CodingX  我会先查看当前仓库结构");
         assertTrue(view.contains("我会先查看当前仓库结构"));
         assertTrue(view.contains("› Write tests for @filename"));
     }
 
     @Test
-    void keyboardSubmitShouldPrintUserInputAbovePlainScreenRenderer() {
+    void consecutiveKeyboardSubmissionsShouldRenderQuestionAnswerPairsInOrder() {
         CodingXTuiModel model = new CodingXTuiModel(
             tempDir.resolve("workspace"),
             new MockAgentEventSource(),
             new TerminalRenderer()
         );
 
-        pressRunes(model, "hello");
-        UpdateResult<?> result = model.update(new KeyPressMessage(new Key(KeyType.keyCR)));
+        pressRunes(model, "你好");
+        model.update(new KeyPressMessage(new Key(KeyType.keyCR)));
+        pressRunes(model, "你是人机吗");
+        model.update(new KeyPressMessage(new Key(KeyType.keyCR)));
 
-        assertPrintLine(result, "> hello");
+        assertInOrder(
+            model.view(),
+            "> 你好",
+            "CodingX  我会先查看当前仓库结构",
+            "> 你是人机吗",
+            "CodingX  我会先查看当前仓库结构"
+        );
+    }
+
+    @Test
+    void runningStreamingTurnShouldKeepNextInputInComposerUntilCurrentTurnCompletes() throws Exception {
+        NonCompletingStreamingEventSource eventSource = new NonCompletingStreamingEventSource();
+        CodingXTuiModel model = new CodingXTuiModel(
+            tempDir.resolve("workspace"),
+            eventSource,
+            new TerminalRenderer()
+        );
+        model.setProgram(new Program(model));
+
+        pressRunes(model, "first");
+        model.update(new KeyPressMessage(new Key(KeyType.keyCR)));
+        eventSource.awaitFirstTask();
+        pressRunes(model, "second");
+        model.update(new KeyPressMessage(new Key(KeyType.keyCR)));
+
+        String view = model.view();
+        assertEquals(List.of("first"), eventSource.tasks);
+        assertTrue(view.contains("> first"));
+        assertFalse(view.lines().anyMatch(line -> line.equals("> second")));
+        assertTrue(view.contains("› second"));
+
+        model.update(new AgentEventsMessage(List.of(
+            AgentEvent.of("session", "turn", 1, AgentEventType.TURN_COMPLETED, Map.of(
+                "status", "COMPLETED"
+            ))
+        )));
+        model.update(new KeyPressMessage(new Key(KeyType.keyCR)));
+
+        assertEquals(List.of("first", "second"), List.copyOf(eventSource.tasks));
+        assertInOrder(model.view(), "> first", "Task completed: COMPLETED", "> second");
     }
 
     @Test
@@ -295,16 +340,6 @@ class CodingXTuiModelTest {
     }
 
     /**
-     * 断言键盘提交会通过普通屏幕打印命令展示用户输入，避免 live view 高度变化裁掉首条用户消息。
-     */
-    private static void assertPrintLine(UpdateResult<?> result, String expectedText) {
-        assertNotNull(result.command());
-        Message message = result.command().execute();
-        PrintLineMessage printLineMessage = assertInstanceOf(PrintLineMessage.class, message);
-        assertTrue(printLineMessage.messageBody().contains(expectedText));
-    }
-
-    /**
      * 测试专用事件源，用于验证错误事件会进入 transcript 并更新状态栏。
      */
     private static class ErrorEventSource implements AgentEventSource {
@@ -340,6 +375,51 @@ class CodingXTuiModelTest {
         @Override
         public void startTurn(String task, Path workspace, java.util.function.Consumer<AgentEvent> eventConsumer) {
             startTurn(task, workspace, false, eventConsumer);
+        }
+    }
+
+    /**
+     * 测试运行中的后端流：只记录已发起任务，不回推完成事件，从而让 TUI 保持 running 状态。
+     */
+    private static class NonCompletingStreamingEventSource implements StreamingAgentEventSource {
+
+        private final List<String> tasks = new CopyOnWriteArrayList<>();
+
+        private final CountDownLatch firstTaskStarted = new CountDownLatch(1);
+
+        @Override
+        public void startTurn(
+            String task,
+            Path workspace,
+            boolean planMode,
+            java.util.function.Consumer<AgentEvent> eventConsumer
+        ) {
+            tasks.add(task);
+            firstTaskStarted.countDown();
+        }
+
+        @Override
+        public void startTurn(String task, Path workspace, java.util.function.Consumer<AgentEvent> eventConsumer) {
+            startTurn(task, workspace, false, eventConsumer);
+        }
+
+        /**
+         * 等待后台流线程收到第一轮任务，避免测试在异步提交前断言。
+         */
+        private void awaitFirstTask() throws InterruptedException {
+            assertTrue(firstTaskStarted.await(1, TimeUnit.SECONDS));
+        }
+    }
+
+    /**
+     * 断言多个片段按顺序出现在同一份 view 中，专门防止用户问题和助手回答被拆到不同渲染区域。
+     */
+    private static void assertInOrder(String view, String... fragments) {
+        int cursor = -1;
+        for (String fragment : fragments) {
+            int index = view.indexOf(fragment, cursor + 1);
+            assertTrue(index > cursor, () -> "fragment not in order: " + fragment + System.lineSeparator() + view);
+            cursor = index;
         }
     }
 }

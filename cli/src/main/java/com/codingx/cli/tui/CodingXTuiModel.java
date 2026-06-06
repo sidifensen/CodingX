@@ -193,13 +193,16 @@ public class CodingXTuiModel implements Model {
             if (isSubmitKey(keyPressMessage)) {
                 // 提交键必须先于 textarea.update() 处理；否则 LF/CR 会被 textarea 当成编辑换行，导致任务不进入 transcript。
                 String normalizedTask = normalizeTask(textarea.value());
-                submitTask(normalizedTask, false);
-                textarea.reset();
                 if (normalizedTask.isEmpty()) {
                     return UpdateResult.from(this, null);
                 }
-                // 普通屏幕 renderer 只能稳定重绘已接管的 live 区域；用户行额外作为 scrollback 打印，避免首条输入被高度变化裁掉。
-                return UpdateResult.from(this, Command.println("> " + normalizedTask));
+                if (isTurnRunning()) {
+                    // 当前轮还在流式输出时保留输入框内容，避免多条问题先堆出来、回答后到而破坏一问一答顺序。
+                    return UpdateResult.from(this, null);
+                }
+                submitTask(normalizedTask);
+                textarea.reset();
+                return UpdateResult.from(this, null);
             }
         }
 
@@ -243,28 +246,13 @@ public class CodingXTuiModel implements Model {
      * @param task 用户任务。
      */
     public void submitTask(String task) {
-        submitTask(task, true);
-    }
-
-    /**
-     * 提交任务并决定是否把用户行放进 live view；键盘路径改由 PrintLineMessage 打印，避免普通屏幕渲染重复或裁剪。
-     *
-     * @param task 用户任务。
-     * @param appendUserLineToLiveView 是否把用户行追加到当前 live transcript。
-     */
-    private void submitTask(String task, boolean appendUserLineToLiveView) {
         String normalizedTask = normalizeTask(task);
         if (normalizedTask.isEmpty()) {
             return;
         }
 
         status = "running";
-        if (appendUserLineToLiveView) {
-            appendUserLine(normalizedTask);
-        } else {
-            closeAssistantBlock();
-            refreshViewport();
-        }
+        appendUserLine(normalizedTask);
         if (eventSource instanceof StreamingAgentEventSource streamingEventSource && program != null) {
             // 真实后端 SSE 在后台线程消费；每个事件通过 Program.send 回到 update()，避免跨线程直接改 UI 状态。
             streamExecutor.submit(() -> streamingEventSource.startTurn(
@@ -290,6 +278,15 @@ public class CodingXTuiModel implements Model {
      */
     private String normalizeTask(String task) {
         return task == null ? "" : task.trim();
+    }
+
+    /**
+     * 判断当前是否已有一轮任务在后端流式执行；运行中不允许再次提交，保证 transcript 按问答轮次展开。
+     *
+     * @return true 表示当前轮尚未完成或出错。
+     */
+    private boolean isTurnRunning() {
+        return "running".equals(status);
     }
 
     /**

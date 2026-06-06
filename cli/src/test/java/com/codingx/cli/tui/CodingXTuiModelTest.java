@@ -9,6 +9,7 @@ import com.codingx.cli.render.TerminalRenderer;
 import com.williamcallahan.tui4j.compat.bubbletea.KeyPressMessage;
 import com.williamcallahan.tui4j.compat.bubbletea.Program;
 import com.williamcallahan.tui4j.compat.bubbletea.UpdateResult;
+import com.williamcallahan.tui4j.compat.bubbletea.WindowSizeMessage;
 import com.williamcallahan.tui4j.compat.bubbletea.input.key.Key;
 import com.williamcallahan.tui4j.compat.bubbletea.input.key.KeyType;
 import com.williamcallahan.tui4j.compat.lipgloss.color.NoColor;
@@ -21,8 +22,8 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.IntStream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -175,7 +176,7 @@ class CodingXTuiModelTest {
 
         pressRunes(model, "first");
         model.update(new KeyPressMessage(new Key(KeyType.keyCR)));
-        eventSource.awaitFirstTask();
+        eventSource.awaitTaskCount(1);
         pressRunes(model, "second");
         model.update(new KeyPressMessage(new Key(KeyType.keyCR)));
 
@@ -191,9 +192,42 @@ class CodingXTuiModelTest {
             ))
         )));
         model.update(new KeyPressMessage(new Key(KeyType.keyCR)));
+        eventSource.awaitTaskCount(2);
 
         assertEquals(List.of("first", "second"), List.copyOf(eventSource.tasks));
         assertInOrder(model.view(), "> first", "Task completed: COMPLETED", "> second");
+    }
+
+    @Test
+    void currentQuestionShouldStayVisibleWhenLongAnswerOverflowsTerminal() {
+        CodingXTuiModel model = new CodingXTuiModel(
+            tempDir.resolve("workspace"),
+            new LongAnswerEventSource(),
+            new TerminalRenderer()
+        );
+
+        model.update(new WindowSizeMessage(80, 12));
+        model.submitTask("看不见啊");
+
+        String visibleTerminal = lastLines(model.view(), 12);
+        assertTrue(visibleTerminal.contains("> 看不见啊"), visibleTerminal);
+        assertTrue(visibleTerminal.contains("long-output-29"), visibleTerminal);
+    }
+
+    @Test
+    void currentQuestionShouldStayVisibleWhenSingleLongLineWrapsInTerminal() {
+        CodingXTuiModel model = new CodingXTuiModel(
+            tempDir.resolve("workspace"),
+            new WrappedLongLineEventSource(),
+            new TerminalRenderer()
+        );
+
+        model.update(new WindowSizeMessage(40, 12));
+        model.submitTask("长行也要看见");
+
+        String visibleTerminal = lastVisualLines(model.view(), 40, 12);
+        assertTrue(visibleTerminal.contains("> 长行也要看见"), visibleTerminal);
+        assertTrue(visibleTerminal.contains("wrap-output-"), visibleTerminal);
     }
 
     @Test
@@ -385,8 +419,6 @@ class CodingXTuiModelTest {
 
         private final List<String> tasks = new CopyOnWriteArrayList<>();
 
-        private final CountDownLatch firstTaskStarted = new CountDownLatch(1);
-
         @Override
         public void startTurn(
             String task,
@@ -395,7 +427,6 @@ class CodingXTuiModelTest {
             java.util.function.Consumer<AgentEvent> eventConsumer
         ) {
             tasks.add(task);
-            firstTaskStarted.countDown();
         }
 
         @Override
@@ -404,10 +435,57 @@ class CodingXTuiModelTest {
         }
 
         /**
-         * 等待后台流线程收到第一轮任务，避免测试在异步提交前断言。
+         * 等待后台流线程收到指定数量的任务，避免测试在异步提交前断言。
          */
-        private void awaitFirstTask() throws InterruptedException {
-            assertTrue(firstTaskStarted.await(1, TimeUnit.SECONDS));
+        private void awaitTaskCount(int expectedCount) throws InterruptedException {
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(1);
+            while (tasks.size() < expectedCount && System.nanoTime() < deadline) {
+                TimeUnit.MILLISECONDS.sleep(10);
+            }
+            assertEquals(expectedCount, tasks.size());
+        }
+    }
+
+    /**
+     * 构造超长回答，复现普通终端按最后 N 行裁剪时用户问题被顶出可见区的问题。
+     */
+    private static class LongAnswerEventSource implements AgentEventSource {
+
+        @Override
+        public List<AgentEvent> startTurn(String task, Path workspace) {
+            String output = String.join(System.lineSeparator(), IntStream.range(0, 30)
+                .mapToObj(index -> "long-output-" + index)
+                .toList());
+            return List.of(
+                AgentEvent.of("session", "turn", 1, AgentEventType.ASSISTANT_DELTA, Map.of(
+                    "delta", "我先确认问题。"
+                )),
+                AgentEvent.of("session", "turn", 2, AgentEventType.COMMAND_OUTPUT_DELTA, Map.of(
+                    "delta", output
+                )),
+                AgentEvent.of("session", "turn", 3, AgentEventType.TURN_COMPLETED, Map.of(
+                    "status", "COMPLETED"
+                ))
+            );
+        }
+    }
+
+    /**
+     * 构造不含换行但足够长的回答，复现真实终端自动换行后用户问题被挤出可见区的情况。
+     */
+    private static class WrappedLongLineEventSource implements AgentEventSource {
+
+        @Override
+        public List<AgentEvent> startTurn(String task, Path workspace) {
+            String output = "wrap-output-".repeat(80);
+            return List.of(
+                AgentEvent.of("session", "turn", 1, AgentEventType.ASSISTANT_DELTA, Map.of(
+                    "delta", output
+                )),
+                AgentEvent.of("session", "turn", 2, AgentEventType.TURN_COMPLETED, Map.of(
+                    "status", "COMPLETED"
+                ))
+            );
         }
     }
 
@@ -421,5 +499,40 @@ class CodingXTuiModelTest {
             assertTrue(index > cursor, () -> "fragment not in order: " + fragment + System.lineSeparator() + view);
             cursor = index;
         }
+    }
+
+    /**
+     * 模拟 tui4j 普通 renderer 在视图高度超过终端高度时保留最后 N 行的可见结果。
+     */
+    private static String lastLines(String view, int lineCount) {
+        List<String> lines = view.lines().toList();
+        int fromIndex = Math.max(lines.size() - lineCount, 0);
+        return String.join(System.lineSeparator(), lines.subList(fromIndex, lines.size()));
+    }
+
+    /**
+     * 按终端宽度估算自动换行后的最后 N 个视觉行，避免长单行在测试里被当成一行。
+     */
+    private static String lastVisualLines(String view, int width, int lineCount) {
+        List<String> visualLines = new java.util.ArrayList<>();
+        for (String line : view.lines().toList()) {
+            int cursor = 0;
+            StringBuilder visualLine = new StringBuilder();
+            for (int offset = 0; offset < line.length(); ) {
+                int codePoint = line.codePointAt(offset);
+                int charWidth = Character.isISOControl(codePoint) ? 0 : 1;
+                if (cursor + charWidth > width && !visualLine.isEmpty()) {
+                    visualLines.add(visualLine.toString());
+                    visualLine = new StringBuilder();
+                    cursor = 0;
+                }
+                visualLine.appendCodePoint(codePoint);
+                cursor += charWidth;
+                offset += Character.charCount(codePoint);
+            }
+            visualLines.add(visualLine.toString());
+        }
+        int fromIndex = Math.max(visualLines.size() - lineCount, 0);
+        return String.join(System.lineSeparator(), visualLines.subList(fromIndex, visualLines.size()));
     }
 }

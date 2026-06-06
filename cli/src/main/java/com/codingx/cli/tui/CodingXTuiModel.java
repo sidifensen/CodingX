@@ -17,6 +17,7 @@ import com.williamcallahan.tui4j.compat.bubbletea.input.key.KeyType;
 import com.williamcallahan.tui4j.compat.bubbles.cursor.Cursor;
 import com.williamcallahan.tui4j.compat.bubbles.textarea.Textarea;
 import com.williamcallahan.tui4j.compat.bubbles.viewport.Viewport;
+import org.jline.utils.WCWidth;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -75,6 +76,16 @@ public class CodingXTuiModel implements Model {
     private final List<String> timelineLines;
 
     /**
+     * 最近一次用户输入在 transcript 中的行号；长回答溢出终端时用于固定显示当前问题。
+     */
+    private int latestUserLineIndex;
+
+    /**
+     * 最近一次用户输入的可见行；当回答很长时放在回答窗口上方，避免被终端尾部裁剪掉。
+     */
+    private String latestUserLine;
+
+    /**
      * 后端流消费线程池；真实 SSE 读取不能阻塞 tui4j 主更新循环。
      */
     private final ExecutorService streamExecutor;
@@ -105,6 +116,22 @@ public class CodingXTuiModel implements Model {
     private String status;
 
     /**
+     * 最近一次终端宽度，用于估算 transcript 可见区。
+     */
+    private int terminalWidth;
+
+    /**
+     * 最近一次终端高度；普通屏幕 renderer 会按该高度保留尾部内容。
+     */
+    private int terminalHeight;
+
+    /**
+     * 终端自动换行后的单个视觉行，保留来源 transcript 行号用于判断用户问题是否仍处于可见区。
+     */
+    private record VisualRow(int sourceLineIndex) {
+    }
+
+    /**
      * @param workspace 当前 CLI 工作区。
      * @param eventSource Agent 事件来源。
      * @param renderer 兼容旧构造链路的终端渲染器；截图风格 TUI 使用独立 transcript renderer。
@@ -118,6 +145,8 @@ public class CodingXTuiModel implements Model {
         this.viewport = Viewport.create(80, 1);
         this.textarea = new Textarea();
         this.timelineLines = new ArrayList<>();
+        this.latestUserLineIndex = -1;
+        this.latestUserLine = "";
         this.streamExecutor = Executors.newSingleThreadExecutor(runnable -> {
             Thread thread = new Thread(runnable, "codingx-tui-stream");
             thread.setDaemon(true);
@@ -125,6 +154,8 @@ public class CodingXTuiModel implements Model {
         });
         this.planMode = true;
         this.status = "ready";
+        this.terminalWidth = 80;
+        this.terminalHeight = Integer.MAX_VALUE;
         this.activeAssistantLineIndex = -1;
         this.activeAssistantText = new StringBuilder();
 
@@ -233,6 +264,8 @@ public class CodingXTuiModel implements Model {
     private void resize(int width, int height) {
         int safeWidth = Math.max(width, 40);
         int viewportHeight = Math.max(Math.min(timelineLines.size(), height - 10), 1);
+        terminalWidth = safeWidth;
+        terminalHeight = Math.max(height, 8);
         viewport.setWidth(safeWidth);
         viewport.setHeight(viewportHeight);
         textarea.setWidth(safeWidth);
@@ -351,7 +384,9 @@ public class CodingXTuiModel implements Model {
      */
     private void appendUserLine(String task) {
         closeAssistantBlock();
-        appendLine("> " + task);
+        latestUserLine = "> " + task;
+        latestUserLineIndex = timelineLines.size();
+        appendLine(latestUserLine);
     }
 
     /**
@@ -442,7 +477,18 @@ public class CodingXTuiModel implements Model {
      * @return 可见 transcript 文本。
      */
     private String renderTranscript() {
-        return String.join(System.lineSeparator(), timelineLines);
+        String transcript = String.join(System.lineSeparator(), timelineLines);
+        if (!shouldPinLatestUserLine()) {
+            return transcript;
+        }
+
+        List<String> currentTurnLines = timelineLines.subList(
+            Math.min(latestUserLineIndex + 1, timelineLines.size()),
+            timelineLines.size()
+        );
+        int userLineHeight = renderedVisualLineCount(latestUserLine);
+        int answerHeight = Math.max(availableTranscriptLines() - userLineHeight, 1);
+        return latestUserLine + System.lineSeparator() + renderVisualTail(currentTurnLines, answerHeight);
     }
 
     /**
@@ -452,5 +498,175 @@ public class CodingXTuiModel implements Model {
      */
     private String renderComposer() {
         return textarea.view();
+    }
+
+    /**
+     * 判断是否需要把最近用户问题固定到可见区；只有完整视图会被普通屏幕裁剪时才启用，短回答不重复显示问题。
+     *
+     * @return true 表示需要固定最近用户问题。
+     */
+    private boolean shouldPinLatestUserLine() {
+        if (latestUserLineIndex < 0 || latestUserLine.isBlank()) {
+            return false;
+        }
+        return lastVisibleRows(renderFullViewRows(), terminalHeight).stream()
+            .noneMatch(row -> row.sourceLineIndex() == latestUserLineIndex);
+    }
+
+    /**
+     * 计算 transcript 在当前终端中最多可占用的行数，预留输入框、状态栏以及 section 间空行。
+     *
+     * @return transcript 可见行数，至少为 1。
+     */
+    private int availableTranscriptLines() {
+        return Math.max(terminalHeight - nonTranscriptLineCount(), 1);
+    }
+
+    /**
+     * 计算输入框、状态栏和 section 间隔占用的行数；与 view() 的分区拼接方式保持一致。
+     *
+     * @return 非 transcript 区域占用行数。
+     */
+    private int nonTranscriptLineCount() {
+        return renderedVisualLineCount(renderComposer())
+            + renderedVisualLineCount(statusBarRenderer.render(planMode, status, workspace))
+            + 2;
+    }
+
+    /**
+     * 组装完整视图的视觉行，用于判断普通屏幕尾部裁剪后是否还能看到用户问题；不直接返回给 tui4j。
+     *
+     * @return transcript、输入框和状态栏对应的视觉行。
+     */
+    private List<VisualRow> renderFullViewRows() {
+        List<VisualRow> rows = new ArrayList<>();
+        for (int index = 0; index < timelineLines.size(); index++) {
+            appendVisualRows(rows, timelineLines.get(index), index);
+        }
+        appendGapRow(rows);
+        appendVisualRows(rows, renderComposer(), -1);
+        appendGapRow(rows);
+        appendVisualRows(rows, statusBarRenderer.render(planMode, status, workspace), -1);
+        return rows;
+    }
+
+    /**
+     * 渲染当前轮回答的视觉行尾部，保证长回答保留最新输出，同时让当前问题作为固定行留在上方。
+     *
+     * @param lines 当前轮回答与状态行。
+     * @param maxLines 最多展示行数。
+     * @return 尾部可见内容。
+     */
+    private String renderVisualTail(List<String> lines, int maxLines) {
+        List<String> visualLines = new ArrayList<>();
+        for (String line : lines) {
+            visualLines.addAll(wrapVisualLines(line));
+        }
+        if (visualLines.isEmpty()) {
+            return "";
+        }
+        int fromIndex = Math.max(visualLines.size() - maxLines, 0);
+        return String.join(System.lineSeparator(), visualLines.subList(fromIndex, visualLines.size()));
+    }
+
+    /**
+     * 按普通屏幕 renderer 的尾部保留策略获取可见视觉行，判断用户问题是否已被长回答顶出屏幕。
+     *
+     * @param rows 完整渲染视觉行。
+     * @param maxLines 终端可见行数。
+     * @return 尾部可见视觉行。
+     */
+    private List<VisualRow> lastVisibleRows(List<VisualRow> rows, int maxLines) {
+        if (rows.isEmpty()) {
+            return List.of();
+        }
+        int safeMaxLines = Math.max(maxLines, 1);
+        int fromIndex = Math.max(rows.size() - safeMaxLines, 0);
+        return rows.subList(fromIndex, rows.size());
+    }
+
+    /**
+     * 追加一个分区间隔视觉行；与 view() 使用的双换行分区符保持一致。
+     *
+     * @param rows 完整视图视觉行集合。
+     */
+    private void appendGapRow(List<VisualRow> rows) {
+        rows.add(new VisualRow(-1));
+    }
+
+    /**
+     * 按终端宽度追加文本视觉行，并保留 transcript 来源行号。
+     *
+     * @param value 渲染文本。
+     * @param sourceLineIndex 来源 transcript 行号，非 transcript 区域使用 -1。
+     */
+    private void appendVisualRows(List<VisualRow> rows, String value, int sourceLineIndex) {
+        for (String visualLine : wrapVisualLines(value)) {
+            rows.add(new VisualRow(sourceLineIndex));
+        }
+    }
+
+    /**
+     * 统计文本在当前终端宽度下的视觉行数；空字符串按 0 行处理，避免初始态错误触发溢出逻辑。
+     *
+     * @param value 渲染文本。
+     * @return 自动换行后的视觉行数。
+     */
+    private int renderedVisualLineCount(String value) {
+        if (value == null || value.isEmpty()) {
+            return 0;
+        }
+        return wrapVisualLines(value).size();
+    }
+
+    /**
+     * 按终端宽度把逻辑文本拆成视觉行；中英文字符宽度使用 JLine 的 WCWidth，避免长中文或 Markdown 行误判可见区。
+     *
+     * @param value 可能包含换行的渲染文本。
+     * @return 自动换行后的视觉行列表。
+     */
+    private List<String> wrapVisualLines(String value) {
+        if (value == null || value.isEmpty()) {
+            return List.of();
+        }
+        List<String> rows = new ArrayList<>();
+        for (String logicalLine : value.lines().toList()) {
+            appendWrappedLogicalLine(rows, logicalLine);
+        }
+        return rows;
+    }
+
+    /**
+     * 拆分单个逻辑行；当下一字符会超过终端宽度时先结束当前视觉行。
+     *
+     * @param rows 输出视觉行集合。
+     * @param logicalLine 当前逻辑行。
+     */
+    private void appendWrappedLogicalLine(List<String> rows, String logicalLine) {
+        StringBuilder row = new StringBuilder();
+        int columns = 0;
+        for (int offset = 0; offset < logicalLine.length(); ) {
+            int codePoint = logicalLine.codePointAt(offset);
+            int width = codePointWidth(codePoint);
+            if (columns + width > terminalWidth && !row.isEmpty()) {
+                rows.add(row.toString());
+                row = new StringBuilder();
+                columns = 0;
+            }
+            row.appendCodePoint(codePoint);
+            columns += width;
+            offset += Character.charCount(codePoint);
+        }
+        rows.add(row.toString());
+    }
+
+    /**
+     * 计算单个 Unicode code point 在终端中的显示宽度；控制字符和不可显示字符不占宽。
+     *
+     * @param codePoint 当前字符。
+     * @return 终端列宽，最小为 0。
+     */
+    private int codePointWidth(int codePoint) {
+        return Math.max(WCWidth.wcwidth(codePoint), 0);
     }
 }

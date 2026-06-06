@@ -47,6 +47,56 @@ public class ChatMcp {
     private String sourceType;
 
     /**
+     * 外部 MCP 传输类型，支持 http、sse、stdio；内置 MCP 可为空。
+     */
+    private String transportType;
+
+    /**
+     * stdio MCP 启动命令，非 stdio 配置可为空。
+     */
+    private String command;
+
+    /**
+     * stdio MCP 启动参数 JSON 数组，可为空。
+     */
+    private String argsJson;
+
+    /**
+     * stdio MCP 环境变量 JSON 对象，可为空；管理端返回时需要脱敏。
+     */
+    private String envJson;
+
+    /**
+     * http/sse MCP 远程端点地址，可为空。
+     */
+    private String endpointUrl;
+
+    /**
+     * http/sse MCP 请求头 JSON 对象，可为空；管理端返回时需要脱敏。
+     */
+    private String headersJson;
+
+    /**
+     * 最近一次工具发现生成的工具 schema 快照 JSON，可为空。
+     */
+    private String toolSchemaJson;
+
+    /**
+     * 外部 MCP 健康状态，例如 UNKNOWN、AVAILABLE、ERROR。
+     */
+    private String healthStatus;
+
+    /**
+     * 最近一次连接或发现成功时间。
+     */
+    private LocalDateTime lastConnectedAt;
+
+    /**
+     * 最近一次连接、发现或调用失败的中文错误摘要。
+     */
+    private String lastErrorMessage;
+
+    /**
      * 启用状态，1 表示允许聊天运行时使用。
      */
     private Integer enabled;

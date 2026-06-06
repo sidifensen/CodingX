@@ -13,19 +13,23 @@
 ## 核心流程
 
 1. `ChatToolSpecService` 从启用的工具配置中过滤出 Java 执行器真实支持的本地工具，并优先向模型暴露 `read/write/edit/bash/grep/find/ls` 短工具名。
-2. `bash` 的模型说明会显式写入命令解释器边界：Windows 环境实际使用 Windows PowerShell，不应使用 Bash 专属语法。
-3. `read/write/edit/grep/find/ls` 的模型说明要求路径基于当前工具工作目录，优先使用相对路径，不应访问工作区外目录。
-4. 聊天执行前通过 `ChatToolExecutionContext` 绑定当前本地工作区，工具结果元数据回显实际工作目录。
-5. `CodexBuiltinChatToolExecutor` 执行命令、补丁、计划、资源读取、图片读取、目标状态、权限申请、插件申请与进程内子代理状态工具；标准 diff 中若出现当前工作区内的绝对路径，会在应用前规范化为相对路径，工作区外路径继续拒绝。
-6. 工具输出会作为系统证据追加给下一轮模型生成，证据中单独写出真实 `workingDirectory` 和后续路径约束；前端同步展示 start、complete 或 error 过程卡片。
-7. 工具调用轮次中的模型正文会先进入后端延迟缓冲；如果该轮最终包含真实工具调用，这些正文会被丢弃，只保留工具卡片和工具证据，避免“现在执行”“接下来调用工具”等内部过程文字变成用户可见回答。
-8. 工具循环中如果模型没有发起 `tool_call`，但正文只是把 `Invoke-RestMethod`、`Invoke-WebRequest`、`/info`、`/eval` 等命令列成待执行计划，后端会把该轮视为内部过程隐藏；当命令只指向 web-access 的 CDP Proxy 本地端口或 `check-deps.mjs` 时，会自动转换成真实 `bash` 工具调用执行，避免模型反复输出“正在执行”却不调用工具。
-9. 工具结果回灌后，如果后续无工具调用轮次开始输出真实最终回答，后端会立即把已确认可见的正文增量写入最终助手消息并通过 SSE 发布，保持用户端逐字/分段显示；若该轮只有“正在执行...”短进度说明，则继续隐藏并追加纠偏提示，让模型下一轮直接输出用户可见结果。如果工具轮次达到上限或工具执行失败，已隐藏的中间正文不会落库为失败消息正文。
-10. `ChatSkillContextService` 读取已选技能说明并加入系统提示；若缺少 URL、页面、附件等必要目标，模型应围绕已选技能追问或尝试获取上下文，而不是转成普通闲聊回答。
+2. `LocalToolAliasService` 追加 Claude Code 风格六大模型可见别名：`ReadFile`、`WriteFile`、`EditFile`、`Bash`、`Glob`、`Grep`；后端执行时会归一到 `read/write/edit/bash/find/grep`，旧短工具名仍可调用。
+3. `bash` 的模型说明会显式写入命令解释器边界：Windows 环境实际使用 Windows PowerShell，不应使用 Bash 专属语法。
+4. `read/write/edit/grep/find/ls` 的模型说明要求路径基于当前工具工作目录，优先使用相对路径，不应访问工作区外目录。
+5. 聊天执行前通过 `ChatToolExecutionContext` 绑定当前本地工作区，工具结果元数据回显实际工作目录。
+6. `CodexBuiltinChatToolExecutor` 执行命令、补丁、计划、资源读取、图片读取、目标状态、权限申请、插件申请与进程内子代理状态工具；标准 diff 中若出现当前工作区内的绝对路径，会在应用前规范化为相对路径，工作区外路径继续拒绝。
+7. `ChatToolSpecService` 还会合并已发现成功的外部 MCP 工具 schema，命名为 `mcp__{mcpCode}__{toolName}`，和本地工具共享同一个模型 function tools 列表。
+8. 工具输出会作为系统证据追加给下一轮模型生成，证据中单独写出真实 `workingDirectory` 和后续路径约束；前端同步展示 start、complete 或 error 过程卡片。
+9. 工具调用轮次中的模型正文会先进入后端延迟缓冲；如果该轮最终包含真实工具调用，这些正文会被丢弃，只保留工具卡片和工具证据，避免“现在执行”“接下来调用工具”等内部过程文字变成用户可见回答。
+10. 工具循环中如果模型没有发起 `tool_call`，但正文只是把 `Invoke-RestMethod`、`Invoke-WebRequest`、`/info`、`/eval` 等命令列成待执行计划，后端会把该轮视为内部过程隐藏；当命令只指向 web-access 的 CDP Proxy 本地端口或 `check-deps.mjs` 时，会自动转换成真实 `bash` 工具调用执行，避免模型反复输出“正在执行”却不调用工具。
+11. 工具结果回灌后，如果后续无工具调用轮次开始输出真实最终回答，后端会立即把已确认可见的正文增量写入最终助手消息并通过 SSE 发布，保持用户端逐字/分段显示；若该轮只有“正在执行...”短进度说明，则继续隐藏并追加纠偏提示，让模型下一轮直接输出用户可见结果。如果工具轮次达到上限或工具执行失败，已隐藏的中间正文不会落库为失败消息正文。
+12. `ChatSkillContextService` 读取已选技能说明并加入系统提示；若缺少 URL、页面、附件等必要目标，模型应围绕已选技能追问或尝试获取上下文，而不是转成普通闲聊回答。
 
 ## 关键文件
 
 - `backend/src/main/java/com/codingx/tool/application/service/ChatToolSpecService.java`：生成模型可见工具 schema，并注入 PowerShell 语法约束。
+- `backend/src/main/java/com/codingx/tool/application/service/LocalToolAliasService.java`：维护 Claude Code 风格六大工具别名到本地短工具编码的映射。
+- `backend/src/main/java/com/codingx/tool/application/service/ChatToolExecutionService.java`：执行模型工具调用，并把别名归一到真实执行器编码。
 - `backend/src/main/java/com/codingx/tool/application/service/CodexBuiltinChatToolExecutor.java`：执行已接入的 Codex 风格本地工具。
 - `backend/src/main/java/com/codingx/chat/application/service/chat/ChatApplicationService.java`：把工具 schema 交给模型，执行模型工具调用并发布过程事件。
 - `backend/src/main/java/com/codingx/skill/application/service/ChatSkillContextService.java`：读取已选技能说明，并声明显式技能选择的任务意图约束。
@@ -36,6 +40,8 @@
 - `backend/src/main/resources/db/migration/V20260529_191800__cap_chat_tool_max_rounds.sql`：收敛历史环境中的异常工具轮次配置。
 
 ## 关键逻辑
+
+`ReadFile`、`WriteFile`、`EditFile`、`Bash`、`Glob`、`Grep` 是模型可见别名，实际执行前分别归一为 `read`、`write`、`edit`、`bash`、`find`、`grep`。工具结果 metadata 会记录 `requestedToolCode` 和 `canonicalToolCode`，便于前端或 Trace 区分模型请求名与真实执行器名。
 
 `bash` 是模型可见的短工具名，内部复用原有 `shell_command` 命令执行边界。Windows 服务端通过 `powershell -NoProfile -Command` 执行，因此模型需要使用 `New-Item -ItemType Directory -Force`、`Set-Content` 等 PowerShell 写法。`mkdir -p`、`cat <<EOF`、`&&` 串联和 `<` 输入重定向属于 Bash 习惯写法，其中 `<` 也是 PowerShell 保留字符，未正确引用会直接触发语法错误。执行器会把已注入的 `CLAUDE_SKILL_DIR*` 环境变量同步成同名 PowerShell 变量，兼容技能文档中常见的 `${CLAUDE_SKILL_DIR}/scripts/...` 路径写法，避免 Windows 下被解析成工作盘根目录的 `scripts`。
 
@@ -52,6 +58,7 @@
 ## 测试与验证
 
 - `mvn -Dtest=ChatToolSpecServiceTest test`
+- `mvn -Dtest=LocalToolAliasServiceTest,ChatToolExecutionServiceTest test`
 - `mvn -Dtest=CodexBuiltinChatToolExecutorTest#applyPatchShouldNormalizeWorkspaceAbsolutePathInGitDiff test`
 - `mvn -Dtest=CodexBuiltinChatToolExecutorTest#applyPatchShouldOverwriteExistingFileWhenNewFileDiffTargetsSameName test`
 - `mvn -Dtest=CodexBuiltinChatToolExecutorTest#applyPatchShouldOverwriteExistingFileWhenStandaloneNewFileDiffTargetsSameName test`

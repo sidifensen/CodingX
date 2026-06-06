@@ -11,13 +11,17 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.core.io.ClassPathResource;
 
@@ -25,7 +29,6 @@ import org.springframework.core.io.ClassPathResource;
  * 负责按当前消息选择的技能编码读取技能说明，并组装成可注入模型的上下文提示。
  */
 @Service
-@RequiredArgsConstructor
 @Slf4j
 public class ChatSkillContextService {
 
@@ -43,6 +46,37 @@ public class ChatSkillContextService {
     private final ChatSkillRepository chatSkillRepository;
     /** 技能包存储客户端，用于从 RustFS 读取远程技能包内容。 */
     private final RustFsSkillPackageClient rustFsSkillPackageClient;
+    /** 技能运行时解析服务，用于读取工具、资源和脚本声明。 */
+    private final SkillRuntimeService skillRuntimeService;
+
+    /**
+     * Spring 生产构造器，注入技能配置、技能包存储和运行时解析服务。
+     * @param chatSkillRepository 技能仓储。
+     * @param rustFsSkillPackageClient 技能包存储客户端。
+     * @param skillRuntimeService 技能运行时解析服务。
+     */
+    @Autowired
+    public ChatSkillContextService(
+        ChatSkillRepository chatSkillRepository,
+        RustFsSkillPackageClient rustFsSkillPackageClient,
+        SkillRuntimeService skillRuntimeService
+    ) {
+        this.chatSkillRepository = chatSkillRepository;
+        this.rustFsSkillPackageClient = rustFsSkillPackageClient;
+        this.skillRuntimeService = skillRuntimeService;
+    }
+
+    /**
+     * 兼容旧测试构造器；未传运行时服务时仅注入 SKILL.md 文本。
+     * @param chatSkillRepository 技能仓储。
+     * @param rustFsSkillPackageClient 技能包存储客户端。
+     */
+    public ChatSkillContextService(
+        ChatSkillRepository chatSkillRepository,
+        RustFsSkillPackageClient rustFsSkillPackageClient
+    ) {
+        this(chatSkillRepository, rustFsSkillPackageClient, null);
+    }
 
     /**
      * 构建技能上下文提示词，缺失或读取失败的技能会自动跳过。
@@ -61,6 +95,7 @@ public class ChatSkillContextService {
         int loadedSkillCount = 0;
         List<String> loadedSkillCodes = new ArrayList<>();
         List<String> skippedSkillCodes = new ArrayList<>();
+        Map<String, SkillRuntimeService.SkillRuntimeDescriptor> runtimeDescriptorBySkillCode = loadRuntimeDescriptors(normalizedCodes);
         for (String skillCode : normalizedCodes) {
             if (loadedSkillCount >= MAX_SKILL_CONTEXT_COUNT || contentBuilder.length() >= MAX_TOTAL_CONTEXT_CHARS) {
                 skippedSkillCodes.add(skillCode + ":超过上下文上限");
@@ -82,13 +117,17 @@ public class ChatSkillContextService {
                 continue;
             }
             String manifestWithRuntimeGuidance = appendSkillRuntimeGuidance(skill, normalizedManifest);
+            String manifestWithRuntimeSummary = appendRuntimeMetadataSummary(
+                manifestWithRuntimeGuidance,
+                runtimeDescriptorBySkillCode.get(skill.getSkillCode())
+            );
             contentBuilder
                 .append("## /")
                 .append(skill.getSkillCode())
                 .append("（")
                 .append(StrUtil.blankToDefault(skill.getDisplayName(), skill.getSkillCode()))
                 .append("）\n")
-                .append(manifestWithRuntimeGuidance)
+                .append(manifestWithRuntimeSummary)
                 .append("\n\n");
             loadedSkillCount++;
             loadedSkillCodes.add(skill.getSkillCode());
@@ -120,6 +159,52 @@ public class ChatSkillContextService {
 
             %s
             """.formatted(contentBuilder.toString().trim());
+    }
+
+    private Map<String, SkillRuntimeService.SkillRuntimeDescriptor> loadRuntimeDescriptors(LinkedHashSet<String> normalizedCodes) {
+        if (skillRuntimeService == null || normalizedCodes.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        try {
+            Map<String, SkillRuntimeService.SkillRuntimeDescriptor> descriptors = new LinkedHashMap<>();
+            for (SkillRuntimeService.SkillRuntimeDescriptor descriptor
+                : skillRuntimeService.loadSelectedSkillRuntimes(List.copyOf(normalizedCodes))) {
+                if (descriptor != null && StrUtil.isNotBlank(descriptor.skillCode())) {
+                    descriptors.put(descriptor.skillCode(), descriptor);
+                }
+            }
+            return descriptors;
+        } catch (RuntimeException exception) {
+            log.warn("技能运行时元数据读取失败: 技能={}, 错误={}", normalizedCodes, exception.getMessage());
+            return Collections.emptyMap();
+        }
+    }
+
+    private String appendRuntimeMetadataSummary(
+        String manifestContent,
+        SkillRuntimeService.SkillRuntimeDescriptor runtimeDescriptor
+    ) {
+        if (runtimeDescriptor == null) {
+            return manifestContent;
+        }
+        List<String> tools = runtimeDescriptor.metadata() == null ? List.of() : runtimeDescriptor.metadata().tools();
+        List<String> resources = runtimeDescriptor.resources() == null ? List.of() : runtimeDescriptor.resources();
+        List<String> scripts = runtimeDescriptor.scripts() == null ? List.of() : runtimeDescriptor.scripts();
+        if (tools.isEmpty() && resources.isEmpty() && scripts.isEmpty()) {
+            return manifestContent;
+        }
+        StringBuilder summary = new StringBuilder(manifestContent).append("\n\n### 技能运行时元数据\n");
+        if (!tools.isEmpty()) {
+            summary.append("- 工具声明：").append(String.join("、", tools)).append('\n');
+        }
+        if (!resources.isEmpty()) {
+            summary.append("- 资源文件：").append(String.join("、", resources)).append('\n');
+        }
+        if (!scripts.isEmpty()) {
+            summary.append("- 脚本文件：").append(String.join("、", scripts)).append('\n');
+        }
+        summary.append("- 资源和脚本路径仅允许位于当前技能包目录内，禁止访问 ../ 或绝对路径。\n");
+        return summary.toString().trim();
     }
 
     private LinkedHashSet<String> normalizeSelectedSkillCodes(List<String> selectedSkillCodes) {

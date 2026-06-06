@@ -128,6 +128,52 @@ class ChatRuntimePersistenceStructureTest {
     }
 
     /**
+     * 外部 MCP Server 接入需要在 mcp 表保存连接配置、工具 schema 快照和健康状态。
+     *
+     * @throws Exception schema.sql 或映射类缺少字段时抛出。
+     */
+    @Test
+    void mcpSchemaAndMappingContainExternalServerRuntimeFields() throws Exception {
+        String schemaSql = Files.readString(Path.of("src/main/resources/db/schema.sql"), StandardCharsets.UTF_8);
+        Class<?> domainClass = Class.forName("com.codingx.mcp.domain.model.ChatMcp");
+        Class<?> dataObjectClass = Class.forName("com.codingx.mcp.infrastructure.persistence.dataobject.ChatMcpDO");
+        List<String> domainFields = List.of(domainClass.getDeclaredFields()).stream().map(Field::getName).toList();
+        List<String> dataObjectFields = List.of(dataObjectClass.getDeclaredFields()).stream().map(Field::getName).toList();
+
+        for (String column : List.of(
+            "transport_type",
+            "command",
+            "args_json",
+            "env_json",
+            "endpoint_url",
+            "headers_json",
+            "tool_schema_json",
+            "health_status",
+            "last_connected_at",
+            "last_error_message"
+        )) {
+            assertTrue(schemaSql.contains(column), "mcp 表缺少外部 MCP 字段: " + column);
+        }
+        for (String field : List.of(
+            "transportType",
+            "command",
+            "argsJson",
+            "envJson",
+            "endpointUrl",
+            "headersJson",
+            "toolSchemaJson",
+            "healthStatus",
+            "lastConnectedAt",
+            "lastErrorMessage"
+        )) {
+            assertTrue(domainFields.contains(field), "ChatMcp 缺少字段: " + field);
+            assertTrue(dataObjectFields.contains(field), "ChatMcpDO 缺少字段: " + field);
+        }
+        assertTrue(schemaSql.contains("COMMENT ON COLUMN mcp.transport_type IS 'MCP传输类型'"));
+        assertTrue(schemaSql.contains("COMMENT ON COLUMN mcp.tool_schema_json IS 'MCP工具Schema快照'"));
+    }
+
+    /**
      * 校验单张表的持久化骨架结构完整性。
      * @param skeleton 骨架定义。
      * @throws Exception 目标类缺失或结构不符合约定时抛出。

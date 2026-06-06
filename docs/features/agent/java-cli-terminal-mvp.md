@@ -22,8 +22,8 @@
 5. 用户执行 `codingx` 或 `codingx tui` 时，`CliCommandRunner` 调用 `TuiLauncher.launch()`，真实实现先通过 `CodingXTuiModel.startupBanner()` 把 `>_ CodingX CLI (v0.1.0)` 启动卡片和 `Tip: Build faster with CodingX.` 写入普通 shell 输出，再启动 tui4j `Program.run()` 维护后续交互区。该拆分用于规避 Windows 终端下 tui4j 普通屏幕 renderer 按活动区域高度裁剪首帧的问题，确保 logo 和启动卡片不会被裁掉。`CodingXTuiModel.view()` 的活动区只渲染真实 transcript、单行 composer 和底部状态行；初始态不会追加假 transcript，也不会用空白 viewport 把输入行推到窗口底部。`TuiStatusBarRenderer` 只展示后端选模来源、当前工作区、运行状态和 `Plan mode` / `Chat mode` 文案；模型名、MCP 连接数和工具数量没有后端真实字段时不会显示。
 6. 用户在 `Textarea` 输入任务后按 Enter，`CodingXTuiModel` 会先于 `textarea.update(...)` 拦截提交键，并兼容 JLine/Windows 终端可能上报的 CR(`enter`) 和 LF(`ctrl+j`) 两种回车类型；空任务直接忽略，非空任务先清理当前活动回答块、把状态切到 `running`，再重置底部输入框。这个顺序保证回车不会被 Textarea 当成编辑换行吞掉；键盘提交不会再把 `> 用户任务` 重复塞进 live view，而是返回 tui4j `Command.println("> 用户任务")`，把用户行直接打印到普通屏幕 live 区上方，避免活动区高度增长时首条用户消息被 renderer 裁掉。当事件源支持流式推送时，模型把任务文本和当前工作区传给 `BackendChatEventSource`，后端流消费线程通过 tui4j `Program.send(...)` 把每个 `AgentEvent` 送回主更新循环；连续 `ASSISTANT_DELTA` 会更新同一个助手回答块，避免后端小片段在 TUI 中变成散乱项目符号列表。
 7. `BackendChatEventSource` 每轮请求都会从 `CliConfigStore` 读取最新 `serverUrl`、`token` 和 `lastSessionId`，构造 `GET /api/chat/stream` 请求。请求固定携带 `question`、`runtimeTarget=local` 和当前工作区绝对路径 `repositoryPath`；当 `lastSessionId` 是数值字符串时，额外携带 `conversationId` 续接后端会话；token 非空时写入 `satoken` header，token 为空时交给后端返回统一登录错误。
-8. 后端返回 SSE 后，`SseEventParser` 按空行拆分 `event:` / `data:` 块，`BackendChatEventMapper` 将 `meta`、`message`、`thinking`、`tool-call`、`mcp-call`、`finish`、`reject`、`queued`、`queue-accepted`、`error`、`done` 映射为 CLI 现有 `AgentEvent`。`meta.conversationId` 或 `finish.conversationId` 到达后，事件源会把数值会话 ID 写回用户主目录配置的 `lastSessionId`，下一次 TUI 输入自然延续同一个后端会话。
-9. `TuiTranscriptRenderer` 把非活动流事件渲染成对话流和工具状态行；助手正文由 `CodingXTuiModel` 先合并活动回答块再写入 transcript，思考增量显示为 `Thinking:`，工具事件优先展示后端 `displayName` 或 `toolId`，完成事件显示 `Task completed: COMPLETED`，错误事件显示 `! Error` 并让底部状态变为 `error`。`shift+tab` 当前只在本地切换 `Plan mode` / `Chat mode` 文案，不触发真实规划策略。
+8. 后端返回 SSE 后，`SseEventParser` 按空行拆分 `event:` / `data:` 块，`BackendChatEventMapper` 将 `meta`、`message`、`thinking`、`tool-call`、`mcp-call`、`finish`、`reject`、`queued`、`queue-accepted`、`error`、`done` 映射为 CLI 现有 `AgentEvent`。`meta.conversationId` 或 `finish.conversationId` 到达后，事件源会把数值会话 ID 写回用户主目录配置的 `lastSessionId`，下一次 TUI 输入自然延续同一个后端会话。TUI 的 `Plan mode` / `Chat mode` 不再只是本地状态栏文案，提交任务时会通过 `planMode=true/false` 查询参数传给后端聊天流。
+9. `TuiTranscriptRenderer` 把非活动流事件渲染成对话流和工具状态行；助手正文由 `CodingXTuiModel` 先合并活动回答块再写入 transcript，思考增量显示为 `Thinking:`，工具事件优先展示后端 `displayName` 或 `toolId`，完成事件显示 `Task completed: COMPLETED`，错误事件显示 `! Error` 并让底部状态变为 `error`。`shift+tab` 切换当前提交模式：Plan mode 下后端会在系统提示中要求模型优先拆解计划、风险和确认点，避免主动执行写入类工具；Chat mode 下按普通执行策略处理。
 10. 用户执行 `exec`、`resume` 或 `sessions` 时，命令分发器不会启动任务或独立会话流程，而是返回非零退出码和 TUI-only 中文提示。这样 CLI 保持单一产品形态，后续会话恢复、会话列表和权限审批都应接入 TUI 内部工作流。
 
 ## 关键文件
@@ -58,7 +58,7 @@
 - `AgentEventSource`：事件源抽象边界；生产实现是 `BackendChatEventSource`，测试可继续使用 `MockAgentEventSource`。
 - `StreamingAgentEventSource`：流式事件源扩展；同步 `startTurn` 仍会收集事件列表，流式 `startTurn(..., Consumer<AgentEvent>)` 用于 TUI 实时刷新。
 - `SseEvent`：后端 SSE 事件块，包含事件名和原始 data 文本。
-- `CodingXTuiModel`：TUI 内存状态，包含 `Viewport` 事件窗口、`Textarea` 任务输入框、当前工作区、活动助手回答块、`Plan mode` / `Chat mode`、运行状态和后端流消费线程；UI 状态只在进程内维护，会话续接状态写入用户主目录 CLI 配置。
+- `CodingXTuiModel`：TUI 内存状态，包含 `Viewport` 事件窗口、`Textarea` 任务输入框、当前工作区、活动助手回答块、`Plan mode` / `Chat mode`、运行状态和后端流消费线程；提交任务时会把当前模式传给事件源。UI 状态只在进程内维护，会话续接状态写入用户主目录 CLI 配置。
 - `TuiTranscriptRenderer`：TUI 展示层事件映射；工具名和工具结果优先来自后端 payload，没有真实后端字段的 MCP 连接状态、工具数量和模型名不会在 TUI 中硬编码展示。
 
 ## 测试与验证

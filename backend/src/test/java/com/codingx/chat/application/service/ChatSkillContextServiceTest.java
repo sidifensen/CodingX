@@ -6,6 +6,7 @@ import static org.mockito.Mockito.when;
 
 import com.codingx.common.storage.RustFsSkillPackageClient;
 import com.codingx.skill.application.service.ChatSkillContextService;
+import com.codingx.skill.application.service.SkillRuntimeService;
 import com.codingx.skill.domain.model.ChatSkill;
 import com.codingx.skill.domain.repository.ChatSkillRepository;
 import java.nio.charset.StandardCharsets;
@@ -27,6 +28,9 @@ class ChatSkillContextServiceTest {
 
     @Mock
     private RustFsSkillPackageClient rustFsSkillPackageClient;
+
+    @Mock
+    private SkillRuntimeService skillRuntimeService;
 
     @InjectMocks
     private ChatSkillContextService chatSkillContextService;
@@ -155,6 +159,52 @@ class ChatSkillContextServiceTest {
         assertTrue(context.contains("-Body"));
         assertTrue(context.contains("不要照搬上游示例里的 curl -s -X POST 和 --data-raw"));
         assertTrue(context.contains("先调用 node \"$env:CLAUDE_SKILL_DIR\\scripts\\check-deps.mjs\""));
+    }
+
+    /**
+     * 技能运行时元数据应进入系统提示，帮助模型知道技能声明的工具、资源和脚本边界。
+     */
+    @Test
+    void buildSkillContextAddsRuntimeMetadataSummary() {
+        ChatSkill skill = ChatSkill.builder()
+            .id(8201L)
+            .skillCode("meeting")
+            .displayName("会议总结")
+            .sourceType("uploaded")
+            .enabled(1)
+            .packageStorageFormat("directory")
+            .storageKey("chat-skills/packages/meeting")
+            .build();
+        when(chatSkillRepository.findBySkillCode("meeting")).thenReturn(skill);
+        when(rustFsSkillPackageClient.downloadDirectoryFile("chat-skills/packages/meeting", "SKILL.md")).thenReturn("""
+            ---
+            name: meeting
+            ---
+            # Meeting Skill
+            """.getBytes(StandardCharsets.UTF_8));
+        when(skillRuntimeService.loadSelectedSkillRuntimes(List.of("meeting"))).thenReturn(List.of(
+            new SkillRuntimeService.SkillRuntimeDescriptor(
+                "meeting",
+                "会议总结",
+                "# Meeting Skill",
+                new SkillRuntimeService.SkillRuntimeMetadata(
+                    "meeting",
+                    "Summarize meetings",
+                    List.of("ReadFile", "Bash"),
+                    List.of("resources/guide.md"),
+                    List.of("scripts/check.ps1")
+                ),
+                List.of("resources/guide.md"),
+                List.of("scripts/check.ps1")
+            )
+        ));
+
+        String context = chatSkillContextService.buildSkillContext(List.of("meeting"));
+
+        assertTrue(context.contains("### 技能运行时元数据"));
+        assertTrue(context.contains("工具声明：ReadFile、Bash"));
+        assertTrue(context.contains("资源文件：resources/guide.md"));
+        assertTrue(context.contains("脚本文件：scripts/check.ps1"));
     }
 
     /**

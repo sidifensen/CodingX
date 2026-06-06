@@ -4,6 +4,7 @@ import com.codingx.cli.agent.AgentEvent;
 import com.codingx.cli.agent.AgentEventSource;
 import com.codingx.cli.agent.AgentEventType;
 import com.codingx.cli.agent.MockAgentEventSource;
+import com.codingx.cli.agent.StreamingAgentEventSource;
 import com.codingx.cli.render.TerminalRenderer;
 import com.williamcallahan.tui4j.compat.bubbletea.KeyPressMessage;
 import com.williamcallahan.tui4j.compat.bubbletea.Message;
@@ -186,6 +187,23 @@ class CodingXTuiModelTest {
     }
 
     @Test
+    void submitTaskShouldPassCurrentPlanModeToStreamingEventSource() {
+        CapturingStreamingEventSource eventSource = new CapturingStreamingEventSource();
+        CodingXTuiModel model = new CodingXTuiModel(
+            tempDir.resolve("workspace"),
+            eventSource,
+            new TerminalRenderer()
+        );
+
+        model.submitTask("先规划");
+        model.update(new KeyPressMessage(new Key(KeyType.KeyShiftTab)));
+        model.submitTask("直接执行");
+
+        assertTrue(eventSource.planModes.contains(true));
+        assertTrue(eventSource.planModes.contains(false));
+    }
+
+    @Test
     void errorEventsShouldSetErrorStatus() {
         CodingXTuiModel model = new CodingXTuiModel(
             tempDir.resolve("workspace"),
@@ -296,6 +314,32 @@ class CodingXTuiModelTest {
             return List.of(AgentEvent.of("session", "turn", 1, AgentEventType.ERROR, Map.of(
                 "message", "模拟错误"
             )));
+        }
+    }
+
+    /**
+     * 测试专用流式事件源，记录 TUI 提交时传入的 planMode。
+     */
+    private static class CapturingStreamingEventSource implements StreamingAgentEventSource {
+
+        private final List<Boolean> planModes = new java.util.ArrayList<>();
+
+        @Override
+        public void startTurn(
+            String task,
+            Path workspace,
+            boolean planMode,
+            java.util.function.Consumer<AgentEvent> eventConsumer
+        ) {
+            planModes.add(planMode);
+            eventConsumer.accept(AgentEvent.of("session", "turn", planModes.size(), AgentEventType.TURN_COMPLETED, Map.of(
+                "status", "COMPLETED"
+            )));
+        }
+
+        @Override
+        public void startTurn(String task, Path workspace, java.util.function.Consumer<AgentEvent> eventConsumer) {
+            startTurn(task, workspace, false, eventConsumer);
         }
     }
 }

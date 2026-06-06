@@ -74,6 +74,11 @@ public class BackendChatEventSource implements StreamingAgentEventSource {
 
     @Override
     public void startTurn(String task, Path workspace, Consumer<AgentEvent> eventConsumer) {
+        startTurn(task, workspace, false, eventConsumer);
+    }
+
+    @Override
+    public void startTurn(String task, Path workspace, boolean planMode, Consumer<AgentEvent> eventConsumer) {
         CliConfig config = configStore.load();
         String normalizedTask = StrUtil.trimToEmpty(task);
         String normalizedWorkspace = workspace.toAbsolutePath().normalize().toString();
@@ -85,7 +90,7 @@ public class BackendChatEventSource implements StreamingAgentEventSource {
         eventConsumer.accept(mapper.turnStarted(normalizedTask, normalizedWorkspace));
 
         try {
-            HttpRequest request = buildRequest(config, normalizedTask, normalizedWorkspace);
+            HttpRequest request = buildRequest(config, normalizedTask, normalizedWorkspace, planMode);
             HttpResponse<InputStream> response = httpClient.send(request, HttpResponse.BodyHandlers.ofInputStream());
             if (response.statusCode() < 200 || response.statusCode() >= 300) {
                 eventConsumer.accept(mapper.error(resolveErrorMessage(response.body())));
@@ -110,7 +115,7 @@ public class BackendChatEventSource implements StreamingAgentEventSource {
     /**
      * 构造后端聊天流请求，参数与 Web 端 `buildStreamRequestUrl` 保持同名。
      */
-    private HttpRequest buildRequest(CliConfig config, String task, String workspace) {
+    private HttpRequest buildRequest(CliConfig config, String task, String workspace, boolean planMode) {
         Map<String, String> query = new LinkedHashMap<>();
         query.put("question", task);
         if (isNumericSessionId(config.lastSessionId())) {
@@ -118,6 +123,7 @@ public class BackendChatEventSource implements StreamingAgentEventSource {
         }
         query.put("runtimeTarget", "local");
         query.put("repositoryPath", workspace);
+        query.put("planMode", String.valueOf(planMode));
 
         HttpRequest.Builder builder = HttpRequest.newBuilder(buildUri(config.serverUrl(), query))
             .timeout(Duration.ofMinutes(10))

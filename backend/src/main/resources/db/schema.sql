@@ -565,6 +565,16 @@ CREATE TABLE IF NOT EXISTS mcp (
     description TEXT,
     category VARCHAR(128),
     source_type VARCHAR(64) NOT NULL DEFAULT 'built-in',
+    transport_type VARCHAR(32),
+    command TEXT,
+    args_json TEXT,
+    env_json TEXT,
+    endpoint_url TEXT,
+    headers_json TEXT,
+    tool_schema_json TEXT,
+    health_status VARCHAR(32),
+    last_connected_at TIMESTAMP,
+    last_error_message TEXT,
     enabled SMALLINT NOT NULL DEFAULT 1,
     sort_no INTEGER NOT NULL DEFAULT 0,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -578,6 +588,16 @@ COMMENT ON COLUMN mcp.display_name IS 'MCP名称';
 COMMENT ON COLUMN mcp.description IS 'MCP描述';
 COMMENT ON COLUMN mcp.category IS 'MCP分类';
 COMMENT ON COLUMN mcp.source_type IS 'MCP来源';
+COMMENT ON COLUMN mcp.transport_type IS 'MCP传输类型';
+COMMENT ON COLUMN mcp.command IS 'MCP启动命令';
+COMMENT ON COLUMN mcp.args_json IS 'MCP命令参数JSON';
+COMMENT ON COLUMN mcp.env_json IS 'MCP环境变量JSON';
+COMMENT ON COLUMN mcp.endpoint_url IS 'MCP远程端点地址';
+COMMENT ON COLUMN mcp.headers_json IS 'MCP请求头JSON';
+COMMENT ON COLUMN mcp.tool_schema_json IS 'MCP工具Schema快照';
+COMMENT ON COLUMN mcp.health_status IS 'MCP健康状态';
+COMMENT ON COLUMN mcp.last_connected_at IS 'MCP最近连接时间';
+COMMENT ON COLUMN mcp.last_error_message IS 'MCP最近错误信息';
 COMMENT ON COLUMN mcp.enabled IS '是否启用 1启用 0禁用';
 COMMENT ON COLUMN mcp.sort_no IS '排序字段';
 COMMENT ON COLUMN mcp.created_at IS '创建时间';

@@ -82,6 +82,7 @@ public class ChatStreamRequestApplicationService {
             localRuntime
         );
         boolean deepThinkingEnabled = Boolean.TRUE.equals(request.deepThinking());
+        boolean planModeEnabled = Boolean.TRUE.equals(request.planMode());
 
         // 步骤 3：解析 MCP、结构化消息、技能、专家和附件参数，生成运行时上下文。
         List<String> selectedMcpCodes = resolveMcpCodes(request.mcpCodes());
@@ -109,7 +110,8 @@ public class ChatStreamRequestApplicationService {
                 localRuntime,
                 localOnly,
                 resolvedWorkspace,
-                request.repositoryPath()
+                request.repositoryPath(),
+                planModeEnabled
             )
         );
 
@@ -127,7 +129,8 @@ public class ChatStreamRequestApplicationService {
                 StrUtil.blankToDefault(resolvedWorkspace.repositoryPath(), request.repositoryPath()),
                 selectedAttachmentIds,
                 localOnly,
-                localRuntime
+                localRuntime,
+                planModeEnabled
             ),
             userId
         );
@@ -221,6 +224,7 @@ public class ChatStreamRequestApplicationService {
      * @param localOnly 是否本地临时运行。
      * @param resolvedWorkspace 解析后的工作空间信息。
      * @param repositoryPath 原始仓库路径参数。
+     * @param planModeEnabled 是否按规划模式处理。
      * @return meta 事件载荷。
      */
     private Map<String, Object> buildMetaPayload(
@@ -234,7 +238,8 @@ public class ChatStreamRequestApplicationService {
         boolean localRuntime,
         boolean localOnly,
         ResolvedWorkspace resolvedWorkspace,
-        String repositoryPath
+        String repositoryPath,
+        boolean planModeEnabled
     ) {
         // 步骤 1：基础 meta 字段用于前端绑定运行、能力选择和运行态展示。
         Map<String, Object> metaPayload = new java.util.LinkedHashMap<>();
@@ -249,6 +254,7 @@ public class ChatStreamRequestApplicationService {
         metaPayload.put("attachmentIds", selectedAttachmentIds);
         metaPayload.put("runtimeTarget", localRuntime ? "local" : "cloud");
         metaPayload.put("localOnly", localOnly);
+        metaPayload.put("planMode", planModeEnabled);
         if (resolvedWorkspace.workspaceId() != null) {
             metaPayload.put("workspaceId", resolvedWorkspace.workspaceId());
         }
@@ -275,6 +281,7 @@ public class ChatStreamRequestApplicationService {
      * @param attachmentIds 附件主键列表。
      * @param localOnly 是否本地临时运行。
      * @param localRuntime 是否本地运行时。
+     * @param planMode 是否按规划模式处理。
      * @return 发送命令。
      */
     private SendChatMessageCommand buildSendCommand(
@@ -288,7 +295,8 @@ public class ChatStreamRequestApplicationService {
         String repositoryPath,
         List<Long> attachmentIds,
         boolean localOnly,
-        boolean localRuntime
+        boolean localRuntime,
+        boolean planMode
     ) {
         String normalizedRepositoryPath = StrUtil.trimToNull(repositoryPath);
         if (localOnly) {
@@ -303,7 +311,8 @@ public class ChatStreamRequestApplicationService {
                 expertCode,
                 normalizedRepositoryPath,
                 attachmentIds,
-                localRuntime
+                localRuntime,
+                planMode
             );
         }
         // 步骤 2：默认构建云端持久化命令，localRuntime 只表示工具运行位置。
@@ -318,7 +327,8 @@ public class ChatStreamRequestApplicationService {
             normalizedRepositoryPath,
             attachmentIds,
             false,
-            localRuntime
+            localRuntime,
+            planMode
         );
     }
 
@@ -519,7 +529,8 @@ public class ChatStreamRequestApplicationService {
         String runtimeTarget,
         String repositoryPath,
         String messages,
-        String attachmentIds
+        String attachmentIds,
+        Boolean planMode
     ) {
     }
 

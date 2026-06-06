@@ -15,6 +15,7 @@ import com.codingx.chat.domain.repository.ChatRuntimeSettingRepository;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
@@ -81,9 +82,11 @@ class AdminChatSettingsServiceTest {
         ChatRuntimeSetting saved = adminChatSettingsService.save(secretSetting);
 
         assertEquals("", saved.getSettingValue());
-        assertEquals("cipher-secret", saved.getEncryptedValue());
+        assertNull(saved.getEncryptedValue());
         assertEquals("pla***cret", saved.getMaskedValue());
-        verify(chatRuntimeSettingRepository).save(any(ChatRuntimeSetting.class));
+        ArgumentCaptor<ChatRuntimeSetting> persistedCaptor = ArgumentCaptor.forClass(ChatRuntimeSetting.class);
+        verify(chatRuntimeSettingRepository).save(persistedCaptor.capture());
+        assertEquals("cipher-secret", persistedCaptor.getValue().getEncryptedValue());
     }
 
     /**
@@ -137,9 +140,11 @@ class AdminChatSettingsServiceTest {
 
         ChatRuntimeSetting saved = adminChatSettingsService.save(incoming);
 
-        assertEquals("cipher-secret", saved.getEncryptedValue());
+        assertNull(saved.getEncryptedValue());
         assertEquals("sk-****", saved.getMaskedValue());
-        verify(runtimeSettingService).refresh();
+        ArgumentCaptor<ChatRuntimeSetting> persistedCaptor = ArgumentCaptor.forClass(ChatRuntimeSetting.class);
+        verify(chatRuntimeSettingRepository).save(persistedCaptor.capture());
+        assertEquals("cipher-secret", persistedCaptor.getValue().getEncryptedValue());
         verify(configCryptoService, never()).encrypt("");
     }
 }

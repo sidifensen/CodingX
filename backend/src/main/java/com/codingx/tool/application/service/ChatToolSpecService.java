@@ -1,14 +1,19 @@
 package com.codingx.tool.application.service;
 
 import cn.hutool.core.util.StrUtil;
+import com.codingx.mcp.application.service.McpServerRuntimeService;
 import com.codingx.tool.domain.model.ChatTool;
 import com.codingx.tool.domain.repository.ChatToolRepository;
 import java.util.Comparator;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 /**
@@ -16,7 +21,6 @@ import org.springframework.stereotype.Service;
  * 关键约束：数据库配置只决定展示与启用态，最终是否暴露必须以 Java 执行器注册表为准。
  */
 @Service
-@RequiredArgsConstructor
 public class ChatToolSpecService {
 
     private static final List<String> MODEL_VISIBLE_LOCAL_TOOLS = List.of(
@@ -49,19 +53,79 @@ public class ChatToolSpecService {
     private final ChatToolRepository chatToolRepository;
     /** 工具执行器注册表，用于确认配置工具在后端确实存在执行实现。 */
     private final ChatToolRegistry chatToolRegistry;
+    /** 本地工具别名服务，用于追加 Claude Code 风格模型可见工具名。 */
+    private final LocalToolAliasService localToolAliasService;
+    /** 外部 MCP 运行时，用于把已发现 MCP 工具合并进模型可见清单。 */
+    private final McpServerRuntimeService mcpServerRuntimeService;
+
+    /**
+     * Spring 生产构造器，合并本地工具和外部 MCP 动态工具。
+     * @param chatToolRepository 工具配置仓储。
+     * @param chatToolRegistry 工具执行器注册表。
+     * @param localToolAliasService 本地工具别名服务。
+     * @param mcpServerRuntimeService 外部 MCP 运行时。
+     */
+    @Autowired
+    public ChatToolSpecService(
+        ChatToolRepository chatToolRepository,
+        ChatToolRegistry chatToolRegistry,
+        LocalToolAliasService localToolAliasService,
+        McpServerRuntimeService mcpServerRuntimeService
+    ) {
+        this.chatToolRepository = chatToolRepository;
+        this.chatToolRegistry = chatToolRegistry;
+        this.localToolAliasService = localToolAliasService;
+        this.mcpServerRuntimeService = mcpServerRuntimeService;
+    }
+
+    /**
+     * 兼容旧测试构造器，未注入外部 MCP 时仅返回本地工具。
+     * @param chatToolRepository 工具配置仓储。
+     * @param chatToolRegistry 工具执行器注册表。
+     * @param localToolAliasService 本地工具别名服务。
+     */
+    public ChatToolSpecService(
+        ChatToolRepository chatToolRepository,
+        ChatToolRegistry chatToolRegistry,
+        LocalToolAliasService localToolAliasService
+    ) {
+        this(chatToolRepository, chatToolRegistry, localToolAliasService, null);
+    }
 
     /**
      * 列出当前可暴露给模型的本地工具 schema。
      * @return 工具 schema 列表。
      */
     public List<ChatToolSpec> listModelVisibleToolSpecs() {
-        return chatToolRepository.findAll().stream()
+        List<ChatTool> enabledTools = chatToolRepository.findAll().stream()
             .filter(this::isEnabled)
             .filter(tool -> MODEL_VISIBLE_LOCAL_TOOLS.contains(normalizeToolCode(tool.getToolCode())))
             .filter(tool -> chatToolRegistry.hasExecutor(tool.getToolCode()))
             .sorted(Comparator.comparing(ChatTool::getSortNo, Comparator.nullsLast(Comparator.naturalOrder()))
                 .thenComparing(ChatTool::getToolCode, Comparator.nullsLast(String::compareToIgnoreCase)))
-            .map(this::toSpec)
+            .toList();
+        List<ChatToolSpec> specs = new ArrayList<>(enabledTools.stream()
+            .map(tool -> toSpec(normalizeToolCode(tool.getToolCode()), normalizeToolCode(tool.getToolCode()), tool))
+            .toList());
+        Map<String, ChatTool> toolByCanonicalCode = enabledTools.stream()
+            .collect(Collectors.toMap(
+                tool -> normalizeToolCode(tool.getToolCode()),
+                Function.identity(),
+                (first, ignored) -> first,
+                LinkedHashMap::new
+            ));
+        for (Map.Entry<String, String> aliasEntry : localToolAliasService.aliasMappings().entrySet()) {
+            ChatTool canonicalTool = toolByCanonicalCode.get(aliasEntry.getValue());
+            if (canonicalTool == null) {
+                continue;
+            }
+            specs.add(toSpec(aliasEntry.getKey(), aliasEntry.getValue(), canonicalTool));
+        }
+        if (mcpServerRuntimeService != null) {
+            specs.addAll(mcpServerRuntimeService.listDiscoveredToolSpecs());
+        }
+        return specs.stream()
+            .filter(spec -> StrUtil.isNotBlank(spec.name()))
             .toList();
     }
 
@@ -70,12 +134,12 @@ public class ChatToolSpecService {
      * @param tool 工具配置。
      * @return 模型工具定义。
      */
-    private ChatToolSpec toSpec(ChatTool tool) {
-        String toolCode = normalizeToolCode(tool.getToolCode());
+    private ChatToolSpec toSpec(String visibleToolCode, String canonicalToolCode, ChatTool tool) {
         return new ChatToolSpec(
-            toolCode,
-            descriptionFor(toolCode, tool),
-            parametersFor(toolCode)
+            visibleToolCode,
+            descriptionFor(visibleToolCode, canonicalToolCode, tool),
+            parametersFor(canonicalToolCode),
+            canonicalToolCode
         );
     }
 
@@ -202,21 +266,26 @@ public class ChatToolSpecService {
      * @param tool 工具配置。
      * @return 模型可见工具说明。
      */
-    private String descriptionFor(String toolCode, ChatTool tool) {
+    private String descriptionFor(String visibleToolCode, String canonicalToolCode, ChatTool tool) {
         String baseDescription = StrUtil.blankToDefault(tool.getDescription(), tool.getDisplayName());
-        if (StrUtil.equals(toolCode, "shell_command")) {
+        if (localToolAliasService.hasAliasForCanonicalCode(canonicalToolCode)
+            && !StrUtil.equals(visibleToolCode, canonicalToolCode)) {
+            baseDescription = baseDescription + "；模型可按 Claude Code 风格工具名 `" + visibleToolCode
+                + "` 调用，后端会归一到 `" + canonicalToolCode + "` 执行。";
+        }
+        if (StrUtil.equals(canonicalToolCode, "shell_command")) {
             return baseDescription + "。" + SHELL_COMMAND_MODEL_GUIDANCE;
         }
-        if (StrUtil.equals(toolCode, "bash")) {
+        if (StrUtil.equals(canonicalToolCode, "bash")) {
             return baseDescription + "。" + SHELL_COMMAND_MODEL_GUIDANCE;
         }
-        if (List.of("read", "write", "edit", "grep", "find", "ls").contains(toolCode)) {
+        if (List.of("read", "write", "edit", "grep", "find", "ls").contains(canonicalToolCode)) {
             return baseDescription + "。" + WORKSPACE_PATH_GUIDANCE;
         }
-        if (StrUtil.equals(toolCode, "exec_command")) {
+        if (StrUtil.equals(canonicalToolCode, "exec_command")) {
             return baseDescription + "。" + EXEC_COMMAND_MODEL_GUIDANCE;
         }
-        if (StrUtil.equals(toolCode, "apply_patch")) {
+        if (StrUtil.equals(canonicalToolCode, "apply_patch")) {
             return baseDescription + "。" + APPLY_PATCH_MODEL_GUIDANCE;
         }
         return baseDescription;

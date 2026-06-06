@@ -129,6 +129,16 @@ public class ChatMcpRepositoryImpl implements ChatMcpRepository {
         dataObject.setDescription(chatMcp.getDescription());
         dataObject.setCategory(chatMcp.getCategory());
         dataObject.setSourceType(chatMcp.getSourceType());
+        dataObject.setTransportType(chatMcp.getTransportType());
+        dataObject.setCommand(chatMcp.getCommand());
+        dataObject.setArgsJson(chatMcp.getArgsJson());
+        dataObject.setEnvJson(chatMcp.getEnvJson());
+        dataObject.setEndpointUrl(chatMcp.getEndpointUrl());
+        dataObject.setHeadersJson(chatMcp.getHeadersJson());
+        dataObject.setToolSchemaJson(chatMcp.getToolSchemaJson());
+        dataObject.setHealthStatus(chatMcp.getHealthStatus());
+        dataObject.setLastConnectedAt(chatMcp.getLastConnectedAt());
+        dataObject.setLastErrorMessage(chatMcp.getLastErrorMessage());
         dataObject.setEnabled(chatMcp.getEnabled());
         dataObject.setSortNo(chatMcp.getSortNo());
         dataObject.setCreatedAt(chatMcp.getCreatedAt());
@@ -145,6 +155,16 @@ public class ChatMcpRepositoryImpl implements ChatMcpRepository {
             .description(dataObject.getDescription())
             .category(dataObject.getCategory())
             .sourceType(dataObject.getSourceType())
+            .transportType(dataObject.getTransportType())
+            .command(dataObject.getCommand())
+            .argsJson(dataObject.getArgsJson())
+            .envJson(dataObject.getEnvJson())
+            .endpointUrl(dataObject.getEndpointUrl())
+            .headersJson(dataObject.getHeadersJson())
+            .toolSchemaJson(dataObject.getToolSchemaJson())
+            .healthStatus(dataObject.getHealthStatus())
+            .lastConnectedAt(dataObject.getLastConnectedAt())
+            .lastErrorMessage(dataObject.getLastErrorMessage())
             .enabled(dataObject.getEnabled())
             // 运行态可用性由查询服务基于执行器注册动态补充，仓储层默认置空。
             .available(null)

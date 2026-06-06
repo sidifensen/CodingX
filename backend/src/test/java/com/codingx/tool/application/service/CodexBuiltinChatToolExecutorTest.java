@@ -872,8 +872,9 @@ class CodexBuiltinChatToolExecutorTest {
 
         ChatToolExecutionContext.bindToolWorkingDirectory(projectRoot);
         try {
-            executeAndRecord(invokedToolCodes, "write", JSONUtil.toJsonStr(Map.of("path", "short-tools.txt", "content", "hello tools\n")));
+            Files.writeString(projectRoot.resolve("short-tools.txt"), "hello tools\n", StandardCharsets.UTF_8);
             executeAndRecord(invokedToolCodes, "read", JSONUtil.toJsonStr(Map.of("path", "short-tools.txt")));
+            executeAndRecord(invokedToolCodes, "write", JSONUtil.toJsonStr(Map.of("path", "short-tools.txt", "content", "hello tools\n")));
             executeAndRecord(
                 invokedToolCodes,
                 "edit",

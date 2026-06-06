@@ -339,6 +339,54 @@ class ChatStreamControllerTest {
     }
 
     /**
+     * CLI Plan mode 参数应进入 SSE meta 与后台发送命令，让后端按规划模式调整运行策略。
+     */
+    @Test
+    void streamChatPassesPlanModeToDispatchCommand() {
+        SseEmitter emitter = new SseEmitter(0L);
+        whenRegisterReturns(emitter);
+        when(chatMcpQueryService.listEnabledMcps()).thenReturn(List.of());
+        when(chatWorkspaceBindingService.bindRepositoryPathForCurrentUser("D:/code/test"))
+            .thenReturn(new ChatWorkspaceBindingService.WorkspaceBindingResult(6101L, "D:/code/test", "test"));
+        ChatConversation conversation = ChatConversation.create(9903L, "本地会话", 1001L, 6101L, ChatConversationStatus.ACTIVE);
+        when(chatConversationApplicationService.createConversation(any(CreateConversationCommand.class), any(Long.class))).thenReturn(conversation);
+        try (MockedStatic<StpUtil> mocked = Mockito.mockStatic(StpUtil.class)) {
+            mocked.when(StpUtil::getLoginIdAsLong).thenReturn(1001L);
+
+            SseEmitter actual = chatStreamController.streamChat(
+                "先规划任务",
+                null,
+                null,
+                false,
+                null,
+                null,
+                null,
+                null,
+                "local",
+                "D:/code/test",
+                null,
+                null,
+                true
+            );
+
+            assertEquals(emitter, actual);
+            verify(chatSseRegistry).publish(
+                eq(9903L),
+                eq("meta"),
+                argThat(payload -> payload instanceof java.util.Map<?, ?> map
+                    && Boolean.TRUE.equals(map.get("planMode")))
+            );
+            verify(chatStreamExecutionService).dispatch(
+                argThat(taskId -> taskId != null && taskId > 0),
+                argThat(command -> command.conversationId().equals(9903L)
+                    && command.planMode()
+                    && command.repositoryPath().equals("D:/code/test")),
+                eq(1001L)
+            );
+        }
+    }
+
+    /**
      * 显式传入 skillCodes 时，应优先使用前端指定列表，不回退默认启用项。
      */
     @Test

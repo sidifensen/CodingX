@@ -1,5 +1,6 @@
 package com.codingx.mcp.application.service;
 
+import cn.hutool.core.util.StrUtil;
 import com.codingx.mcp.application.executor.ChatMcpToolExecutor;
 import com.codingx.mcp.application.executor.ChatMcpToolRegistry;
 import com.codingx.mcp.domain.model.ChatMcp;
@@ -38,10 +39,18 @@ public class ChatMcpQueryService {
             .map(ChatMcpToolExecutor::toolId)
             .collect(Collectors.toSet());
         // 步骤 2：只返回管理端启用的 MCP，并过滤掉编码异常的脏数据。
-        // 步骤 3：available 是运行态字段，由执行器注册情况动态补齐，不落库。
+        // 步骤 3：available 是运行态字段，内置 MCP 按执行器注册判断，外部 MCP 按发现成功的 schema 快照判断。
         return chatMcpRepository.findAllEnabled().stream()
             .filter(mcp -> mcp != null && mcp.getMcpCode() != null)
-            .map(mcp -> mcp.toBuilder().available(registeredToolIds.contains(mcp.getMcpCode())).build())
+            .map(mcp -> mcp.toBuilder().available(isRuntimeAvailable(mcp, registeredToolIds)).build())
             .toList();
+    }
+
+    private boolean isRuntimeAvailable(ChatMcp mcp, Set<String> registeredToolIds) {
+        if ("external".equalsIgnoreCase(StrUtil.blankToDefault(mcp.getSourceType(), ""))) {
+            return "AVAILABLE".equalsIgnoreCase(StrUtil.blankToDefault(mcp.getHealthStatus(), ""))
+                && StrUtil.isNotBlank(mcp.getToolSchemaJson());
+        }
+        return registeredToolIds.contains(mcp.getMcpCode());
     }
 }

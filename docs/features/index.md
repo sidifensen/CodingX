@@ -15,6 +15,8 @@
 - [本地工作空间会话分区](chat/local-workspace-conversation-partition.md)
 - [本地会话云端持久化](chat/cloud-persisted-local-chat.md)
 - [本地工具运行时](chat/local-tool-runtime.md)
+- [Agent Loop 运行时](chat/agent-loop-runtime.md)
+- [外部 MCP Server 运行时](chat/mcp-external-server-runtime.md)
 - [AI 路由默认策略](chat/ai-routing-defaults.md)
 - [AI 模型故障切换策略](chat/ai-model-failover.md)
 - [联网搜索权威时效排序](chat/web-search-authoritative-latest.md)
@@ -25,6 +27,7 @@
 - [聊天后台任务续流](chat/background-stream-resume.md)
 - [系统配置与密钥统一化](chat/system-config-secret-unification.md)
 - [聊天技能上下文持久化](chat/skill-context-persistence.md)
+- [Skill Runtime 技能包](chat/skill-runtime-package.md)
 - [聊天消息操作](chat/message-actions.md)
 
 ## Admin

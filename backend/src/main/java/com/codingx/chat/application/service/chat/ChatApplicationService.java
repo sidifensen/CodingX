@@ -19,6 +19,9 @@ import com.codingx.chat.domain.repository.ChatExecutionStepRepository;
 import com.codingx.chat.domain.repository.ChatMessageRepository;
 import com.codingx.chat.domain.port.AiChatClient;
 import com.codingx.chat.domain.port.ChatStreamPublisher;
+import com.codingx.chat.application.service.agent.AgentLoopCompletionReason;
+import com.codingx.chat.application.service.agent.AgentLoopCoordinator;
+import com.codingx.chat.application.service.agent.AgentLoopResult;
 import com.codingx.common.error.ErrorMessageCatalog;
 import com.codingx.common.exception.ForbiddenException;
 import com.codingx.common.support.ai.AiToolCall;
@@ -143,6 +146,8 @@ public class ChatApplicationService {
     private final ChatToolExecutionService chatToolExecutionService;
     /** 会话 workspace 绑定服务，负责把本地空间映射为真实仓库目录 */
     private final ChatWorkspaceBindingService chatWorkspaceBindingService;
+    /** Agent Loop 确定性规则协调器，负责轮次、完成原因和重复工具调用判断 */
+    private final AgentLoopCoordinator agentLoopCoordinator;
 
     /**
      * 处理 HTTP 同步入口发送消息的协议适配逻辑。
@@ -447,7 +452,8 @@ public class ChatApplicationService {
             command.conversationId(),
             command.skillCodes(),
             command.expertCode(),
-            searchReferences
+            searchReferences,
+            command.planMode()
         );
         log.info(
             "模型调用: 深度思考={}, 技能数={}, 专家={}, 历史条数={}, 搜索引用数={}",
@@ -880,7 +886,8 @@ public class ChatApplicationService {
             command.conversationId(),
             selectedSkillCodes,
             command.expertCode(),
-            searchReferences
+            searchReferences,
+            command.planMode()
         );
         log.info(
             "模型调用: 深度思考={}, 技能数={}, 专家={}, 历史条数={}, 搜索引用数={}",
@@ -1075,7 +1082,8 @@ public class ChatApplicationService {
             command.conversationId(),
             selectedSkillCodes,
             command.expertCode(),
-            List.of()
+            List.of(),
+            command.planMode()
         );
         log.info(
             "模型调用: 深度思考={}, 技能数={}, 专家={}, 历史条数={}, 搜索引用数={}",
@@ -1381,7 +1389,8 @@ public class ChatApplicationService {
             return;
         }
         // 轮次上限由系统配置控制，避免模型在工具-回灌链路里无限循环。
-        int maxToolRounds = Math.max(1, runtimeSettingService.chatToolMaxRounds());
+        AgentLoopCoordinator loopCoordinator = resolveAgentLoopCoordinator();
+        int maxToolRounds = loopCoordinator.normalizeMaxRounds(runtimeSettingService.chatToolMaxRounds());
         Map<String, ChatToolExecutionResult> executedToolResults = new LinkedHashMap<>();
         for (int round = 0; round < maxToolRounds; round++) {
             List<AiToolCall> toolCalls = new ArrayList<>();
@@ -1465,7 +1474,7 @@ public class ChatApplicationService {
             logSuppressedToolRoundContent(round + 1, deferredContentDeltas);
             for (AiToolCall toolCall : toolCalls) {
                 ChatToolExecutionResult toolResult;
-                String toolCallKey = deduplicateToolCallKey(toolCall);
+                String toolCallKey = loopCoordinator.deduplicateKey(toolCall);
                 ChatToolExecutionResult previousToolResult = executedToolResults.get(toolCallKey);
                 if (previousToolResult != null) {
                     toolResult = buildDuplicateToolCallResult(toolCall, previousToolResult);
@@ -1504,9 +1513,20 @@ public class ChatApplicationService {
                 );
                 log.debug("提示词上下文变化内容:\n{}", toolEvidenceContext);
             }
+            AgentLoopResult roundResult = loopCoordinator.resolveRoundResult(
+                round,
+                maxToolRounds,
+                !toolCalls.isEmpty(),
+                false,
+                false
+            );
+            if (roundResult.completionReason() == AgentLoopCompletionReason.MAX_ROUNDS) {
+                streamError[0] = new IllegalStateException(roundResult.message());
+                return;
+            }
         }
         // 连续工具调用仍未结束时，用明确异常提示用户收敛工具调用策略。
-        streamError[0] = new IllegalStateException("本地工具调用轮次超过上限，请收敛工具调用后重试");
+        streamError[0] = new IllegalStateException(loopCoordinator.maxRoundsMessage());
     }
 
     /**
@@ -2441,6 +2461,16 @@ public class ChatApplicationService {
         );
     }
 
+    /**
+     * 获取 Agent Loop 协调器。
+     * 兼容约束：部分旧单测通过 Mockito 构造服务，新增依赖可能未显式注入；这里用默认实例保持旧测试稳定。
+     *
+     * @return 可用的 Agent Loop 协调器。
+     */
+    private AgentLoopCoordinator resolveAgentLoopCoordinator() {
+        return agentLoopCoordinator == null ? new AgentLoopCoordinator() : agentLoopCoordinator;
+    }
+
     private void recordExecutionOutcome(
         ChatConversation conversation,
         Long requestMessageId,
@@ -2535,14 +2565,17 @@ public class ChatApplicationService {
         Long conversationId,
         List<String> selectedSkillCodes,
         String selectedExpertCode,
-        List<SearchReferenceCandidate> searchReferences
+        List<SearchReferenceCandidate> searchReferences,
+        boolean planMode
     ) {
         String systemPrompt = resolveSystemPromptFromIntent(intentDecision);
+        String planModeContext = buildPlanModeContext(planMode);
         String expertContext = chatExpertContextService.buildExpertContext(selectedExpertCode);
         String skillContext = chatSkillContextService.buildSkillContext(selectedSkillCodes);
         String searchEvidenceContext = buildSearchEvidenceContext(intentDecision, searchReferences);
         if (
             StrUtil.isBlank(systemPrompt)
+            && StrUtil.isBlank(planModeContext)
             && StrUtil.isBlank(expertContext)
             && StrUtil.isBlank(skillContext)
             && StrUtil.isBlank(searchEvidenceContext)
@@ -2552,6 +2585,9 @@ public class ChatApplicationService {
         List<String> promptSegments = new ArrayList<>();
         if (StrUtil.isNotBlank(systemPrompt)) {
             promptSegments.add(systemPrompt);
+        }
+        if (StrUtil.isNotBlank(planModeContext)) {
+            promptSegments.add(planModeContext);
         }
         if (StrUtil.isNotBlank(searchEvidenceContext)) {
             promptSegments.add(searchEvidenceContext);
@@ -2576,6 +2612,23 @@ public class ChatApplicationService {
         ));
         aiHistory.addAll(plainAiMessages(history));
         return aiHistory;
+    }
+
+    /**
+     * 构造 CLI Plan mode 运行约束，避免计划模式下直接执行写入类操作。
+     * @param planMode 是否开启计划模式。
+     * @return 可注入模型的系统提示片段。
+     */
+    private String buildPlanModeContext(boolean planMode) {
+        if (!planMode) {
+            return "";
+        }
+        return """
+            # Plan mode
+            当前请求来自 CLI Plan mode。请优先给出任务拆解、风险点、需要确认的决策和建议执行顺序。
+            除非用户明确要求继续执行，禁止主动调用会修改文件、执行命令或产生外部副作用的工具；如需读取上下文，可只使用只读工具并说明读取目的。
+            回答应收敛为可执行计划，不要把计划模式伪装成已经完成实现。
+            """.trim();
     }
 
     /**

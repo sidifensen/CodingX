@@ -95,7 +95,7 @@ public class CodingXTuiModel implements Model {
     private StringBuilder activeAssistantText;
 
     /**
-     * 本地计划模式开关，第一阶段只影响状态栏文案。
+     * 本地计划模式开关，会随任务提交传给后端聊天流。
      */
     private boolean planMode;
 
@@ -270,6 +270,7 @@ public class CodingXTuiModel implements Model {
             streamExecutor.submit(() -> streamingEventSource.startTurn(
                 normalizedTask,
                 workspace,
+                planMode,
                 event -> program.send(new AgentEventsMessage(List.of(event)))
             ));
             refreshViewport();
@@ -277,7 +278,7 @@ public class CodingXTuiModel implements Model {
         }
 
         // 单测和 mock 事件源仍走同步路径，便于不启动真实 Program 也能验证完整 transcript。
-        appendAgentEvents(eventSource.startTurn(normalizedTask, workspace));
+        appendAgentEvents(eventSource.startTurn(normalizedTask, workspace, planMode));
         refreshViewport();
     }
 

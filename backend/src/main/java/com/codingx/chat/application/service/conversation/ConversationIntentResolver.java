@@ -83,9 +83,20 @@ public class ConversationIntentResolver {
         ));
         try {
             String raw = aiPromptExecutionService.complete(prompt, question);
-            return parseCandidates(raw, nodeByCode);
+            List<ConversationIntentCandidate> parsedCandidates = parseCandidates(raw, nodeByCode);
+            if (!parsedCandidates.isEmpty()) {
+                return parsedCandidates;
+            }
+            // 步骤 3：模型返回普通文本或无有效节点时，同样降级到配置文本匹配，避免上层拿到空候选。
+            List<ConversationIntentCandidate> fallbackCandidates = fallbackCandidates(question, leafNodes, nodeByCode, examplesByCode);
+            log.warn(
+                "意图识别返回空候选，使用兜底候选: 问题={}, 候选数={}",
+                StrUtil.maxLength(question, 120),
+                fallbackCandidates.size()
+            );
+            return fallbackCandidates;
         } catch (Exception exception) {
-            // 步骤 3：模型不可用或输出异常时降级到配置文本匹配，避免意图链路完全中断。
+            // 步骤 4：模型不可用或输出异常时降级到配置文本匹配，避免意图链路完全中断。
             List<ConversationIntentCandidate> fallbackCandidates = fallbackCandidates(question, leafNodes, nodeByCode, examplesByCode);
             log.warn(
                 "意图识别失败，使用兜底候选: 问题={}, 候选数={}",

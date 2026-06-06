@@ -3876,10 +3876,32 @@ describe('ChatView', () => {
 
     fireEvent.click(screen.getByTestId('process-command-summary-toggle-967-tool-call-shell-967-a'));
 
+    const firstCommandRow = screen.getByTestId(
+      'process-command-run-row-967-tool-call-shell-967-a-Get-ChildItem',
+    );
+    const secondCommandRow = screen.getByTestId(
+      'process-command-run-row-967-tool-call-shell-967-a-rg-files',
+    );
+    expect(firstCommandRow).toHaveTextContent('已运行 Get-ChildItem');
+    expect(secondCommandRow).toHaveTextContent('已运行 rg --files');
+    expect(firstCommandRow).toHaveAttribute('aria-expanded', 'false');
+    expect(secondCommandRow).toHaveAttribute('aria-expanded', 'false');
+    expect(within(tracePanel).queryByText('$ Get-ChildItem')).not.toBeInTheDocument();
+    expect(within(tracePanel).queryByText(/package\.json/)).not.toBeInTheDocument();
+    expect(within(tracePanel).queryByText('$ rg --files')).not.toBeInTheDocument();
+    expect(within(tracePanel).queryByText(/src\/App\.tsx/)).not.toBeInTheDocument();
+
+    fireEvent.click(firstCommandRow);
     expect(within(tracePanel).getByText('$ Get-ChildItem')).toBeInTheDocument();
     expect(within(tracePanel).getByText(/package\.json/)).toBeInTheDocument();
+    expect(firstCommandRow).toHaveAttribute('aria-expanded', 'true');
+    expect(within(tracePanel).queryByText('$ rg --files')).not.toBeInTheDocument();
+    expect(within(tracePanel).queryByText(/src\/App\.tsx/)).not.toBeInTheDocument();
+
+    fireEvent.click(secondCommandRow);
     expect(within(tracePanel).getByText('$ rg --files')).toBeInTheDocument();
     expect(within(tracePanel).getByText(/src\/App\.tsx/)).toBeInTheDocument();
+    expect(secondCommandRow).toHaveAttribute('aria-expanded', 'true');
   });
 
   /**

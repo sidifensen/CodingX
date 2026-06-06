@@ -53,7 +53,8 @@ public class ChatStreamController {
         @RequestParam(required = false) String runtimeTarget,
         @RequestParam(required = false) String repositoryPath,
         @RequestParam(required = false) String messages,
-        @RequestParam(required = false) String attachmentIds
+        @RequestParam(required = false) String attachmentIds,
+        @RequestParam(required = false) Boolean planMode
     ) {
         // 步骤 1：Controller 仅做登录入口校验，业务权限和参数解析下沉到应用服务。
         StpUtil.checkLogin();
@@ -72,7 +73,8 @@ public class ChatStreamController {
                 runtimeTarget,
                 repositoryPath,
                 messages,
-                attachmentIds
+                attachmentIds,
+                planMode
             ),
             userId
         );
@@ -86,7 +88,54 @@ public class ChatStreamController {
      * @return SSE emitter。
      */
     public SseEmitter streamChat(String question, Long conversationId, Boolean deepThinking) {
-        return streamChat(question, conversationId, null, deepThinking, null, null, null, null, null, null, null, null);
+        return streamChat(question, conversationId, null, deepThinking, null, null, null, null, null, null, null, null, null);
+    }
+
+    /**
+     * 兼容旧的 HTTP 参数封装调用，未传 planMode 时按普通聊天模式处理。
+     * @param question 用户问题。
+     * @param conversationId 会话标识。
+     * @param workspaceId 工作空间标识。
+     * @param deepThinking 是否深度思考。
+     * @param mcpCodes 显式 MCP 编码。
+     * @param skillCodes 显式技能编码。
+     * @param skillPaths 技能本地路径 JSON。
+     * @param expertCode 专家编码。
+     * @param runtimeTarget 运行目标。
+     * @param repositoryPath 当前仓库路径。
+     * @param messages 结构化消息 JSON。
+     * @param attachmentIds 附件主键列表。
+     * @return SSE emitter。
+     */
+    public SseEmitter streamChat(
+        String question,
+        Long conversationId,
+        Long workspaceId,
+        Boolean deepThinking,
+        String mcpCodes,
+        String skillCodes,
+        String skillPaths,
+        String expertCode,
+        String runtimeTarget,
+        String repositoryPath,
+        String messages,
+        String attachmentIds
+    ) {
+        return streamChat(
+            question,
+            conversationId,
+            workspaceId,
+            deepThinking,
+            mcpCodes,
+            skillCodes,
+            skillPaths,
+            expertCode,
+            runtimeTarget,
+            repositoryPath,
+            messages,
+            attachmentIds,
+            null
+        );
     }
 
     /**
@@ -127,7 +176,8 @@ public class ChatStreamController {
             null,
             repositoryPath,
             messages,
-            attachmentIds
+            attachmentIds,
+            null
         );
     }
 
@@ -147,7 +197,7 @@ public class ChatStreamController {
         String mcpCodes,
         String skillCodes
     ) {
-        return streamChat(question, conversationId, null, deepThinking, mcpCodes, skillCodes, null, null, null, null, null, null);
+        return streamChat(question, conversationId, null, deepThinking, mcpCodes, skillCodes, null, null, null, null, null, null, null);
     }
 
     /**
@@ -168,7 +218,7 @@ public class ChatStreamController {
         String skillCodes,
         String messages
     ) {
-        return streamChat(question, conversationId, null, deepThinking, mcpCodes, skillCodes, null, null, null, null, messages, null);
+        return streamChat(question, conversationId, null, deepThinking, mcpCodes, skillCodes, null, null, null, null, messages, null, null);
     }
 
     /**
@@ -191,7 +241,7 @@ public class ChatStreamController {
         String repositoryPath,
         String messages
     ) {
-        return streamChat(question, conversationId, null, deepThinking, mcpCodes, skillCodes, null, null, null, repositoryPath, messages, null);
+        return streamChat(question, conversationId, null, deepThinking, mcpCodes, skillCodes, null, null, null, repositoryPath, messages, null, null);
     }
 
     /**

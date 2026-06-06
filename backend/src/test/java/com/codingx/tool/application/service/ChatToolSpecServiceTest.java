@@ -4,11 +4,13 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.codingx.mcp.application.service.McpServerRuntimeService;
 import com.codingx.tool.domain.model.ChatTool;
 import com.codingx.tool.domain.repository.ChatToolRepository;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
 
 /**
  * 验证模型可见工具定义只能来自真实可执行且已启用的 Java 工具。
@@ -67,12 +69,17 @@ class ChatToolSpecServiceTest {
         };
         ChatToolRegistry registry = new ChatToolRegistry(List.of(executor));
         registry.init();
-        ChatToolSpecService service = new ChatToolSpecService(repository, registry);
+        ChatToolSpecService service = new ChatToolSpecService(repository, registry, new LocalToolAliasService());
 
         List<ChatToolSpec> specs = service.listModelVisibleToolSpecs();
         List<String> names = specs.stream().map(ChatToolSpec::name).toList();
 
-        assertEquals(List.of("read", "bash"), names);
+        assertTrue(names.contains("read"));
+        assertTrue(names.contains("ReadFile"));
+        assertTrue(names.contains("bash"));
+        assertTrue(names.contains("Bash"));
+        assertFalse(names.contains("spawn_agent"));
+        assertFalse(names.contains("fake_tool"));
         ChatToolSpec readSpec = specs.getFirst();
         assertTrue(readSpec.description().contains("读取文件"));
         assertTrue(readSpec.parameters().containsKey("properties"));
@@ -108,15 +115,88 @@ class ChatToolSpecServiceTest {
         };
         ChatToolRegistry registry = new ChatToolRegistry(List.of(executor));
         registry.init();
-        ChatToolSpecService service = new ChatToolSpecService(repository, registry);
+        ChatToolSpecService service = new ChatToolSpecService(repository, registry, new LocalToolAliasService());
 
         List<ChatToolSpec> specs = service.listModelVisibleToolSpecs();
+        List<String> names = specs.stream().map(ChatToolSpec::name).toList();
 
-        assertEquals(shortToolCodes, specs.stream().map(ChatToolSpec::name).toList());
-        for (ChatToolSpec spec : specs) {
+        assertTrue(names.containsAll(shortToolCodes));
+        for (ChatToolSpec spec : specs.stream().filter(spec -> shortToolCodes.contains(spec.name())).toList()) {
             assertTrue(spec.parameters().containsKey("properties"));
             assertTrue(String.valueOf(spec.description()).contains(spec.name()));
         }
+    }
+
+    /**
+     * Claude Code 风格六大工具名应作为模型可见别名暴露，同时记录真实执行器编码用于后端归一化。
+     */
+    @Test
+    void listModelVisibleSpecsIncludesClaudeCodeAliasToolNames() {
+        List<String> shortToolCodes = List.of("read", "write", "edit", "bash", "grep", "find", "ls");
+        ChatToolRepository repository = new InMemoryChatToolRepository(shortToolCodes.stream()
+            .map(toolCode -> ChatTool.builder()
+                .toolCode(toolCode)
+                .displayName(toolCode)
+                .description(toolCode + " 工具")
+                .enabled(1)
+                .sortNo(shortToolCodes.indexOf(toolCode) + 1)
+                .deleted(0)
+                .build())
+            .toList());
+        ChatToolExecutor executor = new ChatToolExecutor() {
+            @Override
+            public List<String> toolCodes() {
+                return shortToolCodes;
+            }
+
+            @Override
+            public ChatToolExecutionResult execute(String toolCode, String question) {
+                return new ChatToolExecutionResult(toolCode, "ok", Map.of());
+            }
+        };
+        ChatToolRegistry registry = new ChatToolRegistry(List.of(executor));
+        registry.init();
+        ChatToolSpecService service = new ChatToolSpecService(repository, registry, new LocalToolAliasService());
+
+        Map<String, String> aliasToCanonical = service.listModelVisibleToolSpecs().stream()
+            .filter(spec -> !shortToolCodes.contains(spec.name()))
+            .collect(java.util.stream.Collectors.toMap(ChatToolSpec::name, ChatToolSpec::canonicalToolCode));
+
+        assertEquals("read", aliasToCanonical.get("ReadFile"));
+        assertEquals("write", aliasToCanonical.get("WriteFile"));
+        assertEquals("edit", aliasToCanonical.get("EditFile"));
+        assertEquals("bash", aliasToCanonical.get("Bash"));
+        assertEquals("find", aliasToCanonical.get("Glob"));
+        assertEquals("grep", aliasToCanonical.get("Grep"));
+    }
+
+    /**
+     * 已发现的外部 MCP 工具应合并进模型工具清单，保证模型能直接发起 mcp__server__tool 调用。
+     */
+    @Test
+    void listModelVisibleSpecsIncludesDiscoveredExternalMcpTools() {
+        ChatToolRepository repository = new InMemoryChatToolRepository(List.of());
+        ChatToolRegistry registry = new ChatToolRegistry(List.of());
+        registry.init();
+        McpServerRuntimeService mcpServerRuntimeService = Mockito.mock(McpServerRuntimeService.class);
+        Mockito.when(mcpServerRuntimeService.listDiscoveredToolSpecs()).thenReturn(List.of(
+            new ChatToolSpec(
+                "mcp__github__search",
+                "Search repositories",
+                Map.of("type", "object", "properties", Map.of()),
+                "mcp__github__search"
+            )
+        ));
+        ChatToolSpecService service = new ChatToolSpecService(
+            repository,
+            registry,
+            new LocalToolAliasService(),
+            mcpServerRuntimeService
+        );
+
+        List<ChatToolSpec> specs = service.listModelVisibleToolSpecs();
+
+        assertEquals(List.of("mcp__github__search"), specs.stream().map(ChatToolSpec::name).toList());
     }
 
     /**
@@ -149,7 +229,7 @@ class ChatToolSpecServiceTest {
         };
         ChatToolRegistry registry = new ChatToolRegistry(List.of(executor));
         registry.init();
-        ChatToolSpecService service = new ChatToolSpecService(repository, registry);
+        ChatToolSpecService service = new ChatToolSpecService(repository, registry, new LocalToolAliasService());
 
         ChatToolSpec bashSpec = service.listModelVisibleToolSpecs().getFirst();
         Map<String, Object> properties = (Map<String, Object>) bashSpec.parameters().get("properties");
@@ -194,7 +274,7 @@ class ChatToolSpecServiceTest {
         };
         ChatToolRegistry registry = new ChatToolRegistry(List.of(executor));
         registry.init();
-        ChatToolSpecService service = new ChatToolSpecService(repository, registry);
+        ChatToolSpecService service = new ChatToolSpecService(repository, registry, new LocalToolAliasService());
 
         ChatToolSpec writeSpec = service.listModelVisibleToolSpecs().getFirst();
         Map<String, Object> properties = (Map<String, Object>) writeSpec.parameters().get("properties");

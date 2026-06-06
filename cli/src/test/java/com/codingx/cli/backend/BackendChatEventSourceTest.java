@@ -75,6 +75,7 @@ class BackendChatEventSourceTest {
         assertEquals("local", capturedRequest.query.get("runtimeTarget"));
         assertEquals(workspace.toAbsolutePath().normalize().toString(), capturedRequest.query.get("repositoryPath"));
         assertEquals("12345", capturedRequest.query.get("conversationId"));
+        assertEquals("false", capturedRequest.query.get("planMode"));
 
         assertTrue(events.stream().anyMatch(event -> event.eventType() == AgentEventType.TURN_STARTED));
         assertTrue(events.stream().anyMatch(event -> event.eventType() == AgentEventType.ASSISTANT_DELTA
@@ -121,6 +122,21 @@ class BackendChatEventSourceTest {
         assertEquals("expired-token", capturedRequest.headers.get("satoken"));
         assertTrue(events.stream().anyMatch(event -> event.eventType() == AgentEventType.ERROR
             && "请先登录".equals(event.payloadText("message"))));
+    }
+
+    @Test
+    void startTurnShouldSendPlanModeQueryParam() throws Exception {
+        Path workspace = Files.createDirectories(tempDir.resolve("workspace"));
+        CliConfigStore configStore = new CliConfigStore(tempDir.resolve("home"));
+        CapturedRequest capturedRequest = new CapturedRequest();
+        server = startServer(capturedRequest, 200, sse(block("done", "{\"conversationId\":67890}")));
+        configStore.save(new CliConfig(baseUrl(), "token-123", "conservative", null));
+
+        BackendChatEventSource eventSource = new BackendChatEventSource(configStore);
+        eventSource.startTurn("先规划实现步骤", workspace, true, ignored -> {
+        });
+
+        assertEquals("true", capturedRequest.query.get("planMode"));
     }
 
     /**

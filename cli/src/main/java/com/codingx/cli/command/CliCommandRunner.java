@@ -1,5 +1,6 @@
 package com.codingx.cli.command;
 
+import com.codingx.cli.auth.CliAuthService;
 import com.codingx.cli.config.CliConfig;
 import com.codingx.cli.config.CliConfigStore;
 import com.codingx.cli.tui.TuiLauncher;
@@ -20,15 +21,23 @@ public class CliCommandRunner {
     private final TuiLauncher tuiLauncher;
 
     /**
+     * CLI 登录服务，用于浏览器授权和设备码授权。
+     */
+    private final CliAuthService cliAuthService;
+
+    /**
      * @param configStore 用户级配置读写器。
      * @param tuiLauncher TUI 启动器。
+     * @param cliAuthService CLI 登录服务，负责浏览器授权和设备码授权。
      */
     public CliCommandRunner(
         CliConfigStore configStore,
-        TuiLauncher tuiLauncher
+        TuiLauncher tuiLauncher,
+        CliAuthService cliAuthService
     ) {
         this.configStore = configStore;
         this.tuiLauncher = tuiLauncher;
+        this.cliAuthService = cliAuthService;
     }
 
     /**
@@ -43,11 +52,30 @@ public class CliCommandRunner {
         }
         return switch (args[0]) {
             case "login" -> login(args);
+            case "auth" -> auth(args);
             case "tui" -> launchTui();
             case "exec" -> tuiOnly();
             case "resume", "sessions" -> tuiOnly();
             default -> launchTui();
         };
+    }
+
+    /**
+     * 执行 CLI 认证命令。
+     *
+     * @param args 命令行参数。
+     * @return 认证命令结果。
+     */
+    private Result auth(String[] args) {
+        if (args.length < 2 || !"login".equals(args[1])) {
+            return new Result(1, "用法: codingx auth login [--device]" + System.lineSeparator());
+        }
+        boolean success = args.length >= 3 && "--device".equals(args[2])
+            ? cliAuthService.loginWithDeviceCode()
+            : cliAuthService.loginWithBrowser();
+        return new Result(success ? 0 : 1, success
+            ? "CLI 登录成功" + System.lineSeparator()
+            : "CLI 登录失败" + System.lineSeparator());
     }
 
     /**

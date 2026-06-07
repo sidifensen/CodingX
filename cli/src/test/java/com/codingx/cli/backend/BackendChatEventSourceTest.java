@@ -120,6 +120,7 @@ class BackendChatEventSourceTest {
         List<AgentEvent> events = eventSource.startTurn("分析登录态", workspace);
 
         assertEquals("expired-token", capturedRequest.headers.get("satoken"));
+        assertTrue(capturedRequest.headers.get("accept").contains("application/json"));
         assertTrue(events.stream().anyMatch(event -> event.eventType() == AgentEventType.ERROR
             && "请先登录".equals(event.payloadText("message"))));
     }

@@ -131,7 +131,7 @@ public class BackendChatEventSource implements StreamingAgentEventSource {
         if (StrUtil.isNotBlank(config.token())) {
             builder.header("satoken", config.token().trim());
         }
-        builder.header("Accept", "text/event-stream");
+        builder.header("Accept", "text/event-stream, application/json");
         return builder.build();
     }
 

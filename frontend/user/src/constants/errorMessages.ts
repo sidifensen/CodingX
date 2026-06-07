@@ -12,4 +12,6 @@ export const UserErrorMessages = {
   CHAT_ATTACHMENT_UPLOAD_FAILED: '附件上传失败',
   CHAT_QUEUE_BUSY: '当前会话并发已满，请稍后重试',
   CHAT_QUEUE_UNAVAILABLE: '当前会话暂不可执行，请稍后重试',
+  CLI_AUTH_PARAMS_INVALID: 'CLI 登录参数不完整，请回到终端重新发起登录',
+  CLI_AUTH_AUTHORIZE_FAILED: 'CLI 授权失败，请回到终端重试',
 } as const;

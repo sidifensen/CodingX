@@ -1,6 +1,7 @@
 package com.codingx.cli.command;
 
 import com.codingx.cli.config.CliConfigStore;
+import com.codingx.cli.auth.CliAuthService;
 import com.codingx.cli.tui.TuiLauncher;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -24,7 +25,8 @@ class CliCommandRunnerTest {
         FakeTuiLauncher tuiLauncher = new FakeTuiLauncher();
         CliCommandRunner runner = new CliCommandRunner(
             new CliConfigStore(tempDir.resolve("home")),
-            tuiLauncher
+            tuiLauncher,
+            new FakeCliAuthService()
         );
 
         CliCommandRunner.Result result = runner.run(new String[] {});
@@ -39,7 +41,8 @@ class CliCommandRunnerTest {
         FakeTuiLauncher tuiLauncher = new FakeTuiLauncher();
         CliCommandRunner runner = new CliCommandRunner(
             new CliConfigStore(tempDir.resolve("home")),
-            tuiLauncher
+            tuiLauncher,
+            new FakeCliAuthService()
         );
 
         CliCommandRunner.Result result = runner.run(new String[] {"tui"});
@@ -54,7 +57,8 @@ class CliCommandRunnerTest {
         FakeTuiLauncher tuiLauncher = new FakeTuiLauncher();
         CliCommandRunner runner = new CliCommandRunner(
             new CliConfigStore(tempDir.resolve("home")),
-            tuiLauncher
+            tuiLauncher,
+            new FakeCliAuthService()
         );
 
         CliCommandRunner.Result result = runner.run(new String[] {"exec", "分析这个项目"});
@@ -69,7 +73,8 @@ class CliCommandRunnerTest {
         FakeTuiLauncher tuiLauncher = new FakeTuiLauncher();
         CliCommandRunner runner = new CliCommandRunner(
             new CliConfigStore(tempDir.resolve("home")),
-            tuiLauncher
+            tuiLauncher,
+            new FakeCliAuthService()
         );
 
         CliCommandRunner.Result resumeResult = runner.run(new String[] {"resume"});
@@ -87,7 +92,8 @@ class CliCommandRunnerTest {
         FakeTuiLauncher tuiLauncher = new FakeTuiLauncher();
         CliCommandRunner runner = new CliCommandRunner(
             new CliConfigStore(tempDir.resolve("home")),
-            tuiLauncher
+            tuiLauncher,
+            new FakeCliAuthService()
         );
 
         CliCommandRunner.Result result = runner.run(new String[] {"login", "http://localhost:5001", "token-123"});
@@ -96,6 +102,42 @@ class CliCommandRunnerTest {
         assertEquals(0, tuiLauncher.launchCount());
         assertTrue(result.output().contains("登录配置已保存"));
         assertTrue(Files.exists(tempDir.resolve("home").resolve(".codingx").resolve("cli.yml")));
+    }
+
+    @Test
+    void authLoginShouldUseBrowserLoginWithoutLaunchingTui() {
+        FakeTuiLauncher tuiLauncher = new FakeTuiLauncher();
+        FakeCliAuthService authService = new FakeCliAuthService();
+        CliCommandRunner runner = new CliCommandRunner(
+            new CliConfigStore(tempDir.resolve("home")),
+            tuiLauncher,
+            authService
+        );
+
+        CliCommandRunner.Result result = runner.run(new String[] {"auth", "login"});
+
+        assertEquals(0, result.exitCode());
+        assertEquals(0, tuiLauncher.launchCount());
+        assertEquals(1, authService.browserLoginCount);
+        assertTrue(result.output().contains("CLI 登录成功"));
+    }
+
+    @Test
+    void authLoginDeviceShouldUseDeviceCodeWithoutLaunchingTui() {
+        FakeTuiLauncher tuiLauncher = new FakeTuiLauncher();
+        FakeCliAuthService authService = new FakeCliAuthService();
+        CliCommandRunner runner = new CliCommandRunner(
+            new CliConfigStore(tempDir.resolve("home")),
+            tuiLauncher,
+            authService
+        );
+
+        CliCommandRunner.Result result = runner.run(new String[] {"auth", "login", "--device"});
+
+        assertEquals(0, result.exitCode());
+        assertEquals(0, tuiLauncher.launchCount());
+        assertEquals(1, authService.deviceLoginCount);
+        assertTrue(result.output().contains("CLI 登录成功"));
     }
 
     /**
@@ -115,6 +157,39 @@ class CliCommandRunnerTest {
 
         int launchCount() {
             return launchCount;
+        }
+    }
+
+    /**
+     * 测试专用认证服务，只记录调用次数，避免命令测试打开真实浏览器。
+     */
+    private static class FakeCliAuthService extends CliAuthService {
+
+        /**
+         * 浏览器登录调用次数。
+         */
+        private int browserLoginCount;
+
+        /**
+         * 设备码登录调用次数。
+         */
+        private int deviceLoginCount;
+
+        FakeCliAuthService() {
+            super(null, null, ignored -> {
+            });
+        }
+
+        @Override
+        public boolean loginWithBrowser() {
+            browserLoginCount++;
+            return true;
+        }
+
+        @Override
+        public boolean loginWithDeviceCode() {
+            deviceLoginCount++;
+            return true;
         }
     }
 }

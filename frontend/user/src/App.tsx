@@ -8,6 +8,7 @@ import AutomationView from './views/AutomationView';
 import McpView from './views/McpView';
 import SkillsView from './views/SkillsView';
 import ExpertsView from './views/ExpertsView';
+import CliLoginView from './views/CliLoginView';
 import Sidebar from './components/Sidebar';
 import LoginModal from './components/auth/LoginModal';
 import DesktopTitleBar from './components/DesktopTitleBar';
@@ -42,10 +43,18 @@ const PATH_VIEW_MAP: Record<string, ViewType> = Object.entries(VIEW_ROUTE_PATHS)
 );
 const CONVERSATION_ID_QUERY_KEY = 'conversationId';
 
+export default function App() {
+  // CLI 登录页是独立授权面，不启动聊天工作区，避免无关接口请求干扰终端登录。
+  if (isCliLoginRoute(window.location.pathname)) {
+    return <CliLoginView />;
+  }
+  return <MainApp />;
+}
+
 /**
  * 渲染前端应用壳层，并管理视图、主题、移动端导航与登录弹窗状态。
  */
-export default function App() {
+function MainApp() {
   // 步骤：维护当前激活的主视图，首次进入时从地址栏路径恢复页面级路由。
   const [activeView, setActiveView] = useState<ViewType>(() => parseViewRoute(window.location.pathname));
   // 步骤：维护当前深色主题开关状态。
@@ -478,4 +487,13 @@ function parseSharedChatRoute(pathname: string, search: string) {
     shareToken: decodeURIComponent(matched[1] ?? ''),
     messageIds,
   };
+}
+
+/**
+ * 判断当前路径是否为 CLI 专用登录授权页。
+ * @param pathname 当前浏览器路径。
+ * @returns true 表示渲染 CLI 登录页。
+ */
+function isCliLoginRoute(pathname: string): boolean {
+  return pathname === '/cli-login';
 }

@@ -12,7 +12,10 @@ import {
   CurrentMcpItem,
   CurrentSkillItem,
   ExecutionStepItem,
+  LongTermMemoryItem,
+  LongTermMemoryStatus,
   McpItem,
+  ProjectProfileView,
   ReferenceItem,
   SharedConversationPayload,
   SampleQuestionItem,
@@ -442,8 +445,20 @@ export class ChatApi {
   static async bindWorkspaceRepository(
     token: string,
     repositoryPath: string,
-  ): Promise<{ repositoryPath: string; workspaceId: string; workspaceName: string }> {
-    const envelope = await this.request<{ repositoryPath: string; workspaceId: string; workspaceName: string }>(
+  ): Promise<{
+    repositoryPath: string;
+    workspaceId: string;
+    workspaceName: string;
+    projectProfile: ProjectProfileView | null;
+    pendingMemoryCount: number;
+  }> {
+    const envelope = await this.request<{
+      repositoryPath: string;
+      workspaceId: string;
+      workspaceName: string;
+      projectProfile?: ProjectProfileView | null;
+      pendingMemoryCount?: number | null;
+    }>(
       '/api/chat/workspace/bind-repository',
       token,
       {
@@ -451,7 +466,63 @@ export class ChatApi {
         body: JSON.stringify({ repositoryPath }),
       },
     );
-    return envelope.data;
+    return {
+      repositoryPath: String(envelope.data.repositoryPath ?? ''),
+      workspaceId: String(envelope.data.workspaceId ?? ''),
+      workspaceName: String(envelope.data.workspaceName ?? ''),
+      projectProfile: envelope.data.projectProfile ?? null,
+      pendingMemoryCount: Number(envelope.data.pendingMemoryCount ?? 0),
+    };
+  }
+
+  /**
+   * 查询当前用户可见的长期记忆，供聊天页展示候选确认和已启用上下文。
+   * @param token 当前登录令牌。
+   * @param workspaceId 当前工作空间 ID，可为空。
+   * @param status 可选状态筛选。
+   * @returns 归一化后的长期记忆列表。
+   */
+  static async listLongTermMemories(
+    token: string,
+    workspaceId?: string | null,
+    status?: LongTermMemoryStatus | 'ALL' | null,
+  ): Promise<LongTermMemoryItem[]> {
+    const searchParams = new URLSearchParams();
+    if (workspaceId && workspaceId.trim().length > 0) {
+      searchParams.set('workspaceId', workspaceId.trim());
+    }
+    if (status && status.trim().length > 0 && status !== 'ALL') {
+      searchParams.set('status', status);
+    }
+    const queryString = searchParams.toString();
+    const envelope = await this.request<LongTermMemoryItem[]>(
+      queryString ? `/api/chat/memories?${queryString}` : '/api/chat/memories',
+      token,
+    );
+    return (envelope.data ?? []).map((item) => this.normalizeLongTermMemory(item));
+  }
+
+  /**
+   * 更新长期记忆状态，确认后才允许后续对话上下文回注。
+   * @param token 当前登录令牌。
+   * @param memoryId 长期记忆 ID。
+   * @param status 目标状态。
+   * @returns 更新后的长期记忆。
+   */
+  static async updateLongTermMemoryStatus(
+    token: string,
+    memoryId: string,
+    status: LongTermMemoryStatus,
+  ): Promise<LongTermMemoryItem> {
+    const envelope = await this.request<LongTermMemoryItem>(
+      `/api/chat/memories/${encodeURIComponent(memoryId)}/status`,
+      token,
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ status }),
+      },
+    );
+    return this.normalizeLongTermMemory(envelope.data);
   }
 
   /**
@@ -501,6 +572,26 @@ export class ChatApi {
       fileName: String(attachment.fileName ?? ''),
       fileSize: Number(attachment.fileSize ?? 0),
       status: String(attachment.status ?? ''),
+    };
+  }
+
+  /**
+   * 统一归一化长期记忆结构，避免后端 Long 主键和可空字段直接泄漏到页面层。
+   * @param memory 原始长期记忆。
+   * @returns 前端可直接消费的记忆对象。
+   */
+  private static normalizeLongTermMemory(memory: LongTermMemoryItem): LongTermMemoryItem {
+    return {
+      ...memory,
+      id: String(memory.id ?? ''),
+      userId: memory.userId == null ? null : String(memory.userId),
+      workspaceId: memory.workspaceId == null ? null : String(memory.workspaceId),
+      sourceConversationId:
+        memory.sourceConversationId == null ? null : String(memory.sourceConversationId),
+      sourceMessageId: memory.sourceMessageId == null ? null : String(memory.sourceMessageId),
+      content: String(memory.content ?? ''),
+      status: String(memory.status ?? 'PENDING'),
+      memoryScope: String(memory.memoryScope ?? 'USER'),
     };
   }
 

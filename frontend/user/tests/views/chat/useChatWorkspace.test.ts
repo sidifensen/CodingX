@@ -3201,6 +3201,96 @@ describe('useChatWorkspace', () => {
   });
 
   /**
+   * 本地目录绑定返回的项目画像和待确认记忆数量应同步进入工作台状态，供聊天页即时展示 Agent 上下文。
+   */
+  it('应在绑定本地工作空间后同步项目画像和待确认记忆数量', async () => {
+    window.localStorage.setItem(
+      'codingx.auth.session',
+      JSON.stringify({
+        token: 'token-123',
+        userId: '1002',
+        username: 'user',
+        displayName: 'CodingX User',
+        userType: 'USER',
+      }),
+    );
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.startsWith('/api/chat/conversations')) {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (
+        url === '/api/chat/sample-questions' ||
+        url === '/api/chat/experts' ||
+        url === '/api/chat/skills' ||
+        url === '/api/chat/mcps'
+      ) {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      throw new Error(`Unhandled fetch in workspace intelligence sync test: ${url}`);
+    });
+
+    const hostContext = {
+      hostType: 'desktop',
+      executionTargets: ['local'] as const,
+      capabilities: {
+        localFiles: true,
+        localFolderPicker: true,
+        shell: true,
+        browserAutomation: false,
+        desktopNotifications: false,
+        officeInterop: false,
+        localMcp: true,
+        windowControls: true,
+      },
+      localResource: {
+        boundRepositoryPath: 'D:/code/workspace-a',
+        workspaceId: '3001',
+        permissionGranted: true,
+      },
+    };
+    const bindWorkspacePath = vi.fn().mockResolvedValue({
+      repositoryPath: 'D:/code/workspace-b',
+      workspaceId: '3002',
+      workspaceName: 'workspace-b',
+      projectProfile: {
+        summary: 'Maven + Vite workspace',
+        moduleMapJson: '[{"name":"backend","path":"backend"}]',
+        testCommandsJson: '["mvn test","npm run build"]',
+        keyEntrypointsJson: '["backend/src/main/java/com/codingx/CodingXApplication.java"]',
+        riskPointsJson: '["缺少端到端测试"]',
+        agentContext: '项目包含后端、用户端和管理端。',
+      },
+      pendingMemoryCount: 2,
+    });
+
+    const { result } = renderHook(() =>
+      useChatWorkspace(true, {
+        hostContext,
+        bindWorkspacePath,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(result.current.isBootstrapping).toBe(false);
+    });
+
+    await act(async () => {
+      await result.current.setActiveWorkspacePath('D:/code/workspace-b');
+    });
+
+    expect(result.current.projectProfile?.summary).toBe('Maven + Vite workspace');
+    expect(result.current.pendingMemoryCount).toBe(2);
+  });
+
+  /**
    * 本地模式发送完成后应回查云端会话，确保后端 message 表成为历史主存储。
    */
   it('本地模式发送完成后应回查云端会话并刷新本地快照', async () => {

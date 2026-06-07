@@ -34,6 +34,7 @@ import com.codingx.common.exception.ConflictException;
 import java.util.Map;
 import com.codingx.common.exception.ForbiddenException;
 import com.codingx.expert.application.service.ChatExpertContextService;
+import com.codingx.governance.application.service.GovernanceAgentContextService;
 import com.codingx.governance.application.service.HookRuleService;
 import com.codingx.mcp.domain.repository.ChatMcpRepository;
 import com.codingx.mcp.domain.model.ChatMcp;
@@ -176,6 +177,9 @@ class ChatApplicationServiceTest {
 
     @Mock
     private HookRuleService hookRuleService;
+
+    @Mock
+    private GovernanceAgentContextService governanceAgentContextService;
 
     /**
      * ChatRuntimeGuardService 依赖。
@@ -451,6 +455,63 @@ class ChatApplicationServiceTest {
 
         verify(chatSkillContextService).buildSkillContext(List.of("weather_query"));
         verify(chatStreamPublisher).publishAssistantCompleted(eq(1L), any(Long.class), eq("技能已生效"), eq("技能对话"));
+        ChatExecutionContext.clear();
+    }
+
+    /**
+     * 项目画像和已确认长期记忆应作为治理上下文注入系统提示，并在完成后提取新的待确认候选。
+     */
+    @Test
+    void sendMessageInjectsGovernanceContextAndExtractsMemoryCandidatesAfterCompletion() {
+        bindRunContext();
+        ChatConversation conversation = ChatConversation.create(1L, "Governance", 1002L, 3001L, ChatConversationStatus.ACTIVE);
+        when(chatConversationRepository.requireById(1L)).thenReturn(conversation);
+        when(chatMessageRepository.findByConversationId(1L)).thenReturn(new ArrayList<>());
+        when(chatAttachmentService.requireOwnedAttachments(any(), eq(1L), eq(1002L))).thenReturn(List.of());
+        when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+            new ConversationRewriteResult("请记住我的代码风格偏好：优先写清楚业务注释", false, List.of("请记住我的代码风格偏好：优先写清楚业务注释"))
+        );
+        when(conversationIntentService.route("请记住我的代码风格偏好：优先写清楚业务注释", false)).thenReturn(
+            new ConversationIntentDecision("chat.normal", ConversationIntentAction.DIRECT, null)
+        );
+        when(chatIntentNodeRepository.findByIntentCode("chat.normal")).thenReturn(null);
+        when(chatSkillContextService.buildSkillContext(any())).thenReturn("");
+        when(chatExpertContextService.buildExpertContext(any())).thenReturn("");
+        when(governanceAgentContextService.buildAgentContext(1002L, 3001L, "请记住我的代码风格偏好：优先写清楚业务注释"))
+            .thenReturn("# 项目画像\n验证命令：cd backend && mvn test\n\n# 长期记忆\n代码风格偏好：业务注释");
+        when(conversationSummaryService.buildModelHistory(any(), any())).thenAnswer(invocation -> invocation.getArgument(1));
+        when(llmResponseCleaner.clean(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(conversationTitleService.generateTitle(any(), any())).thenReturn("长期记忆");
+        doAnswer(invocation -> {
+            @SuppressWarnings("unchecked")
+            List<ChatMessage> aiHistory = invocation.getArgument(0, List.class);
+            ChatMessage systemMessage = aiHistory.getFirst();
+            assertEquals(ChatMessageRole.SYSTEM, systemMessage.getRole());
+            assertTrue(systemMessage.getContent().contains("项目画像"));
+            assertTrue(systemMessage.getContent().contains("长期记忆"));
+            AiChatClient.StreamHandler handler = invocation.getArgument(2);
+            handler.onDelta("已生成待确认记忆候选。");
+            handler.onComplete();
+            return null;
+        }).when(aiChatClient).streamChat(any(), eq(false), any());
+
+        chatApplicationService.sendMessage(
+            new SendChatMessageCommand(1L, "请记住我的代码风格偏好：优先写清楚业务注释", false),
+            1002L
+        );
+
+        ArgumentCaptor<ChatMessage> messageCaptor = ArgumentCaptor.forClass(ChatMessage.class);
+        verify(chatMessageRepository, org.mockito.Mockito.times(2)).save(messageCaptor.capture());
+        verify(governanceAgentContextService).buildAgentContext(
+            1002L,
+            3001L,
+            "请记住我的代码风格偏好：优先写清楚业务注释"
+        );
+        verify(governanceAgentContextService).extractMemoryCandidates(
+            eq(conversation),
+            eq(messageCaptor.getAllValues().get(0)),
+            eq(messageCaptor.getAllValues().get(1))
+        );
         ChatExecutionContext.clear();
     }
 

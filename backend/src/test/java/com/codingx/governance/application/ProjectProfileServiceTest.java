@@ -25,10 +25,15 @@ class ProjectProfileServiceTest {
      */
     @Test
     void scanShouldDetectMavenAndNpmProjectMarkers(@TempDir Path tempDir) throws Exception {
-        Files.writeString(tempDir.resolve("pom.xml"), "<project></project>", StandardCharsets.UTF_8);
-        Files.writeString(tempDir.resolve("package.json"), "{\"scripts\":{\"build\":\"vite build\",\"test:run\":\"vitest run\"}}", StandardCharsets.UTF_8);
-        Files.createDirectories(tempDir.resolve("frontend/user"));
-        Files.writeString(tempDir.resolve("frontend/user/package.json"), "{\"scripts\":{\"build\":\"vite build\"}}", StandardCharsets.UTF_8);
+        Files.createDirectories(tempDir.resolve("backend/src/main/java/com/example"));
+        Files.createDirectories(tempDir.resolve("frontend/user/src"));
+        Files.createDirectories(tempDir.resolve("frontend/admin/src/pages"));
+        Files.writeString(tempDir.resolve("backend/pom.xml"), "<project></project>", StandardCharsets.UTF_8);
+        Files.writeString(tempDir.resolve("frontend/user/package.json"), "{\"scripts\":{\"build\":\"vite build\",\"test:run\":\"vitest run\"}}", StandardCharsets.UTF_8);
+        Files.writeString(tempDir.resolve("frontend/admin/package.json"), "{\"scripts\":{\"build\":\"vite build\",\"test:run\":\"vitest run --passWithNoTests\"}}", StandardCharsets.UTF_8);
+        Files.writeString(tempDir.resolve("frontend/user/src/main.tsx"), "import React from 'react';", StandardCharsets.UTF_8);
+        Files.writeString(tempDir.resolve("frontend/admin/src/main.tsx"), "import React from 'react';", StandardCharsets.UTF_8);
+        Files.writeString(tempDir.resolve("frontend/admin/src/pages/GiantPage.tsx"), "x".repeat(70_000), StandardCharsets.UTF_8);
         InMemoryProjectProfileRepository repository = new InMemoryProjectProfileRepository();
         ProjectProfileService service = new ProjectProfileService(repository);
 
@@ -37,8 +42,16 @@ class ProjectProfileServiceTest {
         assertTrue(profile.getSummary().contains("Maven"));
         assertTrue(profile.getTechStackJson().contains("Java"));
         assertTrue(profile.getTechStackJson().contains("Node"));
-        assertTrue(profile.getVerificationCommandsJson().contains("mvn test"));
+        assertTrue(profile.getVerificationCommandsJson().contains("cd backend && mvn test"));
         assertTrue(profile.getVerificationCommandsJson().contains("npm run build"));
+        assertTrue(profile.getModuleMapJson().contains("backend"));
+        assertTrue(profile.getModuleMapJson().contains("frontend/user"));
+        assertTrue(profile.getModuleMapJson().contains("frontend/admin"));
+        assertTrue(profile.getTestCommandsJson().contains("cd frontend/admin && npm run test:run"));
+        assertTrue(profile.getKeyEntrypointsJson().contains("frontend/user/src/main.tsx"));
+        assertTrue(profile.getRiskPointsJson().contains("GiantPage.tsx"));
+        assertTrue(profile.getAgentContext().contains("模块地图"));
+        assertTrue(profile.getAgentContext().contains("验证命令"));
         assertTrue(repository.savedProfiles.size() == 1);
     }
 

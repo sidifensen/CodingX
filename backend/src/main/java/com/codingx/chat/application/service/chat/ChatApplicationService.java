@@ -26,6 +26,7 @@ import com.codingx.common.error.ErrorMessageCatalog;
 import com.codingx.common.exception.ForbiddenException;
 import com.codingx.common.support.ai.AiToolCall;
 import com.codingx.expert.application.service.ChatExpertContextService;
+import com.codingx.governance.application.service.GovernanceAgentContextService;
 import com.codingx.governance.application.service.HookRuleService;
 import com.codingx.mcp.application.service.ChatMcpExecutionService;
 import com.codingx.mcp.application.service.ChatMcpQueryService;
@@ -141,6 +142,8 @@ public class ChatApplicationService {
     private final ChatToolExecutionService chatToolExecutionService;
     /** Hook 规则服务，记录工具调用前后和任务完成生命周期审计 */
     private final HookRuleService hookRuleService;
+    /** 治理上下文服务，负责把项目画像和已确认长期记忆注入模型，并在完成后提取待确认候选 */
+    private final GovernanceAgentContextService governanceAgentContextService;
     /** 会话 workspace 绑定服务，负责把本地空间映射为真实仓库目录 */
     private final ChatWorkspaceBindingService chatWorkspaceBindingService;
     /** Agent Loop 确定性规则协调器，负责轮次、完成原因和重复工具调用判断 */
@@ -434,6 +437,7 @@ public class ChatApplicationService {
             command.skillCodes(),
             command.expertCode(),
             searchReferences,
+            buildGovernanceAgentContext(conversation, rewrittenQuestion),
             command.planMode()
         );
         log.info(
@@ -854,6 +858,7 @@ public class ChatApplicationService {
             selectedSkillCodes,
             command.expertCode(),
             searchReferences,
+            buildGovernanceAgentContext(conversation, rewrittenQuestion),
             command.planMode()
         );
         log.info(
@@ -966,6 +971,7 @@ public class ChatApplicationService {
         chatConversationRepository.save(conversation);
         recordExecutionOutcome(conversation, userMessage.getId(), assistantMessage.getId(), intentDecision.intentCode(), intentDecision.action() == ConversationIntentAction.SEARCH, true, ChatMessageStatus.COMPLETED, null);
         finishTrace(runId, "SUCCESS", null);
+        extractGovernanceMemoryCandidates(conversation, userMessage, assistantMessage);
         chatStreamPublisher.publishAssistantCompleted(command.conversationId(), assistantMessage.getId(), assistantMessage.getContent(), conversation.getTitle());
     }
 
@@ -1038,6 +1044,7 @@ public class ChatApplicationService {
             selectedSkillCodes,
             command.expertCode(),
             List.of(),
+            "",
             command.planMode()
         );
         log.info(
@@ -1126,6 +1133,57 @@ public class ChatApplicationService {
      */
     private int sizeOf(java.util.Collection<?> values) {
         return values == null ? 0 : values.size();
+    }
+
+    /**
+     * 构建治理上下文片段，供持久化会话在模型输入前获取项目画像和已确认长期记忆。
+     * @param conversation 当前会话。
+     * @param rewrittenQuestion 本轮改写后的用户问题。
+     * @return 可注入 system prompt 的治理上下文，缺失服务或上下文为空时返回空字符串。
+     */
+    private String buildGovernanceAgentContext(ChatConversation conversation, String rewrittenQuestion) {
+        if (governanceAgentContextService == null || conversation == null) {
+            return "";
+        }
+        // 步骤 1：治理上下文只是模型输入增强，失败时不能阻断主聊天链路。
+        try {
+            return governanceAgentContextService.buildAgentContext(
+                conversation.getCreatedBy(),
+                conversation.getWorkspaceId(),
+                rewrittenQuestion
+            );
+        } catch (RuntimeException exception) {
+            log.warn("治理上下文构建失败: conversationId={}, message={}", conversation.getId(), exception.getMessage());
+            return "";
+        }
+    }
+
+    /**
+     * 助手成功完成后提取长期记忆候选，候选默认 PENDING，后续需用户或管理员确认。
+     * @param conversation 当前会话。
+     * @param userMessage 本轮用户消息。
+     * @param assistantMessage 本轮助手完成消息。
+     */
+    private void extractGovernanceMemoryCandidates(
+        ChatConversation conversation,
+        ChatMessage userMessage,
+        ChatMessage assistantMessage
+    ) {
+        if (governanceAgentContextService == null || conversation == null || userMessage == null || assistantMessage == null) {
+            return;
+        }
+        // 步骤 1：记忆提取属于成功回复后的附加动作，异常只记录日志，不回滚已完成回答。
+        try {
+            governanceAgentContextService.extractMemoryCandidates(conversation, userMessage, assistantMessage);
+        } catch (RuntimeException exception) {
+            log.warn(
+                "长期记忆候选提取失败: conversationId={}, userMessageId={}, assistantMessageId={}, message={}",
+                conversation.getId(),
+                userMessage.getId(),
+                assistantMessage.getId(),
+                exception.getMessage()
+            );
+        }
     }
 
     /**
@@ -2659,6 +2717,7 @@ public class ChatApplicationService {
         List<String> selectedSkillCodes,
         String selectedExpertCode,
         List<SearchReferenceCandidate> searchReferences,
+        String governanceContext,
         boolean planMode
     ) {
         String systemPrompt = resolveSystemPromptFromIntent(intentDecision);
@@ -2672,6 +2731,7 @@ public class ChatApplicationService {
             && StrUtil.isBlank(expertContext)
             && StrUtil.isBlank(skillContext)
             && StrUtil.isBlank(searchEvidenceContext)
+            && StrUtil.isBlank(governanceContext)
         ) {
             return history;
         }
@@ -2684,6 +2744,9 @@ public class ChatApplicationService {
         }
         if (StrUtil.isNotBlank(searchEvidenceContext)) {
             promptSegments.add(searchEvidenceContext);
+        }
+        if (StrUtil.isNotBlank(governanceContext)) {
+            promptSegments.add(governanceContext);
         }
         if (StrUtil.isNotBlank(expertContext)) {
             promptSegments.add(expertContext);

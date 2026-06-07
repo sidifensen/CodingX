@@ -540,8 +540,34 @@ export interface AdminGovernanceProjectProfile {
   techStackJson?: string;
   entrypointsJson?: string;
   verificationCommandsJson?: string;
+  moduleMapJson?: string;
+  testCommandsJson?: string;
+  keyEntrypointsJson?: string;
+  riskPointsJson?: string;
+  agentContext?: string;
   status?: string;
   scannedAt?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+/**
+ * 长期记忆治理记录，管理员可确认项目级/用户级候选或撤销错误记忆。
+ */
+export interface AdminGovernanceLongTermMemory {
+  id?: string | number;
+  memoryScope: string;
+  userId?: string | number;
+  workspaceId?: string | number;
+  memoryKey?: string;
+  content: string;
+  status: string;
+  sourceType?: string;
+  sourceConversationId?: string | number;
+  sourceMessageId?: string | number;
+  keywordJson?: string;
+  confidenceScore?: number | string;
+  lastUsedAt?: string;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -1199,6 +1225,38 @@ export class AdminChatApi {
       method: 'POST',
       body: JSON.stringify(payload),
     });
+  }
+
+  /**
+   * 查询长期记忆列表，支持按状态筛选。
+   * @param status 状态筛选，ALL 表示全部。
+   * @param limit 最大返回数量。
+   */
+  static async listLongTermMemories(status = 'ALL', limit = 100): Promise<AdminGovernanceLongTermMemory[]> {
+    const searchParams = new URLSearchParams();
+    searchParams.set('status', status);
+    searchParams.set('limit', String(limit));
+    return this.request<AdminGovernanceLongTermMemory[]>(
+      `/api/admin/governance/long-term-memories?${searchParams.toString()}`,
+    );
+  }
+
+  /**
+   * 更新长期记忆状态，供管理员确认或拒绝候选。
+   * @param id 长期记忆主键。
+   * @param status 目标状态。
+   */
+  static async updateLongTermMemoryStatus(
+    id: string | number,
+    status: 'ACTIVE' | 'REJECTED' | 'PENDING',
+  ): Promise<AdminGovernanceLongTermMemory> {
+    return this.request<AdminGovernanceLongTermMemory>(
+      `/api/admin/governance/long-term-memories/${encodeURIComponent(String(id))}/status`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ status }),
+      },
+    );
   }
 
   /**

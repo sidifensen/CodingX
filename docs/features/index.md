@@ -42,3 +42,4 @@
 ## Governance
 
 - [软件端治理工作台](governance/governed-workbench.md)
+- [项目画像与长期记忆](governance/project-profile-long-term-memory.md)

@@ -21,6 +21,8 @@ vi.mock('@/api/adminChatApi', () => ({
     listHookAudits: vi.fn(),
     listProjectProfiles: vi.fn(),
     scanProjectProfile: vi.fn(),
+    listLongTermMemories: vi.fn(),
+    updateLongTermMemoryStatus: vi.fn(),
     listGovernanceSlashCommands: vi.fn(),
     createGovernanceSlashCommand: vi.fn(),
     updateGovernanceSlashCommand: vi.fn(),
@@ -62,9 +64,34 @@ describe('GovernanceCenterPage', () => {
         summary: 'Maven + Vite workspace',
         techStackJson: '["Maven","Vite"]',
         verificationCommandsJson: '["mvn test","npm run build"]',
+        moduleMapJson: '[{"name":"backend","path":"backend"}]',
+        testCommandsJson: '["mvn test","npm run build"]',
+        keyEntrypointsJson: '["backend/src/main/java/com/codingx/CodingXApplication.java"]',
+        riskPointsJson: '["缺少端到端测试"]',
+        agentContext: '项目包含后端、用户端和管理端。',
         status: 'COMPLETED',
       },
     ]);
+    vi.mocked(AdminChatApi.listLongTermMemories).mockResolvedValue([
+      {
+        id: 9001,
+        memoryScope: 'PROJECT',
+        userId: 1002,
+        workspaceId: 3001,
+        content: '以后都按项目注释规范编写 Java 注释',
+        status: 'PENDING',
+        sourceConversationId: 2001,
+        keywordJson: '["注释规范"]',
+      },
+    ]);
+    vi.mocked(AdminChatApi.updateLongTermMemoryStatus).mockResolvedValue({
+      id: 9001,
+      memoryScope: 'PROJECT',
+      userId: 1002,
+      workspaceId: 3001,
+      content: '以后都按项目注释规范编写 Java 注释',
+      status: 'ACTIVE',
+    });
     vi.mocked(AdminChatApi.listGovernanceSlashCommands).mockResolvedValue([
       {
         id: 4,
@@ -125,6 +152,7 @@ describe('GovernanceCenterPage', () => {
     expect(screen.getByRole('tab', { name: '权限策略' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Hook' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: '项目画像' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: '长期记忆' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Slash Command' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: '审计' })).toBeInTheDocument();
     expect(container.querySelector('.ant-table')).toBeInTheDocument();
@@ -134,6 +162,10 @@ describe('GovernanceCenterPage', () => {
 
     fireEvent.click(screen.getByRole('tab', { name: '项目画像' }));
     expect(await screen.findByText('Maven + Vite workspace')).toBeInTheDocument();
+    expect(await screen.findByText('backend')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('tab', { name: '长期记忆' }));
+    expect(await screen.findByText('以后都按项目注释规范编写 Java 注释')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('tab', { name: 'Slash Command' }));
     expect(await screen.findByText('/review')).toBeInTheDocument();
@@ -170,5 +202,24 @@ describe('GovernanceCenterPage', () => {
       );
     });
     expect(confirmSpy).not.toHaveBeenCalled();
+  });
+
+  /**
+   * 管理员应能在长期记忆页签确认候选记忆，确认动作通过自定义按钮调用后端接口。
+   */
+  it('activates pending long-term memory from governance tab', async () => {
+    render(
+      <MemoryRouter>
+        <GovernanceCenterPage />
+      </MemoryRouter>,
+    );
+    await screen.findByText('禁止危险删除');
+
+    fireEvent.click(screen.getByRole('tab', { name: '长期记忆' }));
+    fireEvent.click(await screen.findByRole('button', { name: '确认长期记忆 9001' }));
+
+    await waitFor(() => {
+      expect(AdminChatApi.updateLongTermMemoryStatus).toHaveBeenCalledWith(9001, 'ACTIVE');
+    });
   });
 });

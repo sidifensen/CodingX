@@ -30,6 +30,16 @@ public class GovernanceProjectProfile {
     private String entrypointsJson;
     /** 建议验证命令 JSON 文本。 */
     private String verificationCommandsJson;
+    /** 模块地图 JSON 文本，描述后端、用户端、管理端等仓库组成。 */
+    private String moduleMapJson;
+    /** 测试命令 JSON 文本，记录按模块推断出的测试或构建命令。 */
+    private String testCommandsJson;
+    /** 关键入口 JSON 文本，记录启动类、前端入口、控制器和配置文件。 */
+    private String keyEntrypointsJson;
+    /** 风险点 JSON 文本，记录扫描时发现的维护风险或验证缺口。 */
+    private String riskPointsJson;
+    /** Agent 输入上下文，供聊天模型理解项目结构和验证方式。 */
+    private String agentContext;
     /** 扫描状态，例如 COMPLETED、FAILED。 */
     private String status;
     /** 扫描完成时间。 */

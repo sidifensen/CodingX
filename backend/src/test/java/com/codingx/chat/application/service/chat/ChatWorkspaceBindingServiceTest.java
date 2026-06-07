@@ -9,6 +9,9 @@ import cn.dev33.satoken.stp.StpUtil;
 import com.codingx.workspace.infrastructure.persistence.dataobject.WorkspaceDO;
 import com.codingx.workspace.infrastructure.persistence.mapper.WorkspaceMapper;
 import com.codingx.workspace.infrastructure.repository.WorkspaceRepositoryImpl;
+import com.codingx.governance.application.service.LongTermMemoryService;
+import com.codingx.governance.application.service.ProjectProfileService;
+import com.codingx.governance.domain.model.GovernanceProjectProfile;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import org.junit.jupiter.api.Test;
@@ -32,6 +35,12 @@ class ChatWorkspaceBindingServiceTest {
     @Mock
     private WorkspaceRepositoryImpl workspaceRepositoryImpl;
 
+    @Mock
+    private ProjectProfileService projectProfileService;
+
+    @Mock
+    private LongTermMemoryService longTermMemoryService;
+
     @InjectMocks
     private ChatWorkspaceBindingService chatWorkspaceBindingService;
 
@@ -53,6 +62,16 @@ class ChatWorkspaceBindingServiceTest {
             repoDir.toString().replace('\\', '/'),
             repoDir.getFileName().toString()
         )).thenReturn(workspace);
+        when(projectProfileService.scanWorkspace(8201L, repoDir.toAbsolutePath().normalize())).thenReturn(GovernanceProjectProfile.builder()
+            .workspaceId(8201L)
+            .summary("检测到 repo 项目")
+            .moduleMapJson("[{\"moduleCode\":\"backend\"}]")
+            .testCommandsJson("[\"cd backend && mvn test\"]")
+            .keyEntrypointsJson("[\"frontend/user/src/main.tsx\"]")
+            .riskPointsJson("[]")
+            .agentContext("# 项目画像")
+            .build());
+        when(longTermMemoryService.countPendingByUserAndWorkspace(1002L, 8201L)).thenReturn(3);
         try (MockedStatic<StpUtil> mocked = Mockito.mockStatic(StpUtil.class)) {
             mocked.when(StpUtil::getLoginIdAsLong).thenReturn(1002L);
 
@@ -68,6 +87,8 @@ class ChatWorkspaceBindingServiceTest {
             assertEquals(8201L, result.workspaceId());
             assertEquals(repoDir.toString().replace('\\', '/'), result.repositoryPath());
             assertEquals(repoDir.getFileName().toString(), result.workspaceName());
+            assertEquals("检测到 repo 项目", result.projectProfile().summary());
+            assertEquals(3, result.pendingMemoryCount());
         }
     }
 
@@ -90,6 +111,10 @@ class ChatWorkspaceBindingServiceTest {
             repoDir.toString().replace('\\', '/'),
             repoDir.getFileName().toString()
         )).thenReturn(existingWorkspace);
+        when(projectProfileService.scanWorkspace(8301L, repoDir.toAbsolutePath().normalize())).thenReturn(GovernanceProjectProfile.builder()
+            .workspaceId(8301L)
+            .summary("检测到 repo 项目")
+            .build());
         try (MockedStatic<StpUtil> mocked = Mockito.mockStatic(StpUtil.class)) {
             mocked.when(StpUtil::getLoginIdAsLong).thenReturn(1002L);
 

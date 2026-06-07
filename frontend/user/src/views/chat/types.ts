@@ -351,6 +351,44 @@ export interface McpCallItem {
 }
 
 /**
+ * 描述本地工作空间扫描出的项目画像摘要，供聊天页展示并作为 Agent 上下文提示来源。
+ */
+export interface ProjectProfileView {
+  summary?: string | null;
+  moduleMapJson?: string | null;
+  testCommandsJson?: string | null;
+  keyEntrypointsJson?: string | null;
+  riskPointsJson?: string | null;
+  agentContext?: string | null;
+}
+
+/**
+ * 长期记忆状态：候选必须确认后才会进入后续模型上下文回注。
+ */
+export type LongTermMemoryStatus = 'PENDING' | 'ACTIVE' | 'REJECTED';
+
+/**
+ * 描述用户可见的长期记忆候选或已启用记忆，ID 在前端统一用字符串避免 Long 精度问题。
+ */
+export interface LongTermMemoryItem {
+  id: string;
+  memoryScope: 'USER' | 'PROJECT' | string;
+  userId?: string | null;
+  workspaceId?: string | null;
+  memoryKey?: string | null;
+  content: string;
+  status: LongTermMemoryStatus | string;
+  sourceType?: string | null;
+  sourceConversationId?: string | null;
+  sourceMessageId?: string | null;
+  keywordJson?: string | null;
+  confidenceScore?: number | string | null;
+  lastUsedAt?: string | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+}
+
+/**
  * 记录当前 SSE 会话的流式上下文。
  */
 export interface ActiveStreamState {
@@ -450,8 +488,13 @@ export interface ChatWorkspaceController {
   workspaceGroups: WorkspaceConversationGroup[];
   activeWorkspacePartitionKey: string | null;
   workspacePath: string | null;
+  workspaceId: string | null;
   workspaceLabel: string;
   workspaceRuntimeTarget: 'cloud' | 'local';
+  projectProfile: ProjectProfileView | null;
+  pendingMemoryCount: number;
+  longTermMemories: LongTermMemoryItem[];
+  isMemoryLoading: boolean;
   conversations: ConversationItem[];
   activeConversationId: string | null;
   messages: ChatMessageItem[];
@@ -492,6 +535,11 @@ export interface ChatWorkspaceController {
   setActiveRuntimeTarget: (runtimeTarget: 'cloud' | 'local') => Promise<void>;
   pickRepositoryDirectory: () => Promise<void>;
   setActiveWorkspacePath: (workspacePath: string | null) => Promise<void>;
+  refreshLongTermMemories: () => Promise<void>;
+  updateLongTermMemoryStatus: (
+    memoryId: string,
+    status: LongTermMemoryStatus,
+  ) => Promise<void>;
   submitMessage: () => Promise<void>;
   cancelCurrentStream: () => Promise<void>;
   selectConversation: (
@@ -599,4 +647,6 @@ export interface WorkspaceBindingSyncResult {
   workspaceId?: string | null;
   workspaceName?: string | null;
   repositoryPath?: string | null;
+  projectProfile?: ProjectProfileView | null;
+  pendingMemoryCount?: number | null;
 }

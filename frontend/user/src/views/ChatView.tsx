@@ -37,12 +37,14 @@ import {
   ChatAttachmentItem,
   ChatWorkspaceController,
   ChatMessageItem,
+  LongTermMemoryItem,
   MessageTimelineItem,
   MessageSearchProgress,
   MessageSearchProgressItem,
   McpItem,
   PendingAttachmentItem,
   ProcessCardItem,
+  ProjectProfileView,
   SharedConversationPayload,
   SlashCommandItem,
 } from './chat/types';
@@ -79,6 +81,10 @@ export default function ChatView({
     activeConversationId,
     workspaceLabel,
     workspacePath,
+    projectProfile,
+    pendingMemoryCount,
+    longTermMemories,
+    isMemoryLoading,
     messages,
     executionSteps,
     references,
@@ -119,6 +125,8 @@ export default function ChatView({
     regenerateConversation,
     resendUserMessage,
     pickRepositoryDirectory,
+    refreshLongTermMemories,
+    updateLongTermMemoryStatus,
     renameDialog,
     deleteDialog,
     renameConversation,
@@ -1069,6 +1077,12 @@ export default function ChatView({
   const showRuntimeWorkspaceSwitcher = showLandingState;
   // 业务约束：云端环境下不展示“云端工作空间”下拉，避免出现无意义的同名选项。
   const showWorkspaceDropdownInSwitcher = showRuntimeWorkspaceSwitcher && activeRuntimeTarget === 'local';
+  const pendingLongTermMemories = React.useMemo(
+    () => longTermMemories.filter((memory) => String(memory.status).toUpperCase() === 'PENDING'),
+    [longTermMemories],
+  );
+  const showWorkspaceIntelligenceStrip =
+    projectProfile != null || pendingMemoryCount > 0 || pendingLongTermMemories.length > 0;
 
   /**
    * 粘贴图片或文件时直接加入待发送附件队列。
@@ -2013,6 +2027,18 @@ export default function ChatView({
                 </div>
               </div>
             </form>
+            {showWorkspaceIntelligenceStrip ? (
+              <WorkspaceIntelligenceStrip
+                projectProfile={projectProfile}
+                pendingMemoryCount={pendingMemoryCount}
+                pendingMemories={pendingLongTermMemories}
+                isMemoryLoading={isMemoryLoading}
+                onRefresh={() => void refreshLongTermMemories()}
+                onUpdateMemoryStatus={(memoryId, status) =>
+                  void updateLongTermMemoryStatus(memoryId, status)
+                }
+              />
+            ) : null}
             {showRuntimeWorkspaceSwitcher ? (
               <div
                 ref={runtimeWorkspaceLayerRef}
@@ -4505,6 +4531,137 @@ function EmptyBlock({ text }: { text: string }) {
       {text}
     </div>
   );
+}
+
+/**
+ * 渲染当前工作空间的项目画像和待确认长期记忆，帮助用户理解 Agent 当前会带入哪些上下文。
+ */
+function WorkspaceIntelligenceStrip({
+  projectProfile,
+  pendingMemoryCount,
+  pendingMemories,
+  isMemoryLoading,
+  onRefresh,
+  onUpdateMemoryStatus,
+}: {
+  projectProfile: ProjectProfileView | null;
+  pendingMemoryCount: number;
+  pendingMemories: LongTermMemoryItem[];
+  isMemoryLoading: boolean;
+  onRefresh: () => void;
+  onUpdateMemoryStatus: (memoryId: string, status: 'ACTIVE' | 'REJECTED') => void;
+}) {
+  const testCommandSummary = summarizeJsonList(projectProfile?.testCommandsJson, 2);
+  const riskSummary = summarizeJsonList(projectProfile?.riskPointsJson, 1);
+  const visiblePendingMemories = pendingMemories.slice(0, 3);
+
+  return (
+    <section
+      data-testid="workspace-intelligence-strip"
+      className="mt-3 rounded-xl border border-border bg-surface/95 px-3 py-2.5 text-left text-xs text-muted shadow-[0_10px_28px_rgba(0,0,0,0.12)] backdrop-blur"
+    >
+      <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="inline-flex items-center gap-1.5 font-medium text-foreground">
+              <Brain size={14} />
+              工作区智能
+            </span>
+            {pendingMemoryCount > 0 ? (
+              <span className="rounded-full border border-border bg-surface-container px-2 py-0.5 text-[11px] text-foreground">
+                待确认 {pendingMemoryCount} 条
+              </span>
+            ) : null}
+            {isMemoryLoading ? <span className="text-[11px] text-muted">同步中</span> : null}
+          </div>
+          {projectProfile?.summary ? (
+            <p className="mt-1 truncate text-foreground">{projectProfile.summary}</p>
+          ) : (
+            <p className="mt-1 text-muted">暂无项目画像摘要</p>
+          )}
+          <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px]">
+            {testCommandSummary ? <span>验证：{testCommandSummary}</span> : null}
+            {riskSummary ? <span>风险：{riskSummary}</span> : null}
+          </div>
+        </div>
+        <button
+          type="button"
+          aria-label="刷新长期记忆"
+          onClick={onRefresh}
+          className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-border px-2 py-1 text-[11px] text-muted transition-colors hover:border-border-active hover:bg-surface-container hover:text-foreground"
+        >
+          <RotateCcw size={12} />
+          刷新
+        </button>
+      </div>
+      {visiblePendingMemories.length > 0 ? (
+        <div className="mt-2 divide-y divide-border border-t border-border pt-1.5">
+          {visiblePendingMemories.map((memory) => (
+            <div key={memory.id} className="flex min-w-0 items-center gap-2 py-1.5">
+              <span className="shrink-0 rounded-full border border-border px-1.5 py-0.5 text-[10px] text-muted">
+                {memory.memoryScope === 'PROJECT' ? '项目' : '用户'}
+              </span>
+              <span className="min-w-0 flex-1 truncate text-foreground">{memory.content}</span>
+              <button
+                type="button"
+                aria-label={`确认长期记忆 ${memory.id}`}
+                onClick={() => onUpdateMemoryStatus(memory.id, 'ACTIVE')}
+                className="rounded-full p-1 text-muted transition-colors hover:bg-surface-container hover:text-foreground"
+              >
+                <CheckCircle2 size={15} />
+              </button>
+              <button
+                type="button"
+                aria-label={`拒绝长期记忆 ${memory.id}`}
+                onClick={() => onUpdateMemoryStatus(memory.id, 'REJECTED')}
+                className="rounded-full p-1 text-muted transition-colors hover:bg-surface-container hover:text-foreground"
+              >
+                <X size={15} />
+              </button>
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+/**
+ * 将后端 JSON 数组或对象摘要转换为短文本，避免聊天页直接暴露长 JSON。
+ */
+function summarizeJsonList(value: string | null | undefined, limit: number) {
+  if (!value || !value.trim()) {
+    return '';
+  }
+  try {
+    const parsed = JSON.parse(value);
+    if (Array.isArray(parsed)) {
+      return parsed
+        .map((item) => {
+          if (typeof item === 'string') {
+            return item;
+          }
+          if (item && typeof item === 'object') {
+            const record = item as Record<string, unknown>;
+            return String(record.command ?? record.name ?? record.path ?? record.summary ?? '');
+          }
+          return String(item ?? '');
+        })
+        .filter(Boolean)
+        .slice(0, limit)
+        .join('、');
+    }
+    if (parsed && typeof parsed === 'object') {
+      return Object.values(parsed as Record<string, unknown>)
+        .map((item) => String(item ?? ''))
+        .filter(Boolean)
+        .slice(0, limit)
+        .join('、');
+    }
+  } catch {
+    return value;
+  }
+  return value;
 }
 
 /**

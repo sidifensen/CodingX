@@ -28,6 +28,7 @@ import {
   AdminChatApi,
   type AdminGovernanceHookAudit,
   type AdminGovernanceHookRule,
+  type AdminGovernanceLongTermMemory,
   type AdminGovernancePermissionAudit,
   type AdminGovernancePermissionPolicy,
   type AdminGovernanceProjectProfile,
@@ -36,7 +37,7 @@ import {
 import { AdminDataTable, AdminTableActions } from '../components/AdminDataTable';
 import { useAdminMessage } from '../components/AdminMessageContext';
 
-type GovernanceTabKey = 'permission' | 'hook' | 'profile' | 'command' | 'audit';
+type GovernanceTabKey = 'permission' | 'hook' | 'profile' | 'memory' | 'command' | 'audit';
 type DialogMode = 'create' | 'edit';
 
 interface PolicyFormState {
@@ -148,6 +149,7 @@ export function GovernanceCenterPage() {
   const [hookRules, setHookRules] = React.useState<AdminGovernanceHookRule[]>([]);
   const [hookAudits, setHookAudits] = React.useState<AdminGovernanceHookAudit[]>([]);
   const [projectProfiles, setProjectProfiles] = React.useState<AdminGovernanceProjectProfile[]>([]);
+  const [longTermMemories, setLongTermMemories] = React.useState<AdminGovernanceLongTermMemory[]>([]);
   const [slashCommands, setSlashCommands] = React.useState<AdminGovernanceSlashCommand[]>([]);
 
   const [policyDialog, setPolicyDialog] = React.useState<{
@@ -182,6 +184,7 @@ export function GovernanceCenterPage() {
         nextPolicies,
         nextHookRules,
         nextProfiles,
+        nextLongTermMemories,
         nextCommands,
         nextPermissionAudits,
         nextHookAudits,
@@ -189,6 +192,7 @@ export function GovernanceCenterPage() {
         AdminChatApi.listPermissionPolicies(),
         AdminChatApi.listHookRules(),
         AdminChatApi.listProjectProfiles(),
+        AdminChatApi.listLongTermMemories('ALL', 100),
         AdminChatApi.listGovernanceSlashCommands(),
         AdminChatApi.listPermissionAudits(),
         AdminChatApi.listHookAudits(),
@@ -196,6 +200,7 @@ export function GovernanceCenterPage() {
       setPermissionPolicies(nextPolicies ?? []);
       setHookRules(nextHookRules ?? []);
       setProjectProfiles(nextProfiles ?? []);
+      setLongTermMemories(nextLongTermMemories ?? []);
       setSlashCommands(nextCommands ?? []);
       setPermissionAudits(nextPermissionAudits ?? []);
       setHookAudits(nextHookAudits ?? []);
@@ -342,10 +347,82 @@ export function GovernanceCenterPage() {
     { title: '路径', dataIndex: 'workspacePath', width: 260, ellipsis: true },
     { title: '摘要', dataIndex: 'summary', width: 240, ellipsis: true, render: optionalText },
     { title: '技术栈', dataIndex: 'techStackJson', width: 180, ellipsis: true, render: renderJsonSummary },
-    { title: '验证命令', dataIndex: 'verificationCommandsJson', width: 220, ellipsis: true, render: renderJsonSummary },
+    { title: '模块地图', dataIndex: 'moduleMapJson', width: 220, ellipsis: true, render: renderJsonSummary },
+    { title: '测试命令', dataIndex: 'testCommandsJson', width: 220, ellipsis: true, render: renderJsonSummary },
+    { title: '关键入口', dataIndex: 'keyEntrypointsJson', width: 240, ellipsis: true, render: renderJsonSummary },
+    { title: '风险点', dataIndex: 'riskPointsJson', width: 220, ellipsis: true, render: renderJsonSummary },
+    { title: 'Agent上下文', dataIndex: 'agentContext', width: 280, ellipsis: true, render: optionalText },
     { title: '状态', dataIndex: 'status', width: 110, render: (value?: string) => <Tag>{value || '-'}</Tag> },
     { title: '扫描时间', dataIndex: 'scannedAt', width: 180, render: formatDate },
   ], []);
+
+  /**
+   * 更新长期记忆状态并刷新治理中心数据；失败时直接透出后端 ApiResponse.message。
+   */
+  const updateMemoryStatus = React.useCallback(async (
+    memoryId: string | number | undefined,
+    status: 'ACTIVE' | 'REJECTED' | 'PENDING',
+  ) => {
+    if (memoryId == null) {
+      return;
+    }
+    try {
+      await AdminChatApi.updateLongTermMemoryStatus(memoryId, status);
+      await loadData();
+      void adminMessage.success(status === 'ACTIVE' ? '长期记忆已确认' : '长期记忆已拒绝');
+    } catch (error) {
+      void adminMessage.error(extractErrorMessage(error, '更新长期记忆失败'));
+    }
+  }, [adminMessage, loadData]);
+
+  const memoryColumns = React.useMemo<ColumnsType<AdminGovernanceLongTermMemory>>(() => [
+    {
+      title: '范围',
+      dataIndex: 'memoryScope',
+      width: 100,
+      render: (value?: string) => <Tag>{memoryScopeLabel(value)}</Tag>,
+    },
+    {
+      title: '状态',
+      dataIndex: 'status',
+      width: 110,
+      render: (value?: string) => <Tag color={memoryStatusColor(value)}>{memoryStatusLabel(value)}</Tag>,
+    },
+    { title: '内容', dataIndex: 'content', width: 360, ellipsis: true },
+    { title: '用户ID', dataIndex: 'userId', width: 120, render: optionalText },
+    { title: '工作空间ID', dataIndex: 'workspaceId', width: 130, render: optionalText },
+    { title: '来源会话', dataIndex: 'sourceConversationId', width: 130, render: optionalText },
+    { title: '关键词', dataIndex: 'keywordJson', width: 180, ellipsis: true, render: renderJsonSummary },
+    { title: '更新时间', dataIndex: 'updatedAt', width: 180, render: formatDate },
+    {
+      title: '操作',
+      key: 'actions',
+      fixed: 'right',
+      align: 'right',
+      width: 180,
+      render: (_, item) => (
+        <AdminTableActions
+          actions={[
+            {
+              key: 'active',
+              label: '确认',
+              ariaLabel: `确认长期记忆 ${item.id}`,
+              disabled: item.id == null || item.status === 'ACTIVE',
+              onClick: () => void updateMemoryStatus(item.id, 'ACTIVE'),
+            },
+            {
+              key: 'reject',
+              label: '拒绝',
+              ariaLabel: `拒绝长期记忆 ${item.id}`,
+              danger: true,
+              disabled: item.id == null || item.status === 'REJECTED',
+              onClick: () => void updateMemoryStatus(item.id, 'REJECTED'),
+            },
+          ]}
+        />
+      ),
+    },
+  ], [updateMemoryStatus]);
 
   const commandColumns = React.useMemo<ColumnsType<AdminGovernanceSlashCommand>>(() => [
     {
@@ -504,7 +581,22 @@ export function GovernanceCenterPage() {
                   locale={{ emptyText: loading ? '加载中...' : '暂无项目画像' }}
                   pagination={false}
                   rowKey={(item) => String(item.id ?? item.workspacePath)}
-                  scroll={{ x: 1180 }}
+                  scroll={{ x: 2100 }}
+                />
+              ),
+            },
+            {
+              key: 'memory',
+              label: '长期记忆',
+              children: (
+                <AdminDataTable<AdminGovernanceLongTermMemory>
+                  columns={memoryColumns}
+                  dataSource={longTermMemories}
+                  loading={loading}
+                  locale={{ emptyText: loading ? '加载中...' : '暂无长期记忆' }}
+                  pagination={false}
+                  rowKey={(item) => String(item.id ?? `${item.memoryScope}-${item.content}`)}
+                  scroll={{ x: 1580 }}
                 />
               ),
             },
@@ -1103,12 +1195,66 @@ function renderJsonSummary(value?: string) {
   try {
     const parsed = JSON.parse(value);
     if (Array.isArray(parsed)) {
-      return parsed.join('、') || '-';
+      return parsed
+        .map((item) => {
+          if (typeof item === 'string') {
+            return item;
+          }
+          if (item && typeof item === 'object') {
+            const record = item as Record<string, unknown>;
+            return String(record.name ?? record.command ?? record.path ?? record.summary ?? '');
+          }
+          return String(item ?? '');
+        })
+        .filter(Boolean)
+        .join('、') || '-';
+    }
+    if (parsed && typeof parsed === 'object') {
+      return Object.values(parsed as Record<string, unknown>)
+        .map((item) => String(item ?? ''))
+        .filter(Boolean)
+        .join('、') || '-';
     }
   } catch {
     return value;
   }
   return value;
+}
+
+function memoryScopeLabel(value?: string) {
+  if (value === 'PROJECT') {
+    return '项目';
+  }
+  if (value === 'USER') {
+    return '用户';
+  }
+  return value || '-';
+}
+
+function memoryStatusLabel(value?: string) {
+  if (value === 'PENDING') {
+    return '待确认';
+  }
+  if (value === 'ACTIVE') {
+    return '已启用';
+  }
+  if (value === 'REJECTED') {
+    return '已拒绝';
+  }
+  return value || '-';
+}
+
+function memoryStatusColor(value?: string) {
+  if (value === 'PENDING') {
+    return 'warning';
+  }
+  if (value === 'ACTIVE') {
+    return 'success';
+  }
+  if (value === 'REJECTED') {
+    return 'default';
+  }
+  return undefined;
 }
 
 function actionLabel(value?: string) {

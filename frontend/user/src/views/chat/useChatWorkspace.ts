@@ -18,6 +18,8 @@ import {
   ConversationExportFormat,
   ConversationItem,
   ExecutionStepItem,
+  LongTermMemoryItem,
+  LongTermMemoryStatus,
   McpCallItem,
   McpItem,
   MessageTimelineItem,
@@ -25,6 +27,7 @@ import {
   MessageSearchProgressItem,
   PendingAttachmentItem,
   ProcessCardItem,
+  ProjectProfileView,
   ReferenceItem,
   RegenerateConversationOptions,
   SampleQuestionItem,
@@ -526,6 +529,10 @@ export function useChatWorkspace(
   const [workspaceLabel, setWorkspaceLabel] = useState(
     getDefaultWorkspaceLabel(activeRuntimeTarget),
   );
+  const [projectProfile, setProjectProfile] = useState<ProjectProfileView | null>(null);
+  const [pendingMemoryCount, setPendingMemoryCount] = useState(0);
+  const [longTermMemories, setLongTermMemories] = useState<LongTermMemoryItem[]>([]);
+  const [isMemoryLoading, setIsMemoryLoading] = useState(false);
   const [conversations, setConversations] = useState<ConversationItem[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [messages, setMessagesState] = useState<ChatMessageItem[]>([]);
@@ -615,6 +622,40 @@ export function useChatWorkspace(
   currentExpertsRef.current = currentExperts;
   currentSkillsRef.current = currentSkills;
   currentMcpsRef.current = currentMcps;
+
+  /**
+   * 清理当前工作空间智能上下文；切到云端或无本地目录时避免展示上一个仓库的画像和记忆。
+   */
+  const clearWorkspaceIntelligence = () => {
+    setProjectProfile(null);
+    setPendingMemoryCount(0);
+    setLongTermMemories([]);
+  };
+
+  /**
+   * 应用目录绑定返回的项目画像和长期记忆摘要，同时返回本轮可用于发送消息的 workspaceId。
+   * @param bindingResult 后端绑定响应，旧宿主可能不携带画像字段。
+   * @param fallbackWorkspaceId 宿主上下文里已有的 workspaceId。
+   * @returns 归一化后的 workspaceId。
+   */
+  const applyWorkspaceBindingResult = (
+    bindingResult: Awaited<ReturnType<NonNullable<UseChatWorkspaceOptions['bindWorkspacePath']>>>,
+    fallbackWorkspaceId: string | null,
+  ) => {
+    const nextWorkspaceId = normalizeWorkspaceId(bindingResult?.workspaceId) ?? fallbackWorkspaceId;
+    if (bindingResult && Object.prototype.hasOwnProperty.call(bindingResult, 'projectProfile')) {
+      setProjectProfile(bindingResult.projectProfile ?? null);
+    }
+    if (bindingResult && Object.prototype.hasOwnProperty.call(bindingResult, 'pendingMemoryCount')) {
+      const nextPendingCount = Number(bindingResult.pendingMemoryCount ?? 0);
+      setPendingMemoryCount(Number.isFinite(nextPendingCount) ? Math.max(0, nextPendingCount) : 0);
+      const token = currentToken();
+      if (token && nextWorkspaceId && nextPendingCount > 0) {
+        void refreshLongTermMemoriesForWorkspace(token, nextWorkspaceId, true);
+      }
+    }
+    return nextWorkspaceId;
+  };
 
   /**
    * 为首屏初始化生成稳定去重键，同一登录会话与同一工作上下文只允许触发一次 bootstrap。
@@ -1443,8 +1484,9 @@ export function useChatWorkspace(
       hostContext?.hostType === 'desktop'
     ) {
       const bindingResult = await bindWorkspacePath(normalizedWorkspacePath);
-      normalizedWorkspaceId =
-        normalizeWorkspaceId(bindingResult?.workspaceId) ?? normalizedWorkspaceId;
+      normalizedWorkspaceId = applyWorkspaceBindingResult(bindingResult, normalizedWorkspaceId);
+    } else if (runtimeTarget !== 'local' || !normalizedWorkspacePath) {
+      clearWorkspaceIntelligence();
     }
     const nextPartitionKey = buildWorkspacePartitionKey(runtimeTarget, normalizedWorkspacePath);
     activeStreamSessionIdRef.current = null;
@@ -1828,7 +1870,7 @@ export function useChatWorkspace(
       let effectiveWorkspaceId = workspaceId;
       if (activeRuntimeTarget === 'local' && workspacePath != null && workspacePath.trim().length > 0) {
         const bindingResult = await bindWorkspacePath(workspacePath);
-        effectiveWorkspaceId = normalizeWorkspaceId(bindingResult?.workspaceId) ?? effectiveWorkspaceId;
+        effectiveWorkspaceId = applyWorkspaceBindingResult(bindingResult, effectiveWorkspaceId);
         if (effectiveWorkspaceId && effectiveWorkspaceId !== workspaceId) {
           setWorkspaceId(effectiveWorkspaceId);
         }
@@ -1958,6 +2000,9 @@ export function useChatWorkspace(
             true,
             true,
           );
+        }
+        if (didFinishStream) {
+          void refreshLongTermMemoriesForWorkspace(token, effectiveWorkspaceId, true);
         }
         refreshWorkspaceGroups('all');
       } catch (error) {
@@ -2907,6 +2952,61 @@ export function useChatWorkspace(
   const currentToken = () => AuthStorage.getSession()?.token ?? null;
 
   /**
+   * 刷新指定工作空间的长期记忆列表；自动刷新失败时保持聊天主流程可用。
+   * @param token 当前登录令牌。
+   * @param targetWorkspaceId 目标工作空间 ID，可为空。
+   * @param silent 是否静默处理错误。
+   */
+  async function refreshLongTermMemoriesForWorkspace(
+    token: string,
+    targetWorkspaceId: string | null,
+    silent = false,
+  ) {
+    setIsMemoryLoading(true);
+    try {
+      const memories = await ChatApi.listLongTermMemories(token, targetWorkspaceId, 'ALL');
+      setLongTermMemories(memories);
+      setPendingMemoryCount(
+        memories.filter((memory) => String(memory.status).toUpperCase() === 'PENDING').length,
+      );
+    } catch (error) {
+      if (!silent) {
+        setStreamError(error instanceof Error ? error.message : UserErrorMessages.CHAT_REQUEST_FAILED);
+      }
+    } finally {
+      setIsMemoryLoading(false);
+    }
+  }
+
+  /**
+   * 供页面手动刷新长期记忆；手动触发时需要展示后端错误文案。
+   */
+  const refreshLongTermMemories = async () => {
+    const token = currentToken();
+    if (!token) {
+      throw new Error(UserErrorMessages.AUTH_SESSION_EXPIRED);
+    }
+    await refreshLongTermMemoriesForWorkspace(token, workspaceId, false);
+  };
+
+  /**
+   * 更新当前用户长期记忆状态，完成后刷新列表和待确认计数。
+   * @param memoryId 长期记忆 ID。
+   * @param status 目标状态。
+   */
+  const updateLongTermMemoryStatus = async (
+    memoryId: string,
+    status: LongTermMemoryStatus,
+  ) => {
+    const token = currentToken();
+    if (!token) {
+      throw new Error(UserErrorMessages.AUTH_SESSION_EXPIRED);
+    }
+    await ChatApi.updateLongTermMemoryStatus(token, memoryId, status);
+    await refreshLongTermMemoriesForWorkspace(token, workspaceId, false);
+  };
+
+  /**
    * 清空前端工作台状态，避免退出登录后仍显示上个用户会话。
    */
   const resetWorkspace = () => {
@@ -2933,6 +3033,7 @@ export function useChatWorkspace(
     setStreamError('');
     setInputValue('');
     clearPendingAttachments();
+    clearWorkspaceIntelligence();
     setRenameDialogState({ isOpen: false, conversationId: null, initialTitle: '', actionContext: undefined });
     setDeleteDialogState({ isOpen: false, conversationId: null, title: '', actionContext: undefined });
     streamStateRef.current = null;
@@ -3496,8 +3597,13 @@ export function useChatWorkspace(
     workspaceGroups,
     activeWorkspacePartitionKey,
     workspacePath,
+    workspaceId,
     workspaceLabel,
     workspaceRuntimeTarget: activeRuntimeTarget,
+    projectProfile,
+    pendingMemoryCount,
+    longTermMemories,
+    isMemoryLoading,
     conversations,
     activeConversationId,
     messages,
@@ -3538,6 +3644,8 @@ export function useChatWorkspace(
     setActiveRuntimeTarget,
     pickRepositoryDirectory,
     setActiveWorkspacePath,
+    refreshLongTermMemories,
+    updateLongTermMemoryStatus,
     submitMessage,
     cancelCurrentStream,
     selectConversation,

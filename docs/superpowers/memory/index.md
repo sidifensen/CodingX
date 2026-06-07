@@ -71,6 +71,10 @@ status: active
   - Codex 风格本地工具执行器的职责、入口与常见陷阱
 - `docs/superpowers/memory/tool/codex-local-tool-runtime-contract.md`
   - 本地工具可见性、执行目录、输出和不可用状态契约
+- `docs/superpowers/memory/governance/governance-workbench-module-card.md`
+  - 软件端治理工作台的权限策略、Hook、项目画像、Slash Command 和聊天上下文注入边界
+- `docs/superpowers/memory/governance/governance-workbench-contract.md`
+  - 治理工作台管理端接口、项目画像表结构和后续长期记忆扩展契约
 - `docs/superpowers/memory/admin/workspace-management-module-card.md`
   - 管理端工作空间只读管理页的职责边界、入口与常见陷阱
 - `docs/superpowers/memory/admin/workspace-management-contract.md`
@@ -93,3 +97,4 @@ status: active
 - 聊天页历史回放和本地快照的长期演化规则尚未独立成 runbook
 - 模型 tool-call 流程与本地工具执行结果回灌仍需实现端到端契约
 - 管理端 Dashboard 统计当前仍依赖应用层聚合，尚未沉淀大数据量场景的查询优化规范
+- 项目画像和长期记忆仍处于治理工作台基础能力阶段，尚未形成可回注到 Agent 输入上下文的完整闭环

@@ -5,6 +5,9 @@ import cn.hutool.core.util.StrUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.codingx.common.error.ErrorMessageCatalog;
 import com.codingx.common.exception.BusinessException;
+import com.codingx.governance.application.service.LongTermMemoryService;
+import com.codingx.governance.application.service.ProjectProfileService;
+import com.codingx.governance.domain.model.GovernanceProjectProfile;
 import com.codingx.workspace.infrastructure.persistence.dataobject.WorkspaceDO;
 import com.codingx.workspace.infrastructure.persistence.mapper.WorkspaceMapper;
 import com.codingx.workspace.infrastructure.repository.WorkspaceRepositoryImpl;
@@ -14,6 +17,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 /**
@@ -21,6 +25,7 @@ import org.springframework.stereotype.Service;
  */
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class ChatWorkspaceBindingService {
 
     /** 用户到本地仓库路径的进程内绑定缓存，用于未显式传 workspaceId 的聊天请求快速回退。 */
@@ -29,6 +34,10 @@ public class ChatWorkspaceBindingService {
     private final WorkspaceMapper workspaceMapper;
     /** 工作空间仓储实现，用于创建或复用用户默认本地工作空间。 */
     private final WorkspaceRepositoryImpl workspaceRepositoryImpl;
+    /** 项目画像服务，用于绑定本地仓库后生成 Agent 可消费的仓库画像。 */
+    private final ProjectProfileService projectProfileService;
+    /** 长期记忆服务，用于返回当前用户在该工作空间下的待确认候选数量。 */
+    private final LongTermMemoryService longTermMemoryService;
 
     /**
      * 绑定当前登录用户的仓库目录。
@@ -42,10 +51,14 @@ public class ChatWorkspaceBindingService {
         String normalizedPathText = normalizedPath.toString().replace('\\', '/');
         String workspaceName = normalizedPath.getFileName() == null ? normalizedPathText : normalizedPath.getFileName().toString();
         WorkspaceDO workspace = workspaceRepositoryImpl.ensureLocalWorkspace(userId, normalizedPathText, workspaceName);
+        ProjectProfileView projectProfile = scanProjectProfile(workspace.getId(), normalizedPath);
+        int pendingMemoryCount = countPendingMemories(userId, workspace.getId());
         return new WorkspaceBindingResult(
             workspace.getId(),
             normalizedPathText,
-            workspace.getName()
+            workspace.getName(),
+            projectProfile,
+            pendingMemoryCount
         );
     }
 
@@ -83,6 +96,56 @@ public class ChatWorkspaceBindingService {
     }
 
     /**
+     * 绑定目录后刷新项目画像；扫描失败时降级读取最近画像，避免画像落库异常阻断目录绑定。
+     * @param workspaceId 工作空间标识。
+     * @param normalizedPath 已校验的本地仓库路径。
+     * @return 项目画像视图，缺失时返回 null。
+     */
+    private ProjectProfileView scanProjectProfile(Long workspaceId, Path normalizedPath) {
+        if (projectProfileService == null || workspaceId == null || normalizedPath == null) {
+            return null;
+        }
+        try {
+            return toProjectProfileView(projectProfileService.scanWorkspace(workspaceId, normalizedPath));
+        } catch (RuntimeException exception) {
+            log.warn("本地仓库项目画像扫描失败: workspaceId={}, path={}, message={}", workspaceId, normalizedPath, exception.getMessage());
+            return toProjectProfileView(projectProfileService.findLatestByWorkspaceId(workspaceId));
+        }
+    }
+
+    /**
+     * 统计当前工作空间待确认长期记忆数量，统计失败时返回 0 保障绑定响应稳定。
+     * @param userId 当前用户标识。
+     * @param workspaceId 工作空间标识。
+     * @return 待确认记忆数量。
+     */
+    private int countPendingMemories(Long userId, Long workspaceId) {
+        if (longTermMemoryService == null) {
+            return 0;
+        }
+        try {
+            return longTermMemoryService.countPendingByUserAndWorkspace(userId, workspaceId);
+        } catch (RuntimeException exception) {
+            log.warn("待确认长期记忆统计失败: userId={}, workspaceId={}, message={}", userId, workspaceId, exception.getMessage());
+            return 0;
+        }
+    }
+
+    private ProjectProfileView toProjectProfileView(GovernanceProjectProfile profile) {
+        if (profile == null) {
+            return null;
+        }
+        return new ProjectProfileView(
+            profile.getSummary(),
+            profile.getModuleMapJson(),
+            profile.getTestCommandsJson(),
+            profile.getKeyEntrypointsJson(),
+            profile.getRiskPointsJson(),
+            profile.getAgentContext()
+        );
+    }
+
+    /**
      * 按工作空间标识查询对应目录，供会话级执行上下文回放。
      * @param workspaceId 工作空间标识。
      * @return 目录路径。
@@ -111,6 +174,34 @@ public class ChatWorkspaceBindingService {
      * @param repositoryPath 规范化仓库路径。
      * @param workspaceName 工作空间名称。
      */
-    public record WorkspaceBindingResult(Long workspaceId, String repositoryPath, String workspaceName) {
+    public record WorkspaceBindingResult(
+        Long workspaceId, // 工作空间标识，前端后续发送消息时使用。
+        String repositoryPath, // 规范化仓库路径。
+        String workspaceName, // 工作空间名称。
+        ProjectProfileView projectProfile, // 最新项目画像摘要，可为空。
+        int pendingMemoryCount // 当前用户待确认长期记忆数量。
+    ) {
+        /**
+         * 兼容旧调用方的最小构造器，默认不返回画像且待确认记忆数为 0。
+         * @param workspaceId 工作空间标识。
+         * @param repositoryPath 规范化仓库路径。
+         * @param workspaceName 工作空间名称。
+         */
+        public WorkspaceBindingResult(Long workspaceId, String repositoryPath, String workspaceName) {
+            this(workspaceId, repositoryPath, workspaceName, null, 0);
+        }
+    }
+
+    /**
+     * 工作空间绑定后返回给用户端的项目画像轻量视图。
+     */
+    public record ProjectProfileView(
+        String summary, // 项目画像摘要。
+        String moduleMapJson, // 模块地图 JSON。
+        String testCommandsJson, // 测试命令 JSON。
+        String keyEntrypointsJson, // 关键入口 JSON。
+        String riskPointsJson, // 风险点 JSON。
+        String agentContext // Agent 输入上下文摘要。
+    ) {
     }
 }

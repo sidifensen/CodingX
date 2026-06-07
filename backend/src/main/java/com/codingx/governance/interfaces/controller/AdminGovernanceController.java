@@ -2,11 +2,13 @@ package com.codingx.governance.interfaces.controller;
 
 import com.codingx.common.model.ApiResponse;
 import com.codingx.governance.application.service.HookRuleService;
+import com.codingx.governance.application.service.LongTermMemoryService;
 import com.codingx.governance.application.service.PermissionPolicyService;
 import com.codingx.governance.application.service.ProjectProfileService;
 import com.codingx.governance.application.service.SlashCommandService;
 import com.codingx.governance.domain.model.GovernanceHookAudit;
 import com.codingx.governance.domain.model.GovernanceHookRule;
+import com.codingx.governance.domain.model.GovernanceLongTermMemory;
 import com.codingx.governance.domain.model.GovernancePermissionAudit;
 import com.codingx.governance.domain.model.GovernancePermissionPolicy;
 import com.codingx.governance.domain.model.GovernanceProjectProfile;
@@ -16,6 +18,7 @@ import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -40,6 +43,8 @@ public class AdminGovernanceController {
     private final ProjectProfileService projectProfileService;
     /** Slash Command 服务，用于管理命令目录。 */
     private final SlashCommandService slashCommandService;
+    /** 长期记忆服务，用于管理端审核和启停候选记忆。 */
+    private final LongTermMemoryService longTermMemoryService;
 
     /**
      * 查询权限策略列表。
@@ -168,6 +173,34 @@ public class AdminGovernanceController {
     }
 
     /**
+     * 查询长期记忆列表，供管理端审核用户级和项目级记忆候选。
+     * @param status 状态筛选，ALL 或空值表示全部状态。
+     * @param limit 最大返回条数。
+     * @return 长期记忆列表。
+     */
+    @GetMapping("/long-term-memories")
+    public ApiResponse<List<GovernanceLongTermMemory>> listLongTermMemories(
+        @RequestParam(defaultValue = "ALL") String status,
+        @RequestParam(defaultValue = "50") int limit
+    ) {
+        return ApiResponse.success(longTermMemoryService.listAdminMemories(status, limit));
+    }
+
+    /**
+     * 更新长期记忆状态，供管理员确认项目约定或撤销错误候选。
+     * @param id 长期记忆主键。
+     * @param request 状态更新请求。
+     * @return 更新后的长期记忆。
+     */
+    @PatchMapping("/long-term-memories/{id}/status")
+    public ApiResponse<GovernanceLongTermMemory> updateLongTermMemoryStatus(
+        @PathVariable Long id,
+        @RequestBody MemoryStatusUpdateRequest request
+    ) {
+        return ApiResponse.success(longTermMemoryService.updateAdminMemoryStatus(id, request == null ? null : request.status()));
+    }
+
+    /**
      * 查询 Slash Command 配置列表。
      * @return 命令配置列表。
      */
@@ -218,5 +251,13 @@ public class AdminGovernanceController {
      * @param workspacePath 工作空间路径。
      */
     public record ProjectProfileScanRequest(Long workspaceId, String workspacePath) {
+    }
+
+    /**
+     * 长期记忆状态更新请求。
+     *
+     * @param status 目标状态，允许 ACTIVE、REJECTED 或 PENDING。
+     */
+    public record MemoryStatusUpdateRequest(String status) {
     }
 }

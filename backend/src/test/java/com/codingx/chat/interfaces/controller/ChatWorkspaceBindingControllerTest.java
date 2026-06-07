@@ -40,7 +40,16 @@ class ChatWorkspaceBindingControllerTest {
             .thenReturn(new com.codingx.chat.application.service.ChatWorkspaceBindingService.WorkspaceBindingResult(
                 3001L,
                 "D:/code/codingx",
-                "codingx"
+                "codingx",
+                new ChatWorkspaceBindingService.ProjectProfileView(
+                    "检测到 CodingX 多模块项目",
+                    "[{\"moduleCode\":\"backend\"}]",
+                    "[\"cd backend && mvn test\"]",
+                    "[\"frontend/user/src/main.tsx\"]",
+                    "[\"frontend/admin/src/pages/GovernanceCenterPage.tsx 文件较大\"]",
+                    "# 项目画像"
+                ),
+                2
             ));
         mockMvc().perform(post("/api/chat/workspace/bind-repository")
                 .contentType(MediaType.APPLICATION_JSON)
@@ -53,7 +62,9 @@ class ChatWorkspaceBindingControllerTest {
             .andExpect(jsonPath("$.success").value(true))
             .andExpect(jsonPath("$.data.repositoryPath").value("D:/code/codingx"))
             .andExpect(jsonPath("$.data.workspaceId").value("3001"))
-            .andExpect(jsonPath("$.data.workspaceName").value("codingx"));
+            .andExpect(jsonPath("$.data.workspaceName").value("codingx"))
+            .andExpect(jsonPath("$.data.projectProfile.summary").value("检测到 CodingX 多模块项目"))
+            .andExpect(jsonPath("$.data.pendingMemoryCount").value(2));
 
         verify(chatWorkspaceBindingService).bindRepositoryPathForCurrentUser(eq("D:/code/codingx"));
     }

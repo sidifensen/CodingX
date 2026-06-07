@@ -62,6 +62,11 @@ public class GovernanceProjectProfileRepositoryImpl implements GovernanceProject
         dataObject.setTechStackJson(profile.getTechStackJson());
         dataObject.setEntrypointsJson(profile.getEntrypointsJson());
         dataObject.setVerificationCommandsJson(profile.getVerificationCommandsJson());
+        dataObject.setModuleMapJson(profile.getModuleMapJson());
+        dataObject.setTestCommandsJson(profile.getTestCommandsJson());
+        dataObject.setKeyEntrypointsJson(profile.getKeyEntrypointsJson());
+        dataObject.setRiskPointsJson(profile.getRiskPointsJson());
+        dataObject.setAgentContext(profile.getAgentContext());
         dataObject.setStatus(profile.getStatus());
         dataObject.setScannedAt(profile.getScannedAt());
         dataObject.setCreatedAt(profile.getCreatedAt());
@@ -79,6 +84,11 @@ public class GovernanceProjectProfileRepositoryImpl implements GovernanceProject
             .techStackJson(dataObject.getTechStackJson())
             .entrypointsJson(dataObject.getEntrypointsJson())
             .verificationCommandsJson(dataObject.getVerificationCommandsJson())
+            .moduleMapJson(dataObject.getModuleMapJson())
+            .testCommandsJson(dataObject.getTestCommandsJson())
+            .keyEntrypointsJson(dataObject.getKeyEntrypointsJson())
+            .riskPointsJson(dataObject.getRiskPointsJson())
+            .agentContext(dataObject.getAgentContext())
             .status(dataObject.getStatus())
             .scannedAt(dataObject.getScannedAt())
             .createdAt(dataObject.getCreatedAt())

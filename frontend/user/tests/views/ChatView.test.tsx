@@ -4311,6 +4311,57 @@ describe('ChatView', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('会话标题不能为空');
     expect(closeRenameDialog).not.toHaveBeenCalled();
   });
+
+  /**
+   * 工作区智能条应展示项目画像和待确认长期记忆，并通过项目内按钮完成确认操作。
+   */
+  it('应展示工作区智能条并允许确认待记忆候选', async () => {
+    const updateLongTermMemoryStatus = vi.fn().mockResolvedValue(undefined);
+
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          activeConversationId: null,
+          messages: [],
+          projectProfile: {
+            summary: 'Maven + Vite workspace',
+            moduleMapJson: '[{"name":"backend","path":"backend"}]',
+            testCommandsJson: '["mvn test","npm run build"]',
+            keyEntrypointsJson: '["backend/src/main/java/com/codingx/CodingXApplication.java"]',
+            riskPointsJson: '["缺少端到端测试"]',
+            agentContext: '项目包含后端、用户端和管理端。',
+          },
+          pendingMemoryCount: 1,
+          longTermMemories: [
+            {
+              id: '9001',
+              memoryScope: 'PROJECT',
+              userId: '1002',
+              workspaceId: '3001',
+              content: '以后都按项目注释规范编写 Java 注释',
+              status: 'PENDING',
+              keywordJson: '["注释规范"]',
+            },
+          ],
+          updateLongTermMemoryStatus,
+        })}
+      />,
+    );
+
+    const strip = await screen.findByTestId('workspace-intelligence-strip');
+    expect(strip).toHaveTextContent('Maven + Vite workspace');
+    expect(strip).toHaveTextContent('待确认 1 条');
+    expect(strip).toHaveTextContent('mvn test');
+    expect(strip).toHaveTextContent('以后都按项目注释规范编写 Java 注释');
+
+    fireEvent.click(screen.getByRole('button', { name: '确认长期记忆 9001' }));
+
+    await waitFor(() => {
+      expect(updateLongTermMemoryStatus).toHaveBeenCalledWith('9001', 'ACTIVE');
+    });
+  });
 });
 
 /**
@@ -4342,8 +4393,13 @@ function createWorkspace(overrides?: Partial<ChatWorkspaceController>): ChatWork
     ],
     activeWorkspacePartitionKey: 'local::d:/code/codingx',
     workspacePath: 'D:/code/CodingX',
+    workspaceId: '3001',
     workspaceLabel: 'CodingX',
     workspaceRuntimeTarget: 'local',
+    projectProfile: null,
+    pendingMemoryCount: 0,
+    longTermMemories: [],
+    isMemoryLoading: false,
     conversations: [
       {
         id: '2001',
@@ -4554,6 +4610,8 @@ function createWorkspace(overrides?: Partial<ChatWorkspaceController>): ChatWork
     setActiveRuntimeTarget: vi.fn().mockResolvedValue(undefined),
     pickRepositoryDirectory: vi.fn().mockResolvedValue(undefined),
     setActiveWorkspacePath: vi.fn().mockResolvedValue(undefined),
+    refreshLongTermMemories: vi.fn().mockResolvedValue(undefined),
+    updateLongTermMemoryStatus: vi.fn().mockResolvedValue(undefined),
     submitMessage: vi.fn().mockResolvedValue(undefined),
     cancelCurrentStream: vi.fn().mockResolvedValue(undefined),
     selectConversation: vi.fn().mockResolvedValue(undefined),

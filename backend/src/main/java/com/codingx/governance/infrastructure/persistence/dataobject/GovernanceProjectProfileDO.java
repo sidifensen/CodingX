@@ -20,6 +20,11 @@ public class GovernanceProjectProfileDO {
     @TableField("tech_stack_json") private String techStackJson; // 技术栈 JSON 文本。
     @TableField("entrypoints_json") private String entrypointsJson; // 入口文件 JSON 文本。
     @TableField("verification_commands_json") private String verificationCommandsJson; // 建议验证命令 JSON 文本。
+    @TableField("module_map_json") private String moduleMapJson; // 模块地图 JSON 文本。
+    @TableField("test_commands_json") private String testCommandsJson; // 测试命令 JSON 文本。
+    @TableField("key_entrypoints_json") private String keyEntrypointsJson; // 关键入口 JSON 文本。
+    @TableField("risk_points_json") private String riskPointsJson; // 风险点 JSON 文本。
+    @TableField("agent_context") private String agentContext; // Agent 输入上下文。
     @TableField("status") private String status; // 扫描状态，例如 COMPLETED、FAILED。
     @TableField("scanned_at") private LocalDateTime scannedAt; // 扫描完成时间。
     @TableField("created_at") private LocalDateTime createdAt; // 创建时间。

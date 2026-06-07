@@ -212,6 +212,93 @@ describe('App', () => {
   });
 
   /**
+   * 技能页是独立功能页，桌面端进入时不应顺带初始化聊天工作区的重型数据。
+   */
+  it('应在打开技能页时只加载技能页自身数据而不触发聊天工作区初始化', async () => {
+    // 步骤：模拟已登录用户直接刷新 /skills，复现桌面端非聊天页首屏卡顿入口。
+    window.history.replaceState({}, '', '/skills');
+    window.localStorage.setItem(
+      'codingx.auth.session',
+      JSON.stringify({
+        token: 'token-123',
+        userId: 1002,
+        username: 'user',
+        displayName: 'CodingX User',
+        userType: 'USER',
+      }),
+    );
+    const requestedUrls: string[] = [];
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const url = String(input);
+      requestedUrls.push(url);
+      if (url === '/api/auth/me') {
+        expect(init?.method).toBe('GET');
+        return new Response(
+          JSON.stringify({
+            success: true,
+            code: 'OK',
+            message: 'success',
+            data: {
+              userId: 1002,
+              username: 'user',
+              displayName: 'CodingX User',
+              userType: 'USER',
+            },
+          }),
+          { status: 200 },
+        );
+      }
+      if (url === '/api/chat/skills') {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            code: 'OK',
+            message: 'success',
+            data: [
+              {
+                id: 7101,
+                skillCode: 'github_search',
+                displayName: 'GitHub 热门项目检索',
+                description: '搜索热门 GitHub 项目并生成技能建议',
+                category: '研发',
+                sourceType: 'built-in',
+                enabled: 1,
+                sortNo: 1,
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      return new Response(
+        JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+        { status: 200 },
+      );
+    });
+
+    // 步骤：渲染技能页并等待页面自身技能接口完成，随后检查是否混入聊天工作区请求。
+    render(<App />);
+
+    expect(await screen.findByRole('heading', { name: '技能库' })).toBeInTheDocument();
+    expect((await screen.findAllByText('GitHub 热门项目检索')).length).toBeGreaterThan(0);
+
+    const forbiddenChatBootstrapRequests = [
+      '/api/chat/conversations',
+      '/api/chat/sample-questions',
+      '/api/chat/mcps',
+      '/api/chat/experts',
+      '/api/chat/slash-commands',
+    ];
+    await waitFor(() => {
+      expect(requestedUrls).toContain('/api/auth/me');
+      expect(requestedUrls).toContain('/api/chat/skills');
+    });
+    for (const forbiddenUrl of forbiddenChatBootstrapRequests) {
+      expect(requestedUrls.some((url) => url.startsWith(forbiddenUrl))).toBe(false);
+    }
+  });
+
+  /**
    * 验证未登录时可打开并关闭登录弹窗。
    */
   it('应在点击登录后展示登录弹窗并支持取消', async () => {

@@ -499,6 +499,7 @@ export function useChatWorkspace(
   const hostBoundRepositoryPath = hostContext?.localResource?.boundRepositoryPath ?? null;
   const hostWorkspaceId = normalizeWorkspaceId(hostContext?.localResource?.workspaceId);
   const executionTargetsSignature = hostContext?.executionTargets?.join('|') ?? '';
+  const shouldBootstrap = options?.shouldBootstrap ?? true;
   const bindWorkspacePath =
     options?.bindWorkspacePath ??
     (async () => {
@@ -1267,6 +1268,12 @@ export function useChatWorkspace(
   }, [activeRuntimeTarget]);
 
   useEffect(() => {
+    if (!shouldBootstrap) {
+      // 独立功能页仅复用工作区空状态给侧栏，不启动会话、技能、MCP 等聊天首屏预取。
+      bootstrapWorkspaceLifecycleRef.current.inFlightKey = null;
+      setIsBootstrapping(false);
+      return;
+    }
     const token = currentToken();
     const hasPersistedToken = token != null;
     // 关键约束：登录态校验尚未返回但本地仍有 token 时，不能提前按“未登录”重置，
@@ -1288,7 +1295,7 @@ export function useChatWorkspace(
     }
     bootstrapWorkspaceLifecycleRef.current.inFlightKey = bootstrapKey;
     void bootstrapWorkspace(token, bootstrapKey);
-  }, [isAuthenticated, activeWorkspacePartitionKey]);
+  }, [shouldBootstrap, isAuthenticated, activeWorkspacePartitionKey]);
 
   useEffect(() => {
     const detachForPageLifecycle = () => {

@@ -633,6 +633,10 @@ export interface ChatWorkspaceController {
  */
 export interface UseChatWorkspaceOptions {
   onUnauthorized?: () => void;
+  /**
+   * 控制是否启动聊天首屏重型初始化；独立功能页只需要稳定空状态，不需要预取聊天数据。
+   */
+  shouldBootstrap?: boolean;
   hostContext?: import('../../host/types').HostContext | null;
   pickRepositoryDirectory?: () => Promise<string | null>;
   bindWorkspacePath?: (

@@ -97,12 +97,16 @@ function MainApp() {
     pickRepositoryDirectory: _pickRepositoryDirectory,
     bindWorkspacePath: _bindWorkspacePath,
   } = useHostContext();
+  // 性能约束：技能库和自动化页不消费聊天工作区数据，桌面端直接进入这些页面时不能预加载聊天首屏接口。
+  const shouldBootstrapChatWorkspace =
+    activeView === 'chat' || activeView === 'mcp' || activeView === 'experts';
   // 步骤：把宿主上下文与本地选择能力注入聊天工作区，避免多份状态分裂。
   const chatWorkspace = useChatWorkspace(isAuthenticated, {
     onUnauthorized: handleUnauthorized,
     hostContext,
     pickRepositoryDirectory: _pickRepositoryDirectory,
     bindWorkspacePath: _bindWorkspacePath,
+    shouldBootstrap: shouldBootstrapChatWorkspace,
   });
   // 步骤：仅在桌面宿主且支持窗口控制时启用自定义标题栏占位高度。
   const hasDesktopTitleBar =

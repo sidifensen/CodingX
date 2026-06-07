@@ -516,6 +516,67 @@ class ChatApplicationServiceTest {
     }
 
     /**
+     * 桌面目标模式复用 planMode 时，系统提示必须明确目标工具调用约束。
+     */
+    @Test
+    void planModeShouldInjectDesktopGoalToolGuidance() {
+        bindRunContext();
+        ChatConversation conversation = ChatConversation.create(1L, "Goal", 1002L, 3001L, ChatConversationStatus.ACTIVE);
+        when(chatConversationRepository.requireById(1L)).thenReturn(conversation);
+        when(chatMessageRepository.findByConversationId(1L)).thenReturn(new ArrayList<>());
+        when(chatAttachmentService.requireOwnedAttachments(any(), eq(1L), eq(1002L))).thenReturn(List.of());
+        when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+            new ConversationRewriteResult("请创建目标并跟进桌面目标模式改造", false, List.of("请创建目标并跟进桌面目标模式改造"))
+        );
+        when(conversationIntentService.route("请创建目标并跟进桌面目标模式改造", false)).thenReturn(
+            new ConversationIntentDecision("chat.normal", ConversationIntentAction.DIRECT, null)
+        );
+        when(chatIntentNodeRepository.findByIntentCode("chat.normal")).thenReturn(null);
+        when(chatSkillContextService.buildSkillContext(any())).thenReturn("");
+        when(chatExpertContextService.buildExpertContext(any())).thenReturn("");
+        when(governanceAgentContextService.buildAgentContext(any(), any(), any())).thenReturn("");
+        when(conversationSummaryService.buildModelHistory(any(), any())).thenAnswer(invocation -> invocation.getArgument(1));
+        when(llmResponseCleaner.clean(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(conversationTitleService.generateTitle(any(), any())).thenReturn("目标模式");
+        doAnswer(invocation -> {
+            @SuppressWarnings("unchecked")
+            List<ChatMessage> aiHistory = invocation.getArgument(0, List.class);
+            String systemPrompt = aiHistory.getFirst().getContent();
+            assertTrue(systemPrompt.contains("桌面端"));
+            assertTrue(systemPrompt.contains("get_goal"));
+            assertTrue(systemPrompt.contains("create_goal"));
+            assertTrue(systemPrompt.contains("update_goal"));
+            assertTrue(systemPrompt.contains("大型"));
+            assertTrue(systemPrompt.contains("明确要求"));
+            AiChatClient.StreamHandler handler = invocation.getArgument(2);
+            handler.onDelta("已进入目标模式");
+            handler.onComplete();
+            return null;
+        }).when(aiChatClient).streamChat(any(), eq(false), any());
+
+        chatApplicationService.sendMessage(
+            new SendChatMessageCommand(
+                1L,
+                "请创建目标并跟进桌面目标模式改造",
+                false,
+                List.of(),
+                List.of(),
+                Map.of(),
+                null,
+                null,
+                List.of(),
+                false,
+                false,
+                true
+            ),
+            1002L
+        );
+
+        verify(chatStreamPublisher).publishAssistantCompleted(eq(1L), any(Long.class), eq("已进入目标模式"), eq("目标模式"));
+        ChatExecutionContext.clear();
+    }
+
+    /**
      * 选中技能时，数据库消息正文必须保留 @skill 标记，但模型历史仍使用剥离后的自然语言正文。
      */
     @Test

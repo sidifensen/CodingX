@@ -4824,6 +4824,56 @@ describe('useChatWorkspace', () => {
   });
 
   /**
+   * 目标模式开启时应复用后端 planMode 通道，让桌面端请求进入目标跟进语境。
+   */
+  it('目标模式开启时应在流请求中携带planMode', () => {
+    const requestUrl = (buildStreamRequestUrl as any)(
+      '请按目标跟进这个大型改造',
+      '2001',
+      '3001',
+      false,
+      true,
+      [],
+      [],
+      undefined,
+      [],
+      null,
+      'local',
+      null,
+      null,
+      true,
+    );
+    const searchParams = new URLSearchParams(requestUrl.split('?')[1] ?? '');
+
+    expect(searchParams.get('planMode')).toBe('true');
+  });
+
+  /**
+   * 普通模式必须保持既有请求语义，不应把 planMode 默认为 true。
+   */
+  it('目标模式关闭时不应在流请求中携带planMode', () => {
+    const requestUrl = (buildStreamRequestUrl as any)(
+      '普通对话',
+      '2001',
+      '3001',
+      false,
+      true,
+      [],
+      [],
+      undefined,
+      [],
+      null,
+      'cloud',
+      null,
+      null,
+      false,
+    );
+    const searchParams = new URLSearchParams(requestUrl.split('?')[1] ?? '');
+
+    expect(searchParams.has('planMode')).toBe(false);
+  });
+
+  /**
    * 本地模式应携带 workspaceId 归档到后端，同时保留目录作为工具执行上下文。
    */
   it('本地流式请求应标记local并携带workspaceId', () => {

@@ -556,6 +556,7 @@ export function useChatWorkspace(
   const [isStreaming, setIsStreaming] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
   const [deepThinkingEnabled, setDeepThinkingEnabled] = useState(false);
+  const [goalModeEnabled, setGoalModeEnabled] = useState(false);
   const [streamQueueState, setStreamQueueState] = useState<StreamQueueState | null>(null);
   const [streamError, setStreamError] = useState('');
   const [inputValue, setInputValue] = useState('');
@@ -1965,6 +1966,8 @@ export function useChatWorkspace(
             attachmentIds,
             activeRuntimeTarget,
             submittedSlashCommand,
+            null,
+            goalModeEnabled,
           ),
           {
             headers: {
@@ -2456,6 +2459,10 @@ export function useChatWorkspace(
           selectedExpertCode,
           workspacePath,
           reusedAttachmentIds,
+          undefined,
+          undefined,
+          undefined,
+          goalModeEnabled,
         ),
         {
           headers: {
@@ -2762,6 +2769,10 @@ export function useChatWorkspace(
           selectedExpertCode,
           workspacePath,
           [],
+          undefined,
+          undefined,
+          undefined,
+          goalModeEnabled,
         ),
         {
           headers: {
@@ -2890,6 +2901,10 @@ export function useChatWorkspace(
           selectedExpertCode,
           workspacePath,
           [],
+          undefined,
+          undefined,
+          undefined,
+          goalModeEnabled,
         ),
         {
           headers: {
@@ -3633,6 +3648,7 @@ export function useChatWorkspace(
     isStreaming,
     isCancelling,
     deepThinkingEnabled,
+    goalModeEnabled,
     streamQueueState,
     streamError,
     inputValue,
@@ -3644,6 +3660,7 @@ export function useChatWorkspace(
     removePendingAttachment,
     clearPendingAttachments,
     setDeepThinkingEnabled,
+    setGoalModeEnabled,
     setSelectedSkillCodes,
     setSelectedSlashCommand,
     setSelectedMcpCodes,
@@ -5031,6 +5048,7 @@ export function buildStreamRequestUrl(
   maybeSelectedExpertCodeOrRuntimeTarget?: string | null,
   maybeRuntimeTargetOrSlashCommand?: 'cloud' | 'local' | SlashCommandItem | null,
   selectedSlashCommand?: SlashCommandItem | null,
+  goalModeEnabled = false,
 ) {
   let repositoryPath: string | null | undefined;
   let attachmentIds: string[] | undefined;
@@ -5087,6 +5105,9 @@ export function buildStreamRequestUrl(
   }
   if (deepThinkingEnabled) {
     searchParams.set('deepThinking', 'true');
+  }
+  if (goalModeEnabled) {
+    searchParams.set('planMode', 'true');
   }
   if (mcpConnected && selectedMcpCodes.length > 0) {
     searchParams.set('mcpCodes', selectedMcpCodes.join(','));

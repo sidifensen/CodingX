@@ -2564,6 +2564,86 @@ describe('ChatView', () => {
   });
 
   /**
+   * 桌面目标模式入口应和输入区工具按钮一起展示，并把切换动作交给工作区状态层。
+   */
+  it('目标模式按钮应切换工作区目标模式状态', async () => {
+    const setGoalModeEnabled = vi.fn();
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          goalModeEnabled: false,
+          setGoalModeEnabled,
+          executionSteps: [],
+        } as Partial<ChatWorkspaceController>)}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '切换目标模式' }));
+
+    expect(setGoalModeEnabled).toHaveBeenCalledWith(true);
+  });
+
+  /**
+   * 目标模式开启后右侧应出现悬浮进度窗，直接展示当前执行步骤和完成占比。
+   */
+  it('目标模式开启且存在执行步骤时应展示右侧目标进度窗', async () => {
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          goalModeEnabled: true,
+          executionSteps: [
+            {
+              id: 'goal-step-1',
+              runId: '5002',
+              stepType: 'analysis',
+              stepTitle: '梳理目标模式需求',
+              stepStatus: 'COMPLETED',
+              sequenceNo: 1,
+            },
+            {
+              id: 'goal-step-2',
+              runId: '5002',
+              stepType: 'implementation',
+              stepTitle: '实现目标模式入口',
+              stepStatus: 'RUNNING',
+              sequenceNo: 2,
+            },
+          ],
+        } as Partial<ChatWorkspaceController>)}
+      />,
+    );
+
+    const panel = screen.getByTestId('goal-progress-panel');
+    expect(panel).toHaveTextContent('目标模式');
+    expect(panel).toHaveTextContent('50%');
+    expect(panel).toHaveTextContent('梳理目标模式需求');
+    expect(panel).toHaveTextContent('实现目标模式入口');
+  });
+
+  /**
+   * 普通空闲态没有目标进度时不应展示悬浮窗，避免干扰常规聊天。
+   */
+  it('目标模式关闭且没有执行步骤时不应展示目标进度窗', async () => {
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          goalModeEnabled: false,
+          isStreaming: false,
+          executionSteps: [],
+        } as Partial<ChatWorkspaceController>)}
+      />,
+    );
+
+    expect(screen.queryByTestId('goal-progress-panel')).not.toBeInTheDocument();
+  });
+
+  /**
    * 环境与工作空间切换应独立于输入框容器，避免占用输入框内部高度。
    */
   it('应在输入框下方渲染环境与工作空间切换行并移除旧状态栏', async () => {
@@ -4589,6 +4669,7 @@ function createWorkspace(overrides?: Partial<ChatWorkspaceController>): ChatWork
     isStreaming: false,
     isCancelling: false,
     deepThinkingEnabled: false,
+    goalModeEnabled: false,
     streamQueueState: null,
     streamError: '',
     inputValue: '请搜索 Spring Boot SSE 最佳实践',
@@ -4600,6 +4681,7 @@ function createWorkspace(overrides?: Partial<ChatWorkspaceController>): ChatWork
     removePendingAttachment: vi.fn(),
     clearPendingAttachments: vi.fn(),
     setDeepThinkingEnabled: vi.fn(),
+    setGoalModeEnabled: vi.fn(),
     setSelectedSkillCodes: vi.fn(),
     setSelectedSlashCommand: vi.fn(),
     setSelectedMcpCodes: vi.fn(),

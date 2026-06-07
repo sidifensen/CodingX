@@ -517,6 +517,10 @@ export interface ChatWorkspaceController {
   isStreaming: boolean;
   isCancelling: boolean;
   deepThinkingEnabled: boolean;
+  /**
+   * 桌面目标模式开关；开启后后续流请求会进入目标跟进语境。
+   */
+  goalModeEnabled: boolean;
   streamQueueState: StreamQueueState | null;
   streamError: string;
   inputValue: string;
@@ -528,6 +532,7 @@ export interface ChatWorkspaceController {
   removePendingAttachment: (clientId: string) => void;
   clearPendingAttachments: () => void;
   setDeepThinkingEnabled: (value: boolean) => void;
+  setGoalModeEnabled: (value: boolean) => void;
   setSelectedSkillCodes: (skillCodes: string[] | ((previous: string[]) => string[])) => void;
   setSelectedSlashCommand: (command: SlashCommandItem | null) => void;
   setSelectedMcpCodes: (mcpCodes: string[] | ((previous: string[]) => string[])) => void;

@@ -26,6 +26,7 @@ import {
   Pencil,
   RotateCcw,
   Share2,
+  Target,
   ThumbsDown,
   ThumbsUp,
   Trash2,
@@ -36,6 +37,7 @@ import { ChatApi } from './chat/chatApi';
 import {
   ChatAttachmentItem,
   ChatWorkspaceController,
+  ExecutionStepItem,
   ChatMessageItem,
   LongTermMemoryItem,
   MessageTimelineItem,
@@ -102,6 +104,7 @@ export default function ChatView({
     isStreaming,
     isCancelling,
     deepThinkingEnabled,
+    goalModeEnabled,
     streamQueueState,
     streamError,
     inputValue,
@@ -113,6 +116,7 @@ export default function ChatView({
     removePendingAttachment,
     clearPendingAttachments,
     setDeepThinkingEnabled,
+    setGoalModeEnabled,
     setSelectedSkillCodes,
     setSelectedSlashCommand,
     setSelectedMcpCodes,
@@ -148,6 +152,12 @@ export default function ChatView({
     // 业务约束：SSE 拒绝事件会同时回填助手消息错误和全局流式错误，消息内已有同文案时只保留一处提示。
     return !messages.some((message) => message.role === 'ASSISTANT' && message.errorMessage === streamError);
   }, [messages, streamError]);
+  const goalProgress = React.useMemo(
+    () => buildGoalProgressView(executionSteps, isStreaming),
+    [executionSteps, isStreaming],
+  );
+  const showGoalProgressPanel =
+    goalModeEnabled || isStreaming || executionSteps.length > 0;
   const latestMessageAnchorRef = React.useRef<HTMLDivElement | null>(null);
   const chatScrollRegionRef = React.useRef<HTMLDivElement | null>(null);
   const shouldFollowLatestMessageRef = React.useRef(true);
@@ -1152,6 +1162,12 @@ export default function ChatView({
     >
       <section className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(71,96,122,0.16),transparent_38%),radial-gradient(circle_at_80%_18%,rgba(188,75,0,0.12),transparent_26%)]" />
+        {showGoalProgressPanel ? (
+          <GoalProgressPanel
+            progress={goalProgress}
+            isGoalModeEnabled={goalModeEnabled}
+          />
+        ) : null}
         <div className="absolute left-4 right-4 top-4 z-20 hidden items-center justify-between md:flex">
           <div className={`${isDesktopSidebarCollapsed ? '' : 'w-10'}`}>
             {/* 步骤：左上角预留壳层折叠按钮占位，避免与主内容视觉挤压；真实交互由 App 壳层负责。 */}
@@ -1985,6 +2001,22 @@ export default function ChatView({
                     >
                       <button
                         type="button"
+                        aria-label="切换目标模式"
+                        aria-pressed={goalModeEnabled}
+                        onClick={() => setGoalModeEnabled(!goalModeEnabled)}
+                        className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-[box-shadow,color,border-color,background-color] duration-200 hover:shadow-[0_8px_18px_rgba(0,0,0,0.16)] ${
+                          goalModeEnabled
+                            ? 'border-foreground bg-foreground text-background hover:opacity-92'
+                            : 'border-border bg-surface-container text-muted hover:border-border-active hover:bg-surface hover:text-foreground'
+                        }`}
+                      >
+                        <span className="flex items-center gap-1.5">
+                          <Target size={14} />
+                          目标模式
+                        </span>
+                      </button>
+                      <button
+                        type="button"
                         aria-label="切换深度思考"
                         onClick={() => setDeepThinkingEnabled(!deepThinkingEnabled)}
                         className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-[box-shadow,color,border-color,background-color] duration-200 hover:shadow-[0_8px_18px_rgba(0,0,0,0.16)] ${
@@ -2296,6 +2328,130 @@ export default function ChatView({
         />
       ) : null}
     </motion.div>
+  );
+}
+
+type GoalProgressView = {
+  percent: number;
+  statusLabel: string;
+  statusTone: 'running' | 'completed' | 'error' | 'cancelled' | 'idle';
+  steps: ExecutionStepItem[];
+};
+
+/**
+ * 右侧目标进度窗只消费当前会话执行步骤，避免为桌面目标模式新增后端状态接口。
+ * @param steps 当前会话执行步骤。
+ * @param isStreaming 当前是否仍在生成。
+ * @returns 可直接渲染的目标进度视图。
+ */
+function buildGoalProgressView(
+  steps: ExecutionStepItem[],
+  isStreaming: boolean,
+): GoalProgressView {
+  if (steps.length === 0) {
+    return {
+      percent: isStreaming ? 12 : 0,
+      statusLabel: isStreaming ? '等待目标拆解' : '准备就绪',
+      statusTone: isStreaming ? 'running' : 'idle',
+      steps: [],
+    };
+  }
+  const normalizedStatuses = steps.map((step) => String(step.stepStatus ?? '').toUpperCase());
+  const completedCount = normalizedStatuses.filter((status) => status === 'COMPLETED').length;
+  const hasError = normalizedStatuses.some((status) => status === 'ERROR' || status === 'FAILED');
+  const hasCancelled = normalizedStatuses.some((status) => status === 'CANCELLED' || status === 'CANCELED');
+  const hasRunning =
+    isStreaming ||
+    normalizedStatuses.some((status) => status === 'RUNNING' || status === 'PENDING' || status === 'CREATED');
+  const percent = Math.round((completedCount / steps.length) * 100);
+  if (hasError) {
+    return { percent, statusLabel: '执行异常', statusTone: 'error', steps };
+  }
+  if (hasCancelled) {
+    return { percent, statusLabel: '已取消', statusTone: 'cancelled', steps };
+  }
+  if (completedCount === steps.length) {
+    return { percent: 100, statusLabel: '目标完成', statusTone: 'completed', steps };
+  }
+  return {
+    percent: Math.max(percent, hasRunning ? 8 : percent),
+    statusLabel: hasRunning ? '正在跟进' : '等待继续',
+    statusTone: hasRunning ? 'running' : 'idle',
+    steps,
+  };
+}
+
+/**
+ * 渲染桌面端右侧悬浮目标进度窗，帮助用户跟进 AI 编码任务的当前阶段。
+ */
+function GoalProgressPanel({
+  progress,
+  isGoalModeEnabled,
+}: {
+  progress: GoalProgressView;
+  isGoalModeEnabled: boolean;
+}) {
+  const visibleSteps = progress.steps
+    .slice()
+    .sort((left, right) => left.sequenceNo - right.sequenceNo)
+    .slice(-4);
+  const statusClassName =
+    progress.statusTone === 'error'
+      ? 'text-error'
+      : progress.statusTone === 'completed'
+        ? 'text-success'
+        : progress.statusTone === 'cancelled'
+          ? 'text-muted'
+          : 'text-accent-breeze';
+  return (
+    <aside
+      data-testid="goal-progress-panel"
+      aria-label="目标进度"
+      className="pointer-events-auto fixed right-5 top-24 z-30 hidden w-72 rounded-lg border border-border bg-surface p-4 text-foreground shadow-[0_18px_46px_rgba(0,0,0,0.22)] md:block"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-2 text-sm font-semibold">
+            <Target size={16} className="text-accent-breeze" />
+            目标模式
+          </div>
+          <div className="mt-1 text-xs leading-5 text-muted">
+            {isGoalModeEnabled ? '后续请求会创建并跟进目标' : '正在展示当前执行进度'}
+          </div>
+        </div>
+        <div className={`rounded-full bg-surface-container px-2 py-1 text-xs font-medium ${statusClassName}`}>
+          {progress.statusLabel}
+        </div>
+      </div>
+      <div className="mt-4">
+        <div className="flex items-center justify-between text-xs text-muted">
+          <span>完成度</span>
+          <span className="font-mono text-foreground">{progress.percent}%</span>
+        </div>
+        <div className="mt-2 h-2 overflow-hidden rounded-full bg-surface-container">
+          <div
+            className="h-full rounded-full bg-foreground transition-[width] duration-300"
+            style={{ width: `${Math.min(100, Math.max(0, progress.percent))}%` }}
+          />
+        </div>
+      </div>
+      <div className="mt-4 space-y-2">
+        {visibleSteps.length > 0 ? (
+          visibleSteps.map((step) => (
+            <div key={step.id} className="border-l border-border pl-3">
+              <div className="text-xs font-medium leading-5 text-foreground">{step.stepTitle}</div>
+              <div className="mt-0.5 font-mono text-[11px] uppercase text-muted">
+                {step.stepStatus || step.stepType}
+              </div>
+            </div>
+          ))
+        ) : (
+          <div className="rounded-md bg-surface-container px-3 py-2 text-xs leading-5 text-muted">
+            等待模型创建目标并输出执行步骤。
+          </div>
+        )}
+      </div>
+    </aside>
   );
 }
 

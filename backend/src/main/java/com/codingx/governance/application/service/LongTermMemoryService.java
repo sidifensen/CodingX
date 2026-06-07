@@ -121,10 +121,56 @@ public class LongTermMemoryService {
     public GovernanceLongTermMemory updateUserMemoryStatus(Long memoryId, Long userId, String status) {
         requireUserId(userId);
         GovernanceLongTermMemory memory = requireMemory(memoryId);
-        if (!userId.equals(memory.getUserId())) {
-            throw new BusinessException("GOVERNANCE_MEMORY_FORBIDDEN", "无权操作该长期记忆");
-        }
+        requireOwnedMemory(memory, userId);
         return updateStatus(memory, status);
+    }
+
+    /**
+     * 用户编辑自己的长期记忆正文；编辑后的内容会刷新关键词和去重键，确保后续回注使用最新约定。
+     * @param memoryId 记忆主键。
+     * @param userId 当前用户 ID。
+     * @param content 新记忆正文。
+     * @return 更新后的记忆。
+     */
+    public GovernanceLongTermMemory updateUserMemoryContent(Long memoryId, Long userId, String content) {
+        requireUserId(userId);
+        GovernanceLongTermMemory memory = requireMemory(memoryId);
+        requireOwnedMemory(memory, userId);
+        String normalizedContent = normalizeEditableMemoryContent(content);
+        if (StrUtil.isBlank(normalizedContent)) {
+            throw new BusinessException("GOVERNANCE_MEMORY_CONTENT_REQUIRED", "长期记忆内容不能为空");
+        }
+        String memoryKey = buildMemoryKey(
+            StrUtil.blankToDefault(memory.getMemoryScope(), "USER"),
+            memory.getUserId(),
+            memory.getWorkspaceId(),
+            normalizedContent
+        );
+        GovernanceLongTermMemory updated = memory.toBuilder()
+            .content(normalizedContent)
+            .memoryKey(memoryKey)
+            .keywordJson(JSONUtil.toJsonStr(extractKeywords(normalizedContent)))
+            .updatedAt(LocalDateTime.now())
+            .deleted(memory.getDeleted() == null ? 0 : memory.getDeleted())
+            .build();
+        memoryRepository.save(updated);
+        return updated;
+    }
+
+    /**
+     * 用户删除自己的长期记忆；使用逻辑删除以保留来源审计链路，删除后不再参与列表和上下文回注。
+     * @param memoryId 记忆主键。
+     * @param userId 当前用户 ID。
+     */
+    public void deleteUserMemory(Long memoryId, Long userId) {
+        requireUserId(userId);
+        GovernanceLongTermMemory memory = requireMemory(memoryId);
+        requireOwnedMemory(memory, userId);
+        GovernanceLongTermMemory deleted = memory.toBuilder()
+            .deleted(1)
+            .updatedAt(LocalDateTime.now())
+            .build();
+        memoryRepository.save(deleted);
     }
 
     /**
@@ -191,6 +237,12 @@ public class LongTermMemoryService {
         return memory;
     }
 
+    private void requireOwnedMemory(GovernanceLongTermMemory memory, Long userId) {
+        if (memory == null || !userId.equals(memory.getUserId())) {
+            throw new BusinessException("GOVERNANCE_MEMORY_FORBIDDEN", "无权操作该长期记忆");
+        }
+    }
+
     private void requireUserId(Long userId) {
         if (userId == null) {
             throw new BusinessException("GOVERNANCE_MEMORY_USER_REQUIRED", "用户身份不能为空");
@@ -234,6 +286,10 @@ public class LongTermMemoryService {
         }
         normalized = normalized.replaceAll("\\s+", " ").trim();
         return StrUtil.maxLength(normalized, 300);
+    }
+
+    private String normalizeEditableMemoryContent(String content) {
+        return StrUtil.maxLength(StrUtil.trimToEmpty(content).replaceAll("\\s+", " "), 300);
     }
 
     private List<String> extractKeywords(String content) {

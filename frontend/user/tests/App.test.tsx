@@ -73,6 +73,12 @@ describe('App', () => {
           { status: 200 },
         );
       }
+      if (url.startsWith('/api/chat/memories')) {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
       if (url === '/api/chat/experts') {
         return new Response(
           JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
@@ -201,6 +207,8 @@ describe('App', () => {
       expect(currentUrl.pathname).toBe('/skills');
       expect(currentUrl.searchParams.get('conversationId')).toBeNull();
     });
+    // 步骤：等待技能页主内容挂载后再切换下一页，避免测试环境中连续点击压住退出动画队列。
+    expect(await screen.findByRole('heading', { name: '技能库' })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'MCP 管理' }));
 
@@ -209,6 +217,90 @@ describe('App', () => {
       expect(currentUrl.pathname).toBe('/mcp');
       expect(currentUrl.searchParams.get('conversationId')).toBeNull();
     });
+    // 步骤：MCP 页同样等待主内容完成切换，再验证记忆管理入口。
+    expect(await screen.findByRole('heading', { name: 'MCP 管理' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '记忆管理' }));
+
+    await waitFor(() => {
+      const currentUrl = new URL(window.location.href);
+      expect(currentUrl.pathname).toBe('/memories');
+      expect(currentUrl.searchParams.get('conversationId')).toBeNull();
+    });
+    // 步骤：主内容区经过 AnimatePresence 退出动画后才挂载新页面，需等待页面标题出现。
+    expect(await screen.findByRole('heading', { name: '记忆管理' })).toBeInTheDocument();
+  });
+
+  /**
+   * 记忆管理页是独立功能页，刷新进入时只应加载用户记忆，不应启动聊天工作区重型初始化。
+   */
+  it('应在打开记忆管理页时只加载长期记忆数据', async () => {
+    window.history.replaceState({}, '', '/memories');
+    window.localStorage.setItem(
+      'codingx.auth.session',
+      JSON.stringify({
+        token: 'token-123',
+        userId: 1002,
+        username: 'user',
+        displayName: 'CodingX User',
+        userType: 'USER',
+      }),
+    );
+    const requestedUrls: string[] = [];
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const url = String(input);
+      requestedUrls.push(url);
+      if (url === '/api/auth/me') {
+        expect(init?.method).toBe('GET');
+        return new Response(
+          JSON.stringify({
+            success: true,
+            code: 'OK',
+            message: 'success',
+            data: {
+              userId: 1002,
+              username: 'user',
+              displayName: 'CodingX User',
+              userType: 'USER',
+            },
+          }),
+          { status: 200 },
+        );
+      }
+      if (url === '/api/chat/memories') {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            code: 'OK',
+            message: 'success',
+            data: [
+              {
+                id: 9001,
+                memoryScope: 'USER',
+                content: '以后回答都先给结论',
+                status: 'ACTIVE',
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      return new Response(
+        JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+        { status: 200 },
+      );
+    });
+
+    render(<App />);
+
+    expect(await screen.findByRole('heading', { name: '记忆管理' })).toBeInTheDocument();
+    expect(await screen.findByText('以后回答都先给结论')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(requestedUrls).toContain('/api/auth/me');
+      expect(requestedUrls).toContain('/api/chat/memories');
+    });
+    expect(requestedUrls.some((url) => url.startsWith('/api/chat/conversations'))).toBe(false);
+    expect(requestedUrls.some((url) => url.startsWith('/api/chat/sample-questions'))).toBe(false);
   });
 
   /**

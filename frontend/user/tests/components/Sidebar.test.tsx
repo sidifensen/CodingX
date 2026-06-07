@@ -71,6 +71,12 @@ function createSidebarProps(overrides?: {
 }
 
 describe('Sidebar conversation collapse behavior', () => {
+  it('应展示记忆管理导航入口', () => {
+    render(<Sidebar {...createSidebarProps()} />);
+
+    expect(screen.getByRole('button', { name: '记忆管理' })).toBeInTheDocument();
+  });
+
   it('点击分组箭头可折叠与展开会话列表', () => {
     render(<Sidebar {...createSidebarProps()} />);
 

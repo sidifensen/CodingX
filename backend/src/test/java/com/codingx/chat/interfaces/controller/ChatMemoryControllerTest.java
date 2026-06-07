@@ -3,6 +3,7 @@ package com.codingx.chat.interfaces.controller;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -95,6 +96,53 @@ class ChatMemoryControllerTest {
         }
 
         verify(longTermMemoryService).updateUserMemoryStatus(eq(9001L), eq(1002L), eq("REJECTED"));
+    }
+
+    /**
+     * 用户编辑自己的长期记忆时应把当前登录用户和正文一起交给服务层做归属校验与内容更新。
+     */
+    @Test
+    void updateMemoryContentDelegatesToService() throws Exception {
+        when(longTermMemoryService.updateUserMemoryContent(9001L, 1002L, "新的代码风格约定")).thenReturn(
+            GovernanceLongTermMemory.builder()
+                .id(9001L)
+                .memoryScope("PROJECT")
+                .userId(1002L)
+                .workspaceId(3001L)
+                .content("新的代码风格约定")
+                .status("ACTIVE")
+                .build()
+        );
+
+        try (MockedStatic<StpUtil> mocked = Mockito.mockStatic(StpUtil.class)) {
+            mocked.when(StpUtil::getLoginIdAsLong).thenReturn(1002L);
+
+            mockMvc().perform(patch("/api/chat/memories/9001")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("{\"content\":\"新的代码风格约定\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.content").value("新的代码风格约定"));
+        }
+
+        verify(longTermMemoryService).updateUserMemoryContent(eq(9001L), eq(1002L), eq("新的代码风格约定"));
+    }
+
+    /**
+     * 用户删除自己的长期记忆时应传递当前登录用户，删除本身由服务层执行逻辑删除。
+     */
+    @Test
+    void deleteMemoryDelegatesToService() throws Exception {
+        try (MockedStatic<StpUtil> mocked = Mockito.mockStatic(StpUtil.class)) {
+            mocked.when(StpUtil::getLoginIdAsLong).thenReturn(1002L);
+
+            mockMvc().perform(delete("/api/chat/memories/9001"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.message").value("删除成功"));
+        }
+
+        verify(longTermMemoryService).deleteUserMemory(eq(9001L), eq(1002L));
     }
 
     private MockMvc mockMvc() {

@@ -767,6 +767,79 @@ describe('ChatApi', () => {
     expect(memories[0].status).toBe('ACTIVE');
   });
 
+  /**
+   * 用户编辑长期记忆正文应命中用户侧记忆更新接口，并返回归一化后的记录。
+   */
+  it('应通过用户侧接口更新长期记忆正文', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          success: true,
+          code: 'OK',
+          message: 'success',
+          data: {
+            id: 9001,
+            memoryScope: 'PROJECT',
+            userId: 1002,
+            workspaceId: 3001,
+            content: '新的项目注释规范',
+            status: 'ACTIVE',
+          },
+        }),
+        { status: 200 },
+      ),
+    );
+
+    const memory = await ChatApi.updateLongTermMemoryContent(
+      'token-123',
+      '9001',
+      '新的项目注释规范',
+    );
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      '/api/chat/memories/9001',
+      expect.objectContaining({
+        method: 'PATCH',
+        body: JSON.stringify({ content: '新的项目注释规范' }),
+        headers: expect.objectContaining({
+          satoken: 'token-123',
+        }),
+      }),
+    );
+    expect(memory.id).toBe('9001');
+    expect(memory.content).toBe('新的项目注释规范');
+    expect(memory.workspaceId).toBe('3001');
+  });
+
+  /**
+   * 用户删除长期记忆应命中用户侧逻辑删除接口。
+   */
+  it('应通过用户侧接口删除长期记忆', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          success: true,
+          code: 'OK',
+          message: '删除成功',
+          data: null,
+        }),
+        { status: 200 },
+      ),
+    );
+
+    await ChatApi.deleteLongTermMemory('token-123', '9001');
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      '/api/chat/memories/9001',
+      expect.objectContaining({
+        method: 'DELETE',
+        headers: expect.objectContaining({
+          satoken: 'token-123',
+        }),
+      }),
+    );
+  });
+
 
   /**
    * 上传附件应使用 multipart/form-data，并命中附件上传接口。

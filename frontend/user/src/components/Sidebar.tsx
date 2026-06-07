@@ -11,6 +11,7 @@ import {
   PlugZap,
   Zap,
   Brain,
+  BookMarked,
   Bot,
   MoreHorizontal,
   PencilLine,
@@ -228,6 +229,7 @@ export default function Sidebar({
           <NavItem id="mcp" label="MCP 管理" icon={PlugZap} />
           <NavItem id="skills" label="技能与套件" icon={Zap} />
           <NavItem id="experts" label="专家团队" icon={Brain} />
+          <NavItem id="memories" label="记忆管理" icon={BookMarked} />
           <NavItem id="automation" label="自动化" icon={Bot} />
         </nav>
 

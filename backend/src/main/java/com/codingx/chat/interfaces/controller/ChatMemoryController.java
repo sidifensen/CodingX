@@ -6,6 +6,7 @@ import com.codingx.governance.application.service.LongTermMemoryService;
 import com.codingx.governance.domain.model.GovernanceLongTermMemory;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -57,10 +58,47 @@ public class ChatMemoryController {
     }
 
     /**
+     * 更新当前用户拥有的长期记忆正文。
+     * @param memoryId 记忆主键。
+     * @param request 正文更新请求。
+     * @return 更新后的长期记忆。
+     */
+    @PatchMapping("/{memoryId}")
+    public ApiResponse<GovernanceLongTermMemory> updateMemoryContent(
+        @PathVariable Long memoryId,
+        @RequestBody MemoryContentUpdateRequest request
+    ) {
+        // 步骤 1：Controller 只读取登录用户和请求正文，归属校验与关键词刷新下沉到服务层。
+        Long userId = StpUtil.getLoginIdAsLong();
+        return ApiResponse.success(longTermMemoryService.updateUserMemoryContent(memoryId, userId, request == null ? null : request.content()));
+    }
+
+    /**
+     * 删除当前用户拥有的长期记忆。
+     * @param memoryId 记忆主键。
+     * @return 删除结果。
+     */
+    @DeleteMapping("/{memoryId}")
+    public ApiResponse<Void> deleteMemory(@PathVariable Long memoryId) {
+        // 步骤 1：删除采用逻辑删除，服务层会校验当前用户是否拥有该记忆。
+        Long userId = StpUtil.getLoginIdAsLong();
+        longTermMemoryService.deleteUserMemory(memoryId, userId);
+        return ApiResponse.successMessage("删除成功");
+    }
+
+    /**
      * 长期记忆状态更新请求。
      *
      * @param status 目标状态，允许 ACTIVE 或 REJECTED。
      */
     public record MemoryStatusUpdateRequest(String status) {
+    }
+
+    /**
+     * 长期记忆正文更新请求。
+     *
+     * @param content 新记忆正文，不能为空。
+     */
+    public record MemoryContentUpdateRequest(String content) {
     }
 }

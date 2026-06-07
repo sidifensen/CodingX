@@ -1,13 +1,16 @@
 package com.codingx.governance.application;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.codingx.chat.domain.model.ChatConversation;
 import com.codingx.chat.domain.model.ChatConversationStatus;
 import com.codingx.chat.domain.model.ChatMessage;
 import com.codingx.chat.domain.model.ChatMessageStatus;
+import com.codingx.common.exception.BusinessException;
 import com.codingx.governance.application.service.LongTermMemoryService;
 import com.codingx.governance.domain.model.GovernanceLongTermMemory;
 import com.codingx.governance.domain.repository.GovernanceLongTermMemoryRepository;
@@ -152,6 +155,86 @@ class LongTermMemoryServiceTest {
         assertEquals(2, activeCount);
     }
 
+    /**
+     * 用户编辑自己的记忆时应刷新正文、关键词、去重键与更新时间，保证后续模型回注使用最新约定。
+     */
+    @Test
+    void updateUserMemoryContentShouldRefreshContentKeywordsAndMemoryKey() {
+        InMemoryLongTermMemoryRepository repository = new InMemoryLongTermMemoryRepository();
+        GovernanceLongTermMemory memory = sampleMemory("ACTIVE")
+            .toBuilder()
+            .id(500L)
+            .userId(200L)
+            .memoryKey("old-key")
+            .content("旧记忆")
+            .keywordJson("[\"旧记忆\"]")
+            .build();
+        repository.save(memory);
+        LongTermMemoryService service = new LongTermMemoryService(repository);
+
+        GovernanceLongTermMemory updated = service.updateUserMemoryContent(500L, 200L, "新的项目注释规范：说明业务意图");
+
+        assertEquals("新的项目注释规范：说明业务意图", updated.getContent());
+        assertTrue(updated.getKeywordJson().contains("业务意图"));
+        assertTrue(updated.getMemoryKey().startsWith("user:"));
+        assertTrue(!"old-key".equals(updated.getMemoryKey()));
+        assertNotNull(updated.getUpdatedAt());
+    }
+
+    /**
+     * 空白正文不能保存，避免把无意义内容回注给模型。
+     */
+    @Test
+    void updateUserMemoryContentShouldRejectBlankContent() {
+        InMemoryLongTermMemoryRepository repository = new InMemoryLongTermMemoryRepository();
+        repository.save(sampleMemory("ACTIVE").toBuilder().id(500L).userId(200L).build());
+        LongTermMemoryService service = new LongTermMemoryService(repository);
+
+        BusinessException exception = assertThrows(
+            BusinessException.class,
+            () -> service.updateUserMemoryContent(500L, 200L, "   ")
+        );
+
+        assertEquals("GOVERNANCE_MEMORY_CONTENT_REQUIRED", exception.getCode());
+    }
+
+    /**
+     * 用户不能编辑或删除他人记忆，归属校验必须在服务层统一完成。
+     */
+    @Test
+    void userMemoryMutationsShouldRejectForeignMemory() {
+        InMemoryLongTermMemoryRepository repository = new InMemoryLongTermMemoryRepository();
+        repository.save(sampleMemory("ACTIVE").toBuilder().id(500L).userId(201L).build());
+        LongTermMemoryService service = new LongTermMemoryService(repository);
+
+        BusinessException editException = assertThrows(
+            BusinessException.class,
+            () -> service.updateUserMemoryContent(500L, 200L, "新的约定")
+        );
+        BusinessException deleteException = assertThrows(
+            BusinessException.class,
+            () -> service.deleteUserMemory(500L, 200L)
+        );
+
+        assertEquals("GOVERNANCE_MEMORY_FORBIDDEN", editException.getCode());
+        assertEquals("GOVERNANCE_MEMORY_FORBIDDEN", deleteException.getCode());
+    }
+
+    /**
+     * 用户删除记忆时只做逻辑删除，后续列表与上下文检索都应排除该记录。
+     */
+    @Test
+    void deleteUserMemoryShouldMarkDeletedAndExcludeFromContext() {
+        InMemoryLongTermMemoryRepository repository = new InMemoryLongTermMemoryRepository();
+        repository.save(sampleMemory("ACTIVE").toBuilder().id(500L).userId(200L).workspaceId(null).keywordJson("[\"业务注释\"]").build());
+        LongTermMemoryService service = new LongTermMemoryService(repository);
+
+        service.deleteUserMemory(500L, 200L);
+
+        assertEquals(1, repository.findById(500L).getDeleted());
+        assertTrue(service.retrieveActiveMemories(200L, null, "业务注释", 10).isEmpty());
+    }
+
     private GovernanceLongTermMemory sampleMemory(String status) {
         return GovernanceLongTermMemory.builder()
             .memoryScope("USER")
@@ -201,6 +284,7 @@ class LongTermMemoryServiceTest {
         public List<GovernanceLongTermMemory> findActiveForContext(Long userId, Long workspaceId, int limit) {
             return savedMemories.stream()
                 .filter(memory -> "ACTIVE".equals(memory.getStatus()))
+                .filter(memory -> memory.getDeleted() == null || memory.getDeleted() == 0)
                 .filter(memory -> userId.equals(memory.getUserId()))
                 .filter(memory -> memory.getWorkspaceId() == null || workspaceId != null && memory.getWorkspaceId().equals(workspaceId))
                 .toList();

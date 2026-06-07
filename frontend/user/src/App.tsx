@@ -9,6 +9,7 @@ import McpView from './views/McpView';
 import SkillsView from './views/SkillsView';
 import ExpertsView from './views/ExpertsView';
 import CliLoginView from './views/CliLoginView';
+import MemoryView from './views/MemoryView';
 import Sidebar from './components/Sidebar';
 import LoginModal from './components/auth/LoginModal';
 import DesktopTitleBar from './components/DesktopTitleBar';
@@ -25,7 +26,7 @@ import {
 /**
  * 定义应用支持的主视图类型。
  */
-export type ViewType = 'chat' | 'mcp' | 'skills' | 'experts' | 'automation';
+export type ViewType = 'chat' | 'mcp' | 'skills' | 'experts' | 'automation' | 'memories';
 
 const VIEW_ROUTE_PATHS: Record<ViewType, string> = {
   chat: '/',
@@ -33,6 +34,7 @@ const VIEW_ROUTE_PATHS: Record<ViewType, string> = {
   skills: '/skills',
   experts: '/experts',
   automation: '/automation',
+  memories: '/memories',
 };
 const PATH_VIEW_MAP: Record<string, ViewType> = Object.entries(VIEW_ROUTE_PATHS).reduce(
   (viewMap, [view, path]) => ({
@@ -419,6 +421,15 @@ function MainApp() {
                 />
               )}
               {activeView === 'automation' && <AutomationView key="automation" />}
+              {activeView === 'memories' && (
+                <MemoryView
+                  key="memories"
+                  isAuthenticated={isAuthenticated}
+                  onRequireLogin={openLoginModal}
+                  workspaceId={chatWorkspace.workspaceId}
+                  workspaceLabel={chatWorkspace.workspaceLabel}
+                />
+              )}
               {activeView === 'skills' && <SkillsView key="skills" />}
               {activeView === 'experts' && (
                 <ExpertsView

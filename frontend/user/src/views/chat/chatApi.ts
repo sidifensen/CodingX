@@ -527,6 +527,44 @@ export class ChatApi {
   }
 
   /**
+   * 更新长期记忆正文，供用户端记忆管理页修正已生效或已停用记忆。
+   * @param token 当前登录令牌。
+   * @param memoryId 长期记忆 ID。
+   * @param content 新记忆正文。
+   * @returns 更新后的长期记忆。
+   */
+  static async updateLongTermMemoryContent(
+    token: string,
+    memoryId: string,
+    content: string,
+  ): Promise<LongTermMemoryItem> {
+    const envelope = await this.request<LongTermMemoryItem>(
+      `/api/chat/memories/${encodeURIComponent(memoryId)}`,
+      token,
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ content }),
+      },
+    );
+    return this.normalizeLongTermMemory(envelope.data);
+  }
+
+  /**
+   * 删除长期记忆，后端执行逻辑删除并保留来源审计链路。
+   * @param token 当前登录令牌。
+   * @param memoryId 长期记忆 ID。
+   */
+  static async deleteLongTermMemory(token: string, memoryId: string): Promise<void> {
+    await this.request<void>(
+      `/api/chat/memories/${encodeURIComponent(memoryId)}`,
+      token,
+      {
+        method: 'DELETE',
+      },
+    );
+  }
+
+  /**
    * 上传聊天附件并返回附件元数据，供发送消息时携带 attachmentIds。
    * @param token 当前登录令牌。
    * @param file 上传文件。

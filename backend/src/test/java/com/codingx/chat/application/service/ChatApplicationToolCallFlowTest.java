@@ -3,6 +3,7 @@ package com.codingx.chat.application.service;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -11,10 +12,13 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import cn.hutool.json.JSONObject;
+import cn.hutool.json.JSONUtil;
 import com.codingx.chat.application.command.SendChatMessageCommand;
 import com.codingx.chat.domain.model.ChatAttachment;
 import com.codingx.chat.domain.model.ChatConversation;
 import com.codingx.chat.domain.model.ChatConversationStatus;
+import com.codingx.chat.domain.model.ChatExecutionStep;
 import com.codingx.chat.domain.model.ChatMessage;
 import com.codingx.chat.domain.model.ChatMessageRole;
 import com.codingx.chat.domain.model.ChatMessageStatus;
@@ -171,6 +175,21 @@ class ChatApplicationToolCallFlowTest {
         assertEquals("工具已执行", toolEvents.get(1).get("content"));
         assertEquals("工具返回：工具已执行", toolEvents.get(1).get("reactObservation"));
         assertEquals(Boolean.TRUE, ((Map<?, ?>) toolEvents.get(1).get("resultMetadata")).get("ok"));
+        ArgumentCaptor<ChatExecutionStep> stepCaptor = ArgumentCaptor.forClass(ChatExecutionStep.class);
+        verify(chatExecutionStepRepository, org.mockito.Mockito.atLeastOnce()).save(stepCaptor.capture());
+        ChatExecutionStep toolStep = stepCaptor.getAllValues().stream()
+            .filter(step -> "tool".equals(step.getStepType()))
+            .findFirst()
+            .orElseThrow();
+        assertEquals("tool", toolStep.getStepType());
+        assertNotNull(toolStep.getMetadataJson());
+        JSONObject toolStepMetadata = JSONUtil.parseObj(toolStep.getMetadataJson());
+        assertEquals("call-1", toolStepMetadata.getStr("callId"));
+        assertEquals("test_sync_tool", toolStepMetadata.getStr("toolId"));
+        assertEquals("同步测试工具", toolStepMetadata.getStr("displayName"));
+        assertEquals("touch", toolStepMetadata.getJSONObject("params").getStr("message"));
+        assertEquals("工具已执行", toolStepMetadata.getStr("rawResult"));
+        assertEquals(Boolean.TRUE, toolStepMetadata.getJSONObject("resultMetadata").getBool("ok"));
         verify(chatStreamPublisher).publishAssistantCompleted(
             eq(1L),
             any(),
@@ -326,6 +345,92 @@ class ChatApplicationToolCallFlowTest {
                 eq("目录已准备好，接下来写入页面。"),
                 eq("日记页面")
             );
+        } finally {
+            ChatExecutionContext.clear();
+        }
+    }
+
+    /**
+     * 同一个写文件目标如果被模型用不同 HTML 内容反复覆盖，应按同一路径去重并收口成功结果。
+     * 业务背景：桌面端生成 HTML 时，模型可能每轮都略微改写 content，原始 arguments 不相等会绕过旧去重，
+     * 最终真实执行多次 write 并触发工具轮次上限。
+     *
+     * @param tempDir 本地 workspace 临时目录。
+     * @throws Exception 执行失败时抛出。
+     */
+    @Test
+    void sendMessageStopsRepeatedWriteToSamePathEvenWhenContentChanges(@TempDir Path tempDir) throws Exception {
+        Long runId = 9401016L;
+        ChatExecutionContext.start(runId);
+        try {
+            Path workspace = tempDir.resolve("repo");
+            Files.createDirectories(workspace);
+            ChatConversation conversation = ChatConversation.create(16L, "Repeat Write", 1002L, ChatConversationStatus.ACTIVE);
+            when(chatConversationRepository.requireById(16L)).thenReturn(conversation);
+            when(chatMessageRepository.findByConversationId(16L)).thenReturn(new ArrayList<>());
+            when(chatAttachmentService.requireOwnedAttachments(any(), eq(16L), eq(1002L))).thenReturn(List.of());
+            when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+                new ConversationRewriteResult("帮我写一个 note.html", false, List.of("帮我写一个 note.html"))
+            );
+            when(conversationIntentService.route("帮我写一个 note.html", false)).thenReturn(
+                new ConversationIntentDecision("chat.normal", ConversationIntentAction.DIRECT, null)
+            );
+            when(chatIntentNodeRepository.findByIntentCode("chat.normal")).thenReturn(null);
+            when(chatSkillContextService.buildSkillContext(any())).thenReturn("");
+            when(chatExpertContextService.buildExpertContext(any())).thenReturn("");
+            when(conversationSummaryService.buildModelHistory(any(), any())).thenAnswer(invocation -> invocation.getArgument(1));
+            when(conversationTitleService.generateTitle(any(), any())).thenReturn("HTML 写入");
+            when(llmResponseCleaner.clean(any())).thenAnswer(invocation -> invocation.getArgument(0));
+            when(chatToolSpecService.listModelVisibleToolSpecs()).thenReturn(List.of(
+                new ChatToolSpec("write", "写入文件", Map.of("type", "object"))
+            ));
+            when(chatToolExecutionService.execute(eq("write"), any())).thenAnswer(invocation ->
+                new ChatToolExecutionResult("write", "已写入文件: note.html", Map.of("path", "note.html", "bytes", 128))
+            );
+            AtomicInteger modelRound = new AtomicInteger();
+            doAnswer(invocation -> {
+                AiChatClient.ToolAwareStreamHandler handler = invocation.getArgument(3);
+                int round = modelRound.incrementAndGet();
+                if (round == 1) {
+                    handler.onToolCall(new AiToolCall(
+                        "call-write-1",
+                        "write",
+                        "{\"path\":\"note.html\",\"content\":\"<!DOCTYPE html><html><body>第一版</body></html>\"}"
+                    ));
+                    handler.onComplete();
+                    return null;
+                }
+                if (round == 2) {
+                    handler.onToolCall(new AiToolCall(
+                        "call-write-2",
+                        "write",
+                        "{\"path\":\"note.html\",\"content\":\"<!DOCTYPE html><html><body>第二版</body></html>\"}"
+                    ));
+                    handler.onComplete();
+                    return null;
+                }
+                throw new AssertionError("同一路径 write 被判定为重复后不应继续请求第三轮模型");
+            }).when(aiChatClient).streamChatWithTools(any(), eq(false), any(), any());
+
+            chatApplicationService.sendMessage(
+                new SendChatMessageCommand(16L, "帮我写一个 note.html", false, List.of(), List.of(), null, workspace.toString(), List.of()),
+                1002L
+            );
+
+            verify(aiChatClient, org.mockito.Mockito.times(2)).streamChatWithTools(any(), eq(false), any(), any());
+            verify(chatToolExecutionService, org.mockito.Mockito.times(1)).execute(eq("write"), any());
+            verify(chatStreamPublisher, never()).publishError(eq(16L), any());
+            verify(chatStreamPublisher).publishAssistantCompleted(
+                eq(16L),
+                any(),
+                eq("已完成，文件已写入 `note.html`。"),
+                eq("HTML 写入")
+            );
+            ArgumentCaptor<ChatMessage> messageCaptor = ArgumentCaptor.forClass(ChatMessage.class);
+            verify(chatMessageRepository, org.mockito.Mockito.times(2)).save(messageCaptor.capture());
+            ChatMessage assistantMessage = messageCaptor.getAllValues().get(1);
+            assertEquals(ChatMessageStatus.COMPLETED, assistantMessage.getStatus());
+            assertEquals("已完成，文件已写入 `note.html`。", assistantMessage.getContent());
         } finally {
             ChatExecutionContext.clear();
         }

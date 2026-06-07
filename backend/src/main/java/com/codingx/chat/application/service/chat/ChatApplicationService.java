@@ -1479,9 +1479,22 @@ public class ChatApplicationService {
             logSuppressedToolRoundContent(round + 1, deferredContentDeltas);
             for (AiToolCall toolCall : toolCalls) {
                 ChatToolExecutionResult toolResult;
-                String toolCallKey = loopCoordinator.deduplicateKey(toolCall);
+                Path deduplicateWorkingDirectory = loopCoordinator.isWriteToolCall(toolCall)
+                    ? resolveToolWorkingDirectory(command)
+                    : null;
+                String toolCallKey = loopCoordinator.deduplicateKey(toolCall, deduplicateWorkingDirectory);
                 ChatToolExecutionResult previousToolResult = executedToolResults.get(toolCallKey);
                 if (previousToolResult != null) {
+                    if (loopCoordinator.isWriteToolCall(toolCall)) {
+                        appendAssistantDelta(command.conversationId(), builder, buildRepeatedWriteFinalAnswer(previousToolResult));
+                        log.warn(
+                            "重复写文件工具调用已收口: 轮次={}, 工具={}, 参数长度={}",
+                            round + 1,
+                            toolCall.toolCode(),
+                            StrUtil.length(toolCall.arguments())
+                        );
+                        return;
+                    }
                     toolResult = buildDuplicateToolCallResult(toolCall, previousToolResult);
                     log.warn(
                         "重复本地工具调用已跳过: 轮次={}, 工具={}, 参数长度={}",
@@ -1491,7 +1504,8 @@ public class ChatApplicationService {
                     );
                 } else {
                     try {
-                        toolResult = executeModelToolCall(command, runId, toolCall);
+                        String toolStepDisplayName = resolveLocalToolDisplayName(toolCall, toolSpecs);
+                        toolResult = executeModelToolCall(command, runId, toolCall, toolStepDisplayName);
                     } catch (RuntimeException exception) {
                         streamError[0] = exception;
                         return;
@@ -2179,9 +2193,15 @@ public class ChatApplicationService {
      * @param command 当前消息命令。
      * @param runId 运行标识。
      * @param toolCall 模型工具调用。
+     * @param toolStepDisplayName 持久化步骤展示名，优先使用工具规格描述，便于历史过程卡片展示中文名称。
      * @return 工具执行结果。
      */
-    private ChatToolExecutionResult executeModelToolCall(SendChatMessageCommand command, Long runId, AiToolCall toolCall) {
+    private ChatToolExecutionResult executeModelToolCall(
+        SendChatMessageCommand command,
+        Long runId,
+        AiToolCall toolCall,
+        String toolStepDisplayName
+    ) {
         // 步骤 1：保存调用前线程上下文，再按当前消息绑定本地 workspace，防止工具执行目录错乱。
         Optional<Path> previousWorkingDirectory = ChatToolExecutionContext.currentToolWorkingDirectory();
         Map<String, Path> previousSkillDirectories = ChatToolExecutionContext.currentSkillDirectories();
@@ -2209,20 +2229,15 @@ public class ChatApplicationService {
                 .stepStatus("COMPLETED")
                 .sequenceNo(1L)
                 .content(toolResult.content())
+                .metadataJson(cn.hutool.json.JSONUtil.toJsonStr(
+                    buildLocalToolStepMetadata(toolCall, toolStepDisplayName, toolResult)
+                ))
                 .createdAt(java.time.LocalDateTime.now())
                 .updatedAt(java.time.LocalDateTime.now())
                 .build();
             if (!command.localOnly()) {
                 chatExecutionStepRepository.save(toolStep);
-                chatStreamPublisher.publishStep(command.conversationId(), Map.of(
-                    "id", toolStep.getId(),
-                    "runId", toolStep.getRunId(),
-                    "stepType", toolStep.getStepType(),
-                    "stepTitle", toolStep.getStepTitle(),
-                    "stepStatus", toolStep.getStepStatus(),
-                    "sequenceNo", toolStep.getSequenceNo(),
-                    "content", toolStep.getContent()
-                ));
+                chatStreamPublisher.publishStep(command.conversationId(), buildExecutionStepPayload(toolStep));
             }
             persistPlanStepsIfNeeded(command, runId, toolResult);
             // 步骤 3：发布工具完成事件并返回工具内容给模型循环，模型可继续基于结果生成回答。
@@ -2250,6 +2265,34 @@ public class ChatApplicationService {
             // 步骤 5：恢复进入工具前的线程上下文，避免后续工具调用沿用错误目录。
             restoreToolExecutionContext(previousWorkingDirectory, previousSkillDirectories);
         }
+    }
+
+    /**
+     * 构造执行步骤 SSE 载荷。
+     * 业务意图：在线流仍保留前端既有 step 字段，同时携带 metadataJson/metadata，
+     * 便于工具过程卡片在刷新前后使用同一份结构化参数和结果元数据。
+     *
+     * @param step 执行步骤快照。
+     * @return 可直接推送给前端的步骤载荷。
+     */
+    private Map<String, Object> buildExecutionStepPayload(ChatExecutionStep step) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("id", step.getId());
+        payload.put("runId", step.getRunId());
+        payload.put("stepType", step.getStepType());
+        payload.put("stepTitle", step.getStepTitle());
+        payload.put("stepStatus", step.getStepStatus());
+        payload.put("sequenceNo", step.getSequenceNo());
+        payload.put("content", step.getContent());
+        if (StrUtil.isNotBlank(step.getMetadataJson())) {
+            payload.put("metadataJson", step.getMetadataJson());
+            try {
+                payload.put("metadata", cn.hutool.json.JSONUtil.parseObj(step.getMetadataJson()));
+            } catch (RuntimeException ignored) {
+                // metadataJson 已经是可回放原文，解析失败不应影响实时步骤事件推送。
+            }
+        }
+        return payload;
     }
 
     /**
@@ -2400,6 +2443,32 @@ public class ChatApplicationService {
     }
 
     /**
+     * 构造本地工具执行步骤的持久化元数据。
+     * 业务意图：SSE 工具事件只覆盖在线流，刷新或历史回放需要从 chat_execution_step.metadata_json
+     * 还原 callId、参数和结构化返回元数据，避免过程卡片退化成只有纯文本输出。
+     *
+     * @param toolCall 模型请求执行的工具调用。
+     * @param toolStepDisplayName 持久化步骤展示名，通常来自工具规格 description。
+     * @param toolResult 工具执行结果。
+     * @return 可序列化到步骤 metadata_json 的结构化元数据。
+     */
+    private Map<String, Object> buildLocalToolStepMetadata(
+        AiToolCall toolCall,
+        String toolStepDisplayName,
+        ChatToolExecutionResult toolResult
+    ) {
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("callId", StrUtil.blankToDefault(toolCall.callId(), "tool-call-" + System.nanoTime()));
+        metadata.put("toolId", StrUtil.blankToDefault(toolCall.toolCode(), "unknown"));
+        metadata.put("displayName", StrUtil.blankToDefault(toolStepDisplayName, resolveLocalToolDisplayName(toolCall)));
+        metadata.put("input", StrUtil.blankToDefault(toolCall.arguments(), ""));
+        metadata.put("params", parseToolCallParams(toolCall.arguments()));
+        metadata.put("rawResult", toolResult == null ? "" : StrUtil.blankToDefault(toolResult.content(), ""));
+        metadata.put("resultMetadata", toolResult == null || toolResult.metadata() == null ? Map.of() : toolResult.metadata());
+        return metadata;
+    }
+
+    /**
      * 发布本地工具执行失败事件，保证前端能在最终错误前看到是哪一个工具失败。
      * @param conversationId 会话标识。
      * @param toolCall 模型请求执行的工具调用。
@@ -2433,7 +2502,7 @@ public class ChatApplicationService {
         payload.put("callId", StrUtil.blankToDefault(toolCall.callId(), "tool-call-" + System.nanoTime()));
         payload.put("phase", phase);
         payload.put("toolId", StrUtil.blankToDefault(toolCall.toolCode(), "unknown"));
-        payload.put("displayName", StrUtil.blankToDefault(toolCall.toolCode(), "本地工具"));
+        payload.put("displayName", resolveLocalToolDisplayName(toolCall));
         payload.put("input", StrUtil.blankToDefault(toolCall.arguments(), ""));
         payload.put("params", parseToolCallParams(toolCall.arguments()));
         payload.put("startedAt", startedAt.toString());
@@ -2470,6 +2539,24 @@ public class ChatApplicationService {
             ? normalizedContent.substring(0, 160) + "..."
             : normalizedContent;
         return prefix + "：" + clippedContent;
+    }
+
+    /**
+     * 解析持久化步骤展示名；历史过程卡片优先使用工具规格描述，无法匹配时退回工具编码。
+     * @param toolCall 模型请求执行的工具调用。
+     * @param toolSpecs 本轮模型可见工具规格。
+     * @return 工具执行步骤展示名。
+     */
+    private String resolveLocalToolDisplayName(AiToolCall toolCall, List<ChatToolSpec> toolSpecs) {
+        if (toolCall == null || CollUtil.isEmpty(toolSpecs)) {
+            return resolveLocalToolDisplayName(toolCall);
+        }
+        return toolSpecs.stream()
+            .filter(toolSpec -> StrUtil.equalsIgnoreCase(toolSpec.name(), toolCall.toolCode()))
+            .map(ChatToolSpec::description)
+            .filter(StrUtil::isNotBlank)
+            .findFirst()
+            .orElseGet(() -> resolveLocalToolDisplayName(toolCall));
     }
 
     /**
@@ -2601,6 +2688,41 @@ public class ChatApplicationService {
             content,
             metadata
         );
+    }
+
+    /**
+     * 对已成功写入的同一路径重复 write 做确定性收口。
+     * 业务意图：模型可能在拿到“文件已写入”证据后继续微调同一个 content 字段；
+     * 此时继续把“重复调用已跳过”回灌给模型容易形成循环，后端直接给出用户可见完成结果。
+     *
+     * @param previousToolResult 上一次成功写入结果。
+     * @return 面向用户的完成答复。
+     */
+    private String buildRepeatedWriteFinalAnswer(ChatToolExecutionResult previousToolResult) {
+        String path = Optional.ofNullable(previousToolResult.metadata())
+            .map(metadata -> metadata.get("path"))
+            .map(String::valueOf)
+            .filter(StrUtil::isNotBlank)
+            .orElse(null);
+        if (StrUtil.isNotBlank(path)) {
+            return "已完成，文件已写入 `" + path + "`。";
+        }
+        return "已完成，文件已写入。";
+    }
+
+    /**
+     * 追加确定性助手正文并实时推送给前端，保持与普通模型 delta 相同的最终消息缓冲。
+     *
+     * @param conversationId 当前会话标识。
+     * @param builder 最终助手消息正文缓冲。
+     * @param delta 要追加的正文。
+     */
+    private void appendAssistantDelta(Long conversationId, StringBuilder builder, String delta) {
+        if (StrUtil.isBlank(delta)) {
+            return;
+        }
+        builder.append(delta);
+        chatStreamPublisher.publishAssistantDelta(conversationId, delta);
     }
 
     /**

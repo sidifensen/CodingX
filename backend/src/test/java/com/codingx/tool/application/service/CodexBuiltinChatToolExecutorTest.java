@@ -23,6 +23,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
@@ -101,6 +102,13 @@ class CodexBuiltinChatToolExecutorTest {
             assertNotNull(result.metadata());
             assertEquals(Boolean.TRUE, result.metadata().get("applied"));
             assertTrue(String.valueOf(result.metadata().get("diffPreview")).contains("line-2-updated"));
+            assertFileDiffMetadata(
+                result.metadata(),
+                "README.md",
+                1,
+                1,
+                "line-2-updated"
+            );
         } finally {
             ChatToolExecutionContext.clear();
         }
@@ -415,6 +423,47 @@ class CodexBuiltinChatToolExecutorTest {
     }
 
     /**
+     * write 工具需要兼容模型函数参数中的多行 HTML 内容。
+     * 业务背景：部分模型会把 HTML 中的真实换行或属性引号直接放入 arguments，严格 JSON 解析失败时不能把整段
+     * arguments 当作 path 解析，否则 Windows 会报出包含 <!DOCTYPE html> 的非法路径并中断软件端任务。
+     *
+     * @param tempDir 测试临时目录。
+     * @throws Exception 执行失败时抛出。
+     */
+    @Test
+    void writeShouldRecoverLooseMultilineHtmlArguments(@TempDir Path tempDir) throws Exception {
+        Path projectRoot = tempDir.resolve("workspace");
+        Files.createDirectories(projectRoot);
+        String looseArguments = """
+            {"path":"note.html","content":"<!DOCTYPE html>
+            <html lang="zh-CN">
+            <head>
+              <meta charset="UTF-8">
+              <title>笔记</title>
+            </head>
+            <body>
+              <main class="note">今天的计划</main>
+            </body>
+            </html>"}
+            """.stripTrailing();
+
+        ChatToolExecutionContext.bindToolWorkingDirectory(projectRoot);
+        try {
+            ChatToolExecutionResult result = codexBuiltinChatToolExecutor.execute("write", looseArguments);
+
+            Path output = projectRoot.resolve("note.html");
+            assertEquals("write", result.toolCode());
+            assertTrue(Files.exists(output));
+            String content = Files.readString(output, StandardCharsets.UTF_8);
+            assertTrue(content.contains("<!DOCTYPE html>"));
+            assertTrue(content.contains("<main class=\"note\">今天的计划</main>"));
+            assertEquals("note.html", result.metadata().get("path"));
+        } finally {
+            ChatToolExecutionContext.clear();
+        }
+    }
+
+    /**
      * shell_command 必须在当前工具上下文绑定的工作目录执行，避免误改后端进程目录。
      *
      * @param tempDir 测试临时目录。
@@ -490,10 +539,42 @@ class CodexBuiltinChatToolExecutorTest {
             assertEquals("ls", lsResult.toolCode());
             assertTrue(readResult.content().contains("alpha"));
             assertTrue(Files.readString(projectRoot.resolve("notes").resolve("todo.txt"), StandardCharsets.UTF_8).contains("done"));
+            assertFileDiffMetadata(writeResult.metadata(), "notes/todo.txt", 2, 0, "alpha");
+            assertFileDiffMetadata(editResult.metadata(), "notes/todo.txt", 1, 1, "done");
             assertTrue(bashResult.content().contains("done"));
             assertTrue(grepResult.content().contains("src/App.java"));
             assertTrue(findResult.content().contains("src/App.java"));
             assertTrue(lsResult.content().contains("notes"));
+        } finally {
+            ChatToolExecutionContext.clear();
+        }
+    }
+
+    /**
+     * 右侧代码审查栏需要按来源读取 git 工作区差异，未暂存模式只读当前工作树改动。
+     *
+     * @param tempDir 测试临时目录。
+     * @throws Exception 执行失败时抛出。
+     */
+    @Test
+    void gitDiffShouldReturnUnstagedFileDiffsForReviewSidebar(@TempDir Path tempDir) throws Exception {
+        Path projectRoot = tempDir.resolve("workspace");
+        Files.createDirectories(projectRoot);
+        Path targetFile = projectRoot.resolve("README.md");
+        Files.writeString(targetFile, "old\n", StandardCharsets.UTF_8);
+        initGitRepository(projectRoot, "README.md");
+        Files.writeString(targetFile, "new\n", StandardCharsets.UTF_8, java.nio.file.StandardOpenOption.TRUNCATE_EXISTING);
+
+        ChatToolExecutionContext.bindToolWorkingDirectory(projectRoot);
+        try {
+            ChatToolExecutionResult result = codexBuiltinChatToolExecutor.execute(
+                "git_diff",
+                JSONUtil.toJsonStr(Map.of("mode", "unstaged"))
+            );
+
+            assertEquals("git_diff", result.toolCode());
+            assertFileDiffMetadata(result.metadata(), "README.md", 1, 1, "+new");
+            assertEquals("unstaged", result.metadata().get("mode"));
         } finally {
             ChatToolExecutionContext.clear();
         }
@@ -894,6 +975,7 @@ class CodexBuiltinChatToolExecutorTest {
                 "{\"command\":\"Set-Content -Path smoke-file.txt -Value electron-smoke\",\"timeoutMs\":10000}"
             );
             executeAndRecord(invokedToolCodes, "apply_patch", JSONUtil.toJsonStr(Map.of("patch", htmlPatch)));
+            executeAndRecord(invokedToolCodes, "git_diff", "{\"mode\":\"unstaged\"}");
             executeAndRecord(invokedToolCodes, "list_mcp_resources", "{}");
             executeAndRecord(invokedToolCodes, "list_mcp_resource_templates", "{}");
             executeAndRecord(invokedToolCodes, "read_mcp_resource", "{\"uri\":\"mcp://configs/weather_query\"}");
@@ -995,5 +1077,70 @@ class CodexBuiltinChatToolExecutorTest {
         invokedToolCodes.add(toolCode);
         assertEquals(expectedResultToolCode, result.toolCode());
         return result;
+    }
+
+    /**
+     * 校验文件差异元数据；主消息区和审查侧栏都依赖这些字段做实时渲染。
+     */
+    private static void assertFileDiffMetadata(
+        Map<String, Object> metadata,
+        String expectedPath,
+        int expectedAdditions,
+        int expectedDeletions,
+        String expectedDiffFragment
+    ) {
+        assertNotNull(metadata);
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> fileDiffs = (List<Map<String, Object>>) metadata.get("fileDiffs");
+        assertNotNull(fileDiffs);
+        assertFalse(fileDiffs.isEmpty());
+        Map<String, Object> matchedDiff = fileDiffs.stream()
+            .filter(diff -> expectedPath.equals(diff.get("path")))
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("缺少文件差异: " + expectedPath + " in " + fileDiffs));
+        assertEquals(expectedAdditions, matchedDiff.get("additions"));
+        assertEquals(expectedDeletions, matchedDiff.get("deletions"));
+        assertTrue(String.valueOf(matchedDiff.get("diff")).contains(expectedDiffFragment));
+        @SuppressWarnings("unchecked")
+        Map<String, Object> summary = (Map<String, Object>) metadata.get("diffSummary");
+        assertNotNull(summary);
+        assertTrue(Number.class.isAssignableFrom(summary.get("filesChanged").getClass()));
+        assertTrue(Number.class.isAssignableFrom(summary.get("additions").getClass()));
+        assertTrue(Number.class.isAssignableFrom(summary.get("deletions").getClass()));
+        assertTrue(String.valueOf(metadata.get("diffPreview")).contains(expectedDiffFragment));
+    }
+
+    /**
+     * 初始化一个最小 git 仓库并提交指定文件，供 diff 查询工具生成稳定的工作区差异。
+     */
+    private static void initGitRepository(Path projectRoot, String filePath) throws Exception {
+        runGit(projectRoot, "init");
+        runGit(projectRoot, "config", "user.email", "test@example.com");
+        runGit(projectRoot, "config", "user.name", "tester");
+        runGit(projectRoot, "add", filePath);
+        runGit(projectRoot, "commit", "-m", "init");
+    }
+
+    /**
+     * 执行测试用 git 命令，失败时直接抛出，避免吞掉仓库初始化错误。
+     */
+    private static void runGit(Path projectRoot, String... args) throws Exception {
+        Process process = new ProcessBuilder(concatGitArgs(args))
+            .directory(projectRoot.toFile())
+            .redirectErrorStream(true)
+            .start();
+        assertTrue(process.waitFor(5, TimeUnit.SECONDS), "git 命令超时");
+        String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+        assertEquals(0, process.exitValue(), output);
+    }
+
+    /**
+     * 组装 git 命令参数数组，避免测试里重复拼接。
+     */
+    private static String[] concatGitArgs(String[] args) {
+        String[] command = new String[args.length + 1];
+        command[0] = "git";
+        System.arraycopy(args, 0, command, 1, args.length);
+        return command;
     }
 }

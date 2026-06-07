@@ -67,7 +67,7 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
 
     private static final List<String> TOOL_CODES = List.of(
         "read", "write", "edit", "bash", "grep", "find", "ls",
-        "shell_command", "apply_patch", "list_mcp_resources", "list_mcp_resource_templates", "read_mcp_resource",
+        "shell_command", "apply_patch", "git_diff", "list_mcp_resources", "list_mcp_resource_templates", "read_mcp_resource",
         "update_plan", "request_user_input", "view_image", "spawn_agent", "send_input", "wait_agent", "close_agent",
         "resume_agent", "tool_search", "request_plugin_install", "request_permissions", "exec_command", "write_stdin",
         "get_goal", "create_goal", "update_goal", "send_message", "followup_task", "list_agents", "spawn_agents_on_csv",
@@ -121,6 +121,7 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
             case "exec_command" -> executeExecCommand(input);
             case "write_stdin" -> executeWriteStdin(input);
             case "apply_patch" -> executeApplyPatch(input);
+            case "git_diff" -> executeGitDiff(input);
             case "list_mcp_resources" -> executeListMcpResources();
             case "list_mcp_resource_templates" -> executeListMcpResourceTemplates();
             case "read_mcp_resource" -> executeReadMcpResource(input);
@@ -309,13 +310,16 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
     private ChatToolExecutionResult executeWrite(ToolInput input) {
         // 步骤 1：解析当前工具工作目录和目标路径，路径约束统一由 resolveWorkspacePath 保证不越界。
         Path workingDirectory = resolveToolWorkingDirectory();
-        Path filePath = resolveWorkspacePath(workingDirectory, extractPath(input, "path"));
-        String content = input.object().getStr("content");
-        if (content == null) {
-            content = input.raw();
-        }
+        WriteArguments writeArguments = extractWriteArguments(input);
+        Path filePath = resolveWorkspacePath(workingDirectory, writeArguments.path());
+        String content = writeArguments.content();
         try {
-            // 步骤 2：写入前补齐父目录，并以 UTF-8 覆盖写入文件内容。
+            // 步骤 2：写入前保留旧内容，后续生成单文件 diff 供聊天流实时展示。
+            boolean existedBeforeWrite = Files.isRegularFile(filePath);
+            String oldContent = existedBeforeWrite
+                ? Files.readString(filePath, StandardCharsets.UTF_8)
+                : "";
+            // 步骤 3：写入前补齐父目录，并以 UTF-8 覆盖写入文件内容。
             Path parent = filePath.getParent();
             if (parent != null) {
                 Files.createDirectories(parent);
@@ -327,13 +331,163 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
                 StandardOpenOption.CREATE,
                 StandardOpenOption.TRUNCATE_EXISTING
             );
-            // 步骤 3：返回工作区相对路径和写入字节数，供模型和前端确认写入结果。
+            // 步骤 4：返回工作区相对路径、写入字节数和文件差异，供模型和前端确认写入结果。
             Map<String, Object> metadata = workspaceFileMetadata(workingDirectory, filePath);
             metadata.put("bytes", Files.size(filePath));
+            addFileDiffMetadata(
+                metadata,
+                List.of(buildSingleFileDiff(workingDirectory, filePath, oldContent, content, existedBeforeWrite ? "modified" : "added"))
+            );
             return new ChatToolExecutionResult("write", "文件已写入", metadata);
         } catch (Exception exception) {
             throw new BusinessException("CHAT_TOOL_WRITE_FAILED", "写入文件失败: " + exception.getMessage());
         }
+    }
+
+    /**
+     * 提取 write 工具的路径与正文参数。
+     * 业务意图：模型工具调用参数偶尔会把多行 HTML 原样塞进 JSON 字符串，导致严格 JSON 解析失败；
+     * 这里仅针对 write 的 path/content 结构做有限恢复，避免整段 HTML 被当成 path 触发 Windows 非法路径错误。
+     * @param input 工具输入。
+     * @return 已恢复的写文件参数。
+     */
+    private WriteArguments extractWriteArguments(ToolInput input) {
+        WriteArguments recoveredArguments = recoverLooseWriteArguments(input.raw());
+        if (recoveredArguments != null && input.object().isEmpty()) {
+            return recoveredArguments;
+        }
+        String content = input.object().getStr("content");
+        if (content == null) {
+            content = input.raw();
+        }
+        return new WriteArguments(extractPath(input, "path"), content);
+    }
+
+    /**
+     * 从非严格 JSON 的 write arguments 中恢复 path/content。
+     * 边界条件：只支持 content 是最后一个字段的对象形态；其他复杂结构继续走原有错误路径，避免误解析任意文本。
+     * @param raw 原始工具参数。
+     * @return 成功恢复时返回写入参数，无法恢复时返回 null。
+     */
+    private WriteArguments recoverLooseWriteArguments(String raw) {
+        if (StrUtil.isBlank(raw) || !StrUtil.trimToEmpty(raw).startsWith("{")) {
+            return null;
+        }
+        String path = extractLooseJsonStringField(raw, "path");
+        String content = extractLooseTrailingStringField(raw, "content");
+        if (StrUtil.isBlank(path) || content == null) {
+            return null;
+        }
+        return new WriteArguments(path, content);
+    }
+
+    /**
+     * 提取普通短字符串字段，例如 path。
+     * @param raw 原始工具参数。
+     * @param fieldName 字段名。
+     * @return 解析出的字段值，无法解析时返回 null。
+     */
+    private String extractLooseJsonStringField(String raw, String fieldName) {
+        Pattern fieldPattern = Pattern.compile(
+            "\"" + Pattern.quote(fieldName) + "\"\\s*:\\s*\"((?:\\\\.|[^\"\\\\])*)\"",
+            Pattern.DOTALL
+        );
+        Matcher matcher = fieldPattern.matcher(raw);
+        if (!matcher.find()) {
+            return null;
+        }
+        return unescapeLooseJsonString(matcher.group(1));
+    }
+
+    /**
+     * 提取位于对象末尾的长字符串字段，用于容忍 HTML 内容中未转义的属性引号和真实换行。
+     * @param raw 原始工具参数。
+     * @param fieldName 字段名。
+     * @return 字段内容，无法安全定位时返回 null。
+     */
+    private String extractLooseTrailingStringField(String raw, String fieldName) {
+        Pattern fieldStartPattern = Pattern.compile(
+            "\"" + Pattern.quote(fieldName) + "\"\\s*:\\s*\"",
+            Pattern.DOTALL
+        );
+        Matcher matcher = fieldStartPattern.matcher(raw);
+        if (!matcher.find()) {
+            return null;
+        }
+        int contentStart = matcher.end();
+        int contentEnd = raw.length();
+        while (contentEnd > contentStart && Character.isWhitespace(raw.charAt(contentEnd - 1))) {
+            contentEnd--;
+        }
+        if (contentEnd <= contentStart || raw.charAt(contentEnd - 1) != '}') {
+            return null;
+        }
+        contentEnd--;
+        while (contentEnd > contentStart && Character.isWhitespace(raw.charAt(contentEnd - 1))) {
+            contentEnd--;
+        }
+        if (contentEnd <= contentStart || raw.charAt(contentEnd - 1) != '"') {
+            return null;
+        }
+        contentEnd--;
+        return unescapeLooseJsonString(raw.substring(contentStart, contentEnd));
+    }
+
+    /**
+     * 只处理 JSON 字符串中常见转义，保留无法识别的反斜杠序列，避免破坏代码正文。
+     * @param value 原始字符串片段。
+     * @return 反转义后的文本。
+     */
+    private String unescapeLooseJsonString(String value) {
+        if (value == null || value.indexOf('\\') < 0) {
+            return value;
+        }
+        StringBuilder builder = new StringBuilder(value.length());
+        for (int index = 0; index < value.length(); index++) {
+            char current = value.charAt(index);
+            if (current != '\\' || index + 1 >= value.length()) {
+                builder.append(current);
+                continue;
+            }
+            char escaped = value.charAt(++index);
+            switch (escaped) {
+                case '"' -> builder.append('"');
+                case '\\' -> builder.append('\\');
+                case '/' -> builder.append('/');
+                case 'b' -> builder.append('\b');
+                case 'f' -> builder.append('\f');
+                case 'n' -> builder.append('\n');
+                case 'r' -> builder.append('\r');
+                case 't' -> builder.append('\t');
+                case 'u' -> index = appendUnicodeEscape(value, index, builder);
+                default -> {
+                    builder.append('\\');
+                    builder.append(escaped);
+                }
+            }
+        }
+        return builder.toString();
+    }
+
+    /**
+     * 解析 \\uXXXX 转义；格式不完整时保留原始文本，避免吞掉用户代码。
+     * @param value 原始字符串。
+     * @param escapeIndex 当前 u 字符下标。
+     * @param builder 输出缓冲。
+     * @return 消费后的下标。
+     */
+    private int appendUnicodeEscape(String value, int escapeIndex, StringBuilder builder) {
+        if (escapeIndex + 4 >= value.length()) {
+            builder.append("\\u");
+            return escapeIndex;
+        }
+        String hex = value.substring(escapeIndex + 1, escapeIndex + 5);
+        if (!ReUtil.isMatch("[0-9a-fA-F]{4}", hex)) {
+            builder.append("\\u");
+            return escapeIndex;
+        }
+        builder.append((char) Integer.parseInt(hex, 16));
+        return escapeIndex + 4;
     }
 
     /**
@@ -375,12 +529,16 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
             if (StrUtil.equals(content, updated)) {
                 throw new BusinessException("CHAT_TOOL_EDIT_NO_CHANGES", "编辑未产生变更");
             }
-            // 步骤 4：写回文件并返回相对路径、命中次数和首个变更行，方便前端展示修改结果。
+            // 步骤 4：写回文件并返回相对路径、命中次数、首个变更行和单文件差异。
             Files.writeString(filePath, updated, StandardCharsets.UTF_8, StandardOpenOption.TRUNCATE_EXISTING);
             Map<String, Object> metadata = workspaceFileMetadata(workingDirectory, filePath);
             metadata.put("replaceAll", replaceAll);
             metadata.put("occurrences", occurrences);
             metadata.put("firstChangedLine", firstChangedLine(content, updated));
+            addFileDiffMetadata(
+                metadata,
+                List.of(buildSingleFileDiff(workingDirectory, filePath, content, updated, "modified"))
+            );
             return new ChatToolExecutionResult("edit", "文件已编辑", metadata);
         } catch (BusinessException exception) {
             throw exception;
@@ -525,18 +683,14 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
         try {
             // 步骤 2：将 patch 应用到当前工具工作目录，内部会统一处理 Codex patch 和 git diff patch。
             applyPatchText(workingDirectory, patchText);
-            CommandExecution diffExecution = runCommand(
-                "git diff -- .",
-                10000L,
-                workingDirectory
-            );
-            // 步骤 3：应用成功后读取 git diff 预览，作为工具结果元数据返回给调用方核对。
+            CommandExecution diffExecution = runGitCommand(workingDirectory, List.of("diff", "--", "."));
+            // 步骤 3：应用成功后读取 git diff 预览，并解析结构化文件差异给前端渲染。
             Map<String, Object> metadata = new LinkedHashMap<>();
             metadata.put("applied", Boolean.TRUE);
             metadata.put("exitCode", 0);
             metadata.put("durationMs", System.currentTimeMillis() - startedAt);
             metadata.put("workingDirectory", workingDirectory.toString());
-            metadata.put("diffPreview", StrUtil.blankToDefault(diffExecution.output(), "未检测到差异"));
+            addFileDiffMetadata(metadata, parseUnifiedDiffs(diffExecution.output()));
             return new ChatToolExecutionResult(
                 "apply_patch",
                 "Patch 已应用",
@@ -550,6 +704,53 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
                 ErrorMessageCatalog.CHAT_TOOL_PATCH_APPLY_FAILED_PREFIX + exception.getMessage()
             );
         }
+    }
+
+    /**
+     * 读取当前工作区的 git 差异，供右侧代码审查栏按来源切换展示。
+     * @param input 工具输入，mode 支持 unstaged、staged、commit、branch。
+     * @return 结构化文件差异。
+     */
+    private ChatToolExecutionResult executeGitDiff(ToolInput input) {
+        // 步骤 1：解析审查来源模式，默认读取未暂存工作区差异，兼容侧边栏首次打开。
+        Path workingDirectory = resolveToolWorkingDirectory();
+        String mode = StrUtil.blankToDefault(input.object().getStr("mode"), "unstaged").toLowerCase(Locale.ROOT);
+        List<String> gitArgs = buildGitDiffArguments(input, mode);
+        // 步骤 2：通过 ProcessBuilder 直接执行 git，避免 shell 包装内容污染 unified diff。
+        CommandExecution diffExecution = runGitCommand(workingDirectory, gitArgs);
+        List<Map<String, Object>> fileDiffs = parseUnifiedDiffs(diffExecution.output());
+        // 步骤 3：统一写入 fileDiffs/diffSummary/diffPreview，前端无需区分实时工具结果和侧栏查询结果。
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("mode", mode);
+        metadata.put("gitArgs", gitArgs);
+        metadata.put("exitCode", diffExecution.exitCode());
+        metadata.put("timedOut", diffExecution.timedOut());
+        metadata.put("durationMs", diffExecution.durationMs());
+        metadata.put("workingDirectory", workingDirectory.toString());
+        addFileDiffMetadata(metadata, fileDiffs);
+        String content = fileDiffs.isEmpty() ? "未检测到差异" : "已读取 " + fileDiffs.size() + " 个文件差异";
+        return new ChatToolExecutionResult("git_diff", content, metadata);
+    }
+
+    /**
+     * 根据侧栏来源模式组装 git diff 参数；未知模式直接抛业务错误，避免执行任意 git 子命令。
+     */
+    private List<String> buildGitDiffArguments(ToolInput input, String mode) {
+        return switch (mode) {
+            case "unstaged", "working_tree", "working-tree" -> List.of("diff", "--", ".");
+            case "staged", "cached" -> List.of("diff", "--cached", "--", ".");
+            case "commit" -> {
+                String ref = StrUtil.blankToDefault(input.object().getStr("ref"), "HEAD");
+                yield List.of("show", "--stat", "--patch", "--format=medium", ref);
+            }
+            case "branch" -> {
+                String base = StrUtil.blankToDefault(input.object().getStr("base"), "HEAD");
+                String target = input.object().getStr("target");
+                String range = StrUtil.isBlank(target) ? base : base + "..." + target;
+                yield List.of("diff", range, "--", ".");
+            }
+            default -> throw new BusinessException("CHAT_TOOL_GIT_DIFF_MODE_UNSUPPORTED", "不支持的差异来源类型");
+        };
     }
 
     /**
@@ -2154,6 +2355,297 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
     }
 
     /**
+     * 写入结构化文件差异元数据，聊天过程卡片和右侧代码审查栏都消费同一字段。
+     * @param metadata 工具结果元数据。
+     * @param fileDiffs 文件级差异列表。
+     */
+    private void addFileDiffMetadata(Map<String, Object> metadata, List<Map<String, Object>> fileDiffs) {
+        List<Map<String, Object>> normalizedDiffs = fileDiffs == null ? List.of() : fileDiffs;
+        Map<String, Object> summary = summarizeFileDiffs(normalizedDiffs);
+        metadata.put("fileDiffs", normalizedDiffs);
+        metadata.put("diffSummary", summary);
+        metadata.put(
+            "diffPreview",
+            normalizedDiffs.isEmpty()
+                ? "未检测到差异"
+                : StrUtil.maxLength(joinFileDiffText(normalizedDiffs), MAX_BUFFER_LENGTH)
+        );
+    }
+
+    /**
+     * 汇总文件差异数量和增删行数，供前端快速渲染徽标。
+     */
+    private Map<String, Object> summarizeFileDiffs(List<Map<String, Object>> fileDiffs) {
+        int additions = 0;
+        int deletions = 0;
+        for (Map<String, Object> fileDiff : fileDiffs) {
+            additions += toInt(fileDiff.get("additions"));
+            deletions += toInt(fileDiff.get("deletions"));
+        }
+        Map<String, Object> summary = new LinkedHashMap<>();
+        summary.put("filesChanged", fileDiffs.size());
+        summary.put("additions", additions);
+        summary.put("deletions", deletions);
+        return summary;
+    }
+
+    /**
+     * 合并多个文件的 diff 文本，作为折叠预览和模型观察内容。
+     */
+    private String joinFileDiffText(List<Map<String, Object>> fileDiffs) {
+        List<String> diffTexts = new ArrayList<>();
+        for (Map<String, Object> fileDiff : fileDiffs) {
+            String diff = String.valueOf(fileDiff.getOrDefault("diff", ""));
+            if (StrUtil.isNotBlank(diff)) {
+                diffTexts.add(diff);
+            }
+        }
+        return String.join("\n", diffTexts);
+    }
+
+    /**
+     * 生成单文件 unified diff。这里使用行级 LCS，避免整文件替换导致小编辑的增删行统计失真。
+     */
+    private Map<String, Object> buildSingleFileDiff(
+        Path workingDirectory,
+        Path filePath,
+        String oldContent,
+        String newContent,
+        String status
+    ) {
+        String relativePath = toWorkspaceRelativePath(workingDirectory, filePath);
+        List<String> oldLines = splitDiffLines(oldContent);
+        List<String> newLines = splitDiffLines(newContent);
+        List<DiffLine> diffLines = buildLineDiff(oldLines, newLines);
+        int additions = 0;
+        int deletions = 0;
+        for (DiffLine diffLine : diffLines) {
+            if (diffLine.type() == '+') {
+                additions++;
+            } else if (diffLine.type() == '-') {
+                deletions++;
+            }
+        }
+        List<String> unifiedLines = new ArrayList<>();
+        unifiedLines.add("diff --git a/" + relativePath + " b/" + relativePath);
+        unifiedLines.add(StrUtil.equals(status, "added") ? "--- /dev/null" : "--- a/" + relativePath);
+        unifiedLines.add(StrUtil.equals(status, "deleted") ? "+++ /dev/null" : "+++ b/" + relativePath);
+        unifiedLines.add(
+            "@@ -" + gitPatchStartLine(oldLines) + "," + oldLines.size()
+                + " +" + gitPatchStartLine(newLines) + "," + newLines.size()
+                + " @@"
+        );
+        for (DiffLine diffLine : diffLines) {
+            unifiedLines.add(diffLine.type() + diffLine.text());
+        }
+        Map<String, Object> fileDiff = new LinkedHashMap<>();
+        fileDiff.put("path", relativePath);
+        fileDiff.put("oldPath", relativePath);
+        fileDiff.put("newPath", relativePath);
+        fileDiff.put("status", status);
+        fileDiff.put("additions", additions);
+        fileDiff.put("deletions", deletions);
+        fileDiff.put("diff", String.join("\n", unifiedLines));
+        return fileDiff;
+    }
+
+    /**
+     * 将文本拆成 diff 行，去掉文件尾换行产生的空尾项，保持行数统计符合 git diff 习惯。
+     */
+    private List<String> splitDiffLines(String content) {
+        if (StrUtil.isEmpty(content)) {
+            return List.of();
+        }
+        String normalizedContent = normalizeLineEnding(content);
+        String[] parts = normalizedContent.split("\n", -1);
+        int lineCount = normalizedContent.endsWith("\n") ? parts.length - 1 : parts.length;
+        List<String> lines = new ArrayList<>(lineCount);
+        for (int index = 0; index < lineCount; index++) {
+            lines.add(parts[index]);
+        }
+        return lines;
+    }
+
+    /**
+     * 使用 LCS 生成行级差异；上下文行保留为空格前缀，便于弹窗直接渲染 unified diff。
+     */
+    private List<DiffLine> buildLineDiff(List<String> oldLines, List<String> newLines) {
+        int[][] lcs = new int[oldLines.size() + 1][newLines.size() + 1];
+        for (int oldIndex = oldLines.size() - 1; oldIndex >= 0; oldIndex--) {
+            for (int newIndex = newLines.size() - 1; newIndex >= 0; newIndex--) {
+                if (StrUtil.equals(oldLines.get(oldIndex), newLines.get(newIndex))) {
+                    lcs[oldIndex][newIndex] = lcs[oldIndex + 1][newIndex + 1] + 1;
+                } else {
+                    lcs[oldIndex][newIndex] = Math.max(lcs[oldIndex + 1][newIndex], lcs[oldIndex][newIndex + 1]);
+                }
+            }
+        }
+        List<DiffLine> diffLines = new ArrayList<>();
+        int oldIndex = 0;
+        int newIndex = 0;
+        while (oldIndex < oldLines.size() || newIndex < newLines.size()) {
+            if (oldIndex < oldLines.size()
+                && newIndex < newLines.size()
+                && StrUtil.equals(oldLines.get(oldIndex), newLines.get(newIndex))) {
+                diffLines.add(new DiffLine(' ', oldLines.get(oldIndex)));
+                oldIndex++;
+                newIndex++;
+            } else if (newIndex < newLines.size()
+                && (oldIndex >= oldLines.size() || lcs[oldIndex][newIndex + 1] >= lcs[oldIndex + 1][newIndex])) {
+                diffLines.add(new DiffLine('+', newLines.get(newIndex)));
+                newIndex++;
+            } else {
+                diffLines.add(new DiffLine('-', oldLines.get(oldIndex)));
+                oldIndex++;
+            }
+        }
+        return diffLines;
+    }
+
+    /**
+     * 从标准 unified diff 文本解析出文件级差异，兼容 git diff 与 git show 输出中的 patch 段。
+     */
+    private List<Map<String, Object>> parseUnifiedDiffs(String diffText) {
+        if (StrUtil.isBlank(diffText)) {
+            return List.of();
+        }
+        String[] lines = normalizeLineEnding(diffText).split("\n", -1);
+        List<Map<String, Object>> fileDiffs = new ArrayList<>();
+        List<String> currentBlock = new ArrayList<>();
+        for (String line : lines) {
+            if (StrUtil.startWith(line, "diff --git ")) {
+                appendParsedDiffBlock(fileDiffs, currentBlock);
+                currentBlock = new ArrayList<>();
+            }
+            if (!currentBlock.isEmpty() || StrUtil.startWith(line, "diff --git ")) {
+                currentBlock.add(line);
+            }
+        }
+        appendParsedDiffBlock(fileDiffs, currentBlock);
+        return fileDiffs;
+    }
+
+    /**
+     * 解析单个 diff --git 文件块，并累计增删行数。
+     */
+    private void appendParsedDiffBlock(List<Map<String, Object>> fileDiffs, List<String> blockLines) {
+        if (blockLines == null || blockLines.isEmpty()) {
+            return;
+        }
+        String oldPath = null;
+        String newPath = null;
+        String status = "modified";
+        int additions = 0;
+        int deletions = 0;
+        for (String line : blockLines) {
+            if (StrUtil.startWith(line, "deleted file mode")) {
+                status = "deleted";
+            } else if (StrUtil.startWith(line, "new file mode")) {
+                status = "added";
+            } else if (StrUtil.startWith(line, "rename from ")) {
+                oldPath = StrUtil.removePrefix(line, "rename from ").trim();
+                status = "renamed";
+            } else if (StrUtil.startWith(line, "rename to ")) {
+                newPath = StrUtil.removePrefix(line, "rename to ").trim();
+                status = "renamed";
+            } else if (StrUtil.startWith(line, "--- ")) {
+                oldPath = normalizeParsedDiffPath(StrUtil.removePrefix(line, "--- "));
+            } else if (StrUtil.startWith(line, "+++ ")) {
+                newPath = normalizeParsedDiffPath(StrUtil.removePrefix(line, "+++ "));
+            } else if (StrUtil.startWith(line, "+") && !StrUtil.startWith(line, "+++")) {
+                additions++;
+            } else if (StrUtil.startWith(line, "-") && !StrUtil.startWith(line, "---")) {
+                deletions++;
+            }
+        }
+        String path = StrUtil.blankToDefault(StrUtil.equals(newPath, "/dev/null") ? oldPath : newPath, oldPath);
+        if (StrUtil.isBlank(path) || StrUtil.equals(path, "/dev/null")) {
+            path = parsePathFromDiffGitHeader(blockLines.getFirst());
+        }
+        Map<String, Object> fileDiff = new LinkedHashMap<>();
+        fileDiff.put("path", path);
+        fileDiff.put("oldPath", oldPath);
+        fileDiff.put("newPath", newPath);
+        fileDiff.put("status", status);
+        fileDiff.put("additions", additions);
+        fileDiff.put("deletions", deletions);
+        fileDiff.put("diff", String.join("\n", blockLines).trim());
+        fileDiffs.add(fileDiff);
+    }
+
+    /**
+     * 规范化 git 文件头路径，剥离 a/b 前缀和时间戳，只保留工作区相对路径。
+     */
+    private String normalizeParsedDiffPath(String pathText) {
+        String path = extractGitFileHeaderPathToken(pathText);
+        if (StrUtil.equals(path, "/dev/null")) {
+            return path;
+        }
+        return stripGitPatchSidePrefix(path);
+    }
+
+    /**
+     * 当文件头缺失时，从 diff --git 行兜底解析路径。
+     */
+    private String parsePathFromDiffGitHeader(String headerLine) {
+        if (!StrUtil.startWith(headerLine, "diff --git ")) {
+            return "";
+        }
+        List<String> parts = StrUtil.split(StrUtil.removePrefix(headerLine, "diff --git "), ' ');
+        if (parts.isEmpty()) {
+            return "";
+        }
+        String candidate = parts.size() > 1 ? parts.get(1) : parts.getFirst();
+        return stripGitPatchSidePrefix(candidate);
+    }
+
+    /**
+     * 直接执行 git 命令并返回原始 stdout，diff 解析不能混入 shell 包装文本。
+     */
+    private CommandExecution runGitCommand(Path workingDirectory, List<String> args) {
+        long start = System.currentTimeMillis();
+        List<String> command = new ArrayList<>();
+        command.add("git");
+        command.addAll(args);
+        try {
+            Process process = new ProcessBuilder(command)
+                .directory(workingDirectory.toFile())
+                .redirectErrorStream(false)
+                .start();
+            StringBuilder stdoutBuffer = new StringBuilder();
+            StringBuilder stderrBuffer = new StringBuilder();
+            Thread stdoutReader = startProcessOutputReader(process.getInputStream(), stdoutBuffer);
+            Thread stderrReader = startProcessOutputReader(process.getErrorStream(), stderrBuffer);
+            boolean finished = process.waitFor(10000L, TimeUnit.MILLISECONDS);
+            if (!finished) {
+                process.destroyForcibly();
+                process.waitFor(1, TimeUnit.SECONDS);
+                joinReader(stdoutReader);
+                joinReader(stderrReader);
+                return new CommandExecution(snapshotOutput(stdoutBuffer), -1, true, System.currentTimeMillis() - start);
+            }
+            joinReader(stdoutReader);
+            joinReader(stderrReader);
+            String stdout = snapshotOutput(stdoutBuffer);
+            String stderr = snapshotOutput(stderrBuffer);
+            String output = process.exitValue() == 0 ? stdout : StrUtil.blankToDefault(stdout, stderr);
+            return new CommandExecution(output, process.exitValue(), false, System.currentTimeMillis() - start);
+        } catch (Exception exception) {
+            throw new BusinessException(
+                "CHAT_TOOL_GIT_DIFF_FAILED",
+                "读取 git 差异失败: " + exception.getMessage()
+            );
+        }
+    }
+
+    /**
+     * 将元数据数字字段统一转为 int，容忍 JSON 解析后出现不同 Number 类型。
+     */
+    private int toInt(Object value) {
+        return value instanceof Number number ? number.intValue() : 0;
+    }
+
+    /**
      * 将工作区内路径转换为正斜杠相对路径，降低 Windows 路径对模型后续调用的干扰。
      */
     private String toWorkspaceRelativePath(Path workingDirectory, Path path) {
@@ -2499,6 +2991,14 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
     }
 
     /**
+     * write 工具写入参数。
+     * @param path 工作区内目标路径。
+     * @param content 要覆盖写入的完整文件内容。
+     */
+    private record WriteArguments(String path, String content) {
+    }
+
+    /**
      * 命令执行结果。
      */
     private record CommandExecution(String output, int exitCode, boolean timedOut, long durationMs) {
@@ -2508,6 +3008,12 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
      * 标准 diff 单行对旧文件和新文件的行数贡献。
      */
     private record GitHunkLineCount(int oldLineCount, int newLineCount) {
+    }
+
+    /**
+     * 内存生成 diff 时的单行模型，type 使用 unified diff 前缀字符。
+     */
+    private record DiffLine(char type, String text) {
     }
 
     /**

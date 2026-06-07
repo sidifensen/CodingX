@@ -45,7 +45,7 @@
 
 `bash` 是模型可见的短工具名，内部复用原有 `shell_command` 命令执行边界。Windows 服务端通过 `powershell -NoProfile -Command` 执行，因此模型需要使用 `New-Item -ItemType Directory -Force`、`Set-Content` 等 PowerShell 写法。`mkdir -p`、`cat <<EOF`、`&&` 串联和 `<` 输入重定向属于 Bash 习惯写法，其中 `<` 也是 PowerShell 保留字符，未正确引用会直接触发语法错误。执行器会把已注入的 `CLAUDE_SKILL_DIR*` 环境变量同步成同名 PowerShell 变量，兼容技能文档中常见的 `${CLAUDE_SKILL_DIR}/scripts/...` 路径写法，避免 Windows 下被解析成工作盘根目录的 `scripts`。
 
-`read/write/edit/grep/find/ls` 都以当前工具工作目录为边界，支持工作区内相对路径和已校验的工作区内绝对路径。`read` 的 `offset` 按 OpenClaw 习惯使用 1-indexed 行号，并在 `limit` 截断时提示下一次读取的 offset；`write` 会覆盖目标文本文件并自动创建父目录；`edit` 兼容 `old_text/new_text` 与旧的 `oldText/newText`，默认要求原文本唯一，避免误替换重复片段，传入 `replace_all=true` 或 `replaceAll=true` 时替换全部匹配；`grep` 支持 `glob`、`ignore_case`、`literal`、`context` 与 `limit`，返回 `path:line:content` 格式的匹配行；`find` 使用 glob 模式匹配文件并排除目录项；`ls` 对目录项追加 `/` 后缀，并支持 `limit` 限制输出。
+`read/write/edit/grep/find/ls` 都以当前工具工作目录为边界，支持工作区内相对路径和已校验的工作区内绝对路径。`read` 的 `offset` 按 OpenClaw 习惯使用 1-indexed 行号，并在 `limit` 截断时提示下一次读取的 offset；`write` 会覆盖目标文本文件并自动创建父目录。若模型把多行 HTML 原样放入 `write` 的 `path/content` arguments，导致严格 JSON 因真实换行或未转义属性引号解析失败，执行器只在能识别顶层 `path` 且 `content` 位于对象末尾时恢复这两个字段，随后仍交给统一工作区路径校验，避免整段 `<!DOCTYPE html>` 被误当作路径。`edit` 兼容 `old_text/new_text` 与旧的 `oldText/newText`，默认要求原文本唯一，避免误替换重复片段，传入 `replace_all=true` 或 `replaceAll=true` 时替换全部匹配；`grep` 支持 `glob`、`ignore_case`、`literal`、`context` 与 `limit`，返回 `path:line:content` 格式的匹配行；`find` 使用 glob 模式匹配文件并排除目录项；`ls` 对目录项追加 `/` 后缀，并支持 `limit` 限制输出。
 
 `chat.tool.max_rounds` 默认值为 10，运行时会把有效值限制在 1 到 20 之间，防止管理端或脚本误配成超大值后让工具循环长期占用聊天执行线程。
 
@@ -63,6 +63,7 @@
 - `mvn -Dtest=CodexBuiltinChatToolExecutorTest#applyPatchShouldOverwriteExistingFileWhenNewFileDiffTargetsSameName test`
 - `mvn -Dtest=CodexBuiltinChatToolExecutorTest#applyPatchShouldOverwriteExistingFileWhenStandaloneNewFileDiffTargetsSameName test`
 - `mvn -Dtest=CodexBuiltinChatToolExecutorTest#applyPatchShouldOverwriteExistingFileWhenNewFileDiffHeaderHasTimestamp test`
+- `mvn -Dtest=CodexBuiltinChatToolExecutorTest#writeShouldRecoverLooseMultilineHtmlArguments test`
 - `mvn -Dtest=CodexBuiltinChatToolExecutorTest#codexRuntimeToolsShouldBeCallableThroughExecutorEntry test`
 - `mvn -Dtest=ChatRuntimePersistenceStructureTest#codexRuntimeToolMigrationEnablesImplementedTools test`
 - `mvn -Dtest=ChatRuntimePersistenceStructureTest#shellCommandRuntimeMigrationClarifiesPowerShellSyntax test`

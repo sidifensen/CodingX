@@ -38,6 +38,33 @@ class AgentLoopCoordinatorTest {
     }
 
     /**
+     * write 是覆盖写入类副作用工具，去重应按目标路径判断，而不是按容易变化的完整 content 判断。
+     */
+    @Test
+    void writeDeduplicateKeyShouldUsePathInsteadOfContent() {
+        AgentLoopCoordinator coordinator = new AgentLoopCoordinator();
+
+        String firstKey = coordinator.deduplicateKey(new AiToolCall(
+            "call-a",
+            "write",
+            "{\"path\":\"note.html\",\"content\":\"第一版\"}"
+        ));
+        String secondKey = coordinator.deduplicateKey(new AiToolCall(
+            "call-b",
+            "write",
+            "{\"path\":\"./note.html\",\"content\":\"第二版\"}"
+        ));
+        String otherPathKey = coordinator.deduplicateKey(new AiToolCall(
+            "call-c",
+            "write",
+            "{\"path\":\"other.html\",\"content\":\"第一版\"}"
+        ));
+
+        assertEquals(firstKey, secondKey);
+        assertTrue(!firstKey.equals(otherPathKey));
+    }
+
+    /**
      * 没有工具调用时是正常完成；达到最后一轮后仍有工具调用时必须给出上限原因和中文错误。
      */
     @Test

@@ -80,6 +80,53 @@ const EMPTY_SNAPSHOT: LocalWorkspaceConversationSnapshot = {
 };
 
 /**
+ * 缓存最近一次解析后的本地快照仓库；桌面端侧栏和会话恢复会在同一轮渲染里重复读取该 store。
+ */
+let workspaceStoreCache: {
+  rawStore: string | null;
+  store: LocalWorkspaceConversationStore;
+} | null = null;
+
+/**
+ * 创建空的快照仓库，避免不同调用方共享可变空对象。
+ * @returns 空快照仓库。
+ */
+function createEmptyStore(): LocalWorkspaceConversationStore {
+  return {
+    version: 1,
+    snapshots: {},
+  };
+}
+
+/**
+ * 记录当前 localStorage 原始内容与已解析对象，后续原始内容未变化时直接复用。
+ * @param rawStore localStorage 中的原始字符串。
+ * @param store 已解析并归一化后的快照仓库。
+ * @returns 传入的快照仓库。
+ */
+function cacheWorkspaceStore(
+  rawStore: string | null,
+  store: LocalWorkspaceConversationStore,
+) {
+  workspaceStoreCache = {
+    rawStore,
+    store,
+  };
+  return store;
+}
+
+/**
+ * 持久化快照仓库并同步刷新解析缓存，避免写入后下一次读取重新 JSON.parse。
+ * @param store 待写入的快照仓库。
+ */
+function persistStore(store: LocalWorkspaceConversationStore) {
+  const normalizedStore = normalizeWorkspaceSnapshots(store);
+  const serializedStore = JSON.stringify(normalizedStore);
+  window.localStorage.setItem(LOCAL_WORKSPACE_CONVERSATION_STORE_KEY, serializedStore);
+  cacheWorkspaceStore(serializedStore, normalizedStore);
+}
+
+/**
  * 生成本地工作空间分区键，确保不同目录下会话相互隔离。
  * @param runtimeTarget 运行环境。
  * @param workspacePath 当前绑定的工作空间路径。
@@ -272,7 +319,7 @@ export function writeWorkspaceSnapshot(
   const normalizedSnapshot = normalizeWorkspaceSnapshot(partitionKey, snapshot);
   const store = readStore();
   store.snapshots[partitionKey] = normalizedSnapshot;
-  window.localStorage.setItem(LOCAL_WORKSPACE_CONVERSATION_STORE_KEY, JSON.stringify(store));
+  persistStore(store);
 }
 
 /**
@@ -336,7 +383,7 @@ export function clearWorkspaceSnapshot(partitionKey: string) {
     return;
   }
   delete store.snapshots[partitionKey];
-  window.localStorage.setItem(LOCAL_WORKSPACE_CONVERSATION_STORE_KEY, JSON.stringify(store));
+  persistStore(store);
 }
 
 /**
@@ -517,30 +564,30 @@ export function markWorkspaceConversationOwnership(
  * @returns 结构化快照仓库。
  */
 function readStore(): LocalWorkspaceConversationStore {
+  const rawStore = window.localStorage.getItem(LOCAL_WORKSPACE_CONVERSATION_STORE_KEY);
+  if (workspaceStoreCache && workspaceStoreCache.rawStore === rawStore) {
+    return workspaceStoreCache.store;
+  }
   try {
-    const rawStore = window.localStorage.getItem(LOCAL_WORKSPACE_CONVERSATION_STORE_KEY);
     if (!rawStore) {
-      return {
-        version: 1,
-        snapshots: {},
-      };
+      return cacheWorkspaceStore(null, createEmptyStore());
     }
     const parsedStore = JSON.parse(rawStore) as Partial<LocalWorkspaceConversationStore>;
     if (parsedStore.version !== 1 || parsedStore.snapshots == null) {
-      return {
-        version: 1,
-        snapshots: {},
-      };
+      return cacheWorkspaceStore(rawStore, createEmptyStore());
     }
-    return normalizeWorkspaceSnapshots({
+    const normalizedStore = normalizeWorkspaceSnapshots({
       version: 1,
       snapshots: parsedStore.snapshots,
     });
+    const normalizedSerialized = JSON.stringify(normalizedStore);
+    if (normalizedSerialized !== rawStore) {
+      window.localStorage.setItem(LOCAL_WORKSPACE_CONVERSATION_STORE_KEY, normalizedSerialized);
+      return cacheWorkspaceStore(normalizedSerialized, normalizedStore);
+    }
+    return cacheWorkspaceStore(rawStore, normalizedStore);
   } catch {
-    return {
-      version: 1,
-      snapshots: {},
-    };
+    return cacheWorkspaceStore(rawStore, createEmptyStore());
   }
 }
 
@@ -567,11 +614,6 @@ function normalizeWorkspaceSnapshots(store: LocalWorkspaceConversationStore): Lo
     version: 1,
     snapshots: normalizedSnapshots,
   };
-  const normalizedSerialized = JSON.stringify(normalizedStore);
-  const rawSerialized = JSON.stringify(store);
-  if (normalizedSerialized !== rawSerialized) {
-    window.localStorage.setItem(LOCAL_WORKSPACE_CONVERSATION_STORE_KEY, normalizedSerialized);
-  }
   return normalizedStore;
 }
 
@@ -891,7 +933,7 @@ export function saveConversationRecordToWorkspace(
     },
     seenTaskFinishedAtByConversationId: nextSnapshot.seenTaskFinishedAtByConversationId ?? {},
   };
-  window.localStorage.setItem(LOCAL_WORKSPACE_CONVERSATION_STORE_KEY, JSON.stringify(store));
+  persistStore(store);
 }
 
 /**

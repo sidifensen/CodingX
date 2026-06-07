@@ -1,6 +1,7 @@
 import {
   buildWorkspaceHistoryPartitionKey,
   buildWorkspacePartitionKey,
+  findWorkspacePartitionByConversationId,
   listWorkspaceGroups,
   readWorkspaceSnapshot,
   saveConversationRecordToWorkspace,
@@ -11,6 +12,7 @@ import {
 
 describe('localConversationStorage', () => {
   beforeEach(() => {
+    vi.restoreAllMocks();
     window.localStorage.clear();
   });
 
@@ -345,5 +347,79 @@ describe('localConversationStorage', () => {
     ]);
     expect(Object.keys(persistedStore.snapshots)).toContain(defaultCloudPartitionKey);
     expect(Object.keys(persistedStore.snapshots)).not.toContain(cloudPathPartitionKey);
+  });
+
+  /**
+   * 桌面端侧栏和聊天恢复会在同一轮渲染中多次读取同一份大快照；
+   * 本地缓存未变化时应复用已解析结果，避免重复 JSON.parse 卡住渲染线程。
+   */
+  it('应在本地缓存未变化时复用已解析的工作空间快照', () => {
+    const defaultCloudPartitionKey = buildWorkspacePartitionKey('cloud', null);
+    const defaultLocalPartitionKey = buildWorkspacePartitionKey('local', null);
+    const localWorkspacePartitionKey = buildWorkspacePartitionKey('local', 'D:/code/CodingX');
+    window.localStorage.setItem(
+      'codingx.chat.workspace.conversations.v1',
+      JSON.stringify({
+        version: 1,
+        snapshots: {
+          [defaultCloudPartitionKey]: {
+            workspacePath: null,
+            workspaceLabel: '云端历史记录',
+            runtimeTarget: 'cloud',
+            lastOpenedAt: 100,
+            activeConversationId: null,
+            pinnedConversationIds: [],
+            conversations: [],
+            conversationRecords: {},
+            seenTaskFinishedAtByConversationId: {},
+          },
+          [defaultLocalPartitionKey]: {
+            workspacePath: null,
+            workspaceLabel: '本地历史记录',
+            runtimeTarget: 'local',
+            lastOpenedAt: 110,
+            activeConversationId: null,
+            pinnedConversationIds: [],
+            conversations: [],
+            conversationRecords: {},
+            seenTaskFinishedAtByConversationId: {},
+          },
+          [localWorkspacePartitionKey]: {
+            workspacePath: 'D:/code/CodingX',
+            workspaceLabel: 'CodingX',
+            runtimeTarget: 'local',
+            lastOpenedAt: 120,
+            activeConversationId: 'local-a',
+            pinnedConversationIds: [],
+            conversations: [
+              { id: 'local-a', title: '本地会话', status: 'ACTIVE', workspaceType: 'LOCAL' },
+            ],
+            conversationRecords: {
+              'local-a': {
+                owned: true,
+                messages: [],
+                executionSteps: [],
+                references: [],
+                artifacts: [],
+                currentExperts: [],
+                currentSkills: [],
+                currentMcps: [],
+              },
+            },
+            seenTaskFinishedAtByConversationId: {},
+          },
+        },
+      }),
+    );
+    const parseSpy = vi.spyOn(JSON, 'parse');
+
+    expect(readWorkspaceSnapshot(localWorkspacePartitionKey).activeConversationId).toBe('local-a');
+    expect(listWorkspaceGroups('local').map((group) => group.partitionKey)).toContain(
+      localWorkspacePartitionKey,
+    );
+    expect(findWorkspacePartitionByConversationId('local-a')).toBe(localWorkspacePartitionKey);
+    expect(readWorkspaceSnapshot(localWorkspacePartitionKey).conversations).toHaveLength(1);
+
+    expect(parseSpy).toHaveBeenCalledTimes(1);
   });
 });

@@ -254,7 +254,7 @@ class CodingXTuiModelTest {
     }
 
     @Test
-    void completedTurnShouldKeepQuestionNearComposer() {
+    void completedTurnShouldKeepQuestionOnlyInTranscript() {
         CodingXTuiModel model = new CodingXTuiModel(
             tempDir.resolve("workspace"),
             new MockAgentEventSource(),
@@ -263,14 +263,43 @@ class CodingXTuiModelTest {
 
         model.submitTask("完成后也要看见");
 
-        String bottomArea = lastLines(model.view(), 5);
-        assertTrue(bottomArea.contains("> 完成后也要看见"), bottomArea);
-        assertTrue(bottomArea.contains("› 输入任务，/ 查看命令"), bottomArea);
-        assertTrue(bottomArea.contains("completed"), bottomArea);
+        String view = stripAnsi(model.view());
+        assertEquals(1, countOccurrences(view, "> 完成后也要看见"), view);
+        assertTrue(view.contains("› 输入任务，/ 查看命令"), view);
+        assertTrue(view.contains("completed"), view);
     }
 
     @Test
-    void rendererBottomThreeLinesShouldKeepQuestionComposerAndStatusVisible() {
+    void completedShortTurnShouldNotDuplicateQuestionAboveComposer() {
+        CodingXTuiModel model = new CodingXTuiModel(
+            tempDir.resolve("workspace"),
+            new MockAgentEventSource(),
+            new TerminalRenderer()
+        );
+
+        model.submitTask("不要重复显示");
+
+        String view = stripAnsi(model.view());
+        assertEquals(1, countOccurrences(view, "> 不要重复显示"), view);
+        assertFalse(lastLines(view, 3).contains("> 不要重复显示"), view);
+    }
+
+    @Test
+    void emptyComposerShouldRenderPlaceholderAsDimText() {
+        TerminalInfo.provide(() -> new TerminalInfo(true, new NoColor()));
+        CodingXTuiModel model = new CodingXTuiModel(
+            tempDir.resolve("workspace"),
+            new MockAgentEventSource(),
+            new TerminalRenderer()
+        );
+
+        String view = model.view();
+
+        assertTrue(view.contains("\u001B[90m› 输入任务，/ 查看命令\u001B[0m"), view);
+    }
+
+    @Test
+    void rendererBottomThreeLinesShouldKeepOnlyComposerAndStatusForShortTurn() {
         CodingXTuiModel model = new CodingXTuiModel(
             tempDir.resolve("workspace"),
             new MockAgentEventSource(),
@@ -279,9 +308,9 @@ class CodingXTuiModelTest {
 
         model.submitTask("三行内也要看见");
 
-        // 真实 tui4j renderer 会按终端可用高度保留视图尾部；底部三行必须同时包含本轮问题、输入框和状态。
-        String bottomArea = lastLines(model.view(), 3);
-        assertTrue(bottomArea.contains("> 三行内也要看见"), bottomArea);
+        // 短回答不在 composer 上方重复展示问题；问题只保留在 transcript 中。
+        String bottomArea = lastLines(stripAnsi(model.view()), 3);
+        assertFalse(bottomArea.contains("> 三行内也要看见"), bottomArea);
         assertTrue(bottomArea.contains("› 输入任务，/ 查看命令"), bottomArea);
         assertTrue(bottomArea.contains("completed"), bottomArea);
     }
@@ -301,7 +330,7 @@ class CodingXTuiModelTest {
     }
 
     @Test
-    void ttyComposerShouldStillKeepQuestionInBottomThreeLines() {
+    void ttyComposerShouldRenderPlaceholderWithoutDuplicatingQuestion() {
         TerminalInfo.provide(() -> new TerminalInfo(true, new NoColor()));
         CodingXTuiModel model = new CodingXTuiModel(
             tempDir.resolve("workspace"),
@@ -311,9 +340,11 @@ class CodingXTuiModelTest {
 
         model.submitTask("真实 TTY 也要看见");
 
-        // 真实终端下 tui4j textarea 会带光标样式；CodingX 底部布局仍必须稳定为问题、输入、状态三行。
-        String bottomArea = lastLines(stripAnsi(model.view()), 3);
-        assertTrue(bottomArea.contains("> 真实 TTY 也要看见"), bottomArea);
+        // 真实终端下 placeholder 是灰色提示，不应该再把当前问题复制到输入区上方。
+        String rawView = model.view();
+        String bottomArea = lastLines(stripAnsi(rawView), 3);
+        assertFalse(bottomArea.contains("> 真实 TTY 也要看见"), bottomArea);
+        assertTrue(rawView.contains("\u001B[90m› 输入任务，/ 查看命令\u001B[0m"), rawView);
         assertTrue(bottomArea.contains("› 输入任务，/ 查看命令"), bottomArea);
         assertTrue(bottomArea.contains("completed"), bottomArea);
     }
@@ -917,5 +948,21 @@ class CodingXTuiModelTest {
         return value
             .replaceAll("\\u001B\\[[;?0-9]*[ -/]*[@-~]", "")
             .replaceAll("\\u001B\\][^\\u0007]*\\u0007", "");
+    }
+
+    /**
+     * 统计片段出现次数，用于避免用户问题同时出现在 transcript 和输入框锚点。
+     */
+    private static int countOccurrences(String value, String fragment) {
+        int count = 0;
+        int cursor = 0;
+        while (cursor >= 0) {
+            cursor = value.indexOf(fragment, cursor);
+            if (cursor >= 0) {
+                count++;
+                cursor += fragment.length();
+            }
+        }
+        return count;
     }
 }

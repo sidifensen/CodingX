@@ -47,6 +47,16 @@ public class CodingXTuiModel implements Model {
     private static final String COMPOSER_PLACEHOLDER = "输入任务，/ 查看命令";
 
     /**
+     * 终端灰色前景色，用于把 placeholder 和真实用户输入区分开。
+     */
+    private static final String ANSI_DIM_PLACEHOLDER = "\u001B[90m";
+
+    /**
+     * ANSI 样式复位，防止灰色 placeholder 污染后续状态栏和回答内容。
+     */
+    private static final String ANSI_RESET = "\u001B[0m";
+
+    /**
      * 当前 CLI 工作区，真实后端聊天流会把它作为 local runtime 的 repositoryPath。
      */
     private final Path workspace;
@@ -637,9 +647,21 @@ public class CodingXTuiModel implements Model {
      */
     private String renderComposer() {
         String taskText = normalizeRendererNewlines(textarea.value()).replace('\n', ' ').trim();
-        String composerText = taskText.isEmpty() ? COMPOSER_PLACEHOLDER : taskText;
         // 真实 TTY 下 tui4j Textarea.view() 会附带光标样式和填充行；底部 composer 必须稳定为单行。
-        return truncateVisualLine("› " + composerText);
+        if (taskText.isEmpty()) {
+            return stylePlaceholder(truncateVisualLine("› " + COMPOSER_PLACEHOLDER));
+        }
+        return truncateVisualLine("› " + taskText);
+    }
+
+    /**
+     * 将空输入提示渲染为灰色文本，使它看起来像 placeholder 而不是一条真实消息。
+     *
+     * @param placeholder 已按终端宽度截断的可见提示行。
+     * @return 带 ANSI 灰色样式的提示行。
+     */
+    private String stylePlaceholder(String placeholder) {
+        return ANSI_DIM_PLACEHOLDER + placeholder + ANSI_RESET;
     }
 
     /**
@@ -679,15 +701,12 @@ public class CodingXTuiModel implements Model {
     }
 
     /**
-     * 渲染底部输入块；最近问题必须紧贴输入框，避免分区空行和状态栏换行把用户刚提交的消息挤出可见区。
+     * 渲染底部输入块；普通场景只保留 composer，避免用户问题同时出现在 transcript 和输入框上方。
      *
-     * @return 当前问题和 composer 组成的输入块。
+     * @return 当前 composer。
      */
     private String renderInputBlock() {
-        if (!shouldRenderCurrentQuestionAnchor()) {
-            return renderComposer();
-        }
-        return renderCurrentQuestionAnchor() + RENDER_NEWLINE + renderComposer();
+        return renderComposer();
     }
 
     /**
@@ -711,13 +730,13 @@ public class CodingXTuiModel implements Model {
     }
 
     /**
-     * 判断是否需要在输入框上方固定展示当前问题；真实普通屏幕刷新时 transcript 顶部可能被尾部保留策略挤掉。
-     * 用户最关心的是“本轮刚提交了什么”，因此完成、错误或中断后也保留最近一次问题，直到下一次提交覆盖。
+     * 判断是否需要在输入框上方固定展示当前问题。
+     * 当前问题固定由 transcript 溢出兜底处理，输入框上方不再常驻显示，避免短回答重复渲染用户消息。
      *
-     * @return true 表示已提交过任务，应展示当前问题固定区。
+     * @return false 表示 composer 区不额外渲染用户问题。
      */
     private boolean shouldRenderCurrentQuestionAnchor() {
-        return !latestUserLine.isBlank();
+        return false;
     }
 
     /**

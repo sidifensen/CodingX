@@ -2,6 +2,7 @@
 *.iml
 
 backend/target/
+cli/target/
 backend/.env
 backend/*.log
 

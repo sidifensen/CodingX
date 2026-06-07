@@ -36,23 +36,45 @@ class CliDistributionTest {
     }
 
     /**
-     * 验证安装脚本会写入用户目录 bin，并生成 cmd / PowerShell 两种入口，方便 Windows 终端直接输入 `codingx`。
+     * 验证 CI 打包脚本会生成发布 jar、校验文件，并在安装模式下更新 Windows 本地命令入口。
      *
      * @throws Exception 脚本读取失败时让测试直接失败。
      */
     @Test
-    void installScriptShouldCreateWindowsLaunchersAndUpdateUserPath() throws Exception {
+    void packageScriptShouldBuildArtifactAndInstallWindowsLaunchers() throws Exception {
+        Path packageScript = Path.of(System.getProperty("user.dir"))
+            .getParent()
+            .resolve("script")
+            .resolve("package-codingx-cli.ps1");
+        String script = Files.readString(packageScript);
+
+        assertTrue(script.contains("target\\dist"));
+        assertTrue(script.contains("codingx.jar.sha256"));
+        assertTrue(script.contains("mvn @mavenArgs"));
+        assertTrue(script.contains(".codingx\\bin"));
+        assertTrue(script.contains("codingx.cmd"));
+        assertTrue(script.contains("codingx.ps1"));
+        assertTrue(script.contains("[Environment]::SetEnvironmentVariable"));
+        assertTrue(script.contains("java -jar"));
+    }
+
+    /**
+     * 验证旧安装入口只代理到统一打包脚本，避免 CI 打包和本地更新维护两套逻辑。
+     *
+     * @throws Exception 脚本读取失败时让测试直接失败。
+     */
+    @Test
+    void installScriptShouldDelegateToPackageScriptWithInstallMode() throws Exception {
         Path installScript = Path.of(System.getProperty("user.dir"))
             .getParent()
             .resolve("script")
             .resolve("install-codingx.ps1");
         String script = Files.readString(installScript);
 
-        assertTrue(script.contains(".codingx"));
-        assertTrue(script.contains("codingx.cmd"));
-        assertTrue(script.contains("codingx.ps1"));
-        assertTrue(script.contains("[Environment]::SetEnvironmentVariable"));
-        assertTrue(script.contains("java -jar"));
+        assertTrue(script.contains("package-codingx-cli.ps1"));
+        assertTrue(script.contains("-Install"));
+        assertTrue(script.contains("-Clean:$Clean"));
+        assertTrue(script.contains("-SkipTests:$SkipTests"));
     }
 
     /**

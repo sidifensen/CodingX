@@ -11,7 +11,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 /**
- * 治理 Agent 上下文服务，统一把项目画像和已确认长期记忆转换成可注入模型的系统上下文。
+ * 治理 Agent 上下文服务，统一把项目画像和已生效长期记忆转换成可注入模型的系统上下文。
  */
 @Service
 @RequiredArgsConstructor
@@ -19,7 +19,7 @@ public class GovernanceAgentContextService {
 
     /** 项目画像服务，用于读取当前工作空间最近一次扫描结果。 */
     private final ProjectProfileService projectProfileService;
-    /** 长期记忆服务，用于检索 ACTIVE 记忆并生成新的 PENDING 候选。 */
+    /** 长期记忆服务，用于检索 ACTIVE 记忆并在完成回复后提取新的生效记忆。 */
     private final LongTermMemoryService longTermMemoryService;
 
     /**
@@ -43,7 +43,7 @@ public class GovernanceAgentContextService {
         if (!memories.isEmpty()) {
             StringBuilder memorySection = new StringBuilder();
             memorySection.append("# 长期记忆\n");
-            memorySection.append("使用方式：以下内容是用户或项目已确认的偏好/约束。只在与当前任务相关时应用，不要逐字复述。\n");
+            memorySection.append("使用方式：以下内容是用户或项目已生效的偏好/约束。只在与当前任务相关时应用，不要逐字复述。\n");
             int index = 1;
             for (GovernanceLongTermMemory memory : memories) {
                 memorySection.append(index++)
@@ -59,11 +59,11 @@ public class GovernanceAgentContextService {
     }
 
     /**
-     * 在助手成功完成后提取长期记忆候选。
+     * 在助手成功完成后提取长期记忆。
      * @param conversation 当前会话。
      * @param userMessage 用户消息。
      * @param assistantMessage 助手完成消息。
-     * @return 新增的 PENDING 候选列表。
+     * @return 新增且已生效的长期记忆列表。
      */
     public List<GovernanceLongTermMemory> extractMemoryCandidates(
         ChatConversation conversation,

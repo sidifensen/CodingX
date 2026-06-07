@@ -459,7 +459,7 @@ class ChatApplicationServiceTest {
     }
 
     /**
-     * 项目画像和已确认长期记忆应作为治理上下文注入系统提示，并在完成后提取新的待确认候选。
+     * 项目画像和已生效长期记忆应作为治理上下文注入系统提示，并在完成后提取新的长期记忆。
      */
     @Test
     void sendMessageInjectsGovernanceContextAndExtractsMemoryCandidatesAfterCompletion() {
@@ -490,7 +490,7 @@ class ChatApplicationServiceTest {
             assertTrue(systemMessage.getContent().contains("项目画像"));
             assertTrue(systemMessage.getContent().contains("长期记忆"));
             AiChatClient.StreamHandler handler = invocation.getArgument(2);
-            handler.onDelta("已生成待确认记忆候选。");
+            handler.onDelta("已生成长期记忆。");
             handler.onComplete();
             return null;
         }).when(aiChatClient).streamChat(any(), eq(false), any());

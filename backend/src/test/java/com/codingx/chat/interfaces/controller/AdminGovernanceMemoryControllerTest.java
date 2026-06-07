@@ -46,25 +46,25 @@ class AdminGovernanceMemoryControllerTest {
      */
     @Test
     void listLongTermMemoriesReturnsRows() throws Exception {
-        when(longTermMemoryService.listAdminMemories("PENDING", 50)).thenReturn(List.of(
+        when(longTermMemoryService.listAdminMemories("ACTIVE", 50)).thenReturn(List.of(
             GovernanceLongTermMemory.builder()
                 .id(9101L)
                 .memoryScope("PROJECT")
                 .userId(1002L)
                 .workspaceId(3001L)
                 .content("项目约定：后端接口错误文案必须使用中文")
-                .status("PENDING")
+                .status("ACTIVE")
                 .build()
         ));
 
         mockMvc().perform(get("/api/admin/governance/long-term-memories")
-                .param("status", "PENDING")
+                .param("status", "ACTIVE")
                 .param("limit", "50"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.success").value(true))
             .andExpect(jsonPath("$.data[0].id").value("9101"))
             .andExpect(jsonPath("$.data[0].memoryScope").value("PROJECT"))
-            .andExpect(jsonPath("$.data[0].status").value("PENDING"));
+            .andExpect(jsonPath("$.data[0].status").value("ACTIVE"));
     }
 
     /**

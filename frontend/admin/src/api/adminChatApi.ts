@@ -552,7 +552,7 @@ export interface AdminGovernanceProjectProfile {
 }
 
 /**
- * 长期记忆治理记录，管理员可确认项目级/用户级候选或撤销错误记忆。
+ * 长期记忆治理记录，管理员可查看并启停项目级或用户级记忆。
  */
 export interface AdminGovernanceLongTermMemory {
   id?: string | number;
@@ -1242,13 +1242,13 @@ export class AdminChatApi {
   }
 
   /**
-   * 更新长期记忆状态，供管理员确认或拒绝候选。
+   * 更新长期记忆状态，供管理员启用或停用记忆。
    * @param id 长期记忆主键。
    * @param status 目标状态。
    */
   static async updateLongTermMemoryStatus(
     id: string | number,
-    status: 'ACTIVE' | 'REJECTED' | 'PENDING',
+    status: 'ACTIVE' | 'REJECTED',
   ): Promise<AdminGovernanceLongTermMemory> {
     return this.request<AdminGovernanceLongTermMemory>(
       `/api/admin/governance/long-term-memories/${encodeURIComponent(String(id))}/status`,

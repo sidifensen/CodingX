@@ -47,19 +47,19 @@ public interface GovernanceLongTermMemoryRepository {
     List<GovernanceLongTermMemory> findForAdmin(String status, int limit);
 
     /**
-     * 查询可参与上下文回注的 ACTIVE 记忆候选。
+     * 查询可参与上下文回注的 ACTIVE 记忆。
      * @param userId 用户 ID。
      * @param workspaceId 工作空间 ID，可为空。
      * @param limit 最大条数。
-     * @return ACTIVE 记忆候选。
+     * @return ACTIVE 记忆。
      */
     List<GovernanceLongTermMemory> findActiveForContext(Long userId, Long workspaceId, int limit);
 
     /**
-     * 统计用户在指定工作空间的待确认记忆数量。
+     * 统计用户在指定工作空间的已生效记忆数量。
      * @param userId 用户 ID。
      * @param workspaceId 工作空间 ID，可为空。
-     * @return 待确认数量。
+     * @return 已生效数量。
      */
-    int countPendingByUserAndWorkspace(Long userId, Long workspaceId);
+    int countActiveByUserAndWorkspace(Long userId, Long workspaceId);
 }

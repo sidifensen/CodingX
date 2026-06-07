@@ -16,15 +16,15 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 
 /**
- * 验证长期记忆候选提取、确认和检索的确定性规则。
+ * 验证长期记忆提取、管理状态和检索回注的确定性规则。
  */
 class LongTermMemoryServiceTest {
 
     /**
-     * 显式记忆信号只应生成 PENDING 候选，不能直接影响后续上下文。
+     * 显式记忆信号应直接生成 ACTIVE 记忆，并立即参与后续上下文检索。
      */
     @Test
-    void extractCandidatesShouldPersistPendingUserMemory() {
+    void extractCandidatesShouldPersistActiveUserMemoryAndRetrieveImmediately() {
         InMemoryLongTermMemoryRepository repository = new InMemoryLongTermMemoryRepository();
         LongTermMemoryService service = new LongTermMemoryService(repository);
         ChatConversation conversation = ChatConversation.create(100L, "偏好", 200L, 300L, ChatConversationStatus.ACTIVE);
@@ -35,13 +35,17 @@ class LongTermMemoryServiceTest {
 
         assertEquals(1, memories.size());
         GovernanceLongTermMemory memory = memories.getFirst();
-        assertEquals("PENDING", memory.getStatus());
+        assertEquals("ACTIVE", memory.getStatus());
         assertEquals("USER", memory.getMemoryScope());
         assertEquals(200L, memory.getUserId());
         assertNull(memory.getWorkspaceId());
         assertEquals(100L, memory.getSourceConversationId());
         assertTrue(memory.getContent().contains("优先写清楚业务注释"));
         assertTrue(memory.getKeywordJson().contains("业务注释"));
+        assertEquals(
+            memory.getId(),
+            service.retrieveActiveMemories(200L, 300L, "后续请继续保持业务注释", 10).getFirst().getId()
+        );
     }
 
     /**
@@ -64,7 +68,7 @@ class LongTermMemoryServiceTest {
     }
 
     /**
-     * 相同 key 的候选已经存在时不能重复保存，避免记忆列表被同一偏好刷屏。
+     * 相同 key 的记忆已经存在时不能重复保存，避免记忆列表被同一偏好刷屏。
      */
     @Test
     void extractCandidatesShouldDeduplicateByMemoryKey() {
@@ -81,21 +85,21 @@ class LongTermMemoryServiceTest {
     }
 
     /**
-     * 用户确认或拒绝候选时应更新状态，只有 ACTIVE 记忆能参与检索回注。
+     * 用户管理自己的记忆时应能停用后再启用，只有 ACTIVE 记忆能参与检索回注。
      */
     @Test
-    void updateUserMemoryStatusShouldActivateOrRejectPendingMemory() {
+    void updateUserMemoryStatusShouldDisableOrReactivateOwnedMemory() {
         InMemoryLongTermMemoryRepository repository = new InMemoryLongTermMemoryRepository();
-        GovernanceLongTermMemory memory = sampleMemory("PENDING").toBuilder().id(500L).userId(200L).build();
+        GovernanceLongTermMemory memory = sampleMemory("ACTIVE").toBuilder().id(500L).userId(200L).build();
         repository.save(memory);
         LongTermMemoryService service = new LongTermMemoryService(repository);
 
-        GovernanceLongTermMemory activated = service.updateUserMemoryStatus(500L, 200L, "ACTIVE");
-        GovernanceLongTermMemory rejected = service.updateUserMemoryStatus(500L, 200L, "REJECTED");
+        GovernanceLongTermMemory disabled = service.updateUserMemoryStatus(500L, 200L, "REJECTED");
+        GovernanceLongTermMemory reactivated = service.updateUserMemoryStatus(500L, 200L, "ACTIVE");
 
-        assertEquals("ACTIVE", activated.getStatus());
-        assertEquals("REJECTED", rejected.getStatus());
-        assertTrue(rejected.getUpdatedAt() != null);
+        assertEquals("REJECTED", disabled.getStatus());
+        assertEquals("ACTIVE", reactivated.getStatus());
+        assertTrue(reactivated.getUpdatedAt() != null);
     }
 
     /**
@@ -105,7 +109,7 @@ class LongTermMemoryServiceTest {
     void retrieveActiveMemoriesShouldFilterByScopeStatusAndKeywords() {
         InMemoryLongTermMemoryRepository repository = new InMemoryLongTermMemoryRepository();
         repository.save(sampleMemory("ACTIVE").toBuilder().id(1L).userId(200L).workspaceId(null).content("代码风格偏好：业务注释").keywordJson("[\"业务注释\"]").build());
-        repository.save(sampleMemory("PENDING").toBuilder().id(2L).userId(200L).workspaceId(300L).content("待确认").keywordJson("[\"业务注释\"]").build());
+        repository.save(sampleMemory("REJECTED").toBuilder().id(2L).userId(200L).workspaceId(300L).content("已停用").keywordJson("[\"业务注释\"]").build());
         repository.save(sampleMemory("ACTIVE").toBuilder().id(3L).userId(201L).workspaceId(300L).content("其他用户").keywordJson("[\"业务注释\"]").build());
         repository.save(sampleMemory("ACTIVE").toBuilder().id(4L).userId(200L).workspaceId(301L).memoryScope("PROJECT").content("其他项目").keywordJson("[\"业务注释\"]").build());
         LongTermMemoryService service = new LongTermMemoryService(repository);
@@ -133,19 +137,19 @@ class LongTermMemoryServiceTest {
     }
 
     /**
-     * 待确认数量需要同时包含跨项目用户偏好和当前项目候选，供聊天页统一提示用户处理。
+     * 已生效数量需要同时包含跨项目用户偏好和当前项目记忆，供聊天页展示 Agent 当前上下文规模。
      */
     @Test
-    void countPendingByUserAndWorkspaceShouldIncludeUserAndCurrentProjectMemories() {
+    void countActiveByUserAndWorkspaceShouldIncludeUserAndCurrentProjectMemories() {
         InMemoryLongTermMemoryRepository repository = new InMemoryLongTermMemoryRepository();
-        repository.save(sampleMemory("PENDING").toBuilder().id(1L).userId(200L).workspaceId(null).build());
-        repository.save(sampleMemory("PENDING").toBuilder().id(2L).userId(200L).workspaceId(300L).memoryScope("PROJECT").build());
-        repository.save(sampleMemory("PENDING").toBuilder().id(3L).userId(200L).workspaceId(301L).memoryScope("PROJECT").build());
+        repository.save(sampleMemory("ACTIVE").toBuilder().id(1L).userId(200L).workspaceId(null).build());
+        repository.save(sampleMemory("ACTIVE").toBuilder().id(2L).userId(200L).workspaceId(300L).memoryScope("PROJECT").build());
+        repository.save(sampleMemory("ACTIVE").toBuilder().id(3L).userId(200L).workspaceId(301L).memoryScope("PROJECT").build());
         LongTermMemoryService service = new LongTermMemoryService(repository);
 
-        int pendingCount = service.countPendingByUserAndWorkspace(200L, 300L);
+        int activeCount = service.countActiveByUserAndWorkspace(200L, 300L);
 
-        assertEquals(2, pendingCount);
+        assertEquals(2, activeCount);
     }
 
     private GovernanceLongTermMemory sampleMemory(String status) {
@@ -203,9 +207,9 @@ class LongTermMemoryServiceTest {
         }
 
         @Override
-        public int countPendingByUserAndWorkspace(Long userId, Long workspaceId) {
+        public int countActiveByUserAndWorkspace(Long userId, Long workspaceId) {
             return (int) savedMemories.stream()
-                .filter(memory -> "PENDING".equals(memory.getStatus()))
+                .filter(memory -> "ACTIVE".equals(memory.getStatus()))
                 .filter(memory -> userId.equals(memory.getUserId()))
                 .filter(memory -> memory.getWorkspaceId() == null || workspaceId == null || workspaceId.equals(memory.getWorkspaceId()))
                 .count();

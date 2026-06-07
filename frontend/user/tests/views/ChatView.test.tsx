@@ -4313,9 +4313,9 @@ describe('ChatView', () => {
   });
 
   /**
-   * 工作区智能条应展示项目画像和待确认长期记忆，并通过项目内按钮完成确认操作。
+   * 工作区智能条应展示项目画像和已生效长期记忆，不再要求用户进行确认操作。
    */
-  it('应展示工作区智能条并允许确认待记忆候选', async () => {
+  it('应展示工作区智能条和已生效长期记忆', async () => {
     const updateLongTermMemoryStatus = vi.fn().mockResolvedValue(undefined);
 
     render(
@@ -4333,7 +4333,7 @@ describe('ChatView', () => {
             riskPointsJson: '["缺少端到端测试"]',
             agentContext: '项目包含后端、用户端和管理端。',
           },
-          pendingMemoryCount: 1,
+          activeMemoryCount: 1,
           longTermMemories: [
             {
               id: '9001',
@@ -4341,7 +4341,7 @@ describe('ChatView', () => {
               userId: '1002',
               workspaceId: '3001',
               content: '以后都按项目注释规范编写 Java 注释',
-              status: 'PENDING',
+              status: 'ACTIVE',
               keywordJson: '["注释规范"]',
             },
           ],
@@ -4352,15 +4352,12 @@ describe('ChatView', () => {
 
     const strip = await screen.findByTestId('workspace-intelligence-strip');
     expect(strip).toHaveTextContent('Maven + Vite workspace');
-    expect(strip).toHaveTextContent('待确认 1 条');
+    expect(strip).toHaveTextContent('已生效 1 条');
     expect(strip).toHaveTextContent('mvn test');
     expect(strip).toHaveTextContent('以后都按项目注释规范编写 Java 注释');
-
-    fireEvent.click(screen.getByRole('button', { name: '确认长期记忆 9001' }));
-
-    await waitFor(() => {
-      expect(updateLongTermMemoryStatus).toHaveBeenCalledWith('9001', 'ACTIVE');
-    });
+    expect(screen.queryByRole('button', { name: '确认长期记忆 9001' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '拒绝长期记忆 9001' })).not.toBeInTheDocument();
+    expect(updateLongTermMemoryStatus).not.toHaveBeenCalled();
   });
 });
 
@@ -4397,7 +4394,7 @@ function createWorkspace(overrides?: Partial<ChatWorkspaceController>): ChatWork
     workspaceLabel: 'CodingX',
     workspaceRuntimeTarget: 'local',
     projectProfile: null,
-    pendingMemoryCount: 0,
+    activeMemoryCount: 0,
     longTermMemories: [],
     isMemoryLoading: false,
     conversations: [

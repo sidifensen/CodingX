@@ -43,7 +43,7 @@ public class AdminGovernanceController {
     private final ProjectProfileService projectProfileService;
     /** Slash Command 服务，用于管理命令目录。 */
     private final SlashCommandService slashCommandService;
-    /** 长期记忆服务，用于管理端审核和启停候选记忆。 */
+    /** 长期记忆服务，用于管理端查看并启停已提取的长期记忆。 */
     private final LongTermMemoryService longTermMemoryService;
 
     /**
@@ -173,7 +173,7 @@ public class AdminGovernanceController {
     }
 
     /**
-     * 查询长期记忆列表，供管理端审核用户级和项目级记忆候选。
+     * 查询长期记忆列表，供管理端查看用户级和项目级记忆。
      * @param status 状态筛选，ALL 或空值表示全部状态。
      * @param limit 最大返回条数。
      * @return 长期记忆列表。
@@ -187,7 +187,7 @@ public class AdminGovernanceController {
     }
 
     /**
-     * 更新长期记忆状态，供管理员确认项目约定或撤销错误候选。
+     * 更新长期记忆状态，供管理员启用或停用项目约定。
      * @param id 长期记忆主键。
      * @param request 状态更新请求。
      * @return 更新后的长期记忆。
@@ -256,7 +256,7 @@ public class AdminGovernanceController {
     /**
      * 长期记忆状态更新请求。
      *
-     * @param status 目标状态，允许 ACTIVE、REJECTED 或 PENDING。
+     * @param status 目标状态，允许 ACTIVE 或 REJECTED。
      */
     public record MemoryStatusUpdateRequest(String status) {
     }

@@ -71,7 +71,7 @@ class ChatWorkspaceBindingServiceTest {
             .riskPointsJson("[]")
             .agentContext("# 项目画像")
             .build());
-        when(longTermMemoryService.countPendingByUserAndWorkspace(1002L, 8201L)).thenReturn(3);
+        when(longTermMemoryService.countActiveByUserAndWorkspace(1002L, 8201L)).thenReturn(3);
         try (MockedStatic<StpUtil> mocked = Mockito.mockStatic(StpUtil.class)) {
             mocked.when(StpUtil::getLoginIdAsLong).thenReturn(1002L);
 
@@ -88,7 +88,7 @@ class ChatWorkspaceBindingServiceTest {
             assertEquals(repoDir.toString().replace('\\', '/'), result.repositoryPath());
             assertEquals(repoDir.getFileName().toString(), result.workspaceName());
             assertEquals("检测到 repo 项目", result.projectProfile().summary());
-            assertEquals(3, result.pendingMemoryCount());
+            assertEquals(3, result.activeMemoryCount());
         }
     }
 

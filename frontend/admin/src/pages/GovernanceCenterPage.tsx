@@ -361,7 +361,7 @@ export function GovernanceCenterPage() {
    */
   const updateMemoryStatus = React.useCallback(async (
     memoryId: string | number | undefined,
-    status: 'ACTIVE' | 'REJECTED' | 'PENDING',
+    status: 'ACTIVE' | 'REJECTED',
   ) => {
     if (memoryId == null) {
       return;
@@ -369,7 +369,7 @@ export function GovernanceCenterPage() {
     try {
       await AdminChatApi.updateLongTermMemoryStatus(memoryId, status);
       await loadData();
-      void adminMessage.success(status === 'ACTIVE' ? '长期记忆已确认' : '长期记忆已拒绝');
+      void adminMessage.success(status === 'ACTIVE' ? '长期记忆已启用' : '长期记忆已停用');
     } catch (error) {
       void adminMessage.error(extractErrorMessage(error, '更新长期记忆失败'));
     }
@@ -405,15 +405,15 @@ export function GovernanceCenterPage() {
           actions={[
             {
               key: 'active',
-              label: '确认',
-              ariaLabel: `确认长期记忆 ${item.id}`,
+              label: '启用',
+              ariaLabel: `启用长期记忆 ${item.id}`,
               disabled: item.id == null || item.status === 'ACTIVE',
               onClick: () => void updateMemoryStatus(item.id, 'ACTIVE'),
             },
             {
               key: 'reject',
-              label: '拒绝',
-              ariaLabel: `拒绝长期记忆 ${item.id}`,
+              label: '停用',
+              ariaLabel: `停用长期记忆 ${item.id}`,
               danger: true,
               disabled: item.id == null || item.status === 'REJECTED',
               onClick: () => void updateMemoryStatus(item.id, 'REJECTED'),
@@ -1233,7 +1233,7 @@ function memoryScopeLabel(value?: string) {
 
 function memoryStatusLabel(value?: string) {
   if (value === 'PENDING') {
-    return '待确认';
+    return '旧待处理';
   }
   if (value === 'ACTIVE') {
     return '已启用';

@@ -142,7 +142,7 @@ public class ChatApplicationService {
     private final ChatToolExecutionService chatToolExecutionService;
     /** Hook 规则服务，记录工具调用前后和任务完成生命周期审计 */
     private final HookRuleService hookRuleService;
-    /** 治理上下文服务，负责把项目画像和已确认长期记忆注入模型，并在完成后提取待确认候选 */
+    /** 治理上下文服务，负责把项目画像和已生效长期记忆注入模型，并在完成后提取新的长期记忆 */
     private final GovernanceAgentContextService governanceAgentContextService;
     /** 会话 workspace 绑定服务，负责把本地空间映射为真实仓库目录 */
     private final ChatWorkspaceBindingService chatWorkspaceBindingService;
@@ -1136,7 +1136,7 @@ public class ChatApplicationService {
     }
 
     /**
-     * 构建治理上下文片段，供持久化会话在模型输入前获取项目画像和已确认长期记忆。
+     * 构建治理上下文片段，供持久化会话在模型输入前获取项目画像和已生效长期记忆。
      * @param conversation 当前会话。
      * @param rewrittenQuestion 本轮改写后的用户问题。
      * @return 可注入 system prompt 的治理上下文，缺失服务或上下文为空时返回空字符串。
@@ -1159,7 +1159,7 @@ public class ChatApplicationService {
     }
 
     /**
-     * 助手成功完成后提取长期记忆候选，候选默认 PENDING，后续需用户或管理员确认。
+     * 助手成功完成后提取长期记忆；提取结果默认 ACTIVE，下一轮相关问题即可参与模型上下文回注。
      * @param conversation 当前会话。
      * @param userMessage 本轮用户消息。
      * @param assistantMessage 本轮助手完成消息。
@@ -1177,7 +1177,7 @@ public class ChatApplicationService {
             governanceAgentContextService.extractMemoryCandidates(conversation, userMessage, assistantMessage);
         } catch (RuntimeException exception) {
             log.warn(
-                "长期记忆候选提取失败: conversationId={}, userMessageId={}, assistantMessageId={}, message={}",
+                "长期记忆提取失败: conversationId={}, userMessageId={}, assistantMessageId={}, message={}",
                 conversation.getId(),
                 userMessage.getId(),
                 assistantMessage.getId(),

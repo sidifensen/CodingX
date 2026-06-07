@@ -450,14 +450,14 @@ export class ChatApi {
     workspaceId: string;
     workspaceName: string;
     projectProfile: ProjectProfileView | null;
-    pendingMemoryCount: number;
+    activeMemoryCount: number;
   }> {
     const envelope = await this.request<{
       repositoryPath: string;
       workspaceId: string;
       workspaceName: string;
       projectProfile?: ProjectProfileView | null;
-      pendingMemoryCount?: number | null;
+      activeMemoryCount?: number | null;
     }>(
       '/api/chat/workspace/bind-repository',
       token,
@@ -471,12 +471,12 @@ export class ChatApi {
       workspaceId: String(envelope.data.workspaceId ?? ''),
       workspaceName: String(envelope.data.workspaceName ?? ''),
       projectProfile: envelope.data.projectProfile ?? null,
-      pendingMemoryCount: Number(envelope.data.pendingMemoryCount ?? 0),
+      activeMemoryCount: Number(envelope.data.activeMemoryCount ?? 0),
     };
   }
 
   /**
-   * 查询当前用户可见的长期记忆，供聊天页展示候选确认和已启用上下文。
+   * 查询当前用户可见的已生效长期记忆，供聊天页展示当前会进入上下文的偏好和约定。
    * @param token 当前登录令牌。
    * @param workspaceId 当前工作空间 ID，可为空。
    * @param status 可选状态筛选。
@@ -491,8 +491,9 @@ export class ChatApi {
     if (workspaceId && workspaceId.trim().length > 0) {
       searchParams.set('workspaceId', workspaceId.trim());
     }
-    if (status && status.trim().length > 0 && status !== 'ALL') {
-      searchParams.set('status', status);
+    const effectiveStatus = status == null ? 'ACTIVE' : status;
+    if (effectiveStatus && effectiveStatus.trim().length > 0 && effectiveStatus !== 'ALL') {
+      searchParams.set('status', effectiveStatus);
     }
     const queryString = searchParams.toString();
     const envelope = await this.request<LongTermMemoryItem[]>(
@@ -503,7 +504,7 @@ export class ChatApi {
   }
 
   /**
-   * 更新长期记忆状态，确认后才允许后续对话上下文回注。
+   * 更新长期记忆状态，供未来用户侧记忆管理入口启用或停用记忆。
    * @param token 当前登录令牌。
    * @param memoryId 长期记忆 ID。
    * @param status 目标状态。
@@ -590,7 +591,7 @@ export class ChatApi {
         memory.sourceConversationId == null ? null : String(memory.sourceConversationId),
       sourceMessageId: memory.sourceMessageId == null ? null : String(memory.sourceMessageId),
       content: String(memory.content ?? ''),
-      status: String(memory.status ?? 'PENDING'),
+      status: String(memory.status ?? 'ACTIVE'),
       memoryScope: String(memory.memoryScope ?? 'USER'),
     };
   }

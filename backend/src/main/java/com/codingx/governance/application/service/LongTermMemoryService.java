@@ -22,7 +22,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 /**
- * 长期记忆应用服务，负责从已完成对话中提取待确认候选、处理确认状态并为模型上下文检索 ACTIVE 记忆。
+ * 长期记忆应用服务，负责从已完成对话中提取可直接回注的长期记忆，并为模型上下文检索 ACTIVE 记忆。
  */
 @Service
 @RequiredArgsConstructor
@@ -31,15 +31,15 @@ public class LongTermMemoryService {
     private static final int DEFAULT_USER_LIST_LIMIT = 100;
     private static final int MAX_CONTEXT_MEMORY_COUNT = 6;
 
-    /** 长期记忆仓储，用于候选去重、状态更新和上下文检索。 */
+    /** 长期记忆仓储，用于记忆去重、状态更新和上下文检索。 */
     private final GovernanceLongTermMemoryRepository memoryRepository;
 
     /**
-     * 从用户与助手的一轮完成对话中提取长期记忆候选。
+     * 从用户与助手的一轮完成对话中提取长期记忆。
      * @param conversation 当前会话，提供用户与工作空间归属。
      * @param userMessage 用户消息，显式记忆信号从这里识别。
      * @param assistantMessage 已完成助手消息，作为来源链路的完成证据。
-     * @return 本次新保存的 PENDING 记忆候选。
+     * @return 本次新保存且立即生效的 ACTIVE 记忆。
      */
     public List<GovernanceLongTermMemory> extractCandidates(
         ChatConversation conversation,
@@ -54,7 +54,7 @@ public class LongTermMemoryService {
         if (!containsMemorySignal(userContent)) {
             return List.of();
         }
-        // 步骤 2：显式信号后的正文作为候选内容，状态固定 PENDING，必须由用户或管理员确认后才能回注。
+        // 步骤 2：显式信号后的正文作为记忆内容，状态直接置为 ACTIVE，下一轮相关问题即可被上下文检索回注。
         String memoryContent = normalizeMemoryContent(userContent);
         if (StrUtil.isBlank(memoryContent)) {
             return List.of();
@@ -75,7 +75,7 @@ public class LongTermMemoryService {
             .workspaceId(memoryWorkspaceId)
             .memoryKey(memoryKey)
             .content(memoryContent)
-            .status("PENDING")
+            .status("ACTIVE")
             .sourceType("CHAT_EXCHANGE")
             .sourceConversationId(conversation.getId())
             .sourceMessageId(userMessage.getId())
@@ -90,7 +90,7 @@ public class LongTermMemoryService {
     }
 
     /**
-     * 查询用户可见的记忆列表，供用户端候选确认和已启用记忆查看。
+     * 查询用户可见的记忆列表，供用户端查看当前会进入模型上下文的记忆。
      * @param userId 当前用户 ID。
      * @param workspaceId 当前工作空间 ID，可为空。
      * @param status 状态筛选，可为空。
@@ -112,7 +112,7 @@ public class LongTermMemoryService {
     }
 
     /**
-     * 用户确认或拒绝自己的候选记忆。
+     * 用户管理自己的长期记忆状态；当前提取后的记忆默认 ACTIVE，此入口仅用于启用或停用已有记忆。
      * @param memoryId 记忆主键。
      * @param userId 当前用户 ID。
      * @param status 目标状态，仅允许 ACTIVE 或 REJECTED。
@@ -128,7 +128,7 @@ public class LongTermMemoryService {
     }
 
     /**
-     * 管理端更新任意长期记忆状态。
+     * 管理端更新任意长期记忆状态，用于启用或停用已提取的记忆。
      * @param memoryId 记忆主键。
      * @param status 目标状态。
      * @return 更新后的记忆。
@@ -138,16 +138,16 @@ public class LongTermMemoryService {
     }
 
     /**
-     * 统计当前用户在工作空间下待确认记忆数量。
+     * 统计当前用户在工作空间下已生效记忆数量。
      * @param userId 用户 ID。
      * @param workspaceId 工作空间 ID，可为空。
-     * @return 待确认数量。
+     * @return 已生效数量。
      */
-    public int countPendingByUserAndWorkspace(Long userId, Long workspaceId) {
+    public int countActiveByUserAndWorkspace(Long userId, Long workspaceId) {
         if (userId == null) {
             return 0;
         }
-        return memoryRepository.countPendingByUserAndWorkspace(userId, workspaceId);
+        return memoryRepository.countActiveByUserAndWorkspace(userId, workspaceId);
     }
 
     /**
@@ -199,7 +199,7 @@ public class LongTermMemoryService {
 
     private String normalizeWritableStatus(String status) {
         String normalizedStatus = StrUtil.trimToEmpty(status).toUpperCase(Locale.ROOT);
-        if (!"ACTIVE".equals(normalizedStatus) && !"REJECTED".equals(normalizedStatus) && !"PENDING".equals(normalizedStatus)) {
+        if (!"ACTIVE".equals(normalizedStatus) && !"REJECTED".equals(normalizedStatus)) {
             throw new BusinessException("GOVERNANCE_MEMORY_STATUS_INVALID", "长期记忆状态不合法");
         }
         return normalizedStatus;

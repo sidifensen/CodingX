@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:executing-plans` to implement this plan task-by-task. It will decide whether each batch should run in parallel or serial subagent mode and will pass only task-local context to each subagent. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build a complete deterministic project profile and long-term memory loop for CodingX, including scan, candidate confirmation, retrieval, prompt injection, user UI, admin UI, docs, tests, and commit.
+**Goal:** Build a complete deterministic project profile and long-term memory loop for CodingX, including scan, explicit-consent memory activation, retrieval, prompt injection, user UI, admin UI, docs, tests, and commit.
 
-**Architecture:** Extend the existing governance subsystem rather than introducing a separate memory subsystem. Project profile scan writes richer JSON fields and Agent context into `governance_project_profile`; `LongTermMemoryService` manages PENDING/ACTIVE/REJECTED memory records; `GovernanceAgentContextService` combines latest profile and active memory for chat prompt injection.
+**Architecture:** Extend the existing governance subsystem rather than introducing a separate memory subsystem. Project profile scan writes richer JSON fields and Agent context into `governance_project_profile`; `LongTermMemoryService` saves explicit memory requests as ACTIVE records and manages ACTIVE/REJECTED status; `GovernanceAgentContextService` combines latest profile and active memory for chat prompt injection.
 
 **Tech Stack:** Java 21, Spring Boot 3.4, MyBatis Plus, PostgreSQL migrations, Hutool, React 19, TypeScript, Tailwind tokens, Ant Design admin components.
 
@@ -42,7 +42,7 @@
 
 ### Task 3: Long-Term Memory Service
 
-- [ ] Add failing `LongTermMemoryServiceTest` for candidate extraction, dedupe, status updates, and retrieval.
+- [ ] Add failing `LongTermMemoryServiceTest` for explicit memory extraction, dedupe, status updates, and retrieval.
 - [ ] Implement extraction, keyword normalization, status transitions, list methods, and retrieval.
 - [ ] Add user/admin request/response DTOs with field comments.
 - [ ] Run `mvn -Dtest=LongTermMemoryServiceTest test`.
@@ -50,7 +50,7 @@
 ### Task 4: Governance Context And Chat Integration
 
 - [ ] Add failing `GovernanceAgentContextServiceTest` for project profile plus active memory context.
-- [ ] Add failing chat application assertion that completed normal exchanges trigger candidate extraction.
+- [ ] Add failing chat application assertion that completed normal exchanges trigger explicit memory extraction.
 - [ ] Implement `GovernanceAgentContextService`.
 - [ ] Inject governance context into `ChatApplicationService.buildAiHistory`.
 - [ ] Trigger memory candidate extraction after successful assistant completion.
@@ -68,7 +68,7 @@
 
 - [ ] Extend user chat types and API methods for project profile and long-term memory.
 - [ ] Store profile/memory status in `useChatWorkspace`.
-- [ ] Add a compact workspace intelligence strip and memory review controls to `ChatView`.
+- [ ] Add a compact workspace intelligence strip and active memory summaries to `ChatView`.
 - [ ] Ensure light/dark theme tokens are used and no native browser dialogs are introduced.
 - [ ] Run `cd frontend/user && npm run build && npm run test:run`.
 

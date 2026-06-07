@@ -698,7 +698,7 @@ describe('ChatApi', () => {
               riskPointsJson: '["缺少端到端测试"]',
               agentContext: '项目包含后端、用户端和管理端。',
             },
-            pendingMemoryCount: 2,
+            activeMemoryCount: 2,
           },
         }),
         { status: 200 },
@@ -721,13 +721,13 @@ describe('ChatApi', () => {
     expect(result.workspaceId).toBe('3001');
     expect(result.workspaceName).toBe('codingx');
     expect(result.projectProfile?.summary).toBe('Maven + Vite workspace');
-    expect(result.pendingMemoryCount).toBe(2);
+    expect(result.activeMemoryCount).toBe(2);
   });
 
   /**
-   * 用户端长期记忆接口应复用统一 ApiResponse 解析，并把大整数 ID 归一为字符串。
+   * 用户端长期记忆接口应默认读取已生效记忆，并把大整数 ID 归一为字符串。
    */
-  it('应查询并更新用户长期记忆状态', async () => {
+  it('应查询已生效用户长期记忆', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce(
         new Response(
@@ -742,56 +742,29 @@ describe('ChatApi', () => {
                 userId: 1002,
                 workspaceId: 3001,
                 content: '以后都按项目注释规范编写 Java 注释',
-                status: 'PENDING',
+                status: 'ACTIVE',
                 keywordJson: '["注释规范"]',
               },
             ],
           }),
           { status: 200 },
         ),
-      )
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            success: true,
-            code: 'OK',
-            message: 'success',
-            data: {
-              id: 9001,
-              memoryScope: 'PROJECT',
-              userId: 1002,
-              workspaceId: 3001,
-              content: '以后都按项目注释规范编写 Java 注释',
-              status: 'ACTIVE',
-            },
-          }),
-          { status: 200 },
-        ),
       );
 
-    const memories = await ChatApi.listLongTermMemories('token-123', '3001', 'PENDING');
-    const updated = await ChatApi.updateLongTermMemoryStatus('token-123', '9001', 'ACTIVE');
+    const memories = await ChatApi.listLongTermMemories('token-123', '3001');
 
     expect(fetchSpy).toHaveBeenNthCalledWith(
       1,
-      '/api/chat/memories?workspaceId=3001&status=PENDING',
+      '/api/chat/memories?workspaceId=3001&status=ACTIVE',
       expect.objectContaining({
         headers: expect.objectContaining({
           satoken: 'token-123',
         }),
       }),
     );
-    expect(fetchSpy).toHaveBeenNthCalledWith(
-      2,
-      '/api/chat/memories/9001/status',
-      expect.objectContaining({
-        method: 'PATCH',
-        body: JSON.stringify({ status: 'ACTIVE' }),
-      }),
-    );
     expect(memories[0].id).toBe('9001');
     expect(memories[0].workspaceId).toBe('3001');
-    expect(updated.status).toBe('ACTIVE');
+    expect(memories[0].status).toBe('ACTIVE');
   });
 
 

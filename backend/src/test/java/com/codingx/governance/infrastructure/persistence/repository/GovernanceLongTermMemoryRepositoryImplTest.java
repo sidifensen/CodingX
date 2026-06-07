@@ -79,19 +79,20 @@ class GovernanceLongTermMemoryRepositoryImplTest {
     }
 
     /**
-     * 待确认数量在当前工作空间下需要包含用户级候选和当前项目候选。
+     * 已生效数量在当前工作空间下需要包含用户级记忆和当前项目记忆。
      */
     @Test
     @SuppressWarnings("unchecked")
-    void countPendingByUserAndWorkspaceShouldQueryUserAndCurrentProjectMemories() {
+    void countActiveByUserAndWorkspaceShouldQueryUserAndCurrentProjectMemories() {
         when(mapper.selectCount(any())).thenReturn(0L);
 
-        repository.countPendingByUserAndWorkspace(200L, 300L);
+        repository.countActiveByUserAndWorkspace(200L, 300L);
 
         ArgumentCaptor<LambdaQueryWrapper<GovernanceLongTermMemoryDO>> captor =
             ArgumentCaptor.forClass((Class<LambdaQueryWrapper<GovernanceLongTermMemoryDO>>) (Class<?>) LambdaQueryWrapper.class);
         verify(mapper).selectCount(captor.capture());
         String sqlSegment = sqlSegment(captor.getValue());
+        assertTrue(sqlSegment.contains("status ="), sqlSegment);
         assertTrue(sqlSegment.contains("workspace_id is null"), sqlSegment);
         assertTrue(sqlSegment.contains(" or "), sqlSegment);
         assertTrue(sqlSegment.contains("workspace_id ="), sqlSegment);

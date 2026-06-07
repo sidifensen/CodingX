@@ -530,7 +530,7 @@ export function useChatWorkspace(
     getDefaultWorkspaceLabel(activeRuntimeTarget),
   );
   const [projectProfile, setProjectProfile] = useState<ProjectProfileView | null>(null);
-  const [pendingMemoryCount, setPendingMemoryCount] = useState(0);
+  const [activeMemoryCount, setActiveMemoryCount] = useState(0);
   const [longTermMemories, setLongTermMemories] = useState<LongTermMemoryItem[]>([]);
   const [isMemoryLoading, setIsMemoryLoading] = useState(false);
   const [conversations, setConversations] = useState<ConversationItem[]>([]);
@@ -628,7 +628,7 @@ export function useChatWorkspace(
    */
   const clearWorkspaceIntelligence = () => {
     setProjectProfile(null);
-    setPendingMemoryCount(0);
+    setActiveMemoryCount(0);
     setLongTermMemories([]);
   };
 
@@ -646,11 +646,11 @@ export function useChatWorkspace(
     if (bindingResult && Object.prototype.hasOwnProperty.call(bindingResult, 'projectProfile')) {
       setProjectProfile(bindingResult.projectProfile ?? null);
     }
-    if (bindingResult && Object.prototype.hasOwnProperty.call(bindingResult, 'pendingMemoryCount')) {
-      const nextPendingCount = Number(bindingResult.pendingMemoryCount ?? 0);
-      setPendingMemoryCount(Number.isFinite(nextPendingCount) ? Math.max(0, nextPendingCount) : 0);
+    if (bindingResult && Object.prototype.hasOwnProperty.call(bindingResult, 'activeMemoryCount')) {
+      const nextActiveCount = Number(bindingResult.activeMemoryCount ?? 0);
+      setActiveMemoryCount(Number.isFinite(nextActiveCount) ? Math.max(0, nextActiveCount) : 0);
       const token = currentToken();
-      if (token && nextWorkspaceId && nextPendingCount > 0) {
+      if (token && nextWorkspaceId && nextActiveCount > 0) {
         void refreshLongTermMemoriesForWorkspace(token, nextWorkspaceId, true);
       }
     }
@@ -2964,10 +2964,10 @@ export function useChatWorkspace(
   ) {
     setIsMemoryLoading(true);
     try {
-      const memories = await ChatApi.listLongTermMemories(token, targetWorkspaceId, 'ALL');
+      const memories = await ChatApi.listLongTermMemories(token, targetWorkspaceId);
       setLongTermMemories(memories);
-      setPendingMemoryCount(
-        memories.filter((memory) => String(memory.status).toUpperCase() === 'PENDING').length,
+      setActiveMemoryCount(
+        memories.filter((memory) => String(memory.status).toUpperCase() === 'ACTIVE').length,
       );
     } catch (error) {
       if (!silent) {
@@ -2990,7 +2990,7 @@ export function useChatWorkspace(
   };
 
   /**
-   * 更新当前用户长期记忆状态，完成后刷新列表和待确认计数。
+   * 更新当前用户长期记忆状态，完成后刷新列表和已生效计数。
    * @param memoryId 长期记忆 ID。
    * @param status 目标状态。
    */
@@ -3601,7 +3601,7 @@ export function useChatWorkspace(
     workspaceLabel,
     workspaceRuntimeTarget: activeRuntimeTarget,
     projectProfile,
-    pendingMemoryCount,
+    activeMemoryCount,
     longTermMemories,
     isMemoryLoading,
     conversations,

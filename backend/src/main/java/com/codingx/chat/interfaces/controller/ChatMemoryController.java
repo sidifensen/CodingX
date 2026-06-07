@@ -15,14 +15,14 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 用户侧长期记忆接口，负责候选查看和确认/拒绝操作。
+ * 用户侧长期记忆接口，负责查看和启停当前用户自己的长期记忆。
  */
 @RestController
 @RequestMapping("/api/chat/memories")
 @RequiredArgsConstructor
 public class ChatMemoryController {
 
-    /** 长期记忆服务，执行用户归属过滤、状态更新和记忆候选读取。 */
+    /** 长期记忆服务，执行用户归属过滤、状态更新和记忆读取。 */
     private final LongTermMemoryService longTermMemoryService;
 
     /**
@@ -59,7 +59,7 @@ public class ChatMemoryController {
     /**
      * 长期记忆状态更新请求。
      *
-     * @param status 目标状态，允许 ACTIVE、REJECTED 或 PENDING。
+     * @param status 目标状态，允许 ACTIVE 或 REJECTED。
      */
     public record MemoryStatusUpdateRequest(String status) {
     }

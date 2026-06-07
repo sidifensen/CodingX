@@ -9,7 +9,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 /**
- * 长期记忆领域对象，承载用户级或项目级记忆的确认状态与检索关键词。
+ * 长期记忆领域对象，承载用户级或项目级记忆的生效状态与检索关键词。
  */
 @Getter
 @Builder(toBuilder = true)
@@ -21,7 +21,7 @@ public class GovernanceLongTermMemory {
     private Long id;
     /** 记忆范围，USER 表示用户偏好，PROJECT 表示项目约定。 */
     private String memoryScope;
-    /** 记忆所属用户，用户记忆必填，项目候选也记录提取用户。 */
+    /** 记忆所属用户，用户记忆必填，项目记忆也记录提取用户。 */
     private Long userId;
     /** 记忆所属工作空间，项目记忆必填，用户记忆可为空。 */
     private Long workspaceId;
@@ -29,7 +29,7 @@ public class GovernanceLongTermMemory {
     private String memoryKey;
     /** 记忆正文，必须是可直接回注给模型的简洁中文约束。 */
     private String content;
-    /** 记忆状态，PENDING/ACTIVE/REJECTED。 */
+    /** 记忆状态，ACTIVE 表示参与回注，REJECTED 表示已停用。 */
     private String status;
     /** 来源类型，例如 CHAT_EXCHANGE。 */
     private String sourceType;

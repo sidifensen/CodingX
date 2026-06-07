@@ -36,7 +36,7 @@ public class ChatWorkspaceBindingService {
     private final WorkspaceRepositoryImpl workspaceRepositoryImpl;
     /** 项目画像服务，用于绑定本地仓库后生成 Agent 可消费的仓库画像。 */
     private final ProjectProfileService projectProfileService;
-    /** 长期记忆服务，用于返回当前用户在该工作空间下的待确认候选数量。 */
+    /** 长期记忆服务，用于返回当前用户在该工作空间下的已生效记忆数量。 */
     private final LongTermMemoryService longTermMemoryService;
 
     /**
@@ -52,13 +52,13 @@ public class ChatWorkspaceBindingService {
         String workspaceName = normalizedPath.getFileName() == null ? normalizedPathText : normalizedPath.getFileName().toString();
         WorkspaceDO workspace = workspaceRepositoryImpl.ensureLocalWorkspace(userId, normalizedPathText, workspaceName);
         ProjectProfileView projectProfile = scanProjectProfile(workspace.getId(), normalizedPath);
-        int pendingMemoryCount = countPendingMemories(userId, workspace.getId());
+        int activeMemoryCount = countActiveMemories(userId, workspace.getId());
         return new WorkspaceBindingResult(
             workspace.getId(),
             normalizedPathText,
             workspace.getName(),
             projectProfile,
-            pendingMemoryCount
+            activeMemoryCount
         );
     }
 
@@ -114,19 +114,19 @@ public class ChatWorkspaceBindingService {
     }
 
     /**
-     * 统计当前工作空间待确认长期记忆数量，统计失败时返回 0 保障绑定响应稳定。
+     * 统计当前工作空间已生效长期记忆数量，统计失败时返回 0 保障绑定响应稳定。
      * @param userId 当前用户标识。
      * @param workspaceId 工作空间标识。
-     * @return 待确认记忆数量。
+     * @return 已生效记忆数量。
      */
-    private int countPendingMemories(Long userId, Long workspaceId) {
+    private int countActiveMemories(Long userId, Long workspaceId) {
         if (longTermMemoryService == null) {
             return 0;
         }
         try {
-            return longTermMemoryService.countPendingByUserAndWorkspace(userId, workspaceId);
+            return longTermMemoryService.countActiveByUserAndWorkspace(userId, workspaceId);
         } catch (RuntimeException exception) {
-            log.warn("待确认长期记忆统计失败: userId={}, workspaceId={}, message={}", userId, workspaceId, exception.getMessage());
+            log.warn("已生效长期记忆统计失败: userId={}, workspaceId={}, message={}", userId, workspaceId, exception.getMessage());
             return 0;
         }
     }
@@ -179,10 +179,10 @@ public class ChatWorkspaceBindingService {
         String repositoryPath, // 规范化仓库路径。
         String workspaceName, // 工作空间名称。
         ProjectProfileView projectProfile, // 最新项目画像摘要，可为空。
-        int pendingMemoryCount // 当前用户待确认长期记忆数量。
+        int activeMemoryCount // 当前用户已生效长期记忆数量。
     ) {
         /**
-         * 兼容旧调用方的最小构造器，默认不返回画像且待确认记忆数为 0。
+         * 兼容旧调用方的最小构造器，默认不返回画像且已生效记忆数为 0。
          * @param workspaceId 工作空间标识。
          * @param repositoryPath 规范化仓库路径。
          * @param workspaceName 工作空间名称。

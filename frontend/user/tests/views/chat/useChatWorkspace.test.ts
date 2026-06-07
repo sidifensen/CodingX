@@ -3201,9 +3201,9 @@ describe('useChatWorkspace', () => {
   });
 
   /**
-   * 本地目录绑定返回的项目画像和待确认记忆数量应同步进入工作台状态，供聊天页即时展示 Agent 上下文。
+   * 本地目录绑定返回的项目画像和已生效记忆数量应同步进入工作台状态，供聊天页即时展示 Agent 上下文。
    */
-  it('应在绑定本地工作空间后同步项目画像和待确认记忆数量', async () => {
+  it('应在绑定本地工作空间后同步项目画像和已生效记忆数量', async () => {
     window.localStorage.setItem(
       'codingx.auth.session',
       JSON.stringify({
@@ -3268,7 +3268,7 @@ describe('useChatWorkspace', () => {
         riskPointsJson: '["缺少端到端测试"]',
         agentContext: '项目包含后端、用户端和管理端。',
       },
-      pendingMemoryCount: 2,
+      activeMemoryCount: 2,
     });
 
     const { result } = renderHook(() =>
@@ -3287,7 +3287,7 @@ describe('useChatWorkspace', () => {
     });
 
     expect(result.current.projectProfile?.summary).toBe('Maven + Vite workspace');
-    expect(result.current.pendingMemoryCount).toBe(2);
+    expect(result.current.activeMemoryCount).toBe(2);
   });
 
   /**

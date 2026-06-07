@@ -79,7 +79,7 @@ describe('GovernanceCenterPage', () => {
         userId: 1002,
         workspaceId: 3001,
         content: '以后都按项目注释规范编写 Java 注释',
-        status: 'PENDING',
+        status: 'ACTIVE',
         sourceConversationId: 2001,
         keywordJson: '["注释规范"]',
       },
@@ -205,9 +205,9 @@ describe('GovernanceCenterPage', () => {
   });
 
   /**
-   * 管理员应能在长期记忆页签确认候选记忆，确认动作通过自定义按钮调用后端接口。
+   * 管理员应能在长期记忆页签停用已生效记忆，管理动作通过自定义按钮调用后端接口。
    */
-  it('activates pending long-term memory from governance tab', async () => {
+  it('disables active long-term memory from governance tab', async () => {
     render(
       <MemoryRouter>
         <GovernanceCenterPage />
@@ -216,10 +216,12 @@ describe('GovernanceCenterPage', () => {
     await screen.findByText('禁止危险删除');
 
     fireEvent.click(screen.getByRole('tab', { name: '长期记忆' }));
-    fireEvent.click(await screen.findByRole('button', { name: '确认长期记忆 9001' }));
+    expect(await screen.findByText('已启用')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '确认长期记忆 9001' })).not.toBeInTheDocument();
+    fireEvent.click(await screen.findByRole('button', { name: '停用长期记忆 9001' }));
 
     await waitFor(() => {
-      expect(AdminChatApi.updateLongTermMemoryStatus).toHaveBeenCalledWith(9001, 'ACTIVE');
+      expect(AdminChatApi.updateLongTermMemoryStatus).toHaveBeenCalledWith(9001, 'REJECTED');
     });
   });
 });

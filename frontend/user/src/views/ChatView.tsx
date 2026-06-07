@@ -82,7 +82,7 @@ export default function ChatView({
     workspaceLabel,
     workspacePath,
     projectProfile,
-    pendingMemoryCount,
+    activeMemoryCount,
     longTermMemories,
     isMemoryLoading,
     messages,
@@ -126,7 +126,6 @@ export default function ChatView({
     resendUserMessage,
     pickRepositoryDirectory,
     refreshLongTermMemories,
-    updateLongTermMemoryStatus,
     renameDialog,
     deleteDialog,
     renameConversation,
@@ -1077,12 +1076,12 @@ export default function ChatView({
   const showRuntimeWorkspaceSwitcher = showLandingState;
   // 业务约束：云端环境下不展示“云端工作空间”下拉，避免出现无意义的同名选项。
   const showWorkspaceDropdownInSwitcher = showRuntimeWorkspaceSwitcher && activeRuntimeTarget === 'local';
-  const pendingLongTermMemories = React.useMemo(
-    () => longTermMemories.filter((memory) => String(memory.status).toUpperCase() === 'PENDING'),
+  const activeLongTermMemories = React.useMemo(
+    () => longTermMemories.filter((memory) => String(memory.status).toUpperCase() === 'ACTIVE'),
     [longTermMemories],
   );
   const showWorkspaceIntelligenceStrip =
-    projectProfile != null || pendingMemoryCount > 0 || pendingLongTermMemories.length > 0;
+    projectProfile != null || activeMemoryCount > 0 || activeLongTermMemories.length > 0;
 
   /**
    * 粘贴图片或文件时直接加入待发送附件队列。
@@ -2030,13 +2029,10 @@ export default function ChatView({
             {showWorkspaceIntelligenceStrip ? (
               <WorkspaceIntelligenceStrip
                 projectProfile={projectProfile}
-                pendingMemoryCount={pendingMemoryCount}
-                pendingMemories={pendingLongTermMemories}
+                activeMemoryCount={activeMemoryCount}
+                activeMemories={activeLongTermMemories}
                 isMemoryLoading={isMemoryLoading}
                 onRefresh={() => void refreshLongTermMemories()}
-                onUpdateMemoryStatus={(memoryId, status) =>
-                  void updateLongTermMemoryStatus(memoryId, status)
-                }
               />
             ) : null}
             {showRuntimeWorkspaceSwitcher ? (
@@ -4534,26 +4530,24 @@ function EmptyBlock({ text }: { text: string }) {
 }
 
 /**
- * 渲染当前工作空间的项目画像和待确认长期记忆，帮助用户理解 Agent 当前会带入哪些上下文。
+ * 渲染当前工作空间的项目画像和已生效长期记忆，帮助用户理解 Agent 当前会带入哪些上下文。
  */
 function WorkspaceIntelligenceStrip({
   projectProfile,
-  pendingMemoryCount,
-  pendingMemories,
+  activeMemoryCount,
+  activeMemories,
   isMemoryLoading,
   onRefresh,
-  onUpdateMemoryStatus,
 }: {
   projectProfile: ProjectProfileView | null;
-  pendingMemoryCount: number;
-  pendingMemories: LongTermMemoryItem[];
+  activeMemoryCount: number;
+  activeMemories: LongTermMemoryItem[];
   isMemoryLoading: boolean;
   onRefresh: () => void;
-  onUpdateMemoryStatus: (memoryId: string, status: 'ACTIVE' | 'REJECTED') => void;
 }) {
   const testCommandSummary = summarizeJsonList(projectProfile?.testCommandsJson, 2);
   const riskSummary = summarizeJsonList(projectProfile?.riskPointsJson, 1);
-  const visiblePendingMemories = pendingMemories.slice(0, 3);
+  const visibleActiveMemories = activeMemories.slice(0, 3);
 
   return (
     <section
@@ -4567,9 +4561,9 @@ function WorkspaceIntelligenceStrip({
               <Brain size={14} />
               工作区智能
             </span>
-            {pendingMemoryCount > 0 ? (
+            {activeMemoryCount > 0 ? (
               <span className="rounded-full border border-border bg-surface-container px-2 py-0.5 text-[11px] text-foreground">
-                待确认 {pendingMemoryCount} 条
+                已生效 {activeMemoryCount} 条
               </span>
             ) : null}
             {isMemoryLoading ? <span className="text-[11px] text-muted">同步中</span> : null}
@@ -4594,30 +4588,14 @@ function WorkspaceIntelligenceStrip({
           刷新
         </button>
       </div>
-      {visiblePendingMemories.length > 0 ? (
+      {visibleActiveMemories.length > 0 ? (
         <div className="mt-2 divide-y divide-border border-t border-border pt-1.5">
-          {visiblePendingMemories.map((memory) => (
+          {visibleActiveMemories.map((memory) => (
             <div key={memory.id} className="flex min-w-0 items-center gap-2 py-1.5">
               <span className="shrink-0 rounded-full border border-border px-1.5 py-0.5 text-[10px] text-muted">
                 {memory.memoryScope === 'PROJECT' ? '项目' : '用户'}
               </span>
               <span className="min-w-0 flex-1 truncate text-foreground">{memory.content}</span>
-              <button
-                type="button"
-                aria-label={`确认长期记忆 ${memory.id}`}
-                onClick={() => onUpdateMemoryStatus(memory.id, 'ACTIVE')}
-                className="rounded-full p-1 text-muted transition-colors hover:bg-surface-container hover:text-foreground"
-              >
-                <CheckCircle2 size={15} />
-              </button>
-              <button
-                type="button"
-                aria-label={`拒绝长期记忆 ${memory.id}`}
-                onClick={() => onUpdateMemoryStatus(memory.id, 'REJECTED')}
-                className="rounded-full p-1 text-muted transition-colors hover:bg-surface-container hover:text-foreground"
-              >
-                <X size={15} />
-              </button>
             </div>
           ))}
         </div>

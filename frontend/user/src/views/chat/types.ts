@@ -363,12 +363,12 @@ export interface ProjectProfileView {
 }
 
 /**
- * 长期记忆状态：候选必须确认后才会进入后续模型上下文回注。
+ * 长期记忆状态：ACTIVE 参与后续模型上下文回注，REJECTED 表示已停用。
  */
-export type LongTermMemoryStatus = 'PENDING' | 'ACTIVE' | 'REJECTED';
+export type LongTermMemoryStatus = 'ACTIVE' | 'REJECTED';
 
 /**
- * 描述用户可见的长期记忆候选或已启用记忆，ID 在前端统一用字符串避免 Long 精度问题。
+ * 描述用户可见的长期记忆，ID 在前端统一用字符串避免 Long 精度问题。
  */
 export interface LongTermMemoryItem {
   id: string;
@@ -492,7 +492,7 @@ export interface ChatWorkspaceController {
   workspaceLabel: string;
   workspaceRuntimeTarget: 'cloud' | 'local';
   projectProfile: ProjectProfileView | null;
-  pendingMemoryCount: number;
+  activeMemoryCount: number;
   longTermMemories: LongTermMemoryItem[];
   isMemoryLoading: boolean;
   conversations: ConversationItem[];
@@ -648,5 +648,5 @@ export interface WorkspaceBindingSyncResult {
   workspaceName?: string | null;
   repositoryPath?: string | null;
   projectProfile?: ProjectProfileView | null;
-  pendingMemoryCount?: number | null;
+  activeMemoryCount?: number | null;
 }

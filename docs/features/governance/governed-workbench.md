@@ -33,7 +33,7 @@
 - `governance_permission_audit`：权限判定审计，记录工具输入、工作目录、命中策略、决策和中文消息。
 - `governance_hook_rule` / `governance_hook_audit`：Hook 配置与生命周期触发审计。
 - `governance_project_profile`：项目画像扫描结果，记录工作空间路径、技术栈、入口、验证命令、模块地图、风险点和 Agent 上下文。
-- `governance_long_term_memory`：长期记忆候选和已启用记忆，记录用户/项目范围、确认状态、来源会话和检索关键词。
+- `governance_long_term_memory`：长期记忆记录，保存明确授权后已生效或已停用的用户/项目记忆、来源会话和检索关键词。
 - `governance_slash_command`：内置 Slash Command 配置，用户端只展示启用命令。
 
 ## 测试与验证

@@ -64,7 +64,7 @@ class ChatWorkspaceBindingControllerTest {
             .andExpect(jsonPath("$.data.workspaceId").value("3001"))
             .andExpect(jsonPath("$.data.workspaceName").value("codingx"))
             .andExpect(jsonPath("$.data.projectProfile.summary").value("检测到 CodingX 多模块项目"))
-            .andExpect(jsonPath("$.data.pendingMemoryCount").value(2));
+            .andExpect(jsonPath("$.data.activeMemoryCount").value(2));
 
         verify(chatWorkspaceBindingService).bindRepositoryPathForCurrentUser(eq("D:/code/codingx"));
     }

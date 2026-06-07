@@ -25,7 +25,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 /**
- * 验证用户侧长期记忆候选列表和状态更新接口契约。
+ * 验证用户侧长期记忆列表和状态更新接口契约。
  */
 @ExtendWith(MockitoExtension.class)
 class ChatMemoryControllerTest {
@@ -41,14 +41,14 @@ class ChatMemoryControllerTest {
      */
     @Test
     void listMemoriesReturnsCurrentUserMemories() throws Exception {
-        when(longTermMemoryService.listUserMemories(1002L, 3001L, "PENDING")).thenReturn(List.of(
+        when(longTermMemoryService.listUserMemories(1002L, 3001L, "ACTIVE")).thenReturn(List.of(
             GovernanceLongTermMemory.builder()
                 .id(9001L)
                 .memoryScope("USER")
                 .userId(1002L)
                 .workspaceId(3001L)
                 .content("代码风格偏好：业务注释")
-                .status("PENDING")
+                .status("ACTIVE")
                 .keywordJson("[\"业务注释\"]")
                 .build()
         ));
@@ -58,28 +58,28 @@ class ChatMemoryControllerTest {
 
             mockMvc().perform(get("/api/chat/memories")
                     .param("workspaceId", "3001")
-                    .param("status", "PENDING"))
+                    .param("status", "ACTIVE"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data[0].id").value("9001"))
                 .andExpect(jsonPath("$.data[0].content").value("代码风格偏好：业务注释"))
-                .andExpect(jsonPath("$.data[0].status").value("PENDING"));
+                .andExpect(jsonPath("$.data[0].status").value("ACTIVE"));
         }
     }
 
     /**
-     * 用户确认候选时应把目标状态传给服务层，并回传更新后的记录。
+     * 用户停用已有记忆时应把目标状态传给服务层，并回传更新后的记录。
      */
     @Test
     void updateMemoryStatusDelegatesToService() throws Exception {
-        when(longTermMemoryService.updateUserMemoryStatus(9001L, 1002L, "ACTIVE")).thenReturn(
+        when(longTermMemoryService.updateUserMemoryStatus(9001L, 1002L, "REJECTED")).thenReturn(
             GovernanceLongTermMemory.builder()
                 .id(9001L)
                 .memoryScope("USER")
                 .userId(1002L)
                 .workspaceId(3001L)
                 .content("代码风格偏好：业务注释")
-                .status("ACTIVE")
+                .status("REJECTED")
                 .build()
         );
 
@@ -88,13 +88,13 @@ class ChatMemoryControllerTest {
 
             mockMvc().perform(patch("/api/chat/memories/9001/status")
                     .contentType(MediaType.APPLICATION_JSON)
-                    .content("{\"status\":\"ACTIVE\"}"))
+                    .content("{\"status\":\"REJECTED\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
-                .andExpect(jsonPath("$.data.status").value("ACTIVE"));
+                .andExpect(jsonPath("$.data.status").value("REJECTED"));
         }
 
-        verify(longTermMemoryService).updateUserMemoryStatus(eq(9001L), eq(1002L), eq("ACTIVE"));
+        verify(longTermMemoryService).updateUserMemoryStatus(eq(9001L), eq(1002L), eq("REJECTED"));
     }
 
     private MockMvc mockMvc() {

@@ -85,13 +85,13 @@ public class GovernanceLongTermMemoryRepositoryImpl implements GovernanceLongTer
     }
 
     @Override
-    public int countPendingByUserAndWorkspace(Long userId, Long workspaceId) {
+    public int countActiveByUserAndWorkspace(Long userId, Long workspaceId) {
         LambdaQueryWrapper<GovernanceLongTermMemoryDO> wrapper = new LambdaQueryWrapper<GovernanceLongTermMemoryDO>()
             .eq(userId != null, GovernanceLongTermMemoryDO::getUserId, userId)
-            .eq(GovernanceLongTermMemoryDO::getStatus, "PENDING")
+            .eq(GovernanceLongTermMemoryDO::getStatus, "ACTIVE")
             .eq(GovernanceLongTermMemoryDO::getDeleted, 0);
         wrapper.and(nested -> {
-            // 用户级候选需要在任意工作空间提示；项目级候选只在对应工作空间提示。
+            // 用户级记忆会跨工作空间生效；项目级记忆只在对应工作空间计入当前 Agent 上下文规模。
             if (workspaceId == null) {
                 nested.isNull(GovernanceLongTermMemoryDO::getWorkspaceId);
                 return;

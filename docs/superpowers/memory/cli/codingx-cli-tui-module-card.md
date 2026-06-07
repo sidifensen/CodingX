@@ -15,7 +15,7 @@ entrypoints:
   - cli/src/main/java/com/codingx/cli/CodingXCli.java
   - cli/src/main/java/com/codingx/cli/command/CliCommandRunner.java
   - cli/src/main/java/com/codingx/cli/tui/CodingXTuiModel.java
-last_verified_commit: 1a2293d7
+last_verified_commit: 6821cb68
 status: active
 ---
 
@@ -30,6 +30,7 @@ status: active
 - `CodingXTuiLauncher` 通过 tui4j `Program.run()` 在普通终端屏幕运行，不进入 alt screen；真实运行时必须先把固定启动卡片写入 shell 输出，再交给 tui4j 维护后续交互区。
 - `CodingXTuiModel` 维护 TUI 内存状态，包括 Codex 风格启动 banner、真实 transcript、单行任务输入框、Slash Command 面板、当前工作区、运行状态、计划模式和活动助手回答块；它只编排输入、认证命令、事件源和视图刷新，不直接承担 header、transcript、status bar 文案映射。真实后端流通过 `Program.send(AgentEventsMessage)` 回到主更新循环，后台线程不能直接修改 TUI 状态。
 - `BackendChatEventSource` 读取用户主目录 `CliConfigStore`，请求现有后端 `GET /api/chat/stream`，携带 `satoken`、`runtimeTarget=local`、`repositoryPath` 和数值型 `conversationId`，再把 SSE 映射为 `AgentEvent`。
+- CLI 浏览器登录依赖后端 Sa-Token 白名单边界：终端匿名发起的 `/api/auth/cli/token`、`/api/auth/cli/device/start`、`/api/auth/cli/device/token` 必须放行；浏览器身份确认接口 `/api/auth/cli/authorize` 和 `/api/auth/cli/device/authorize` 必须继续要求网页登录态。
 - `TuiHeaderRenderer`、`TuiTranscriptRenderer`、`TuiStatusBarRenderer` 分别维护顶部品牌区、对话流/工具状态和底部模式栏，避免 TUI 模型继续膨胀为大而全的展示类。
 
 ## Entry Points
@@ -46,6 +47,7 @@ status: active
 - `cli/src/main/java/com/codingx/cli/backend/SseEventParser.java`：SSE 文本事件块解析器。
 - `cli/src/main/java/com/codingx/cli/backend/BackendChatEventMapper.java`：后端聊天事件到 CLI `AgentEvent` 的映射器。
 - `cli/src/main/java/com/codingx/cli/render/TerminalRenderer.java`：保留日志式事件渲染边界，当前不再作为截图风格 transcript 输出。
+- `backend/src/main/java/com/codingx/config/SaTokenConfig.java`：CLI 授权兑换和设备码轮询的匿名白名单边界。
 
 ## Invariants
 
@@ -57,6 +59,7 @@ status: active
 - composer 必须保持单行 `› 输入任务，/ 查看命令` 提示，避免旧版英文模板被误认为系统残留任务，也避免三行输入框和外层边框把界面撑回全屏观感。
 - TUI 输入以 `/` 开头时必须展示本地 Slash Command 面板；`/login`、`/logout`、`/help` 和 `/` 由 `CodingXTuiModel` 本地消费，不能作为普通聊天任务发送到后端。
 - 普通聊天提交前若 `CliAuthService.isLoggedIn()` 判断本机无 token，TUI 应先触发浏览器登录；登录成功后继续发送原任务，登录失败则显示中文错误并停止提交。
+- Sa-Token 白名单只能逐个放行 CLI 终端匿名端点：`/api/auth/cli/token`、`/api/auth/cli/device/start`、`/api/auth/cli/device/token`。不能使用 `/api/auth/cli/**`，否则浏览器确认授权接口会绕过网页登录态；也不能漏掉 token 兑换端点，否则浏览器回调成功后 CLI 会在授权码换 token 阶段失败。
 - 提交键必须在 `textarea.update(...)` 前处理，并同时兼容 CR(`enter`) 与 LF(`ctrl+j`)；真实 Windows/JLine 输入可能把回车上报为 LF，若只识别 `enter` 会导致用户输入不进入 transcript。
 - `mvn package` 只能把 fat jar 输出为 `cli/target/codingx.jar`，不能在 `cli/` 根目录留下 `dependency-reduced-pom.xml` 等构建副产物。
 - `login` 是配置命令，不属于任务运行模式；它只能写用户主目录配置，不能写当前项目工作区。
@@ -84,3 +87,4 @@ status: active
 - 不要并行运行 `mvn test` 和 `mvn exec:java` 共享 `cli/target`，Maven 构建目录竞争可能导致误判。
 - 仓库 `docs/` 被 `.gitignore` 覆盖，新建 superpowers 文档提交时需要显式 `git add -f`。
 - 测试后端 SSE 时使用 JDK `HttpServer` 即可，不需要启动真实后端服务；真实后端登录态错误应优先展示 `ApiResponse.message`。
+- 如果浏览器页面显示 CLI 授权成功但终端仍失败，优先探测 `/api/auth/cli/token` 是否返回业务错误而不是 Sa-Token 未登录错误；这通常说明 `SaTokenConfig` 的 CLI 匿名兑换白名单缺失或运行中的后端不是最新代码。

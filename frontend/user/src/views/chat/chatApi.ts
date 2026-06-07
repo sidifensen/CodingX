@@ -420,6 +420,44 @@ export class ChatApi {
   }
 
   /**
+   * 调用用户态聊天工具，供页面内轻量工具面板读取结构化结果。
+   * @param token 当前登录令牌。
+   * @param toolCode 工具编码。
+   * @param payload 工具输入对象，会序列化到 question 字段。
+   * @returns 工具执行结果。
+   */
+  static async invokeTool(
+    token: string,
+    toolCode: string,
+    payload: Record<string, unknown>,
+  ): Promise<{
+    toolCode: string;
+    content: string;
+    metadata?: Record<string, unknown>;
+  }> {
+    const envelope = await this.request<{
+      toolCode?: string;
+      content?: string;
+      metadata?: Record<string, unknown>;
+    }>(
+      `/api/chat/tools/${encodeURIComponent(toolCode)}/invoke`,
+      token,
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          question: JSON.stringify(payload),
+          confirmHighRisk: false,
+        }),
+      },
+    );
+    return {
+      toolCode: String(envelope.data.toolCode ?? toolCode),
+      content: String(envelope.data.content ?? ''),
+      metadata: envelope.data.metadata,
+    };
+  }
+
+  /**
    * 提交指定消息的点赞/点踩反馈，确保用户操作写入后端反馈表。
    * @param token 当前登录令牌。
    * @param messageId 消息标识。

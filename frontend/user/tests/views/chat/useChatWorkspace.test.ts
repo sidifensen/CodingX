@@ -6718,6 +6718,307 @@ describe('useChatWorkspace', () => {
   });
 
   /**
+   * 本地文件编辑工具完成时应把后端 fileDiffs 元数据保留到调用记录和过程卡片，供消息内弹窗与侧栏实时消费。
+   */
+  it('preserves file diff metadata from local tool-call events', async () => {
+    window.localStorage.setItem(
+      'codingx.auth.session',
+      JSON.stringify({
+        token: 'token-123',
+        userId: '1002',
+        username: 'user',
+        displayName: 'CodingX User',
+        userType: 'USER',
+      }),
+    );
+
+    const readQueue: Array<{
+      resolve: (value: ReadableStreamReadResult<Uint8Array>) => void;
+      reject: (reason?: unknown) => void;
+    }> = [];
+    const metaEvent = new TextEncoder().encode('event:meta\ndata:{"conversationId":"2001"}\n\n');
+    const toolStartEvent = new TextEncoder().encode(
+      'event:tool-call\ndata:{"callId":"diff-call-1","phase":"start","toolId":"write","displayName":"写文件","params":{"path":"src/App.tsx","content":"export const title = \\"CodingX\\";"},"reactAction":"正在编辑 src/App.tsx","startedAt":"2026-05-26T18:11:08"}\n\n',
+    );
+    const toolCompleteEvent = new TextEncoder().encode(
+      'event:tool-call\ndata:{"callId":"diff-call-1","phase":"complete","toolId":"write","displayName":"写文件","content":"文件已写入","rawResult":"文件已写入","reactObservation":"已编辑 src/App.tsx","resultMetadata":{"diffSummary":{"filesChanged":1,"additions":1,"deletions":1},"fileDiffs":[{"path":"src/App.tsx","oldPath":"src/App.tsx","newPath":"src/App.tsx","status":"modified","additions":1,"deletions":1,"diff":"diff --git a/src/App.tsx b/src/App.tsx\\n--- a/src/App.tsx\\n+++ b/src/App.tsx\\n@@ -1 +1 @@\\n-const title = \\"Old\\";\\n+export const title = \\"CodingX\\";"}]}}\n\n',
+    );
+    const finishEvent = new TextEncoder().encode('event:finish\ndata:{"content":"已完成编辑"}\n\n');
+    const mockReader = {
+      read: vi.fn(() => {
+        return new Promise<ReadableStreamReadResult<Uint8Array>>((resolve, reject) => {
+          readQueue.push({ resolve, reject });
+        });
+      }),
+    };
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (
+        url === '/api/chat/conversations' ||
+        url === '/api/chat/sample-questions' ||
+        url === '/api/chat/experts' ||
+        url === '/api/chat/skills' ||
+        url === '/api/chat/mcps' ||
+        url === '/api/chat/conversations/2001/messages' ||
+        url === '/api/chat/conversations/2001/steps' ||
+        url === '/api/chat/conversations/2001/references' ||
+        url === '/api/chat/conversations/2001/artifacts' ||
+        url === '/api/chat/conversations/2001/current-skills' ||
+        url === '/api/chat/conversations/2001/current-mcps' ||
+        url === '/api/chat/conversations/2001/current-experts'
+      ) {
+        if (url === '/api/chat/conversations') {
+          return new Response(
+            JSON.stringify({
+              success: true,
+              code: 'OK',
+              message: 'success',
+              data: [
+                {
+                  id: '2001',
+                  title: 'Default Demo Conversation',
+                  status: 'ACTIVE',
+                  lastRunId: '5002',
+                },
+              ],
+            }),
+            { status: 200 },
+          );
+        }
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (url.includes('/api/chat/stream')) {
+        return {
+          ok: true,
+          status: 200,
+          body: {
+            getReader: () => mockReader,
+          },
+        } as unknown as Response;
+      }
+      throw new Error(`Unhandled fetch in local file diff stream test: ${url}`);
+    });
+
+    const { result } = renderHook(() => useChatWorkspace(true));
+
+    await waitFor(() => {
+      expect(result.current.isBootstrapping).toBe(false);
+    });
+    await act(async () => {
+      result.current.setInputValue('write src/App.tsx');
+    });
+    const submitPromise = result.current.submitMessage();
+
+    await waitFor(() => {
+      expect(result.current.isStreaming).toBe(true);
+      expect(readQueue.length).toBeGreaterThan(0);
+    });
+
+    for (const event of [metaEvent, toolStartEvent, toolCompleteEvent]) {
+      await act(async () => {
+        readQueue.shift()?.resolve({ done: false, value: event });
+      });
+      if (event === toolStartEvent) {
+        await waitFor(() => {
+          const assistantMessage = result.current.messages.find((item) => item.role === 'ASSISTANT');
+          const processCards = ((assistantMessage as Record<string, unknown> | undefined)?.processCards ?? []) as Array<Record<string, unknown>>;
+          const toolCallCard = processCards.find((card) => card.type === 'tool_call');
+          expect(toolCallCard?.fileDiffs).toEqual([
+            expect.objectContaining({
+              path: 'src/App.tsx',
+              status: 'pending',
+              diff: expect.stringContaining('+export const title = "CodingX";'),
+            }),
+          ]);
+        });
+      }
+      await waitFor(() => {
+        expect(readQueue.length).toBeGreaterThan(0);
+      });
+    }
+
+    await waitFor(() => {
+      const assistantMessage = result.current.messages.find((item) => item.role === 'ASSISTANT');
+      const calls = ((assistantMessage?.mcpCalls ?? []) as Array<Record<string, unknown>>);
+      expect(calls[0].fileDiffs).toEqual([
+        expect.objectContaining({
+          path: 'src/App.tsx',
+          additions: 1,
+          deletions: 1,
+        }),
+      ]);
+      expect(calls[0].diffSummary).toEqual({ filesChanged: 1, additions: 1, deletions: 1 });
+      const processCards = ((assistantMessage as Record<string, unknown> | undefined)?.processCards ?? []) as Array<Record<string, unknown>>;
+      const toolResultCard = processCards.find((card) => card.type === 'tool_result');
+      expect(toolResultCard?.fileDiffs).toEqual([
+        expect.objectContaining({
+          path: 'src/App.tsx',
+          diff: expect.stringContaining('+export const title = "CodingX";'),
+        }),
+      ]);
+      expect(toolResultCard?.diffSummary).toEqual({ filesChanged: 1, additions: 1, deletions: 1 });
+    });
+
+    await act(async () => {
+      readQueue.shift()?.resolve({ done: false, value: finishEvent });
+    });
+    await waitFor(() => {
+      expect(readQueue.length).toBeGreaterThan(0);
+    });
+    await act(async () => {
+      readQueue.shift()?.resolve({ done: true, value: undefined });
+    });
+    await act(async () => {
+      await submitPromise;
+    });
+  });
+
+  /**
+   * 历史会话只返回 executionSteps.metadataJson 时，也应恢复文件差异，供上轮对话侧栏继续展示。
+   */
+  it('restores file diff metadata from replay execution steps', async () => {
+    window.localStorage.setItem(
+      'codingx.auth.session',
+      JSON.stringify({
+        token: 'token-123',
+        userId: '1002',
+        username: 'user',
+        displayName: 'CodingX User',
+        userType: 'USER',
+      }),
+    );
+    window.history.replaceState(window.history.state, '', '/?conversationId=2001');
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === '/api/chat/conversations') {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            code: 'OK',
+            message: 'success',
+            data: [
+              {
+                id: '2001',
+                title: '历史差异会话',
+                status: 'ACTIVE',
+                lastRunId: '5002',
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      if (
+        url === '/api/chat/sample-questions' ||
+        url === '/api/chat/experts' ||
+        url === '/api/chat/skills' ||
+        url === '/api/chat/mcps'
+      ) {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (url === '/api/chat/conversations/2001/messages') {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            code: 'OK',
+            message: 'success',
+            data: [
+              {
+                id: 'assistant-replay-diff',
+                conversationId: '2001',
+                role: 'ASSISTANT',
+                content: '历史回复',
+                status: 'COMPLETED',
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      if (url === '/api/chat/conversations/2001/steps') {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            code: 'OK',
+            message: 'success',
+            data: [
+              {
+                id: 'step-diff-1',
+                runId: '5002',
+                stepType: 'tool',
+                stepTitle: '执行本地工具 write',
+                stepStatus: 'COMPLETED',
+                sequenceNo: 1,
+                content: '文件已写入',
+                metadataJson: JSON.stringify({
+                  callId: 'replay-call-1',
+                  toolId: 'write',
+                  displayName: '写文件',
+                  params: { path: 'src/replay.ts' },
+                  rawResult: '文件已写入',
+                  resultMetadata: {
+                    diffSummary: { filesChanged: 1, additions: 1, deletions: 0 },
+                    fileDiffs: [
+                      {
+                        path: 'src/replay.ts',
+                        status: 'added',
+                        additions: 1,
+                        deletions: 0,
+                        diff: '+export const replay = true;',
+                      },
+                    ],
+                  },
+                }),
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      if (
+        url === '/api/chat/conversations/2001/references' ||
+        url === '/api/chat/conversations/2001/artifacts' ||
+        url === '/api/chat/conversations/2001/current-skills' ||
+        url === '/api/chat/conversations/2001/current-mcps' ||
+        url === '/api/chat/conversations/2001/current-experts'
+      ) {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      throw new Error(`Unhandled fetch in replay file diff test: ${url}`);
+    });
+
+    const { result } = renderHook(() => useChatWorkspace(true));
+
+    await waitFor(() => {
+      expect(result.current.isBootstrapping).toBe(false);
+    });
+
+    await waitFor(() => {
+      const assistantMessage = result.current.messages.find((item) => item.role === 'ASSISTANT');
+      const processCards = ((assistantMessage as Record<string, unknown> | undefined)?.processCards ?? []) as Array<Record<string, unknown>>;
+      const toolResultCard = processCards.find((card) => card.type === 'tool_result');
+      expect(toolResultCard?.fileDiffs).toEqual([
+        expect.objectContaining({
+          path: 'src/replay.ts',
+          diff: '+export const replay = true;',
+        }),
+      ]);
+      expect(toolResultCard?.diffSummary).toEqual({ filesChanged: 1, additions: 1, deletions: 0 });
+    });
+  });
+
+  /**
    * 正文与工具事件必须保留 SSE 到达顺序，供主消息区按 Codex 风格穿插展示。
    */
   it('按流式事件顺序记录正文与工具过程时间线', async () => {

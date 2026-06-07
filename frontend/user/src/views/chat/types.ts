@@ -81,6 +81,49 @@ export interface ProcessCardDetailItem {
 }
 
 /**
+ * 描述单个文件的 unified diff，供消息内编辑列表和右侧代码审查栏共同展示。
+ */
+export interface FileDiffItem {
+  /**
+   * 展示用文件路径，优先使用工作区相对路径。
+   */
+  path: string;
+  /**
+   * 修改前路径；重命名或删除场景可能与 path 不一致。
+   */
+  oldPath?: string;
+  /**
+   * 修改后路径；新增或重命名场景用于定位最终文件。
+   */
+  newPath?: string;
+  /**
+   * 文件状态，例如 added、modified、deleted、renamed。
+   */
+  status?: string;
+  /**
+   * 新增行数，来自后端 diffSummary/fileDiffs 统计。
+   */
+  additions: number;
+  /**
+   * 删除行数，来自后端 diffSummary/fileDiffs 统计。
+   */
+  deletions: number;
+  /**
+   * 标准 unified diff 文本，用于弹窗和侧栏按行高亮。
+   */
+  diff: string;
+}
+
+/**
+ * 描述一组文件差异的汇总数据，避免 UI 每次渲染都重新遍历 diff。
+ */
+export interface DiffSummary {
+  filesChanged: number;
+  additions: number;
+  deletions: number;
+}
+
+/**
  * 描述主消息区中统一的过程链路节点。
  */
 export interface ProcessCardItem {
@@ -96,6 +139,14 @@ export interface ProcessCardItem {
   toolId?: string;
   displayName?: string;
   details?: ProcessCardDetailItem[];
+  /**
+   * 工具编辑文件时产生的结构化差异；实时过程和历史回放都通过该字段恢复。
+   */
+  fileDiffs?: FileDiffItem[];
+  /**
+   * 文件差异汇总，用于快速展示“已编辑 N 个文件 +x -y”。
+   */
+  diffSummary?: DiffSummary;
 }
 
 /**
@@ -339,6 +390,14 @@ export interface McpCallItem {
    * 调用完成态返回的元数据。
    */
   resultMetadata?: Record<string, unknown>;
+  /**
+   * 从 resultMetadata.fileDiffs 归一化得到的文件差异，供消息区和侧栏复用。
+   */
+  fileDiffs?: FileDiffItem[];
+  /**
+   * 从 resultMetadata.diffSummary 归一化得到的差异汇总。
+   */
+  diffSummary?: DiffSummary;
   /**
    * 后端基于工具调用公开生成的 ReAct 摘要，不承载模型私有思维链。
    */

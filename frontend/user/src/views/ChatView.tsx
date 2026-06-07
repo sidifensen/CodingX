@@ -19,6 +19,8 @@ import {
   Brain,
   Sparkles,
   Paperclip,
+  PanelRightClose,
+  PanelRightOpen,
   FolderOpen,
   Monitor,
   Plug,
@@ -37,7 +39,9 @@ import { ChatApi } from './chat/chatApi';
 import {
   ChatAttachmentItem,
   ChatWorkspaceController,
+  DiffSummary,
   ExecutionStepItem,
+  FileDiffItem,
   ChatMessageItem,
   LongTermMemoryItem,
   MessageTimelineItem,
@@ -51,6 +55,11 @@ import {
   SlashCommandItem,
 } from './chat/types';
 import { resolveSkillChipLabel } from './chat/messagePresentation';
+import {
+  normalizeDiffSummaryFromMetadata,
+  normalizeFileDiffsFromMetadata,
+  summarizeFileDiffs,
+} from './chat/fileDiffs';
 
 /**
  * 定义聊天视图的输入属性。
@@ -61,6 +70,10 @@ interface ChatViewProps {
   onRequireLogin: () => void;
   workspace: ChatWorkspaceController;
 }
+
+const CODE_REVIEW_SIDEBAR_DEFAULT_WIDTH = 380;
+const CODE_REVIEW_SIDEBAR_MIN_WIDTH = 320;
+const CODE_REVIEW_SIDEBAR_MAX_WIDTH = 720;
 
 /**
  * 渲染接入真实后端数据的聊天三栏工作台。
@@ -165,6 +178,10 @@ export default function ChatView({
   const [activeRuntimeWorkspaceMenu, setActiveRuntimeWorkspaceMenu] = React.useState<
     'runtime' | 'workspace' | null
   >(null);
+  const [isCodeReviewSidebarOpen, setIsCodeReviewSidebarOpen] = React.useState(false);
+  const [codeReviewSidebarWidth, setCodeReviewSidebarWidth] = React.useState(
+    CODE_REVIEW_SIDEBAR_DEFAULT_WIDTH,
+  );
   const [skillSearchKeyword, setSkillSearchKeyword] = React.useState('');
   const [activeSkillOptionIndex, setActiveSkillOptionIndex] = React.useState(-1);
   const [slashCommandSearchKeyword, setSlashCommandSearchKeyword] = React.useState('');
@@ -1172,7 +1189,21 @@ export default function ChatView({
           <div className={`${isDesktopSidebarCollapsed ? '' : 'w-10'}`}>
             {/* 步骤：左上角预留壳层折叠按钮占位，避免与主内容视觉挤压；真实交互由 App 壳层负责。 */}
           </div>
-          <div className="w-10" />
+          <button
+            type="button"
+            data-testid="code-review-sidebar-toggle"
+            aria-label={isCodeReviewSidebarOpen ? '关闭代码差异侧边栏' : '打开代码差异侧边栏'}
+            aria-pressed={isCodeReviewSidebarOpen}
+            onClick={() => setIsCodeReviewSidebarOpen((current) => !current)}
+            className={`pointer-events-auto inline-flex h-10 items-center gap-2 rounded-lg border px-3 text-sm font-medium shadow-sm transition-colors ${
+              isCodeReviewSidebarOpen
+                ? 'border-foreground bg-foreground text-background'
+                : 'border-border bg-surface text-muted hover:bg-surface-container hover:text-foreground'
+            }`}
+          >
+            {isCodeReviewSidebarOpen ? <PanelRightClose size={16} /> : <PanelRightOpen size={16} />}
+            <span>代码差异</span>
+          </button>
         </div>
         <div
           ref={chatScrollRegionRef}
@@ -2204,8 +2235,17 @@ export default function ChatView({
             ) : null}
             </div>
           </div>
-        ) : null}
+      ) : null}
       </section>
+
+      {isCodeReviewSidebarOpen ? (
+        <CodeReviewSidebar
+          messages={messages}
+          width={codeReviewSidebarWidth}
+          onClose={() => setIsCodeReviewSidebarOpen(false)}
+          onResize={setCodeReviewSidebarWidth}
+        />
+      ) : null}
 
       {previewAttachment ? (
         <div
@@ -2448,6 +2488,236 @@ function GoalProgressPanel({
         ) : (
           <div className="rounded-md bg-surface-container px-3 py-2 text-xs leading-5 text-muted">
             等待模型创建目标并输出执行步骤。
+          </div>
+        )}
+      </div>
+    </aside>
+  );
+}
+
+type CodeReviewMode = 'current' | 'previous' | 'unstaged' | 'staged' | 'commit' | 'branch';
+
+const CODE_REVIEW_MODES: Array<{ mode: CodeReviewMode; label: string }> = [
+  { mode: 'current', label: '本轮编辑' },
+  { mode: 'previous', label: '上轮对话' },
+  { mode: 'unstaged', label: '未暂存' },
+  { mode: 'staged', label: '已暂存' },
+  { mode: 'commit', label: '提交' },
+  { mode: 'branch', label: '分支' },
+];
+
+const GIT_DIFF_REVIEW_MODES = new Set<CodeReviewMode>(['unstaged', 'staged', 'commit', 'branch']);
+
+/**
+ * 右侧代码审查栏聚合本轮/上轮工具差异，并可按模式读取当前工作区 git diff。
+ */
+function CodeReviewSidebar({
+  messages,
+  width,
+  onClose,
+  onResize,
+}: {
+  messages: ChatMessageItem[];
+  width: number;
+  onClose: () => void;
+  onResize: (nextWidth: number) => void;
+}) {
+  const [activeMode, setActiveMode] = React.useState<CodeReviewMode>('current');
+  const [workspaceDiffs, setWorkspaceDiffs] = React.useState<FileDiffItem[]>([]);
+  const [workspaceSummary, setWorkspaceSummary] = React.useState<DiffSummary | undefined>();
+  const [isLoadingWorkspaceDiff, setIsLoadingWorkspaceDiff] = React.useState(false);
+  const [workspaceDiffError, setWorkspaceDiffError] = React.useState('');
+  const conversationDiffRounds = React.useMemo(() => collectConversationDiffRounds(messages), [messages]);
+  const currentRound = conversationDiffRounds[conversationDiffRounds.length - 1];
+  const previousRound = conversationDiffRounds[conversationDiffRounds.length - 2];
+  const isWorkspaceMode = GIT_DIFF_REVIEW_MODES.has(activeMode);
+  const localDiffs = activeMode === 'previous'
+    ? previousRound?.fileDiffs ?? []
+    : currentRound?.fileDiffs ?? [];
+  const localSummary =
+    activeMode === 'previous'
+      ? previousRound?.diffSummary
+      : currentRound?.diffSummary;
+  const visibleFileDiffs = isWorkspaceMode ? workspaceDiffs : localDiffs;
+  const visibleSummary =
+    (isWorkspaceMode ? workspaceSummary : localSummary) ??
+    (visibleFileDiffs.length > 0 ? summarizeFileDiffs(visibleFileDiffs) : { filesChanged: 0, additions: 0, deletions: 0 });
+  const [activePath, setActivePath] = React.useState<string>('');
+  const activeFileDiff =
+    visibleFileDiffs.find((fileDiff) => fileDiff.path === activePath) ??
+    visibleFileDiffs[0] ??
+    null;
+  const clampSidebarWidth = React.useCallback((nextWidth: number) => {
+    const viewportLimit =
+      typeof window === 'undefined'
+        ? CODE_REVIEW_SIDEBAR_MAX_WIDTH
+        : Math.max(CODE_REVIEW_SIDEBAR_MIN_WIDTH, window.innerWidth - 520);
+    return Math.min(
+      Math.max(nextWidth, CODE_REVIEW_SIDEBAR_MIN_WIDTH),
+      Math.min(CODE_REVIEW_SIDEBAR_MAX_WIDTH, viewportLimit),
+    );
+  }, []);
+
+  const startResize = React.useCallback(
+    (event: React.MouseEvent<HTMLButtonElement>) => {
+      event.preventDefault();
+      const startX = event.clientX;
+      const startWidth = width;
+      const handleMouseMove = (moveEvent: MouseEvent) => {
+        // 面板固定在右侧，鼠标向左移动时宽度增加，向右移动时宽度减少。
+        onResize(clampSidebarWidth(startWidth - (moveEvent.clientX - startX)));
+      };
+      const stopResize = () => {
+        window.removeEventListener('mousemove', handleMouseMove);
+        window.removeEventListener('mouseup', stopResize);
+      };
+      window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('mouseup', stopResize);
+    },
+    [clampSidebarWidth, onResize, width],
+  );
+
+  React.useEffect(() => {
+    if (!visibleFileDiffs.some((fileDiff) => fileDiff.path === activePath)) {
+      setActivePath(visibleFileDiffs[0]?.path ?? '');
+    }
+  }, [activePath, visibleFileDiffs]);
+
+  React.useEffect(() => {
+    if (!isWorkspaceMode) {
+      return;
+    }
+    const session = AuthStorage.getSession();
+    if (!session?.token) {
+      setWorkspaceDiffError('登录状态失效，无法读取工作区差异');
+      setWorkspaceDiffs([]);
+      setWorkspaceSummary(undefined);
+      return;
+    }
+    let cancelled = false;
+    const loadWorkspaceDiff = async () => {
+      setIsLoadingWorkspaceDiff(true);
+      setWorkspaceDiffError('');
+      try {
+        const result = await ChatApi.invokeTool(session.token, 'git_diff', {
+          mode: activeMode,
+        });
+        if (cancelled) {
+          return;
+        }
+        const nextFileDiffs = normalizeFileDiffsFromMetadata(result.metadata);
+        setWorkspaceDiffs(nextFileDiffs);
+        setWorkspaceSummary(normalizeDiffSummaryFromMetadata(result.metadata, nextFileDiffs));
+      } catch (error) {
+        if (cancelled) {
+          return;
+        }
+        setWorkspaceDiffs([]);
+        setWorkspaceSummary(undefined);
+        setWorkspaceDiffError(error instanceof Error ? error.message : '读取工作区差异失败');
+      } finally {
+        if (!cancelled) {
+          setIsLoadingWorkspaceDiff(false);
+        }
+      }
+    };
+    void loadWorkspaceDiff();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeMode, isWorkspaceMode]);
+
+  return (
+    <aside
+      data-testid="code-review-sidebar"
+      aria-label="代码差异审查栏"
+      className="relative hidden h-full shrink-0 border-l border-border bg-surface text-foreground shadow-[-18px_0_46px_rgba(0,0,0,0.18)] lg:flex lg:flex-col"
+      style={{ width }}
+    >
+      <button
+        type="button"
+        data-testid="code-review-sidebar-resize-handle"
+        role="separator"
+        aria-label="调整代码差异侧边栏宽度"
+        aria-orientation="vertical"
+        onMouseDown={startResize}
+        className="absolute -left-1 top-0 z-10 h-full w-2 cursor-col-resize border-l border-transparent transition-colors hover:border-foreground/40 focus-visible:border-foreground focus-visible:outline-none"
+      />
+      <div className="border-b border-border px-4 py-3">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 text-sm font-semibold">
+              <FileText size={16} className="text-muted" />
+              代码差异
+            </div>
+            <div className="mt-1 text-xs text-muted">审查本次会话与工作区变更</div>
+          </div>
+          <button
+            type="button"
+            aria-label="关闭代码差异侧边栏"
+            onClick={onClose}
+            className="rounded-md p-1.5 text-muted transition-colors hover:bg-surface-container hover:text-foreground"
+          >
+            <X size={16} />
+          </button>
+        </div>
+        <div className="mt-3 grid grid-cols-3 gap-1">
+          {CODE_REVIEW_MODES.map((item) => (
+            <button
+              key={item.mode}
+              type="button"
+              aria-pressed={activeMode === item.mode}
+              onClick={() => setActiveMode(item.mode)}
+              className={`rounded-md border px-2 py-1.5 text-xs transition-colors ${
+                activeMode === item.mode
+                  ? 'border-foreground bg-foreground text-background'
+                  : 'border-border bg-surface-container text-muted hover:text-foreground'
+              }`}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+        <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted">
+          <span>{visibleSummary.filesChanged} 个文件</span>
+          <span className="font-mono text-success">+{visibleSummary.additions}</span>
+          <span className="font-mono text-error">-{visibleSummary.deletions}</span>
+        </div>
+      </div>
+      <div className="min-h-0 flex-1 overflow-hidden">
+        {isLoadingWorkspaceDiff ? (
+          <div className="px-4 py-4 text-sm text-muted">正在读取 git diff...</div>
+        ) : workspaceDiffError ? (
+          <div className="mx-4 mt-4 rounded-md border border-error/30 bg-error/10 px-3 py-2 text-sm text-error">
+            {workspaceDiffError}
+          </div>
+        ) : visibleFileDiffs.length === 0 ? (
+          <div className="px-4 py-4 text-sm text-muted">当前模式暂无文件差异</div>
+        ) : (
+          <div className="grid h-full grid-rows-[auto_1fr]">
+            <div className="space-y-1 border-b border-border px-3 py-3">
+              {visibleFileDiffs.map((fileDiff) => (
+                <button
+                  key={`${fileDiff.path}-${fileDiff.diff}`}
+                  type="button"
+                  onClick={() => setActivePath(fileDiff.path)}
+                  className={`flex w-full min-w-0 items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors ${
+                    activeFileDiff?.path === fileDiff.path
+                      ? 'bg-surface-container text-foreground'
+                      : 'text-muted hover:bg-surface-container hover:text-foreground'
+                  }`}
+                >
+                  <span className="truncate font-mono" title={fileDiff.path}>{fileDiff.path}</span>
+                  <span className="shrink-0 font-mono">
+                    <span className="text-success">+{fileDiff.additions}</span>
+                    <span className="ml-2 text-error">-{fileDiff.deletions}</span>
+                  </span>
+                </button>
+              ))}
+            </div>
+            <div className="min-h-0 overflow-auto">
+              {activeFileDiff ? <DiffTextBlock diffText={activeFileDiff.diff || '等待写入内容...'} /> : null}
+            </div>
           </div>
         )}
       </div>
@@ -5429,6 +5699,8 @@ function ProcessToolRow({
   const shouldHideDetails = mergedCards.some(shouldHideSearchDetails);
   const visibleDetails = shouldHideDetails ? [] : buildProcessToolDetailViews(card, resultCard);
   const hasDetails = !shouldHideDetails && visibleDetails.length > 0;
+  const fileDiffBundle = buildProcessToolFileDiffBundle(card, resultCard);
+  const hasFileDiffs = fileDiffBundle.fileDiffs.length > 0;
   const contentId = `process-tool-detail-${messageId}-${card.id}`;
   const isReactTrace = card.presentation === 'react';
   const summaryText = formatProcessToolSurfaceSummary(card, Boolean(resultCard));
@@ -5462,6 +5734,15 @@ function ProcessToolRow({
           </div>
         </div>
       </div>
+      {hasFileDiffs ? (
+        <EditedFilesSummary
+          messageId={messageId}
+          cardId={card.id}
+          fileDiffs={fileDiffBundle.fileDiffs}
+          diffSummary={fileDiffBundle.diffSummary}
+          isPending={fileDiffBundle.isPending}
+        />
+      ) : null}
       {isExpanded && hasDetails ? (
         <div id={contentId}>
           <div className="space-y-2">
@@ -5485,6 +5766,250 @@ type ProcessToolDetailView = {
   label: string;
   content: string;
 };
+
+type ProcessToolFileDiffBundle = {
+  fileDiffs: FileDiffItem[];
+  diffSummary?: DiffSummary;
+  isPending: boolean;
+};
+
+/**
+ * 从工具开始/结果两张过程卡中选择最可信的文件差异；完成态真实 diff 优先于开始态临时预览。
+ */
+function buildProcessToolFileDiffBundle(
+  card: ProcessCardItem,
+  resultCard?: ProcessCardItem,
+): ProcessToolFileDiffBundle {
+  const sourceCards = [card, resultCard].filter((item): item is ProcessCardItem => item != null);
+  const diffSource = sourceCards
+    .slice()
+    .reverse()
+    .find((sourceCard) => (sourceCard.fileDiffs?.length ?? 0) > 0);
+  const fileDiffs = dedupeFileDiffs(diffSource?.fileDiffs ?? []);
+  const diffSummary =
+    diffSource?.diffSummary ??
+    (fileDiffs.length > 0 ? summarizeFileDiffs(fileDiffs) : undefined);
+  return {
+    fileDiffs,
+    diffSummary,
+    isPending:
+      diffSource?.status === 'running' ||
+      fileDiffs.some((fileDiff) => fileDiff.status === 'pending'),
+  };
+}
+
+/**
+ * 渲染工具过程下方的文件编辑摘要；点击文件行打开统一 diff 弹窗，不使用浏览器原生弹窗。
+ */
+function EditedFilesSummary({
+  messageId,
+  cardId,
+  fileDiffs,
+  diffSummary,
+  isPending,
+}: {
+  messageId: string;
+  cardId: string;
+  fileDiffs: FileDiffItem[];
+  diffSummary?: DiffSummary;
+  isPending: boolean;
+}) {
+  const [activeFileDiff, setActiveFileDiff] = React.useState<FileDiffItem | null>(null);
+  const summary = diffSummary ?? summarizeFileDiffs(fileDiffs);
+  const actionLabel = isPending ? '正在编辑' : '已编辑';
+
+  return (
+    <div
+      data-testid={`edited-files-summary-${messageId}-${cardId}`}
+      className="ml-6 space-y-2 rounded-md border border-border/70 bg-surface-container/68 px-3 py-2"
+    >
+      <div className="flex min-w-0 flex-wrap items-center gap-2 text-xs text-muted">
+        <FileText size={13} className="shrink-0" />
+        <span className="font-medium text-foreground">
+          {actionLabel} {summary.filesChanged} 个文件
+        </span>
+        <span className="font-mono text-success">+{summary.additions}</span>
+        <span className="font-mono text-error">-{summary.deletions}</span>
+      </div>
+      <div className="space-y-1">
+        {fileDiffs.map((fileDiff) => (
+          <button
+            key={`${fileDiff.path}-${fileDiff.diff}`}
+            type="button"
+            data-testid={`edited-file-row-${messageId}-${cardId}-${getFileDiffSlug(fileDiff.path)}`}
+            onClick={() => setActiveFileDiff(fileDiff)}
+            className="flex w-full min-w-0 items-center justify-between gap-3 rounded-md px-2 py-1.5 text-left text-xs text-muted transition-colors hover:bg-surface hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border"
+          >
+            <span className="flex min-w-0 items-center gap-2">
+              <File size={13} className="shrink-0" />
+              <span className="truncate font-mono text-[12px]" title={fileDiff.path}>
+                {fileDiff.path}
+              </span>
+            </span>
+            <span className="shrink-0 font-mono">
+              <span className="text-success">+{fileDiff.additions}</span>
+              <span className="ml-2 text-error">-{fileDiff.deletions}</span>
+            </span>
+          </button>
+        ))}
+      </div>
+      {activeFileDiff ? (
+        <FileDiffDialog
+          fileDiff={activeFileDiff}
+          onClose={() => setActiveFileDiff(null)}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * 自定义文件差异弹窗，承载统一 diff 高亮展示。
+ */
+function FileDiffDialog({
+  fileDiff,
+  onClose,
+}: {
+  fileDiff: FileDiffItem;
+  onClose: () => void;
+}) {
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={`文件差异：${fileDiff.path}`}
+      className="fixed inset-0 z-[140] flex items-center justify-center bg-background/55 p-4 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div
+        className="flex max-h-[82vh] w-full max-w-4xl flex-col overflow-hidden rounded-xl border border-border bg-surface text-foreground shadow-[0_28px_80px_rgba(0,0,0,0.34)]"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="flex min-w-0 items-center justify-between gap-3 border-b border-border px-4 py-3">
+          <div className="min-w-0">
+            <div className="text-xs text-muted">文件差异</div>
+            <div className="truncate font-mono text-sm font-semibold text-foreground">
+              {fileDiff.path}
+            </div>
+          </div>
+          <button
+            type="button"
+            aria-label="关闭文件差异弹窗"
+            onClick={onClose}
+            className="rounded-md p-1.5 text-muted transition-colors hover:bg-surface-container hover:text-foreground"
+          >
+            <X size={16} />
+          </button>
+        </div>
+        <div className="min-h-0 flex-1 overflow-auto">
+          <DiffTextBlock diffText={fileDiff.diff || '等待写入内容...'} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * 按 unified diff 行前缀做轻量高亮，保持代码内容可复制且不依赖第三方 diff 组件。
+ */
+function DiffTextBlock({ diffText }: { diffText: string }) {
+  const lines = diffText.split(/\r?\n/);
+  return (
+    <pre className="min-w-full whitespace-pre-wrap [overflow-wrap:anywhere] bg-background px-4 py-3 font-mono text-[12px] leading-5 text-foreground">
+      {lines.map((line, index) => (
+        <span
+          key={`${index}-${line}`}
+          className={`block ${
+            line.startsWith('+') && !line.startsWith('+++')
+              ? 'bg-success/10 text-success'
+              : line.startsWith('-') && !line.startsWith('---')
+                ? 'bg-error/10 text-error'
+                : line.startsWith('@@')
+                  ? 'text-accent-breeze'
+                  : 'text-muted'
+          }`}
+        >
+          {line || ' '}
+        </span>
+      ))}
+    </pre>
+  );
+}
+
+type ConversationDiffRound = {
+  messageId: string;
+  fileDiffs: FileDiffItem[];
+  diffSummary: DiffSummary;
+};
+
+/**
+ * 从会话消息中按助手回复轮次收集文件差异，右侧栏据此切换“本轮编辑/上轮对话”。
+ */
+function collectConversationDiffRounds(messages: ChatMessageItem[]): ConversationDiffRound[] {
+  return messages
+    .filter((message) => message.role === 'ASSISTANT')
+    .map((message) => {
+      const fileDiffs = collectMessageFileDiffs(message);
+      return fileDiffs.length > 0
+        ? {
+            messageId: message.id,
+            fileDiffs,
+            diffSummary: summarizeFileDiffs(fileDiffs),
+          }
+        : null;
+    })
+    .filter((round): round is ConversationDiffRound => round != null);
+}
+
+/**
+ * 同一条消息可能同时保存 processCards 与 timelineItems；按过程卡片 ID 去重后收集文件差异。
+ */
+function collectMessageFileDiffs(message: ChatMessageItem): FileDiffItem[] {
+  const cards: ProcessCardItem[] = [];
+  const seenCardIds = new Set<string>();
+  const pushCard = (card: ProcessCardItem) => {
+    if (seenCardIds.has(card.id)) {
+      return;
+    }
+    seenCardIds.add(card.id);
+    cards.push(card);
+  };
+  (message.processCards ?? []).forEach(pushCard);
+  (message.timelineItems ?? []).forEach((item) => {
+    if (item.type === 'process') {
+      pushCard(item.card);
+    }
+  });
+  return dedupeFileDiffs(cards.flatMap((card) => card.fileDiffs ?? []));
+}
+
+/**
+ * 文件多次编辑时只保留同一路径最后一次 diff，侧栏关注当前可审查状态。
+ */
+function dedupeFileDiffs(fileDiffs: FileDiffItem[]): FileDiffItem[] {
+  const orderedPathKeys: string[] = [];
+  const diffByPath = new Map<string, FileDiffItem>();
+  for (const fileDiff of fileDiffs) {
+    const pathKey = fileDiff.path || fileDiff.newPath || fileDiff.oldPath || 'unknown';
+    if (!diffByPath.has(pathKey)) {
+      orderedPathKeys.push(pathKey);
+    }
+    diffByPath.set(pathKey, fileDiff);
+  }
+  return orderedPathKeys
+    .map((pathKey) => diffByPath.get(pathKey))
+    .filter((fileDiff): fileDiff is FileDiffItem => fileDiff != null);
+}
+
+/**
+ * 将文件路径转换成稳定测试标识片段，避免斜杠、点号影响 data-testid。
+ */
+function getFileDiffSlug(path: string): string {
+  return path
+    .trim()
+    .replace(/[^A-Za-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '') || 'file';
+}
 
 /**
  * 同一次工具调用的参数和返回结果共用一个展开区，避免过程流里出现两张相邻明细卡。

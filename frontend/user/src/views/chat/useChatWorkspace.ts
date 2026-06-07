@@ -4,6 +4,11 @@ import { UserErrorMessages } from '../../constants/errorMessages';
 import { ChatApi } from './chatApi';
 import { extractSseEvents } from './sse';
 import {
+  buildPendingFileDiffsFromToolParams,
+  normalizeDiffSummaryFromMetadata,
+  normalizeFileDiffsFromMetadata,
+} from './fileDiffs';
+import {
   ActiveStreamState,
   ArtifactItem,
   ChatAttachmentItem,
@@ -3275,6 +3280,12 @@ export function useChatWorkspace(
           : isRecord(payload.metadata)
             ? payload.metadata
             : undefined;
+      const completedFileDiffs = normalizeFileDiffsFromMetadata(resultMetadata);
+      const pendingFileDiffs =
+        completedFileDiffs.length > 0
+          ? completedFileDiffs
+          : buildPendingFileDiffsFromToolParams(String(payload.toolId ?? ''), params);
+      const diffSummary = normalizeDiffSummaryFromMetadata(resultMetadata, pendingFileDiffs);
       const call: McpCallItem = {
         callId,
         toolId: String(payload.toolId ?? ''),
@@ -3287,6 +3298,8 @@ export function useChatWorkspace(
         params,
         rawResult,
         resultMetadata,
+        fileDiffs: pendingFileDiffs.length > 0 ? pendingFileDiffs : undefined,
+        diffSummary,
         reactThought: normalizeOptionalString(payload.reactThought),
         reactAction: normalizeOptionalString(payload.reactAction),
         reactObservation: normalizeOptionalString(payload.reactObservation),
@@ -5392,6 +5405,8 @@ function mergeMcpCallsById(calls: McpCallItem[], nextCall: McpCallItem): McpCall
       ? {
           ...call,
           ...nextCall,
+          fileDiffs: nextCall.fileDiffs ?? call.fileDiffs,
+          diffSummary: nextCall.diffSummary ?? call.diffSummary,
         }
       : call,
   );
@@ -5671,6 +5686,8 @@ function mergeMcpCallIntoProcessCards(
         displayName: call.displayName,
         presentation: 'react',
         details: nextDetails,
+        fileDiffs: call.fileDiffs,
+        diffSummary: call.diffSummary,
       });
       return nextCards;
     }
@@ -5685,6 +5702,8 @@ function mergeMcpCallIntoProcessCards(
       toolId: call.toolId,
       displayName: call.displayName,
       details: nextDetails,
+      fileDiffs: call.fileDiffs,
+      diffSummary: call.diffSummary,
     });
     return nextCards;
   }
@@ -5704,6 +5723,8 @@ function mergeMcpCallIntoProcessCards(
         toolId: call.toolId,
         displayName: call.displayName,
         presentation: 'react',
+        fileDiffs: call.fileDiffs,
+        diffSummary: call.diffSummary,
         details: [
           ...(call.params
             ? [
@@ -5733,6 +5754,8 @@ function mergeMcpCallIntoProcessCards(
       status: 'completed',
       toolId: call.toolId,
       displayName: call.displayName,
+      fileDiffs: call.fileDiffs,
+      diffSummary: call.diffSummary,
       details: [
         ...(call.params
           ? [
@@ -6145,6 +6168,9 @@ function deriveMcpCallsFromSteps(executionSteps: ExecutionStepItem[]): McpCallIt
       const toolId = resolveReplayToolStepId(step, metadata);
       const displayName = resolveReplayToolStepDisplayName(step, metadata, toolId);
       const rawResult = metadata.rawResult ?? metadata.content ?? stepContent;
+      const resultMetadata = isRecord(metadata.resultMetadata) ? metadata.resultMetadata : undefined;
+      const fileDiffs = normalizeFileDiffsFromMetadata(resultMetadata);
+      const diffSummary = normalizeDiffSummaryFromMetadata(resultMetadata, fileDiffs);
       return {
         callId: `replay-step-${step.id}`,
         toolId,
@@ -6155,7 +6181,9 @@ function deriveMcpCallsFromSteps(executionSteps: ExecutionStepItem[]): McpCallIt
         phase: normalizedStepStatus === 'COMPLETED' ? 'complete' : 'start',
         status: normalizedStepStatus === 'COMPLETED' ? 'completed' : 'running',
         params: resolveReplayToolStepParams(metadata),
-        resultMetadata: isRecord(metadata.resultMetadata) ? metadata.resultMetadata : undefined,
+        resultMetadata,
+        fileDiffs: fileDiffs.length > 0 ? fileDiffs : undefined,
+        diffSummary,
       } satisfies McpCallItem;
     });
 }
@@ -6598,6 +6626,8 @@ function deriveProcessCardsFromReplay(options: {
       status: call.status === 'error' ? 'error' : 'completed',
       toolId: call.toolId,
       displayName: call.displayName,
+      fileDiffs: call.fileDiffs,
+      diffSummary: call.diffSummary,
       details: call.params
         ? [
             {
@@ -6616,6 +6646,8 @@ function deriveProcessCardsFromReplay(options: {
         status: call.status === 'error' ? 'error' : 'completed',
         toolId: call.toolId,
         displayName: call.displayName,
+        fileDiffs: call.fileDiffs,
+        diffSummary: call.diffSummary,
         details: [
           {
             label: '结果',

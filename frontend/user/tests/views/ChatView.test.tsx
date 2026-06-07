@@ -824,6 +824,237 @@ describe('ChatView', () => {
   });
 
   /**
+   * 文件编辑工具应在消息过程里展示编辑文件列表，并用自定义弹窗展示 unified diff。
+   */
+  it('应在工具过程中展示文件差异列表并打开差异弹窗', async () => {
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          messages: [
+            {
+              id: '706',
+              conversationId: '2001',
+              role: 'ASSISTANT',
+              content: '已完成编辑',
+              processCards: [
+                {
+                  id: 'tool-result-706',
+                  type: 'tool_result',
+                  title: '已获取结果',
+                  summary: '已编辑 src/App.tsx',
+                  status: 'completed',
+                  toolId: 'write',
+                  displayName: '写文件',
+                  diffSummary: { filesChanged: 1, additions: 1, deletions: 1 },
+                  fileDiffs: [
+                    {
+                      path: 'src/App.tsx',
+                      oldPath: 'src/App.tsx',
+                      newPath: 'src/App.tsx',
+                      status: 'modified',
+                      additions: 1,
+                      deletions: 1,
+                      diff: [
+                        'diff --git a/src/App.tsx b/src/App.tsx',
+                        '--- a/src/App.tsx',
+                        '+++ b/src/App.tsx',
+                        '@@ -1 +1 @@',
+                        '-const title = "Old";',
+                        '+export const title = "CodingX";',
+                      ].join('\n'),
+                    },
+                  ],
+                },
+              ],
+              status: 'COMPLETED',
+            } as any,
+          ],
+          executionSteps: [],
+          references: [],
+          artifacts: [],
+        })}
+      />,
+    );
+
+    expect(screen.getByTestId('edited-files-summary-706-tool-result-706')).toHaveTextContent(
+      '已编辑 1 个文件',
+    );
+    fireEvent.click(screen.getByTestId('edited-file-row-706-tool-result-706-src-App-tsx'));
+
+    const dialog = screen.getByRole('dialog', { name: '文件差异：src/App.tsx' });
+    expect(dialog).toBeInTheDocument();
+    expect(dialog).toHaveTextContent('src/App.tsx');
+    expect(dialog).toHaveTextContent('+export const title = "CodingX";');
+
+    fireEvent.click(screen.getByRole('button', { name: '关闭文件差异弹窗' }));
+    expect(screen.queryByRole('dialog', { name: '文件差异：src/App.tsx' })).not.toBeInTheDocument();
+  });
+
+  /**
+   * 右侧代码审查栏应支持本轮、上轮和 git 工作区差异模式切换。
+   */
+  it('应在右侧代码审查栏切换会话差异和工作区git差异', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          success: true,
+          code: 'OK',
+          message: 'success',
+          data: {
+            toolCode: 'git_diff',
+            content: '已读取 1 个文件差异',
+            metadata: {
+              diffSummary: { filesChanged: 1, additions: 2, deletions: 0 },
+              fileDiffs: [
+                {
+                  path: 'src/workspace.ts',
+                  status: 'modified',
+                  additions: 2,
+                  deletions: 0,
+                  diff: [
+                    'diff --git a/src/workspace.ts b/src/workspace.ts',
+                    '--- a/src/workspace.ts',
+                    '+++ b/src/workspace.ts',
+                    '@@ -1 +1,2 @@',
+                    '+export const workspace = "local";',
+                  ].join('\n'),
+                },
+              ],
+            },
+          },
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    );
+
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          messages: [
+            {
+              id: '707-user',
+              conversationId: '2001',
+              role: 'USER',
+              content: '上一轮',
+              status: 'COMPLETED',
+            },
+            {
+              id: '707-prev',
+              conversationId: '2001',
+              role: 'ASSISTANT',
+              content: '上一轮已编辑',
+              processCards: [
+                {
+                  id: 'tool-result-prev',
+                  type: 'tool_result',
+                  title: '已获取结果',
+                  summary: '已编辑 src/prev.ts',
+                  status: 'completed',
+                  toolId: 'write',
+                  displayName: '写文件',
+                  diffSummary: { filesChanged: 1, additions: 1, deletions: 0 },
+                  fileDiffs: [
+                    {
+                      path: 'src/prev.ts',
+                      status: 'added',
+                      additions: 1,
+                      deletions: 0,
+                      diff: '+export const prev = true;',
+                    },
+                  ],
+                },
+              ],
+              status: 'COMPLETED',
+            } as any,
+            {
+              id: '707',
+              conversationId: '2001',
+              role: 'ASSISTANT',
+              content: '本轮已编辑',
+              processCards: [
+                {
+                  id: 'tool-result-current',
+                  type: 'tool_result',
+                  title: '已获取结果',
+                  summary: '已编辑 src/current.ts',
+                  status: 'completed',
+                  toolId: 'write',
+                  displayName: '写文件',
+                  diffSummary: { filesChanged: 1, additions: 1, deletions: 1 },
+                  fileDiffs: [
+                    {
+                      path: 'src/current.ts',
+                      status: 'modified',
+                      additions: 1,
+                      deletions: 1,
+                      diff: '+export const current = true;',
+                    },
+                  ],
+                },
+              ],
+              status: 'COMPLETED',
+            } as any,
+          ],
+          executionSteps: [],
+          references: [],
+          artifacts: [],
+        })}
+      />,
+    );
+
+    // 业务约束：差异栏默认隐藏，避免一直挤占聊天区域，用户从右上角按钮按需打开。
+    expect(screen.queryByTestId('code-review-sidebar')).not.toBeInTheDocument();
+    const sidebarToggle = screen.getByTestId('code-review-sidebar-toggle');
+    expect(sidebarToggle).toHaveAccessibleName('打开代码差异侧边栏');
+
+    fireEvent.click(sidebarToggle);
+    let sidebar = screen.getByTestId('code-review-sidebar');
+    expect(sidebar).toBeInTheDocument();
+    expect(sidebar).toHaveStyle({ width: '380px' });
+    for (const label of ['本轮编辑', '上轮对话', '未暂存', '已暂存', '提交', '分支']) {
+      expect(screen.getByRole('button', { name: label })).toBeInTheDocument();
+    }
+    expect(sidebar).toHaveTextContent('src/current.ts');
+
+    // 侧栏在右侧展开，拖动左侧边缘向左会增加宽度。
+    fireEvent.mouseDown(screen.getByTestId('code-review-sidebar-resize-handle'), {
+      clientX: 1000,
+    });
+    fireEvent.mouseMove(window, { clientX: 920 });
+    fireEvent.mouseUp(window);
+    expect(sidebar).toHaveStyle({ width: '460px' });
+
+    fireEvent.click(within(sidebar).getByRole('button', { name: '关闭代码差异侧边栏' }));
+    expect(screen.queryByTestId('code-review-sidebar')).not.toBeInTheDocument();
+    expect(sidebarToggle).toHaveAccessibleName('打开代码差异侧边栏');
+
+    fireEvent.click(sidebarToggle);
+    sidebar = screen.getByTestId('code-review-sidebar');
+    expect(sidebar).toHaveStyle({ width: '460px' });
+
+    fireEvent.click(screen.getByRole('button', { name: '上轮对话' }));
+    expect(sidebar).toHaveTextContent('src/prev.ts');
+
+    fireEvent.click(screen.getByRole('button', { name: '未暂存' }));
+    await waitFor(() => {
+      expect(fetchSpy).toHaveBeenCalledWith(
+        '/api/chat/tools/git_diff/invoke',
+        expect.objectContaining({
+          method: 'POST',
+        }),
+      );
+    });
+    expect(await screen.findByText('src/workspace.ts')).toBeInTheDocument();
+    expect(sidebar).toHaveTextContent(
+      '+export const workspace = "local";',
+    );
+  });
+
+  /**
    * 深度思考在流式阶段默认展开，便于用户直接看到完整推理过程；用户仍可手动折叠。
    */
   it('应支持深度思考流式期间默认展开并可手动折叠', async () => {

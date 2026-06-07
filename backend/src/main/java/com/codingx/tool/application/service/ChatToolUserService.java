@@ -4,12 +4,15 @@ import cn.dev33.satoken.stp.StpUtil;
 import cn.hutool.core.util.StrUtil;
 import cn.hutool.json.JSONObject;
 import cn.hutool.json.JSONUtil;
+import com.codingx.chat.application.service.ChatWorkspaceBindingService;
 import com.codingx.common.error.ErrorMessageCatalog;
 import com.codingx.common.exception.BusinessException;
 import com.codingx.tool.domain.model.ChatTool;
 import com.codingx.tool.domain.repository.ChatToolRepository;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -33,6 +36,7 @@ public class ChatToolUserService {
         "exec_command",
         "write_stdin",
         "apply_patch",
+        "git_diff",
         "list_mcp_resources",
         "list_mcp_resource_templates",
         "read_mcp_resource",
@@ -72,6 +76,11 @@ public class ChatToolUserService {
     private final ChatToolExecutionService chatToolExecutionService;
 
     /**
+     * 聊天工作区绑定服务，用于让用户态工具调用继承桌面端当前选择的本地仓库目录。
+     */
+    private final ChatWorkspaceBindingService chatWorkspaceBindingService;
+
+    /**
      * 调用当前登录用户允许访问的工具。
      * @param toolCode 工具编码。
      * @param question 调用载荷。
@@ -91,13 +100,39 @@ public class ChatToolUserService {
     public ChatToolExecutionResult invokeForCurrentUser(String toolCode, String question, boolean confirmHighRisk) {
         // 步骤 1：用户态工具调用必须先确认登录态，后续权限判断都基于当前登录用户。
         StpUtil.checkLogin();
+        Long userId = StpUtil.getLoginIdAsLong();
         // 步骤 2：工具编码统一小写后依次校验白名单、启用状态和高风险确认。
         String normalizedToolCode = normalizeToolCode(toolCode);
         ensureToolWhitelisted(normalizedToolCode);
         ensureToolEnabled(normalizedToolCode);
         ensureHighRiskConfirmed(normalizedToolCode, question, confirmHighRisk);
-        // 步骤 3：校验通过后只传递规范化编码给执行层，避免大小写差异导致注册表找不到执行器。
-        return chatToolExecutionService.execute(normalizedToolCode, question);
+        // 步骤 3：侧栏等用户态工具入口没有聊天流的执行上下文，需要临时绑定当前用户的本地仓库目录。
+        return executeWithCurrentUserWorkspace(userId, normalizedToolCode, question);
+    }
+
+    /**
+     * 在当前用户绑定的仓库目录中执行工具，并在结束后恢复原有线程上下文。
+     * @param userId 当前登录用户 ID。
+     * @param normalizedToolCode 规范化工具编码。
+     * @param question 调用载荷。
+     * @return 工具执行结果。
+     */
+    private ChatToolExecutionResult executeWithCurrentUserWorkspace(Long userId, String normalizedToolCode, String question) {
+        Optional<Path> previousWorkingDirectory = ChatToolExecutionContext.currentToolWorkingDirectory();
+        Optional<Path> boundRepositoryPath = chatWorkspaceBindingService.findRepositoryPathByUserId(userId);
+        try {
+            // 步骤 1：有桌面端绑定目录时优先使用该目录，确保 git_diff/read/write 都作用于用户选中的工作区。
+            boundRepositoryPath.ifPresent(ChatToolExecutionContext::bindToolWorkingDirectory);
+            // 步骤 2：校验通过后只传递规范化编码给执行层，避免大小写差异导致注册表找不到执行器。
+            return chatToolExecutionService.execute(normalizedToolCode, question);
+        } finally {
+            // 步骤 3：恢复调用前上下文；没有旧上下文时清理 ThreadLocal，避免 servlet 线程复用串到下次请求。
+            if (previousWorkingDirectory.isPresent()) {
+                ChatToolExecutionContext.bindToolWorkingDirectory(previousWorkingDirectory.get());
+            } else {
+                ChatToolExecutionContext.bindToolWorkingDirectory(null);
+            }
+        }
     }
 
     /**

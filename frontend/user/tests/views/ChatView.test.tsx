@@ -2644,6 +2644,25 @@ describe('ChatView', () => {
   });
 
   /**
+   * 普通回复流式生成只代表聊天正在输出，不代表用户已进入目标模式。
+   */
+  it('目标模式关闭且普通生成进行中时不应展示目标进度窗', async () => {
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          goalModeEnabled: false,
+          isStreaming: true,
+          executionSteps: [],
+        } as Partial<ChatWorkspaceController>)}
+      />,
+    );
+
+    expect(screen.queryByTestId('goal-progress-panel')).not.toBeInTheDocument();
+  });
+
+  /**
    * 环境与工作空间切换应独立于输入框容器，避免占用输入框内部高度。
    */
   it('应在输入框下方渲染环境与工作空间切换行并移除旧状态栏', async () => {

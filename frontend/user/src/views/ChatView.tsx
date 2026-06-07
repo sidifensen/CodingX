@@ -156,8 +156,8 @@ export default function ChatView({
     () => buildGoalProgressView(executionSteps, isStreaming),
     [executionSteps, isStreaming],
   );
-  const showGoalProgressPanel =
-    goalModeEnabled || isStreaming || executionSteps.length > 0;
+  // 目标浮窗只响应用户显式开启的目标模式，普通聊天流式输出不应被误判为目标进度。
+  const showGoalProgressPanel = goalModeEnabled;
   const latestMessageAnchorRef = React.useRef<HTMLDivElement | null>(null);
   const chatScrollRegionRef = React.useRef<HTMLDivElement | null>(null);
   const shouldFollowLatestMessageRef = React.useRef(true);

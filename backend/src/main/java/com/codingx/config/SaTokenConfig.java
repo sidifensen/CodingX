@@ -26,9 +26,12 @@ public class SaTokenConfig implements WebMvcConfigurer {
                 StpUtil.checkLogin();
             }
         })).addPathPatterns("/**")
-            // 步骤 3：排除登录、公开流、分享、接口文档和健康检查等不需要登录的入口。
+            // 步骤 3：排除登录、CLI 终端兑换、公开流、分享、接口文档和健康检查等不需要登录的入口。
             .excludePathPatterns(
                 "/api/auth/login",
+                "/api/auth/cli/token",
+                "/api/auth/cli/device/start",
+                "/api/auth/cli/device/token",
                 "/api/chat/stream",
                 "/api/chat/conversations/*/stream",
                 "/api/chat/conversations/shared/**",

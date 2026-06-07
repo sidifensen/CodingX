@@ -24,8 +24,8 @@
 3. 用户运行 `codingx` 命令后，Windows 通过 PATH 找到 `codingx.cmd`，`cmd` 启动 `java -jar codingx.jar`，再进入 `CodingXCli.main`。`CodingXCli` 使用用户主目录创建 `CliConfigStore`，并用当前工作目录、`BackendChatEventSource` 和 `TerminalRenderer` 组装 `CodingXTuiLauncher`；这意味着从任意仓库目录输入 `codingx` 时，后端收到的 `repositoryPath` 就是用户当前目录。
 4. 用户执行 `codingx auth login` 时，`CliCommandRunner` 进入认证分支并调用 `CliAuthService.loginWithBrowser()`。服务先读取 `.codingx/cli.yml` 中的后端地址，生成 `state`、PKCE `codeVerifier/codeChallenge`，再用 `LoopbackCallbackServer` 只绑定 `127.0.0.1` 的随机端口；随后按后端地址推导用户端前端地址，本地开发会从 `5001` 映射到 `5002`，正式 `api.` 子域会映射到根域。
 5. 浏览器打开 `/cli-login?redirectUri=...&state=...&codeChallenge=...` 后，用户端 `CliLoginView` 会先恢复或创建网页登录态，再携带 satoken 调用 `POST /api/auth/cli/authorize`。后端 `CliAuthApplicationService` 校验 `redirectUri` 必须是 `http://127.0.0.1:<port>/callback`、`localhost` 或 `[::1]` 的 callback 路径，并把一次性 code、state、codeChallenge、userId 和过期时间写入内存状态；前端拿到 code 后只跳回 CLI 本机回调地址，不在 URL 中暴露真实 satoken。
-6. CLI 收到本机回调后，`LoopbackCallbackServer` 校验回调 state 并返回 code，`CliAuthService` 再调用 `POST /api/auth/cli/token` 提交 code、state 和原始 verifier。后端读取即消费授权码，依次校验 state 与 PKCE S256 challenge；校验通过后重新加载用户、确认账号有效，并通过现有 Sa-Token 登录网关创建 CLI 专用 satoken。CLI 解析统一 `ApiResponse`，把 token 写入用户主目录配置，同时清空 `lastSessionId`，避免新 token 续接旧账号会话。
-7. 用户执行 `codingx auth login --device` 时，CLI 调用 `POST /api/auth/cli/device/start` 获取内部 `deviceCode`、用户可读 `userCode`、验证页路径、过期时间和轮询间隔。终端展示 `/cli-login?deviceCode=...`，浏览器页登录后调用 `POST /api/auth/cli/device/authorize` 把 userCode 绑定到当前网页登录用户；CLI 按 `pollIntervalSeconds` 调用 `POST /api/auth/cli/device/token`，pending 时继续等待，approved 时消费设备码并保存 token，超时或后端错误时展示后端中文 message。
+6. CLI 收到本机回调后，`LoopbackCallbackServer` 校验回调 state 并返回 code，`CliAuthService` 再调用 `POST /api/auth/cli/token` 提交 code、state 和原始 verifier。该接口由终端进程匿名调用，必须在 `SaTokenConfig` 全局登录拦截器白名单中；真正的用户身份来自前一步已保存的一次性授权码，而不是当前 HTTP 请求的网页登录态。后端读取即消费授权码，依次校验 state 与 PKCE S256 challenge；校验通过后重新加载用户、确认账号有效，并通过现有 Sa-Token 登录网关创建 CLI 专用 satoken。CLI 解析统一 `ApiResponse`，把 token 写入用户主目录配置，同时清空 `lastSessionId`，避免新 token 续接旧账号会话。
+7. 用户执行 `codingx auth login --device` 时，CLI 调用 `POST /api/auth/cli/device/start` 获取内部 `deviceCode`、用户可读 `userCode`、验证页路径、过期时间和轮询间隔。设备码创建和 `POST /api/auth/cli/device/token` 轮询同样来自终端进程，必须允许匿名访问；浏览器页登录后调用的 `POST /api/auth/cli/device/authorize` 仍然不能放入通配白名单，因为它需要当前网页登录用户把 userCode 绑定到具体账号。CLI 按 `pollIntervalSeconds` 轮询，pending 时继续等待，approved 时消费设备码并保存 token，超时或后端错误时展示后端中文 message。
 8. 用户执行诊断用 `codingx login <serverUrl> <satoken>` 时，`CliCommandRunner` 校验 `serverUrl` 和 `satoken` 参数数量；参数缺失时返回中文用法提示，参数完整时通过 `CliConfigStore` 使用 SnakeYAML 写入用户主目录配置。该流程不会读取或写入当前工作区文件，避免登录令牌进入 Git 仓库。
 9. 用户执行 `codingx` 或 `codingx tui` 时，`CliCommandRunner` 调用 `TuiLauncher.launch()`，真实实现先通过 `CodingXTuiModel.startupBanner()` 把 `>_ CodingX CLI (v0.1.0)` 启动卡片和 `Tip: Build faster with CodingX.` 写入普通 shell 输出，再启动 tui4j `Program.run()` 维护后续交互区。该拆分用于规避 Windows 终端下 tui4j 普通屏幕 renderer 按活动区域高度裁剪首帧的问题，确保 logo 和启动卡片不会被裁掉。`CodingXTuiModel.view()` 的活动区只渲染真实 transcript、单行 composer 和底部状态行；初始态不会追加假 transcript，也不会用空白 viewport 把输入行推到窗口底部。`TuiStatusBarRenderer` 只展示后端选模来源、当前工作区、运行状态和 `Plan mode` / `Chat mode` 文案；模型名、MCP 连接数和工具数量没有后端真实字段时不会显示。
 10. 用户在 `Textarea` 输入内容时，`CodingXTuiModel.view()` 会把 composer 稳定渲染为单行 `› 输入内容/placeholder`；当输入以 `/` 开头时，模型在输入区上方渲染纯文本命令面板。用户按 Enter 后，模型先判断是否为本地 Slash Command：`/login` 调用 `CliAuthService.loginWithBrowser()` 打开浏览器登录，`/logout` 调用 `CliAuthService.logout()` 清理本机 token，`/help` 或 `/` 只展示命令列表；未知命令会展示中文错误和可用命令，不会进入后端聊天流。
@@ -63,6 +63,7 @@
 - `backend/src/main/java/com/codingx/auth/interfaces/controller/CliAuthController.java`：CLI 授权 HTTP 协议层，提供授权码、设备码和 token 兑换接口。
 - `backend/src/main/java/com/codingx/auth/application/service/CliAuthApplicationService.java`：CLI 授权应用服务，集中处理 loopback 白名单、PKCE 校验、一次性 code 消费、设备码状态和 CLI token 创建。
 - `backend/src/main/java/com/codingx/auth/application/service/InMemoryCliAuthStateStore.java`：短期 CLI 授权状态内存存储，按过期时间清理授权码和设备码。
+- `backend/src/main/java/com/codingx/config/SaTokenConfig.java`：全局登录态拦截器配置；只放开 `/api/auth/cli/token`、`/api/auth/cli/device/start` 和 `/api/auth/cli/device/token` 这些终端匿名入口，不放开 `/api/auth/cli/authorize` 或 `/api/auth/cli/device/authorize`。
 - `frontend/user/src/views/CliLoginView.tsx`：用户端 CLI 授权页，支持 loopback 与设备码两种模式，复用网页登录态并遵循亮暗主题变量。
 - `frontend/user/src/api/cliAuthApi.ts`：CLI 授权前端 API 封装，统一解析后端 `ApiResponse.message`。
 - `cli/src/test/java/com/codingx/cli/CliDistributionTest.java`：CLI 分发契约测试，验证可执行 jar 配置和 Windows 安装脚本关键行为。
@@ -86,7 +87,7 @@
 ## 测试与验证
 
 - `cd cli && mvn test`
-- `cd backend && mvn -Dtest=CliAuthApplicationServiceTest,CliAuthControllerTest test`：覆盖 loopback 白名单、一次性 code、PKCE 校验、设备码 pending/approved 和 Controller 协议。
+- `cd backend && mvn -Dtest=SaTokenConfigCliAuthTest,CliAuthApplicationServiceTest,CliAuthControllerTest test`：覆盖 Sa-Token 白名单边界、一次性 code、PKCE 校验、设备码 pending/approved 和 Controller 协议。
 - `cd cli && mvn -Dtest=CliAuthServiceTest,CliCommandRunnerTest,BackendChatEventSourceTest test`：覆盖浏览器回调、设备码轮询、`auth login` 命令分发和 SSE 401 JSON message 解析。
 - `cd frontend/user && npm run test:run -- tests/views/CliLoginView.test.tsx`：覆盖 loopback 授权、设备码授权和参数缺失错误展示。
 - `cd cli && mvn -Dtest=CodingXTuiModelTest test`：覆盖用户问题可见性、完成后问题锚定、底部三行尾部裁剪、TTY 单行 composer、LF-only renderer 视图、运行中输入保留、连续问答顺序、长输出裁剪、长单行自动换行、视图预换行，以及真实 `Program.run()` + `program.send` 流式增量时底部可见用户问题的场景。
@@ -94,3 +95,5 @@
 - `powershell -ExecutionPolicy Bypass -File script/install-codingx.ps1 -ProjectRoot D:\code\CodingX`
 - `where codingx`：验证命令解析到用户目录 `.codingx/bin/codingx.cmd`。
 - `codingx exec smoke-test`：验证 PATH 命令进入 CLI 命令分发，并继续拒绝非交互任务模式。
+- 真实登录回归：清空本机 CLI token 后执行 `codingx auth login`，浏览器进入 `/cli-login` 并跳回 `127.0.0.1:<port>/callback`，终端输出 `CLI 登录成功：CodingX Admin`，`~/.codingx/cli.yml` 写入新 satoken。
+- 真实 TUI 回归：使用 Windows 伪终端执行 `cmd.exe /c codingx`，输入 `What is 2 plus 2? Answer with a single number.`，捕获到 `> What is 2 plus 2? Answer with a single number.`、`CodingX  4` 和 `Task completed: COMPLETED`。

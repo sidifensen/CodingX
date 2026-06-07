@@ -4,6 +4,7 @@ import com.codingx.cli.agent.AgentEvent;
 import com.codingx.cli.agent.AgentEventSource;
 import com.codingx.cli.agent.AgentEventType;
 import com.codingx.cli.agent.StreamingAgentEventSource;
+import com.codingx.cli.auth.CliAuthService;
 import com.codingx.cli.render.TerminalRenderer;
 import com.williamcallahan.tui4j.compat.bubbletea.Command;
 import com.williamcallahan.tui4j.compat.bubbletea.KeyPressMessage;
@@ -41,6 +42,11 @@ public class CodingXTuiModel implements Model {
     private static final String RENDER_NEWLINE = "\n";
 
     /**
+     * 空输入时展示的中文任务提示，避免旧英文模板被误认为系统残留任务。
+     */
+    private static final String COMPOSER_PLACEHOLDER = "输入任务，/ 查看命令";
+
+    /**
      * 当前 CLI 工作区，真实后端聊天流会把它作为 local runtime 的 repositoryPath。
      */
     private final Path workspace;
@@ -64,6 +70,11 @@ public class CodingXTuiModel implements Model {
      * 底部状态栏渲染器。
      */
     private final TuiStatusBarRenderer statusBarRenderer;
+
+    /**
+     * CLI 认证服务，用于在 TUI 输入框内消费 `/login` 和 `/logout` 控制命令。
+     */
+    private final CliAuthService cliAuthService;
 
     /**
      * 滚动事件窗口，用于承载助手输出、工具状态和命令输出。
@@ -142,11 +153,27 @@ public class CodingXTuiModel implements Model {
      * @param renderer 兼容旧构造链路的终端渲染器；截图风格 TUI 使用独立 transcript renderer。
      */
     public CodingXTuiModel(Path workspace, AgentEventSource eventSource, TerminalRenderer renderer) {
+        this(workspace, eventSource, renderer, null);
+    }
+
+    /**
+     * @param workspace 当前 CLI 工作区。
+     * @param eventSource Agent 事件来源。
+     * @param renderer 兼容旧构造链路的终端渲染器；截图风格 TUI 使用独立 transcript renderer。
+     * @param cliAuthService CLI 认证服务；测试可为空，空时 `/login` 只给出命令行引导。
+     */
+    public CodingXTuiModel(
+        Path workspace,
+        AgentEventSource eventSource,
+        TerminalRenderer renderer,
+        CliAuthService cliAuthService
+    ) {
         this.workspace = workspace;
         this.eventSource = eventSource;
         this.headerRenderer = new TuiHeaderRenderer();
         this.transcriptRenderer = new TuiTranscriptRenderer();
         this.statusBarRenderer = new TuiStatusBarRenderer();
+        this.cliAuthService = cliAuthService;
         this.viewport = Viewport.create(80, 1);
         this.textarea = new Textarea();
         this.timelineLines = new ArrayList<>();
@@ -171,7 +198,7 @@ public class CodingXTuiModel implements Model {
      * 配置底部输入框的基础体验；真实任务只能从这里提交，所以保持提示、宽度和焦点稳定。
      */
     private void configureTextarea() {
-        textarea.setPlaceholder("Write tests for @filename");
+        textarea.setPlaceholder(COMPOSER_PLACEHOLDER);
         textarea.setPrompt("› ");
         textarea.setCharLimit(1000);
         textarea.setWidth(80);
@@ -232,8 +259,16 @@ public class CodingXTuiModel implements Model {
                 if (normalizedTask.isEmpty()) {
                     return UpdateResult.from(this, null);
                 }
+                if (handleSlashCommand(normalizedTask)) {
+                    textarea.reset();
+                    return UpdateResult.from(this, null);
+                }
                 if (isTurnRunning()) {
                     // 当前轮还在流式输出时保留输入框内容，避免多条问题先堆出来、回答后到而破坏一问一答顺序。
+                    return UpdateResult.from(this, null);
+                }
+                if (!ensureLoggedInBeforeChat()) {
+                    textarea.reset();
                     return UpdateResult.from(this, null);
                 }
                 submitTask(normalizedTask);
@@ -319,12 +354,107 @@ public class CodingXTuiModel implements Model {
     }
 
     /**
+     * 处理 TUI 内部控制命令；这些命令不应发送到后端聊天流，否则未登录场景会变成普通请求失败。
+     *
+     * @param task 已清洗的输入内容。
+     * @return true 表示该输入已被本地命令消费。
+     */
+    private boolean handleSlashCommand(String task) {
+        String normalizedCommand = task.trim().toLowerCase();
+        if (!normalizedCommand.startsWith("/")) {
+            return false;
+        }
+        closeAssistantBlock();
+        latestUserLine = "> " + task;
+        latestUserLineIndex = timelineLines.size();
+        appendLine(latestUserLine);
+        switch (normalizedCommand) {
+            case "/login" -> runLoginCommand();
+            case "/logout" -> runLogoutCommand();
+            case "/help", "/" -> {
+                appendCommandHelp();
+                status = "ready";
+            }
+            default -> {
+                appendSystemLine("未知命令：" + task);
+                appendCommandHelp();
+                status = "error";
+            }
+        }
+        refreshViewport();
+        return true;
+    }
+
+    /**
+     * 执行浏览器登录命令；认证服务缺失时给出命令行兜底，避免测试和旧嵌入方空指针。
+     */
+    private void runLoginCommand() {
+        status = "running";
+        if (cliAuthService == null) {
+            appendSystemLine("请运行 codingx auth login 打开浏览器登录。");
+            status = "error";
+            return;
+        }
+        boolean success = cliAuthService.loginWithBrowser();
+        appendSystemLine(success ? "CLI 登录成功" : "CLI 登录失败，请尝试 codingx auth login --device。");
+        status = success ? "completed" : "error";
+    }
+
+    /**
+     * 执行退出登录命令；只清理本机 token，不影响后端账号和其他浏览器会话。
+     */
+    private void runLogoutCommand() {
+        status = "running";
+        if (cliAuthService == null) {
+            appendSystemLine("请运行 codingx logout 清理本机登录态。");
+            status = "error";
+            return;
+        }
+        boolean success = cliAuthService.logout();
+        appendSystemLine(success ? "CLI 已退出登录" : "CLI 退出登录失败");
+        status = success ? "completed" : "error";
+    }
+
+    /**
+     * 展示 CLI 内部命令列表；命令面板是纯文本区域，保持普通终端可读且不引入新 TUI 组件复杂度。
+     */
+    private void appendCommandHelp() {
+        appendSystemLine("可用命令");
+        appendSystemLine("/login   登录 CodingX");
+        appendSystemLine("/logout  退出登录");
+        appendSystemLine("/help    查看命令列表");
+    }
+
+    /**
      * 判断当前是否已有一轮任务在后端流式执行；运行中不允许再次提交，保证 transcript 按问答轮次展开。
      *
      * @return true 表示当前轮尚未完成或出错。
      */
     private boolean isTurnRunning() {
         return "running".equals(status);
+    }
+
+    /**
+     * 普通聊天提交前确保 CLI 已登录；无 token 时直接打开浏览器登录，成功后继续原任务。
+     *
+     * @return true 表示可以继续提交到后端聊天流。
+     */
+    private boolean ensureLoggedInBeforeChat() {
+        if (cliAuthService == null || cliAuthService.isLoggedIn()) {
+            return true;
+        }
+        status = "running";
+        appendSystemLine("未登录或登录已失效，正在打开浏览器登录 CodingX。");
+        boolean success = cliAuthService.loginWithBrowser();
+        if (success) {
+            appendSystemLine("CLI 登录成功，继续发送当前请求。");
+            status = "ready";
+            return true;
+        }
+        appendSystemLine("CLI 登录失败，请运行 /login 或 codingx auth login --device 后重试。");
+        status = "error";
+        refreshViewport();
+        return false;
     }
 
     /**
@@ -461,6 +591,9 @@ public class CodingXTuiModel implements Model {
         if (!timelineLines.isEmpty()) {
             sections.add(renderTranscript());
         }
+        if (shouldRenderSlashCommandPanel()) {
+            sections.add(renderSlashCommandPanel());
+        }
         // 用户消息、输入框和状态栏必须连续占用底部三行；tui4j 普通 renderer 只保留尾部可见行时不能让空行挤掉问题。
         sections.add(inputAndStatus);
         return wrapRendererView(String.join(GAP, sections));
@@ -504,9 +637,45 @@ public class CodingXTuiModel implements Model {
      */
     private String renderComposer() {
         String taskText = normalizeRendererNewlines(textarea.value()).replace('\n', ' ').trim();
-        String composerText = taskText.isEmpty() ? "Write tests for @filename" : taskText;
+        String composerText = taskText.isEmpty() ? COMPOSER_PLACEHOLDER : taskText;
         // 真实 TTY 下 tui4j Textarea.view() 会附带光标样式和填充行；底部 composer 必须稳定为单行。
         return truncateVisualLine("› " + composerText);
+    }
+
+    /**
+     * 判断是否应在输入区上方展示 Slash Command 面板；只要当前输入以 `/` 开头就给出候选。
+     *
+     * @return true 表示展示命令列表。
+     */
+    private boolean shouldRenderSlashCommandPanel() {
+        return normalizeRendererNewlines(textarea.value()).trim().startsWith("/");
+    }
+
+    /**
+     * 渲染输入中的命令候选；保持纯文本而非复杂交互控件，适配普通终端和测试输出。
+     *
+     * @return 命令候选文本。
+     */
+    private String renderSlashCommandPanel() {
+        String keyword = normalizeRendererNewlines(textarea.value()).trim()
+            .replaceFirst("^/+", "")
+            .toLowerCase();
+        List<String> commands = List.of(
+            "/login   登录 CodingX",
+            "/logout  退出登录",
+            "/help    查看命令列表"
+        ).stream()
+            .filter(line -> keyword.isBlank() || line.toLowerCase().contains(keyword))
+            .toList();
+        if (commands.isEmpty()) {
+            return "  未匹配到命令";
+        }
+        List<String> lines = new ArrayList<>();
+        lines.add("  命令");
+        for (String command : commands) {
+            lines.add("  " + command);
+        }
+        return String.join(RENDER_NEWLINE, lines);
     }
 
     /**

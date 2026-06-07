@@ -5,6 +5,7 @@ import com.codingx.cli.agent.AgentEventSource;
 import com.codingx.cli.agent.AgentEventType;
 import com.codingx.cli.agent.MockAgentEventSource;
 import com.codingx.cli.agent.StreamingAgentEventSource;
+import com.codingx.cli.auth.CliAuthService;
 import com.codingx.cli.render.TerminalRenderer;
 import com.williamcallahan.tui4j.compat.bubbletea.KeyPressMessage;
 import com.williamcallahan.tui4j.compat.bubbletea.Program;
@@ -83,7 +84,8 @@ class CodingXTuiModelTest {
 
         String view = model.view();
 
-        assertTrue(view.contains("› Write tests for @filename"));
+        assertTrue(view.contains("› 输入任务，/ 查看命令"));
+        assertFalse(view.contains("Write tests for @filename"));
         assertTrue(view.contains("server selected ·"));
         assertFalse(view.contains(">_ CodingX CLI (v0.1.0)"));
         assertFalse(view.contains("Tip: Build faster with CodingX."));
@@ -125,7 +127,7 @@ class CodingXTuiModelTest {
         assertTrue(view.contains("> hello"));
         assertInOrder(view, "> hello", "CodingX  我会先查看当前仓库结构");
         assertTrue(view.contains("我会先查看当前仓库结构"));
-        assertTrue(view.contains("› Write tests for @filename"));
+        assertTrue(view.contains("› 输入任务，/ 查看命令"));
     }
 
     @Test
@@ -144,7 +146,7 @@ class CodingXTuiModelTest {
         assertTrue(view.contains("> hello"));
         assertInOrder(view, "> hello", "CodingX  我会先查看当前仓库结构");
         assertTrue(view.contains("我会先查看当前仓库结构"));
-        assertTrue(view.contains("› Write tests for @filename"));
+        assertTrue(view.contains("› 输入任务，/ 查看命令"));
     }
 
     @Test
@@ -248,7 +250,7 @@ class CodingXTuiModelTest {
 
         String bottomArea = lastLines(model.view(), 5);
         assertTrue(bottomArea.contains("> 你好你好"), bottomArea);
-        assertTrue(bottomArea.contains("› Write tests for @filename"), bottomArea);
+        assertTrue(bottomArea.contains("› 输入任务，/ 查看命令"), bottomArea);
     }
 
     @Test
@@ -263,7 +265,7 @@ class CodingXTuiModelTest {
 
         String bottomArea = lastLines(model.view(), 5);
         assertTrue(bottomArea.contains("> 完成后也要看见"), bottomArea);
-        assertTrue(bottomArea.contains("› Write tests for @filename"), bottomArea);
+        assertTrue(bottomArea.contains("› 输入任务，/ 查看命令"), bottomArea);
         assertTrue(bottomArea.contains("completed"), bottomArea);
     }
 
@@ -280,7 +282,7 @@ class CodingXTuiModelTest {
         // 真实 tui4j renderer 会按终端可用高度保留视图尾部；底部三行必须同时包含本轮问题、输入框和状态。
         String bottomArea = lastLines(model.view(), 3);
         assertTrue(bottomArea.contains("> 三行内也要看见"), bottomArea);
-        assertTrue(bottomArea.contains("› Write tests for @filename"), bottomArea);
+        assertTrue(bottomArea.contains("› 输入任务，/ 查看命令"), bottomArea);
         assertTrue(bottomArea.contains("completed"), bottomArea);
     }
 
@@ -312,7 +314,7 @@ class CodingXTuiModelTest {
         // 真实终端下 tui4j textarea 会带光标样式；CodingX 底部布局仍必须稳定为问题、输入、状态三行。
         String bottomArea = lastLines(stripAnsi(model.view()), 3);
         assertTrue(bottomArea.contains("> 真实 TTY 也要看见"), bottomArea);
-        assertTrue(bottomArea.contains("› Write tests for @filename"), bottomArea);
+        assertTrue(bottomArea.contains("› 输入任务，/ 查看命令"), bottomArea);
         assertTrue(bottomArea.contains("completed"), bottomArea);
     }
 
@@ -432,6 +434,109 @@ class CodingXTuiModelTest {
         model.update(new KeyPressMessage(new Key(KeyType.KeyShiftTab)));
 
         assertTrue(model.view().contains("Plan mode"));
+    }
+
+    @Test
+    void typingSlashShouldShowCliCommandListWithoutSubmittingChatRequest() {
+        CapturingStreamingEventSource eventSource = new CapturingStreamingEventSource();
+        CodingXTuiModel model = new CodingXTuiModel(
+            tempDir.resolve("workspace"),
+            eventSource,
+            new TerminalRenderer()
+        );
+
+        pressRunes(model, "/");
+
+        String view = model.view();
+        assertTrue(view.contains("/login"), view);
+        assertTrue(view.contains("/logout"), view);
+        assertTrue(view.contains("登录 CodingX"), view);
+        assertTrue(view.contains("› /"), view);
+        assertTrue(eventSource.tasks.isEmpty());
+    }
+
+    @Test
+    void slashLoginShouldUseCliAuthWithoutSubmittingChatRequest() {
+        CapturingStreamingEventSource eventSource = new CapturingStreamingEventSource();
+        FakeCliAuthService authService = new FakeCliAuthService();
+        CodingXTuiModel model = new CodingXTuiModel(
+            tempDir.resolve("workspace"),
+            eventSource,
+            new TerminalRenderer(),
+            authService
+        );
+
+        pressRunes(model, "/login");
+        model.update(new KeyPressMessage(new Key(KeyType.keyCR)));
+
+        String view = model.view();
+        assertEquals(1, authService.browserLoginCount);
+        assertTrue(eventSource.tasks.isEmpty());
+        assertTrue(view.contains("CLI 登录成功"), view);
+        assertTrue(view.contains("completed"), view);
+    }
+
+    @Test
+    void slashLogoutShouldUseCliAuthWithoutSubmittingChatRequest() {
+        CapturingStreamingEventSource eventSource = new CapturingStreamingEventSource();
+        FakeCliAuthService authService = new FakeCliAuthService();
+        CodingXTuiModel model = new CodingXTuiModel(
+            tempDir.resolve("workspace"),
+            eventSource,
+            new TerminalRenderer(),
+            authService
+        );
+
+        pressRunes(model, "/logout");
+        model.update(new KeyPressMessage(new Key(KeyType.keyCR)));
+
+        String view = model.view();
+        assertEquals(1, authService.logoutCount);
+        assertTrue(eventSource.tasks.isEmpty());
+        assertTrue(view.contains("CLI 已退出登录"), view);
+        assertTrue(view.contains("completed"), view);
+    }
+
+    @Test
+    void normalTaskShouldOpenLoginBeforeSubmittingWhenCliTokenMissing() {
+        CapturingStreamingEventSource eventSource = new CapturingStreamingEventSource();
+        FakeCliAuthService authService = new FakeCliAuthService(false);
+        CodingXTuiModel model = new CodingXTuiModel(
+            tempDir.resolve("workspace"),
+            eventSource,
+            new TerminalRenderer(),
+            authService
+        );
+
+        pressRunes(model, "分析当前项目");
+        model.update(new KeyPressMessage(new Key(KeyType.keyCR)));
+
+        String view = model.view();
+        assertEquals(1, authService.browserLoginCount);
+        assertEquals(List.of("分析当前项目"), eventSource.tasks);
+        assertTrue(view.contains("CLI 登录成功"), view);
+        assertTrue(view.contains("> 分析当前项目"), view);
+    }
+
+    @Test
+    void normalTaskShouldNotSubmitWhenAutomaticLoginFails() {
+        CapturingStreamingEventSource eventSource = new CapturingStreamingEventSource();
+        FakeCliAuthService authService = new FakeCliAuthService(false, false);
+        CodingXTuiModel model = new CodingXTuiModel(
+            tempDir.resolve("workspace"),
+            eventSource,
+            new TerminalRenderer(),
+            authService
+        );
+
+        pressRunes(model, "分析当前项目");
+        model.update(new KeyPressMessage(new Key(KeyType.keyCR)));
+
+        String view = model.view();
+        assertEquals(1, authService.browserLoginCount);
+        assertTrue(eventSource.tasks.isEmpty());
+        assertTrue(view.contains("CLI 登录失败"), view);
+        assertTrue(view.contains("error"), view);
     }
 
     @Test
@@ -560,6 +665,8 @@ class CodingXTuiModelTest {
      */
     private static class CapturingStreamingEventSource implements StreamingAgentEventSource {
 
+        private final List<String> tasks = new java.util.ArrayList<>();
+
         private final List<Boolean> planModes = new java.util.ArrayList<>();
 
         @Override
@@ -569,6 +676,7 @@ class CodingXTuiModelTest {
             boolean planMode,
             java.util.function.Consumer<AgentEvent> eventConsumer
         ) {
+            tasks.add(task);
             planModes.add(planMode);
             eventConsumer.accept(AgentEvent.of("session", "turn", planModes.size(), AgentEventType.TURN_COMPLETED, Map.of(
                 "status", "COMPLETED"
@@ -578,6 +686,64 @@ class CodingXTuiModelTest {
         @Override
         public void startTurn(String task, Path workspace, java.util.function.Consumer<AgentEvent> eventConsumer) {
             startTurn(task, workspace, false, eventConsumer);
+        }
+    }
+
+    /**
+     * 测试专用认证服务，只记录 TUI 内部命令调用次数，避免单测打开真实浏览器。
+     */
+    private static class FakeCliAuthService extends CliAuthService {
+
+        /**
+         * 浏览器登录调用次数。
+         */
+        private int browserLoginCount;
+
+        /**
+         * 退出登录调用次数。
+         */
+        private int logoutCount;
+
+        /**
+         * 是否已有可用登录态。
+         */
+        private final boolean loggedIn;
+
+        /**
+         * 浏览器登录是否成功。
+         */
+        private final boolean browserLoginResult;
+
+        FakeCliAuthService() {
+            this(true);
+        }
+
+        FakeCliAuthService(boolean loggedIn) {
+            this(loggedIn, true);
+        }
+
+        FakeCliAuthService(boolean loggedIn, boolean browserLoginResult) {
+            super(null, null, ignored -> {
+            });
+            this.loggedIn = loggedIn;
+            this.browserLoginResult = browserLoginResult;
+        }
+
+        @Override
+        public boolean isLoggedIn() {
+            return loggedIn;
+        }
+
+        @Override
+        public boolean loginWithBrowser() {
+            browserLoginCount++;
+            return browserLoginResult;
+        }
+
+        @Override
+        public boolean logout() {
+            logoutCount++;
+            return true;
         }
     }
 

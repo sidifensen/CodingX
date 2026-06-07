@@ -52,6 +52,7 @@ public class CliCommandRunner {
         }
         return switch (args[0]) {
             case "login" -> login(args);
+            case "logout" -> logout();
             case "auth" -> auth(args);
             case "tui" -> launchTui();
             case "exec" -> tuiOnly();
@@ -67,8 +68,14 @@ public class CliCommandRunner {
      * @return 认证命令结果。
      */
     private Result auth(String[] args) {
-        if (args.length < 2 || !"login".equals(args[1])) {
-            return new Result(1, "用法: codingx auth login [--device]" + System.lineSeparator());
+        if (args.length < 2) {
+            return new Result(1, "用法: codingx auth <login|logout> [--device]" + System.lineSeparator());
+        }
+        if ("logout".equals(args[1])) {
+            return logout();
+        }
+        if (!"login".equals(args[1])) {
+            return new Result(1, "用法: codingx auth <login|logout> [--device]" + System.lineSeparator());
         }
         boolean success = args.length >= 3 && "--device".equals(args[2])
             ? cliAuthService.loginWithDeviceCode()
@@ -92,6 +99,18 @@ public class CliCommandRunner {
         // 登录阶段只保存后端地址和 satoken；会话信息等真实 Agent API 接入后再回填。
         configStore.save(new CliConfig(args[1], args[2], "conservative", null));
         return new Result(0, "登录配置已保存: " + configStore.configFile() + System.lineSeparator());
+    }
+
+    /**
+     * 清理 CLI 本机登录态；命令层只负责分发，实际 token 清理由认证服务封装。
+     *
+     * @return 退出登录结果。
+     */
+    private Result logout() {
+        boolean success = cliAuthService.logout();
+        return new Result(success ? 0 : 1, success
+            ? "CLI 已退出登录" + System.lineSeparator()
+            : "CLI 退出登录失败" + System.lineSeparator());
     }
 
     /**

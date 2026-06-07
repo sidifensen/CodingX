@@ -44,7 +44,8 @@ public final class CodingXCli {
             new CodingXTuiLauncher(
                 Path.of(System.getProperty("user.dir")),
                 new BackendChatEventSource(configStore),
-                new TerminalRenderer()
+                new TerminalRenderer(),
+                cliAuthService
             ),
             cliAuthService
         );

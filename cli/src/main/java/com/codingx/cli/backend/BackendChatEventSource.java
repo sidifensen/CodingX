@@ -88,6 +88,11 @@ public class BackendChatEventSource implements StreamingAgentEventSource {
         );
         AtomicReference<String> knownConversationId = new AtomicReference<>(config.lastSessionId());
         eventConsumer.accept(mapper.turnStarted(normalizedTask, normalizedWorkspace));
+        if (StrUtil.isBlank(config.token())) {
+            // 步骤：CLI 本机没有 token 时不请求聊天流，直接提示登录入口，避免用户看到泛化的网络失败。
+            eventConsumer.accept(mapper.error("未登录或登录已失效，请先运行 /login，或执行 codingx auth login。"));
+            return;
+        }
 
         try {
             HttpRequest request = buildRequest(config, normalizedTask, normalizedWorkspace, planMode);

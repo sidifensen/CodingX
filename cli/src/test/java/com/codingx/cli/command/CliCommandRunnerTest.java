@@ -140,6 +140,42 @@ class CliCommandRunnerTest {
         assertTrue(result.output().contains("CLI 登录成功"));
     }
 
+    @Test
+    void logoutShouldClearCliLoginWithoutLaunchingTui() {
+        FakeTuiLauncher tuiLauncher = new FakeTuiLauncher();
+        FakeCliAuthService authService = new FakeCliAuthService();
+        CliCommandRunner runner = new CliCommandRunner(
+            new CliConfigStore(tempDir.resolve("home")),
+            tuiLauncher,
+            authService
+        );
+
+        CliCommandRunner.Result result = runner.run(new String[] {"logout"});
+
+        assertEquals(0, result.exitCode());
+        assertEquals(0, tuiLauncher.launchCount());
+        assertEquals(1, authService.logoutCount);
+        assertTrue(result.output().contains("CLI 已退出登录"));
+    }
+
+    @Test
+    void authLogoutShouldClearCliLoginWithoutLaunchingTui() {
+        FakeTuiLauncher tuiLauncher = new FakeTuiLauncher();
+        FakeCliAuthService authService = new FakeCliAuthService();
+        CliCommandRunner runner = new CliCommandRunner(
+            new CliConfigStore(tempDir.resolve("home")),
+            tuiLauncher,
+            authService
+        );
+
+        CliCommandRunner.Result result = runner.run(new String[] {"auth", "logout"});
+
+        assertEquals(0, result.exitCode());
+        assertEquals(0, tuiLauncher.launchCount());
+        assertEquals(1, authService.logoutCount);
+        assertTrue(result.output().contains("CLI 已退出登录"));
+    }
+
     /**
      * 测试专用 TUI 启动器，只记录启动次数，避免单测进入真实交互终端。
      */
@@ -175,6 +211,11 @@ class CliCommandRunnerTest {
          */
         private int deviceLoginCount;
 
+        /**
+         * 退出登录调用次数。
+         */
+        private int logoutCount;
+
         FakeCliAuthService() {
             super(null, null, ignored -> {
             });
@@ -189,6 +230,12 @@ class CliCommandRunnerTest {
         @Override
         public boolean loginWithDeviceCode() {
             deviceLoginCount++;
+            return true;
+        }
+
+        @Override
+        public boolean logout() {
+            logoutCount++;
             return true;
         }
     }

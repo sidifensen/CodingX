@@ -28,7 +28,7 @@ status: active
 - `script/install-codingx.ps1` 是 Windows 本地安装入口，负责打包 jar、复制到用户目录 `.codingx/bin`、生成 `codingx.cmd` / `codingx.ps1`，并把 `.codingx/bin` 写入用户级 PATH。
 - `CliCommandRunner` 只做协议层命令分发；任务运行入口保持 TUI-only，`codingx` 和 `codingx tui` 启动普通屏幕 TUI，`exec`、`resume`、`sessions` 返回 TUI-only 拒绝提示。
 - `CodingXTuiLauncher` 通过 tui4j `Program.run()` 在普通终端屏幕运行，不进入 alt screen；真实运行时必须先把固定启动卡片写入 shell 输出，再交给 tui4j 维护后续交互区。
-- `CodingXTuiModel` 维护 TUI 内存状态，包括 Codex 风格启动 banner、真实 transcript、单行任务输入框、当前工作区、运行状态、计划模式和活动助手回答块；它只编排输入、事件源和视图刷新，不直接承担 header、transcript、status bar 文案映射。真实后端流通过 `Program.send(AgentEventsMessage)` 回到主更新循环，后台线程不能直接修改 TUI 状态。
+- `CodingXTuiModel` 维护 TUI 内存状态，包括 Codex 风格启动 banner、真实 transcript、单行任务输入框、Slash Command 面板、当前工作区、运行状态、计划模式和活动助手回答块；它只编排输入、认证命令、事件源和视图刷新，不直接承担 header、transcript、status bar 文案映射。真实后端流通过 `Program.send(AgentEventsMessage)` 回到主更新循环，后台线程不能直接修改 TUI 状态。
 - `BackendChatEventSource` 读取用户主目录 `CliConfigStore`，请求现有后端 `GET /api/chat/stream`，携带 `satoken`、`runtimeTarget=local`、`repositoryPath` 和数值型 `conversationId`，再把 SSE 映射为 `AgentEvent`。
 - `TuiHeaderRenderer`、`TuiTranscriptRenderer`、`TuiStatusBarRenderer` 分别维护顶部品牌区、对话流/工具状态和底部模式栏，避免 TUI 模型继续膨胀为大而全的展示类。
 
@@ -54,13 +54,16 @@ status: active
 - TUI 启动器不能调用 `withAltScreen()`；启动页必须保留 shell 命令上下文，视觉上接近官方 Codex CLI 的普通屏幕启动卡片。
 - 启动卡片必须由 `CodingXTuiModel.startupBanner()` 先写入普通 shell 输出，不能只放在 `CodingXTuiModel.view()` 中；Windows 终端下 tui4j 普通屏幕 renderer 可能按活动区高度裁剪首帧，导致 logo/header 消失。
 - 初始视图不能追加假 transcript，也不能用大高度空白 viewport 占位；只有真实用户输入、助手输出、工具事件或错误事件出现后才渲染 transcript 区。
-- composer 必须保持单行 `› Write tests for @filename` 提示，避免旧版三行输入框和外层边框把界面撑回全屏观感。
+- composer 必须保持单行 `› 输入任务，/ 查看命令` 提示，避免旧版英文模板被误认为系统残留任务，也避免三行输入框和外层边框把界面撑回全屏观感。
+- TUI 输入以 `/` 开头时必须展示本地 Slash Command 面板；`/login`、`/logout`、`/help` 和 `/` 由 `CodingXTuiModel` 本地消费，不能作为普通聊天任务发送到后端。
+- 普通聊天提交前若 `CliAuthService.isLoggedIn()` 判断本机无 token，TUI 应先触发浏览器登录；登录成功后继续发送原任务，登录失败则显示中文错误并停止提交。
 - 提交键必须在 `textarea.update(...)` 前处理，并同时兼容 CR(`enter`) 与 LF(`ctrl+j`)；真实 Windows/JLine 输入可能把回车上报为 LF，若只识别 `enter` 会导致用户输入不进入 transcript。
 - `mvn package` 只能把 fat jar 输出为 `cli/target/codingx.jar`，不能在 `cli/` 根目录留下 `dependency-reduced-pom.xml` 等构建副产物。
 - `login` 是配置命令，不属于任务运行模式；它只能写用户主目录配置，不能写当前项目工作区。
 - TUI 单测不能启动真实 `Program`，应直接测试模型或使用 fake `TuiLauncher`，避免接管测试终端。
 - 生产事件源是 `BackendChatEventSource`；`MockAgentEventSource` 只用于测试和本地样例，不应重新注入 `CodingXCli.main`。
 - 后端聊天流请求必须复用 Web 端协议字段：`question`、`runtimeTarget=local`、`repositoryPath`、数值型 `conversationId` 和 `satoken` header，不能在 CLI 单独发明一套 Controller 或任务表。
+- `BackendChatEventSource` 发现本机 token 为空时必须跳过 HTTP 请求并直接生成中文登录引导错误；不要让未登录场景退化成泛化网络失败。
 - `meta.conversationId` 或 `finish.conversationId` 到达后必须写回 `CliConfig.lastSessionId`；下一轮 TUI 输入依靠该字段续接当前后端会话。
 - `shift+tab` 目前只切换 TUI 本地 `Plan mode` / `Chat mode` 文案，不代表真实规划策略已经接入；真实策略应从 Agent Runtime 或会话状态返回。
 - 模型名、MCP 连接数和工具数没有真实后端状态来源时不能在 header、footer 或测试里硬编码展示；工具名称和结果应优先来自后端 SSE payload。

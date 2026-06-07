@@ -146,6 +146,37 @@ public class CliAuthService {
     }
 
     /**
+     * 判断 CLI 本机是否已有可用 token；仅检查本地配置，真实有效性仍以后端响应为准。
+     *
+     * @return true 表示本地配置中存在 token。
+     */
+    public boolean isLoggedIn() {
+        return configStore != null && StrUtil.isNotBlank(configStore.load().token());
+    }
+
+    /**
+     * 清理 CLI 本机登录态；退出登录只清空 token 和最近会话，保留后端地址与审批策略。
+     *
+     * @return true 表示本机 token 已清空。
+     */
+    public boolean logout() {
+        try {
+            CliConfig config = configStore.load();
+            configStore.save(new CliConfig(
+                config.serverUrl(),
+                "",
+                config.approvalPolicy(),
+                null
+            ));
+            output("CLI 已退出登录");
+            return true;
+        } catch (RuntimeException exception) {
+            output("CLI 退出登录失败：" + exception.getMessage());
+            return false;
+        }
+    }
+
+    /**
      * 构造前端 CLI 登录地址。
      */
     private String buildLoginUrl(CliConfig config, URI callbackUri, String state, String codeChallenge) {

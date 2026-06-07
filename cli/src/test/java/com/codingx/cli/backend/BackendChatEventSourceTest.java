@@ -126,6 +126,22 @@ class BackendChatEventSourceTest {
     }
 
     @Test
+    void startTurnShouldGuideLoginAndSkipBackendRequestWhenTokenMissing() throws Exception {
+        Path workspace = Files.createDirectories(tempDir.resolve("workspace"));
+        CliConfigStore configStore = new CliConfigStore(tempDir.resolve("home"));
+        CapturedRequest capturedRequest = new CapturedRequest();
+        server = startServer(capturedRequest, 500, "{\"message\":\"不应该请求后端\"}");
+        configStore.save(new CliConfig(baseUrl(), "", "conservative", null));
+
+        BackendChatEventSource eventSource = new BackendChatEventSource(configStore);
+        List<AgentEvent> events = eventSource.startTurn("未登录发送", workspace);
+
+        assertEquals(null, capturedRequest.path);
+        assertTrue(events.stream().anyMatch(event -> event.eventType() == AgentEventType.ERROR
+            && event.payloadText("message").contains("请先运行 /login")));
+    }
+
+    @Test
     void startTurnShouldSendPlanModeQueryParam() throws Exception {
         Path workspace = Files.createDirectories(tempDir.resolve("workspace"));
         CliConfigStore configStore = new CliConfigStore(tempDir.resolve("home"));

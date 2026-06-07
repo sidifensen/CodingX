@@ -32,7 +32,7 @@ function resolveSkillIcon(category?: string) {
  * 渲染技能库视图。
  */
 export default function SkillsView() {
-  const [activeCategory, setActiveCategory] = useState('全部');
+  const [activeDiscoveryCategory, setActiveDiscoveryCategory] = useState('全部');
   const [skills, setSkills] = useState<ChatSkillItem[]>([]);
   const [selectedSkill, setSelectedSkill] = useState<ChatSkillItem | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -79,12 +79,12 @@ export default function SkillsView() {
     return ['全部', ...Array.from(new Set(runtimeCategories))];
   }, [skills]);
 
-  const visibleSkills = useMemo(() => {
-    if (activeCategory === '全部') {
+  const visibleDiscoverySkills = useMemo(() => {
+    if (activeDiscoveryCategory === '全部') {
       return skills;
     }
-    return skills.filter((item) => item.category === activeCategory);
-  }, [activeCategory, skills]);
+    return skills.filter((item) => item.category?.trim() === activeDiscoveryCategory);
+  }, [activeDiscoveryCategory, skills]);
 
   if (selectedSkill) {
     return (
@@ -119,9 +119,9 @@ export default function SkillsView() {
           </p>
         </div>
 
-        <section className="mb-16">
+        <section className="mb-16" aria-labelledby="installed-skills-heading">
           <div className="mb-6 flex items-center justify-between">
-            <h2 className="font-mono text-xs uppercase tracking-widest text-muted">
+            <h2 id="installed-skills-heading" className="font-mono text-xs uppercase tracking-widest text-muted">
               已安装 ({skills.length})
             </h2>
             <button
@@ -146,42 +146,20 @@ export default function SkillsView() {
 
           {!isLoading && !errorMessage ? (
             <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
-              {visibleSkills.map((skill) => {
-                const SkillIcon = resolveSkillIcon(skill.category);
-                return (
-                  <button
-                    key={skill.id || skill.skillCode}
-                    type="button"
-                    aria-label={`查看技能详情 ${skill.displayName}`}
-                    onClick={() => setSelectedSkill(skill)}
-                    className="group flex h-full cursor-pointer flex-col rounded-lg border border-border bg-surface-container p-5 text-left shadow-sm outline-none transition-colors hover:border-border-active focus-visible:border-border-selected focus-visible:ring-2 focus-visible:ring-border-active"
-                  >
-                    <div className="mb-4 flex items-center justify-between">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-full border border-border bg-surface-high">
-                        <SkillIcon size={20} className="text-foreground" />
-                      </div>
-                      <span className="rounded bg-surface-high px-2 py-0.5 font-mono text-[10px] uppercase tracking-widest text-muted">
-                        {skill.sourceType || '技能'}
-                      </span>
-                    </div>
-                    <h3 className="mt-auto mb-1 font-semibold text-foreground">
-                      {skill.displayName}
-                    </h3>
-                    <p className="line-clamp-2 text-[13px] leading-relaxed text-muted">
-                      {skill.description || '暂无描述'}
-                    </p>
-                    <div className="mt-3 flex items-center justify-between text-[11px] text-muted">
-                      <span>{skill.category || '未分类'}</span>
-                      <span className="font-mono">/{skill.skillCode}</span>
-                    </div>
-                  </button>
-                );
-              })}
+              {skills.map((skill) => (
+                <SkillSummaryCard
+                  key={skill.id || skill.skillCode}
+                  skill={skill}
+                  ariaLabelPrefix="查看技能详情"
+                  testIdPrefix="installed"
+                  onSelect={() => setSelectedSkill(skill)}
+                />
+              ))}
             </div>
           ) : null}
         </section>
 
-        <section className="mb-12">
+        <section className="mb-12" aria-labelledby="skill-discovery-heading">
           <div className="mb-6 border-b border-border">
             <div className="flex gap-8">
               <button
@@ -199,25 +177,94 @@ export default function SkillsView() {
             </div>
           </div>
 
-          <div className="mb-8 flex flex-wrap gap-2">
-            {categories.map((category) => (
-              <button
-                key={category}
-                type="button"
-                onClick={() => setActiveCategory(category)}
-                className={`rounded-full px-5 py-1.5 font-mono text-[11px] tracking-widest transition-colors ${
-                  activeCategory === category
-                    ? 'bg-foreground font-bold text-background'
-                    : 'border border-border bg-surface-high text-muted hover:border-border-active'
-                }`}
-              >
-                {category}
-              </button>
+          <div className="mb-8 flex flex-col gap-4">
+            <div className="flex items-center justify-between gap-4">
+              <h2 id="skill-discovery-heading" className="font-mono text-xs uppercase tracking-widest text-muted">
+                全部展示 ({visibleDiscoverySkills.length})
+              </h2>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {categories.map((category) => (
+                <button
+                  key={category}
+                  type="button"
+                  onClick={() => setActiveDiscoveryCategory(category)}
+                  className={`rounded-full px-5 py-1.5 font-mono text-[11px] tracking-widest transition-colors ${
+                    activeDiscoveryCategory === category
+                      ? 'bg-foreground font-bold text-background'
+                      : 'border border-border bg-surface-high text-muted hover:border-border-active'
+                  }`}
+                >
+                  {category}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {visibleDiscoverySkills.map((skill) => (
+              <SkillSummaryCard
+                key={`discovery-${skill.id || skill.skillCode}`}
+                skill={skill}
+                ariaLabelPrefix="查看推荐技能详情"
+                testIdPrefix="discovery"
+                onSelect={() => setSelectedSkill(skill)}
+              />
             ))}
           </div>
         </section>
       </div>
     </motion.div>
+  );
+}
+
+/**
+ * 技能摘要卡片用于已安装区和下方发现区。
+ * 关键约束：来源可能是完整 GitHub URL，必须在卡片内单行截断，不能撑开网格列。
+ */
+function SkillSummaryCard({
+  skill,
+  ariaLabelPrefix,
+  testIdPrefix,
+  onSelect,
+}: {
+  skill: ChatSkillItem;
+  ariaLabelPrefix: string;
+  testIdPrefix: string;
+  onSelect: () => void;
+}) {
+  const SkillIcon = resolveSkillIcon(skill.category);
+  const sourceLabel = skill.sourceType || '技能';
+  return (
+    <button
+      type="button"
+      aria-label={`${ariaLabelPrefix} ${skill.displayName}`}
+      onClick={onSelect}
+      className="group flex min-h-[222px] min-w-0 cursor-pointer flex-col overflow-hidden rounded-lg border border-border bg-surface-container p-5 text-left shadow-sm outline-none transition-colors hover:border-border-active focus-visible:border-border-selected focus-visible:ring-2 focus-visible:ring-border-active"
+    >
+      <div className="mb-4 flex min-w-0 items-center gap-3">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-border bg-surface-high">
+          <SkillIcon size={20} className="text-foreground" />
+        </div>
+        <span
+          title={sourceLabel}
+          data-testid={`${testIdPrefix}-skill-source-${skill.skillCode}`}
+          className="min-w-0 flex-1 truncate rounded bg-surface-high px-2 py-0.5 font-mono text-[10px] uppercase tracking-widest text-muted"
+        >
+          {sourceLabel}
+        </span>
+      </div>
+      <h3 className="mt-auto mb-1 min-w-0 truncate font-semibold text-foreground">
+        {skill.displayName}
+      </h3>
+      <p className="line-clamp-2 text-[13px] leading-relaxed text-muted">
+        {skill.description || '暂无描述'}
+      </p>
+      <div className="mt-3 flex min-w-0 items-center justify-between gap-3 text-[11px] text-muted">
+        <span className="min-w-0 truncate">{skill.category || '未分类'}</span>
+        <span className="min-w-0 truncate font-mono">/{skill.skillCode}</span>
+      </div>
+    </button>
   );
 }
 

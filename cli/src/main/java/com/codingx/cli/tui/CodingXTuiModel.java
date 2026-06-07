@@ -6,6 +6,8 @@ import com.codingx.cli.agent.AgentEventType;
 import com.codingx.cli.agent.StreamingAgentEventSource;
 import com.codingx.cli.auth.CliAuthService;
 import com.codingx.cli.render.TerminalRenderer;
+import com.codingx.cli.slash.CliSlashCommand;
+import com.codingx.cli.slash.SlashCommandCatalog;
 import com.williamcallahan.tui4j.compat.bubbletea.Command;
 import com.williamcallahan.tui4j.compat.bubbletea.KeyPressMessage;
 import com.williamcallahan.tui4j.compat.bubbletea.Message;
@@ -23,6 +25,7 @@ import org.jline.utils.WCWidth;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -85,6 +88,16 @@ public class CodingXTuiModel implements Model {
      * CLI 认证服务，用于在 TUI 输入框内消费 `/login` 和 `/logout` 控制命令。
      */
     private final CliAuthService cliAuthService;
+
+    /**
+     * 后端治理中心 Slash Command 目录，用于让 CLI 面板展示管理端启用命令。
+     */
+    private final SlashCommandCatalog slashCommandCatalog;
+
+    /**
+     * 已加载的后端 Slash Command 快照；目录失败时为空，但本地控制命令仍可用。
+     */
+    private final List<CliSlashCommand> backendSlashCommands;
 
     /**
      * 滚动事件窗口，用于承载助手输出、工具状态和命令输出。
@@ -178,12 +191,31 @@ public class CodingXTuiModel implements Model {
         TerminalRenderer renderer,
         CliAuthService cliAuthService
     ) {
+        this(workspace, eventSource, renderer, cliAuthService, SlashCommandCatalog.EMPTY);
+    }
+
+    /**
+     * @param workspace 当前 CLI 工作区。
+     * @param eventSource Agent 事件来源。
+     * @param renderer 兼容旧构造链路的终端渲染器；截图风格 TUI 使用独立 transcript renderer。
+     * @param cliAuthService CLI 认证服务；测试可为空，空时 `/login` 只给出命令行引导。
+     * @param slashCommandCatalog 后端 Slash Command 目录；为空时只展示本地控制命令。
+     */
+    public CodingXTuiModel(
+        Path workspace,
+        AgentEventSource eventSource,
+        TerminalRenderer renderer,
+        CliAuthService cliAuthService,
+        SlashCommandCatalog slashCommandCatalog
+    ) {
         this.workspace = workspace;
         this.eventSource = eventSource;
         this.headerRenderer = new TuiHeaderRenderer();
         this.transcriptRenderer = new TuiTranscriptRenderer();
         this.statusBarRenderer = new TuiStatusBarRenderer();
         this.cliAuthService = cliAuthService;
+        this.slashCommandCatalog = slashCommandCatalog == null ? SlashCommandCatalog.EMPTY : slashCommandCatalog;
+        this.backendSlashCommands = loadBackendSlashCommands(this.slashCommandCatalog);
         this.viewport = Viewport.create(80, 1);
         this.textarea = new Textarea();
         this.timelineLines = new ArrayList<>();
@@ -374,6 +406,10 @@ public class CodingXTuiModel implements Model {
         if (!normalizedCommand.startsWith("/")) {
             return false;
         }
+        if (isBackendSlashCommand(normalizedCommand)) {
+            // 后端内置命令必须走聊天流结构化 messages 参数，不能被本地控制命令分支吞掉。
+            return false;
+        }
         closeAssistantBlock();
         latestUserLine = "> " + task;
         latestUserLineIndex = timelineLines.size();
@@ -433,6 +469,9 @@ public class CodingXTuiModel implements Model {
         appendSystemLine("/login   登录 CodingX");
         appendSystemLine("/logout  退出登录");
         appendSystemLine("/help    查看命令列表");
+        for (CliSlashCommand command : backendSlashCommands) {
+            appendSystemLine(formatBackendSlashCommand(command));
+        }
     }
 
     /**
@@ -682,11 +721,14 @@ public class CodingXTuiModel implements Model {
         String keyword = normalizeRendererNewlines(textarea.value()).trim()
             .replaceFirst("^/+", "")
             .toLowerCase();
-        List<String> commands = List.of(
-            "/login   登录 CodingX",
-            "/logout  退出登录",
-            "/help    查看命令列表"
-        ).stream()
+        List<String> commands = new ArrayList<>();
+        commands.add("/login   登录 CodingX");
+        commands.add("/logout  退出登录");
+        commands.add("/help    查看命令列表");
+        for (CliSlashCommand command : backendSlashCommands) {
+            commands.add(formatBackendSlashCommand(command));
+        }
+        commands = commands.stream()
             .filter(line -> keyword.isBlank() || line.toLowerCase().contains(keyword))
             .toList();
         if (commands.isEmpty()) {
@@ -698,6 +740,45 @@ public class CodingXTuiModel implements Model {
             lines.add("  " + command);
         }
         return String.join(RENDER_NEWLINE, lines);
+    }
+
+    /**
+     * 首次构造 TUI 时读取后端命令目录；读取失败由目录实现降级为空列表。
+     */
+    private List<CliSlashCommand> loadBackendSlashCommands(SlashCommandCatalog catalog) {
+        try {
+            return catalog.listCommands().stream()
+                .filter(command -> command != null && command.commandCode() != null && !command.commandCode().isBlank())
+                .toList();
+        } catch (RuntimeException exception) {
+            return List.of();
+        }
+    }
+
+    /**
+     * 判断输入的前导 Slash token 是否来自后端治理命令；命中时由聊天流请求负责结构化提交。
+     */
+    private boolean isBackendSlashCommand(String normalizedCommand) {
+        String commandToken = normalizedCommand.split("\\s+", 2)[0].replaceFirst("^/+", "");
+        if (commandToken.isBlank()) {
+            return false;
+        }
+        return backendSlashCommands.stream()
+            .anyMatch(command -> commandToken.equalsIgnoreCase(command.commandCode()));
+    }
+
+    /**
+     * 格式化后端命令候选，保持与本地控制命令同一面板密度。
+     */
+    private String formatBackendSlashCommand(CliSlashCommand command) {
+        String displayName = command.displayName() == null || command.displayName().isBlank()
+            ? "/" + command.commandCode()
+            : command.displayName();
+        String description = command.description() == null ? "" : command.description().trim();
+        if (description.isBlank()) {
+            return displayName;
+        }
+        return String.format(Locale.ROOT, "%-8s %s", displayName, description);
     }
 
     /**

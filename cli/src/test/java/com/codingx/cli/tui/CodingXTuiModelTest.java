@@ -7,6 +7,8 @@ import com.codingx.cli.agent.MockAgentEventSource;
 import com.codingx.cli.agent.StreamingAgentEventSource;
 import com.codingx.cli.auth.CliAuthService;
 import com.codingx.cli.render.TerminalRenderer;
+import com.codingx.cli.slash.CliSlashCommand;
+import com.codingx.cli.slash.SlashCommandCatalog;
 import com.williamcallahan.tui4j.compat.bubbletea.KeyPressMessage;
 import com.williamcallahan.tui4j.compat.bubbletea.Program;
 import com.williamcallahan.tui4j.compat.bubbletea.ProgramOption;
@@ -473,7 +475,9 @@ class CodingXTuiModelTest {
         CodingXTuiModel model = new CodingXTuiModel(
             tempDir.resolve("workspace"),
             eventSource,
-            new TerminalRenderer()
+            new TerminalRenderer(),
+            null,
+            backendSlashCatalog()
         );
 
         pressRunes(model, "/");
@@ -481,9 +485,53 @@ class CodingXTuiModelTest {
         String view = model.view();
         assertTrue(view.contains("/login"), view);
         assertTrue(view.contains("/logout"), view);
+        assertTrue(view.contains("/review"), view);
+        assertTrue(view.contains("/fix-test"), view);
+        assertTrue(view.contains("审查当前改动"), view);
         assertTrue(view.contains("登录 CodingX"), view);
         assertTrue(view.contains("› /"), view);
         assertTrue(eventSource.tasks.isEmpty());
+    }
+
+    @Test
+    void typingSlashKeywordShouldFilterBackendGovernanceCommands() {
+        CapturingStreamingEventSource eventSource = new CapturingStreamingEventSource();
+        CodingXTuiModel model = new CodingXTuiModel(
+            tempDir.resolve("workspace"),
+            eventSource,
+            new TerminalRenderer(),
+            null,
+            backendSlashCatalog()
+        );
+
+        pressRunes(model, "/fi");
+
+        String view = model.view();
+        assertTrue(view.contains("/fix-test"), view);
+        assertFalse(view.contains("/review"), view);
+        assertFalse(view.contains("/login"), view);
+        assertTrue(eventSource.tasks.isEmpty());
+    }
+
+    @Test
+    void backendSlashCommandShouldSubmitChatInsteadOfLocalUnknownCommand() {
+        CapturingStreamingEventSource eventSource = new CapturingStreamingEventSource();
+        FakeCliAuthService authService = new FakeCliAuthService();
+        CodingXTuiModel model = new CodingXTuiModel(
+            tempDir.resolve("workspace"),
+            eventSource,
+            new TerminalRenderer(),
+            authService,
+            backendSlashCatalog()
+        );
+
+        pressRunes(model, "/review 请审查当前改动");
+        model.update(new KeyPressMessage(new Key(KeyType.keyCR)));
+
+        String view = model.view();
+        assertEquals(List.of("/review 请审查当前改动"), eventSource.tasks);
+        assertFalse(view.contains("未知命令"), view);
+        assertTrue(view.contains("> /review 请审查当前改动"), view);
     }
 
     @Test
@@ -676,6 +724,16 @@ class CodingXTuiModelTest {
         for (char rune : value.toCharArray()) {
             model.update(new KeyPressMessage(new Key(KeyType.KeyRunes, new char[]{rune})));
         }
+    }
+
+    /**
+     * 测试专用 Slash Command 目录，模拟管理端治理中心维护并由后端用户接口返回的启用命令。
+     */
+    private static SlashCommandCatalog backendSlashCatalog() {
+        return () -> List.of(
+            new CliSlashCommand("206060101", "review", "/review", "审查当前改动并优先指出风险和测试缺口", "BUILTIN", 1),
+            new CliSlashCommand("206060102", "fix-test", "/fix-test", "定位并修复测试失败", "BUILTIN", 2)
+        );
     }
 
     /**

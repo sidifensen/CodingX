@@ -54,6 +54,10 @@ npm run pack:win
 - `CODINGX_USER_URL`：桌面宿主可选加载地址。
   - 开发态未配置时，默认 `http://localhost:5002`
   - 生产打包态未配置时，默认加载应用内置 `user-dist/index.html`
+- `CODINGX_API_BASE_URL`：桌面宿主后端 API 基址，默认 `http://localhost:5001`。
+  - 开发态通常由 `frontend/user` 的 Vite 代理处理 `/api`，该变量只作为打包态兜底配置保留。
+  - 生产打包态加载内置 `user-dist` 时，主进程会把内置页面发出的 `file://.../api/...` 请求改写到该后端地址。
+  - 若生产态显式配置 `CODINGX_USER_URL` 加载远程 Web 页面，则远程页面应自行处理 `/api` 代理或后端基址，不走内置页面改写。
 - 环境加载规则（主进程 `src/main.ts`）：
   - 开发运行（`app.isPackaged === false`）固定按 `development` 读取：`.env.development` → `.env`
   - 打包运行（`app.isPackaged === true`）固定按 `production` 读取：`.env.production` → `.env`
@@ -61,6 +65,7 @@ npm run pack:win
 
 ```bash
 CODINGX_USER_URL=http://localhost:5173
+CODINGX_API_BASE_URL=http://localhost:5001
 ```
 
-- 生产配置示例：复制 `.env.production.example` 为 `.env.production`，按需填写 `CODINGX_USER_URL`；若留空则使用打包内置页面。
+- 生产配置示例：复制 `.env.production.example` 为 `.env.production`，按需填写 `CODINGX_USER_URL`；若留空则使用打包内置页面，并通过 `CODINGX_API_BASE_URL` 访问后端 `/api`。

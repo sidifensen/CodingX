@@ -1,11 +1,13 @@
-import { app, BrowserWindow, dialog, ipcMain } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, session } from 'electron';
 import { existsSync } from 'node:fs';
 import { readdir } from 'node:fs/promises';
 import path from 'node:path';
 import dotenv from 'dotenv';
 import { DesktopMenuAction, HostContext, HostWindowState, LocalDirectoryEntry } from './types';
+import { resolvePackagedApiRedirectUrl } from './apiProxy';
 
 let mainWindow: BrowserWindow | null = null;
+let packagedApiProxyRegistered = false;
 
 const hostState: {
   boundRepositoryPath: string | null;
@@ -44,6 +46,27 @@ function loadDesktopEnv() {
   if (!app.isPackaged && !process.env.CODINGX_USER_URL?.trim()) {
     process.env.CODINGX_USER_URL = DEFAULT_CODINGX_USER_URL;
   }
+}
+
+/**
+ * 打包态加载内置 user-dist 时没有 Vite 代理，主进程需要把 file 页面发起的 `/api` 请求转到后端服务。
+ */
+function registerPackagedApiProxy() {
+  if (packagedApiProxyRegistered) {
+    return;
+  }
+  packagedApiProxyRegistered = true;
+  session.defaultSession.webRequest.onBeforeRequest((details, callback) => {
+    const redirectURL = resolvePackagedApiRedirectUrl(
+      details.url,
+      process.env.CODINGX_API_BASE_URL,
+    );
+    if (redirectURL) {
+      callback({ redirectURL });
+      return;
+    }
+    callback({});
+  });
 }
 
 /**
@@ -107,6 +130,7 @@ async function createWindow() {
       await mainWindow.loadURL(configuredUserUrl);
       return;
     }
+    registerPackagedApiProxy();
     const packagedUserEntry = path.join(process.resourcesPath, 'user-dist', 'index.html');
     await mainWindow.loadFile(packagedUserEntry);
     return;

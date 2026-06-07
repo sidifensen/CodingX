@@ -8,6 +8,7 @@
   "scripts": {
     "prestart": "npm run build",
     "build": "tsc -p tsconfig.json",
+    "test:run": "npm run build && node --test tests/*.test.mjs",
     "start": "electron .",
     "dev": "npm run start",
     "build:user": "npm --prefix ../user run build",

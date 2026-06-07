@@ -3,6 +3,7 @@
 ## Agent
 
 - [Java CLI 基础终端](agent/java-cli-terminal-mvp.md)
+- [三端 Slash Command 同源](agent/slash-command-three-end-parity.md)
 
 ## Chat
 

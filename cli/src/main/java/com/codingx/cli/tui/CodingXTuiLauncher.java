@@ -3,6 +3,7 @@ package com.codingx.cli.tui;
 import com.codingx.cli.agent.AgentEventSource;
 import com.codingx.cli.auth.CliAuthService;
 import com.codingx.cli.render.TerminalRenderer;
+import com.codingx.cli.slash.SlashCommandCatalog;
 import com.williamcallahan.tui4j.compat.bubbletea.Program;
 
 import java.nio.file.Path;
@@ -33,6 +34,11 @@ public class CodingXTuiLauncher implements TuiLauncher {
     private final CliAuthService cliAuthService;
 
     /**
+     * 后端 Slash Command 目录，用于 TUI 面板展示管理端启用命令。
+     */
+    private final SlashCommandCatalog slashCommandCatalog;
+
+    /**
      * @param workspace 当前 CLI 工作区。
      * @param eventSource Agent 事件来源。
      * @param renderer 终端事件渲染器。
@@ -53,15 +59,39 @@ public class CodingXTuiLauncher implements TuiLauncher {
         TerminalRenderer renderer,
         CliAuthService cliAuthService
     ) {
+        this(workspace, eventSource, renderer, cliAuthService, SlashCommandCatalog.EMPTY);
+    }
+
+    /**
+     * @param workspace 当前 CLI 工作区。
+     * @param eventSource Agent 事件来源。
+     * @param renderer 终端事件渲染器。
+     * @param cliAuthService CLI 认证服务，可为空以兼容测试和旧构造链路。
+     * @param slashCommandCatalog 后端 Slash Command 目录，可为空时只展示本地控制命令。
+     */
+    public CodingXTuiLauncher(
+        Path workspace,
+        AgentEventSource eventSource,
+        TerminalRenderer renderer,
+        CliAuthService cliAuthService,
+        SlashCommandCatalog slashCommandCatalog
+    ) {
         this.workspace = workspace;
         this.eventSource = eventSource;
         this.renderer = renderer;
         this.cliAuthService = cliAuthService;
+        this.slashCommandCatalog = slashCommandCatalog == null ? SlashCommandCatalog.EMPTY : slashCommandCatalog;
     }
 
     @Override
     public void launch() {
-        CodingXTuiModel model = new CodingXTuiModel(workspace, eventSource, renderer, cliAuthService);
+        CodingXTuiModel model = new CodingXTuiModel(
+            workspace,
+            eventSource,
+            renderer,
+            cliAuthService,
+            slashCommandCatalog
+        );
         // 品牌卡片先写入普通 shell 输出；后续 tui4j 差量刷新只维护输入区，避免 Windows 终端裁剪掉 logo。
         System.out.print(model.startupBanner() + System.lineSeparator() + System.lineSeparator());
         System.out.flush();

@@ -4,6 +4,8 @@ import com.codingx.cli.agent.AgentEvent;
 import com.codingx.cli.agent.AgentEventType;
 import com.codingx.cli.config.CliConfig;
 import com.codingx.cli.config.CliConfigStore;
+import com.codingx.cli.slash.CliSlashCommand;
+import com.codingx.cli.slash.SlashCommandCatalog;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.AfterEach;
@@ -154,6 +156,31 @@ class BackendChatEventSourceTest {
         });
 
         assertEquals("true", capturedRequest.query.get("planMode"));
+    }
+
+    @Test
+    void startTurnShouldSendStructuredBuiltinSlashCommandLikeWebClient() throws Exception {
+        Path workspace = Files.createDirectories(tempDir.resolve("workspace"));
+        CliConfigStore configStore = new CliConfigStore(tempDir.resolve("home"));
+        CapturedRequest capturedRequest = new CapturedRequest();
+        server = startServer(capturedRequest, 200, sse(block("done", "{\"conversationId\":67890}")));
+        configStore.save(new CliConfig(baseUrl(), "token-123", "conservative", null));
+        SlashCommandCatalog slashCommandCatalog = () -> List.of(
+            new CliSlashCommand("206060101", "review", "/review", "审查当前改动并优先指出风险和测试缺口", "BUILTIN", 1)
+        );
+
+        BackendChatEventSource eventSource = new BackendChatEventSource(configStore, slashCommandCatalog);
+        eventSource.startTurn("/review 请审查当前改动", workspace, true, ignored -> {
+        });
+
+        assertEquals("请审查当前改动", capturedRequest.query.get("question"));
+        assertEquals("true", capturedRequest.query.get("planMode"));
+        String messages = capturedRequest.query.get("messages");
+        assertTrue(messages.contains("\"type\":\"slash_command\""), messages);
+        assertTrue(messages.contains("\"command\":\"review\""), messages);
+        assertTrue(messages.contains("\"command_type\":\"builtin\""), messages);
+        assertTrue(messages.contains("\"type\":\"text\""), messages);
+        assertTrue(messages.contains("\"content\":\"请审查当前改动\""), messages);
     }
 
     /**

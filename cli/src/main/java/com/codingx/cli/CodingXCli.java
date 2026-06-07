@@ -6,6 +6,8 @@ import com.codingx.cli.auth.SystemBrowserLauncher;
 import com.codingx.cli.command.CliCommandRunner;
 import com.codingx.cli.config.CliConfigStore;
 import com.codingx.cli.render.TerminalRenderer;
+import com.codingx.cli.slash.BackendSlashCommandCatalog;
+import com.codingx.cli.slash.SlashCommandCatalog;
 import com.codingx.cli.tui.CodingXTuiLauncher;
 
 import java.nio.file.Path;
@@ -39,13 +41,15 @@ public final class CodingXCli {
             new SystemBrowserLauncher(),
             System.out::print
         );
+        SlashCommandCatalog slashCommandCatalog = new BackendSlashCommandCatalog(configStore);
         CliCommandRunner runner = new CliCommandRunner(
             configStore,
             new CodingXTuiLauncher(
                 Path.of(System.getProperty("user.dir")),
-                new BackendChatEventSource(configStore),
+                new BackendChatEventSource(configStore, slashCommandCatalog),
                 new TerminalRenderer(),
-                cliAuthService
+                cliAuthService,
+                slashCommandCatalog
             ),
             cliAuthService
         );

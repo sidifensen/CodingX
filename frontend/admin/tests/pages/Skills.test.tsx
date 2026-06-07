@@ -37,10 +37,10 @@ const skillFixture = [
   },
   {
     id: 7102,
-    skillCode: 'code_search',
-    displayName: '代码检索',
-    description: '查询研发状态、列表、优先级与解决率',
-    category: '研发',
+    skillCode: 'deep-research',
+    displayName: '调研分析',
+    description: '深度搜索并生成研究报告',
+    category: '研究分析',
     sourceType: 'built-in',
     enabled: 1,
     sortNo: 2,
@@ -111,11 +111,11 @@ describe('Skills page', () => {
     });
 
     expect(screen.getByText('天气查询')).toBeInTheDocument();
-    expect(screen.getByText('代码检索')).toBeInTheDocument();
+    expect(screen.getByText('调研分析')).toBeInTheDocument();
     expect(screen.getByText('/weather_query')).toBeInTheDocument();
-    expect(screen.getByText('/code_search')).toBeInTheDocument();
+    expect(screen.getByText('/deep-research')).toBeInTheDocument();
     expect(screen.getByText('天气')).toBeInTheDocument();
-    expect(screen.getByText('研发')).toBeInTheDocument();
+    expect(screen.getByText('研究分析')).toBeInTheDocument();
     expect(screen.getByText('第 1 / 3 页，共 22 条')).toBeInTheDocument();
   });
 

@@ -452,30 +452,6 @@ public class RuntimeSettingService {
     }
 
     /**
-     * 获取代码检索根目录。
-     * @return 根目录。
-     */
-    public String codeSearchRoot() {
-        return getString("code_search.root", runtimeProperties.getCodeSearchRoot());
-    }
-
-    /**
-     * 获取代码检索最大命中条数。
-     * @return 最大条数。
-     */
-    public int codeSearchMaxResults() {
-        return getInt("code_search.max_results", runtimeProperties.getCodeSearchMaxResults());
-    }
-
-    /**
-     * 获取代码检索单文件最大扫描字节数。
-     * @return 最大字节数。
-     */
-    public long codeSearchMaxFileSizeBytes() {
-        return getLong("code_search.max_file_size_bytes", runtimeProperties.getCodeSearchMaxFileSizeBytes());
-    }
-
-    /**
      * 获取聊天附件上传单文件最大字节数。
      * @return 最大字节数。
      */

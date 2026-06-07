@@ -217,14 +217,14 @@ class ChatControllerConversationMutationTest {
 
             ApiResponse<Void> response = chatController.sendMessage(
                 2001L,
-                new SendChatMessageRequest("请用已选技能帮我查一下网页", List.of("web-access", "code_search"), List.of())
+                new SendChatMessageRequest("请用已选技能帮我查一下网页", List.of("web-access", "deep-research"), List.of())
             );
 
             assertEquals(true, response.success());
             verify(chatApplicationService).sendSynchronousMessage(
                 2001L,
                 "请用已选技能帮我查一下网页",
-                List.of("web-access", "code_search"),
+                List.of("web-access", "deep-research"),
                 List.of(),
                 1002L
             );

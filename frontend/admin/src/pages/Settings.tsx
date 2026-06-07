@@ -77,7 +77,6 @@ const CATEGORY_LABELS: Record<string, string> = {
   'chat.intent.guidance': '歧义引导',
   search: '搜索链路',
   queue: '并发门控',
-  code_search: '代码检索运行时',
   'ai.routing': '模型路由',
 };
 

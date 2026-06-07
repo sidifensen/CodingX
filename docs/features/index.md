@@ -9,6 +9,7 @@
 
 - [聊天歧义引导配置](chat/intent-guidance-config.md)
 - [天气 MCP 城市澄清](chat/weather-mcp-city-clarify.md)
+- [聊天 MCP 工具运行边界](chat/mcp-runtime-boundary.md)
 - [聊天拆分问题逐题意图路由](chat/split-intent-routing.md)
 - [任务完成提醒已读状态](chat/task-completion-read.md)
 - [助手消息过程时间线穿插展示](chat/interleaved-process-timeline.md)
@@ -16,6 +17,7 @@
 - [本地工作空间会话分区](chat/local-workspace-conversation-partition.md)
 - [本地会话云端持久化](chat/cloud-persisted-local-chat.md)
 - [本地工具运行时](chat/local-tool-runtime.md)
+- [聊天代码差异审查](chat/code-diff-review.md)
 - [Agent Loop 运行时](chat/agent-loop-runtime.md)
 - [外部 MCP Server 运行时](chat/mcp-external-server-runtime.md)
 - [AI 路由默认策略](chat/ai-routing-defaults.md)

@@ -33,14 +33,14 @@ const mcpToolFixture = [
     sampleQuestion: '上海未来三天天气预报',
   },
   {
-    toolId: 'code_search',
-    displayName: '代码检索',
-    category: '研发',
-    source: '内置后端',
+    toolId: 'browser_tools',
+    displayName: '浏览器工具',
+    category: '浏览器',
+    source: '外部 MCP',
     status: 'healthy',
     statusLabel: '可用',
-    description: '按关键词检索代码文件与行号',
-    sampleQuestion: '查找 ChatController 的 sendMessage 方法',
+    description: '提供浏览器页面读取与操作能力',
+    sampleQuestion: '打开当前页面并读取标题',
   },
 ] as const;
 
@@ -57,11 +57,11 @@ const mcpConfigFixture = [
   },
   {
     id: 7102,
-    mcpCode: 'code_search',
-    displayName: '代码检索',
-    description: '按关键词检索代码文件与行号',
-    category: '研发',
-    sourceType: 'built-in',
+    mcpCode: 'browser_tools',
+    displayName: '浏览器工具',
+    description: '提供浏览器页面读取与操作能力',
+    category: '浏览器',
+    sourceType: 'external',
     enabled: 0,
     sortNo: 2,
   },
@@ -98,7 +98,7 @@ describe('MCP page', () => {
     expect(AdminChatApi.listMcpConfigs).toHaveBeenCalledTimes(1);
     expect(AdminChatApi.listMcpTools).toHaveBeenCalledTimes(1);
     expect(screen.getByText('/weather_query')).toBeInTheDocument();
-    expect(screen.getByText('/code_search')).toBeInTheDocument();
+    expect(screen.getByText('/browser_tools')).toBeInTheDocument();
     expect(screen.queryAllByText('weather_query')).toHaveLength(0);
     expect(screen.getAllByText('可用').length).toBeGreaterThanOrEqual(1);
     expect(container.querySelector('.ant-table')).toBeInTheDocument();

@@ -258,7 +258,7 @@ class ChatStreamControllerTest {
         SseEmitter emitter = new SseEmitter(0L);
         whenRegisterReturns(emitter);
         when(chatMcpQueryService.listEnabledMcps()).thenReturn(List.of(
-            ChatMcp.builder().id(1L).mcpCode("code_search").displayName("代码搜索").category("代码").enabled(1).available(true).sortNo(1).build()
+            ChatMcp.builder().id(1L).mcpCode("weather_query").displayName("天气查询").category("天气").enabled(1).available(true).sortNo(1).build()
         ));
         ChatConversation conversation = ChatConversation.create(9901L, "本地会话", 1001L, 6001L, ChatConversationStatus.ACTIVE);
         when(chatConversationApplicationService.createConversation(any(CreateConversationCommand.class), any(Long.class))).thenReturn(conversation);
@@ -650,10 +650,10 @@ class ChatStreamControllerTest {
             mocked.when(StpUtil::getLoginIdAsLong).thenReturn(1001L);
 
             SseEmitter actual = chatStreamController.streamChat(
-                "请分析代码",
+                "请查询北京天气",
                 6001L,
                 false,
-                "code_search",
+                "weather_query",
                 "agent-browser",
                 "D:/code/codingx",
                 null
@@ -663,7 +663,7 @@ class ChatStreamControllerTest {
             verify(chatStreamExecutionService).dispatch(
                 argThat(taskId -> taskId != null && taskId > 0),
                 argThat(command -> command.conversationId().equals(6001L)
-                    && command.content().equals("请分析代码")
+                    && command.content().equals("请查询北京天气")
                     && command.repositoryPath().equals("D:/code/codingx")
                     && command.expertCode() == null
                     && command.attachmentIds().isEmpty()),

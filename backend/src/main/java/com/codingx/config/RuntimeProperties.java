@@ -35,21 +35,6 @@ public class RuntimeProperties {
     private long queueLeaseRenewIntervalMs = 10000L;
 
     /**
-     * 代码检索工具扫描根目录；为空时自动回退到项目根目录。
-     */
-    private String codeSearchRoot = "";
-
-    /**
-     * 代码检索工具单次最大返回命中数。
-     */
-    private int codeSearchMaxResults = 20;
-
-    /**
-     * 代码检索工具单文件最大扫描大小（字节）。
-     */
-    private long codeSearchMaxFileSizeBytes = 1024 * 1024L;
-
-    /**
      * 聊天附件上传单文件最大字节数，由业务层进行二次校验。
      */
     private long uploadMaxFileSizeBytes = 10L * 1024L * 1024L;

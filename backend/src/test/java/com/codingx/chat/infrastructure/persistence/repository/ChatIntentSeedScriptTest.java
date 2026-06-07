@@ -25,10 +25,12 @@ class ChatIntentSeedScriptTest {
         String cleanupMigrationSql = Files.readString(
             Path.of("src/main/resources/db/migration/V20260522_023500__physical_remove_sales_and_ticket_mcps_and_intents.sql")
         );
+        String codeSearchCleanupMigrationSql = Files.readString(
+            Path.of("src/main/resources/db/migration/V20260607_222030__remove_code_search_mcp_and_intents.sql")
+        );
 
         for (String marker : new String[] {
             "'weather'", "'weather-data'",
-            "'code'", "'code-search'", "'code_search'",
             "'shell_command'", "'apply_patch'", "'update_plan'",
             "'sys-feedback'", "企业内部知识助手「小码」"
         }) {
@@ -40,12 +42,13 @@ class ChatIntentSeedScriptTest {
             }
         }
 
-        for (String removedMarker : new String[] {"'sales'", "'sales-data'", "'ticket'", "'ticket-data'"}) {
+        for (String removedMarker : new String[] {"'sales'", "'sales-data'", "'ticket'", "'ticket-data'", "'code'", "'code-search'"}) {
             assertFalse(initSql.contains(removedMarker), "init.sql 不应再包含已下线意图: " + removedMarker);
         }
-        for (String removedMcp : new String[] {"'sales_query'", "'ticket_query'"}) {
+        for (String removedMcp : new String[] {"'sales_query'", "'ticket_query'", "'code_search'"}) {
             assertFalse(initSql.contains(removedMcp), "init.sql 不应再包含已下线 MCP: " + removedMcp);
-            assertTrue(cleanupMigrationSql.contains(removedMcp), "清理迁移应覆盖已下线 MCP: " + removedMcp);
+            String migrationSqlToCheck = "'code_search'".equals(removedMcp) ? codeSearchCleanupMigrationSql : cleanupMigrationSql;
+            assertTrue(migrationSqlToCheck.contains(removedMcp), "清理迁移应覆盖已下线 MCP: " + removedMcp);
         }
 
         assertTrue(cleanupMigrationSql.contains("DELETE FROM task_mcp"), "清理迁移必须同步移除任务 MCP 绑定");
@@ -53,5 +56,7 @@ class ChatIntentSeedScriptTest {
         assertTrue(cleanupMigrationSql.contains("DELETE FROM chat_intent_node"), "清理迁移必须同步移除历史意图节点");
         assertTrue(cleanupMigrationSql.contains("sales-data"), "清理迁移必须覆盖销售链路历史节点");
         assertTrue(cleanupMigrationSql.contains("ticket-data"), "清理迁移必须覆盖工单链路历史节点");
+        assertTrue(codeSearchCleanupMigrationSql.contains("code-search"), "代码检索清理迁移必须覆盖历史叶子意图");
+        assertTrue(codeSearchCleanupMigrationSql.contains("DELETE FROM setting"), "代码检索清理迁移必须同步移除运行时设置");
     }
 }

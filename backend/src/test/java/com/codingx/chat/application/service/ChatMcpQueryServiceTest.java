@@ -46,7 +46,7 @@ class ChatMcpQueryServiceTest {
         );
         when(chatMcpRepository.findAllEnabled()).thenReturn(List.of(
             ChatMcp.builder().id(1L).mcpCode("weather_query").displayName("天气查询").enabled(1).build(),
-            ChatMcp.builder().id(2L).mcpCode("code_search").displayName("代码检索").enabled(1).build()
+            ChatMcp.builder().id(2L).mcpCode("unregistered_mcp").displayName("未接入 MCP").enabled(1).build()
         ));
 
         List<ChatMcp> result = service.listEnabledMcps();

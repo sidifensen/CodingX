@@ -30,7 +30,10 @@ import java.nio.file.Path;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.IntStream;
 
@@ -642,6 +645,9 @@ class CodingXTuiModelTest {
         assertTrue(view.contains("/fix-test"), view);
         assertTrue(view.contains("审查当前改动"), view);
         assertTrue(view.contains("登录 CodingX"), view);
+        assertTrue(view.contains("\u001B[90m  命令"), view);
+        assertTrue(view.contains("定位并修复测试失败\u001B[0m"), view);
+        assertFalse(view.contains("\u001B[90m› /"), view);
         assertTrue(view.contains("› /"), view);
         assertTrue(eventSource.tasks.isEmpty());
     }
@@ -706,6 +712,39 @@ class CodingXTuiModelTest {
         assertTrue(eventSource.tasks.isEmpty());
         assertTrue(view.contains("CLI 登录成功"), view);
         assertTrue(view.contains("completed"), view);
+    }
+
+    @Test
+    void slashLoginShouldNotBlockEscapeQuitWhileBrowserCallbackIsPending() throws Exception {
+        CapturingStreamingEventSource eventSource = new CapturingStreamingEventSource();
+        BlockingCliAuthService authService = new BlockingCliAuthService();
+        CodingXTuiModel model = new CodingXTuiModel(
+            tempDir.resolve("workspace"),
+            eventSource,
+            new TerminalRenderer(),
+            authService
+        );
+        model.setProgram(new Program(model));
+
+        pressRunes(model, "/login");
+        CompletableFuture<UpdateResult<?>> loginUpdate = CompletableFuture.supplyAsync(
+            () -> model.update(new KeyPressMessage(new Key(KeyType.keyCR)))
+        );
+        try {
+            authService.awaitBrowserLoginStarted();
+
+            UpdateResult<?> loginResult = loginUpdate.get(500, TimeUnit.MILLISECONDS);
+            assertNull(loginResult.command());
+            assertTrue(eventSource.tasks.isEmpty());
+            assertTrue(stripAnsi(model.view()).contains("正在打开浏览器登录 CodingX"), model.view());
+
+            UpdateResult<?> escapeResult = model.update(new KeyPressMessage(new Key(KeyType.keyESC)));
+
+            assertTrue(authService.awaitBrowserLoginInterrupted(), "后台登录等待应被 Esc 取消");
+            assertTrue(escapeResult.command().execute() instanceof com.williamcallahan.tui4j.compat.bubbletea.QuitMessage);
+        } finally {
+            authService.releaseBrowserLogin();
+        }
     }
 
     @Test
@@ -986,6 +1025,50 @@ class CodingXTuiModelTest {
         public boolean logout() {
             logoutCount++;
             return true;
+        }
+    }
+
+    /**
+     * 模拟浏览器回调迟迟不返回的登录服务，用于验证 TUI 主循环不会被登录流程卡死。
+     */
+    private static class BlockingCliAuthService extends CliAuthService {
+
+        private final CountDownLatch browserLoginStarted = new CountDownLatch(1);
+
+        private final CountDownLatch browserLoginInterrupted = new CountDownLatch(1);
+
+        private final CountDownLatch browserLoginReleased = new CountDownLatch(1);
+
+        BlockingCliAuthService() {
+            super(null, null, ignored -> {
+            });
+        }
+
+        @Override
+        public boolean loginWithBrowser() {
+            browserLoginStarted.countDown();
+            try {
+                browserLoginReleased.await();
+                return true;
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+                browserLoginInterrupted.countDown();
+                return false;
+            }
+        }
+
+        private void awaitBrowserLoginStarted() throws InterruptedException, TimeoutException {
+            if (!browserLoginStarted.await(1, TimeUnit.SECONDS)) {
+                throw new TimeoutException("浏览器登录未启动");
+            }
+        }
+
+        private boolean awaitBrowserLoginInterrupted() throws InterruptedException {
+            return browserLoginInterrupted.await(1, TimeUnit.SECONDS);
+        }
+
+        private void releaseBrowserLogin() {
+            browserLoginReleased.countDown();
         }
     }
 

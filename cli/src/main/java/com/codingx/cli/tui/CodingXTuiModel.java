@@ -153,6 +153,11 @@ public class CodingXTuiModel implements Model {
     private Future<?> activeStreamTask;
 
     /**
+     * 当前正在等待的浏览器登录任务；登录必须后台执行，避免 loopback 回调等待阻塞键盘事件。
+     */
+    private Future<?> activeAuthTask;
+
+    /**
      * 当前流式轮次序号；中断后递增，后台迟到事件不会再写回 TUI。
      */
     private volatile long streamTurnSerial;
@@ -207,6 +212,12 @@ public class CodingXTuiModel implements Model {
      * 运行中计时消息，只触发重绘和下一次计时。
      */
     private record RunningTickMessage() implements Message {
+    }
+
+    /**
+     * 后台浏览器登录完成后回到 TUI 主循环的消息；pendingTask 非空时登录成功后继续发送原任务。
+     */
+    private record BrowserLoginResultMessage(boolean success, String pendingTask) implements Message {
     }
 
     /**
@@ -266,6 +277,7 @@ public class CodingXTuiModel implements Model {
             return thread;
         });
         this.activeStreamTask = null;
+        this.activeAuthTask = null;
         this.streamTurnSerial = 0L;
         this.planMode = true;
         this.status = "ready";
@@ -329,6 +341,10 @@ public class CodingXTuiModel implements Model {
             return UpdateResult.from(this, isTurnRunning() ? runningTickCommand() : null);
         }
 
+        if (msg instanceof BrowserLoginResultMessage browserLoginResultMessage) {
+            return UpdateResult.from(this, handleBrowserLoginResult(browserLoginResultMessage));
+        }
+
         if (msg instanceof WindowSizeMessage windowSizeMessage) {
             resize(windowSizeMessage.width(), windowSizeMessage.height());
         }
@@ -336,7 +352,7 @@ public class CodingXTuiModel implements Model {
         if (msg instanceof KeyPressMessage keyPressMessage) {
             String key = keyPressMessage.key();
             if ("ctrl+c".equals(key)) {
-                streamExecutor.shutdownNow();
+                shutdownBackgroundTasks();
                 return UpdateResult.from(this, QuitMessage::new);
             }
             if ("esc".equals(key) || keyPressMessage.type() == KeyType.keyESC) {
@@ -344,7 +360,7 @@ public class CodingXTuiModel implements Model {
                     interruptRunningTurn();
                     return UpdateResult.from(this, null);
                 }
-                streamExecutor.shutdownNow();
+                shutdownBackgroundTasks();
                 return UpdateResult.from(this, QuitMessage::new);
             }
             if ("shift+tab".equals(key) || keyPressMessage.type() == KeyType.KeyShiftTab) {
@@ -365,11 +381,7 @@ public class CodingXTuiModel implements Model {
                     // 当前轮还在流式输出时保留输入框内容，避免多条问题先堆出来、回答后到而破坏一问一答顺序。
                     return UpdateResult.from(this, null);
                 }
-                if (!ensureLoggedInBeforeChat()) {
-                    textarea.reset();
-                    return UpdateResult.from(this, null);
-                }
-                Command submitCommand = submitTaskAndReturnCommand(normalizedTask);
+                Command submitCommand = submitTaskAfterLogin(normalizedTask);
                 textarea.reset();
                 return UpdateResult.from(this, submitCommand);
             }
@@ -509,15 +521,12 @@ public class CodingXTuiModel implements Model {
      * 执行浏览器登录命令；认证服务缺失时给出命令行兜底，避免测试和旧嵌入方空指针。
      */
     private void runLoginCommand() {
-        status = "running";
         if (cliAuthService == null) {
             appendSystemLine("请运行 codingx auth login 打开浏览器登录。");
             status = "error";
             return;
         }
-        boolean success = cliAuthService.loginWithBrowser();
-        appendSystemLine(success ? "CLI 登录成功" : "CLI 登录失败，请尝试 codingx auth login --device。");
-        status = success ? "completed" : "error";
+        startBrowserLogin(null);
     }
 
     /**
@@ -558,26 +567,92 @@ public class CodingXTuiModel implements Model {
     }
 
     /**
-     * 普通聊天提交前确保 CLI 已登录；无 token 时直接打开浏览器登录，成功后继续原任务。
+     * 普通聊天提交前检查 CLI 登录态；真实 TUI 中自动登录会后台执行，成功后继续提交原任务。
      *
-     * @return true 表示可以继续提交到后端聊天流。
+     * @param task 用户原始任务。
+     * @return 可立即执行的后续命令；后台登录场景返回空。
      */
-    private boolean ensureLoggedInBeforeChat() {
+    private Command submitTaskAfterLogin(String task) {
         if (cliAuthService == null || cliAuthService.isLoggedIn()) {
-            return true;
+            return submitTaskAndReturnCommand(task);
         }
+        if (program != null) {
+            startBrowserLogin(task);
+            return null;
+        }
+        return submitTaskAfterSynchronousLogin(task);
+    }
+
+    /**
+     * 无真实 Program 的测试或嵌入链路继续同步登录，避免调用方额外处理异步消息。
+     *
+     * @param task 登录成功后要继续发送的任务。
+     * @return 登录成功后的提交命令；失败时为空。
+     */
+    private Command submitTaskAfterSynchronousLogin(String task) {
         status = "running";
         appendSystemLine("未登录或登录已失效，正在打开浏览器登录 CodingX。");
         boolean success = cliAuthService.loginWithBrowser();
         if (success) {
             appendSystemLine("CLI 登录成功，继续发送当前请求。");
             status = "ready";
-            return true;
+            return submitTaskAndReturnCommand(task);
         }
         appendSystemLine("CLI 登录失败，请运行 /login 或 codingx auth login --device 后重试。");
         status = "error";
         refreshViewport();
-        return false;
+        return null;
+    }
+
+    /**
+     * 后台执行浏览器登录，避免浏览器授权等待期间 TUI 无法响应 Esc/Ctrl+C。
+     *
+     * @param pendingTask 登录成功后要继续发送的用户任务；为空表示用户只执行了 `/login`。
+     */
+    private void startBrowserLogin(String pendingTask) {
+        closeAssistantBlock();
+        status = "authenticating";
+        appendSystemLine(pendingTask == null
+            ? "正在打开浏览器登录 CodingX，授权完成后会自动返回；Esc 可退出。"
+            : "未登录或登录已失效，正在打开浏览器登录 CodingX；授权完成后继续发送当前请求。");
+        if (program == null) {
+            handleBrowserLoginResult(new BrowserLoginResultMessage(cliAuthService.loginWithBrowser(), pendingTask));
+            return;
+        }
+        activeAuthTask = streamExecutor.submit(() -> {
+            boolean success = cliAuthService.loginWithBrowser();
+            if (!Thread.currentThread().isInterrupted() && program != null) {
+                program.send(new BrowserLoginResultMessage(success, pendingTask));
+            }
+        });
+        refreshViewport();
+    }
+
+    /**
+     * 处理后台浏览器登录结果；自动登录成功时继续发送原任务。
+     *
+     * @param message 登录结果消息。
+     * @return 后续提交命令，可为空。
+     */
+    private Command handleBrowserLoginResult(BrowserLoginResultMessage message) {
+        activeAuthTask = null;
+        if (message.success()) {
+            if (message.pendingTask() == null || message.pendingTask().isBlank()) {
+                appendSystemLine("CLI 登录成功");
+                status = "completed";
+                refreshViewport();
+                return null;
+            }
+            appendSystemLine("CLI 登录成功，继续发送当前请求。");
+            status = "ready";
+            return submitTaskAndReturnCommand(message.pendingTask());
+        }
+        appendSystemLine(message.pendingTask() == null || message.pendingTask().isBlank()
+            ? "CLI 登录失败，请尝试 codingx auth login --device。"
+            : "CLI 登录失败，请运行 /login 或 codingx auth login --device 后重试。");
+        status = "error";
+        refreshViewport();
+        return null;
     }
 
     /**
@@ -636,6 +711,21 @@ public class CodingXTuiModel implements Model {
         status = "interrupted";
         appendLine("• Interrupted");
         refreshViewport();
+    }
+
+    /**
+     * 退出 TUI 前停止所有后台任务；包括 SSE 流和浏览器登录等待，避免退出后仍占用回调端口。
+     */
+    private void shutdownBackgroundTasks() {
+        if (activeAuthTask != null) {
+            activeAuthTask.cancel(true);
+            activeAuthTask = null;
+        }
+        if (activeStreamTask != null) {
+            activeStreamTask.cancel(true);
+            activeStreamTask = null;
+        }
+        streamExecutor.shutdownNow();
     }
 
     /**
@@ -963,14 +1053,14 @@ public class CodingXTuiModel implements Model {
             .filter(line -> keyword.isBlank() || line.toLowerCase().contains(keyword))
             .toList();
         if (commands.isEmpty()) {
-            return "  未匹配到命令";
+            return styleDim("  未匹配到命令");
         }
         List<String> lines = new ArrayList<>();
         lines.add("  命令");
         for (String command : commands) {
             lines.add("  " + command);
         }
-        return String.join(RENDER_NEWLINE, lines);
+        return styleDim(String.join(RENDER_NEWLINE, lines));
     }
 
     /**

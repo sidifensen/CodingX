@@ -428,6 +428,7 @@ function MainApp() {
                   onRequireLogin={openLoginModal}
                   workspaceId={chatWorkspace.workspaceId}
                   workspaceLabel={chatWorkspace.workspaceLabel}
+                  workspaceGroups={chatWorkspace.workspaceGroups}
                 />
               )}
               {activeView === 'skills' && <SkillsView key="skills" />}

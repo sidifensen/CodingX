@@ -1,6 +1,7 @@
 package com.codingx.chat.interfaces.controller;
 
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -42,7 +43,7 @@ class ChatMemoryControllerTest {
      */
     @Test
     void listMemoriesReturnsCurrentUserMemories() throws Exception {
-        when(longTermMemoryService.listUserMemories(1002L, 3001L, "ACTIVE")).thenReturn(List.of(
+        when(longTermMemoryService.listUserMemories(1002L, 3001L, "ACTIVE", false)).thenReturn(List.of(
             GovernanceLongTermMemory.builder()
                 .id(9001L)
                 .memoryScope("USER")
@@ -66,6 +67,37 @@ class ChatMemoryControllerTest {
                 .andExpect(jsonPath("$.data[0].content").value("代码风格偏好：业务注释"))
                 .andExpect(jsonPath("$.data[0].status").value("ACTIVE"));
         }
+    }
+
+    /**
+     * 用户端记忆管理页请求全工作空间记忆时，应把 includeAllWorkspaces 透传到服务层。
+     */
+    @Test
+    void listMemoriesShouldSupportAllWorkspaceManagementQuery() throws Exception {
+        when(longTermMemoryService.listUserMemories(1002L, null, "ALL", true)).thenReturn(List.of(
+            GovernanceLongTermMemory.builder()
+                .id(9002L)
+                .memoryScope("PROJECT")
+                .userId(1002L)
+                .workspaceId(3002L)
+                .content("另一个项目必须先跑端到端测试")
+                .status("ACTIVE")
+                .build()
+        ));
+
+        try (MockedStatic<StpUtil> mocked = Mockito.mockStatic(StpUtil.class)) {
+            mocked.when(StpUtil::getLoginIdAsLong).thenReturn(1002L);
+
+            mockMvc().perform(get("/api/chat/memories")
+                    .param("status", "ALL")
+                    .param("includeAllWorkspaces", "true"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data[0].workspaceId").value("3002"))
+                .andExpect(jsonPath("$.data[0].content").value("另一个项目必须先跑端到端测试"));
+        }
+
+        verify(longTermMemoryService).listUserMemories(eq(1002L), isNull(), eq("ALL"), eq(true));
     }
 
     /**

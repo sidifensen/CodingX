@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 
 import MemoryView from '@/views/MemoryView';
-import { LongTermMemoryItem } from '@/views/chat/types';
+import { LongTermMemoryItem, WorkspaceConversationGroup } from '@/views/chat/types';
 
 const listLongTermMemoriesMock = vi.fn();
 const updateLongTermMemoryStatusMock = vi.fn();
@@ -55,6 +55,38 @@ const memories: LongTermMemoryItem[] = [
     status: 'REJECTED',
     updatedAt: '2026-06-07 12:00:00',
   },
+  {
+    id: '9004',
+    memoryScope: 'PROJECT',
+    userId: '1002',
+    workspaceId: '3002',
+    content: '另一个项目必须先跑端到端测试',
+    status: 'ACTIVE',
+    updatedAt: '2026-06-07 13:00:00',
+  },
+];
+
+const workspaceGroups: WorkspaceConversationGroup[] = [
+  {
+    partitionKey: 'local:D:/code/test',
+    groupType: 'workspace',
+    workspacePath: 'D:/code/test',
+    workspaceLabel: 'test',
+    runtimeTarget: 'local',
+    lastOpenedAt: 1,
+    activeConversationId: null,
+    conversations: [{ id: 'c-1', title: 'test', status: 'ACTIVE', workspaceId: '3001' }],
+  },
+  {
+    partitionKey: 'local:D:/code/other',
+    groupType: 'workspace',
+    workspacePath: 'D:/code/other',
+    workspaceLabel: 'other',
+    runtimeTarget: 'local',
+    lastOpenedAt: 2,
+    activeConversationId: null,
+    conversations: [{ id: 'c-2', title: 'other', status: 'ACTIVE', workspaceId: '3002' }],
+  },
 ];
 
 describe('MemoryView', () => {
@@ -78,25 +110,35 @@ describe('MemoryView', () => {
   });
 
   /**
-   * 页面应按当前工作空间加载用户级和项目级记忆，并展示关键统计。
+   * 页面应加载当前账号所有工作空间的用户级和项目级记忆，并按工作空间分组展示。
    */
-  it('loads visible memories for current workspace', async () => {
+  it('loads memories for all workspaces and groups project memories', async () => {
     render(
       <MemoryView
         isAuthenticated={true}
         onRequireLogin={vi.fn()}
         workspaceId="3001"
         workspaceLabel="CodingX"
+        workspaceGroups={workspaceGroups}
       />,
     );
 
     expect(await screen.findByRole('heading', { name: '记忆管理' })).toBeInTheDocument();
-    expect(listLongTermMemoriesMock).toHaveBeenCalledWith('token-123', '3001', 'ALL');
+    expect(listLongTermMemoriesMock).toHaveBeenCalledWith(
+      'token-123',
+      null,
+      'ALL',
+      { includeAllWorkspaces: true },
+    );
     expect(screen.getByText('以后回答都先给结论')).toBeInTheDocument();
     expect(screen.getByText('项目 Java 文件必须补充业务注释')).toBeInTheDocument();
     expect(screen.getByText('已废弃的旧项目约定')).toBeInTheDocument();
-    expect(screen.getByText('CodingX')).toBeInTheDocument();
-    expect(screen.getByText('生效 2')).toBeInTheDocument();
+    expect(screen.getByText('另一个项目必须先跑端到端测试')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '跨项目用户记忆' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'test' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'other' })).toBeInTheDocument();
+    expect(screen.getByText('覆盖 2 个工作空间')).toBeInTheDocument();
+    expect(screen.getByText('生效 3')).toBeInTheDocument();
   });
 
   /**

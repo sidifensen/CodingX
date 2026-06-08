@@ -768,6 +768,36 @@ describe('ChatApi', () => {
   });
 
   /**
+   * 记忆管理页需要显式请求所有工作空间记忆，避免默认空 workspace 语义只返回用户级记忆。
+   */
+  it('应支持查询当前用户所有工作空间长期记忆', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            success: true,
+            code: 'OK',
+            message: 'success',
+            data: [],
+          }),
+          { status: 200 },
+        ),
+      );
+
+    await ChatApi.listLongTermMemories('token-123', null, 'ALL', { includeAllWorkspaces: true });
+
+    expect(fetchSpy).toHaveBeenNthCalledWith(
+      1,
+      '/api/chat/memories?includeAllWorkspaces=true',
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          satoken: 'token-123',
+        }),
+      }),
+    );
+  });
+
+  /**
    * 用户编辑长期记忆正文应命中用户侧记忆更新接口，并返回归一化后的记录。
    */
   it('应通过用户侧接口更新长期记忆正文', async () => {

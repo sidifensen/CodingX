@@ -7,8 +7,8 @@
 ## 使用入口
 
 - 用户端聊天页：本地工作空间绑定后，输入区下方显示“工作区智能”信息条，展示项目画像摘要、测试命令、风险摘要和已生效记忆。
-- 用户端记忆管理页：侧栏点击「记忆管理」或直接访问 `/memories`，查看当前账号可见的用户记忆和项目记忆，并执行筛选、编辑、启用、停用和删除。
-- 用户端记忆接口：`GET /api/chat/memories` 查询当前用户可见记忆，`PATCH /api/chat/memories/{memoryId}` 更新记忆正文，`PATCH /api/chat/memories/{memoryId}/status` 启用或停用已有记忆，`DELETE /api/chat/memories/{memoryId}` 逻辑删除记忆。
+- 用户端记忆管理页：侧栏点击「记忆管理」或直接访问 `/memories`，查看当前账号所有工作空间的用户记忆和项目记忆，并执行筛选、编辑、启用、停用和删除。
+- 用户端记忆接口：`GET /api/chat/memories` 查询当前用户可见记忆，管理页通过 `includeAllWorkspaces=true` 查询当前账号全部工作空间记忆；`PATCH /api/chat/memories/{memoryId}` 更新记忆正文，`PATCH /api/chat/memories/{memoryId}/status` 启用或停用已有记忆，`DELETE /api/chat/memories/{memoryId}` 逻辑删除记忆。
 - 管理端治理中心：进入「治理中心」，在「项目画像」页签查看模块地图、测试命令、关键入口、风险点和 Agent 上下文，在「长期记忆」页签治理已提取记忆。
 - 管理端治理接口：`GET /api/admin/governance/long-term-memories` 和 `PATCH /api/admin/governance/long-term-memories/{id}/status` 管理长期记忆启停状态。
 
@@ -18,19 +18,19 @@
 2. 聊天提交时，`ChatApplicationService` 在构造模型历史前调用 `GovernanceAgentContextService`。该服务按当前用户、工作空间和问题读取最新项目画像与 ACTIVE 长期记忆，生成一段带使用约束的上下文，插入模型历史；画像或记忆缺失时返回空文本，不阻断聊天。
 3. 助手正常完成后，`GovernanceAgentContextService.extractMemoryCandidates` 委托 `LongTermMemoryService` 读取用户消息。只有文本包含“记住”“请记忆”“长期保存”“以后都按”“我的偏好”等显式授权信号时才生成 `ACTIVE` 记忆，并按范围、用户、工作空间和内容生成确定性去重键；重复内容不会再次保存，普通聊天不会被自动沉淀为长期记忆。
 4. 用户端“工作区智能”信息条展示当前工作空间的已生效记忆数量和最多 3 条摘要，不再弹出确认/拒绝按钮。用户刷新信息条时前端重新调用 `GET /api/chat/memories?status=ACTIVE`，接口失败时展示后端 `ApiResponse.message`。
-5. 用户进入 `/memories` 后，`MemoryView` 读取登录令牌并调用 `ChatApi.listLongTermMemories(token, workspaceId, 'ALL')`，一次性加载当前用户可见的 ACTIVE 与 REJECTED 记忆。页面在本地按 `memoryScope` 和 `status` 筛选；编辑时先用自定义弹窗校验非空正文，再调用 `PATCH /api/chat/memories/{memoryId}`，后端校验当前用户归属并刷新 `content`、`keywordJson`、`memoryKey` 和 `updatedAt`；删除时通过自定义确认弹窗调用 `DELETE /api/chat/memories/{memoryId}`，后端设置 `deleted=1`，后续列表和模型上下文检索都会排除该记录。
+5. 用户进入 `/memories` 后，`MemoryView` 读取登录令牌并调用 `ChatApi.listLongTermMemories(token, null, 'ALL', { includeAllWorkspaces: true })`，一次性加载当前用户所有工作空间的 ACTIVE 与 REJECTED 记忆。页面先用侧栏 `workspaceGroups` 将 `workspaceId` 映射为工作空间名称，再把记忆分为“跨项目用户记忆”和各工作空间项目记忆；范围和状态筛选仍在本地完成。编辑时先用自定义弹窗校验非空正文，再调用 `PATCH /api/chat/memories/{memoryId}`，后端校验当前用户归属并刷新 `content`、`keywordJson`、`memoryKey` 和 `updatedAt`；删除时通过自定义确认弹窗调用 `DELETE /api/chat/memories/{memoryId}`，后端设置 `deleted=1`，后续列表和模型上下文检索都会排除该记录。
 6. 管理端治理中心并行加载权限、Hook、项目画像、长期记忆、Slash Command 和审计数据。`GET /api/admin/governance/project-profiles` 返回按工作空间去重后的当前画像列表，旧重复扫描记录不会继续占用主列表；管理员在「长期记忆」页签对记忆执行“启用/停用”治理操作，页面使用 Ant Design 按钮和消息组件，不使用浏览器原生弹窗。
 
 ## 关键文件
 
 - `backend/src/main/java/com/codingx/governance/application/service/ProjectProfileService.java`：扫描工作空间并生成画像 JSON 与 Agent 上下文。
-- `backend/src/main/java/com/codingx/governance/application/service/LongTermMemoryService.java`：提取、去重、启用、停用和检索长期记忆。
+- `backend/src/main/java/com/codingx/governance/application/service/LongTermMemoryService.java`：提取、去重、启用、停用和检索长期记忆，并区分模型上下文的工作空间查询与管理页全工作空间查询。
 - `backend/src/main/java/com/codingx/chat/interfaces/controller/ChatMemoryController.java`：用户侧长期记忆查询、正文编辑、启停和逻辑删除接口。
 - `backend/src/main/java/com/codingx/governance/application/service/GovernanceAgentContextService.java`：组合项目画像与 ACTIVE 记忆并回注聊天上下文。
 - `backend/src/main/java/com/codingx/chat/application/service/chat/ChatWorkspaceBindingService.java`：目录绑定时刷新画像并返回已生效记忆数量。
 - `frontend/user/src/views/chat/useChatWorkspace.ts`：保存画像、记忆列表和状态更新动作。
 - `frontend/user/src/views/ChatView.tsx`：渲染“工作区智能”信息条和已生效记忆摘要。
-- `frontend/user/src/views/MemoryView.tsx`：用户端长期记忆管理页，承载筛选、编辑、启停、删除和未登录提示。
+- `frontend/user/src/views/MemoryView.tsx`：用户端长期记忆管理页，承载全工作空间分组、筛选、编辑、启停、删除和未登录提示。
 - `frontend/user/src/App.tsx` 与 `frontend/user/src/components/Sidebar.tsx`：注册 `/memories` 路由并提供侧栏入口。
 - `frontend/admin/src/pages/GovernanceCenterPage.tsx`：管理端项目画像增强列和长期记忆页签。
 

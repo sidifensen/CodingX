@@ -521,20 +521,26 @@ export class ChatApi {
   }
 
   /**
-   * 查询当前用户可见的已生效长期记忆，供聊天页展示当前会进入上下文的偏好和约定。
+   * 查询当前用户可见的长期记忆，默认按当前工作空间约束；管理页可显式查询全部工作空间。
    * @param token 当前登录令牌。
    * @param workspaceId 当前工作空间 ID，可为空。
    * @param status 可选状态筛选。
+   * @param options 管理页查询选项。
    * @returns 归一化后的长期记忆列表。
    */
   static async listLongTermMemories(
     token: string,
     workspaceId?: string | null,
     status?: LongTermMemoryStatus | 'ALL' | null,
+    options?: { includeAllWorkspaces?: boolean },
   ): Promise<LongTermMemoryItem[]> {
     const searchParams = new URLSearchParams();
     if (workspaceId && workspaceId.trim().length > 0) {
       searchParams.set('workspaceId', workspaceId.trim());
+    }
+    if (options?.includeAllWorkspaces) {
+      // 该参数只用于记忆管理页总览，聊天上下文仍按 workspaceId 默认语义检索。
+      searchParams.set('includeAllWorkspaces', 'true');
     }
     const effectiveStatus = status == null ? 'ACTIVE' : status;
     if (effectiveStatus && effectiveStatus.trim().length > 0 && effectiveStatus !== 'ALL') {

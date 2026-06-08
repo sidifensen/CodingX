@@ -2,6 +2,7 @@ package com.codingx.governance.infrastructure.persistence.repository;
 
 import cn.hutool.core.util.StrUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.codingx.governance.domain.model.GovernanceLongTermMemory;
 import com.codingx.governance.domain.repository.GovernanceLongTermMemoryRepository;
 import com.codingx.governance.infrastructure.persistence.dataobject.GovernanceLongTermMemoryDO;
@@ -25,6 +26,18 @@ public class GovernanceLongTermMemoryRepositoryImpl implements GovernanceLongTer
         GovernanceLongTermMemoryDO dataObject = toDataObject(memory);
         if (dataObject.getId() == null || mapper.selectById(dataObject.getId()) == null) {
             mapper.insert(dataObject);
+            return;
+        }
+        if (Integer.valueOf(1).equals(dataObject.getDeleted())) {
+            // MyBatis-Plus 全局逻辑删除规则会影响 updateById 对 deleted 字段的处理，删除分支必须显式 SET。
+            mapper.update(
+                null,
+                new UpdateWrapper<GovernanceLongTermMemoryDO>()
+                    .set("deleted", 1)
+                    .set("updated_at", dataObject.getUpdatedAt())
+                    .eq("id", dataObject.getId())
+                    .eq("deleted", 0)
+            );
             return;
         }
         mapper.updateById(dataObject);
@@ -68,6 +81,17 @@ public class GovernanceLongTermMemoryRepositoryImpl implements GovernanceLongTer
                     .or()
                     .eq(GovernanceLongTermMemoryDO::getWorkspaceId, workspaceId);
             });
+        return mapper.selectList(wrapper)
+            .stream()
+            .map(this::toDomain)
+            .toList();
+    }
+
+    @Override
+    public List<GovernanceLongTermMemory> findAllForUser(Long userId, String status, int limit) {
+        // 用户端记忆管理页需要总览当前账号的所有项目记忆，但仍必须按 user_id 隔离租户数据。
+        LambdaQueryWrapper<GovernanceLongTermMemoryDO> wrapper = baseWrapper(status, limit)
+            .eq(userId != null, GovernanceLongTermMemoryDO::getUserId, userId);
         return mapper.selectList(wrapper)
             .stream()
             .map(this::toDomain)

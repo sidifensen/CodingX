@@ -11,7 +11,7 @@ import {
 
 import { AuthStorage } from '../utils/authStorage';
 import { ChatApi } from './chat/chatApi';
-import { LongTermMemoryItem, LongTermMemoryStatus } from './chat/types';
+import { LongTermMemoryItem, LongTermMemoryStatus, WorkspaceConversationGroup } from './chat/types';
 
 type MemoryScopeFilter = 'ALL' | 'USER' | 'PROJECT';
 type MemoryStatusFilter = 'ALL' | LongTermMemoryStatus;
@@ -21,6 +21,14 @@ interface MemoryViewProps {
   onRequireLogin: () => void;
   workspaceId: string | null;
   workspaceLabel: string;
+  workspaceGroups?: WorkspaceConversationGroup[];
+}
+
+interface MemoryWorkspaceGroup {
+  key: string;
+  label: string;
+  description: string;
+  memories: LongTermMemoryItem[];
 }
 
 /**
@@ -31,6 +39,7 @@ export default function MemoryView({
   onRequireLogin,
   workspaceId,
   workspaceLabel,
+  workspaceGroups = [],
 }: MemoryViewProps) {
   const [memories, setMemories] = useState<LongTermMemoryItem[]>([]);
   const [scopeFilter, setScopeFilter] = useState<MemoryScopeFilter>('ALL');
@@ -60,8 +69,10 @@ export default function MemoryView({
       setIsLoading(true);
       setErrorMessage('');
       try {
-        // 步骤 1：管理页需要同时展示 ACTIVE 与 REJECTED，状态筛选在本地完成以减少来回请求。
-        const response = await ChatApi.listLongTermMemories(token, workspaceId, 'ALL');
+        // 步骤 1：管理页需要跨工作空间治理记忆，状态和范围筛选在本地完成以减少来回请求。
+        const response = await ChatApi.listLongTermMemories(token, null, 'ALL', {
+          includeAllWorkspaces: true,
+        });
         if (!disposed) {
           setMemories(response);
         }
@@ -81,7 +92,7 @@ export default function MemoryView({
     return () => {
       disposed = true;
     };
-  }, [isAuthenticated, workspaceId]);
+  }, [isAuthenticated]);
 
   const activeCount = useMemo(
     () => memories.filter((memory) => normalizeStatus(memory.status) === 'ACTIVE').length,
@@ -91,6 +102,17 @@ export default function MemoryView({
     () => memories.filter((memory) => normalizeScope(memory.memoryScope) === 'PROJECT').length,
     [memories],
   );
+  const workspaceLabelById = useMemo(
+    () => buildWorkspaceLabelById(workspaceGroups, workspaceId, workspaceLabel),
+    [workspaceGroups, workspaceId, workspaceLabel],
+  );
+  const workspaceCoverageCount = useMemo(() => {
+    return new Set(
+      memories
+        .map((memory) => normalizeWorkspaceId(memory.workspaceId))
+        .filter((memoryWorkspaceId): memoryWorkspaceId is string => memoryWorkspaceId != null),
+    ).size;
+  }, [memories]);
 
   const visibleMemories = useMemo(() => {
     return memories.filter((memory) => {
@@ -101,6 +123,10 @@ export default function MemoryView({
       return matchesScope && matchesStatus;
     });
   }, [memories, scopeFilter, statusFilter]);
+  const visibleMemoryGroups = useMemo(
+    () => groupVisibleMemories(visibleMemories, workspaceLabelById),
+    [visibleMemories, workspaceLabelById],
+  );
 
   /**
    * 手动刷新记忆列表，用于用户在聊天页新增记忆后回到管理页拉取最新状态。
@@ -114,7 +140,9 @@ export default function MemoryView({
     setIsLoading(true);
     setErrorMessage('');
     try {
-      const response = await ChatApi.listLongTermMemories(token, workspaceId, 'ALL');
+      const response = await ChatApi.listLongTermMemories(token, null, 'ALL', {
+        includeAllWorkspaces: true,
+      });
       setMemories(response);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : '长期记忆加载失败');
@@ -252,7 +280,7 @@ export default function MemoryView({
             </button>
           </div>
           <div className="mt-6 grid grid-cols-1 gap-3 text-sm sm:grid-cols-3">
-            <Metric label="当前工作空间" value={workspaceLabel || '未绑定项目'} />
+            <Metric label="覆盖工作空间" value={`覆盖 ${workspaceCoverageCount} 个工作空间`} />
             <Metric label="记忆总数" value={`${memories.length}`} />
             <Metric label="上下文生效" value={`生效 ${activeCount}`} />
           </div>
@@ -320,15 +348,31 @@ export default function MemoryView({
                 </div>
               ) : null}
               {!isLoading && visibleMemories.length > 0 ? (
-                <div className="divide-y divide-border border-y border-border">
-                  {visibleMemories.map((memory) => (
-                    <MemoryRow
-                      key={memory.id}
-                      memory={memory}
-                      onEdit={() => openEditDialog(memory)}
-                      onToggleStatus={() => void toggleMemoryStatus(memory)}
-                      onDelete={() => setDeletingMemory(memory)}
-                    />
+                <div className="space-y-6">
+                  {visibleMemoryGroups.map((group) => (
+                    <section key={group.key} className="border-y border-border">
+                      <header className="flex flex-col gap-1 bg-surface-container px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                          <h2 className="text-sm font-semibold text-foreground">{group.label}</h2>
+                          <p className="mt-1 text-xs text-muted">{group.description}</p>
+                        </div>
+                        <span className="text-xs font-medium text-muted">
+                          {group.memories.length} 条记忆
+                        </span>
+                      </header>
+                      <div className="divide-y divide-border">
+                        {group.memories.map((memory) => (
+                          <MemoryRow
+                            key={memory.id}
+                            memory={memory}
+                            workspaceLabel={resolveMemoryWorkspaceLabel(memory, workspaceLabelById)}
+                            onEdit={() => openEditDialog(memory)}
+                            onToggleStatus={() => void toggleMemoryStatus(memory)}
+                            onDelete={() => setDeletingMemory(memory)}
+                          />
+                        ))}
+                      </div>
+                    </section>
                   ))}
                 </div>
               ) : null}
@@ -473,11 +517,13 @@ function SegmentedFilter({
  */
 function MemoryRow({
   memory,
+  workspaceLabel,
   onEdit,
   onToggleStatus,
   onDelete,
 }: {
   memory: LongTermMemoryItem;
+  workspaceLabel: string | null;
   onEdit: () => void;
   onToggleStatus: () => void;
   onDelete: () => void;
@@ -496,7 +542,7 @@ function MemoryRow({
         <p className="break-words text-sm leading-7 text-foreground">{memory.content}</p>
         <div className="mt-3 flex flex-wrap gap-3 text-xs text-muted">
           <span>来源：{memory.sourceType || '聊天记忆'}</span>
-          {memory.workspaceId ? <span>工作空间：{memory.workspaceId}</span> : <span>跨项目偏好</span>}
+          {workspaceLabel ? <span>工作空间：{workspaceLabel}</span> : <span>跨项目偏好</span>}
         </div>
       </div>
       <div className="flex flex-wrap gap-2 md:justify-end">
@@ -573,12 +619,106 @@ function IconButton({
   );
 }
 
+/**
+ * 从左侧工作空间分组反推 workspaceId 与展示名关系，缺失时保留当前工作空间作为兜底。
+ */
+function buildWorkspaceLabelById(
+  workspaceGroups: WorkspaceConversationGroup[],
+  currentWorkspaceId: string | null,
+  currentWorkspaceLabel: string,
+) {
+  const labelById = new Map<string, string>();
+  workspaceGroups.forEach((group) => {
+    group.conversations.forEach((conversation) => {
+      const workspaceId = normalizeWorkspaceId(conversation.workspaceId);
+      if (workspaceId && !labelById.has(workspaceId)) {
+        labelById.set(workspaceId, group.workspaceLabel || `工作空间 ${workspaceId}`);
+      }
+    });
+  });
+  const normalizedCurrentWorkspaceId = normalizeWorkspaceId(currentWorkspaceId);
+  if (normalizedCurrentWorkspaceId && currentWorkspaceLabel && !labelById.has(normalizedCurrentWorkspaceId)) {
+    labelById.set(normalizedCurrentWorkspaceId, currentWorkspaceLabel);
+  }
+  return labelById;
+}
+
+/**
+ * 将筛选后的记忆按跨项目用户记忆和具体工作空间分组，保证用户能一次性治理所有项目约定。
+ */
+function groupVisibleMemories(
+  memories: LongTermMemoryItem[],
+  workspaceLabelById: Map<string, string>,
+): MemoryWorkspaceGroup[] {
+  const userMemories: LongTermMemoryItem[] = [];
+  const projectMemoriesByWorkspaceId = new Map<string, LongTermMemoryItem[]>();
+
+  memories.forEach((memory) => {
+    const memoryWorkspaceId = normalizeWorkspaceId(memory.workspaceId);
+    if (normalizeScope(memory.memoryScope) !== 'PROJECT' || !memoryWorkspaceId) {
+      userMemories.push(memory);
+      return;
+    }
+    projectMemoriesByWorkspaceId.set(
+      memoryWorkspaceId,
+      [...(projectMemoriesByWorkspaceId.get(memoryWorkspaceId) ?? []), memory],
+    );
+  });
+
+  const groups: MemoryWorkspaceGroup[] = [];
+  if (userMemories.length > 0) {
+    groups.push({
+      key: 'user',
+      label: '跨项目用户记忆',
+      description: '这些偏好不绑定具体工作空间，会在用户相关对话中参与上下文。',
+      memories: userMemories,
+    });
+  }
+
+  Array.from(projectMemoriesByWorkspaceId.entries())
+    .sort(([leftWorkspaceId], [rightWorkspaceId]) => {
+      const leftLabel = workspaceLabelById.get(leftWorkspaceId) ?? `工作空间 ${leftWorkspaceId}`;
+      const rightLabel = workspaceLabelById.get(rightWorkspaceId) ?? `工作空间 ${rightWorkspaceId}`;
+      return leftLabel.localeCompare(rightLabel, 'zh-CN');
+    })
+    .forEach(([memoryWorkspaceId, workspaceMemories]) => {
+      const label = workspaceLabelById.get(memoryWorkspaceId) ?? `工作空间 ${memoryWorkspaceId}`;
+      groups.push({
+        key: `workspace-${memoryWorkspaceId}`,
+        label,
+        description: `工作空间 ${memoryWorkspaceId} 的项目约定，只在该项目上下文中生效。`,
+        memories: workspaceMemories,
+      });
+    });
+
+  return groups;
+}
+
+/**
+ * 返回单条记忆的工作空间展示名，无法匹配到侧栏分组时回退到 workspaceId。
+ */
+function resolveMemoryWorkspaceLabel(
+  memory: LongTermMemoryItem,
+  workspaceLabelById: Map<string, string>,
+) {
+  const memoryWorkspaceId = normalizeWorkspaceId(memory.workspaceId);
+  if (!memoryWorkspaceId) {
+    return null;
+  }
+  return workspaceLabelById.get(memoryWorkspaceId) ?? memoryWorkspaceId;
+}
+
 function normalizeScope(scope: string | null | undefined): 'USER' | 'PROJECT' {
   return String(scope ?? '').toUpperCase() === 'PROJECT' ? 'PROJECT' : 'USER';
 }
 
 function normalizeStatus(status: string | null | undefined): LongTermMemoryStatus {
   return String(status ?? '').toUpperCase() === 'REJECTED' ? 'REJECTED' : 'ACTIVE';
+}
+
+function normalizeWorkspaceId(workspaceId: string | number | null | undefined) {
+  const normalizedWorkspaceId = String(workspaceId ?? '').trim();
+  return normalizedWorkspaceId.length > 0 ? normalizedWorkspaceId : null;
 }
 
 function formatDate(value?: string | null) {

@@ -30,16 +30,18 @@ public class ChatMemoryController {
      * 查询当前用户可见的长期记忆。
      * @param workspaceId 工作空间 ID，可为空；为空时查询用户级或未归属空间记忆。
      * @param status 状态筛选，可为空或 ALL。
+     * @param includeAllWorkspaces 是否查询当前用户全部工作空间记忆，仅供记忆管理页使用。
      * @return 当前用户可见长期记忆列表。
      */
     @GetMapping
     public ApiResponse<List<GovernanceLongTermMemory>> listMemories(
         @RequestParam(required = false) Long workspaceId,
-        @RequestParam(required = false) String status
+        @RequestParam(required = false) String status,
+        @RequestParam(defaultValue = "false") boolean includeAllWorkspaces
     ) {
         // 步骤 1：用户身份由 Sa-Token 提供，Controller 只做协议参数适配。
         Long userId = StpUtil.getLoginIdAsLong();
-        return ApiResponse.success(longTermMemoryService.listUserMemories(userId, workspaceId, status));
+        return ApiResponse.success(longTermMemoryService.listUserMemories(userId, workspaceId, status, includeAllWorkspaces));
     }
 
     /**

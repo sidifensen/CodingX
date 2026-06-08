@@ -97,8 +97,30 @@ public class LongTermMemoryService {
      * @return 用户可见记忆列表。
      */
     public List<GovernanceLongTermMemory> listUserMemories(Long userId, Long workspaceId, String status) {
+        return listUserMemories(userId, workspaceId, status, false);
+    }
+
+    /**
+     * 查询用户可见的记忆列表；管理页可显式请求当前账号所有工作空间记忆。
+     * @param userId 当前用户 ID。
+     * @param workspaceId 当前工作空间 ID，可为空。
+     * @param status 状态筛选，可为空。
+     * @param includeAllWorkspaces 是否查询当前用户全部工作空间记忆，仅供记忆管理页总览使用。
+     * @return 用户可见记忆列表。
+     */
+    public List<GovernanceLongTermMemory> listUserMemories(
+        Long userId,
+        Long workspaceId,
+        String status,
+        boolean includeAllWorkspaces
+    ) {
         requireUserId(userId);
-        return memoryRepository.findForUser(userId, workspaceId, normalizeStatusOrNull(status), DEFAULT_USER_LIST_LIMIT);
+        String normalizedStatus = normalizeStatusOrNull(status);
+        if (includeAllWorkspaces) {
+            // 管理页需要跨工作空间编辑/删除自己的记忆；模型上下文检索不走这个分支，避免串入无关项目约定。
+            return memoryRepository.findAllForUser(userId, normalizedStatus, DEFAULT_USER_LIST_LIMIT);
+        }
+        return memoryRepository.findForUser(userId, workspaceId, normalizedStatus, DEFAULT_USER_LIST_LIMIT);
     }
 
     /**

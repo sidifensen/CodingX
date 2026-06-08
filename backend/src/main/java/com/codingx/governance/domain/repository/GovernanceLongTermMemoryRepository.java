@@ -39,6 +39,15 @@ public interface GovernanceLongTermMemoryRepository {
     List<GovernanceLongTermMemory> findForUser(Long userId, Long workspaceId, String status, int limit);
 
     /**
+     * 查询当前用户全部工作空间的记忆，供用户端管理页总览和治理自己的长期记忆。
+     * @param userId 用户 ID。
+     * @param status 状态筛选，可为空。
+     * @param limit 最大条数。
+     * @return 当前用户所有未删除长期记忆。
+     */
+    List<GovernanceLongTermMemory> findAllForUser(Long userId, String status, int limit);
+
+    /**
      * 查询管理端记忆列表。
      * @param status 状态筛选，可为空。
      * @param limit 最大条数。

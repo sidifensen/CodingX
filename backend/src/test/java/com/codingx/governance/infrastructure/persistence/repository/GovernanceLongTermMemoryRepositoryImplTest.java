@@ -3,15 +3,19 @@ package com.codingx.governance.infrastructure.persistence.repository;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.MybatisMapperBuilderAssistant;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
+import com.codingx.governance.domain.model.GovernanceLongTermMemory;
 import com.codingx.governance.infrastructure.persistence.dataobject.GovernanceLongTermMemoryDO;
 import com.codingx.governance.infrastructure.persistence.mapper.GovernanceLongTermMemoryMapper;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Locale;
 import org.junit.jupiter.api.BeforeAll;
@@ -79,6 +83,54 @@ class GovernanceLongTermMemoryRepositoryImplTest {
     }
 
     /**
+     * 管理页全工作空间查询只按用户归属和状态过滤，不追加 workspace 条件。
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void findAllForUserShouldNotLimitWorkspaceScope() {
+        when(mapper.selectList(any())).thenReturn(List.of());
+
+        repository.findAllForUser(200L, "ACTIVE", 10);
+
+        String sqlSegment = sqlSegment(captureSelectListWrapper());
+        assertTrue(sqlSegment.contains("user_id ="), sqlSegment);
+        assertTrue(sqlSegment.contains("status ="), sqlSegment);
+        assertFalse(sqlSegment.contains("workspace_id"), sqlSegment);
+    }
+
+    /**
+     * 逻辑删除字段受 MyBatis-Plus 全局规则影响，必须显式 SET，避免接口成功但 deleted 未落库。
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void saveDeletedMemoryShouldSetDeletedExplicitly() {
+        GovernanceLongTermMemoryDO existing = new GovernanceLongTermMemoryDO();
+        existing.setId(9001L);
+        existing.setDeleted(0);
+        when(mapper.selectById(9001L)).thenReturn(existing);
+
+        repository.save(GovernanceLongTermMemory.builder()
+            .id(9001L)
+            .memoryScope("USER")
+            .userId(1002L)
+            .memoryKey("memory-key")
+            .content("待删除记忆")
+            .status("ACTIVE")
+            .updatedAt(LocalDateTime.now())
+            .deleted(1)
+            .build());
+
+        ArgumentCaptor<UpdateWrapper<GovernanceLongTermMemoryDO>> captor =
+            ArgumentCaptor.forClass((Class<UpdateWrapper<GovernanceLongTermMemoryDO>>) (Class<?>) UpdateWrapper.class);
+        verify(mapper).update(isNull(), captor.capture());
+        String sqlSet = captor.getValue().getSqlSet().toLowerCase(Locale.ROOT);
+        String sqlSegment = sqlSegment(captor.getValue());
+        assertTrue(sqlSet.contains("deleted"), sqlSet);
+        assertTrue(sqlSegment.contains("id ="), sqlSegment);
+        assertTrue(sqlSegment.contains("deleted ="), sqlSegment);
+    }
+
+    /**
      * 已生效数量在当前工作空间下需要包含用户级记忆和当前项目记忆。
      */
     @Test
@@ -106,6 +158,10 @@ class GovernanceLongTermMemoryRepositoryImplTest {
     }
 
     private String sqlSegment(LambdaQueryWrapper<GovernanceLongTermMemoryDO> wrapper) {
+        return wrapper.getCustomSqlSegment().toLowerCase(Locale.ROOT);
+    }
+
+    private String sqlSegment(UpdateWrapper<GovernanceLongTermMemoryDO> wrapper) {
         return wrapper.getCustomSqlSegment().toLowerCase(Locale.ROOT);
     }
 }

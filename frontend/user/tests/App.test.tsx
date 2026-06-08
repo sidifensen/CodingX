@@ -267,7 +267,7 @@ describe('App', () => {
           { status: 200 },
         );
       }
-      if (url === '/api/chat/memories') {
+      if (url === '/api/chat/memories?includeAllWorkspaces=true') {
         return new Response(
           JSON.stringify({
             success: true,
@@ -297,7 +297,7 @@ describe('App', () => {
     expect(await screen.findByText('以后回答都先给结论')).toBeInTheDocument();
     await waitFor(() => {
       expect(requestedUrls).toContain('/api/auth/me');
-      expect(requestedUrls).toContain('/api/chat/memories');
+      expect(requestedUrls).toContain('/api/chat/memories?includeAllWorkspaces=true');
     });
     expect(requestedUrls.some((url) => url.startsWith('/api/chat/conversations'))).toBe(false);
     expect(requestedUrls.some((url) => url.startsWith('/api/chat/sample-questions'))).toBe(false);

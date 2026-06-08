@@ -44,7 +44,8 @@ status: active
 - `GET /api/admin/governance/project-profiles?limit=N` 返回按工作空间去重后的当前项目画像，`limit` 应在仓储层或服务层限制到安全范围。
 - `POST /api/admin/governance/project-profiles/scan` 接收 `workspaceId` 与 `workspacePath`，路径存在性、目录合法性和扫描细节由 service 处理。
 - `GET /api/chat/slash-commands` 只返回启用命令；内置命令模板的拼接由后端 `SlashCommandService` 完成，前端只提交结构化命令选择和用户正文。
-- `GET /api/chat/memories` 返回当前登录用户可见的用户级和项目级长期记忆；用户端管理页需要传 `status=ALL` 后在本地按范围和状态筛选。
+- `GET /api/chat/memories` 默认返回当前登录用户在当前工作空间可见的用户级和项目级长期记忆；`workspaceId` 为空且未传全量标记时只返回用户级/未归属工作空间记忆，避免把无关项目约定注入云端或未绑定会话。
+- `GET /api/chat/memories?includeAllWorkspaces=true` 是用户端记忆管理页专用查询，返回当前登录用户全部工作空间的未删除长期记忆；页面再按“跨项目用户记忆”和各工作空间项目记忆分组展示。
 - `PATCH /api/chat/memories/{memoryId}` 只允许当前用户编辑自己的记忆正文，服务层必须同步刷新 `content`、`keywordJson`、`memoryKey` 和 `updatedAt`。
 - `PATCH /api/chat/memories/{memoryId}/status` 只允许当前用户启用或停用自己的长期记忆，`ACTIVE` 参与模型上下文回注，`REJECTED` 不参与回注。
 - `DELETE /api/chat/memories/{memoryId}` 执行逻辑删除，设置 `deleted=1` 后必须从用户列表和上下文检索中排除，但保留来源审计链路。
@@ -59,6 +60,7 @@ status: active
 - 管理端项目画像主列表必须展示当前画像视图；如果历史重复数据仍存在，列表层需要按 `workspace_id` 选取最近扫描结果，避免重复路径污染页面。
 - 长期记忆与短期摘要语义必须分离：长期记忆按用户/项目持久化，短期摘要只压缩单会话历史。
 - 长期记忆不再使用确认流：只有用户消息出现“记住”“请记忆”“长期保存”“以后都按”“我的偏好”等显式授权信号才自动写入 `ACTIVE`，普通聊天不能沉淀。
+- 聊天模型上下文检索必须继续按当前用户和当前 `workspaceId` 查询 ACTIVE 记忆；管理页的 `includeAllWorkspaces=true` 不能被复用到模型回注链路。
 - 用户端长期记忆管理必须使用项目内自定义弹窗、主题令牌和后端 `ApiResponse.message`，禁止用浏览器原生 `alert`、`confirm` 或 `prompt`。
 
 ## Compatibility Notes

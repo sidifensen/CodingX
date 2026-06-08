@@ -140,6 +140,26 @@ class LongTermMemoryServiceTest {
     }
 
     /**
+     * 用户记忆管理页需要查看当前账号所有工作空间的项目记忆，不能只局限于当前选中的 workspace。
+     */
+    @Test
+    void listUserMemoriesWithAllWorkspacesShouldIncludeProjectMemoriesAcrossWorkspaces() {
+        InMemoryLongTermMemoryRepository repository = new InMemoryLongTermMemoryRepository();
+        repository.save(sampleMemory("ACTIVE").toBuilder().id(1L).userId(200L).workspaceId(null).content("用户偏好").build());
+        repository.save(sampleMemory("ACTIVE").toBuilder().id(2L).userId(200L).workspaceId(300L).memoryScope("PROJECT").content("项目 300 约定").build());
+        repository.save(sampleMemory("ACTIVE").toBuilder().id(3L).userId(200L).workspaceId(301L).memoryScope("PROJECT").content("项目 301 约定").build());
+        repository.save(sampleMemory("ACTIVE").toBuilder().id(4L).userId(201L).workspaceId(301L).memoryScope("PROJECT").content("其他用户项目约定").build());
+        LongTermMemoryService service = new LongTermMemoryService(repository);
+
+        List<GovernanceLongTermMemory> memories = service.listUserMemories(200L, null, "ALL", true);
+
+        assertEquals(3, memories.size());
+        assertTrue(memories.stream().anyMatch(memory -> "项目 300 约定".equals(memory.getContent())));
+        assertTrue(memories.stream().anyMatch(memory -> "项目 301 约定".equals(memory.getContent())));
+        assertTrue(memories.stream().noneMatch(memory -> "其他用户项目约定".equals(memory.getContent())));
+    }
+
+    /**
      * 已生效数量需要同时包含跨项目用户偏好和当前项目记忆，供聊天页展示 Agent 当前上下文规模。
      */
     @Test
@@ -272,6 +292,14 @@ class LongTermMemoryServiceTest {
             return savedMemories.stream()
                 .filter(memory -> userId.equals(memory.getUserId()))
                 .filter(memory -> memory.getWorkspaceId() == null || workspaceId != null && workspaceId.equals(memory.getWorkspaceId()))
+                .toList();
+        }
+
+        @Override
+        public List<GovernanceLongTermMemory> findAllForUser(Long userId, String status, int limit) {
+            return savedMemories.stream()
+                .filter(memory -> userId.equals(memory.getUserId()))
+                .filter(memory -> status == null || status.equals(memory.getStatus()))
                 .toList();
         }
 

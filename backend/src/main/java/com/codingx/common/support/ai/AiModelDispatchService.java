@@ -33,12 +33,12 @@ public class AiModelDispatchService {
     private final AiModelSelector aiModelSelector;
 
     /**
-     * 最近一次调度尝试过的 provider 列表，用于跨线程测试和问题定位。
+     * 最近一次调度尝试过的候选 provider 列表，用于跨线程测试和问题定位。
      */
     private volatile List<String> lastAttemptedProviders = List.of();
 
     /**
-     * 当前线程本次调度尝试过的 provider 列表，避免并发请求互相覆盖观测结果。
+     * 当前线程本次调度尝试过的候选 provider 列表，避免并发请求互相覆盖观测结果。
      */
     private final ThreadLocal<List<String>> currentThreadAttemptedProviders = ThreadLocal.withInitial(List::of);
 
@@ -133,16 +133,17 @@ public class AiModelDispatchService {
         );
         for (AiModelTarget target : targets) {
             String modelId = target.id();
+            String logicalProvider = target.candidate().getProvider();
             // 步骤 3：熔断中的模型直接跳过，避免请求继续打到短期不可用 provider。
             if (!healthRegistry.allowCall(modelId)) {
                 continue;
             }
-            AiProviderClient providerClient = resolveProviderClient(target.candidate().getProvider());
+            AiProviderClient providerClient = resolveProviderClient(logicalProvider);
             if (providerClient == null) {
                 continue;
             }
-            // 步骤 4：记录本次尝试顺序；请求局部变量避免单例 Bean 下并发请求互相污染。
-            attemptedProviders.add(providerClient.provider());
+            // 步骤 4：记录候选池中的真实 provider；客户端 provider 只表示内部协议适配器。
+            attemptedProviders.add(logicalProvider);
             publishAttemptSnapshot(attemptedProviders);
             FirstTokenAwaiter awaiter = new FirstTokenAwaiter();
             FirstTokenBufferingHandler bufferingHandler = new FirstTokenBufferingHandler(handler, awaiter);
@@ -160,7 +161,7 @@ public class AiModelDispatchService {
                 // 步骤 6：provider 返回空 session 视为首包前失败，标记失败后继续 fallback。
                 healthRegistry.markFailure(modelId);
                 lastError = new IllegalStateException(
-                    providerClient.provider() + "/" + target.candidate().getModel()
+                    logicalProvider + "/" + target.candidate().getModel()
                         + ErrorMessageCatalog.AI_STREAM_SESSION_NULL_SUFFIX
                 );
                 continue;
@@ -172,12 +173,12 @@ public class AiModelDispatchService {
                 if (!result.isSuccess()) {
                     healthRegistry.markFailure(modelId);
                     session.cancel();
-                    lastError = errorForResult(result, providerClient.provider(), target.candidate().getModel());
+                    lastError = errorForResult(result, logicalProvider, target.candidate().getModel());
                     continue;
                 }
 
                 // 步骤 8：首包成功后再向下游提交缓存事件，避免失败候选污染最终响应。
-                handler.onMetadata(providerClient.provider(), target.candidate().getModel());
+                handler.onMetadata(logicalProvider, target.candidate().getModel());
                 bufferingHandler.commit();
                 try {
                     // 步骤 9：首包后异常说明响应已开始，不能再 fallback，转换为可观察错误。

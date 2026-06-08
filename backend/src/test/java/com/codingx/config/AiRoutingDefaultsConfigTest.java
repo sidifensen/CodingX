@@ -166,6 +166,34 @@ class AiRoutingDefaultsConfigTest {
     }
 
     /**
+     * 历史消息中的 openai-compatible 只是协议适配器，升级时应按唯一模型名映射回填真实候选 provider。
+     * @throws IOException 读取迁移文件失败时抛出。
+     */
+    @Test
+    void migrationBackfillsOpenAiCompatibleChatMessageProviderFromUniqueCandidateModel() throws IOException {
+        try (Stream<Path> migrations = Files.list(Path.of("src/main/resources/db/migration"))) {
+            boolean found = migrations
+                .filter(path -> path.getFileName().toString().endsWith(".sql"))
+                .anyMatch(path -> {
+                    try {
+                        String content = Files.readString(path);
+                        return containsAll(
+                            content,
+                            "chat_message",
+                            "openai-compatible",
+                            "candidate_provider",
+                            "HAVING COUNT(DISTINCT provider_value.setting_value) = 1"
+                        );
+                    } catch (IOException exception) {
+                        throw new IllegalStateException("读取迁移文件失败：" + path, exception);
+                    }
+                });
+
+            assertTrue(found, "应存在一条迁移按唯一候选模型回填历史消息真实 provider");
+        }
+    }
+
+    /**
      * 判断文本是否同时包含所有指定片段。
      * @param content 待检查文本。
      * @param snippets 需要命中的片段。

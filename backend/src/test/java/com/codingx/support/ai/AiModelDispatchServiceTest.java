@@ -302,6 +302,49 @@ class AiModelDispatchServiceTest {
     }
 
     /**
+     * OpenAI 兼容客户端只是内部协议适配器，对外 metadata 必须保留候选池中的真实模型商。
+     */
+    @Test
+    void streamChatReportsCandidateProviderWhenCompatibleClientHandlesVendor() {
+        AiProviderClient compatibleProvider = new AiProviderClient() {
+            @Override
+            public String provider() {
+                return "openai-compatible";
+            }
+
+            @Override
+            public AiStreamSession streamChat(AiConversationRequest request, AiModelTarget target, AiStreamHandler handler) {
+                handler.onContentDelta("兼容客户端回答");
+                handler.onComplete();
+                return new AiStreamSession(() -> {}, CompletableFuture.completedFuture(null));
+            }
+        };
+        AiProperties properties = minimalPropertiesWithCandidates(
+            candidate("qwen-plus", "bailian", "qwen-plus-latest", 1, false)
+        );
+        properties.getProviders().put("bailian", provider("http://127.0.0.1:5", "key"));
+        AiModelDispatchService service = new AiModelDispatchService(
+            List.of(compatibleProvider),
+            new AiProviderHealthRegistry(2, 30_000L),
+            new AiModelSelector(properties)
+        );
+        List<String> terminals = new ArrayList<>();
+
+        service.streamChat(AiConversationRequest.builder()
+            .messages(List.of(ChatMessage.userMessage(1L, "你好")))
+            .stream(true)
+            .build(), new AiStreamHandler() {
+            @Override
+            public void onMetadata(String provider, String model) {
+                terminals.add(provider + ":" + model);
+            }
+        });
+
+        assertEquals(List.of("bailian"), service.getLastAttemptedProviders());
+        assertEquals(List.of("bailian:qwen-plus-latest"), terminals);
+    }
+
+    /**
      * 候选 provider 没有注册客户端时，应跳过该候选并继续尝试后续模型。
      */
     @Test

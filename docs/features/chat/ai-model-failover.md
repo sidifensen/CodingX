@@ -33,6 +33,10 @@
 
 默认路由顺序只由 `ai.chat.candidates.<slot>.*` 候选池决定。候选字段中的 provider、模型名、能力标记和 `priority` 一起决定真实调用目标和 fallback 顺序；只有请求显式传入 `preferredModel` 时，才会在匹配候选内临时提升该候选到首位。普通请求不直接让 thinking 候选抢占默认入口，即使运行时配置把 thinking 候选 priority 调到更高，也会先尝试非 thinking 候选；thinking 候选仍保留在后续 fallback 中。
 
+`openai-compatible` 只表示后端内部的协议适配器编码，不是业务审计意义上的模型商。路由层解析客户端时可以回退到该适配器，但对外发布的 metadata、调度尝试记录和最终 `chat_message.provider` 必须使用候选池中的 provider，例如 `bailian` 或 `siliconflow`；`chat_message.model` 则使用候选池中的真实模型名。
+
+历史消息如果已经落成 `openai-compatible`，迁移脚本会按当前候选池中的唯一 `model -> provider` 映射回填真实 provider；同一模型名对应多个 provider 时不会自动更新，避免审计字段被错误覆盖。
+
 调度层和 provider 客户端都会以 `AiConversationRequest.thinkingEnabled()` 作为 thinking 展示边界。OpenAI 兼容 provider 与 DeepSeek provider 即使收到上游 `reasoning_content`，只要本轮请求未开启深度思考，就不会向下游发布 `thinking` 事件；调度层也会兜底丢弃新增 provider 误发的 thinking 增量，避免该内容进入 SSE 和消息持久化。该丢弃发生在首包缓冲之前，因此普通请求中被过滤的 thinking 不会被当作可见首包；若候选只返回 reasoning 而没有正文或工具调用，路由层会继续 fallback。
 
 ## 测试与验证

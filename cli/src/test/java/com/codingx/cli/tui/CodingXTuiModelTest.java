@@ -693,7 +693,7 @@ class CodingXTuiModelTest {
     }
 
     @Test
-    void tabShouldKeepInputWhenSlashCommandMatchIsAmbiguous() {
+    void tabShouldSelectFirstSlashCommandWhenMultipleMatches() {
         CapturingStreamingEventSource eventSource = new CapturingStreamingEventSource();
         CodingXTuiModel model = new CodingXTuiModel(
             tempDir.resolve("workspace"),
@@ -707,10 +707,132 @@ class CodingXTuiModelTest {
         model.update(new KeyPressMessage(new Key(KeyType.keyHT)));
 
         String view = stripAnsi(model.view());
-        assertTrue(view.contains("› /log█"), view);
-        assertTrue(view.contains("/login"));
-        assertTrue(view.contains("/logout"));
+        assertTrue(view.contains("› /login█"), view);
+        assertFalse(view.contains("› /log█"), view);
         assertTrue(eventSource.tasks.isEmpty());
+    }
+
+    @Test
+    void downArrowShouldMoveSelectionToNextSlashCommand() {
+        CodingXTuiModel model = new CodingXTuiModel(
+            tempDir.resolve("workspace"),
+            new MockAgentEventSource(),
+            new TerminalRenderer(),
+            null,
+            backendSlashCatalog()
+        );
+
+        pressRunes(model, "/");
+        model.update(new KeyPressMessage(new Key(KeyType.KeyDown)));
+
+        String view = stripAnsi(model.view());
+        // 第二项 /logout 变为选中态，带选择箭头标记。
+        assertTrue(view.contains("› /logout"), view);
+        // 第一项 /login 不再是选中态（无选择箭头），但仍在面板中。
+        assertTrue(view.contains("/login"), view);
+    }
+
+    @Test
+    void upArrowFromFirstItemShouldWrapToLastSlashCommand() {
+        CodingXTuiModel model = new CodingXTuiModel(
+            tempDir.resolve("workspace"),
+            new MockAgentEventSource(),
+            new TerminalRenderer(),
+            null,
+            backendSlashCatalog()
+        );
+
+        pressRunes(model, "/");
+        // 初始选中第一项，按 Up 应回绕到最后一项。
+        model.update(new KeyPressMessage(new Key(KeyType.KeyUp)));
+
+        String view = stripAnsi(model.view());
+        // 5 个命令（login/logout/help/review/fix-test），最后一项是 /fix-test。
+        assertTrue(view.contains("› /fix-test"), view);
+    }
+
+    @Test
+    void enterShouldSelectHighlightedSlashCommand() {
+        CapturingStreamingEventSource eventSource = new CapturingStreamingEventSource();
+        CodingXTuiModel model = new CodingXTuiModel(
+            tempDir.resolve("workspace"),
+            eventSource,
+            new TerminalRenderer(),
+            null,
+            backendSlashCatalog()
+        );
+
+        pressRunes(model, "/");
+        // 下移两项选中 /help（索引 2），然后回车选中。
+        model.update(new KeyPressMessage(new Key(KeyType.KeyDown)));
+        model.update(new KeyPressMessage(new Key(KeyType.KeyDown)));
+        model.update(new KeyPressMessage(new Key(KeyType.keyCR)));
+
+        String view = stripAnsi(model.view());
+        assertTrue(view.contains("› /help█"), view);
+        assertTrue(eventSource.tasks.isEmpty(), "命令面板选中不应提交任务");
+    }
+
+    @Test
+    void slashCommandPanelShouldRenderUnselectedCommandsDimly() {
+        CodingXTuiModel model = new CodingXTuiModel(
+            tempDir.resolve("workspace"),
+            new MockAgentEventSource(),
+            new TerminalRenderer(),
+            null,
+            backendSlashCatalog()
+        );
+
+        pressRunes(model, "/");
+
+        String view = model.view();
+        // 未选中命令保持灰色弱提示，只让当前选中项抢占视觉焦点。
+        assertTrue(view.contains("\u001B[90m  /logout 退出登录\u001B[0m"), view);
+        assertTrue(view.contains("\u001B[90m  /review 审查当前改动并优先指出风险和测试缺口\u001B[0m"), view);
+        // 选中项使用蓝色前景 + 灰色背景，避免整张命令列表都像高亮信息。
+        assertTrue(view.contains("\u001B[34;48;5;238m/login\u001B[0m"), view);
+        assertTrue(view.contains("登录 CodingX"), view);
+    }
+
+    @Test
+    void selectedSlashCommandShouldUseBlueOnGrayBackground() {
+        CodingXTuiModel model = new CodingXTuiModel(
+            tempDir.resolve("workspace"),
+            new MockAgentEventSource(),
+            new TerminalRenderer(),
+            null,
+            backendSlashCatalog()
+        );
+
+        pressRunes(model, "/");
+        // 初始选中第一项 /login。
+        String view = model.view();
+        assertTrue(view.contains("\u001B[34;48;5;238m/login"), view);
+    }
+
+    @Test
+    void typingAfterNavigationShouldResetSlashCommandSelection() {
+        CodingXTuiModel model = new CodingXTuiModel(
+            tempDir.resolve("workspace"),
+            new MockAgentEventSource(),
+            new TerminalRenderer(),
+            null,
+            backendSlashCatalog()
+        );
+
+        pressRunes(model, "/");
+        // 下移两项后先选中 /help，继续输入会触发过滤并把选中索引重置到第一项。
+        model.update(new KeyPressMessage(new Key(KeyType.KeyDown)));
+        model.update(new KeyPressMessage(new Key(KeyType.KeyDown)));
+        // 继续输入字符，选中索引应重置为 0。
+        pressRunes(model, "r");
+
+        String view = stripAnsi(model.view());
+        // 过滤后第一项 /review 应为选中态。
+        assertTrue(view.contains("› /review"), view);
+        // /login 和 /logout 已被过滤掉。
+        assertFalse(view.contains("/login"), view);
+        assertFalse(view.contains("/logout"), view);
     }
 
     @Test

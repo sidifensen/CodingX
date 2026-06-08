@@ -58,6 +58,11 @@ public class CodingXTuiModel implements Model {
     private static final String ANSI_DIM_PLACEHOLDER = "\u001B[90m";
 
     /**
+     * ANSI 蓝色前景 + 灰色背景，用于标记当前选中的命令项，配合上下键导航使用。
+     */
+    private static final String ANSI_BLUE_ON_GRAY = "\u001B[34;48;5;238m";
+
+    /**
      * ANSI 样式复位，防止灰色 placeholder 污染后续状态栏和回答内容。
      */
     private static final String ANSI_RESET = "\u001B[0m";
@@ -178,6 +183,11 @@ public class CodingXTuiModel implements Model {
     private StringBuilder activeAssistantText;
 
     /**
+     * Slash Command 面板当前选中项的索引；上下键导航时递增/递减，输入字符或删除时重置为 0。
+     */
+    private int slashCommandSelectedIndex;
+
+    /**
      * 本地计划模式开关，会随任务提交传给后端聊天流。
      */
     private boolean planMode;
@@ -286,6 +296,7 @@ public class CodingXTuiModel implements Model {
         this.terminalHeight = Integer.MAX_VALUE;
         this.activeAssistantLineIndex = -1;
         this.activeAssistantText = new StringBuilder();
+        this.slashCommandSelectedIndex = 0;
 
         configureTextarea();
     }
@@ -367,9 +378,43 @@ public class CodingXTuiModel implements Model {
                 planMode = !planMode;
                 return UpdateResult.from(this, null);
             }
-            if (isTabKey(keyPressMessage) && completeUniqueSlashCommand()) {
-                return UpdateResult.from(this, null);
+
+            // Slash Command 面板打开时，上下键只用于导航候选列表，不能交给 textarea 移动光标。
+            if (shouldRenderSlashCommandPanel()) {
+                if (keyPressMessage.type() == KeyType.KeyUp || "up".equals(key)) {
+                    navigateSlashCommandUp();
+                    return UpdateResult.from(this, null);
+                }
+                if (keyPressMessage.type() == KeyType.KeyDown || "down".equals(key)) {
+                    navigateSlashCommandDown();
+                    return UpdateResult.from(this, null);
+                }
+                if (isSubmitKey(keyPressMessage)) {
+                    if (selectSlashCommand()) {
+                        return UpdateResult.from(this, null);
+                    }
+                }
+                if (isTabKey(keyPressMessage)) {
+                    if (selectSlashCommand() || completeUniqueSlashCommand()) {
+                        return UpdateResult.from(this, null);
+                    }
+                }
+            } else {
+                if (isTabKey(keyPressMessage) && completeUniqueSlashCommand()) {
+                    return UpdateResult.from(this, null);
+                }
             }
+
+            // 用户键入或删除字符时重置命令选中索引，新输入总是从第一项开始。
+            if (keyPressMessage.type() == KeyType.KeyRunes
+                || keyPressMessage.type() == KeyType.keyBS
+                || keyPressMessage.type() == KeyType.keyDEL
+                || keyPressMessage.type() == KeyType.KeyDelete
+                || "backspace".equals(key)
+                || "delete".equals(key)) {
+                slashCommandSelectedIndex = 0;
+            }
+
             if (isSubmitKey(keyPressMessage)) {
                 // 提交键必须先于 textarea.update() 处理；否则 LF/CR 会被 textarea 当成编辑换行，导致任务不进入 transcript。
                 String normalizedTask = normalizeTask(textarea.value());
@@ -1063,30 +1108,115 @@ public class CodingXTuiModel implements Model {
         if (matches.size() != 1) {
             return false;
         }
+        slashCommandSelectedIndex = 0;
         textarea.setValue(matches.getFirst().command());
         return true;
     }
 
     /**
-     * 渲染输入中的命令候选；保持纯文本而非复杂交互控件，适配普通终端和测试输出。
+     * 上下键导航：将选中索引向上移动一项，到顶部时回绕到底部。
+     */
+    private void navigateSlashCommandUp() {
+        String keyword = slashCommandKeyword(normalizeRendererNewlines(textarea.value()).trim());
+        int count = filteredSlashCommandCount(keyword);
+        if (count == 0) {
+            return;
+        }
+        slashCommandSelectedIndex = (slashCommandSelectedIndex - 1 + count) % count;
+    }
+
+    /**
+     * 上下键导航：将选中索引向下移动一项，到底部时回绕到顶部。
+     */
+    private void navigateSlashCommandDown() {
+        String keyword = slashCommandKeyword(normalizeRendererNewlines(textarea.value()).trim());
+        int count = filteredSlashCommandCount(keyword);
+        if (count == 0) {
+            return;
+        }
+        slashCommandSelectedIndex = (slashCommandSelectedIndex + 1) % count;
+    }
+
+    /**
+     * 选中当前高亮的命令填入输入框；输入已经与某个命令完全匹配时不消费按键，让 Enter 走提交流程。
+     *
+     * @return true 表示已选中并消费了本次操作。
+     */
+    private boolean selectSlashCommand() {
+        String value = normalizeRendererNewlines(textarea.value()).trim();
+        String keyword = slashCommandKeyword(value);
+        List<SlashCommandDisplay> filtered = filteredSlashCommands(keyword);
+        if (filtered.isEmpty()) {
+            return false;
+        }
+        // 输入已经是完整命令时让 Enter 直接提交，而不是重新选中自己。
+        if (slashCommandDisplays().stream().anyMatch(c -> c.command().equalsIgnoreCase(value))) {
+            return false;
+        }
+        int index = Math.min(slashCommandSelectedIndex, filtered.size() - 1);
+        textarea.setValue(filtered.get(index).command());
+        return true;
+    }
+
+    /**
+     * 按关键字过滤命令展示列表，供导航计数和选中操作复用。
+     *
+     * @param keyword 搜索关键字。
+     * @return 匹配的命令列表。
+     */
+    private List<SlashCommandDisplay> filteredSlashCommands(String keyword) {
+        return slashCommandDisplays().stream()
+            .filter(command -> keyword.isBlank() || command.searchText().contains(keyword))
+            .toList();
+    }
+
+    /**
+     * 返回当前过滤条件下的匹配命令数量。
+     *
+     * @param keyword 搜索关键字。
+     * @return 匹配数量。
+     */
+    private int filteredSlashCommandCount(String keyword) {
+        return (int) slashCommandDisplays().stream()
+            .filter(command -> keyword.isBlank() || command.searchText().contains(keyword))
+            .count();
+    }
+
+    /**
+     * 渲染输入中的命令候选面板；普通候选保持灰色弱提示，当前选中项带灰色背景和选择标记。
      *
      * @return 命令候选文本。
      */
     private String renderSlashCommandPanel() {
         String keyword = slashCommandKeyword(normalizeRendererNewlines(textarea.value()).trim());
-        List<String> commands = slashCommandDisplays().stream()
-            .filter(command -> keyword.isBlank() || command.searchText().contains(keyword))
-            .map(SlashCommandDisplay::line)
-            .toList();
-        if (commands.isEmpty()) {
+        List<SlashCommandDisplay> filtered = filteredSlashCommands(keyword);
+        if (filtered.isEmpty()) {
             return styleDim("  未匹配到命令");
         }
         List<String> lines = new ArrayList<>();
-        lines.add("  命令");
-        for (String command : commands) {
-            lines.add("  " + command);
+        lines.add(styleDim("  命令"));
+        int clampedIndex = Math.min(slashCommandSelectedIndex, filtered.size() - 1);
+        for (int index = 0; index < filtered.size(); index++) {
+            SlashCommandDisplay display = filtered.get(index);
+            boolean selected = index == clampedIndex;
+            lines.add(renderSlashCommandLine(display, selected));
         }
-        return styleDim(String.join(RENDER_NEWLINE, lines));
+        return String.join(RENDER_NEWLINE, lines);
+    }
+
+    /**
+     * 渲染单条命令候选行；未选中项保持灰色弱提示，选中项额外加灰色背景和选择箭头。
+     *
+     * @param display 命令展示数据。
+     * @param selected 当前行是否为选中项。
+     * @return 带 ANSI 样式的单行文本。
+     */
+    private String renderSlashCommandLine(SlashCommandDisplay display, boolean selected) {
+        if (!selected) {
+            return styleDim("  " + display.name() + " " + display.description());
+        }
+        return "› " + ANSI_BLUE_ON_GRAY + display.name() + ANSI_RESET
+            + ANSI_DIM_PLACEHOLDER + " " + display.description() + ANSI_RESET;
     }
 
     /**
@@ -1106,23 +1236,27 @@ public class CodingXTuiModel implements Model {
      */
     private List<SlashCommandDisplay> slashCommandDisplays() {
         List<SlashCommandDisplay> commands = new ArrayList<>();
-        commands.add(new SlashCommandDisplay("/login", "/login   登录 CodingX"));
-        commands.add(new SlashCommandDisplay("/logout", "/logout  退出登录"));
-        commands.add(new SlashCommandDisplay("/help", "/help    查看命令列表"));
+        commands.add(new SlashCommandDisplay("/login", "/login", "登录 CodingX"));
+        commands.add(new SlashCommandDisplay("/logout", "/logout", "退出登录"));
+        commands.add(new SlashCommandDisplay("/help", "/help", "查看命令列表"));
         for (CliSlashCommand command : backendSlashCommands) {
             String commandText = "/" + command.commandCode();
-            commands.add(new SlashCommandDisplay(commandText, formatBackendSlashCommand(command)));
+            String displayName = command.displayName() == null || command.displayName().isBlank()
+                ? commandText
+                : command.displayName();
+            String description = command.description() == null ? "" : command.description().trim();
+            commands.add(new SlashCommandDisplay(commandText, displayName, description));
         }
         return commands;
     }
 
     /**
-     * Slash Command 展示项；command 用于补全，line 用于候选面板。
+     * Slash Command 展示项；command 用于补全，name 和 description 用于候选过滤与分段渲染。
      */
-    private record SlashCommandDisplay(String command, String line) {
+    private record SlashCommandDisplay(String command, String name, String description) {
 
         private String searchText() {
-            return line.toLowerCase();
+            return (name + " " + description).toLowerCase();
         }
     }
 

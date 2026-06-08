@@ -21,6 +21,7 @@ related_docs:
   - docs/superpowers/memory/lessons/stream-replay-stale-closure-overwrites-content.md
   - docs/superpowers/memory/lessons/chat-citation-links-must-not-wait-for-slow-replay-panels.md
   - docs/superpowers/memory/lessons/share-selection-must-ignore-unpersisted-message-ids.md
+  - docs/superpowers/memory/lessons/ai-adapter-provider-leaks-to-audit-fields.md
   - docs/superpowers/memory/tool/codex-local-tool-runtime-module-card.md
   - docs/superpowers/memory/tool/codex-local-tool-runtime-contract.md
 last_verified_commit: df295563eedea6ac3e6b6e500b3487c9c7b12db7
@@ -63,6 +64,8 @@ status: active
     - Electron 聊天首屏初始化必须按认证态和工作区上下文做幂等保护
   - `docs/superpowers/memory/lessons/built-in-skill-database-records-must-match-classpath-manifests.md`
     - 内置技能写入数据库后，必须同步提供类路径 `SKILL.md`，否则运行时上下文无法读取
+  - `docs/superpowers/memory/lessons/ai-adapter-provider-leaks-to-audit-fields.md`
+    - AI 路由对外审计字段必须使用候选池 provider，不能泄漏内部协议适配器名
 - `docs/superpowers/memory/chat/ai-routing-module-card.md`
   - 聊天 AI 模型路由、候选池和故障切换的职责边界
 - `docs/superpowers/memory/chat/ai-routing-selection-contract.md`

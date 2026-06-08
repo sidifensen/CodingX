@@ -47,7 +47,7 @@
 
 1. 用户在本地 workspace 会话中发送消息，聊天服务带着 `userId`、`workspaceId` 和用户问题调用 `GovernanceAgentContextService.buildAgentContext`。
 2. `RepositoryInstructionContextService` 通过 `WorkspaceMapper` 查询当前用户拥有且未删除的 workspace，读取 `working_directory` 并校验目录存在。
-3. 服务按固定候选顺序发现规范文件，跳过目录、空文件、超出工作区的路径和显式排除路径；读取成功后记录来源类型、相对路径、内容长度和开头预览。
+3. 服务按固定候选顺序发现规范文件，跳过目录、空文件、符号链接、超出工作区的路径和显式排除路径；读取成功后记录来源类型、相对路径、内容长度和开头预览。
 4. 规范内容按单文件与总长度上限裁剪后拼成 `# 仓库规范文件` 片段，长期记忆仍按当前用户、workspace 和问题检索。
 5. `ChatApplicationService` 将治理上下文插入模型历史；若规范缺失或读取失败，只保留长期记忆或返回空字符串。
 

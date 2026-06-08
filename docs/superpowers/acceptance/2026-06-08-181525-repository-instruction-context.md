@@ -13,6 +13,7 @@
 | AC-001 | 本地 workspace 存在 `AGENTS.md`、`CLAUDE.md` 和 `.cursor/rules/*.mdc` 时，后端上下文会包含这些规范文件内容。 | Logic | 单元测试创建临时仓库和 workspace 记录。 | `RepositoryInstructionContextService.buildInstructionContext` 返回 `# 仓库规范文件`，并包含三个文件的相对路径和正文片段。 |
 | AC-002 | 后端不会加载用户明确排除的 Copilot、superpowers memory 和 `.codingx` 文件。 | Logic | 临时仓库同时创建 `.github/copilot-instructions.md`、`docs/superpowers/memory/a.md`、`.codingx/context.md`、`.codingx/rules.md`。 | 返回上下文不包含这些文件名和文件正文。 |
 | AC-003 | 后端识别规范文件时会打印发现流程和短预览。 | Logic | 单元测试通过输出捕获执行一次规范文件发现。 | 日志包含“开始识别仓库规范文件”和“识别到仓库规范文件”，包含相对路径和压缩后的开头预览，不包含完整超长正文。 |
+| AC-003A | 仓库内规范文件如果是符号链接，不得跟随读取目标内容。 | Logic | 单元测试创建或模拟 `AGENTS.md` 为符号链接，目标文件位于工作目录外。 | 返回上下文不包含符号链接路径和目标文件内容，日志不会打印目标文件预览。 |
 | AC-004 | `GovernanceAgentContextService` 组合仓库规范文件和 ACTIVE 长期记忆，不再读取项目画像。 | Logic | Mock 规范服务返回规则上下文，Mock 长期记忆服务返回一条 ACTIVE 记忆。 | 构建结果包含“仓库规范文件”和“长期记忆”，不包含“项目画像”。 |
 | AC-005 | 用户绑定本地仓库目录后，后端响应只返回 workspace 信息和已生效记忆数量。 | API | 控制器单元测试 mock `ChatWorkspaceBindingService.WorkspaceBindingResult`。 | `/api/chat/workspace/bind-repository` 响应含 `repositoryPath`、`workspaceId`、`workspaceName`、`activeMemoryCount`，不含 `projectProfile`。 |
 | AC-006 | 管理端治理接口不再暴露项目画像列表和扫描接口。 | API | 后端控制器代码和前端 API 测试更新后运行。 | `AdminGovernanceController` 没有 `/project-profiles` 映射，`AdminChatApi` 没有 `listProjectProfiles` 和 `scanProjectProfile`。 |

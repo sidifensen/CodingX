@@ -2,6 +2,7 @@ package com.codingx.governance.application;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.CALLS_REAL_METHODS;
 import static org.mockito.Mockito.when;
@@ -152,6 +153,50 @@ class RepositoryInstructionContextServiceTest {
     }
 
     /**
+     * 候选规范文件如果是指向仓库外的符号链接，必须跳过，避免把本地敏感文件注入模型或写入日志预览。
+     * @param tempDir 临时仓库目录。
+     * @throws Exception 文件创建失败时抛出。
+     */
+    @Test
+    void buildInstructionContextShouldSkipInstructionSymlinkEscapingWorkspace(@TempDir Path tempDir) throws Exception {
+        Path externalFile = Files.createTempFile("codingx-external-instruction", ".md");
+        Files.writeString(externalFile, "external secret should never load", StandardCharsets.UTF_8);
+        Path instructionLink = tempDir.resolve("AGENTS.md");
+        assumeTrue(createSymbolicLinkIfSupported(instructionLink, externalFile), "当前环境不支持创建符号链接");
+        when(workspaceMapper.selectOne(any())).thenReturn(workspace(tempDir));
+        RepositoryInstructionContextService service = new RepositoryInstructionContextService(workspaceMapper);
+
+        String context = service.buildInstructionContext(2002L, 3001L);
+
+        assertFalse(context.contains("external secret should never load"));
+        assertFalse(context.contains("AGENTS.md"));
+    }
+
+    /**
+     * 使用静态桩模拟符号链接，确保测试不依赖 Windows 开发机的 symlink 权限。
+     * @param tempDir 临时仓库目录。
+     * @throws Exception 静态桩配置失败时抛出。
+     */
+    @Test
+    void buildInstructionContextShouldNotReadSymbolicInstructionFile(@TempDir Path tempDir) throws Exception {
+        Path instructionPath = tempDir.resolve("AGENTS.md").toAbsolutePath().normalize();
+        when(workspaceMapper.selectOne(any())).thenReturn(workspace(tempDir));
+        try (MockedStatic<Files> files = Mockito.mockStatic(Files.class, CALLS_REAL_METHODS)) {
+            files.when(() -> Files.isSymbolicLink(instructionPath)).thenReturn(true);
+            files.when(() -> Files.isRegularFile(instructionPath)).thenReturn(true);
+            files.when(() -> Files.size(instructionPath)).thenReturn(33L);
+            files.when(() -> Files.readString(instructionPath, StandardCharsets.UTF_8))
+                .thenReturn("external secret should never load");
+            RepositoryInstructionContextService service = new RepositoryInstructionContextService(workspaceMapper);
+
+            String context = service.buildInstructionContext(2002L, 3001L);
+
+            assertFalse(context.contains("external secret should never load"));
+            assertFalse(context.contains("AGENTS.md"));
+        }
+    }
+
+    /**
      * 发现阶段读取文件大小失败时，日志必须带真实 workspaceId，便于排查具体仓库问题。
      * @param tempDir 临时仓库目录。
      * @throws Exception 文件创建或静态桩配置失败时抛出。
@@ -185,6 +230,15 @@ class RepositoryInstructionContextServiceTest {
     private void write(Path path, String content) throws Exception {
         Files.createDirectories(path.getParent());
         Files.writeString(path, content, StandardCharsets.UTF_8);
+    }
+
+    private boolean createSymbolicLinkIfSupported(Path link, Path target) throws Exception {
+        try {
+            Files.createSymbolicLink(link, target);
+            return true;
+        } catch (UnsupportedOperationException | IOException | SecurityException exception) {
+            return false;
+        }
     }
 
     private WorkspaceDO workspace(Path workingDirectory) {

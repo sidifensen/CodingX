@@ -196,7 +196,7 @@ public class RepositoryInstructionContextService {
         Path path,
         String sourceType
     ) {
-        if (!path.startsWith(workspacePath) || !Files.isRegularFile(path) || isExcluded(workspacePath, path)) {
+        if (!path.startsWith(workspacePath) || Files.isSymbolicLink(path) || !Files.isRegularFile(path) || isExcluded(workspacePath, path)) {
             return;
         }
         try {
@@ -227,6 +227,7 @@ public class RepositoryInstructionContextService {
         builder.append("# 仓库规范文件\n");
         builder.append("使用方式：以下内容来自仓库内的 Agent/AI 规范文件。请优先遵守与当前任务相关且更具体的规则，不要逐字复述给用户。\n");
         int totalChars = 0;
+        int appendedFileCount = 0;
         for (InstructionFile instructionFile : instructionFiles) {
             try {
                 String content = Files.readString(instructionFile.path(), StandardCharsets.UTF_8);
@@ -261,6 +262,7 @@ public class RepositoryInstructionContextService {
                     .append(normalizedContent.trim())
                     .append('\n');
                 totalChars += normalizedContent.length();
+                appendedFileCount++;
             } catch (Exception exception) {
                 log.warn(
                     "读取仓库规范文件失败: workspaceId={}, path={}, message={}",
@@ -269,6 +271,9 @@ public class RepositoryInstructionContextService {
                     exception.getMessage()
                 );
             }
+        }
+        if (appendedFileCount == 0) {
+            return "";
         }
         String context = builder.toString().trim();
         return "# 仓库规范文件".equals(context) ? "" : context;

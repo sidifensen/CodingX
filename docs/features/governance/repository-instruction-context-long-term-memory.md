@@ -17,7 +17,7 @@
 1. 用户端选择或切换本地仓库目录后，`useHostContext` 调用 `ChatApi.bindWorkspaceRepository`，后端 `ChatWorkspaceBindingService` 校验目录、创建或复用本地工作空间，并保存 `workspace.working_directory`。该绑定流程不再触发扫描画像生成，也不会写入画像类持久化数据；绑定响应继续提供 `workspaceId` 和已生效记忆数量，前端同步到 `useChatWorkspace` 状态。目录缺失、越权或不合法时由后端抛出中文业务异常，前端展示 `ApiResponse.message`。
 2. 聊天提交时，`ChatApplicationService` 在构造模型历史前调用 `GovernanceAgentContextService`。该服务把当前用户 ID、`workspaceId` 和本轮问题传给仓库规范文件服务与长期记忆服务；任一来源为空时跳过该片段，不影响聊天主流程。最终生成的治理上下文作为 system prompt 片段插入模型历史，与系统提示、Plan mode、搜索证据、专家和技能上下文并列。
 3. `RepositoryInstructionContextService` 先按当前用户和 `workspaceId` 查询 `workspace` 表，确认本地工作目录存在且归属当前用户。随后按固定优先级读取 `AGENTS.override.md`、`AGENTS.md`、`CLAUDE.local.md`、`CLAUDE.md`、`.claude/CLAUDE.md`、`GEMINI.md`、`QWEN.md`，并扫描 Cursor、Windsurf、Cline、Roo、Continue、Junie、OpenHands、Kiro、Aider 等常见规则文件或规则目录。它明确排除 `.github/copilot-instructions.md`、`docs/superpowers/memory/**`、`.codingx/context.md` 和 `.codingx/rules.md`，避免把 Copilot 专用指令、系统记忆或本产品内部上下文重复注入。
-4. 规范文件读取全程只读，不格式化、不生成、不回写仓库文件；同一路径只保留第一次命中，目录型规则按相对路径稳定排序。单文件内容超过 `12,000` 字符时裁剪并追加“内容已截断”提示，本轮累计超过 `24,000` 字符时停止追加后续文件。后端日志记录开始识别、命中文件的来源类型、相对路径、字节数和短预览；目录扫描失败、文件读取失败、单文件截断或总量截断都会写入日志，但不会中断聊天。
+4. 规范文件读取全程只读，不格式化、不生成、不回写仓库文件；同一路径只保留第一次命中，目录型规则按相对路径稳定排序。候选文件如果是符号链接会被跳过，避免仓库内规则文件指向工作目录外的本地文件并进入模型上下文或日志预览。单文件内容超过 `12,000` 字符时裁剪并追加“内容已截断”提示，本轮累计超过 `24,000` 字符时停止追加后续文件；目录扫描失败、文件读取失败、单文件截断或总量截断都会写入日志，但不会中断聊天。
 5. 长期记忆检索按当前用户、工作空间和本轮问题读取最多 6 条 ACTIVE 记录，生成“长期记忆”上下文段。助手正常完成后，`GovernanceAgentContextService.extractMemoryCandidates` 委托 `LongTermMemoryService` 读取用户消息；只有文本包含“记住”“请记忆”“长期保存”“以后都按”“我的偏好”等显式授权信号时才生成 `ACTIVE` 记忆，并按范围、用户、工作空间和内容生成确定性去重键。重复内容不会再次保存，普通聊天不会被自动沉淀为长期记忆。
 6. 用户进入 `/memories` 后，`MemoryView` 读取登录令牌并调用 `ChatApi.listLongTermMemories(token, null, 'ALL', { includeAllWorkspaces: true })`，一次性加载当前用户所有工作空间的 ACTIVE 与 REJECTED 记忆。后端 `ChatMemoryViewService` 会按当前用户读取 `workspace.name` 并返回 `workspaceName`，页面优先使用该可信名称，再用侧栏 `workspaceGroups` 作为历史缓存兜底；编辑、启停和删除都使用项目内自定义弹窗或按钮，并沿用后端中文错误消息。
 7. 管理端治理中心并行加载权限、自动化 Hook 规则、长期记忆、Slash Command 和权限审计数据。管理员在「长期记忆」页签对记忆执行“启用/停用”治理操作，页面使用 Ant Design 按钮和消息组件，不使用浏览器原生弹窗。由于仓库规范文件只在聊天运行时从本地工作目录读取，管理端不会展示或缓存这些文件内容。
@@ -42,7 +42,7 @@
 
 ## 测试与验证
 
-- 后端测试覆盖仓库规范文件命中、排除路径、短预览日志、超长内容截断、长期记忆提取去重、状态更新、检索、聊天上下文回注和用户/管理端记忆接口。
+- 后端测试覆盖仓库规范文件命中、排除路径、符号链接跳过、短预览日志、超长内容截断、长期记忆提取去重、状态更新、检索、聊天上下文回注和用户/管理端记忆接口。
 - 用户端测试覆盖长期记忆 API、`useChatWorkspace` 状态同步、`/memories` 路由接入和记忆管理页的筛选、编辑、启停、删除。
 - 管理端测试覆盖治理中心长期记忆页签和启停操作。
 - 前端页面改动需要通过浏览器/CDP 打开用户端聊天页和管理端治理中心，保存截图或计算样式证据到 `logs/`。

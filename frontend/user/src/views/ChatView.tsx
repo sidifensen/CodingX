@@ -2534,10 +2534,13 @@ function CodeReviewSidebar({
   const [workspaceSummary, setWorkspaceSummary] = React.useState<DiffSummary | undefined>();
   const [isLoadingWorkspaceDiff, setIsLoadingWorkspaceDiff] = React.useState(false);
   const [workspaceDiffError, setWorkspaceDiffError] = React.useState('');
+  const [isModeMenuOpen, setIsModeMenuOpen] = React.useState(false);
+  const modeMenuRef = React.useRef<HTMLDivElement | null>(null);
   const conversationDiffRounds = React.useMemo(() => collectConversationDiffRounds(messages), [messages]);
   const currentRound = conversationDiffRounds[conversationDiffRounds.length - 1];
   const previousRound = conversationDiffRounds[conversationDiffRounds.length - 2];
   const isWorkspaceMode = GIT_DIFF_REVIEW_MODES.has(activeMode);
+  const activeModeItem = CODE_REVIEW_MODES.find((item) => item.mode === activeMode) ?? CODE_REVIEW_MODES[0];
   const localDiffs = activeMode === 'previous'
     ? previousRound?.fileDiffs ?? []
     : currentRound?.fileDiffs ?? [];
@@ -2554,6 +2557,10 @@ function CodeReviewSidebar({
     visibleFileDiffs.find((fileDiff) => fileDiff.path === activePath) ??
     visibleFileDiffs[0] ??
     null;
+  const selectCodeReviewMode = React.useCallback((nextMode: CodeReviewMode) => {
+    setActiveMode(nextMode);
+    setIsModeMenuOpen(false);
+  }, []);
   const clampSidebarWidth = React.useCallback((nextWidth: number) => {
     const viewportLimit =
       typeof window === 'undefined'
@@ -2589,6 +2596,30 @@ function CodeReviewSidebar({
       setActivePath(visibleFileDiffs[0]?.path ?? '');
     }
   }, [activePath, visibleFileDiffs]);
+
+  React.useEffect(() => {
+    if (!isModeMenuOpen) {
+      return undefined;
+    }
+    const handlePointerDown = (event: MouseEvent) => {
+      const target = event.target;
+      if (target instanceof Node && modeMenuRef.current?.contains(target)) {
+        return;
+      }
+      setIsModeMenuOpen(false);
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setIsModeMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isModeMenuOpen]);
 
   React.useEffect(() => {
     if (!isWorkspaceMode) {
@@ -2671,22 +2702,50 @@ function CodeReviewSidebar({
             <X size={16} />
           </button>
         </div>
-        <div className="mt-3 grid grid-cols-3 gap-1">
-          {CODE_REVIEW_MODES.map((item) => (
-            <button
-              key={item.mode}
-              type="button"
-              aria-pressed={activeMode === item.mode}
-              onClick={() => setActiveMode(item.mode)}
-              className={`rounded-md border px-2 py-1.5 text-xs transition-colors ${
-                activeMode === item.mode
-                  ? 'border-foreground bg-foreground text-background'
-                  : 'border-border bg-surface-container text-muted hover:text-foreground'
-              }`}
+        <div ref={modeMenuRef} className="relative mt-3">
+          <button
+            type="button"
+            data-testid="code-review-mode-menu-button"
+            aria-haspopup="menu"
+            aria-expanded={isModeMenuOpen}
+            aria-label={`选择差异类型：${activeModeItem.label}`}
+            onClick={() => setIsModeMenuOpen((current) => !current)}
+            className="inline-flex h-9 max-w-full items-center gap-2 rounded-md border border-border bg-surface-container px-3 text-xs font-medium text-foreground shadow-sm transition-colors hover:border-foreground/40 hover:bg-surface focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border"
+          >
+            <span className="truncate">{activeModeItem.label}</span>
+            <span aria-hidden="true" className="rounded-full bg-surface px-1.5 font-mono text-[11px] text-muted">
+              {visibleSummary.filesChanged}
+            </span>
+            <ChevronDown
+              size={14}
+              className={`shrink-0 text-muted transition-transform ${isModeMenuOpen ? 'rotate-180' : ''}`}
+            />
+          </button>
+          {isModeMenuOpen ? (
+            <div
+              role="menu"
+              aria-label="差异类型"
+              className="absolute left-0 top-10 z-20 w-52 rounded-lg border border-border bg-surface p-1.5 text-xs text-foreground shadow-[0_18px_44px_rgba(0,0,0,0.28)]"
             >
-              {item.label}
-            </button>
-          ))}
+              {CODE_REVIEW_MODES.map((item) => (
+                <button
+                  key={item.mode}
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={activeMode === item.mode}
+                  onClick={() => selectCodeReviewMode(item.mode)}
+                  className={`flex w-full items-center justify-between gap-3 rounded-md px-2.5 py-2 text-left transition-colors ${
+                    activeMode === item.mode
+                      ? 'bg-surface-container text-foreground'
+                      : 'text-muted hover:bg-surface-container hover:text-foreground'
+                  }`}
+                >
+                  <span>{item.label}</span>
+                  {activeMode === item.mode ? <CheckCircle2 size={13} aria-hidden="true" /> : null}
+                </button>
+              ))}
+            </div>
+          ) : null}
         </div>
         <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted">
           <span>{visibleSummary.filesChanged} 个文件</span>
@@ -2725,9 +2784,13 @@ function CodeReviewSidebar({
                 </button>
               ))}
             </div>
-            <div className="min-h-0 overflow-auto">
-              {activeFileDiff ? <DiffTextBlock diffText={activeFileDiff.diff || '等待写入内容...'} /> : null}
-            </div>
+            {activeFileDiff ? (
+              <AutoScrollingDiffBlock
+                diffText={activeFileDiff.diff || '等待写入内容...'}
+                className="min-h-0 overflow-auto"
+                testId="code-review-sidebar-diff-scroll"
+              />
+            ) : null}
           </div>
         )}
       </div>
@@ -5920,9 +5983,45 @@ function InlineFileDiffPanel({
           <X size={14} />
         </button>
       </div>
-      <div className="max-h-[46vh] overflow-auto">
-        <DiffTextBlock diffText={fileDiff.diff || '等待写入内容...'} />
-      </div>
+      <AutoScrollingDiffBlock
+        diffText={fileDiff.diff || '等待写入内容...'}
+        className="max-h-[46vh] overflow-auto"
+        testId="inline-file-diff-scroll"
+      />
+    </div>
+  );
+}
+
+/**
+ * 流式写文件时 diff 文本会不断增长，容器需要跟随到底部让用户看到最新新增内容。
+ */
+function AutoScrollingDiffBlock({
+  diffText,
+  className,
+  testId,
+}: {
+  diffText: string;
+  className: string;
+  testId: string;
+}) {
+  const scrollContainerRef = React.useRef<HTMLDivElement | null>(null);
+
+  React.useLayoutEffect(() => {
+    const scrollContainer = scrollContainerRef.current;
+    if (!scrollContainer) {
+      return;
+    }
+    const targetTop = scrollContainer.scrollHeight;
+    if (typeof scrollContainer.scrollTo === 'function') {
+      scrollContainer.scrollTo({ top: targetTop, behavior: 'auto' });
+      return;
+    }
+    scrollContainer.scrollTop = targetTop;
+  }, [diffText]);
+
+  return (
+    <div ref={scrollContainerRef} data-testid={testId} className={className}>
+      <DiffTextBlock diffText={diffText} />
     </div>
   );
 }

@@ -31,6 +31,10 @@ describe('ChatView', () => {
         writeText: vi.fn().mockResolvedValue(undefined),
       },
     });
+    Object.defineProperty(window.HTMLElement.prototype, 'scrollTo', {
+      configurable: true,
+      value: vi.fn(),
+    });
   });
 
   /**
@@ -827,6 +831,12 @@ describe('ChatView', () => {
    * 文件编辑工具应在消息过程里展示编辑文件列表，并在点击文件行后就地展开 unified diff。
    */
   it('应在工具过程中展示文件差异列表并就地展开差异弹窗', async () => {
+    const scrollToMock = vi.fn();
+    Object.defineProperty(window.HTMLElement.prototype, 'scrollTo', {
+      configurable: true,
+      value: scrollToMock,
+    });
+
     render(
       <ChatView
         isAuthenticated={true}
@@ -890,6 +900,10 @@ describe('ChatView', () => {
     expect(fileRow).toHaveAttribute('aria-expanded', 'true');
     expect(dialog).toHaveTextContent('src/App.tsx');
     expect(dialog).toHaveTextContent('+export const title = "CodingX";');
+    expect(scrollToMock).toHaveBeenCalledWith({
+      top: expect.any(Number),
+      behavior: 'auto',
+    });
 
     fireEvent.click(within(dialog).getByRole('button', { name: '收起文件差异内容' }));
     expect(
@@ -1021,9 +1035,9 @@ describe('ChatView', () => {
     let sidebar = screen.getByTestId('code-review-sidebar');
     expect(sidebar).toBeInTheDocument();
     expect(sidebar).toHaveStyle({ width: '380px' });
-    for (const label of ['本轮编辑', '上轮对话', '未暂存', '已暂存', '提交', '分支']) {
-      expect(screen.getByRole('button', { name: label })).toBeInTheDocument();
-    }
+    const modeMenuButton = within(sidebar).getByTestId('code-review-mode-menu-button');
+    expect(modeMenuButton).toHaveTextContent('本轮编辑');
+    expect(within(sidebar).queryByRole('menuitemradio', { name: '上轮对话' })).not.toBeInTheDocument();
     expect(sidebar).toHaveTextContent('src/current.ts');
 
     // 侧栏在右侧展开，拖动左侧边缘向左会增加宽度。
@@ -1042,10 +1056,15 @@ describe('ChatView', () => {
     sidebar = screen.getByTestId('code-review-sidebar');
     expect(sidebar).toHaveStyle({ width: '460px' });
 
-    fireEvent.click(screen.getByRole('button', { name: '上轮对话' }));
+    fireEvent.click(within(sidebar).getByTestId('code-review-mode-menu-button'));
+    for (const label of ['本轮编辑', '上轮对话', '未暂存', '已暂存', '提交', '分支']) {
+      expect(within(sidebar).getByRole('menuitemradio', { name: label })).toBeInTheDocument();
+    }
+    fireEvent.click(within(sidebar).getByRole('menuitemradio', { name: '上轮对话' }));
     expect(sidebar).toHaveTextContent('src/prev.ts');
 
-    fireEvent.click(screen.getByRole('button', { name: '未暂存' }));
+    fireEvent.click(within(sidebar).getByTestId('code-review-mode-menu-button'));
+    fireEvent.click(within(sidebar).getByRole('menuitemradio', { name: '未暂存' }));
     await waitFor(() => {
       expect(fetchSpy).toHaveBeenCalledWith(
         '/api/chat/tools/git_diff/invoke',

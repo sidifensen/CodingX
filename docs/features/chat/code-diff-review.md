@@ -2,7 +2,7 @@
 
 ## 功能用途
 
-聊天页和 desktop 端在 AI 调用本地文件工具写代码时，会实时展示正在编辑和已编辑的文件差异。用户可以在助手消息内点击文件，并在该文件行下方展开 diff 面板，也可以通过右侧代码审查栏切换本轮编辑、上轮对话、未暂存、已暂存、提交和分支等差异来源。
+聊天页和 desktop 端在 AI 调用本地文件工具写代码时，会实时展示正在编辑和已编辑的文件差异。用户可以在助手消息内点击文件，并在该文件行下方展开 diff 面板，也可以通过右侧代码审查栏的差异类型按钮切换本轮编辑、上轮对话、未暂存、已暂存、提交和分支等差异来源。
 
 ## 使用入口
 
@@ -12,11 +12,11 @@
 
 1. 模型发起文件工具调用时，`useChatWorkspace` 从 `tool-call start` 事件的 `path`、`content` 或 `patch` 参数构造临时 `fileDiffs`，过程卡片立即带上 `pending` 状态。前端消息区因此能在真实写盘前显示“正在编辑 N 个文件”，并用临时 unified diff 展示 AI 准备新增或替换的内容。
 2. 后端 `CodexBuiltinChatToolExecutor` 执行 `write`、`edit`、`apply_patch` 后生成真实文件级 diff，并把 `fileDiffs`、`diffSummary` 和 `diffPreview` 写入工具结果 metadata。`ChatApplicationService` 持久化执行步骤 metadata，历史回放时前端可以从 `executionSteps.metadataJson.resultMetadata` 恢复同一批差异。
-3. `ChatView` 收集助手消息过程卡片中的 `fileDiffs`，在消息内渲染编辑文件摘要。用户点击文件行时在该行下方展开 `InlineFileDiffPanel`，面板内使用 `DiffTextBlock` 对 `+`、`-`、hunk 和普通行做分色展示；面板保留在文件列表上下文内，不使用浏览器原生弹窗，也不再额外打开全屏遮罩弹窗。
-4. `ChatView` 在右上角渲染代码差异切换按钮，按钮只控制侧栏显隐，不影响消息区的实时文件摘要。`CodeReviewSidebar` 展开后默认展示本轮 AI 编辑差异，用户可点击面板右上角关闭按钮收起；拖动面板左边缘时按右侧固定面板计算宽度，向左拖宽、向右拖窄，并限制在最小和最大宽度之间。
-5. 同一工具调用可能连续收到 `start`、`progress` 和 `complete` 事件。`useChatWorkspace` 按卡片 ID 合并过程卡片时，如果后续事件没有携带 `fileDiffs` 或 `diffSummary`，会保留上一帧已经生成的临时或真实差异，避免多轮对话过程中“正在编辑/已编辑文件”列表被空事件覆盖。
+3. `ChatView` 收集助手消息过程卡片中的 `fileDiffs`，在消息内渲染编辑文件摘要。用户点击文件行时在该行下方展开 `InlineFileDiffPanel`，面板内使用 `DiffTextBlock` 对 `+`、`-`、hunk 和普通行做分色展示；面板保留在文件列表上下文内，不使用浏览器原生弹窗，也不再额外打开全屏遮罩弹窗。diff 内容容器在流式写入时会按最新文本自动滚动到底部，保证新增内容实时可见。
+4. `ChatView` 在右上角渲染代码差异切换按钮，按钮只控制侧栏显隐，不影响消息区的实时文件摘要。`CodeReviewSidebar` 展开后默认展示本轮 AI 编辑差异，用户通过侧栏顶部的差异类型下拉按钮切换“本轮编辑”“上轮对话”“未暂存”“已暂存”“提交”和“分支”；拖动面板左边缘时按右侧固定面板计算宽度，向左拖宽、向右拖窄，并限制在最小和最大宽度之间。
+5. 同一工具调用可能连续收到 `start`、`progress` 和 `complete` 事件。`useChatWorkspace` 按卡片 ID 合并过程卡片时，如果后续事件没有携带 `fileDiffs` 或 `diffSummary`，会保留上一帧已经生成的临时或真实差异，避免多轮对话过程中“正在编辑/已编辑文件”列表被空事件覆盖；当 `complete` 事件携带最终 diff 后，调用卡会清除 pending diff，由结果卡承载最终差异，避免同一次工具调用显示两份编辑摘要。
 6. 同一会话第二轮或后续轮次结束后，前端会重新加载 `messages` 与 `executionSteps`。回放时不只修补最新助手消息，还会按每条助手消息的 `runId` 过滤对应步骤，把早期轮次的 `fileDiffs` 和过程卡片补回原消息，避免第一轮写文件列表在第二轮刷新后消失。
-7. 侧栏切到“上轮对话”时只读取上一条带差异的助手消息。切到“未暂存”“已暂存”“提交”或“分支”时，前端通过 `ChatApi.invokeTool(token, 'git_diff', { mode }, { workspaceId, repositoryPath })` 请求当前 workspace 差异；本地运行目标会透传当前绑定目录，云端目标不传本地路径。
+7. 侧栏切到“上轮对话”时只读取上一条带差异的助手消息。切到“未暂存”“已暂存”“提交”或“分支”时，前端通过 `ChatApi.invokeTool(token, 'git_diff', { mode }, { workspaceId, repositoryPath })` 请求当前 workspace 差异；本地运行目标会透传当前绑定目录，云端目标不传本地路径。侧栏 diff 内容同样在差异文本更新后滚动到底部。
 8. 用户态 `git_diff` 工具优先按显式 `workspaceId` 查询当前用户拥有的工作空间目录，并只在该目录内绑定工具执行上下文；未命中时才回退到用户最近绑定且与前端 `repositoryPath` 一致的目录。未检测到差异时返回空 `fileDiffs` 和中文提示；检测到差异时解析 unified diff，按文件路径、增删行数和完整 diff 文本返回给前端。
 
 ## 关键文件

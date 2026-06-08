@@ -6853,6 +6853,9 @@ describe('useChatWorkspace', () => {
       ]);
       expect(calls[0].diffSummary).toEqual({ filesChanged: 1, additions: 1, deletions: 1 });
       const processCards = ((assistantMessage as Record<string, unknown> | undefined)?.processCards ?? []) as Array<Record<string, unknown>>;
+      const toolCallCard = processCards.find((card) => card.type === 'tool_call');
+      expect(toolCallCard?.fileDiffs).toBeUndefined();
+      expect(toolCallCard?.diffSummary).toBeUndefined();
       const toolResultCard = processCards.find((card) => card.type === 'tool_result');
       expect(toolResultCard?.fileDiffs).toEqual([
         expect.objectContaining({
@@ -6861,6 +6864,11 @@ describe('useChatWorkspace', () => {
         }),
       ]);
       expect(toolResultCard?.diffSummary).toEqual({ filesChanged: 1, additions: 1, deletions: 1 });
+      const timelineItems = ((assistantMessage as Record<string, unknown> | undefined)?.timelineItems ?? []) as Array<Record<string, unknown>>;
+      const timelineToolCall = timelineItems.find(
+        (item) => item.type === 'process' && (item.card as Record<string, unknown> | undefined)?.type === 'tool_call',
+      )?.card as Record<string, unknown> | undefined;
+      expect(timelineToolCall?.fileDiffs).toBeUndefined();
     });
 
     await act(async () => {

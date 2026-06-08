@@ -5699,7 +5699,7 @@ function mergeMcpCallIntoProcessCards(
   if (call.phase === 'complete' || call.phase === 'error') {
     nextCards = finalizeCardsByType(nextCards, ['tool_call']);
     if (isReactToolProcess) {
-      nextCards = upsertProcessCard(nextCards, {
+      nextCards = upsertProcessCard(clearCompletedToolCallDiffPreview(nextCards, call), {
         id: `tool-result-${call.callId ?? call.toolId}`,
         type: 'tool_result',
         title: '观察',
@@ -5715,9 +5715,9 @@ function mergeMcpCallIntoProcessCards(
         fileDiffs: call.fileDiffs,
         diffSummary: call.diffSummary,
       });
-      return nextCards;
+      return suppressToolCallDiffsWhenResultExists(nextCards) ?? nextCards;
     }
-    nextCards = upsertProcessCard(nextCards, {
+    nextCards = upsertProcessCard(clearCompletedToolCallDiffPreview(nextCards, call), {
       id: `tool-result-${call.callId ?? call.toolId}`,
       type: 'tool_result',
       title: '已获取结果',
@@ -5729,7 +5729,26 @@ function mergeMcpCallIntoProcessCards(
       diffSummary: call.diffSummary,
     });
   }
-  return nextCards;
+  return suppressToolCallDiffsWhenResultExists(nextCards) ?? nextCards;
+}
+
+/**
+ * 写文件完成后由结果卡承载最终 diff，调用卡只保留动作过程，避免中间穿插正文时显示两份编辑摘要。
+ * @param cards 当前过程卡片。
+ * @param call 已完成或异常的工具调用。
+ * @returns 已清理调用卡 diff 预览的卡片列表。
+ */
+function clearCompletedToolCallDiffPreview(cards: ProcessCardItem[], call: McpCallItem): ProcessCardItem[] {
+  const toolCallId = `tool-call-${call.callId ?? call.toolId}`;
+  return cards.map((card) =>
+    card.id === toolCallId && card.type === 'tool_call'
+      ? {
+          ...card,
+          fileDiffs: undefined,
+          diffSummary: undefined,
+        }
+      : card,
+  );
 }
 
 /**
@@ -6694,7 +6713,11 @@ function sanitizeProcessCardsForDisplay(
     return cards;
   }
   const nextCards = cards.filter((card) => !isSyntheticToolThoughtCard(card));
-  return nextCards.length === cards.length ? cards : nextCards;
+  const nextDedupedCards = suppressToolCallDiffsWhenResultExists(nextCards);
+  if (nextCards.length === cards.length && nextDedupedCards === nextCards) {
+    return cards;
+  }
+  return nextDedupedCards ?? nextCards;
 }
 
 /**
@@ -6708,10 +6731,79 @@ function sanitizeTimelineItemsForDisplay(
   if (!items) {
     return items;
   }
-  const nextItems = items.filter(
+  const filteredItems = items.filter(
     (item) => item.type !== 'process' || !isSyntheticToolThoughtCard(item.card),
   );
-  return nextItems.length === items.length ? items : nextItems;
+  const processCards = filteredItems
+    .filter((item): item is Extract<MessageTimelineItem, { type: 'process' }> => item.type === 'process')
+    .map((item) => item.card);
+  const nextProcessCards = suppressToolCallDiffsWhenResultExists(processCards);
+  if (!nextProcessCards || nextProcessCards === processCards) {
+    return filteredItems.length === items.length ? items : filteredItems;
+  }
+  const cardById = new Map(nextProcessCards.map((card) => [card.id, card]));
+  return filteredItems.map((item) =>
+    item.type === 'process'
+      ? {
+          ...item,
+          card: cardById.get(item.card.id) ?? item.card,
+        }
+      : item,
+  );
+}
+
+/**
+ * 同一次工具调用的调用卡和结果卡都带文件 diff 时，只保留结果卡 diff，避免消息过程里重复展示编辑文件列表。
+ * @param cards 过程卡片。
+ * @returns 去重后的过程卡片；无可变更时返回原引用。
+ */
+function suppressToolCallDiffsWhenResultExists(
+  cards: ProcessCardItem[] | undefined,
+): ProcessCardItem[] | undefined {
+  if (!cards || cards.length === 0) {
+    return cards;
+  }
+  const resultKeys = new Set(
+    cards
+      .filter((card) => card.type === 'tool_result' && ((card.fileDiffs?.length ?? 0) > 0 || card.diffSummary != null))
+      .map(resolveToolDiffPairKey)
+      .filter((key) => key.length > 0),
+  );
+  if (resultKeys.size === 0) {
+    return cards;
+  }
+  let changed = false;
+  const nextCards = cards.map((card) => {
+    const shouldClear =
+      card.type === 'tool_call' &&
+      ((card.fileDiffs?.length ?? 0) > 0 || card.diffSummary != null) &&
+      resultKeys.has(resolveToolDiffPairKey(card));
+    if (!shouldClear) {
+      return card;
+    }
+    changed = true;
+    return {
+      ...card,
+      fileDiffs: undefined,
+      diffSummary: undefined,
+    };
+  });
+  return changed ? nextCards : cards;
+}
+
+/**
+ * 从过程卡 ID 中提取同一次工具调用的配对键，兼容实时与历史回放生成的 tool-call/tool-result 前缀。
+ * @param card 过程卡片。
+ * @returns 可用于调用卡与结果卡配对的键。
+ */
+function resolveToolDiffPairKey(card: ProcessCardItem): string {
+  const idKey = card.id
+    .replace(/^(?:replay-)?tool-(?:call|result)-/, '')
+    .trim();
+  if (idKey.length > 0 && idKey !== card.id) {
+    return idKey;
+  }
+  return `${card.toolId ?? ''}::${card.displayName ?? ''}`.trim().toLowerCase();
 }
 
 /**
@@ -6812,7 +6904,7 @@ function deriveProcessCardsFromReplay(options: {
       ),
     );
   }
-  return processCards.length > 0 ? processCards : undefined;
+  return processCards.length > 0 ? suppressToolCallDiffsWhenResultExists(processCards) : undefined;
 }
 
 /**

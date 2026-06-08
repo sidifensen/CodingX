@@ -5665,15 +5665,6 @@ function mergeMcpCallIntoProcessCards(
   let nextCards = finalizeCardsByType(cards, ['analysis']);
   const isReactToolProcess = Boolean(call.reactAction || call.reactObservation);
   if (call.phase === 'start' || call.phase === 'progress') {
-    const existingCard = nextCards.find((card) => card.id === `tool-call-${call.callId ?? call.toolId}`);
-    const nextDetails = call.params
-      ? [
-          {
-            label: '参数',
-            content: formatProcessCardDetail(call.params),
-          },
-        ]
-      : existingCard?.details;
     if (isReactToolProcess) {
       // 工具事件里的 reactThought 可能是后端兜底模板，不代表模型真实正文；只展示动作和观察。
       nextCards = upsertProcessCard(nextCards, {
@@ -5685,7 +5676,6 @@ function mergeMcpCallIntoProcessCards(
         toolId: call.toolId,
         displayName: call.displayName,
         presentation: 'react',
-        details: nextDetails,
         fileDiffs: call.fileDiffs,
         diffSummary: call.diffSummary,
       });
@@ -5701,7 +5691,6 @@ function mergeMcpCallIntoProcessCards(
       status: call.status === 'error' ? 'error' : 'running',
       toolId: call.toolId,
       displayName: call.displayName,
-      details: nextDetails,
       fileDiffs: call.fileDiffs,
       diffSummary: call.diffSummary,
     });
@@ -5725,24 +5714,6 @@ function mergeMcpCallIntoProcessCards(
         presentation: 'react',
         fileDiffs: call.fileDiffs,
         diffSummary: call.diffSummary,
-        details: [
-          ...(call.params
-            ? [
-                {
-                  label: '参数',
-                  content: formatProcessCardDetail(call.params),
-                },
-              ]
-            : []),
-          ...(call.rawResult != null || call.errorMessage
-            ? [
-                {
-                  label: call.phase === 'error' ? '异常' : '结果',
-                  content: formatProcessCardDetail(call.rawResult ?? call.errorMessage),
-                },
-              ]
-            : []),
-        ],
       });
       return nextCards;
     }
@@ -5756,24 +5727,6 @@ function mergeMcpCallIntoProcessCards(
       displayName: call.displayName,
       fileDiffs: call.fileDiffs,
       diffSummary: call.diffSummary,
-      details: [
-        ...(call.params
-          ? [
-              {
-                label: '参数',
-                content: formatProcessCardDetail(call.params),
-              },
-            ]
-          : []),
-        ...(call.rawResult != null
-          ? [
-              {
-                label: '结果',
-                content: formatProcessCardDetail(call.rawResult),
-              },
-            ]
-          : []),
-      ],
     });
   }
   return nextCards;
@@ -6000,9 +5953,9 @@ function mergeProcessCardDetails(
  * @returns 用户可读结果摘要。
  */
 function resolveToolResultSummary(call: McpCallItem): string {
-  const rawResultText = formatProcessCardDetail(call.rawResult ?? call.content).replace(/\s+/g, ' ').trim();
-  if (rawResultText) {
-    return rawResultText.length > 80 ? `${rawResultText.slice(0, 80)}...` : rawResultText;
+  // 工具调用结果可能包含完整 JSON、HTML 或命令输出，主消息区只展示状态，避免过程链路被原始结果撑开。
+  if (call.phase === 'error') {
+    return call.errorMessage || `${call.displayName || call.toolId || '工具'}执行异常。`;
   }
   return `已获取${call.displayName || call.toolId || '工具'}结果。`;
 }
@@ -6631,14 +6584,6 @@ function deriveProcessCardsFromReplay(options: {
       displayName: call.displayName,
       fileDiffs: call.fileDiffs,
       diffSummary: call.diffSummary,
-      details: call.params
-        ? [
-            {
-              label: '参数',
-              content: formatProcessCardDetail(call.params),
-            },
-          ]
-        : undefined,
     });
     if (call.rawResult != null || call.content) {
       processCards.push({
@@ -6651,12 +6596,6 @@ function deriveProcessCardsFromReplay(options: {
         displayName: call.displayName,
         fileDiffs: call.fileDiffs,
         diffSummary: call.diffSummary,
-        details: [
-          {
-            label: '结果',
-            content: formatProcessCardDetail(call.rawResult ?? call.content),
-          },
-        ],
       });
     }
   }

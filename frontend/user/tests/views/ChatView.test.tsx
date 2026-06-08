@@ -3604,9 +3604,10 @@ describe('ChatView', () => {
   });
 
   /**
-   * Local tool cards use inline rows so arguments and results can be inspected in place.
+   * Shell tool cards use a Codex-style command summary so arguments and results stay inspectable
+   * without forcing every command output into the main message stream.
    */
-  it('renders local tool arguments and results in the assistant message', async () => {
+  it('renders local shell command arguments and results in the assistant message', async () => {
     render(
       <ChatView
         isAuthenticated={true}
@@ -3661,17 +3662,27 @@ describe('ChatView', () => {
     );
 
     expect(screen.queryByTestId('process-tool-group-toggle-963')).not.toBeInTheDocument();
-    expect(screen.getByTestId('process-tool-row-963-tool-call-shell-963')).toBeInTheDocument();
+    expect(screen.getByTestId('process-command-summary-963-tool-call-shell-963')).toHaveTextContent(
+      '已运行 1 条命令',
+    );
+    expect(screen.queryByTestId('process-tool-row-963-tool-call-shell-963')).not.toBeInTheDocument();
     expect(screen.queryByTestId('process-tool-row-963-tool-result-shell-963')).not.toBeInTheDocument();
-    expect(screen.getByText('调用shell_command')).toBeInTheDocument();
-    expect(screen.getByText('已获取结果')).toBeInTheDocument();
+    expect(screen.queryByText('调用shell_command')).not.toBeInTheDocument();
+    expect(screen.queryByText('已获取结果')).not.toBeInTheDocument();
     expect(screen.queryByText('{"command":"pwd"}')).not.toBeInTheDocument();
+    expect(screen.queryByText('$ pwd')).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByTestId('process-tool-detail-toggle-963-tool-call-shell-963'));
+    fireEvent.click(screen.getByTestId('process-command-summary-toggle-963-tool-call-shell-963'));
+    const commandRow = screen.getByTestId('process-command-run-row-963-tool-call-shell-963-pwd');
+    expect(commandRow).toHaveTextContent('已运行 pwd');
+    expect(commandRow).toHaveAttribute('aria-expanded', 'false');
 
-    const callRow = screen.getByTestId('process-tool-row-963-tool-call-shell-963');
-    expect(callRow).toHaveTextContent('{"command":"pwd"}');
-    expect(callRow).toHaveTextContent('D:/code/CodingX');
+    fireEvent.click(commandRow);
+
+    expect(commandRow).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.queryByText('{"command":"pwd"}')).not.toBeInTheDocument();
+    expect(screen.getByText('$ pwd')).toBeInTheDocument();
+    expect(screen.getByText('D:/code/CodingX')).toBeInTheDocument();
   });
 
   /**
@@ -3750,11 +3761,18 @@ describe('ChatView', () => {
     expect(within(tracePanel).queryByText('Action 行动')).not.toBeInTheDocument();
     expect(within(tracePanel).queryByText('Observation 观察')).not.toBeInTheDocument();
     expect(within(tracePanel).queryByText('行动')).not.toBeInTheDocument();
-    expect(screen.getByText('调用 shell_command')).toBeInTheDocument();
-    expect(screen.getByText('观察')).toBeInTheDocument();
+    expect(screen.getByTestId('process-command-summary-964-tool-call-shell-964')).toHaveTextContent(
+      '已运行 1 条命令',
+    );
+    expect(screen.queryByText('调用 shell_command')).not.toBeInTheDocument();
+    expect(screen.queryByText('观察')).not.toBeInTheDocument();
     expect(screen.queryByText('{"command":"pwd"}')).not.toBeInTheDocument();
-    fireEvent.click(screen.getByTestId('process-tool-detail-toggle-964-tool-call-shell-964'));
-    expect(screen.getByText('{"command":"pwd"}')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('process-command-summary-toggle-964-tool-call-shell-964'));
+    const commandRow = screen.getByTestId('process-command-run-row-964-tool-call-shell-964-pwd');
+    expect(commandRow).toHaveTextContent('已运行 pwd');
+    fireEvent.click(commandRow);
+    expect(screen.queryByText('{"command":"pwd"}')).not.toBeInTheDocument();
+    expect(screen.getByText('$ pwd')).toBeInTheDocument();
     expect(screen.getByText('D:/code/CodingX')).toBeInTheDocument();
   });
 
@@ -3976,12 +3994,12 @@ describe('ChatView', () => {
     const messageShell = screen.getByTestId('assistant-message-body-969');
     const messageText = messageShell.textContent ?? '';
     expect(messageText.indexOf('我先检查当前目录。')).toBeLessThan(
-      messageText.indexOf('调用 shell_command'),
+      messageText.indexOf('已运行 1 条命令'),
     );
-    expect(messageText.indexOf('调用 shell_command')).toBeLessThan(
+    expect(messageText.indexOf('已运行 1 条命令')).toBeLessThan(
       messageText.indexOf('我再根据结果继续分析。'),
     );
-    expect(screen.getAllByTestId('process-tool-row-969-tool-call-shell-969')).toHaveLength(1);
+    expect(screen.getAllByTestId('process-command-summary-969-tool-call-shell-969')).toHaveLength(1);
   });
 
   /**

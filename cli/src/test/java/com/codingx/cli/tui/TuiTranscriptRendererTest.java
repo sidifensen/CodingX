@@ -49,14 +49,14 @@ class TuiTranscriptRendererTest {
     }
 
     @Test
-    void turnCompletedShouldRenderTaskCompletionLine() {
+    void turnCompletedShouldStaySilentInTranscript() {
         TuiTranscriptRenderer renderer = new TuiTranscriptRenderer();
 
         List<String> lines = renderer.render(List.of(event(AgentEventType.TURN_COMPLETED, Map.of(
             "status", "COMPLETED"
         ))));
 
-        assertTrue(String.join("\n", lines).contains("Task completed: COMPLETED"));
+        assertTrue(lines.isEmpty(), String.join("\n", lines));
     }
 
     @Test

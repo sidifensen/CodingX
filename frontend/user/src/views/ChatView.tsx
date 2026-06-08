@@ -5705,10 +5705,9 @@ function ProcessToolRow({
 }) {
   const [isExpanded, setIsExpanded] = React.useState(false);
   const Icon = resolveProcessToolIcon(card);
-  const mergedCards = resultCard ? [card, resultCard] : [card];
-  const shouldHideDetails = mergedCards.some(shouldHideSearchDetails);
-  const visibleDetails = shouldHideDetails ? [] : buildProcessToolDetailViews(card, resultCard);
-  const hasDetails = !shouldHideDetails && visibleDetails.length > 0;
+  // 工具表工具可能携带大段参数、JSON 或命令输出；主消息区只展示动作和文件变更摘要。
+  const visibleDetails: ProcessToolDetailView[] = [];
+  const hasDetails = false;
   const fileDiffBundle = buildProcessToolFileDiffBundle(card, resultCard);
   const hasFileDiffs = fileDiffBundle.fileDiffs.length > 0;
   const contentId = `process-tool-detail-${messageId}-${card.id}`;

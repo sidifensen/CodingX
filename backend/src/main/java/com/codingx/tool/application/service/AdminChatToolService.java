@@ -148,14 +148,14 @@ public class AdminChatToolService {
         // 步骤 1：探测前先读取配置；配置不存在或禁用时不进入执行器。
         ChatTool configuredTool = requireConfiguredTool(toolCode);
         if (!isEnabled(configuredTool)) {
-            return toHealthView(configuredTool, null).toBuilder()
-                .ok(false)
-                .status("degraded")
-                .statusLabel("禁用")
-                .message(configuredTool.getToolCode() + " 已禁用，未执行探测")
-                .checkedAt(DATE_TIME_FORMATTER.format(LocalDateTime.now()))
-                .durationMs(0L)
-                .build();
+            return withHealthProbeResult(
+                toHealthView(configuredTool, null),
+                false,
+                "degraded",
+                "禁用",
+                configuredTool.getToolCode() + " 已禁用，未执行探测",
+                0L
+            );
         }
         long startedAt = System.currentTimeMillis();
         String normalizedCode = normalizeToolCode(configuredTool.getToolCode());
@@ -167,25 +167,25 @@ public class AdminChatToolService {
             String message = StrUtil.isBlank(content)
                 ? normalizedCode + " 调用成功"
                 : StrUtil.maxLength(content, 120);
-            return toHealthView(configuredTool, chatToolRegistry.require(normalizedCode)).toBuilder()
-                .ok(true)
-                .status("healthy")
-                .statusLabel("可用")
-                .message(message)
-                .checkedAt(DATE_TIME_FORMATTER.format(LocalDateTime.now()))
-                .durationMs(durationMs)
-                .build();
+            return withHealthProbeResult(
+                toHealthView(configuredTool, chatToolRegistry.require(normalizedCode)),
+                true,
+                "healthy",
+                "可用",
+                message,
+                durationMs
+            );
         } catch (Exception exception) {
             // 步骤 3：探测异常只影响当前工具健康状态，返回失败视图而不是中断整个管理端页面。
             long durationMs = Math.max(1, System.currentTimeMillis() - startedAt);
-            return toHealthView(configuredTool, null).toBuilder()
-                .ok(false)
-                .status("failed")
-                .statusLabel("异常")
-                .message(StrUtil.blankToDefault(exception.getMessage(), configuredTool.getToolCode() + " 探测失败"))
-                .checkedAt(DATE_TIME_FORMATTER.format(LocalDateTime.now()))
-                .durationMs(durationMs)
-                .build();
+            return withHealthProbeResult(
+                toHealthView(configuredTool, null),
+                false,
+                "failed",
+                "异常",
+                StrUtil.blankToDefault(exception.getMessage(), configuredTool.getToolCode() + " 探测失败"),
+                durationMs
+            );
         }
     }
 
@@ -206,19 +206,19 @@ public class AdminChatToolService {
         String normalizedCode = normalizeToolCode(configuredTool.getToolCode());
         ChatToolExecutionResult result = chatToolExecutionService.execute(normalizedCode, StrUtil.blankToDefault(question, sampleQuestionFor(normalizedCode)));
         long durationMs = Math.max(1, System.currentTimeMillis() - startedAt);
-        return ToolInvokeView.builder()
-            .toolCode(configuredTool.getToolCode())
-            .displayName(configuredTool.getDisplayName())
-            .ok(true)
-            .status("success")
-            .statusLabel("成功")
-            .message("工具调用成功")
-            .requestQuestion(StrUtil.blankToDefault(question, sampleQuestionFor(normalizedCode)))
-            .content(StrUtil.blankToDefault(result.content(), ""))
-            .metadata(result.metadata() == null ? Map.of() : result.metadata())
-            .durationMs(durationMs)
-            .checkedAt(DATE_TIME_FORMATTER.format(LocalDateTime.now()))
-            .build();
+        return new ToolInvokeView(
+            configuredTool.getToolCode(),
+            configuredTool.getDisplayName(),
+            true,
+            "success",
+            "成功",
+            "工具调用成功",
+            StrUtil.blankToDefault(question, sampleQuestionFor(normalizedCode)),
+            StrUtil.blankToDefault(result.content(), ""),
+            result.metadata() == null ? Map.of() : result.metadata(),
+            DATE_TIME_FORMATTER.format(LocalDateTime.now()),
+            durationMs
+        );
     }
 
     /**
@@ -308,20 +308,54 @@ public class AdminChatToolService {
             statusLabel = "未接入";
             message = tool.getToolCode() + " 缺少执行器";
         }
-        return ToolHealthView.builder()
-            .toolCode(tool.getToolCode())
-            .displayName(tool.getDisplayName())
-            .category(tool.getCategory())
-            .source(tool.getSourceType())
-            .description(tool.getDescription())
-            .sampleQuestion(sampleQuestionFor(tool.getToolCode()))
-            .ok(enabled && hasExecutor)
-            .status(status)
-            .statusLabel(statusLabel)
-            .message(message)
-            .checkedAt(DATE_TIME_FORMATTER.format(LocalDateTime.now()))
-            .durationMs(0L)
-            .build();
+        return new ToolHealthView(
+            tool.getToolCode(),
+            tool.getDisplayName(),
+            tool.getCategory(),
+            tool.getSourceType(),
+            status,
+            statusLabel,
+            enabled && hasExecutor,
+            message,
+            tool.getDescription(),
+            sampleQuestionFor(tool.getToolCode()),
+            DATE_TIME_FORMATTER.format(LocalDateTime.now()),
+            0L
+        );
+    }
+
+    /**
+     * 基于配置态视图复制探测结果，避免运行时依赖 Lombok 生成的嵌套 builder 类。
+     * @param base 配置态健康视图。
+     * @param ok 探测是否成功。
+     * @param status 健康状态编码。
+     * @param statusLabel 健康状态文案。
+     * @param message 管理端可读说明。
+     * @param durationMs 探测耗时。
+     * @return 合并探测结果后的健康视图。
+     */
+    private ToolHealthView withHealthProbeResult(
+        ToolHealthView base,
+        boolean ok,
+        String status,
+        String statusLabel,
+        String message,
+        long durationMs
+    ) {
+        return new ToolHealthView(
+            base.toolCode(),
+            base.displayName(),
+            base.category(),
+            base.source(),
+            status,
+            statusLabel,
+            ok,
+            message,
+            base.description(),
+            base.sampleQuestion(),
+            DATE_TIME_FORMATTER.format(LocalDateTime.now()),
+            durationMs
+        );
     }
 
     private boolean isEnabled(ChatTool tool) {

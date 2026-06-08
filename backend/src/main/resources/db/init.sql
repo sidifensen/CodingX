@@ -175,9 +175,6 @@ VALUES
     (7032, 'queue.poll_interval_ms', '200', NULL, FALSE, NULL, NULL, NULL, 'LONG', 'queue', '队列轮询间隔毫秒', 30, TRUE, 0),
     (7033, 'queue.lease_seconds', '300', NULL, FALSE, NULL, NULL, NULL, 'LONG', 'queue', '执行资格租约秒数', 40, TRUE, 0),
     (7034, 'queue.lease_renew_interval_ms', '10000', NULL, FALSE, NULL, NULL, NULL, 'LONG', 'queue', '执行资格续租间隔毫秒', 50, TRUE, 0),
-    (7040, 'code_search.root', '', NULL, FALSE, NULL, NULL, NULL, 'STRING', 'code_search', '代码检索根目录', 10, TRUE, 0),
-    (7041, 'code_search.max_results', '20', NULL, FALSE, NULL, NULL, NULL, 'INTEGER', 'code_search', '代码检索最大返回命中数', 20, TRUE, 0),
-    (7042, 'code_search.max_file_size_bytes', '1048576', NULL, FALSE, NULL, NULL, NULL, 'LONG', 'code_search', '代码检索单文件最大扫描字节数', 30, TRUE, 0),
     (7067, 'chat.attachment.max_file_size_bytes', '10485760', NULL, FALSE, NULL, NULL, NULL, 'LONG', 'chat.attachment', '聊天附件上传单文件最大字节数', 10, FALSE, 0),
     (7043, 'web_search.enabled', 'false', NULL, FALSE, NULL, NULL, NULL, 'BOOLEAN', 'search', '是否启用真实联网搜索', 50, FALSE, 0),
     (7047, 'web_search.max_results', '5', NULL, FALSE, NULL, NULL, NULL, 'INTEGER', 'search', '联网搜索单次最大候选数', 90, FALSE, 0),
@@ -306,7 +303,6 @@ SET
 
 INSERT INTO mcp (id, mcp_code, display_name, description, category, source_type, enabled, sort_no, deleted)
 VALUES
-    (7100, 'code_search', '代码检索', '按关键词检索代码文件、行号与命中片段', '研发', 'built-in', 1, 0, 0),
     (7103, 'weather_query', '天气查询', '查询当前天气与未来预报', '天气', 'built-in', 1, 3, 0)
 ON CONFLICT (mcp_code) DO UPDATE
 SET

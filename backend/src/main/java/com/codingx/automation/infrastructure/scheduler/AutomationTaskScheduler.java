@@ -1,5 +1,6 @@
 package com.codingx.automation.infrastructure.scheduler;
 
+import com.codingx.automation.application.service.AutomationTaskExecutionService;
 import com.codingx.automation.application.service.AutomationTaskService;
 import com.codingx.automation.domain.model.AutomationTask;
 import java.time.LocalDateTime;
@@ -20,6 +21,9 @@ public class AutomationTaskScheduler {
     /** 自动化任务应用服务，负责到期任务查询、幂等状态推进和下一次执行时间计算。 */
     private final AutomationTaskService automationTaskService;
 
+    /** 自动化任务执行服务，负责把已认领任务交给聊天执行链路真正产出结果。 */
+    private final AutomationTaskExecutionService automationTaskExecutionService;
+
     /**
      * 按固定间隔扫描到期任务；真实执行链路后续可从服务层返回的触发快照继续编排。
      */
@@ -32,6 +36,8 @@ public class AutomationTaskScheduler {
         // 步骤 3：仅在有任务触发时打印摘要日志，避免空扫描持续刷屏。
         if (!triggeredTasks.isEmpty()) {
             log.info("automation scheduler triggered {} due task(s) at {}", triggeredTasks.size(), now);
+            // 步骤 4：状态认领成功后继续派发真实执行，避免任务只显示触发但没有结果。
+            automationTaskExecutionService.executeTriggeredTasks(triggeredTasks);
         }
     }
 }

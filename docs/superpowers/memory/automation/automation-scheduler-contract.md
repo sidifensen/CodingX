@@ -26,13 +26,14 @@ status: active
 
 ## Scope
 
-该契约覆盖用户端自动化定时任务的当前真实边界：手动创建、从会话创建、列表展示、计划字段校验和到期扫描状态推进。当前仓库已经具备 `automation_task` 表、用户侧列表/创建接口、聊天创建短路分支和 Spring 定时扫描入口；尚未交付真实 AI 后台执行、执行历史、启停/删除/编辑协议。
+该契约覆盖用户端自动化定时任务的当前真实边界：手动创建、从会话创建、列表展示、计划字段校验、到期扫描状态推进和已认领任务的聊天后台执行派发。当前仓库已经具备 `automation_task` 表、用户侧列表/创建接口、聊天创建短路分支、Spring 定时扫描入口和到期后复用聊天链路的执行派发；尚未交付执行历史、启停/删除/编辑协议。
 
 ## Producers And Consumers
 
 - Producer：`AutomationTaskService` 负责校验用户、计划字段、来源会话、创建来源，创建任务并推进到期任务状态。
 - Producer：`AutomationTaskChatCreationService` 负责从聊天会话中创建 `CHAT` 来源任务，并生成助手确认消息。
-- Producer：`AutomationTaskScheduler` 负责扫描启用且到期的任务，并把状态推进委派给服务层。
+- Producer：`AutomationTaskScheduler` 负责扫描启用且到期的任务，把状态推进委派给服务层，并把已认领任务交给执行服务。
+- Executor：`AutomationTaskExecutionService` 负责把已认领任务交付到聊天后台执行链路，复用聊天搜索、模型、SSE 和会话未读提醒能力。
 - Consumer：用户端 `AutomationView` 消费任务列表、创建结果、启停结果和最近执行状态。
 - Consumer：`ChatApplicationService` 在命中自动化创建意图时消费创建结果，保存助手消息并发布完成 SSE。
 
@@ -43,14 +44,16 @@ status: active
 - 会话创建入口不新增页面确认协议；`ChatApplicationService` 在当前会话已完成归属校验后，把会话、用户消息和当前用户 ID 交给自动化创建服务。
 - 解析器只有在明确计划时间和创建/提醒语义同时存在时才返回创建参数；每日时间支持阿拉伯数字时间和受限中文整点/半点表达，例如 `18:11`、`18点`、`十二点`、`两点半`。未命中时普通聊天必须继续模型/意图路由。
 - 当前版本没有启停、删除、更新接口；后续扩展必须基于任务归属校验，任务不存在或不属于当前用户时通过统一异常处理返回中文 `ApiResponse.message`。
-- 调度扫描当前只推进 `lastRunAt`、`lastRunStatus` 和 `nextRunAt`；写入时必须用扫描时的旧 `nextRunAt` 做条件更新，避免重叠扫描重复触发同一到期任务。真实执行失败记录和执行历史仍需后续定义。
+- 调度扫描先推进 `lastRunAt`、`lastRunStatus` 和 `nextRunAt`；写入时必须用扫描时的旧 `nextRunAt` 做条件更新，避免重叠扫描重复触发同一到期任务。认领成功后才允许执行服务派发聊天后台运行。
+- 聊天来源任务必须把执行结果写回 `sourceConversationId` 对应会话，执行前必须校验该会话属于任务 `userId`。会话缺失或归属不匹配时不得派发聊天执行，任务状态写为 `FAILED`。
+- 手动来源任务第一次执行时可创建交付会话，并把会话 ID 写回 `automation_task.source_conversation_id`；后续周期必须复用该会话，避免重复创建结果会话。
 
 ## State And Schema Rules
 
 - 自动化任务需要持久化计划配置、来源类型、来源会话、工作空间、启用状态、最近执行时间、下一次执行时间、最近执行结果和审计时间。
 - `scheduleType` 第一版限定为 `DAILY`、`WEEKLY`、`ONCE`，覆盖“每天 + 时间”、每周和一次性计划。
 - `enabled` 控制定时扫描是否触发；删除应使用逻辑删除，避免历史执行关系断裂。
-- 最近执行结果只作为列表摘要，当前 `TRIGGERED` 表示调度已扫描触发，不代表 AI 任务真实执行完成。
+- 最近执行结果只作为列表摘要，`TRIGGERED` 表示调度已认领并开始派发执行，不代表模型回复已经完成；真实用户可见结果以聊天会话中的助手消息和未读提醒为准。
 
 ## Invariants
 

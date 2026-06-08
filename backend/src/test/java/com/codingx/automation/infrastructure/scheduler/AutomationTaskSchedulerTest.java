@@ -4,7 +4,12 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.codingx.automation.application.service.AutomationTaskExecutionService;
 import com.codingx.automation.application.service.AutomationTaskService;
+import com.codingx.automation.domain.model.AutomationScheduleType;
+import com.codingx.automation.domain.model.AutomationTask;
+import com.codingx.automation.domain.model.AutomationTaskSourceType;
+import java.time.LocalDateTime;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -22,6 +27,10 @@ class AutomationTaskSchedulerTest {
     @Mock
     private AutomationTaskService automationTaskService;
 
+    /** 自动化任务执行服务，负责把已认领任务派发到聊天执行链路。 */
+    @Mock
+    private AutomationTaskExecutionService automationTaskExecutionService;
+
     /** 被测调度入口，仅负责定时触发服务扫描。 */
     @InjectMocks
     private AutomationTaskScheduler automationTaskScheduler;
@@ -36,5 +45,31 @@ class AutomationTaskSchedulerTest {
         automationTaskScheduler.scanDueTasks();
 
         verify(automationTaskService).triggerDueTasks(any());
+    }
+
+    /**
+     * 扫描到到期任务后，调度入口必须继续委派执行服务，不能只推进状态。
+     */
+    @Test
+    void scanDueTasksShouldDispatchTriggeredTasksToExecutionService() {
+        AutomationTask task = AutomationTask.builder()
+            .id(1001L)
+            .userId(2001L)
+            .sourceType(AutomationTaskSourceType.CHAT)
+            .sourceConversationId(3001L)
+            .name("新闻推送")
+            .prompt("推送 AI 新闻")
+            .scheduleType(AutomationScheduleType.DAILY)
+            .scheduleTime("12:00")
+            .nextRunAt(LocalDateTime.of(2026, 6, 9, 12, 0))
+            .lastRunStatus("TRIGGERED")
+            .enabled(true)
+            .deleted(false)
+            .build();
+        when(automationTaskService.triggerDueTasks(any())).thenReturn(List.of(task));
+
+        automationTaskScheduler.scanDueTasks();
+
+        verify(automationTaskExecutionService).executeTriggeredTasks(List.of(task));
     }
 }

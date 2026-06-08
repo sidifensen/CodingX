@@ -1,4 +1,5 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
+import { isConversationListRequest, isConversationMessageListRequest } from '../../support/chatPaginationMock';
 import { useChatWorkspace } from '@/views/chat/useChatWorkspace';
 
 /**
@@ -32,19 +33,19 @@ describe('useChatWorkspace submit behavior', () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
       const url = String(input);
       if (
-        url === '/api/chat/conversations' ||
+        isConversationListRequest(url) ||
         url === '/api/chat/sample-questions' ||
         url === '/api/chat/experts' ||
         url === '/api/chat/skills' ||
         url === '/api/chat/mcps' ||
-        url === '/api/chat/conversations/pending-conversation/messages' ||
+        isConversationMessageListRequest(url, 'pending-conversation') ||
         url === '/api/chat/conversations/pending-conversation/steps' ||
         url === '/api/chat/conversations/pending-conversation/references' ||
         url === '/api/chat/conversations/pending-conversation/artifacts' ||
         url === '/api/chat/conversations/pending-conversation/current-skills' ||
         url === '/api/chat/conversations/pending-conversation/current-mcps' ||
         url === '/api/chat/conversations/pending-conversation/current-experts' ||
-        url === '/api/chat/conversations/2001/messages' ||
+        isConversationMessageListRequest(url, '2001') ||
         url === '/api/chat/conversations/2001/steps' ||
         url === '/api/chat/conversations/2001/references' ||
         url === '/api/chat/conversations/2001/artifacts' ||
@@ -52,7 +53,7 @@ describe('useChatWorkspace submit behavior', () => {
         url === '/api/chat/conversations/2001/current-mcps' ||
         url === '/api/chat/conversations/2001/current-experts'
       ) {
-        if (url === '/api/chat/conversations') {
+        if (isConversationListRequest(url)) {
           return new Response(
             JSON.stringify({
               success: true,
@@ -125,19 +126,19 @@ describe('useChatWorkspace submit behavior', () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
       const url = String(input);
       if (
-        url === '/api/chat/conversations' ||
+        isConversationListRequest(url) ||
         url === '/api/chat/sample-questions' ||
         url === '/api/chat/experts' ||
         url === '/api/chat/skills' ||
         url === '/api/chat/mcps' ||
-        url === '/api/chat/conversations/pending-conversation/messages' ||
+        isConversationMessageListRequest(url, 'pending-conversation') ||
         url === '/api/chat/conversations/pending-conversation/steps' ||
         url === '/api/chat/conversations/pending-conversation/references' ||
         url === '/api/chat/conversations/pending-conversation/artifacts' ||
         url === '/api/chat/conversations/pending-conversation/current-skills' ||
         url === '/api/chat/conversations/pending-conversation/current-mcps' ||
         url === '/api/chat/conversations/pending-conversation/current-experts' ||
-        url === '/api/chat/conversations/2001/messages' ||
+        isConversationMessageListRequest(url, '2001') ||
         url === '/api/chat/conversations/2001/steps' ||
         url === '/api/chat/conversations/2001/references' ||
         url === '/api/chat/conversations/2001/artifacts' ||
@@ -145,7 +146,7 @@ describe('useChatWorkspace submit behavior', () => {
         url === '/api/chat/conversations/2001/current-mcps' ||
         url === '/api/chat/conversations/2001/current-experts'
       ) {
-        if (url === '/api/chat/conversations') {
+        if (isConversationListRequest(url)) {
           return new Response(
             JSON.stringify({
               success: true,
@@ -228,7 +229,7 @@ describe('useChatWorkspace submit behavior', () => {
 
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
       const url = String(input);
-      if (url === '/api/chat/conversations') {
+      if (isConversationListRequest(url)) {
         conversationsRequestCount += 1;
         if (conversationsRequestCount === 1) {
           return new Response(
@@ -243,7 +244,7 @@ describe('useChatWorkspace submit behavior', () => {
         url === '/api/chat/experts' ||
         url === '/api/chat/skills' ||
         url === '/api/chat/mcps' ||
-        url === '/api/chat/conversations/2001/messages' ||
+        isConversationMessageListRequest(url, '2001') ||
         url === '/api/chat/conversations/2001/steps' ||
         url === '/api/chat/conversations/2001/references' ||
         url === '/api/chat/conversations/2001/artifacts' ||
@@ -404,7 +405,7 @@ describe('useChatWorkspace submit behavior', () => {
 
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
       const url = String(input);
-      if (url === '/api/chat/conversations') {
+      if (isConversationListRequest(url)) {
         conversationsRequestCount += 1;
         if (conversationsRequestCount === 1) {
           return new Response(
@@ -419,7 +420,7 @@ describe('useChatWorkspace submit behavior', () => {
         url === '/api/chat/experts' ||
         url === '/api/chat/skills' ||
         url === '/api/chat/mcps' ||
-        url === '/api/chat/conversations/2001/messages' ||
+        isConversationMessageListRequest(url, '2001') ||
         url === '/api/chat/conversations/2001/steps' ||
         url === '/api/chat/conversations/2001/references' ||
         url === '/api/chat/conversations/2001/artifacts' ||
@@ -522,7 +523,7 @@ describe('useChatWorkspace submit behavior', () => {
 
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
       const url = String(input);
-      if (url === '/api/chat/conversations') {
+      if (isConversationListRequest(url)) {
         conversationsRequestCount += 1;
         if (conversationsRequestCount === 1) {
           return new Response(
@@ -544,7 +545,7 @@ describe('useChatWorkspace submit behavior', () => {
         }
         return conversationsAfterFinish;
       }
-      if (url === '/api/chat/conversations/2001/messages') {
+      if (isConversationMessageListRequest(url, '2001')) {
         return new Response(
           JSON.stringify({
             success: true,
@@ -672,7 +673,7 @@ describe('useChatWorkspace submit behavior', () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
       const url = String(input);
       if (
-        url === '/api/chat/conversations' ||
+        isConversationListRequest(url) ||
         url === '/api/chat/sample-questions' ||
         url === '/api/chat/experts' ||
         url === '/api/chat/skills' ||
@@ -723,7 +724,7 @@ describe('useChatWorkspace submit behavior', () => {
 
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
       const url = String(input);
-      if (url === '/api/chat/conversations') {
+      if (isConversationListRequest(url)) {
         return new Response(
           JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
           { status: 200 },
@@ -809,7 +810,7 @@ describe('useChatWorkspace submit behavior', () => {
 
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
       const url = String(input);
-      if (url === '/api/chat/conversations') {
+      if (isConversationListRequest(url)) {
         return new Response(
           JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
           { status: 200 },
@@ -931,7 +932,7 @@ describe('useChatWorkspace submit behavior', () => {
 
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
       const url = String(input);
-      if (url === '/api/chat/conversations') {
+      if (isConversationListRequest(url)) {
         return new Response(
           JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
           { status: 200 },
@@ -954,7 +955,7 @@ describe('useChatWorkspace submit behavior', () => {
           { status: 200 },
         );
       }
-      if (url === '/api/chat/conversations/2001/messages') {
+      if (isConversationMessageListRequest(url, '2001')) {
         return new Response(
           JSON.stringify({
             success: true,
@@ -1078,7 +1079,7 @@ describe('useChatWorkspace submit behavior', () => {
 
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
       const url = String(input);
-      if (url === '/api/chat/conversations') {
+      if (isConversationListRequest(url)) {
         return new Response(
           JSON.stringify({
             success: true,
@@ -1097,7 +1098,7 @@ describe('useChatWorkspace submit behavior', () => {
           { status: 200 },
         );
       }
-      if (url === '/api/chat/conversations/2001/messages') {
+      if (isConversationMessageListRequest(url, '2001')) {
         return new Response(
           JSON.stringify({
             success: true,
@@ -1210,7 +1211,7 @@ describe('useChatWorkspace submit behavior', () => {
 
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
       const url = String(input);
-      if (url === '/api/chat/conversations') {
+      if (isConversationListRequest(url)) {
         return new Response(
           JSON.stringify({
             success: true,
@@ -1227,7 +1228,7 @@ describe('useChatWorkspace submit behavior', () => {
           { status: 200 },
         );
       }
-      if (url === '/api/chat/conversations/2002/messages') {
+      if (isConversationMessageListRequest(url, '2002')) {
         return new Response(
           JSON.stringify({
             success: true,
@@ -1374,7 +1375,7 @@ describe('useChatWorkspace submit behavior', () => {
 
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
       const url = String(input);
-      if (url === '/api/chat/conversations') {
+      if (isConversationListRequest(url)) {
         return new Response(
           JSON.stringify({
             success: true,
@@ -1393,7 +1394,7 @@ describe('useChatWorkspace submit behavior', () => {
           { status: 200 },
         );
       }
-      if (url === '/api/chat/conversations/2001/messages') {
+      if (isConversationMessageListRequest(url, '2001')) {
         return new Response(
           JSON.stringify({
             success: true,

@@ -1,6 +1,7 @@
 package com.codingx.chat.domain.repository;
 
 import com.codingx.chat.domain.model.ChatMessage;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -21,6 +22,21 @@ public interface ChatMessageRepository {
      * @return 按创建时间升序排列的消息列表。
      */
     List<ChatMessage> findByConversationId(Long conversationId);
+
+    /**
+     * 按会话读取最近消息页，按创建时间倒序返回，应用层会在响应前恢复升序。
+     * @param conversationId 会话标识。
+     * @param limit 最大读取条数，调用方通常传入 pageSize + 1。
+     * @param beforeCreatedAt 游标创建时间，为空时读取最新消息页。
+     * @param beforeId 游标消息 ID，为空时读取最新消息页。
+     * @return 按创建时间倒序排列的消息页。
+     */
+    List<ChatMessage> findRecentPageByConversationId(
+        Long conversationId,
+        int limit,
+        LocalDateTime beforeCreatedAt,
+        Long beforeId
+    );
 
     /**
      * 按消息主键查询单条记录。

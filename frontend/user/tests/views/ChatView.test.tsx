@@ -572,6 +572,28 @@ describe('ChatView', () => {
   });
 
   /**
+   * 消息分页存在更早记录时，顶部应提供显式加载入口，避免 ChatView 首次渲染全量历史消息。
+   */
+  it('应在消息区顶部加载更早消息', async () => {
+    const loadOlderMessages = vi.fn().mockResolvedValue(undefined);
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          hasMoreMessagesBefore: true,
+          isLoadingOlderMessages: false,
+          loadOlderMessages,
+        })}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '加载更早消息' }));
+
+    expect(loadOlderMessages).toHaveBeenCalledTimes(1);
+  });
+
+  /**
    * 助手消息正文应按 Markdown 渲染，避免把标题、加粗和列表原样当纯文本展示。
    */
   it('应将助手消息按 Markdown 渲染', async () => {
@@ -4780,6 +4802,8 @@ function createWorkspace(overrides?: Partial<ChatWorkspaceController>): ChatWork
       },
     ],
     activeConversationId: '2001',
+    hasMoreMessagesBefore: false,
+    isLoadingOlderMessages: false,
     messages: [
       {
         id: '101',
@@ -4988,6 +5012,8 @@ function createWorkspace(overrides?: Partial<ChatWorkspaceController>): ChatWork
     cancelCurrentStream: vi.fn().mockResolvedValue(undefined),
     selectConversation: vi.fn().mockResolvedValue(undefined),
     selectConversationInWorkspace: vi.fn().mockResolvedValue(undefined),
+    loadMoreConversations: vi.fn().mockResolvedValue(undefined),
+    loadOlderMessages: vi.fn().mockResolvedValue(undefined),
     startNewConversation: vi.fn().mockResolvedValue(undefined),
     renameConversation: vi.fn().mockResolvedValue(undefined),
     deleteConversation: vi.fn().mockResolvedValue(undefined),

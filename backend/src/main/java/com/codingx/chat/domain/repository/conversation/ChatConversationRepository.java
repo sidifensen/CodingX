@@ -1,6 +1,7 @@
 package com.codingx.chat.domain.repository;
 
 import com.codingx.chat.domain.model.ChatConversation;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -35,6 +36,46 @@ public interface ChatConversationRepository {
      * @return 按置顶、更新时间和主键倒序排列的会话列表。
      */
     List<ChatConversation> findByCreatedByAndWorkspaceId(Long userId, Long workspaceId);
+
+    /**
+     * 按用户和工作空间读取一页会话，多取一条供应用层判断是否还有下一页。
+     * @param userId 用户标识。
+     * @param workspaceId 工作空间标识，可为空；为空时查询历史未归属会话。
+     * @param limit 最大读取条数，调用方通常传入 pageSize + 1。
+     * @param cursorPinned 上一页最后一条会话的置顶状态，可为空表示首页。
+     * @param cursorUpdatedAt 上一页最后一条会话的更新时间，可为空表示首页。
+     * @param cursorId 上一页最后一条会话 ID，可为空表示首页。
+     * @return 按置顶、更新时间和 ID 倒序排列的会话页。
+     */
+    List<ChatConversation> findPageByCreatedByAndWorkspaceId(
+        Long userId,
+        Long workspaceId,
+        int limit,
+        Boolean cursorPinned,
+        LocalDateTime cursorUpdatedAt,
+        Long cursorId
+    );
+
+    /**
+     * 按用户和多个工作空间读取一页会话，可同时包含历史未归属会话，供默认云端历史合并加载。
+     * @param userId 用户标识。
+     * @param workspaceIds 允许的工作空间 ID 列表。
+     * @param includeNullWorkspace 是否包含 workspace_id 为空的历史会话。
+     * @param limit 最大读取条数，调用方通常传入 pageSize + 1。
+     * @param cursorPinned 上一页最后一条会话的置顶状态，可为空表示首页。
+     * @param cursorUpdatedAt 上一页最后一条会话的更新时间，可为空表示首页。
+     * @param cursorId 上一页最后一条会话 ID，可为空表示首页。
+     * @return 符合空间范围的会话页。
+     */
+    List<ChatConversation> findPageByCreatedByAndWorkspaceScope(
+        Long userId,
+        List<Long> workspaceIds,
+        boolean includeNullWorkspace,
+        int limit,
+        Boolean cursorPinned,
+        LocalDateTime cursorUpdatedAt,
+        Long cursorId
+    );
 
     /**
      * 供管理端按关键字查询会话列表，返回全量会话记录。

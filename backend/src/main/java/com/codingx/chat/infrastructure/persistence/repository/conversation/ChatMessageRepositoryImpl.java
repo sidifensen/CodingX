@@ -63,6 +63,41 @@ public class ChatMessageRepositoryImpl implements ChatMessageRepository {
     }
 
     /**
+     * 按创建时间倒序读取最近消息页，应用层会恢复为升序后返回给前端。
+     * @param conversationId 会话标识。
+     * @param limit 最大读取条数。
+     * @param beforeCreatedAt 游标创建时间。
+     * @param beforeId 游标消息 ID。
+     * @return 按创建时间倒序排列的消息页。
+     */
+    @Override
+    public List<ChatMessage> findRecentPageByConversationId(
+        Long conversationId,
+        int limit,
+        LocalDateTime beforeCreatedAt,
+        Long beforeId
+    ) {
+        LambdaQueryWrapper<ChatMessageDO> queryWrapper = new LambdaQueryWrapper<ChatMessageDO>()
+            .eq(ChatMessageDO::getConversationId, conversationId)
+            .eq(ChatMessageDO::getDeleted, 0);
+        if (beforeCreatedAt != null && beforeId != null) {
+            // 步骤 1：更旧消息位于游标创建时间之前；同一时间下使用 ID 倒序继续切分。
+            queryWrapper.and(cursor -> cursor
+                .lt(ChatMessageDO::getCreatedAt, beforeCreatedAt)
+                .or(branch -> branch
+                    .eq(ChatMessageDO::getCreatedAt, beforeCreatedAt)
+                    .lt(ChatMessageDO::getId, beforeId)));
+        }
+        return chatMessageMapper.selectList(queryWrapper
+                .orderByDesc(ChatMessageDO::getCreatedAt)
+                .orderByDesc(ChatMessageDO::getId)
+                .last("LIMIT " + Math.max(1, limit)))
+            .stream()
+            .map(this::toDomain)
+            .toList();
+    }
+
+    /**
      * 逻辑删除指定会话内的消息；会话条件必须参与更新，避免跨会话误删。
      * @param conversationId 会话标识。
      * @param messageIds 消息主键列表。

@@ -1,5 +1,5 @@
 {
-  "name": "react-example",
+  "name": "codingx-user-frontend",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -14,7 +14,7 @@
     "fmt": "vp fmt",
     "test": "vp test",
     "test:run": "vp test run",
-    "clean": "rm -rf dist server.js"
+    "clean": "node -e \"const fs=require('fs'); fs.rmSync('dist',{recursive:true,force:true}); fs.rmSync('server.js',{force:true})\""
   },
   "dependencies": {
     "@google/genai": "^1.29.0",

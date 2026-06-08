@@ -21,6 +21,7 @@ function createConversation(index: number) {
  */
 function createSidebarProps(overrides?: {
   workspaceGroups?: WorkspaceConversationGroup[];
+  onLoadMoreConversations?: ReturnType<typeof vi.fn>;
 }) {
   const defaultConversations = Array.from({ length: 11 }, (_, i) => createConversation(i + 1));
   return {
@@ -52,6 +53,7 @@ function createSidebarProps(overrides?: {
     onExportConversation: vi.fn(async () => undefined),
     onExportConversations: vi.fn(async () => undefined),
     onDeleteConversations: vi.fn(async () => undefined),
+    onLoadMoreConversations: overrides?.onLoadMoreConversations ?? vi.fn(async () => undefined),
     workspaceGroups:
       overrides?.workspaceGroups ??
       [
@@ -119,6 +121,37 @@ describe('Sidebar conversation collapse behavior', () => {
     fireEvent.click(screen.getByRole('button', { name: '收起显示' }));
     expect(screen.queryByText('会话 6')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: '展开显示' })).toBeInTheDocument();
+  });
+
+  it('分组还有远端下一页时点击按钮应触发分页加载', () => {
+    const onLoadMoreConversations = vi.fn(async () => undefined);
+    const props = createSidebarProps({
+      onLoadMoreConversations,
+      workspaceGroups: [
+        {
+          partitionKey: 'cloud::__no_workspace__',
+          workspacePath: null,
+          workspaceLabel: '云端历史记录',
+          runtimeTarget: 'cloud',
+          lastOpenedAt: Date.now(),
+          activeConversationId: 'conversation-1',
+          conversations: Array.from({ length: 5 }, (_, i) => createConversation(i + 1)),
+          hasMore: true,
+          isLoadingMore: false,
+        },
+      ],
+    });
+
+    render(<Sidebar {...props} />);
+    fireEvent.click(screen.getByRole('button', { name: '加载更多会话' }));
+
+    expect(onLoadMoreConversations).toHaveBeenCalledWith(
+      expect.objectContaining({
+        partitionKey: 'cloud::__no_workspace__',
+        runtimeTarget: 'cloud',
+        workspacePath: null,
+      }),
+    );
   });
 
   it('应以图标区分云端与本地分组并移除次级运行环境文案', () => {

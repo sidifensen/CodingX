@@ -14,7 +14,10 @@ import com.codingx.chat.application.service.ChatRuntimeGuardService;
 import com.codingx.chat.domain.model.ChatConversation;
 import com.codingx.chat.domain.model.ChatConversationStatus;
 import com.codingx.chat.interfaces.response.ChatConversationResponse;
+import com.codingx.chat.interfaces.response.CursorPageResponse;
 import com.codingx.config.GlobalExceptionHandler;
+import com.fasterxml.jackson.databind.SerializationFeature;
+import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
 import java.time.LocalDateTime;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -24,6 +27,8 @@ import org.mockito.Mock;
 import org.mockito.MockedStatic;
 import org.mockito.Mockito;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.converter.json.Jackson2ObjectMapperBuilder;
+import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
@@ -153,6 +158,45 @@ class ChatControllerListConversationsTest {
     }
 
     /**
+     * 传入 pageSize 时应走分页协议，旧数组响应只保留给不带分页参数的调用方。
+     */
+    @Test
+    void listConversationsReturnsCursorPageWhenPageSizePresent() throws Exception {
+        LocalDateTime updatedAt = LocalDateTime.of(2026, 6, 8, 12, 0);
+        ChatConversation conversation = ChatConversation.create(2001L, "分页会话", 1002L, 3001L, ChatConversationStatus.ACTIVE);
+        conversation.restorePersistenceState(updatedAt.minusHours(1), updatedAt);
+        List<ChatConversation> conversations = List.of(conversation);
+        CursorPageResponse.Cursor nextCursor = new CursorPageResponse.Cursor(false, updatedAt, null, 2001L);
+        when(chatConversationApplicationService.pageConversations(1002L, 3001L, 20, null, null, null))
+            .thenReturn(new CursorPageResponse<>(conversations, true, nextCursor));
+        when(chatConversationViewService.toConversationResponses(conversations, 1002L)).thenReturn(List.of(
+            response(
+                2001L,
+                "分页会话",
+                3001L,
+                null,
+                ChatConversationResponse.WorkspaceType.LOCAL,
+                null,
+                null,
+                true
+            )
+        ));
+
+        try (MockedStatic<StpUtil> mocked = Mockito.mockStatic(StpUtil.class)) {
+            mocked.when(StpUtil::getLoginIdAsLong).thenReturn(1002L);
+
+            mockMvc().perform(get("/api/chat/conversations")
+                    .param("workspaceId", "3001")
+                    .param("pageSize", "20"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.items[0].id").value("2001"))
+                .andExpect(jsonPath("$.data.hasMore").value(true))
+                .andExpect(jsonPath("$.data.nextCursor.cursorPinned").value(false))
+                .andExpect(jsonPath("$.data.nextCursor.cursorId").value("2001"));
+        }
+    }
+
+    /**
      * 构造会话响应，测试只关心控制器序列化，不重复验证视图服务业务投影。
      */
     private ChatConversationResponse response(
@@ -191,7 +235,19 @@ class ChatControllerListConversationsTest {
      */
     private MockMvc mockMvc() {
         return MockMvcBuilders.standaloneSetup(chatController)
+            .setMessageConverters(jacksonMessageConverter())
             .setControllerAdvice(new GlobalExceptionHandler())
             .build();
+    }
+
+    /**
+     * standalone MockMvc 需要显式加载项目同款 JSON 规则，保证 Long 与 LocalDateTime 序列化契约贴近生产环境。
+     */
+    private MappingJackson2HttpMessageConverter jacksonMessageConverter() {
+        return new MappingJackson2HttpMessageConverter(Jackson2ObjectMapperBuilder.json()
+            .serializerByType(Long.class, ToStringSerializer.instance)
+            .serializerByType(Long.TYPE, ToStringSerializer.instance)
+            .featuresToDisable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS)
+            .build());
     }
 }

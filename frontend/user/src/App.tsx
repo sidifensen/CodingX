@@ -355,6 +355,7 @@ function MainApp() {
           onExportConversation={handleExportConversation}
           onExportConversations={handleExportConversations}
           onDeleteConversations={handleDeleteConversations}
+          onLoadMoreConversations={chatWorkspace.loadMoreConversations}
           workspaceGroups={chatWorkspace.workspaceGroups}
           activeWorkspacePartitionKey={chatWorkspace.activeWorkspacePartitionKey}
           onSelectWorkspacePath={chatWorkspace.setActiveWorkspacePath}

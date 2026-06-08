@@ -22,6 +22,7 @@ import {
   ConversationActionContext,
   ConversationExportFormat,
   ConversationItem,
+  CursorPageCursor,
   ExecutionStepItem,
   LongTermMemoryItem,
   LongTermMemoryStatus,
@@ -40,6 +41,7 @@ import {
   StreamQueueState,
   UseChatWorkspaceOptions,
   WorkspaceConversationCreateContext,
+  WorkspaceConversationSelectionContext,
   WorkspaceConversationGroup,
 } from './types';
 import {
@@ -68,6 +70,8 @@ const PDF_PAGE_MARGIN = 48;
 const PDF_LINE_HEIGHT = 17;
 const PDF_FONT_SIZE = 12;
 const PDF_MAX_TEXT_UNITS_PER_LINE = 58;
+const CHAT_CONVERSATION_PAGE_SIZE = 30;
+const CHAT_MESSAGE_PAGE_SIZE = 30;
 
 /**
  * 描述一次导出下载的文件内容；PDF 使用二进制 BlobPart，文本类格式使用字符串 BlobPart。
@@ -167,6 +171,28 @@ function mergeConversationListById(
     mergedConversations.push(conversation);
   }
   return mergedConversations;
+}
+
+/**
+ * 将更早消息前置合并到当前回放，按消息 ID 去重，避免滚动加载旧消息时重复展示边界消息。
+ * @param olderMessages 后端按时间升序返回的更早一页消息。
+ * @param currentMessages 当前已展示的最近消息。
+ * @returns 去重后的完整消息列表。
+ */
+function prependMessagesById(
+  olderMessages: ChatMessageItem[],
+  currentMessages: ChatMessageItem[],
+) {
+  const seenMessageIds = new Set<string>();
+  const nextMessages: ChatMessageItem[] = [];
+  for (const message of [...olderMessages, ...currentMessages]) {
+    if (seenMessageIds.has(message.id)) {
+      continue;
+    }
+    seenMessageIds.add(message.id);
+    nextMessages.push(message);
+  }
+  return nextMessages;
 }
 
 /**
@@ -398,6 +424,25 @@ interface StreamResumeSkipState {
 }
 
 /**
+ * 记录某个工作空间分区的会话分页状态，供侧栏“加载更多”继续请求下一页。
+ */
+interface ConversationPaginationState {
+  hasMore: boolean;
+  nextCursor: CursorPageCursor | null;
+  isLoadingMore: boolean;
+}
+
+/**
+ * 记录当前会话消息分页状态，顶部加载旧消息时使用最旧消息 cursor。
+ */
+interface MessagePaginationState {
+  conversationId: string | null;
+  hasMoreBefore: boolean;
+  oldestCursor: CursorPageCursor | null;
+  isLoadingOlder: boolean;
+}
+
+/**
  * 统一判断 MCP 是否允许用户在会话中启用。
  * 关键约束：后端显式返回禁用或不可用时，前端必须强制剔除，不允许进入可选列表。
  * @param mcp MCP 配置。
@@ -540,6 +585,13 @@ export function useChatWorkspace(
   const [conversations, setConversations] = useState<ConversationItem[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [messages, setMessagesState] = useState<ChatMessageItem[]>([]);
+  const [conversationPaginationMap, setConversationPaginationMapState] = useState<Record<string, ConversationPaginationState>>({});
+  const [messagePagination, setMessagePaginationState] = useState<MessagePaginationState>({
+    conversationId: null,
+    hasMoreBefore: false,
+    oldestCursor: null,
+    isLoadingOlder: false,
+  });
   const [executionSteps, setExecutionSteps] = useState<ExecutionStepItem[]>([]);
   const [references, setReferences] = useState<ReferenceItem[]>([]);
   const [artifacts, setArtifacts] = useState<ArtifactItem[]>([]);
@@ -611,6 +663,13 @@ export function useChatWorkspace(
   const workspacePathRef = useRef(workspacePath);
   const conversationsRef = useRef<ConversationItem[]>([]);
   const messagesRef = useRef<ChatMessageItem[]>([]);
+  const conversationPaginationMapRef = useRef<Record<string, ConversationPaginationState>>({});
+  const messagePaginationRef = useRef<MessagePaginationState>({
+    conversationId: null,
+    hasMoreBefore: false,
+    oldestCursor: null,
+    isLoadingOlder: false,
+  });
   const executionStepsRef = useRef<ExecutionStepItem[]>([]);
   const referencesRef = useRef<ReferenceItem[]>([]);
   const artifactsRef = useRef<ArtifactItem[]>([]);
@@ -621,6 +680,8 @@ export function useChatWorkspace(
   workspacePathRef.current = workspacePath;
   conversationsRef.current = conversations;
   messagesRef.current = messages;
+  conversationPaginationMapRef.current = conversationPaginationMap;
+  messagePaginationRef.current = messagePagination;
   executionStepsRef.current = executionSteps;
   referencesRef.current = references;
   artifactsRef.current = artifacts;
@@ -754,6 +815,53 @@ export function useChatWorkspace(
       return nextMessages;
     });
   };
+
+  /**
+   * 同步更新会话分页状态和 ref，避免加载更多时读到 React 尚未刷新的旧 cursor。
+   * @param nextValue 新分页状态或基于旧状态的计算函数。
+   */
+  const setConversationPaginationMap = (
+    nextValue:
+      | Record<string, ConversationPaginationState>
+      | ((previous: Record<string, ConversationPaginationState>) => Record<string, ConversationPaginationState>),
+  ) => {
+    const nextMap =
+      typeof nextValue === 'function'
+        ? nextValue(conversationPaginationMapRef.current)
+        : nextValue;
+    conversationPaginationMapRef.current = nextMap;
+    setConversationPaginationMapState(nextMap);
+  };
+
+  /**
+   * 同步更新当前消息分页状态和 ref，保证顶部加载旧消息不会重复提交同一个 cursor。
+   * @param nextValue 新分页状态或基于旧状态的计算函数。
+   */
+  const setMessagePagination = (
+    nextValue: MessagePaginationState | ((previous: MessagePaginationState) => MessagePaginationState),
+  ) => {
+    const nextState =
+      typeof nextValue === 'function'
+        ? nextValue(messagePaginationRef.current)
+        : nextValue;
+    messagePaginationRef.current = nextState;
+    setMessagePaginationState(nextState);
+  };
+
+  /**
+   * 将内存中的分页状态装饰到侧栏工作空间分组，避免把 cursor 写入本地快照结构。
+   * @param groups 本地快照生成的工作空间分组。
+   * @returns 带分页状态的工作空间分组。
+   */
+  const decorateWorkspaceGroupsWithPagination = (groups: WorkspaceConversationGroup[]) =>
+    groups.map((group) => {
+      const pagination = conversationPaginationMapRef.current[group.partitionKey];
+      return {
+        ...group,
+        hasMore: Boolean(pagination?.hasMore),
+        isLoadingMore: Boolean(pagination?.isLoadingMore),
+      };
+    });
 
   /**
    * 恢复运行中会话时，后端会回放运行期缓冲；若本地快照已有部分正文，需要跳过已展示前缀。
@@ -1127,10 +1235,10 @@ export function useChatWorkspace(
     const shouldShowAllWorkspaceGroups = hostType === 'desktop' && mode === 'all';
     // 关键约束：侧栏分组始终基于本地快照重建，避免会话刷新的短窗口期出现“暂无会话”闪烁。
     if (shouldShowAllWorkspaceGroups) {
-      setWorkspaceGroups(listWorkspaceGroups());
+      setWorkspaceGroups(decorateWorkspaceGroupsWithPagination(listWorkspaceGroups()));
       return;
     }
-    setWorkspaceGroups(listWorkspaceGroups(activeRuntimeTarget));
+    setWorkspaceGroups(decorateWorkspaceGroupsWithPagination(listWorkspaceGroups(activeRuntimeTarget)));
   };
 
   /**
@@ -1541,7 +1649,11 @@ export function useChatWorkspace(
     const nextWorkspaceId = await switchWorkspacePartition('local', nextWorkspacePath, true, false);
     const token = currentToken();
     if (token) {
-      await loadConversations(token, nextWorkspaceId);
+      await loadConversations(token, nextWorkspaceId, {
+        runtimeTarget: 'local',
+        workspacePath: nextWorkspacePath,
+        activeConversationId: null,
+      });
     }
   };
 
@@ -1605,6 +1717,101 @@ export function useChatWorkspace(
   };
 
   /**
+   * 根据侧栏分组的分页状态继续读取下一页会话，只追加到目标分区快照，避免首屏一次性加载全量历史。
+   * @param selectionContext 侧栏分组上下文。
+   */
+  const loadMoreConversations = async (
+    selectionContext: WorkspaceConversationSelectionContext,
+  ) => {
+    const token = currentToken();
+    if (!token) {
+      return;
+    }
+    const normalizedWorkspacePath =
+      selectionContext.runtimeTarget === 'local' ? selectionContext.workspacePath ?? null : null;
+    const targetPartitionKey = isWorkspaceHistoryPartitionKey(selectionContext.partitionKey)
+      ? buildWorkspacePartitionKey(selectionContext.runtimeTarget, normalizedWorkspacePath)
+      : selectionContext.partitionKey;
+    const pagination = conversationPaginationMapRef.current[targetPartitionKey];
+    if (!pagination?.hasMore || pagination.isLoadingMore) {
+      return;
+    }
+    setStreamError('');
+    setConversationPaginationMap((previousMap) => ({
+      ...previousMap,
+      [targetPartitionKey]: {
+        ...pagination,
+        isLoadingMore: true,
+      },
+    }));
+    try {
+      const isCurrentPartition =
+        activeRuntimeTarget === selectionContext.runtimeTarget &&
+        buildWorkspacePartitionKey(activeRuntimeTarget, workspacePath ?? null) === targetPartitionKey;
+      const effectiveWorkspaceId =
+        isCurrentPartition && selectionContext.runtimeTarget === 'local'
+          ? workspaceId
+          : null;
+      const conversationPage = await ChatApi.listConversationPage(token, {
+        workspaceId: effectiveWorkspaceId,
+        pageSize: CHAT_CONVERSATION_PAGE_SIZE,
+        cursor: pagination.nextCursor,
+      });
+      const snapshot = readWorkspaceSnapshot(targetPartitionKey);
+      const mergedConversations = mergeConversationListById(
+        snapshot.conversations,
+        conversationPage.items,
+        { mergeExisting: true },
+      );
+      const effectiveActiveConversationId =
+        isCurrentPartition ? activeConversationIdRef.current : snapshot.activeConversationId ?? null;
+      const nextSeenTaskFinishedAtByConversationId = markActiveTaskCompletionSeen(
+        mergedConversations,
+        snapshot.seenTaskFinishedAtByConversationId ?? {},
+        effectiveActiveConversationId,
+      );
+      const nextConversations = applyTaskCompletionReminders(
+        mergedConversations,
+        nextSeenTaskFinishedAtByConversationId,
+        effectiveActiveConversationId,
+      );
+      writeWorkspaceSnapshot(targetPartitionKey, {
+        ...snapshot,
+        conversations: nextConversations,
+        activeConversationId: snapshot.activeConversationId ?? (isCurrentPartition ? activeConversationIdRef.current : null),
+        seenTaskFinishedAtByConversationId: nextSeenTaskFinishedAtByConversationId,
+      });
+      if (isCurrentPartition) {
+        conversationsRef.current = nextConversations;
+        setConversations(nextConversations);
+      }
+      setConversationPaginationMap((previousMap) => ({
+        ...previousMap,
+        [targetPartitionKey]: {
+          hasMore: conversationPage.hasMore,
+          nextCursor: conversationPage.nextCursor,
+          isLoadingMore: false,
+        },
+      }));
+      refreshWorkspaceGroups('all');
+    } catch (error) {
+      setConversationPaginationMap((previousMap) => ({
+        ...previousMap,
+        [targetPartitionKey]: {
+          hasMore: pagination.hasMore,
+          nextCursor: pagination.nextCursor,
+          isLoadingMore: false,
+        },
+      }));
+      if (error instanceof ChatApi.UnauthorizedError) {
+        onUnauthorizedRef.current?.();
+        return;
+      }
+      setStreamError(error instanceof Error ? error.message : UserErrorMessages.CHAT_REQUEST_FAILED);
+    }
+  };
+
+  /**
    * 打开文件夹选择器并将结果切换为当前工作空间。
    */
   const pickRepositoryDirectory = async () => {
@@ -1615,7 +1822,70 @@ export function useChatWorkspace(
     const nextWorkspaceId = await switchWorkspacePartition('local', selectedPath, true, false);
     const token = currentToken();
     if (token) {
-      await loadConversations(token, nextWorkspaceId);
+      await loadConversations(token, nextWorkspaceId, {
+        runtimeTarget: 'local',
+        workspacePath: selectedPath,
+        activeConversationId: null,
+      });
+    }
+  };
+
+  /**
+   * 读取当前会话更早的一页消息并前置到消息区，保持最近页和本地回放快照不被替换。
+   */
+  const loadOlderMessages = async () => {
+    const token = currentToken();
+    const conversationId = activeConversationIdRef.current;
+    const pagination = messagePaginationRef.current;
+    if (
+      !token ||
+      !conversationId ||
+      pagination.conversationId !== conversationId ||
+      !pagination.hasMoreBefore ||
+      pagination.isLoadingOlder
+    ) {
+      return;
+    }
+    setStreamError('');
+    setMessagePagination({
+      ...pagination,
+      isLoadingOlder: true,
+    });
+    try {
+      const messagePage = await ChatApi.listMessagePage(token, conversationId, {
+        pageSize: CHAT_MESSAGE_PAGE_SIZE,
+        before: pagination.oldestCursor,
+      });
+      if (activeConversationIdRef.current !== conversationId) {
+        return;
+      }
+      const nextMessages = prependMessagesById(messagePage.items, messagesRef.current);
+      setMessages(nextMessages);
+      setMessagePagination({
+        conversationId,
+        hasMoreBefore: messagePage.hasMore,
+        oldestCursor: messagePage.nextCursor,
+        isLoadingOlder: false,
+      });
+      persistConversationState(conversationId, conversationsRef.current, {
+        messages: nextMessages,
+        executionSteps: executionStepsRef.current,
+        references: referencesRef.current,
+        artifacts: artifactsRef.current,
+        currentExperts: currentExpertsRef.current,
+        currentSkills: currentSkillsRef.current,
+        currentMcps: currentMcpsRef.current,
+      });
+    } catch (error) {
+      setMessagePagination({
+        ...pagination,
+        isLoadingOlder: false,
+      });
+      if (error instanceof ChatApi.UnauthorizedError) {
+        onUnauthorizedRef.current?.();
+        return;
+      }
+      setStreamError(error instanceof Error ? error.message : UserErrorMessages.CHAT_REQUEST_FAILED);
     }
   };
 
@@ -1717,7 +1987,9 @@ export function useChatWorkspace(
     setCurrentExperts([]);
     setCurrentSkills([]);
     setCurrentMcps([]);
-    const nextMessagesPromise = ChatApi.listMessages(token, conversationId);
+    const nextMessagePagePromise = ChatApi.listMessagePage(token, conversationId, {
+      pageSize: CHAT_MESSAGE_PAGE_SIZE,
+    });
     const nextStepsPromise = ChatApi.listSteps(token, conversationId);
     const nextReferencesPromise = ChatApi.listReferences(token, conversationId);
     const nextArtifactsPromise = ChatApi.listArtifacts(token, conversationId);
@@ -1725,7 +1997,14 @@ export function useChatWorkspace(
     const nextCurrentSkillsPromise = ChatApi.listCurrentSkills(token, conversationId);
     const nextCurrentMcpsPromise = ChatApi.listCurrentMcps(token, conversationId);
 
-    const nextMessages = await nextMessagesPromise;
+    const nextMessagePage = await nextMessagePagePromise;
+    const nextMessages = nextMessagePage.items;
+    setMessagePagination({
+      conversationId,
+      hasMoreBefore: nextMessagePage.hasMore,
+      oldestCursor: nextMessagePage.nextCursor,
+      isLoadingOlder: false,
+    });
     const shouldPreservePreviousAssistantContent =
       preferPreviousAssistantContent ||
       isActiveAssistantReplayContext(
@@ -1951,7 +2230,7 @@ export function useChatWorkspace(
       });
 
       try {
-        const response = await fetch(
+        const response = await ChatApi.openChatStream(
           buildStreamRequestUrl(
             question,
             activeConversationId,
@@ -1968,14 +2247,9 @@ export function useChatWorkspace(
             null,
             goalModeEnabled,
           ),
-          {
-            headers: {
-              satoken: token,
-            },
-            signal: streamAbortController.signal,
-          },
+          token,
+          streamAbortController.signal,
         );
-        await ChatApi.assertStreamAuthorized(response);
         // 附件上传成功并已发出流请求后即可释放预览 URL，避免长期占用浏览器内存。
         submittedAttachments.forEach((item) => URL.revokeObjectURL(item.previewUrl));
         await consumeSseStream(response, optimisticAssistantId, streamSessionId, submitLockId);
@@ -2139,16 +2413,11 @@ export function useChatWorkspace(
 
     void (async () => {
       try {
-        const response = await fetch(
+        const response = await ChatApi.openChatStream(
           `/api/chat/conversations/${encodeURIComponent(conversationId)}/stream`,
-          {
-            headers: {
-              satoken: token,
-            },
-            signal: streamAbortController.signal,
-          },
+          token,
+          streamAbortController.signal,
         );
-        await ChatApi.assertStreamAuthorized(response);
         await consumeSseStream(response, resumedAssistantId, streamSessionId);
         const didFinishStream = finishedStreamSessionIdsRef.current.has(streamSessionId);
         finishedStreamSessionIdsRef.current.delete(streamSessionId);
@@ -2446,7 +2715,7 @@ export function useChatWorkspace(
     hideStreamQueueState();
 
     try {
-      const response = await fetch(
+      const response = await ChatApi.openChatStream(
         buildStreamRequestUrl(
           normalizedContent,
           targetConversationId,
@@ -2463,14 +2732,9 @@ export function useChatWorkspace(
           undefined,
           goalModeEnabled,
         ),
-        {
-          headers: {
-            satoken: token,
-          },
-          signal: streamAbortController.signal,
-        },
+        token,
+        streamAbortController.signal,
       );
-      await ChatApi.assertStreamAuthorized(response);
       await consumeSseStream(response, optimisticAssistantId, streamSessionId);
       if (!isActiveStreamSession(streamSessionId)) {
         return;
@@ -2756,7 +3020,7 @@ export function useChatWorkspace(
     setStreamError('');
     hideStreamQueueState();
     try {
-      const response = await fetch(
+      const response = await ChatApi.openChatStream(
         buildStreamRequestUrl(
           previousUserMessage.content,
           conversationId,
@@ -2773,14 +3037,9 @@ export function useChatWorkspace(
           undefined,
           goalModeEnabled,
         ),
-        {
-          headers: {
-            satoken: token,
-          },
-          signal: streamAbortController.signal,
-        },
+        token,
+        streamAbortController.signal,
       );
-      await ChatApi.assertStreamAuthorized(response);
       await consumeSseStream(response, optimisticAssistantId, streamSessionId);
       if (isActiveStreamSession(streamSessionId)) {
         await loadConversations(token);
@@ -2888,7 +3147,7 @@ export function useChatWorkspace(
     hideStreamQueueState();
 
     try {
-      const response = await fetch(
+      const response = await ChatApi.openChatStream(
         buildStreamRequestUrl(
           content,
           conversationId,
@@ -2905,14 +3164,9 @@ export function useChatWorkspace(
           undefined,
           goalModeEnabled,
         ),
-        {
-          headers: {
-            satoken: token,
-          },
-          signal: streamAbortController.signal,
-        },
+        token,
+        streamAbortController.signal,
       );
-      await ChatApi.assertStreamAuthorized(response);
       await consumeSseStream(response, optimisticAssistantId, streamSessionId);
       if (!isActiveStreamSession(streamSessionId)) {
         return;
@@ -3036,6 +3290,7 @@ export function useChatWorkspace(
     abortControllerRef.current?.abort();
     activeStreamSessionIdRef.current = null;
     setConversations([]);
+    setConversationPaginationMap({});
     clearConversationPlayback();
     setSampleQuestions([]);
     setAvailableExperts([]);
@@ -3635,6 +3890,8 @@ export function useChatWorkspace(
     conversations,
     activeConversationId,
     messages,
+    hasMoreMessagesBefore: messagePagination.hasMoreBefore,
+    isLoadingOlderMessages: messagePagination.isLoadingOlder,
     executionSteps,
     references,
     artifacts,
@@ -3680,6 +3937,8 @@ export function useChatWorkspace(
     cancelCurrentStream,
     selectConversation,
     selectConversationInWorkspace,
+    loadMoreConversations,
+    loadOlderMessages,
     startNewConversation,
     renameConversation,
     deleteConversation,
@@ -4393,15 +4652,40 @@ export function useChatWorkspace(
    * @param token 当前登录令牌。
    * @returns 最新会话列表。
    */
-  async function loadConversations(token: string, effectiveWorkspaceId: string | null = workspaceId) {
+  async function loadConversations(
+    token: string,
+    effectiveWorkspaceId: string | null = workspaceId,
+    options?: {
+      runtimeTarget?: 'cloud' | 'local';
+      workspacePath?: string | null;
+      activeConversationId?: string | null;
+    },
+  ) {
     const shouldKeepLandingState =
       activeConversationId == null && messages.length === 0 && !readConversationIdFromUrl();
-    const fallbackWorkspacePath = workspacePath ?? null;
-    const currentPartitionKey = buildWorkspacePartitionKey(activeRuntimeTarget, fallbackWorkspacePath);
+    const effectiveRuntimeTarget = options?.runtimeTarget ?? activeRuntimeTarget;
+    const fallbackWorkspacePath = options?.workspacePath ?? workspacePath ?? null;
+    const currentPartitionKey = buildWorkspacePartitionKey(
+      effectiveRuntimeTarget,
+      fallbackWorkspacePath,
+    );
     const currentSnapshot = readWorkspaceSnapshot(currentPartitionKey);
     const persistedActiveConversationId = currentSnapshot.activeConversationId ?? null;
-    const effectiveActiveConversationId = activeConversationId ?? persistedActiveConversationId;
-    const remoteConversations = await ChatApi.listConversations(token, effectiveWorkspaceId);
+    const effectiveActiveConversationId =
+      options?.activeConversationId ?? activeConversationId ?? persistedActiveConversationId;
+    const conversationPage = await ChatApi.listConversationPage(token, {
+      workspaceId: effectiveWorkspaceId,
+      pageSize: CHAT_CONVERSATION_PAGE_SIZE,
+    });
+    const remoteConversations = conversationPage.items;
+    setConversationPaginationMap((previousMap) => ({
+      ...previousMap,
+      [currentPartitionKey]: {
+        hasMore: conversationPage.hasMore,
+        nextCursor: conversationPage.nextCursor,
+        isLoadingMore: false,
+      },
+    }));
     // 远端列表请求期间，刷新恢复可能已经清理过本地消息快照；写回会话列表前必须重读，避免旧闭包覆盖修正后的记录。
     const latestSnapshotForConversationRecords = readWorkspaceSnapshot(currentPartitionKey);
     // 关键约束：流式生成期间会话列表可能返回慢数据或空数据，不能把 meta 已写入的当前会话从侧栏快照中抹掉。
@@ -4413,11 +4697,11 @@ export function useChatWorkspace(
       currentSnapshot.seenTaskFinishedAtByConversationId ?? {},
       effectiveActiveConversationId,
     );
-    if (activeRuntimeTarget === 'cloud') {
+    if (effectiveRuntimeTarget === 'cloud') {
       const visibleConversations = applyTaskCompletionReminders(
         filterWorkspaceConversationsByRuntimeTarget(
           protectedRemoteConversations,
-          activeRuntimeTarget,
+          effectiveRuntimeTarget,
         ),
         seenTaskFinishedAtByConversationId,
         effectiveActiveConversationId,
@@ -4429,20 +4713,20 @@ export function useChatWorkspace(
         ),
       );
       const nextActiveConversationId =
-        activeConversationId != null && visibleConversationIds.has(activeConversationId)
-          ? activeConversationId
+        effectiveActiveConversationId != null && visibleConversationIds.has(effectiveActiveConversationId)
+          ? effectiveActiveConversationId
           : persistedActiveConversationId != null && visibleConversationIds.has(persistedActiveConversationId)
             ? persistedActiveConversationId
             : shouldKeepLandingState
               ? null
               : (visibleConversations[0]?.id ?? null);
       setConversations(visibleConversations);
-      upsertWorkspaceSnapshot(activeRuntimeTarget, fallbackWorkspacePath, {
+      upsertWorkspaceSnapshot(effectiveRuntimeTarget, fallbackWorkspacePath, {
         conversations: visibleConversations,
         activeConversationId: nextActiveConversationId,
         workspaceLabel: fallbackWorkspacePath
           ? getWorkspaceLabel(fallbackWorkspacePath)
-          : getDefaultWorkspaceLabel(activeRuntimeTarget),
+          : getDefaultWorkspaceLabel(effectiveRuntimeTarget),
         conversationRecords: visibleConversationRecords,
         seenTaskFinishedAtByConversationId,
       });
@@ -4451,7 +4735,7 @@ export function useChatWorkspace(
     }
     const nextWorkspaceConversations = applyTaskCompletionReminders(
       resolveWorkspaceConversations(
-        activeRuntimeTarget,
+        effectiveRuntimeTarget,
         fallbackWorkspacePath,
         effectiveWorkspaceId,
         protectedRemoteConversations,
@@ -4460,7 +4744,7 @@ export function useChatWorkspace(
       effectiveActiveConversationId,
     );
     markWorkspaceConversationOwnership(
-      activeRuntimeTarget,
+      effectiveRuntimeTarget,
       fallbackWorkspacePath,
       nextWorkspaceConversations.map((conversation) => conversation.id),
     );
@@ -4468,7 +4752,7 @@ export function useChatWorkspace(
     const localDefaultSnapshot = readWorkspaceSnapshot(buildWorkspacePartitionKey('local', null));
     const localDefaultPartitionKey = buildWorkspacePartitionKey('local', null);
     const isLocalDefaultActivePartition =
-      buildWorkspacePartitionKey(activeRuntimeTarget, fallbackWorkspacePath) === localDefaultPartitionKey;
+      buildWorkspacePartitionKey(effectiveRuntimeTarget, fallbackWorkspacePath) === localDefaultPartitionKey;
     const localDefaultSeenTaskFinishedAtByConversationId = isLocalDefaultActivePartition
       ? seenTaskFinishedAtByConversationId
       : (localDefaultSnapshot.seenTaskFinishedAtByConversationId ?? {});
@@ -4482,15 +4766,15 @@ export function useChatWorkspace(
       isLocalDefaultActivePartition ? effectiveActiveConversationId : null,
     );
     setConversations(nextWorkspaceConversations);
-    upsertWorkspaceSnapshot(activeRuntimeTarget, fallbackWorkspacePath, {
+    upsertWorkspaceSnapshot(effectiveRuntimeTarget, fallbackWorkspacePath, {
       conversations: nextWorkspaceConversations,
       activeConversationId:
-        activeConversationId ??
+        effectiveActiveConversationId ??
         persistedActiveConversationId ??
         (shouldKeepLandingState ? null : (nextWorkspaceConversations[0]?.id ?? null)),
       workspaceLabel: fallbackWorkspacePath
         ? getWorkspaceLabel(fallbackWorkspacePath)
-        : getDefaultWorkspaceLabel(activeRuntimeTarget),
+        : getDefaultWorkspaceLabel(effectiveRuntimeTarget),
       seenTaskFinishedAtByConversationId,
     });
     upsertWorkspaceSnapshot('local', null, {
@@ -4501,8 +4785,8 @@ export function useChatWorkspace(
       seenTaskFinishedAtByConversationId: localDefaultSeenTaskFinishedAtByConversationId,
     });
     if (
-      activeConversationId &&
-      !nextWorkspaceConversations.some((conversation) => conversation.id === activeConversationId)
+      effectiveActiveConversationId &&
+      !nextWorkspaceConversations.some((conversation) => conversation.id === effectiveActiveConversationId)
     ) {
       const nextConversationId = nextWorkspaceConversations[0]?.id ?? null;
       setActiveConversationId(nextConversationId);
@@ -4521,6 +4805,12 @@ export function useChatWorkspace(
       writeConversationIdToUrl(null);
     }
     setMessages([]);
+    setMessagePagination({
+      conversationId: null,
+      hasMoreBefore: false,
+      oldestCursor: null,
+      isLoadingOlder: false,
+    });
     setExecutionSteps([]);
     setReferences([]);
     setArtifacts([]);

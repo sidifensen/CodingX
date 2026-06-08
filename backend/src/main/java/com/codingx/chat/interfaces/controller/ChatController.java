@@ -20,14 +20,17 @@ import com.codingx.chat.interfaces.request.ShareConversationRequest;
 import com.codingx.chat.interfaces.response.ChatConversationResponse;
 import com.codingx.chat.interfaces.response.ChatMessageResponse;
 import com.codingx.chat.interfaces.response.ConversationShareResponse;
+import com.codingx.chat.interfaces.response.CursorPageResponse;
 import com.codingx.chat.interfaces.response.SharedConversationResponse;
 import com.codingx.common.error.ErrorMessageCatalog;
 import com.codingx.common.model.ApiResponse;
 import com.codingx.common.idempotent.IdempotentSubmit;
 import jakarta.validation.Valid;
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDateTime;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -96,28 +99,71 @@ public class ChatController {
     /**
      * 查询当前用户的会话列表。
      * @param workspaceId 工作空间过滤条件，缺省时读取云端历史范围。
+     * @param pageSize 分页大小，传入后启用 cursor 分页响应。
+     * @param cursorPinned 上一页最后一条会话置顶状态。
+     * @param cursorUpdatedAt 上一页最后一条会话更新时间。
+     * @param cursorId 上一页最后一条会话主键。
      * @return 会话响应列表。
      */
     @GetMapping
-    public ApiResponse<List<ChatConversationResponse>> listConversations(@RequestParam(required = false) Long workspaceId) {
+    public ApiResponse<?> listConversations(
+        @RequestParam(required = false) Long workspaceId,
+        @RequestParam(required = false) Integer pageSize,
+        @RequestParam(required = false) Boolean cursorPinned,
+        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime cursorUpdatedAt,
+        @RequestParam(required = false) Long cursorId
+    ) {
         // 步骤 1：读取登录用户和可选工作空间参数，业务过滤由应用服务处理。
         Long userId = StpUtil.getLoginIdAsLong();
+        if (hasConversationPaginationParams(pageSize, cursorPinned, cursorUpdatedAt, cursorId)) {
+            // 步骤 2：只要出现分页参数就启用新版 cursor 协议；旧调用不带分页参数时继续返回数组。
+            CursorPageResponse<ChatConversation> page = chatConversationApplicationService.pageConversations(
+                userId,
+                workspaceId,
+                pageSize,
+                cursorPinned,
+                cursorUpdatedAt,
+                cursorId
+            );
+            List<ChatConversationResponse> responses = chatConversationViewService.toConversationResponses(page.items(), userId);
+            return ApiResponse.success(new CursorPageResponse<>(responses, page.hasMore(), page.nextCursor()));
+        }
         List<ChatConversation> conversations = chatConversationApplicationService.listConversations(userId, workspaceId);
-        // 步骤 2：会话列表响应统一交给视图服务补齐工作空间、任务状态和分享字段。
+        // 步骤 3：旧协议保持数组响应，避免未升级前端或外部调用方必须读取 items 字段。
         return ApiResponse.success(chatConversationViewService.toConversationResponses(conversations, userId));
     }
 
     /**
      * 查询会话消息列表。
      * @param conversationId 会话标识。
+     * @param pageSize 分页大小，传入后启用 cursor 分页响应。
+     * @param beforeCreatedAt 上一页最旧消息创建时间。
+     * @param beforeId 上一页最旧消息主键。
      * @return 消息响应列表。
      */
     @GetMapping("/{conversationId}/messages")
-    public ApiResponse<List<ChatMessageResponse>> listMessages(@PathVariable Long conversationId) {
+    public ApiResponse<?> listMessages(
+        @PathVariable Long conversationId,
+        @RequestParam(required = false) Integer pageSize,
+        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime beforeCreatedAt,
+        @RequestParam(required = false) Long beforeId
+    ) {
         // 步骤 1：Controller 只传递会话标识和登录用户，归属校验由应用服务完成。
         Long userId = StpUtil.getLoginIdAsLong();
+        if (hasMessagePaginationParams(pageSize, beforeCreatedAt, beforeId)) {
+            // 步骤 2：分页消息返回最近一页或指定 cursor 之前的一页，响应对象保留下一页入口。
+            CursorPageResponse<ChatMessage> page = chatConversationApplicationService.pageMessages(
+                conversationId,
+                userId,
+                pageSize,
+                beforeCreatedAt,
+                beforeId
+            );
+            List<ChatMessageResponse> responses = chatConversationViewService.toMessageResponses(page.items(), userId);
+            return ApiResponse.success(new CursorPageResponse<>(responses, page.hasMore(), page.nextCursor()));
+        }
         List<ChatMessage> messages = chatConversationApplicationService.listMessages(conversationId, userId);
-        // 步骤 2：消息附件、技能标记和反馈状态由视图服务统一投影。
+        // 步骤 3：不带分页参数时保持旧数组响应，兼容历史调用方。
         return ApiResponse.success(chatConversationViewService.toMessageResponses(messages, userId));
     }
 
@@ -327,6 +373,25 @@ public class ChatController {
         chatReactionService.submitReaction(messageId, request.conversationId(), StpUtil.getLoginIdAsLong(), request.vote(), request.reason(), request.comment());
         // 步骤 2：统一封装反馈提交成功提示。
         return ApiResponse.successMessage(ErrorMessageCatalog.CHAT_FEEDBACK_SUBMITTED);
+    }
+
+    /**
+     * 判断会话列表是否应走 cursor 分页协议，允许旧版 cursorUpdatedAt + cursorId 调用触发分页。
+     */
+    private boolean hasConversationPaginationParams(
+        Integer pageSize,
+        Boolean cursorPinned,
+        LocalDateTime cursorUpdatedAt,
+        Long cursorId
+    ) {
+        return pageSize != null || cursorPinned != null || cursorUpdatedAt != null || cursorId != null;
+    }
+
+    /**
+     * 判断消息列表是否应走 cursor 分页协议，避免旧调用方在无参数时收到对象响应。
+     */
+    private boolean hasMessagePaginationParams(Integer pageSize, LocalDateTime beforeCreatedAt, Long beforeId) {
+        return pageSize != null || beforeCreatedAt != null || beforeId != null;
     }
 
 }

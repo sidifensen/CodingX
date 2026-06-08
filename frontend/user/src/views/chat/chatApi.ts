@@ -7,13 +7,18 @@ import {
   ChatExpertItem,
   ChatSkillItem,
   ChatMessageItem,
+  ConversationPage,
+  ConversationPageQuery,
   ConversationItem,
+  CursorPageCursor,
   CurrentExpertItem,
   CurrentMcpItem,
   CurrentSkillItem,
   ExecutionStepItem,
   LongTermMemoryItem,
   LongTermMemoryStatus,
+  MessagePage,
+  MessagePageQuery,
   McpItem,
   ReferenceItem,
   SharedConversationPayload,
@@ -46,24 +51,36 @@ export class ChatApi {
       queryString ? `/api/chat/conversations?${queryString}` : '/api/chat/conversations',
       token
     );
-    return envelope.data.map((item) => ({
-      id: String(item.id ?? ''),
-      title: String(item.title ?? ''),
-      status: String(item.status ?? ''),
-      lastMessageAt: item.lastMessageAt,
-      lastRunId: item.lastRunId == null ? undefined : String(item.lastRunId),
-      activeTaskId: item.activeTaskId == null ? undefined : String(item.activeTaskId),
-      activeTaskStatus: item.activeTaskStatus == null ? undefined : String(item.activeTaskStatus),
-      lastTaskId: item.lastTaskId == null ? undefined : String(item.lastTaskId),
-      lastTaskStatus: item.lastTaskStatus == null ? undefined : String(item.lastTaskStatus),
-      lastTaskFinishedAt: item.lastTaskFinishedAt,
-      taskCompletionRead:
-        item.taskCompletionRead == null
-          ? undefined
-          : Boolean(item.taskCompletionRead),
-      workspaceId: item.workspaceId == null ? null : String(item.workspaceId),
-      workspaceType: item.workspaceType,
-    }));
+    return envelope.data.map((item) => this.normalizeConversation(item));
+  }
+
+  /**
+   * 分页加载当前用户可见的会话列表，首屏和“加载更多”都走该入口，避免前端一次性接收全量会话。
+   * @param token 当前登录令牌。
+   * @param query 分页查询参数，缺省时读取第一页。
+   * @returns 会话分页响应。
+   */
+  static async listConversationPage(
+    token: string,
+    query: ConversationPageQuery = {},
+  ): Promise<ConversationPage> {
+    const searchParams = new URLSearchParams();
+    if (query.workspaceId && query.workspaceId.trim().length > 0) {
+      searchParams.set('workspaceId', query.workspaceId);
+    }
+    searchParams.set('pageSize', String(query.pageSize ?? 30));
+    appendCursorSearchParams(searchParams, query.cursor, 'conversation');
+    const envelope = await this.request<ConversationPage>(
+      `/api/chat/conversations?${searchParams.toString()}`,
+      token,
+    );
+    // 兼容约束：分页后端已返回 CursorPage；旧测试桩或旧后端快照仍可能返回数组，按单页处理即可。
+    const pageData = normalizeCursorPageData(envelope.data);
+    return {
+      items: pageData.items.map((item) => this.normalizeConversation(item)),
+      hasMore: pageData.hasMore,
+      nextCursor: pageData.nextCursor,
+    };
   }
 
   /**
@@ -77,11 +94,35 @@ export class ChatApi {
       `/api/chat/conversations/${conversationId}/messages`,
       token,
     );
-    return envelope.data.map((item) => ({
-      ...item,
-      skillCodes: (item.skillCodes ?? []).map((skillCode) => String(skillCode ?? '')).filter(Boolean),
-      attachments: (item.attachments ?? []).map((attachment) => this.normalizeAttachment(attachment)),
-    }));
+    return envelope.data.map((item) => this.normalizeMessage(item));
+  }
+
+  /**
+   * 分页加载指定会话消息，首页返回最近一页，before cursor 用于继续读取更旧消息。
+   * @param token 当前登录令牌。
+   * @param conversationId 会话标识。
+   * @param query 分页查询参数。
+   * @returns 消息分页响应。
+   */
+  static async listMessagePage(
+    token: string,
+    conversationId: string,
+    query: MessagePageQuery = {},
+  ): Promise<MessagePage> {
+    const searchParams = new URLSearchParams();
+    searchParams.set('pageSize', String(query.pageSize ?? 30));
+    appendCursorSearchParams(searchParams, query.before, 'message');
+    const envelope = await this.request<MessagePage>(
+      `/api/chat/conversations/${conversationId}/messages?${searchParams.toString()}`,
+      token,
+    );
+    // 兼容约束：分页后端已返回 CursorPage；旧测试桩或旧后端快照仍可能返回数组，按单页处理即可。
+    const pageData = normalizeCursorPageData(envelope.data);
+    return {
+      items: pageData.items.map((item) => this.normalizeMessage(item)),
+      hasMore: pageData.hasMore,
+      nextCursor: pageData.nextCursor,
+    };
   }
 
   /**
@@ -662,6 +703,48 @@ export class ChatApi {
   }
 
   /**
+   * 统一归一化会话结构，分页和旧列表接口共用，避免 Long 主键和可空状态在两个路径出现差异。
+   * @param item 后端返回的会话项。
+   * @returns 前端可直接使用的会话项。
+   */
+  private static normalizeConversation(item: ConversationItem): ConversationItem {
+    return {
+      id: String(item.id ?? ''),
+      title: String(item.title ?? ''),
+      status: String(item.status ?? ''),
+      lastMessageAt: item.lastMessageAt,
+      lastRunId: item.lastRunId == null ? undefined : String(item.lastRunId),
+      activeTaskId: item.activeTaskId == null ? undefined : String(item.activeTaskId),
+      activeTaskStatus: item.activeTaskStatus == null ? undefined : String(item.activeTaskStatus),
+      lastTaskId: item.lastTaskId == null ? undefined : String(item.lastTaskId),
+      lastTaskStatus: item.lastTaskStatus == null ? undefined : String(item.lastTaskStatus),
+      lastTaskFinishedAt: item.lastTaskFinishedAt,
+      taskCompletionRead:
+        item.taskCompletionRead == null
+          ? undefined
+          : Boolean(item.taskCompletionRead),
+      workspaceId: item.workspaceId == null ? null : String(item.workspaceId),
+      workspaceType: item.workspaceType,
+    };
+  }
+
+  /**
+   * 统一归一化消息结构，分页和旧列表接口共用，保证附件与技能标记始终是前端安全类型。
+   * @param item 后端返回的消息项。
+   * @returns 前端可直接使用的消息项。
+   */
+  private static normalizeMessage(item: ChatMessageItem): ChatMessageItem {
+    return {
+      ...item,
+      id: String(item.id ?? ''),
+      conversationId: String(item.conversationId ?? ''),
+      runId: item.runId == null ? undefined : String(item.runId),
+      skillCodes: (item.skillCodes ?? []).map((skillCode) => String(skillCode ?? '')).filter(Boolean),
+      attachments: (item.attachments ?? []).map((attachment) => this.normalizeAttachment(attachment)),
+    };
+  }
+
+  /**
    * 统一归一化长期记忆结构，避免后端 Long 主键和可空字段直接泄漏到页面层。
    * @param memory 原始长期记忆。
    * @returns 前端可直接消费的记忆对象。
@@ -727,6 +810,24 @@ export class ChatApi {
   }
 
   /**
+   * 打开聊天 SSE 流请求，集中设置鉴权头与 abort signal，Hook 只负责构造业务 URL 和消费流内容。
+   * @param path 已构造好的流式请求路径。
+   * @param token 当前登录令牌。
+   * @param signal 取消信号。
+   * @returns 已通过授权检查的响应对象。
+   */
+  static async openChatStream(path: string, token: string, signal: AbortSignal): Promise<Response> {
+    const response = await fetch(path, {
+      headers: {
+        satoken: token,
+      },
+      signal,
+    });
+    await this.assertStreamAuthorized(response);
+    return response;
+  }
+
+  /**
    * 公开接口不需要 satoken，但仍复用 ApiResponse 解析，保证错误语义一致。
    * @param path 接口路径。
    * @returns 统一响应包。
@@ -768,4 +869,77 @@ function normalizeMessageIds(messageIds: string[] | undefined) {
         .filter(Boolean),
     ),
   );
+}
+
+/**
+ * 将前端 cursor 映射为后端分页查询参数；会话和消息分页使用不同的时间字段名。
+ * @param searchParams 正在拼装的 URL 参数。
+ * @param cursor 上一页返回的 cursor。
+ * @param mode 分页目标类型。
+ */
+function appendCursorSearchParams(
+  searchParams: URLSearchParams,
+  cursor: CursorPageCursor | null | undefined,
+  mode: 'conversation' | 'message',
+) {
+  if (!cursor) {
+    return;
+  }
+  if (mode === 'conversation') {
+    if (cursor.cursorPinned != null) {
+      searchParams.set('cursorPinned', String(Boolean(cursor.cursorPinned)));
+    }
+    if (cursor.cursorUpdatedAt) {
+      searchParams.set('cursorUpdatedAt', cursor.cursorUpdatedAt);
+    }
+    if (cursor.cursorId) {
+      searchParams.set('cursorId', cursor.cursorId);
+    }
+    return;
+  }
+  if (cursor.cursorCreatedAt) {
+    searchParams.set('beforeCreatedAt', cursor.cursorCreatedAt);
+  }
+  if (cursor.cursorId) {
+    searchParams.set('beforeId', cursor.cursorId);
+  }
+}
+
+/**
+ * 归一化后端返回的分页 cursor，保证 Snowflake 主键不会在前端被 Number 化。
+ * @param cursor 后端返回的原始 cursor。
+ * @returns 字符串化后的 cursor，没有下一页时返回 null。
+ */
+function normalizeCursor(cursor: CursorPageCursor | null | undefined): CursorPageCursor | null {
+  if (!cursor) {
+    return null;
+  }
+  return {
+    cursorPinned: cursor.cursorPinned == null ? null : Boolean(cursor.cursorPinned),
+    cursorUpdatedAt: cursor.cursorUpdatedAt == null ? null : String(cursor.cursorUpdatedAt),
+    cursorCreatedAt: cursor.cursorCreatedAt == null ? null : String(cursor.cursorCreatedAt),
+    cursorId: cursor.cursorId == null ? null : String(cursor.cursorId),
+  };
+}
+
+/**
+ * 归一化分页响应数据；旧数组响应按无下一页的单页数据处理，保障兼容路径不会中断页面初始化。
+ * @param data 后端或测试桩返回的原始 data。
+ * @returns 标准分页数据。
+ */
+function normalizeCursorPageData<T>(
+  data: CursorPage<T> | T[] | null | undefined,
+): CursorPage<T> {
+  if (Array.isArray(data)) {
+    return {
+      items: data,
+      hasMore: false,
+      nextCursor: null,
+    };
+  }
+  return {
+    items: data?.items ?? [],
+    hasMore: Boolean(data?.hasMore),
+    nextCursor: normalizeCursor(data?.nextCursor),
+  };
 }

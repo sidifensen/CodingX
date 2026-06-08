@@ -9,6 +9,7 @@ import com.codingx.chat.infrastructure.persistence.dataobject.ChatConversationDO
 import com.codingx.chat.infrastructure.persistence.mapper.ChatConversationMapper;
 import com.codingx.common.error.ErrorMessageCatalog;
 import com.codingx.common.exception.NotFoundException;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
@@ -102,6 +103,141 @@ public class ChatConversationRepositoryImpl implements ChatConversationRepositor
             .stream()
             .map(this::toDomain)
             .toList();
+    }
+
+    /**
+     * 按用户与单个工作空间读取 cursor 页。
+     * @param userId 用户标识。
+     * @param workspaceId 工作空间标识，可为空。
+     * @param limit 最大读取条数。
+     * @param cursorPinned 上一页末尾会话置顶状态。
+     * @param cursorUpdatedAt 上一页末尾会话更新时间。
+     * @param cursorId 上一页末尾会话 ID。
+     * @return 会话分页结果，多取一条供应用层判断 hasMore。
+     */
+    @Override
+    public List<ChatConversation> findPageByCreatedByAndWorkspaceId(
+        Long userId,
+        Long workspaceId,
+        int limit,
+        Boolean cursorPinned,
+        LocalDateTime cursorUpdatedAt,
+        Long cursorId
+    ) {
+        return findPageByCreatedByAndWorkspaceScope(
+            userId,
+            workspaceId == null ? List.of() : List.of(workspaceId),
+            workspaceId == null,
+            limit,
+            cursorPinned,
+            cursorUpdatedAt,
+            cursorId
+        );
+    }
+
+    /**
+     * 按用户与工作空间范围读取 cursor 页，支持默认云端空间与历史空 workspace 合并。
+     * @param userId 用户标识。
+     * @param workspaceIds 工作空间白名单。
+     * @param includeNullWorkspace 是否包含历史空工作空间。
+     * @param limit 最大读取条数。
+     * @param cursorPinned 上一页末尾会话置顶状态。
+     * @param cursorUpdatedAt 上一页末尾会话更新时间。
+     * @param cursorId 上一页末尾会话 ID。
+     * @return 会话分页结果，多取一条供应用层判断 hasMore。
+     */
+    @Override
+    public List<ChatConversation> findPageByCreatedByAndWorkspaceScope(
+        Long userId,
+        List<Long> workspaceIds,
+        boolean includeNullWorkspace,
+        int limit,
+        Boolean cursorPinned,
+        LocalDateTime cursorUpdatedAt,
+        Long cursorId
+    ) {
+        LambdaQueryWrapper<ChatConversationDO> queryWrapper = new LambdaQueryWrapper<ChatConversationDO>()
+            .eq(ChatConversationDO::getCreatedBy, userId)
+            .eq(ChatConversationDO::getDeleted, 0);
+        applyWorkspaceScope(queryWrapper, workspaceIds, includeNullWorkspace);
+        applyConversationCursor(queryWrapper, cursorPinned, cursorUpdatedAt, cursorId);
+        queryWrapper
+            .orderByDesc(ChatConversationDO::getPinned)
+            .orderByDesc(ChatConversationDO::getUpdatedAt)
+            .orderByDesc(ChatConversationDO::getId)
+            .last("LIMIT " + Math.max(1, limit));
+        return chatConversationMapper.selectList(queryWrapper)
+            .stream()
+            .map(this::toDomain)
+            .toList();
+    }
+
+    /**
+     * 拼接工作空间范围条件，支持默认云端空间与历史未归属会话合并分页。
+     * @param queryWrapper 当前查询包装器。
+     * @param workspaceIds 可见工作空间标识集合。
+     * @param includeNullWorkspace 是否包含 workspace_id 为空的历史会话。
+     */
+    private void applyWorkspaceScope(
+        LambdaQueryWrapper<ChatConversationDO> queryWrapper,
+        List<Long> workspaceIds,
+        boolean includeNullWorkspace
+    ) {
+        List<Long> normalizedWorkspaceIds = workspaceIds == null
+            ? List.of()
+            : workspaceIds.stream()
+                .filter(workspaceId -> workspaceId != null && workspaceId > 0)
+                .distinct()
+                .toList();
+        if (normalizedWorkspaceIds.isEmpty() && !includeNullWorkspace) {
+            // 步骤 1：没有任何合法工作空间范围时强制空结果，避免漏条件导致读取全量会话。
+            queryWrapper.apply("1 = 0");
+            return;
+        }
+        if (!normalizedWorkspaceIds.isEmpty() && includeNullWorkspace) {
+            // 步骤 2：默认云端历史需要同时包含默认云端空间和旧版未归属会话。
+            queryWrapper.and(scope -> scope
+                .in(ChatConversationDO::getWorkspaceId, normalizedWorkspaceIds)
+                .or()
+                .isNull(ChatConversationDO::getWorkspaceId));
+            return;
+        }
+        if (!normalizedWorkspaceIds.isEmpty()) {
+            // 步骤 3：显式工作空间只读取指定空间会话。
+            queryWrapper.in(ChatConversationDO::getWorkspaceId, normalizedWorkspaceIds);
+            return;
+        }
+        // 步骤 4：只有历史兼容范围时读取 workspace_id 为空的旧会话。
+        queryWrapper.isNull(ChatConversationDO::getWorkspaceId);
+    }
+
+    /**
+     * 拼接会话分页游标条件，严格匹配 pinned desc、updated_at desc、id desc 排序。
+     * @param queryWrapper 当前查询包装器。
+     * @param cursorPinned 上一页末尾会话置顶状态。
+     * @param cursorUpdatedAt 上一页末尾会话更新时间。
+     * @param cursorId 上一页末尾会话 ID。
+     */
+    private void applyConversationCursor(
+        LambdaQueryWrapper<ChatConversationDO> queryWrapper,
+        Boolean cursorPinned,
+        LocalDateTime cursorUpdatedAt,
+        Long cursorId
+    ) {
+        if (cursorUpdatedAt == null || cursorId == null) {
+            // 游标不完整时按首页处理，避免半截游标造成跳项。
+            return;
+        }
+        int cursorPinnedValue = Boolean.TRUE.equals(cursorPinned) ? 1 : 0;
+        queryWrapper.and(cursor -> cursor
+            .lt(ChatConversationDO::getPinned, cursorPinnedValue)
+            .or(branch -> branch
+                .eq(ChatConversationDO::getPinned, cursorPinnedValue)
+                .lt(ChatConversationDO::getUpdatedAt, cursorUpdatedAt))
+            .or(branch -> branch
+                .eq(ChatConversationDO::getPinned, cursorPinnedValue)
+                .eq(ChatConversationDO::getUpdatedAt, cursorUpdatedAt)
+                .lt(ChatConversationDO::getId, cursorId)));
     }
 
     /**

@@ -11,6 +11,7 @@ import com.codingx.chat.domain.model.ChatMessageRole;
 import com.codingx.chat.domain.repository.ChatConversationRepository;
 import com.codingx.chat.domain.repository.ChatMessageRepository;
 import com.codingx.chat.interfaces.response.ConversationShareResponse;
+import com.codingx.chat.interfaces.response.CursorPageResponse;
 import com.codingx.common.error.ErrorMessageCatalog;
 import com.codingx.common.exception.ForbiddenException;
 import com.codingx.common.exception.NotFoundException;
@@ -19,7 +20,9 @@ import com.codingx.workspace.infrastructure.persistence.dataobject.WorkspaceDO;
 import com.codingx.workspace.infrastructure.repository.WorkspaceRepositoryImpl;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -32,6 +35,16 @@ import org.springframework.stereotype.Service;
 @Service
 @RequiredArgsConstructor
 public class ChatConversationApplicationService {
+
+    /**
+     * 聊天历史默认分页大小，首屏只加载近期记录，避免前端一次性渲染全量会话或消息。
+     */
+    private static final int DEFAULT_PAGE_SIZE = 30;
+
+    /**
+     * 单次分页最大读取数量，防止前端传入过大 pageSize 退化为全量加载。
+     */
+    private static final int MAX_PAGE_SIZE = 100;
 
     /**
      * 会话仓储端口，用于保存会话聚合、查询历史列表、加载分享会话和更新置顶/提醒状态。
@@ -107,6 +120,76 @@ public class ChatConversationApplicationService {
     }
 
     /**
+     * 分页查询当前用户会话列表，供侧边栏按需追加历史会话。
+     * @param userId 当前用户标识。
+     * @param workspaceId 工作空间标识，可为空；为空时读取默认云端空间和历史未归属会话。
+     * @param pageSize 请求页大小，非法值会回退到默认值并限制最大值。
+     * @param cursorUpdatedAt 上一页最后一条会话更新时间，可为空表示首页。
+     * @param cursorId 上一页最后一条会话 ID，可为空表示首页。
+     * @return 会话分页响应，items 保持置顶、更新时间和主键倒序。
+     */
+    public CursorPageResponse<ChatConversation> pageConversations(
+        Long userId,
+        Long workspaceId,
+        Integer pageSize,
+        LocalDateTime cursorUpdatedAt,
+        Long cursorId
+    ) {
+        return pageConversations(userId, workspaceId, pageSize, null, cursorUpdatedAt, cursorId);
+    }
+
+    /**
+     * 分页查询当前用户会话列表，完整游标包含置顶状态以匹配 pinned desc 排序。
+     * @param userId 当前用户标识。
+     * @param workspaceId 工作空间标识，可为空。
+     * @param pageSize 请求页大小。
+     * @param cursorPinned 上一页最后一条会话置顶状态，可为空时按未置顶兼容旧游标。
+     * @param cursorUpdatedAt 上一页最后一条会话更新时间。
+     * @param cursorId 上一页最后一条会话 ID。
+     * @return 会话分页响应。
+     */
+    public CursorPageResponse<ChatConversation> pageConversations(
+        Long userId,
+        Long workspaceId,
+        Integer pageSize,
+        Boolean cursorPinned,
+        LocalDateTime cursorUpdatedAt,
+        Long cursorId
+    ) {
+        int normalizedPageSize = normalizePageSize(pageSize);
+        int queryLimit = normalizedPageSize + 1;
+        List<ChatConversation> queried;
+        if (workspaceId != null) {
+            // 步骤 1：显式工作空间分页必须先校验归属，避免 cursor 被用来探测其他空间会话。
+            workspaceRepositoryImpl.requireOwnedWorkspace(workspaceId, userId);
+            queried = chatConversationRepository.findPageByCreatedByAndWorkspaceId(
+                userId,
+                workspaceId,
+                queryLimit,
+                cursorPinned,
+                cursorUpdatedAt,
+                cursorId
+            );
+        } else {
+            // 步骤 2：默认云端历史只覆盖默认云端空间和旧版未归属会话，不把本地空间混入 Web 历史。
+            List<Long> defaultCloudWorkspaceIds = workspaceRepositoryImpl.findDefaultCloudWorkspaceByUserId(userId)
+                .map(workspace -> List.of(workspace.getId()))
+                .orElseGet(List::of);
+            queried = chatConversationRepository.findPageByCreatedByAndWorkspaceScope(
+                userId,
+                defaultCloudWorkspaceIds,
+                true,
+                queryLimit,
+                cursorPinned,
+                cursorUpdatedAt,
+                cursorId
+            );
+        }
+        // 步骤 3：应用层只暴露 pageSize 条，额外一条仅用于判断 hasMore 和生成下一页入口。
+        return buildConversationPage(queried, normalizedPageSize);
+    }
+
+    /**
      * 查询指定会话的消息列表。
      * @param conversationId 会话标识。
      * @param userId 当前用户标识。
@@ -120,6 +203,39 @@ public class ChatConversationApplicationService {
         }
         // 步骤 2：归属校验通过后交给消息仓储按会话读取历史消息。
         return chatMessageRepository.findByConversationId(conversationId);
+    }
+
+    /**
+     * 分页查询指定会话的消息，首页返回最近一页，响应前恢复为创建时间升序。
+     * @param conversationId 会话标识。
+     * @param userId 当前用户标识。
+     * @param pageSize 请求页大小。
+     * @param beforeCreatedAt 上一页最旧消息创建时间，可为空表示最近页。
+     * @param beforeId 上一页最旧消息 ID，可为空表示最近页。
+     * @return 消息分页响应，items 始终按旧到新排列。
+     */
+    public CursorPageResponse<ChatMessage> pageMessages(
+        Long conversationId,
+        Long userId,
+        Integer pageSize,
+        LocalDateTime beforeCreatedAt,
+        Long beforeId
+    ) {
+        // 步骤 1：复用旧消息列表的会话归属校验，分页 cursor 不能绕过用户边界。
+        ChatConversation conversation = chatConversationRepository.requireById(conversationId);
+        if (!conversation.getCreatedBy().equals(userId)) {
+            throw new ForbiddenException(ErrorMessageCatalog.CHAT_CONVERSATION_FORBIDDEN);
+        }
+        // 步骤 2：仓储按倒序读取最近消息页，多取一条供应用层判断是否还能加载更旧历史。
+        int normalizedPageSize = normalizePageSize(pageSize);
+        List<ChatMessage> queried = chatMessageRepository.findRecentPageByConversationId(
+            conversationId,
+            normalizedPageSize + 1,
+            beforeCreatedAt,
+            beforeId
+        );
+        // 步骤 3：响应前恢复为升序，前端只需要 prepend 旧页，不需要理解数据库倒序查询细节。
+        return buildMessagePage(queried, normalizedPageSize);
     }
 
     /**
@@ -404,6 +520,74 @@ public class ChatConversationApplicationService {
             .filter(id -> id != null && id > 0)
             .distinct()
             .toList();
+    }
+
+    /**
+     * 标准化分页大小，保证非法值不会导致无界查询或空页异常。
+     * @param pageSize 前端传入的页大小。
+     * @return 限制在 1 到 MAX_PAGE_SIZE 之间的页大小。
+     */
+    private int normalizePageSize(Integer pageSize) {
+        if (pageSize == null || pageSize <= 0) {
+            // 缺省或非法页大小走统一默认值，兼容前端初始加载。
+            return DEFAULT_PAGE_SIZE;
+        }
+        return Math.min(pageSize, MAX_PAGE_SIZE);
+    }
+
+    /**
+     * 根据仓储多取一条的结果构造会话分页响应。
+     * @param queried 仓储查询结果，最多 pageSize + 1 条。
+     * @param pageSize 标准化后的页大小。
+     * @return 会话 cursor 分页响应。
+     */
+    private CursorPageResponse<ChatConversation> buildConversationPage(List<ChatConversation> queried, int pageSize) {
+        List<ChatConversation> safeQueried = queried == null ? List.of() : queried;
+        boolean hasMore = safeQueried.size() > pageSize;
+        List<ChatConversation> items = hasMore ? safeQueried.subList(0, pageSize) : safeQueried;
+        if (items.isEmpty() || !hasMore) {
+            // 没有下一页时不返回 cursor，前端据此禁用继续加载入口。
+            return new CursorPageResponse<>(items, false, null);
+        }
+        ChatConversation cursorSource = items.get(items.size() - 1);
+        return new CursorPageResponse<>(
+            items,
+            true,
+            new CursorPageResponse.Cursor(
+                cursorSource.getPinned(),
+                cursorSource.getUpdatedAt(),
+                null,
+                cursorSource.getId()
+            )
+        );
+    }
+
+    /**
+     * 根据仓储倒序多取一条的结果构造消息分页响应，并恢复旧到新的展示顺序。
+     * @param queriedDesc 仓储倒序查询结果，最多 pageSize + 1 条。
+     * @param pageSize 标准化后的页大小。
+     * @return 消息 cursor 分页响应。
+     */
+    private CursorPageResponse<ChatMessage> buildMessagePage(List<ChatMessage> queriedDesc, int pageSize) {
+        List<ChatMessage> safeQueried = queriedDesc == null ? List.of() : queriedDesc;
+        boolean hasMore = safeQueried.size() > pageSize;
+        List<ChatMessage> descendingItems = new ArrayList<>(hasMore ? safeQueried.subList(0, pageSize) : safeQueried);
+        Collections.reverse(descendingItems);
+        if (descendingItems.isEmpty() || !hasMore) {
+            // 没有更旧消息时不返回 cursor，前端顶部加载入口会隐藏或禁用。
+            return new CursorPageResponse<>(descendingItems, false, null);
+        }
+        ChatMessage cursorSource = descendingItems.get(0);
+        return new CursorPageResponse<>(
+            descendingItems,
+            true,
+            new CursorPageResponse.Cursor(
+                null,
+                null,
+                cursorSource.getCreatedAt(),
+                cursorSource.getId()
+            )
+        );
     }
 
     /**

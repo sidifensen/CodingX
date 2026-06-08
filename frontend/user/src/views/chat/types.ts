@@ -27,6 +27,45 @@ export interface ConversationItem {
 }
 
 /**
+ * 描述后端 cursor 分页返回的下一页起点；会话分页使用 updatedAt，消息分页使用 createdAt。
+ */
+export interface CursorPageCursor {
+  cursorPinned?: boolean | null;
+  cursorUpdatedAt?: string | null;
+  cursorCreatedAt?: string | null;
+  cursorId?: string | null;
+}
+
+/**
+ * 描述后端统一 cursor 分页响应，items 已由 API 层归一化为前端可消费结构。
+ */
+export interface CursorPage<T> {
+  items: T[];
+  hasMore: boolean;
+  nextCursor: CursorPageCursor | null;
+}
+
+/**
+ * 会话列表分页查询参数，Sidebar 加载更多时会带上上一页游标。
+ */
+export interface ConversationPageQuery {
+  workspaceId?: string | null;
+  pageSize?: number;
+  cursor?: CursorPageCursor | null;
+}
+
+/**
+ * 消息列表分页查询参数，加载更旧消息时会带上当前最旧消息游标。
+ */
+export interface MessagePageQuery {
+  pageSize?: number;
+  before?: CursorPageCursor | null;
+}
+
+export type ConversationPage = CursorPage<ConversationItem>;
+export type MessagePage = CursorPage<ChatMessageItem>;
+
+/**
  * 描述聊天消息回放与流式拼接需要的字段。
  */
 export interface ChatMessageItem {
@@ -409,7 +448,6 @@ export interface McpCallItem {
   errorMessage?: string;
 }
 
-
 /**
  * 长期记忆状态：ACTIVE 参与后续模型上下文回注，REJECTED 表示已停用。
  */
@@ -479,6 +517,8 @@ export interface WorkspaceConversationGroup {
    */
   pinnedConversationIds?: string[];
   conversations: ConversationItem[];
+  hasMore?: boolean;
+  isLoadingMore?: boolean;
 }
 
 /**
@@ -546,6 +586,8 @@ export interface ChatWorkspaceController {
   conversations: ConversationItem[];
   activeConversationId: string | null;
   messages: ChatMessageItem[];
+  hasMoreMessagesBefore: boolean;
+  isLoadingOlderMessages: boolean;
   executionSteps: ExecutionStepItem[];
   references: ReferenceItem[];
   artifacts: ArtifactItem[];
@@ -603,6 +645,8 @@ export interface ChatWorkspaceController {
     conversationId: string,
     selectionContext: WorkspaceConversationSelectionContext,
   ) => Promise<void>;
+  loadMoreConversations: (selectionContext: WorkspaceConversationSelectionContext) => Promise<void>;
+  loadOlderMessages: () => Promise<void>;
   startNewConversation: (
     createContext?: WorkspaceConversationCreateContext,
   ) => Promise<void>;

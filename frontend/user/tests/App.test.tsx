@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { isConversationListRequest, isConversationMessageListRequest } from './support/chatPaginationMock';
 import App from '@/App';
 
 /**
@@ -22,7 +23,7 @@ describe('App', () => {
           { status: 200 },
         );
       }
-      if (url === '/api/chat/conversations') {
+      if (isConversationListRequest(url)) {
         return new Response(
           JSON.stringify({
             success: true,
@@ -467,7 +468,7 @@ describe('App', () => {
           { status: 200 },
         );
       }
-      if (url === '/api/chat/conversations') {
+      if (isConversationListRequest(url)) {
         return new Response(
           JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
           { status: 200 },
@@ -569,7 +570,7 @@ describe('App', () => {
           },
         );
       }
-      if (url === '/api/chat/conversations') {
+      if (isConversationListRequest(url)) {
         return new Response(
           JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
           { status: 200 },
@@ -694,7 +695,7 @@ describe('App', () => {
           { status: 200 },
         );
       }
-      if (url === '/api/chat/conversations') {
+      if (isConversationListRequest(url)) {
         return new Response(
           JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
           { status: 200 },
@@ -770,7 +771,7 @@ describe('App', () => {
           { status: 200 },
         );
       }
-      if (url === '/api/chat/conversations') {
+      if (isConversationListRequest(url)) {
         return new Response(
           JSON.stringify({
             success: true,
@@ -814,7 +815,7 @@ describe('App', () => {
         );
       }
       if (
-        url === '/api/chat/conversations/2001/messages' ||
+        isConversationMessageListRequest(url, '2001') ||
         url === '/api/chat/conversations/2001/steps' ||
         url === '/api/chat/conversations/2001/references' ||
         url === '/api/chat/conversations/2001/artifacts'
@@ -893,7 +894,7 @@ describe('App', () => {
           { status: 200 },
         );
       }
-      if (url === '/api/chat/conversations') {
+      if (isConversationListRequest(url)) {
         return new Response(
           JSON.stringify({
             success: true,
@@ -937,7 +938,7 @@ describe('App', () => {
         );
       }
       if (
-        url === '/api/chat/conversations/2001/messages' ||
+        isConversationMessageListRequest(url, '2001') ||
         url === '/api/chat/conversations/2001/steps' ||
         url === '/api/chat/conversations/2001/references' ||
         url === '/api/chat/conversations/2001/artifacts'
@@ -1103,7 +1104,7 @@ describe('App', () => {
           { status: 200 },
         );
       }
-      if (url === '/api/chat/conversations') {
+      if (isConversationListRequest(url)) {
         return new Response(
           JSON.stringify({
             success: true,
@@ -1146,7 +1147,7 @@ describe('App', () => {
           { status: 200 },
         );
       }
-      if (url === '/api/chat/conversations/2001/messages') {
+      if (isConversationMessageListRequest(url, '2001')) {
         messageRequestCount += 1;
         return new Response(
           JSON.stringify({
@@ -1230,7 +1231,7 @@ describe('App', () => {
         );
       }
       if (
-        url === '/api/chat/conversations/2010/messages' ||
+        isConversationMessageListRequest(url, '2010') ||
         url === '/api/chat/conversations/2010/steps' ||
         url === '/api/chat/conversations/2010/references' ||
         url === '/api/chat/conversations/2010/artifacts'
@@ -1442,7 +1443,7 @@ describe('App', () => {
           { status: 200 },
         );
       }
-      if (url === '/api/chat/conversations') {
+      if (isConversationListRequest(url)) {
         return new Response(
           JSON.stringify({
             success: true,
@@ -1492,7 +1493,7 @@ describe('App', () => {
           { status: 200 },
         );
       }
-      if (url === '/api/chat/conversations/2055114974648864768/messages') {
+      if (isConversationMessageListRequest(url, '2055114974648864768')) {
         return new Response(
           JSON.stringify({
             success: true,
@@ -1513,7 +1514,7 @@ describe('App', () => {
           { status: 200 },
         );
       }
-      if (url === '/api/chat/conversations/2055120756043943936/messages') {
+      if (isConversationMessageListRequest(url, '2055120756043943936')) {
         return new Response(
           JSON.stringify({
             success: true,
@@ -1608,7 +1609,7 @@ describe('App', () => {
           { status: 200 },
         );
       }
-      if (url === '/api/chat/conversations') {
+      if (isConversationListRequest(url)) {
         return new Response(
           JSON.stringify({
             success: true,
@@ -1659,11 +1660,11 @@ describe('App', () => {
         );
       }
       if (
-        url === '/api/chat/conversations/2055114974648864768/messages' ||
+        isConversationMessageListRequest(url, '2055114974648864768') ||
         url === '/api/chat/conversations/2055114974648864768/steps' ||
         url === '/api/chat/conversations/2055114974648864768/references' ||
         url === '/api/chat/conversations/2055114974648864768/artifacts' ||
-        url === '/api/chat/conversations/2055120756043943936/messages' ||
+        isConversationMessageListRequest(url, '2055120756043943936') ||
         url === '/api/chat/conversations/2055120756043943936/steps' ||
         url === '/api/chat/conversations/2055120756043943936/references' ||
         url === '/api/chat/conversations/2055120756043943936/artifacts'
@@ -1730,7 +1731,7 @@ describe('App', () => {
           { status: 200 },
         );
       }
-      if (url === '/api/chat/conversations') {
+      if (isConversationListRequest(url)) {
         return new Response(
           JSON.stringify({
             success: true,
@@ -1774,7 +1775,7 @@ describe('App', () => {
         );
       }
       if (
-        url === '/api/chat/conversations/2055114974648864768/messages' ||
+        isConversationMessageListRequest(url, '2055114974648864768') ||
         url === '/api/chat/conversations/2055114974648864768/steps' ||
         url === '/api/chat/conversations/2055114974648864768/references' ||
         url === '/api/chat/conversations/2055114974648864768/artifacts'

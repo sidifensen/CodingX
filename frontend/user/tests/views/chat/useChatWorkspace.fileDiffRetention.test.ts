@@ -1,4 +1,5 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
+import { isConversationListRequest, isConversationMessageListRequest } from '../../support/chatPaginationMock';
 import { useChatWorkspace } from '@/views/chat/useChatWorkspace';
 
 /**
@@ -78,7 +79,7 @@ describe('useChatWorkspace file diff retention', () => {
             code: 'OK',
             message: 'success',
             data:
-              url === '/api/chat/conversations'
+              isConversationListRequest(url)
                 ? [{ id: '2001', title: 'Default Demo Conversation', status: 'ACTIVE' }]
                 : [],
           }),
@@ -145,12 +146,12 @@ function encodeSseEvent(eventName: string, payload: Record<string, unknown>) {
  */
 function isBootstrapFetch(url: string) {
   return (
-    url === '/api/chat/conversations' ||
+    isConversationListRequest(url) ||
     url === '/api/chat/sample-questions' ||
     url === '/api/chat/experts' ||
     url === '/api/chat/skills' ||
     url === '/api/chat/mcps' ||
-    url === '/api/chat/conversations/2001/messages' ||
+    isConversationMessageListRequest(url, '2001') ||
     url === '/api/chat/conversations/2001/steps' ||
     url === '/api/chat/conversations/2001/references' ||
     url === '/api/chat/conversations/2001/artifacts' ||

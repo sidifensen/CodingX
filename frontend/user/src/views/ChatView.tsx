@@ -36,6 +36,7 @@ import {
 } from 'lucide-react';
 import { AuthStorage } from '../utils/authStorage';
 import { ChatApi } from './chat/chatApi';
+import ChatMessageList from './chat/ChatMessageList';
 import {
   ChatAttachmentItem,
   ChatWorkspaceController,
@@ -100,6 +101,8 @@ export default function ChatView({
     longTermMemories,
     isMemoryLoading,
     messages,
+    hasMoreMessagesBefore,
+    isLoadingOlderMessages,
     executionSteps,
     references,
     artifacts,
@@ -136,6 +139,7 @@ export default function ChatView({
     setActiveRuntimeTarget,
     submitMessage,
     cancelCurrentStream,
+    loadOlderMessages,
     shareConversation,
     deleteConversationMessages,
     regenerateConversation,
@@ -1313,7 +1317,11 @@ export default function ChatView({
               </p>
             </div>
           ) : (
-            <div className="mx-auto flex max-w-4xl flex-col gap-6">
+            <ChatMessageList
+              hasMoreBefore={hasMoreMessagesBefore}
+              isLoadingOlder={isLoadingOlderMessages}
+              onLoadOlderMessages={loadOlderMessages}
+            >
               {messages.map((message, index) => {
                 const isAssistant = message.role === 'ASSISTANT';
                 const isLatestMessage = message.id === messages[messages.length - 1]?.id;
@@ -1420,7 +1428,7 @@ export default function ChatView({
                   </div>
                 );
               })}
-            </div>
+            </ChatMessageList>
           )}
           {shouldShowStreamError ? (
             // 步骤：统一在消息滚动区尾部渲染一条错误提示，避免输入框上方与消息区重复提示。

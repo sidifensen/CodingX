@@ -1,4 +1,5 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
+import { isConversationListRequest, isConversationMessageListRequest } from '../../support/chatPaginationMock';
 import { useChatWorkspace } from '@/views/chat/useChatWorkspace';
 
 /**
@@ -100,7 +101,7 @@ describe('useChatWorkspace task status state', () => {
 
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
       const url = String(input);
-      if (url === '/api/chat/conversations') {
+      if (isConversationListRequest(url)) {
         return createEmptyListResponse();
       }
       if (
@@ -108,7 +109,7 @@ describe('useChatWorkspace task status state', () => {
         url === '/api/chat/experts' ||
         url === '/api/chat/skills' ||
         url === '/api/chat/mcps' ||
-        url === '/api/chat/conversations/task-conversation-history/messages' ||
+        isConversationMessageListRequest(url, 'task-conversation-history') ||
         url === '/api/chat/conversations/task-conversation-history/steps' ||
         url === '/api/chat/conversations/task-conversation-history/references' ||
         url === '/api/chat/conversations/task-conversation-history/artifacts' ||
@@ -220,7 +221,7 @@ describe('useChatWorkspace task status state', () => {
 
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
       const url = String(input);
-      if (url === '/api/chat/conversations') {
+      if (isConversationListRequest(url)) {
         // 本地历史现在也会先尝试读取云端会话列表；该用例只验证本地快照提醒状态。
         return createEmptyListResponse();
       }
@@ -229,7 +230,7 @@ describe('useChatWorkspace task status state', () => {
         url === '/api/chat/experts' ||
         url === '/api/chat/skills' ||
         url === '/api/chat/mcps' ||
-        url === '/api/chat/conversations/workspace-owned/messages' ||
+        isConversationMessageListRequest(url, 'workspace-owned') ||
         url === '/api/chat/conversations/workspace-owned/steps' ||
         url === '/api/chat/conversations/workspace-owned/references' ||
         url === '/api/chat/conversations/workspace-owned/artifacts' ||
@@ -352,7 +353,7 @@ describe('useChatWorkspace task status state', () => {
 
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
       const url = String(input);
-      if (url === '/api/chat/conversations') {
+      if (isConversationListRequest(url)) {
         return new Response(
           JSON.stringify({
             success: true,
@@ -386,14 +387,14 @@ describe('useChatWorkspace task status state', () => {
         url === '/api/chat/experts' ||
         url === '/api/chat/skills' ||
         url === '/api/chat/mcps' ||
-        url === '/api/chat/conversations/cloud-conversation/messages' ||
+        isConversationMessageListRequest(url, 'cloud-conversation') ||
         url === '/api/chat/conversations/cloud-conversation/steps' ||
         url === '/api/chat/conversations/cloud-conversation/references' ||
         url === '/api/chat/conversations/cloud-conversation/artifacts' ||
         url === '/api/chat/conversations/cloud-conversation/current-experts' ||
         url === '/api/chat/conversations/cloud-conversation/current-skills' ||
         url === '/api/chat/conversations/cloud-conversation/current-mcps' ||
-        url === '/api/chat/conversations/local-conversation/messages' ||
+        isConversationMessageListRequest(url, 'local-conversation') ||
         url === '/api/chat/conversations/local-conversation/steps' ||
         url === '/api/chat/conversations/local-conversation/references' ||
         url === '/api/chat/conversations/local-conversation/artifacts' ||

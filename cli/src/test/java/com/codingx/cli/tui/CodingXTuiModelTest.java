@@ -86,12 +86,25 @@ class CodingXTuiModelTest {
 
         String view = model.view();
 
-        assertTrue(view.contains("› 输入任务，/ 查看命令"));
+        assertTrue(stripAnsi(view).contains("› █输入任务，/ 查看命令"));
         assertFalse(view.contains("Write tests for @filename"));
         assertTrue(view.contains("server selected ·"));
         assertFalse(view.contains(">_ CodingX CLI (v0.1.0)"));
         assertFalse(view.contains("Tip: Build faster with CodingX."));
         assertTrue(view.lines().count() <= 4);
+    }
+
+    @Test
+    void composerShouldRenderVisibleBlinkingCursorCell() {
+        CodingXTuiModel model = new CodingXTuiModel(
+            tempDir.resolve("workspace"),
+            new MockAgentEventSource(),
+            new TerminalRenderer()
+        );
+
+        String view = stripAnsi(model.view());
+
+        assertTrue(view.contains("› █输入任务，/ 查看命令"), view);
     }
 
     @Test
@@ -105,7 +118,7 @@ class CodingXTuiModelTest {
         model.submitTask("分析这个项目");
 
         String view = model.view();
-        assertTrue(view.contains("> 分析这个项目"));
+        assertTrue(view.contains("› 分析这个项目"));
         assertTrue(view.contains("我会先查看当前仓库结构"));
         assertTrue(view.contains("ToolSearch"));
         assertTrue(view.contains("Task completed: COMPLETED"));
@@ -126,10 +139,10 @@ class CodingXTuiModelTest {
 
         String view = model.view();
         assertNull(result.command());
-        assertTrue(view.contains("> hello"));
-        assertInOrder(view, "> hello", "CodingX  我会先查看当前仓库结构");
+        assertTrue(view.contains("› hello"));
+        assertInOrder(view, "› hello", "• 我会先查看当前仓库结构");
         assertTrue(view.contains("我会先查看当前仓库结构"));
-        assertTrue(view.contains("› 输入任务，/ 查看命令"));
+        assertTrue(stripAnsi(view).contains("› █输入任务，/ 查看命令"));
     }
 
     @Test
@@ -145,10 +158,10 @@ class CodingXTuiModelTest {
 
         String view = model.view();
         assertNull(result.command());
-        assertTrue(view.contains("> hello"));
-        assertInOrder(view, "> hello", "CodingX  我会先查看当前仓库结构");
+        assertTrue(view.contains("› hello"));
+        assertInOrder(view, "› hello", "• 我会先查看当前仓库结构");
         assertTrue(view.contains("我会先查看当前仓库结构"));
-        assertTrue(view.contains("› 输入任务，/ 查看命令"));
+        assertTrue(stripAnsi(view).contains("› █输入任务，/ 查看命令"));
     }
 
     @Test
@@ -166,10 +179,10 @@ class CodingXTuiModelTest {
 
         assertInOrder(
             model.view(),
-            "> 你好",
-            "CodingX  我会先查看当前仓库结构",
-            "> 你是人机吗",
-            "CodingX  我会先查看当前仓库结构"
+            "› 你好",
+            "• 我会先查看当前仓库结构",
+            "› 你是人机吗",
+            "• 我会先查看当前仓库结构"
         );
     }
 
@@ -191,8 +204,8 @@ class CodingXTuiModelTest {
 
         String view = model.view();
         assertEquals(List.of("first"), eventSource.tasks);
-        assertTrue(view.contains("> first"));
-        assertFalse(view.lines().anyMatch(line -> line.equals("> second")));
+        assertTrue(view.contains("› first"));
+        assertFalse(view.lines().anyMatch(line -> line.equals("› second")));
         assertTrue(view.contains("› second"));
 
         model.update(new AgentEventsMessage(List.of(
@@ -204,7 +217,7 @@ class CodingXTuiModelTest {
         eventSource.awaitTaskCount(2);
 
         assertEquals(List.of("first", "second"), List.copyOf(eventSource.tasks));
-        assertInOrder(model.view(), "> first", "Task completed: COMPLETED", "> second");
+        assertInOrder(model.view(), "› first", "Task completed: COMPLETED", "› second");
     }
 
     @Test
@@ -227,8 +240,49 @@ class CodingXTuiModelTest {
         )));
 
         String view = model.view();
-        assertInOrder(view, "> 你好你好", "CodingX  你好你好，我正在处理。");
+        assertInOrder(view, "› 你好你好", "• 你好你好，我正在处理。");
         assertTrue(view.contains("running"), view);
+    }
+
+    @Test
+    void runningTurnShouldRenderElapsedWorkingHintAndEscInterruptHelp() throws Exception {
+        NonCompletingStreamingEventSource eventSource = new NonCompletingStreamingEventSource();
+        CodingXTuiModel model = new CodingXTuiModel(
+            tempDir.resolve("workspace"),
+            eventSource,
+            new TerminalRenderer()
+        );
+        model.setProgram(new Program(model));
+
+        pressRunes(model, "你是谁");
+        model.update(new KeyPressMessage(new Key(KeyType.keyCR)));
+        eventSource.awaitTaskCount(1);
+
+        String view = stripAnsi(model.view());
+        assertTrue(view.contains("› 你是谁"), view);
+        assertTrue(view.matches("(?s).*• Working \\(\\d+s • esc to interrupt\\).*"), view);
+    }
+
+    @Test
+    void escShouldInterruptRunningTurnInsteadOfQuittingProgram() throws Exception {
+        NonCompletingStreamingEventSource eventSource = new NonCompletingStreamingEventSource();
+        CodingXTuiModel model = new CodingXTuiModel(
+            tempDir.resolve("workspace"),
+            eventSource,
+            new TerminalRenderer()
+        );
+        model.setProgram(new Program(model));
+
+        pressRunes(model, "你是谁");
+        model.update(new KeyPressMessage(new Key(KeyType.keyCR)));
+        eventSource.awaitTaskCount(1);
+        UpdateResult<?> result = model.update(new KeyPressMessage(new Key(KeyType.keyESC)));
+
+        String view = stripAnsi(model.view());
+        assertNull(result.command());
+        assertTrue(view.contains("• Interrupted"), view);
+        assertTrue(view.contains("interrupted"), view);
+        assertFalse(view.contains("Working ("), view);
     }
 
     @Test
@@ -250,9 +304,9 @@ class CodingXTuiModelTest {
             ))
         )));
 
-        String bottomArea = lastLines(model.view(), 5);
-        assertTrue(bottomArea.contains("> 你好你好"), bottomArea);
-        assertTrue(bottomArea.contains("› 输入任务，/ 查看命令"), bottomArea);
+        String bottomArea = lastLines(stripAnsi(model.view()), 5);
+        assertTrue(bottomArea.contains("› 你好你好"), bottomArea);
+        assertTrue(bottomArea.contains("› █输入任务，/ 查看命令"), bottomArea);
     }
 
     @Test
@@ -266,8 +320,8 @@ class CodingXTuiModelTest {
         model.submitTask("完成后也要看见");
 
         String view = stripAnsi(model.view());
-        assertEquals(1, countOccurrences(view, "> 完成后也要看见"), view);
-        assertTrue(view.contains("› 输入任务，/ 查看命令"), view);
+        assertEquals(1, countOccurrences(view, "› 完成后也要看见"), view);
+        assertTrue(view.contains("› █输入任务，/ 查看命令"), view);
         assertTrue(view.contains("completed"), view);
     }
 
@@ -282,8 +336,8 @@ class CodingXTuiModelTest {
         model.submitTask("不要重复显示");
 
         String view = stripAnsi(model.view());
-        assertEquals(1, countOccurrences(view, "> 不要重复显示"), view);
-        assertFalse(lastLines(view, 3).contains("> 不要重复显示"), view);
+        assertEquals(1, countOccurrences(view, "› 不要重复显示"), view);
+        assertFalse(lastLines(view, 3).contains("› 不要重复显示"), view);
     }
 
     @Test
@@ -297,7 +351,7 @@ class CodingXTuiModelTest {
 
         String view = model.view();
 
-        assertTrue(view.contains("\u001B[90m› 输入任务，/ 查看命令\u001B[0m"), view);
+        assertTrue(view.contains("› █\u001B[90m输入任务，/ 查看命令\u001B[0m"), view);
     }
 
     @Test
@@ -312,8 +366,8 @@ class CodingXTuiModelTest {
 
         // 短回答不在 composer 上方重复展示问题；问题只保留在 transcript 中。
         String bottomArea = lastLines(stripAnsi(model.view()), 3);
-        assertFalse(bottomArea.contains("> 三行内也要看见"), bottomArea);
-        assertTrue(bottomArea.contains("› 输入任务，/ 查看命令"), bottomArea);
+        assertFalse(bottomArea.contains("› 三行内也要看见"), bottomArea);
+        assertTrue(bottomArea.contains("› █输入任务，/ 查看命令"), bottomArea);
         assertTrue(bottomArea.contains("completed"), bottomArea);
     }
 
@@ -345,9 +399,9 @@ class CodingXTuiModelTest {
         // 真实终端下 placeholder 是灰色提示，不应该再把当前问题复制到输入区上方。
         String rawView = model.view();
         String bottomArea = lastLines(stripAnsi(rawView), 3);
-        assertFalse(bottomArea.contains("> 真实 TTY 也要看见"), bottomArea);
-        assertTrue(rawView.contains("\u001B[90m› 输入任务，/ 查看命令\u001B[0m"), rawView);
-        assertTrue(bottomArea.contains("› 输入任务，/ 查看命令"), bottomArea);
+        assertFalse(bottomArea.contains("› 真实 TTY 也要看见"), bottomArea);
+        assertTrue(rawView.contains("› █\u001B[90m输入任务，/ 查看命令\u001B[0m"), rawView);
+        assertTrue(bottomArea.contains("› █输入任务，/ 查看命令"), bottomArea);
         assertTrue(bottomArea.contains("completed"), bottomArea);
     }
 
@@ -376,8 +430,8 @@ class CodingXTuiModelTest {
         inputWriter.write("visible-user\r".getBytes(StandardCharsets.UTF_8));
         inputWriter.flush();
         eventSource.awaitTaskCount(1);
-        awaitContains(() -> lastLines(model.view(), 5), "> visible-user");
-        awaitContains(() -> stripAnsi(output.toString(StandardCharsets.UTF_8)), "> visible-user");
+        awaitContains(() -> lastLines(model.view(), 5), "› visible-user");
+        awaitContains(() -> stripAnsi(output.toString(StandardCharsets.UTF_8)), "› visible-user");
 
         inputWriter.write(3);
         inputWriter.flush();
@@ -397,7 +451,7 @@ class CodingXTuiModelTest {
         model.submitTask("看不见啊");
 
         String visibleTerminal = lastLines(model.view(), 12);
-        assertTrue(visibleTerminal.contains("> 看不见啊"), visibleTerminal);
+        assertTrue(visibleTerminal.contains("› 看不见啊"), visibleTerminal);
         assertTrue(visibleTerminal.contains("long-output-29"), visibleTerminal);
     }
 
@@ -413,7 +467,7 @@ class CodingXTuiModelTest {
         model.submitTask("长行也要看见");
 
         String visibleTerminal = lastVisualLines(model.view(), 40, 12);
-        assertTrue(visibleTerminal.contains("> 长行也要看见"), visibleTerminal);
+        assertTrue(visibleTerminal.contains("› 长行也要看见"), visibleTerminal);
         assertTrue(visibleTerminal.contains("wrap-output-"), visibleTerminal);
     }
 
@@ -531,7 +585,7 @@ class CodingXTuiModelTest {
         String view = model.view();
         assertEquals(List.of("/review 请审查当前改动"), eventSource.tasks);
         assertFalse(view.contains("未知命令"), view);
-        assertTrue(view.contains("> /review 请审查当前改动"), view);
+        assertTrue(view.contains("› /review 请审查当前改动"), view);
     }
 
     @Test
@@ -594,7 +648,7 @@ class CodingXTuiModelTest {
         assertEquals(1, authService.browserLoginCount);
         assertEquals(List.of("分析当前项目"), eventSource.tasks);
         assertTrue(view.contains("CLI 登录成功"), view);
-        assertTrue(view.contains("> 分析当前项目"), view);
+        assertTrue(view.contains("› 分析当前项目"), view);
     }
 
     @Test

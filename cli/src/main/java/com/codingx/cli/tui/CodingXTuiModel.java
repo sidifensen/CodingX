@@ -23,11 +23,14 @@ import com.williamcallahan.tui4j.compat.bubbles.viewport.Viewport;
 import org.jline.utils.WCWidth;
 
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 /**
  * CodingX TUI 的 Bubble Tea 模型，维护启动卡片、transcript、输入框和状态栏。
@@ -58,6 +61,21 @@ public class CodingXTuiModel implements Model {
      * ANSI 样式复位，防止灰色 placeholder 污染后续状态栏和回答内容。
      */
     private static final String ANSI_RESET = "\u001B[0m";
+
+    /**
+     * 底部输入框的块状光标，解决普通 Windows Terminal 下输入位置不可见的问题。
+     */
+    private static final String VISIBLE_CURSOR = "█";
+
+    /**
+     * 运行中等待提示的刷新周期；只负责重绘秒数，不改变后端请求超时。
+     */
+    private static final Duration RUNNING_TICK_INTERVAL = Duration.ofSeconds(1);
+
+    /**
+     * 纳秒到秒的换算常量，保证等待计时不受系统时区影响。
+     */
+    private static final long NANOS_PER_SECOND = TimeUnit.SECONDS.toNanos(1);
 
     /**
      * 当前 CLI 工作区，真实后端聊天流会把它作为 local runtime 的 repositoryPath。
@@ -130,6 +148,16 @@ public class CodingXTuiModel implements Model {
     private final ExecutorService streamExecutor;
 
     /**
+     * 当前正在消费的流式任务；Esc 中断时通过 Future 发送 interrupt。
+     */
+    private Future<?> activeStreamTask;
+
+    /**
+     * 当前流式轮次序号；中断后递增，后台迟到事件不会再写回 TUI。
+     */
+    private volatile long streamTurnSerial;
+
+    /**
      * tui4j Program 引用，用于后台 SSE 线程把事件送回主更新循环。
      */
     private Program program;
@@ -152,7 +180,12 @@ public class CodingXTuiModel implements Model {
     /**
      * 当前运行状态，展示在底部状态栏。
      */
-    private String status;
+    private volatile String status;
+
+    /**
+     * 当前轮开始运行的纳秒时间，用于渲染 `Working (Ns • esc to interrupt)`。
+     */
+    private long runningTurnStartedAtNanos;
 
     /**
      * 最近一次终端宽度，用于估算 transcript 可见区。
@@ -168,6 +201,12 @@ public class CodingXTuiModel implements Model {
      * 终端自动换行后的单个视觉行，保留来源 transcript 行号用于判断用户问题是否仍处于可见区。
      */
     private record VisualRow(int sourceLineIndex) {
+    }
+
+    /**
+     * 运行中计时消息，只触发重绘和下一次计时。
+     */
+    private record RunningTickMessage() implements Message {
     }
 
     /**
@@ -226,8 +265,11 @@ public class CodingXTuiModel implements Model {
             thread.setDaemon(true);
             return thread;
         });
+        this.activeStreamTask = null;
+        this.streamTurnSerial = 0L;
         this.planMode = true;
         this.status = "ready";
+        this.runningTurnStartedAtNanos = 0L;
         this.terminalWidth = 80;
         this.terminalHeight = Integer.MAX_VALUE;
         this.activeAssistantLineIndex = -1;
@@ -246,6 +288,8 @@ public class CodingXTuiModel implements Model {
         textarea.setWidth(80);
         textarea.setHeight(1);
         textarea.setShowLineNumbers(false);
+        // 自定义单行 composer 不直接调用 Textarea.view()，这里保留 cursor 状态让 blink 消息驱动块状光标闪烁。
+        textarea.cursor().setBlink(true);
         textarea.focus();
     }
 
@@ -281,13 +325,25 @@ public class CodingXTuiModel implements Model {
             return UpdateResult.from(this, null);
         }
 
+        if (msg instanceof RunningTickMessage) {
+            return UpdateResult.from(this, isTurnRunning() ? runningTickCommand() : null);
+        }
+
         if (msg instanceof WindowSizeMessage windowSizeMessage) {
             resize(windowSizeMessage.width(), windowSizeMessage.height());
         }
 
         if (msg instanceof KeyPressMessage keyPressMessage) {
             String key = keyPressMessage.key();
-            if ("ctrl+c".equals(key) || "esc".equals(key)) {
+            if ("ctrl+c".equals(key)) {
+                streamExecutor.shutdownNow();
+                return UpdateResult.from(this, QuitMessage::new);
+            }
+            if ("esc".equals(key) || keyPressMessage.type() == KeyType.keyESC) {
+                if (isTurnRunning()) {
+                    interruptRunningTurn();
+                    return UpdateResult.from(this, null);
+                }
                 streamExecutor.shutdownNow();
                 return UpdateResult.from(this, QuitMessage::new);
             }
@@ -313,9 +369,9 @@ public class CodingXTuiModel implements Model {
                     textarea.reset();
                     return UpdateResult.from(this, null);
                 }
-                submitTask(normalizedTask);
+                Command submitCommand = submitTaskAndReturnCommand(normalizedTask);
                 textarea.reset();
-                return UpdateResult.from(this, null);
+                return UpdateResult.from(this, submitCommand);
             }
         }
 
@@ -361,28 +417,46 @@ public class CodingXTuiModel implements Model {
      * @param task 用户任务。
      */
     public void submitTask(String task) {
+        submitTaskAndReturnCommand(task);
+    }
+
+    /**
+     * 提交任务并返回需要交给 Program 执行的后续命令；流式请求会启动等待计时刷新。
+     *
+     * @param task 用户任务。
+     * @return 运行中 tick 命令；同步事件源无后续命令。
+     */
+    private Command submitTaskAndReturnCommand(String task) {
         String normalizedTask = normalizeTask(task);
         if (normalizedTask.isEmpty()) {
-            return;
+            return null;
         }
 
         status = "running";
+        runningTurnStartedAtNanos = System.nanoTime();
         appendUserLine(normalizedTask);
         if (eventSource instanceof StreamingAgentEventSource streamingEventSource && program != null) {
             // 真实后端 SSE 在后台线程消费；每个事件通过 Program.send 回到 update()，避免跨线程直接改 UI 状态。
-            streamExecutor.submit(() -> streamingEventSource.startTurn(
+            long currentTurnSerial = ++streamTurnSerial;
+            activeStreamTask = streamExecutor.submit(() -> streamingEventSource.startTurn(
                 normalizedTask,
                 workspace,
                 planMode,
-                event -> program.send(new AgentEventsMessage(List.of(event)))
+                event -> {
+                    // Esc 中断后可能仍有迟到 SSE 事件，这里按轮次过滤，避免旧事件写回新状态。
+                    if (isCurrentStreamTurn(currentTurnSerial)) {
+                        program.send(new AgentEventsMessage(List.of(event)));
+                    }
+                }
             ));
             refreshViewport();
-            return;
+            return runningTickCommand();
         }
 
         // 单测和 mock 事件源仍走同步路径，便于不启动真实 Program 也能验证完整 transcript。
         appendAgentEvents(eventSource.startTurn(normalizedTask, workspace, planMode));
         refreshViewport();
+        return null;
     }
 
     /**
@@ -411,7 +485,7 @@ public class CodingXTuiModel implements Model {
             return false;
         }
         closeAssistantBlock();
-        latestUserLine = "> " + task;
+        latestUserLine = "› " + task;
         latestUserLineIndex = timelineLines.size();
         appendLine(latestUserLine);
         switch (normalizedCommand) {
@@ -523,16 +597,54 @@ public class CodingXTuiModel implements Model {
             }
         }
         if (events.stream().anyMatch(event -> event.eventType() == AgentEventType.ERROR)) {
+            activeStreamTask = null;
             status = "error";
             return;
         }
         if (events.stream().anyMatch(event -> event.eventType() == AgentEventType.TURN_INTERRUPTED)) {
+            activeStreamTask = null;
             status = "interrupted";
             return;
         }
         if (events.stream().anyMatch(event -> event.eventType() == AgentEventType.TURN_COMPLETED)) {
+            activeStreamTask = null;
             status = "completed";
         }
+    }
+
+    /**
+     * 判断后台 SSE 事件是否仍属于当前运行轮次；Esc 中断会递增轮次号，让迟到回调自然丢弃。
+     *
+     * @param turnSerial 后台线程捕获的轮次号。
+     * @return true 表示事件仍可写回 TUI。
+     */
+    private boolean isCurrentStreamTurn(long turnSerial) {
+        return isTurnRunning() && streamTurnSerial == turnSerial && program != null;
+    }
+
+    /**
+     * 中断当前流式回答；只停止本轮 AI 回复，不退出整个 TUI 程序。
+     */
+    private void interruptRunningTurn() {
+        closeAssistantBlock();
+        streamTurnSerial++;
+        if (activeStreamTask != null) {
+            activeStreamTask.cancel(true);
+            activeStreamTask = null;
+        }
+        runningTurnStartedAtNanos = 0L;
+        status = "interrupted";
+        appendLine("• Interrupted");
+        refreshViewport();
+    }
+
+    /**
+     * 构造运行中计时命令；tick 回到 update 后会继续排下一次，直到本轮结束。
+     *
+     * @return tui4j tick 命令。
+     */
+    private Command runningTickCommand() {
+        return Command.tick(RUNNING_TICK_INTERVAL, ignored -> new RunningTickMessage());
     }
 
     /**
@@ -568,7 +680,7 @@ public class CodingXTuiModel implements Model {
      */
     private void appendUserLine(String task) {
         closeAssistantBlock();
-        latestUserLine = "> " + task;
+        latestUserLine = "› " + task;
         latestUserLineIndex = timelineLines.size();
         appendLine(latestUserLine);
     }
@@ -607,7 +719,7 @@ public class CodingXTuiModel implements Model {
      * @return transcript 可见行。
      */
     private String formatAssistantLine(String text) {
-        return "CodingX  " + text;
+        return "• " + text;
     }
 
     /**
@@ -624,7 +736,7 @@ public class CodingXTuiModel implements Model {
      * 将内存中的 transcript 同步给滚动窗口，并把视口移动到底部显示最新任务结果。
      */
     private void refreshViewport() {
-        viewport.setContent(String.join(RENDER_NEWLINE, timelineLines));
+        viewport.setContent(String.join(RENDER_NEWLINE, renderTranscriptLines()));
         viewport.gotoBottom();
     }
 
@@ -645,7 +757,7 @@ public class CodingXTuiModel implements Model {
         }
         // 用户消息、输入框和状态栏必须连续占用底部三行；tui4j 普通 renderer 只保留尾部可见行时不能让空行挤掉问题。
         sections.add(inputAndStatus);
-        return wrapRendererView(String.join(GAP, sections));
+        return wrapRendererView(String.join(RENDER_NEWLINE, sections));
     }
 
     /**
@@ -665,18 +777,53 @@ public class CodingXTuiModel implements Model {
      * @return 可见 transcript 文本。
      */
     private String renderTranscript() {
-        String transcript = String.join(RENDER_NEWLINE, timelineLines);
+        List<String> transcriptLines = renderTranscriptLines();
+        String transcript = String.join(RENDER_NEWLINE, transcriptLines);
         if (!shouldPinLatestUserLine()) {
             return transcript;
         }
 
-        List<String> currentTurnLines = timelineLines.subList(
-            Math.min(latestUserLineIndex + 1, timelineLines.size()),
-            timelineLines.size()
+        List<String> currentTurnLines = transcriptLines.subList(
+            Math.min(latestUserLineIndex + 1, transcriptLines.size()),
+            transcriptLines.size()
         );
         int userLineHeight = renderedVisualLineCount(latestUserLine);
         int answerHeight = Math.max(availableTranscriptLines() - userLineHeight, 1);
         return latestUserLine + RENDER_NEWLINE + renderVisualTail(currentTurnLines, answerHeight);
+    }
+
+    /**
+     * 返回当前 transcript 派生行；运行中等待提示只参与渲染，不写入历史消息，避免完成后残留。
+     *
+     * @return 实际历史行加运行态临时提示。
+     */
+    private List<String> renderTranscriptLines() {
+        List<String> lines = new ArrayList<>(timelineLines);
+        if (isTurnRunning()) {
+            lines.add(renderWorkingLine());
+        }
+        return lines;
+    }
+
+    /**
+     * 渲染当前轮等待提示，向用户说明正在生成并可按 Esc 中断。
+     *
+     * @return 运行中提示行。
+     */
+    private String renderWorkingLine() {
+        return "• Working (" + elapsedRunningSeconds() + "s • esc to interrupt)";
+    }
+
+    /**
+     * 计算当前轮已等待秒数，使用单调时钟避免系统时间调整影响计时。
+     *
+     * @return 当前轮已运行秒数。
+     */
+    private long elapsedRunningSeconds() {
+        if (runningTurnStartedAtNanos <= 0L) {
+            return 0L;
+        }
+        return Math.max(System.nanoTime() - runningTurnStartedAtNanos, 0L) / NANOS_PER_SECOND;
     }
 
     /**
@@ -686,11 +833,27 @@ public class CodingXTuiModel implements Model {
      */
     private String renderComposer() {
         String taskText = normalizeRendererNewlines(textarea.value()).replace('\n', ' ').trim();
+        String cursorCell = textarea.cursor().isBlink() ? " " : VISIBLE_CURSOR;
         // 真实 TTY 下 tui4j Textarea.view() 会附带光标样式和填充行；底部 composer 必须稳定为单行。
         if (taskText.isEmpty()) {
-            return stylePlaceholder(truncateVisualLine("› " + COMPOSER_PLACEHOLDER));
+            return renderEmptyComposer(cursorCell);
         }
-        return truncateVisualLine("› " + taskText);
+        return truncateVisualLine("› " + taskText + cursorCell);
+    }
+
+    /**
+     * 渲染空输入状态；先按纯可见文本截断，再给 placeholder 加灰，避免 ANSI 控制串参与宽度计算。
+     *
+     * @param cursorCell 当前光标可见或隐藏占位。
+     * @return 空 composer 可见行。
+     */
+    private String renderEmptyComposer(String cursorCell) {
+        String prefix = "› " + cursorCell;
+        String truncated = truncateVisualLine(prefix + COMPOSER_PLACEHOLDER);
+        if (truncated.length() <= prefix.length()) {
+            return truncated;
+        }
+        return prefix + stylePlaceholder(truncated.substring(prefix.length()));
     }
 
     /**
@@ -871,7 +1034,7 @@ public class CodingXTuiModel implements Model {
     }
 
     /**
-     * 计算输入框、状态栏和 section 间隔占用的行数；与 view() 的分区拼接方式保持一致。
+     * 计算输入框、状态栏占用的行数；活动区使用紧凑单换行，避免等待提示把最近问题挤出尾部可见区。
      *
      * @return 非 transcript 区域占用行数。
      */
@@ -879,11 +1042,9 @@ public class CodingXTuiModel implements Model {
         int currentQuestionAnchorLines = shouldRenderCurrentQuestionAnchor()
             ? renderedVisualLineCount(renderCurrentQuestionAnchor())
             : 0;
-        int sectionGapLines = timelineLines.isEmpty() ? 0 : 1;
         return currentQuestionAnchorLines
             + renderedVisualLineCount(renderComposer())
-            + renderedVisualLineCount(renderStatusBar())
-            + sectionGapLines;
+            + renderedVisualLineCount(renderStatusBar());
     }
 
     /**
@@ -896,8 +1057,8 @@ public class CodingXTuiModel implements Model {
         for (int index = 0; index < timelineLines.size(); index++) {
             appendVisualRows(rows, timelineLines.get(index), index);
         }
-        if (!timelineLines.isEmpty()) {
-            appendGapRow(rows);
+        if (isTurnRunning()) {
+            appendVisualRows(rows, renderWorkingLine(), -1);
         }
         if (shouldRenderCurrentQuestionAnchor()) {
             appendVisualRows(rows, renderCurrentQuestionAnchor(), latestUserLineIndex);
@@ -940,15 +1101,6 @@ public class CodingXTuiModel implements Model {
         int safeMaxLines = Math.max(maxLines, 1);
         int fromIndex = Math.max(rows.size() - safeMaxLines, 0);
         return rows.subList(fromIndex, rows.size());
-    }
-
-    /**
-     * 追加一个分区间隔视觉行；与 view() 使用的双换行分区符保持一致。
-     *
-     * @param rows 完整视图视觉行集合。
-     */
-    private void appendGapRow(List<VisualRow> rows) {
-        rows.add(new VisualRow(-1));
     }
 
     /**

@@ -6,12 +6,10 @@ import com.codingx.tool.domain.model.ChatTool;
 import com.codingx.tool.domain.repository.ChatToolRepository;
 import java.util.Comparator;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
-import java.util.function.Function;
-import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -107,20 +105,7 @@ public class ChatToolSpecService {
         List<ChatToolSpec> specs = new ArrayList<>(enabledTools.stream()
             .map(tool -> toSpec(normalizeToolCode(tool.getToolCode()), normalizeToolCode(tool.getToolCode()), tool))
             .toList());
-        Map<String, ChatTool> toolByCanonicalCode = enabledTools.stream()
-            .collect(Collectors.toMap(
-                tool -> normalizeToolCode(tool.getToolCode()),
-                Function.identity(),
-                (first, ignored) -> first,
-                LinkedHashMap::new
-            ));
-        for (Map.Entry<String, String> aliasEntry : localToolAliasService.aliasMappings().entrySet()) {
-            ChatTool canonicalTool = toolByCanonicalCode.get(aliasEntry.getValue());
-            if (canonicalTool == null) {
-                continue;
-            }
-            specs.add(toSpec(aliasEntry.getKey(), aliasEntry.getValue(), canonicalTool));
-        }
+        // 模型只看短工具名，别名保留在执行入口归一化层，避免同一能力以两个 function name 暴露后诱发重复调用。
         if (mcpServerRuntimeService != null) {
             specs.addAll(mcpServerRuntimeService.listDiscoveredToolSpecs());
         }

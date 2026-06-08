@@ -75,9 +75,9 @@ class ChatToolSpecServiceTest {
         List<String> names = specs.stream().map(ChatToolSpec::name).toList();
 
         assertTrue(names.contains("read"));
-        assertTrue(names.contains("ReadFile"));
         assertTrue(names.contains("bash"));
-        assertTrue(names.contains("Bash"));
+        assertFalse(names.contains("ReadFile"));
+        assertFalse(names.contains("Bash"));
         assertFalse(names.contains("spawn_agent"));
         assertFalse(names.contains("fake_tool"));
         ChatToolSpec readSpec = specs.getFirst();
@@ -128,10 +128,11 @@ class ChatToolSpecServiceTest {
     }
 
     /**
-     * Claude Code 风格六大工具名应作为模型可见别名暴露，同时记录真实执行器编码用于后端归一化。
+     * 模型可见工具只保留短工具名，Claude Code 风格别名只作为执行兼容入口存在。
+     * 业务约束：同一能力不能同时以 read 和 ReadFile 暴露给模型，避免模型混用两个入口造成重复调用。
      */
     @Test
-    void listModelVisibleSpecsIncludesClaudeCodeAliasToolNames() {
+    void listModelVisibleSpecsShouldNotExposeClaudeCodeAliasToolNames() {
         List<String> shortToolCodes = List.of("read", "write", "edit", "bash", "grep", "find", "ls");
         ChatToolRepository repository = new InMemoryChatToolRepository(shortToolCodes.stream()
             .map(toolCode -> ChatTool.builder()
@@ -158,16 +159,17 @@ class ChatToolSpecServiceTest {
         registry.init();
         ChatToolSpecService service = new ChatToolSpecService(repository, registry, new LocalToolAliasService());
 
-        Map<String, String> aliasToCanonical = service.listModelVisibleToolSpecs().stream()
-            .filter(spec -> !shortToolCodes.contains(spec.name()))
-            .collect(java.util.stream.Collectors.toMap(ChatToolSpec::name, ChatToolSpec::canonicalToolCode));
+        List<String> names = service.listModelVisibleToolSpecs().stream()
+            .map(ChatToolSpec::name)
+            .toList();
 
-        assertEquals("read", aliasToCanonical.get("ReadFile"));
-        assertEquals("write", aliasToCanonical.get("WriteFile"));
-        assertEquals("edit", aliasToCanonical.get("EditFile"));
-        assertEquals("bash", aliasToCanonical.get("Bash"));
-        assertEquals("find", aliasToCanonical.get("Glob"));
-        assertEquals("grep", aliasToCanonical.get("Grep"));
+        assertTrue(names.containsAll(shortToolCodes));
+        assertFalse(names.contains("ReadFile"));
+        assertFalse(names.contains("WriteFile"));
+        assertFalse(names.contains("EditFile"));
+        assertFalse(names.contains("Bash"));
+        assertFalse(names.contains("Glob"));
+        assertFalse(names.contains("Grep"));
     }
 
     /**

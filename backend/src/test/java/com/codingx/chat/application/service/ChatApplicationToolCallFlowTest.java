@@ -351,6 +351,168 @@ class ChatApplicationToolCallFlowTest {
     }
 
     /**
+     * 工具回灌后的下一轮模型可能先输出较长的执行叙述，随后才发起真实 tool_call。
+     * 业务约束：这类“我将/下一步/现在执行”文本仍是内部过程，不能因为长度超过短进度阈值就提前发布到用户侧。
+     *
+     * @param tempDir 本地 workspace 临时目录。
+     * @throws Exception 执行失败时抛出。
+     */
+    @Test
+    void sendMessageSuppressesLongToolNarrationBeforeLaterToolCall(@TempDir Path tempDir) throws Exception {
+        Long runId = 9401017L;
+        ChatExecutionContext.start(runId);
+        try {
+            Path workspace = tempDir.resolve("repo");
+            Files.createDirectories(workspace);
+            ChatConversation conversation = ChatConversation.create(17L, "Long Tool Narration", 1002L, ChatConversationStatus.ACTIVE);
+            when(chatConversationRepository.requireById(17L)).thenReturn(conversation);
+            when(chatMessageRepository.findByConversationId(17L)).thenReturn(new ArrayList<>());
+            when(chatAttachmentService.requireOwnedAttachments(any(), eq(17L), eq(1002L))).thenReturn(List.of());
+            when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+                new ConversationRewriteResult("丰富 snake-game.html 功能", false, List.of("丰富 snake-game.html 功能"))
+            );
+            when(conversationIntentService.route("丰富 snake-game.html 功能", false)).thenReturn(
+                new ConversationIntentDecision("chat.normal", ConversationIntentAction.DIRECT, null)
+            );
+            when(chatIntentNodeRepository.findByIntentCode("chat.normal")).thenReturn(null);
+            when(chatSkillContextService.buildSkillContext(any())).thenReturn("");
+            when(chatExpertContextService.buildExpertContext(any())).thenReturn("");
+            when(conversationSummaryService.buildModelHistory(any(), any())).thenAnswer(invocation -> invocation.getArgument(1));
+            when(conversationTitleService.generateTitle(any(), any())).thenReturn("贪吃蛇增强");
+            when(llmResponseCleaner.clean(any())).thenAnswer(invocation -> invocation.getArgument(0));
+            when(chatToolSpecService.listModelVisibleToolSpecs()).thenReturn(List.of(
+                new ChatToolSpec("read", "读取文件", Map.of("type", "object"))
+            ));
+            when(chatToolExecutionService.execute(eq("read"), any())).thenAnswer(invocation ->
+                new ChatToolExecutionResult("read", "snake-game.html 内容片段", Map.of("path", "snake-game.html"))
+            );
+            AtomicInteger modelRound = new AtomicInteger();
+            doAnswer(invocation -> {
+                AiChatClient.ToolAwareStreamHandler handler = invocation.getArgument(3);
+                int round = modelRound.incrementAndGet();
+                if (round == 1) {
+                    handler.onToolCall(new AiToolCall("call-read-1", "read", "{\"path\":\"snake-game.html\"}"));
+                    handler.onComplete();
+                    return null;
+                }
+                if (round == 2) {
+                    handler.onDelta("""
+                        我们先确认 `snake-game.html` 的完整内容，尤其是 `<script>` 部分。
+                        ✅ 下一步行动：完整读取文件，定位并分析现有 JS 逻辑。
+                        现在执行完整读取：
+                        """);
+                    handler.onToolCall(new AiToolCall("call-read-2", "read", "{\"path\":\"snake-game.html\",\"limit\":1000}"));
+                    handler.onComplete();
+                    return null;
+                }
+                handler.onDelta("已读取完整文件，接下来可以安全增强贪吃蛇功能。");
+                handler.onComplete();
+                return null;
+            }).when(aiChatClient).streamChatWithTools(any(), eq(false), any(), any());
+
+            chatApplicationService.sendMessage(
+                new SendChatMessageCommand(17L, "丰富 snake-game.html 功能", false, List.of(), List.of(), null, workspace.toString(), List.of()),
+                1002L
+            );
+
+            verify(chatStreamPublisher, never()).publishAssistantDelta(
+                eq(17L),
+                org.mockito.ArgumentMatchers.contains("我们先确认")
+            );
+            verify(chatStreamPublisher).publishAssistantDelta(17L, "已读取完整文件，接下来可以安全增强贪吃蛇功能。");
+            verify(chatStreamPublisher).publishAssistantCompleted(
+                eq(17L),
+                any(),
+                eq("已读取完整文件，接下来可以安全增强贪吃蛇功能。"),
+                eq("贪吃蛇增强")
+            );
+            ArgumentCaptor<ChatMessage> messageCaptor = ArgumentCaptor.forClass(ChatMessage.class);
+            verify(chatMessageRepository, org.mockito.Mockito.times(2)).save(messageCaptor.capture());
+            ChatMessage assistantMessage = messageCaptor.getAllValues().get(1);
+            assertEquals("已读取完整文件，接下来可以安全增强贪吃蛇功能。", assistantMessage.getContent());
+        } finally {
+            ChatExecutionContext.clear();
+        }
+    }
+
+    /**
+     * 历史中已经落库的内部执行叙述不能继续作为模型上下文，否则用户回复“同意/继续”会触发重复读取并打满工具轮次。
+     *
+     * @param tempDir 本地 workspace 临时目录。
+     * @throws Exception 执行失败时抛出。
+     */
+    @Test
+    void sendMessageFiltersPersistedToolNarrationFromModelHistory(@TempDir Path tempDir) throws Exception {
+        Long runId = 9401018L;
+        ChatExecutionContext.start(runId);
+        try {
+            Path workspace = tempDir.resolve("repo");
+            Files.createDirectories(workspace);
+            ChatConversation conversation = ChatConversation.create(18L, "Polluted History", 1002L, ChatConversationStatus.ACTIVE);
+            ChatMessage previousUserMessage = ChatMessage.userMessage(18L, "那个贪吃蛇帮我丰富一下功能");
+            ChatMessage pollutedAssistantMessage = ChatMessage.assistantMessage(
+                18L,
+                """
+                    我们先确认 `snake-game.html` 的完整内容，尤其是 `<script>` 部分。
+                    ✅ 下一步行动：完整读取文件并分析现有 JS 逻辑。
+                    现在执行完整读取：
+                    """,
+                ChatMessageStatus.COMPLETED,
+                null,
+                null,
+                null
+            );
+            when(chatConversationRepository.requireById(18L)).thenReturn(conversation);
+            when(chatMessageRepository.findByConversationId(18L)).thenReturn(new ArrayList<>(List.of(
+                previousUserMessage,
+                pollutedAssistantMessage
+            )));
+            when(chatAttachmentService.requireOwnedAttachments(any(), eq(18L), eq(1002L))).thenReturn(List.of());
+            when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+                new ConversationRewriteResult("同意", false, List.of("同意"))
+            );
+            when(conversationIntentService.route("同意", false)).thenReturn(
+                new ConversationIntentDecision("chat.normal", ConversationIntentAction.DIRECT, null)
+            );
+            when(chatIntentNodeRepository.findByIntentCode("chat.normal")).thenReturn(null);
+            when(chatSkillContextService.buildSkillContext(any())).thenReturn("");
+            when(chatExpertContextService.buildExpertContext(any())).thenReturn("");
+            when(conversationSummaryService.buildModelHistory(any(), any())).thenAnswer(invocation -> invocation.getArgument(1));
+            when(conversationTitleService.generateTitle(any(), any())).thenReturn("贪吃蛇增强");
+            when(llmResponseCleaner.clean(any())).thenAnswer(invocation -> invocation.getArgument(0));
+            when(chatToolSpecService.listModelVisibleToolSpecs()).thenReturn(List.of(
+                new ChatToolSpec("read", "读取文件", Map.of("type", "object"))
+            ));
+            doAnswer(invocation -> {
+                @SuppressWarnings("unchecked")
+                List<ChatMessage> history = invocation.getArgument(0);
+                assertFalse(history.stream().anyMatch(message ->
+                    message.getRole() == ChatMessageRole.ASSISTANT
+                        && message.getContent().contains("现在执行完整读取")
+                ));
+                AiChatClient.ToolAwareStreamHandler handler = invocation.getArgument(3);
+                handler.onDelta("可以，接下来我会基于现有文件直接给出增强结果。");
+                handler.onComplete();
+                return null;
+            }).when(aiChatClient).streamChatWithTools(any(), eq(false), any(), any());
+
+            chatApplicationService.sendMessage(
+                new SendChatMessageCommand(18L, "同意", false, List.of(), List.of(), null, workspace.toString(), List.of()),
+                1002L
+            );
+
+            verify(chatStreamPublisher).publishAssistantCompleted(
+                eq(18L),
+                any(),
+                eq("可以，接下来我会基于现有文件直接给出增强结果。"),
+                eq("贪吃蛇增强")
+            );
+        } finally {
+            ChatExecutionContext.clear();
+        }
+    }
+
+    /**
      * 同一个写文件目标如果被模型用不同 HTML 内容反复覆盖，应按同一路径去重并收口成功结果。
      * 业务背景：桌面端生成 HTML 时，模型可能每轮都略微改写 content，原始 arguments 不相等会绕过旧去重，
      * 最终真实执行多次 write 并触发工具轮次上限。

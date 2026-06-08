@@ -431,7 +431,7 @@ public class ChatApplicationService {
         final String[] selectedProvider = new String[1];
         final String[] selectedModel = new String[1];
         List<ChatMessage> aiHistory = buildAiHistory(
-            conversationSummaryService.buildModelHistory(command.conversationId(), plainAiMessages(history)),
+            conversationSummaryService.buildModelHistory(command.conversationId(), modelVisibleAiMessages(history)),
             intentDecision,
             command.conversationId(),
             command.skillCodes(),
@@ -852,7 +852,7 @@ public class ChatApplicationService {
         final String[] selectedProvider = new String[1];
         final String[] selectedModel = new String[1];
         List<ChatMessage> aiHistory = buildAiHistory(
-            conversationSummaryService.buildModelHistory(command.conversationId(), plainAiMessages(history)),
+            conversationSummaryService.buildModelHistory(command.conversationId(), modelVisibleAiMessages(history)),
             intentDecision,
             command.conversationId(),
             selectedSkillCodes,
@@ -1594,18 +1594,19 @@ public class ChatApplicationService {
     }
 
     /**
-     * 判断工具轮次正文是否属于短进度说明。
-     * 关键约束：工具已执行后，模型可能输出“正在执行页面信息读取...”并结束流；该内容不是用户答案，不能发布为最终消息。
+     * 判断工具轮次正文是否属于内部进度说明。
+     * 关键约束：工具已执行后，模型可能输出“正在执行页面信息读取...”或较长的“下一步行动/我将读取”叙述；
+     * 这些内容都不是用户答案，不能发布为最终消息或落库进历史。
      *
      * @param content 本轮模型正文。
-     * @return 是否只包含短进度说明。
+     * @return 是否只包含内部进度说明。
      */
     private boolean isProgressOnlyToolRoundContent(String content) {
         content = StrUtil.trimToEmpty(content);
         if (StrUtil.isBlank(content)) {
             return false;
         }
-        if (isCommandPlanOnlyToolRoundContent(content)) {
+        if (isCommandPlanOnlyToolRoundContent(content) || isExecutionNarrationOnlyToolRoundContent(content)) {
             return true;
         }
         if (content.length() > 80) {
@@ -1627,6 +1628,48 @@ public class ChatApplicationService {
             || normalizedContent.endsWith("中")
             || normalizedContent.endsWith("中...");
         return hasProgressPrefix && hasProgressSuffix;
+    }
+
+    /**
+     * 判断工具回灌后的正文是否只是自然语言执行叙述。
+     * 业务背景：部分模型会先输出较长的“我们先确认/下一步行动/现在执行”正文，随后才发起 read/grep/write。
+     * 该阶段还没有形成用户可见结论，必须继续留在后端缓冲，避免重复显示并污染下一轮历史。
+     *
+     * @param content 本轮模型正文。
+     * @return true 表示该正文只描述待执行动作。
+     */
+    private boolean isExecutionNarrationOnlyToolRoundContent(String content) {
+        String normalizedContent = StrUtil.trimToEmpty(content).replaceAll("\\s+", "");
+        if (StrUtil.isBlank(normalizedContent)) {
+            return false;
+        }
+        boolean hasStrongPendingMarker = normalizedContent.contains("现在执行")
+            || normalizedContent.contains("准备执行")
+            || normalizedContent.contains("执行命令")
+            || normalizedContent.contains("下一步行动")
+            || normalizedContent.contains("确认动作")
+            || normalizedContent.contains("我将：")
+            || normalizedContent.contains("我将:");
+        if (hasStrongPendingMarker) {
+            return true;
+        }
+        boolean hasPlanningMarker = normalizedContent.startsWith("我们先")
+            || normalizedContent.startsWith("我先")
+            || normalizedContent.contains("先确认")
+            || normalizedContent.contains("需要先")
+            || normalizedContent.contains("下一步将")
+            || normalizedContent.contains("接下来我将")
+            || normalizedContent.contains("再针对性");
+        boolean hasCompletedResultEvidence = normalizedContent.contains("已完成")
+            || normalizedContent.contains("已经完成")
+            || normalizedContent.contains("修复完成")
+            || normalizedContent.contains("文件已写入")
+            || normalizedContent.contains("已写入")
+            || normalizedContent.contains("已创建")
+            || normalizedContent.contains("已读取")
+            || normalizedContent.contains("结果如下")
+            || normalizedContent.contains("最终结果");
+        return hasPlanningMarker && !hasCompletedResultEvidence;
     }
 
     /**
@@ -1770,16 +1813,16 @@ public class ChatApplicationService {
         }
 
         /**
-         * 判断当前片段是否仍可能发展为短进度句；命中时继续缓冲，避免把“正在执行”半句提前推给用户。
+         * 判断当前片段是否仍可能发展为内部进度句；命中时继续缓冲，避免把“正在执行/下一步行动”提前推给用户。
          *
-         * @return 是否仍可能是短进度说明。
+         * @return 是否仍可能是内部进度说明。
          */
         private boolean isPossibleProgressOnlyContent() {
             String content = StrUtil.trimToEmpty(String.join("", deltas));
             if (StrUtil.isBlank(content)) {
                 return false;
             }
-            if (isCommandPlanOnlyToolRoundContent(content)) {
+            if (isCommandPlanOnlyToolRoundContent(content) || isExecutionNarrationOnlyToolRoundContent(content)) {
                 return true;
             }
             if (content.length() > 80) {
@@ -2814,6 +2857,44 @@ public class ChatApplicationService {
     }
 
     /**
+     * 构造真正送入模型的历史消息，剥离历史中已落库的内部工具执行叙述。
+     * 业务约束：用户仍能在界面看到旧消息，但模型不能继续把“现在执行/准备执行”当成上轮已确认计划，
+     * 否则用户回复“同意/继续”会再次进入 read/grep 循环并触发工具轮次上限。
+     *
+     * @param history 原始历史。
+     * @return 模型可见历史。
+     */
+    private List<ChatMessage> modelVisibleAiMessages(List<ChatMessage> history) {
+        if (history == null || history.isEmpty()) {
+            return List.of();
+        }
+        return history.stream()
+            .map(ChatCapabilityMentionSupport::toPlainAiMessage)
+            .filter(message -> !isPersistedInternalToolNarration(message))
+            .toList();
+    }
+
+    /**
+     * 判断历史助手消息是否为之前错误落库的内部工具执行叙述。
+     *
+     * @param message 历史消息。
+     * @return true 表示该消息不应进入后续模型上下文。
+     */
+    private boolean isPersistedInternalToolNarration(ChatMessage message) {
+        if (message == null || message.getRole() != ChatMessageRole.ASSISTANT || StrUtil.isBlank(message.getContent())) {
+            return false;
+        }
+        String normalizedContent = message.getContent().replaceAll("\\s+", "");
+        boolean hasPersistedExecutionMarker = normalizedContent.contains("现在执行")
+            || normalizedContent.contains("准备执行")
+            || normalizedContent.contains("确认动作")
+            || normalizedContent.contains("执行命令");
+        return hasPersistedExecutionMarker
+            && (isExecutionNarrationOnlyToolRoundContent(message.getContent())
+                || isCommandPlanOnlyToolRoundContent(message.getContent()));
+    }
+
+    /**
      * 提取纯用户问题列表，避免 rewrite/intent 把 @skill 当成自然语言。
      * @param history 原始历史。
      * @return 纯文本用户问题。
@@ -2855,7 +2936,7 @@ public class ChatApplicationService {
             && StrUtil.isBlank(searchEvidenceContext)
             && StrUtil.isBlank(governanceContext)
         ) {
-            return history;
+            return modelVisibleAiMessages(history);
         }
         List<String> promptSegments = new ArrayList<>();
         if (StrUtil.isNotBlank(systemPrompt)) {
@@ -2888,7 +2969,7 @@ public class ChatApplicationService {
             null,
             null
         ));
-        aiHistory.addAll(plainAiMessages(history));
+        aiHistory.addAll(modelVisibleAiMessages(history));
         return aiHistory;
     }
 

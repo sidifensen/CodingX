@@ -522,6 +522,18 @@ export interface WorkspaceConversationGroup {
 }
 
 /**
+ * 描述后端返回的当前用户工作区库存项，供侧栏补齐没有会话的空工作区。
+ */
+export interface WorkspaceInventoryItem {
+  id: string;
+  name: string;
+  runtimeTarget: 'cloud' | 'local';
+  workingDirectory: string | null;
+  repositoryUrl?: string | null;
+  branchName?: string | null;
+}
+
+/**
  * 统一描述会话动作所需的分组上下文，确保非当前分组菜单动作仍能落到正确分区。
  */
 export type ConversationActionContext = WorkspaceConversationSelectionContext;

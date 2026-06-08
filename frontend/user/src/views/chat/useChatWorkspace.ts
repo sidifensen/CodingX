@@ -40,6 +40,7 @@ import {
   SlashCommandItem,
   StreamQueueState,
   UseChatWorkspaceOptions,
+  WorkspaceInventoryItem,
   WorkspaceConversationCreateContext,
   WorkspaceConversationSelectionContext,
   WorkspaceConversationGroup,
@@ -571,6 +572,7 @@ export function useChatWorkspace(
     runtimeTargets[0] ?? 'cloud',
   );
   const [workspaceGroups, setWorkspaceGroups] = useState<WorkspaceConversationGroup[]>([]);
+  const [workspaceInventory, setWorkspaceInventory] = useState<WorkspaceInventoryItem[]>([]);
   const [activeWorkspacePartitionKey, setActiveWorkspacePartitionKey] = useState<string | null>(
     null,
   );
@@ -676,6 +678,7 @@ export function useChatWorkspace(
   const currentExpertsRef = useRef<CurrentExpertItem[]>([]);
   const currentSkillsRef = useRef<CurrentSkillItem[]>([]);
   const currentMcpsRef = useRef<CurrentMcpItem[]>([]);
+  const workspaceInventoryRef = useRef<WorkspaceInventoryItem[]>([]);
   activeRuntimeTargetRef.current = activeRuntimeTarget;
   workspacePathRef.current = workspacePath;
   conversationsRef.current = conversations;
@@ -688,6 +691,7 @@ export function useChatWorkspace(
   currentExpertsRef.current = currentExperts;
   currentSkillsRef.current = currentSkills;
   currentMcpsRef.current = currentMcps;
+  workspaceInventoryRef.current = workspaceInventory;
 
   /**
    * 清理当前工作空间记忆上下文；切到云端或无本地目录时避免展示上一个仓库的记忆。
@@ -853,8 +857,11 @@ export function useChatWorkspace(
    * @param groups 本地快照生成的工作空间分组。
    * @returns 带分页状态的工作空间分组。
    */
-  const decorateWorkspaceGroupsWithPagination = (groups: WorkspaceConversationGroup[]) =>
-    groups.map((group) => {
+  const decorateWorkspaceGroupsWithPagination = (
+    groups: WorkspaceConversationGroup[],
+    inventoryRuntimeTarget?: 'cloud' | 'local',
+  ) =>
+    mergeWorkspaceInventoryGroups(groups, inventoryRuntimeTarget).map((group) => {
       const pagination = conversationPaginationMapRef.current[group.partitionKey];
       return {
         ...group,
@@ -862,6 +869,117 @@ export function useChatWorkspace(
         isLoadingMore: Boolean(pagination?.isLoadingMore),
       };
     });
+
+  /**
+   * 将服务端工作区库存合并到本地快照分组，确保没有会话的工作区也能显示。
+   * 关键约束：本地快照是会话、置顶和已读状态的权威来源，服务端库存只补齐缺失分组。
+   * @param groups 本地快照分组。
+   * @returns 合并后的侧栏分组。
+   */
+  const mergeWorkspaceInventoryGroups = (
+    groups: WorkspaceConversationGroup[],
+    inventoryRuntimeTarget?: 'cloud' | 'local',
+  ) => {
+    const mergedGroups = [...groups];
+    const groupIndexByPartitionKey = new Map(
+      mergedGroups.map((group, index) => [group.partitionKey, index]),
+    );
+    for (const workspace of workspaceInventoryRef.current) {
+      const inventoryGroup = buildWorkspaceInventoryGroup(workspace);
+      if (!inventoryGroup) {
+        continue;
+      }
+      if (inventoryRuntimeTarget && inventoryGroup.runtimeTarget !== inventoryRuntimeTarget) {
+        continue;
+      }
+      const existingIndex = groupIndexByPartitionKey.get(inventoryGroup.partitionKey);
+      if (existingIndex == null) {
+        groupIndexByPartitionKey.set(inventoryGroup.partitionKey, mergedGroups.length);
+        mergedGroups.push(inventoryGroup);
+        continue;
+      }
+      const existingGroup = mergedGroups[existingIndex];
+      mergedGroups[existingIndex] = {
+        ...inventoryGroup,
+        ...existingGroup,
+        workspaceLabel: existingGroup.workspaceLabel || inventoryGroup.workspaceLabel,
+        workspacePath: existingGroup.workspacePath ?? inventoryGroup.workspacePath,
+      };
+    }
+    return mergedGroups.sort(compareWorkspaceGroupsForSidebar);
+  };
+
+  /**
+   * 把后端工作区库存项转换为侧栏分组；无本地目录的云端空间归并到默认云端历史分区。
+   * @param workspace 后端工作区库存项。
+   * @returns 可合并的侧栏分组，或无法展示时返回 null。
+   */
+  const buildWorkspaceInventoryGroup = (
+    workspace: WorkspaceInventoryItem,
+  ): WorkspaceConversationGroup | null => {
+    const runtimeTarget = workspace.runtimeTarget === 'local' ? 'local' : 'cloud';
+    const workspacePath =
+      runtimeTarget === 'local' && workspace.workingDirectory
+        ? workspace.workingDirectory
+        : null;
+    if (runtimeTarget === 'local' && !workspacePath) {
+      return null;
+    }
+    const partitionKey = buildWorkspacePartitionKey(runtimeTarget, workspacePath);
+    const label =
+      workspace.name.trim() ||
+      (workspacePath ? getWorkspaceLabel(workspacePath) : getDefaultWorkspaceLabel(runtimeTarget));
+    return {
+      partitionKey,
+      groupType: 'workspace',
+      workspacePath,
+      workspaceLabel: label,
+      runtimeTarget,
+      lastOpenedAt: 0,
+      activeConversationId: null,
+      pinnedConversationIds: [],
+      conversations: [],
+    };
+  };
+
+  /**
+   * 侧栏分组排序保持与本地快照一致，合并服务端库存后避免顺序抖动。
+   * @param left 左侧分组。
+   * @param right 右侧分组。
+   * @returns 排序比较结果。
+   */
+  const compareWorkspaceGroupsForSidebar = (
+    left: WorkspaceConversationGroup,
+    right: WorkspaceConversationGroup,
+  ) => {
+    const labelCompare = left.workspaceLabel.localeCompare(right.workspaceLabel, 'zh-Hans-CN');
+    if (labelCompare !== 0) {
+      return labelCompare;
+    }
+    return left.partitionKey.localeCompare(right.partitionKey, 'zh-Hans-CN');
+  };
+
+  /**
+   * 应用工作区库存请求结果；鉴权失败继续抛出，普通失败只清空库存补齐能力。
+   * @param result 工作区库存请求的 settled 结果。
+   */
+  const applyWorkspaceInventoryResult = (
+    result:
+      | { status: 'fulfilled'; value: WorkspaceInventoryItem[] }
+      | { status: 'rejected'; reason: unknown },
+  ) => {
+    if (result.status === 'fulfilled') {
+      workspaceInventoryRef.current = result.value;
+      setWorkspaceInventory(result.value);
+      return;
+    }
+    if (result.reason instanceof ChatApi.UnauthorizedError) {
+      throw result.reason;
+    }
+    // 工作区库存只补齐侧栏空分组，失败时保留本地快照分组，不阻断聊天首屏。
+    workspaceInventoryRef.current = [];
+    setWorkspaceInventory([]);
+  };
 
   /**
    * 恢复运行中会话时，后端会回放运行期缓冲；若本地快照已有部分正文，需要跳过已展示前缀。
@@ -1238,7 +1356,12 @@ export function useChatWorkspace(
       setWorkspaceGroups(decorateWorkspaceGroupsWithPagination(listWorkspaceGroups()));
       return;
     }
-    setWorkspaceGroups(decorateWorkspaceGroupsWithPagination(listWorkspaceGroups(activeRuntimeTarget)));
+    setWorkspaceGroups(
+      decorateWorkspaceGroupsWithPagination(
+        listWorkspaceGroups(activeRuntimeTarget),
+        activeRuntimeTarget,
+      ),
+    );
   };
 
   /**
@@ -1429,6 +1552,10 @@ export function useChatWorkspace(
     let didCompleteBootstrap = false;
     setIsBootstrapping(true);
     try {
+      const nextWorkspaceInventoryPromise = ChatApi.listWorkspaces(token).then(
+        (value) => ({ status: 'fulfilled' as const, value }),
+        (reason: unknown) => ({ status: 'rejected' as const, reason }),
+      );
       const preferredInitialConversationPartition = resolveInitialWorkspacePartition();
       if (
         preferredInitialConversationPartition &&
@@ -1445,6 +1572,7 @@ export function useChatWorkspace(
         );
         setActiveWorkspacePartitionKey(preferredInitialConversationPartition.partitionKey);
         setConversations(preferredInitialConversationPartition.snapshot.conversations);
+        applyWorkspaceInventoryResult(await nextWorkspaceInventoryPromise);
         refreshWorkspaceGroups('all');
         return;
       }
@@ -1499,6 +1627,7 @@ export function useChatWorkspace(
       }
 
       const nextConversations = await nextConversationsPromise;
+      applyWorkspaceInventoryResult(await nextWorkspaceInventoryPromise);
       refreshWorkspaceGroups('all');
       const shouldProtectActiveStream = hasActiveStreamPlayback();
       const preferredConversationId = didHydrateConversationFromSnapshot || shouldProtectActiveStream

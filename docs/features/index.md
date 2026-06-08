@@ -21,6 +21,7 @@
 - [助手消息过程时间线穿插展示](chat/interleaved-process-timeline.md)
 - [Redis 聊天队列门控](chat/redis-queue-gate.md)
 - [本地工作空间会话分区](chat/local-workspace-conversation-partition.md)
+- [用户侧工作区库存展示](chat/user-workspace-inventory.md)
 - [本地会话云端持久化](chat/cloud-persisted-local-chat.md)
 - [本地工具运行时](chat/local-tool-runtime.md)
 - [聊天代码差异审查](chat/code-diff-review.md)

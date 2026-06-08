@@ -146,6 +146,93 @@ describe('useChatWorkspace workspace switch', () => {
 
     expect(result.current.workspaceGroups.map((group) => group.workspaceLabel)).toContain('test');
   });
+
+  /**
+   * 后端工作区库存中的空本地目录也应进入侧栏，避免管理端可见但用户端不可见。
+   */
+  it('应展示服务端返回的空本地工作空间分组', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === '/api/chat/workspaces') {
+        return jsonResponse([
+          {
+            id: '3001',
+            name: 'CodingX',
+            runtimeTarget: 'local',
+            workingDirectory: 'D:/code/CodingX',
+            repositoryUrl: null,
+            branchName: null,
+          },
+        ]);
+      }
+      if (url.startsWith('/api/chat/conversations?workspaceId=3001')) {
+        return jsonResponse({
+          items: [],
+          hasMore: false,
+          nextCursor: null,
+        });
+      }
+      if (url.startsWith('/api/chat/conversations?pageSize=30')) {
+        return jsonResponse({
+          items: [],
+          hasMore: false,
+          nextCursor: null,
+        });
+      }
+      if (
+        url === '/api/chat/sample-questions' ||
+        url === '/api/chat/experts' ||
+        url === '/api/chat/skills' ||
+        url === '/api/chat/mcps'
+      ) {
+        return jsonResponse([]);
+      }
+      throw new Error(`Unhandled fetch in server workspace inventory test: ${url}`);
+    });
+
+    const hostContext = {
+      hostType: 'desktop',
+      executionTargets: ['local'] as const,
+      capabilities: {
+        localFiles: true,
+        localFolderPicker: true,
+        shell: true,
+        browserAutomation: false,
+        desktopNotifications: false,
+        officeInterop: false,
+        localMcp: true,
+        windowControls: true,
+      },
+      localResource: {
+        boundRepositoryPath: null,
+        workspaceId: null,
+        permissionGranted: true,
+      },
+    };
+
+    const { result } = renderHook(() =>
+      useChatWorkspace(true, {
+        hostContext,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(result.current.isBootstrapping).toBe(false);
+    });
+    await waitFor(() => {
+      expect(result.current.workspaceGroups.map((group) => group.workspaceLabel)).toContain('CodingX');
+    });
+
+    const codingxGroup = result.current.workspaceGroups.find(
+      (group) => group.workspaceLabel === 'CodingX',
+    );
+    expect(codingxGroup).toMatchObject({
+      partitionKey: 'local::d:/code/codingx',
+      workspacePath: 'D:/code/CodingX',
+      runtimeTarget: 'local',
+      conversations: [],
+    });
+  });
 });
 
 function jsonResponse(data: unknown) {

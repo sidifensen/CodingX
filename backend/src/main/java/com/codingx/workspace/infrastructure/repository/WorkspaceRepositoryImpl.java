@@ -161,6 +161,24 @@ public class WorkspaceRepositoryImpl implements WorkspaceRepository {
     }
 
     /**
+     * 查询当前用户拥有的全部有效工作空间，供用户侧侧栏展示空工作区分组。
+     * @param userId 当前用户标识。
+     * @return 当前用户未删除工作空间列表。
+     */
+    public List<WorkspaceDO> listActiveWorkspacesByUser(Long userId) {
+        if (userId == null) {
+            return List.of();
+        }
+        return workspaceMapper.selectList(new LambdaQueryWrapper<WorkspaceDO>()
+            .eq(WorkspaceDO::getCreatedBy, userId)
+            .eq(WorkspaceDO::getDeleted, 0)
+            .orderByAsc(WorkspaceDO::getRuntimeTarget)
+            .orderByAsc(WorkspaceDO::getName)
+            .orderByDesc(WorkspaceDO::getUpdatedAt)
+            .orderByDesc(WorkspaceDO::getId));
+    }
+
+    /**
      * 确保用户存在默认云端空间，供“未指定 workspaceId”的会话稳定归档。
      * @param userId 用户标识。
      * @param preferredName 候选展示名，可为空。

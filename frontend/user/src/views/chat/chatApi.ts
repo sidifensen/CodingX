@@ -25,6 +25,7 @@ import {
   SampleQuestionItem,
   ShareConversationOptions,
   SlashCommandItem,
+  WorkspaceInventoryItem,
 } from './types';
 
 /**
@@ -460,6 +461,16 @@ export class ChatApi {
   }
 
   /**
+   * 加载当前用户拥有的工作区库存，供侧栏补齐没有会话的空工作区分组。
+   * @param token 当前登录令牌。
+   * @returns 当前用户工作区列表。
+   */
+  static async listWorkspaces(token: string): Promise<WorkspaceInventoryItem[]> {
+    const envelope = await this.request<WorkspaceInventoryItem[]>('/api/chat/workspaces', token);
+    return (envelope.data ?? []).map((item) => this.normalizeWorkspace(item));
+  }
+
+  /**
    * 调用用户态聊天工具，供页面内轻量工具面板读取结构化结果。
    * @param token 当前登录令牌。
    * @param toolCode 工具编码。
@@ -725,6 +736,26 @@ export class ChatApi {
           : Boolean(item.taskCompletionRead),
       workspaceId: item.workspaceId == null ? null : String(item.workspaceId),
       workspaceType: item.workspaceType,
+    };
+  }
+
+  /**
+   * 统一归一化用户工作区库存，避免运行目标大小写和 Long 主键影响侧栏分组。
+   * @param item 后端返回的工作区项。
+   * @returns 前端可直接合并的工作区项。
+   */
+  private static normalizeWorkspace(item: WorkspaceInventoryItem): WorkspaceInventoryItem {
+    const runtimeTarget = String(item.runtimeTarget ?? '').trim().toLowerCase();
+    const workingDirectory = String(item.workingDirectory ?? '').trim();
+    const repositoryUrl = String(item.repositoryUrl ?? '').trim();
+    const branchName = String(item.branchName ?? '').trim();
+    return {
+      id: String(item.id ?? ''),
+      name: String(item.name ?? ''),
+      runtimeTarget: runtimeTarget === 'local' ? 'local' : 'cloud',
+      workingDirectory: workingDirectory.length === 0 ? null : workingDirectory,
+      repositoryUrl: repositoryUrl.length === 0 ? null : repositoryUrl,
+      branchName: branchName.length === 0 ? null : branchName,
     };
   }
 

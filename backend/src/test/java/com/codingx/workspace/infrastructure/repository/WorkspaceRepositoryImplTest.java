@@ -11,6 +11,10 @@ import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.MybatisConfiguration;
+import com.baomidou.mybatisplus.core.MybatisMapperBuilderAssistant;
+import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.codingx.common.error.ErrorMessageCatalog;
 import com.codingx.common.exception.NotFoundException;
 import com.codingx.chat.infrastructure.persistence.mapper.ChatConversationMapper;
@@ -20,7 +24,9 @@ import com.codingx.workspace.infrastructure.persistence.dataobject.WorkspaceDO;
 import com.codingx.workspace.infrastructure.persistence.mapper.WorkspaceMapper;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -33,6 +39,17 @@ import org.mockito.junit.jupiter.MockitoExtension;
  */
 @ExtendWith(MockitoExtension.class)
 class WorkspaceRepositoryImplTest {
+
+    /**
+     * 纯 Mockito 单测不会启动 MyBatis 容器，需要手动初始化表元数据才能检查 LambdaQueryWrapper 的列名条件。
+     */
+    @BeforeAll
+    static void initMybatisPlusTableInfo() {
+        TableInfoHelper.initTableInfo(
+            new MybatisMapperBuilderAssistant(new MybatisConfiguration(), ""),
+            WorkspaceDO.class
+        );
+    }
 
     @Mock
     private WorkspaceMapper workspaceMapper;
@@ -130,6 +147,46 @@ class WorkspaceRepositoryImplTest {
         assertEquals("D:/code/test", inserted.getWorkingDirectory());
         assertEquals(1001L, inserted.getCreatedBy());
         assertEquals(workspace.getId(), inserted.getId());
+    }
+
+    /**
+     * 用户侧工作区库存只应返回当前用户未删除的工作空间，供侧栏展示空工作区分组。
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void listActiveWorkspacesByUserReturnsOnlyCurrentUserActiveWorkspaces() {
+        WorkspaceDO localWorkspace = new WorkspaceDO();
+        localWorkspace.setId(3001L);
+        localWorkspace.setName("CodingX");
+        localWorkspace.setWorkingDirectory("D:/code/CodingX");
+        localWorkspace.setRuntimeTarget(WorkspaceRepositoryImpl.RUNTIME_TARGET_LOCAL);
+        localWorkspace.setCreatedBy(1001L);
+        localWorkspace.setDeleted(0);
+        WorkspaceDO cloudWorkspace = new WorkspaceDO();
+        cloudWorkspace.setId(3002L);
+        cloudWorkspace.setName("云端历史记录");
+        cloudWorkspace.setRuntimeTarget(WorkspaceRepositoryImpl.RUNTIME_TARGET_CLOUD);
+        cloudWorkspace.setCreatedBy(1001L);
+        cloudWorkspace.setDeleted(0);
+        when(workspaceMapper.selectList(any())).thenReturn(List.of(localWorkspace, cloudWorkspace));
+
+        List<WorkspaceDO> workspaces = workspaceRepository.listActiveWorkspacesByUser(1001L);
+
+        assertEquals(2, workspaces.size());
+        assertEquals(3001L, workspaces.get(0).getId());
+        assertEquals("CodingX", workspaces.get(0).getName());
+        assertEquals("D:/code/CodingX", workspaces.get(0).getWorkingDirectory());
+
+        // 关键断言：库存接口必须在仓储层带上当前用户和未删除过滤，避免用户端看到管理端全量工作区。
+        ArgumentCaptor<LambdaQueryWrapper<WorkspaceDO>> captor =
+            ArgumentCaptor.forClass((Class<LambdaQueryWrapper<WorkspaceDO>>) (Class<?>) LambdaQueryWrapper.class);
+        verify(workspaceMapper).selectList(captor.capture());
+        LambdaQueryWrapper<WorkspaceDO> wrapper = captor.getValue();
+        String sqlSegment = wrapper.getCustomSqlSegment().toLowerCase(Locale.ROOT);
+        assertTrue(sqlSegment.contains("created_by ="), sqlSegment);
+        assertTrue(sqlSegment.contains("deleted ="), sqlSegment);
+        assertTrue(wrapper.getParamNameValuePairs().containsValue(1001L));
+        assertTrue(wrapper.getParamNameValuePairs().containsValue(0));
     }
 
     /**

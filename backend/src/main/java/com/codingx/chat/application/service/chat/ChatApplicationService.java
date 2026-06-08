@@ -312,7 +312,11 @@ public class ChatApplicationService {
         boolean mcpEnabled = command.mcpCodes() != null && !command.mcpCodes().isEmpty();
         List<SubQuestionIntentDecision> subQuestionDecisions = normalizeSelectedSkillShortQuestionDecisions(
             suppressAutomaticSearchDecisions(
-                resolveSubQuestionDecisions(rewriteResult, mcpEnabled)
+                suppressCodeArtifactFollowUpSearchDecisions(
+                    resolveSubQuestionDecisions(rewriteResult, mcpEnabled),
+                    command.content(),
+                    history
+                )
             ),
             command.skillCodes()
         );
@@ -729,7 +733,11 @@ public class ChatApplicationService {
         boolean mcpEnabled = command.mcpCodes() != null && !command.mcpCodes().isEmpty();
         List<SubQuestionIntentDecision> subQuestionDecisions = normalizeSelectedSkillShortQuestionDecisions(
             suppressAutomaticSearchDecisions(
-                resolveSubQuestionDecisions(rewriteResult, mcpEnabled)
+                suppressCodeArtifactFollowUpSearchDecisions(
+                    resolveSubQuestionDecisions(rewriteResult, mcpEnabled),
+                    plainQuestion,
+                    history
+                )
             ),
             selectedSkillCodes
         );
@@ -3548,6 +3556,193 @@ public class ChatApplicationService {
             .map(SubQuestionIntentDecision::question)
             .filter(StrUtil::isNotBlank)
             .toList();
+    }
+
+    /**
+     * 代码产物续写短句容易被通用搜索意图误判；这里在执行搜索前做窄口径降级。
+     * 业务约束：只有当前问题是短编辑指令、没有显式搜索/时效诉求，且历史能证明存在代码或文件产物时才降级。
+     */
+    private List<SubQuestionIntentDecision> suppressCodeArtifactFollowUpSearchDecisions(
+        List<SubQuestionIntentDecision> decisions,
+        String originalQuestion,
+        List<ChatMessage> history
+    ) {
+        if (CollUtil.isEmpty(decisions)) {
+            return decisions;
+        }
+        boolean hasCodeArtifactContext = historyHasCodeArtifactSignal(history);
+        boolean explicitSearchIntent = hasExplicitSearchOrFreshnessIntent(originalQuestion);
+        if (!hasCodeArtifactContext || explicitSearchIntent) {
+            return decisions;
+        }
+        return decisions.stream()
+            .map(decision -> suppressCodeArtifactFollowUpSearchDecision(decision, originalQuestion))
+            .toList();
+    }
+
+    /**
+     * 单条子问题级降级，避免混合问题中的其他搜索或 MCP 子问题被误伤。
+     */
+    private SubQuestionIntentDecision suppressCodeArtifactFollowUpSearchDecision(
+        SubQuestionIntentDecision decision,
+        String originalQuestion
+    ) {
+        if (
+            decision.intentDecision().action() != ConversationIntentAction.SEARCH
+                || hasExplicitSearchOrFreshnessIntent(decision.question())
+                || !isCodeArtifactFollowUpQuestion(originalQuestion, decision.question())
+        ) {
+            return decision;
+        }
+        log.info(
+            "代码产物续写搜索降级: 原意图={}, 原问题={}, 子问题={}",
+            decision.intentDecision().intentCode(),
+            logPreview(originalQuestion),
+            logPreview(decision.question())
+        );
+        return new SubQuestionIntentDecision(
+            decision.question(),
+            new ConversationIntentDecision(
+                decision.intentDecision().intentCode(),
+                ConversationIntentAction.DIRECT,
+                null
+            )
+        );
+    }
+
+    /**
+     * 识别“丰富一下/继续优化/美化一下”等依赖上一轮产物的短编辑指令。
+     */
+    private boolean isCodeArtifactFollowUpQuestion(String originalQuestion, String routedQuestion) {
+        return isShortCodeArtifactEditQuestion(originalQuestion) || isShortCodeArtifactEditQuestion(routedQuestion);
+    }
+
+    /**
+     * 短句集合保持保守，避免把真实开放问题误降级为普通直答。
+     */
+    private boolean isShortCodeArtifactEditQuestion(String question) {
+        String normalizedQuestion = normalizeCompactText(question);
+        if (StrUtil.isBlank(normalizedQuestion)) {
+            return false;
+        }
+        if (StrUtil.equalsAny(
+            normalizedQuestion,
+            "丰富一下",
+            "丰富下",
+            "再丰富一下",
+            "继续丰富",
+            "完善一下",
+            "完善下",
+            "继续完善",
+            "优化一下",
+            "优化下",
+            "继续优化",
+            "扩展一下",
+            "扩展下",
+            "增强一下",
+            "增强下",
+            "美化一下",
+            "美化下",
+            "改好看点",
+            "加点内容",
+            "多加点内容",
+            "继续",
+            "接着来",
+            "接着写",
+            "继续写"
+        )) {
+            return true;
+        }
+        // 兼容模型把“丰富一下”改写成“丰富页面/优化页面”等短表达，超过长度阈值交回正常意图链路。
+        return normalizedQuestion.length() <= 12
+            && (
+                StrUtil.startWithAny(normalizedQuestion, "丰富", "完善", "优化", "扩展", "增强", "美化")
+                    || StrUtil.endWithAny(normalizedQuestion, "好看点", "丰富点", "完善点", "优化点")
+            );
+    }
+
+    /**
+     * 当前问题显式要求检索或时效信息时，必须保留搜索链路。
+     */
+    private boolean hasExplicitSearchOrFreshnessIntent(String question) {
+        String normalizedQuestion = normalizeCompactText(question);
+        if (StrUtil.isBlank(normalizedQuestion)) {
+            return false;
+        }
+        return StrUtil.containsAny(
+            normalizedQuestion,
+            "搜索",
+            "搜一下",
+            "帮我搜",
+            "查询",
+            "查一下",
+            "帮我查",
+            "最新",
+            "今天",
+            "当前",
+            "现在",
+            "联网",
+            "网页",
+            "新闻",
+            "资料",
+            "版本"
+        );
+    }
+
+    /**
+     * 历史中出现代码块、HTML 文件、补丁或本地工具产物时，说明短句更可能是在续写上一轮代码成果。
+     */
+    private boolean historyHasCodeArtifactSignal(List<ChatMessage> history) {
+        if (CollUtil.isEmpty(history)) {
+            return false;
+        }
+        return history.stream()
+            // 只把助手或系统消息视为已产生的代码产物证据，避免用户上一轮提到“代码”就误触发续写保护。
+            .filter(message -> message.getRole() != ChatMessageRole.USER)
+            .map(ChatMessage::getContent)
+            .filter(StrUtil::isNotBlank)
+            .anyMatch(this::hasCodeArtifactSignal);
+    }
+
+    /**
+     * 识别代码产物信号；使用关键词而不读取文件系统，避免聊天路由阶段产生额外 IO。
+     */
+    private boolean hasCodeArtifactSignal(String content) {
+        String lowerContent = StrUtil.blankToDefault(content, "").toLowerCase(java.util.Locale.ROOT);
+        String compactContent = normalizeCompactText(content);
+        return StrUtil.containsAny(
+            lowerContent,
+            "```html",
+            "```css",
+            "```javascript",
+            "```typescript",
+            "index.html",
+            ".html",
+            ".css",
+            ".js",
+            "apply_patch",
+            "shell_command"
+        ) || StrUtil.containsAny(
+            compactContent,
+            "文件已写入",
+            "文件已更新",
+            "文件已创建",
+            "已写入",
+            "已更新",
+            "已创建",
+            "html页面",
+            "代码",
+            "补丁"
+        );
+    }
+
+    /**
+     * 压缩标点、空白和中文符号，统一短句判断入口。
+     */
+    private String normalizeCompactText(String value) {
+        return StrUtil.blankToDefault(value, "")
+            .replaceAll("[\\p{Punct}\\s，。？！、：；“”‘’（）【】《》]+", "")
+            .toLowerCase(java.util.Locale.ROOT);
     }
 
     /**

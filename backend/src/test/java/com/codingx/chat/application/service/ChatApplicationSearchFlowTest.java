@@ -14,6 +14,8 @@ import com.codingx.chat.domain.model.ChatConversationStatus;
 import com.codingx.chat.domain.model.ChatExecutionStep;
 import com.codingx.chat.domain.model.ChatIntentNode;
 import com.codingx.chat.domain.model.ChatMessage;
+import com.codingx.chat.domain.model.ChatMessageRole;
+import com.codingx.chat.domain.model.ChatMessageStatus;
 import com.codingx.chat.domain.repository.ChatConversationRepository;
 import com.codingx.chat.domain.repository.ChatExecutionRunRepository;
 import com.codingx.chat.domain.repository.ChatExecutionStepRepository;
@@ -294,6 +296,53 @@ class ChatApplicationSearchFlowTest {
         Mockito.verify(searchReferenceCollector, Mockito.never()).collect(any(), any(), any(), any());
         Mockito.verify(documentArtifactService, Mockito.never()).createDocxArtifact(any(), any(), any(), any());
         verify(chatStreamPublisher).publishAssistantCompleted(eq(1L), any(Long.class), eq("普通回答"), eq("SSE搜索"));
+        ChatExecutionContext.clear();
+    }
+
+    /**
+     * 代码生成后的续写短句即使被意图模型误判为搜索，也应继续走普通模型续写。
+     */
+    @Test
+    void sendMessageDoesNotInvokeSearchForCodeArtifactFollowUpShortEdit() {
+        Long runId = 9201006L;
+        ChatExecutionContext.start(runId);
+        ChatConversation conversation = ChatConversation.create(1L, "HTML 页面", 1002L, ChatConversationStatus.ACTIVE);
+        when(chatConversationRepository.requireById(1L)).thenReturn(conversation);
+        when(chatMessageRepository.findByConversationId(1L)).thenReturn(new ArrayList<>(List.of(
+            ChatMessage.create(11L, 1L, ChatMessageRole.USER, "写个好看的html", ChatMessageStatus.COMPLETED, null, null, null),
+            ChatMessage.create(12L, 1L, ChatMessageRole.ASSISTANT, "文件已写入：D:/code/test/index.html", ChatMessageStatus.COMPLETED, null, null, null)
+        )));
+        when(chatAttachmentService.requireOwnedAttachments(any(), eq(1L), eq(1002L))).thenReturn(List.of());
+        when(conversationRewriteService.rewriteResult(any(), eq("丰富一下"))).thenReturn(
+            new ConversationRewriteResult("丰富一下", false, List.of("丰富一下"))
+        );
+        when(conversationSummaryService.buildModelHistory(any(), any())).thenAnswer(invocation -> invocation.getArgument(1));
+        Mockito.lenient().when(runtimeSettingService.webSearchEnabled()).thenReturn(true);
+        Mockito.lenient().when(runtimeSettingService.searchMaxParallelQuestions()).thenReturn(3);
+        when(conversationIntentService.route("丰富一下", false)).thenReturn(
+            new ConversationIntentDecision("search-general", ConversationIntentAction.SEARCH, null)
+        );
+        when(chatExpertContextService.buildExpertContext(any())).thenReturn("");
+        when(chatSkillContextService.buildSkillContext(any())).thenReturn("");
+        when(chatIntentNodeRepository.findByIntentCode("search-general")).thenReturn(null);
+        Mockito.lenient().when(webSearchExecutionService.search("丰富一下")).thenReturn(List.of(
+            new SearchReferenceCandidate("网页搜索误触发", "https://example.com/html", "Example", "snippet")
+        ));
+        when(llmResponseCleaner.clean(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(conversationTitleService.generateTitle(any(), any())).thenReturn("HTML 页面优化");
+        org.mockito.Mockito.doAnswer(invocation -> {
+            AiChatClient.StreamHandler handler = invocation.getArgument(2);
+            handler.onDelta("已继续丰富页面。");
+            handler.onComplete();
+            return null;
+        }).when(aiChatClient).streamChat(any(), org.mockito.ArgumentMatchers.anyBoolean(), any());
+
+        chatApplicationService.sendMessage(new SendChatMessageCommand(1L, "丰富一下", false), 1002L);
+
+        Mockito.verify(webSearchExecutionService, Mockito.never()).search(any());
+        Mockito.verify(searchReferenceCollector, Mockito.never()).collect(any(), any(), any(), any());
+        Mockito.verify(documentArtifactService, Mockito.never()).createDocxArtifact(any(), any(), any(), any());
+        verify(chatStreamPublisher).publishAssistantCompleted(eq(1L), any(Long.class), eq("已继续丰富页面。"), eq("HTML 页面优化"));
         ChatExecutionContext.clear();
     }
 

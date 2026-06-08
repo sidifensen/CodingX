@@ -1,6 +1,7 @@
 package com.codingx.chat.application.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -45,6 +46,10 @@ import com.codingx.tool.application.service.ChatToolExecutionService;
 import com.codingx.tool.application.service.ChatToolExecutionResult;
 import com.codingx.tool.application.service.ChatToolSpecService;
 import com.codingx.tool.application.service.ChatToolSpec;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -522,9 +527,11 @@ class ChatApplicationServiceTest {
     void planModeShouldInjectDesktopGoalToolGuidance() {
         bindRunContext();
         ChatConversation conversation = ChatConversation.create(1L, "Goal", 1002L, 3001L, ChatConversationStatus.ACTIVE);
+        String planModePrompt = new PromptTemplateLoader(Path.of("src/main/resources/prompt")).load("plan-mode-goal-context");
         when(chatConversationRepository.requireById(1L)).thenReturn(conversation);
         when(chatMessageRepository.findByConversationId(1L)).thenReturn(new ArrayList<>());
         when(chatAttachmentService.requireOwnedAttachments(any(), eq(1L), eq(1002L))).thenReturn(List.of());
+        when(promptTemplateLoader.load("plan-mode-goal-context")).thenReturn(planModePrompt);
         when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
             new ConversationRewriteResult("请创建目标并跟进桌面目标模式改造", false, List.of("请创建目标并跟进桌面目标模式改造"))
         );
@@ -573,7 +580,28 @@ class ChatApplicationServiceTest {
         );
 
         verify(chatStreamPublisher).publishAssistantCompleted(eq(1L), any(Long.class), eq("已进入目标模式"), eq("目标模式"));
+        verify(promptTemplateLoader).load("plan-mode-goal-context");
         ChatExecutionContext.clear();
+    }
+
+    /**
+     * 目标模式提示词属于可维护 Prompt 资产，必须放在 resources/prompt 下，避免业务提示散落在编排代码里。
+     */
+    @Test
+    void planModePromptShouldBeStoredAsPromptResource() throws IOException {
+        // 步骤 1：先检查资源文件本身存在，确保运维或产品同学可以独立维护目标模式提示词。
+        Path promptResource = Path.of("src/main/resources/prompt/plan-mode-goal-context.st");
+        assertTrue(Files.exists(promptResource));
+        String promptContent = new PromptTemplateLoader(promptResource.getParent()).load("plan-mode-goal-context");
+        assertTrue(promptContent.contains("# 规划/目标模式"));
+        assertTrue(promptContent.contains("create_goal"));
+
+        // 步骤 2：再约束应用服务只负责加载资源，不继续内联保存整段中文提示词。
+        String serviceSource = Files.readString(
+            Path.of("src/main/java/com/codingx/chat/application/service/chat/ChatApplicationService.java"),
+            StandardCharsets.UTF_8
+        );
+        assertFalse(serviceSource.contains("当前请求来自 CLI 或桌面端的规划/目标模式。请先判断用户"));
     }
 
     /**

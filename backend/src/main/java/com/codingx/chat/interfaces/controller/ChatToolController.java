@@ -35,7 +35,13 @@ public class ChatToolController {
     ) {
         String question = request == null ? null : request.question();
         boolean confirmHighRisk = request != null && Boolean.TRUE.equals(request.confirmHighRisk());
-        ChatToolExecutionResult result = chatToolUserService.invokeForCurrentUser(toolCode, question, confirmHighRisk);
+        ChatToolExecutionResult result = chatToolUserService.invokeForCurrentUser(
+            toolCode,
+            question,
+            confirmHighRisk,
+            request == null ? null : request.workspaceId(),
+            request == null ? null : request.repositoryPath()
+        );
         return ApiResponse.success(result);
     }
 }

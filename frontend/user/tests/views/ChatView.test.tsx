@@ -1054,6 +1054,15 @@ describe('ChatView', () => {
         }),
       );
     });
+    const workspaceDiffRequest = fetchSpy.mock.calls.find(
+      ([url]) => url === '/api/chat/tools/git_diff/invoke',
+    )?.[1] as RequestInit | undefined;
+    const workspaceDiffBody = JSON.parse(String(workspaceDiffRequest?.body ?? '{}')) as {
+      workspaceId?: string;
+      repositoryPath?: string;
+    };
+    expect(workspaceDiffBody.workspaceId).toBe('3001');
+    expect(workspaceDiffBody.repositoryPath).toBe('D:/code/CodingX');
     expect(await screen.findByText('src/workspace.ts')).toBeInTheDocument();
     expect(sidebar).toHaveTextContent(
       '+export const workspace = "local";',

@@ -131,6 +131,11 @@ public class ChatWorkspaceBindingService {
         }
     }
 
+    /**
+     * 将治理侧项目画像转换为聊天页轻量视图；画像缺失时返回 null，由前端按无画像状态展示。
+     * @param profile 治理侧项目画像。
+     * @return 聊天页项目画像视图。
+     */
     private ProjectProfileView toProjectProfileView(GovernanceProjectProfile profile) {
         if (profile == null) {
             return null;
@@ -156,6 +161,31 @@ public class ChatWorkspaceBindingService {
         }
         WorkspaceDO workspace = workspaceMapper.selectOne(new LambdaQueryWrapper<WorkspaceDO>()
             .eq(WorkspaceDO::getId, workspaceId)
+            .eq(WorkspaceDO::getDeleted, 0)
+            .last("LIMIT 1"));
+        if (workspace == null || StrUtil.isBlank(workspace.getWorkingDirectory())) {
+            return Optional.empty();
+        }
+        Path path = Path.of(workspace.getWorkingDirectory()).toAbsolutePath().normalize();
+        if (!Files.exists(path) || !Files.isDirectory(path)) {
+            return Optional.empty();
+        }
+        return Optional.of(path);
+    }
+
+    /**
+     * 按当前用户拥有的工作空间查询本地目录，供用户态工具显式读取当前会话工作区。
+     * @param workspaceId 工作空间标识。
+     * @param userId 当前用户标识。
+     * @return 当前用户可访问的目录路径。
+     */
+    public Optional<Path> findRepositoryPathByWorkspaceId(Long workspaceId, Long userId) {
+        if (workspaceId == null || userId == null) {
+            return Optional.empty();
+        }
+        WorkspaceDO workspace = workspaceMapper.selectOne(new LambdaQueryWrapper<WorkspaceDO>()
+            .eq(WorkspaceDO::getId, workspaceId)
+            .eq(WorkspaceDO::getCreatedBy, userId)
             .eq(WorkspaceDO::getDeleted, 0)
             .last("LIMIT 1"));
         if (workspace == null || StrUtil.isBlank(workspace.getWorkingDirectory())) {

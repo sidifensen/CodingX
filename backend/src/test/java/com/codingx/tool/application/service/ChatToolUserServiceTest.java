@@ -132,4 +132,53 @@ class ChatToolUserServiceTest {
         verify(chatWorkspaceBindingService).findRepositoryPathByUserId(1001L);
         verify(chatToolExecutionService).execute("git_diff", question);
     }
+
+    /**
+     * 右侧栏传入当前会话 workspaceId 时应优先使用该工作空间目录，避免多工作区切换后读到用户级旧绑定。
+     */
+    @Test
+    void invokeForCurrentUserShouldPreferExplicitWorkspacePathForExecution() {
+        String question = "{\"mode\":\"unstaged\"}";
+        Path repositoryPath = Path.of("D:/code/CodingX");
+        when(chatToolRepository.findByToolCode("git_diff")).thenReturn(
+            ChatTool.builder()
+                .id(9135L)
+                .toolCode("git_diff")
+                .displayName("Git 差异读取")
+                .enabled(1)
+                .build()
+        );
+        when(chatWorkspaceBindingService.findRepositoryPathByWorkspaceId(3001L, 1001L)).thenReturn(Optional.of(repositoryPath));
+        when(chatToolExecutionService.execute(eq("git_diff"), eq(question))).thenAnswer(invocation -> {
+            // 步骤：显式 workspaceId 命中时必须先绑定会话当前目录，而不是回退用户最近绑定目录。
+            assertEquals(
+                repositoryPath.toAbsolutePath().normalize(),
+                ChatToolExecutionContext.currentToolWorkingDirectory().orElseThrow()
+            );
+            return new ChatToolExecutionResult(
+                "git_diff",
+                "已读取 1 个文件差异",
+                Map.of("workingDirectory", repositoryPath.toString())
+            );
+        });
+
+        try (MockedStatic<StpUtil> mockedStpUtil = mockStatic(StpUtil.class)) {
+            mockedStpUtil.when(StpUtil::checkLogin).thenAnswer(invocation -> null);
+            mockedStpUtil.when(StpUtil::getLoginIdAsLong).thenReturn(1001L);
+
+            ChatToolExecutionResult result = chatToolUserService.invokeForCurrentUser(
+                "git_diff",
+                question,
+                false,
+                3001L,
+                null
+            );
+
+            assertEquals("git_diff", result.toolCode());
+            assertEquals(Optional.empty(), ChatToolExecutionContext.currentToolWorkingDirectory());
+        }
+
+        verify(chatWorkspaceBindingService).findRepositoryPathByWorkspaceId(3001L, 1001L);
+        verify(chatToolExecutionService).execute("git_diff", question);
+    }
 }

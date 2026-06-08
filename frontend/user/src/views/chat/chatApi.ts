@@ -424,12 +424,17 @@ export class ChatApi {
    * @param token 当前登录令牌。
    * @param toolCode 工具编码。
    * @param payload 工具输入对象，会序列化到 question 字段。
+   * @param options 页面当前工作区上下文，可为空；侧栏读取 git diff 时用于后端定位当前仓库。
    * @returns 工具执行结果。
    */
   static async invokeTool(
     token: string,
     toolCode: string,
     payload: Record<string, unknown>,
+    options?: {
+      workspaceId?: string | null;
+      repositoryPath?: string | null;
+    },
   ): Promise<{
     toolCode: string;
     content: string;
@@ -447,6 +452,8 @@ export class ChatApi {
         body: JSON.stringify({
           question: JSON.stringify(payload),
           confirmHighRisk: false,
+          workspaceId: normalizeOptionalString(options?.workspaceId),
+          repositoryPath: normalizeOptionalString(options?.repositoryPath),
         }),
       },
     );
@@ -733,6 +740,16 @@ export class ChatApi {
     ApiResponseParser.assertSuccess(response, envelope, UserErrorMessages.CHAT_REQUEST_FAILED);
     return envelope;
   }
+}
+
+/**
+ * 归一化可选字符串字段；空白值视为未传，避免后端把空路径当作显式上下文。
+ * @param value 原始可选字段。
+ * @returns 去空白后的字符串，或 undefined。
+ */
+function normalizeOptionalString(value: string | null | undefined) {
+  const normalizedValue = value == null ? '' : String(value).trim();
+  return normalizedValue.length > 0 ? normalizedValue : undefined;
 }
 
 /**

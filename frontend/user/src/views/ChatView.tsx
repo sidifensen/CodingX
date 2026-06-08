@@ -96,6 +96,7 @@ export default function ChatView({
     activeConversationId,
     workspaceLabel,
     workspacePath,
+    workspaceId,
     projectProfile,
     activeMemoryCount,
     longTermMemories,
@@ -2242,6 +2243,8 @@ export default function ChatView({
         <CodeReviewSidebar
           messages={messages}
           width={codeReviewSidebarWidth}
+          workspaceId={workspaceId}
+          repositoryPath={activeRuntimeTarget === 'local' ? workspacePath : null}
           onClose={() => setIsCodeReviewSidebarOpen(false)}
           onResize={setCodeReviewSidebarWidth}
         />
@@ -2514,11 +2517,15 @@ const GIT_DIFF_REVIEW_MODES = new Set<CodeReviewMode>(['unstaged', 'staged', 'co
 function CodeReviewSidebar({
   messages,
   width,
+  workspaceId,
+  repositoryPath,
   onClose,
   onResize,
 }: {
   messages: ChatMessageItem[];
   width: number;
+  workspaceId: string | null;
+  repositoryPath: string | null;
   onClose: () => void;
   onResize: (nextWidth: number) => void;
 }) {
@@ -2601,6 +2608,9 @@ function CodeReviewSidebar({
       try {
         const result = await ChatApi.invokeTool(session.token, 'git_diff', {
           mode: activeMode,
+        }, {
+          workspaceId,
+          repositoryPath,
         });
         if (cancelled) {
           return;
@@ -2625,7 +2635,7 @@ function CodeReviewSidebar({
     return () => {
       cancelled = true;
     };
-  }, [activeMode, isWorkspaceMode]);
+  }, [activeMode, isWorkspaceMode, repositoryPath, workspaceId]);
 
   return (
     <aside

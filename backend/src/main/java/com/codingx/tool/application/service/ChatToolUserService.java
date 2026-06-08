@@ -98,6 +98,25 @@ public class ChatToolUserService {
      * @return 执行结果。
      */
     public ChatToolExecutionResult invokeForCurrentUser(String toolCode, String question, boolean confirmHighRisk) {
+        return invokeForCurrentUser(toolCode, question, confirmHighRisk, null, null);
+    }
+
+    /**
+     * 调用当前登录用户允许访问的工具，并允许页面显式指定当前会话工作区。
+     * @param toolCode 工具编码。
+     * @param question 调用载荷。
+     * @param confirmHighRisk 是否已确认高风险调用。
+     * @param workspaceId 当前会话工作空间标识，可为空。
+     * @param repositoryPath 当前前端分区目录，仅用于用户级绑定兜底匹配。
+     * @return 执行结果。
+     */
+    public ChatToolExecutionResult invokeForCurrentUser(
+        String toolCode,
+        String question,
+        boolean confirmHighRisk,
+        Long workspaceId,
+        String repositoryPath
+    ) {
         // 步骤 1：用户态工具调用必须先确认登录态，后续权限判断都基于当前登录用户。
         StpUtil.checkLogin();
         Long userId = StpUtil.getLoginIdAsLong();
@@ -107,7 +126,7 @@ public class ChatToolUserService {
         ensureToolEnabled(normalizedToolCode);
         ensureHighRiskConfirmed(normalizedToolCode, question, confirmHighRisk);
         // 步骤 3：侧栏等用户态工具入口没有聊天流的执行上下文，需要临时绑定当前用户的本地仓库目录。
-        return executeWithCurrentUserWorkspace(userId, normalizedToolCode, question);
+        return executeWithCurrentUserWorkspace(userId, normalizedToolCode, question, workspaceId, repositoryPath);
     }
 
     /**
@@ -115,13 +134,24 @@ public class ChatToolUserService {
      * @param userId 当前登录用户 ID。
      * @param normalizedToolCode 规范化工具编码。
      * @param question 调用载荷。
+     * @param workspaceId 当前会话工作空间标识，可为空；存在时优先按持久化工作空间定位目录。
+     * @param repositoryPath 当前页面本地目录，可为空；仅在用户级绑定一致时作为兜底。
      * @return 工具执行结果。
      */
-    private ChatToolExecutionResult executeWithCurrentUserWorkspace(Long userId, String normalizedToolCode, String question) {
+    private ChatToolExecutionResult executeWithCurrentUserWorkspace(
+        Long userId,
+        String normalizedToolCode,
+        String question,
+        Long workspaceId,
+        String repositoryPath
+    ) {
         Optional<Path> previousWorkingDirectory = ChatToolExecutionContext.currentToolWorkingDirectory();
-        Optional<Path> boundRepositoryPath = chatWorkspaceBindingService.findRepositoryPathByUserId(userId);
+        Optional<Path> explicitWorkspacePath = findExplicitWorkspacePath(userId, workspaceId);
+        Optional<Path> boundRepositoryPath = explicitWorkspacePath.isPresent()
+            ? explicitWorkspacePath
+            : findMatchingUserRepositoryPath(userId, repositoryPath);
         try {
-            // 步骤 1：有桌面端绑定目录时优先使用该目录，确保 git_diff/read/write 都作用于用户选中的工作区。
+            // 步骤 1：优先使用当前会话 workspaceId 对应目录，再回退用户最近绑定目录，确保 git_diff 读当前项目。
             boundRepositoryPath.ifPresent(ChatToolExecutionContext::bindToolWorkingDirectory);
             // 步骤 2：校验通过后只传递规范化编码给执行层，避免大小写差异导致注册表找不到执行器。
             return chatToolExecutionService.execute(normalizedToolCode, question);
@@ -133,6 +163,38 @@ public class ChatToolUserService {
                 ChatToolExecutionContext.bindToolWorkingDirectory(null);
             }
         }
+    }
+
+    /**
+     * 查询当前用户拥有的显式工作空间目录，避免侧栏多工作区切换后读到旧绑定。
+     */
+    private Optional<Path> findExplicitWorkspacePath(Long userId, Long workspaceId) {
+        if (workspaceId == null) {
+            return Optional.empty();
+        }
+        Optional<Path> workspacePath = chatWorkspaceBindingService.findRepositoryPathByWorkspaceId(workspaceId, userId);
+        return workspacePath == null ? Optional.empty() : workspacePath;
+    }
+
+    /**
+     * 读取用户级目录绑定；当前端传入路径时只接受与用户绑定一致的目录，避免任意路径直接进入工具上下文。
+     */
+    private Optional<Path> findMatchingUserRepositoryPath(Long userId, String repositoryPath) {
+        Optional<Path> boundRepositoryPath = chatWorkspaceBindingService.findRepositoryPathByUserId(userId);
+        if (boundRepositoryPath == null) {
+            boundRepositoryPath = Optional.empty();
+        }
+        if (boundRepositoryPath.isEmpty() || StrUtil.isBlank(repositoryPath)) {
+            return boundRepositoryPath;
+        }
+        Path requestedPath;
+        try {
+            requestedPath = Path.of(repositoryPath).toAbsolutePath().normalize();
+        } catch (RuntimeException ignored) {
+            return Optional.empty();
+        }
+        Path boundPath = boundRepositoryPath.get().toAbsolutePath().normalize();
+        return boundPath.equals(requestedPath) ? boundRepositoryPath : Optional.empty();
     }
 
     /**

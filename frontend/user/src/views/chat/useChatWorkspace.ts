@@ -5956,6 +5956,9 @@ function upsertProcessCard(cards: ProcessCardItem[], nextCard: ProcessCardItem):
       ? {
           ...card,
           ...nextCard,
+          // 后续 progress 事件可能只更新文案，不携带文件差异；必须保留上一帧已生成的 pending/real diff。
+          fileDiffs: nextCard.fileDiffs ?? card.fileDiffs,
+          diffSummary: nextCard.diffSummary ?? card.diffSummary,
         }
       : card,
   );

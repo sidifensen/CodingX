@@ -151,6 +151,43 @@ class OpenAiStyleStreamParserTest {
     }
 
     /**
+     * 大段 write 参数会按 tool_calls 分片返回；解析器必须在最终 tool_call 前派发参数进度，供前端实时展示正在编辑的文件。
+     */
+    @Test
+    void parseDispatchesToolCallArgumentProgressBeforeFinalToolCall() {
+        String rawStream = """
+            data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"id\":\"call-write-1\",\"type\":\"function\",\"function\":{\"name\":\"write\",\"arguments\":\"{\\\"path\\\":\\\"rogue_snake.html\\\",\\\"content\\\":\\\"<!DOCTYPE html>\"}}]}}]}
+            data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"\\\\n<html>\"}}]}}]}
+            data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"</html>\\\"}\"}}]}}]}
+            data: [DONE]
+            """;
+        OpenAiStyleStreamParser parser = new OpenAiStyleStreamParser();
+        List<String> events = new ArrayList<>();
+
+        parser.parse(rawStream, new OpenAiStyleStreamParser.StreamConsumer() {
+            @Override
+            public void onToolCallDelta(AiToolCallDelta toolCallDelta) {
+                events.add("progress:" + toolCallDelta.toolCode() + ":" + toolCallDelta.accumulatedArguments());
+            }
+
+            @Override
+            public void onToolCall(AiToolCall toolCall) {
+                events.add("complete:" + toolCall.toolCode() + ":" + toolCall.arguments());
+            }
+        });
+
+        assertEquals(4, events.size());
+        assertTrue(events.get(0).startsWith("progress:write:"));
+        assertTrue(events.get(0).contains("rogue_snake.html"));
+        assertTrue(events.get(1).contains("<html>"));
+        assertTrue(events.get(2).contains("</html>"));
+        assertEquals(
+            "complete:write:{\"path\":\"rogue_snake.html\",\"content\":\"<!DOCTYPE html>\\n<html></html>\"}",
+            events.get(3)
+        );
+    }
+
+    /**
      * 同一个解析器 Bean 会被多个 provider 流共享，工具参数累积必须按流隔离，不能串到另一个请求。
      */
     @Test

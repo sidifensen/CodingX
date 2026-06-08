@@ -68,6 +68,14 @@ public class FirstTokenBufferingHandler implements AiStreamHandler {
     }
 
     @Override
+    public void onToolCallDelta(AiToolCallDelta toolCallDelta) {
+        // 步骤 1：工具参数进度说明 provider 已开始返回有效工具输出，可结束首包等待。
+        awaiter.markContent();
+        // 步骤 2：首包确认前只缓冲参数进度，避免失败候选提前污染最终 UI。
+        bufferOrDispatch(BufferedEvent.toolCallDelta(toolCallDelta));
+    }
+
+    @Override
     public void onComplete() {
         // 步骤 1：无内容完成会唤醒路由层，由路由层判定是否 fallback。
         awaiter.markComplete();
@@ -137,6 +145,7 @@ public class FirstTokenBufferingHandler implements AiStreamHandler {
             case THINKING -> delegate.onThinkingDelta(event.delta());
             case CONTENT -> delegate.onContentDelta(event.delta());
             case TOOL_CALL -> delegate.onToolCall(event.toolCall());
+            case TOOL_CALL_DELTA -> delegate.onToolCallDelta(event.toolCallDelta());
             case COMPLETE -> delegate.onComplete();
             case ERROR -> delegate.onError(event.error());
         }
@@ -153,32 +162,38 @@ public class FirstTokenBufferingHandler implements AiStreamHandler {
         Type type, // 事件类型，决定提交后回放到下游的回调方法。
         String delta, // thinking 或正文增量内容，非文本事件为空。
         AiToolCall toolCall, // 工具调用事件载荷，非工具调用事件为空。
+        AiToolCallDelta toolCallDelta, // 工具参数进度载荷，非参数进度事件为空。
         Throwable error // 错误事件载荷，非错误事件为空。
     ) {
 
         private static BufferedEvent thinking(String delta) {
             // thinking 与 content 都属于可见内容，但需要保留独立事件类型。
-            return new BufferedEvent(Type.THINKING, delta, null, null);
+            return new BufferedEvent(Type.THINKING, delta, null, null, null);
         }
 
         private static BufferedEvent content(String delta) {
             // 正文增量只携带 delta，不携带工具调用或错误对象。
-            return new BufferedEvent(Type.CONTENT, delta, null, null);
+            return new BufferedEvent(Type.CONTENT, delta, null, null, null);
         }
 
         private static BufferedEvent toolCall(AiToolCall toolCall) {
             // 工具调用必须整体缓冲，避免首包失败候选提前触发工具执行。
-            return new BufferedEvent(Type.TOOL_CALL, null, toolCall, null);
+            return new BufferedEvent(Type.TOOL_CALL, null, toolCall, null, null);
+        }
+
+        private static BufferedEvent toolCallDelta(AiToolCallDelta toolCallDelta) {
+            // 工具参数进度也必须缓冲到首包确认后，保持 fallback 语义一致。
+            return new BufferedEvent(Type.TOOL_CALL_DELTA, null, null, toolCallDelta, null);
         }
 
         private static BufferedEvent complete() {
             // 完成事件不携带额外载荷，只表达 provider 流已经结束。
-            return new BufferedEvent(Type.COMPLETE, null, null, null);
+            return new BufferedEvent(Type.COMPLETE, null, null, null, null);
         }
 
         private static BufferedEvent error(Throwable error) {
             // 错误事件保留原始异常，便于路由层和下游日志读取根因。
-            return new BufferedEvent(Type.ERROR, null, null, error);
+            return new BufferedEvent(Type.ERROR, null, null, null, error);
         }
     }
 
@@ -189,6 +204,7 @@ public class FirstTokenBufferingHandler implements AiStreamHandler {
         THINKING,
         CONTENT,
         TOOL_CALL,
+        TOOL_CALL_DELTA,
         COMPLETE,
         ERROR
     }

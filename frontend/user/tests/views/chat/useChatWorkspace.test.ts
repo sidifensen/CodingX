@@ -6878,6 +6878,164 @@ describe('useChatWorkspace', () => {
   });
 
   /**
+   * write 工具参数仍在流式生成时，progress 事件应持续刷新 pending diff，避免长 HTML 写入阶段主消息区空白。
+   */
+  it('updates pending file diffs from local write progress events', async () => {
+    window.localStorage.setItem(
+      'codingx.auth.session',
+      JSON.stringify({
+        token: 'token-123',
+        userId: '1002',
+        username: 'user',
+        displayName: 'CodingX User',
+        userType: 'USER',
+      }),
+    );
+
+    const readQueue: Array<{
+      resolve: (value: ReadableStreamReadResult<Uint8Array>) => void;
+      reject: (reason?: unknown) => void;
+    }> = [];
+    const metaEvent = new TextEncoder().encode('event:meta\ndata:{"conversationId":"2001"}\n\n');
+    const firstProgressEvent = new TextEncoder().encode(
+      'event:tool-call\ndata:{"callId":"write-progress-1","phase":"progress","toolId":"write","displayName":"写文件","params":{"path":"rogue_snake.html","content":"<!DOCTYPE html>\\n<html"},"reactAction":"正在编辑 rogue_snake.html","progressText":"正在生成 rogue_snake.html，已接收 27 个字符"}\n\n',
+    );
+    const secondProgressEvent = new TextEncoder().encode(
+      'event:tool-call\ndata:{"callId":"write-progress-1","phase":"progress","toolId":"write","displayName":"写文件","params":{"path":"rogue_snake.html","content":"<!DOCTYPE html>\\n<html>\\n<body>Rogue Snake</body>"},"reactAction":"正在编辑 rogue_snake.html","progressText":"正在生成 rogue_snake.html，已接收 52 个字符"}\n\n',
+    );
+    const finishEvent = new TextEncoder().encode('event:finish\ndata:{"content":"已完成编辑"}\n\n');
+    const mockReader = {
+      read: vi.fn(() => {
+        return new Promise<ReadableStreamReadResult<Uint8Array>>((resolve, reject) => {
+          readQueue.push({ resolve, reject });
+        });
+      }),
+    };
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (
+        url === '/api/chat/conversations' ||
+        url === '/api/chat/sample-questions' ||
+        url === '/api/chat/experts' ||
+        url === '/api/chat/skills' ||
+        url === '/api/chat/mcps' ||
+        url === '/api/chat/conversations/2001/messages' ||
+        url === '/api/chat/conversations/2001/steps' ||
+        url === '/api/chat/conversations/2001/references' ||
+        url === '/api/chat/conversations/2001/artifacts' ||
+        url === '/api/chat/conversations/2001/current-skills' ||
+        url === '/api/chat/conversations/2001/current-mcps' ||
+        url === '/api/chat/conversations/2001/current-experts'
+      ) {
+        if (url === '/api/chat/conversations') {
+          return new Response(
+            JSON.stringify({
+              success: true,
+              code: 'OK',
+              message: 'success',
+              data: [
+                {
+                  id: '2001',
+                  title: 'Default Demo Conversation',
+                  status: 'ACTIVE',
+                  lastRunId: '5002',
+                },
+              ],
+            }),
+            { status: 200 },
+          );
+        }
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (url.includes('/api/chat/stream')) {
+        return {
+          ok: true,
+          status: 200,
+          body: {
+            getReader: () => mockReader,
+          },
+        } as unknown as Response;
+      }
+      throw new Error(`Unhandled fetch in local write progress stream test: ${url}`);
+    });
+
+    const { result } = renderHook(() => useChatWorkspace(true));
+
+    await waitFor(() => {
+      expect(result.current.isBootstrapping).toBe(false);
+    });
+    await act(async () => {
+      result.current.setInputValue('write rogue snake html');
+    });
+    const submitPromise = result.current.submitMessage();
+
+    await waitFor(() => {
+      expect(result.current.isStreaming).toBe(true);
+      expect(readQueue.length).toBeGreaterThan(0);
+    });
+
+    for (const event of [metaEvent, firstProgressEvent]) {
+      await act(async () => {
+        readQueue.shift()?.resolve({ done: false, value: event });
+      });
+      await waitFor(() => {
+        expect(readQueue.length).toBeGreaterThan(0);
+      });
+    }
+    await waitFor(() => {
+      const assistantMessage = result.current.messages.find((item) => item.role === 'ASSISTANT');
+      const processCards = ((assistantMessage as Record<string, unknown> | undefined)?.processCards ?? []) as Array<Record<string, unknown>>;
+      const toolCallCard = processCards.find((card) => card.type === 'tool_call');
+      expect(toolCallCard?.summary).toBe('正在编辑 rogue_snake.html');
+      expect(toolCallCard?.fileDiffs).toEqual([
+        expect.objectContaining({
+          path: 'rogue_snake.html',
+          status: 'pending',
+          additions: 2,
+          diff: expect.stringContaining('+<html'),
+        }),
+      ]);
+    });
+
+    await act(async () => {
+      readQueue.shift()?.resolve({ done: false, value: secondProgressEvent });
+    });
+    await waitFor(() => {
+      const assistantMessage = result.current.messages.find((item) => item.role === 'ASSISTANT');
+      const processCards = ((assistantMessage as Record<string, unknown> | undefined)?.processCards ?? []) as Array<Record<string, unknown>>;
+      const toolCallCard = processCards.find((card) => card.type === 'tool_call');
+      expect(toolCallCard?.fileDiffs).toEqual([
+        expect.objectContaining({
+          path: 'rogue_snake.html',
+          status: 'pending',
+          additions: 3,
+          diff: expect.stringContaining('+<body>Rogue Snake</body>'),
+        }),
+      ]);
+    });
+
+    await waitFor(() => {
+      expect(readQueue.length).toBeGreaterThan(0);
+    });
+    await act(async () => {
+      readQueue.shift()?.resolve({ done: false, value: finishEvent });
+    });
+    await waitFor(() => {
+      expect(readQueue.length).toBeGreaterThan(0);
+    });
+    await act(async () => {
+      readQueue.shift()?.resolve({ done: true, value: undefined });
+    });
+    await act(async () => {
+      await submitPromise;
+    });
+  });
+
+  /**
    * 历史会话只返回 executionSteps.metadataJson 时，也应恢复文件差异，供上轮对话侧栏继续展示。
    */
   it('restores file diff metadata from replay execution steps', async () => {

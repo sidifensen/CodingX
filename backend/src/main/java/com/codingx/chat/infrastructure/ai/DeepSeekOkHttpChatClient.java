@@ -163,6 +163,14 @@ public class DeepSeekOkHttpChatClient implements AiProviderClient {
                             handler.onToolCall(toolCall);
                         }
                     }
+
+                    @Override
+                    public void onToolCallDelta(com.codingx.common.support.ai.AiToolCallDelta toolCallDelta) {
+                        if (!cancelled.get()) {
+                            // 参数分片只用于实时进度展示，真正执行仍等待完整工具调用。
+                            handler.onToolCallDelta(toolCallDelta);
+                        }
+                    }
                 };
                 while (!cancelled.get()) {
                     // 步骤 7：逐行读取 SSE 文本，并交给共享解析器拆解正文、thinking 和工具调用。

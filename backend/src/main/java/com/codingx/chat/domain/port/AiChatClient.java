@@ -3,6 +3,7 @@ package com.codingx.chat.domain.port;
 import com.codingx.chat.domain.model.ChatMessage;
 import com.codingx.common.error.ErrorMessageCatalog;
 import com.codingx.common.support.ai.AiToolCall;
+import com.codingx.common.support.ai.AiToolCallDelta;
 import com.codingx.tool.application.service.ChatToolSpec;
 import java.util.List;
 
@@ -102,6 +103,13 @@ public interface AiChatClient {
          * @param toolCall 工具调用。
          */
         default void onToolCall(AiToolCall toolCall) {
+        }
+
+        /**
+         * 接收模型工具调用参数进度。
+         * @param toolCallDelta 工具调用参数进度。
+         */
+        default void onToolCallDelta(AiToolCallDelta toolCallDelta) {
         }
     }
 }

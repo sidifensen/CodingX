@@ -212,7 +212,7 @@ public class OpenAiStyleStreamParser {
         if (StrUtil.isNotEmpty(thinkingDelta)) {
             consumer.onThinkingDelta(thinkingDelta);
         }
-        extractToolCallDeltas(payload, streamState);
+        extractToolCallDeltas(payload, streamState, consumer);
         String delta = extractContentDelta(payload);
         if (StrUtil.isNotEmpty(delta)) {
             consumer.onContentDelta(delta);
@@ -231,7 +231,7 @@ public class OpenAiStyleStreamParser {
             }
             // 步骤 1：callId 缺失时生成兜底标识，arguments 保留原始拼接 JSON 字符串。
             consumer.onToolCall(new AiToolCall(
-                StrUtil.blankToDefault(accumulator.callId, "tool-call-" + System.nanoTime()),
+                resolveToolCallId(accumulator),
                 accumulator.toolCode,
                 accumulator.arguments.toString()
             ));
@@ -244,7 +244,7 @@ public class OpenAiStyleStreamParser {
      * 从 OpenAI tool_calls delta 中累积工具名和参数片段。
      * @param payload JSON 负载。
      */
-    private void extractToolCallDeltas(String payload, StreamState streamState) {
+    private void extractToolCallDeltas(String payload, StreamState streamState, StreamConsumer consumer) {
         try {
             // 步骤 1：只处理 delta.tool_calls，非工具调用行直接返回。
             JSONObject choice = firstChoice(payload);
@@ -264,7 +264,7 @@ public class OpenAiStyleStreamParser {
                 JSONObject toolCall = toolCalls.getJSONObject(i);
                 int index = toolCall.getInt("index", i);
                 ToolCallAccumulator accumulator = streamState.toolCallAccumulators()
-                    .computeIfAbsent(index, ignored -> new ToolCallAccumulator());
+                    .computeIfAbsent(index, ignored -> new ToolCallAccumulator("tool-call-" + System.nanoTime()));
                 if (StrUtil.isNotBlank(toolCall.getStr("id"))) {
                     // id 可能只在首片出现，后续分片沿用已记录值。
                     accumulator.callId = toolCall.getStr("id");
@@ -273,13 +273,27 @@ public class OpenAiStyleStreamParser {
                 if (function == null) {
                     continue;
                 }
+                String argumentsDelta = "";
+                boolean changed = false;
                 if (StrUtil.isNotBlank(function.getStr("name"))) {
                     // name 可能和 arguments 分片分开发送，因此需要单独累积。
                     accumulator.toolCode = function.getStr("name");
+                    changed = true;
                 }
                 if (function.containsKey("arguments")) {
                     // arguments 是 JSON 字符串片段，必须按到达顺序拼接，不能提前解析。
-                    accumulator.arguments.append(StrUtil.nullToEmpty(function.getStr("arguments")));
+                    argumentsDelta = StrUtil.nullToEmpty(function.getStr("arguments"));
+                    accumulator.arguments.append(argumentsDelta);
+                    changed = true;
+                }
+                if (changed && StrUtil.isNotBlank(accumulator.toolCode)) {
+                    // 步骤 3：工具名已知后立即公开当前参数前缀；真实执行仍等待 emitToolCalls 派发完整调用。
+                    consumer.onToolCallDelta(new AiToolCallDelta(
+                        resolveToolCallId(accumulator),
+                        accumulator.toolCode,
+                        argumentsDelta,
+                        accumulator.arguments.toString()
+                    ));
                 }
             }
         } catch (Exception ignored) {
@@ -323,6 +337,15 @@ public class OpenAiStyleStreamParser {
     }
 
     /**
+     * 解析工具调用 ID；provider 不给 id 时使用累积器创建时生成的稳定兜底 ID。
+     * @param accumulator 工具调用累积器。
+     * @return 工具调用 ID。
+     */
+    private static String resolveToolCallId(ToolCallAccumulator accumulator) {
+        return StrUtil.blankToDefault(accumulator.callId, accumulator.syntheticCallId);
+    }
+
+    /**
      * 定义流式解析回调契约。
      */
     public interface StreamConsumer {
@@ -349,6 +372,13 @@ public class OpenAiStyleStreamParser {
         }
 
         /**
+         * 接收模型工具调用参数分片进度。
+         * @param toolCallDelta 工具调用参数进度。
+         */
+        default void onToolCallDelta(AiToolCallDelta toolCallDelta) {
+        }
+
+        /**
          * 接收流式结束事件。
          */
         default void onDone() {
@@ -366,6 +396,11 @@ public class OpenAiStyleStreamParser {
         private String callId;
 
         /**
+         * provider 未返回 ID 时使用的稳定兜底 ID，保证 progress 与 complete 能合并到同一张前端卡片。
+         */
+        private final String syntheticCallId;
+
+        /**
          * 模型返回的工具名称，对应后端工具编码；为空时不会派发工具调用。
          */
         private String toolCode;
@@ -374,6 +409,14 @@ public class OpenAiStyleStreamParser {
          * 工具参数 JSON 字符串分片累积器，按 SSE 到达顺序拼接。
          */
         private final StringBuilder arguments = new StringBuilder();
+
+        /**
+         * 创建工具调用累积器。
+         * @param syntheticCallId 兜底调用 ID。
+         */
+        private ToolCallAccumulator(String syntheticCallId) {
+            this.syntheticCallId = syntheticCallId;
+        }
     }
 
     /**

@@ -8,6 +8,7 @@ import com.codingx.common.support.ai.AiConversationRequest;
 import com.codingx.common.support.ai.AiModelDispatchService;
 import com.codingx.common.support.ai.AiStreamHandler;
 import com.codingx.common.support.ai.AiToolCall;
+import com.codingx.common.support.ai.AiToolCallDelta;
 import com.codingx.tool.application.service.ChatToolSpec;
 import java.util.List;
 import org.springframework.context.annotation.Primary;
@@ -75,6 +76,11 @@ public class RoutingAiChatClient implements AiChatClient {
             @Override
             public void onToolCall(AiToolCall toolCall) {
                 handler.onToolCall(toolCall);
+            }
+
+            @Override
+            public void onToolCallDelta(AiToolCallDelta toolCallDelta) {
+                handler.onToolCallDelta(toolCallDelta);
             }
 
             @Override

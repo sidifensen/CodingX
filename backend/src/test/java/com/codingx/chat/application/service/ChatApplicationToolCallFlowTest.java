@@ -30,6 +30,7 @@ import com.codingx.chat.domain.repository.ChatExecutionStepRepository;
 import com.codingx.chat.domain.repository.ChatIntentNodeRepository;
 import com.codingx.chat.domain.repository.ChatMessageRepository;
 import com.codingx.common.support.ai.AiToolCall;
+import com.codingx.common.support.ai.AiToolCallDelta;
 import com.codingx.common.exception.BusinessException;
 import com.codingx.expert.application.service.ChatExpertContextService;
 import com.codingx.mcp.domain.repository.ChatMcpRepository;
@@ -430,6 +431,95 @@ class ChatApplicationToolCallFlowTest {
             verify(chatMessageRepository, org.mockito.Mockito.times(2)).save(messageCaptor.capture());
             ChatMessage assistantMessage = messageCaptor.getAllValues().get(1);
             assertEquals("已读取完整文件，接下来可以安全增强贪吃蛇功能。", assistantMessage.getContent());
+        } finally {
+            ChatExecutionContext.clear();
+        }
+    }
+
+    /**
+     * 模型生成大段 write.content 时，应在完整工具调用完成前持续推送参数进度，让前端先展示“正在编辑文件”。
+     *
+     * @param tempDir 本地 workspace 临时目录。
+     * @throws Exception 执行失败时抛出。
+     */
+    @Test
+    void sendMessagePublishesWriteToolArgumentProgressBeforeToolCompletes(@TempDir Path tempDir) throws Exception {
+        Long runId = 9401019L;
+        ChatExecutionContext.start(runId);
+        try {
+            Path workspace = tempDir.resolve("repo");
+            Files.createDirectories(workspace);
+            ChatConversation conversation = ChatConversation.create(19L, "Write Progress", 1002L, ChatConversationStatus.ACTIVE);
+            when(chatConversationRepository.requireById(19L)).thenReturn(conversation);
+            when(chatMessageRepository.findByConversationId(19L)).thenReturn(new ArrayList<>());
+            when(chatAttachmentService.requireOwnedAttachments(any(), eq(19L), eq(1002L))).thenReturn(List.of());
+            when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+                new ConversationRewriteResult("帮我写个肉鸽贪吃蛇html", false, List.of("帮我写个肉鸽贪吃蛇html"))
+            );
+            when(conversationIntentService.route("帮我写个肉鸽贪吃蛇html", false)).thenReturn(
+                new ConversationIntentDecision("chat.normal", ConversationIntentAction.DIRECT, null)
+            );
+            when(chatIntentNodeRepository.findByIntentCode("chat.normal")).thenReturn(null);
+            when(chatSkillContextService.buildSkillContext(any())).thenReturn("");
+            when(chatExpertContextService.buildExpertContext(any())).thenReturn("");
+            when(conversationSummaryService.buildModelHistory(any(), any())).thenAnswer(invocation -> invocation.getArgument(1));
+            when(conversationTitleService.generateTitle(any(), any())).thenReturn("肉鸽贪吃蛇");
+            when(llmResponseCleaner.clean(any())).thenAnswer(invocation -> invocation.getArgument(0));
+            when(chatToolSpecService.listModelVisibleToolSpecs()).thenReturn(List.of(
+                new ChatToolSpec("write", "写文件", Map.of("type", "object"))
+            ));
+            when(chatToolExecutionService.execute(eq("write"), any())).thenReturn(
+                new ChatToolExecutionResult("write", "文件已写入", Map.of(
+                    "path", "rogue_snake.html",
+                    "diffSummary", Map.of("filesChanged", 1, "additions", 2, "deletions", 0)
+                ))
+            );
+            AtomicInteger modelRound = new AtomicInteger();
+            doAnswer(invocation -> {
+                AiChatClient.ToolAwareStreamHandler handler = invocation.getArgument(3);
+                if (modelRound.incrementAndGet() == 1) {
+                    String firstArguments = "{\"path\":\"rogue_snake.html\",\"content\":\"<!DOCTYPE html>\\n<html";
+                    handler.onToolCallDelta(new AiToolCallDelta(
+                        "call-write-1",
+                        "write",
+                        firstArguments,
+                        firstArguments
+                    ));
+                    handler.onToolCall(new AiToolCall(
+                        "call-write-1",
+                        "write",
+                        "{\"path\":\"rogue_snake.html\",\"content\":\"<!DOCTYPE html>\\n<html></html>\"}"
+                    ));
+                    handler.onComplete();
+                    return null;
+                }
+                handler.onDelta("已写入 `rogue_snake.html`。");
+                handler.onComplete();
+                return null;
+            }).when(aiChatClient).streamChatWithTools(any(), eq(false), any(), any());
+
+            chatApplicationService.sendMessage(
+                new SendChatMessageCommand(19L, "帮我写个肉鸽贪吃蛇html", false, List.of(), List.of(), null, workspace.toString(), List.of()),
+                1002L
+            );
+
+            ArgumentCaptor<Object> payloadCaptor = ArgumentCaptor.forClass(Object.class);
+            verify(chatStreamPublisher, org.mockito.Mockito.atLeastOnce()).publishToolCall(eq(19L), payloadCaptor.capture());
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> payloads = payloadCaptor.getAllValues().stream()
+                .filter(Map.class::isInstance)
+                .map(payload -> (Map<String, Object>) payload)
+                .toList();
+            Map<String, Object> progressPayload = payloads.stream()
+                .filter(payload -> "progress".equals(payload.get("phase")))
+                .findFirst()
+                .orElseThrow();
+            assertEquals("write", progressPayload.get("toolId"));
+            assertEquals("正在编辑 rogue_snake.html", progressPayload.get("reactAction"));
+            @SuppressWarnings("unchecked")
+            Map<String, Object> params = (Map<String, Object>) progressPayload.get("params");
+            assertEquals("rogue_snake.html", params.get("path"));
+            assertTrue(String.valueOf(params.get("content")).contains("<!DOCTYPE html>"));
         } finally {
             ChatExecutionContext.clear();
         }

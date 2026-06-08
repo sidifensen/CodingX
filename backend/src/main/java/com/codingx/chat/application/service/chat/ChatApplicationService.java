@@ -25,6 +25,7 @@ import com.codingx.chat.application.service.agent.AgentLoopResult;
 import com.codingx.common.error.ErrorMessageCatalog;
 import com.codingx.common.exception.ForbiddenException;
 import com.codingx.common.support.ai.AiToolCall;
+import com.codingx.common.support.ai.AiToolCallDelta;
 import com.codingx.expert.application.service.ChatExpertContextService;
 import com.codingx.governance.application.service.GovernanceAgentContextService;
 import com.codingx.governance.application.service.HookRuleService;
@@ -2200,6 +2201,11 @@ public class ChatApplicationService {
         ToolRoundContentBuffer deferredContentDeltas
     ) {
         return new AiChatClient.ToolAwareStreamHandler() {
+            /**
+             * 已发布的工具参数长度，按 callId 记录，用于限制大段 content 分片造成的 SSE 过量刷新。
+             */
+            private final Map<String, Integer> publishedToolArgumentProgressLengths = new LinkedHashMap<>();
+
             @Override
             public void onMetadata(String provider, String model) {
                 selectedProvider[0] = provider;
@@ -2243,6 +2249,23 @@ public class ChatApplicationService {
             }
 
             @Override
+            public void onToolCallDelta(AiToolCallDelta toolCallDelta) {
+                if (chatRuntimeGuardService.isCancelled(command.conversationId(), activeRunId)) {
+                    return;
+                }
+                if (toolCallDelta == null || StrUtil.isBlank(toolCallDelta.toolCode())) {
+                    return;
+                }
+                if (deferredContentDeltas != null) {
+                    deferredContentDeltas.markToolCallObserved();
+                }
+                if (toolCalls == null || !shouldPublishToolArgumentProgress(toolCallDelta, publishedToolArgumentProgressLengths)) {
+                    return;
+                }
+                publishLocalToolCallProgress(command.conversationId(), toolCallDelta);
+            }
+
+            @Override
             public void onComplete() {
             }
 
@@ -2251,6 +2274,53 @@ public class ChatApplicationService {
                 streamError[0] = throwable;
             }
         };
+    }
+
+    /**
+     * 判断本次工具参数进度是否需要推送给前端。
+     * 业务约束：write.content 可能按 token 级分片返回，首片必须立即显示，后续按长度间隔刷新即可。
+     *
+     * @param toolCallDelta 工具参数进度。
+     * @param publishedLengths 已发布长度缓存。
+     * @return 是否发布。
+     */
+    private boolean shouldPublishToolArgumentProgress(
+        AiToolCallDelta toolCallDelta,
+        Map<String, Integer> publishedLengths
+    ) {
+        String key = StrUtil.blankToDefault(toolCallDelta.callId(), toolCallDelta.toolCode());
+        int currentLength = StrUtil.length(toolCallDelta.accumulatedArguments());
+        Integer previousLength = publishedLengths.get(key);
+        if (previousLength == null || currentLength < 800 || currentLength - previousLength >= 800) {
+            publishedLengths.put(key, currentLength);
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * 将模型工具参数分片转换为前端已支持的 tool-call progress 事件。
+     *
+     * @param conversationId 会话标识。
+     * @param toolCallDelta 工具参数进度。
+     */
+    private void publishLocalToolCallProgress(Long conversationId, AiToolCallDelta toolCallDelta) {
+        AiToolCall partialToolCall = new AiToolCall(
+            toolCallDelta.callId(),
+            toolCallDelta.toolCode(),
+            StrUtil.blankToDefault(toolCallDelta.accumulatedArguments(), "")
+        );
+        Map<String, Object> payload = baseLocalToolCallPayload(partialToolCall, "progress", LocalDateTime.now());
+        Object progressParams = parseToolCallProgressParams(toolCallDelta);
+        payload.put("params", progressParams);
+        payload.put("progressStage", "arguments");
+        payload.put("progressText", buildToolArgumentProgressText(toolCallDelta, progressParams));
+        payload.put("progressDetail", Map.of(
+            "argumentLength", StrUtil.length(toolCallDelta.accumulatedArguments()),
+            "deltaLength", StrUtil.length(toolCallDelta.argumentsDelta())
+        ));
+        payload.put("reactAction", buildLocalToolProgressAction(toolCallDelta, progressParams));
+        chatStreamPublisher.publishToolCall(conversationId, payload);
     }
 
     /**
@@ -2652,6 +2722,183 @@ public class ChatApplicationService {
             // 模型偶发返回非 JSON 参数时仍需展示原始输入，不能影响工具执行主流程。
             return argumentsText;
         }
+    }
+
+    /**
+     * 解析工具参数进度；完整 JSON 优先，write/edit 的半截 JSON 走有限字段恢复。
+     *
+     * @param toolCallDelta 工具参数进度。
+     * @return 前端可展示参数。
+     */
+    private Object parseToolCallProgressParams(AiToolCallDelta toolCallDelta) {
+        String argumentsText = StrUtil.blankToDefault(toolCallDelta.accumulatedArguments(), "");
+        Object parsed = parseToolCallParams(argumentsText);
+        if (!(parsed instanceof String) || !isFileEditTool(toolCallDelta.toolCode())) {
+            return parsed;
+        }
+        return parsePartialFileEditArguments(argumentsText);
+    }
+
+    /**
+     * 从尚未闭合的 write/edit JSON 参数中恢复 path/content 字段。
+     * 关键约束：这里只服务 UI 进度预览，不参与真实工具执行，因此宁可少展示，也不能抛异常中断聊天。
+     *
+     * @param argumentsText 已累积参数前缀。
+     * @return 可展示参数或原始文本。
+     */
+    private Object parsePartialFileEditArguments(String argumentsText) {
+        Map<String, Object> params = new LinkedHashMap<>();
+        String path = firstNotBlank(
+            extractJsonStringFieldPrefix(argumentsText, "path"),
+            extractJsonStringFieldPrefix(argumentsText, "filePath"),
+            extractJsonStringFieldPrefix(argumentsText, "targetPath"),
+            extractJsonStringFieldPrefix(argumentsText, "filename")
+        );
+        String content = firstNotBlank(
+            extractJsonStringFieldPrefix(argumentsText, "content"),
+            extractJsonStringFieldPrefix(argumentsText, "newString"),
+            extractJsonStringFieldPrefix(argumentsText, "patch")
+        );
+        if (StrUtil.isNotBlank(path)) {
+            params.put("path", path);
+        }
+        if (StrUtil.isNotBlank(content)) {
+            params.put("content", content);
+        }
+        return params.isEmpty() ? argumentsText : params;
+    }
+
+    /**
+     * 从 JSON 字符串前缀中提取字段值，允许目标字符串尚未闭合。
+     *
+     * @param source JSON 前缀。
+     * @param fieldName 字段名。
+     * @return 字段值前缀。
+     */
+    private String extractJsonStringFieldPrefix(String source, String fieldName) {
+        if (StrUtil.isBlank(source) || StrUtil.isBlank(fieldName)) {
+            return "";
+        }
+        int fieldIndex = source.indexOf("\"" + fieldName + "\"");
+        if (fieldIndex < 0) {
+            return "";
+        }
+        int colonIndex = source.indexOf(':', fieldIndex + fieldName.length() + 2);
+        if (colonIndex < 0) {
+            return "";
+        }
+        int quoteIndex = source.indexOf('"', colonIndex + 1);
+        if (quoteIndex < 0) {
+            return "";
+        }
+        StringBuilder valueBuilder = new StringBuilder();
+        boolean escaping = false;
+        for (int index = quoteIndex + 1; index < source.length(); index++) {
+            char current = source.charAt(index);
+            if (escaping) {
+                valueBuilder.append(unescapeJsonStringChar(current));
+                escaping = false;
+                continue;
+            }
+            if (current == '\\') {
+                escaping = true;
+                continue;
+            }
+            if (current == '"') {
+                return valueBuilder.toString();
+            }
+            valueBuilder.append(current);
+        }
+        return valueBuilder.toString();
+    }
+
+    /**
+     * 处理 JSON 字符串中常见转义字符，保证临时 diff 使用用户可读文本。
+     *
+     * @param current 转义字符。
+     * @return 反转义后的字符。
+     */
+    private char unescapeJsonStringChar(char current) {
+        return switch (current) {
+            case 'n' -> '\n';
+            case 'r' -> '\r';
+            case 't' -> '\t';
+            case '"' -> '"';
+            case '\\' -> '\\';
+            default -> current;
+        };
+    }
+
+    /**
+     * 判断工具是否属于文件编辑类，只有这些工具才需要从半截参数中恢复文件路径和内容。
+     *
+     * @param toolCode 工具编码。
+     * @return 是否文件编辑工具。
+     */
+    private boolean isFileEditTool(String toolCode) {
+        return StrUtil.equalsAnyIgnoreCase(toolCode, "write", "edit", "apply_patch");
+    }
+
+    /**
+     * 返回首个非空字符串。
+     *
+     * @param values 候选值。
+     * @return 首个非空值。
+     */
+    private String firstNotBlank(String... values) {
+        for (String value : values) {
+            if (StrUtil.isNotBlank(value)) {
+                return value;
+            }
+        }
+        return "";
+    }
+
+    /**
+     * 构造工具参数进度文案。
+     *
+     * @param toolCallDelta 工具参数进度。
+     * @param progressParams 已解析参数。
+     * @return 用户可读进度文案。
+     */
+    private String buildToolArgumentProgressText(AiToolCallDelta toolCallDelta, Object progressParams) {
+        String path = extractProgressPath(progressParams);
+        int argumentLength = StrUtil.length(toolCallDelta.accumulatedArguments());
+        if (StrUtil.isNotBlank(path)) {
+            return "正在生成 " + path + "，已接收 " + argumentLength + " 个字符";
+        }
+        return "正在准备 " + StrUtil.blankToDefault(toolCallDelta.toolCode(), "工具") + " 参数，已接收 " + argumentLength + " 个字符";
+    }
+
+    /**
+     * 构造工具参数进度的行动摘要。
+     *
+     * @param toolCallDelta 工具参数进度。
+     * @param progressParams 已解析参数。
+     * @return 行动摘要。
+     */
+    private String buildLocalToolProgressAction(AiToolCallDelta toolCallDelta, Object progressParams) {
+        String path = extractProgressPath(progressParams);
+        if (isFileEditTool(toolCallDelta.toolCode()) && StrUtil.isNotBlank(path)) {
+            return "正在编辑 " + path;
+        }
+        return "正在准备调用 " + StrUtil.blankToDefault(toolCallDelta.toolCode(), "工具");
+    }
+
+    /**
+     * 从进度参数中提取文件路径。
+     *
+     * @param progressParams 已解析参数。
+     * @return 文件路径。
+     */
+    private String extractProgressPath(Object progressParams) {
+        if (!(progressParams instanceof Map<?, ?> params)) {
+            return "";
+        }
+        Object path = Optional.ofNullable(params.get("path"))
+            .orElseGet(() -> Optional.ofNullable(params.get("filePath"))
+                .orElseGet(() -> Optional.ofNullable(params.get("targetPath")).orElse(params.get("filename"))));
+        return path == null ? "" : StrUtil.trimToEmpty(String.valueOf(path));
     }
 
     /**

@@ -106,4 +106,37 @@ class FirstTokenBufferingHandlerTest {
         assertEquals(1, toolCalls.size());
         assertEquals("shell_command", toolCalls.getFirst().toolCode());
     }
+
+    /**
+     * tool_call 参数分片同样代表 provider 已开始有效输出，但首包确认前不能提前触发下游 UI。
+     *
+     * @throws Exception 等待首事件失败时抛出。
+     */
+    @Test
+    void treatsToolCallDeltaAsFirstContentEventAndReplaysAfterCommit() throws Exception {
+        FirstTokenAwaiter awaiter = new FirstTokenAwaiter();
+        List<AiToolCallDelta> toolCallDeltas = new ArrayList<>();
+        FirstTokenBufferingHandler handler = new FirstTokenBufferingHandler(new AiStreamHandler() {
+            @Override
+            public void onToolCallDelta(AiToolCallDelta toolCallDelta) {
+                toolCallDeltas.add(toolCallDelta);
+            }
+        }, awaiter);
+
+        handler.onToolCallDelta(new AiToolCallDelta(
+            "call-write-1",
+            "write",
+            "{\"path\":\"rogue_snake.html\"",
+            "{\"path\":\"rogue_snake.html\""
+        ));
+
+        assertTrue(awaiter.await(10, TimeUnit.MILLISECONDS).isSuccess());
+        assertEquals(List.of(), toolCallDeltas);
+
+        handler.commit();
+
+        assertEquals(1, toolCallDeltas.size());
+        assertEquals("write", toolCallDeltas.getFirst().toolCode());
+        assertTrue(toolCallDeltas.getFirst().accumulatedArguments().contains("rogue_snake.html"));
+    }
 }

@@ -117,6 +117,13 @@ public class OpenAiCompatibleChatClient implements AiProviderClient {
                             handler.onToolCall(toolCall);
                         }
                     }
+
+                    @Override
+                    public void onToolCallDelta(com.codingx.common.support.ai.AiToolCallDelta toolCallDelta) {
+                        if (!cancelled.get()) {
+                            handler.onToolCallDelta(toolCallDelta);
+                        }
+                    }
                 };
                 while (!cancelled.get()) {
                     String line = source.readUtf8Line();

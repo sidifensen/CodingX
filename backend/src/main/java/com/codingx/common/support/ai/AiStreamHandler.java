@@ -35,6 +35,13 @@ public interface AiStreamHandler {
     }
 
     /**
+     * 推送模型正在生成中的工具调用参数片段。
+     * @param toolCallDelta 工具调用参数进度。
+     */
+    default void onToolCallDelta(AiToolCallDelta toolCallDelta) {
+    }
+
+    /**
      * 推送流式完成事件。
      */
     default void onComplete() {

@@ -243,6 +243,11 @@ public class AiModelDispatchService {
             }
 
             @Override
+            public void onToolCallDelta(AiToolCallDelta toolCallDelta) {
+                delegate.onToolCallDelta(toolCallDelta);
+            }
+
+            @Override
             public void onComplete() {
                 delegate.onComplete();
             }

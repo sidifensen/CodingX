@@ -32,7 +32,6 @@ import {
   MessageSearchProgressItem,
   PendingAttachmentItem,
   ProcessCardItem,
-  ProjectProfileView,
   ReferenceItem,
   RegenerateConversationOptions,
   SampleQuestionItem,
@@ -535,7 +534,6 @@ export function useChatWorkspace(
   const [workspaceLabel, setWorkspaceLabel] = useState(
     getDefaultWorkspaceLabel(activeRuntimeTarget),
   );
-  const [projectProfile, setProjectProfile] = useState<ProjectProfileView | null>(null);
   const [activeMemoryCount, setActiveMemoryCount] = useState(0);
   const [longTermMemories, setLongTermMemories] = useState<LongTermMemoryItem[]>([]);
   const [isMemoryLoading, setIsMemoryLoading] = useState(false);
@@ -631,17 +629,16 @@ export function useChatWorkspace(
   currentMcpsRef.current = currentMcps;
 
   /**
-   * 清理当前工作空间智能上下文；切到云端或无本地目录时避免展示上一个仓库的画像和记忆。
+   * 清理当前工作空间记忆上下文；切到云端或无本地目录时避免展示上一个仓库的记忆。
    */
   const clearWorkspaceIntelligence = () => {
-    setProjectProfile(null);
     setActiveMemoryCount(0);
     setLongTermMemories([]);
   };
 
   /**
-   * 应用目录绑定返回的项目画像和长期记忆摘要，同时返回本轮可用于发送消息的 workspaceId。
-   * @param bindingResult 后端绑定响应，旧宿主可能不携带画像字段。
+   * 应用目录绑定返回的长期记忆摘要，同时返回本轮可用于发送消息的 workspaceId。
+   * @param bindingResult 后端绑定响应，旧宿主可能不携带记忆统计字段。
    * @param fallbackWorkspaceId 宿主上下文里已有的 workspaceId。
    * @returns 归一化后的 workspaceId。
    */
@@ -650,9 +647,6 @@ export function useChatWorkspace(
     fallbackWorkspaceId: string | null,
   ) => {
     const nextWorkspaceId = normalizeWorkspaceId(bindingResult?.workspaceId) ?? fallbackWorkspaceId;
-    if (bindingResult && Object.prototype.hasOwnProperty.call(bindingResult, 'projectProfile')) {
-      setProjectProfile(bindingResult.projectProfile ?? null);
-    }
     if (bindingResult && Object.prototype.hasOwnProperty.call(bindingResult, 'activeMemoryCount')) {
       const nextActiveCount = Number(bindingResult.activeMemoryCount ?? 0);
       setActiveMemoryCount(Number.isFinite(nextActiveCount) ? Math.max(0, nextActiveCount) : 0);
@@ -3635,7 +3629,6 @@ export function useChatWorkspace(
     workspaceId,
     workspaceLabel,
     workspaceRuntimeTarget: activeRuntimeTarget,
-    projectProfile,
     activeMemoryCount,
     longTermMemories,
     isMemoryLoading,

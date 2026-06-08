@@ -507,37 +507,10 @@ describe('AdminChatApi unauthorized handling', () => {
   });
 
   /**
-   * 项目画像扫描接口应提交工作空间 ID 与路径，供管理端主动刷新本地仓库画像。
+   * 管理端 API 不再暴露项目画像扫描能力，避免前端调用已下线接口。
    */
-  it('requests project profile scan with workspace path payload', async () => {
-    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(
-        JSON.stringify({
-          success: true,
-          code: 'OK',
-          message: 'success',
-          data: {
-            id: 11,
-            workspaceId: 3001,
-            workspacePath: 'D:/code/CodingX',
-            summary: 'Maven + Vite workspace',
-            status: 'COMPLETED',
-          },
-        }),
-        { status: 200 },
-      ),
-    );
-
-    const result = await AdminChatApi.scanProjectProfile({
-      workspaceId: 3001,
-      workspacePath: 'D:/code/CodingX',
-    });
-
-    expect(result.summary).toBe('Maven + Vite workspace');
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(String(fetchMock.mock.calls[0][0])).toContain('/api/admin/governance/project-profiles/scan');
-    expect((fetchMock.mock.calls[0][1] as RequestInit).body).toBe(
-      JSON.stringify({ workspaceId: 3001, workspacePath: 'D:/code/CodingX' }),
-    );
+  it('does not expose project profile governance api helpers', () => {
+    expect('listProjectProfiles' in AdminChatApi).toBe(false);
+    expect('scanProjectProfile' in AdminChatApi).toBe(false);
   });
 });

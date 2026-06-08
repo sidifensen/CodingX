@@ -50,7 +50,6 @@ import {
   McpItem,
   PendingAttachmentItem,
   ProcessCardItem,
-  ProjectProfileView,
   SharedConversationPayload,
   SlashCommandItem,
 } from './chat/types';
@@ -97,7 +96,6 @@ export default function ChatView({
     workspaceLabel,
     workspacePath,
     workspaceId,
-    projectProfile,
     activeMemoryCount,
     longTermMemories,
     isMemoryLoading,
@@ -1108,8 +1106,7 @@ export default function ChatView({
     () => longTermMemories.filter((memory) => String(memory.status).toUpperCase() === 'ACTIVE'),
     [longTermMemories],
   );
-  const showWorkspaceIntelligenceStrip =
-    projectProfile != null || activeMemoryCount > 0 || activeLongTermMemories.length > 0;
+  const showWorkspaceIntelligenceStrip = activeMemoryCount > 0 || activeLongTermMemories.length > 0;
 
   /**
    * 粘贴图片或文件时直接加入待发送附件队列。
@@ -2092,7 +2089,6 @@ export default function ChatView({
             </form>
             {showWorkspaceIntelligenceStrip ? (
               <WorkspaceIntelligenceStrip
-                projectProfile={projectProfile}
                 activeMemoryCount={activeMemoryCount}
                 activeMemories={activeLongTermMemories}
                 isMemoryLoading={isMemoryLoading}
@@ -5029,23 +5025,19 @@ function EmptyBlock({ text }: { text: string }) {
 }
 
 /**
- * 渲染当前工作空间的项目画像和已生效长期记忆，帮助用户理解 Agent 当前会带入哪些上下文。
+ * 渲染当前工作空间已生效长期记忆，帮助用户理解 Agent 当前会带入哪些持久约束。
  */
 function WorkspaceIntelligenceStrip({
-  projectProfile,
   activeMemoryCount,
   activeMemories,
   isMemoryLoading,
   onRefresh,
 }: {
-  projectProfile: ProjectProfileView | null;
   activeMemoryCount: number;
   activeMemories: LongTermMemoryItem[];
   isMemoryLoading: boolean;
   onRefresh: () => void;
 }) {
-  const testCommandSummary = summarizeJsonList(projectProfile?.testCommandsJson, 2);
-  const riskSummary = summarizeJsonList(projectProfile?.riskPointsJson, 1);
   const visibleActiveMemories = activeMemories.slice(0, 3);
 
   return (
@@ -5058,7 +5050,7 @@ function WorkspaceIntelligenceStrip({
           <div className="flex flex-wrap items-center gap-2">
             <span className="inline-flex items-center gap-1.5 font-medium text-foreground">
               <Brain size={14} />
-              工作区智能
+              工作区记忆
             </span>
             {activeMemoryCount > 0 ? (
               <span className="rounded-full border border-border bg-surface-container px-2 py-0.5 text-[11px] text-foreground">
@@ -5067,15 +5059,7 @@ function WorkspaceIntelligenceStrip({
             ) : null}
             {isMemoryLoading ? <span className="text-[11px] text-muted">同步中</span> : null}
           </div>
-          {projectProfile?.summary ? (
-            <p className="mt-1 truncate text-foreground">{projectProfile.summary}</p>
-          ) : (
-            <p className="mt-1 text-muted">暂无项目画像摘要</p>
-          )}
-          <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px]">
-            {testCommandSummary ? <span>验证：{testCommandSummary}</span> : null}
-            {riskSummary ? <span>风险：{riskSummary}</span> : null}
-          </div>
+          <p className="mt-1 text-muted">已生效的用户或项目记忆会随当前工作空间参与上下文。</p>
         </div>
         <button
           type="button"
@@ -5101,44 +5085,6 @@ function WorkspaceIntelligenceStrip({
       ) : null}
     </section>
   );
-}
-
-/**
- * 将后端 JSON 数组或对象摘要转换为短文本，避免聊天页直接暴露长 JSON。
- */
-function summarizeJsonList(value: string | null | undefined, limit: number) {
-  if (!value || !value.trim()) {
-    return '';
-  }
-  try {
-    const parsed = JSON.parse(value);
-    if (Array.isArray(parsed)) {
-      return parsed
-        .map((item) => {
-          if (typeof item === 'string') {
-            return item;
-          }
-          if (item && typeof item === 'object') {
-            const record = item as Record<string, unknown>;
-            return String(record.command ?? record.name ?? record.path ?? record.summary ?? '');
-          }
-          return String(item ?? '');
-        })
-        .filter(Boolean)
-        .slice(0, limit)
-        .join('、');
-    }
-    if (parsed && typeof parsed === 'object') {
-      return Object.values(parsed as Record<string, unknown>)
-        .map((item) => String(item ?? ''))
-        .filter(Boolean)
-        .slice(0, limit)
-        .join('、');
-    }
-  } catch {
-    return value;
-  }
-  return value;
 }
 
 /**

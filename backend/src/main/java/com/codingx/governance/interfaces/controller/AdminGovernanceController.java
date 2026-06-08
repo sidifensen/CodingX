@@ -4,15 +4,12 @@ import com.codingx.common.model.ApiResponse;
 import com.codingx.governance.application.service.HookRuleService;
 import com.codingx.governance.application.service.LongTermMemoryService;
 import com.codingx.governance.application.service.PermissionPolicyService;
-import com.codingx.governance.application.service.ProjectProfileService;
 import com.codingx.governance.application.service.SlashCommandService;
 import com.codingx.governance.domain.model.GovernanceHookRule;
 import com.codingx.governance.domain.model.GovernanceLongTermMemory;
 import com.codingx.governance.domain.model.GovernancePermissionAudit;
 import com.codingx.governance.domain.model.GovernancePermissionPolicy;
-import com.codingx.governance.domain.model.GovernanceProjectProfile;
 import com.codingx.governance.domain.model.GovernanceSlashCommand;
-import java.nio.file.Path;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -27,7 +24,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 提供管理端治理中心接口，集中维护权限策略、Hook、项目画像和 Slash Command。
+ * 提供管理端治理中心接口，集中维护权限策略、Hook、长期记忆和 Slash Command。
  */
 @RestController
 @RequestMapping("/api/admin/governance")
@@ -36,10 +33,8 @@ public class AdminGovernanceController {
 
     /** 权限策略服务，用于策略 CRUD 与审计查询。 */
     private final PermissionPolicyService permissionPolicyService;
-    /** Hook 规则服务，用于 Hook CRUD 与任务生命周期自动化规则查询。 */
+    /** Hook 规则服务，用于 Hook CRUD 与审计查询。 */
     private final HookRuleService hookRuleService;
-    /** 项目画像服务，用于查询和刷新工作空间扫描结果。 */
-    private final ProjectProfileService projectProfileService;
     /** Slash Command 服务，用于管理命令目录。 */
     private final SlashCommandService slashCommandService;
     /** 长期记忆服务，用于管理端查看并启停已提取的长期记忆。 */
@@ -141,27 +136,6 @@ public class AdminGovernanceController {
     }
 
     /**
-     * 查询最近项目画像。
-     * @param limit 最大返回条数。
-     * @return 项目画像列表。
-     */
-    @GetMapping("/project-profiles")
-    public ApiResponse<List<GovernanceProjectProfile>> listProjectProfiles(@RequestParam(defaultValue = "20") int limit) {
-        return ApiResponse.success(projectProfileService.listRecentProfiles(limit));
-    }
-
-    /**
-     * 扫描指定工作空间路径并生成项目画像。
-     * @param request 扫描请求。
-     * @return 新生成的画像。
-     */
-    @PostMapping("/project-profiles/scan")
-    public ApiResponse<GovernanceProjectProfile> scanProjectProfile(@RequestBody ProjectProfileScanRequest request) {
-        // 步骤 1：扫描只把协议参数转换为 Path，目录存在性和越界语义由服务层统一校验。
-        return ApiResponse.success(projectProfileService.scanWorkspace(request.workspaceId(), Path.of(request.workspacePath())));
-    }
-
-    /**
      * 查询长期记忆列表，供管理端查看用户级和项目级记忆。
      * @param status 状态筛选，ALL 或空值表示全部状态。
      * @param limit 最大返回条数。
@@ -231,15 +205,6 @@ public class AdminGovernanceController {
     public ApiResponse<Void> deleteSlashCommand(@PathVariable Long id) {
         slashCommandService.deleteCommand(id);
         return ApiResponse.successMessage("删除成功");
-    }
-
-    /**
-     * 项目画像扫描请求。
-     *
-     * @param workspaceId 工作空间 ID。
-     * @param workspacePath 工作空间路径。
-     */
-    public record ProjectProfileScanRequest(Long workspaceId, String workspacePath) {
     }
 
     /**

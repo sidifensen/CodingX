@@ -40,25 +40,22 @@ public class ChatWorkspaceBindingController {
             normalizedPath,
             String.valueOf(bindingResult.workspaceId()),
             StrUtil.blankToDefault(bindingResult.workspaceName(), ""),
-            bindingResult.projectProfile(),
             bindingResult.activeMemoryCount()
         ));
     }
 
     /**
-     * 用户端目录绑定响应，包含工作空间标识、最新项目画像和已生效记忆数量。
+     * 用户端目录绑定响应，包含工作空间标识和已生效记忆数量。
      *
      * @param repositoryPath 规范化仓库路径。
      * @param workspaceId 工作空间 ID 字符串，前端保持字符串避免 Long 精度丢失。
      * @param workspaceName 工作空间展示名称。
-     * @param projectProfile 项目画像轻量视图，可为空。
      * @param activeMemoryCount 当前用户已生效长期记忆数量。
      */
     public record WorkspaceBindingResponse(
         String repositoryPath,
         String workspaceId,
         String workspaceName,
-        ChatWorkspaceBindingService.ProjectProfileView projectProfile,
         int activeMemoryCount
     ) {
     }

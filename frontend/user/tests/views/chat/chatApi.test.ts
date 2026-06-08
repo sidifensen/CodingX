@@ -690,14 +690,6 @@ describe('ChatApi', () => {
             repositoryPath: 'D:/code/codingx',
             workspaceId: '3001',
             workspaceName: 'codingx',
-            projectProfile: {
-              summary: 'Maven + Vite workspace',
-              moduleMapJson: '[{"name":"backend","path":"backend"}]',
-              testCommandsJson: '["mvn test","npm run build"]',
-              keyEntrypointsJson: '["backend/src/main/java/com/codingx/CodingXApplication.java"]',
-              riskPointsJson: '["缺少端到端测试"]',
-              agentContext: '项目包含后端、用户端和管理端。',
-            },
             activeMemoryCount: 2,
           },
         }),
@@ -720,7 +712,7 @@ describe('ChatApi', () => {
     expect(result.repositoryPath).toBe('D:/code/codingx');
     expect(result.workspaceId).toBe('3001');
     expect(result.workspaceName).toBe('codingx');
-    expect(result.projectProfile?.summary).toBe('Maven + Vite workspace');
+    expect('projectProfile' in result).toBe(false);
     expect(result.activeMemoryCount).toBe(2);
   });
 

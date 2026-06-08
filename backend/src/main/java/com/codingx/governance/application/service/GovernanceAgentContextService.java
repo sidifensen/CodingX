@@ -4,21 +4,20 @@ import cn.hutool.core.util.StrUtil;
 import com.codingx.chat.domain.model.ChatConversation;
 import com.codingx.chat.domain.model.ChatMessage;
 import com.codingx.governance.domain.model.GovernanceLongTermMemory;
-import com.codingx.governance.domain.model.GovernanceProjectProfile;
 import java.util.ArrayList;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 /**
- * 治理 Agent 上下文服务，统一把项目画像和已生效长期记忆转换成可注入模型的系统上下文。
+ * 治理 Agent 上下文服务，统一把仓库规范文件和已生效长期记忆转换成可注入模型的系统上下文。
  */
 @Service
 @RequiredArgsConstructor
 public class GovernanceAgentContextService {
 
-    /** 项目画像服务，用于读取当前工作空间最近一次扫描结果。 */
-    private final ProjectProfileService projectProfileService;
+    /** 仓库规范上下文服务，用于读取当前工作空间内的 AGENTS/CLAUDE/GEMINI 等规则文件。 */
+    private final RepositoryInstructionContextService repositoryInstructionContextService;
     /** 长期记忆服务，用于检索 ACTIVE 记忆并在完成回复后提取新的生效记忆。 */
     private final LongTermMemoryService longTermMemoryService;
 
@@ -31,13 +30,9 @@ public class GovernanceAgentContextService {
      */
     public String buildAgentContext(Long userId, Long workspaceId, String query) {
         List<String> sections = new ArrayList<>();
-        GovernanceProjectProfile profile = projectProfileService.findLatestByWorkspaceId(workspaceId);
-        if (profile != null && StrUtil.isNotBlank(profile.getAgentContext())) {
-            sections.add("""
-                # 项目画像
-                使用方式：这是仓库结构、测试命令、关键入口和风险点摘要。请优先用它决定读哪些文件、跑哪些验证，但不要逐字复述给用户。
-                %s
-                """.formatted(profile.getAgentContext()).trim());
+        String repositoryInstructionContext = repositoryInstructionContextService.buildInstructionContext(userId, workspaceId);
+        if (StrUtil.isNotBlank(repositoryInstructionContext)) {
+            sections.add(repositoryInstructionContext);
         }
         List<GovernanceLongTermMemory> memories = longTermMemoryService.retrieveActiveMemories(userId, workspaceId, query, 6);
         if (!memories.isEmpty()) {

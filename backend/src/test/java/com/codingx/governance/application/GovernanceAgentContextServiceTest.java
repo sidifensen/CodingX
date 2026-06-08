@@ -4,10 +4,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.codingx.governance.application.service.GovernanceAgentContextService;
 import com.codingx.governance.application.service.LongTermMemoryService;
-import com.codingx.governance.application.service.ProjectProfileService;
+import com.codingx.governance.application.service.RepositoryInstructionContextService;
 import com.codingx.governance.domain.model.GovernanceLongTermMemory;
-import com.codingx.governance.domain.model.GovernanceProjectProfile;
-import java.time.LocalDateTime;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -15,33 +13,23 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 /**
- * 验证治理上下文服务会把项目画像与长期记忆组装成可注入模型的系统上下文。
+ * 验证治理上下文服务会把仓库规范文件与长期记忆组装成可注入模型的系统上下文。
  */
 @ExtendWith(MockitoExtension.class)
 class GovernanceAgentContextServiceTest {
 
     @Mock
-    private ProjectProfileService projectProfileService;
+    private RepositoryInstructionContextService repositoryInstructionContextService;
     @Mock
     private LongTermMemoryService longTermMemoryService;
 
     /**
-     * 存在最新项目画像和命中的 ACTIVE 记忆时，应生成包含两类信息的上下文片段。
+     * 存在仓库规范文件和命中的 ACTIVE 记忆时，应生成包含两类信息的上下文片段。
      */
     @Test
-    void buildAgentContextShouldIncludeProjectProfileAndActiveMemories() {
-        org.mockito.Mockito.when(projectProfileService.findLatestByWorkspaceId(300L)).thenReturn(GovernanceProjectProfile.builder()
-            .id(1L)
-            .workspaceId(300L)
-            .workspacePath("D:/code/CodingX")
-            .summary("检测到 CodingX 多模块项目")
-            .moduleMapJson("[{\"moduleCode\":\"backend\"}]")
-            .testCommandsJson("[\"cd backend && mvn test\"]")
-            .riskPointsJson("[\"frontend/admin/src/pages/GovernanceCenterPage.tsx 文件较大\"]")
-            .agentContext("# 项目画像\\n模块地图：backend\\n验证命令：cd backend && mvn test")
-            .status("COMPLETED")
-            .scannedAt(LocalDateTime.now())
-            .build());
+    void buildAgentContextShouldIncludeRepositoryInstructionsAndActiveMemories() {
+        org.mockito.Mockito.when(repositoryInstructionContextService.buildInstructionContext(200L, 300L))
+            .thenReturn("# 仓库规范文件\n## AGENTS.md\n提交信息必须使用中文");
         org.mockito.Mockito.when(longTermMemoryService.retrieveActiveMemories(200L, 300L, "请按业务注释规范修改代码", 6)).thenReturn(List.of(
             GovernanceLongTermMemory.builder()
                 .id(10L)
@@ -52,14 +40,18 @@ class GovernanceAgentContextServiceTest {
                 .status("ACTIVE")
                 .build()
         ));
-        GovernanceAgentContextService service = new GovernanceAgentContextService(projectProfileService, longTermMemoryService);
+        GovernanceAgentContextService service = new GovernanceAgentContextService(
+            repositoryInstructionContextService,
+            longTermMemoryService
+        );
 
         String context = service.buildAgentContext(200L, 300L, "请按业务注释规范修改代码");
 
-        assertTrue(context.contains("项目画像"));
-        assertTrue(context.contains("cd backend && mvn test"));
+        assertTrue(context.contains("仓库规范文件"));
+        assertTrue(context.contains("提交信息必须使用中文"));
         assertTrue(context.contains("长期记忆"));
         assertTrue(context.contains("优先写清楚业务注释"));
         assertTrue(context.contains("不要逐字复述"));
+        assertTrue(!context.contains("项目画像"));
     }
 }

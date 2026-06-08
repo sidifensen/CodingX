@@ -6,7 +6,6 @@ import {
   PlusOutlined,
   ReloadOutlined,
   SaveOutlined,
-  SearchOutlined,
 } from '@ant-design/icons';
 import {
   Alert,
@@ -30,13 +29,12 @@ import {
   type AdminGovernanceLongTermMemory,
   type AdminGovernancePermissionAudit,
   type AdminGovernancePermissionPolicy,
-  type AdminGovernanceProjectProfile,
   type AdminGovernanceSlashCommand,
 } from '../api/adminChatApi';
 import { AdminDataTable, AdminTableActions } from '../components/AdminDataTable';
 import { useAdminMessage } from '../components/AdminMessageContext';
 
-type GovernanceTabKey = 'permission' | 'hook' | 'profile' | 'memory' | 'command' | 'audit';
+type GovernanceTabKey = 'permission' | 'hook' | 'memory' | 'command' | 'audit';
 type DialogMode = 'create' | 'edit';
 
 interface PolicyFormState {
@@ -73,11 +71,6 @@ interface CommandFormState {
   sortNo: number;
 }
 
-interface ProfileScanFormState {
-  workspaceId: string;
-  workspacePath: string;
-}
-
 const emptyPolicyForm: PolicyFormState = {
   policyCode: '',
   policyName: '',
@@ -112,11 +105,6 @@ const emptyCommandForm: CommandFormState = {
   sortNo: 0,
 };
 
-const emptyProfileScanForm: ProfileScanFormState = {
-  workspaceId: '',
-  workspacePath: '',
-};
-
 const ACTION_OPTIONS = [
   { value: 'ALLOW', label: '允许' },
   { value: 'CONFIRM', label: '确认' },
@@ -137,7 +125,7 @@ const TRIGGER_OPTIONS = [
 ];
 
 /**
- * 管理端治理中心：集中维护软件端工具权限、自动化 Hook、项目画像和 Slash Command。
+ * 管理端治理中心：集中维护软件端工具权限、自动化 Hook、长期记忆和 Slash Command。
  */
 export function GovernanceCenterPage() {
   const adminMessage = useAdminMessage();
@@ -147,7 +135,6 @@ export function GovernanceCenterPage() {
   const [permissionPolicies, setPermissionPolicies] = React.useState<AdminGovernancePermissionPolicy[]>([]);
   const [permissionAudits, setPermissionAudits] = React.useState<AdminGovernancePermissionAudit[]>([]);
   const [hookRules, setHookRules] = React.useState<AdminGovernanceHookRule[]>([]);
-  const [projectProfiles, setProjectProfiles] = React.useState<AdminGovernanceProjectProfile[]>([]);
   const [longTermMemories, setLongTermMemories] = React.useState<AdminGovernanceLongTermMemory[]>([]);
   const [slashCommands, setSlashCommands] = React.useState<AdminGovernanceSlashCommand[]>([]);
 
@@ -166,7 +153,6 @@ export function GovernanceCenterPage() {
     open: boolean;
     item: AdminGovernanceSlashCommand | null;
   }>({ mode: 'create', open: false, item: null });
-  const [scanDialogOpen, setScanDialogOpen] = React.useState(false);
   const [deleteTarget, setDeleteTarget] = React.useState<{
     title: string;
     onConfirm: () => Promise<void>;
@@ -182,21 +168,18 @@ export function GovernanceCenterPage() {
       const [
         nextPolicies,
         nextHookRules,
-        nextProfiles,
         nextLongTermMemories,
         nextCommands,
         nextPermissionAudits,
       ] = await Promise.all([
         AdminChatApi.listPermissionPolicies(),
         AdminChatApi.listHookRules(),
-        AdminChatApi.listProjectProfiles(),
         AdminChatApi.listLongTermMemories('ALL', 100),
         AdminChatApi.listGovernanceSlashCommands(),
         AdminChatApi.listPermissionAudits(),
       ]);
       setPermissionPolicies(nextPolicies ?? []);
       setHookRules(nextHookRules ?? []);
-      setProjectProfiles(nextProfiles ?? []);
       setLongTermMemories(nextLongTermMemories ?? []);
       setSlashCommands(nextCommands ?? []);
       setPermissionAudits(nextPermissionAudits ?? []);
@@ -338,20 +321,6 @@ export function GovernanceCenterPage() {
     },
   ], [adminMessage, loadData]);
 
-  const profileColumns = React.useMemo<ColumnsType<AdminGovernanceProjectProfile>>(() => [
-    { title: '工作空间ID', dataIndex: 'workspaceId', width: 120, render: optionalText },
-    { title: '路径', dataIndex: 'workspacePath', width: 260, ellipsis: true },
-    { title: '摘要', dataIndex: 'summary', width: 240, ellipsis: true, render: optionalText },
-    { title: '技术栈', dataIndex: 'techStackJson', width: 180, ellipsis: true, render: renderJsonSummary },
-    { title: '模块地图', dataIndex: 'moduleMapJson', width: 220, ellipsis: true, render: renderJsonSummary },
-    { title: '测试命令', dataIndex: 'testCommandsJson', width: 220, ellipsis: true, render: renderJsonSummary },
-    { title: '关键入口', dataIndex: 'keyEntrypointsJson', width: 240, ellipsis: true, render: renderJsonSummary },
-    { title: '风险点', dataIndex: 'riskPointsJson', width: 220, ellipsis: true, render: renderJsonSummary },
-    { title: 'Agent上下文', dataIndex: 'agentContext', width: 280, ellipsis: true, render: optionalText },
-    { title: '状态', dataIndex: 'status', width: 110, render: (value?: string) => <Tag>{value || '-'}</Tag> },
-    { title: '扫描时间', dataIndex: 'scannedAt', width: 180, render: formatDate },
-  ], []);
-
   /**
    * 更新长期记忆状态并刷新治理中心数据；失败时直接透出后端 ApiResponse.message。
    */
@@ -491,7 +460,7 @@ export function GovernanceCenterPage() {
         <div className="min-w-0">
           <Typography.Title level={2} style={{ margin: 0 }}>治理中心</Typography.Title>
           <Typography.Text type="secondary">
-            维护软件端工具权限、自动化 Hook、项目画像和 Slash Command 命令目录。
+            维护软件端工具权限、自动化 Hook、长期记忆和 Slash Command 命令目录。
           </Typography.Text>
         </div>
         <Space wrap>
@@ -506,11 +475,6 @@ export function GovernanceCenterPage() {
           {activeTab === 'hook' ? (
             <Button icon={<PlusOutlined />} type="primary" onClick={() => setHookDialog({ mode: 'create', open: true, item: null })}>
               新增 Hook
-            </Button>
-          ) : null}
-          {activeTab === 'profile' ? (
-            <Button icon={<SearchOutlined />} type="primary" onClick={() => setScanDialogOpen(true)}>
-              扫描项目
             </Button>
           ) : null}
           {activeTab === 'command' ? (
@@ -555,21 +519,6 @@ export function GovernanceCenterPage() {
                   pagination={false}
                   rowKey={(item) => String(item.id ?? item.hookCode)}
                   scroll={{ x: 1160 }}
-                />
-              ),
-            },
-            {
-              key: 'profile',
-              label: '项目画像',
-              children: (
-                <AdminDataTable<AdminGovernanceProjectProfile>
-                  columns={profileColumns}
-                  dataSource={projectProfiles}
-                  loading={loading}
-                  locale={{ emptyText: loading ? '加载中...' : '暂无项目画像' }}
-                  pagination={false}
-                  rowKey={(item) => String(item.id ?? item.workspacePath)}
-                  scroll={{ x: 2100 }}
                 />
               ),
             },
@@ -669,17 +618,6 @@ export function GovernanceCenterPage() {
           setCommandDialog((previous) => ({ ...previous, open: false }));
           await loadData();
           void adminMessage.success(commandDialog.mode === 'edit' ? 'Slash Command 已保存' : 'Slash Command 已创建');
-        }}
-      />
-
-      <ProjectProfileScanDialog
-        open={scanDialogOpen}
-        onClose={() => setScanDialogOpen(false)}
-        onSubmit={async (payload) => {
-          await AdminChatApi.scanProjectProfile(payload);
-          setScanDialogOpen(false);
-          await loadData();
-          void adminMessage.success('项目画像已扫描');
         }}
       />
 
@@ -986,71 +924,6 @@ function SlashCommandEditDialog({
         </Form.Item>
         <Form.Item label="提示模板">
           <Input.TextArea aria-label="提示模板" rows={5} value={form.promptTemplate} onChange={(event) => updateField('promptTemplate', event.target.value)} />
-        </Form.Item>
-      </Form>
-    </Modal>
-  );
-}
-
-function ProjectProfileScanDialog({
-  open,
-  onClose,
-  onSubmit,
-}: {
-  open: boolean;
-  onClose: () => void;
-  onSubmit: (payload: { workspaceId?: string | number | null; workspacePath: string }) => Promise<void>;
-}) {
-  const adminMessage = useAdminMessage();
-  const [form, setForm] = React.useState<ProfileScanFormState>(emptyProfileScanForm);
-  const [saving, setSaving] = React.useState(false);
-
-  React.useEffect(() => {
-    if (open) {
-      setForm(emptyProfileScanForm);
-    }
-  }, [open]);
-
-  const handleSubmit = async () => {
-    if (!form.workspacePath.trim()) {
-      void adminMessage.error('请输入工作空间路径');
-      return;
-    }
-    const numericWorkspaceId = form.workspaceId.trim() ? Number(form.workspaceId.trim()) : null;
-    setSaving(true);
-    try {
-      await onSubmit({
-        workspaceId: Number.isFinite(numericWorkspaceId) ? numericWorkspaceId : null,
-        workspacePath: form.workspacePath.trim(),
-      });
-    } catch (error) {
-      void adminMessage.error(extractErrorMessage(error, '扫描项目画像失败'));
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <Modal
-      destroyOnHidden
-      footer={(
-        <Space>
-          <Button disabled={saving} onClick={onClose}>取消</Button>
-          <Button icon={<SearchOutlined />} loading={saving} type="primary" onClick={() => void handleSubmit()}>
-            开始扫描
-          </Button>
-        </Space>
-      )}
-      open={open}
-      title="扫描项目画像"
-      onCancel={onClose}
-    >
-      <Form layout="vertical">
-        <Form.Item label="工作空间ID">
-          <Input aria-label="工作空间ID" value={form.workspaceId} onChange={(event) => setForm((previous) => ({ ...previous, workspaceId: event.target.value }))} />
-        </Form.Item>
-        <Form.Item label="工作空间路径" required>
-          <Input aria-label="工作空间路径" value={form.workspacePath} onChange={(event) => setForm((previous) => ({ ...previous, workspacePath: event.target.value }))} />
         </Form.Item>
       </Form>
     </Modal>

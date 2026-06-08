@@ -409,17 +409,6 @@ export interface McpCallItem {
   errorMessage?: string;
 }
 
-/**
- * 描述本地工作空间扫描出的项目画像摘要，供聊天页展示并作为 Agent 上下文提示来源。
- */
-export interface ProjectProfileView {
-  summary?: string | null;
-  moduleMapJson?: string | null;
-  testCommandsJson?: string | null;
-  keyEntrypointsJson?: string | null;
-  riskPointsJson?: string | null;
-  agentContext?: string | null;
-}
 
 /**
  * 长期记忆状态：ACTIVE 参与后续模型上下文回注，REJECTED 表示已停用。
@@ -551,7 +540,6 @@ export interface ChatWorkspaceController {
   workspaceId: string | null;
   workspaceLabel: string;
   workspaceRuntimeTarget: 'cloud' | 'local';
-  projectProfile: ProjectProfileView | null;
   activeMemoryCount: number;
   longTermMemories: LongTermMemoryItem[];
   isMemoryLoading: boolean;
@@ -716,6 +704,5 @@ export interface WorkspaceBindingSyncResult {
   workspaceId?: string | null;
   workspaceName?: string | null;
   repositoryPath?: string | null;
-  projectProfile?: ProjectProfileView | null;
   activeMemoryCount?: number | null;
 }

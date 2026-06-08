@@ -3201,9 +3201,9 @@ describe('useChatWorkspace', () => {
   });
 
   /**
-   * 本地目录绑定返回的项目画像和已生效记忆数量应同步进入工作台状态，供聊天页即时展示 Agent 上下文。
+   * 本地目录绑定返回的已生效记忆数量应同步进入工作台状态，项目画像不再由前端保存。
    */
-  it('应在绑定本地工作空间后同步项目画像和已生效记忆数量', async () => {
+  it('应在绑定本地工作空间后同步已生效记忆数量', async () => {
     window.localStorage.setItem(
       'codingx.auth.session',
       JSON.stringify({
@@ -3260,14 +3260,6 @@ describe('useChatWorkspace', () => {
       repositoryPath: 'D:/code/workspace-b',
       workspaceId: '3002',
       workspaceName: 'workspace-b',
-      projectProfile: {
-        summary: 'Maven + Vite workspace',
-        moduleMapJson: '[{"name":"backend","path":"backend"}]',
-        testCommandsJson: '["mvn test","npm run build"]',
-        keyEntrypointsJson: '["backend/src/main/java/com/codingx/CodingXApplication.java"]',
-        riskPointsJson: '["缺少端到端测试"]',
-        agentContext: '项目包含后端、用户端和管理端。',
-      },
       activeMemoryCount: 2,
     });
 
@@ -3286,7 +3278,7 @@ describe('useChatWorkspace', () => {
       await result.current.setActiveWorkspacePath('D:/code/workspace-b');
     });
 
-    expect(result.current.projectProfile?.summary).toBe('Maven + Vite workspace');
+    expect('projectProfile' in result.current).toBe(false);
     expect(result.current.activeMemoryCount).toBe(2);
   });
 

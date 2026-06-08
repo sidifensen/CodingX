@@ -15,7 +15,6 @@ import {
   LongTermMemoryItem,
   LongTermMemoryStatus,
   McpItem,
-  ProjectProfileView,
   ReferenceItem,
   SharedConversationPayload,
   SampleQuestionItem,
@@ -494,14 +493,12 @@ export class ChatApi {
     repositoryPath: string;
     workspaceId: string;
     workspaceName: string;
-    projectProfile: ProjectProfileView | null;
     activeMemoryCount: number;
   }> {
     const envelope = await this.request<{
       repositoryPath: string;
       workspaceId: string;
       workspaceName: string;
-      projectProfile?: ProjectProfileView | null;
       activeMemoryCount?: number | null;
     }>(
       '/api/chat/workspace/bind-repository',
@@ -515,7 +512,6 @@ export class ChatApi {
       repositoryPath: String(envelope.data.repositoryPath ?? ''),
       workspaceId: String(envelope.data.workspaceId ?? ''),
       workspaceName: String(envelope.data.workspaceName ?? ''),
-      projectProfile: envelope.data.projectProfile ?? null,
       activeMemoryCount: Number(envelope.data.activeMemoryCount ?? 0),
     };
   }

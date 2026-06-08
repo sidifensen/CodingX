@@ -4695,9 +4695,9 @@ describe('ChatView', () => {
   });
 
   /**
-   * 工作区智能条应展示项目画像和已生效长期记忆，不再要求用户进行确认操作。
+   * 工作区记忆条应展示已生效长期记忆，不再要求用户进行确认操作。
    */
-  it('应展示工作区智能条和已生效长期记忆', async () => {
+  it('应展示工作区记忆条和已生效长期记忆', async () => {
     const updateLongTermMemoryStatus = vi.fn().mockResolvedValue(undefined);
 
     render(
@@ -4707,14 +4707,6 @@ describe('ChatView', () => {
         workspace={createWorkspace({
           activeConversationId: null,
           messages: [],
-          projectProfile: {
-            summary: 'Maven + Vite workspace',
-            moduleMapJson: '[{"name":"backend","path":"backend"}]',
-            testCommandsJson: '["mvn test","npm run build"]',
-            keyEntrypointsJson: '["backend/src/main/java/com/codingx/CodingXApplication.java"]',
-            riskPointsJson: '["缺少端到端测试"]',
-            agentContext: '项目包含后端、用户端和管理端。',
-          },
           activeMemoryCount: 1,
           longTermMemories: [
             {
@@ -4733,10 +4725,10 @@ describe('ChatView', () => {
     );
 
     const strip = await screen.findByTestId('workspace-intelligence-strip');
-    expect(strip).toHaveTextContent('Maven + Vite workspace');
+    expect(strip).toHaveTextContent('工作区记忆');
     expect(strip).toHaveTextContent('已生效 1 条');
-    expect(strip).toHaveTextContent('mvn test');
     expect(strip).toHaveTextContent('以后都按项目注释规范编写 Java 注释');
+    expect(strip).not.toHaveTextContent('项目画像');
     expect(screen.queryByRole('button', { name: '确认长期记忆 9001' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '拒绝长期记忆 9001' })).not.toBeInTheDocument();
     expect(updateLongTermMemoryStatus).not.toHaveBeenCalled();
@@ -4775,7 +4767,6 @@ function createWorkspace(overrides?: Partial<ChatWorkspaceController>): ChatWork
     workspaceId: '3001',
     workspaceLabel: 'CodingX',
     workspaceRuntimeTarget: 'local',
-    projectProfile: null,
     activeMemoryCount: 0,
     longTermMemories: [],
     isMemoryLoading: false,

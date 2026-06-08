@@ -514,28 +514,6 @@ export interface AdminGovernanceHookRule {
 }
 
 /**
- * 项目画像扫描结果，帮助软件端理解本地仓库技术栈与验证命令。
- */
-export interface AdminGovernanceProjectProfile {
-  id?: string | number;
-  workspaceId?: string | number;
-  workspacePath: string;
-  summary?: string;
-  techStackJson?: string;
-  entrypointsJson?: string;
-  verificationCommandsJson?: string;
-  moduleMapJson?: string;
-  testCommandsJson?: string;
-  keyEntrypointsJson?: string;
-  riskPointsJson?: string;
-  agentContext?: string;
-  status?: string;
-  scannedAt?: string;
-  createdAt?: string;
-  updatedAt?: string;
-}
-
-/**
  * 长期记忆治理记录，管理员可查看并启停项目级或用户级记忆。
  */
 export interface AdminGovernanceLongTermMemory {
@@ -570,14 +548,6 @@ export interface AdminGovernanceSlashCommand {
   sortNo?: number;
   createdAt?: string;
   updatedAt?: string;
-}
-
-/**
- * 管理端项目画像扫描请求。
- */
-export interface AdminGovernanceProjectProfileScanPayload {
-  workspaceId?: string | number | null;
-  workspacePath: string;
 }
 
 /**
@@ -1175,29 +1145,6 @@ export class AdminChatApi {
   static async deleteHookRule(id: string | number): Promise<void> {
     await this.request<void>(`/api/admin/governance/hook-rules/${encodeURIComponent(String(id))}`, {
       method: 'DELETE',
-    });
-  }
-
-  /**
-   * 查询最近项目画像。
-   * @param limit 最大返回条数。
-   */
-  static async listProjectProfiles(limit = 20): Promise<AdminGovernanceProjectProfile[]> {
-    return this.request<AdminGovernanceProjectProfile[]>(
-      `/api/admin/governance/project-profiles?limit=${encodeURIComponent(String(limit))}`,
-    );
-  }
-
-  /**
-   * 扫描本地工作空间项目画像。
-   * @param payload 工作空间路径与可选 ID。
-   */
-  static async scanProjectProfile(
-    payload: AdminGovernanceProjectProfileScanPayload,
-  ): Promise<AdminGovernanceProjectProfile> {
-    return this.request<AdminGovernanceProjectProfile>('/api/admin/governance/project-profiles/scan', {
-      method: 'POST',
-      body: JSON.stringify(payload),
     });
   }
 

@@ -12,7 +12,6 @@ import com.codingx.config.GlobalExceptionHandler;
 import com.codingx.governance.application.service.HookRuleService;
 import com.codingx.governance.application.service.LongTermMemoryService;
 import com.codingx.governance.application.service.PermissionPolicyService;
-import com.codingx.governance.application.service.ProjectProfileService;
 import com.codingx.governance.application.service.SlashCommandService;
 import com.codingx.governance.domain.model.GovernanceLongTermMemory;
 import com.codingx.governance.interfaces.controller.AdminGovernanceController;
@@ -34,7 +33,6 @@ class AdminGovernanceMemoryControllerTest {
 
     @Mock private PermissionPolicyService permissionPolicyService;
     @Mock private HookRuleService hookRuleService;
-    @Mock private ProjectProfileService projectProfileService;
     @Mock private SlashCommandService slashCommandService;
     @Mock private LongTermMemoryService longTermMemoryService;
 

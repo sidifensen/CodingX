@@ -18,8 +18,6 @@ vi.mock('@/api/adminChatApi', () => ({
     createHookRule: vi.fn(),
     updateHookRule: vi.fn(),
     deleteHookRule: vi.fn(),
-    listProjectProfiles: vi.fn(),
-    scanProjectProfile: vi.fn(),
     listLongTermMemories: vi.fn(),
     updateLongTermMemoryStatus: vi.fn(),
     listGovernanceSlashCommands: vi.fn(),
@@ -53,22 +51,6 @@ describe('GovernanceCenterPage', () => {
         actionType: 'DESKTOP_NOTIFY',
         enabled: 1,
         sortNo: 1,
-      },
-    ]);
-    vi.mocked(AdminChatApi.listProjectProfiles).mockResolvedValue([
-      {
-        id: 3,
-        workspaceId: 3001,
-        workspacePath: 'D:/code/CodingX',
-        summary: 'Maven + Vite workspace',
-        techStackJson: '["Maven","Vite"]',
-        verificationCommandsJson: '["mvn test","npm run build"]',
-        moduleMapJson: '[{"name":"backend","path":"backend"}]',
-        testCommandsJson: '["mvn test","npm run build"]',
-        keyEntrypointsJson: '["backend/src/main/java/com/codingx/CodingXApplication.java"]',
-        riskPointsJson: '["缺少端到端测试"]',
-        agentContext: '项目包含后端、用户端和管理端。',
-        status: 'COMPLETED',
       },
     ]);
     vi.mocked(AdminChatApi.listLongTermMemories).mockResolvedValue([
@@ -128,7 +110,7 @@ describe('GovernanceCenterPage', () => {
   });
 
   /**
-   * 治理中心首屏应加载权限策略、Hook 规则、画像、Slash Command 和权限审计数据，形成管理端统一入口。
+   * 治理中心首屏应加载权限策略、Hook 规则、长期记忆、Slash Command 和权限审计数据，形成管理端统一入口。
    */
   it('loads governance dashboard data and renders tabbed workbench', async () => {
     const { container } = render(
@@ -141,7 +123,7 @@ describe('GovernanceCenterPage', () => {
     expect(screen.getByText('禁止危险删除')).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: '权限策略' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Hook' })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: '项目画像' })).toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: '项目画像' })).not.toBeInTheDocument();
     expect(screen.getByRole('tab', { name: '长期记忆' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Slash Command' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: '审计' })).toBeInTheDocument();
@@ -151,10 +133,6 @@ describe('GovernanceCenterPage', () => {
 
     fireEvent.click(screen.getByRole('tab', { name: 'Hook' }));
     expect(await screen.findByText('任务完成通知')).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('tab', { name: '项目画像' }));
-    expect(await screen.findByText('Maven + Vite workspace')).toBeInTheDocument();
-    expect(await screen.findByText('backend')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('tab', { name: '长期记忆' }));
     expect(await screen.findByText('以后都按项目注释规范编写 Java 注释')).toBeInTheDocument();

@@ -144,7 +144,7 @@ public class ChatApplicationService {
     private final ChatToolExecutionService chatToolExecutionService;
     /** Hook 规则服务，用于匹配任务生命周期自动化动作，供桌面通知或宠物联动消费。 */
     private final HookRuleService hookRuleService;
-    /** 治理上下文服务，负责把项目画像和已生效长期记忆注入模型，并在完成后提取新的长期记忆 */
+    /** 治理上下文服务，负责把仓库规范文件和已生效长期记忆注入模型，并在完成后提取新的长期记忆 */
     private final GovernanceAgentContextService governanceAgentContextService;
     /** 会话 workspace 绑定服务，负责把本地空间映射为真实仓库目录 */
     private final ChatWorkspaceBindingService chatWorkspaceBindingService;
@@ -1146,7 +1146,7 @@ public class ChatApplicationService {
     }
 
     /**
-     * 构建治理上下文片段，供持久化会话在模型输入前获取项目画像和已生效长期记忆。
+     * 构建治理上下文片段，供持久化会话在模型输入前获取仓库规范文件和已生效长期记忆。
      * @param conversation 当前会话。
      * @param rewrittenQuestion 本轮改写后的用户问题。
      * @return 可注入 system prompt 的治理上下文，缺失服务或上下文为空时返回空字符串。

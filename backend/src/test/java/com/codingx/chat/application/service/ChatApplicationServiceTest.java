@@ -464,7 +464,7 @@ class ChatApplicationServiceTest {
     }
 
     /**
-     * 项目画像和已生效长期记忆应作为治理上下文注入系统提示，并在完成后提取新的长期记忆。
+     * 仓库规范文件和已生效长期记忆应作为治理上下文注入系统提示，并在完成后提取新的长期记忆。
      */
     @Test
     void sendMessageInjectsGovernanceContextAndExtractsMemoryCandidatesAfterCompletion() {
@@ -483,7 +483,7 @@ class ChatApplicationServiceTest {
         when(chatSkillContextService.buildSkillContext(any())).thenReturn("");
         when(chatExpertContextService.buildExpertContext(any())).thenReturn("");
         when(governanceAgentContextService.buildAgentContext(1002L, 3001L, "请记住我的代码风格偏好：优先写清楚业务注释"))
-            .thenReturn("# 项目画像\n验证命令：cd backend && mvn test\n\n# 长期记忆\n代码风格偏好：业务注释");
+            .thenReturn("# 仓库规范文件\n## AGENTS.md\n提交信息必须使用中文\n\n# 长期记忆\n代码风格偏好：业务注释");
         when(conversationSummaryService.buildModelHistory(any(), any())).thenAnswer(invocation -> invocation.getArgument(1));
         when(llmResponseCleaner.clean(any())).thenAnswer(invocation -> invocation.getArgument(0));
         when(conversationTitleService.generateTitle(any(), any())).thenReturn("长期记忆");
@@ -492,7 +492,7 @@ class ChatApplicationServiceTest {
             List<ChatMessage> aiHistory = invocation.getArgument(0, List.class);
             ChatMessage systemMessage = aiHistory.getFirst();
             assertEquals(ChatMessageRole.SYSTEM, systemMessage.getRole());
-            assertTrue(systemMessage.getContent().contains("项目画像"));
+            assertTrue(systemMessage.getContent().contains("仓库规范文件"));
             assertTrue(systemMessage.getContent().contains("长期记忆"));
             AiChatClient.StreamHandler handler = invocation.getArgument(2);
             handler.onDelta("已生成长期记忆。");

@@ -673,6 +673,47 @@ class CodingXTuiModelTest {
     }
 
     @Test
+    void tabShouldCompleteUniqueSlashCommandMatch() {
+        CapturingStreamingEventSource eventSource = new CapturingStreamingEventSource();
+        CodingXTuiModel model = new CodingXTuiModel(
+            tempDir.resolve("workspace"),
+            eventSource,
+            new TerminalRenderer(),
+            null,
+            backendSlashCatalog()
+        );
+
+        pressRunes(model, "/logi");
+        model.update(new KeyPressMessage(new Key(KeyType.keyHT)));
+
+        String view = stripAnsi(model.view());
+        assertTrue(view.contains("› /login█"), view);
+        assertFalse(view.contains("› /logi█"), view);
+        assertTrue(eventSource.tasks.isEmpty());
+    }
+
+    @Test
+    void tabShouldKeepInputWhenSlashCommandMatchIsAmbiguous() {
+        CapturingStreamingEventSource eventSource = new CapturingStreamingEventSource();
+        CodingXTuiModel model = new CodingXTuiModel(
+            tempDir.resolve("workspace"),
+            eventSource,
+            new TerminalRenderer(),
+            null,
+            backendSlashCatalog()
+        );
+
+        pressRunes(model, "/log");
+        model.update(new KeyPressMessage(new Key(KeyType.keyHT)));
+
+        String view = stripAnsi(model.view());
+        assertTrue(view.contains("› /log█"), view);
+        assertTrue(view.contains("/login"));
+        assertTrue(view.contains("/logout"));
+        assertTrue(eventSource.tasks.isEmpty());
+    }
+
+    @Test
     void backendSlashCommandShouldSubmitChatInsteadOfLocalUnknownCommand() {
         CapturingStreamingEventSource eventSource = new CapturingStreamingEventSource();
         FakeCliAuthService authService = new FakeCliAuthService();

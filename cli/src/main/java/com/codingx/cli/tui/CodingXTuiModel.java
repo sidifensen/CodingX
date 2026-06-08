@@ -367,6 +367,9 @@ public class CodingXTuiModel implements Model {
                 planMode = !planMode;
                 return UpdateResult.from(this, null);
             }
+            if (isTabKey(keyPressMessage) && completeUniqueSlashCommand()) {
+                return UpdateResult.from(this, null);
+            }
             if (isSubmitKey(keyPressMessage)) {
                 // 提交键必须先于 textarea.update() 处理；否则 LF/CR 会被 textarea 当成编辑换行，导致任务不进入 transcript。
                 String normalizedTask = normalizeTask(textarea.value());
@@ -403,6 +406,16 @@ public class CodingXTuiModel implements Model {
         return "enter".equals(keyPressMessage.key())
             || keyPressMessage.type() == KeyType.keyCR
             || keyPressMessage.type() == KeyType.keyLF;
+    }
+
+    /**
+     * 判断当前按键是否为 Tab；tui4j 把普通 Tab 映射为水平制表符 HT。
+     *
+     * @param keyPressMessage 键盘事件。
+     * @return true 表示应尝试补全 Slash Command。
+     */
+    private boolean isTabKey(KeyPressMessage keyPressMessage) {
+        return "tab".equals(keyPressMessage.key()) || keyPressMessage.type() == KeyType.keyHT;
     }
 
     /**
@@ -1034,23 +1047,36 @@ public class CodingXTuiModel implements Model {
     }
 
     /**
+     * 尝试把当前 Slash Command 前缀补全为唯一命令；多候选时只保留面板，不擅自选择。
+     *
+     * @return true 表示已经消费 Tab 事件。
+     */
+    private boolean completeUniqueSlashCommand() {
+        String value = normalizeRendererNewlines(textarea.value()).trim();
+        if (!value.startsWith("/")) {
+            return false;
+        }
+        String keyword = slashCommandKeyword(value);
+        List<SlashCommandDisplay> matches = slashCommandDisplays().stream()
+            .filter(command -> command.command().substring(1).toLowerCase().startsWith(keyword))
+            .toList();
+        if (matches.size() != 1) {
+            return false;
+        }
+        textarea.setValue(matches.getFirst().command());
+        return true;
+    }
+
+    /**
      * 渲染输入中的命令候选；保持纯文本而非复杂交互控件，适配普通终端和测试输出。
      *
      * @return 命令候选文本。
      */
     private String renderSlashCommandPanel() {
-        String keyword = normalizeRendererNewlines(textarea.value()).trim()
-            .replaceFirst("^/+", "")
-            .toLowerCase();
-        List<String> commands = new ArrayList<>();
-        commands.add("/login   登录 CodingX");
-        commands.add("/logout  退出登录");
-        commands.add("/help    查看命令列表");
-        for (CliSlashCommand command : backendSlashCommands) {
-            commands.add(formatBackendSlashCommand(command));
-        }
-        commands = commands.stream()
-            .filter(line -> keyword.isBlank() || line.toLowerCase().contains(keyword))
+        String keyword = slashCommandKeyword(normalizeRendererNewlines(textarea.value()).trim());
+        List<String> commands = slashCommandDisplays().stream()
+            .filter(command -> keyword.isBlank() || command.searchText().contains(keyword))
+            .map(SlashCommandDisplay::line)
             .toList();
         if (commands.isEmpty()) {
             return styleDim("  未匹配到命令");
@@ -1061,6 +1087,43 @@ public class CodingXTuiModel implements Model {
             lines.add("  " + command);
         }
         return styleDim(String.join(RENDER_NEWLINE, lines));
+    }
+
+    /**
+     * 提取 Slash Command 搜索关键字，去掉前导 `/` 并统一小写。
+     *
+     * @param value 当前输入框文本。
+     * @return 用于面板过滤和 Tab 补全的关键字。
+     */
+    private String slashCommandKeyword(String value) {
+        return value.replaceFirst("^/+", "").toLowerCase();
+    }
+
+    /**
+     * 返回本地控制命令和后端治理命令的统一展示数据；面板和补全共享这份列表。
+     *
+     * @return 可展示和匹配的命令列表。
+     */
+    private List<SlashCommandDisplay> slashCommandDisplays() {
+        List<SlashCommandDisplay> commands = new ArrayList<>();
+        commands.add(new SlashCommandDisplay("/login", "/login   登录 CodingX"));
+        commands.add(new SlashCommandDisplay("/logout", "/logout  退出登录"));
+        commands.add(new SlashCommandDisplay("/help", "/help    查看命令列表"));
+        for (CliSlashCommand command : backendSlashCommands) {
+            String commandText = "/" + command.commandCode();
+            commands.add(new SlashCommandDisplay(commandText, formatBackendSlashCommand(command)));
+        }
+        return commands;
+    }
+
+    /**
+     * Slash Command 展示项；command 用于补全，line 用于候选面板。
+     */
+    private record SlashCommandDisplay(String command, String line) {
+
+        private String searchText() {
+            return line.toLowerCase();
+        }
     }
 
     /**

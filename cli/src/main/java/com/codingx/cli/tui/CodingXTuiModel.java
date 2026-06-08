@@ -58,9 +58,9 @@ public class CodingXTuiModel implements Model {
     private static final String ANSI_DIM_PLACEHOLDER = "\u001B[90m";
 
     /**
-     * ANSI 蓝色前景 + 灰色背景，用于标记当前选中的命令项，配合上下键导航使用。
+     * ANSI 蓝色前景色，用于标记当前选中的 Slash Command 整行文本。
      */
-    private static final String ANSI_BLUE_ON_GRAY = "\u001B[34;48;5;238m";
+    private static final String ANSI_BLUE = "\u001B[34m";
 
     /**
      * ANSI 样式复位，防止灰色 placeholder 污染后续状态栏和回答内容。
@@ -1183,7 +1183,7 @@ public class CodingXTuiModel implements Model {
     }
 
     /**
-     * 渲染输入中的命令候选面板；普通候选保持灰色弱提示，当前选中项带灰色背景和选择标记。
+     * 渲染输入中的命令候选面板；普通候选保持灰色弱提示，当前选中项只改变整行文字颜色。
      *
      * @return 命令候选文本。
      */
@@ -1196,27 +1196,46 @@ public class CodingXTuiModel implements Model {
         List<String> lines = new ArrayList<>();
         lines.add(styleDim("  命令"));
         int clampedIndex = Math.min(slashCommandSelectedIndex, filtered.size() - 1);
+        int nameWidth = filtered.stream()
+            .mapToInt(command -> command.name().length())
+            .max()
+            .orElse(0);
         for (int index = 0; index < filtered.size(); index++) {
             SlashCommandDisplay display = filtered.get(index);
             boolean selected = index == clampedIndex;
-            lines.add(renderSlashCommandLine(display, selected));
+            lines.add(renderSlashCommandLine(display, selected, nameWidth));
         }
         return String.join(RENDER_NEWLINE, lines);
     }
 
     /**
-     * 渲染单条命令候选行；未选中项保持灰色弱提示，选中项额外加灰色背景和选择箭头。
+     * 渲染单条命令候选行；未选中项保持灰色弱提示，选中项不加背景，仅让整行文字变色。
      *
      * @param display 命令展示数据。
      * @param selected 当前行是否为选中项。
+     * @param nameWidth 当前候选集合中最长命令名长度，用于让说明文案按列对齐。
      * @return 带 ANSI 样式的单行文本。
      */
-    private String renderSlashCommandLine(SlashCommandDisplay display, boolean selected) {
+    private String renderSlashCommandLine(SlashCommandDisplay display, boolean selected, int nameWidth) {
+        String content = padRight(display.name(), nameWidth) + "  " + display.description();
         if (!selected) {
-            return styleDim("  " + display.name() + " " + display.description());
+            return styleDim("  " + content);
         }
-        return "› " + ANSI_BLUE_ON_GRAY + display.name() + ANSI_RESET
-            + ANSI_DIM_PLACEHOLDER + " " + display.description() + ANSI_RESET;
+        return "› " + ANSI_BLUE + content + ANSI_RESET;
+    }
+
+    /**
+     * 使用空格把命令名补齐到固定列宽，避免描述文本紧贴命令导致面板显得拥挤。
+     *
+     * @param text 原始命令名。
+     * @param width 目标列宽。
+     * @return 右侧补空格后的命令名。
+     */
+    private String padRight(String text, int width) {
+        if (text.length() >= width) {
+            return text;
+        }
+        return text + " ".repeat(width - text.length());
     }
 
     /**

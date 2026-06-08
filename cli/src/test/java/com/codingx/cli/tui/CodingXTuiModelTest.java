@@ -787,15 +787,16 @@ class CodingXTuiModelTest {
 
         String view = model.view();
         // 未选中命令保持灰色弱提示，只让当前选中项抢占视觉焦点。
-        assertTrue(view.contains("\u001B[90m  /logout 退出登录\u001B[0m"), view);
-        assertTrue(view.contains("\u001B[90m  /review 审查当前改动并优先指出风险和测试缺口\u001B[0m"), view);
-        // 选中项使用蓝色前景 + 灰色背景，避免整张命令列表都像高亮信息。
-        assertTrue(view.contains("\u001B[34;48;5;238m/login\u001B[0m"), view);
+        assertTrue(view.contains("\u001B[90m  /logout    退出登录\u001B[0m"), view);
+        assertTrue(view.contains("\u001B[90m  /review    审查当前改动并优先指出风险和测试缺口\u001B[0m"), view);
+        // 选中项只改变整行文字颜色，不使用背景块，避免在终端里出现突兀的色块。
+        assertTrue(view.contains("› \u001B[34m/login     登录 CodingX\u001B[0m"), view);
+        assertFalse(view.contains("48;5;238"), view);
         assertTrue(view.contains("登录 CodingX"), view);
     }
 
     @Test
-    void selectedSlashCommandShouldUseBlueOnGrayBackground() {
+    void selectedSlashCommandShouldColorEntireLineWithoutBackground() {
         CodingXTuiModel model = new CodingXTuiModel(
             tempDir.resolve("workspace"),
             new MockAgentEventSource(),
@@ -807,7 +808,8 @@ class CodingXTuiModelTest {
         pressRunes(model, "/");
         // 初始选中第一项 /login。
         String view = model.view();
-        assertTrue(view.contains("\u001B[34;48;5;238m/login"), view);
+        assertTrue(view.contains("› \u001B[34m/login     登录 CodingX\u001B[0m"), view);
+        assertFalse(view.contains("48;5;238"), view);
     }
 
     @Test

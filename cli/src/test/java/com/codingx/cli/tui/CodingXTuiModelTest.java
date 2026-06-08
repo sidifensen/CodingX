@@ -10,6 +10,7 @@ import com.codingx.cli.render.TerminalRenderer;
 import com.codingx.cli.slash.CliSlashCommand;
 import com.codingx.cli.slash.SlashCommandCatalog;
 import com.williamcallahan.tui4j.compat.bubbletea.KeyPressMessage;
+import com.williamcallahan.tui4j.compat.bubbletea.PasteMessage;
 import com.williamcallahan.tui4j.compat.bubbletea.Program;
 import com.williamcallahan.tui4j.compat.bubbletea.ProgramOption;
 import com.williamcallahan.tui4j.compat.bubbletea.UpdateResult;
@@ -105,6 +106,103 @@ class CodingXTuiModelTest {
         String view = stripAnsi(model.view());
 
         assertTrue(view.contains("› █输入任务，/ 查看命令"), view);
+    }
+
+    @Test
+    void composerCursorShouldFollowLeftAndRightNavigation() {
+        CodingXTuiModel model = new CodingXTuiModel(
+            tempDir.resolve("workspace"),
+            new MockAgentEventSource(),
+            new TerminalRenderer()
+        );
+
+        // 回归自绘光标固定在输入末尾的问题：方向键只更新 Textarea，view 必须读取真实光标位置。
+        pressRunes(model, "abc");
+        assertTrue(stripAnsi(model.view()).contains("› abc█"), model.view());
+
+        model.update(new KeyPressMessage(new Key(KeyType.KeyLeft)));
+        assertTrue(stripAnsi(model.view()).contains("› ab█c"), model.view());
+
+        model.update(new KeyPressMessage(new Key(KeyType.KeyRight)));
+        assertTrue(stripAnsi(model.view()).contains("› abc█"), model.view());
+    }
+
+    @Test
+    void composerCursorShouldFollowUpAndDownNavigationAcrossInputLines() {
+        CodingXTuiModel model = new CodingXTuiModel(
+            tempDir.resolve("workspace"),
+            new MockAgentEventSource(),
+            new TerminalRenderer()
+        );
+
+        // 粘贴多行文本后仍压平成单行 composer，但光标位置要跟随 Textarea 的真实行列移动。
+        model.update(new PasteMessage("abc\ndef"));
+        assertTrue(stripAnsi(model.view()).contains("› abc def█"), model.view());
+
+        model.update(new KeyPressMessage(new Key(KeyType.KeyUp)));
+        assertTrue(stripAnsi(model.view()).contains("› ab█c def"), model.view());
+
+        model.update(new KeyPressMessage(new Key(KeyType.KeyDown)));
+        assertTrue(stripAnsi(model.view()).contains("› abc de█f"), model.view());
+    }
+
+    @Test
+    void assistantReplyShouldHaveSpacingAfterUserMessage() {
+        CodingXTuiModel model = new CodingXTuiModel(
+            tempDir.resolve("workspace"),
+            new MockAgentEventSource(),
+            new TerminalRenderer()
+        );
+
+        // 用户输入和助手回答之间保留空行，避免终端里两种说话者粘在一起难以区分。
+        model.submitTask("分析这个项目");
+
+        String view = stripAnsi(model.view());
+        assertTrue(view.contains("› 分析这个项目\n\n• 我会先查看当前仓库结构"), view);
+    }
+
+    @Test
+    void runningWorkingHintShouldRenderAsDimText() throws Exception {
+        NonCompletingStreamingEventSource eventSource = new NonCompletingStreamingEventSource();
+        CodingXTuiModel model = new CodingXTuiModel(
+            tempDir.resolve("workspace"),
+            eventSource,
+            new TerminalRenderer()
+        );
+        model.setProgram(new Program(model));
+
+        // Working 只表达等待状态，应使用灰色弱提示，不能看起来像一条普通助手消息。
+        pressRunes(model, "你是谁");
+        model.update(new KeyPressMessage(new Key(KeyType.keyCR)));
+        eventSource.awaitTaskCount(1);
+
+        String view = model.view();
+        assertTrue(view.contains("\u001B[90m• Working ("), view);
+        assertTrue(view.contains("esc to interrupt)\u001B[0m"), view);
+    }
+
+    @Test
+    void dimWorkingHintShouldIgnoreAnsiSequencesWhenWrapping() throws Exception {
+        NonCompletingStreamingEventSource eventSource = new NonCompletingStreamingEventSource();
+        CodingXTuiModel model = new CodingXTuiModel(
+            tempDir.resolve("workspace"),
+            eventSource,
+            new TerminalRenderer()
+        );
+        model.setProgram(new Program(model));
+        model.update(new WindowSizeMessage(40, 8));
+
+        pressRunes(model, "你是谁");
+        model.update(new KeyPressMessage(new Key(KeyType.keyCR)));
+        eventSource.awaitTaskCount(1);
+        setRunningStartedAt(model, System.nanoTime() - TimeUnit.SECONDS.toNanos(10));
+
+        // ANSI 灰色控制串不占终端列宽；窄屏下 Working 可见文本本身仍应保持在同一行。
+        String view = stripAnsi(model.view());
+        assertTrue(
+            view.lines().anyMatch(line -> line.matches("• Working \\(\\d+s • esc to interrupt\\)")),
+            view
+        );
     }
 
     @Test
@@ -305,7 +403,7 @@ class CodingXTuiModelTest {
             ))
         )));
 
-        String bottomArea = lastLines(stripAnsi(model.view()), 5);
+        String bottomArea = lastLines(stripAnsi(model.view()), 6);
         assertTrue(bottomArea.contains("› 你好你好"), bottomArea);
         assertTrue(bottomArea.contains("› █输入任务，/ 查看命令"), bottomArea);
     }
@@ -431,7 +529,7 @@ class CodingXTuiModelTest {
         inputWriter.write("visible-user\r".getBytes(StandardCharsets.UTF_8));
         inputWriter.flush();
         eventSource.awaitTaskCount(1);
-        awaitContains(() -> lastLines(model.view(), 5), "› visible-user");
+        awaitContains(() -> lastLines(model.view(), 6), "› visible-user");
         awaitContains(() -> stripAnsi(output.toString(StandardCharsets.UTF_8)), "› visible-user");
 
         inputWriter.write(3);
@@ -1052,6 +1150,13 @@ class CodingXTuiModelTest {
             current = supplier.get();
         }
         assertTrue(current.contains(expected), current);
+    }
+
+    private static void setRunningStartedAt(CodingXTuiModel model, long startedAtNanos) throws Exception {
+        // 计时字段没有公开 setter；测试只调整起始时间来稳定复现两位数秒数的换行边界。
+        var field = CodingXTuiModel.class.getDeclaredField("runningTurnStartedAtNanos");
+        field.setAccessible(true);
+        field.setLong(model, startedAtNanos);
     }
 
     /**

@@ -695,6 +695,9 @@ public class CodingXTuiModel implements Model {
             return;
         }
         if (activeAssistantLineIndex < 0) {
+            if (!timelineLines.isEmpty() && latestUserLine.equals(timelineLines.getLast())) {
+                appendLine("");
+            }
             activeAssistantText = new StringBuilder();
             activeAssistantLineIndex = timelineLines.size();
             timelineLines.add("");
@@ -811,7 +814,7 @@ public class CodingXTuiModel implements Model {
      * @return 运行中提示行。
      */
     private String renderWorkingLine() {
-        return "• Working (" + elapsedRunningSeconds() + "s • esc to interrupt)";
+        return styleDim("• Working (" + elapsedRunningSeconds() + "s • esc to interrupt)");
     }
 
     /**
@@ -832,13 +835,68 @@ public class CodingXTuiModel implements Model {
      * @return 可见 composer 文本。
      */
     private String renderComposer() {
-        String taskText = normalizeRendererNewlines(textarea.value()).replace('\n', ' ').trim();
+        String taskText = normalizeRendererNewlines(textarea.value());
         String cursorCell = textarea.cursor().isBlink() ? " " : VISIBLE_CURSOR;
         // 真实 TTY 下 tui4j Textarea.view() 会附带光标样式和填充行；底部 composer 必须稳定为单行。
-        if (taskText.isEmpty()) {
+        if (taskText.isBlank()) {
             return renderEmptyComposer(cursorCell);
         }
-        return truncateVisualLine("› " + taskText + cursorCell);
+        return renderEditableComposer(taskText, cursorCell);
+    }
+
+    /**
+     * 按 Textarea 的真实行列光标渲染单行 composer；左右/上下键只改变 Textarea 状态，这里负责把状态反映到自绘光标。
+     *
+     * @param taskText 输入框原始文本，可能包含换行。
+     * @param cursorCell 当前光标可见或隐藏占位。
+     * @return 带真实光标位置的单行 composer。
+     */
+    private String renderEditableComposer(String taskText, String cursorCell) {
+        String[] lines = taskText.split(RENDER_NEWLINE, -1);
+        int row = Math.max(0, Math.min(textarea.line(), lines.length - 1));
+        int cursorIndex = charIndexForCellOffset(lines[row], textarea.lineInfo().charOffset());
+        StringBuilder beforeCursor = new StringBuilder();
+        for (int index = 0; index < row; index++) {
+            if (!beforeCursor.isEmpty()) {
+                beforeCursor.append(' ');
+            }
+            beforeCursor.append(lines[index]);
+        }
+        if (row > 0) {
+            beforeCursor.append(' ');
+        }
+        beforeCursor.append(lines[row], 0, cursorIndex);
+
+        StringBuilder afterCursor = new StringBuilder(lines[row].substring(cursorIndex));
+        for (int index = row + 1; index < lines.length; index++) {
+            afterCursor.append(' ');
+            afterCursor.append(lines[index]);
+        }
+        return truncateVisualLine("› " + beforeCursor + cursorCell + afterCursor);
+    }
+
+    /**
+     * 将 textarea 的单行 cell 偏移转换为 Java 字符串下标，确保中文宽字符前后移动时光标仍落在字符边界。
+     *
+     * @param value 当前 textarea 行文本。
+     * @param cellOffset 光标相对当前行的终端列偏移。
+     * @return Java 字符串下标。
+     */
+    private int charIndexForCellOffset(String value, int cellOffset) {
+        int columns = 0;
+        for (int offset = 0; offset < value.length(); ) {
+            int codePoint = value.codePointAt(offset);
+            int width = codePointWidth(codePoint);
+            if (columns + width > cellOffset) {
+                return offset;
+            }
+            columns += width;
+            offset += Character.charCount(codePoint);
+            if (columns >= cellOffset) {
+                return offset;
+            }
+        }
+        return value.length();
     }
 
     /**
@@ -863,7 +921,17 @@ public class CodingXTuiModel implements Model {
      * @return 带 ANSI 灰色样式的提示行。
      */
     private String stylePlaceholder(String placeholder) {
-        return ANSI_DIM_PLACEHOLDER + placeholder + ANSI_RESET;
+        return styleDim(placeholder);
+    }
+
+    /**
+     * 渲染灰色弱提示；用于 placeholder 和运行中 Working 行。
+     *
+     * @param text 原始文本。
+     * @return 带 ANSI 灰色样式的文本。
+     */
+    private String styleDim(String text) {
+        return ANSI_DIM_PLACEHOLDER + text + ANSI_RESET;
     }
 
     /**
@@ -1169,6 +1237,12 @@ public class CodingXTuiModel implements Model {
         StringBuilder row = new StringBuilder();
         int columns = 0;
         for (int offset = 0; offset < value.length(); ) {
+            if (isAnsiSequenceStart(value, offset)) {
+                int ansiEnd = ansiSequenceEnd(value, offset);
+                row.append(value, offset, ansiEnd);
+                offset = ansiEnd;
+                continue;
+            }
             int codePoint = value.codePointAt(offset);
             int width = codePointWidth(codePoint);
             if (columns + width > maxColumns && !row.isEmpty()) {
@@ -1191,6 +1265,12 @@ public class CodingXTuiModel implements Model {
         StringBuilder row = new StringBuilder();
         int columns = 0;
         for (int offset = 0; offset < logicalLine.length(); ) {
+            if (isAnsiSequenceStart(logicalLine, offset)) {
+                int ansiEnd = ansiSequenceEnd(logicalLine, offset);
+                row.append(logicalLine, offset, ansiEnd);
+                offset = ansiEnd;
+                continue;
+            }
             int codePoint = logicalLine.codePointAt(offset);
             int width = codePointWidth(codePoint);
             if (columns + width > terminalWidth && !row.isEmpty()) {
@@ -1203,6 +1283,37 @@ public class CodingXTuiModel implements Model {
             offset += Character.charCount(codePoint);
         }
         rows.add(row.toString());
+    }
+
+    /**
+     * 识别 ANSI CSI 控制序列起点；这些序列只影响样式，不应参与终端列宽计算。
+     *
+     * @param value 当前渲染文本。
+     * @param offset 待检查的字符串下标。
+     * @return true 表示当前位置是 ESC[ 开头的 ANSI CSI 序列。
+     */
+    private boolean isAnsiSequenceStart(String value, int offset) {
+        return value.charAt(offset) == '\u001B'
+            && offset + 1 < value.length()
+            && value.charAt(offset + 1) == '[';
+    }
+
+    /**
+     * 找到 ANSI CSI 控制序列的结束位置；异常截断时消费到行尾，避免把残缺控制串拆成可见字符。
+     *
+     * @param value 当前渲染文本。
+     * @param offset ESC 字符所在下标。
+     * @return 序列结束后的下标。
+     */
+    private int ansiSequenceEnd(String value, int offset) {
+        int cursor = offset + 2;
+        while (cursor < value.length()) {
+            char marker = value.charAt(cursor++);
+            if (marker >= '@' && marker <= '~') {
+                return cursor;
+            }
+        }
+        return value.length();
     }
 
     /**

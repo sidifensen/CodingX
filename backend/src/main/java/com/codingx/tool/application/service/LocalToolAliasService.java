@@ -7,13 +7,13 @@ import java.util.Map;
 import org.springframework.stereotype.Service;
 
 /**
- * 维护模型可见的 Claude Code 风格工具名与后端真实本地工具编码之间的映射。
- * 业务约束：别名只影响模型 schema、过程展示和入口归一化，真实执行仍委托给既有短工具编码。
+ * 维护 Claude Code 风格兼容工具名与后端真实本地工具编码之间的映射。
+ * 业务约束：别名只作为历史入口兼容和展示辅助，模型 schema 统一暴露既有短工具编码。
  */
 @Service
 public class LocalToolAliasService {
 
-    /** Claude Code 风格展示名到 CodingX 既有执行器编码的映射，保持声明顺序用于 schema 输出。 */
+    /** Claude Code 风格兼容名到 CodingX 既有执行器编码的映射，保持声明顺序便于展示和测试。 */
     private static final Map<String, String> ALIAS_TO_CANONICAL = createAliasMap();
     /** 既有执行器编码到 Claude Code 风格展示名的反向映射，用于时间线和文档展示。 */
     private static final Map<String, String> CANONICAL_TO_ALIAS = createCanonicalMap();
@@ -55,7 +55,7 @@ public class LocalToolAliasService {
     }
 
     /**
-     * 返回别名到真实编码的有序快照，供模型 schema 生成时追加别名工具。
+     * 返回别名到真实编码的有序快照，供执行入口兼容和诊断展示使用。
      * @return 有序不可变映射。
      */
     public Map<String, String> aliasMappings() {

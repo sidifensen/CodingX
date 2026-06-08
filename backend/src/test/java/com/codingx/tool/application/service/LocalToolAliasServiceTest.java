@@ -10,7 +10,7 @@ import org.junit.jupiter.api.Test;
 class LocalToolAliasServiceTest {
 
     /**
-     * 六个高频编程工具需要按 Claude Code 命名暴露给模型，执行时仍回落到既有短工具编码。
+     * 六个 Claude Code 风格工具名仅作为兼容入口，执行时仍回落到既有短工具编码。
      */
     @Test
     void shouldMapClaudeCodeAliasesToCanonicalToolCodes() {
@@ -37,7 +37,7 @@ class LocalToolAliasServiceTest {
     }
 
     /**
-     * 展示名只影响模型 schema 和过程时间线，不能改变未知工具的真实编码。
+     * 展示名只影响过程时间线和诊断展示，不能改变未知工具的真实编码。
      */
     @Test
     void shouldResolveDisplayNameForKnownCanonicalTool() {

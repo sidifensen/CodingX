@@ -599,6 +599,98 @@ class ChatApplicationToolCallFlowTest {
     }
 
     /**
+     * 同参只读工具重复调用时，应退出工具模式并转为无工具最终生成，避免 read/ReadFile 循环打满工具轮次上限。
+     * 业务背景：模型可能先用别名 ReadFile 读取文件，再用 read 读取同一路径；如果继续把“重复已跳过”作为工具结果回灌，
+     * 模型会再次请求相同 read，用户侧看起来只调用少数工具，后端却跑满 20 轮。
+     *
+     * @param tempDir 本地 workspace 临时目录。
+     * @throws Exception 执行失败时抛出。
+     */
+    @Test
+    void sendMessageCompletesRepeatedReadWithPlainStream(@TempDir Path tempDir) throws Exception {
+        Long runId = 9401019L;
+        ChatExecutionContext.start(runId);
+        try {
+            Path workspace = tempDir.resolve("repo");
+            Files.createDirectories(workspace);
+            ChatConversation conversation = ChatConversation.create(19L, "Repeat Read", 1002L, ChatConversationStatus.ACTIVE);
+            when(chatConversationRepository.requireById(19L)).thenReturn(conversation);
+            when(chatMessageRepository.findByConversationId(19L)).thenReturn(new ArrayList<>());
+            when(chatAttachmentService.requireOwnedAttachments(any(), eq(19L), eq(1002L))).thenReturn(List.of());
+            when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+                new ConversationRewriteResult("继续分析 README", false, List.of("继续分析 README"))
+            );
+            when(conversationIntentService.route("继续分析 README", false)).thenReturn(
+                new ConversationIntentDecision("chat.normal", ConversationIntentAction.DIRECT, null)
+            );
+            when(chatIntentNodeRepository.findByIntentCode("chat.normal")).thenReturn(null);
+            when(chatSkillContextService.buildSkillContext(any())).thenReturn("");
+            when(chatExpertContextService.buildExpertContext(any())).thenReturn("");
+            when(conversationSummaryService.buildModelHistory(any(), any())).thenAnswer(invocation -> invocation.getArgument(1));
+            when(conversationTitleService.generateTitle(any(), any())).thenReturn("README 分析");
+            when(llmResponseCleaner.clean(any())).thenAnswer(invocation -> invocation.getArgument(0));
+            when(chatToolSpecService.listModelVisibleToolSpecs()).thenReturn(List.of(
+                new ChatToolSpec("read", "读取文件", Map.of("type", "object"))
+            ));
+            when(chatToolExecutionService.execute(eq("read"), eq("{\"path\":\"README.md\"}"))).thenReturn(
+                new ChatToolExecutionResult("read", "README.md 内容片段", Map.of("path", "README.md"))
+            );
+            AtomicInteger modelRound = new AtomicInteger();
+            doAnswer(invocation -> {
+                AiChatClient.ToolAwareStreamHandler handler = invocation.getArgument(3);
+                int round = modelRound.incrementAndGet();
+                if (round == 1) {
+                    handler.onToolCall(new AiToolCall("call-read-1", "read", "{\"path\":\"README.md\"}"));
+                    handler.onComplete();
+                    return null;
+                }
+                if (round == 2) {
+                    handler.onToolCall(new AiToolCall("call-read-2", "read", "{\"path\":\"README.md\"}"));
+                    handler.onComplete();
+                    return null;
+                }
+                throw new AssertionError("重复 read 收口后不应继续请求第三轮工具模型");
+            }).when(aiChatClient).streamChatWithTools(any(), eq(false), any(), any());
+            doAnswer(invocation -> {
+                @SuppressWarnings("unchecked")
+                List<ChatMessage> history = invocation.getArgument(0);
+                assertTrue(history.stream().anyMatch(message ->
+                    message.getRole() == ChatMessageRole.SYSTEM
+                        && message.getContent().contains("重复本地工具调用已拦截")
+                ));
+                assertTrue(history.stream().anyMatch(message -> message.getContent().contains("README.md 内容片段")));
+                AiChatClient.StreamHandler handler = invocation.getArgument(2);
+                handler.onDelta("已基于 README 内容继续分析。");
+                handler.onComplete();
+                return null;
+            }).when(aiChatClient).streamChat(any(), eq(false), any());
+
+            chatApplicationService.sendMessage(
+                new SendChatMessageCommand(19L, "继续分析 README", false, List.of(), List.of(), null, workspace.toString(), List.of()),
+                1002L
+            );
+
+            verify(aiChatClient, org.mockito.Mockito.times(2)).streamChatWithTools(any(), eq(false), any(), any());
+            verify(aiChatClient).streamChat(any(), eq(false), any());
+            verify(chatToolExecutionService, org.mockito.Mockito.times(1)).execute("read", "{\"path\":\"README.md\"}");
+            verify(chatStreamPublisher, never()).publishError(eq(19L), any());
+            verify(chatStreamPublisher).publishAssistantCompleted(
+                eq(19L),
+                any(),
+                eq("已基于 README 内容继续分析。"),
+                eq("README 分析")
+            );
+            ArgumentCaptor<ChatMessage> messageCaptor = ArgumentCaptor.forClass(ChatMessage.class);
+            verify(chatMessageRepository, org.mockito.Mockito.times(2)).save(messageCaptor.capture());
+            ChatMessage assistantMessage = messageCaptor.getAllValues().get(1);
+            assertEquals(ChatMessageStatus.COMPLETED, assistantMessage.getStatus());
+            assertEquals("已基于 README 内容继续分析。", assistantMessage.getContent());
+        } finally {
+            ChatExecutionContext.clear();
+        }
+    }
+
+    /**
      * 工具回灌后的模型可能只输出“正在执行...”这类进度句且不再发起 tool_call；这不是最终答案。
      *
      * @param tempDir 本地 workspace 临时目录。

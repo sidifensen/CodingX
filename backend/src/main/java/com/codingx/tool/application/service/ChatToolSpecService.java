@@ -51,7 +51,7 @@ public class ChatToolSpecService {
     private final ChatToolRepository chatToolRepository;
     /** 工具执行器注册表，用于确认配置工具在后端确实存在执行实现。 */
     private final ChatToolRegistry chatToolRegistry;
-    /** 本地工具别名服务，用于追加 Claude Code 风格模型可见工具名。 */
+    /** 本地工具别名服务，仅用于兼容旧展示说明；模型可见 schema 不再追加别名工具。 */
     private final LocalToolAliasService localToolAliasService;
     /** 外部 MCP 运行时，用于把已发现 MCP 工具合并进模型可见清单。 */
     private final McpServerRuntimeService mcpServerRuntimeService;

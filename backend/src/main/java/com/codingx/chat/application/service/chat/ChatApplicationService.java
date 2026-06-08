@@ -1495,13 +1495,35 @@ public class ChatApplicationService {
                         );
                         return;
                     }
-                    toolResult = buildDuplicateToolCallResult(toolCall, previousToolResult);
+                    currentHistory.add(ChatMessage.create(
+                        cn.hutool.core.util.IdUtil.getSnowflakeNextId(),
+                        command.conversationId(),
+                        ChatMessageRole.SYSTEM,
+                        buildRepeatedNonWriteToolFinalGuidance(toolCall),
+                        ChatMessageStatus.COMPLETED,
+                        null,
+                        null,
+                        null
+                    ).attachRun(runId));
                     log.warn(
-                        "重复本地工具调用已跳过: 轮次={}, 工具={}, 参数长度={}",
+                        "重复本地工具调用已收口为普通生成: 轮次={}, 工具={}, 参数长度={}",
                         round + 1,
                         toolCall.toolCode(),
                         StrUtil.length(toolCall.arguments())
                     );
+                    aiChatClient.streamChat(currentHistory, command.deepThinking(), buildStreamHandler(
+                        command,
+                        builder,
+                        thinkingBuilder,
+                        thinkingStartedAt,
+                        streamError,
+                        selectedProvider,
+                        selectedModel,
+                        activeRunId,
+                        null,
+                        null
+                    ));
+                    return;
                 } else {
                     try {
                         String toolStepDisplayName = resolveLocalToolDisplayName(toolCall, toolSpecs);
@@ -2706,31 +2728,20 @@ public class ChatApplicationService {
     }
 
     /**
-     * 对重复工具调用只回灌上一轮结果，不再次触发外部进程或浏览器操作。
+     * 对重复非 write 工具调用切换到无工具最终生成，避免“重复已跳过”结果继续诱导模型发起同一 tool_call。
      * @param toolCall 当前重复工具调用。
-     * @param previousToolResult 上一次同参工具结果。
-     * @return 用于提示模型收口的工具结果。
+     * @return 无工具最终生成阶段的系统收口指令。
      */
-    private ChatToolExecutionResult buildDuplicateToolCallResult(AiToolCall toolCall, ChatToolExecutionResult previousToolResult) {
-        Map<String, Object> metadata = new LinkedHashMap<>();
-        if (previousToolResult.metadata() != null) {
-            metadata.putAll(previousToolResult.metadata());
-        }
-        metadata.put("duplicateSkipped", true);
-        metadata.put("duplicateToolCode", StrUtil.blankToDefault(toolCall.toolCode(), "unknown"));
-        String content = """
-            重复工具调用已跳过：同一工具和参数在本轮已经执行过。
+    private String buildRepeatedNonWriteToolFinalGuidance(AiToolCall toolCall) {
+        return """
+            重复本地工具调用已拦截：模型再次请求相同工具和参数，后端不会重复执行。
+            被拦截工具：%s
 
-            上一次工具输出：
-            %s
-
-            必须直接依据上一次工具输出回答用户，不要再次调用相同工具。
-            """.formatted(StrUtil.blankToDefault(previousToolResult.content(), ""));
-        return new ChatToolExecutionResult(
-            StrUtil.blankToDefault(toolCall.toolCode(), previousToolResult.toolCode()),
-            content,
-            metadata
-        );
+            继续执行要求：
+            - 上文已经包含该工具的真实执行结果，必须直接基于已有工具结果回答用户。
+            - 当前最终生成阶段不再开放本地工具；不要再声明需要读取、搜索或执行同一工具。
+            - 如果已有工具结果不足以完成用户请求，应说明缺少的具体信息，并给出基于现有信息的可执行结论。
+            """.formatted(StrUtil.blankToDefault(toolCall == null ? null : toolCall.toolCode(), "unknown"));
     }
 
     /**

@@ -17,6 +17,7 @@
   --color-muted: var(--text-muted);
   --color-primary: var(--brand-primary);
   --color-primary-foreground: var(--brand-on-primary);
+  --color-success: var(--success);
   --color-error: var(--error);
   --color-accent-breeze: var(--accent-breeze);
   --color-accent-sunset: var(--accent-sunset);
@@ -37,6 +38,8 @@
     --text-muted: #747878;
     --brand-primary: #000000;
     --brand-on-primary: #ffffff;
+    /* Diff rows and status counters use these semantic colors for add/delete contrast. */
+    --success: #0b6f3a;
     --error: #ba1a1a;
     --accent-breeze: #47607a;
     --accent-sunset: #bc4b00;
@@ -56,6 +59,7 @@
     --text-muted: #7d8187;
     --brand-primary: #ffffff;
     --brand-on-primary: #000000;
+    --success: #7ee787;
     --error: #ffb4ab;
     --accent-breeze: #a0c3ec;
     --accent-sunset: #ff7a17;

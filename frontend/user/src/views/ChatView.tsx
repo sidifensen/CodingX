@@ -5928,14 +5928,14 @@ function DiffTextBlock({ diffText }: { diffText: string }) {
       {lines.map((line, index) => (
         <span
           key={`${index}-${line}`}
-          className={`block ${
+          className={`block border-l-2 px-2 ${
             line.startsWith('+') && !line.startsWith('+++')
-              ? 'bg-success/10 text-success'
+              ? 'border-success/70 bg-success/15 font-medium text-success'
               : line.startsWith('-') && !line.startsWith('---')
-                ? 'bg-error/10 text-error'
+                ? 'border-error/70 bg-error/15 font-medium text-error'
                 : line.startsWith('@@')
-                  ? 'text-accent-breeze'
-                  : 'text-muted'
+                  ? 'border-accent-breeze/55 bg-accent-breeze/10 text-accent-breeze'
+                  : 'border-transparent text-muted'
           }`}
         >
           {line || ' '}

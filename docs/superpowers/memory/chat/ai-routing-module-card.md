@@ -43,7 +43,7 @@ status: active
 - provider 缺失时对应候选会被过滤，不能让不可调用目标进入调度层。
 - 图片附件存在时优先使用 `supports_vision=true` 候选；没有视觉候选时回退原候选池。
 - thinking 请求优先使用 `supports_thinking=true` 候选；没有 thinking 候选时回退普通候选，避免空路由。
-- 普通请求默认先尝试非 thinking 候选，thinking 候选只能作为后续 fallback 或显式 `preferredModel` 命中，避免 priority 配置误触发深度思考。
+- 普通请求直接按候选池 `priority` 排序；`supports_thinking=true` 只表示候选具备 deep thinking 能力，不会在普通请求中自动开启 thinking。
 - `AiModelDispatchService` 必须在首包缓冲前按 `thinkingEnabled` 过滤 thinking 事件；关闭深度思考时，被过滤的 reasoning 不能算可见首包，候选只返回 reasoning 时应继续 fallback。
 - 数据库 `setting` 会覆盖 YAML 骨架，修改运行时路由键位时必须同步 `init.sql`、迁移脚本、测试和功能文档。
 

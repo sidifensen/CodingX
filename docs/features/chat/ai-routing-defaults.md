@@ -12,7 +12,7 @@
 
 1. `ai.provider`、`ai.base_url`、`ai.api_key`、`ai.chat_model`、`ai.selection.*` 和候选池 `ai.chat.candidates.<slot>.*` 都由系统配置表控制。
 2. provider 级 `chat` endpoint 使用 `ai.providers.<provider>.endpoints.chat` 键位控制，不再只能写死在 `application.yml`。
-3. 候选池按 `ai.chat.candidates.<slot>.*` 扁平键组织，当前默认优先级是硅基流动 DeepSeek、硅基流动千问视觉、百炼文本、百炼思考、百炼视觉回退；普通请求会先尝试非 thinking 候选，再把 thinking 候选作为后续 fallback。
+3. 候选池按 `ai.chat.candidates.<slot>.*` 扁平键组织，当前默认优先级由管理端 `priority` 直接决定；普通请求和深度思考请求都会在各自可用候选内尊重该顺序。
 4. 当请求包含图片附件时，`AiModelSelector` 会优先筛选 `supports_vision=true` 的数据库候选，因此会先命中硅基流动千问视觉模型。
 5. 路由层默认等待首包 15 秒；超时后取消当前 provider 的底层 HTTP Call，并切换到下一个候选，避免旧慢连接继续占用后台读流资源。
 6. `init.sql` 与历史迁移脚本会同步写入 endpoint、候选池和首包超时键位；历史默认模型指针会被清理，避免旧环境继续通过废弃键位改变默认顺序。
@@ -34,7 +34,7 @@
 
 ## 关键逻辑
 
-SiliconFlow 与百炼都走 `OpenAiCompatibleChatClient`，DeepSeek 走 `DeepSeekOkHttpChatClient`。路由层以模型候选 ID 维度累计失败，达到阈值后打开熔断窗口；首包超时也会计为失败并尝试后续候选。provider 的 `AiStreamSession.cancel()` 必须取消真实 OkHttp `Call`，否则首包超时后虽然主请求会继续切换，旧 provider 连接仍可能在后台挂到 `ai.read_timeout_ms`。视觉模型候选必须保留 `supports_vision=true`，否则图片请求不会优先切到千问视觉模型。普通请求的 `priority` 只在非 thinking 候选桶内决定顺序，避免 thinking 候选因运行时配置被调高而误触发深度思考；若 provider 仍返回 `reasoning_content`，调度层与客户端会在 `thinkingEnabled=false` 时丢弃该增量，且被丢弃的 reasoning 不算首包成功。数据库 `setting` 会覆盖 YAML 骨架，因此每次修改候选默认顺序都必须同步更新候选 `priority`、`init.sql` 与迁移脚本，避免“新环境正确、老环境错误”的分裂状态。
+SiliconFlow 与百炼都走 `OpenAiCompatibleChatClient`，DeepSeek 走 `DeepSeekOkHttpChatClient`。路由层以模型候选 ID 维度累计失败，达到阈值后打开熔断窗口；首包超时也会计为失败并尝试后续候选。provider 的 `AiStreamSession.cancel()` 必须取消真实 OkHttp `Call`，否则首包超时后虽然主请求会继续切换，旧 provider 连接仍可能在后台挂到 `ai.read_timeout_ms`。视觉模型候选必须保留 `supports_vision=true`，否则图片请求不会优先切到千问视觉模型。普通请求直接按候选池 `priority` 排序；`supports_thinking=true` 只表示候选具备 thinking 能力，是否展示 thinking 仍由 `thinkingEnabled` 控制。若 provider 在普通请求里返回 `reasoning_content`，调度层与客户端会在 `thinkingEnabled=false` 时丢弃该增量，且被丢弃的 reasoning 不算首包成功。数据库 `setting` 会覆盖 YAML 骨架，因此每次修改候选默认顺序都必须同步更新候选 `priority`、`init.sql` 与迁移脚本，避免“新环境正确、老环境错误”的分裂状态。
 
 ## 测试与验证
 

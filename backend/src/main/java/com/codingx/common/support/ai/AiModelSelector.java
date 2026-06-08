@@ -129,10 +129,10 @@ public class AiModelSelector {
         String firstChoice = resolveFirstChoiceModel(preferredModel);
         Map<String, AiProperties.Provider> providers = mergedProviders();
         // 步骤 5：按首选模型、优先级和候选 ID 排序，并过滤缺少 provider 配置的候选。
+        // 业务约束：候选是否支持 thinking 只是能力标记，普通请求仍必须尊重管理端配置的绝对 priority。
         return filteredCandidates.stream()
             .sorted(Comparator
                 .comparing((AiProperties.ChatCandidate candidate) -> !Objects.equals(candidate.getId(), firstChoice))
-                .thenComparing(candidate -> shouldDeferThinkingCandidate(thinkingEnabled, firstChoice, candidate))
                 .thenComparing(AiProperties.ChatCandidate::getPriority, Comparator.nullsLast(Integer::compareTo))
                 .thenComparing(AiProperties.ChatCandidate::getId, Comparator.nullsLast(String::compareTo)))
             .map(candidate -> toTarget(candidate, providers))
@@ -160,26 +160,6 @@ public class AiModelSelector {
         }
         // 步骤 3：历史环境可能只有 app.ai.provider/base-url/api-key/chat-model，仍需合成一个真实候选保障兼容。
         return legacyChatGroup();
-    }
-
-    /**
-     * 普通请求默认避开 thinking 候选，避免运行时配置把思考模型 priority 调高后误触发深度思考。
-     * @param thinkingEnabled 本轮请求是否显式开启深度思考。
-     * @param firstChoice 显式首选候选 ID；存在时说明调用方有明确模型选择。
-     * @param candidate 当前候选。
-     * @return true 表示普通请求排序时应把该 thinking 候选延后到非 thinking 候选之后。
-     */
-    private boolean shouldDeferThinkingCandidate(
-        boolean thinkingEnabled,
-        String firstChoice,
-        AiProperties.ChatCandidate candidate
-    ) {
-        // 步骤 1：深度思考请求和显式模型选择都保留原排序语义，只在普通自动路由时调整默认桶。
-        if (thinkingEnabled || StrUtil.isNotBlank(firstChoice)) {
-            return false;
-        }
-        // 步骤 2：thinking 候选仍保留在列表尾部作为故障回退，但不能抢占普通请求默认入口。
-        return Boolean.TRUE.equals(candidate.getSupportsThinking());
     }
 
     /**

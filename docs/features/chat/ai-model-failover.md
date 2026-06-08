@@ -10,8 +10,8 @@
 
 ## 核心流程
 
-1. `AiModelSelector` 读取聊天候选池，过滤禁用候选；图片附件优先筛选视觉模型，深度思考模式优先筛选 thinking 模型，普通模式则在自动路由时先尝试非 thinking 候选。
-2. 未指定 `preferredModel` 时，不再读取默认模型指针；普通模式先按非 thinking / thinking 分桶，再在桶内按 `priority` 和候选 ID 排序，深度思考模式继续只在 thinking 候选内按优先级排序。
+1. `AiModelSelector` 读取聊天候选池，过滤禁用候选；图片附件优先筛选视觉模型，深度思考模式优先筛选 thinking 模型，普通模式不额外改写候选桶。
+2. 未指定 `preferredModel` 时，不再读取默认模型指针；普通模式直接按候选池 `priority` 和候选 ID 排序，深度思考模式继续只在 thinking 候选内按优先级排序。
 3. `AiModelDispatchService` 按候选顺序解析 provider 客户端，缺失客户端直接跳过；熔断中的模型在冷却前不参与调用。
 4. provider 返回 `AiStreamSession` 后，调度层等待首包窗口；首包前失败、超时或无内容完成会取消 session、标记模型失败并切换后续候选。
 5. 首包成功后提交缓冲事件并等待流结束；此后异常视为已输出后的失败，不再换模型接管，避免用户看到两套模型混合回答。
@@ -31,7 +31,7 @@
 
 调度尝试顺序使用请求局部变量记录，并在请求完成时发布不可变快照到 `getLastAttemptedProviders()`。这保证 `AiModelDispatchService` 作为单例 Bean 时，并发请求不会互相清空或拼接尝试记录。
 
-默认路由顺序只由 `ai.chat.candidates.<slot>.*` 候选池决定。候选字段中的 provider、模型名、能力标记和 `priority` 一起决定真实调用目标和 fallback 顺序；只有请求显式传入 `preferredModel` 时，才会在匹配候选内临时提升该候选到首位。普通请求不直接让 thinking 候选抢占默认入口，即使运行时配置把 thinking 候选 priority 调到更高，也会先尝试非 thinking 候选；thinking 候选仍保留在后续 fallback 中。
+默认路由顺序只由 `ai.chat.candidates.<slot>.*` 候选池决定。候选字段中的 provider、模型名、能力标记和 `priority` 一起决定真实调用目标和 fallback 顺序；只有请求显式传入 `preferredModel` 时，才会在匹配候选内临时提升该候选到首位。普通请求也尊重候选池 priority 的绝对顺序，`supports_thinking` 只表示该候选可用于深度思考模式，不会在普通请求中自动开启 thinking。
 
 `openai-compatible` 只表示后端内部的协议适配器编码，不是业务审计意义上的模型商。路由层解析客户端时可以回退到该适配器，但对外发布的 metadata、调度尝试记录和最终 `chat_message.provider` 必须使用候选池中的 provider，例如 `bailian` 或 `siliconflow`；`chat_message.model` 则使用候选池中的真实模型名。
 

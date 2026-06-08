@@ -50,10 +50,10 @@ class AiModelSelectorTest {
     }
 
     /**
-     * 普通请求未开启深度思考时，即使 thinking 候选优先级更高，也应先尝试非 thinking 候选。
+     * 普通请求未开启深度思考时，也应遵循管理端候选池 priority 的绝对顺序。
      */
     @Test
-    void selectChatCandidatesPrefersNonThinkingCandidatesWhenThinkingDisabled() {
+    void selectChatCandidatesUsesPriorityWhenThinkingDisabled() {
         AiModelSelector selector = new AiModelSelector(buildProperties(
             candidate("thinking-priority-first", "deepseek", "deepseek-thinking", 1, true),
             candidate("normal-priority-second", "stub", "stub-chat", 5, false),
@@ -63,7 +63,7 @@ class AiModelSelectorTest {
         List<AiModelTarget> targets = selector.selectChatCandidates(null, false);
 
         assertEquals(
-            List.of("normal-priority-second", "normal-priority-third", "thinking-priority-first"),
+            List.of("thinking-priority-first", "normal-priority-second", "normal-priority-third"),
             targets.stream().map(AiModelTarget::id).toList()
         );
     }

@@ -13,6 +13,7 @@ import {
   ArtifactItem,
   ChatAttachmentItem,
   ChatExpertItem,
+  ChatGoalItem,
   ChatSkillItem,
   CurrentExpertItem,
   CurrentMcpItem,
@@ -595,6 +596,7 @@ export function useChatWorkspace(
     isLoadingOlder: false,
   });
   const [executionSteps, setExecutionSteps] = useState<ExecutionStepItem[]>([]);
+  const [activeGoal, setActiveGoal] = useState<ChatGoalItem | null>(null);
   const [references, setReferences] = useState<ReferenceItem[]>([]);
   const [artifacts, setArtifacts] = useState<ArtifactItem[]>([]);
   const [sampleQuestions, setSampleQuestions] = useState<SampleQuestionItem[]>([]);
@@ -673,6 +675,7 @@ export function useChatWorkspace(
     isLoadingOlder: false,
   });
   const executionStepsRef = useRef<ExecutionStepItem[]>([]);
+  const activeGoalRef = useRef<ChatGoalItem | null>(null);
   const referencesRef = useRef<ReferenceItem[]>([]);
   const artifactsRef = useRef<ArtifactItem[]>([]);
   const currentExpertsRef = useRef<CurrentExpertItem[]>([]);
@@ -686,6 +689,7 @@ export function useChatWorkspace(
   conversationPaginationMapRef.current = conversationPaginationMap;
   messagePaginationRef.current = messagePagination;
   executionStepsRef.current = executionSteps;
+  activeGoalRef.current = activeGoal;
   referencesRef.current = references;
   artifactsRef.current = artifacts;
   currentExpertsRef.current = currentExperts;
@@ -1173,6 +1177,29 @@ export function useChatWorkspace(
       return;
     }
     setSelectedSkillCodesState(nextValue);
+  };
+
+  /**
+   * 按会话读取后端真实 active goal；失败时清空本地目标，避免切换会话后继续显示旧目标。
+   * @param token 当前登录令牌。
+   * @param conversationId 会话标识。
+   * @returns 当前 active goal 或 null。
+   */
+  const loadActiveGoal = async (token: string, conversationId: string) => {
+    try {
+      const nextGoal = await ChatApi.getActiveGoal(token, conversationId);
+      activeGoalRef.current = nextGoal;
+      setActiveGoal(nextGoal);
+      return nextGoal;
+    } catch (error) {
+      if (error instanceof ChatApi.UnauthorizedError) {
+        throw error;
+      }
+      // 目标浮窗只展示后端权威 active goal，查询失败或目标不存在时都不能沿用旧会话目标。
+      activeGoalRef.current = null;
+      setActiveGoal(null);
+      return null;
+    }
   };
 
   /**
@@ -2111,6 +2138,7 @@ export function useChatWorkspace(
     }
     // 关键约束：刷新恢复时优先渲染消息主区，避免右栏慢接口阻塞首屏可读内容。
     setExecutionSteps([]);
+    setActiveGoal(null);
     setReferences([]);
     setArtifacts([]);
     setCurrentExperts([]);
@@ -2119,6 +2147,7 @@ export function useChatWorkspace(
     const nextMessagePagePromise = ChatApi.listMessagePage(token, conversationId, {
       pageSize: CHAT_MESSAGE_PAGE_SIZE,
     });
+    const nextActiveGoalPromise = loadActiveGoal(token, conversationId);
     const nextStepsPromise = ChatApi.listSteps(token, conversationId);
     const nextReferencesPromise = ChatApi.listReferences(token, conversationId);
     const nextArtifactsPromise = ChatApi.listArtifacts(token, conversationId);
@@ -2157,12 +2186,14 @@ export function useChatWorkspace(
 
     const [
       nextSteps,
+      nextActiveGoal,
       nextArtifacts,
       nextCurrentExperts,
       nextCurrentSkills,
       nextCurrentMcps,
     ] = await Promise.all([
       nextStepsPromise,
+      nextActiveGoalPromise,
       nextArtifactsPromise,
       nextCurrentExpertsPromise,
       nextCurrentSkillsPromise,
@@ -2178,6 +2209,7 @@ export function useChatWorkspace(
     });
     setMessages(nextReplayMessagesWithPanels);
     setExecutionSteps(nextSteps);
+    setActiveGoal(nextActiveGoal);
     setReferences(nextReferences);
     setArtifacts(nextArtifacts);
     setCurrentExperts(nextCurrentExperts);
@@ -2652,6 +2684,8 @@ export function useChatWorkspace(
     hideStreamQueueState();
     setStreamError('');
     setInputValue('');
+    activeGoalRef.current = null;
+    setActiveGoal(null);
 
     /**
      * 侧栏从指定分组触发“新建”时，先切换到目标环境/工作空间，再重置会话空态。
@@ -3527,6 +3561,35 @@ export function useChatWorkspace(
       return;
     }
 
+    if (eventName === 'goal' && isRecord(payload)) {
+      const goalPayload = isRecord(payload.goal) ? payload.goal : payload;
+      const goalConversationId = String(
+        goalPayload.conversationId ?? payload.conversationId ?? streamStateRef.current?.conversationId ?? '',
+      );
+      const currentConversationId =
+        streamStateRef.current?.conversationId ?? activeConversationIdRef.current ?? '';
+      if (
+        goalConversationId &&
+        currentConversationId &&
+        currentConversationId !== 'pending-conversation' &&
+        goalConversationId !== currentConversationId
+      ) {
+        return;
+      }
+      // 目标事件来自后端 goal 工具链路，直接更新 activeGoal；不会再从 executionSteps 推导进度。
+      const nextGoal = ChatApi.normalizeGoal(goalPayload as ChatGoalItem);
+      activeGoalRef.current = nextGoal;
+      setActiveGoal(nextGoal);
+      if (goalConversationId && currentConversationId === 'pending-conversation') {
+        streamStateRef.current = {
+          conversationId: goalConversationId,
+          activeMessageId: optimisticAssistantId,
+        };
+        setActiveConversationId(goalConversationId);
+      }
+      return;
+    }
+
     if (eventName === 'queued' && isRecord(payload)) {
       const position = Math.max(1, Number(payload.position ?? 1));
       scheduleStreamQueueState(position);
@@ -4022,6 +4085,7 @@ export function useChatWorkspace(
     hasMoreMessagesBefore: messagePagination.hasMoreBefore,
     isLoadingOlderMessages: messagePagination.isLoadingOlder,
     executionSteps,
+    activeGoal,
     references,
     artifacts,
     sampleQuestions,

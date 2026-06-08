@@ -2941,15 +2941,16 @@ describe('ChatView', () => {
   });
 
   /**
-   * 目标模式开启后右侧应出现悬浮进度窗，直接展示当前执行步骤和完成占比。
+   * 目标模式开关只是发送 planMode 的入口；没有后端 active goal 时不应显示浮窗。
    */
-  it('目标模式开启且存在执行步骤时应展示右侧目标进度窗', async () => {
+  it('目标模式开启但没有active goal时不应展示右侧目标进度窗', async () => {
     render(
       <ChatView
         isAuthenticated={true}
         onRequireLogin={vi.fn()}
         workspace={createWorkspace({
           goalModeEnabled: true,
+          activeGoal: null,
           executionSteps: [
             {
               id: 'goal-step-1',
@@ -2972,11 +2973,57 @@ describe('ChatView', () => {
       />,
     );
 
+    expect(screen.queryByTestId('goal-progress-panel')).not.toBeInTheDocument();
+  });
+
+  /**
+   * active goal 是右侧浮窗的唯一数据源，应展示标题、状态、摘要和步骤完成数。
+   */
+  it('存在active goal时应展示右侧目标进度窗', async () => {
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          goalModeEnabled: false,
+          activeGoal: {
+            id: 'goal-1',
+            conversationId: '2001',
+            goalKey: 'default',
+            title: '完成真实目标模式',
+            status: 'ACTIVE',
+            progressSummary: '接口和 Hook 已接入真实目标状态',
+            steps: [
+              {
+                id: 'goal-step-1',
+                goalId: 'goal-1',
+                stepKey: 'api',
+                title: '读取 active goal',
+                status: 'COMPLETED',
+                sortNo: 1,
+              },
+              {
+                id: 'goal-step-2',
+                goalId: 'goal-1',
+                stepKey: 'ui',
+                title: '渲染目标浮窗',
+                status: 'IN_PROGRESS',
+                sortNo: 2,
+              },
+            ],
+          },
+          executionSteps: [],
+        } as Partial<ChatWorkspaceController>)}
+      />,
+    );
+
     const panel = screen.getByTestId('goal-progress-panel');
-    expect(panel).toHaveTextContent('目标模式');
-    expect(panel).toHaveTextContent('50%');
-    expect(panel).toHaveTextContent('梳理目标模式需求');
-    expect(panel).toHaveTextContent('实现目标模式入口');
+    expect(panel).toHaveTextContent('完成真实目标模式');
+    expect(panel).toHaveTextContent('ACTIVE');
+    expect(panel).toHaveTextContent('1/2');
+    expect(panel).toHaveTextContent('接口和 Hook 已接入真实目标状态');
+    expect(panel).toHaveTextContent('读取 active goal');
+    expect(panel).toHaveTextContent('渲染目标浮窗');
   });
 
   /**

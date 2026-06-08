@@ -52,6 +52,15 @@ public class NoopChatStreamPublisher implements ChatStreamPublisher {
     }
 
     /**
+     * 忽略目标状态事件发布。
+     * @param conversationId 会话标识。
+     * @param payload 目标快照载荷。
+     */
+    @Override
+    public void publishGoal(Long conversationId, Object payload) {
+    }
+
+    /**
      * 忽略助手完成事件。
      * @param conversationId 会话标识。
      * @param content 助手完整回复。

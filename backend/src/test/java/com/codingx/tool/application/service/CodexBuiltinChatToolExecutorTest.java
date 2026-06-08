@@ -10,6 +10,8 @@ import static org.mockito.Mockito.when;
 import cn.hutool.json.JSONUtil;
 import com.codingx.mcp.domain.repository.ChatMcpRepository;
 import com.codingx.mcp.domain.model.ChatMcp;
+import com.codingx.chat.application.service.goal.ChatGoalService;
+import com.codingx.chat.application.service.goal.ChatGoalView;
 import com.codingx.common.exception.BusinessException;
 import com.codingx.skill.domain.model.ChatSkill;
 import com.codingx.skill.domain.repository.ChatSkillRepository;
@@ -22,10 +24,12 @@ import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 import javax.imageio.ImageIO;
 import org.junit.jupiter.api.Test;
@@ -33,6 +37,7 @@ import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.ArgumentCaptor;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 /**
@@ -50,8 +55,139 @@ class CodexBuiltinChatToolExecutorTest {
     @Mock
     private ChatSkillRepository chatSkillRepository;
 
+    @Mock
+    private ChatGoalService chatGoalService;
+
     @InjectMocks
     private CodexBuiltinChatToolExecutor codexBuiltinChatToolExecutor;
+
+    /**
+     * 目标工具缺少会话治理上下文时必须返回中文业务错误，避免脱离聊天流污染全局目标状态。
+     */
+    @Test
+    void goalToolsShouldRequireConversationContext() {
+        ChatToolExecutionContext.clear();
+
+        BusinessException exception = assertThrows(
+            BusinessException.class,
+            () -> codexBuiltinChatToolExecutor.execute("create_goal", "{\"title\":\"无上下文目标\"}")
+        );
+
+        assertEquals("CHAT_TOOL_GOAL_CONTEXT_REQUIRED", exception.getCode());
+        assertTrue(exception.getMessage().contains("目标工具必须在聊天会话中执行"));
+    }
+
+    /**
+     * create_goal 必须从当前工具上下文读取 userId、conversationId、runId，并委托目标服务写库。
+     */
+    @Test
+    void createGoalShouldUseChatGoalServiceWithGovernanceContext() {
+        ChatGoalView goalView = sampleGoalView("9001", "2001", "目标已创建", "GOAL_CREATED");
+        when(chatGoalService.createGoal(
+            org.mockito.ArgumentMatchers.eq(2001L),
+            org.mockito.ArgumentMatchers.eq(1001L),
+            org.mockito.ArgumentMatchers.eq(3001L),
+            org.mockito.ArgumentMatchers.any(ChatGoalService.CreateGoalCommand.class)
+        )).thenReturn(goalView);
+        ChatToolExecutionContext.bindGovernanceContext(1001L, 2001L, 3001L);
+
+        try {
+            ChatToolExecutionResult result = codexBuiltinChatToolExecutor.execute(
+                "create_goal",
+                "{\"goalKey\":\"default\",\"title\":\"真实目标模式\",\"steps\":[{\"key\":\"schema\",\"title\":\"建表\",\"status\":\"pending\"}]}"
+            );
+
+            assertEquals("create_goal", result.toolCode());
+            assertEquals(goalView, result.metadata().get("goal"));
+            ArgumentCaptor<ChatGoalService.CreateGoalCommand> commandCaptor = ArgumentCaptor.forClass(ChatGoalService.CreateGoalCommand.class);
+            org.mockito.Mockito.verify(chatGoalService).createGoal(
+                org.mockito.ArgumentMatchers.eq(2001L),
+                org.mockito.ArgumentMatchers.eq(1001L),
+                org.mockito.ArgumentMatchers.eq(3001L),
+                commandCaptor.capture()
+            );
+            assertEquals("default", commandCaptor.getValue().goalKey());
+            assertEquals("真实目标模式", commandCaptor.getValue().title());
+            assertEquals("schema", commandCaptor.getValue().steps().getFirst().stepKey());
+        } finally {
+            ChatToolExecutionContext.clear();
+        }
+    }
+
+    /**
+     * get_goal 必须按当前会话委托目标服务查询，不能再读取执行器内存 Map。
+     */
+    @Test
+    void getGoalShouldReadGoalFromChatGoalService() {
+        ChatGoalView goalView = sampleGoalView("9001", "2001", "目标读取成功", "GOAL_UPDATED");
+        when(chatGoalService.getGoal(2001L, 1001L, null, "default")).thenReturn(Optional.of(goalView));
+        ChatToolExecutionContext.bindGovernanceContext(1001L, 2001L, 3001L);
+
+        try {
+            ChatToolExecutionResult result = codexBuiltinChatToolExecutor.execute("get_goal", "{\"goalKey\":\"default\"}");
+
+            assertEquals("get_goal", result.toolCode());
+            assertEquals(goalView, result.metadata().get("goal"));
+        } finally {
+            ChatToolExecutionContext.clear();
+        }
+    }
+
+    /**
+     * get_goal 未传目标标识时必须读取当前 active goal，不能隐式改写为 default key。
+     */
+    @Test
+    void getGoalWithoutIdentifierShouldReadActiveGoal() {
+        ChatGoalView goalView = sampleGoalView("9002", "2001", "当前活动目标", "GOAL_UPDATED");
+        when(chatGoalService.getGoal(2001L, 1001L, null, null)).thenReturn(Optional.of(goalView));
+        ChatToolExecutionContext.bindGovernanceContext(1001L, 2001L, 3001L);
+
+        try {
+            ChatToolExecutionResult result = codexBuiltinChatToolExecutor.execute("get_goal", "{}");
+
+            assertEquals("get_goal", result.toolCode());
+            assertEquals(goalView, result.metadata().get("goal"));
+        } finally {
+            ChatToolExecutionContext.clear();
+        }
+    }
+
+    /**
+     * update_goal 必须把状态和步骤更新委托目标服务，后续由服务追加事件并发布 SSE。
+     */
+    @Test
+    void updateGoalShouldDelegateStatusAndStepsToChatGoalService() {
+        ChatGoalView goalView = sampleGoalView("9001", "2001", "目标已完成", "GOAL_COMPLETED");
+        when(chatGoalService.updateGoal(
+            org.mockito.ArgumentMatchers.eq(2001L),
+            org.mockito.ArgumentMatchers.eq(1001L),
+            org.mockito.ArgumentMatchers.eq(3001L),
+            org.mockito.ArgumentMatchers.any(ChatGoalService.UpdateGoalCommand.class)
+        )).thenReturn(goalView);
+        ChatToolExecutionContext.bindGovernanceContext(1001L, 2001L, 3001L);
+
+        try {
+            ChatToolExecutionResult result = codexBuiltinChatToolExecutor.execute(
+                "update_goal",
+                "{\"goalId\":\"9001\",\"status\":\"completed\",\"progressSummary\":\"已完成\",\"steps\":[{\"key\":\"schema\",\"title\":\"建表\",\"status\":\"completed\"}]}"
+            );
+
+            assertEquals("update_goal", result.toolCode());
+            assertEquals(goalView, result.metadata().get("goal"));
+            ArgumentCaptor<ChatGoalService.UpdateGoalCommand> commandCaptor = ArgumentCaptor.forClass(ChatGoalService.UpdateGoalCommand.class);
+            org.mockito.Mockito.verify(chatGoalService).updateGoal(
+                org.mockito.ArgumentMatchers.eq(2001L),
+                org.mockito.ArgumentMatchers.eq(1001L),
+                org.mockito.ArgumentMatchers.eq(3001L),
+                commandCaptor.capture()
+            );
+            assertEquals("9001", commandCaptor.getValue().goalId());
+            assertEquals("completed", commandCaptor.getValue().status());
+            assertEquals("schema", commandCaptor.getValue().steps().getFirst().stepKey());
+        } finally {
+            ChatToolExecutionContext.clear();
+        }
+    }
 
     /**
      * apply_patch 应在可应用时真实写入文件并返回 diff 结果。
@@ -889,34 +1025,53 @@ class CodexBuiltinChatToolExecutorTest {
         when(chatMcpRepository.findByMcpCode("weather_query")).thenReturn(ChatMcp.builder().mcpCode("weather_query").displayName("天气").build());
         when(chatSkillRepository.findAll()).thenReturn(List.of(ChatSkill.builder().skillCode("browser").build()));
         when(chatToolRepository.findAll()).thenReturn(List.of(ChatTool.builder().toolCode("shell_command").displayName("Shell").build()));
+        ChatGoalView goalView = sampleGoalView("tool-check", "2001", "工具检查", "GOAL_UPDATED");
+        when(chatGoalService.createGoal(
+            org.mockito.ArgumentMatchers.eq(2001L),
+            org.mockito.ArgumentMatchers.eq(1001L),
+            org.mockito.ArgumentMatchers.eq(3001L),
+            org.mockito.ArgumentMatchers.any(ChatGoalService.CreateGoalCommand.class)
+        )).thenReturn(goalView);
+        when(chatGoalService.getGoal(2001L, 1001L, "tool-check", null)).thenReturn(Optional.of(goalView));
+        when(chatGoalService.updateGoal(
+            org.mockito.ArgumentMatchers.eq(2001L),
+            org.mockito.ArgumentMatchers.eq(1001L),
+            org.mockito.ArgumentMatchers.eq(3001L),
+            org.mockito.ArgumentMatchers.any(ChatGoalService.UpdateGoalCommand.class)
+        )).thenReturn(goalView);
 
-        assertEquals("list_mcp_resources", codexBuiltinChatToolExecutor.execute("list_mcp_resources", "{}").toolCode());
-        assertEquals("list_mcp_resource_templates", codexBuiltinChatToolExecutor.execute("list_mcp_resource_templates", "{}").toolCode());
-        assertEquals("read_mcp_resource", codexBuiltinChatToolExecutor.execute("read_mcp_resource", "{\"uri\":\"mcp://configs/weather_query\"}").toolCode());
-        assertEquals("request_user_input", codexBuiltinChatToolExecutor.execute("request_user_input", "{\"question\":\"是否继续？\"}").toolCode());
-        assertEquals("request_plugin_install", codexBuiltinChatToolExecutor.execute("request_plugin_install", "{\"plugin\":\"browser-use\"}").toolCode());
-        assertEquals("request_permissions", codexBuiltinChatToolExecutor.execute("request_permissions", "{\"command\":\"Get-ChildItem\"}").toolCode());
-        assertEquals("create_goal", codexBuiltinChatToolExecutor.execute("create_goal", "{\"goalId\":\"tool-check\",\"title\":\"工具检查\"}").toolCode());
-        assertEquals("get_goal", codexBuiltinChatToolExecutor.execute("get_goal", "{\"goalId\":\"tool-check\"}").toolCode());
-        assertEquals("update_goal", codexBuiltinChatToolExecutor.execute("update_goal", "{\"goalId\":\"tool-check\",\"status\":\"done\"}").toolCode());
+        ChatToolExecutionContext.bindGovernanceContext(1001L, 2001L, 3001L);
+        try {
+            assertEquals("list_mcp_resources", codexBuiltinChatToolExecutor.execute("list_mcp_resources", "{}").toolCode());
+            assertEquals("list_mcp_resource_templates", codexBuiltinChatToolExecutor.execute("list_mcp_resource_templates", "{}").toolCode());
+            assertEquals("read_mcp_resource", codexBuiltinChatToolExecutor.execute("read_mcp_resource", "{\"uri\":\"mcp://configs/weather_query\"}").toolCode());
+            assertEquals("request_user_input", codexBuiltinChatToolExecutor.execute("request_user_input", "{\"question\":\"是否继续？\"}").toolCode());
+            assertEquals("request_plugin_install", codexBuiltinChatToolExecutor.execute("request_plugin_install", "{\"plugin\":\"browser-use\"}").toolCode());
+            assertEquals("request_permissions", codexBuiltinChatToolExecutor.execute("request_permissions", "{\"command\":\"Get-ChildItem\"}").toolCode());
+            assertEquals("create_goal", codexBuiltinChatToolExecutor.execute("create_goal", "{\"goalId\":\"tool-check\",\"title\":\"工具检查\"}").toolCode());
+            assertEquals("get_goal", codexBuiltinChatToolExecutor.execute("get_goal", "{\"goalId\":\"tool-check\"}").toolCode());
+            assertEquals("update_goal", codexBuiltinChatToolExecutor.execute("update_goal", "{\"goalId\":\"tool-check\",\"status\":\"done\"}").toolCode());
 
-        ChatToolExecutionResult spawnResult = codexBuiltinChatToolExecutor.execute("spawn_agent", "{\"prompt\":\"检查工具\"}");
-        String agentId = String.valueOf(spawnResult.metadata().get("agentId"));
-        assertEquals("spawn_agent", spawnResult.toolCode());
-        assertEquals("send_input", codexBuiltinChatToolExecutor.execute("send_input", "{\"target\":\"" + agentId + "\",\"message\":\"继续\"}").toolCode());
-        assertEquals("wait_agent", codexBuiltinChatToolExecutor.execute("wait_agent", "{\"agentId\":\"" + agentId + "\"}").toolCode());
-        assertEquals("followup_task", codexBuiltinChatToolExecutor.execute("followup_task", "{\"agentId\":\"" + agentId + "\",\"task\":\"补充验证\"}").toolCode());
-        assertEquals("close_agent", codexBuiltinChatToolExecutor.execute("close_agent", "{\"agentId\":\"" + agentId + "\"}").toolCode());
-        assertEquals("resume_agent", codexBuiltinChatToolExecutor.execute("resume_agent", "{\"agentId\":\"" + agentId + "\"}").toolCode());
-        assertEquals("list_agents", codexBuiltinChatToolExecutor.execute("list_agents", "{}").toolCode());
+            ChatToolExecutionResult spawnResult = codexBuiltinChatToolExecutor.execute("spawn_agent", "{\"prompt\":\"检查工具\"}");
+            String agentId = String.valueOf(spawnResult.metadata().get("agentId"));
+            assertEquals("spawn_agent", spawnResult.toolCode());
+            assertEquals("send_input", codexBuiltinChatToolExecutor.execute("send_input", "{\"target\":\"" + agentId + "\",\"message\":\"继续\"}").toolCode());
+            assertEquals("wait_agent", codexBuiltinChatToolExecutor.execute("wait_agent", "{\"agentId\":\"" + agentId + "\"}").toolCode());
+            assertEquals("followup_task", codexBuiltinChatToolExecutor.execute("followup_task", "{\"agentId\":\"" + agentId + "\",\"task\":\"补充验证\"}").toolCode());
+            assertEquals("close_agent", codexBuiltinChatToolExecutor.execute("close_agent", "{\"agentId\":\"" + agentId + "\"}").toolCode());
+            assertEquals("resume_agent", codexBuiltinChatToolExecutor.execute("resume_agent", "{\"agentId\":\"" + agentId + "\"}").toolCode());
+            assertEquals("list_agents", codexBuiltinChatToolExecutor.execute("list_agents", "{}").toolCode());
 
-        Path csvPath = tempDir.resolve("agents.csv");
-        Files.writeString(csvPath, "name\nalpha\n", StandardCharsets.UTF_8);
-        assertEquals(
-            "spawn_agents_on_csv",
-            codexBuiltinChatToolExecutor.execute("spawn_agents_on_csv", "{\"csvPath\":\"" + csvPath.toString().replace("\\", "\\\\") + "\"}").toolCode()
-        );
-        assertEquals("report_agent_job_result", codexBuiltinChatToolExecutor.execute("report_agent_job_result", "{\"jobId\":\"job-1\",\"summary\":\"ok\"}").toolCode());
+            Path csvPath = tempDir.resolve("agents.csv");
+            Files.writeString(csvPath, "name\nalpha\n", StandardCharsets.UTF_8);
+            assertEquals(
+                "spawn_agents_on_csv",
+                codexBuiltinChatToolExecutor.execute("spawn_agents_on_csv", "{\"csvPath\":\"" + csvPath.toString().replace("\\", "\\\\") + "\"}").toolCode()
+            );
+            assertEquals("report_agent_job_result", codexBuiltinChatToolExecutor.execute("report_agent_job_result", "{\"jobId\":\"job-1\",\"summary\":\"ok\"}").toolCode());
+        } finally {
+            ChatToolExecutionContext.clear();
+        }
     }
 
     /**
@@ -950,8 +1105,23 @@ class CodexBuiltinChatToolExecutorTest {
         when(chatMcpRepository.findByMcpCode("weather_query")).thenReturn(ChatMcp.builder().mcpCode("weather_query").displayName("天气").build());
         when(chatSkillRepository.findAll()).thenReturn(List.of(ChatSkill.builder().skillCode("browser").displayName("浏览器").build()));
         when(chatToolRepository.findAll()).thenReturn(List.of(ChatTool.builder().toolCode("shell_command").displayName("Shell").build()));
+        ChatGoalView smokeGoal = sampleGoalView("electron-smoke", "2001", "工具烟测", "GOAL_UPDATED");
+        when(chatGoalService.createGoal(
+            org.mockito.ArgumentMatchers.eq(2001L),
+            org.mockito.ArgumentMatchers.eq(1001L),
+            org.mockito.ArgumentMatchers.eq(3001L),
+            org.mockito.ArgumentMatchers.any(ChatGoalService.CreateGoalCommand.class)
+        )).thenReturn(smokeGoal);
+        when(chatGoalService.getGoal(2001L, 1001L, "electron-smoke", null)).thenReturn(Optional.of(smokeGoal));
+        when(chatGoalService.updateGoal(
+            org.mockito.ArgumentMatchers.eq(2001L),
+            org.mockito.ArgumentMatchers.eq(1001L),
+            org.mockito.ArgumentMatchers.eq(3001L),
+            org.mockito.ArgumentMatchers.any(ChatGoalService.UpdateGoalCommand.class)
+        )).thenReturn(smokeGoal);
 
         ChatToolExecutionContext.bindToolWorkingDirectory(projectRoot);
+        ChatToolExecutionContext.bindGovernanceContext(1001L, 2001L, 3001L);
         try {
             Files.writeString(projectRoot.resolve("short-tools.txt"), "hello tools\n", StandardCharsets.UTF_8);
             executeAndRecord(invokedToolCodes, "read", JSONUtil.toJsonStr(Map.of("path", "short-tools.txt")));
@@ -1077,6 +1247,26 @@ class CodexBuiltinChatToolExecutorTest {
         invokedToolCodes.add(toolCode);
         assertEquals(expectedResultToolCode, result.toolCode());
         return result;
+    }
+
+    /**
+     * 构造目标工具测试用的目标视图，避免烟测关心服务层建模细节。
+     */
+    private static ChatGoalView sampleGoalView(String goalId, String conversationId, String title, String eventType) {
+        return new ChatGoalView(
+            goalId,
+            conversationId,
+            "default",
+            title,
+            "目标说明",
+            "ACTIVE",
+            "进行中",
+            eventType,
+            LocalDateTime.parse("2026-06-09T12:00:00"),
+            LocalDateTime.parse("2026-06-09T12:01:00"),
+            null,
+            List.of(new ChatGoalView.StepView("step-1", "schema", "建表", "PENDING", "等待处理", 0))
+        );
     }
 
     /**

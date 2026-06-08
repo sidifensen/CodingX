@@ -45,6 +45,86 @@ describe('ChatApi', () => {
   });
 
   /**
+   * 真实目标模式读取会话级 active goal，所有 Long 标识必须字符串化后再进入页面状态。
+   */
+  it('目标模式应加载并归一化当前会话active goal', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          success: true,
+          code: 'OK',
+          message: 'success',
+          data: {
+            id: '2055114974648864768',
+            conversationId: '2055114974648864700',
+            goalKey: 'default',
+            title: '完成真实目标模式',
+            status: 'ACTIVE',
+            progressSummary: '已完成接口契约',
+            updatedRunId: 912345678901234567,
+            steps: [
+              {
+                id: 101,
+                goalId: '2055114974648864768',
+                stepKey: 'api',
+                title: '前端读取目标',
+                status: 'COMPLETED',
+                sortNo: 1,
+              },
+            ],
+          },
+        }),
+        { status: 200 },
+      ),
+    );
+
+    const result = await ChatApi.getActiveGoal('token-123', '2055114974648864700');
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      '/api/chat/conversations/2055114974648864700/goal/active',
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          satoken: 'token-123',
+        }),
+      }),
+    );
+    expect(result).toEqual(
+      expect.objectContaining({
+        id: '2055114974648864768',
+        conversationId: '2055114974648864700',
+        updatedRunId: '912345678901234600',
+        title: '完成真实目标模式',
+      }),
+    );
+    expect(result?.steps[0]).toEqual(
+      expect.objectContaining({
+        id: '101',
+        goalId: '2055114974648864768',
+        title: '前端读取目标',
+      }),
+    );
+  });
+
+  /**
+   * 后端无 active goal 时返回 null，前端必须保持空状态而不是制造占位目标。
+   */
+  it('目标模式在缺失active goal时应返回null', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          success: true,
+          code: 'OK',
+          message: 'success',
+          data: null,
+        }),
+        { status: 200 },
+      ),
+    );
+
+    await expect(ChatApi.getActiveGoal('token-123', '2001')).resolves.toBeNull();
+  });
+
+  /**
    * 会话列表应解析后端任务完成提醒已读字段，刷新后侧栏提醒圆点以该字段为准。
    */
   it('应解析任务完成提醒已读字段', async () => {

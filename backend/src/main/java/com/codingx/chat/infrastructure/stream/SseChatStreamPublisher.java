@@ -108,6 +108,17 @@ public class SseChatStreamPublisher implements ChatStreamPublisher {
     }
 
     /**
+     * 发布真实目标状态事件。
+     * @param conversationId 会话标识。
+     * @param payload 目标快照载荷。
+     */
+    @Override
+    public void publishGoal(Long conversationId, Object payload) {
+        // 步骤 1：目标状态由 ChatGoalService 组装，SSE 层只负责使用 goal 事件名推送。
+        chatSseRegistry.publish(conversationId, "goal", payload);
+    }
+
+    /**
      * 发布助手回复完成事件。
      * @param conversationId 会话标识。
      * @param content 助手完整回复。

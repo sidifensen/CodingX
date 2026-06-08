@@ -5,6 +5,8 @@ import {
   ArtifactItem,
   ChatAttachmentItem,
   ChatExpertItem,
+  ChatGoalItem,
+  ChatGoalStepItem,
   ChatSkillItem,
   ChatMessageItem,
   ConversationPage,
@@ -96,6 +98,26 @@ export class ChatApi {
       token,
     );
     return envelope.data.map((item) => this.normalizeMessage(item));
+  }
+
+  /**
+   * 读取当前会话的真实 active goal；没有目标时返回 null，页面不得自行制造占位进度。
+   * @param token 当前登录令牌。
+   * @param conversationId 会话标识。
+   * @returns 归一化后的 active goal，或 null。
+   */
+  static async getActiveGoal(
+    token: string,
+    conversationId: string,
+  ): Promise<ChatGoalItem | null> {
+    const envelope = await this.request<ChatGoalItem | null>(
+      `/api/chat/conversations/${encodeURIComponent(conversationId)}/goal/active`,
+      token,
+    );
+    if (envelope.data == null) {
+      return null;
+    }
+    return this.normalizeGoal(envelope.data);
   }
 
   /**
@@ -736,6 +758,55 @@ export class ChatApi {
           : Boolean(item.taskCompletionRead),
       workspaceId: item.workspaceId == null ? null : String(item.workspaceId),
       workspaceType: item.workspaceType,
+    };
+  }
+
+  /**
+   * 统一归一化目标快照，保证 Long 主键和步骤顺序进入 React 状态前稳定。
+   * @param goal 后端返回或 SSE 下发的目标快照。
+   * @returns 前端可直接展示的目标状态。
+   */
+  static normalizeGoal(goal: ChatGoalItem): ChatGoalItem {
+    return {
+      ...goal,
+      id: String(goal.id ?? ''),
+      conversationId: String(goal.conversationId ?? ''),
+      goalKey: goal.goalKey == null ? undefined : String(goal.goalKey),
+      title: String(goal.title ?? ''),
+      description: goal.description == null ? null : String(goal.description),
+      status: String(goal.status ?? ''),
+      progressSummary: goal.progressSummary == null ? null : String(goal.progressSummary),
+      createdRunId: goal.createdRunId == null ? null : String(goal.createdRunId),
+      updatedRunId: goal.updatedRunId == null ? null : String(goal.updatedRunId),
+      createdAt: goal.createdAt == null ? null : String(goal.createdAt),
+      updatedAt: goal.updatedAt == null ? null : String(goal.updatedAt),
+      completedAt: goal.completedAt == null ? null : String(goal.completedAt),
+      steps: (goal.steps ?? []).map((step) => this.normalizeGoalStep(step)),
+    };
+  }
+
+  /**
+   * 统一归一化目标步骤，兼容后端使用 id/key/title/content 的不同快照字段。
+   * @param step 后端返回或 SSE 下发的步骤快照。
+   * @returns 前端展示所需步骤。
+   */
+  private static normalizeGoalStep(step: ChatGoalStepItem): ChatGoalStepItem {
+    const record = step as ChatGoalStepItem & {
+      key?: unknown;
+      content?: unknown;
+      sequenceNo?: unknown;
+    };
+    return {
+      id: String(step.id ?? record.key ?? ''),
+      goalId: step.goalId == null ? undefined : String(step.goalId),
+      stepKey: step.stepKey == null && record.key == null ? undefined : String(step.stepKey ?? record.key),
+      title: String(step.title ?? record.content ?? ''),
+      status: String(step.status ?? ''),
+      sortNo: Number(step.sortNo ?? record.sequenceNo ?? 0),
+      detail: step.detail == null ? null : String(step.detail),
+      startedAt: step.startedAt == null ? null : String(step.startedAt),
+      completedAt: step.completedAt == null ? null : String(step.completedAt),
+      updatedAt: step.updatedAt == null ? null : String(step.updatedAt),
     };
   }
 

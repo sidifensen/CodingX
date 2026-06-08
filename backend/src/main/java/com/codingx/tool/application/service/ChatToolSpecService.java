@@ -30,6 +30,9 @@ public class ChatToolSpecService {
         "find",
         "ls",
         "update_plan",
+        "get_goal",
+        "create_goal",
+        "update_goal",
         "view_image",
         "tool_search",
         "test_sync_tool"
@@ -241,6 +244,35 @@ public class ChatToolSpecService {
                 ),
                 List.of("steps")
             );
+            case "get_goal" -> objectSchema(
+                Map.of(
+                    "goalId", stringSchema("可选，目标 ID；未提供时按 goalKey 或当前 active goal 查询"),
+                    "goalKey", stringSchema("可选，目标稳定键，默认 default")
+                ),
+                List.of()
+            );
+            case "create_goal" -> objectSchema(
+                Map.of(
+                    "goalId", stringSchema("可选，目标 ID；通常无需指定，由后端生成"),
+                    "goalKey", stringSchema("可选，目标稳定键，默认 default"),
+                    "title", stringSchema("目标标题"),
+                    "description", stringSchema("可选，目标说明"),
+                    "steps", goalStepsSchema("初始目标步骤列表")
+                ),
+                List.of("title")
+            );
+            case "update_goal" -> objectSchema(
+                Map.of(
+                    "goalId", stringSchema("可选，目标 ID；未提供时按 goalKey 或当前 active goal 更新"),
+                    "goalKey", stringSchema("可选，目标稳定键"),
+                    "title", stringSchema("可选，新目标标题"),
+                    "description", stringSchema("可选，新目标说明"),
+                    "status", stringEnumSchema("可选，目标状态", List.of("ACTIVE", "COMPLETED", "BLOCKED", "CANCELLED")),
+                    "progressSummary", stringSchema("可选，当前进度摘要"),
+                    "steps", goalStepsSchema("可选，最新目标步骤快照")
+                ),
+                List.of()
+            );
             default -> objectSchema(Map.of("input", stringSchema("工具输入文本")), List.of());
         };
     }
@@ -303,6 +335,26 @@ public class ChatToolSpecService {
         schema.put("description", description);
         schema.put("items", new LinkedHashMap<>(itemSchema));
         return schema;
+    }
+
+    /**
+     * 构造目标步骤 schema，create_goal 与 update_goal 保持同一参数契约。
+     * @param description 数组字段说明。
+     * @return 目标步骤数组 JSON Schema。
+     */
+    private Map<String, Object> goalStepsSchema(String description) {
+        return arraySchema(
+            description,
+            objectSchema(
+                Map.of(
+                    "key", stringSchema("可选，步骤稳定键"),
+                    "title", stringSchema("步骤标题"),
+                    "status", stringEnumSchema("步骤状态", List.of("PENDING", "IN_PROGRESS", "COMPLETED", "BLOCKED", "CANCELLED")),
+                    "detail", stringSchema("可选，步骤详情或阻塞原因")
+                ),
+                List.of("title")
+            )
+        );
     }
 
     private Map<String, Object> numberSchema(String description) {

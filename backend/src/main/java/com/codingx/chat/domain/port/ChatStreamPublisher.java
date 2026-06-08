@@ -62,6 +62,13 @@ public interface ChatStreamPublisher {
     void publishArtifact(Long conversationId, Object payload);
 
     /**
+     * 发布真实目标状态事件，供前端用后端 active goal 快照刷新目标浮窗。
+     * @param conversationId 会话标识。
+     * @param payload 目标快照载荷，通常为 ChatGoalView。
+     */
+    void publishGoal(Long conversationId, Object payload);
+
+    /**
      * 发布助手回复完成事件。
      * 业务约束：本地临时会话没有云端消息主键，继续使用该兼容入口，不向前端伪造可反馈的消息 ID。
      * @param conversationId 会话标识。

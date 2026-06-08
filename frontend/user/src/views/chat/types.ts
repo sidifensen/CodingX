@@ -534,6 +534,41 @@ export interface WorkspaceInventoryItem {
 }
 
 /**
+ * 描述真实目标模式中的单个目标步骤；状态来自后端 goal 快照，不再由执行过程步骤推导。
+ */
+export interface ChatGoalStepItem {
+  id: string;
+  goalId?: string;
+  stepKey?: string;
+  title: string;
+  status: string;
+  sortNo: number;
+  detail?: string | null;
+  startedAt?: string | null;
+  completedAt?: string | null;
+  updatedAt?: string | null;
+}
+
+/**
+ * 描述当前会话的后端 active goal；仅存在真实目标时页面才展示目标进度浮窗。
+ */
+export interface ChatGoalItem {
+  id: string;
+  conversationId: string;
+  goalKey?: string;
+  title: string;
+  description?: string | null;
+  status: string;
+  progressSummary?: string | null;
+  createdRunId?: string | null;
+  updatedRunId?: string | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+  completedAt?: string | null;
+  steps: ChatGoalStepItem[];
+}
+
+/**
  * 统一描述会话动作所需的分组上下文，确保非当前分组菜单动作仍能落到正确分区。
  */
 export type ConversationActionContext = WorkspaceConversationSelectionContext;
@@ -601,6 +636,7 @@ export interface ChatWorkspaceController {
   hasMoreMessagesBefore: boolean;
   isLoadingOlderMessages: boolean;
   executionSteps: ExecutionStepItem[];
+  activeGoal: ChatGoalItem | null;
   references: ReferenceItem[];
   artifacts: ArtifactItem[];
   sampleQuestions: SampleQuestionItem[];

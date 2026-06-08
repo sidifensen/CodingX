@@ -289,6 +289,51 @@ class ChatToolSpecServiceTest {
     }
 
     /**
+     * 真实目标模式工具必须暴露给模型，否则模型只能看到系统提示却无法调用目标持久化链路。
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void modelVisibleSpecsShouldIncludeRealGoalTools() {
+        List<String> goalToolCodes = List.of("get_goal", "create_goal", "update_goal");
+        ChatToolRepository repository = new InMemoryChatToolRepository(goalToolCodes.stream()
+            .map(toolCode -> ChatTool.builder()
+                .toolCode(toolCode)
+                .displayName(toolCode)
+                .description(toolCode + " 工具")
+                .enabled(1)
+                .sortNo(goalToolCodes.indexOf(toolCode) + 1)
+                .deleted(0)
+                .build())
+            .toList());
+        ChatToolExecutor executor = new ChatToolExecutor() {
+            @Override
+            public List<String> toolCodes() {
+                return goalToolCodes;
+            }
+
+            @Override
+            public ChatToolExecutionResult execute(String toolCode, String question) {
+                return new ChatToolExecutionResult(toolCode, "ok", Map.of());
+            }
+        };
+        ChatToolRegistry registry = new ChatToolRegistry(List.of(executor));
+        registry.init();
+        ChatToolSpecService service = new ChatToolSpecService(repository, registry, new LocalToolAliasService());
+
+        List<ChatToolSpec> specs = service.listModelVisibleToolSpecs();
+        List<String> names = specs.stream().map(ChatToolSpec::name).toList();
+        ChatToolSpec createGoalSpec = specs.stream()
+            .filter(spec -> spec.name().equals("create_goal"))
+            .findFirst()
+            .orElseThrow();
+        Map<String, Object> properties = (Map<String, Object>) createGoalSpec.parameters().get("properties");
+
+        assertTrue(names.containsAll(goalToolCodes));
+        assertTrue(properties.containsKey("title"));
+        assertTrue(properties.containsKey("steps"));
+    }
+
+    /**
      * 测试用内存仓储只实现 schema 服务所需的读取方法。
      */
     private record InMemoryChatToolRepository(List<ChatTool> tools) implements ChatToolRepository {

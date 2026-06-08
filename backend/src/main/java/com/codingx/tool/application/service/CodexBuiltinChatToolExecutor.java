@@ -16,6 +16,8 @@ import cn.hutool.json.JSONObject;
 import cn.hutool.json.JSONUtil;
 import cn.hutool.http.HttpRequest;
 import cn.hutool.http.HttpResponse;
+import com.codingx.chat.application.service.goal.ChatGoalService;
+import com.codingx.chat.application.service.goal.ChatGoalView;
 import com.codingx.skill.domain.model.ChatSkill;
 import com.codingx.tool.domain.model.ChatTool;
 import com.codingx.skill.domain.repository.ChatSkillRepository;
@@ -85,13 +87,13 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
     private final ChatMcpRepository chatMcpRepository;
     /** 技能仓储，用于工具搜索时返回当前系统已配置技能。 */
     private final ChatSkillRepository chatSkillRepository;
+    /** 目标应用服务，用于 get_goal/create_goal/update_goal 读写数据库权威目标状态。 */
+    private final ChatGoalService chatGoalService;
 
     /** 子代理会话缓存，用于模拟 spawn/wait/send/close 等代理生命周期操作。 */
     private final Map<String, AgentSession> agentSessions = new ConcurrentHashMap<>();
     /** 后台命令会话缓存，用于 exec_command 与 write_stdin 之间复用进程句柄。 */
     private final Map<String, CommandSession> commandSessions = new ConcurrentHashMap<>();
-    /** 目标状态缓存，用于 get_goal/create_goal/update_goal 内置工具共享当前目标。 */
-    private final Map<String, GoalState> goals = new ConcurrentHashMap<>();
     /** 计划步骤缓存，用于 update_plan 工具保存会话级任务进度。 */
     private final Map<String, List<PlanStep>> plans = new ConcurrentHashMap<>();
     /** 插件安装请求记录，用于返回 request_plugin_install 调用历史。 */
@@ -1905,41 +1907,92 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
      * 查询当前目标定义。
      */
     private ChatToolExecutionResult executeGetGoal(ToolInput input) {
-        String goalId = StrUtil.blankToDefault(input.object().getStr("goalId"), "default");
-        GoalState goalState = goals.get(goalId);
-        if (goalState == null) {
-            throw new BusinessException("CHAT_TOOL_GOAL_NOT_FOUND", ErrorMessageCatalog.CHAT_TOOL_GOAL_NOT_FOUND);
-        }
-        return new ChatToolExecutionResult("get_goal", "目标读取成功", Map.of("goal", goalState));
+        ChatToolExecutionContext.GovernanceContext context = requireGoalContext();
+        String goalId = readString(input.object(), "goalId", "goal_id", "id");
+        String goalKey = readString(input.object(), "goalKey", "goal_key", "key");
+        ChatGoalView goalView = chatGoalService.getGoal(context.conversationId(), context.userId(), goalId, goalKey)
+            .orElseThrow(() -> new BusinessException("CHAT_TOOL_GOAL_NOT_FOUND", ErrorMessageCatalog.CHAT_TOOL_GOAL_NOT_FOUND));
+        return new ChatToolExecutionResult("get_goal", "目标读取成功", Map.of("goal", goalView));
     }
 
     /**
      * 创建目标定义。
      */
     private ChatToolExecutionResult executeCreateGoal(ToolInput input) {
-        String goalId = StrUtil.blankToDefault(input.object().getStr("goalId"), "default");
-        String title = StrUtil.blankToDefault(input.object().getStr("title"), "默认目标");
-        String description = StrUtil.blankToDefault(input.object().getStr("description"), input.raw());
-        GoalState goalState = new GoalState(goalId, title, description, "active", LocalDateTime.now());
-        goals.put(goalId, goalState);
-        return new ChatToolExecutionResult("create_goal", "目标已创建", Map.of("goal", goalState));
+        ChatToolExecutionContext.GovernanceContext context = requireGoalContext();
+        ChatGoalService.CreateGoalCommand command = new ChatGoalService.CreateGoalCommand(
+            readString(input.object(), "goalId", "goal_id", "id"),
+            StrUtil.blankToDefault(readString(input.object(), "goalKey", "goal_key", "key"), "default"),
+            StrUtil.blankToDefault(readString(input.object(), "title", "name"), "默认目标"),
+            StrUtil.blankToDefault(readString(input.object(), "description", "summary"), input.raw()),
+            extractGoalSteps(input.object())
+        );
+        ChatGoalView goalView = chatGoalService.createGoal(context.conversationId(), context.userId(), context.runId(), command);
+        return new ChatToolExecutionResult("create_goal", "目标已创建", Map.of("goal", goalView));
     }
 
     /**
      * 更新目标定义。
      */
     private ChatToolExecutionResult executeUpdateGoal(ToolInput input) {
-        String goalId = StrUtil.blankToDefault(input.object().getStr("goalId"), "default");
-        GoalState existing = goals.get(goalId);
-        if (existing == null) {
-            throw new BusinessException("CHAT_TOOL_GOAL_NOT_FOUND", ErrorMessageCatalog.CHAT_TOOL_GOAL_NOT_FOUND);
+        ChatToolExecutionContext.GovernanceContext context = requireGoalContext();
+        ChatGoalService.UpdateGoalCommand command = new ChatGoalService.UpdateGoalCommand(
+            readString(input.object(), "goalId", "goal_id", "id"),
+            readString(input.object(), "goalKey", "goal_key", "key"),
+            readString(input.object(), "title", "name"),
+            readString(input.object(), "description", "summary"),
+            readString(input.object(), "status", "state"),
+            readString(input.object(), "progressSummary", "progress_summary", "progress"),
+            extractGoalSteps(input.object())
+        );
+        ChatGoalView goalView = chatGoalService.updateGoal(context.conversationId(), context.userId(), context.runId(), command);
+        return new ChatToolExecutionResult("update_goal", "目标已更新", Map.of("goal", goalView));
+    }
+
+    /**
+     * 读取目标工具的会话治理上下文，缺少会话或用户时直接返回中文业务错误。
+     */
+    private ChatToolExecutionContext.GovernanceContext requireGoalContext() {
+        ChatToolExecutionContext.GovernanceContext context = ChatToolExecutionContext.currentGovernanceContext()
+            .orElseThrow(() -> new BusinessException("CHAT_TOOL_GOAL_CONTEXT_REQUIRED", "目标工具必须在聊天会话中执行"));
+        if (context.conversationId() == null || context.userId() == null) {
+            throw new BusinessException("CHAT_TOOL_GOAL_CONTEXT_REQUIRED", "目标工具必须在聊天会话中执行");
         }
-        String title = StrUtil.blankToDefault(input.object().getStr("title"), existing.title());
-        String description = StrUtil.blankToDefault(input.object().getStr("description"), existing.description());
-        String status = StrUtil.blankToDefault(input.object().getStr("status"), existing.status());
-        GoalState updated = new GoalState(goalId, title, description, status, LocalDateTime.now());
-        goals.put(goalId, updated);
-        return new ChatToolExecutionResult("update_goal", "目标已更新", Map.of("goal", updated));
+        return context;
+    }
+
+    /**
+     * 从目标工具入参中读取 steps 数组，兼容 key/id/title/content/detail 等模型常见字段。
+     */
+    private List<ChatGoalService.StepCommand> extractGoalSteps(JSONObject object) {
+        JSONArray steps = object.getJSONArray("steps");
+        if (steps == null || steps.isEmpty()) {
+            return List.of();
+        }
+        List<ChatGoalService.StepCommand> commands = new ArrayList<>();
+        for (Object item : steps) {
+            JSONObject stepObject = item instanceof JSONObject jsonObject ? jsonObject : JSONUtil.parseObj(item);
+            commands.add(new ChatGoalService.StepCommand(
+                readString(stepObject, "stepKey", "step_key", "key", "id"),
+                StrUtil.blankToDefault(readString(stepObject, "title", "step", "content", "name"), "步骤 " + (commands.size() + 1)),
+                readString(stepObject, "status", "state"),
+                readString(stepObject, "detail", "description", "reason")
+            ));
+        }
+        return commands;
+    }
+
+    /**
+     * 按多个候选字段读取字符串，降低模型参数命名差异对工具调用的影响。
+     */
+    private String readString(JSONObject object, String... keys) {
+        for (String key : keys) {
+            String value = object.getStr(key);
+            if (StrUtil.isNotBlank(value)) {
+                return value;
+            }
+        }
+        return null;
     }
 
     /**
@@ -3100,18 +3153,6 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
         public void completedAt(LocalDateTime completedAt) {
             this.completedAt = completedAt;
         }
-    }
-
-    /**
-     * 目标定义状态。
-     */
-    private record GoalState(
-        String goalId,
-        String title,
-        String description,
-        String status,
-        LocalDateTime updatedAt
-    ) {
     }
 
     /**

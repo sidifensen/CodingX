@@ -164,6 +164,41 @@ class ChatRuntimePersistenceStructureTest {
     }
 
     /**
+     * 真实目标模式必须把目标、步骤和事件写入数据库基线与迁移脚本，并保留中文注释供维护和审计。
+     *
+     * @throws Exception schema 或迁移脚本缺失时抛出。
+     */
+    @Test
+    void chatGoalSchemaAndMigrationContainGoalTablesWithComments() throws Exception {
+        String schemaSql = Files.readString(Path.of("src/main/resources/db/schema.sql"), StandardCharsets.UTF_8);
+        Path migration = Path.of("src/main/resources/db/migration/V20260609_120000__create_chat_goal_tables.sql");
+        assertTrue(Files.exists(migration), "缺少真实目标模式建表迁移脚本");
+        String migrationSql = Files.readString(migration, StandardCharsets.UTF_8);
+
+        for (String sql : List.of(schemaSql, migrationSql)) {
+            for (String tableName : List.of("chat_goal", "chat_goal_step", "chat_goal_event")) {
+                assertTrue(sql.contains("CREATE TABLE IF NOT EXISTS " + tableName + " ("), "缺少目标表定义: " + tableName);
+                assertTrue(sql.contains("COMMENT ON TABLE " + tableName), "缺少目标表中文注释: " + tableName);
+            }
+            for (String columnComment : List.of(
+                "COMMENT ON COLUMN chat_goal.conversation_id IS '所属会话ID'",
+                "COMMENT ON COLUMN chat_goal.user_id IS '目标归属用户ID'",
+                "COMMENT ON COLUMN chat_goal.goal_key IS '目标稳定键'",
+                "COMMENT ON COLUMN chat_goal.status IS '目标状态'",
+                "COMMENT ON COLUMN chat_goal_step.step_key IS '步骤稳定键'",
+                "COMMENT ON COLUMN chat_goal_step.sort_no IS '步骤排序号'",
+                "COMMENT ON COLUMN chat_goal_event.event_type IS '目标事件类型'",
+                "COMMENT ON COLUMN chat_goal_event.payload_json IS '事件载荷JSON'"
+            )) {
+                assertTrue(sql.contains(columnComment), "缺少目标字段中文注释: " + columnComment);
+            }
+            assertTrue(sql.contains("idx_chat_goal_conversation_status"), "缺少会话活跃目标查询索引");
+            assertTrue(sql.contains("idx_chat_goal_step_goal_sort"), "缺少目标步骤排序索引");
+            assertTrue(sql.contains("idx_chat_goal_event_conversation"), "缺少目标事件会话索引");
+        }
+    }
+
+    /**
      * 外部 MCP Server 接入需要在 mcp 表保存连接配置、工具 schema 快照和健康状态。
      *
      * @throws Exception schema.sql 或映射类缺少字段时抛出。
@@ -323,6 +358,15 @@ class ChatRuntimePersistenceStructureTest {
                 "com.codingx.chat.infrastructure.persistence.repository.ChatTraceNodeRepositoryImpl",
                 "chat_trace_node",
                 List.of("save", "findByTraceId")
+            ),
+            new PersistenceSkeleton(
+                "com.codingx.chat.domain.model.ChatGoal",
+                "com.codingx.chat.domain.repository.ChatGoalRepository",
+                "com.codingx.chat.infrastructure.persistence.dataobject.ChatGoalDO",
+                "com.codingx.chat.infrastructure.persistence.mapper.ChatGoalMapper",
+                "com.codingx.chat.infrastructure.persistence.repository.ChatGoalRepositoryImpl",
+                "chat_goal",
+                List.of("saveGoal", "findActiveByConversationIdAndUserId", "findByGoalKeyAndConversationIdAndUserId")
             )
         );
     }

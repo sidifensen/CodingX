@@ -46,9 +46,8 @@ public class TuiTranscriptRenderer {
             case FILE_DIFF -> List.of("  Diff: " + event.payloadText("path"));
             case APPROVAL_REQUESTED -> List.of("  Approval required: " + event.payloadText("summary"));
             case APPROVAL_RESOLVED -> List.of("  Approval: " + event.payloadText("result"));
-            case TURN_COMPLETED -> List.of(
-                "  Task completed: " + event.payloadText("status")
-            );
+            // 完成事件只驱动状态栏变为 completed，不再写入 transcript，避免每轮回答后出现英文完成噪音。
+            case TURN_COMPLETED -> List.of();
             case TURN_INTERRUPTED -> List.of("  Task interrupted");
             case ERROR -> List.of("! Error: " + event.payloadText("message"));
             case UNKNOWN -> List.of("  Unknown event");

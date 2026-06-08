@@ -121,7 +121,7 @@ class CodingXTuiModelTest {
         assertTrue(view.contains("› 分析这个项目"));
         assertTrue(view.contains("我会先查看当前仓库结构"));
         assertTrue(view.contains("ToolSearch"));
-        assertTrue(view.contains("Task completed: COMPLETED"));
+        assertFalse(view.contains("Task completed: COMPLETED"));
         assertTrue(view.contains("completed"));
         assertFalse(view.contains("[tool] 工具: ls"));
     }
@@ -217,7 +217,8 @@ class CodingXTuiModelTest {
         eventSource.awaitTaskCount(2);
 
         assertEquals(List.of("first", "second"), List.copyOf(eventSource.tasks));
-        assertInOrder(model.view(), "› first", "Task completed: COMPLETED", "› second");
+        assertInOrder(model.view(), "› first", "› second");
+        assertFalse(model.view().contains("Task completed: COMPLETED"));
     }
 
     @Test
@@ -723,7 +724,7 @@ class CodingXTuiModelTest {
 
         String view = model.view();
         assertTrue(view.contains("这是后端流式返回"));
-        assertTrue(view.contains("Task completed: COMPLETED"));
+        assertFalse(view.contains("Task completed: COMPLETED"));
         assertTrue(view.contains("completed"));
     }
 

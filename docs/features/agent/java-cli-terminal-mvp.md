@@ -6,7 +6,8 @@
 
 ## 使用入口
 
-- `script/install-codingx.ps1`：本地安装入口，先在 `cli` 目录执行 `mvn -q package` 生成 `target/codingx.jar`，再复制到用户目录 `.codingx/bin` 并生成 `codingx.cmd` / `codingx.ps1`。安装脚本会把 `.codingx/bin` 写入用户级 PATH，新终端可直接输入 `codingx`。
+- `script/package-codingx-cli.bat` / `script/package-codingx-cli.ps1`：CLI 打包入口，先在 `cli` 目录执行 Maven package 生成 `target/codingx.jar`，再复制到 `cli/target/dist/codingx.jar` 并生成 `codingx.jar.sha256`。BAT 入口支持 `--project-root`、`--output-dir`、`--clean`、`--skip-tests`、`--install`、`--install-root` 参数，也兼容 `-ProjectRoot` 这类 PowerShell 风格参数名，便于 CI 或普通 cmd 直接调用。
+- `script/install-codingx.bat` / `script/install-codingx.ps1`：本地安装入口，代理到对应打包脚本并开启安装模式；安装时复制 jar 到用户目录 `.codingx/bin`，生成 `codingx.cmd` / `codingx.ps1`，并把 `.codingx/bin` 写入用户级 PATH，新终端可直接输入 `codingx`。
 - `codingx auth login`：默认登录入口，CLI 在 `127.0.0.1:<randomPort>/callback` 启动临时回调服务，打开浏览器进入用户端 `/cli-login`，授权成功后用一次性 code 兑换 satoken 并写入 `.codingx/cli.yml`。
 - `codingx auth login --device`：无浏览器或远程终端兜底入口，CLI 先从后端获取设备码，用户在浏览器打开 `/cli-login?deviceCode=...` 授权，终端按后端返回的轮询间隔等待结果。
 - `codingx logout` / `codingx auth logout`：清理本机 CLI 登录态，只删除用户主目录配置中的 token 和最近会话，不修改后端地址与审批策略。
@@ -19,7 +20,7 @@
 
 ## 核心流程
 
-1. 开发者执行 `script/install-codingx.ps1` 后，脚本先定位项目根目录和 `cli` 子目录，再运行 `mvn -q package`。Maven Shade Plugin 会把 CLI 代码和运行依赖打进 `target/codingx.jar`，并在 Manifest 写入 `Main-Class=com.codingx.cli.CodingXCli`；打包失败或 jar 不存在时脚本直接抛出中文错误，不会写入半成品启动器。
+1. 开发者执行 `script/install-codingx.bat` 或 `script/install-codingx.ps1` 后，安装入口先代理到同语言的 `package-codingx-cli` 打包脚本，再定位项目根目录和 `cli` 子目录并运行 Maven package。Maven Shade Plugin 会把 CLI 代码和运行依赖打进 `target/codingx.jar`，并在 Manifest 写入 `Main-Class=com.codingx.cli.CodingXCli`；打包失败或 jar 不存在时脚本直接返回非零退出码，不会写入半成品启动器。
 2. 打包成功后，安装脚本创建用户目录 `.codingx/bin`，复制 `target/codingx.jar` 为 `.codingx/bin/codingx.jar`，再生成 `codingx.cmd` 和 `codingx.ps1` 两种 Windows 启动器。两个启动器只做一件事：把当前命令行参数原样转发给 `java -jar ~/.codingx/bin/codingx.jar`；脚本随后把 `.codingx/bin` 写入用户级 PATH，并临时补到当前 PowerShell 进程 PATH，方便安装后立即验证。
 3. 用户运行 `codingx` 命令后，Windows 通过 PATH 找到 `codingx.cmd`，`cmd` 启动 `java -jar codingx.jar`，再进入 `CodingXCli.main`。`CodingXCli` 使用用户主目录创建 `CliConfigStore`，并用当前工作目录、`BackendChatEventSource` 和 `TerminalRenderer` 组装 `CodingXTuiLauncher`；这意味着从任意仓库目录输入 `codingx` 时，后端收到的 `repositoryPath` 就是用户当前目录。
 4. 用户执行 `codingx auth login` 时，`CliCommandRunner` 进入认证分支并调用 `CliAuthService.loginWithBrowser()`。服务先读取 `.codingx/cli.yml` 中的后端地址，生成 `state`、PKCE `codeVerifier/codeChallenge`，再用 `LoopbackCallbackServer` 只绑定 `127.0.0.1` 的随机端口；随后按后端地址推导用户端前端地址，本地开发会从 `5001` 映射到 `5002`，正式 `api.` 子域会映射到根域。
@@ -32,14 +33,17 @@
 11. 普通任务提交前，`CodingXTuiModel` 会通过 `CliAuthService.isLoggedIn()` 检查本机配置是否已有 token。若没有 token，TUI 先追加中文提示并自动调用浏览器登录；登录成功后继续发送用户原任务，登录失败则把状态置为 `error` 并保留中文兜底提示，避免用户只看到泛化的请求失败。认证服务缺失的测试或旧嵌入链路仍可直接提交任务，由后端事件源做最后的未登录守卫。
 12. 用户在 `Textarea` 输入普通任务后按 Enter，`CodingXTuiModel` 会先于 `textarea.update(...)` 拦截提交键，并兼容 JLine/Windows 终端可能上报的 CR(`enter`) 和 LF(`ctrl+j`) 两种回车类型；空任务直接忽略，非空任务会先追加 `› 用户任务` 到同一份 transcript，再把状态切到 `running` 并重置底部输入框。这个顺序保证回车不会被 Textarea 当成编辑换行吞掉，也不会把用户问题打印到普通 scrollback 后和助手回答分离。若当前轮仍是 `running`，再次按 Enter 只保留输入框内容，不追加第二条问题、不发起第二个后端请求；用户等当前轮完成后再按 Enter，下一条问题才进入 transcript，保证界面按 `用户问题 -> AI 回答 -> 下一个用户问题 -> 下一个 AI 回答` 展开。当事件源支持流式推送时，模型把任务文本和当前工作区传给 `BackendChatEventSource`，保存当前流式 `Future`，并通过 tui4j `Program.send(...)` 把每个 `AgentEvent` 送回主更新循环；连续 `ASSISTANT_DELTA` 会更新同一个 `• AI 回答` 块，避免后端小片段在 TUI 中变成散乱项目符号列表。运行中 transcript 会临时追加 `• Working (Ns • esc to interrupt)`，这个等待秒数由 1 秒 tick 触发重绘，不写入历史消息；用户按 Esc 时只取消当前流式 `Future`、丢弃迟到事件、追加 `• Interrupted` 并把状态改为 `interrupted`，不会退出 TUI 程序。普通屏幕 renderer 保留尾部内容时，如果当前轮回答过长会把最新 `› 用户任务` 顶出可见区，`CodingXTuiModel` 会按 JLine `WCWidth` 和窗口宽度估算视觉行，把最近一次用户问题固定在当前轮输出尾部上方，再裁剪回答尾部，确保多行输出和自动换行的长 Markdown 段落都不会隐藏用户刚提交的问题；交给 tui4j renderer 前，模型会把后端 JSON、长 Markdown 和长路径按终端宽度预换行，并把最终视图换行统一为 LF，让 renderer 的逻辑行数与 Windows Terminal 的视觉行数一致，避免 CRLF 行尾和自动换行造成后续刷新错位。状态栏会在窄终端下退化为单行摘要，避免长工作区路径换行后挤掉当前问题。
 13. `BackendChatEventSource` 每轮请求都会从 `CliConfigStore` 读取最新 `serverUrl`、`token` 和 `lastSessionId`，构造 `GET /api/chat/stream` 请求。请求固定携带 `question`、`runtimeTarget=local` 和当前工作区绝对路径 `repositoryPath`；当 `lastSessionId` 是数值字符串时，额外携带 `conversationId` 续接后端会话；token 非空时写入 `satoken` header。若本机 token 为空，事件源会在发出 `TURN_STARTED` 后直接生成中文未登录错误并跳过 HTTP 请求；若 token 已失效且后端返回 `application/json` 统一错误，CLI 优先把 `ApiResponse.message` 转成错误事件。
-14. 后端返回 SSE 后，`SseEventParser` 按空行拆分 `event:` / `data:` 块，`BackendChatEventMapper` 将 `meta`、`message`、`thinking`、`tool-call`、`mcp-call`、`finish`、`reject`、`queued`、`queue-accepted`、`error`、`done` 映射为 CLI 现有 `AgentEvent`。`meta.conversationId` 或 `finish.conversationId` 到达后，事件源会把数值会话 ID 写回用户主目录配置的 `lastSessionId`，下一次 TUI 输入自然延续同一个后端会话。TUI 的 `Plan mode` / `Chat mode` 不再只是本地状态栏文案，提交任务时会通过 `planMode=true/false` 查询参数传给后端聊天流。
-15. `TuiTranscriptRenderer` 把非活动流事件渲染成对话流和工具状态行；助手正文由 `CodingXTuiModel` 先合并活动回答块再写入 transcript，思考增量显示为 `Thinking:`，工具事件优先展示后端 `displayName` 或 `toolId`，完成事件显示 `Task completed: COMPLETED`，错误事件显示 `! Error` 并让底部状态变为 `error`。`shift+tab` 切换当前提交模式：Plan mode 下后端会在系统提示中要求模型优先拆解计划、风险和确认点，避免主动执行写入类工具；Chat mode 下按普通执行策略处理。
+14. 后端返回 SSE 后，`SseEventParser` 按空行拆分 `event:` / `data:` 块，`BackendChatEventMapper` 将 `meta`、`message`、`thinking`、`tool-call`、`mcp-call`、`finish`、`reject`、`queued`、`queue-accepted`、`error`、`done` 映射为 CLI 现有 `AgentEvent`。其中 `queue-accepted` 只表示后端调度已接收，TUI 已通过 `Working` 行表达运行中，因此不会再生成“已开始执行” transcript。`meta.conversationId` 或 `finish.conversationId` 到达后，事件源会把数值会话 ID 写回用户主目录配置的 `lastSessionId`，下一次 TUI 输入自然延续同一个后端会话。TUI 的 `Plan mode` / `Chat mode` 不再只是本地状态栏文案，提交任务时会通过 `planMode=true/false` 查询参数传给后端聊天流。
+15. `TuiTranscriptRenderer` 把非活动流事件渲染成对话流和工具状态行；助手正文由 `CodingXTuiModel` 先合并活动回答块再写入 transcript，思考增量显示为 `Thinking:`，工具事件优先展示后端 `displayName` 或 `toolId`，完成事件只让底部状态栏变为 `completed`，不再写入 `Task completed: COMPLETED`；错误事件显示 `! Error` 并让底部状态变为 `error`。`shift+tab` 切换当前提交模式：Plan mode 下后端会在系统提示中要求模型优先拆解计划、风险和确认点，避免主动执行写入类工具；Chat mode 下按普通执行策略处理。
 16. 用户执行 `exec`、`resume` 或 `sessions` 时，命令分发器不会启动任务或独立会话流程，而是返回非零退出码和 TUI-only 中文提示。这样 CLI 保持单一产品形态，后续会话恢复、会话列表和权限审批都应接入 TUI 内部工作流。
 
 ## 关键文件
 
 - `cli/pom.xml`：通过 Maven Shade Plugin 在 `package` 阶段生成可执行 `target/codingx.jar`。
-- `script/install-codingx.ps1`：Windows 本地安装脚本，负责打包、复制 jar、生成启动器和写入用户 PATH。
+- `script/package-codingx-cli.bat`：Windows cmd/CI 打包脚本，负责 Maven 打包、复制发布 jar、生成 SHA256 校验文件，并可通过 `--install` 执行安装。
+- `script/package-codingx-cli.ps1`：PowerShell 打包脚本，和 BAT 入口保持同等打包与安装语义。
+- `script/install-codingx.bat`：Windows cmd 本地安装脚本，代理到 BAT 打包脚本并强制开启安装模式。
+- `script/install-codingx.ps1`：PowerShell 本地安装脚本，代理到 PowerShell 打包脚本并强制开启安装模式。
 - `cli/src/main/java/com/codingx/cli/CodingXCli.java`：CLI 进程入口，负责组装配置读写器和 TUI 启动器。
 - `cli/src/main/java/com/codingx/cli/command/CliCommandRunner.java`：命令解析和流程编排，覆盖 `login` / `logout`、`auth login` / `auth logout`、默认 TUI、显式 `tui` 和非交互命令拒绝。
 - `cli/src/main/java/com/codingx/cli/auth/CliAuthService.java`：CLI 认证编排服务，负责 loopback 登录、设备码轮询、PKCE challenge、后端 token 兑换、登录态检查、退出登录和配置保存。
@@ -92,8 +96,9 @@
 - `cd frontend/user && npm run test:run -- tests/views/CliLoginView.test.tsx`：覆盖 loopback 授权、设备码授权和参数缺失错误展示。
 - `cd cli && mvn -Dtest=CodingXTuiModelTest test`：覆盖用户问题可见性、完成后问题锚定、底部三行尾部裁剪、TTY 单行 composer、LF-only renderer 视图、运行中输入保留、连续问答顺序、长输出裁剪、长单行自动换行、视图预换行，以及真实 `Program.run()` + `program.send` 流式增量时底部可见用户问题的场景。
 - `cd cli && mvn package`
+- `script\install-codingx.bat --project-root D:\code\CodingX`
 - `powershell -ExecutionPolicy Bypass -File script/install-codingx.ps1 -ProjectRoot D:\code\CodingX`
 - `where codingx`：验证命令解析到用户目录 `.codingx/bin/codingx.cmd`。
 - `codingx exec smoke-test`：验证 PATH 命令进入 CLI 命令分发，并继续拒绝非交互任务模式。
 - 真实登录回归：清空本机 CLI token 后执行 `codingx auth login`，浏览器进入 `/cli-login` 并跳回 `127.0.0.1:<port>/callback`，终端输出 `CLI 登录成功：CodingX Admin`，`~/.codingx/cli.yml` 写入新 satoken。
-- 真实 TUI 回归：使用 Windows 伪终端执行 `cmd.exe /c codingx`，输入 `What is 2 plus 2? Answer with a single number.`，捕获到 `› What is 2 plus 2? Answer with a single number.`、`• 4`、`• Working (Ns • esc to interrupt)` 或 `Task completed: COMPLETED`。
+- 真实 TUI 回归：使用 Windows 伪终端执行 `cmd.exe /c codingx`，输入 `What is 2 plus 2? Answer with a single number.`，捕获到 `› What is 2 plus 2? Answer with a single number.`、`• 4`、`• Working (Ns • esc to interrupt)`，且 transcript 不包含“已开始执行”和 `Task completed: COMPLETED`。

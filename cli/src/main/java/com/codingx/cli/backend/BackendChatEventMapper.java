@@ -94,9 +94,8 @@ class BackendChatEventMapper {
             case "queued" -> List.of(event(AgentEventType.TOOL_OUTPUT_DELTA, Map.of(
                 "delta", "排队中，当前位置: " + StrUtil.blankToDefault(text(payload, "position"), "1")
             )));
-            case "queue-accepted" -> List.of(event(AgentEventType.TOOL_OUTPUT_DELTA, Map.of(
-                "delta", "已开始执行"
-            )));
+            // 后端队列接收只是调度状态，TUI 已有 Working 行表达运行中，避免 transcript 出现“已开始执行”噪音。
+            case "queue-accepted" -> List.of();
             case "error" -> List.of(error(text(payload, "message")));
             case "done" -> List.of();
             default -> List.of(event(AgentEventType.UNKNOWN, withDefault(payload, "eventName", sseEvent.eventName())));

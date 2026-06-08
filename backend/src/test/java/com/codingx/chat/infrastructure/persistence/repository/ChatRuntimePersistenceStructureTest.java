@@ -12,6 +12,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.stream.Stream;
 import org.apache.ibatis.annotations.Mapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.stereotype.Repository;
@@ -29,6 +30,41 @@ class ChatRuntimePersistenceStructureTest {
     void runtimePersistenceSkeletonsExistForAllNewTables() throws Exception {
         for (PersistenceSkeleton skeleton : expectedSkeletons()) {
             assertRepositorySkeleton(skeleton);
+        }
+    }
+
+    /**
+     * 消息表不再承担意图审计职责，遗留库中的 message 级 intent_code 必须由幂等迁移兜底移除。
+     * @throws Exception schema、DO 或迁移脚本读取失败时抛出。
+     */
+    @Test
+    void chatMessageSchemaDoesNotContainLegacyIntentCode() throws Exception {
+        String schemaSql = Files.readString(Path.of("src/main/resources/db/schema.sql"), StandardCharsets.UTF_8);
+        String chatMessageTableSql = schemaSql.substring(
+            schemaSql.indexOf("CREATE TABLE IF NOT EXISTS chat_message ("),
+            schemaSql.indexOf("COMMENT ON TABLE chat_message")
+        );
+        Class<?> dataObjectClass = Class.forName("com.codingx.chat.infrastructure.persistence.dataobject.ChatMessageDO");
+        List<String> dataObjectFields = List.of(dataObjectClass.getDeclaredFields()).stream()
+            .map(Field::getName)
+            .toList();
+
+        assertFalse(schemaSql.contains("COMMENT ON COLUMN chat_message.intent_code"), "schema.sql 不应注释消息表废弃意图字段");
+        assertFalse(chatMessageTableSql.contains("intent_code"), "schema.sql 的 chat_message 不应定义 intent_code");
+        assertFalse(dataObjectFields.contains("intentCode"), "ChatMessageDO 不应映射已废弃的消息级意图字段");
+        try (Stream<Path> migrations = Files.list(Path.of("src/main/resources/db/migration"))) {
+            boolean hasCleanupMigration = migrations
+                .filter(path -> path.getFileName().toString().equals("V20260609_090000__drop_legacy_chat_message_intent_code.sql"))
+                .anyMatch(path -> {
+                    try {
+                        String content = Files.readString(path, StandardCharsets.UTF_8);
+                        return content.contains("ALTER TABLE chat_message")
+                            && content.contains("DROP COLUMN IF EXISTS intent_code");
+                    } catch (Exception exception) {
+                        throw new IllegalStateException("读取迁移文件失败：" + path, exception);
+                    }
+                });
+            assertTrue(hasCleanupMigration, "缺少清理 chat_message.intent_code 的幂等迁移");
         }
     }
 

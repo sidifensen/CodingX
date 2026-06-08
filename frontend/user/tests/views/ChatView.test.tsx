@@ -922,9 +922,11 @@ describe('ChatView', () => {
     expect(fileRow).toHaveAttribute('aria-expanded', 'true');
     expect(dialog).toHaveTextContent('src/App.tsx');
     expect(dialog).toHaveTextContent('+export const title = "CodingX";');
-    expect(scrollToMock).toHaveBeenCalledWith({
-      top: expect.any(Number),
-      behavior: 'auto',
+    await waitFor(() => {
+      expect(scrollToMock).toHaveBeenCalledWith({
+        top: expect.any(Number),
+        behavior: 'auto',
+      });
     });
 
     fireEvent.click(within(dialog).getByRole('button', { name: '收起文件差异内容' }));
@@ -932,6 +934,72 @@ describe('ChatView', () => {
       screen.queryByRole('dialog', { name: '文件差异内容：src/App.tsx' }),
     ).not.toBeInTheDocument();
     expect(fileRow).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  /**
+   * 正在写入的大文件 diff 只渲染尾部实时预览，避免每个分片都把完整 diff 重绘一遍导致正文流式输出卡顿。
+   */
+  it('应限制流式写入中的大文件差异预览行数', async () => {
+    const largePendingDiff = [
+      'diff --git a/src/large.ts b/src/large.ts',
+      '--- a/src/large.ts',
+      '+++ b/src/large.ts',
+      '@@ -1 +1,260 @@',
+      ...Array.from({ length: 260 }, (_, index) => `+export const value${index} = ${index};`),
+    ].join('\n');
+
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          messages: [
+            {
+              id: '706b',
+              conversationId: '2001',
+              role: 'ASSISTANT',
+              content: '正在编辑',
+              processCards: [
+                {
+                  id: 'tool-call-706b',
+                  type: 'tool_call',
+                  title: '行动',
+                  summary: '正在编辑 src/large.ts',
+                  status: 'running',
+                  toolId: 'write',
+                  displayName: '写文件',
+                  diffSummary: { filesChanged: 1, additions: 260, deletions: 0 },
+                  fileDiffs: [
+                    {
+                      path: 'src/large.ts',
+                      oldPath: 'src/large.ts',
+                      newPath: 'src/large.ts',
+                      status: 'pending',
+                      additions: 260,
+                      deletions: 0,
+                      diff: largePendingDiff,
+                    },
+                  ],
+                },
+              ],
+              status: 'streaming',
+            } as any,
+          ],
+          executionSteps: [],
+          references: [],
+          artifacts: [],
+        })}
+      />,
+    );
+
+    const fileRow = screen.getByTestId('edited-file-row-706b-tool-call-706b-src-large-ts');
+    fireEvent.click(fileRow);
+
+    const panel = screen.getByTestId('inline-file-diff-scroll');
+    expect(panel).toHaveTextContent('实时预览，仅渲染最新');
+    expect(panel).toHaveTextContent('+export const value259 = 259;');
+    expect(panel).not.toHaveTextContent('+export const value0 = 0;');
+    expect(within(panel).getAllByTestId('diff-line')).toHaveLength(120);
   });
 
   /**

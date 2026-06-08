@@ -74,6 +74,7 @@ interface ChatViewProps {
 const CODE_REVIEW_SIDEBAR_DEFAULT_WIDTH = 380;
 const CODE_REVIEW_SIDEBAR_MIN_WIDTH = 320;
 const CODE_REVIEW_SIDEBAR_MAX_WIDTH = 720;
+const STREAMING_DIFF_PREVIEW_LINE_LIMIT = 120;
 
 /**
  * 渲染接入真实后端数据的聊天三栏工作台。
@@ -2791,6 +2792,7 @@ function CodeReviewSidebar({
             {activeFileDiff ? (
               <AutoScrollingDiffBlock
                 diffText={activeFileDiff.diff || '等待写入内容...'}
+                isStreamingPreview={activeFileDiff.status === 'pending'}
                 className="min-h-0 overflow-auto"
                 testId="code-review-sidebar-diff-scroll"
               />
@@ -5891,6 +5893,7 @@ function EditedFilesSummary({
                 <InlineFileDiffPanel
                   panelId={panelId}
                   fileDiff={fileDiff}
+                  isPending={isPending || fileDiff.status === 'pending'}
                   onClose={() => setActiveFileDiff(null)}
                 />
               ) : null}
@@ -5908,10 +5911,12 @@ function EditedFilesSummary({
 function InlineFileDiffPanel({
   panelId,
   fileDiff,
+  isPending,
   onClose,
 }: {
   panelId: string;
   fileDiff: FileDiffItem;
+  isPending: boolean;
   onClose: () => void;
 }) {
   return (
@@ -5939,6 +5944,7 @@ function InlineFileDiffPanel({
       </div>
       <AutoScrollingDiffBlock
         diffText={fileDiff.diff || '等待写入内容...'}
+        isStreamingPreview={isPending}
         className="max-h-[46vh] overflow-auto"
         testId="inline-file-diff-scroll"
       />
@@ -5951,31 +5957,37 @@ function InlineFileDiffPanel({
  */
 function AutoScrollingDiffBlock({
   diffText,
+  isStreamingPreview = false,
   className,
   testId,
 }: {
   diffText: string;
+  isStreamingPreview?: boolean;
   className: string;
   testId: string;
 }) {
   const scrollContainerRef = React.useRef<HTMLDivElement | null>(null);
 
-  React.useLayoutEffect(() => {
+  React.useEffect(() => {
     const scrollContainer = scrollContainerRef.current;
     if (!scrollContainer) {
       return;
     }
-    const targetTop = scrollContainer.scrollHeight;
-    if (typeof scrollContainer.scrollTo === 'function') {
-      scrollContainer.scrollTo({ top: targetTop, behavior: 'auto' });
-      return;
-    }
-    scrollContainer.scrollTop = targetTop;
+    // 流式 diff 会高频追加内容，滚动放到下一帧执行，避免同步布局测量阻塞正文 token 渲染。
+    const frameId = window.requestAnimationFrame(() => {
+      const targetTop = scrollContainer.scrollHeight;
+      if (typeof scrollContainer.scrollTo === 'function') {
+        scrollContainer.scrollTo({ top: targetTop, behavior: 'auto' });
+        return;
+      }
+      scrollContainer.scrollTop = targetTop;
+    });
+    return () => window.cancelAnimationFrame(frameId);
   }, [diffText]);
 
   return (
     <div ref={scrollContainerRef} data-testid={testId} className={className}>
-      <DiffTextBlock diffText={diffText} />
+      <DiffTextBlock diffText={diffText} isStreamingPreview={isStreamingPreview} />
     </div>
   );
 }
@@ -5983,13 +5995,31 @@ function AutoScrollingDiffBlock({
 /**
  * 按 unified diff 行前缀做轻量高亮，保持代码内容可复制且不依赖第三方 diff 组件。
  */
-function DiffTextBlock({ diffText }: { diffText: string }) {
-  const lines = diffText.split(/\r?\n/);
+function DiffTextBlock({
+  diffText,
+  isStreamingPreview = false,
+}: {
+  diffText: string;
+  isStreamingPreview?: boolean;
+}) {
+  const { lines, omittedCount } = React.useMemo(
+    () => buildDiffPreviewLines(diffText, isStreamingPreview),
+    [diffText, isStreamingPreview],
+  );
   return (
     <pre className="min-w-full whitespace-pre-wrap [overflow-wrap:anywhere] bg-background px-4 py-3 font-mono text-[12px] leading-5 text-foreground">
+      {omittedCount > 0 ? (
+        <span
+          data-testid="diff-preview-omitted"
+          className="mb-1 block border-l-2 border-accent-breeze/55 bg-accent-breeze/10 px-2 text-accent-breeze"
+        >
+          实时预览，仅渲染最新 {STREAMING_DIFF_PREVIEW_LINE_LIMIT} 行，已省略 {omittedCount} 行
+        </span>
+      ) : null}
       {lines.map((line, index) => (
         <span
           key={`${index}-${line}`}
+          data-testid="diff-line"
           className={`block border-l-2 px-2 ${
             line.startsWith('+') && !line.startsWith('+++')
               ? 'border-success/70 bg-success/15 font-medium text-success'
@@ -6005,6 +6035,23 @@ function DiffTextBlock({ diffText }: { diffText: string }) {
       ))}
     </pre>
   );
+}
+
+/**
+ * 流式写入时只保留尾部 diff 预览，完成后的真实 diff 和工作区 diff 仍完整展示。
+ */
+function buildDiffPreviewLines(
+  diffText: string,
+  isStreamingPreview: boolean,
+): { lines: string[]; omittedCount: number } {
+  const lines = diffText.split(/\r?\n/);
+  if (!isStreamingPreview || lines.length <= STREAMING_DIFF_PREVIEW_LINE_LIMIT) {
+    return { lines, omittedCount: 0 };
+  }
+  return {
+    lines: lines.slice(-STREAMING_DIFF_PREVIEW_LINE_LIMIT),
+    omittedCount: lines.length - STREAMING_DIFF_PREVIEW_LINE_LIMIT,
+  };
 }
 
 type ConversationDiffRound = {

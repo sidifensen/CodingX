@@ -6286,9 +6286,25 @@ function patchLatestAssistantReplayPanels(
   if (latestAssistantIndex == null) {
     return replayMessages;
   }
-  const latestAssistantMessage = replayMessages[latestAssistantIndex];
+  const replayMessagesWithHistoricalPanels = patchHistoricalAssistantReplayPanels(replayMessages, {
+    previousMessages: options.previousMessages ?? [],
+    executionSteps: options.executionSteps,
+    references: options.references,
+    latestAssistantIndex,
+  });
+  const latestAssistantMessage = replayMessagesWithHistoricalPanels[latestAssistantIndex];
   const previousPanelState = readLatestAssistantPanelState(options.previousMessages ?? []);
-  const derivedMcpCalls = deriveMcpCallsFromSteps(options.executionSteps);
+  const latestExecutionSteps = filterExecutionStepsForReplayMessage(
+    options.executionSteps,
+    latestAssistantMessage.runId,
+    true,
+  );
+  const latestReferences = filterReferencesForReplayMessage(
+    options.references,
+    latestAssistantMessage.runId,
+    true,
+  );
+  const derivedMcpCalls = deriveMcpCallsFromSteps(latestExecutionSteps);
   const previousReplayContent = normalizeReplayContent(previousPanelState.content);
   const nextReplayContent = normalizeReplayContent(latestAssistantMessage.content);
   const targetConversationId = normalizeReplayConversationId(options.targetConversationId);
@@ -6320,7 +6336,7 @@ function patchLatestAssistantReplayPanels(
         : derivedMcpCalls.length > 0
           ? derivedMcpCalls
           : undefined;
-  const replaySearchProgress = deriveSearchProgressFromReplay(options.executionSteps, options.references);
+  const replaySearchProgress = deriveSearchProgressFromReplay(latestExecutionSteps, latestReferences);
   const nextSearchProgress =
     latestAssistantMessage.searchProgress ??
     previousPanelState.searchProgress ??
@@ -6331,8 +6347,8 @@ function patchLatestAssistantReplayPanels(
     previousPanelState.processCards.length > 0;
   const derivedProcessCards = deriveProcessCardsFromReplay({
     message: latestAssistantMessage,
-    executionSteps: options.executionSteps,
-    references: options.references,
+    executionSteps: latestExecutionSteps,
+    references: latestReferences,
     mcpCalls: nextMcpCalls ?? [],
     searchProgress: nextSearchProgress,
   });
@@ -6359,9 +6375,9 @@ function patchLatestAssistantReplayPanels(
     nextTimelineItems !== latestAssistantMessage.timelineItems ||
     normalizeReplayContent(nextContent) !== nextReplayContent;
   if (!shouldPatch) {
-    return replayMessages;
+    return replayMessagesWithHistoricalPanels;
   }
-  return replayMessages.map((message, index) =>
+  return replayMessagesWithHistoricalPanels.map((message, index) =>
     index === latestAssistantIndex
       ? {
           ...message,
@@ -6373,6 +6389,175 @@ function patchLatestAssistantReplayPanels(
         }
       : message,
   );
+}
+
+/**
+ * 回放整段会话时补齐非最新助手消息的过程面板，避免后续轮次刷新时覆盖早期工具 diff。
+ * @param messages 历史接口返回的消息列表。
+ * @param options 回放上下文。
+ * @returns 已补齐历史助手过程面板的消息列表。
+ */
+function patchHistoricalAssistantReplayPanels(
+  messages: ChatMessageItem[],
+  options: {
+    previousMessages: ChatMessageItem[];
+    executionSteps: ExecutionStepItem[];
+    references: ReferenceItem[];
+    latestAssistantIndex: number;
+  },
+): ChatMessageItem[] {
+  return messages.map((message, index) => {
+    if (index === options.latestAssistantIndex || message.role !== 'ASSISTANT') {
+      return message;
+    }
+    const previousMessage = findPreviousReplayMessage(options.previousMessages, message);
+    const messageExecutionSteps = filterExecutionStepsForReplayMessage(
+      options.executionSteps,
+      message.runId,
+      false,
+    );
+    const messageReferences = filterReferencesForReplayMessage(
+      options.references,
+      message.runId,
+      false,
+    );
+    const hasReplaySource =
+      messageExecutionSteps.length > 0 ||
+      messageReferences.length > 0 ||
+      (previousMessage?.mcpCalls?.length ?? 0) > 0 ||
+      (previousMessage?.processCards?.length ?? 0) > 0 ||
+      (previousMessage?.timelineItems?.length ?? 0) > 0 ||
+      previousMessage?.searchProgress != null;
+    if (!hasReplaySource) {
+      return message;
+    }
+
+    const derivedMcpCalls = deriveMcpCallsFromSteps(messageExecutionSteps);
+    const nextMcpCalls =
+      message.mcpCalls && message.mcpCalls.length > 0
+        ? message.mcpCalls
+        : previousMessage?.mcpCalls && previousMessage.mcpCalls.length > 0
+          ? previousMessage.mcpCalls
+          : derivedMcpCalls.length > 0
+            ? derivedMcpCalls
+            : undefined;
+    const replaySearchProgress = deriveSearchProgressFromReplay(messageExecutionSteps, messageReferences);
+    const nextSearchProgress =
+      message.searchProgress ??
+      previousMessage?.searchProgress ??
+      replaySearchProgress;
+    const derivedProcessCards = deriveProcessCardsFromReplay({
+      message,
+      executionSteps: messageExecutionSteps,
+      references: messageReferences,
+      mcpCalls: nextMcpCalls ?? [],
+      searchProgress: nextSearchProgress,
+    });
+    const nextProcessCards = pickMostInformativeProcessCards([
+      message.processCards,
+      previousMessage?.processCards,
+      derivedProcessCards,
+    ]);
+    const shouldPreservePreviousTimeline =
+      (previousMessage?.timelineItems?.length ?? 0) > 0 &&
+      (message.timelineItems?.length ?? 0) === 0;
+    const nextTimelineItems = mergeReplayTimelineItems(
+      message.timelineItems,
+      previousMessage?.timelineItems,
+      nextProcessCards,
+      shouldPreservePreviousTimeline,
+    );
+    const shouldPatch =
+      nextMcpCalls !== message.mcpCalls ||
+      nextSearchProgress !== message.searchProgress ||
+      nextProcessCards !== message.processCards ||
+      nextTimelineItems !== message.timelineItems;
+    if (!shouldPatch) {
+      return message;
+    }
+    return {
+      ...message,
+      mcpCalls: nextMcpCalls,
+      processCards: nextProcessCards,
+      searchProgress: nextSearchProgress,
+      timelineItems: nextTimelineItems,
+    };
+  });
+}
+
+/**
+ * 按消息 ID 优先、runId 兜底寻找刷新前的同一助手消息面板状态。
+ * @param previousMessages 刷新前的本地消息。
+ * @param replayMessage 当前回放消息。
+ * @returns 对应的旧助手消息，缺失时返回 undefined。
+ */
+function findPreviousReplayMessage(
+  previousMessages: ChatMessageItem[],
+  replayMessage: ChatMessageItem,
+): ChatMessageItem | undefined {
+  const replayMessageId = normalizeReplayIdentifier(replayMessage.id);
+  if (replayMessageId.length > 0) {
+    const previousById = previousMessages.find(
+      (message) => message.role === 'ASSISTANT' && normalizeReplayIdentifier(message.id) === replayMessageId,
+    );
+    if (previousById) {
+      return previousById;
+    }
+  }
+  const replayRunId = normalizeReplayIdentifier(replayMessage.runId);
+  if (replayRunId.length === 0) {
+    return undefined;
+  }
+  return previousMessages.find(
+    (message) => message.role === 'ASSISTANT' && normalizeReplayIdentifier(message.runId) === replayRunId,
+  );
+}
+
+/**
+ * 按消息 runId 过滤执行步骤；缺少 runId 时可按调用方要求回退到全量步骤。
+ * @param executionSteps 所有执行步骤。
+ * @param runId 消息 runId。
+ * @param fallbackToAllWhenMissingRunId 缺少 runId 时是否返回全量步骤。
+ * @returns 当前消息可消费的步骤。
+ */
+function filterExecutionStepsForReplayMessage(
+  executionSteps: ExecutionStepItem[],
+  runId: string | undefined,
+  fallbackToAllWhenMissingRunId: boolean,
+): ExecutionStepItem[] {
+  const normalizedRunId = normalizeReplayIdentifier(runId);
+  if (normalizedRunId.length === 0) {
+    return fallbackToAllWhenMissingRunId ? executionSteps : [];
+  }
+  return executionSteps.filter((step) => normalizeReplayIdentifier(step.runId) === normalizedRunId);
+}
+
+/**
+ * 按消息 runId 过滤引用来源；缺少 runId 时可按调用方要求回退到全量引用。
+ * @param references 所有引用。
+ * @param runId 消息 runId。
+ * @param fallbackToAllWhenMissingRunId 缺少 runId 时是否返回全量引用。
+ * @returns 当前消息可消费的引用。
+ */
+function filterReferencesForReplayMessage(
+  references: ReferenceItem[],
+  runId: string | undefined,
+  fallbackToAllWhenMissingRunId: boolean,
+): ReferenceItem[] {
+  const normalizedRunId = normalizeReplayIdentifier(runId);
+  if (normalizedRunId.length === 0) {
+    return fallbackToAllWhenMissingRunId ? references : [];
+  }
+  return references.filter((reference) => normalizeReplayIdentifier(reference.runId) === normalizedRunId);
+}
+
+/**
+ * 归一化回放关联标识，统一处理数字、空串和空白值。
+ * @param value 原始标识。
+ * @returns 去空白后的标识。
+ */
+function normalizeReplayIdentifier(value: unknown): string {
+  return String(value ?? '').trim();
 }
 
 /**

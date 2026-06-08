@@ -7177,6 +7177,173 @@ describe('useChatWorkspace', () => {
   });
 
   /**
+   * 同一会话多轮回放时，非最新助手消息也要按 runId 恢复自己的文件差异，避免第二轮完成后第一轮编辑列表消失。
+   */
+  it('retains earlier assistant file diffs when later turn reloads the conversation', async () => {
+    window.localStorage.setItem(
+      'codingx.auth.session',
+      JSON.stringify({
+        token: 'token-123',
+        userId: '1002',
+        username: 'user',
+        displayName: 'CodingX User',
+        userType: 'USER',
+      }),
+    );
+    window.history.replaceState(window.history.state, '', '/?conversationId=2001');
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === '/api/chat/conversations') {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            code: 'OK',
+            message: 'success',
+            data: [
+              {
+                id: '2001',
+                title: '多轮编辑会话',
+                status: 'ACTIVE',
+                lastRunId: '5003',
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      if (
+        url === '/api/chat/sample-questions' ||
+        url === '/api/chat/experts' ||
+        url === '/api/chat/skills' ||
+        url === '/api/chat/mcps'
+      ) {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (url === '/api/chat/conversations/2001/messages') {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            code: 'OK',
+            message: 'success',
+            data: [
+              {
+                id: 'user-first',
+                conversationId: '2001',
+                role: 'USER',
+                content: '写一个文件',
+                status: 'COMPLETED',
+              },
+              {
+                id: 'assistant-first',
+                conversationId: '2001',
+                runId: '5002',
+                role: 'ASSISTANT',
+                content: '第一轮写好了',
+                status: 'COMPLETED',
+              },
+              {
+                id: 'user-second',
+                conversationId: '2001',
+                role: 'USER',
+                content: '丰富一下',
+                status: 'COMPLETED',
+              },
+              {
+                id: 'assistant-second',
+                conversationId: '2001',
+                runId: '5003',
+                role: 'ASSISTANT',
+                content: '第二轮已丰富',
+                status: 'COMPLETED',
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      if (url === '/api/chat/conversations/2001/steps') {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            code: 'OK',
+            message: 'success',
+            data: [
+              {
+                id: 'step-first-diff',
+                runId: '5002',
+                stepType: 'tool',
+                stepTitle: '执行本地工具 write',
+                stepStatus: 'COMPLETED',
+                sequenceNo: 1,
+                content: '文件已写入',
+                metadataJson: JSON.stringify({
+                  callId: 'first-write',
+                  toolId: 'write',
+                  displayName: '写文件',
+                  params: { path: 'index.html' },
+                  rawResult: '文件已写入',
+                  resultMetadata: {
+                    diffSummary: { filesChanged: 1, additions: 1, deletions: 0 },
+                    fileDiffs: [
+                      {
+                        path: 'index.html',
+                        status: 'added',
+                        additions: 1,
+                        deletions: 0,
+                        diff: '+<main>第一轮页面</main>',
+                      },
+                    ],
+                  },
+                }),
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      if (
+        url === '/api/chat/conversations/2001/references' ||
+        url === '/api/chat/conversations/2001/artifacts' ||
+        url === '/api/chat/conversations/2001/current-skills' ||
+        url === '/api/chat/conversations/2001/current-mcps' ||
+        url === '/api/chat/conversations/2001/current-experts'
+      ) {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      throw new Error(`Unhandled fetch in multi-turn replay file diff test: ${url}`);
+    });
+
+    const { result } = renderHook(() => useChatWorkspace(true));
+
+    await waitFor(() => {
+      expect(result.current.isBootstrapping).toBe(false);
+    });
+
+    await waitFor(() => {
+      const firstAssistantMessage = result.current.messages.find((item) => item.id === 'assistant-first');
+      const firstProcessCards = ((firstAssistantMessage as Record<string, unknown> | undefined)?.processCards ?? []) as Array<Record<string, unknown>>;
+      const firstToolResultCard = firstProcessCards.find((card) => card.type === 'tool_result');
+      expect(firstToolResultCard?.fileDiffs).toEqual([
+        expect.objectContaining({
+          path: 'index.html',
+          diff: '+<main>第一轮页面</main>',
+        }),
+      ]);
+
+      const secondAssistantMessage = result.current.messages.find((item) => item.id === 'assistant-second');
+      const secondProcessCards = ((secondAssistantMessage as Record<string, unknown> | undefined)?.processCards ?? []) as Array<Record<string, unknown>>;
+      expect(secondProcessCards.some((card) => (card.fileDiffs as unknown[] | undefined)?.length > 0)).toBe(false);
+    });
+  });
+
+  /**
    * 正文与工具事件必须保留 SSE 到达顺序，供主消息区按 Codex 风格穿插展示。
    */
   it('按流式事件顺序记录正文与工具过程时间线', async () => {

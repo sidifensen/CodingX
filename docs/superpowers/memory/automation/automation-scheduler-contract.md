@@ -41,7 +41,7 @@ status: active
 - 手动创建入口 `POST /api/automation/tasks` 至少需要 `name`、`prompt`、`scheduleType` 和计划时间字段，后端从 Sa-Token 补齐当前用户；若请求显式携带 `workspaceId`，服务层必须通过 `WorkspaceRepository.ensureOwnedByUser` 校验当前用户归属。
 - 列表入口 `GET /api/automation/tasks` 只返回当前用户未删除任务，默认按启用状态、下一次执行时间和更新时间排序。
 - 会话创建入口不新增页面确认协议；`ChatApplicationService` 在当前会话已完成归属校验后，把会话、用户消息和当前用户 ID 交给自动化创建服务。
-- 解析器只有在明确计划时间和创建/提醒语义同时存在时才返回创建参数；未命中时普通聊天必须继续模型/意图路由。
+- 解析器只有在明确计划时间和创建/提醒语义同时存在时才返回创建参数；每日时间支持阿拉伯数字时间和受限中文整点/半点表达，例如 `18:11`、`18点`、`十二点`、`两点半`。未命中时普通聊天必须继续模型/意图路由。
 - 当前版本没有启停、删除、更新接口；后续扩展必须基于任务归属校验，任务不存在或不属于当前用户时通过统一异常处理返回中文 `ApiResponse.message`。
 - 调度扫描当前只推进 `lastRunAt`、`lastRunStatus` 和 `nextRunAt`；写入时必须用扫描时的旧 `nextRunAt` 做条件更新，避免重叠扫描重复触发同一到期任务。真实执行失败记录和执行历史仍需后续定义。
 

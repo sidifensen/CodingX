@@ -28,6 +28,21 @@ class AutomationTaskIntentParserTest {
     }
 
     /**
+     * 用户在会话中常用中文数字表达整点时间，解析器必须命中并直接创建每日任务。
+     */
+    @Test
+    void parseShouldResolveChineseDailyHourAutomationIntent() {
+        AutomationTaskIntentParser parser = new AutomationTaskIntentParser();
+
+        var result = parser.parse("帮我创建自动化任务，每天十二点给我推送ai新闻", LocalDateTime.of(2026, 6, 8, 17, 0));
+
+        assertTrue(result.isPresent());
+        assertEquals(AutomationScheduleType.DAILY, result.get().scheduleType());
+        assertEquals("12:00", result.get().scheduleTime());
+        assertEquals("给我推送ai新闻", result.get().prompt());
+    }
+
+    /**
      * 没有明确计划时间的普通问题不应误创建自动化任务。
      */
     @Test

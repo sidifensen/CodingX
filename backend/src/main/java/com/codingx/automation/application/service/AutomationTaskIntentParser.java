@@ -1,5 +1,6 @@
 package com.codingx.automation.application.service;
 
+import cn.hutool.core.convert.NumberChineseFormatter;
 import cn.hutool.core.util.StrUtil;
 import com.codingx.automation.domain.model.AutomationScheduleType;
 import java.time.LocalDateTime;
@@ -17,6 +18,8 @@ public class AutomationTaskIntentParser {
 
     /** 匹配 18:11、18点11、18 点等中文常见时间写法。 */
     private static final Pattern TIME_PATTERN = Pattern.compile("(\\d{1,2})(?:[:：点时])(\\d{1,2})?");
+    /** 匹配十二点、两点半这类中文整点/半点写法，只在紧跟点/时时视为时间。 */
+    private static final Pattern CHINESE_HOUR_PATTERN = Pattern.compile("([零〇一二两三四五六七八九十]{1,3})(?:点|时)(半)?");
     /** 匹配每周几表达，1-7 与一到日都支持。 */
     private static final Pattern WEEKLY_PATTERN = Pattern.compile("每周([一二三四五六日天1-7])");
 
@@ -90,11 +93,27 @@ public class AutomationTaskIntentParser {
      */
     private Optional<LocalTime> parseTime(String content) {
         Matcher matcher = TIME_PATTERN.matcher(content);
+        if (matcher.find()) {
+            int hour = Integer.parseInt(matcher.group(1));
+            int minute = matcher.group(2) == null ? 0 : Integer.parseInt(matcher.group(2));
+            if (hour < 0 || hour > 23 || minute < 0 || minute > 59) {
+                return Optional.empty();
+            }
+            return Optional.of(LocalTime.of(hour, minute));
+        }
+        return parseChineseHour(content);
+    }
+
+    /**
+     * 解析中文数字整点/半点。只接受 0-23 小时，避免把普通数量词误判为时间。
+     */
+    private Optional<LocalTime> parseChineseHour(String content) {
+        Matcher matcher = CHINESE_HOUR_PATTERN.matcher(content);
         if (!matcher.find()) {
             return Optional.empty();
         }
-        int hour = Integer.parseInt(matcher.group(1));
-        int minute = matcher.group(2) == null ? 0 : Integer.parseInt(matcher.group(2));
+        int hour = NumberChineseFormatter.chineseToNumber(matcher.group(1));
+        int minute = matcher.group(2) == null ? 0 : 30;
         if (hour < 0 || hour > 23 || minute < 0 || minute > 59) {
             return Optional.empty();
         }
@@ -125,8 +144,11 @@ public class AutomationTaskIntentParser {
      */
     private String normalizePrompt(String content) {
         String prompt = content
+            .replaceAll("(?:创建|设置|设定|安排)(?:一个|一条|个|条)?(?:自动化|定时)?任务", "")
+            .replaceAll("自动化任务|定时任务", "")
             .replaceAll("每天|每日|每周[一二三四五六日天1-7]?|明天|今晚|一次性?|定时|自动化", "")
             .replaceAll("\\d{1,2}[:：点时]\\d{0,2}", "")
+            .replaceAll("[零〇一二两三四五六七八九十]{1,3}[点时]半?", "")
             .replaceAll("帮我|请|创建|设置|设定|安排|提醒我|提醒|自动", "")
             .replaceAll("[，。,.\\s]+", " ")
             .trim();

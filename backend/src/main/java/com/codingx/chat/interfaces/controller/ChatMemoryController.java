@@ -1,6 +1,8 @@
 package com.codingx.chat.interfaces.controller;
 
 import cn.dev33.satoken.stp.StpUtil;
+import com.codingx.chat.application.service.ChatMemoryViewService;
+import com.codingx.chat.interfaces.response.ChatLongTermMemoryResponse;
 import com.codingx.common.model.ApiResponse;
 import com.codingx.governance.application.service.LongTermMemoryService;
 import com.codingx.governance.domain.model.GovernanceLongTermMemory;
@@ -25,6 +27,8 @@ public class ChatMemoryController {
 
     /** 长期记忆服务，执行用户归属过滤、状态更新和记忆读取。 */
     private final LongTermMemoryService longTermMemoryService;
+    /** 长期记忆视图服务，负责为用户端响应补齐工作空间展示名。 */
+    private final ChatMemoryViewService chatMemoryViewService;
 
     /**
      * 查询当前用户可见的长期记忆。
@@ -34,14 +38,15 @@ public class ChatMemoryController {
      * @return 当前用户可见长期记忆列表。
      */
     @GetMapping
-    public ApiResponse<List<GovernanceLongTermMemory>> listMemories(
+    public ApiResponse<List<ChatLongTermMemoryResponse>> listMemories(
         @RequestParam(required = false) Long workspaceId,
         @RequestParam(required = false) String status,
         @RequestParam(defaultValue = "false") boolean includeAllWorkspaces
     ) {
         // 步骤 1：用户身份由 Sa-Token 提供，Controller 只做协议参数适配。
         Long userId = StpUtil.getLoginIdAsLong();
-        return ApiResponse.success(longTermMemoryService.listUserMemories(userId, workspaceId, status, includeAllWorkspaces));
+        List<GovernanceLongTermMemory> memories = longTermMemoryService.listUserMemories(userId, workspaceId, status, includeAllWorkspaces);
+        return ApiResponse.success(chatMemoryViewService.toMemoryResponses(memories, userId));
     }
 
     /**
@@ -51,12 +56,13 @@ public class ChatMemoryController {
      * @return 更新后的长期记忆。
      */
     @PatchMapping("/{memoryId}/status")
-    public ApiResponse<GovernanceLongTermMemory> updateMemoryStatus(
+    public ApiResponse<ChatLongTermMemoryResponse> updateMemoryStatus(
         @PathVariable Long memoryId,
         @RequestBody MemoryStatusUpdateRequest request
     ) {
         Long userId = StpUtil.getLoginIdAsLong();
-        return ApiResponse.success(longTermMemoryService.updateUserMemoryStatus(memoryId, userId, request == null ? null : request.status()));
+        GovernanceLongTermMemory memory = longTermMemoryService.updateUserMemoryStatus(memoryId, userId, request == null ? null : request.status());
+        return ApiResponse.success(chatMemoryViewService.toMemoryResponse(memory, userId));
     }
 
     /**
@@ -66,13 +72,14 @@ public class ChatMemoryController {
      * @return 更新后的长期记忆。
      */
     @PatchMapping("/{memoryId}")
-    public ApiResponse<GovernanceLongTermMemory> updateMemoryContent(
+    public ApiResponse<ChatLongTermMemoryResponse> updateMemoryContent(
         @PathVariable Long memoryId,
         @RequestBody MemoryContentUpdateRequest request
     ) {
         // 步骤 1：Controller 只读取登录用户和请求正文，归属校验与关键词刷新下沉到服务层。
         Long userId = StpUtil.getLoginIdAsLong();
-        return ApiResponse.success(longTermMemoryService.updateUserMemoryContent(memoryId, userId, request == null ? null : request.content()));
+        GovernanceLongTermMemory memory = longTermMemoryService.updateUserMemoryContent(memoryId, userId, request == null ? null : request.content());
+        return ApiResponse.success(chatMemoryViewService.toMemoryResponse(memory, userId));
     }
 
     /**

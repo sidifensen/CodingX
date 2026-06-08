@@ -1,5 +1,6 @@
 package com.codingx.chat.interfaces.controller;
 
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.verify;
@@ -11,6 +12,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import cn.dev33.satoken.stp.StpUtil;
+import com.codingx.chat.application.service.ChatMemoryViewService;
+import com.codingx.chat.interfaces.response.ChatLongTermMemoryResponse;
 import com.codingx.config.GlobalExceptionHandler;
 import com.codingx.governance.application.service.LongTermMemoryService;
 import com.codingx.governance.domain.model.GovernanceLongTermMemory;
@@ -35,6 +38,9 @@ class ChatMemoryControllerTest {
     @Mock
     private LongTermMemoryService longTermMemoryService;
 
+    @Mock
+    private ChatMemoryViewService chatMemoryViewService;
+
     @InjectMocks
     private ChatMemoryController chatMemoryController;
 
@@ -43,17 +49,17 @@ class ChatMemoryControllerTest {
      */
     @Test
     void listMemoriesReturnsCurrentUserMemories() throws Exception {
-        when(longTermMemoryService.listUserMemories(1002L, 3001L, "ACTIVE", false)).thenReturn(List.of(
-            GovernanceLongTermMemory.builder()
-                .id(9001L)
-                .memoryScope("USER")
-                .userId(1002L)
-                .workspaceId(3001L)
-                .content("代码风格偏好：业务注释")
-                .status("ACTIVE")
-                .keywordJson("[\"业务注释\"]")
-                .build()
-        ));
+        GovernanceLongTermMemory memory = GovernanceLongTermMemory.builder()
+            .id(9001L)
+            .memoryScope("USER")
+            .userId(1002L)
+            .workspaceId(3001L)
+            .content("代码风格偏好：业务注释")
+            .status("ACTIVE")
+            .keywordJson("[\"业务注释\"]")
+            .build();
+        when(longTermMemoryService.listUserMemories(1002L, 3001L, "ACTIVE", false)).thenReturn(List.of(memory));
+        when(chatMemoryViewService.toMemoryResponses(anyList(), eq(1002L))).thenReturn(List.of(toResponse(memory, "test")));
 
         try (MockedStatic<StpUtil> mocked = Mockito.mockStatic(StpUtil.class)) {
             mocked.when(StpUtil::getLoginIdAsLong).thenReturn(1002L);
@@ -64,6 +70,7 @@ class ChatMemoryControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data[0].id").value("9001"))
+                .andExpect(jsonPath("$.data[0].workspaceName").value("test"))
                 .andExpect(jsonPath("$.data[0].content").value("代码风格偏好：业务注释"))
                 .andExpect(jsonPath("$.data[0].status").value("ACTIVE"));
         }
@@ -74,16 +81,16 @@ class ChatMemoryControllerTest {
      */
     @Test
     void listMemoriesShouldSupportAllWorkspaceManagementQuery() throws Exception {
-        when(longTermMemoryService.listUserMemories(1002L, null, "ALL", true)).thenReturn(List.of(
-            GovernanceLongTermMemory.builder()
-                .id(9002L)
-                .memoryScope("PROJECT")
-                .userId(1002L)
-                .workspaceId(3002L)
-                .content("另一个项目必须先跑端到端测试")
-                .status("ACTIVE")
-                .build()
-        ));
+        GovernanceLongTermMemory memory = GovernanceLongTermMemory.builder()
+            .id(9002L)
+            .memoryScope("PROJECT")
+            .userId(1002L)
+            .workspaceId(3002L)
+            .content("另一个项目必须先跑端到端测试")
+            .status("ACTIVE")
+            .build();
+        when(longTermMemoryService.listUserMemories(1002L, null, "ALL", true)).thenReturn(List.of(memory));
+        when(chatMemoryViewService.toMemoryResponses(anyList(), eq(1002L))).thenReturn(List.of(toResponse(memory, "other")));
 
         try (MockedStatic<StpUtil> mocked = Mockito.mockStatic(StpUtil.class)) {
             mocked.when(StpUtil::getLoginIdAsLong).thenReturn(1002L);
@@ -94,6 +101,7 @@ class ChatMemoryControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data[0].workspaceId").value("3002"))
+                .andExpect(jsonPath("$.data[0].workspaceName").value("other"))
                 .andExpect(jsonPath("$.data[0].content").value("另一个项目必须先跑端到端测试"));
         }
 
@@ -105,16 +113,16 @@ class ChatMemoryControllerTest {
      */
     @Test
     void updateMemoryStatusDelegatesToService() throws Exception {
-        when(longTermMemoryService.updateUserMemoryStatus(9001L, 1002L, "REJECTED")).thenReturn(
-            GovernanceLongTermMemory.builder()
-                .id(9001L)
-                .memoryScope("USER")
-                .userId(1002L)
-                .workspaceId(3001L)
-                .content("代码风格偏好：业务注释")
-                .status("REJECTED")
-                .build()
-        );
+        GovernanceLongTermMemory memory = GovernanceLongTermMemory.builder()
+            .id(9001L)
+            .memoryScope("USER")
+            .userId(1002L)
+            .workspaceId(3001L)
+            .content("代码风格偏好：业务注释")
+            .status("REJECTED")
+            .build();
+        when(longTermMemoryService.updateUserMemoryStatus(9001L, 1002L, "REJECTED")).thenReturn(memory);
+        when(chatMemoryViewService.toMemoryResponse(memory, 1002L)).thenReturn(toResponse(memory, "test"));
 
         try (MockedStatic<StpUtil> mocked = Mockito.mockStatic(StpUtil.class)) {
             mocked.when(StpUtil::getLoginIdAsLong).thenReturn(1002L);
@@ -135,16 +143,16 @@ class ChatMemoryControllerTest {
      */
     @Test
     void updateMemoryContentDelegatesToService() throws Exception {
-        when(longTermMemoryService.updateUserMemoryContent(9001L, 1002L, "新的代码风格约定")).thenReturn(
-            GovernanceLongTermMemory.builder()
-                .id(9001L)
-                .memoryScope("PROJECT")
-                .userId(1002L)
-                .workspaceId(3001L)
-                .content("新的代码风格约定")
-                .status("ACTIVE")
-                .build()
-        );
+        GovernanceLongTermMemory memory = GovernanceLongTermMemory.builder()
+            .id(9001L)
+            .memoryScope("PROJECT")
+            .userId(1002L)
+            .workspaceId(3001L)
+            .content("新的代码风格约定")
+            .status("ACTIVE")
+            .build();
+        when(longTermMemoryService.updateUserMemoryContent(9001L, 1002L, "新的代码风格约定")).thenReturn(memory);
+        when(chatMemoryViewService.toMemoryResponse(memory, 1002L)).thenReturn(toResponse(memory, "test"));
 
         try (MockedStatic<StpUtil> mocked = Mockito.mockStatic(StpUtil.class)) {
             mocked.when(StpUtil::getLoginIdAsLong).thenReturn(1002L);
@@ -181,5 +189,32 @@ class ChatMemoryControllerTest {
         return MockMvcBuilders.standaloneSetup(chatMemoryController)
             .setControllerAdvice(new GlobalExceptionHandler())
             .build();
+    }
+
+    /**
+     * 构造控制器测试用响应对象，保持断言聚焦在接口契约而非视图服务内部映射。
+     * @param memory 长期记忆领域对象。
+     * @param workspaceName 工作空间展示名。
+     * @return 长期记忆响应。
+     */
+    private ChatLongTermMemoryResponse toResponse(GovernanceLongTermMemory memory, String workspaceName) {
+        return new ChatLongTermMemoryResponse(
+            memory.getId(),
+            memory.getMemoryScope(),
+            memory.getUserId(),
+            memory.getWorkspaceId(),
+            workspaceName,
+            memory.getMemoryKey(),
+            memory.getContent(),
+            memory.getStatus(),
+            memory.getSourceType(),
+            memory.getSourceConversationId(),
+            memory.getSourceMessageId(),
+            memory.getKeywordJson(),
+            memory.getConfidenceScore(),
+            memory.getLastUsedAt(),
+            memory.getCreatedAt(),
+            memory.getUpdatedAt()
+        );
     }
 }

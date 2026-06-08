@@ -15,6 +15,7 @@ import { LongTermMemoryItem, LongTermMemoryStatus, WorkspaceConversationGroup } 
 
 type MemoryScopeFilter = 'ALL' | 'USER' | 'PROJECT';
 type MemoryStatusFilter = 'ALL' | LongTermMemoryStatus;
+const DEFAULT_WORKSPACE_LABELS = new Set(['本地历史记录', '云端历史记录']);
 
 interface MemoryViewProps {
   isAuthenticated: boolean;
@@ -103,8 +104,8 @@ export default function MemoryView({
     [memories],
   );
   const workspaceLabelById = useMemo(
-    () => buildWorkspaceLabelById(workspaceGroups, workspaceId, workspaceLabel),
-    [workspaceGroups, workspaceId, workspaceLabel],
+    () => buildWorkspaceLabelById(workspaceGroups, workspaceId, workspaceLabel, memories),
+    [workspaceGroups, workspaceId, workspaceLabel, memories],
   );
   const workspaceCoverageCount = useMemo(() => {
     return new Set(
@@ -626,21 +627,79 @@ function buildWorkspaceLabelById(
   workspaceGroups: WorkspaceConversationGroup[],
   currentWorkspaceId: string | null,
   currentWorkspaceLabel: string,
+  memories: LongTermMemoryItem[] = [],
 ) {
   const labelById = new Map<string, string>();
+  const priorityById = new Map<string, number>();
   workspaceGroups.forEach((group) => {
     group.conversations.forEach((conversation) => {
       const workspaceId = normalizeWorkspaceId(conversation.workspaceId);
-      if (workspaceId && !labelById.has(workspaceId)) {
-        labelById.set(workspaceId, group.workspaceLabel || `工作空间 ${workspaceId}`);
+      if (workspaceId) {
+        // 默认“本地/云端历史记录”分组也可能暂存同一 workspaceId，会比真实路径分组更早出现。
+        setWorkspaceLabelCandidate(
+          labelById,
+          priorityById,
+          workspaceId,
+          group.workspaceLabel || `工作空间 ${workspaceId}`,
+          resolveWorkspaceLabelPriority(group.workspaceLabel, group.workspacePath),
+        );
       }
     });
   });
   const normalizedCurrentWorkspaceId = normalizeWorkspaceId(currentWorkspaceId);
-  if (normalizedCurrentWorkspaceId && currentWorkspaceLabel && !labelById.has(normalizedCurrentWorkspaceId)) {
-    labelById.set(normalizedCurrentWorkspaceId, currentWorkspaceLabel);
+  if (normalizedCurrentWorkspaceId && currentWorkspaceLabel) {
+    setWorkspaceLabelCandidate(
+      labelById,
+      priorityById,
+      normalizedCurrentWorkspaceId,
+      currentWorkspaceLabel,
+      isDefaultWorkspaceLabel(currentWorkspaceLabel) ? 1 : 2,
+    );
   }
+  memories.forEach((memory) => {
+    const memoryWorkspaceId = normalizeWorkspaceId(memory.workspaceId);
+    const memoryWorkspaceName = String(memory.workspaceName ?? '').trim();
+    if (memoryWorkspaceId && memoryWorkspaceName) {
+      // 后端按当前用户从 workspace 表补齐的名称最可信，优先于侧栏本地历史快照。
+      setWorkspaceLabelCandidate(labelById, priorityById, memoryWorkspaceId, memoryWorkspaceName, 4);
+    }
+  });
   return labelById;
+}
+
+/**
+ * 按可信度写入 workspaceId 的展示名，避免默认历史分组覆盖真实项目目录名。
+ */
+function setWorkspaceLabelCandidate(
+  labelById: Map<string, string>,
+  priorityById: Map<string, number>,
+  workspaceId: string,
+  label: string,
+  priority: number,
+) {
+  const normalizedLabel = label.trim();
+  if (!normalizedLabel) {
+    return;
+  }
+  const previousPriority = priorityById.get(workspaceId) ?? -1;
+  if (priority >= previousPriority) {
+    labelById.set(workspaceId, normalizedLabel);
+    priorityById.set(workspaceId, priority);
+  }
+}
+
+/**
+ * 真实目录分组优先级最高；默认历史标签只作为没有项目名时的兜底。
+ */
+function resolveWorkspaceLabelPriority(label: string, workspacePath: string | null) {
+  if (workspacePath && workspacePath.trim().length > 0) {
+    return 3;
+  }
+  return isDefaultWorkspaceLabel(label) ? 1 : 2;
+}
+
+function isDefaultWorkspaceLabel(label: string) {
+  return DEFAULT_WORKSPACE_LABELS.has(label.trim());
 }
 
 /**
@@ -686,7 +745,7 @@ function groupVisibleMemories(
       groups.push({
         key: `workspace-${memoryWorkspaceId}`,
         label,
-        description: `工作空间 ${memoryWorkspaceId} 的项目约定，只在该项目上下文中生效。`,
+        description: `${label} 的项目约定，只在该项目上下文中生效。`,
         memories: workspaceMemories,
       });
     });

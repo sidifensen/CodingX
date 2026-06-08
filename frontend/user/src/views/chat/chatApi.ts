@@ -676,6 +676,7 @@ export class ChatApi {
       id: String(memory.id ?? ''),
       userId: memory.userId == null ? null : String(memory.userId),
       workspaceId: memory.workspaceId == null ? null : String(memory.workspaceId),
+      workspaceName: memory.workspaceName == null ? null : String(memory.workspaceName),
       sourceConversationId:
         memory.sourceConversationId == null ? null : String(memory.sourceConversationId),
       sourceMessageId: memory.sourceMessageId == null ? null : String(memory.sourceMessageId),

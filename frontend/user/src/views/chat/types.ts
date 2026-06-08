@@ -434,6 +434,7 @@ export interface LongTermMemoryItem {
   memoryScope: 'USER' | 'PROJECT' | string;
   userId?: string | null;
   workspaceId?: string | null;
+  workspaceName?: string | null;
   memoryKey?: string | null;
   content: string;
   status: LongTermMemoryStatus | string;

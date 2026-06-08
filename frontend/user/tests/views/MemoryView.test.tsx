@@ -68,6 +68,16 @@ const memories: LongTermMemoryItem[] = [
 
 const workspaceGroups: WorkspaceConversationGroup[] = [
   {
+    partitionKey: 'local::__no_workspace__',
+    groupType: 'workspace',
+    workspacePath: null,
+    workspaceLabel: '本地历史记录',
+    runtimeTarget: 'local',
+    lastOpenedAt: 0,
+    activeConversationId: null,
+    conversations: [{ id: 'history-c-1', title: 'history', status: 'ACTIVE', workspaceId: '3001' }],
+  },
+  {
     partitionKey: 'local:D:/code/test',
     groupType: 'workspace',
     workspacePath: 'D:/code/test',
@@ -139,6 +149,39 @@ describe('MemoryView', () => {
     expect(screen.getByRole('heading', { name: 'other' })).toBeInTheDocument();
     expect(screen.getByText('覆盖 2 个工作空间')).toBeInTheDocument();
     expect(screen.getByText('生效 3')).toBeInTheDocument();
+  });
+
+  /**
+   * 记忆接口已经返回工作空间名称时，应优先使用后端可信名称，不能退回本地历史或数字 ID。
+   */
+  it('uses memory workspace name when sidebar history does not include the project group', async () => {
+    listLongTermMemoriesMock.mockResolvedValue([
+      {
+        id: '9101',
+        memoryScope: 'PROJECT',
+        userId: '1002',
+        workspaceId: '3001',
+        workspaceName: 'test',
+        content: 'test 工作空间的项目记忆',
+        status: 'ACTIVE',
+        updatedAt: '2026-06-08 17:00:00',
+      },
+    ]);
+
+    render(
+      <MemoryView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspaceId="3001"
+        workspaceLabel="本地历史记录"
+        workspaceGroups={[workspaceGroups[0]]}
+      />,
+    );
+
+    expect(await screen.findByRole('heading', { name: 'test' })).toBeInTheDocument();
+    expect(screen.getByText('工作空间：test')).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: '本地历史记录' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: '工作空间 3001' })).not.toBeInTheDocument();
   });
 
   /**

@@ -3,6 +3,8 @@ import cn.hutool.core.date.DateUtil;
 import cn.hutool.core.collection.CollUtil;
 import cn.hutool.core.util.IdUtil;
 import cn.hutool.core.util.StrUtil;
+import com.codingx.automation.application.service.AutomationTaskChatCreationResult;
+import com.codingx.automation.application.service.AutomationTaskChatCreationService;
 import com.codingx.chat.application.command.SendChatMessageCommand;
 import com.codingx.chat.domain.model.ChatConversation;
 import com.codingx.chat.domain.model.ChatExecutionStep;
@@ -150,6 +152,8 @@ public class ChatApplicationService {
     private final ChatWorkspaceBindingService chatWorkspaceBindingService;
     /** Agent Loop 确定性规则协调器，负责轮次、完成原因和重复工具调用判断 */
     private final AgentLoopCoordinator agentLoopCoordinator;
+    /** 自动化聊天创建服务，命中定时任务请求时直接落库并生成助手摘要；旧测试未注入时允许为空。 */
+    private final AutomationTaskChatCreationService automationTaskChatCreationService;
 
     /**
      * 处理 HTTP 同步入口发送消息的协议适配逻辑。
@@ -724,7 +728,34 @@ public class ChatApplicationService {
         }
         chatStreamPublisher.publishUserMessage(command.conversationId(), plainQuestion);
         history.add(userMessage);
-        // 步骤 4：改写问题并执行意图分流，多子问题会在后续分别触发搜索或 MCP。
+        // 步骤 4：明确的定时任务创建请求在会话内直接落库并回复摘要，不跳转到自动化页面确认。
+        Optional<AutomationTaskChatCreationResult> automationCreationResult = tryCreateAutomationTaskFromChat(
+            conversation,
+            plainQuestion,
+            userId,
+            runId
+        );
+        if (automationCreationResult.isPresent()) {
+            ChatMessage assistantMessage = ChatMessage.assistantMessage(
+                command.conversationId(),
+                automationCreationResult.get().assistantContent(),
+                ChatMessageStatus.COMPLETED,
+                null,
+                null,
+                null
+            ).attachRun(runId);
+            chatMessageRepository.save(assistantMessage);
+            history.add(assistantMessage);
+            conversation.rename(conversationTitleService.generateTitle(conversation, plainAiMessages(history)));
+            conversation.touch();
+            conversation.recordLastRunId(runId);
+            chatConversationRepository.save(conversation);
+            recordExecutionOutcome(conversation, userMessage.getId(), assistantMessage.getId(), "automation.create", false, false, ChatMessageStatus.COMPLETED, null);
+            finishTrace(runId, "SUCCESS", null);
+            chatStreamPublisher.publishAssistantCompleted(command.conversationId(), assistantMessage.getId(), assistantMessage.getContent(), conversation.getTitle());
+            return;
+        }
+        // 步骤 5：改写问题并执行意图分流，多子问题会在后续分别触发搜索或 MCP。
         ConversationRewriteResult rewriteResult = conversationRewriteService.rewriteResult(
             plainUserContents(history),
             plainQuestion
@@ -744,7 +775,7 @@ public class ChatApplicationService {
         );
         ConversationIntentDecision intentDecision = primaryIntentDecision(subQuestionDecisions);
         logChatDecision("发送消息", command, runId, intentDecision, rewriteResult);
-        // 步骤 5：优先处理无需进入模型的短路分支，包括澄清、直答和 MCP 未启用提示。
+        // 步骤 6：优先处理无需进入模型的短路分支，包括澄清、直答和 MCP 未启用提示。
         // 已选技能短指代应继续进入模型，由技能上下文解释当前引用的技能或追问执行目标。
         Optional<SubQuestionIntentDecision> clarifyDecision = firstDecisionWithAction(
             subQuestionDecisions,
@@ -841,7 +872,7 @@ public class ChatApplicationService {
             chatStreamPublisher.publishAssistantCompleted(command.conversationId(), assistantMessage.getId(), assistantMessage.getContent(), conversation.getTitle());
             return;
         }
-        // 步骤 6：执行可用的 MCP 和搜索分支，搜索引用会同时写入引用表并生成文档产物占位。
+        // 步骤 7：执行可用的 MCP 和搜索分支，搜索引用会同时写入引用表并生成文档产物占位。
         long nextSequenceNo = executeMcpDecisions(subQuestionDecisions, command, runId, history, 1L);
         List<String> searchQuestions = searchQuestions(subQuestionDecisions);
         if (CollUtil.isNotEmpty(searchQuestions)) {
@@ -854,7 +885,7 @@ public class ChatApplicationService {
             searchReferenceCollector.collect(runId, userMessage.getId(), command.conversationId(), searchReferences);
             documentArtifactService.createDocxArtifact(runId, userMessage.getId(), command.conversationId(), "搜索结果整理中");
         }
-        // 步骤 7：组装模型上下文，包含摘要裁剪后的历史、能力上下文、专家提示和搜索引用。
+        // 步骤 8：组装模型上下文，包含摘要裁剪后的历史、能力上下文、专家提示和搜索引用。
         StringBuilder builder = new StringBuilder();
         StringBuilder thinkingBuilder = new StringBuilder();
         AtomicReference<LocalDateTime> thinkingStartedAt = new AtomicReference<>();
@@ -883,7 +914,7 @@ public class ChatApplicationService {
         tokenCounterService.estimateConversationTokens(aiHistory);
         final Long activeRunId = runId;
         try {
-            // 步骤 8：进入支持工具调用的模型循环，流式内容、thinking 与工具事件都会写入缓冲区或 SSE。
+            // 步骤 9：进入支持工具调用的模型循环，流式内容、thinking 与工具事件都会写入缓冲区或 SSE。
             runAiToolAwareLoop(
                 command,
                 runId,
@@ -899,7 +930,7 @@ public class ChatApplicationService {
                 shouldExposeModelTools(searchReferences, selectedSkillCodes, rewrittenQuestion)
             );
         } catch (RuntimeException exception) {
-            // 步骤 9：模型循环中被用户取消时记录取消态，否则继续抛出交由外层异常处理。
+            // 步骤 10：模型循环中被用户取消时记录取消态，否则继续抛出交由外层异常处理。
             if (chatRuntimeGuardService.isCancelled(command.conversationId(), activeRunId)) {
                 ChatMessage cancelledMessage = ChatMessage.assistantMessage(
                     command.conversationId(),
@@ -920,7 +951,7 @@ public class ChatApplicationService {
             }
             throw exception;
         }
-        // 步骤 10：模型循环结束后再次检查取消状态，覆盖流结束与取消请求竞态。
+        // 步骤 11：模型循环结束后再次检查取消状态，覆盖流结束与取消请求竞态。
         if (chatRuntimeGuardService.isCancelled(command.conversationId(), activeRunId)) {
             ChatMessage cancelledMessage = ChatMessage.assistantMessage(
                 command.conversationId(),
@@ -939,7 +970,7 @@ public class ChatApplicationService {
             finishTrace(runId, "CANCELLED", null);
             return;
         }
-        // 步骤 11：流式异常时保留已经生成的部分回答，并把错误状态写入消息、run 和 Trace。
+        // 步骤 12：流式异常时保留已经生成的部分回答，并把错误状态写入消息、run 和 Trace。
         if (streamError[0] != null) {
 
             ChatMessage failedMessage = ChatMessage.assistantMessage(
@@ -961,7 +992,7 @@ public class ChatApplicationService {
             finishTrace(runId, "ERROR", streamError[0].getMessage());
             return;
         }
-        // 步骤 12：正常完成时保存助手消息、刷新标题和摘要，最后发布完成事件给前端。
+        // 步骤 13：正常完成时保存助手消息、刷新标题和摘要，最后发布完成事件给前端。
         ChatMessage assistantMessage = ChatMessage.assistantMessage(
             command.conversationId(),
             StrUtil.blankToDefault(llmResponseCleaner.clean(builder.toString()), ""),
@@ -983,6 +1014,27 @@ public class ChatApplicationService {
         finishTrace(runId, "SUCCESS", null);
         extractGovernanceMemoryCandidates(conversation, userMessage, assistantMessage);
         chatStreamPublisher.publishAssistantCompleted(command.conversationId(), assistantMessage.getId(), assistantMessage.getContent(), conversation.getTitle());
+    }
+
+    /**
+     * 尝试在聊天会话内直接创建自动化任务；未启用服务或未命中意图时返回空。
+     * 兼容约束：部分旧单测未显式注入该新增依赖，因此空依赖必须跳过而不能影响普通聊天。
+     * @param conversation 当前会话，调用前已完成用户归属校验。
+     * @param plainQuestion 用户消息正文。
+     * @param userId 当前用户标识。
+     * @param runId 当前运行标识。
+     * @return 自动化任务创建结果。
+     */
+    private Optional<AutomationTaskChatCreationResult> tryCreateAutomationTaskFromChat(
+        ChatConversation conversation,
+        String plainQuestion,
+        Long userId,
+        Long runId
+    ) {
+        if (automationTaskChatCreationService == null) {
+            return Optional.empty();
+        }
+        return automationTaskChatCreationService.tryCreateFromChatMessage(conversation, plainQuestion, userId, runId);
     }
 
     /**

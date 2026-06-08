@@ -67,6 +67,19 @@ public class WorkspaceRepositoryImpl implements WorkspaceRepository {
     }
 
     /**
+     * 校验工作空间是否属于当前用户；空工作空间表示不绑定上下文，直接放行。
+     * @param workspaceId 工作空间标识，可为空。
+     * @param userId 当前用户标识。
+     */
+    @Override
+    public void ensureOwnedByUser(Long workspaceId, Long userId) {
+        if (workspaceId == null) {
+            return;
+        }
+        requireOwnedWorkspace(workspaceId, userId);
+    }
+
+    /**
      * 管理端分页查询工作空间，并按空间补齐未删除会话数量。
      * @param query 查询条件。
      * @return 工作空间分页结果。

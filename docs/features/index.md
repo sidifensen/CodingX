@@ -5,6 +5,10 @@
 - [Java CLI 基础终端](agent/java-cli-terminal-mvp.md)
 - [三端 Slash Command 同源](agent/slash-command-three-end-parity.md)
 
+## Automation
+
+- [自动化定时任务](automation/scheduled-tasks.md)
+
 ## Chat
 
 - [聊天歧义引导配置](chat/intent-guidance-config.md)

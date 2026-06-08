@@ -8,12 +8,14 @@ import org.mybatis.spring.annotation.MapperScan;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.scheduling.annotation.EnableScheduling;
 
 /**
  * 启动 CodingX 后端应用。
  */
 @SpringBootApplication
 @MapperScan("com.codingx.**.infrastructure.persistence.mapper")
+@EnableScheduling
 @EnableConfigurationProperties({
     AiProperties.class,
     RuntimeProperties.class,

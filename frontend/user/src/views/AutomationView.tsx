@@ -1,175 +1,146 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { motion } from 'motion/react';
-import { Newspaper, ShieldAlert, Activity, LineChart, Plus, ArrowRight, Zap } from 'lucide-react';
+import { CalendarClock, MessageSquareText, Plus, RotateCcw } from 'lucide-react';
+
+import { AutomationTaskCreateDialog } from './automation/AutomationTaskCreateDialog';
+import { AutomationTaskList } from './automation/AutomationTaskList';
+import { useAutomationTasks } from './automation/useAutomationTasks';
 
 /**
- * 渲染自动化视图页面。
+ * 渲染自动化定时任务页面，支持手动创建和查看聊天创建的任务。
  */
 export default function AutomationView() {
-  const [activeTab, setActiveTab] = useState('templates');
+  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
+  const {
+    tasks,
+    isLoading,
+    isSaving,
+    errorMessage,
+    setErrorMessage,
+    reloadTasks,
+    createTask,
+  } = useAutomationTasks();
+
+  const activeTaskCount = useMemo(() => tasks.filter((task) => task.enabled).length, [tasks]);
+  const chatTaskCount = useMemo(() => tasks.filter((task) => task.sourceType === 'CHAT').length, [tasks]);
+  const nextRunLabel = useMemo(() => {
+    const nextTask = tasks.find((task) => task.enabled && task.nextRunAt);
+    return nextTask?.nextRunAt ? nextTask.nextRunAt.replace('T', ' ').slice(0, 16) : '待创建';
+  }, [tasks]);
+
+  /**
+   * 提交创建表单，成功后关闭弹窗；失败时保留弹窗并原样展示后端 message。
+   */
+  const handleCreateSubmit: Parameters<typeof AutomationTaskCreateDialog>[0]['onSubmit'] = async (payload) => {
+    try {
+      await createTask(payload);
+      setIsCreateDialogOpen(false);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : '自动化任务请求失败');
+    }
+  };
 
   return (
     <motion.div
-      initial={{ opacity: 0, x: 20 }}
       animate={{ opacity: 1, x: 0 }}
+      className="h-full overflow-y-auto bg-background px-5 py-6 text-foreground md:px-10 md:py-8"
       exit={{ opacity: 0, x: -20 }}
-      className="flex flex-col h-full overflow-y-auto px-6 md:px-12 py-8 bg-background"
+      initial={{ opacity: 0, x: 20 }}
     >
-      <div className="max-w-7xl mx-auto w-full">
-        {/* Page Header */}
-        <div className="mb-12">
-          <h1 className="text-4xl md:text-5xl font-bold text-foreground mb-2 tracking-tight">
-            自动化
-          </h1>
-          <p className="text-base text-muted max-w-lg leading-relaxed">
-            通过编排任务流与自动化模板，将繁琐的日常工作一键托管。
-          </p>
-        </div>
-
-        {/* Tabs */}
-        <div className="flex border-b border-border mb-8">
-          <button
-            onClick={() => setActiveTab('configured')}
-            className={`px-6 py-4 text-sm font-medium transition-colors border-b-2 ${activeTab === 'configured' ? 'text-foreground border-foreground' : 'text-muted border-transparent hover:text-foreground'}`}
-          >
-            已配置
-          </button>
-          <button
-            onClick={() => setActiveTab('history')}
-            className={`px-6 py-4 text-sm font-medium transition-colors border-b-2 ${activeTab === 'history' ? 'text-foreground border-foreground' : 'text-muted border-transparent hover:text-foreground'}`}
-          >
-            执行历史
-          </button>
-          <button
-            onClick={() => setActiveTab('templates')}
-            className={`px-6 py-4 text-sm font-medium transition-colors border-b-2 ${activeTab === 'templates' ? 'text-foreground border-foreground' : 'text-muted border-transparent hover:text-foreground'}`}
-          >
-            任务模板
-          </button>
-        </div>
-
-        {/* Bento Grid Layout */}
-        <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
-          {/* Daily AI News */}
-          <div className="md:col-span-8 bg-surface-container border border-border rounded-xl p-8 hover:border-border-active transition-all group flex flex-col justify-between min-h-[320px]">
-            <div className="flex justify-between items-start mb-6">
-              <div className="w-12 h-12 bg-surface-high border border-border rounded-full flex items-center justify-center">
-                <Newspaper className="text-accent-breeze" size={24} />
-              </div>
-              <span className="font-mono text-[10px] text-muted bg-surface-high px-3 py-1 rounded-full border border-border tracking-widest uppercase">
-                Trending
-              </span>
+      <div className="mx-auto flex w-full max-w-6xl flex-col gap-6">
+        <header className="flex flex-col gap-5 border-b border-border pb-6 lg:flex-row lg:items-end lg:justify-between">
+          <div className="max-w-2xl">
+            <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-border bg-surface px-3 py-1 text-xs font-medium text-muted">
+              <CalendarClock size={14} />
+              自动执行
             </div>
-            <div>
-              <h3 className="text-3xl font-bold text-foreground mb-3 tracking-tight">
-                每日 AI 新闻简报
-              </h3>
-              <p className="text-sm text-muted max-w-md leading-relaxed">
-                多源聚合全球 AI
-                技术突破与行业动态，利用大模型自动摘要并生成结构化每日简报，支持钉钉/飞书推送。
-              </p>
-            </div>
-            <div className="flex gap-4 mt-8">
-              <button className="text-foreground text-sm font-medium flex items-center gap-2 group-hover:translate-x-1 transition-transform">
-                使用此模板 <ArrowRight size={16} />
-              </button>
-            </div>
+            <h1 className="text-3xl font-semibold tracking-tight text-foreground md:text-4xl">
+              定时任务
+            </h1>
+            <p className="mt-3 text-sm leading-6 text-muted">
+              手动创建周期任务，或在聊天里直接说出执行时间和需求，系统会在当前会话内完成创建并留下任务消息。
+            </p>
           </div>
 
-          {/* Security Scan */}
-          <div className="md:col-span-4 bg-surface-container border border-border rounded-xl p-8 hover:border-border-active transition-all flex flex-col justify-between min-h-[320px]">
-            <div>
-              <div className="w-12 h-12 bg-surface-high border border-border rounded-full flex items-center justify-center mb-6">
-                <ShieldAlert className="text-error" size={24} />
-              </div>
-              <h3 className="text-lg font-bold text-foreground mb-2">安全漏洞扫描</h3>
-              <p className="text-sm text-muted leading-relaxed">
-                定期执行代码库全量安全扫描，识别潜在注入与依赖风险，自动提交 PR 建议。
-              </p>
-            </div>
-            <div className="mt-8 pt-6 border-t border-border">
-              <div className="flex items-center gap-2">
-                <div className="w-2 h-2 rounded-full bg-error"></div>
-                <span className="font-mono text-[10px] text-muted tracking-widest uppercase">
-                  CRITICAL TOOL
-                </span>
-              </div>
-            </div>
-          </div>
-
-          {/* Brand Monitoring */}
-          <div className="md:col-span-4 bg-surface-container border border-border rounded-xl p-8 hover:border-border-active transition-all flex flex-col justify-between h-[280px]">
-            <div>
-              <div className="w-12 h-12 bg-surface-high border border-border rounded-full flex items-center justify-center mb-6">
-                <Activity className="text-accent-sunset" size={24} />
-              </div>
-              <h3 className="text-lg font-bold text-foreground mb-2">品牌舆情监控周报</h3>
-              <p className="text-sm text-muted leading-relaxed">
-                全网抓取品牌相关评价，智能分析情感倾向与核心痛点，周一准时送达。
-              </p>
-            </div>
-            <button className="w-full py-2.5 mt-4 border border-border-active rounded-full text-sm text-muted hover:text-foreground hover:bg-surface-high transition-colors font-medium">
-              快速配置
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              className="inline-flex h-10 items-center gap-2 rounded-md border border-border bg-surface px-4 text-sm font-medium text-muted transition-colors hover:border-border-active hover:text-foreground"
+              onClick={() => void reloadTasks()}
+              type="button"
+            >
+              <RotateCcw size={16} />
+              刷新
+            </button>
+            <button
+              className="inline-flex h-10 items-center gap-2 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90"
+              onClick={() => {
+                setErrorMessage('');
+                setIsCreateDialogOpen(true);
+              }}
+              type="button"
+            >
+              <Plus size={16} />
+              新建定时任务
             </button>
           </div>
+        </header>
 
-          {/* Stock Watch */}
-          <div className="md:col-span-4 bg-surface-container border border-border rounded-xl overflow-hidden flex flex-col hover:border-border-active transition-all h-[280px]">
-            <div className="flex-1 p-8">
-              <div className="w-12 h-12 bg-surface-high border border-border rounded-full flex items-center justify-center mb-6">
-                <LineChart className="text-foreground" size={24} />
-              </div>
-              <h3 className="text-lg font-bold text-foreground mb-2">股价监控与预警</h3>
-              <p className="text-sm text-muted leading-relaxed">
-                实时追踪关注标的价格波动，触发关键点位即刻通过多渠道发起紧急预警。
-              </p>
-            </div>
-            <div className="bg-surface-high px-8 py-4 border-t border-border flex justify-between items-center">
-              <span className="font-mono text-[10px] text-accent-breeze tracking-widest uppercase">
-                REAL-TIME
-              </span>
-              <Zap size={16} className="text-muted" />
-            </div>
-          </div>
+        <section className="grid gap-3 md:grid-cols-3">
+          <AutomationMetric label="运行中" value={String(activeTaskCount)} />
+          <AutomationMetric label="会话创建" value={String(chatTaskCount)} icon={<MessageSquareText size={16} />} />
+          <AutomationMetric label="下次运行" value={nextRunLabel} />
+        </section>
 
-          {/* Custom Pipeline */}
-          <div className="md:col-span-4 bg-background border border-border border-dashed rounded-xl p-8 flex flex-col items-center justify-center text-center group cursor-pointer hover:bg-surface-container transition-all h-[280px]">
-            <div className="w-16 h-16 rounded-full border border-border flex items-center justify-center mb-6 group-hover:scale-110 transition-transform bg-surface-container">
-              <Plus size={32} className="text-muted" />
-            </div>
-            <h3 className="text-lg font-bold text-foreground mb-2">自定义流程</h3>
-            <p className="text-sm text-muted">连接 API 与模型，编排专属自动化流</p>
+        {errorMessage && !isCreateDialogOpen && (
+          <div className="rounded-md border border-error/35 bg-error/10 px-4 py-3 text-sm text-error">
+            {errorMessage}
           </div>
-        </div>
+        )}
 
-        {/* Footer Section */}
-        <div className="mt-16 pt-8 border-t border-border flex flex-col md:flex-row justify-between items-center gap-6 pb-8">
-          <div className="flex gap-8">
-            <div className="flex items-center gap-3">
-              <span className="font-mono text-[10px] text-muted tracking-widest uppercase">
-                STATUS
-              </span>
-              <div className="flex items-center gap-2">
-                <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
-                <span className="font-mono text-[10px] text-foreground tracking-widest uppercase">
-                  OPERATIONAL
-                </span>
-              </div>
-            </div>
-            <div className="flex items-center gap-3">
-              <span className="font-mono text-[10px] text-muted tracking-widest uppercase">
-                TASKS TODAY
-              </span>
-              <span className="font-mono text-[10px] text-foreground font-bold tracking-widest uppercase">
-                1,248
-              </span>
-            </div>
-          </div>
-          <p className="font-mono text-[10px] text-muted tracking-widest uppercase">
-            © 2026 CODINGX RESEARCH LABS. ALL RIGHTS RESERVED.
-          </p>
-        </div>
+        <AutomationTaskList
+          isLoading={isLoading}
+          onCreate={() => {
+            setErrorMessage('');
+            setIsCreateDialogOpen(true);
+          }}
+          tasks={tasks}
+        />
       </div>
+
+      <AutomationTaskCreateDialog
+        errorMessage={errorMessage}
+        isOpen={isCreateDialogOpen}
+        isSaving={isSaving}
+        onClearError={() => setErrorMessage('')}
+        onClose={() => {
+          setErrorMessage('');
+          setIsCreateDialogOpen(false);
+        }}
+        onSubmit={handleCreateSubmit}
+      />
     </motion.div>
+  );
+}
+
+/**
+ * 页面顶部指标块，使用轻量边框分区展示任务统计，避免把页面拆成多层卡片。
+ */
+function AutomationMetric({
+  label,
+  value,
+  icon,
+}: {
+  label: string;
+  value: string;
+  icon?: React.ReactNode;
+}) {
+  return (
+    <div className="min-w-0 rounded-lg border border-border bg-surface px-4 py-3">
+      <div className="flex items-center gap-2 text-xs font-medium text-muted">
+        {icon}
+        {label}
+      </div>
+      <div className="mt-2 truncate text-lg font-semibold text-foreground">{value}</div>
+    </div>
   );
 }

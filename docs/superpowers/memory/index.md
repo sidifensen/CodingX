@@ -78,6 +78,10 @@ status: active
   - 软件端治理工作台的权限策略、Hook、项目画像、Slash Command 和聊天上下文注入边界
 - `docs/superpowers/memory/governance/governance-workbench-contract.md`
   - 治理工作台管理端接口、项目画像表结构和后续长期记忆扩展契约
+- `docs/superpowers/memory/automation/automation-scheduler-module-card.md`
+  - 用户端自动化/定时任务页面、后端任务模块、会话创建入口和调度扫描边界
+- `docs/superpowers/memory/automation/automation-scheduler-contract.md`
+  - 自动化定时任务从手动创建、会话创建到后端调度扫描的真实契约和剩余缺口
 - `docs/superpowers/memory/admin/workspace-management-module-card.md`
   - 管理端工作空间只读管理页的职责边界、入口与常见陷阱
 - `docs/superpowers/memory/admin/workspace-management-contract.md`
@@ -101,3 +105,4 @@ status: active
 - 模型 tool-call 流程与本地工具执行结果回灌仍需实现端到端契约
 - 管理端 Dashboard 统计当前仍依赖应用层聚合，尚未沉淀大数据量场景的查询优化规范
 - 项目画像和长期记忆仍处于治理工作台基础能力阶段，尚未形成可回注到 Agent 输入上下文的完整闭环
+- 自动化/定时任务已有真实任务表、用户侧列表/创建接口、会话内创建和调度扫描；仍缺少真实 AI 后台执行、执行历史、启停/删除/编辑协议和多实例幂等锁

@@ -9,9 +9,15 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.codingx.chat.application.command.SendChatMessageCommand;
+import com.codingx.automation.application.service.AutomationTaskChatCreationResult;
+import com.codingx.automation.application.service.AutomationTaskChatCreationService;
+import com.codingx.automation.domain.model.AutomationScheduleType;
+import com.codingx.automation.domain.model.AutomationTask;
+import com.codingx.automation.domain.model.AutomationTaskSourceType;
 import com.codingx.chat.domain.model.ChatConversation;
 import com.codingx.chat.domain.model.ChatConversationStatus;
 import com.codingx.chat.domain.model.ChatExecutionRun;
@@ -187,6 +193,12 @@ class ChatApplicationServiceTest {
     private GovernanceAgentContextService governanceAgentContextService;
 
     /**
+     * 自动化会话创建服务，用于在聊天中直接创建定时任务并返回助手摘要。
+     */
+    @Mock
+    private AutomationTaskChatCreationService automationTaskChatCreationService;
+
+    /**
      * ChatRuntimeGuardService 依赖。
      */
     @Mock
@@ -206,6 +218,48 @@ class ChatApplicationServiceTest {
         Long runId = 9001001L;
         ChatExecutionContext.start(runId);
         return runId;
+    }
+
+    /**
+     * 明确的自动化创建请求应直接在当前会话创建任务，并以助手消息返回创建结果。
+     */
+    @Test
+    void sendMessageCreatesAutomationTaskAndRepliesInsideConversation() {
+        Long runId = bindRunContext();
+        ChatConversation conversation = ChatConversation.create(1L, "Default", 1002L, 3001L, ChatConversationStatus.ACTIVE);
+        AutomationTask task = AutomationTask.builder()
+            .id(7001L)
+            .userId(1002L)
+            .workspaceId(3001L)
+            .sourceType(AutomationTaskSourceType.CHAT)
+            .sourceConversationId(1L)
+            .name("每日项目总结")
+            .prompt("总结项目状态")
+            .scheduleType(AutomationScheduleType.DAILY)
+            .scheduleTime("18:11")
+            .enabled(true)
+            .deleted(false)
+            .build();
+        String assistantContent = "已创建自动化任务：每日项目总结\n执行时间：每天 18:11\n需求：总结项目状态";
+        when(chatConversationRepository.requireById(1L)).thenReturn(conversation);
+        when(chatMessageRepository.findByConversationId(1L)).thenReturn(new ArrayList<>());
+        when(chatAttachmentService.requireOwnedAttachments(any(), eq(1L), eq(1002L))).thenReturn(List.of());
+        when(automationTaskChatCreationService.tryCreateFromChatMessage(conversation, "每天 18:11 帮我总结项目状态", 1002L, runId))
+            .thenReturn(java.util.Optional.of(new AutomationTaskChatCreationResult(task, assistantContent)));
+        when(conversationTitleService.generateTitle(org.mockito.ArgumentMatchers.eq(conversation), any())).thenReturn("每日项目总结");
+
+        chatApplicationService.sendMessage(new SendChatMessageCommand(1L, "每天 18:11 帮我总结项目状态", false), 1002L);
+
+        ArgumentCaptor<ChatMessage> captor = ArgumentCaptor.forClass(ChatMessage.class);
+        verify(chatMessageRepository, org.mockito.Mockito.times(2)).save(captor.capture());
+        ChatMessage assistantMessage = captor.getAllValues().get(1);
+        assertEquals(ChatMessageRole.ASSISTANT, assistantMessage.getRole());
+        assertEquals(ChatMessageStatus.COMPLETED, assistantMessage.getStatus());
+        assertTrue(assistantMessage.getContent().contains("已创建自动化任务"));
+        assertTrue(assistantMessage.getContent().contains("18:11"));
+        verify(chatStreamPublisher).publishAssistantCompleted(eq(1L), eq(assistantMessage.getId()), eq(assistantContent), eq("每日项目总结"));
+        verifyNoInteractions(conversationRewriteService, aiChatClient);
+        ChatExecutionContext.clear();
     }
 
     /**

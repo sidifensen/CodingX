@@ -26,7 +26,6 @@ import type { ColumnsType } from 'antd/es/table';
 
 import {
   AdminChatApi,
-  type AdminGovernanceHookAudit,
   type AdminGovernanceHookRule,
   type AdminGovernanceLongTermMemory,
   type AdminGovernancePermissionAudit,
@@ -95,9 +94,9 @@ const emptyPolicyForm: PolicyFormState = {
 const emptyHookForm: HookFormState = {
   hookCode: '',
   hookName: '',
-  triggerPoint: 'BEFORE_TOOL_CALL',
+  triggerPoint: 'BEFORE_TASK_START',
   conditionKeyword: '',
-  actionType: 'AUDIT',
+  actionType: 'DESKTOP_NOTIFY',
   actionConfigJson: '',
   enabled: true,
   sortNo: 0,
@@ -131,13 +130,14 @@ const RISK_OPTIONS = [
 ];
 
 const TRIGGER_OPTIONS = [
-  { value: 'BEFORE_TOOL_CALL', label: '工具调用前' },
-  { value: 'AFTER_TOOL_CALL', label: '工具调用后' },
+  { value: 'BEFORE_TASK_START', label: '任务开始前' },
+  { value: 'TASK_CONFIRM_REQUIRED', label: '任务需要确认' },
+  { value: 'TASK_FAILED', label: '任务失败' },
   { value: 'TASK_COMPLETED', label: '任务完成' },
 ];
 
 /**
- * 管理端治理中心：集中维护软件端工具权限、Hook、项目画像和 Slash Command。
+ * 管理端治理中心：集中维护软件端工具权限、自动化 Hook、项目画像和 Slash Command。
  */
 export function GovernanceCenterPage() {
   const adminMessage = useAdminMessage();
@@ -147,7 +147,6 @@ export function GovernanceCenterPage() {
   const [permissionPolicies, setPermissionPolicies] = React.useState<AdminGovernancePermissionPolicy[]>([]);
   const [permissionAudits, setPermissionAudits] = React.useState<AdminGovernancePermissionAudit[]>([]);
   const [hookRules, setHookRules] = React.useState<AdminGovernanceHookRule[]>([]);
-  const [hookAudits, setHookAudits] = React.useState<AdminGovernanceHookAudit[]>([]);
   const [projectProfiles, setProjectProfiles] = React.useState<AdminGovernanceProjectProfile[]>([]);
   const [longTermMemories, setLongTermMemories] = React.useState<AdminGovernanceLongTermMemory[]>([]);
   const [slashCommands, setSlashCommands] = React.useState<AdminGovernanceSlashCommand[]>([]);
@@ -187,7 +186,6 @@ export function GovernanceCenterPage() {
         nextLongTermMemories,
         nextCommands,
         nextPermissionAudits,
-        nextHookAudits,
       ] = await Promise.all([
         AdminChatApi.listPermissionPolicies(),
         AdminChatApi.listHookRules(),
@@ -195,7 +193,6 @@ export function GovernanceCenterPage() {
         AdminChatApi.listLongTermMemories('ALL', 100),
         AdminChatApi.listGovernanceSlashCommands(),
         AdminChatApi.listPermissionAudits(),
-        AdminChatApi.listHookAudits(),
       ]);
       setPermissionPolicies(nextPolicies ?? []);
       setHookRules(nextHookRules ?? []);
@@ -203,7 +200,6 @@ export function GovernanceCenterPage() {
       setLongTermMemories(nextLongTermMemories ?? []);
       setSlashCommands(nextCommands ?? []);
       setPermissionAudits(nextPermissionAudits ?? []);
-      setHookAudits(nextHookAudits ?? []);
     } catch (error) {
       setErrorMessage(extractErrorMessage(error, '加载治理中心数据失败'));
     } finally {
@@ -298,7 +294,7 @@ export function GovernanceCenterPage() {
     { title: '名称', dataIndex: 'hookName', width: 180, ellipsis: true },
     { title: '触发点', dataIndex: 'triggerPoint', width: 160, render: triggerLabel },
     { title: '条件关键字', dataIndex: 'conditionKeyword', width: 180, ellipsis: true, render: optionalText },
-    { title: '动作类型', dataIndex: 'actionType', width: 110, render: (value?: string) => <Tag>{value || 'AUDIT'}</Tag> },
+    { title: '动作类型', dataIndex: 'actionType', width: 150, render: (value?: string) => <Tag>{value || 'DESKTOP_NOTIFY'}</Tag> },
     { title: '状态', dataIndex: 'enabled', width: 100, render: renderEnabledTag },
     { title: '排序', dataIndex: 'sortNo', width: 90, render: (value?: number) => value ?? 0 },
     {
@@ -489,21 +485,13 @@ export function GovernanceCenterPage() {
     { title: '时间', dataIndex: 'createdAt', width: 180, render: formatDate },
   ], []);
 
-  const hookAuditColumns = React.useMemo<ColumnsType<AdminGovernanceHookAudit>>(() => [
-    { title: 'Hook', dataIndex: 'hookCode', width: 180, render: optionalText },
-    { title: '触发点', dataIndex: 'triggerPoint', width: 150, render: triggerLabel },
-    { title: '结果', dataIndex: 'result', width: 120, render: optionalText },
-    { title: '消息', dataIndex: 'message', width: 260, ellipsis: true, render: optionalText },
-    { title: '时间', dataIndex: 'createdAt', width: 180, render: formatDate },
-  ], []);
-
   return (
     <div className="w-full space-y-lg p-lg">
       <header className="flex min-w-0 flex-col gap-sm lg:flex-row lg:items-end lg:justify-between">
         <div className="min-w-0">
           <Typography.Title level={2} style={{ margin: 0 }}>治理中心</Typography.Title>
           <Typography.Text type="secondary">
-            维护软件端工具权限、Hook 生命周期、项目画像和 Slash Command 命令目录。
+            维护软件端工具权限、自动化 Hook、项目画像和 Slash Command 命令目录。
           </Typography.Text>
         </div>
         <Space wrap>
@@ -619,36 +607,20 @@ export function GovernanceCenterPage() {
               key: 'audit',
               label: '审计',
               children: (
-                <div className="grid gap-md xl:grid-cols-2">
-                  <section className="min-w-0">
-                    <Typography.Title level={4} style={{ marginTop: 0 }}>
-                      <AuditOutlined /> 权限审计
-                    </Typography.Title>
-                    <AdminDataTable<AdminGovernancePermissionAudit>
-                      columns={permissionAuditColumns}
-                      dataSource={permissionAudits}
-                      loading={loading}
-                      locale={{ emptyText: loading ? '加载中...' : '暂无权限审计' }}
-                      pagination={false}
-                      rowKey={(item) => String(item.id ?? `${item.toolCode}-${item.createdAt}`)}
-                      scroll={{ x: 980 }}
-                    />
-                  </section>
-                  <section className="min-w-0">
-                    <Typography.Title level={4} style={{ marginTop: 0 }}>
-                      <AuditOutlined /> Hook 审计
-                    </Typography.Title>
-                    <AdminDataTable<AdminGovernanceHookAudit>
-                      columns={hookAuditColumns}
-                      dataSource={hookAudits}
-                      loading={loading}
-                      locale={{ emptyText: loading ? '加载中...' : '暂无 Hook 审计' }}
-                      pagination={false}
-                      rowKey={(item) => String(item.id ?? `${item.hookCode}-${item.createdAt}`)}
-                      scroll={{ x: 840 }}
-                    />
-                  </section>
-                </div>
+                <section className="min-w-0">
+                  <Typography.Title level={4} style={{ marginTop: 0 }}>
+                    <AuditOutlined /> 权限审计
+                  </Typography.Title>
+                  <AdminDataTable<AdminGovernancePermissionAudit>
+                    columns={permissionAuditColumns}
+                    dataSource={permissionAudits}
+                    loading={loading}
+                    locale={{ emptyText: loading ? '加载中...' : '暂无权限审计' }}
+                    pagination={false}
+                    rowKey={(item) => String(item.id ?? `${item.toolCode}-${item.createdAt}`)}
+                    scroll={{ x: 980 }}
+                  />
+                </section>
               ),
             },
           ]}
@@ -1126,9 +1098,9 @@ function toHookForm(item: AdminGovernanceHookRule | null): HookFormState {
   return {
     hookCode: item.hookCode ?? '',
     hookName: item.hookName ?? '',
-    triggerPoint: item.triggerPoint ?? 'BEFORE_TOOL_CALL',
+    triggerPoint: item.triggerPoint ?? 'BEFORE_TASK_START',
     conditionKeyword: item.conditionKeyword ?? '',
-    actionType: item.actionType ?? 'AUDIT',
+    actionType: item.actionType ?? 'DESKTOP_NOTIFY',
     actionConfigJson: item.actionConfigJson ?? '',
     enabled: item.enabled !== 0,
     sortNo: Number(item.sortNo ?? 0),
@@ -1142,7 +1114,7 @@ function toHookPayload(form: HookFormState, item: AdminGovernanceHookRule | null
     hookName: form.hookName.trim(),
     triggerPoint: form.triggerPoint,
     conditionKeyword: form.conditionKeyword.trim() || undefined,
-    actionType: form.actionType.trim() || 'AUDIT',
+    actionType: form.actionType.trim() || 'DESKTOP_NOTIFY',
     actionConfigJson: form.actionConfigJson.trim() || undefined,
     enabled: form.enabled ? 1 : 0,
     sortNo: Number(form.sortNo) || 0,

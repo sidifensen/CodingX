@@ -18,7 +18,6 @@ vi.mock('@/api/adminChatApi', () => ({
     createHookRule: vi.fn(),
     updateHookRule: vi.fn(),
     deleteHookRule: vi.fn(),
-    listHookAudits: vi.fn(),
     listProjectProfiles: vi.fn(),
     scanProjectProfile: vi.fn(),
     listLongTermMemories: vi.fn(),
@@ -48,10 +47,10 @@ describe('GovernanceCenterPage', () => {
     vi.mocked(AdminChatApi.listHookRules).mockResolvedValue([
       {
         id: 2,
-        hookCode: 'audit-before-tool',
-        hookName: '审计工具调用',
-        triggerPoint: 'BEFORE_TOOL_CALL',
-        actionType: 'AUDIT',
+        hookCode: 'task-completed',
+        hookName: '任务完成通知',
+        triggerPoint: 'TASK_COMPLETED',
+        actionType: 'DESKTOP_NOTIFY',
         enabled: 1,
         sortNo: 1,
       },
@@ -113,15 +112,6 @@ describe('GovernanceCenterPage', () => {
         message: '权限策略拒绝执行',
       },
     ]);
-    vi.mocked(AdminChatApi.listHookAudits).mockResolvedValue([
-      {
-        id: 6,
-        hookCode: 'audit-before-tool',
-        triggerPoint: 'BEFORE_TOOL_CALL',
-        result: 'AUDITED',
-        message: '已记录 Hook 审计',
-      },
-    ]);
     vi.mocked(AdminChatApi.updatePermissionPolicy).mockResolvedValue({
       id: 1,
       policyCode: 'deny-dangerous-delete',
@@ -138,7 +128,7 @@ describe('GovernanceCenterPage', () => {
   });
 
   /**
-   * 治理中心首屏应加载权限策略、Hook、画像、Slash Command 和审计数据，形成管理端统一入口。
+   * 治理中心首屏应加载权限策略、Hook 规则、画像、Slash Command 和权限审计数据，形成管理端统一入口。
    */
   it('loads governance dashboard data and renders tabbed workbench', async () => {
     const { container } = render(
@@ -156,9 +146,11 @@ describe('GovernanceCenterPage', () => {
     expect(screen.getByRole('tab', { name: 'Slash Command' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: '审计' })).toBeInTheDocument();
     expect(container.querySelector('.ant-table')).toBeInTheDocument();
+    expect(AdminChatApi.listPermissionAudits).toHaveBeenCalledTimes(1);
+    expect('listHookAudits' in AdminChatApi).toBe(false);
 
     fireEvent.click(screen.getByRole('tab', { name: 'Hook' }));
-    expect(await screen.findByText('审计工具调用')).toBeInTheDocument();
+    expect(await screen.findByText('任务完成通知')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('tab', { name: '项目画像' }));
     expect(await screen.findByText('Maven + Vite workspace')).toBeInTheDocument();
@@ -172,8 +164,8 @@ describe('GovernanceCenterPage', () => {
 
     fireEvent.click(screen.getByRole('tab', { name: '审计' }));
     expect(await screen.findByText('权限策略拒绝执行')).toBeInTheDocument();
-    expect(screen.getByText('已记录 Hook 审计')).toBeInTheDocument();
-  });
+    expect(screen.queryByText('Hook 审计')).not.toBeInTheDocument();
+  }, 10000);
 
   /**
    * 编辑策略应使用项目内弹窗并调用治理接口，不能依赖浏览器原生确认框。

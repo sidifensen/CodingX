@@ -23,6 +23,7 @@ import com.codingx.chat.application.service.agent.AgentLoopCompletionReason;
 import com.codingx.chat.application.service.agent.AgentLoopCoordinator;
 import com.codingx.chat.application.service.agent.AgentLoopResult;
 import com.codingx.common.error.ErrorMessageCatalog;
+import com.codingx.common.exception.BusinessException;
 import com.codingx.common.exception.ForbiddenException;
 import com.codingx.common.support.ai.AiToolCall;
 import com.codingx.common.support.ai.AiToolCallDelta;
@@ -141,7 +142,7 @@ public class ChatApplicationService {
     private final ChatToolSpecService chatToolSpecService;
     /** 工具执行服务，承接模型发起的本地工具调用 */
     private final ChatToolExecutionService chatToolExecutionService;
-    /** Hook 规则服务，记录工具调用前后和任务完成生命周期审计 */
+    /** Hook 规则服务，用于匹配任务生命周期自动化动作，供桌面通知或宠物联动消费。 */
     private final HookRuleService hookRuleService;
     /** 治理上下文服务，负责把项目画像和已生效长期记忆注入模型，并在完成后提取新的长期记忆 */
     private final GovernanceAgentContextService governanceAgentContextService;
@@ -2354,13 +2355,6 @@ public class ChatApplicationService {
         }
         LocalDateTime startedAt = LocalDateTime.now();
         publishLocalToolCallEvent(command.conversationId(), toolCall, "start", startedAt, null, null);
-        triggerGovernanceHook(
-            "BEFORE_TOOL_CALL",
-            command.conversationId(),
-            runId,
-            toolCall.toolCode(),
-            toolCall.arguments()
-        );
         try {
             // 步骤 2：执行模型指定工具，并把工具输出转成 chat_execution_step 供前端时间线展示。
             ChatToolExecutionResult toolResult = chatToolExecutionService.execute(toolCall.toolCode(), toolCall.arguments());
@@ -2385,27 +2379,26 @@ public class ChatApplicationService {
             persistPlanStepsIfNeeded(command, runId, toolResult);
             // 步骤 3：发布工具完成事件并返回工具内容给模型循环，模型可继续基于结果生成回答。
             publishLocalToolCallEvent(command.conversationId(), toolCall, "complete", startedAt, LocalDateTime.now(), toolResult);
-            triggerGovernanceHook(
-                "AFTER_TOOL_CALL",
-                command.conversationId(),
-                runId,
-                toolCall.toolCode(),
-                toolResult.content()
-            );
             return toolResult;
-        } catch (RuntimeException exception) {
-            // 步骤 4：工具执行失败时先通知前端工具错误，再把异常交给模型循环外层收口。
+        } catch (BusinessException exception) {
+            // 步骤 4：权限策略要求用户确认时触发任务级 Hook，供后续桌面通知或宠物联动提醒用户处理。
+            if ("GOVERNANCE_PERMISSION_CONFIRM_REQUIRED".equals(exception.getCode())) {
+                triggerGovernanceHook(
+                    "TASK_CONFIRM_REQUIRED",
+                    command.conversationId(),
+                    runId,
+                    toolCall.toolCode(),
+                    "任务需要确认：" + exception.getMessage()
+                );
+            }
             publishLocalToolCallError(command.conversationId(), toolCall, startedAt, exception);
-            triggerGovernanceHook(
-                "AFTER_TOOL_CALL",
-                command.conversationId(),
-                runId,
-                toolCall.toolCode(),
-                "工具执行失败：" + exception.getMessage()
-            );
+            throw exception;
+        } catch (RuntimeException exception) {
+            // 步骤 5：工具执行失败时先通知前端工具错误，再把异常交给模型循环外层收口。
+            publishLocalToolCallError(command.conversationId(), toolCall, startedAt, exception);
             throw exception;
         } finally {
-            // 步骤 5：恢复进入工具前的线程上下文，避免后续工具调用沿用错误目录。
+            // 步骤 6：恢复进入工具前的线程上下文，避免后续工具调用沿用错误目录。
             restoreToolExecutionContext(previousWorkingDirectory, previousSkillDirectories);
         }
     }
@@ -2502,7 +2495,7 @@ public class ChatApplicationService {
     }
 
     /**
-     * 触发治理 Hook；Hook 审计失败不能反向中断聊天主流程。
+     * 触发自动化 Hook；规则匹配失败不能反向中断聊天主流程。
      */
     private void triggerGovernanceHook(
         String triggerPoint,

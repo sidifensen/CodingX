@@ -47,4 +47,5 @@
 ## Governance
 
 - [软件端治理工作台](governance/governed-workbench.md)
+- [Hook 自动化规则](governance/hook-automation.md)
 - [项目画像与长期记忆](governance/project-profile-long-term-memory.md)

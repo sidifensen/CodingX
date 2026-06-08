@@ -91,10 +91,17 @@ class ChatStreamExecutionServiceTest {
 
     /**
      * 释放测试线程池，避免用例之间残留后台线程。
+     * @throws Exception 等待后台任务收口时被中断。
      */
     @AfterEach
-    void shutdownExecutor() {
-        executorService.shutdownNow();
+    void shutdownExecutor() throws Exception {
+        // 步骤 1：先给后台任务正常执行 finally 的机会，避免 JUnit 删除 @TempDir 时和 skill 临时目录清理竞争。
+        executorService.shutdown();
+        if (!executorService.awaitTermination(2, TimeUnit.SECONDS)) {
+            // 步骤 2：超时才强制中断，保证异常用例不会把后台线程遗留到下一个测试。
+            executorService.shutdownNow();
+            assertTrue(executorService.awaitTermination(2, TimeUnit.SECONDS), "background executor should stop after each test");
+        }
     }
 
     /**

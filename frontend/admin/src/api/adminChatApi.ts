@@ -497,7 +497,7 @@ export interface AdminGovernancePermissionAudit {
 }
 
 /**
- * 治理中心 Hook 规则配置，当前 MVP 仅执行无副作用审计动作。
+ * 治理中心 Hook 规则配置，用于管理任务生命周期事件上的自动化动作。
  */
 export interface AdminGovernanceHookRule {
   id?: string | number;
@@ -511,22 +511,6 @@ export interface AdminGovernanceHookRule {
   sortNo?: number;
   createdAt?: string;
   updatedAt?: string;
-}
-
-/**
- * Hook 生命周期审计记录，记录触发点、上下文摘要和处理结果。
- */
-export interface AdminGovernanceHookAudit {
-  id?: string | number;
-  hookCode?: string;
-  triggerPoint?: string;
-  userId?: string | number;
-  conversationId?: string | number;
-  runId?: string | number;
-  contextSummary?: string;
-  result?: string;
-  message?: string;
-  createdAt?: string;
 }
 
 /**
@@ -1192,16 +1176,6 @@ export class AdminChatApi {
     await this.request<void>(`/api/admin/governance/hook-rules/${encodeURIComponent(String(id))}`, {
       method: 'DELETE',
     });
-  }
-
-  /**
-   * 查询最近 Hook 审计记录。
-   * @param limit 最大返回条数。
-   */
-  static async listHookAudits(limit = 50): Promise<AdminGovernanceHookAudit[]> {
-    return this.request<AdminGovernanceHookAudit[]>(
-      `/api/admin/governance/hook-audits?limit=${encodeURIComponent(String(limit))}`,
-    );
   }
 
   /**

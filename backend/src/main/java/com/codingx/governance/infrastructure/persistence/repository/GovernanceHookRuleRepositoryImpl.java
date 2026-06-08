@@ -61,7 +61,7 @@ public class GovernanceHookRuleRepositoryImpl implements GovernanceHookRuleRepos
 
     @Override
     public void softDeleteById(Long id) {
-        // 步骤 1：Hook 删除只标记 deleted，历史审计仍可通过 hookCode 追溯。
+        // 步骤 1：Hook 删除只标记 deleted，避免误删后影响其他会话正在读取的规则配置。
         mapper.update(
             null,
             new LambdaUpdateWrapper<GovernanceHookRuleDO>()

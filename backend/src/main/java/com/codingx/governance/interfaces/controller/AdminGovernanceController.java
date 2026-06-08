@@ -6,7 +6,6 @@ import com.codingx.governance.application.service.LongTermMemoryService;
 import com.codingx.governance.application.service.PermissionPolicyService;
 import com.codingx.governance.application.service.ProjectProfileService;
 import com.codingx.governance.application.service.SlashCommandService;
-import com.codingx.governance.domain.model.GovernanceHookAudit;
 import com.codingx.governance.domain.model.GovernanceHookRule;
 import com.codingx.governance.domain.model.GovernanceLongTermMemory;
 import com.codingx.governance.domain.model.GovernancePermissionAudit;
@@ -37,7 +36,7 @@ public class AdminGovernanceController {
 
     /** 权限策略服务，用于策略 CRUD 与审计查询。 */
     private final PermissionPolicyService permissionPolicyService;
-    /** Hook 规则服务，用于 Hook CRUD 与审计查询。 */
+    /** Hook 规则服务，用于 Hook CRUD 与任务生命周期自动化规则查询。 */
     private final HookRuleService hookRuleService;
     /** 项目画像服务，用于查询和刷新工作空间扫描结果。 */
     private final ProjectProfileService projectProfileService;
@@ -139,16 +138,6 @@ public class AdminGovernanceController {
     public ApiResponse<Void> deleteHookRule(@PathVariable Long id) {
         hookRuleService.deleteRule(id);
         return ApiResponse.successMessage("删除成功");
-    }
-
-    /**
-     * 查询最近 Hook 审计。
-     * @param limit 最大返回条数。
-     * @return Hook 审计列表。
-     */
-    @GetMapping("/hook-audits")
-    public ApiResponse<List<GovernanceHookAudit>> listHookAudits(@RequestParam(defaultValue = "50") int limit) {
-        return ApiResponse.success(hookRuleService.listRecentAudits(limit));
     }
 
     /**

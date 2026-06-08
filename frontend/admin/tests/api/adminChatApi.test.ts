@@ -472,6 +472,13 @@ describe('AdminChatApi unauthorized handling', () => {
   });
 
   /**
+   * Hook 只保留规则配置，前端 API 不应再暴露 Hook 审计列表请求。
+   */
+  it('does not expose hook audit list api after hook automation migration', () => {
+    expect('listHookAudits' in AdminChatApi).toBe(false);
+  });
+
+  /**
    * 治理中心保存接口必须继续透传后端 ApiResponse.message，页面不应改写权限策略错误语义。
    */
   it('keeps backend message when governance policy save fails', async () => {

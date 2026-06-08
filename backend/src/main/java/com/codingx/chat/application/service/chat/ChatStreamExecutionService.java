@@ -14,6 +14,7 @@ import com.codingx.chat.domain.repository.ChatConversationRepository;
 import com.codingx.chat.domain.repository.ChatExecutionRunRepository;
 import com.codingx.chat.domain.port.ChatStreamPublisher;
 import com.codingx.common.exception.ConflictException;
+import com.codingx.governance.application.service.HookRuleService;
 import com.codingx.tool.application.service.ChatToolExecutionContext;
 import java.time.LocalDateTime;
 import java.nio.file.Path;
@@ -52,6 +53,8 @@ public class ChatStreamExecutionService {
     private final ExecutorService executor;
     /** 技能本地缓存服务，用于云端运行启动前同步可用技能包。 */
     private final com.codingx.skill.application.service.SkillLocalCacheService skillLocalCacheService;
+    /** Hook 规则服务，用于发布任务级生命周期事件，供桌面通知或宠物联动消费。 */
+    private final HookRuleService hookRuleService;
 
     /**
      * 注入可替换执行器，便于测试与后续线程池治理。
@@ -69,6 +72,7 @@ public class ChatStreamExecutionService {
         ChatWorkspaceBindingService chatWorkspaceBindingService,
         ChatStreamPublisher chatStreamPublisher,
         com.codingx.skill.application.service.SkillLocalCacheService skillLocalCacheService,
+        HookRuleService hookRuleService,
         @Qualifier("chatStreamExecutor")
         ExecutorService executor
     ) {
@@ -80,6 +84,7 @@ public class ChatStreamExecutionService {
         this.chatWorkspaceBindingService = chatWorkspaceBindingService;
         this.chatStreamPublisher = chatStreamPublisher;
         this.skillLocalCacheService = skillLocalCacheService;
+        this.hookRuleService = hookRuleService;
         this.executor = executor;
     }
 
@@ -103,6 +108,35 @@ public class ChatStreamExecutionService {
             chatConversationRepository,
             chatWorkspaceBindingService,
             new NoopChatStreamPublisher(),
+            null,
+            null,
+            executor
+        );
+    }
+
+    /**
+     * 兼容既有单测构造签名，允许测试显式注入流发布器和技能缓存但不接入 Hook 服务。
+     */
+    public ChatStreamExecutionService(
+        ChatApplicationService chatApplicationService,
+        ChatRuntimeGuardService chatRuntimeGuardService,
+        ConversationTraceRecordService conversationTraceRecordService,
+        ChatExecutionRunRepository chatExecutionRunRepository,
+        ChatConversationRepository chatConversationRepository,
+        ChatWorkspaceBindingService chatWorkspaceBindingService,
+        ChatStreamPublisher chatStreamPublisher,
+        com.codingx.skill.application.service.SkillLocalCacheService skillLocalCacheService,
+        ExecutorService executor
+    ) {
+        this(
+            chatApplicationService,
+            chatRuntimeGuardService,
+            conversationTraceRecordService,
+            chatExecutionRunRepository,
+            chatConversationRepository,
+            chatWorkspaceBindingService,
+            chatStreamPublisher,
+            skillLocalCacheService,
             null,
             executor
         );
@@ -178,22 +212,26 @@ public class ChatStreamExecutionService {
                 bindToolWorkingDirectory(command, userId);
                 tempSkillRoot = bindSkillDirectories(command);
                 log.info("聊天执行开始");
+                triggerGovernanceHook("BEFORE_TASK_START", command.conversationId(), runId, null, "任务开始执行");
                 chatApplicationService.sendMessage(command, userId);
                 markConversationRunFinished(command.conversationId());
             } catch (ConflictException exception) {
                 // 步骤 5：队列或运行门控拒绝时记录 REJECTED，前端按业务冲突展示而不是系统错误。
                 markRunRejected(runId, command.conversationId(), exception.getMessage());
+                triggerGovernanceHook("TASK_FAILED", command.conversationId(), runId, null, "任务被拒绝：" + exception.getMessage());
                 markConversationRunFinished(command.conversationId());
                 throw exception;
             } catch (IllegalStateException exception) {
                 // 步骤 6：已知运行态异常写入失败状态并通过 SSE 告知前端，保留原异常继续向线程池传播。
                 markRunFailed(runId, command.conversationId(), exception);
+                triggerGovernanceHook("TASK_FAILED", command.conversationId(), runId, null, "任务失败：" + exception.getMessage());
                 markConversationRunFinished(command.conversationId());
                 chatStreamPublisher.publishError(command.conversationId(), exception.getMessage());
                 throw exception;
             } catch (Throwable throwable) {
                 // 步骤 7：未知异常统一写入失败终态，避免 run 长时间停留在 RUNNING。
                 markRunFailed(runId, command.conversationId(), throwable);
+                triggerGovernanceHook("TASK_FAILED", command.conversationId(), runId, null, "任务失败：" + throwable.getMessage());
                 markConversationRunFinished(command.conversationId());
                 chatStreamPublisher.publishError(command.conversationId(), throwable.getMessage());
                 throw throwable;
@@ -240,7 +278,11 @@ public class ChatStreamExecutionService {
                 bindToolWorkingDirectory(command, userId);
                 tempSkillRoot = bindSkillDirectories(command);
                 log.info("聊天执行开始");
+                triggerGovernanceHook("BEFORE_TASK_START", command.conversationId(), runId, null, "本地任务开始执行");
                 chatApplicationService.sendMessage(command, userId);
+            } catch (Throwable throwable) {
+                triggerGovernanceHook("TASK_FAILED", command.conversationId(), runId, null, "本地任务失败：" + throwable.getMessage());
+                throw throwable;
             } finally {
                 // 步骤 3：无论执行成功、失败或取消，都清理临时目录、运行锁和线程上下文，避免污染下一次本地运行。
                 if (tempSkillRoot != null) {
@@ -407,6 +449,31 @@ public class ChatStreamExecutionService {
      */
     private int sizeOf(java.util.Collection<?> values) {
         return values == null ? 0 : values.size();
+    }
+
+    /**
+     * 触发任务级自动化 Hook；Hook 规则匹配失败只写日志，不能影响后台任务状态收口。
+     * @param triggerPoint 任务生命周期触发点。
+     * @param conversationId 会话标识。
+     * @param runId 运行标识。
+     * @param toolCode 关联工具编码，可为空。
+     * @param contextText 事件上下文摘要。
+     */
+    private void triggerGovernanceHook(String triggerPoint, Long conversationId, Long runId, String toolCode, String contextText) {
+        if (hookRuleService == null) {
+            return;
+        }
+        try {
+            hookRuleService.trigger(triggerPoint, conversationId, runId, toolCode, contextText);
+        } catch (RuntimeException exception) {
+            log.warn(
+                "自动化 Hook 触发失败: triggerPoint={}, conversationId={}, runId={}",
+                triggerPoint,
+                conversationId,
+                runId,
+                exception
+            );
+        }
     }
 
     /**

@@ -18,15 +18,15 @@ public class GovernanceHookRule {
 
     /** Hook 规则主键。 */
     private Long id;
-    /** Hook 编码，审计和管理端通过该编码识别规则。 */
+    /** Hook 编码，管理端和后续自动化执行器通过该编码识别规则。 */
     private String hookCode;
     /** Hook 名称，用于页面展示。 */
     private String hookName;
-    /** 触发点，例如 BEFORE_TOOL_CALL、AFTER_TOOL_CALL、TASK_COMPLETED。 */
+    /** 触发点，例如 BEFORE_TASK_START、TASK_CONFIRM_REQUIRED、TASK_FAILED、TASK_COMPLETED。 */
     private String triggerPoint;
     /** 条件关键字，可为空；存在时仅在上下文文本包含该关键字时触发。 */
     private String conditionKeyword;
-    /** 动作类型，MVP 仅支持 AUDIT，不执行外部副作用。 */
+    /** 动作类型，例如 DESKTOP_NOTIFY、PET_EVENT、LOCAL_SCRIPT、WEBHOOK。 */
     private String actionType;
     /** 动作配置 JSON，保留后续扩展空间。 */
     private String actionConfigJson;

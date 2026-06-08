@@ -3,55 +3,57 @@ package com.codingx.governance.application.service;
 import cn.hutool.core.util.IdUtil;
 import cn.hutool.core.util.StrUtil;
 import com.codingx.common.exception.BusinessException;
-import com.codingx.governance.domain.model.GovernanceHookAudit;
 import com.codingx.governance.domain.model.GovernanceHookRule;
-import com.codingx.governance.domain.repository.GovernanceHookAuditRepository;
 import com.codingx.governance.domain.repository.GovernanceHookRuleRepository;
 import java.time.LocalDateTime;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 /**
- * Hook 规则应用服务，负责记录工具调用和任务生命周期中的可审计事件。
+ * Hook 规则应用服务，负责按任务生命周期事件匹配自动化 Hook 配置。
  */
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class HookRuleService {
 
     /** Hook 规则仓储，用于按触发点读取当前启用规则。 */
     private final GovernanceHookRuleRepository ruleRepository;
-    /** Hook 审计仓储，用于追加生命周期触发记录。 */
-    private final GovernanceHookAuditRepository auditRepository;
 
     /**
-     * 触发生命周期 Hook。MVP 仅支持 AUDIT 动作，不执行外部命令或脚本。
+     * 触发生命周期 Hook 并返回命中的自动化规则；当前方法只做规则匹配，不执行外部脚本或写审计表。
      * @param triggerPoint 触发点。
      * @param conversationId 会话 ID，可为空。
      * @param runId 运行 ID，可为空。
      * @param toolCode 工具编码，可为空。
      * @param contextText 当前触发上下文摘要。
+     * @return 本次命中的启用 Hook 规则，调用方可交给桌面通知、宠物联动或脚本执行器处理。
      */
-    public void trigger(String triggerPoint, Long conversationId, Long runId, String toolCode, String contextText) {
-        // 步骤 1：只读取当前触发点启用规则，禁用规则不会写入新审计。
-        for (GovernanceHookRule rule : ruleRepository.findEnabledByTriggerPoint(triggerPoint)) {
-            if (!matchesCondition(rule, contextText)) {
-                continue;
-            }
-            // 步骤 2：MVP 不执行 actionConfigJson，只把触发证据写入审计。
-            auditRepository.save(GovernanceHookAudit.builder()
-                .id(IdUtil.getSnowflakeNextId())
-                .hookCode(rule.getHookCode())
-                .triggerPoint(triggerPoint)
-                .conversationId(conversationId)
-                .runId(runId)
-                .toolCode(toolCode)
-                .status("SUCCESS")
-                .message("Hook 已触发并记录审计")
-                .createdAt(LocalDateTime.now())
-                .build());
+    public List<GovernanceHookRule> trigger(String triggerPoint, Long conversationId, Long runId, String toolCode, String contextText) {
+        // 步骤 1：只读取当前触发点启用规则，禁用规则不会进入后续桌面通知或宠物联动。
+        List<GovernanceHookRule> matchedRules = ruleRepository.findEnabledByTriggerPoint(triggerPoint).stream()
+            .filter(rule -> matchesCondition(rule, contextText))
+            .sorted(Comparator
+                .comparing((GovernanceHookRule rule) -> rule.getSortNo() == null ? Integer.MAX_VALUE : rule.getSortNo())
+                .thenComparing(rule -> StrUtil.blankToDefault(rule.getHookCode(), "")))
+            .toList();
+        // 步骤 2：Hook 执行器尚未接入时只写应用日志，避免重新引入数据库 Hook 日志表。
+        for (GovernanceHookRule rule : matchedRules) {
+            log.info(
+                "Hook规则已匹配: hookCode={}, triggerPoint={}, actionType={}, conversationId={}, runId={}, toolCode={}",
+                rule.getHookCode(),
+                triggerPoint,
+                rule.getActionType(),
+                conversationId,
+                runId,
+                toolCode
+            );
         }
+        return matchedRules;
     }
 
     /**
@@ -63,16 +65,7 @@ public class HookRuleService {
     }
 
     /**
-     * 查询最近 Hook 审计。
-     * @param limit 最大返回条数。
-     * @return 最近审计列表。
-     */
-    public List<GovernanceHookAudit> listRecentAudits(int limit) {
-        return auditRepository.findRecent(limit);
-    }
-
-    /**
-     * 新增 Hook 规则，默认动作限制为 AUDIT，避免绕过权限策略产生副作用。
+     * 新增 Hook 规则，默认动作使用桌面通知；真实本机能力由后续桌面执行器按 actionType 消费。
      */
     public GovernanceHookRule createRule(GovernanceHookRule rule) {
         LocalDateTime now = LocalDateTime.now();
@@ -81,7 +74,7 @@ public class HookRuleService {
             .hookCode(required(rule.getHookCode(), "Hook编码不能为空"))
             .hookName(required(rule.getHookName(), "Hook名称不能为空"))
             .triggerPoint(required(rule.getTriggerPoint(), "Hook触发点不能为空").toUpperCase(Locale.ROOT))
-            .actionType("AUDIT")
+            .actionType(StrUtil.blankToDefault(rule.getActionType(), "DESKTOP_NOTIFY").toUpperCase(Locale.ROOT))
             .actionConfigJson(StrUtil.blankToDefault(rule.getActionConfigJson(), "{}"))
             .enabled(rule.getEnabled() == null ? 1 : rule.getEnabled())
             .sortNo(rule.getSortNo() == null ? 0 : rule.getSortNo())
@@ -94,7 +87,7 @@ public class HookRuleService {
     }
 
     /**
-     * 更新 Hook 规则，继续强制动作类型为 AUDIT。
+     * 更新 Hook 规则，保留管理员配置的动作类型，供后续自动化执行器分发。
      */
     public GovernanceHookRule updateRule(Long id, GovernanceHookRule rule) {
         GovernanceHookRule existing = ruleRepository.findById(id);
@@ -106,7 +99,7 @@ public class HookRuleService {
             .hookCode(required(rule.getHookCode(), "Hook编码不能为空"))
             .hookName(required(rule.getHookName(), "Hook名称不能为空"))
             .triggerPoint(required(rule.getTriggerPoint(), "Hook触发点不能为空").toUpperCase(Locale.ROOT))
-            .actionType("AUDIT")
+            .actionType(StrUtil.blankToDefault(rule.getActionType(), existing.getActionType()).toUpperCase(Locale.ROOT))
             .actionConfigJson(StrUtil.blankToDefault(rule.getActionConfigJson(), "{}"))
             .enabled(rule.getEnabled() == null ? existing.getEnabled() : rule.getEnabled())
             .sortNo(rule.getSortNo() == null ? existing.getSortNo() : rule.getSortNo())

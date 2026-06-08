@@ -723,28 +723,6 @@ COMMENT ON COLUMN governance_hook_rule.created_at IS '创建时间';
 COMMENT ON COLUMN governance_hook_rule.updated_at IS '更新时间';
 COMMENT ON COLUMN governance_hook_rule.deleted IS '逻辑删除标记';
 
-CREATE TABLE IF NOT EXISTS governance_hook_audit (
-    id BIGINT PRIMARY KEY,
-    hook_code VARCHAR(128) NOT NULL,
-    trigger_point VARCHAR(64) NOT NULL,
-    conversation_id BIGINT,
-    run_id BIGINT,
-    tool_code VARCHAR(128),
-    status VARCHAR(32) NOT NULL,
-    message TEXT,
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-COMMENT ON TABLE governance_hook_audit IS '治理Hook审计表';
-COMMENT ON COLUMN governance_hook_audit.id IS 'Hook审计主键ID';
-COMMENT ON COLUMN governance_hook_audit.hook_code IS 'Hook编码';
-COMMENT ON COLUMN governance_hook_audit.trigger_point IS 'Hook触发点';
-COMMENT ON COLUMN governance_hook_audit.conversation_id IS '触发会话ID';
-COMMENT ON COLUMN governance_hook_audit.run_id IS '触发运行ID';
-COMMENT ON COLUMN governance_hook_audit.tool_code IS '工具编码';
-COMMENT ON COLUMN governance_hook_audit.status IS '触发状态';
-COMMENT ON COLUMN governance_hook_audit.message IS '审计说明';
-COMMENT ON COLUMN governance_hook_audit.created_at IS '创建时间';
-
 CREATE TABLE IF NOT EXISTS governance_project_profile (
     id BIGINT PRIMARY KEY,
     workspace_id BIGINT NOT NULL,
@@ -966,7 +944,6 @@ CREATE INDEX IF NOT EXISTS idx_tool_enabled_sort ON tool (enabled, sort_no ASC);
 CREATE INDEX IF NOT EXISTS idx_governance_permission_policy_enabled ON governance_permission_policy (enabled, sort_no ASC);
 CREATE INDEX IF NOT EXISTS idx_governance_permission_audit_created ON governance_permission_audit (created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_governance_hook_rule_trigger ON governance_hook_rule (trigger_point, enabled, sort_no ASC);
-CREATE INDEX IF NOT EXISTS idx_governance_hook_audit_created ON governance_hook_audit (created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_governance_project_profile_workspace ON governance_project_profile (workspace_id, scanned_at DESC);
 CREATE UNIQUE INDEX IF NOT EXISTS uk_governance_project_profile_workspace_active ON governance_project_profile (workspace_id) WHERE deleted = 0;
 COMMENT ON INDEX uk_governance_project_profile_workspace_active IS '项目画像工作空间当前记录唯一索引';
@@ -1020,8 +997,10 @@ INSERT INTO governance_hook_rule (
     id, hook_code, hook_name, trigger_point, condition_keyword, action_type, action_config_json, enabled, sort_no, deleted
 )
 VALUES
-    (206060201, 'audit-before-tool', '工具调用前审计', 'BEFORE_TOOL_CALL', null, 'AUDIT', '{}', 1, 1, 0),
-    (206060202, 'audit-task-complete', '任务完成审计', 'TASK_COMPLETED', null, 'AUDIT', '{}', 1, 2, 0)
+    (206060201, 'before-task-start', '任务开始前通知', 'BEFORE_TASK_START', null, 'DESKTOP_NOTIFY', '{"title":"CodingX 任务已开始","body":"后台任务开始执行"}', 1, 1, 0),
+    (206060202, 'task-confirm-required', '任务需要确认通知', 'TASK_CONFIRM_REQUIRED', null, 'DESKTOP_NOTIFY', '{"title":"CodingX 等待确认","body":"任务执行需要你确认后继续"}', 1, 2, 0),
+    (206060203, 'task-failed', '任务失败通知', 'TASK_FAILED', null, 'DESKTOP_NOTIFY', '{"title":"CodingX 任务失败","body":"后台任务执行失败，请回到会话查看原因"}', 1, 3, 0),
+    (206060204, 'task-completed', '任务完成通知', 'TASK_COMPLETED', null, 'DESKTOP_NOTIFY', '{"title":"CodingX 任务完成","body":"后台任务已完成，请回到会话查看结果"}', 1, 4, 0)
 ON CONFLICT (hook_code) DO UPDATE
 SET
     hook_name = EXCLUDED.hook_name,

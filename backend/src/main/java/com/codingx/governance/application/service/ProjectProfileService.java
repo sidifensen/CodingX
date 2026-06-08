@@ -10,6 +10,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -79,8 +80,9 @@ public class ProjectProfileService {
         List<String> normalizedKeyEntrypoints = distinct(keyEntrypoints);
         List<String> normalizedRiskPoints = distinct(riskPoints);
         LocalDateTime now = LocalDateTime.now();
+        GovernanceProjectProfile currentProfile = profileRepository.findLatestByWorkspaceId(workspaceId);
         GovernanceProjectProfile profile = GovernanceProjectProfile.builder()
-            .id(IdUtil.getSnowflakeNextId())
+            .id(resolveProfileId(currentProfile))
             .workspaceId(workspaceId)
             .workspacePath(normalizedWorkspacePath.toString())
             .summary(buildSummary(normalizedTechStack, normalizedEntrypoints))
@@ -94,7 +96,7 @@ public class ProjectProfileService {
             .agentContext(buildAgentContext(moduleMap, normalizedTestCommands, normalizedKeyEntrypoints, normalizedRiskPoints))
             .status("COMPLETED")
             .scannedAt(now)
-            .createdAt(now)
+            .createdAt(resolveCreatedAt(currentProfile, now))
             .updatedAt(now)
             .deleted(0)
             .build();
@@ -108,7 +110,18 @@ public class ProjectProfileService {
      * @return 项目画像列表。
      */
     public List<GovernanceProjectProfile> listRecentProfiles(int limit) {
-        return profileRepository.findRecent(limit);
+        int normalizedLimit = Math.min(Math.max(limit, 1), 100);
+        int queryLimit = Math.min(Math.max(normalizedLimit * 5, normalizedLimit), 100);
+        List<GovernanceProjectProfile> profiles = profileRepository.findRecent(queryLimit);
+        // 步骤：管理端主列表展示“当前画像”，历史重复记录只保留最新一条，避免把扫描流水误当项目列表。
+        Map<String, GovernanceProjectProfile> currentProfiles = new LinkedHashMap<>();
+        profiles.stream()
+            .filter(profile -> profile != null && (profile.getDeleted() == null || profile.getDeleted() == 0))
+            .sorted(currentProfileComparator())
+            .forEach(profile -> currentProfiles.putIfAbsent(profileIdentity(profile), profile));
+        return currentProfiles.values().stream()
+            .limit(normalizedLimit)
+            .toList();
     }
 
     /**
@@ -118,6 +131,57 @@ public class ProjectProfileService {
      */
     public GovernanceProjectProfile findLatestByWorkspaceId(Long workspaceId) {
         return profileRepository.findLatestByWorkspaceId(workspaceId);
+    }
+
+    /**
+     * 解析本次扫描应写入的画像主键；已有画像时复用旧主键，让仓储执行更新而不是新增。
+     * @param currentProfile 当前工作空间已有画像，可为空。
+     * @return 可用于保存的画像主键。
+     */
+    private Long resolveProfileId(GovernanceProjectProfile currentProfile) {
+        if (currentProfile != null && currentProfile.getId() != null) {
+            return currentProfile.getId();
+        }
+        return IdUtil.getSnowflakeNextId();
+    }
+
+    /**
+     * 解析画像创建时间；重复扫描只刷新更新时间和扫描时间，不改变首次创建时间。
+     * @param currentProfile 当前工作空间已有画像，可为空。
+     * @param fallbackTime 首次创建时使用的时间。
+     * @return 画像创建时间。
+     */
+    private LocalDateTime resolveCreatedAt(GovernanceProjectProfile currentProfile, LocalDateTime fallbackTime) {
+        if (currentProfile != null && currentProfile.getCreatedAt() != null) {
+            return currentProfile.getCreatedAt();
+        }
+        return fallbackTime;
+    }
+
+    /**
+     * 构造管理端列表去重键；优先按 workspaceId 归并，兼容旧数据再退回到路径。
+     * @param profile 项目画像。
+     * @return 当前画像归并键。
+     */
+    private String profileIdentity(GovernanceProjectProfile profile) {
+        if (profile.getWorkspaceId() != null) {
+            return "workspace:" + profile.getWorkspaceId();
+        }
+        return "path:" + StrUtil.nullToDefault(profile.getWorkspacePath(), "");
+    }
+
+    /**
+     * 当前画像列表按最近扫描时间倒序排列；扫描时间缺失的历史数据排在后面。
+     * @return 项目画像排序器。
+     */
+    private Comparator<GovernanceProjectProfile> currentProfileComparator() {
+        Comparator<GovernanceProjectProfile> scannedAtComparator = Comparator.comparing(
+            profile -> profile.getScannedAt() == null ? LocalDateTime.MIN : profile.getScannedAt()
+        );
+        Comparator<GovernanceProjectProfile> idComparator = Comparator.comparing(
+            profile -> profile.getId() == null ? Long.MIN_VALUE : profile.getId()
+        );
+        return scannedAtComparator.reversed().thenComparing(idComparator.reversed());
     }
 
     private void detectPackageJson(

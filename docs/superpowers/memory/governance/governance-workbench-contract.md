@@ -41,7 +41,7 @@ status: active
 
 ## Interface Rules
 
-- `GET /api/admin/governance/project-profiles?limit=N` 返回最近项目画像，`limit` 应在仓储层限制到安全范围。
+- `GET /api/admin/governance/project-profiles?limit=N` 返回按工作空间去重后的当前项目画像，`limit` 应在仓储层或服务层限制到安全范围。
 - `POST /api/admin/governance/project-profiles/scan` 接收 `workspaceId` 与 `workspacePath`，路径存在性、目录合法性和扫描细节由 service 处理。
 - `GET /api/chat/slash-commands` 只返回启用命令；内置命令模板的拼接由后端 `SlashCommandService` 完成，前端只提交结构化命令选择和用户正文。
 - `GET /api/chat/memories` 返回当前登录用户可见的用户级和项目级长期记忆；用户端管理页需要传 `status=ALL` 后在本地按范围和状态筛选。
@@ -49,12 +49,14 @@ status: active
 - `PATCH /api/chat/memories/{memoryId}/status` 只允许当前用户启用或停用自己的长期记忆，`ACTIVE` 参与模型上下文回注，`REJECTED` 不参与回注。
 - `DELETE /api/chat/memories/{memoryId}` 执行逻辑删除，设置 `deleted=1` 后必须从用户列表和上下文检索中排除，但保留来源审计链路。
 - `governance_project_profile` 当前字段包含 `workspace_id`、`workspace_path`、`summary`、`tech_stack_json`、`entrypoints_json`、`verification_commands_json`、`status`、`scanned_at` 和审计时间字段。
+- `governance_project_profile` 是工作空间当前画像表，不是扫描流水表；同一 `workspace_id` 只能有一条 `deleted=0` 记录，重复扫描必须更新当前画像并保留首次 `created_at`。
 
 ## Invariants
 
 - 数据库结构变更必须同时更新迁移脚本和 `backend/src/main/resources/db/schema.sql`，新增表字段必须保留中文注释。
 - 治理表的 Java DO、领域模型、仓储映射和前端 TypeScript 类型必须保持字段同步。
 - 项目画像扫描失败应通过中文 `BusinessException` 或统一异常处理返回 `ApiResponse`，不要把 Java 异常栈暴露给前端。
+- 管理端项目画像主列表必须展示当前画像视图；如果历史重复数据仍存在，列表层需要按 `workspace_id` 选取最近扫描结果，避免重复路径污染页面。
 - 长期记忆与短期摘要语义必须分离：长期记忆按用户/项目持久化，短期摘要只压缩单会话历史。
 - 长期记忆不再使用确认流：只有用户消息出现“记住”“请记忆”“长期保存”“以后都按”“我的偏好”等显式授权信号才自动写入 `ACTIVE`，普通聊天不能沉淀。
 - 用户端长期记忆管理必须使用项目内自定义弹窗、主题令牌和后端 `ApiResponse.message`，禁止用浏览器原生 `alert`、`confirm` 或 `prompt`。

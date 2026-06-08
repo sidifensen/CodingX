@@ -21,11 +21,14 @@ class GovernanceSchemaCompatibilityTest {
     void governanceTablesShouldExistInMigrationAndSchemaWithChineseComments() throws Exception {
         Path migrationPath = Path.of("src/main/resources/db/migration/V20260606_211000__create_governance_workbench_tables.sql");
         Path memoryMigrationPath = Path.of("src/main/resources/db/migration/V20260607_011500__project_profile_long_term_memory.sql");
+        Path profileUpsertMigrationPath = Path.of("src/main/resources/db/migration/V20260608_123000__deduplicate_project_profile.sql");
         assertTrue(Files.exists(migrationPath), "缺少治理工作台迁移脚本");
         assertTrue(Files.exists(memoryMigrationPath), "缺少项目画像与长期记忆迁移脚本");
+        assertTrue(Files.exists(profileUpsertMigrationPath), "缺少项目画像去重迁移脚本");
         String migrationSql = Files.readString(migrationPath, StandardCharsets.UTF_8);
         String memoryMigrationSql = Files.readString(memoryMigrationPath, StandardCharsets.UTF_8);
-        String combinedMigrationSql = migrationSql + "\n" + memoryMigrationSql;
+        String profileUpsertMigrationSql = Files.readString(profileUpsertMigrationPath, StandardCharsets.UTF_8);
+        String combinedMigrationSql = migrationSql + "\n" + memoryMigrationSql + "\n" + profileUpsertMigrationSql;
         String schemaSql = Files.readString(Path.of("src/main/resources/db/schema.sql"), StandardCharsets.UTF_8);
 
         for (String tableName : List.of(
@@ -57,5 +60,14 @@ class GovernanceSchemaCompatibilityTest {
             assertTrue(combinedMigrationSql.contains(comment), "迁移缺少字段注释: " + comment);
             assertTrue(schemaSql.contains(comment), "schema 缺少字段注释: " + comment);
         }
+
+        assertTrue(
+            combinedMigrationSql.contains("uk_governance_project_profile_workspace_active"),
+            "迁移缺少项目画像当前记录唯一索引"
+        );
+        assertTrue(
+            schemaSql.contains("uk_governance_project_profile_workspace_active"),
+            "schema 缺少项目画像当前记录唯一索引"
+        );
     }
 }

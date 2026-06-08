@@ -968,6 +968,8 @@ CREATE INDEX IF NOT EXISTS idx_governance_permission_audit_created ON governance
 CREATE INDEX IF NOT EXISTS idx_governance_hook_rule_trigger ON governance_hook_rule (trigger_point, enabled, sort_no ASC);
 CREATE INDEX IF NOT EXISTS idx_governance_hook_audit_created ON governance_hook_audit (created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_governance_project_profile_workspace ON governance_project_profile (workspace_id, scanned_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_governance_project_profile_workspace_active ON governance_project_profile (workspace_id) WHERE deleted = 0;
+COMMENT ON INDEX uk_governance_project_profile_workspace_active IS '项目画像工作空间当前记录唯一索引';
 CREATE INDEX IF NOT EXISTS idx_governance_long_term_memory_user ON governance_long_term_memory (user_id, status, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_governance_long_term_memory_workspace ON governance_long_term_memory (workspace_id, status, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_governance_slash_command_enabled ON governance_slash_command (enabled, sort_no ASC);

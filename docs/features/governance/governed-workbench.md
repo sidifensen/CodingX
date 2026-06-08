@@ -16,7 +16,7 @@
 2. 后端聊天提交服务解析结构化 `slash_command`，当命令类型为 `builtin` 时调用 `SlashCommandService` 校验命令是否存在且启用。校验通过后把命令模板和用户问题组合进模型上下文；命令未知或停用时抛出中文 `BusinessException`，由全局异常处理返回 `ApiResponse.message`。
 3. 工具执行前，`ChatToolExecutionService` 从 `ChatToolExecutionContext` 读取用户、会话、运行和工作目录上下文，再调用 `PermissionPolicyService` 按工具编码、命令片段和路径片段匹配策略。`DENY` 和 `CONFIRM` 会写入审计并阻止执行，`ALLOW` 或未命中策略时继续执行工具。
 4. 聊天应用服务在工具调用前后和任务完成时触发 `HookRuleService`；当前 Hook 动作只写入审计，不执行外部副作用，Hook 异常只记录日志，不中断聊天流。模型调用 `update_plan` 时，后端把每个计划步骤落入 `chat_execution_step`，并向前端发布 `step` 事件，支持软件端查看计划和执行状态。
-5. 管理端治理中心加载策略、Hook、项目画像、长期记忆、Slash Command 和审计数据；编辑操作使用 Ant Design Modal，接口错误直接展示后端 `ApiResponse.message`。项目画像扫描接收工作空间 ID 和路径，由后端扫描 Maven、NPM、Vite 等仓库标记并保存摘要、技术栈、模块地图、测试命令、关键入口和风险点。
+5. 管理端治理中心加载策略、Hook、项目画像、长期记忆、Slash Command 和审计数据；编辑操作使用 Ant Design Modal，接口错误直接展示后端 `ApiResponse.message`。项目画像扫描接收工作空间 ID 和路径，由后端扫描 Maven、NPM、Vite 等仓库标记并保存摘要、技术栈、模块地图、测试命令、关键入口和风险点；同一工作空间重复扫描会更新当前画像，管理端主列表只展示每个工作空间最新结果。
 
 ## 关键文件
 
@@ -32,7 +32,7 @@
 - `governance_permission_policy`：权限策略，包含工具编码、命令片段、路径片段、动作和风险等级。
 - `governance_permission_audit`：权限判定审计，记录工具输入、工作目录、命中策略、决策和中文消息。
 - `governance_hook_rule` / `governance_hook_audit`：Hook 配置与生命周期触发审计。
-- `governance_project_profile`：项目画像扫描结果，记录工作空间路径、技术栈、入口、验证命令、模块地图、风险点和 Agent 上下文。
+- `governance_project_profile`：项目当前画像，记录工作空间路径、技术栈、入口、验证命令、模块地图、风险点和 Agent 上下文；每个未删除工作空间画像由唯一索引约束为一条。
 - `governance_long_term_memory`：长期记忆记录，保存明确授权后已生效或已停用的用户/项目记忆、来源会话和检索关键词。
 - `governance_slash_command`：内置 Slash Command 配置，用户端只展示启用命令。
 

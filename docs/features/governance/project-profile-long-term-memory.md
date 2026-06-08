@@ -14,12 +14,12 @@
 
 ## 核心流程
 
-1. 用户端选择或切换本地仓库目录后，`useHostContext` 调用 `ChatApi.bindWorkspaceRepository`，后端 `ChatWorkspaceBindingService` 校验目录、创建或复用本地工作空间，并调用 `ProjectProfileService.scanWorkspace` 生成画像。扫描结果写入 `governance_project_profile`，绑定响应返回 `workspaceId`、`projectProfile` 和 `activeMemoryCount`，前端同步到 `useChatWorkspace` 状态。
+1. 用户端选择或切换本地仓库目录后，`useHostContext` 调用 `ChatApi.bindWorkspaceRepository`，后端 `ChatWorkspaceBindingService` 校验目录、创建或复用本地工作空间，并调用 `ProjectProfileService.scanWorkspace` 生成画像。`governance_project_profile` 保存的是每个工作空间的当前画像，重复扫描会复用旧画像 `id` 并刷新摘要、扫描时间和更新时间，不会新增扫描流水；绑定响应返回 `workspaceId`、`projectProfile` 和 `activeMemoryCount`，前端同步到 `useChatWorkspace` 状态。
 2. 聊天提交时，`ChatApplicationService` 在构造模型历史前调用 `GovernanceAgentContextService`。该服务按当前用户、工作空间和问题读取最新项目画像与 ACTIVE 长期记忆，生成一段带使用约束的上下文，插入模型历史；画像或记忆缺失时返回空文本，不阻断聊天。
 3. 助手正常完成后，`GovernanceAgentContextService.extractMemoryCandidates` 委托 `LongTermMemoryService` 读取用户消息。只有文本包含“记住”“请记忆”“长期保存”“以后都按”“我的偏好”等显式授权信号时才生成 `ACTIVE` 记忆，并按范围、用户、工作空间和内容生成确定性去重键；重复内容不会再次保存，普通聊天不会被自动沉淀为长期记忆。
 4. 用户端“工作区智能”信息条展示当前工作空间的已生效记忆数量和最多 3 条摘要，不再弹出确认/拒绝按钮。用户刷新信息条时前端重新调用 `GET /api/chat/memories?status=ACTIVE`，接口失败时展示后端 `ApiResponse.message`。
 5. 用户进入 `/memories` 后，`MemoryView` 读取登录令牌并调用 `ChatApi.listLongTermMemories(token, workspaceId, 'ALL')`，一次性加载当前用户可见的 ACTIVE 与 REJECTED 记忆。页面在本地按 `memoryScope` 和 `status` 筛选；编辑时先用自定义弹窗校验非空正文，再调用 `PATCH /api/chat/memories/{memoryId}`，后端校验当前用户归属并刷新 `content`、`keywordJson`、`memoryKey` 和 `updatedAt`；删除时通过自定义确认弹窗调用 `DELETE /api/chat/memories/{memoryId}`，后端设置 `deleted=1`，后续列表和模型上下文检索都会排除该记录。
-6. 管理端治理中心并行加载权限、Hook、项目画像、长期记忆、Slash Command 和审计数据。管理员在「长期记忆」页签对记忆执行“启用/停用”治理操作，页面使用 Ant Design 按钮和消息组件，不使用浏览器原生弹窗。
+6. 管理端治理中心并行加载权限、Hook、项目画像、长期记忆、Slash Command 和审计数据。`GET /api/admin/governance/project-profiles` 返回按工作空间去重后的当前画像列表，旧重复扫描记录不会继续占用主列表；管理员在「长期记忆」页签对记忆执行“启用/停用”治理操作，页面使用 Ant Design 按钮和消息组件，不使用浏览器原生弹窗。
 
 ## 关键文件
 
@@ -41,11 +41,12 @@
 - `governance_project_profile.key_entrypoints_json`：启动类、前端入口、控制器和配置文件等关键入口。
 - `governance_project_profile.risk_points_json`：扫描发现的风险点或验证缺口。
 - `governance_project_profile.agent_context`：供模型输入的项目级上下文摘要。
+- `uk_governance_project_profile_workspace_active`：约束每个工作空间只能存在一条未删除项目画像，迁移会先把旧重复画像逻辑删除，只保留最近扫描结果。
 - `governance_long_term_memory`：长期记忆表，当前写入状态为 `ACTIVE`，停用状态为 `REJECTED`，历史 `PENDING` 会通过迁移转为 `ACTIVE`，范围为 `USER` 或 `PROJECT`；用户删除时只更新 `deleted=1`，保留来源审计链路但不再参与列表和上下文回注。
 
 ## 测试与验证
 
-- 后端测试覆盖画像字段、迁移/基线结构、记忆提取去重、状态更新、检索、聊天上下文回注和用户/管理端记忆接口。
+- 后端测试覆盖画像字段、重复扫描更新当前画像、管理端画像列表去重、迁移/基线结构、记忆提取去重、状态更新、检索、聊天上下文回注和用户/管理端记忆接口。
 - 用户端测试覆盖目录绑定响应、长期记忆 API、`useChatWorkspace` 状态同步、“工作区智能”已生效记忆展示、`/memories` 路由接入和记忆管理页的筛选、编辑、启停、删除。
 - 管理端测试覆盖治理中心长期记忆页签、项目画像增强字段和启停操作。
 - 前端页面改动需要通过浏览器/CDP 打开用户端聊天页和管理端治理中心，保存截图或计算样式证据到 `logs/`。

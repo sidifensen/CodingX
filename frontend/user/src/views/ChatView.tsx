@@ -5799,7 +5799,7 @@ function buildProcessToolFileDiffBundle(
 }
 
 /**
- * 渲染工具过程下方的文件编辑摘要；点击文件行打开统一 diff 弹窗，不使用浏览器原生弹窗。
+ * 渲染工具过程下方的文件编辑摘要；点击文件行后在该行下方展开 diff 面板。
  */
 function EditedFilesSummary({
   messageId,
@@ -5832,78 +5832,87 @@ function EditedFilesSummary({
         <span className="font-mono text-error">-{summary.deletions}</span>
       </div>
       <div className="space-y-1">
-        {fileDiffs.map((fileDiff) => (
-          <button
-            key={`${fileDiff.path}-${fileDiff.diff}`}
-            type="button"
-            data-testid={`edited-file-row-${messageId}-${cardId}-${getFileDiffSlug(fileDiff.path)}`}
-            onClick={() => setActiveFileDiff(fileDiff)}
-            className="flex w-full min-w-0 items-center justify-between gap-3 rounded-md px-2 py-1.5 text-left text-xs text-muted transition-colors hover:bg-surface hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border"
-          >
-            <span className="flex min-w-0 items-center gap-2">
-              <File size={13} className="shrink-0" />
-              <span className="truncate font-mono text-[12px]" title={fileDiff.path}>
-                {fileDiff.path}
-              </span>
-            </span>
-            <span className="shrink-0 font-mono">
-              <span className="text-success">+{fileDiff.additions}</span>
-              <span className="ml-2 text-error">-{fileDiff.deletions}</span>
-            </span>
-          </button>
-        ))}
+        {fileDiffs.map((fileDiff) => {
+          const fileDiffSlug = getFileDiffSlug(fileDiff.path);
+          const isActive = activeFileDiff?.path === fileDiff.path;
+          const panelId = `edited-file-diff-panel-${messageId}-${cardId}-${fileDiffSlug}`;
+          return (
+            <div key={`${fileDiff.path}-${fileDiff.diff}`} className="space-y-1">
+              <button
+                type="button"
+                data-testid={`edited-file-row-${messageId}-${cardId}-${fileDiffSlug}`}
+                aria-expanded={isActive}
+                aria-controls={panelId}
+                onClick={() => setActiveFileDiff(isActive ? null : fileDiff)}
+                className={`flex w-full min-w-0 items-center justify-between gap-3 rounded-md px-2 py-1.5 text-left text-xs transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border ${
+                  isActive
+                    ? 'bg-surface text-foreground'
+                    : 'text-muted hover:bg-surface hover:text-foreground'
+                }`}
+              >
+                <span className="flex min-w-0 items-center gap-2">
+                  <File size={13} className="shrink-0" />
+                  <span className="truncate font-mono text-[12px]" title={fileDiff.path}>
+                    {fileDiff.path}
+                  </span>
+                </span>
+                <span className="shrink-0 font-mono">
+                  <span className="text-success">+{fileDiff.additions}</span>
+                  <span className="ml-2 text-error">-{fileDiff.deletions}</span>
+                </span>
+              </button>
+              {isActive ? (
+                <InlineFileDiffPanel
+                  panelId={panelId}
+                  fileDiff={fileDiff}
+                  onClose={() => setActiveFileDiff(null)}
+                />
+              ) : null}
+            </div>
+          );
+        })}
       </div>
-      {activeFileDiff ? (
-        <FileDiffDialog
-          fileDiff={activeFileDiff}
-          onClose={() => setActiveFileDiff(null)}
-        />
-      ) : null}
     </div>
   );
 }
 
 /**
- * 自定义文件差异弹窗，承载统一 diff 高亮展示。
+ * 文件行下方的内嵌差异面板，避免遮罩聊天区并保持文件列表上下文。
  */
-function FileDiffDialog({
+function InlineFileDiffPanel({
+  panelId,
   fileDiff,
   onClose,
 }: {
+  panelId: string;
   fileDiff: FileDiffItem;
   onClose: () => void;
 }) {
   return (
     <div
+      id={panelId}
       role="dialog"
-      aria-modal="true"
-      aria-label={`文件差异：${fileDiff.path}`}
-      className="fixed inset-0 z-[140] flex items-center justify-center bg-background/55 p-4 backdrop-blur-sm"
-      onClick={onClose}
+      aria-label={`文件差异内容：${fileDiff.path}`}
+      className="ml-5 overflow-hidden rounded-lg border border-border bg-background text-foreground shadow-[0_16px_40px_rgba(0,0,0,0.22)]"
     >
-      <div
-        className="flex max-h-[82vh] w-full max-w-4xl flex-col overflow-hidden rounded-xl border border-border bg-surface text-foreground shadow-[0_28px_80px_rgba(0,0,0,0.34)]"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <div className="flex min-w-0 items-center justify-between gap-3 border-b border-border px-4 py-3">
-          <div className="min-w-0">
-            <div className="text-xs text-muted">文件差异</div>
-            <div className="truncate font-mono text-sm font-semibold text-foreground">
-              {fileDiff.path}
-            </div>
+      <div className="flex min-w-0 items-center justify-between gap-3 border-b border-border bg-surface px-3 py-2">
+        <div className="min-w-0">
+          <div className="text-[11px] text-muted">文件差异</div>
+          <div className="truncate font-mono text-xs font-semibold text-foreground">
+            {fileDiff.path}
           </div>
-          <button
-            type="button"
-            aria-label="关闭文件差异弹窗"
-            onClick={onClose}
-            className="rounded-md p-1.5 text-muted transition-colors hover:bg-surface-container hover:text-foreground"
-          >
-            <X size={16} />
-          </button>
         </div>
-        <div className="min-h-0 flex-1 overflow-auto">
-          <DiffTextBlock diffText={fileDiff.diff || '等待写入内容...'} />
-        </div>
+        <button
+          type="button"
+          aria-label="收起文件差异内容"
+          onClick={onClose}
+          className="rounded-md p-1.5 text-muted transition-colors hover:bg-surface-container hover:text-foreground"
+        >
+          <X size={14} />
+        </button>
+      </div>
+      <div className="max-h-[46vh] overflow-auto">
+        <DiffTextBlock diffText={fileDiff.diff || '等待写入内容...'} />
       </div>
     </div>
   );

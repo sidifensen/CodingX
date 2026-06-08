@@ -824,9 +824,9 @@ describe('ChatView', () => {
   });
 
   /**
-   * 文件编辑工具应在消息过程里展示编辑文件列表，并用自定义弹窗展示 unified diff。
+   * 文件编辑工具应在消息过程里展示编辑文件列表，并在点击文件行后就地展开 unified diff。
    */
-  it('应在工具过程中展示文件差异列表并打开差异弹窗', async () => {
+  it('应在工具过程中展示文件差异列表并就地展开差异弹窗', async () => {
     render(
       <ChatView
         isAuthenticated={true}
@@ -878,18 +878,24 @@ describe('ChatView', () => {
       />,
     );
 
-    expect(screen.getByTestId('edited-files-summary-706-tool-result-706')).toHaveTextContent(
-      '已编辑 1 个文件',
-    );
-    fireEvent.click(screen.getByTestId('edited-file-row-706-tool-result-706-src-App-tsx'));
+    const summary = screen.getByTestId('edited-files-summary-706-tool-result-706');
+    const fileRow = screen.getByTestId('edited-file-row-706-tool-result-706-src-App-tsx');
+    expect(summary).toHaveTextContent('已编辑 1 个文件');
+    expect(fileRow).toHaveAttribute('aria-expanded', 'false');
+    fireEvent.click(fileRow);
 
-    const dialog = screen.getByRole('dialog', { name: '文件差异：src/App.tsx' });
+    const dialog = within(summary).getByRole('dialog', { name: '文件差异内容：src/App.tsx' });
     expect(dialog).toBeInTheDocument();
+    expect(dialog).not.toHaveAttribute('aria-modal');
+    expect(fileRow).toHaveAttribute('aria-expanded', 'true');
     expect(dialog).toHaveTextContent('src/App.tsx');
     expect(dialog).toHaveTextContent('+export const title = "CodingX";');
 
-    fireEvent.click(screen.getByRole('button', { name: '关闭文件差异弹窗' }));
-    expect(screen.queryByRole('dialog', { name: '文件差异：src/App.tsx' })).not.toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole('button', { name: '收起文件差异内容' }));
+    expect(
+      screen.queryByRole('dialog', { name: '文件差异内容：src/App.tsx' }),
+    ).not.toBeInTheDocument();
+    expect(fileRow).toHaveAttribute('aria-expanded', 'false');
   });
 
   /**

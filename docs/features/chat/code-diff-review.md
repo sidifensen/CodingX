@@ -2,7 +2,7 @@
 
 ## 功能用途
 
-聊天页和 desktop 端在 AI 调用本地文件工具写代码时，会实时展示正在编辑和已编辑的文件差异。用户可以在助手消息内点击文件查看 diff 弹窗，也可以通过右侧代码审查栏切换本轮编辑、上轮对话、未暂存、已暂存、提交和分支等差异来源。
+聊天页和 desktop 端在 AI 调用本地文件工具写代码时，会实时展示正在编辑和已编辑的文件差异。用户可以在助手消息内点击文件，并在该文件行下方展开 diff 面板，也可以通过右侧代码审查栏切换本轮编辑、上轮对话、未暂存、已暂存、提交和分支等差异来源。
 
 ## 使用入口
 
@@ -12,7 +12,7 @@
 
 1. 模型发起文件工具调用时，`useChatWorkspace` 从 `tool-call start` 事件的 `path`、`content` 或 `patch` 参数构造临时 `fileDiffs`，过程卡片立即带上 `pending` 状态。前端消息区因此能在真实写盘前显示“正在编辑 N 个文件”，并用临时 unified diff 展示 AI 准备新增或替换的内容。
 2. 后端 `CodexBuiltinChatToolExecutor` 执行 `write`、`edit`、`apply_patch` 后生成真实文件级 diff，并把 `fileDiffs`、`diffSummary` 和 `diffPreview` 写入工具结果 metadata。`ChatApplicationService` 持久化执行步骤 metadata，历史回放时前端可以从 `executionSteps.metadataJson.resultMetadata` 恢复同一批差异。
-3. `ChatView` 收集助手消息过程卡片中的 `fileDiffs`，在消息内渲染编辑文件摘要。用户点击文件行时打开自定义 `FileDiffDialog`，弹窗内使用 `DiffTextBlock` 对 `+`、`-`、hunk 和普通行做分色展示，不使用浏览器原生弹窗。
+3. `ChatView` 收集助手消息过程卡片中的 `fileDiffs`，在消息内渲染编辑文件摘要。用户点击文件行时在该行下方展开 `InlineFileDiffPanel`，面板内使用 `DiffTextBlock` 对 `+`、`-`、hunk 和普通行做分色展示；面板保留在文件列表上下文内，不使用浏览器原生弹窗，也不再额外打开全屏遮罩弹窗。
 4. `ChatView` 在右上角渲染代码差异切换按钮，按钮只控制侧栏显隐，不影响消息区的实时文件摘要。`CodeReviewSidebar` 展开后默认展示本轮 AI 编辑差异，用户可点击面板右上角关闭按钮收起；拖动面板左边缘时按右侧固定面板计算宽度，向左拖宽、向右拖窄，并限制在最小和最大宽度之间。
 5. 侧栏切到“上轮对话”时只读取上一条带差异的助手消息。切到“未暂存”“已暂存”“提交”或“分支”时，前端通过 `ChatApi.invokeTool(token, 'git_diff', { mode })` 请求当前 workspace 差异，并用同一套文件列表和 diff 视图展示结果。
 6. `git_diff` 工具只在已绑定工作区内执行 git 命令。未检测到差异时返回空 `fileDiffs` 和中文提示；检测到差异时解析 unified diff，按文件路径、增删行数和完整 diff 文本返回给前端。
@@ -24,7 +24,7 @@
 - `backend/src/main/java/com/codingx/tool/application/service/ChatToolUserService.java`：把 `git_diff` 纳入聊天工具调用白名单。
 - `frontend/user/src/views/chat/fileDiffs.ts`：统一归一化后端 diff metadata，并从工具开始参数构造临时 pending diff。
 - `frontend/user/src/views/chat/useChatWorkspace.ts`：在 SSE start、complete 和历史 replay 链路中写入 `fileDiffs`、`diffSummary`。
-- `frontend/user/src/views/ChatView.tsx`：渲染消息内编辑文件摘要、diff 弹窗和右侧代码审查栏。
+- `frontend/user/src/views/ChatView.tsx`：渲染消息内编辑文件摘要、行内 diff 面板和右侧代码审查栏。
 - `frontend/user/src/views/chat/chatApi.ts`：提供统一工具调用入口，供右侧栏读取工作区 git diff。
 
 ## 关键数据结构
@@ -40,4 +40,4 @@
 - `mvn -Dtest=CodexBuiltinChatToolExecutorTest#shortToolNamesShouldOperateInsideBoundWorkspace+applyPatchShouldWriteFileAndReturnDiff+gitDiffShouldReturnUnstagedFileDiffsForReviewSidebar test`
 - `mvn -Dtest=ChatApplicationToolCallFlowTest#sendMessageExecutesModelToolCallAndContinuesWithToolEvidence test`
 - `mvn -Dtest=ChatToolUserServiceTest test`
-- desktop 端绑定 `D:\code\test` 后发送写代码请求，验证工具执行期间出现“正在编辑”，完成后消息区和右侧栏均展示文件差异，并保存浏览器/CDP 截图证据。
+- desktop 端绑定 `D:\code\test` 后发送写代码请求，验证工具执行期间出现“正在编辑”，完成后消息区和右侧栏均展示文件差异；点击消息内文件行后 diff 面板应在该文件列表下方展开，且不出现全屏遮罩弹窗，并保存浏览器/CDP 截图证据。

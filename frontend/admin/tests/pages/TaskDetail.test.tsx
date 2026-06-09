@@ -1,6 +1,6 @@
 import '@testing-library/jest-dom/vitest';
 
-import { cleanup, render, screen, within } from '@testing-library/react';
+import { cleanup, render, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -40,9 +40,9 @@ describe('TaskDetail', () => {
   });
 
   /**
-   * 没有目标时应给出明确空状态，同时保留消息列表。
+   * 没有目标时不渲染目标记录区，避免空状态挤占会话消息排查空间。
    */
-  it('renders empty goal state when conversation has no goals', async () => {
+  it('hides goal section when conversation has no goals', async () => {
     vi.mocked(AdminChatApi.getConversationDetail).mockResolvedValueOnce({
       ...buildConversationDetailFixture(),
       goals: [],
@@ -50,9 +50,9 @@ describe('TaskDetail', () => {
 
     renderTaskDetailPage('/tasks/2001');
 
-    const goalSection = await screen.findByTestId('admin-conversation-goals-section');
-    expect(within(goalSection).getByText('当前会话暂无目标记录')).toBeInTheDocument();
-    expect(screen.getByText('怎么报销？')).toBeInTheDocument();
+    expect(await screen.findByText('怎么报销？')).toBeInTheDocument();
+    expect(screen.queryByTestId('admin-conversation-goals-section')).not.toBeInTheDocument();
+    expect(screen.queryByText('当前会话暂无目标记录')).not.toBeInTheDocument();
   });
 
   /**

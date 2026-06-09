@@ -78,7 +78,7 @@ export function TaskDetail() {
 
           <MetadataStrip items={buildConversationMetadataItems(detail)} />
 
-          <GoalRecordsSection goals={detail.goals ?? []} />
+          {(detail.goals?.length ?? 0) > 0 ? <GoalRecordsSection goals={detail.goals ?? []} /> : null}
 
           <div
             className="border-t border-border-hairline pt-xl"
@@ -105,6 +105,10 @@ export function TaskDetail() {
  * 目标记录区块展示 chat_goal、chat_goal_step 和 chat_goal_event 三张表的只读排障信息。
  */
 function GoalRecordsSection({ goals }: { goals: AdminChatGoalRecord[] }) {
+  if (goals.length === 0) {
+    return null;
+  }
+
   return (
     <section
       data-testid="admin-conversation-goals-section"
@@ -120,15 +124,11 @@ function GoalRecordsSection({ goals }: { goals: AdminChatGoalRecord[] }) {
         </Typography.Text>
       </div>
 
-      {goals.length === 0 ? (
-        <Empty description="当前会话暂无目标记录" />
-      ) : (
-        <div className="space-y-lg">
-          {goals.map((goal, index) => (
-            <GoalRecordItem key={goal.id || index} goal={goal} index={index} />
-          ))}
-        </div>
-      )}
+      <div className="space-y-lg">
+        {goals.map((goal, index) => (
+          <GoalRecordItem key={goal.id || index} goal={goal} index={index} />
+        ))}
+      </div>
     </section>
   );
 }

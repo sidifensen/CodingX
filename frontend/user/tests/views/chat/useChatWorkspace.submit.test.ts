@@ -800,6 +800,207 @@ describe('useChatWorkspace submit behavior', () => {
   });
 
   /**
+   * 后端在 meta 后异常断开且没有 finish/cancel/error 终态时，前端必须主动收敛运行态。
+   * 业务边界：否则左侧会话会继续显示后台执行 spinner，用户也会误以为任务仍在运行。
+   */
+  it('SSE空终止后应清理侧栏运行态并标记助手消息异常', async () => {
+    const readQueue: Array<{
+      resolve: (value: ReadableStreamReadResult<Uint8Array>) => void;
+      reject: (reason?: unknown) => void;
+    }> = [];
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (isConversationListRequest(url)) {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (
+        url === '/api/chat/sample-questions' ||
+        url === '/api/chat/experts' ||
+        url === '/api/chat/skills' ||
+        url === '/api/chat/mcps'
+      ) {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (url.includes('/api/chat/stream')) {
+        return {
+          ok: true,
+          status: 200,
+          body: {
+            getReader: () => ({
+              read: vi.fn(
+                () =>
+                  new Promise<ReadableStreamReadResult<Uint8Array>>((resolve, reject) => {
+                    readQueue.push({ resolve, reject });
+                  }),
+              ),
+            }),
+          },
+        } as unknown as Response;
+      }
+      throw new Error(`Unhandled fetch in empty stream terminal test: ${url}`);
+    });
+
+    const { result } = renderHook(() => useChatWorkspace(true));
+    await waitFor(() => {
+      expect(result.current.isBootstrapping).toBe(false);
+    });
+
+    await act(async () => {
+      result.current.setInputValue('执行一个会返回空响应的任务');
+    });
+    const submitPromise = result.current.submitMessage();
+    await waitFor(() => {
+      expect(readQueue.length).toBeGreaterThan(0);
+    });
+
+    await act(async () => {
+      readQueue.shift()?.resolve({
+        done: false,
+        value: new TextEncoder().encode(
+          'event:meta\ndata:{"conversationId":"2001","taskId":"9001"}\n\n',
+        ),
+      });
+    });
+    await waitFor(() => {
+      expect(result.current.conversations[0]?.activeTaskStatus).toBe('RUNNING');
+    });
+
+    await act(async () => {
+      readQueue.shift()?.resolve({ done: true, value: undefined });
+    });
+    await act(async () => {
+      await submitPromise;
+    });
+
+    const stoppedConversation = result.current.conversations.find((item) => item.id === '2001');
+    const stoppedSidebarConversation = result.current.workspaceGroups
+      .flatMap((group) => group.conversations)
+      .find((item) => item.id === '2001');
+    const assistantMessage = result.current.messages.find((message) => message.role === 'ASSISTANT');
+    expect(result.current.isStreaming).toBe(false);
+    expect(stoppedConversation?.activeTaskStatus).toBeUndefined();
+    expect(stoppedSidebarConversation?.activeTaskStatus).toBeUndefined();
+    expect(assistantMessage).toEqual(
+      expect.objectContaining({
+        status: 'error',
+        errorMessage: '服务返回空响应，请检查后端服务状态',
+      }),
+    );
+  });
+
+  /**
+   * 后端主动下发 error 终态时，也必须清理 meta 阶段写入的运行态。
+   */
+  it('SSE错误终态后应清理侧栏运行态', async () => {
+    const readQueue: Array<{
+      resolve: (value: ReadableStreamReadResult<Uint8Array>) => void;
+      reject: (reason?: unknown) => void;
+    }> = [];
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (isConversationListRequest(url)) {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (
+        url === '/api/chat/sample-questions' ||
+        url === '/api/chat/experts' ||
+        url === '/api/chat/skills' ||
+        url === '/api/chat/mcps'
+      ) {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (url.includes('/api/chat/stream')) {
+        return {
+          ok: true,
+          status: 200,
+          body: {
+            getReader: () => ({
+              read: vi.fn(
+                () =>
+                  new Promise<ReadableStreamReadResult<Uint8Array>>((resolve, reject) => {
+                    readQueue.push({ resolve, reject });
+                  }),
+              ),
+            }),
+          },
+        } as unknown as Response;
+      }
+      throw new Error(`Unhandled fetch in error stream terminal test: ${url}`);
+    });
+
+    const { result } = renderHook(() => useChatWorkspace(true));
+    await waitFor(() => {
+      expect(result.current.isBootstrapping).toBe(false);
+    });
+
+    await act(async () => {
+      result.current.setInputValue('执行一个会失败的任务');
+    });
+    const submitPromise = result.current.submitMessage();
+    await waitFor(() => {
+      expect(readQueue.length).toBeGreaterThan(0);
+    });
+
+    await act(async () => {
+      readQueue.shift()?.resolve({
+        done: false,
+        value: new TextEncoder().encode(
+          'event:meta\ndata:{"conversationId":"2001","taskId":"9001"}\n\n',
+        ),
+      });
+    });
+    await waitFor(() => {
+      expect(result.current.conversations[0]?.activeTaskStatus).toBe('RUNNING');
+    });
+
+    await act(async () => {
+      readQueue.shift()?.resolve({
+        done: false,
+        value: new TextEncoder().encode(
+          'event:error\ndata:{"message":"服务返回空响应，请检查后端服务状态"}\n\n',
+        ),
+      });
+    });
+    await waitFor(() => {
+      expect(readQueue.length).toBeGreaterThan(0);
+    });
+    await act(async () => {
+      readQueue.shift()?.resolve({ done: true, value: undefined });
+    });
+    await act(async () => {
+      await submitPromise;
+    });
+
+    const stoppedConversation = result.current.conversations.find((item) => item.id === '2001');
+    const stoppedSidebarConversation = result.current.workspaceGroups
+      .flatMap((group) => group.conversations)
+      .find((item) => item.id === '2001');
+    const assistantMessage = result.current.messages.find((message) => message.role === 'ASSISTANT');
+    expect(stoppedConversation?.activeTaskStatus).toBeUndefined();
+    expect(stoppedSidebarConversation?.activeTaskStatus).toBeUndefined();
+    expect(assistantMessage).toEqual(
+      expect.objectContaining({
+        status: 'error',
+        errorMessage: '服务返回空响应，请检查后端服务状态',
+      }),
+    );
+  });
+
+  /**
    * 浏览器刷新会中断当前页面的 SSE 连接，但后端任务仍在运行；此时不能把本地半截回答标记为用户停止。
    */
   it('刷新页面时应只脱离本地流并保留后台运行快照', async () => {

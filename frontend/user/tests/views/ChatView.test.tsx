@@ -2168,6 +2168,61 @@ describe('ChatView', () => {
   });
 
   /**
+   * 服务异常终止后，临时用户消息后面的助手消息会进入 error 终态，此时仍必须允许用户编辑后重发。
+   */
+  it('异常终止后的临时用户消息应支持编辑重发', async () => {
+    const resendUserMessage = vi.fn().mockResolvedValue(undefined);
+
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          resendUserMessage,
+          messages: [
+            {
+              id: 'optimistic-user-1779773736000',
+              conversationId: '2001',
+              runId: '9001',
+              role: 'USER',
+              content: '开启目标模式，继续执行',
+              status: 'COMPLETED',
+            },
+            {
+              id: 'optimistic-assistant-1779773736001',
+              conversationId: '2001',
+              runId: '9001',
+              role: 'ASSISTANT',
+              content: '',
+              processCards: [],
+              timelineItems: [],
+              status: 'error',
+              errorMessage: '服务返回空响应，请检查后端服务状态',
+            },
+          ],
+          executionSteps: [],
+          references: [],
+          artifacts: [],
+        })}
+      />,
+    );
+
+    const editButton = screen.getByTestId('edit-user-message-optimistic-user-1779773736000');
+    expect(editButton).not.toBeDisabled();
+
+    fireEvent.click(editButton);
+    const editor = screen.getByLabelText('编辑用户消息');
+    fireEvent.change(editor, { target: { value: '修改目标后重新执行' } });
+    fireEvent.click(screen.getByRole('button', { name: '发送' }));
+    await waitFor(() => {
+      expect(resendUserMessage).toHaveBeenCalledWith(
+        'optimistic-user-1779773736000',
+        '修改目标后重新执行',
+      );
+    });
+  });
+
+  /**
    * 分享应进入明显的轮次选择模式：聊天区卡片化、底部输入区隐藏，并默认选中触发分享的问答轮次。
    */
   it('应进入分享轮次选择模式并隐藏输入区', async () => {

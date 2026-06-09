@@ -3494,10 +3494,12 @@ export function useChatWorkspace(
   ) => {
     const reader = response.body?.getReader();
     if (!reader) {
+      finalizeUnexpectedStreamEnd(optimisticAssistantId, streamSessionId);
       return;
     }
     const decoder = new TextDecoder();
     let buffer = '';
+    let hasTerminalEvent = false;
 
     while (true) {
       const { done, value } = await reader.read();
@@ -3505,6 +3507,10 @@ export function useChatWorkspace(
         const { events } = extractSseEvents(`${buffer}\n\n`);
         for (const event of events) {
           applySseEvent(event.event, event.data, optimisticAssistantId, streamSessionId, submitLockId);
+          hasTerminalEvent = hasTerminalEvent || isTerminalSseEvent(event.event);
+        }
+        if (!hasTerminalEvent) {
+          finalizeUnexpectedStreamEnd(optimisticAssistantId, streamSessionId);
         }
         break;
       }
@@ -3513,8 +3519,100 @@ export function useChatWorkspace(
       buffer = remainder;
       for (const event of events) {
         applySseEvent(event.event, event.data, optimisticAssistantId, streamSessionId, submitLockId);
+        hasTerminalEvent = hasTerminalEvent || isTerminalSseEvent(event.event);
       }
     }
+  };
+
+  /**
+   * SSE 连接自然结束但没有终态事件时，将本轮流收敛为异常终态，避免侧栏运行态和编辑锁残留。
+   * @param optimisticAssistantId 当前流式助手消息标识。
+   * @param streamSessionId 当前流会话编号。
+   */
+  const finalizeUnexpectedStreamEnd = (
+    optimisticAssistantId: string,
+    streamSessionId: number,
+  ) => {
+    if (!isActiveStreamSession(streamSessionId)) {
+      return;
+    }
+    finalizeNonSuccessStreamTerminal(
+      optimisticAssistantId,
+      streamSessionId,
+      undefined,
+      'error',
+      UserErrorMessages.API_EMPTY_RESPONSE,
+    );
+  };
+
+  /**
+   * 收敛非成功终态流，清理后台运行投影并恢复输入区可操作状态。
+   * @param optimisticAssistantId 当前流式助手消息标识。
+   * @param streamSessionId 当前流会话编号。
+   * @param submitLockId 当前提交锁编号。
+   * @param status 助手消息终态。
+   * @param errorMessage 错误提示；仅错误终态需要写入。
+   * @param conversationIdOverride 终态事件显式携带的会话标识。
+   */
+  const finalizeNonSuccessStreamTerminal = (
+    optimisticAssistantId: string,
+    streamSessionId: number,
+    submitLockId: number | undefined,
+    status: 'cancelled' | 'error',
+    errorMessage?: string,
+    conversationIdOverride?: string | null,
+  ) => {
+    const terminalConversationId = String(
+      conversationIdOverride ??
+        streamStateRef.current?.conversationId ??
+        activeConversationIdRef.current ??
+        '',
+    ).trim();
+    hideStreamQueueState();
+    clearConversationRunningTaskProjection(terminalConversationId);
+    if (status === 'error') {
+      setStreamError(errorMessage ?? UserErrorMessages.CHAT_REQUEST_FAILED);
+    }
+    const nextMessages = messagesRef.current.map((message) =>
+      message.id === optimisticAssistantId
+        ? {
+            ...message,
+            status,
+            errorMessage: status === 'error' ? errorMessage : message.errorMessage,
+            searchProgress: message.searchProgress
+              ? {
+                  ...message.searchProgress,
+                  status,
+                }
+              : undefined,
+            processCards: finalizeProcessCards(message.processCards ?? [], status),
+            timelineItems: finalizeTimelineProcessCards(
+              message.timelineItems,
+              status,
+            ),
+          }
+        : message,
+    );
+    setMessages(nextMessages);
+    if (terminalConversationId && terminalConversationId !== 'pending-conversation') {
+      persistConversationState(terminalConversationId, conversationsRef.current, {
+        messages: nextMessages,
+        executionSteps: executionStepsRef.current,
+        references: referencesRef.current,
+        artifacts: artifactsRef.current,
+        currentExperts: currentExpertsRef.current,
+        currentSkills: currentSkillsRef.current,
+        currentMcps: currentMcpsRef.current,
+      });
+    }
+    if (activeStreamSessionIdRef.current === streamSessionId) {
+      activeStreamSessionIdRef.current = null;
+    }
+    if (submitLockId != null && submitMessageInFlightRef.current === submitLockId) {
+      submitMessageInFlightRef.current = null;
+    }
+    abortControllerRef.current = null;
+    setIsStreaming(false);
   };
 
   /**
@@ -3616,24 +3714,12 @@ export function useChatWorkspace(
     if (eventName === 'reject' && isRecord(payload)) {
       const reason = String(payload.reason ?? '').trim();
       const resolvedMessage = resolveQueueRejectMessage(reason);
-      hideStreamQueueState();
-      setStreamError(resolvedMessage);
-      setMessages((previousMessages) =>
-        previousMessages.map((message) =>
-          message.id === optimisticAssistantId
-            ? {
-                ...message,
-                status: 'error',
-                errorMessage: resolvedMessage,
-                searchProgress: message.searchProgress
-                  ? {
-                      ...message.searchProgress,
-                      status: 'error',
-                    }
-                  : undefined,
-              }
-            : message,
-        ),
+      finalizeNonSuccessStreamTerminal(
+        optimisticAssistantId,
+        streamSessionId,
+        submitLockId,
+        'error',
+        resolvedMessage,
       );
       return;
     }
@@ -4021,60 +4107,31 @@ export function useChatWorkspace(
     }
 
     if (eventName === 'cancel') {
-      hideStreamQueueState();
-      clearConversationRunningTaskProjection(
+      const cancelConversationId =
         isRecord(payload)
           ? String(payload.conversationId ?? streamStateRef.current?.conversationId ?? activeConversationIdRef.current ?? '')
-          : streamStateRef.current?.conversationId ?? activeConversationIdRef.current,
-      );
-      setMessages((previousMessages) =>
-        previousMessages.map((message) =>
-          message.id === optimisticAssistantId
-              ? {
-                  ...message,
-                  status: 'cancelled',
-                  searchProgress: message.searchProgress
-                  ? {
-                      ...message.searchProgress,
-                      status: 'cancelled',
-                    }
-                  : undefined,
-                  processCards: finalizeProcessCards(message.processCards ?? [], 'cancelled'),
-                  timelineItems: finalizeTimelineProcessCards(
-                    message.timelineItems,
-                    'cancelled',
-                  ),
-              }
-            : message,
-        ),
+          : streamStateRef.current?.conversationId ?? activeConversationIdRef.current;
+      finalizeNonSuccessStreamTerminal(
+        optimisticAssistantId,
+        streamSessionId,
+        submitLockId,
+        'cancelled',
+        undefined,
+        cancelConversationId,
       );
       return;
     }
 
     if (eventName === 'error' && isRecord(payload)) {
-      hideStreamQueueState();
-      setMessages((previousMessages) =>
-        previousMessages.map((message) =>
-          message.id === optimisticAssistantId
-              ? {
-                  ...message,
-                  status: 'error',
-                  errorMessage: String(payload.message ?? UserErrorMessages.CHAT_REQUEST_FAILED),
-                  searchProgress: message.searchProgress
-                  ? {
-                      ...message.searchProgress,
-                      status: 'error',
-                    }
-                  : undefined,
-                  processCards: finalizeProcessCards(message.processCards ?? [], 'error'),
-                  timelineItems: finalizeTimelineProcessCards(
-                    message.timelineItems,
-                    'error',
-                  ),
-              }
-            : message,
-        ),
+      finalizeNonSuccessStreamTerminal(
+        optimisticAssistantId,
+        streamSessionId,
+        submitLockId,
+        'error',
+        String(payload.message ?? UserErrorMessages.CHAT_REQUEST_FAILED),
+        String(payload.conversationId ?? streamStateRef.current?.conversationId ?? activeConversationIdRef.current ?? ''),
       );
+      return;
     }
   };
 
@@ -5505,6 +5562,21 @@ function isOptimisticAssistantMessageId(messageId: string) {
     messageId.startsWith('optimistic-edit-assistant-') ||
     messageId.startsWith('optimistic-regenerate-assistant-') ||
     messageId.startsWith('resumed-assistant-')
+  );
+}
+
+/**
+ * 判断 SSE 事件是否已经给出本轮流式会话的最终状态。
+ * @param eventName 原始事件名。
+ * @returns 是否为终态事件。
+ */
+function isTerminalSseEvent(eventName: string) {
+  const normalizedEventName = String(eventName ?? '').trim().toLowerCase();
+  return (
+    normalizedEventName === 'finish' ||
+    normalizedEventName === 'cancel' ||
+    normalizedEventName === 'error' ||
+    normalizedEventName === 'reject'
   );
 }
 

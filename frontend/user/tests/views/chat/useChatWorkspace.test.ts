@@ -2483,7 +2483,11 @@ describe('useChatWorkspace', () => {
       }
       if (url.includes('/api/chat/stream')) {
         streamFetchMock(url);
-        return new Response('', { status: 200 });
+        // 成功路径必须返回明确 finish 终态；空 SSE 现在会被前端视为异常终止。
+        return new Response(
+          'event:finish\ndata:{"conversationId":"local-fallback-1","content":"本地回答","title":"本地项目问题"}\n\n',
+          { status: 200 },
+        );
       }
       throw new Error(`Unhandled fetch in local workspace fallback send test: ${url}`);
     });
@@ -2568,7 +2572,11 @@ describe('useChatWorkspace', () => {
       }
       if (url.includes('/api/chat/stream')) {
         streamFetchMock(url);
-        return new Response('', { status: 200 });
+        // 成功路径必须返回明确 finish 终态；空 SSE 现在会被前端视为异常终止。
+        return new Response(
+          'event:finish\ndata:{"conversationId":"local-default-1","content":"本地回答","title":"本地历史问题"}\n\n',
+          { status: 200 },
+        );
       }
       throw new Error(`Unhandled fetch in local default history send test: ${url}`);
     });

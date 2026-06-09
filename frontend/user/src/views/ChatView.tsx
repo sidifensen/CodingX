@@ -1332,7 +1332,8 @@ export default function ChatView({
                   : null;
                 const canMutateUserMessage =
                   PERSISTED_MESSAGE_ID_PATTERN.test(message.id) ||
-                  (isOptimisticUserMessageId(message.id) && nextAssistantMessage?.status === 'cancelled');
+                  (isOptimisticUserMessageId(message.id) &&
+                    (nextAssistantMessage?.status === 'cancelled' || nextAssistantMessage?.status === 'error'));
                 const referenceMessageId = isAssistant
                   ? resolveAssistantReferenceMessageId(messages, index)
                   : null;

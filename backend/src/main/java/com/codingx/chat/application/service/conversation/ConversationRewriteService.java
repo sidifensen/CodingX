@@ -105,10 +105,10 @@ public class ConversationRewriteService {
      */
     private boolean shouldBypassPromptRewrite(List<String> history, String question) {
         boolean hasPriorUserContext = hasPriorUserContext(history, question);
-        if (hasPriorUserContext && mayDependOnPriorContext(question)) {
+        if (hasPriorUserContext && ConversationPreflightSignals.mayDependOnPriorContext(question)) {
             return false;
         }
-        if (question.contains("销售")) {
+        if (ConversationPreflightSignals.containsAnyRaw(question, ConversationPreflightSignals.METRIC_SHORT_QUESTION_MARKERS)) {
             return true;
         }
         return isSelfContainedSingleQuestion(question);
@@ -140,42 +140,7 @@ public class ConversationRewriteService {
      * 归一化历史问题文本，避免标点和空白导致本轮输入被误判为上一轮上下文。
      */
     private String normalizeForHistoryCompare(String value) {
-        return StrUtil.blankToDefault(value, "")
-            .replaceAll("[\\p{Punct}\\s，。？！、：；“”‘’（）【】《》]+", "")
-            .toLowerCase(java.util.Locale.ROOT);
-    }
-
-    /**
-     * 判断本轮问题是否明显依赖上一轮上下文。
-     * 业务意图：长会话里大量问题是新的独立问题，不能因为 history 非空就每轮等待改写模型；
-     * 只有包含指代、延续、上文引用或省略动作的问题，才保留改写模型用于补全上下文。
-     * @param question 当前问题。
-     * @return true 表示需要结合上一轮上下文改写。
-     */
-    private boolean mayDependOnPriorContext(String question) {
-        String normalizedQuestion = normalizeForHistoryCompare(question);
-        if (StrUtil.isBlank(normalizedQuestion)) {
-            return false;
-        }
-        return StrUtil.containsAny(
-            normalizedQuestion,
-            "这个",
-            "那个",
-            "上面",
-            "前面",
-            "刚才",
-            "上一轮",
-            "上一个",
-            "继续",
-            "接着",
-            "再来",
-            "按照刚才",
-            "基于上面",
-            "帮我改",
-            "怎么改",
-            "这个怎么",
-            "那怎么"
-        );
+        return ConversationPreflightSignals.normalizeText(value);
     }
 
     /**
@@ -187,38 +152,15 @@ public class ConversationRewriteService {
      */
     private boolean isSelfContainedSingleQuestion(String question) {
         String trimmedQuestion = StrUtil.trim(question);
-        if (StrUtil.isBlank(trimmedQuestion) || trimmedQuestion.length() > 80) {
+        if (StrUtil.isBlank(trimmedQuestion) || trimmedQuestion.length() > ConversationPreflightSignals.SELF_CONTAINED_QUESTION_MAX_LENGTH) {
             return false;
         }
-        if (isGreetingQuestion(trimmedQuestion)
-            || mayNeedQuestionSplit(trimmedQuestion)
-            || mayNeedFreshSearchRewrite(trimmedQuestion)) {
+        if (ConversationPreflightSignals.isGreetingQuestion(trimmedQuestion)
+            || ConversationPreflightSignals.mayNeedQuestionSplit(trimmedQuestion)
+            || ConversationPreflightSignals.hasFreshSearchSignal(trimmedQuestion)) {
             return false;
         }
         return trimmedQuestion.length() >= 3;
-    }
-
-    /**
-     * 简单问候已由聊天主流程快答处理；改写服务保留原模型兼容测试和兜底语义。
-     */
-    private boolean isGreetingQuestion(String question) {
-        String normalized = question.replaceAll("[\\p{Punct}\\s，。？！、：；“”‘’（）【】《》]+", "")
-            .toLowerCase(java.util.Locale.ROOT);
-        return List.of("你好", "您好", "你好呀", "你好啊", "嗨", "哈喽", "hello", "hi", "在吗").contains(normalized);
-    }
-
-    /**
-     * 多诉求问题需要保留模型拆分能力，避免把搜索、MCP 和普通回答混在一个子问题里路由。
-     */
-    private boolean mayNeedQuestionSplit(String question) {
-        return StrUtil.containsAny(question, "分别", "然后", "以及", "同时", "顺便", "并且", "另外", "接着", "\n", "；", ";");
-    }
-
-    /**
-     * 时效和显式搜索问题保留改写模型入口，避免影响后续搜索问题抽取和权威证据排序。
-     */
-    private boolean mayNeedFreshSearchRewrite(String question) {
-        return StrUtil.containsAny(question, "搜索", "搜一下", "联网", "查询", "查一下", "最新", "最近", "今天", "当前", "现在", "版本", "汇率", "新闻", "发布");
     }
 
     /**

@@ -58,6 +58,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -571,6 +574,51 @@ class ChatApplicationServiceTest {
             eq(messageCaptor.getAllValues().get(0)),
             eq(messageCaptor.getAllValues().get(1))
         );
+        ChatExecutionContext.clear();
+    }
+
+    /**
+     * 普通模型回复前的治理上下文应在意图路由期间提前预加载，避免每轮回答都串行等待上下文读取。
+     */
+    @Test
+    void sendMessageShouldPreloadGovernanceContextBeforeIntentRouteCompletes() {
+        bindRunContext();
+        ChatConversation conversation = ChatConversation.create(1L, "Governance", 1002L, 3001L, ChatConversationStatus.ACTIVE);
+        CountDownLatch governanceContextStarted = new CountDownLatch(1);
+        when(chatConversationRepository.requireById(1L)).thenReturn(conversation);
+        when(chatMessageRepository.findByConversationId(1L)).thenReturn(new ArrayList<>());
+        when(chatAttachmentService.requireOwnedAttachments(any(), eq(1L), eq(1002L))).thenReturn(List.of());
+        when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+            new ConversationRewriteResult("请帮我写一个 Java 工具类", false, List.of("请帮我写一个 Java 工具类"))
+        );
+        when(governanceAgentContextService.buildAgentContextAsync(1002L, 3001L, "请帮我写一个 Java 工具类"))
+            .thenAnswer(invocation -> {
+                governanceContextStarted.countDown();
+                return CompletableFuture.completedFuture("# 仓库规范文件\n## AGENTS.md\n提交信息必须使用中文");
+            });
+        when(conversationIntentService.route("请帮我写一个 Java 工具类", false)).thenAnswer(invocation -> {
+            assertTrue(governanceContextStarted.await(1, TimeUnit.SECONDS), "治理上下文应在意图路由完成前启动预加载");
+            return new ConversationIntentDecision("chat.normal", ConversationIntentAction.DIRECT, null);
+        });
+        when(chatIntentNodeRepository.findByIntentCode("chat.normal")).thenReturn(null);
+        when(chatSkillContextService.buildSkillContext(any())).thenReturn("");
+        when(chatExpertContextService.buildExpertContext(any())).thenReturn("");
+        when(conversationSummaryService.buildModelHistory(any(), any())).thenAnswer(invocation -> invocation.getArgument(1));
+        when(llmResponseCleaner.clean(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(conversationTitleService.generateTitle(any(), any())).thenReturn("治理预加载");
+        doAnswer(invocation -> {
+            AiChatClient.StreamHandler handler = invocation.getArgument(2);
+            handler.onDelta("已完成");
+            handler.onComplete();
+            return null;
+        }).when(aiChatClient).streamChat(any(), eq(false), any());
+
+        chatApplicationService.sendMessage(
+            new SendChatMessageCommand(1L, "请帮我写一个 Java 工具类", false),
+            1002L
+        );
+
+        verify(governanceAgentContextService).buildAgentContextAsync(1002L, 3001L, "请帮我写一个 Java 工具类");
         ChatExecutionContext.clear();
     }
 

@@ -81,22 +81,6 @@ public class ChatApplicationService {
 
     private static final int PROMPT_CONTEXT_LOG_PREVIEW_LENGTH = 1_800;
     private static final String QUICK_GREETING_REPLY = "你好，我在。你可以直接说要查资料、改代码、看项目，或让我帮你梳理问题。";
-    private static final Set<String> QUICK_GREETING_TEXTS = Set.of(
-        "你好",
-        "您好",
-        "你好呀",
-        "你好啊",
-        "嗨",
-        "哈喽",
-        "hello",
-        "hi",
-        "在吗",
-        "早上好",
-        "上午好",
-        "中午好",
-        "下午好",
-        "晚上好"
-    );
     /** 会话聚合仓储，负责读取与更新会话主状态（归属、标题、最后活跃时间等） */
     private final ChatConversationRepository chatConversationRepository;
     /** 消息仓储，负责会话消息历史读写与按会话回放 */
@@ -331,6 +315,7 @@ public class ChatApplicationService {
         );
         List<SearchReferenceCandidate> searchReferences = List.of();
         String rewrittenQuestion = rewriteResult.rewrite();
+        CompletableFuture<String> governanceContextFuture = preloadGovernanceAgentContext(conversation, rewrittenQuestion);
         boolean mcpEnabled = command.mcpCodes() != null && !command.mcpCodes().isEmpty();
         List<SubQuestionIntentDecision> subQuestionDecisions = normalizeSelectedSkillShortQuestionDecisions(
             suppressAutomaticSearchDecisions(
@@ -464,7 +449,7 @@ public class ChatApplicationService {
             command.skillCodes(),
             command.expertCode(),
             searchReferences,
-            buildGovernanceAgentContext(conversation, rewrittenQuestion),
+            resolveGovernanceAgentContext(conversation, rewrittenQuestion, governanceContextFuture),
             command.deepThinking(),
             command.planMode()
         );
@@ -789,6 +774,7 @@ public class ChatApplicationService {
         );
         List<SearchReferenceCandidate> searchReferences = List.of();
         String rewrittenQuestion = rewriteResult.rewrite();
+        CompletableFuture<String> governanceContextFuture = preloadGovernanceAgentContext(conversation, rewrittenQuestion);
         boolean mcpEnabled = command.mcpCodes() != null && !command.mcpCodes().isEmpty();
         List<SubQuestionIntentDecision> subQuestionDecisions = normalizeSelectedSkillShortQuestionDecisions(
             suppressAutomaticSearchDecisions(
@@ -926,7 +912,7 @@ public class ChatApplicationService {
             selectedSkillCodes,
             command.expertCode(),
             searchReferences,
-            buildGovernanceAgentContext(conversation, rewrittenQuestion),
+            resolveGovernanceAgentContext(conversation, rewrittenQuestion, governanceContextFuture),
             command.deepThinking(),
             command.planMode()
         );
@@ -1087,18 +1073,7 @@ public class ChatApplicationService {
             && CollUtil.isEmpty(command.skillPaths())
             && StrUtil.isBlank(command.expertCode())
             && StrUtil.isBlank(command.repositoryPath())
-            && QUICK_GREETING_TEXTS.contains(normalizeQuickGreetingText(plainQuestion));
-    }
-
-    /**
-     * 将问候文本归一为稳定匹配键，兼容中英文大小写、空白和常见标点。
-     * @param question 用户输入。
-     * @return 用于集合匹配的问候键。
-     */
-    private String normalizeQuickGreetingText(String question) {
-        return StrUtil.blankToDefault(question, "")
-            .replaceAll("[\\p{Punct}\\s，。？！、：；“”‘’（）【】《》]+", "")
-            .toLowerCase(java.util.Locale.ROOT);
+            && ConversationPreflightSignals.isGreetingQuestion(plainQuestion);
     }
 
     /**
@@ -1319,6 +1294,61 @@ public class ChatApplicationService {
             );
         } catch (RuntimeException exception) {
             log.warn("治理上下文构建失败: conversationId={}, message={}", conversation.getId(), exception.getMessage());
+            return "";
+        }
+    }
+
+    /**
+     * 提前启动治理上下文构建，让仓库规范/长期记忆读取与意图路由、搜索/MCP 判断并行。
+     * 业务约束：预加载只影响模型输入增强，不能阻断短路回复；异常由结果读取阶段兜底为空上下文。
+     * @param conversation 当前会话。
+     * @param rewrittenQuestion 改写后的问题。
+     * @return 治理上下文异步结果，缺少上下文服务时返回已完成的空结果。
+     */
+    private CompletableFuture<String> preloadGovernanceAgentContext(ChatConversation conversation, String rewrittenQuestion) {
+        if (governanceAgentContextService == null || conversation == null) {
+            return CompletableFuture.completedFuture("");
+        }
+        try {
+            // 步骤 1：交给治理服务的前置执行器直接并行读取，不额外提交父任务占用公共线程池。
+            return governanceAgentContextService.buildAgentContextAsync(
+                conversation.getCreatedBy(),
+                conversation.getWorkspaceId(),
+                rewrittenQuestion
+            );
+        } catch (RuntimeException exception) {
+            log.warn(
+                "治理上下文预加载启动失败: conversationId={}, message={}",
+                conversation.getId(),
+                exception.getMessage()
+            );
+            return CompletableFuture.completedFuture("");
+        }
+    }
+
+    /**
+     * 读取已预加载的治理上下文；没有预加载句柄时退回同步构建，保持重新生成等兼容入口可用。
+     * @param conversation 当前会话。
+     * @param rewrittenQuestion 改写后的问题。
+     * @param governanceContextFuture 预加载句柄。
+     * @return 可注入模型的治理上下文。
+     */
+    private String resolveGovernanceAgentContext(
+        ChatConversation conversation,
+        String rewrittenQuestion,
+        CompletableFuture<String> governanceContextFuture
+    ) {
+        if (governanceContextFuture == null) {
+            return buildGovernanceAgentContext(conversation, rewrittenQuestion);
+        }
+        try {
+            return StrUtil.blankToDefault(governanceContextFuture.join(), "");
+        } catch (RuntimeException exception) {
+            log.warn(
+                "治理上下文预加载结果读取失败: conversationId={}, message={}",
+                conversation == null ? null : conversation.getId(),
+                exception.getMessage()
+            );
             return "";
         }
     }

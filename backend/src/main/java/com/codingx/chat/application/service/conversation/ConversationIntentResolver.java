@@ -280,16 +280,16 @@ public class ConversationIntentResolver {
             return false;
         }
         String normalizedQuestion = normalizeText(question);
-        if (StrUtil.isBlank(normalizedQuestion) || normalizedQuestion.length() > 80) {
+        if (StrUtil.isBlank(normalizedQuestion) || normalizedQuestion.length() > ConversationPreflightSignals.SELF_CONTAINED_QUESTION_MAX_LENGTH) {
             return false;
         }
-        if (containsAny(normalizedQuestion, "搜索", "搜一下", "联网", "查询", "查一下", "最新", "最近", "今天", "当前", "现在", "版本", "汇率", "新闻", "发布", "天气", "温度", "下雨", "空气质量")) {
+        if (ConversationPreflightSignals.hasFreshSearchOrToolSignal(question)) {
             return false;
         }
-        if (containsAny(normalizedQuestion, "分别", "然后", "以及", "同时", "顺便", "并且", "另外", "接着")) {
+        if (ConversationPreflightSignals.mayNeedQuestionSplit(question)) {
             return false;
         }
-        return containsAny(normalizedQuestion, "解释", "介绍", "分析", "总结", "梳理", "说明", "帮我写", "写一个", "生成", "翻译", "优化", "改写", "润色", "代码", "怎么", "如何");
+        return ConversationPreflightSignals.isPlainDirectQuestion(question);
     }
 
     /**
@@ -297,18 +297,6 @@ public class ConversationIntentResolver {
      */
     private boolean hasHighConfidenceConfiguredCandidate(List<ConversationIntentCandidate> candidates) {
         return candidates.stream().anyMatch(candidate -> candidate.score() >= 0.78D);
-    }
-
-    /**
-     * 基于归一化文本做包含判断，避免在主流程里散落重复循环。
-     */
-    private boolean containsAny(String value, String... patterns) {
-        for (String pattern : patterns) {
-            if (value.contains(normalizeText(pattern))) {
-                return true;
-            }
-        }
-        return false;
     }
 
     /**
@@ -462,7 +450,7 @@ public class ConversationIntentResolver {
      * @return 标准化文本。
      */
     private String normalizeText(String value) {
-        return value == null ? "" : value.replaceAll("[\\p{Punct}\\s，。？！、：；“”‘’（）【】《》]+", "").toLowerCase(java.util.Locale.ROOT);
+        return ConversationPreflightSignals.normalizeText(value);
     }
 
 }

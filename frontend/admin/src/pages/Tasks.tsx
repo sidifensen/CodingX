@@ -2,6 +2,7 @@ import React from 'react';
 import { EyeOutlined, ReloadOutlined, SearchOutlined } from '@ant-design/icons';
 import { Alert, Button, Input, Segmented, Space, Tag, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
+import { useNavigate } from 'react-router-dom';
 
 import {
   AdminChatApi,
@@ -16,6 +17,7 @@ const PAGE_SIZE = 10;
  * 管理端会话列表页：承载会话检索、状态筛选与详情跳转。
  */
 export function Tasks() {
+  const navigate = useNavigate();
   const [statusFilter, setStatusFilter] = React.useState<'全部' | '活跃' | '已归档'>('全部');
   const [keywordInput, setKeywordInput] = React.useState('');
   const [keyword, setKeyword] = React.useState('');
@@ -111,13 +113,13 @@ export function Tasks() {
               key: 'detail',
               label: '查看详情',
               icon: <EyeOutlined />,
-              href: `/tasks/${item.id}`,
+              onClick: () => navigate(`/tasks/${item.id}`),
             },
           ]}
         />
       ),
     },
-  ], []);
+  ], [navigate]);
 
   return (
     <div className="w-full space-y-lg p-lg">

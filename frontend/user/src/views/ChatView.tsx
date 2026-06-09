@@ -75,6 +75,9 @@ interface ChatViewProps {
 const CODE_REVIEW_SIDEBAR_DEFAULT_WIDTH = 380;
 const CODE_REVIEW_SIDEBAR_MIN_WIDTH = 320;
 const CODE_REVIEW_SIDEBAR_MAX_WIDTH = 720;
+// 业务约束：输入区选择器位于紧凑工具栏上方，滚动条必须轻量，避免挤占 MCP/技能/专家名称宽度。
+const INPUT_SELECTOR_SCROLL_CLASS =
+  'chat-input-selector-scrollbar max-h-64 overflow-y-auto pr-1 [scrollbar-width:thin] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-border hover:[&::-webkit-scrollbar-thumb]:bg-border-active';
 
 /**
  * 渲染接入真实后端数据的聊天三栏工作台。
@@ -185,6 +188,7 @@ export default function ChatView({
   const [codeReviewSidebarWidth, setCodeReviewSidebarWidth] = React.useState(
     CODE_REVIEW_SIDEBAR_DEFAULT_WIDTH,
   );
+  const [mcpSearchKeyword, setMcpSearchKeyword] = React.useState('');
   const [skillSearchKeyword, setSkillSearchKeyword] = React.useState('');
   const [activeSkillOptionIndex, setActiveSkillOptionIndex] = React.useState(-1);
   const [slashCommandSearchKeyword, setSlashCommandSearchKeyword] = React.useState('');
@@ -473,6 +477,29 @@ export default function ChatView({
     await deleteConversationMessages(activeConversationId, deletableSelectedMessageIds);
     cancelDeleteSelection();
   };
+
+  /**
+   * 过滤 MCP 列表，支持按名称、编码、描述和分类快速定位工具。
+   * @returns 过滤后的 MCP 列表。
+   */
+  const filteredMcps = React.useMemo(() => {
+    const normalizedKeyword = mcpSearchKeyword.trim().toLowerCase();
+    if (!normalizedKeyword) {
+      return availableMcps;
+    }
+    return availableMcps.filter((mcp) => {
+      const displayName = (mcp.displayName ?? '').toLowerCase();
+      const mcpCode = (mcp.mcpCode ?? '').toLowerCase();
+      const description = (mcp.description ?? '').toLowerCase();
+      const category = (mcp.category ?? '').toLowerCase();
+      return (
+        displayName.includes(normalizedKeyword) ||
+        mcpCode.includes(normalizedKeyword) ||
+        description.includes(normalizedKeyword) ||
+        category.includes(normalizedKeyword)
+      );
+    });
+  }, [availableMcps, mcpSearchKeyword]);
 
   /**
    * 过滤技能列表，支持名称与编码模糊检索。
@@ -1483,6 +1510,16 @@ export default function ChatView({
                             className="h-8 w-full rounded-lg border border-border bg-surface-container px-3 text-xs text-foreground outline-none placeholder:text-muted"
                           />
                         </div>
+                      ) : activeSelectorMode === 'mcp' ? (
+                        <div className="mb-2 px-1">
+                          <input
+                            type="text"
+                            value={mcpSearchKeyword}
+                            onChange={(event) => setMcpSearchKeyword(event.target.value)}
+                            placeholder="搜索MCP"
+                            className="h-8 w-full rounded-lg border border-border bg-surface-container px-3 text-xs text-foreground outline-none placeholder:text-muted"
+                          />
+                        </div>
                       ) : activeSelectorMode === 'skill' ? (
                         <div className="mb-2 px-1">
                           <input
@@ -1505,7 +1542,7 @@ export default function ChatView({
                           />
                         </div>
                       ) : null}
-                      <div className="max-h-64 overflow-y-auto">
+                      <div data-testid="input-selector-scroll-list" className={INPUT_SELECTOR_SCROLL_CLASS}>
                         {activeSelectorMode === 'command' ? (
                           filteredSlashCommands.length ? (
                             filteredSlashCommands.map((command, index) => {
@@ -1552,64 +1589,70 @@ export default function ChatView({
                             </div>
                           )
                         ) : activeSelectorMode === 'mcp' ? (
-                          availableMcps.map((mcp) => {
-                            const isSelected = selectedMcpCodes.includes(mcp.mcpCode);
-                            const selectable = isMcpSelectable(mcp);
-                            return (
-                              <button
-                                key={mcp.mcpCode}
-                                type="button"
-                                aria-label={`选择MCP ${mcp.displayName}`}
-                                aria-disabled={!selectable}
-                                disabled={!selectable}
-                                onClick={() => toggleMcpSelection(mcp.mcpCode, selectable)}
-                                className={`mb-1 flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm transition-colors last:mb-0 ${
-                                  !selectable
-                                    ? 'cursor-not-allowed bg-surface-container/65 text-muted opacity-60'
-                                    : isSelected
-                                    ? 'bg-surface-container text-foreground'
-                                    : 'text-muted hover:bg-surface-container hover:text-foreground'
-                                }`}
-                              >
-                                <span className="min-w-0">
-                                  <span className="block truncate text-foreground">
-                                    {mcp.displayName}
+                          filteredMcps.length ? (
+                            filteredMcps.map((mcp) => {
+                              const isSelected = selectedMcpCodes.includes(mcp.mcpCode);
+                              const selectable = isMcpSelectable(mcp);
+                              return (
+                                <button
+                                  key={mcp.mcpCode}
+                                  type="button"
+                                  aria-label={`选择MCP ${mcp.displayName}`}
+                                  aria-disabled={!selectable}
+                                  disabled={!selectable}
+                                  onClick={() => toggleMcpSelection(mcp.mcpCode, selectable)}
+                                  className={`mb-1 flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm transition-colors last:mb-0 ${
+                                    !selectable
+                                      ? 'cursor-not-allowed bg-surface-container/65 text-muted opacity-60'
+                                      : isSelected
+                                      ? 'bg-surface-container text-foreground'
+                                      : 'text-muted hover:bg-surface-container hover:text-foreground'
+                                  }`}
+                                >
+                                  <span className="min-w-0">
+                                    <span className="block truncate text-foreground">
+                                      {mcp.displayName}
+                                    </span>
+                                    <span className="mt-1 block truncate font-mono text-[11px] text-muted">
+                                      /{mcp.mcpCode}
+                                    </span>
+                                    {!selectable ? (
+                                      <span className="mt-1 block text-[10px] text-muted">不可用</span>
+                                    ) : null}
                                   </span>
-                                  <span className="mt-1 block truncate font-mono text-[11px] text-muted">
-                                    /{mcp.mcpCode}
-                                  </span>
-                                  {!selectable ? (
-                                    <span className="mt-1 block text-[10px] text-muted">不可用</span>
-                                  ) : null}
-                                </span>
-                                <span className="inline-flex items-center gap-2">
-                                  <span className="sr-only">
-                                    {!selectable ? '不可用' : isSelected ? '已启用' : '未启用'}
-                                  </span>
-                                  <span
-                                    role="switch"
-                                    aria-label={`切换MCP ${mcp.displayName}`}
-                                    aria-checked={selectable && isSelected}
-                                    aria-disabled={!selectable}
-                                    data-testid={`mcp-switch-${mcp.mcpCode}`}
-                                    className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full border transition-colors ${
-                                      selectable && isSelected
-                                        ? 'border-foreground bg-foreground/90'
-                                        : 'border-border bg-surface-high'
-                                    }`}
-                                  >
+                                  <span className="inline-flex items-center gap-2">
+                                    <span className="sr-only">
+                                      {!selectable ? '不可用' : isSelected ? '已启用' : '未启用'}
+                                    </span>
                                     <span
-                                      className={`inline-block h-4 w-4 rounded-full bg-background shadow-sm transition-transform ${
+                                      role="switch"
+                                      aria-label={`切换MCP ${mcp.displayName}`}
+                                      aria-checked={selectable && isSelected}
+                                      aria-disabled={!selectable}
+                                      data-testid={`mcp-switch-${mcp.mcpCode}`}
+                                      className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full border transition-colors ${
                                         selectable && isSelected
-                                          ? 'translate-x-[18px]'
-                                          : 'translate-x-[1px]'
+                                          ? 'border-foreground bg-foreground/90'
+                                          : 'border-border bg-surface-high'
                                       }`}
-                                    />
+                                    >
+                                      <span
+                                        className={`inline-block h-4 w-4 rounded-full bg-background shadow-sm transition-transform ${
+                                          selectable && isSelected
+                                            ? 'translate-x-[18px]'
+                                            : 'translate-x-[1px]'
+                                        }`}
+                                      />
+                                    </span>
                                   </span>
-                                </span>
-                              </button>
-                            );
-                          })
+                                </button>
+                              );
+                            })
+                          ) : (
+                            <div className="rounded-xl bg-surface-container px-3 py-2 text-sm text-muted">
+                              未匹配到MCP
+                            </div>
+                          )
                         ) : activeSelectorMode === 'expert' ? (
                           filteredExperts.length ? (
                             filteredExperts.map((expert) => {
@@ -1709,6 +1752,7 @@ export default function ChatView({
                       onClick={() => {
                         setActiveSelectorMode((current) => (current === 'mcp' ? null : 'mcp'));
                         setSkillSelectorSource(null);
+                        setMcpSearchKeyword('');
                       }}
                       className="inline-flex h-7 items-center gap-1 rounded-full border border-border bg-surface-container px-3 text-xs text-foreground transition-[box-shadow,border-color,background-color] duration-200 hover:border-border-active hover:bg-surface hover:shadow-[0_8px_18px_rgba(0,0,0,0.16)]"
                     >

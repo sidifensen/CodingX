@@ -2496,9 +2496,30 @@ describe('ChatView', () => {
     const selectorPanel = screen.getByTestId('mcp-selector-panel');
     expect(selectorPanel).toBeInTheDocument();
     expect(screen.getByTestId('mcp-trigger-icon')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('搜索MCP')).toBeInTheDocument();
+    const selectorScrollList = screen.getByTestId('input-selector-scroll-list');
+    expect(selectorScrollList).toHaveClass('chat-input-selector-scrollbar');
     expect(screen.getByRole('button', { name: '选择MCP 销售查询' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '选择MCP 工单查询' })).toBeInTheDocument();
     expect(screen.getByRole('switch', { name: '切换MCP 销售查询' })).toBeInTheDocument();
+  });
+
+  /**
+   * MCP 面板顶部搜索框应像技能面板一样即时过滤候选，方便长列表快速定位工具。
+   */
+  it('应支持在MCP列表顶部搜索过滤可选MCP', async () => {
+    render(
+      <ChatView isAuthenticated={true} onRequireLogin={vi.fn()} workspace={createWorkspace()} />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '打开MCP列表' }));
+    fireEvent.change(screen.getByPlaceholderText('搜索MCP'), { target: { value: 'ticket' } });
+
+    expect(screen.getByRole('button', { name: '选择MCP 工单查询' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '选择MCP 销售查询' })).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByPlaceholderText('搜索MCP'), { target: { value: '不存在' } });
+    expect(screen.getByText('未匹配到MCP')).toBeInTheDocument();
   });
 
   /**
@@ -2585,6 +2606,7 @@ describe('ChatView', () => {
 
     const selectorPanel = screen.getByTestId('skill-selector-panel');
     expect(selectorPanel).toBeInTheDocument();
+    expect(screen.getByTestId('input-selector-scroll-list')).toHaveClass('chat-input-selector-scrollbar');
     expect(screen.getByRole('button', { name: '选择技能 销售查询' })).toBeInTheDocument();
     // 技能列表第二行展示业务描述，并用单行截断承接长描述，避免继续展示内部斜杠命令。
     const skillDescription = within(selectorPanel).getByText('查询销售汇总、排名、趋势与明细');
@@ -3399,6 +3421,50 @@ describe('ChatView', () => {
     fireEvent.click(screen.getByRole('button', { name: '打开MCP列表' }));
     expect(screen.getByTestId('mcp-selector-panel')).toBeInTheDocument();
     expect(screen.queryByTestId('skill-selector-panel')).not.toBeInTheDocument();
+  });
+
+  /**
+   * MCP、技能与专家浮层都应使用窄滚动条，避免右侧滚动条占用过多列表内容宽度。
+   */
+  it('应让输入区MCP技能和专家列表使用窄滚动条', async () => {
+    const expectThinScrollbarList = () => {
+      const selectorScrollList = screen.getByTestId('input-selector-scroll-list');
+      expect(selectorScrollList).toHaveClass('chat-input-selector-scrollbar');
+      expect(selectorScrollList.className).toContain('[scrollbar-width:thin]');
+      expect(selectorScrollList.className).toContain('[&::-webkit-scrollbar]:w-1.5');
+    };
+
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          availableExperts: [
+            {
+              id: '8101',
+              expertCode: 'bi-analyst',
+              displayName: 'BI 报表专家',
+              description: '分析经营看板并给出指标建议',
+              category: '数据分析',
+            },
+          ],
+          selectedExpertCode: null,
+          currentExperts: [],
+        })}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '打开MCP列表' }));
+    expect(screen.getByTestId('mcp-selector-panel')).toBeInTheDocument();
+    expectThinScrollbarList();
+
+    fireEvent.click(screen.getByRole('button', { name: '打开技能列表' }));
+    expect(screen.getByTestId('skill-selector-panel')).toBeInTheDocument();
+    expectThinScrollbarList();
+
+    fireEvent.click(screen.getByRole('button', { name: '打开专家列表' }));
+    expect(screen.getByTestId('expert-selector-panel')).toBeInTheDocument();
+    expectThinScrollbarList();
   });
 
   /**

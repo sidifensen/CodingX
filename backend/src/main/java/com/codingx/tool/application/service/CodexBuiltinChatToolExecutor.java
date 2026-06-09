@@ -47,6 +47,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
@@ -55,6 +56,7 @@ import java.util.regex.Pattern;
 import java.util.stream.Stream;
 import javax.imageio.ImageIO;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 /**
@@ -63,6 +65,7 @@ import org.springframework.stereotype.Component;
  * 说明：此执行器覆盖 chat_tool 预置的工具编码，所有能力均在后端进程内完成，
  * 不依赖 MCP 协议转发，便于管理端做可见性、探测与调试调用。
  */
+@Slf4j
 @Component
 @RequiredArgsConstructor
 public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
@@ -1910,8 +1913,36 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
         ChatToolExecutionContext.GovernanceContext context = requireGoalContext();
         String goalId = readString(input.object(), "goalId", "goal_id", "id");
         String goalKey = readString(input.object(), "goalKey", "goal_key", "key");
-        ChatGoalView goalView = chatGoalService.getGoal(context.conversationId(), context.userId(), goalId, goalKey)
-            .orElseThrow(() -> new BusinessException("CHAT_TOOL_GOAL_NOT_FOUND", ErrorMessageCatalog.CHAT_TOOL_GOAL_NOT_FOUND));
+        log.info(
+            "目标工具 get_goal 调用开始: conversationId={}, userId={}, runId={}, goalId={}, goalKey={}",
+            context.conversationId(),
+            context.userId(),
+            context.runId(),
+            goalId,
+            goalKey
+        );
+        Optional<ChatGoalView> goalOptional = chatGoalService.getGoal(context.conversationId(), context.userId(), goalId, goalKey);
+        if (goalOptional.isEmpty()) {
+            log.warn(
+                "目标工具 get_goal 未找到目标: conversationId={}, userId={}, runId={}, goalId={}, goalKey={}",
+                context.conversationId(),
+                context.userId(),
+                context.runId(),
+                goalId,
+                goalKey
+            );
+            throw new BusinessException("CHAT_TOOL_GOAL_NOT_FOUND", ErrorMessageCatalog.CHAT_TOOL_GOAL_NOT_FOUND);
+        }
+        ChatGoalView goalView = goalOptional.orElseThrow();
+        log.info(
+            "目标工具 get_goal 调用完成: conversationId={}, userId={}, runId={}, goalId={}, status={}, stepCount={}",
+            context.conversationId(),
+            context.userId(),
+            context.runId(),
+            goalView.id(),
+            goalView.status(),
+            goalView.steps().size()
+        );
         return new ChatToolExecutionResult("get_goal", "目标读取成功", Map.of("goal", goalView));
     }
 
@@ -1920,14 +1951,35 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
      */
     private ChatToolExecutionResult executeCreateGoal(ToolInput input) {
         ChatToolExecutionContext.GovernanceContext context = requireGoalContext();
+        List<ChatGoalService.StepCommand> steps = extractGoalSteps(input.object());
         ChatGoalService.CreateGoalCommand command = new ChatGoalService.CreateGoalCommand(
             readString(input.object(), "goalId", "goal_id", "id"),
             StrUtil.blankToDefault(readString(input.object(), "goalKey", "goal_key", "key"), "default"),
             StrUtil.blankToDefault(readString(input.object(), "title", "name"), "默认目标"),
             StrUtil.blankToDefault(readString(input.object(), "description", "summary"), input.raw()),
-            extractGoalSteps(input.object())
+            steps
+        );
+        log.info(
+            "目标工具 create_goal 调用开始: conversationId={}, userId={}, runId={}, goalId={}, goalKey={}, requestedStepCount={}, titleLength={}",
+            context.conversationId(),
+            context.userId(),
+            context.runId(),
+            command.goalId(),
+            command.goalKey(),
+            steps.size(),
+            StrUtil.length(command.title())
         );
         ChatGoalView goalView = chatGoalService.createGoal(context.conversationId(), context.userId(), context.runId(), command);
+        log.info(
+            "目标工具 create_goal 调用完成: conversationId={}, userId={}, runId={}, goalId={}, eventType={}, status={}, stepCount={}",
+            context.conversationId(),
+            context.userId(),
+            context.runId(),
+            goalView.id(),
+            goalView.eventType(),
+            goalView.status(),
+            goalView.steps().size()
+        );
         return new ChatToolExecutionResult("create_goal", "目标已创建", Map.of("goal", goalView));
     }
 
@@ -1936,6 +1988,7 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
      */
     private ChatToolExecutionResult executeUpdateGoal(ToolInput input) {
         ChatToolExecutionContext.GovernanceContext context = requireGoalContext();
+        List<ChatGoalService.StepCommand> steps = extractGoalSteps(input.object());
         ChatGoalService.UpdateGoalCommand command = new ChatGoalService.UpdateGoalCommand(
             readString(input.object(), "goalId", "goal_id", "id"),
             readString(input.object(), "goalKey", "goal_key", "key"),
@@ -1943,9 +1996,29 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
             readString(input.object(), "description", "summary"),
             readString(input.object(), "status", "state"),
             readString(input.object(), "progressSummary", "progress_summary", "progress"),
-            extractGoalSteps(input.object())
+            steps
+        );
+        log.info(
+            "目标工具 update_goal 调用开始: conversationId={}, userId={}, runId={}, goalId={}, goalKey={}, status={}, requestedStepCount={}",
+            context.conversationId(),
+            context.userId(),
+            context.runId(),
+            command.goalId(),
+            command.goalKey(),
+            command.status(),
+            steps.size()
         );
         ChatGoalView goalView = chatGoalService.updateGoal(context.conversationId(), context.userId(), context.runId(), command);
+        log.info(
+            "目标工具 update_goal 调用完成: conversationId={}, userId={}, runId={}, goalId={}, eventType={}, status={}, stepCount={}",
+            context.conversationId(),
+            context.userId(),
+            context.runId(),
+            goalView.id(),
+            goalView.eventType(),
+            goalView.status(),
+            goalView.steps().size()
+        );
         return new ChatToolExecutionResult("update_goal", "目标已更新", Map.of("goal", goalView));
     }
 
@@ -1954,8 +2027,17 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
      */
     private ChatToolExecutionContext.GovernanceContext requireGoalContext() {
         ChatToolExecutionContext.GovernanceContext context = ChatToolExecutionContext.currentGovernanceContext()
-            .orElseThrow(() -> new BusinessException("CHAT_TOOL_GOAL_CONTEXT_REQUIRED", "目标工具必须在聊天会话中执行"));
+            .orElseThrow(() -> {
+                log.warn("目标工具缺少线程治理上下文，拒绝执行目标工具");
+                return new BusinessException("CHAT_TOOL_GOAL_CONTEXT_REQUIRED", "目标工具必须在聊天会话中执行");
+            });
         if (context.conversationId() == null || context.userId() == null) {
+            log.warn(
+                "目标工具上下文不完整，拒绝执行目标工具: conversationId={}, userId={}, runId={}",
+                context.conversationId(),
+                context.userId(),
+                context.runId()
+            );
             throw new BusinessException("CHAT_TOOL_GOAL_CONTEXT_REQUIRED", "目标工具必须在聊天会话中执行");
         }
         return context;

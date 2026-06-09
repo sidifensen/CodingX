@@ -18,3 +18,7 @@ logs/
 # stray desktop shell dependency cache
 /desktop-shell/node_modules/
 /logs/
+# Track only feature docs; keep local process notes out of Git.
+/docs/*
+!/docs/features/
+!/docs/features/**

@@ -31,6 +31,12 @@
 
 ## 功能说明与文档维护规范
 
+### 文档提交边界
+
+- **强制要求：默认只允许提交 `docs/features/**` 下的功能文档变更。**
+- `docs/superpowers/**`、`docs/project/**`、`docs/trae/**`、`docs/workbuddy/**` 以及 `docs/features` 以外的其他 `docs` 内容，默认视为本地过程资料或其他会话成果，禁止纳入提交。
+- 如发现 `docs/features` 以外的 `docs` 文件已被 Git 跟踪，应优先执行 `git rm --cached <path>` 仅移除索引追踪，禁止删除本地文件内容；只有用户明确要求提交这些目录或移除追踪时才可例外。
+- 提交前必须用 `git diff --cached --name-only` 检查暂存区；除用户明确要求的移除追踪记录外，确认所有 `docs/` 路径都位于 `docs/features/` 下，避免 Codex 自动把过程文档、memory、plan、spec 或 project 资料提交进去。
 ### 交付摘要
 
 除简单任务外，每次完成开发后，助手最终回复必须包含完整的实现说明：

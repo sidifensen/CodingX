@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.codingx.chat.domain.model.ChatIntentExample;
@@ -87,6 +88,44 @@ class ConversationIntentResolverTest {
         List<ConversationIntentCandidate> candidates = conversationIntentResolver.resolveCandidates("北京天气", nodes, List.of());
 
         assertEquals("external-service", candidates.getFirst().node().getIntentCode());
+    }
+
+    /**
+     * 配置示例已能精确命中的系统问题应直接返回本地高置信候选，避免回答前再等待意图分类模型。
+     */
+    @Test
+    void resolveCandidatesBypassesPromptForExactConfiguredExample() {
+        List<ChatIntentNode> nodes = List.of(
+            ChatIntentNode.builder().intentCode("sys").name("系统意图").intentType("system").enabled(1).sortNo(1).build(),
+            ChatIntentNode.builder().intentCode("sys-about-bot").parentCode("sys").name("关于助手").intentType("system").enabled(1).sortNo(2).build()
+        );
+        List<ChatIntentExample> examples = List.of(
+            ChatIntentExample.builder().intentCode("sys-about-bot").exampleText("你是谁").sortNo(1).build()
+        );
+
+        List<ConversationIntentCandidate> candidates = conversationIntentResolver.resolveCandidates("你是谁", nodes, examples);
+
+        assertEquals("sys-about-bot", candidates.getFirst().node().getIntentCode());
+        assertEquals(0.96D, candidates.getFirst().score());
+        verifyNoInteractions(promptTemplateLoader, aiPromptExecutionService);
+    }
+
+    /**
+     * 无配置候选的普通自包含直答问题应直接回落 chat.normal，不再等待意图分类模型。
+     */
+    @Test
+    void resolveCandidatesBypassesPromptForPlainDirectQuestionWithoutConfiguredMatch() {
+        List<ChatIntentNode> nodes = List.of(
+            ChatIntentNode.builder().intentCode("search").name("联网搜索").intentType("search").enabled(1).sortNo(1).build(),
+            ChatIntentNode.builder().intentCode("search-general").parentCode("search").name("通用检索").description("开放网页检索").intentType("search").enabled(1).sortNo(2).build(),
+            ChatIntentNode.builder().intentCode("weather").name("天气服务").intentType("mcp").enabled(1).sortNo(3).build(),
+            ChatIntentNode.builder().intentCode("weather-data").parentCode("weather").name("天气查询").description("城市天气查询").intentType("mcp").mcpToolId("weather_query").enabled(1).sortNo(4).build()
+        );
+
+        List<ConversationIntentCandidate> candidates = conversationIntentResolver.resolveCandidates("请解释一下 Java Stream 的作用", nodes, List.of());
+
+        assertEquals(List.of(), candidates);
+        verifyNoInteractions(promptTemplateLoader, aiPromptExecutionService);
     }
 
     /**
@@ -228,12 +267,12 @@ class ConversationIntentResolverTest {
             ChatIntentExample.builder().intentCode("sys-welcome").exampleText("你好").sortNo(1).build()
         );
         when(promptTemplateLoader.render(anyString(), anyMap())).thenReturn("intent prompt");
-        when(aiPromptExecutionService.complete("intent prompt", "你好")).thenReturn("你好");
+        when(aiPromptExecutionService.complete("intent prompt", "你好呀")).thenReturn("你好呀");
 
-        List<ConversationIntentCandidate> candidates = conversationIntentResolver.resolveCandidates("你好", nodes, examples);
+        List<ConversationIntentCandidate> candidates = conversationIntentResolver.resolveCandidates("你好呀", nodes, examples);
 
         assertEquals("sys-welcome", candidates.getFirst().node().getIntentCode());
         verify(promptTemplateLoader).render(anyString(), anyMap());
-        verify(aiPromptExecutionService).complete("intent prompt", "你好");
+        verify(aiPromptExecutionService).complete("intent prompt", "你好呀");
     }
 }

@@ -77,7 +77,25 @@ public class ConversationIntentResolver {
         if (leafNodes.isEmpty()) {
             return List.of();
         }
-        // 步骤 2：把叶子意图与示例渲染进分类 Prompt，交给模型返回候选分数。
+        // 步骤 2：配置示例精确命中时直接返回高置信候选，避免回答前额外等待意图分类模型。
+        List<ConversationIntentCandidate> configuredExactCandidates = exactExampleCandidates(question, leafNodes, examplesByCode);
+        if (!configuredExactCandidates.isEmpty()) {
+            log.info(
+                "意图识别配置精确命中，跳过模型分类: 问题={}, 候选数={}",
+                StrUtil.maxLength(question, 120),
+                configuredExactCandidates.size()
+            );
+            return configuredExactCandidates;
+        }
+        List<ConversationIntentCandidate> configuredFallbackCandidates = fallbackCandidates(question, leafNodes, nodeByCode, examplesByCode);
+        if (shouldBypassPromptForPlainDirect(question, configuredFallbackCandidates)) {
+            log.info(
+                "意图识别普通直答旁路，跳过模型分类: 问题={}",
+                StrUtil.maxLength(question, 120)
+            );
+            return List.of();
+        }
+        // 步骤 3：把叶子意图与示例渲染进分类 Prompt，交给模型返回候选分数。
         String prompt = promptTemplateLoader.render("intent-classify", Map.of(
             "intent_list", buildIntentList(leafNodes, nodeByCode, examplesByCode)
         ));
@@ -87,8 +105,8 @@ public class ConversationIntentResolver {
             if (!parsedCandidates.isEmpty()) {
                 return parsedCandidates;
             }
-            // 步骤 3：模型返回普通文本或无有效节点时，同样降级到配置文本匹配，避免上层拿到空候选。
-            List<ConversationIntentCandidate> fallbackCandidates = fallbackCandidates(question, leafNodes, nodeByCode, examplesByCode);
+            // 步骤 4：模型返回普通文本或无有效节点时，同样降级到配置文本匹配，避免上层拿到空候选。
+            List<ConversationIntentCandidate> fallbackCandidates = configuredFallbackCandidates;
             log.warn(
                 "意图识别返回空候选，使用兜底候选: 问题={}, 候选数={}",
                 StrUtil.maxLength(question, 120),
@@ -96,8 +114,8 @@ public class ConversationIntentResolver {
             );
             return fallbackCandidates;
         } catch (Exception exception) {
-            // 步骤 4：模型不可用或输出异常时降级到配置文本匹配，避免意图链路完全中断。
-            List<ConversationIntentCandidate> fallbackCandidates = fallbackCandidates(question, leafNodes, nodeByCode, examplesByCode);
+            // 步骤 5：模型不可用或输出异常时降级到配置文本匹配，避免意图链路完全中断。
+            List<ConversationIntentCandidate> fallbackCandidates = configuredFallbackCandidates;
             log.warn(
                 "意图识别失败，使用兜底候选: 问题={}, 候选数={}",
                 StrUtil.maxLength(question, 120),
@@ -217,6 +235,80 @@ public class ConversationIntentResolver {
      */
     private boolean looksLikeJson(String raw) {
         return StrUtil.startWith(raw, "[") || StrUtil.startWith(raw, "{");
+    }
+
+    /**
+     * 使用配置示例做零模型精确命中，主要覆盖“你是谁”“你好”等高确定性系统问题和管理员显式维护的常见问法。
+     * 只接受归一化后完全一致的示例，模糊相似仍交给分类模型，避免搜索、MCP、业务系统等近义问题被过早固定。
+     * @param question 用户问题。
+     * @param leafNodes 叶子候选节点。
+     * @param examplesByCode 示例索引。
+     * @return 按叶子排序稳定输出的高置信候选。
+     */
+    private List<ConversationIntentCandidate> exactExampleCandidates(
+        String question,
+        List<ChatIntentNode> leafNodes,
+        Map<String, List<String>> examplesByCode
+    ) {
+        String normalizedQuestion = normalizeText(question);
+        if (StrUtil.isBlank(normalizedQuestion)) {
+            return List.of();
+        }
+        List<ConversationIntentCandidate> candidates = new ArrayList<>();
+        for (ChatIntentNode node : leafNodes) {
+            List<String> examples = examplesByCode.getOrDefault(node.getIntentCode(), List.of());
+            for (String example : examples) {
+                if (normalizedQuestion.equals(normalizeText(example))) {
+                    candidates.add(new ConversationIntentCandidate(node, 0.96D));
+                    break;
+                }
+            }
+        }
+        return candidates;
+    }
+
+    /**
+     * 判断当前问题是否可以直接交给普通模型回答。
+     * 业务约束：只有本地配置没有高置信候选、且文本像解释/分析/总结/写作/翻译类普通直答时才旁路；
+     * 搜索、天气、汇率、时效、多诉求等请求继续保留分类模型，以免错过搜索或 MCP 分流。
+     * @param question 用户问题。
+     * @param configuredFallbackCandidates 本地配置兜底候选。
+     * @return true 表示可直接返回空候选，由上层走 chat.normal。
+     */
+    private boolean shouldBypassPromptForPlainDirect(String question, List<ConversationIntentCandidate> configuredFallbackCandidates) {
+        if (hasHighConfidenceConfiguredCandidate(configuredFallbackCandidates)) {
+            return false;
+        }
+        String normalizedQuestion = normalizeText(question);
+        if (StrUtil.isBlank(normalizedQuestion) || normalizedQuestion.length() > 80) {
+            return false;
+        }
+        if (containsAny(normalizedQuestion, "搜索", "搜一下", "联网", "查询", "查一下", "最新", "最近", "今天", "当前", "现在", "版本", "汇率", "新闻", "发布", "天气", "温度", "下雨", "空气质量")) {
+            return false;
+        }
+        if (containsAny(normalizedQuestion, "分别", "然后", "以及", "同时", "顺便", "并且", "另外", "接着")) {
+            return false;
+        }
+        return containsAny(normalizedQuestion, "解释", "介绍", "分析", "总结", "梳理", "说明", "帮我写", "写一个", "生成", "翻译", "优化", "改写", "润色", "代码", "怎么", "如何");
+    }
+
+    /**
+     * 本地兜底里的弱候选可能来自中英文短片段重叠，不能阻断普通直答旁路；只有较高分配置命中才保留分类模型。
+     */
+    private boolean hasHighConfidenceConfiguredCandidate(List<ConversationIntentCandidate> candidates) {
+        return candidates.stream().anyMatch(candidate -> candidate.score() >= 0.78D);
+    }
+
+    /**
+     * 基于归一化文本做包含判断，避免在主流程里散落重复循环。
+     */
+    private boolean containsAny(String value, String... patterns) {
+        for (String pattern : patterns) {
+            if (value.contains(normalizeText(pattern))) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -370,7 +462,7 @@ public class ConversationIntentResolver {
      * @return 标准化文本。
      */
     private String normalizeText(String value) {
-        return value == null ? "" : value.replaceAll("[\\p{Punct}\\s]+", "").toLowerCase(java.util.Locale.ROOT);
+        return value == null ? "" : value.replaceAll("[\\p{Punct}\\s，。？！、：；“”‘’（）【】《》]+", "").toLowerCase(java.util.Locale.ROOT);
     }
 
 }

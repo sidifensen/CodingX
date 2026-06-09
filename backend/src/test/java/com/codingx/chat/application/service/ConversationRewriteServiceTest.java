@@ -1,6 +1,7 @@
 package com.codingx.chat.application.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.util.List;
@@ -86,6 +87,42 @@ class ConversationRewriteServiceTest {
 
         assertEquals("销售总额是多少", result.rewrite());
         assertEquals(List.of("销售总额是多少"), result.subQuestions());
+    }
+
+    /**
+     * 第一轮自包含问题没有历史指代，也不需要拆分时，应直接跳过改写模型，减少回答前的额外等待。
+     */
+    @Test
+    void rewriteResultBypassesPromptForSelfContainedQuestionWithoutHistory() {
+        when(conversationQueryTermMappingService.normalize("请解释一下 Java Stream 的作用")).thenReturn("请解释一下 Java Stream 的作用");
+
+        ConversationRewriteResult result = conversationRewriteService.rewriteResult(
+            List.of("请解释一下 Java Stream 的作用"),
+            "请解释一下 Java Stream 的作用"
+        );
+
+        assertEquals("请解释一下 Java Stream 的作用", result.rewrite());
+        assertEquals(false, result.shouldSplit());
+        assertEquals(List.of("请解释一下 Java Stream 的作用"), result.subQuestions());
+        verifyNoInteractions(promptTemplateLoader, aiPromptExecutionService);
+    }
+
+    /**
+     * 会话已有旧问题时，如果本轮问题仍是完整独立问题，也应跳过改写模型，避免长会话里每轮都额外等待。
+     */
+    @Test
+    void rewriteResultBypassesPromptForSelfContainedQuestionWithUnrelatedHistory() {
+        when(conversationQueryTermMappingService.normalize("请解释一下 Java Stream 的作用")).thenReturn("请解释一下 Java Stream 的作用");
+
+        ConversationRewriteResult result = conversationRewriteService.rewriteResult(
+            List.of("上一轮问的是 CodingX 聊天架构", "请解释一下 Java Stream 的作用"),
+            "请解释一下 Java Stream 的作用"
+        );
+
+        assertEquals("请解释一下 Java Stream 的作用", result.rewrite());
+        assertEquals(false, result.shouldSplit());
+        assertEquals(List.of("请解释一下 Java Stream 的作用"), result.subQuestions());
+        verifyNoInteractions(promptTemplateLoader, aiPromptExecutionService);
     }
 
     /**

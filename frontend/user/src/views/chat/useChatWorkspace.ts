@@ -3039,7 +3039,15 @@ export function useChatWorkspace(
         } else if (error instanceof ChatApi.UnauthorizedError) {
           onUnauthorizedRef.current?.();
         } else {
-          setStreamError(error instanceof Error ? error.message : UserErrorMessages.CHAT_REQUEST_FAILED);
+          const message = error instanceof Error ? error.message : UserErrorMessages.CHAT_REQUEST_FAILED;
+          // 请求尚未进入 SSE 消费阶段也已经创建了乐观助手消息，必须收敛为错误态才能释放用户消息编辑锁。
+          finalizeNonSuccessStreamTerminal(
+            optimisticAssistantId,
+            streamSessionId,
+            submitLockId,
+            'error',
+            message,
+          );
         }
       } finally {
         finishedStreamSessionIdsRef.current.delete(streamSessionId);

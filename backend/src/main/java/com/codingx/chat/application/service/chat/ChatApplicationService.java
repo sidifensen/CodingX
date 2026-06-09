@@ -83,6 +83,8 @@ public class ChatApplicationService {
 
     private static final int PROMPT_CONTEXT_LOG_PREVIEW_LENGTH = 1_800;
     private static final String QUICK_GREETING_REPLY = "你好，我在。你可以直接说要查资料、改代码、看项目，或让我帮你梳理问题。";
+    /** 执行型目标需要覆盖创建目标、读写文件、失败恢复、验证和提交，不能复用普通工具问答的短轮次预算。 */
+    private static final int PLAN_MODE_EXECUTION_MIN_TOOL_ROUNDS = 20;
     /** 会话聚合仓储，负责读取与更新会话主状态（归属、标题、最后活跃时间等） */
     private final ChatConversationRepository chatConversationRepository;
     /** 消息仓储，负责会话消息历史读写与按会话回放 */
@@ -1594,9 +1596,7 @@ public class ChatApplicationService {
             ));
             return;
         }
-        // 轮次上限由系统配置控制，避免模型在工具-回灌链路里无限循环。
         AgentLoopCoordinator loopCoordinator = resolveAgentLoopCoordinator();
-        int maxToolRounds = loopCoordinator.normalizeMaxRounds(runtimeSettingService.chatToolMaxRounds());
         Map<String, ChatToolExecutionResult> executedToolResults = new LinkedHashMap<>();
         boolean planModeGoalAvailable = false;
         boolean planModeGoalProgressDirty = false;
@@ -1605,6 +1605,12 @@ public class ChatApplicationService {
         boolean planModeGoalMissingObserved = false;
         boolean effectivePlanMode = isEffectivePlanMode(command);
         boolean planModeExecutionRequested = isPlanModeExecutionRequested(command);
+        int maxToolRounds = resolveEffectiveToolMaxRounds(
+            loopCoordinator,
+            runtimeSettingService.chatToolMaxRounds(),
+            effectivePlanMode,
+            planModeExecutionRequested
+        );
         PlanModeTerminalGoalSnapshot planModeTerminalGoalSnapshot = null;
         if (effectivePlanMode) {
             log.info(
@@ -2257,6 +2263,30 @@ public class ChatApplicationService {
             return;
         }
         streamError[0] = new IllegalStateException(loopCoordinator.maxRoundsMessage());
+    }
+
+    /**
+     * 解析本轮真实工具预算。
+     * 业务约束：普通聊天仍遵守管理端配置；但用户明确要求“目标模式 + 直接执行/验证/提交”时，
+     * 单次任务天然需要 get_goal/create_goal、读写、失败恢复、验证、提交和多次 update_goal，
+     * 因此至少给到 Agent Loop 安全硬上限，避免在可恢复 edit 失败后提前写入 BLOCKED。
+     *
+     * @param loopCoordinator Agent Loop 轮次裁剪器。
+     * @param configuredRounds 管理端或默认配置中的轮次。
+     * @param effectivePlanMode 本轮是否按目标模式执行。
+     * @param executionRequested 用户是否明确要求直接执行。
+     * @return 已经过安全裁剪的有效工具轮次。
+     */
+    private int resolveEffectiveToolMaxRounds(
+        AgentLoopCoordinator loopCoordinator,
+        int configuredRounds,
+        boolean effectivePlanMode,
+        boolean executionRequested
+    ) {
+        int requestedRounds = effectivePlanMode && executionRequested
+            ? Math.max(configuredRounds, PLAN_MODE_EXECUTION_MIN_TOOL_ROUNDS)
+            : configuredRounds;
+        return loopCoordinator.normalizeMaxRounds(requestedRounds);
     }
 
     /**
@@ -4677,7 +4707,8 @@ public class ChatApplicationService {
 
     /**
      * 判断是否应在终态目标写库后立即停止工具循环。
-     * 业务约束：BLOCKED/CANCELLED 表示目标已不再是 active goal；继续让模型调用 edit/read/bash 后，外层兜底再写 update_goal 会查不到 active goal。
+     * 业务约束：COMPLETED/BLOCKED/CANCELLED 都表示目标已经离开 ACTIVE；继续让模型调用 edit/read/bash 或追加自然语言，
+     * 可能覆盖数据库终态或触发外层兜底再次写 update_goal，导致桌面端目标浮窗与最终答复不一致。
      */
     private boolean shouldStopPlanModeToolLoopAfterTerminalGoal(
         SendChatMessageCommand command,
@@ -4686,7 +4717,7 @@ public class ChatApplicationService {
         if (!isEffectivePlanMode(command) || snapshot == null) {
             return false;
         }
-        return snapshot.status() == ChatGoalStatus.BLOCKED || snapshot.status() == ChatGoalStatus.CANCELLED;
+        return snapshot.status() != ChatGoalStatus.ACTIVE;
     }
 
     /**

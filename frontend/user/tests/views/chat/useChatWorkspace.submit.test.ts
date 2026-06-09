@@ -706,6 +706,59 @@ describe('useChatWorkspace submit behavior', () => {
   });
 
   /**
+   * 流式请求在建立 SSE 前失败时，也要把本轮助手占位收敛为错误态。
+   * 业务边界：临时用户消息的编辑入口依赖后续助手消息进入 error/cancelled，否则错误已展示但用户仍无法修改重发。
+   */
+  it('流式请求建连失败后应标记助手消息异常以解锁临时用户消息编辑', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (isConversationListRequest(url)) {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (
+        url === '/api/chat/sample-questions' ||
+        url === '/api/chat/experts' ||
+        url === '/api/chat/skills' ||
+        url === '/api/chat/mcps'
+      ) {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (url.includes('/api/chat/stream')) {
+        return new Response('', { status: 500 });
+      }
+      throw new Error(`Unhandled fetch in stream connect failure test: ${url}`);
+    });
+
+    const { result } = renderHook(() => useChatWorkspace(true));
+    await waitFor(() => {
+      expect(result.current.isBootstrapping).toBe(false);
+    });
+
+    await act(async () => {
+      result.current.setInputValue('这次后端会返回空响应');
+    });
+    await act(async () => {
+      await result.current.submitMessage();
+    });
+
+    const assistantMessage = result.current.messages.find((message) => message.role === 'ASSISTANT');
+    expect(result.current.streamError).toBe('服务返回空响应，请检查后端服务状态');
+    expect(result.current.isStreaming).toBe(false);
+    expect(assistantMessage).toEqual(
+      expect.objectContaining({
+        status: 'error',
+        errorMessage: '服务返回空响应，请检查后端服务状态',
+      }),
+    );
+  });
+
+  /**
    * 离开当前会话只应断开本地 SSE 订阅，后台任务必须继续运行，不能等同于显式停止生成。
    */
   it('切到新建会话时不应取消正在后台运行的任务', async () => {

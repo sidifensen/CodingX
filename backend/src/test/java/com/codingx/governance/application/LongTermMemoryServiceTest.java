@@ -140,6 +140,29 @@ class LongTermMemoryServiceTest {
     }
 
     /**
+     * 项目归属类提问应命中当前工作空间内的项目记忆，避免“候选已加载但关键词未完全包含”导致回注为空。
+     */
+    @Test
+    void retrieveActiveMemoriesShouldMatchProjectOwnershipQuestion() {
+        InMemoryLongTermMemoryRepository repository = new InMemoryLongTermMemoryRepository();
+        repository.save(sampleMemory("ACTIVE")
+            .toBuilder()
+            .id(10L)
+            .memoryScope("PROJECT")
+            .userId(200L)
+            .workspaceId(300L)
+            .content("这个项目是斯蒂芬森的")
+            .keywordJson("[\"这个项目是斯蒂芬森的\"]")
+            .build());
+        LongTermMemoryService service = new LongTermMemoryService(repository);
+
+        List<GovernanceLongTermMemory> memories = service.retrieveActiveMemories(200L, 300L, "这个项目是谁的", 10);
+
+        assertEquals(1, memories.size());
+        assertEquals(10L, memories.getFirst().getId());
+    }
+
+    /**
      * 用户记忆管理页需要查看当前账号所有工作空间的项目记忆，不能只局限于当前选中的 workspace。
      */
     @Test

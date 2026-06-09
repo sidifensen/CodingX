@@ -18,7 +18,7 @@
 2. 后端聊天提交服务解析结构化 `slash_command`，当命令类型为 `builtin` 时调用 `SlashCommandService` 校验命令是否存在且启用。校验通过后把命令模板和用户问题组合进模型上下文；命令未知或停用时抛出中文 `BusinessException`，由全局异常处理返回 `ApiResponse.message`。
 3. `ChatApplicationService` 构造模型历史前调用 `GovernanceAgentContextService`。该服务先按当前用户和 `workspaceId` 解析用户拥有的本地工作目录，再由 `RepositoryInstructionContextService` 只读发现仓库规范文件；未绑定工作空间、目录不存在或没有命中文件时返回空片段，不阻断聊天。
 4. 仓库规范文件发现按稳定优先级读取 `AGENTS.override.md`、`AGENTS.md`、`CLAUDE.local.md`、`CLAUDE.md`、`.claude/CLAUDE.md`、`GEMINI.md`、`QWEN.md`，并支持 Cursor、Windsurf、Cline、Roo、Continue、Junie、OpenHands、Kiro、Aider 等常见规则文件或规则目录。读取时明确排除 `.github/copilot-instructions.md`、`docs/superpowers/memory/**`、`.codingx/context.md` 和 `.codingx/rules.md`；后端日志记录开始识别、命中文件、短预览、单文件或总内容截断，以及目录扫描或文件读取失败。
-5. `GovernanceAgentContextService` 再按当前用户、工作空间和本轮问题读取最多 6 条 ACTIVE 长期记忆，和仓库规范文件一起组成 system prompt 片段。长期记忆缺失时只注入仓库规范文件；仓库规范文件缺失时仍可单独注入长期记忆；两者都缺失时返回空文本。
+5. `GovernanceAgentContextService` 再按当前用户、工作空间和本轮问题读取最多 6 条 ACTIVE 长期记忆，和仓库规范文件一起组成 system prompt 片段。长期记忆先做用户和工作空间范围过滤，再按正文包含、关键词命中或项目主题短问句命中筛选；“这个项目是谁的”这类问题可以命中当前工作空间内“这个项目是某某的”项目记忆。长期记忆缺失时只注入仓库规范文件；仓库规范文件缺失时仍可单独注入长期记忆；两者都缺失时返回空文本。
 6. 工具执行前，`ChatToolExecutionService` 从 `ChatToolExecutionContext` 读取用户、会话、运行和工作目录上下文，再调用 `PermissionPolicyService` 按工具编码、命令片段和路径片段匹配策略。`DENY` 和 `CONFIRM` 会写入审计并阻止执行，`ALLOW` 或未命中策略时继续执行工具。
 7. 后台任务派发进入执行线程后触发 `BEFORE_TASK_START` Hook；任务外层失败时触发 `TASK_FAILED`，工具权限策略需要用户确认时触发 `TASK_CONFIRM_REQUIRED`，成功收口时触发 `TASK_COMPLETED`。`HookRuleService` 只按触发点和条件关键字返回启用规则，并写应用日志；规则动作如 `DESKTOP_NOTIFY`、`PET_EVENT`、`LOCAL_SCRIPT` 由后续桌面端或自动化执行器解释，匹配失败不会中断聊天流。
 

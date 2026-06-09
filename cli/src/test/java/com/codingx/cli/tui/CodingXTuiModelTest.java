@@ -388,6 +388,22 @@ class CodingXTuiModelTest {
     }
 
     @Test
+    void escShouldKeepIdleTuiOpen() {
+        CodingXTuiModel model = new CodingXTuiModel(
+            tempDir.resolve("workspace"),
+            new MockAgentEventSource(),
+            new TerminalRenderer()
+        );
+
+        UpdateResult<?> result = model.update(new KeyPressMessage(new Key(KeyType.keyESC)));
+
+        String view = stripAnsi(model.view());
+        assertNull(result.command(), "空闲状态按 Esc 不应退出 TUI");
+        assertTrue(view.contains("› █输入任务，/ 查看命令"), view);
+        assertTrue(view.contains("ready"), view);
+    }
+
+    @Test
     void runningStreamingAssistantDeltaShouldKeepQuestionNearComposer() throws Exception {
         DelayedStreamingEventSource eventSource = new DelayedStreamingEventSource();
         CodingXTuiModel model = new CodingXTuiModel(
@@ -902,7 +918,7 @@ class CodingXTuiModelTest {
     }
 
     @Test
-    void slashLoginShouldNotBlockEscapeQuitWhileBrowserCallbackIsPending() throws Exception {
+    void slashLoginShouldCancelBrowserWaitWithoutQuittingWhenEscapePressed() throws Exception {
         CapturingStreamingEventSource eventSource = new CapturingStreamingEventSource();
         BlockingCliAuthService authService = new BlockingCliAuthService();
         CodingXTuiModel model = new CodingXTuiModel(
@@ -928,7 +944,8 @@ class CodingXTuiModelTest {
             UpdateResult<?> escapeResult = model.update(new KeyPressMessage(new Key(KeyType.keyESC)));
 
             assertTrue(authService.awaitBrowserLoginInterrupted(), "后台登录等待应被 Esc 取消");
-            assertTrue(escapeResult.command().execute() instanceof com.williamcallahan.tui4j.compat.bubbletea.QuitMessage);
+            assertNull(escapeResult.command(), "取消浏览器登录不应退出 TUI");
+            assertTrue(stripAnsi(model.view()).contains("已取消浏览器登录等待"), model.view());
         } finally {
             authService.releaseBrowserLogin();
         }

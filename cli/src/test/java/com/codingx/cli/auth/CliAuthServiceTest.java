@@ -112,6 +112,10 @@ class CliAuthServiceTest {
             String successResponse = httpGet(wrongUri + "?code=cli-code-1&state=state-expected");
 
             assertTrue(successResponse.contains("授权完成"));
+            assertTrue(successResponse.contains("CodingX CLI 已连接"));
+            assertTrue(successResponse.contains("auth-shell"));
+            assertTrue(successResponse.contains("@media (prefers-color-scheme: dark)"));
+            assertTrue(successResponse.contains("可以关闭此页面"));
             assertEquals("cli-code-1", resultFuture.get().code());
         }
     }

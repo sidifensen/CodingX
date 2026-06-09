@@ -163,6 +163,11 @@ public class CodingXTuiModel implements Model {
     private Future<?> activeAuthTask;
 
     /**
+     * 当前浏览器登录等待序号；Esc 取消后递增，后台迟到结果不会再覆盖 TUI 状态。
+     */
+    private volatile long authTurnSerial;
+
+    /**
      * 当前流式轮次序号；中断后递增，后台迟到事件不会再写回 TUI。
      */
     private volatile long streamTurnSerial;
@@ -227,7 +232,7 @@ public class CodingXTuiModel implements Model {
     /**
      * 后台浏览器登录完成后回到 TUI 主循环的消息；pendingTask 非空时登录成功后继续发送原任务。
      */
-    private record BrowserLoginResultMessage(boolean success, String pendingTask) implements Message {
+    private record BrowserLoginResultMessage(long turnSerial, boolean success, String pendingTask) implements Message {
     }
 
     /**
@@ -288,6 +293,7 @@ public class CodingXTuiModel implements Model {
         });
         this.activeStreamTask = null;
         this.activeAuthTask = null;
+        this.authTurnSerial = 0L;
         this.streamTurnSerial = 0L;
         this.planMode = true;
         this.status = "ready";
@@ -371,8 +377,11 @@ public class CodingXTuiModel implements Model {
                     interruptRunningTurn();
                     return UpdateResult.from(this, null);
                 }
-                shutdownBackgroundTasks();
-                return UpdateResult.from(this, QuitMessage::new);
+                if (isBrowserLoginWaiting()) {
+                    cancelBrowserLoginWait();
+                    return UpdateResult.from(this, null);
+                }
+                return UpdateResult.from(this, null);
             }
             if ("shift+tab".equals(key) || keyPressMessage.type() == KeyType.KeyShiftTab) {
                 planMode = !planMode;
@@ -668,18 +677,25 @@ public class CodingXTuiModel implements Model {
      */
     private void startBrowserLogin(String pendingTask) {
         closeAssistantBlock();
+        // 重新发起登录时先终止旧等待，避免旧 loopback 任务失去 Future 引用后无法被 Esc 清理。
+        if (activeAuthTask != null) {
+            activeAuthTask.cancel(true);
+            activeAuthTask = null;
+        }
         status = "authenticating";
         appendSystemLine(pendingTask == null
-            ? "正在打开浏览器登录 CodingX，授权完成后会自动返回；Esc 可退出。"
-            : "未登录或登录已失效，正在打开浏览器登录 CodingX；授权完成后继续发送当前请求。");
+            ? "正在打开浏览器登录 CodingX，授权完成后会自动返回；Esc 可取消等待。"
+            : "未登录或登录已失效，正在打开浏览器登录 CodingX；授权完成后继续发送当前请求，Esc 可取消等待。");
         if (program == null) {
-            handleBrowserLoginResult(new BrowserLoginResultMessage(cliAuthService.loginWithBrowser(), pendingTask));
+            handleBrowserLoginResult(new BrowserLoginResultMessage(authTurnSerial, cliAuthService.loginWithBrowser(), pendingTask));
             return;
         }
+        long currentAuthSerial = ++authTurnSerial;
         activeAuthTask = streamExecutor.submit(() -> {
             boolean success = cliAuthService.loginWithBrowser();
-            if (!Thread.currentThread().isInterrupted() && program != null) {
-                program.send(new BrowserLoginResultMessage(success, pendingTask));
+            // Esc 取消等待后可能仍有迟到结果返回，这里按登录轮次过滤，避免覆盖 ready 状态。
+            if (isCurrentAuthTurn(currentAuthSerial)) {
+                program.send(new BrowserLoginResultMessage(currentAuthSerial, success, pendingTask));
             }
         });
         refreshViewport();
@@ -692,6 +708,9 @@ public class CodingXTuiModel implements Model {
      * @return 后续提交命令，可为空。
      */
     private Command handleBrowserLoginResult(BrowserLoginResultMessage message) {
+        if (message.turnSerial() != authTurnSerial) {
+            return null;
+        }
         activeAuthTask = null;
         if (message.success()) {
             if (message.pendingTask() == null || message.pendingTask().isBlank()) {
@@ -755,6 +774,25 @@ public class CodingXTuiModel implements Model {
     }
 
     /**
+     * 判断浏览器登录结果是否仍属于当前等待轮次；取消等待或重新发起登录后旧结果都要丢弃。
+     *
+     * @param turnSerial 后台登录线程捕获的等待序号。
+     * @return true 表示该结果仍可写回 TUI。
+     */
+    private boolean isCurrentAuthTurn(long turnSerial) {
+        return isBrowserLoginWaiting() && authTurnSerial == turnSerial && program != null;
+    }
+
+    /**
+     * 判断当前是否正在等待浏览器授权回调；该状态下 Esc 只取消等待，不退出 TUI。
+     *
+     * @return true 表示后台登录任务尚未结束。
+     */
+    private boolean isBrowserLoginWaiting() {
+        return "authenticating".equals(status) && activeAuthTask != null;
+    }
+
+    /**
      * 中断当前流式回答；只停止本轮 AI 回复，不退出整个 TUI 程序。
      */
     private void interruptRunningTurn() {
@@ -767,6 +805,20 @@ public class CodingXTuiModel implements Model {
         runningTurnStartedAtNanos = 0L;
         status = "interrupted";
         appendLine("• Interrupted");
+        refreshViewport();
+    }
+
+    /**
+     * 取消当前浏览器登录等待；只释放 TUI 交互状态，用户仍可稍后重新执行 `/login`。
+     */
+    private void cancelBrowserLoginWait() {
+        authTurnSerial++;
+        if (activeAuthTask != null) {
+            activeAuthTask.cancel(true);
+            activeAuthTask = null;
+        }
+        status = "ready";
+        appendSystemLine("已取消浏览器登录等待，可重新输入 /login。");
         refreshViewport();
     }
 

@@ -107,6 +107,16 @@ export function TaskDetail() {
 function GoalRecordsSection({ goals }: { goals: AdminChatGoalRecord[] }) {
   const [expanded, setExpanded] = React.useState(false);
   const detailPanelId = React.useId();
+  const toggleExpanded = React.useCallback(() => {
+    setExpanded((current) => !current);
+  }, []);
+  const handleToggleKeyDown = React.useCallback((event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== 'Enter' && event.key !== ' ') {
+      return;
+    }
+    event.preventDefault();
+    toggleExpanded();
+  }, [toggleExpanded]);
 
   if (goals.length === 0) {
     return null;
@@ -120,7 +130,17 @@ function GoalRecordsSection({ goals }: { goals: AdminChatGoalRecord[] }) {
       className="border-t border-border-hairline bg-surface-container-low px-sm py-sm sm:px-md"
       style={{ marginTop: 24 }}
     >
-      <div className="flex flex-col gap-sm sm:flex-row sm:items-center sm:justify-between">
+      <div
+        aria-controls={detailPanelId}
+        aria-expanded={expanded}
+        aria-label={expanded ? '收起目标记录' : '展开目标记录'}
+        className="group flex cursor-pointer select-none flex-col gap-sm outline-none transition-colors hover:text-ink focus-visible:ring-2 focus-visible:ring-primary sm:flex-row sm:items-center sm:justify-between"
+        data-testid="admin-conversation-goals-toggle"
+        onClick={toggleExpanded}
+        onKeyDown={handleToggleKeyDown}
+        role="button"
+        tabIndex={0}
+      >
         <div className="min-w-0">
           <Space size={[8, 8]} wrap>
             <Typography.Title level={4} style={{ margin: 0, lineHeight: 1.3 }}>
@@ -131,17 +151,13 @@ function GoalRecordsSection({ goals }: { goals: AdminChatGoalRecord[] }) {
             <Tag>事件 {eventCount}</Tag>
           </Space>
         </div>
-        <Button
-          aria-controls={detailPanelId}
-          aria-expanded={expanded}
-          aria-label={expanded ? '收起目标记录' : '展开目标记录'}
-          icon={expanded ? <DownOutlined /> : <RightOutlined />}
-          onClick={() => setExpanded((current) => !current)}
-          size="small"
-          type="text"
+        <span
+          aria-hidden="true"
+          className="inline-flex items-center gap-xs text-[12px] font-medium text-secondary transition-colors group-hover:text-ink"
         >
+          {expanded ? <DownOutlined /> : <RightOutlined />}
           {expanded ? '收起' : '展开'}
-        </Button>
+        </span>
       </div>
 
       {expanded ? (

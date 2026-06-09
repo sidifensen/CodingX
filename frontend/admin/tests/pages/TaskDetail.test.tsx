@@ -36,7 +36,7 @@ describe('TaskDetail', () => {
     expect(screen.queryByText('修复聊天目标展示')).not.toBeInTheDocument();
     expect(screen.queryByText('管理端展示目标三表')).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: '展开目标记录' }));
+    fireEvent.click(screen.getByTestId('admin-conversation-goals-toggle'));
 
     expect(screen.getByText('修复聊天目标展示')).toBeInTheDocument();
     expect(screen.getByText('管理端展示目标三表')).toBeInTheDocument();
@@ -45,6 +45,10 @@ describe('TaskDetail', () => {
     expect(screen.getByText('GOAL_UPDATED')).toBeInTheDocument();
     expect(screen.getByText('{"goal":{"title":"修复聊天目标展示"}}')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /编辑|删除|重置|完成|取消/ })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByText('目标 1'));
+
+    expect(screen.queryByText('修复聊天目标展示')).not.toBeInTheDocument();
   });
 
   /**

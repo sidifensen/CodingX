@@ -35,6 +35,9 @@ import com.codingx.chat.infrastructure.stream.NoopChatStreamPublisher;
 @Slf4j
 public class ChatStreamExecutionService {
 
+    /** 旧 run 自动收口时写入前端和管理端可读的统一中文原因。 */
+    private static final String INTERRUPTED_RUN_MESSAGE = "上一次执行已中断，已自动收口";
+
     /** 聊天主应用服务，承接后台线程中真正的消息处理链路。 */
     private final ChatApplicationService chatApplicationService;
     /** 运行态守卫服务，用于提交前检查会话是否已有执行中的 run。 */
@@ -159,12 +162,15 @@ public class ChatStreamExecutionService {
      */
     public void dispatch(Long runId, SendChatMessageCommand command, Long userId) {
         // 步骤 1：本地临时运行不创建持久化 run 和 Trace，直接派发内存级执行链路。
+        boolean effectivePlanMode = isEffectivePlanMode(command);
         if (command.localOnly()) {
             log.info(
-                "聊天派发: runId={}, 会话={}, 模式=本地, 深度思考={}, MCP数={}, 技能数={}, 专家={}",
+                "聊天派发: runId={}, 会话={}, 模式=本地, 深度思考={}, 目标模式={}, 有效目标模式={}, MCP数={}, 技能数={}, 专家={}",
                 runId,
                 command.conversationId(),
                 command.deepThinking(),
+                command.planMode(),
+                effectivePlanMode,
                 sizeOf(command.mcpCodes()),
                 sizeOf(command.skillCodes()),
                 command.expertCode()
@@ -175,14 +181,17 @@ public class ChatStreamExecutionService {
         // 步骤 2：云端运行只落库执行 run，保证前端 meta、后台线程和执行时间线使用同一个主键。
         LocalDateTime now = LocalDateTime.now();
         log.info(
-            "聊天派发: runId={}, 会话={}, 模式=云端, 深度思考={}, MCP数={}, 技能数={}, 专家={}",
+            "聊天派发: runId={}, 会话={}, 模式=云端, 深度思考={}, 目标模式={}, 有效目标模式={}, MCP数={}, 技能数={}, 专家={}",
             runId,
             command.conversationId(),
             command.deepThinking(),
+            command.planMode(),
+            effectivePlanMode,
             sizeOf(command.mcpCodes()),
             sizeOf(command.skillCodes()),
             command.expertCode()
         );
+        markInterruptedConversationRuns(command.conversationId(), runId, now);
         chatExecutionRunRepository.save(ChatExecutionRun.builder()
             .id(runId)
             .conversationId(command.conversationId())
@@ -211,7 +220,6 @@ public class ChatStreamExecutionService {
                 ChatToolExecutionContext.bindGovernanceContext(userId, command.conversationId(), runId);
                 bindToolWorkingDirectory(command, userId);
                 tempSkillRoot = bindSkillDirectories(command);
-                log.info("聊天执行开始");
                 triggerGovernanceHook("BEFORE_TASK_START", command.conversationId(), runId, null, "任务开始执行");
                 chatApplicationService.sendMessage(command, userId);
                 markConversationRunFinished(command.conversationId());
@@ -277,7 +285,6 @@ public class ChatStreamExecutionService {
                 ChatToolExecutionContext.bindGovernanceContext(userId, command.conversationId(), runId);
                 bindToolWorkingDirectory(command, userId);
                 tempSkillRoot = bindSkillDirectories(command);
-                log.info("聊天执行开始");
                 triggerGovernanceHook("BEFORE_TASK_START", command.conversationId(), runId, null, "本地任务开始执行");
                 chatApplicationService.sendMessage(command, userId);
             } catch (Throwable throwable) {
@@ -318,6 +325,64 @@ public class ChatStreamExecutionService {
             // 提醒状态只影响侧栏提示，不能反向污染已经完成的后台 run 终态。
             log.warn("标记会话运行完成提醒未读失败，conversationId={}", conversationId, exception);
         }
+    }
+
+    /**
+     * 新 run 派发前收口同会话旧运行记录，避免服务重启、模型长连接中断或旧线程丢失后前端一直显示运行中。
+     * @param conversationId 会话标识。
+     * @param currentRunId 本次即将创建的 run 标识。
+     * @param interruptedAt 收口时间。
+     */
+    private void markInterruptedConversationRuns(Long conversationId, Long currentRunId, LocalDateTime interruptedAt) {
+        if (conversationId == null || currentRunId == null) {
+            return;
+        }
+        java.util.List<ChatExecutionRun> previousRuns;
+        try {
+            // 步骤 1：只读取同会话 run，避免跨会话任务被误收口。
+            previousRuns = chatExecutionRunRepository.findByConversationId(conversationId);
+        } catch (RuntimeException exception) {
+            log.warn("读取同会话旧运行记录失败，跳过自动收口: conversationId={}", conversationId, exception);
+            return;
+        }
+        for (ChatExecutionRun previousRun : previousRuns) {
+            if (!shouldMarkInterrupted(previousRun, currentRunId)) {
+                continue;
+            }
+            // 步骤 2：仅把旧运行态写为明确失败终态，不修改消息、步骤和目标事件历史。
+            chatExecutionRunRepository.save(previousRun.toBuilder()
+                .status("ERROR")
+                .queueStatus("FAILED")
+                .errorMessage(INTERRUPTED_RUN_MESSAGE)
+                .finishedAt(interruptedAt)
+                .updatedAt(interruptedAt)
+                .build());
+            log.warn(
+                "旧聊天 run 已自动收口: conversationId={}, oldRunId={}, newRunId={}, oldStatus={}, oldQueueStatus={}",
+                conversationId,
+                previousRun.getId(),
+                currentRunId,
+                previousRun.getStatus(),
+                previousRun.getQueueStatus()
+            );
+        }
+    }
+
+    /**
+     * 判断旧 run 是否属于需要自动中断收口的运行态。
+     * @param previousRun 候选旧 run。
+     * @param currentRunId 当前 run 标识。
+     * @return 是否需要收口。
+     */
+    private boolean shouldMarkInterrupted(ChatExecutionRun previousRun, Long currentRunId) {
+        if (previousRun == null || previousRun.getId() == null || previousRun.getId().equals(currentRunId)) {
+            return false;
+        }
+        if (previousRun.getFinishedAt() != null) {
+            return false;
+        }
+        return StrUtil.equalsAnyIgnoreCase(previousRun.getStatus(), "RUNNING", "WAITING", "ACQUIRED")
+            || StrUtil.equalsAnyIgnoreCase(previousRun.getQueueStatus(), "WAITING", "ACQUIRED");
     }
 
     /**
@@ -449,6 +514,39 @@ public class ChatStreamExecutionService {
      */
     private int sizeOf(java.util.Collection<?> values) {
         return values == null ? 0 : values.size();
+    }
+
+    /**
+     * 派发层只做轻量目标模式识别，方便日志判断桌面端是否传入 planMode 或由用户原文触发兜底。
+     * 真实目标工具编排仍由 ChatApplicationService 负责，避免派发层承载业务状态流转。
+     * @param command 聊天消息命令。
+     * @return 本轮是否应被后端按目标/规划模式处理。
+     */
+    private boolean isEffectivePlanMode(SendChatMessageCommand command) {
+        if (command == null) {
+            return false;
+        }
+        if (command.planMode()) {
+            return true;
+        }
+        String normalizedContent = StrUtil.trimToEmpty(command.content()).replaceAll("\\s+", "");
+        if (StrUtil.isBlank(normalizedContent)) {
+            return false;
+        }
+        boolean goalModeSignal = normalizedContent.contains("开启目标模式")
+            || normalizedContent.contains("目标模式")
+            || normalizedContent.contains("创建一个目标")
+            || normalizedContent.contains("创建目标")
+            || normalizedContent.contains("检查当前线程是否已有目标");
+        boolean executionOrProgressSignal = normalizedContent.contains("更新目标进度")
+            || normalizedContent.contains("跟进进度")
+            || normalizedContent.contains("每完成一个关键步骤")
+            || normalizedContent.contains("执行过程中")
+            || normalizedContent.contains("不要只给方案")
+            || normalizedContent.contains("直接执行")
+            || normalizedContent.contains("验证、提交")
+            || normalizedContent.contains("完成提交");
+        return goalModeSignal && executionOrProgressSignal;
     }
 
     /**

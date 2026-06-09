@@ -7,6 +7,10 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.codingx.chat.domain.model.ChatIntentNode;
 import com.codingx.chat.domain.repository.ChatIntentNodeRepository;
 import com.codingx.mcp.application.executor.WeatherQuestionParser;
@@ -155,6 +159,44 @@ class ConversationIntentServiceTest {
         assertEquals(ConversationIntentAction.CLARIFY, decision.action());
         assertEquals("weather-data", decision.intentCode());
         assertEquals("请明确你想查询哪个城市的天气，例如：上海今天天气怎么样。", decision.reply());
+    }
+
+    /**
+     * 天气槽位澄清必须在后端日志中打印原因和返回文案，方便排查指代词问题为何没有继续调用工具。
+     */
+    @Test
+    void routeLogsClarificationReasonAndReplyWhenWeatherCityIsMissing() {
+        ChatIntentNode node = ChatIntentNode.builder()
+            .intentCode("weather-data")
+            .name("天气查询")
+            .intentType("mcp")
+            .mcpToolId("weather_query")
+            .enabled(1)
+            .examples("[\"北京今天天气怎么样？\",\"上海明天会下雨吗？\"]")
+            .build();
+        List<ConversationIntentCandidate> candidates = List.of(new ConversationIntentCandidate(node, 0.92D));
+        Logger logger = (Logger) org.slf4j.LoggerFactory.getLogger(ConversationIntentService.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        when(chatIntentNodeRepository.findEnabledNodes()).thenReturn(List.of(node));
+        when(conversationIntentResolver.resolveCandidates(eq("明天的天气怎么样"), eq(List.of(node)), any()))
+            .thenReturn(candidates);
+        when(conversationIntentGuidanceService.buildGuidancePrompt(eq("明天的天气怎么样"), eq(candidates), eq(List.of(node))))
+            .thenReturn(null);
+
+        try {
+            ConversationIntentDecision decision = conversationIntentService.route("明天的天气怎么样", true);
+
+            assertEquals(ConversationIntentAction.CLARIFY, decision.action());
+            boolean logged = appender.list.stream()
+                .anyMatch(event -> event.getLevel().equals(Level.INFO)
+                    && event.getFormattedMessage().contains("澄清原因=天气缺少城市参数")
+                    && event.getFormattedMessage().contains("澄清回复=请明确你想查询哪个城市的天气"));
+            assertTrue(logged);
+        } finally {
+            logger.detachAppender(appender);
+        }
     }
 
     /**

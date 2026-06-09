@@ -17,6 +17,7 @@ import lombok.Builder;
  * @param preferredModel 前端或运行时显式指定的候选模型 ID，可为空。
  * @param stream 是否请求流式响应，true 表示 provider 需要按 token/事件回调。
  * @param thinkingEnabled 是否开启深度思考模式，影响候选模型过滤和默认模型选择。
+ * @param streamCompletionTimeoutOverrideMs 本次请求覆盖的首包后整流完成超时毫秒，可为空；用于目标模式等需要更快收口的链路。
  */
 @Builder(toBuilder = true)
 public record AiConversationRequest(
@@ -25,7 +26,8 @@ public record AiConversationRequest(
     List<ChatToolSpec> tools, // 暴露给模型的工具定义列表，可为空。
     String preferredModel, // 前端或运行时显式指定的候选模型 ID，可为空。
     boolean stream, // 是否请求流式响应，true 表示 provider 需要按 token/事件回调。
-    boolean thinkingEnabled // 是否开启深度思考模式，影响候选模型过滤和默认模型选择。
+    boolean thinkingEnabled, // 是否开启深度思考模式，影响候选模型过滤和默认模型选择。
+    Long streamCompletionTimeoutOverrideMs // 本次请求覆盖的首包后整流完成超时，空值表示使用全局路由配置。
 ) {
 
     /**

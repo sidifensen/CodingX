@@ -148,6 +148,71 @@ class ChatGoalServiceTest {
     }
 
     /**
+     * 模型可能把默认目标键写入 goalId 字段，服务层必须把非数字 goalId 兼容为稳定键继续更新。
+     */
+    @Test
+    void updateGoalTreatsNonNumericGoalIdAsGoalKey() {
+        ChatGoalView created = chatGoalService.createGoal(
+            1001L,
+            2001L,
+            3001L,
+            new ChatGoalService.CreateGoalCommand(null, "default", "目标", null, List.of())
+        );
+
+        ChatGoalView updated = chatGoalService.updateGoal(
+            1001L,
+            2001L,
+            3002L,
+            new ChatGoalService.UpdateGoalCommand(
+                "default",
+                null,
+                "目标",
+                null,
+                "ACTIVE",
+                "完成第一步",
+                List.of(new ChatGoalService.StepCommand("draft", "起草 HTML", "COMPLETED", "已完成结构草稿"))
+            )
+        );
+
+        assertEquals(created.id(), updated.id());
+        assertEquals("完成第一步", chatGoalRepository.goals.get(created.id()).getProgressSummary());
+        assertEquals(ChatGoalStepStatus.COMPLETED, chatGoalRepository.stepsByGoalId.get(created.id()).getFirst().getStatus());
+        assertEquals("GOAL_UPDATED", chatGoalRepository.events.getLast().eventType());
+    }
+
+    /**
+     * update_goal 若收到模型编造的非数字 goalId，应回退当前会话 active goal，避免已创建目标后再次报“目标不存在”。
+     */
+    @Test
+    void updateGoalFallsBackToActiveGoalWhenNonNumericGoalIdMisses() {
+        ChatGoalView created = chatGoalService.createGoal(
+            1001L,
+            2001L,
+            3001L,
+            new ChatGoalService.CreateGoalCommand(null, "default", "目标", null, List.of())
+        );
+
+        ChatGoalView updated = chatGoalService.updateGoal(
+            1001L,
+            2001L,
+            3002L,
+            new ChatGoalService.UpdateGoalCommand(
+                "goal_202606091110",
+                null,
+                null,
+                null,
+                "ACTIVE",
+                "已完成结构设计",
+                List.of(new ChatGoalService.StepCommand("draft", "起草 HTML", "COMPLETED", "已完成结构草稿"))
+            )
+        );
+
+        assertEquals(created.id(), updated.id());
+        assertEquals("已完成结构设计", chatGoalRepository.goals.get(created.id()).getProgressSummary());
+        assertEquals("GOAL_UPDATED", chatGoalRepository.events.getLast().eventType());
+    }
+
+    /**
      * getGoal 必须按当前会话读取目标，不能只按 goalKey 跨会话命中同名目标。
      */
     @Test

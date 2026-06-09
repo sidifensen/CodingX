@@ -101,15 +101,7 @@ public class ChatGoalService {
             goalId,
             goalKey
         );
-        Optional<ChatGoal> goalOptional;
-        if (StrUtil.isNotBlank(goalId)) {
-            goalOptional = parseLong(goalId)
-                .flatMap(parsedGoalId -> chatGoalRepository.findByIdAndConversationIdAndUserId(parsedGoalId, conversationId, userId));
-        } else if (StrUtil.isNotBlank(goalKey)) {
-            goalOptional = chatGoalRepository.findByGoalKeyAndConversationIdAndUserId(goalKey, conversationId, userId);
-        } else {
-            goalOptional = chatGoalRepository.findActiveByConversationIdAndUserId(conversationId, userId);
-        }
+        Optional<ChatGoal> goalOptional = resolveGoal(conversationId, userId, goalId, goalKey);
         if (goalOptional.isEmpty()) {
             log.warn(
                 "目标模式读取目标未命中: conversationId={}, userId={}, lookupMode={}, goalId={}, goalKey={}",
@@ -236,7 +228,7 @@ public class ChatGoalService {
             safeCommand.status(),
             requestedStepCount
         );
-        Optional<ChatGoal> existingOptional = resolveGoal(conversationId, userId, safeCommand.goalId(), safeCommand.goalKey());
+        Optional<ChatGoal> existingOptional = resolveGoalForUpdate(conversationId, userId, runId, safeCommand);
         if (existingOptional.isEmpty()) {
             log.warn(
                 "目标模式更新目标未命中: conversationId={}, userId={}, runId={}, goalId={}, goalKey={}",
@@ -290,15 +282,62 @@ public class ChatGoalService {
     }
 
     /**
+     * 更新工具优先尊重模型传入的 goalId/goalKey；若模型编造了不存在的标识，则回退当前 active goal。
+     * 这个兜底只用于 update_goal，避免 get_goal 在读取不存在目标时悄悄返回其他目标，影响工具决策。
+     */
+    private Optional<ChatGoal> resolveGoalForUpdate(
+        Long conversationId,
+        Long userId,
+        Long runId,
+        UpdateGoalCommand command
+    ) {
+        Optional<ChatGoal> goalOptional = resolveGoal(conversationId, userId, command.goalId(), command.goalKey());
+        if (goalOptional.isPresent()) {
+            return goalOptional;
+        }
+        boolean hasExplicitLookup = StrUtil.isNotBlank(command.goalId()) || StrUtil.isNotBlank(command.goalKey());
+        if (!hasExplicitLookup) {
+            return Optional.empty();
+        }
+
+        // 模型在同一轮 create_goal 后常会继续使用自造 goalId；此时 active goal 才是数据库事实来源。
+        Optional<ChatGoal> activeGoal = chatGoalRepository.findActiveByConversationIdAndUserId(conversationId, userId);
+        activeGoal.ifPresent(goal -> log.warn(
+            "目标模式更新目标标识未命中，已回退 active goal: conversationId={}, userId={}, runId={}, providedGoalId={}, providedGoalKey={}, activeGoalId={}",
+            conversationId,
+            userId,
+            runId,
+            command.goalId(),
+            command.goalKey(),
+            goal.getId()
+        ));
+        return activeGoal;
+    }
+
+    /**
      * 按工具传入的目标标识解析目标，未提供时回退当前 active goal。
+     * 模型有时会把稳定键 default 填入 goalId，因此非数字 goalId 需要兼容为 goalKey。
      */
     private Optional<ChatGoal> resolveGoal(Long conversationId, Long userId, String goalId, String goalKey) {
-        if (StrUtil.isNotBlank(goalId)) {
-            return parseLong(goalId)
-                .flatMap(parsedGoalId -> chatGoalRepository.findByIdAndConversationIdAndUserId(parsedGoalId, conversationId, userId));
+        Optional<Long> parsedGoalId = parseLong(goalId);
+        if (parsedGoalId.isPresent()) {
+            Optional<ChatGoal> goalOptional = chatGoalRepository.findByIdAndConversationIdAndUserId(
+                parsedGoalId.orElseThrow(),
+                conversationId,
+                userId
+            );
+            if (goalOptional.isPresent()) {
+                return goalOptional;
+            }
         }
         if (StrUtil.isNotBlank(goalKey)) {
-            return chatGoalRepository.findByGoalKeyAndConversationIdAndUserId(goalKey, conversationId, userId);
+            Optional<ChatGoal> goalOptional = chatGoalRepository.findByGoalKeyAndConversationIdAndUserId(goalKey, conversationId, userId);
+            if (goalOptional.isPresent()) {
+                return goalOptional;
+            }
+        }
+        if (StrUtil.isNotBlank(goalId) && parsedGoalId.isEmpty()) {
+            return chatGoalRepository.findByGoalKeyAndConversationIdAndUserId(goalId.trim(), conversationId, userId);
         }
         return chatGoalRepository.findActiveByConversationIdAndUserId(conversationId, userId);
     }

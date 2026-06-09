@@ -87,6 +87,7 @@ public class OpenAiCompatibleChatClient implements AiProviderClient {
                 }
                 BufferedSource source = responseBody.source();
                 OpenAiStyleStreamParser.StreamState streamState = openAiStyleStreamParser.newStreamState();
+                AtomicBoolean streamDone = new AtomicBoolean(false);
                 // 步骤 4：把 OpenAI SSE 片段转发给统一处理器，取消后停止向上游回调，避免旧流污染新候选。
                 OpenAiStyleStreamParser.StreamConsumer streamConsumer = new OpenAiStyleStreamParser.StreamConsumer() {
                     @Override
@@ -107,6 +108,7 @@ public class OpenAiCompatibleChatClient implements AiProviderClient {
                     @Override
                     public void onDone() {
                         if (!cancelled.get()) {
+                            streamDone.set(true);
                             handler.onComplete();
                         }
                     }
@@ -125,7 +127,7 @@ public class OpenAiCompatibleChatClient implements AiProviderClient {
                         }
                     }
                 };
-                while (!cancelled.get()) {
+                while (!cancelled.get() && !streamDone.get()) {
                     String line = source.readUtf8Line();
                     if (line == null) {
                         break;

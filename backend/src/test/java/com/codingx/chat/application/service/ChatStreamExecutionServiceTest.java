@@ -471,6 +471,48 @@ class ChatStreamExecutionServiceTest {
     }
 
     /**
+     * 新请求派发前应把同会话旧 RUNNING/WAITING run 收口，避免进程重启或流式中断后前端一直显示“停止生成”。
+     * @throws Exception 等待后台线程执行时抛出。
+     */
+    @Test
+    void dispatchMarksPreviousRunningConversationRunsInterruptedBeforeNewRun() throws Exception {
+        CountDownLatch captured = new CountDownLatch(1);
+        Long oldRunId = 90001L;
+        Long newRunId = 90002L;
+        ChatExecutionRun oldRunningRun = ChatExecutionRun.builder()
+            .id(oldRunId)
+            .conversationId(1001L)
+            .taskId(oldRunId)
+            .status("RUNNING")
+            .queueStatus("ACQUIRED")
+            .createdAt(java.time.LocalDateTime.now().minusMinutes(10))
+            .updatedAt(java.time.LocalDateTime.now().minusMinutes(10))
+            .build();
+        when(chatExecutionRunRepository.findByConversationId(1001L)).thenReturn(java.util.List.of(oldRunningRun));
+        ChatStreamExecutionService service = createService();
+        org.mockito.Mockito.doAnswer(invocation -> {
+            captured.countDown();
+            return null;
+        }).when(chatApplicationService).sendMessage(new SendChatMessageCommand(1001L, "你好", false, java.util.List.of(), java.util.List.of(), null, null, java.util.List.of()), 2001L);
+
+        service.dispatch(newRunId, new SendChatMessageCommand(1001L, "你好", false), 2001L);
+
+        assertTrue(captured.await(1, TimeUnit.SECONDS), "new run should continue after stale run cleanup");
+        verify(chatExecutionRunRepository).save(org.mockito.ArgumentMatchers.argThat(run ->
+            oldRunId.equals(run.getId())
+                && "ERROR".equals(run.getStatus())
+                && "FAILED".equals(run.getQueueStatus())
+                && "上一次执行已中断，已自动收口".equals(run.getErrorMessage())
+                && run.getFinishedAt() != null
+        ));
+        verify(chatExecutionRunRepository).save(org.mockito.ArgumentMatchers.argThat(run ->
+            newRunId.equals(run.getId())
+                && "RUNNING".equals(run.getStatus())
+                && "WAITING".equals(run.getQueueStatus())
+        ));
+    }
+
+    /**
      * 后台 run 进入终态时应把会话任务完成提醒重置为未读，让前端列表刷新后能显示提醒圆点。
      * @throws Exception 等待后台线程执行时抛出。
      */

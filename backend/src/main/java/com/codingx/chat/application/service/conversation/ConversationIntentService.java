@@ -49,7 +49,7 @@ public class ConversationIntentService {
         // 步骤 1：空问题直接进入澄清分支，避免后续模型或工具链路收到无效输入。
         if (StrUtil.isBlank(question)) {
             ConversationIntentDecision decision = new ConversationIntentDecision("clarify.ambiguity", ConversationIntentAction.CLARIFY, "请补充你的具体问题");
-            logIntentDecision(question, mcpEnabled, decision, List.of());
+            logIntentDecision(question, mcpEnabled, decision, List.of(), "问题为空");
             return decision;
         }
         // 步骤 2：加载启用意图节点和示例，先由分类器给出候选，再由歧义服务判断是否需要追问。
@@ -59,7 +59,7 @@ public class ConversationIntentService {
         String guidancePrompt = conversationIntentGuidanceService.buildGuidancePrompt(question, candidates, nodes);
         if (StrUtil.isNotBlank(guidancePrompt)) {
             ConversationIntentDecision decision = new ConversationIntentDecision("clarify.ambiguity", ConversationIntentAction.CLARIFY, guidancePrompt);
-            logIntentDecision(question, mcpEnabled, decision, candidates);
+            logIntentDecision(question, mcpEnabled, decision, candidates, "歧义引导");
             return decision;
         }
         // 步骤 3：没有候选时回退普通直答，由后续模型生成回答而不是强行搜索或调用工具。
@@ -78,6 +78,8 @@ public class ConversationIntentService {
                 decision = new ConversationIntentDecision(topNode.getIntentCode(), ConversationIntentAction.MCP_DISABLED, "当前消息未连接 MCP");
             } else if (weatherMcpMissingCity(topNode, question)) {
                 decision = new ConversationIntentDecision(topNode.getIntentCode(), ConversationIntentAction.CLARIFY, "请明确你想查询哪个城市的天气，例如：上海今天天气怎么样。");
+                logIntentDecision(question, mcpEnabled, decision, candidates, "天气缺少城市参数");
+                return decision;
             } else {
                 decision = new ConversationIntentDecision(topNode.getIntentCode(), ConversationIntentAction.MCP, null);
             }
@@ -153,6 +155,19 @@ public class ConversationIntentService {
         ConversationIntentDecision decision,
         List<ConversationIntentCandidate> candidates
     ) {
+        logIntentDecision(question, mcpEnabled, decision, candidates, null);
+    }
+
+    /**
+     * 打印意图路由结果；当命中澄清短路时额外打印原因和用户可见文案，方便排查为何没有继续调用模型或工具。
+     */
+    private void logIntentDecision(
+        String question,
+        boolean mcpEnabled,
+        ConversationIntentDecision decision,
+        List<ConversationIntentCandidate> candidates,
+        String clarifyReason
+    ) {
         ConversationIntentCandidate top = candidates.isEmpty() ? null : candidates.getFirst();
         log.info(
             "意图决策: 问题={}, 动作={}, 意图={}, 首选={}, 分数={}, 候选={}, MCP={}",
@@ -164,5 +179,18 @@ public class ConversationIntentService {
             candidates.size(),
             mcpEnabled
         );
+        if (decision.action() == ConversationIntentAction.CLARIFY) {
+            log.info(
+                "意图澄清触发: 问题={}, 澄清原因={}, 意图={}, 首选={}, 分数={}, 候选={}, MCP={}, 澄清回复={}",
+                StrUtil.maxLength(question, 120),
+                StrUtil.blankToDefault(clarifyReason, "意图路由澄清"),
+                decision.intentCode(),
+                top == null ? null : top.node().getIntentCode(),
+                top == null ? null : top.score(),
+                candidates.size(),
+                mcpEnabled,
+                StrUtil.maxLength(decision.reply(), 200)
+            );
+        }
     }
 }

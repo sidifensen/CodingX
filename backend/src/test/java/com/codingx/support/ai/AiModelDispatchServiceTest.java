@@ -302,6 +302,97 @@ class AiModelDispatchServiceTest {
     }
 
     /**
+     * 首包成功后 provider 如果长期不结束，路由层必须取消会话并抛错，避免聊天 run 永久停留 RUNNING。
+     */
+    @Test
+    void streamChatTimesOutWhenProviderDoesNotCompleteAfterFirstToken() {
+        CompletableFuture<Void> hangingCompletion = new CompletableFuture<>();
+        java.util.concurrent.atomic.AtomicBoolean cancelled = new java.util.concurrent.atomic.AtomicBoolean(false);
+        AiProviderClient hangingProvider = new AiProviderClient() {
+            @Override
+            public String provider() {
+                return "primary";
+            }
+
+            @Override
+            public AiStreamSession streamChat(AiConversationRequest request, AiModelTarget target, AiStreamHandler handler) {
+                handler.onContentDelta("partial");
+                return new AiStreamSession(() -> cancelled.set(true), hangingCompletion);
+            }
+        };
+        AiProperties properties = minimalPropertiesWithCandidates(
+            candidate("deepseek-chat", "primary", "deepseek-chat", 1, false)
+        );
+        properties.getSelection().setStreamCompletionTimeoutMs(50L);
+        AiModelDispatchService service = new AiModelDispatchService(
+            List.of(hangingProvider),
+            new AiProviderHealthRegistry(2, 30_000L),
+            new AiModelSelector(properties)
+        );
+        List<String> deltas = new ArrayList<>();
+
+        IllegalStateException exception = assertThrows(IllegalStateException.class, () -> service.streamChat(
+            AiConversationRequest.builder()
+                .messages(List.of(ChatMessage.userMessage(1L, "你好")))
+                .stream(true)
+                .build(),
+            new AiStreamHandler() {
+                @Override
+                public void onContentDelta(String delta) {
+                    deltas.add(delta);
+                }
+            }
+        ));
+
+        assertEquals(ErrorMessageCatalog.AI_STREAM_FAILED_AFTER_FIRST_TOKEN, exception.getMessage());
+        assertTrue(cancelled.get(), "hanging provider should be cancelled after completion timeout");
+        assertEquals(List.of("partial"), deltas);
+    }
+
+    /**
+     * 请求级完成超时应优先于全局路由配置，供目标模式这类执行链路快速失败并由上层写入阻塞状态。
+     */
+    @Test
+    void streamChatUsesRequestCompletionTimeoutOverrideWhenPresent() {
+        CompletableFuture<Void> hangingCompletion = new CompletableFuture<>();
+        java.util.concurrent.atomic.AtomicBoolean cancelled = new java.util.concurrent.atomic.AtomicBoolean(false);
+        AiProviderClient hangingProvider = new AiProviderClient() {
+            @Override
+            public String provider() {
+                return "primary";
+            }
+
+            @Override
+            public AiStreamSession streamChat(AiConversationRequest request, AiModelTarget target, AiStreamHandler handler) {
+                handler.onContentDelta("partial");
+                return new AiStreamSession(() -> cancelled.set(true), hangingCompletion);
+            }
+        };
+        AiProperties properties = minimalPropertiesWithCandidates(
+            candidate("deepseek-chat", "primary", "deepseek-chat", 1, false)
+        );
+        properties.getSelection().setStreamCompletionTimeoutMs(60_000L);
+        AiModelDispatchService service = new AiModelDispatchService(
+            List.of(hangingProvider),
+            new AiProviderHealthRegistry(2, 30_000L),
+            new AiModelSelector(properties)
+        );
+
+        IllegalStateException exception = assertThrows(IllegalStateException.class, () -> service.streamChat(
+            AiConversationRequest.builder()
+                .messages(List.of(ChatMessage.userMessage(1L, "开启目标模式")))
+                .stream(true)
+                .streamCompletionTimeoutOverrideMs(50L)
+                .build(),
+            new AiStreamHandler() {
+            }
+        ));
+
+        assertEquals(ErrorMessageCatalog.AI_STREAM_FAILED_AFTER_FIRST_TOKEN, exception.getMessage());
+        assertTrue(cancelled.get(), "request override should cancel hanging provider before global timeout");
+    }
+
+    /**
      * OpenAI 兼容客户端只是内部协议适配器，对外 metadata 必须保留候选池中的真实模型商。
      */
     @Test

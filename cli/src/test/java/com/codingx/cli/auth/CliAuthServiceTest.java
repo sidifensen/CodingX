@@ -116,6 +116,11 @@ class CliAuthServiceTest {
             assertTrue(successResponse.contains("auth-shell"));
             assertTrue(successResponse.contains("@media (prefers-color-scheme: dark)"));
             assertTrue(successResponse.contains("可以关闭此页面"));
+            assertTrue(successResponse.contains("#0d74ce"));
+            assertTrue(successResponse.contains("#171717"));
+            assertTrue(successResponse.contains("backdrop-filter: blur"));
+            assertFalse(successResponse.contains("#24c08b"));
+            assertFalse(successResponse.contains("36, 192, 139"));
             assertEquals("cli-code-1", resultFuture.get().code());
         }
     }

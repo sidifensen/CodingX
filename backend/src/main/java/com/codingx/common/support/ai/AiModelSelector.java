@@ -81,6 +81,18 @@ public class AiModelSelector {
     }
 
     /**
+     * 返回首包成功后的整流完成超时时间，供路由层防止 provider 长连接永久挂起聊天线程。
+     * @return 整流完成超时毫秒数。
+     */
+    public long streamCompletionTimeoutMs() {
+        // 步骤 1：优先读取动态运行时配置，缺省时回退静态配置。
+        if (dynamicProperties != null) {
+            return dynamicProperties.streamCompletionTimeoutMs();
+        }
+        return aiProperties.getSelection().getStreamCompletionTimeoutMs();
+    }
+
+    /**
      * 选择聊天候选模型。
      * @param preferredModel 显式指定的优先模型。
      * @param thinkingEnabled 是否开启思考模式。

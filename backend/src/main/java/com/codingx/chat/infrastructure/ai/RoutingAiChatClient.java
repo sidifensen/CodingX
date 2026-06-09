@@ -1,6 +1,7 @@
 package com.codingx.chat.infrastructure.ai;
 
 import com.codingx.chat.domain.model.ChatMessage;
+import com.codingx.chat.domain.model.ChatMessageRole;
 import com.codingx.chat.domain.port.AiChatClient;
 import com.codingx.chat.domain.model.ChatAttachment;
 import com.codingx.chat.application.service.ChatAttachmentService;
@@ -20,6 +21,9 @@ import org.springframework.stereotype.Component;
 @Component
 @Primary
 public class RoutingAiChatClient implements AiChatClient {
+
+    /** 目标模式首包后模型流完成等待窗口，避免长工具参数流把桌面端长期卡在 RUNNING/ACTIVE。 */
+    private static final long PLAN_MODE_STREAM_COMPLETION_TIMEOUT_MS = 90_000L;
 
     /** 模型调度服务，用于把旧领域接口请求路由到当前可用 provider/model。 */
     private final AiModelDispatchService aiModelDispatchService;
@@ -56,6 +60,7 @@ public class RoutingAiChatClient implements AiChatClient {
             .tools(tools == null ? List.of() : tools)
             .stream(true)
             .thinkingEnabled(deepThinking)
+            .streamCompletionTimeoutOverrideMs(resolveStreamCompletionTimeoutOverrideMs(history))
             .build();
         aiModelDispatchService.streamChat(request, new AiStreamHandler() {
             @Override
@@ -138,6 +143,22 @@ public class RoutingAiChatClient implements AiChatClient {
         return history.stream()
             .flatMap(message -> chatAttachmentService.listByMessageId(message.getId()).stream())
             .toList();
+    }
+
+    /**
+     * 目标模式需要比普通聊天更快收口模型长流，防止右侧目标浮窗停留在 ACTIVE 且 run 长时间 RUNNING。
+     * @param history 本次送入模型的历史，应用层会在目标模式下追加系统约束。
+     * @return 请求级整流完成超时；空值表示沿用全局路由配置。
+     */
+    private Long resolveStreamCompletionTimeoutOverrideMs(List<ChatMessage> history) {
+        if (history == null) {
+            return null;
+        }
+        boolean planMode = history.stream()
+            .filter(message -> message.getRole() == ChatMessageRole.SYSTEM)
+            .map(ChatMessage::getContent)
+            .anyMatch(content -> content != null && content.contains("# 规划/目标模式"));
+        return planMode ? PLAN_MODE_STREAM_COMPLETION_TIMEOUT_MS : null;
     }
 }
 

@@ -49,6 +49,7 @@ class AiRoutingDefaultsConfigTest {
         assertTrue(initSql.contains("ai.chat.candidates.10.provider'"), "初始化数据应包含候选 provider 扁平键");
         assertTrue(initSql.contains("ai.chat.candidates.10.supports_vision'"), "初始化数据应包含候选视觉能力扁平键");
         assertTrue(initSql.contains("ai.selection.first_packet_timeout_ms', '15000'"), "初始化数据应把首包等待窗口控制在 15 秒");
+        assertTrue(initSql.contains("ai.selection.stream_completion_timeout_ms', '300000'"), "初始化数据应把首包后整流完成窗口控制在 300 秒");
     }
 
     /**
@@ -162,6 +163,32 @@ class AiRoutingDefaultsConfigTest {
                 });
 
             assertTrue(found, "应存在一条迁移把首包等待窗口更新为 15 秒");
+        }
+    }
+
+    /**
+     * 历史环境升级时必须补齐首包后的整流完成超时，避免 provider 长连接异常导致聊天 run 永久运行中。
+     * @throws IOException 读取迁移文件失败时抛出。
+     */
+    @Test
+    void migrationSeedsStreamCompletionTimeoutForExistingDatabases() throws IOException {
+        try (Stream<Path> migrations = Files.list(Path.of("src/main/resources/db/migration"))) {
+            boolean found = migrations
+                .filter(path -> path.getFileName().toString().endsWith(".sql"))
+                .anyMatch(path -> {
+                    try {
+                        String content = Files.readString(path);
+                        return containsAll(
+                            content,
+                            "ai.selection.stream_completion_timeout_ms",
+                            "'300000'"
+                        );
+                    } catch (IOException exception) {
+                        throw new IllegalStateException("读取迁移文件失败：" + path, exception);
+                    }
+                });
+
+            assertTrue(found, "应存在一条迁移补齐首包后整流完成超时");
         }
     }
 

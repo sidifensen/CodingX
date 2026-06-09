@@ -31,6 +31,7 @@ public final class ChatRunContextStepSupport {
      * @param mcpCodes 本轮 MCP 编码。
      * @param skillCodes 本轮技能编码。
      * @param expertCode 本轮专家编码。
+     * @param planMode 本轮是否按目标/规划模式执行，供重试、回放和线上排查还原入口状态。
      * @param existingStep 已存在的上下文步骤。
      * @return 可直接保存的执行步骤。
      */
@@ -39,13 +40,15 @@ public final class ChatRunContextStepSupport {
         List<String> mcpCodes,
         List<String> skillCodes,
         String expertCode,
+        boolean planMode,
         ChatExecutionStep existingStep
     ) {
         LocalDateTime now = LocalDateTime.now();
         JSONObject metadata = JSONUtil.createObj()
             .set("mcpCodes", normalizeCodes(mcpCodes))
             .set("skillCodes", normalizeCodes(skillCodes))
-            .set("expertCode", StrUtil.trimToNull(expertCode));
+            .set("expertCode", StrUtil.trimToNull(expertCode))
+            .set("planMode", planMode);
         return ChatExecutionStep.builder()
             .id(existingStep == null || existingStep.getId() == null ? IdUtil.getSnowflakeNextId() : existingStep.getId())
             .runId(runId)
@@ -75,7 +78,8 @@ public final class ChatRunContextStepSupport {
             return new RunContext(
                 readStringArray(metadata, "mcpCodes"),
                 readStringArray(metadata, "skillCodes"),
-                StrUtil.trimToNull(metadata.getStr("expertCode"))
+                StrUtil.trimToNull(metadata.getStr("expertCode")),
+                readBoolean(metadata, "planMode")
             );
         } catch (Exception ignored) {
             return RunContext.empty();
@@ -125,18 +129,34 @@ public final class ChatRunContextStepSupport {
     }
 
     /**
+     * 兼容旧 metadata 中缺失 planMode 字段的记录；只有明确 true 才恢复目标/规划模式。
+     * @param metadata 上下文步骤 metadata。
+     * @param fieldName 布尔字段名。
+     * @return 字段是否为 true。
+     */
+    private static boolean readBoolean(JSONObject metadata, String fieldName) {
+        if (metadata == null || StrUtil.isBlank(fieldName)) {
+            return false;
+        }
+        Object value = metadata.get(fieldName);
+        return Boolean.TRUE.equals(value) || StrUtil.equalsIgnoreCase(String.valueOf(value), "true");
+    }
+
+    /**
      * 本次聊天运行选择的能力上下文，来自流式入口解析后的 MCP、技能和专家选择。
      * @param mcpCodes 本轮选中的 MCP 编码列表，已去重并过滤空白值。
      * @param skillCodes 本轮选中的技能编码列表，已去重并过滤空白值。
      * @param expertCode 本轮选中的专家编码，可为空；为空表示不绑定专家提示词。
+     * @param planMode 本轮是否按目标/规划模式执行；旧记录缺失时默认为 false。
      */
     public record RunContext(
         List<String> mcpCodes, // 本轮选中的 MCP 编码列表，已去重并过滤空白值。
         List<String> skillCodes, // 本轮选中的技能编码列表，已去重并过滤空白值。
-        String expertCode // 本轮选中的专家编码，可为空；为空表示不绑定专家提示词。
+        String expertCode, // 本轮选中的专家编码，可为空；为空表示不绑定专家提示词。
+        boolean planMode // 本轮是否按目标/规划模式执行；旧记录缺失时默认为 false。
     ) {
         public static RunContext empty() {
-            return new RunContext(List.of(), List.of(), null);
+            return new RunContext(List.of(), List.of(), null, false);
         }
     }
 }

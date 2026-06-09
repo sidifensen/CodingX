@@ -827,8 +827,9 @@ class CodingXTuiModelTest {
         // 未选中命令保持灰色弱提示，只让当前选中项抢占视觉焦点。
         assertTrue(view.contains("\u001B[90m  /logout    退出登录\u001B[0m"), view);
         assertTrue(view.contains("\u001B[90m  /review    审查当前改动并优先指出风险和测试缺口\u001B[0m"), view);
-        // 选中项只改变整行文字颜色，不使用背景块，避免在终端里出现突兀的色块。
-        assertTrue(view.contains("› \u001B[34m/login     登录 CodingX\u001B[0m"), view);
+        // 选中项只把箭头做灰色弱提示，命令和说明继续变色，避免箭头抢视觉焦点。
+        assertTrue(view.contains("\u001B[90m› \u001B[0m\u001B[34m/login     登录 CodingX\u001B[0m"), view);
+        assertFalse(view.contains("› \u001B[34m/login"), view);
         assertFalse(view.contains("48;5;238"), view);
         assertTrue(view.contains("登录 CodingX"), view);
     }
@@ -846,7 +847,8 @@ class CodingXTuiModelTest {
         pressRunes(model, "/");
         // 初始选中第一项 /login。
         String view = model.view();
-        assertTrue(view.contains("› \u001B[34m/login     登录 CodingX\u001B[0m"), view);
+        assertTrue(view.contains("\u001B[90m› \u001B[0m\u001B[34m/login     登录 CodingX\u001B[0m"), view);
+        assertFalse(view.contains("› \u001B[34m/login"), view);
         assertFalse(view.contains("48;5;238"), view);
     }
 

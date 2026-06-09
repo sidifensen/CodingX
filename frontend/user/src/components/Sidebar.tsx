@@ -319,7 +319,10 @@ export default function Sidebar({
           <NavItem id="automation" label="自动化" icon={Bot} />
         </nav>
 
-        <div className="sidebar-scrollbar flex-1 overflow-y-auto pb-4">
+        <div
+          data-testid="sidebar-conversation-history-panel"
+          className="sidebar-scrollbar mt-2 flex-1 overflow-y-auto pb-4"
+        >
           {authSession ? (
             <ConversationHistory
               workspaceGroups={workspaceGroups}

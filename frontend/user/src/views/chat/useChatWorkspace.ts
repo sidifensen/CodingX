@@ -102,6 +102,26 @@ interface ConversationExportRecord {
 }
 
 /**
+ * 记录已从当前页面脱离但仍在前端继续消费的 SSE 流。
+ * 业务意图：用户切换会话只改变主区显示，不应停止旧会话在前端接收后续 token。
+ */
+interface BackgroundStreamContext {
+  runtimeTarget: 'cloud' | 'local';
+  workspacePath: string | null;
+  conversationId: string;
+  activeMessageId: string;
+  abortController: AbortController;
+  conversations: ConversationItem[];
+  messages: ChatMessageItem[];
+  executionSteps: ExecutionStepItem[];
+  references: ReferenceItem[];
+  artifacts: ArtifactItem[];
+  currentExperts: CurrentExpertItem[];
+  currentSkills: CurrentSkillItem[];
+  currentMcps: CurrentMcpItem[];
+}
+
+/**
  * 描述已由 Canvas 渲染好的 PDF 页面图片，供二进制 PDF XObject 嵌入。
  */
 interface PdfImagePage {
@@ -649,6 +669,7 @@ export function useChatWorkspace(
   const streamStateRef = useRef<ActiveStreamState | null>(null);
   const activeConversationIdRef = useRef<string | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const backgroundStreamContextsRef = useRef<Record<number, BackgroundStreamContext>>({});
   const streamMcpCallsRef = useRef<Record<string, McpCallItem[]>>({});
   const streamResumeSkipRef = useRef<Record<string, StreamResumeSkipState>>({});
   const streamSessionSeedRef = useRef(0);
@@ -1107,10 +1128,37 @@ export function useChatWorkspace(
    * 关键约束：旧流后续迟到事件必须被会话编号拦截，不能再覆盖新打开的会话主区或 URL。
    */
   const detachActiveStreamSubscription = () => {
-    markActiveStreamDetached();
+    const streamSessionId = activeStreamSessionIdRef.current;
+    const activeStreamState = streamStateRef.current;
+    const streamAbortController = abortControllerRef.current;
     persistActiveStreamSnapshot();
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
+    if (
+      streamSessionId != null &&
+      activeStreamState?.conversationId &&
+      activeStreamState.conversationId !== 'pending-conversation' &&
+      streamAbortController
+    ) {
+      backgroundStreamContextsRef.current[streamSessionId] = {
+        runtimeTarget: activeRuntimeTargetRef.current,
+        workspacePath: workspacePathRef.current ?? null,
+        conversationId: activeStreamState.conversationId,
+        activeMessageId: activeStreamState.activeMessageId,
+        abortController: streamAbortController,
+        conversations: conversationsRef.current,
+        messages: messagesRef.current,
+        executionSteps: executionStepsRef.current,
+        references: referencesRef.current,
+        artifacts: artifactsRef.current,
+        currentExperts: currentExpertsRef.current,
+        currentSkills: currentSkillsRef.current,
+        currentMcps: currentMcpsRef.current,
+      };
+      // 业务约束：切换会话只让旧流转入后台消费；旧事件后续只能更新其会话快照，不能再占用主区。
+      detachedStreamSessionIdsRef.current.add(streamSessionId);
+    } else if (streamAbortController) {
+      // 未拿到真实会话 ID 的 pending 流没有可持久化目标，只能断开本地订阅等待后端运行态兜底。
+      markActiveStreamDetached();
+      streamAbortController.abort();
     }
     abortControllerRef.current = null;
     activeStreamSessionIdRef.current = null;
@@ -1229,7 +1277,8 @@ export function useChatWorkspace(
    * @returns 是否为当前激活会话。
    */
   const isActiveStreamSession = (streamSessionId: number) =>
-    activeStreamSessionIdRef.current === streamSessionId;
+    activeStreamSessionIdRef.current === streamSessionId ||
+    backgroundStreamContextsRef.current[streamSessionId] != null;
 
   /**
    * 标记当前流只是本地页面脱离，用于区分刷新/切换与用户显式停止生成。
@@ -1273,6 +1322,511 @@ export function useChatWorkspace(
    */
   const isDetachedStreamAbort = (streamSessionId: number) =>
     detachedStreamSessionIdsRef.current.has(streamSessionId);
+
+  /**
+   * 将后台流上下文写回本地工作空间快照，并在当前分区列表包含该会话时同步侧栏。
+   * @param streamSessionId 流会话编号。
+   * @param context 后台流上下文。
+   */
+  const persistBackgroundStreamContext = (
+    streamSessionId: number,
+    context: BackgroundStreamContext,
+  ) => {
+    backgroundStreamContextsRef.current[streamSessionId] = context;
+    saveConversationRecordToWorkspace(
+      context.runtimeTarget,
+      context.workspacePath,
+      context.conversationId,
+      context.conversations,
+      {
+        messages: context.messages,
+        executionSteps: context.executionSteps,
+        references: context.references,
+        artifacts: context.artifacts,
+        currentExperts: context.currentExperts,
+        currentSkills: context.currentSkills,
+        currentMcps: context.currentMcps,
+      },
+    );
+    if (
+      context.runtimeTarget === activeRuntimeTargetRef.current &&
+      (context.workspacePath ?? null) === (workspacePathRef.current ?? null)
+    ) {
+      const mergedConversations = mergeConversationListById(
+        conversationsRef.current,
+        context.conversations,
+        { mergeExisting: true },
+      );
+      conversationsRef.current = mergedConversations;
+      setConversations(mergedConversations);
+    }
+    refreshWorkspaceGroups('all');
+  };
+
+  /**
+   * 为已脱离页面的流更新会话列表投影，避免后台事件污染当前打开会话。
+   * @param context 后台流上下文。
+   * @param conversationId 会话标识。
+   * @param conversationTitle 可选标题。
+   * @param activeTaskId 可选任务标识。
+   * @returns 更新后的后台上下文。
+   */
+  const upsertBackgroundStreamConversation = (
+    context: BackgroundStreamContext,
+    conversationId: string,
+    conversationTitle?: string,
+    activeTaskId?: string,
+  ): BackgroundStreamContext => {
+    const existingConversation = context.conversations.find(
+      (conversation) => conversation.id === conversationId,
+    );
+    const nextConversation: ConversationItem = existingConversation
+      ? {
+          ...existingConversation,
+          title:
+            conversationTitle && conversationTitle.trim().length > 0
+              ? conversationTitle
+              : existingConversation.title,
+          activeTaskId: activeTaskId ?? existingConversation.activeTaskId,
+          activeTaskStatus: activeTaskId ? 'RUNNING' : existingConversation.activeTaskStatus,
+        }
+      : {
+          id: conversationId,
+          title:
+            conversationTitle && conversationTitle.trim().length > 0
+              ? conversationTitle
+              : '新会话',
+          status: 'ACTIVE',
+          activeTaskId,
+          activeTaskStatus: activeTaskId ? 'RUNNING' : undefined,
+          workspaceType: context.runtimeTarget === 'local' ? 'LOCAL' : undefined,
+        };
+    return {
+      ...context,
+      conversationId,
+      conversations: upsertConversationToTop(context.conversations, nextConversation),
+      messages: context.messages.map((message) =>
+        message.conversationId === context.conversationId ||
+        message.conversationId === 'pending-conversation' ||
+        message.id === context.activeMessageId
+          ? {
+              ...message,
+              conversationId,
+            }
+          : message,
+      ),
+    };
+  };
+
+  /**
+   * 更新后台流的消息列表，并保持过程卡片展示清洗规则与主区一致。
+   * @param context 后台流上下文。
+   * @param updater 消息列表更新函数。
+   * @returns 更新后的后台上下文。
+   */
+  const updateBackgroundStreamMessages = (
+    context: BackgroundStreamContext,
+    updater: (messages: ChatMessageItem[]) => ChatMessageItem[],
+  ): BackgroundStreamContext => ({
+    ...context,
+    messages: sanitizeMessagesForProcessDisplay(updater(context.messages)),
+  });
+
+  /**
+   * 后台流 finish 后清理会话运行投影并补齐最终助手消息。
+   * @param context 后台流上下文。
+   * @param payload finish 事件载荷。
+   * @returns 更新后的后台上下文。
+   */
+  const finalizeBackgroundStream = (
+    context: BackgroundStreamContext,
+    payload: Record<string, unknown>,
+  ): BackgroundStreamContext => {
+    const finishConversationId =
+      String(payload.conversationId ?? '').trim() || context.conversationId;
+    const finishAssistantMessageId = normalizePersistedMessageId(payload.assistantMessageId);
+    const finishTitle = typeof payload.title === 'string' ? payload.title : undefined;
+    const nextContext = upsertBackgroundStreamConversation(
+      context,
+      finishConversationId,
+      finishTitle,
+    );
+    const nextConversations = upsertConversationToTop(
+      nextContext.conversations,
+      {
+        ...(nextContext.conversations.find((conversation) => conversation.id === finishConversationId) ?? {
+          id: finishConversationId,
+          title:
+            finishTitle && finishTitle.trim().length > 0
+              ? finishTitle
+              : '新会话',
+          status: 'ACTIVE',
+          workspaceType: nextContext.runtimeTarget === 'local' ? 'LOCAL' : undefined,
+        }),
+        activeTaskId: undefined,
+        activeTaskStatus: undefined,
+      },
+    );
+    return updateBackgroundStreamMessages(
+      {
+        ...nextContext,
+        conversationId: finishConversationId,
+        activeMessageId: finishAssistantMessageId ?? nextContext.activeMessageId,
+        conversations: nextConversations,
+      },
+      (messages) =>
+        messages.map((message) =>
+          message.id === nextContext.activeMessageId
+            ? {
+                ...message,
+                id: finishAssistantMessageId ?? message.id,
+                conversationId: finishConversationId,
+                content: String(payload.content ?? message.content),
+                status: 'done',
+                searchProgress: message.searchProgress
+                  ? {
+                      ...message.searchProgress,
+                      status: 'completed',
+                    }
+                  : undefined,
+                processCards: finalizeProcessCards(message.processCards ?? [], 'completed'),
+                timelineItems: finalizeTimelineProcessCards(
+                  ensureTimelineContent(
+                    message.timelineItems,
+                    String(payload.content ?? message.content),
+                  ),
+                  'completed',
+                ),
+              }
+            : message,
+        ),
+    );
+  };
+
+  /**
+   * 消费已脱离当前页面的 SSE 事件，只更新对应会话快照，不改当前主区、URL 或输入状态。
+   * @param eventName 事件名。
+   * @param payload 事件载荷。
+   * @param streamSessionId 流会话编号。
+   * @returns 是否已按后台流处理。
+   */
+  const applyBackgroundSseEvent = (
+    eventName: string,
+    payload: unknown,
+    streamSessionId: number,
+  ) => {
+    const currentContext = backgroundStreamContextsRef.current[streamSessionId];
+    if (!currentContext) {
+      return false;
+    }
+    if (eventName === 'hook-notification' || eventName === 'queued' || eventName === 'queue-accepted') {
+      return true;
+    }
+    let nextContext = currentContext;
+    if (eventName === 'meta' && isRecord(payload)) {
+      const conversationId = String(payload.conversationId ?? '').trim();
+      if (conversationId) {
+        const taskId = payload.taskId == null ? undefined : String(payload.taskId);
+        nextContext = upsertBackgroundStreamConversation(
+          nextContext,
+          conversationId,
+          undefined,
+          taskId,
+        );
+      }
+    } else if (eventName === 'message' && isRecord(payload) && payload.type === 'response') {
+      const delta = String(payload.delta ?? '');
+      if (!delta) {
+        return true;
+      }
+      nextContext = updateBackgroundStreamMessages(nextContext, (messages) =>
+        messages.map((message) =>
+          message.id === nextContext.activeMessageId
+            ? (() => {
+                const currentProcessCards = message.processCards ?? [];
+                const nextProcessCards = finalizeCardsByType(currentProcessCards, ['analysis']);
+                return {
+                  ...message,
+                  content: `${message.content}${delta}`,
+                  processCards: nextProcessCards,
+                  timelineItems: appendContentToTimeline(
+                    syncProcessCardsToTimeline(
+                      message.timelineItems,
+                      currentProcessCards,
+                      nextProcessCards,
+                    ),
+                    delta,
+                  ),
+                };
+              })()
+            : message,
+        ),
+      );
+    } else if (eventName === 'thinking' && isRecord(payload) && payload.type === 'thinking') {
+      const delta = String(payload.delta ?? '');
+      if (!delta) {
+        return true;
+      }
+      nextContext = updateBackgroundStreamMessages(nextContext, (messages) =>
+        messages.map((message) =>
+          message.id === nextContext.activeMessageId
+            ? (() => {
+                const currentProcessCards = message.processCards ?? [];
+                const thinkingCardId = resolveThinkingProcessCardId(currentProcessCards);
+                const existingThinkingCard = currentProcessCards.find((card) => card.id === thinkingCardId);
+                const nextThinkingContent = `${message.thinkingContent ?? ''}${delta}`;
+                const nextProcessCards = upsertProcessCard(
+                  currentProcessCards,
+                  buildAnalysisProcessCard(
+                    thinkingCardId,
+                    `${existingThinkingCard?.summary ?? ''}${delta}`,
+                    thinkingCardId === 'analysis-after-tools' ? '分析检索结果' : '分析问题',
+                  ),
+                );
+                return {
+                  ...message,
+                  thinkingContent: nextThinkingContent,
+                  processCards: nextProcessCards,
+                  timelineItems: syncProcessCardsToTimeline(
+                    message.timelineItems,
+                    currentProcessCards,
+                    nextProcessCards,
+                  ),
+                };
+              })()
+            : message,
+        ),
+      );
+    } else if ((eventName === 'mcp-call' || eventName === 'tool-call') && isRecord(payload)) {
+      const phase = resolveMcpCallPhase(payload.phase);
+      const params = normalizeMcpCallParams(payload.params);
+      const resultMetadata =
+        isRecord(payload.resultMetadata)
+          ? payload.resultMetadata
+          : isRecord(payload.metadata)
+            ? payload.metadata
+            : undefined;
+      const completedFileDiffs = normalizeFileDiffsFromMetadata(resultMetadata);
+      const pendingFileDiffs =
+        completedFileDiffs.length > 0
+          ? completedFileDiffs
+          : buildPendingFileDiffsFromToolParams(String(payload.toolId ?? ''), params);
+      const call: McpCallItem = {
+        callId: normalizeOptionalString(payload.callId),
+        toolId: String(payload.toolId ?? ''),
+        displayName: String(payload.displayName ?? payload.toolId ?? ''),
+        input: String(payload.input ?? ''),
+        content: String(payload.content ?? ''),
+        metadata: isRecord(payload.metadata) ? payload.metadata : undefined,
+        phase,
+        status: resolveMcpCallStatus(phase),
+        params,
+        rawResult: payload.rawResult ?? payload.content,
+        resultMetadata,
+        fileDiffs: pendingFileDiffs.length > 0 ? pendingFileDiffs : undefined,
+        diffSummary: normalizeDiffSummaryFromMetadata(resultMetadata, pendingFileDiffs),
+        reactThought: normalizeOptionalString(payload.reactThought),
+        reactAction: normalizeOptionalString(payload.reactAction),
+        reactObservation: normalizeOptionalString(payload.reactObservation),
+        progressStage: normalizeOptionalString(payload.progressStage),
+        progressText: normalizeOptionalString(payload.progressText),
+        progressDetail: isRecord(payload.progressDetail) ? payload.progressDetail : undefined,
+        startedAt: normalizeOptionalString(payload.startedAt),
+        finishedAt: normalizeOptionalString(payload.finishedAt),
+        errorMessage: normalizeOptionalString(payload.errorMessage),
+      };
+      streamMcpCallsRef.current[nextContext.activeMessageId] = mergeMcpCallsById(
+        streamMcpCallsRef.current[nextContext.activeMessageId] ?? [],
+        call,
+      );
+      nextContext = updateBackgroundStreamMessages(nextContext, (messages) =>
+        messages.map((message) =>
+          message.id === nextContext.activeMessageId
+            ? (() => {
+                const currentProcessCards = message.processCards ?? [];
+                const nextProcessCards = mergeMcpCallIntoProcessCards(currentProcessCards, call);
+                return {
+                  ...message,
+                  mcpCalls: mergeMcpCallsById(message.mcpCalls ?? [], call),
+                  processCards: nextProcessCards,
+                  timelineItems: syncProcessCardsToTimeline(
+                    message.timelineItems,
+                    currentProcessCards,
+                    nextProcessCards,
+                  ),
+                };
+              })()
+            : message,
+        ),
+      );
+    } else if (eventName === 'step' && isRecord(payload)) {
+      const stepType = String(payload.stepType ?? '');
+      const nextStep = {
+        id: String(payload.id ?? ''),
+        runId: String(payload.runId ?? ''),
+        stepType,
+        stepTitle: String(payload.stepTitle ?? ''),
+        stepStatus: String(payload.stepStatus ?? ''),
+        sequenceNo: Number(payload.sequenceNo ?? 0),
+        content: typeof payload.content === 'string' ? payload.content : undefined,
+        metadataJson: typeof payload.metadataJson === 'string' ? payload.metadataJson : undefined,
+      };
+      nextContext = {
+        ...nextContext,
+        executionSteps: upsertById(nextContext.executionSteps, nextStep),
+      };
+      if (isSearchStepType(stepType)) {
+        nextContext = updateBackgroundStreamMessages(nextContext, (messages) =>
+          messages.map((message) =>
+            message.id === nextContext.activeMessageId
+              ? (() => {
+                  const currentProcessCards = message.processCards ?? [];
+                  const nextProcessCards = mergeSearchStepIntoProcessCards(
+                    currentProcessCards,
+                    {
+                      id: String(payload.id ?? 'search-step'),
+                      title: String(payload.stepTitle ?? '调用网页搜索'),
+                      summary:
+                        typeof payload.content === 'string' && payload.content.trim().length > 0
+                          ? payload.content
+                          : '正在检索实时资料。',
+                      status:
+                        String(payload.stepStatus ?? '').trim().toUpperCase() === 'COMPLETED'
+                          ? 'completed'
+                          : 'running',
+                    },
+                  );
+                  return {
+                    ...message,
+                    searchProgress: {
+                      status: 'running',
+                      items: message.searchProgress?.items ?? [],
+                    },
+                    processCards: nextProcessCards,
+                    timelineItems: syncProcessCardsToTimeline(
+                      message.timelineItems,
+                      currentProcessCards,
+                      nextProcessCards,
+                    ),
+                  };
+                })()
+              : message,
+          ),
+        );
+      }
+    } else if (eventName === 'reference' && isRecord(payload)) {
+      const nextReference = {
+        id: String(payload.id ?? ''),
+        runId: String(payload.runId ?? ''),
+        messageId: payload.messageId == null ? undefined : String(payload.messageId),
+        conversationId: String(payload.conversationId ?? ''),
+        sourceType: typeof payload.sourceType === 'string' ? payload.sourceType : undefined,
+        title: String(payload.title ?? ''),
+        url: typeof payload.url === 'string' ? payload.url : undefined,
+        siteName: typeof payload.siteName === 'string' ? payload.siteName : undefined,
+        snippet: typeof payload.snippet === 'string' ? payload.snippet : undefined,
+        rankNo: payload.rankNo == null ? undefined : Number(payload.rankNo),
+      };
+      nextContext = {
+        ...nextContext,
+        references: upsertById(nextContext.references, nextReference),
+      };
+      nextContext = updateBackgroundStreamMessages(nextContext, (messages) =>
+        messages.map((message) => {
+          if (message.id !== nextContext.activeMessageId) {
+            return message;
+          }
+          const currentProcessCards = message.processCards ?? [];
+          const nextProcessCards = mergeReferenceIntoProcessCards(currentProcessCards, nextReference);
+          return {
+            ...message,
+            searchProgress: {
+              status: 'running',
+              items: upsertById(message.searchProgress?.items ?? [], {
+                id: nextReference.id,
+                title: nextReference.title,
+                url: nextReference.url,
+                siteName: nextReference.siteName,
+              }),
+            },
+            processCards: nextProcessCards,
+            timelineItems: syncProcessCardsToTimeline(
+              message.timelineItems,
+              currentProcessCards,
+              nextProcessCards,
+            ),
+          };
+        }),
+      );
+    } else if (eventName === 'artifact' && isRecord(payload)) {
+      nextContext = {
+        ...nextContext,
+        artifacts: upsertById(nextContext.artifacts, {
+          id: String(payload.id ?? ''),
+          runId: String(payload.runId ?? ''),
+          messageId: payload.messageId == null ? undefined : String(payload.messageId),
+          conversationId: String(payload.conversationId ?? ''),
+          artifactType: String(payload.artifactType ?? ''),
+          name: String(payload.name ?? ''),
+          mimeType: typeof payload.mimeType === 'string' ? payload.mimeType : undefined,
+          storagePath: String(payload.storagePath ?? ''),
+          contentPreview:
+            typeof payload.preview === 'string'
+              ? payload.preview
+              : typeof payload.contentPreview === 'string'
+                ? payload.contentPreview
+                : undefined,
+        }),
+      };
+    } else if (eventName === 'finish' && isRecord(payload)) {
+      nextContext = finalizeBackgroundStream(nextContext, payload);
+      finishedStreamSessionIdsRef.current.add(streamSessionId);
+    } else if (eventName === 'cancel' || eventName === 'error' || eventName === 'reject') {
+      const status = eventName === 'cancel' ? 'cancelled' : 'error';
+      const errorMessage =
+        eventName === 'reject' && isRecord(payload)
+          ? resolveQueueRejectMessage(String(payload.reason ?? '').trim())
+          : isRecord(payload)
+            ? String(payload.message ?? UserErrorMessages.CHAT_REQUEST_FAILED)
+            : UserErrorMessages.CHAT_REQUEST_FAILED;
+      nextContext = updateBackgroundStreamMessages(nextContext, (messages) =>
+        messages.map((message) =>
+          message.id === nextContext.activeMessageId
+            ? {
+                ...message,
+                status,
+                errorMessage: status === 'error' ? errorMessage : message.errorMessage,
+                searchProgress: message.searchProgress
+                  ? {
+                      ...message.searchProgress,
+                      status,
+                    }
+                  : undefined,
+                processCards: finalizeProcessCards(message.processCards ?? [], status),
+                timelineItems: finalizeTimelineProcessCards(message.timelineItems, status),
+              }
+            : message,
+        ),
+      );
+      nextContext = {
+        ...nextContext,
+        conversations: nextContext.conversations.map((conversation) =>
+          conversation.id === nextContext.conversationId
+            ? {
+                ...conversation,
+                activeTaskId: undefined,
+                activeTaskStatus: undefined,
+              }
+            : conversation,
+        ),
+      };
+      finishedStreamSessionIdsRef.current.add(streamSessionId);
+    } else {
+      return true;
+    }
+    persistBackgroundStreamContext(streamSessionId, nextContext);
+    return true;
+  };
 
   /**
    * 当后端通过 meta 下发新会话 ID 时，立即写入当前分区会话列表，避免列表依赖后续刷新才出现。
@@ -2417,6 +2971,10 @@ export function useChatWorkspace(
         // 附件上传成功并已发出流请求后即可释放预览 URL，避免长期占用浏览器内存。
         submittedAttachments.forEach((item) => URL.revokeObjectURL(item.previewUrl));
         await consumeSseStream(response, optimisticAssistantId, streamSessionId, submitLockId);
+        if (backgroundStreamContextsRef.current[streamSessionId]) {
+          refreshWorkspaceGroups('all');
+          return;
+        }
         if (
           !isActiveStreamSession(streamSessionId) &&
           !finishedStreamSessionIdsRef.current.has(streamSessionId)
@@ -2486,6 +3044,7 @@ export function useChatWorkspace(
       } finally {
         finishedStreamSessionIdsRef.current.delete(streamSessionId);
         detachedStreamSessionIdsRef.current.delete(streamSessionId);
+        delete backgroundStreamContextsRef.current[streamSessionId];
         delete streamMcpCallsRef.current[optimisticAssistantId];
         if (abortControllerRef.current === streamAbortController) {
           abortControllerRef.current = null;
@@ -3631,6 +4190,9 @@ export function useChatWorkspace(
     submitLockId?: number,
   ) => {
     if (!isActiveStreamSession(streamSessionId)) {
+      return;
+    }
+    if (applyBackgroundSseEvent(eventName, payload, streamSessionId)) {
       return;
     }
     if (eventName === 'hook-notification' && isRecord(payload)) {
@@ -6236,6 +6798,7 @@ function mergeMcpCallIntoProcessCards(
         toolId: call.toolId,
         displayName: call.displayName,
         presentation: 'react',
+        details: buildMcpCallInputDetails(call),
         fileDiffs: call.fileDiffs,
         diffSummary: call.diffSummary,
       });
@@ -6272,6 +6835,7 @@ function mergeMcpCallIntoProcessCards(
         toolId: call.toolId,
         displayName: call.displayName,
         presentation: 'react',
+        details: buildMcpCallOutputDetails(call),
         fileDiffs: call.fileDiffs,
         diffSummary: call.diffSummary,
       });
@@ -6290,6 +6854,62 @@ function mergeMcpCallIntoProcessCards(
     });
   }
   return suppressToolCallDiffsWhenResultExists(nextCards) ?? nextCards;
+}
+
+/**
+ * 将 MCP 调用入参转换成过程明细，供主消息区按需展开查看。
+ * 业务意图：ReAct 工具行表面只展示动作摘要，但维护者仍需要能展开核对真实参数。
+ *
+ * @param call MCP 调用记录。
+ * @returns 参数明细；无参数时返回 undefined，避免渲染空展开按钮。
+ */
+function buildMcpCallInputDetails(call: McpCallItem): ProcessCardItem['details'] {
+  const paramsText = stringifyProcessDetailValue(call.params);
+  return paramsText
+    ? [
+        {
+          label: '参数',
+          content: paramsText,
+        },
+      ]
+    : undefined;
+}
+
+/**
+ * 将 MCP 调用结果或异常转换成过程明细，供主消息区按需展开查看。
+ * @param call MCP 调用记录。
+ * @returns 结果或异常明细；无内容时返回 undefined。
+ */
+function buildMcpCallOutputDetails(call: McpCallItem): ProcessCardItem['details'] {
+  const label = call.phase === 'error' ? '异常' : '结果';
+  const outputText = stringifyProcessDetailValue(call.phase === 'error' ? call.errorMessage : call.rawResult ?? call.content);
+  return outputText
+    ? [
+        {
+          label,
+          content: outputText,
+        },
+      ]
+    : undefined;
+}
+
+/**
+ * 把过程明细值稳定转换为字符串，兼容对象参数、原始 JSON 字符串和普通文本。
+ * @param value 原始明细值。
+ * @returns 可展示字符串，空值返回空字符串。
+ */
+function stringifyProcessDetailValue(value: unknown): string {
+  if (value == null) {
+    return '';
+  }
+  if (typeof value === 'string') {
+    return value.trim();
+  }
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value).trim();
+  }
 }
 
 /**

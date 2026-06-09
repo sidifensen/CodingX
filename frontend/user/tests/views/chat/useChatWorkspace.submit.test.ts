@@ -1401,16 +1401,14 @@ describe('useChatWorkspace submit behavior', () => {
   });
 
   /**
-   * 从运行中会话切走时，只应断开当前页面订阅；旧流后续事件不能再把主区和 URL 拉回旧会话。
+   * 从运行中会话切走时，旧流应继续在前端后台消费；后续事件只写回旧会话快照，不能拉回主区和 URL。
    */
-  it('切到其他会话时应脱离旧运行流并立即显示目标会话', async () => {
+  it('切到其他会话时应让旧流在前端后台继续写入旧会话快照', async () => {
     const submitReadQueue: Array<{
       resolve: (value: ReadableStreamReadResult<Uint8Array>) => void;
       reject: (reason?: unknown) => void;
     }> = [];
-    const streamAbortSignals: AbortSignal[] = [];
-
-    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
       const url = String(input);
       if (isConversationListRequest(url)) {
         return new Response(
@@ -1473,25 +1471,12 @@ describe('useChatWorkspace submit behavior', () => {
         );
       }
       if (url.includes('/api/chat/stream')) {
-        if (init?.signal) {
-          streamAbortSignals.push(init.signal);
-        }
-        const abortSignal = init?.signal;
         const reader = {
           read: vi.fn(
-            () => {
-              if (abortSignal?.aborted) {
-                return Promise.reject(new DOMException('Aborted', 'AbortError'));
-              }
-              return new Promise<ReadableStreamReadResult<Uint8Array>>((resolve, reject) => {
+            () =>
+              new Promise<ReadableStreamReadResult<Uint8Array>>((resolve, reject) => {
                 submitReadQueue.push({ resolve, reject });
-                abortSignal?.addEventListener(
-                  'abort',
-                  () => reject(new DOMException('Aborted', 'AbortError')),
-                  { once: true },
-                );
-              });
-            },
+              }),
           ),
         };
         return {
@@ -1534,7 +1519,6 @@ describe('useChatWorkspace submit behavior', () => {
       await result.current.selectConversation('2002', result.current.conversations);
     });
 
-    expect(streamAbortSignals[0]?.aborted).toBe(true);
     expect(result.current.activeConversationId).toBe('2002');
     expect(result.current.isStreaming).toBe(false);
     expect(result.current.messages.some((message) => message.content === '目标会话回答')).toBe(true);
@@ -1546,12 +1530,22 @@ describe('useChatWorkspace submit behavior', () => {
           'event:message\ndata:{"type":"response","delta":"旧流迟到输出"}\n\n',
         ),
       });
+    });
+    await waitFor(() => {
+      expect(submitReadQueue.length).toBeGreaterThan(0);
+    });
+    await act(async () => {
       submitReadQueue.shift()?.resolve({
         done: false,
         value: new TextEncoder().encode(
           'event:finish\ndata:{"conversationId":"2001","content":"旧流完成","title":"旧会话"}\n\n',
         ),
       });
+    });
+    await waitFor(() => {
+      expect(submitReadQueue.length).toBeGreaterThan(0);
+    });
+    await act(async () => {
       submitReadQueue.shift()?.resolve({ done: true, value: undefined });
     });
     await act(async () => {
@@ -1560,6 +1554,24 @@ describe('useChatWorkspace submit behavior', () => {
 
     expect(result.current.activeConversationId).toBe('2002');
     expect(result.current.messages.some((message) => message.content === '旧流完成')).toBe(false);
+    const persistedStore = JSON.parse(
+      window.localStorage.getItem('codingx.chat.workspace.conversations.v1') ?? '{}',
+    );
+    const oldConversationRecord =
+      persistedStore.snapshots?.['cloud::__no_workspace__']?.conversationRecords?.['2001'];
+    expect(oldConversationRecord?.messages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          content: '旧流完成',
+          status: 'done',
+        }),
+      ]),
+    );
+    const oldConversation = persistedStore.snapshots?.['cloud::__no_workspace__']?.conversations?.find(
+      (conversation: { id?: string }) => conversation.id === '2001',
+    );
+    expect(oldConversation?.id).toBe('2001');
+    expect(oldConversation?.activeTaskStatus).not.toBe('RUNNING');
   });
 
   /**

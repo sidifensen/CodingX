@@ -150,19 +150,21 @@ public class LoopbackCallbackServer implements AutoCloseable {
               <title>%s</title>
               <style>
                 :root {
-                  color-scheme: light;
-                  --page-bg: #f6f3ed;
-                  --panel-bg: #111315;
-                  --panel-border: #252a2e;
-                  --text-main: #f5f1e8;
-                  --text-muted: #9ea7ad;
-                  --paper: #fffaf1;
-                  --paper-text: #25211b;
-                  --accent: #24c08b;
-                  --accent-soft: rgba(36, 192, 139, 0.14);
-                  --error: #e15d4f;
-                  --error-soft: rgba(225, 93, 79, 0.14);
-                  --shadow: 0 28px 80px rgba(19, 22, 24, 0.18);
+                  color-scheme: dark;
+                  --canvas: #050506;
+                  --ink: #ffffff;
+                  --surface: #171717;
+                  --surface-raised: rgba(23, 23, 23, 0.92);
+                  --surface-code: #08090b;
+                  --border: rgba(255, 255, 255, 0.12);
+                  --border-strong: rgba(255, 255, 255, 0.18);
+                  --muted: #b0b4ba;
+                  --muted-soft: #737981;
+                  --accent: #0d74ce;
+                  --accent-soft: rgba(13, 116, 206, 0.14);
+                  --error: #eb8e90;
+                  --error-soft: rgba(235, 142, 144, 0.14);
+                  --shadow: 0 28px 90px rgba(0, 0, 0, 0.52);
                 }
 
                 * {
@@ -175,21 +177,35 @@ public class LoopbackCallbackServer implements AutoCloseable {
                   display: grid;
                   place-items: center;
                   background:
-                    radial-gradient(circle at top left, rgba(36, 192, 139, 0.16), transparent 32rem),
-                    linear-gradient(135deg, #fffaf1, var(--page-bg));
-                  color: var(--paper-text);
-                  font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+                    radial-gradient(circle at 18%% 18%%, rgba(13, 116, 206, 0.16), transparent 24rem),
+                    radial-gradient(circle at 78%% 74%%, rgba(255, 255, 255, 0.07), transparent 30rem),
+                    linear-gradient(135deg, #111111 0%%, var(--canvas) 48%%, #020203 100%%);
+                  color: var(--ink);
+                  font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
                   padding: 24px;
+                }
+
+                body::before {
+                  content: "";
+                  position: fixed;
+                  inset: 0;
+                  pointer-events: none;
+                  background:
+                    linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+                    linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
+                  background-size: 72px 72px;
+                  mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.65), transparent 72%%);
                 }
 
                 .auth-shell {
                   width: min(680px, calc(100vw - 32px));
-                  border: 1px solid var(--panel-border);
-                  border-radius: 18px;
+                  border: 1px solid var(--border);
+                  border-radius: 16px;
                   overflow: hidden;
-                  background: var(--panel-bg);
-                  color: var(--text-main);
+                  background: var(--surface-raised);
+                  color: var(--ink);
                   box-shadow: var(--shadow);
+                  backdrop-filter: blur(22px);
                 }
 
                 .auth-shell__bar {
@@ -198,8 +214,8 @@ public class LoopbackCallbackServer implements AutoCloseable {
                   justify-content: space-between;
                   gap: 16px;
                   padding: 16px 18px;
-                  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-                  background: rgba(255, 255, 255, 0.03);
+                  border-bottom: 1px solid var(--border);
+                  background: rgba(255, 255, 255, 0.025);
                 }
 
                 .auth-shell__brand {
@@ -228,7 +244,7 @@ public class LoopbackCallbackServer implements AutoCloseable {
                 }
 
                 .auth-shell__badge {
-                  border: 1px solid rgba(36, 192, 139, 0.32);
+                  border: 1px solid rgba(13, 116, 206, 0.38);
                   border-radius: 999px;
                   padding: 6px 10px;
                   color: var(--accent);
@@ -238,7 +254,7 @@ public class LoopbackCallbackServer implements AutoCloseable {
                 }
 
                 .auth-shell--error .auth-shell__badge {
-                  border-color: rgba(225, 93, 79, 0.32);
+                  border-color: rgba(235, 142, 144, 0.36);
                   color: var(--error);
                   background: var(--error-soft);
                 }
@@ -250,8 +266,8 @@ public class LoopbackCallbackServer implements AutoCloseable {
                 .auth-shell__eyebrow {
                   margin: 0 0 14px;
                   color: var(--accent);
-                  font: 700 12px ui-monospace, SFMono-Regular, Consolas, monospace;
-                  letter-spacing: 0.08em;
+                  font: 700 11px ui-monospace, "JetBrains Mono", SFMono-Regular, Consolas, monospace;
+                  letter-spacing: 0.12em;
                 }
 
                 .auth-shell--error .auth-shell__eyebrow {
@@ -263,21 +279,23 @@ public class LoopbackCallbackServer implements AutoCloseable {
                   font-size: clamp(30px, 6vw, 54px);
                   line-height: 1.02;
                   letter-spacing: 0;
+                  color: var(--ink);
+                  font-weight: 700;
                 }
 
                 .auth-shell__message {
                   margin: 20px 0 0;
                   max-width: 520px;
-                  color: var(--text-muted);
+                  color: var(--muted);
                   font-size: 16px;
                   line-height: 1.7;
                 }
 
                 .auth-shell__terminal {
                   margin-top: 30px;
-                  border: 1px solid rgba(255, 255, 255, 0.09);
+                  border: 1px solid var(--border);
                   border-radius: 12px;
-                  background: rgba(0, 0, 0, 0.22);
+                  background: var(--surface-code);
                   overflow: hidden;
                 }
 
@@ -286,21 +304,21 @@ public class LoopbackCallbackServer implements AutoCloseable {
                   align-items: center;
                   gap: 7px;
                   padding: 11px 13px;
-                  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+                  border-bottom: 1px solid var(--border);
                 }
 
                 .auth-shell__dot {
                   width: 9px;
                   height: 9px;
                   border-radius: 999px;
-                  background: #575f66;
+                  background: var(--muted-soft);
                 }
 
                 .auth-shell__terminal-line {
                   margin: 0;
                   padding: 18px;
-                  color: var(--text-main);
-                  font: 14px ui-monospace, SFMono-Regular, Consolas, monospace;
+                  color: var(--ink);
+                  font: 14px ui-monospace, "JetBrains Mono", SFMono-Regular, Consolas, monospace;
                   white-space: normal;
                 }
 
@@ -314,22 +332,16 @@ public class LoopbackCallbackServer implements AutoCloseable {
 
                 .auth-shell__hint {
                   margin: 20px 0 0;
-                  color: var(--text-muted);
+                  color: var(--muted);
                   font-size: 14px;
                 }
 
                 @media (prefers-color-scheme: dark) {
                   :root {
                     color-scheme: dark;
-                    --page-bg: #0c0f11;
-                    --paper-text: #f2ede3;
-                    --shadow: 0 30px 90px rgba(0, 0, 0, 0.46);
                   }
 
                   body {
-                    background:
-                      radial-gradient(circle at top left, rgba(36, 192, 139, 0.12), transparent 30rem),
-                      linear-gradient(135deg, #15100c, var(--page-bg));
                   }
                 }
 

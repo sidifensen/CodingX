@@ -487,6 +487,15 @@ public class RuntimeSettingService {
     }
 
     /**
+     * 获取模型路由首包后整流完成超时毫秒。
+     * @return 首包后整流完成超时毫秒。
+     */
+    public long aiStreamCompletionTimeoutMs() {
+        Long fallback = aiProperties.getSelection() == null ? null : aiProperties.getSelection().getStreamCompletionTimeoutMs();
+        return getLong("ai.selection.stream_completion_timeout_ms", fallback == null ? 300_000L : fallback);
+    }
+
+    /**
      * 获取聊天入口线程池核心线程数。
      * @return 核心线程数。
      */

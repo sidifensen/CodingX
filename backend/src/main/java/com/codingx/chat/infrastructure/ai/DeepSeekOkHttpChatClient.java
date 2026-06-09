@@ -131,6 +131,7 @@ public class DeepSeekOkHttpChatClient implements AiProviderClient {
                 BufferedSource source = responseBodyValue.source();
                 // 步骤 6：每次模型流创建独立解析状态，避免并发 tool_call 分片互相串线。
                 OpenAiStyleStreamParser.StreamState streamState = openAiStyleStreamParser.newStreamState();
+                AtomicBoolean streamDone = new AtomicBoolean(false);
                 OpenAiStyleStreamParser.StreamConsumer streamConsumer = new OpenAiStyleStreamParser.StreamConsumer() {
                     @Override
                     public void onContentDelta(String delta) {
@@ -152,6 +153,7 @@ public class DeepSeekOkHttpChatClient implements AiProviderClient {
                     public void onDone() {
                         if (!cancelled.get()) {
                             // provider 发送 [DONE] 后通知下游完成，路由层据此收口当前 session。
+                            streamDone.set(true);
                             handler.onComplete();
                         }
                     }
@@ -172,7 +174,7 @@ public class DeepSeekOkHttpChatClient implements AiProviderClient {
                         }
                     }
                 };
-                while (!cancelled.get()) {
+                while (!cancelled.get() && !streamDone.get()) {
                     // 步骤 7：逐行读取 SSE 文本，并交给共享解析器拆解正文、thinking 和工具调用。
                     String line = source.readUtf8Line();
                     if (line == null) {

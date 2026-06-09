@@ -27,6 +27,11 @@ function createSidebarProps(overrides?: {
   onOpenSettings?: ReturnType<typeof vi.fn>;
 }) {
   const defaultConversations = Array.from({ length: 11 }, (_, i) => createConversation(i + 1));
+  const historyConversations = Array.from({ length: 3 }, (_, i) => ({
+    ...createConversation(i + 101),
+    id: `history-conversation-${i + 1}`,
+    title: `历史会话 ${i + 1}`,
+  }));
   return {
     activeView: 'chat' as const,
     setActiveView: vi.fn(),
@@ -72,10 +77,27 @@ function createSidebarProps(overrides?: {
           activeConversationId: 'conversation-1',
           conversations: defaultConversations,
         },
+        {
+          partitionKey: 'local::__history__',
+          workspacePath: null,
+          workspaceLabel: '历史记录',
+          runtimeTarget: 'local',
+          groupType: 'history',
+          lastOpenedAt: Date.now() - 1000,
+          activeConversationId: null,
+          conversations: historyConversations,
+        },
       ],
     activeWorkspacePartitionKey: 'local::d:/code/codingx',
     onSelectWorkspacePath: vi.fn(async () => undefined),
   };
+}
+
+/**
+ * 普通工作空间默认折叠；需要操作其会话行的用例先显式展开，避免测试绕过侧栏真实首屏状态。
+ */
+function expandWorkspaceGroup(workspaceLabel = 'CodingX') {
+  fireEvent.click(screen.getByRole('button', { name: `展开工作空间 ${workspaceLabel} 会话` }));
 }
 
 describe('Sidebar conversation collapse behavior', () => {
@@ -129,26 +151,87 @@ describe('Sidebar conversation collapse behavior', () => {
     expect(screen.getByRole('button', { name: '记忆管理' })).toBeInTheDocument();
   });
 
+  it('默认应只展开历史记录分组并在导航与会话列表之间保留间距', () => {
+    render(<Sidebar {...createSidebarProps()} />);
+
+    expect(screen.getByRole('button', { name: '展开工作空间 CodingX 会话' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '折叠工作空间 历史记录 会话' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '会话 1' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '历史会话 1' })).toBeInTheDocument();
+    expect(screen.getByTestId('sidebar-conversation-history-panel')).toHaveClass('mt-2');
+  });
+
+  it('云端历史记录和本地历史记录即使缺少历史分组类型也应默认展开', () => {
+    // 业务意图：旧快照或默认分组可能只带历史标签，侧栏仍应把它们当作历史记录展开。
+    const props = createSidebarProps({
+      workspaceGroups: [
+        {
+          partitionKey: 'cloud::__no_workspace__',
+          workspacePath: null,
+          workspaceLabel: '云端历史记录',
+          runtimeTarget: 'cloud',
+          lastOpenedAt: Date.now(),
+          activeConversationId: null,
+          conversations: [{ ...createConversation(1), title: '云端历史会话' }],
+        },
+        {
+          partitionKey: 'local::__no_workspace__',
+          workspacePath: null,
+          workspaceLabel: '本地历史记录',
+          runtimeTarget: 'local',
+          lastOpenedAt: Date.now() - 1000,
+          activeConversationId: null,
+          conversations: [{ ...createConversation(2), title: '本地历史会话' }],
+        },
+        {
+          partitionKey: 'local::d:/code/codingx',
+          workspacePath: 'D:/code/CodingX',
+          workspaceLabel: 'CodingX',
+          runtimeTarget: 'local',
+          lastOpenedAt: Date.now() - 2000,
+          activeConversationId: null,
+          conversations: [createConversation(3)],
+        },
+      ],
+    });
+
+    render(<Sidebar {...props} />);
+
+    expect(screen.getByRole('button', { name: '折叠工作空间 云端历史记录 会话' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '折叠工作空间 本地历史记录 会话' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '云端历史会话' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '本地历史会话' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '展开工作空间 CodingX 会话' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '会话 3' })).not.toBeInTheDocument();
+  });
+
   it('点击分组箭头可折叠与展开会话列表', () => {
     render(<Sidebar {...createSidebarProps()} />);
 
-    const toggleButton = screen.getByRole('button', { name: '折叠工作空间 CodingX 会话' });
-    fireEvent.click(toggleButton);
     const collapsedToggleButton = screen.getByRole('button', { name: '展开工作空间 CodingX 会话' });
-    expect(collapsedToggleButton).toBeInTheDocument();
-    const collapseContainer = collapsedToggleButton.closest('section')?.querySelector('div[aria-hidden=\"true\"]');
+    fireEvent.click(collapsedToggleButton);
+    const toggleButton = screen.getByRole('button', { name: '折叠工作空间 CodingX 会话' });
+    expect(toggleButton).toBeInTheDocument();
+    expect(screen.getByText('会话 1')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '展开显示' })).toBeInTheDocument();
+
+    fireEvent.click(toggleButton);
+    const expandedToggleButton = screen.getByRole('button', { name: '展开工作空间 CodingX 会话' });
+    expect(expandedToggleButton).toBeInTheDocument();
+    const collapseContainer = expandedToggleButton.closest('section')?.querySelector('div[aria-hidden=\"true\"]');
     expect(collapseContainer).toBeInTheDocument();
     // 折叠区采用高度过渡动画，断言收起态的网格行与透明度状态。
     expect(collapseContainer?.className).toContain('grid-rows-[0fr]');
     expect(collapseContainer?.className).toContain('opacity-0');
 
-    fireEvent.click(collapsedToggleButton);
+    fireEvent.click(expandedToggleButton);
     expect(screen.getByText('会话 1')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '展开显示' })).toBeInTheDocument();
   });
 
   it('默认仅显示 5 条并展示展开按钮', () => {
     render(<Sidebar {...createSidebarProps()} />);
+    expandWorkspaceGroup();
 
     expect(screen.getByText('会话 1')).toBeInTheDocument();
     expect(screen.getByText('会话 5')).toBeInTheDocument();
@@ -158,6 +241,7 @@ describe('Sidebar conversation collapse behavior', () => {
 
   it('点击展开后每次追加 5 条，并可收起回 5 条', () => {
     render(<Sidebar {...createSidebarProps()} />);
+    expandWorkspaceGroup();
 
     fireEvent.click(screen.getByRole('button', { name: '展开显示' }));
     expect(screen.getByText('会话 10')).toBeInTheDocument();
@@ -270,6 +354,7 @@ describe('Sidebar conversation collapse behavior', () => {
 
   it('会话项 hover 态应复用选中态背景，展开按钮应为无边框紧凑样式', () => {
     render(<Sidebar {...createSidebarProps()} />);
+    expandWorkspaceGroup();
 
     const conversationButton = screen.getByRole('button', { name: '会话 1' });
     const conversationRow = conversationButton.closest('div[class*=\"rounded-xl border\"]');
@@ -290,6 +375,7 @@ describe('Sidebar conversation collapse behavior', () => {
   it('点击会话时应回传会话所属分组上下文，避免跨空间串线', () => {
     const props = createSidebarProps();
     render(<Sidebar {...props} />);
+    expandWorkspaceGroup();
 
     fireEvent.click(screen.getByRole('button', { name: '会话 1' }));
 
@@ -306,6 +392,7 @@ describe('Sidebar conversation collapse behavior', () => {
   it('点击会话行空白区域也应切换会话', () => {
     const props = createSidebarProps();
     render(<Sidebar {...props} />);
+    expandWorkspaceGroup();
 
     const conversationButton = screen.getByRole('button', { name: '会话 1' });
     const conversationRow = conversationButton.closest('[data-testid="sidebar-conversation-row-conversation-1"]');
@@ -347,6 +434,7 @@ describe('Sidebar conversation collapse behavior', () => {
     });
 
     render(<Sidebar {...props} />);
+    expandWorkspaceGroup();
 
     expect(
       screen.getByRole('status', { name: '会话 会话 1 正在后台执行' }),
@@ -379,6 +467,7 @@ describe('Sidebar conversation collapse behavior', () => {
     });
 
     render(<Sidebar {...props} />);
+    expandWorkspaceGroup();
 
     expect(screen.getByText('刚刚')).toBeInTheDocument();
     expect(
@@ -410,6 +499,7 @@ describe('Sidebar conversation collapse behavior', () => {
     });
 
     render(<Sidebar {...props} />);
+    expandWorkspaceGroup();
 
     fireEvent.mouseEnter(
       screen.getByRole('status', { name: '会话 会话 1 有后台任务完成提醒' }),
@@ -457,6 +547,7 @@ describe('Sidebar conversation collapse behavior', () => {
     props.activeWorkspacePartitionKey = 'local::d:/code/codingx';
 
     render(<Sidebar {...props} />);
+    expandWorkspaceGroup();
 
     const selectedRows = document.querySelectorAll('.border-border-selected');
     expect(selectedRows).toHaveLength(1);
@@ -514,6 +605,7 @@ describe('Sidebar conversation collapse behavior', () => {
     // 业务意图：通过 Portal + fixed 固定在视口层，避免菜单被侧栏 overflow 裁剪成“半截”。
     const props = createSidebarProps();
     render(<Sidebar {...props} />);
+    expandWorkspaceGroup();
 
     fireEvent.click(screen.getByRole('button', { name: '打开会话菜单 会话 1' }));
 
@@ -526,6 +618,7 @@ describe('Sidebar conversation collapse behavior', () => {
   it('会话菜单应按千问顺序提供完整动作且不展示移动分组', () => {
     const props = createSidebarProps();
     render(<Sidebar {...props} />);
+    expandWorkspaceGroup();
 
     fireEvent.click(screen.getByRole('button', { name: '打开会话菜单 会话 1' }));
 
@@ -562,6 +655,7 @@ describe('Sidebar conversation collapse behavior', () => {
     });
 
     render(<Sidebar {...props} />);
+    expandWorkspaceGroup();
     fireEvent.click(screen.getByRole('button', { name: '打开会话菜单 会话 1' }));
 
     expect(screen.getByRole('button', { name: '取消置顶' })).toBeInTheDocument();
@@ -570,6 +664,7 @@ describe('Sidebar conversation collapse behavior', () => {
   it('点击导出对话后应展示 Word、PDF、TXT 与 Json 格式并触发回调', () => {
     const props = createSidebarProps();
     render(<Sidebar {...props} />);
+    expandWorkspaceGroup();
 
     fireEvent.click(screen.getByRole('button', { name: '打开会话菜单 会话 1' }));
     fireEvent.click(screen.getByRole('button', { name: '导出对话' }));
@@ -620,6 +715,7 @@ describe('Sidebar conversation collapse behavior', () => {
   it('进入批量管理后应展示千问样式批量管理抽屉', () => {
     const props = createSidebarProps();
     render(<Sidebar {...props} />);
+    expandWorkspaceGroup();
 
     fireEvent.click(screen.getByRole('button', { name: '打开会话菜单 会话 1' }));
     fireEvent.click(screen.getByRole('button', { name: '批量管理' }));

@@ -58,7 +58,7 @@ public class CodingXTuiModel implements Model {
     private static final String ANSI_DIM_PLACEHOLDER = "\u001B[90m";
 
     /**
-     * ANSI 蓝色前景色，用于标记当前选中的 Slash Command 整行文本。
+     * ANSI 蓝色前景色，用于标记当前选中的 Slash Command 命令与说明文本。
      */
     private static final String ANSI_BLUE = "\u001B[34m";
 
@@ -1270,7 +1270,7 @@ public class CodingXTuiModel implements Model {
     }
 
     /**
-     * 渲染单条命令候选行；未选中项保持灰色弱提示，选中项不加背景，仅让整行文字变色。
+     * 渲染单条命令候选行；未选中项保持灰色弱提示，选中项不加背景，箭头灰显、命令文本变色。
      *
      * @param display 命令展示数据。
      * @param selected 当前行是否为选中项。
@@ -1282,7 +1282,7 @@ public class CodingXTuiModel implements Model {
         if (!selected) {
             return styleDim("  " + content);
         }
-        return "› " + ANSI_BLUE + content + ANSI_RESET;
+        return styleDim("› ") + ANSI_BLUE + content + ANSI_RESET;
     }
 
     /**

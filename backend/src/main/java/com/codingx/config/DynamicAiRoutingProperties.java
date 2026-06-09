@@ -43,5 +43,13 @@ public class DynamicAiRoutingProperties {
         return runtimeSettingService.aiFirstPacketTimeoutMs();
     }
 
-}
+    /**
+     * 获取首包成功后的整流完成超时毫秒。
+     * @return 首包后整流完成超时毫秒。
+     */
+    public long streamCompletionTimeoutMs() {
+        // 步骤 1：整流完成超时由系统配置动态控制，避免慢流或异常长连接永久占用聊天线程。
+        return runtimeSettingService.aiStreamCompletionTimeoutMs();
+    }
 
+}

@@ -203,8 +203,11 @@ public class OpenAiStyleStreamParser {
         // 步骤 1：剥离 data: 前缀并识别流结束标记。
         String payload = StrUtil.trim(line.substring(5));
         if ("[DONE]".equals(payload)) {
-            emitToolCalls(streamState, consumer);
-            consumer.onDone();
+            emitStreamDone(streamState, consumer);
+            return;
+        }
+        if (streamState.doneEmitted()) {
+            // 当前流已经由 finish_reason 或 [DONE] 收口，后续重复尾包不再派发，避免工具重复执行。
             return;
         }
         // 步骤 2：先派发 thinking，再累积工具调用，最后派发正文，保持 provider 原始语义顺序。
@@ -217,6 +220,42 @@ public class OpenAiStyleStreamParser {
         if (StrUtil.isNotEmpty(delta)) {
             consumer.onContentDelta(delta);
         }
+        if (hasFinishReason(payload)) {
+            // OpenAI 兼容 provider 可能只给 finish_reason，不立刻关闭连接；此时必须结束当前轮次。
+            emitStreamDone(streamState, consumer);
+        }
+    }
+
+    /**
+     * 判断当前 SSE 负载是否声明当前 choice 已经完成。
+     * @param payload JSON 负载。
+     * @return 是否包含 finish_reason。
+     */
+    private boolean hasFinishReason(String payload) {
+        try {
+            JSONObject choice = firstChoice(payload);
+            if (choice == null || !choice.containsKey("finish_reason")) {
+                return false;
+            }
+            return StrUtil.isNotBlank(choice.getStr("finish_reason"));
+        } catch (Exception ignored) {
+            // finish_reason 解析失败不能影响正文与工具片段派发。
+            return false;
+        }
+    }
+
+    /**
+     * 统一派发流完成事件，确保工具调用和完成信号只发送一次。
+     * @param streamState 当前流解析状态。
+     * @param consumer 流事件消费者。
+     */
+    private void emitStreamDone(StreamState streamState, StreamConsumer consumer) {
+        if (streamState.doneEmitted()) {
+            return;
+        }
+        emitToolCalls(streamState, consumer);
+        streamState.markDoneEmitted();
+        consumer.onDone();
     }
 
     /**
@@ -434,6 +473,11 @@ public class OpenAiStyleStreamParser {
          */
         private final Map<Integer, ToolCallAccumulator> toolCallAccumulators = new LinkedHashMap<>();
 
+        /**
+         * 是否已经向上游派发完成事件，避免 finish_reason 和 [DONE] 重复触发完成或工具执行。
+         */
+        private boolean doneEmitted;
+
         private StreamState(StringBuilder lineBuffer) {
             // 步骤 1：状态绑定调用方传入的行缓冲，旧 API 和新 API 都复用同一份解析进度。
             this.lineBuffer = lineBuffer;
@@ -446,6 +490,13 @@ public class OpenAiStyleStreamParser {
         private Map<Integer, ToolCallAccumulator> toolCallAccumulators() {
             return toolCallAccumulators;
         }
+
+        private boolean doneEmitted() {
+            return doneEmitted;
+        }
+
+        private void markDoneEmitted() {
+            doneEmitted = true;
+        }
     }
 }
-

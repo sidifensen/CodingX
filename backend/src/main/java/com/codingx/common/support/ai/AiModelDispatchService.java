@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -181,11 +182,21 @@ public class AiModelDispatchService {
                 handler.onMetadata(logicalProvider, target.candidate().getModel());
                 bufferingHandler.commit();
                 try {
-                    // 步骤 9：首包后异常说明响应已开始，不能再 fallback，转换为可观察错误。
-                    session.completion().join();
+                    // 步骤 9：首包后异常或超时说明响应已开始，不能再 fallback，转换为可观察错误并交给聊天 run 收口。
+                    session.completion().get(resolveStreamCompletionTimeoutMs(request), TimeUnit.MILLISECONDS);
                 } catch (CompletionException completionException) {
                     healthRegistry.markFailure(modelId);
                     Throwable cause = completionException.getCause() == null ? completionException : completionException.getCause();
+                    publishAttemptSnapshot(attemptedProviders);
+                    throw new IllegalStateException(ErrorMessageCatalog.AI_STREAM_FAILED_AFTER_FIRST_TOKEN, cause);
+                } catch (TimeoutException timeoutException) {
+                    healthRegistry.markFailure(modelId);
+                    session.cancel();
+                    publishAttemptSnapshot(attemptedProviders);
+                    throw new IllegalStateException(ErrorMessageCatalog.AI_STREAM_FAILED_AFTER_FIRST_TOKEN, timeoutException);
+                } catch (java.util.concurrent.ExecutionException executionException) {
+                    healthRegistry.markFailure(modelId);
+                    Throwable cause = executionException.getCause() == null ? executionException : executionException.getCause();
                     publishAttemptSnapshot(attemptedProviders);
                     throw new IllegalStateException(ErrorMessageCatalog.AI_STREAM_FAILED_AFTER_FIRST_TOKEN, cause);
                 }
@@ -280,6 +291,20 @@ public class AiModelDispatchService {
         List<String> snapshot = List.copyOf(attemptedProviders);
         currentThreadAttemptedProviders.set(snapshot);
         lastAttemptedProviders = snapshot;
+    }
+
+    /**
+     * 解析本次流式响应完成等待窗口。
+     * 业务意图：普通聊天沿用全局长窗口；目标模式等执行链路可通过请求级覆盖值更快失败并让上层写入可见阻塞状态。
+     * @param request 本次模型请求。
+     * @return 首包后整流完成等待毫秒数。
+     */
+    private long resolveStreamCompletionTimeoutMs(AiConversationRequest request) {
+        Long overrideTimeoutMs = request == null ? null : request.streamCompletionTimeoutOverrideMs();
+        if (overrideTimeoutMs != null && overrideTimeoutMs > 0) {
+            return overrideTimeoutMs;
+        }
+        return aiModelSelector.streamCompletionTimeoutMs();
     }
 
     /**

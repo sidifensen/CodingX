@@ -27,6 +27,20 @@ import ConversationRow, {
  */
 const CONVERSATION_PAGE_SIZE = 5;
 const BATCH_SELECTION_LIMIT = 100;
+const HISTORY_PARTITION_SUFFIX = '::__history__';
+const HISTORY_WORKSPACE_LABELS = new Set(['云端历史记录', '本地历史记录']);
+
+/**
+ * 识别历史记录分组，兼容旧快照仅写 label、未写 groupType 的默认云端/本地历史记录。
+ * @param group 工作空间分组。
+ */
+function isHistoryConversationGroup(group: WorkspaceConversationGroup) {
+  return (
+    group.groupType === 'history' ||
+    group.partitionKey.endsWith(HISTORY_PARTITION_SUFFIX) ||
+    HISTORY_WORKSPACE_LABELS.has(group.workspaceLabel.trim())
+  );
+}
 
 interface ConversationHistoryProps {
   workspaceGroups: WorkspaceConversationGroup[];
@@ -277,12 +291,17 @@ export default function ConversationHistory({
 
   /**
    * 切换工作空间分组折叠状态，用于快速隐藏或展示该分组会话。
-   * @param partitionKey 工作空间分区键。
+   * @param group 工作空间分组。
    */
-  const handleToggleGroupCollapse = (partitionKey: string) => {
+  const handleToggleGroupCollapse = (group: WorkspaceConversationGroup) => {
+    const isHistoryGroup = isHistoryConversationGroup(group);
     setCollapsedGroupMap((previousMap) => ({
       ...previousMap,
-      [partitionKey]: !previousMap[partitionKey],
+      [group.partitionKey]: !(
+        previousMap[group.partitionKey] ??
+        // 首屏默认只展开历史记录分组，普通工作空间先收起，降低侧栏纵向噪音。
+        !isHistoryGroup
+      ),
     }));
   };
 
@@ -319,10 +338,16 @@ export default function ConversationHistory({
               totalConversations > CONVERSATION_PAGE_SIZE &&
               !hasLocalHiddenConversations &&
               !hasRemoteMoreConversations;
-            const isGroupCollapsed = Boolean(collapsedGroupMap[group.partitionKey]);
+            const isHistoryGroup = isHistoryConversationGroup(group);
+            const isGroupCollapsed =
+              collapsedGroupMap[group.partitionKey] ??
+              // 新进入的分组若还没有用户点击状态，则仅历史记录默认展开。
+              !isHistoryGroup;
             const isBatchMode = batchModePartitionKey === group.partitionKey;
             const actionContext = buildActionContext(group);
-            const RuntimeIcon = getWorkspaceRuntimeIcon(group.runtimeTarget, group.groupType);
+            const RuntimeIcon = isHistoryGroup
+              ? History
+              : getWorkspaceRuntimeIcon(group.runtimeTarget, group.groupType);
             return (
               <section key={group.partitionKey}>
                 <div className="group/workspace-header flex min-h-11 w-full items-center justify-between gap-3 rounded-lg bg-surface-container/55 px-1 py-1.5 transition-colors hover:bg-surface-container">
@@ -331,10 +356,10 @@ export default function ConversationHistory({
                     aria-label={`${isGroupCollapsed ? '展开' : '折叠'}工作空间 ${group.workspaceLabel} 会话`}
                     onClick={() => {
                       // 历史分组不绑定具体目录，点击分组头仅折叠/展开，避免触发无效路径切换。
-                      if (group.groupType !== 'history') {
+                      if (!isHistoryGroup) {
                         void onSelectWorkspacePath(group.workspacePath);
                       }
-                      handleToggleGroupCollapse(group.partitionKey);
+                      handleToggleGroupCollapse(group);
                     }}
                     className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-md px-0 py-0 text-left"
                   >
@@ -342,7 +367,7 @@ export default function ConversationHistory({
                       size={14}
                       className="ml-1 shrink-0 text-muted"
                       data-testid={
-                        group.groupType === 'history'
+                        isHistoryGroup
                           ? 'workspace-runtime-icon-history'
                           : `workspace-runtime-icon-${group.runtimeTarget}`
                       }

@@ -6,10 +6,12 @@ import cn.hutool.core.util.StrUtil;
 import com.codingx.automation.application.service.AutomationTaskChatCreationResult;
 import com.codingx.automation.application.service.AutomationTaskChatCreationService;
 import com.codingx.chat.application.command.SendChatMessageCommand;
+import com.codingx.chat.application.service.goal.ChatGoalView;
 import com.codingx.chat.domain.model.ChatConversation;
 import com.codingx.chat.domain.model.ChatExecutionStep;
 import com.codingx.chat.domain.model.ChatExecutionRun;
 import com.codingx.chat.domain.model.ChatAttachment;
+import com.codingx.chat.domain.model.ChatGoalStatus;
 import com.codingx.chat.domain.model.ChatIntentNode;
 import com.codingx.chat.domain.model.ChatMessage;
 import com.codingx.chat.domain.model.ChatMessageRole;
@@ -243,25 +245,31 @@ public class ChatApplicationService {
             .orElseThrow(() -> new ForbiddenException(ErrorMessageCatalog.CHAT_CONVERSATION_FORBIDDEN));
         ChatMessage lastAssistantMessage = findLastMessageByRole(history, ChatMessageRole.ASSISTANT)
             .orElseThrow(() -> new ForbiddenException(ErrorMessageCatalog.CHAT_CONVERSATION_FORBIDDEN));
-        // 步骤 4：恢复原 run 选择的技能、MCP 与专家上下文；老数据缺失时回退解析用户消息里的技能 mention。
+        // 步骤 4：恢复原 run 选择的技能、MCP、专家与目标模式上下文；老数据缺失时回退解析用户消息里的技能 mention。
         Long sourceRunId = lastAssistantMessage.getRunId() != null ? lastAssistantMessage.getRunId() : resolveRegenerateSourceRunId(conversation);
-        List<String> selectedSkillCodes = loadSelectedSkillCodes(sourceRunId);
+        ChatRunContextStepSupport.RunContext sourceRunContext = loadRunContext(sourceRunId);
+        List<String> selectedSkillCodes = sourceRunContext.skillCodes();
         if (selectedSkillCodes.isEmpty()) {
             selectedSkillCodes = ChatCapabilityMentionSupport.parseSkillCodes(lastUserMessage.getContent());
         }
-        List<String> selectedMcpCodes = loadSelectedMcpCodes(sourceRunId);
-        String selectedExpertCode = loadSelectedExpertCode(sourceRunId);
+        List<String> selectedMcpCodes = sourceRunContext.mcpCodes();
+        String selectedExpertCode = sourceRunContext.expertCode();
+        boolean regeneratedPlanMode = sourceRunContext.planMode() || isExplicitGoalModePrompt(lastUserMessage.getContent());
         SendChatMessageCommand command = new SendChatMessageCommand(
             conversationId,
             ChatCapabilityMentionSupport.stripSelectedSkillMentions(lastUserMessage.getContent(), selectedSkillCodes),
             false,
             selectedMcpCodes,
             selectedSkillCodes,
+            Map.of(),
             selectedExpertCode,
             null,
-            List.of()
+            List.of(),
+            false,
+            false,
+            regeneratedPlanMode
         );
-        bindSelectedContextToRun(runId, selectedMcpCodes, selectedSkillCodes, selectedExpertCode);
+        bindSelectedContextToRun(runId, selectedMcpCodes, selectedSkillCodes, selectedExpertCode, regeneratedPlanMode);
         try {
             // 步骤 5：复用正常聊天执行链路生成新助手消息，失败时统一写入 run 与 Trace 终态。
             processRegeneratedMessage(command, conversation, history, lastUserMessage, runId);
@@ -319,21 +327,26 @@ public class ChatApplicationService {
         boolean mcpEnabled = command.mcpCodes() != null && !command.mcpCodes().isEmpty();
         List<SubQuestionIntentDecision> subQuestionDecisions = normalizeSelectedSkillShortQuestionDecisions(
             suppressAutomaticSearchDecisions(
-                suppressCodeArtifactFollowUpSearchDecisions(
-                    resolveSubQuestionDecisions(rewriteResult, mcpEnabled),
-                    command.content(),
-                    history
+                suppressPlanModeGoalSearchDecisions(
+                    suppressCodeArtifactFollowUpSearchDecisions(
+                        resolveSubQuestionDecisions(rewriteResult, mcpEnabled),
+                        command.content(),
+                        history
+                    ),
+                    command
                 )
             ),
             command.skillCodes()
         );
         ConversationIntentDecision intentDecision = primaryIntentDecision(subQuestionDecisions);
         logChatDecision("继续生成", command, runId, intentDecision, rewriteResult);
+        boolean effectivePlanMode = isEffectivePlanMode(command);
         Optional<SubQuestionIntentDecision> clarifyDecision = firstDecisionWithAction(
             subQuestionDecisions,
             ConversationIntentAction.CLARIFY
         );
-        if (clarifyDecision.isPresent() && CollUtil.isEmpty(command.skillCodes())) {
+        boolean bypassIntentShortCircuit = shouldBypassIntentShortCircuit(command);
+        if (clarifyDecision.isPresent() && CollUtil.isEmpty(command.skillCodes()) && !bypassIntentShortCircuit) {
             intentDecision = clarifyDecision.get().intentDecision();
             ChatMessage assistantMessage = ChatMessage.assistantMessage(
                 command.conversationId(),
@@ -354,7 +367,7 @@ public class ChatApplicationService {
             chatStreamPublisher.publishAssistantCompleted(command.conversationId(), assistantMessage.getId(), assistantMessage.getContent(), conversation.getTitle());
             return;
         }
-        if (isSingleDirectReply(subQuestionDecisions) && CollUtil.isEmpty(command.skillCodes())) {
+        if (isSingleDirectReply(subQuestionDecisions) && CollUtil.isEmpty(command.skillCodes()) && !bypassIntentShortCircuit) {
             ChatMessage assistantMessage = ChatMessage.assistantMessage(
                 command.conversationId(),
                 intentDecision.reply(),
@@ -378,7 +391,7 @@ public class ChatApplicationService {
             subQuestionDecisions,
             ConversationIntentAction.MCP_DISABLED
         );
-        if (mcpDisabledDecision.isPresent()) {
+        if (mcpDisabledDecision.isPresent() && !bypassIntentShortCircuit) {
             intentDecision = mcpDisabledDecision.get().intentDecision();
             ChatMessage assistantMessage = ChatMessage.assistantMessage(
                 command.conversationId(),
@@ -403,7 +416,7 @@ public class ChatApplicationService {
             subQuestionDecisions,
             command.mcpCodes()
         );
-        if (unavailableMcpDecision.isPresent()) {
+        if (unavailableMcpDecision.isPresent() && !bypassIntentShortCircuit) {
             intentDecision = unavailableMcpDecision.get().intentDecision();
             ChatMessage assistantMessage = ChatMessage.assistantMessage(
                 command.conversationId(),
@@ -451,7 +464,7 @@ public class ChatApplicationService {
             searchReferences,
             resolveGovernanceAgentContext(conversation, rewrittenQuestion, governanceContextFuture),
             command.deepThinking(),
-            command.planMode()
+            effectivePlanMode
         );
         log.info(
             "模型调用: 深度思考={}, 技能数={}, 专家={}, 历史条数={}, 搜索引用数={}",
@@ -599,40 +612,16 @@ public class ChatApplicationService {
     }
 
     /**
-     * 重新生成时读取上一轮 run 绑定的技能编码。
+     * 重新生成时读取上一轮 run 绑定的运行上下文。
+     * 业务约束：技能、MCP、专家和目标模式都随 runtime_context 隐藏步骤保存，旧记录缺字段时由解析器回退默认值。
      * @param sourceRunId 上一轮 run 标识。
-     * @return 技能编码列表。
+     * @return 运行上下文，缺失时返回空上下文。
      */
-    private List<String> loadSelectedSkillCodes(Long sourceRunId) {
+    private ChatRunContextStepSupport.RunContext loadRunContext(Long sourceRunId) {
         if (sourceRunId == null) {
-            return List.of();
+            return ChatRunContextStepSupport.RunContext.empty();
         }
-        return ChatRunContextStepSupport.parseContext(chatExecutionStepRepository.findByRunId(sourceRunId)).skillCodes();
-    }
-
-    /**
-     * 重新生成时读取上一轮 run 绑定的 MCP 编码。
-     * @param sourceRunId 上一轮 run 标识。
-     * @return MCP 编码列表。
-     */
-    private List<String> loadSelectedMcpCodes(Long sourceRunId) {
-        if (sourceRunId == null) {
-            return List.of();
-        }
-        return ChatRunContextStepSupport.parseContext(chatExecutionStepRepository.findByRunId(sourceRunId)).mcpCodes();
-    }
-
-    /**
-     * 重新生成时读取上一轮 run 绑定的专家编码。
-     * @param sourceRunId 上一轮 run 标识。
-     * @return 专家编码，缺失时返回 null。
-     */
-    private String loadSelectedExpertCode(Long sourceRunId) {
-        if (sourceRunId == null) {
-            return null;
-        }
-        // 专家选择随 run 写入隐藏 runtime_context 步骤；旧 task_expert 表已删除，缺失时不再回退。
-        return ChatRunContextStepSupport.parseContext(chatExecutionStepRepository.findByRunId(sourceRunId)).expertCode();
+        return ChatRunContextStepSupport.parseContext(chatExecutionStepRepository.findByRunId(sourceRunId));
     }
 
     /**
@@ -641,9 +630,16 @@ public class ChatApplicationService {
      * @param selectedMcpCodes 绑定的 MCP 编码。
      * @param selectedSkillCodes 绑定的技能编码。
      * @param selectedExpertCode 绑定的专家编码。
+     * @param planMode 是否沿用目标/规划模式。
      */
-    private void bindSelectedContextToRun(Long runId, List<String> selectedMcpCodes, List<String> selectedSkillCodes, String selectedExpertCode) {
-        saveRunCapabilityContext(runId, selectedMcpCodes, selectedSkillCodes, selectedExpertCode);
+    private void bindSelectedContextToRun(
+        Long runId,
+        List<String> selectedMcpCodes,
+        List<String> selectedSkillCodes,
+        String selectedExpertCode,
+        boolean planMode
+    ) {
+        saveRunCapabilityContext(runId, selectedMcpCodes, selectedSkillCodes, selectedExpertCode, planMode);
     }
 
     /**
@@ -652,12 +648,14 @@ public class ChatApplicationService {
      * @param selectedMcpCodes MCP 编码。
      * @param selectedSkillCodes 技能编码。
      * @param selectedExpertCode 专家编码。
+     * @param planMode 本轮是否按目标/规划模式执行。
      */
     private void saveRunCapabilityContext(
         Long runId,
         List<String> selectedMcpCodes,
         List<String> selectedSkillCodes,
-        String selectedExpertCode
+        String selectedExpertCode,
+        boolean planMode
     ) {
         if (runId == null) {
             return;
@@ -669,6 +667,7 @@ public class ChatApplicationService {
             selectedMcpCodes,
             selectedSkillCodes,
             selectedExpertCode,
+            planMode,
             existingContextStep
         ));
     }
@@ -713,6 +712,7 @@ public class ChatApplicationService {
         chatRuntimeGuardService.ensureAccepted(command.conversationId());
         List<String> selectedSkillCodes = ChatCapabilityMentionSupport.mergeSkillCodes(command.skillCodes(), command.content());
         String plainQuestion = ChatCapabilityMentionSupport.stripSelectedSkillMentions(command.content(), selectedSkillCodes);
+        boolean effectivePlanMode = isEffectivePlanMode(command);
         // 步骤 3：纯问候不需要历史、附件、改写、意图识别和模型工具循环，先落库用户输入后直接确定性收口。
         if (shouldReplyWithQuickGreeting(command, plainQuestion, selectedSkillCodes)) {
             ChatMessage userMessage = ChatMessage.userMessage(command.conversationId(), plainQuestion).attachRun(runId);
@@ -722,7 +722,7 @@ public class ChatApplicationService {
             return;
         }
         // 步骤 4：非问候请求需要保存能力上下文，并读取历史与附件后进入完整编排链路。
-        saveRunCapabilityContext(runId, command.mcpCodes(), selectedSkillCodes, command.expertCode());
+        saveRunCapabilityContext(runId, command.mcpCodes(), selectedSkillCodes, command.expertCode(), effectivePlanMode);
         List<ChatMessage> history = new ArrayList<>(chatMessageRepository.findByConversationId(command.conversationId()));
         List<ChatAttachment> validatedAttachments = chatAttachmentService.requireOwnedAttachments(
             command.attachmentIds(),
@@ -778,10 +778,13 @@ public class ChatApplicationService {
         boolean mcpEnabled = command.mcpCodes() != null && !command.mcpCodes().isEmpty();
         List<SubQuestionIntentDecision> subQuestionDecisions = normalizeSelectedSkillShortQuestionDecisions(
             suppressAutomaticSearchDecisions(
-                suppressCodeArtifactFollowUpSearchDecisions(
-                    resolveSubQuestionDecisions(rewriteResult, mcpEnabled),
-                    plainQuestion,
-                    history
+                suppressPlanModeGoalSearchDecisions(
+                    suppressCodeArtifactFollowUpSearchDecisions(
+                        resolveSubQuestionDecisions(rewriteResult, mcpEnabled),
+                        plainQuestion,
+                        history
+                    ),
+                    command
                 )
             ),
             selectedSkillCodes
@@ -794,7 +797,8 @@ public class ChatApplicationService {
             subQuestionDecisions,
             ConversationIntentAction.CLARIFY
         );
-        if (clarifyDecision.isPresent() && selectedSkillCodes.isEmpty()) {
+        boolean bypassIntentShortCircuit = shouldBypassIntentShortCircuit(command);
+        if (clarifyDecision.isPresent() && selectedSkillCodes.isEmpty() && !bypassIntentShortCircuit) {
             intentDecision = clarifyDecision.get().intentDecision();
             ChatMessage assistantMessage = ChatMessage.assistantMessage(
                 command.conversationId(),
@@ -815,7 +819,7 @@ public class ChatApplicationService {
             chatStreamPublisher.publishAssistantCompleted(command.conversationId(), assistantMessage.getId(), assistantMessage.getContent(), conversation.getTitle());
             return;
         }
-        if (isSingleDirectReply(subQuestionDecisions) && selectedSkillCodes.isEmpty()) {
+        if (isSingleDirectReply(subQuestionDecisions) && selectedSkillCodes.isEmpty() && !bypassIntentShortCircuit) {
             ChatMessage assistantMessage = ChatMessage.assistantMessage(
                 command.conversationId(),
                 intentDecision.reply(),
@@ -839,7 +843,7 @@ public class ChatApplicationService {
             subQuestionDecisions,
             ConversationIntentAction.MCP_DISABLED
         );
-        if (mcpDisabledDecision.isPresent()) {
+        if (mcpDisabledDecision.isPresent() && !bypassIntentShortCircuit) {
             intentDecision = mcpDisabledDecision.get().intentDecision();
             ChatMessage assistantMessage = ChatMessage.assistantMessage(
                 command.conversationId(),
@@ -864,7 +868,7 @@ public class ChatApplicationService {
             subQuestionDecisions,
             command.mcpCodes()
         );
-        if (unavailableMcpDecision.isPresent()) {
+        if (unavailableMcpDecision.isPresent() && !bypassIntentShortCircuit) {
             intentDecision = unavailableMcpDecision.get().intentDecision();
             ChatMessage assistantMessage = ChatMessage.assistantMessage(
                 command.conversationId(),
@@ -914,7 +918,7 @@ public class ChatApplicationService {
             searchReferences,
             resolveGovernanceAgentContext(conversation, rewrittenQuestion, governanceContextFuture),
             command.deepThinking(),
-            command.planMode()
+            effectivePlanMode
         );
         log.info(
             "模型调用: 深度思考={}, 技能数={}, 专家={}, 历史条数={}, 搜索引用数={}",
@@ -1067,7 +1071,7 @@ public class ChatApplicationService {
         List<String> selectedSkillCodes
     ) {
         return !command.deepThinking()
-            && !command.planMode()
+            && !isEffectivePlanMode(command)
             && CollUtil.isEmpty(selectedSkillCodes)
             && CollUtil.isEmpty(command.attachmentIds())
             && CollUtil.isEmpty(command.skillPaths())
@@ -1123,6 +1127,7 @@ public class ChatApplicationService {
         ChatMessage userMessage = ChatMessage.userMessage(command.conversationId(), plainQuestion).attachRun(runId);
         history.add(userMessage);
         chatStreamPublisher.publishUserMessage(command.conversationId(), userMessage.getContent());
+        boolean effectivePlanMode = isEffectivePlanMode(command);
         // 步骤 2：本地模式允许澄清、直答和 MCP 未启用提示短路，但技能说明不得静态伪造成执行结果。
         if (shouldReplyWithQuickGreeting(command, plainQuestion, selectedSkillCodes)) {
             chatStreamPublisher.publishAssistantCompleted(
@@ -1145,7 +1150,8 @@ public class ChatApplicationService {
             selectedSkillCodes
         );
         logChatDecision("本地消息", command, runId, intentDecision, rewriteResult);
-        if (intentDecision.action() == ConversationIntentAction.CLARIFY && selectedSkillCodes.isEmpty()) {
+        boolean bypassIntentShortCircuit = shouldBypassIntentShortCircuit(command);
+        if (intentDecision.action() == ConversationIntentAction.CLARIFY && selectedSkillCodes.isEmpty() && !bypassIntentShortCircuit) {
             chatStreamPublisher.publishAssistantCompleted(
                 command.conversationId(),
                 intentDecision.reply(),
@@ -1153,7 +1159,7 @@ public class ChatApplicationService {
             );
             return;
         }
-        if (intentDecision.action() == ConversationIntentAction.DIRECT && StrUtil.isNotBlank(intentDecision.reply()) && selectedSkillCodes.isEmpty()) {
+        if (intentDecision.action() == ConversationIntentAction.DIRECT && StrUtil.isNotBlank(intentDecision.reply()) && selectedSkillCodes.isEmpty() && !bypassIntentShortCircuit) {
             chatStreamPublisher.publishAssistantCompleted(
                 command.conversationId(),
                 intentDecision.reply(),
@@ -1161,7 +1167,7 @@ public class ChatApplicationService {
             );
             return;
         }
-        if (intentDecision.action() == ConversationIntentAction.MCP_DISABLED) {
+        if (intentDecision.action() == ConversationIntentAction.MCP_DISABLED && !bypassIntentShortCircuit) {
             chatStreamPublisher.publishAssistantCompleted(
                 command.conversationId(),
                 "你当前未连接 MCP。请在输入框上方开启“连接 MCP”并至少选择一个 MCP 后重试",
@@ -1185,7 +1191,7 @@ public class ChatApplicationService {
             List.of(),
             "",
             command.deepThinking(),
-            command.planMode()
+            effectivePlanMode
         );
         log.info(
             "模型调用: 深度思考={}, 技能数={}, 专家={}, 历史条数={}, 搜索引用数={}",
@@ -1592,25 +1598,150 @@ public class ChatApplicationService {
         AgentLoopCoordinator loopCoordinator = resolveAgentLoopCoordinator();
         int maxToolRounds = loopCoordinator.normalizeMaxRounds(runtimeSettingService.chatToolMaxRounds());
         Map<String, ChatToolExecutionResult> executedToolResults = new LinkedHashMap<>();
+        boolean planModeGoalAvailable = false;
+        boolean planModeGoalProgressDirty = false;
+        boolean planModeGoalExecutionObserved = false;
+        boolean planModeGoalTerminalObserved = false;
+        boolean planModeGoalMissingObserved = false;
+        boolean effectivePlanMode = isEffectivePlanMode(command);
+        boolean planModeExecutionRequested = isPlanModeExecutionRequested(command);
+        PlanModeTerminalGoalSnapshot planModeTerminalGoalSnapshot = null;
+        if (effectivePlanMode) {
+            log.info(
+                "目标模式工具循环初始化: conversationId={}, runId={}, requestedPlanMode={}, effectivePlanMode={}, executionRequested={}, maxRounds={}, toolCount={}, questionPreview={}",
+                command.conversationId(),
+                runId,
+                command.planMode(),
+                effectivePlanMode,
+                planModeExecutionRequested,
+                maxToolRounds,
+                toolSpecs.size(),
+                logPreview(command.content())
+            );
+        }
         for (int round = 0; round < maxToolRounds; round++) {
             List<AiToolCall> toolCalls = new ArrayList<>();
+            boolean requirePlanModeGoalUpdateBeforeAnswer =
+                shouldRequirePlanModeGoalUpdate(command, planModeGoalAvailable, planModeGoalProgressDirty);
+            boolean requirePlanModeGoalBootstrapBeforeAnswer = shouldRequirePlanModeGoalBootstrap(
+                command,
+                planModeGoalAvailable,
+                planModeExecutionRequested
+            );
+            boolean requirePlanModeGoalExecutionBeforeAnswer = shouldRequirePlanModeGoalExecution(
+                command,
+                planModeGoalAvailable,
+                planModeExecutionRequested,
+                planModeGoalTerminalObserved
+            );
+            List<ChatToolSpec> roundToolSpecs = resolvePlanModeRoundToolSpecs(
+                command,
+                toolSpecs,
+                planModeGoalAvailable,
+                requirePlanModeGoalUpdateBeforeAnswer,
+                planModeExecutionRequested,
+                planModeGoalMissingObserved,
+                planModeGoalTerminalObserved,
+                planModeGoalExecutionObserved
+            );
+            if (effectivePlanMode) {
+                log.info(
+                    "目标模式工具轮次状态: conversationId={}, runId={}, round={}, goalAvailable={}, goalMissingObserved={}, progressDirty={}, executionObserved={}, terminalObserved={}, requireBootstrap={}, requireUpdate={}, requireExecution={}, visibleTools={}",
+                    command.conversationId(),
+                    runId,
+                    round + 1,
+                    planModeGoalAvailable,
+                    planModeGoalMissingObserved,
+                    planModeGoalProgressDirty,
+                    planModeGoalExecutionObserved,
+                    planModeGoalTerminalObserved,
+                    requirePlanModeGoalBootstrapBeforeAnswer,
+                    requirePlanModeGoalUpdateBeforeAnswer,
+                    requirePlanModeGoalExecutionBeforeAnswer,
+                    roundToolSpecs.stream().map(ChatToolSpec::name).toList()
+                );
+            }
             ToolRoundContentBuffer deferredContentDeltas = new ToolRoundContentBuffer(
                 command.conversationId(),
                 builder,
-                !executedToolResults.isEmpty()
+                !executedToolResults.isEmpty() && !effectivePlanMode
             );
-            aiChatClient.streamChatWithTools(currentHistory, command.deepThinking(), toolSpecs, buildStreamHandler(
-                command,
-                builder,
-                thinkingBuilder,
-                thinkingStartedAt,
-                streamError,
-                selectedProvider,
-                selectedModel,
-                activeRunId,
-                toolCalls,
-                deferredContentDeltas
-            ));
+            try {
+                aiChatClient.streamChatWithTools(currentHistory, command.deepThinking(), roundToolSpecs, buildStreamHandler(
+                    command,
+                    builder,
+                    thinkingBuilder,
+                    thinkingStartedAt,
+                    streamError,
+                    selectedProvider,
+                    selectedModel,
+                    activeRunId,
+                    toolCalls,
+                    deferredContentDeltas
+                ));
+            } catch (RuntimeException exception) {
+                if (shouldCreateAndBlockPlanModeGoalOnStreamFailure(
+                    command,
+                    planModeExecutionRequested,
+                    planModeGoalAvailable,
+                    planModeGoalMissingObserved,
+                    planModeGoalTerminalObserved
+                )) {
+                    planModeTerminalGoalSnapshot = createAndBlockPlanModeGoalAfterMissingGoalStreamFailure(
+                        command,
+                        runId,
+                        exception,
+                        planModeTerminalGoalSnapshot
+                    );
+                    planModeGoalAvailable = true;
+                    planModeGoalExecutionObserved = true;
+                    planModeGoalProgressDirty = false;
+                    planModeGoalTerminalObserved = true;
+                    appendAssistantDelta(
+                        command.conversationId(),
+                        builder,
+                        buildPlanModeTerminalGoalAnswer(planModeTerminalGoalSnapshot)
+                    );
+                    log.warn(
+                        "目标模式空目标后模型流失败，已创建并阻塞目标: conversationId={}, runId={}, round={}, message={}",
+                        command.conversationId(),
+                        runId,
+                        round + 1,
+                        exception.getMessage()
+                    );
+                    return;
+                }
+                if (shouldBlockPlanModeGoalOnStreamFailure(
+                    command,
+                    planModeExecutionRequested,
+                    planModeGoalAvailable,
+                    planModeGoalTerminalObserved
+                )) {
+                    planModeTerminalGoalSnapshot = blockPlanModeGoalAfterStreamFailure(
+                        command,
+                        runId,
+                        exception,
+                        planModeTerminalGoalSnapshot
+                    );
+                    planModeGoalExecutionObserved = true;
+                    planModeGoalProgressDirty = false;
+                    planModeGoalTerminalObserved = true;
+                    appendAssistantDelta(
+                        command.conversationId(),
+                        builder,
+                        buildPlanModeTerminalGoalAnswer(planModeTerminalGoalSnapshot)
+                    );
+                    log.warn(
+                        "目标模式模型流失败已写入阻塞目标: conversationId={}, runId={}, round={}, message={}",
+                        command.conversationId(),
+                        runId,
+                        round + 1,
+                        exception.getMessage()
+                    );
+                    return;
+                }
+                throw exception;
+            }
             log.info(
                 "模型工具轮次: 轮次={}, 工具调用数={}, 流错误={}",
                 round + 1,
@@ -1618,12 +1749,75 @@ public class ChatApplicationService {
                 streamError[0] == null ? null : streamError[0].getMessage()
             );
             if (streamError[0] != null) {
+                RuntimeException streamFailure = toRuntimeException(streamError[0]);
+                if (shouldCreateAndBlockPlanModeGoalOnStreamFailure(
+                    command,
+                    planModeExecutionRequested,
+                    planModeGoalAvailable,
+                    planModeGoalMissingObserved,
+                    planModeGoalTerminalObserved
+                )) {
+                    planModeTerminalGoalSnapshot = createAndBlockPlanModeGoalAfterMissingGoalStreamFailure(
+                        command,
+                        runId,
+                        streamFailure,
+                        planModeTerminalGoalSnapshot
+                    );
+                    planModeGoalAvailable = true;
+                    planModeGoalExecutionObserved = true;
+                    planModeGoalProgressDirty = false;
+                    planModeGoalTerminalObserved = true;
+                    appendAssistantDelta(
+                        command.conversationId(),
+                        builder,
+                        buildPlanModeTerminalGoalAnswer(planModeTerminalGoalSnapshot)
+                    );
+                    streamError[0] = null;
+                    log.warn(
+                        "目标模式空目标后模型流错误，已创建并阻塞目标: conversationId={}, runId={}, round={}, message={}",
+                        command.conversationId(),
+                        runId,
+                        round + 1,
+                        streamFailure.getMessage()
+                    );
+                    return;
+                }
+                if (shouldBlockPlanModeGoalOnStreamFailure(
+                    command,
+                    planModeExecutionRequested,
+                    planModeGoalAvailable,
+                    planModeGoalTerminalObserved
+                )) {
+                    planModeTerminalGoalSnapshot = blockPlanModeGoalAfterStreamFailure(
+                        command,
+                        runId,
+                        streamFailure,
+                        planModeTerminalGoalSnapshot
+                    );
+                    planModeGoalExecutionObserved = true;
+                    planModeGoalProgressDirty = false;
+                    planModeGoalTerminalObserved = true;
+                    appendAssistantDelta(
+                        command.conversationId(),
+                        builder,
+                        buildPlanModeTerminalGoalAnswer(planModeTerminalGoalSnapshot)
+                    );
+                    streamError[0] = null;
+                    log.warn(
+                        "目标模式模型流错误已写入阻塞目标: conversationId={}, runId={}, round={}, message={}",
+                        command.conversationId(),
+                        runId,
+                        round + 1,
+                        streamFailure.getMessage()
+                    );
+                    return;
+                }
                 return;
             }
             if (toolCalls.isEmpty() && deferredContentDeltas.isCommandPlanOnlyContent()) {
                 List<AiToolCall> inferredToolCalls = inferLocalShellToolCallsFromCommandPlan(
                     deferredContentDeltas.content(),
-                    toolSpecs
+                    roundToolSpecs
                 );
                 if (CollUtil.isNotEmpty(inferredToolCalls)) {
                     toolCalls.addAll(inferredToolCalls);
@@ -1648,6 +1842,109 @@ public class ChatApplicationService {
                 }
             }
             if (toolCalls.isEmpty()) {
+                if (requirePlanModeGoalBootstrapBeforeAnswer) {
+                    logSuppressedToolRoundContent(round + 1, deferredContentDeltas);
+                    currentHistory.add(ChatMessage.create(
+                        cn.hutool.core.util.IdUtil.getSnowflakeNextId(),
+                        command.conversationId(),
+                        ChatMessageRole.SYSTEM,
+                        buildPlanModeGoalBootstrapRequiredGuidance(
+                            deferredContentDeltas.content(),
+                            roundToolSpecs,
+                            planModeGoalMissingObserved
+                        ),
+                        ChatMessageStatus.COMPLETED,
+                        null,
+                        null,
+                        null
+                    ).attachRun(runId));
+                    log.warn(
+                        "目标模式目标未创建，已拦截最终正文: conversationId={}, runId={}, round={}, goalMissing={}",
+                        command.conversationId(),
+                        runId,
+                        round + 1,
+                        planModeGoalMissingObserved
+                    );
+                    continue;
+                }
+                if (requirePlanModeGoalUpdateBeforeAnswer) {
+                    logSuppressedToolRoundContent(round + 1, deferredContentDeltas);
+                    currentHistory.add(ChatMessage.create(
+                        cn.hutool.core.util.IdUtil.getSnowflakeNextId(),
+                        command.conversationId(),
+                        ChatMessageRole.SYSTEM,
+                        buildPlanModeGoalUpdateRequiredGuidance(deferredContentDeltas.content()),
+                        ChatMessageStatus.COMPLETED,
+                        null,
+                        null,
+                        null
+                    ).attachRun(runId));
+                    continue;
+                }
+                if (shouldBlockPlanModeGoalAfterUnfinishedExecution(
+                    command,
+                    planModeExecutionRequested,
+                    planModeGoalAvailable,
+                    planModeGoalExecutionObserved,
+                    planModeGoalTerminalObserved
+                ) && isPlanModeFalseCompletionClaim(deferredContentDeltas.content())) {
+                    logSuppressedToolRoundContent(round + 1, deferredContentDeltas);
+                    planModeTerminalGoalSnapshot = blockPlanModeGoalAfterUnfinishedExecution(
+                        command,
+                        runId,
+                        planModeTerminalGoalSnapshot
+                    );
+                    planModeGoalProgressDirty = false;
+                    planModeGoalTerminalObserved = true;
+                    appendAssistantDelta(
+                        command.conversationId(),
+                        builder,
+                        buildPlanModeTerminalGoalAnswer(planModeTerminalGoalSnapshot)
+                    );
+                    log.warn(
+                        "目标模式检测到 ACTIVE 目标伪完成正文，已写入阻塞目标: conversationId={}, runId={}, round={}",
+                        command.conversationId(),
+                        runId,
+                        round + 1
+                    );
+                    return;
+                }
+                if (requirePlanModeGoalExecutionBeforeAnswer) {
+                    logSuppressedToolRoundContent(round + 1, deferredContentDeltas);
+                    currentHistory.add(ChatMessage.create(
+                        cn.hutool.core.util.IdUtil.getSnowflakeNextId(),
+                        command.conversationId(),
+                        ChatMessageRole.SYSTEM,
+                        buildPlanModeGoalExecutionRequiredGuidance(deferredContentDeltas.content(), roundToolSpecs),
+                        ChatMessageStatus.COMPLETED,
+                        null,
+                        null,
+                        null
+                    ).attachRun(runId));
+                    log.warn(
+                        "目标模式创建目标后未继续执行，已拦截最终正文: conversationId={}, runId={}, round={}",
+                        command.conversationId(),
+                        runId,
+                        round + 1
+                    );
+                    continue;
+                }
+                if (shouldUsePlanModeTerminalGoalSnapshotAnswer(command, planModeTerminalGoalSnapshot, deferredContentDeltas.content())) {
+                    logSuppressedToolRoundContent(round + 1, deferredContentDeltas);
+                    appendAssistantDelta(
+                        command.conversationId(),
+                        builder,
+                        buildPlanModeTerminalGoalAnswer(planModeTerminalGoalSnapshot)
+                    );
+                    log.warn(
+                        "目标模式最终正文与终态目标冲突，已改用目标快照收口: conversationId={}, runId={}, round={}, goalStatus={}",
+                        command.conversationId(),
+                        runId,
+                        round + 1,
+                        planModeTerminalGoalSnapshot.status()
+                    );
+                    return;
+                }
                 if (!executedToolResults.isEmpty() && deferredContentDeltas.isProgressOnlyContent()) {
                     logSuppressedToolRoundContent(round + 1, deferredContentDeltas);
                     currentHistory.add(ChatMessage.create(
@@ -1665,10 +1962,55 @@ public class ChatApplicationService {
                 deferredContentDeltas.flushIfNeeded();
                 return;
             }
-            toolCalls = filterAllowedToolCalls(toolCalls, toolSpecs, currentHistory, command.conversationId(), runId, round + 1);
+            toolCalls = filterAllowedToolCalls(toolCalls, roundToolSpecs, currentHistory, command.conversationId(), runId, round + 1);
             if (toolCalls.isEmpty()) {
+                if (requirePlanModeGoalBootstrapBeforeAnswer) {
+                    logSuppressedToolRoundContent(round + 1, deferredContentDeltas);
+                    currentHistory.add(ChatMessage.create(
+                        cn.hutool.core.util.IdUtil.getSnowflakeNextId(),
+                        command.conversationId(),
+                        ChatMessageRole.SYSTEM,
+                        buildPlanModeGoalBootstrapRequiredGuidance(
+                            deferredContentDeltas.content(),
+                            roundToolSpecs,
+                            planModeGoalMissingObserved
+                        ),
+                        ChatMessageStatus.COMPLETED,
+                        null,
+                        null,
+                        null
+                    ).attachRun(runId));
+                }
                 logSuppressedToolRoundContent(round + 1, deferredContentDeltas);
                 continue;
+            }
+            if (requirePlanModeGoalUpdateBeforeAnswer) {
+                List<AiToolCall> goalUpdateToolCalls = toolCalls.stream()
+                    .filter(this::isGoalProgressUpdateToolCall)
+                    .toList();
+                if (goalUpdateToolCalls.isEmpty()) {
+                    logSuppressedToolRoundContent(round + 1, deferredContentDeltas);
+                    currentHistory.add(ChatMessage.create(
+                        cn.hutool.core.util.IdUtil.getSnowflakeNextId(),
+                        command.conversationId(),
+                        ChatMessageRole.SYSTEM,
+                        buildPlanModeGoalUpdateRequiredGuidance(deferredContentDeltas.content()),
+                        ChatMessageStatus.COMPLETED,
+                        null,
+                        null,
+                        null
+                    ).attachRun(runId));
+                    log.warn(
+                        "目标模式进度未落库，已拦截非 update_goal 工具: conversationId={}, runId={}, round={}, toolCount={}",
+                        command.conversationId(),
+                        runId,
+                        round + 1,
+                        toolCalls.size()
+                    );
+                    continue;
+                }
+                // 目标进度未同步时只允许 update_goal 先执行；其余工具需等目标状态写入数据库后重新决策。
+                toolCalls = goalUpdateToolCalls;
             }
             // 工具调用轮次中的正文通常是“现在执行”“接下来调用工具”等中间过程，不能作为最终用户回答暴露。
             logSuppressedToolRoundContent(round + 1, deferredContentDeltas);
@@ -1681,6 +2023,33 @@ public class ChatApplicationService {
                 ChatToolExecutionResult previousToolResult = executedToolResults.get(toolCallKey);
                 if (previousToolResult != null) {
                     if (loopCoordinator.isWriteToolCall(toolCall)) {
+                        if (shouldContinuePlanModeAfterRepeatedWrite(
+                            command,
+                            planModeExecutionRequested,
+                            planModeGoalAvailable,
+                            planModeGoalTerminalObserved
+                        )) {
+                            // 目标模式中重复写同一路径只是模型循环信号，不能绕过 update_goal 终态收口。
+                            currentHistory.add(ChatMessage.create(
+                                cn.hutool.core.util.IdUtil.getSnowflakeNextId(),
+                                command.conversationId(),
+                                ChatMessageRole.SYSTEM,
+                                buildPlanModeRepeatedWriteGuidance(previousToolResult),
+                                ChatMessageStatus.COMPLETED,
+                                null,
+                                null,
+                                null
+                            ).attachRun(runId));
+                            log.warn(
+                                "目标模式重复写文件已拦截并继续等待目标终态: conversationId={}, runId={}, round={}, tool={}, 参数长度={}",
+                                command.conversationId(),
+                                runId,
+                                round + 1,
+                                toolCall.toolCode(),
+                                StrUtil.length(toolCall.arguments())
+                            );
+                            continue;
+                        }
                         appendAssistantDelta(command.conversationId(), builder, buildRepeatedWriteFinalAnswer(previousToolResult));
                         log.warn(
                             "重复写文件工具调用已收口: 轮次={}, 工具={}, 参数长度={}",
@@ -1689,6 +2058,33 @@ public class ChatApplicationService {
                             StrUtil.length(toolCall.arguments())
                         );
                         return;
+                    }
+                    if (shouldContinuePlanModeAfterRepeatedTool(
+                        command,
+                        planModeExecutionRequested,
+                        planModeGoalAvailable,
+                        planModeGoalTerminalObserved
+                    )) {
+                        // 目标模式的重复 read/ls 通常表示模型卡在调研阶段，不能退回普通流式正文绕过目标终态。
+                        currentHistory.add(ChatMessage.create(
+                            cn.hutool.core.util.IdUtil.getSnowflakeNextId(),
+                            command.conversationId(),
+                            ChatMessageRole.SYSTEM,
+                            buildPlanModeRepeatedToolGuidance(toolCall, previousToolResult),
+                            ChatMessageStatus.COMPLETED,
+                            null,
+                            null,
+                            null
+                        ).attachRun(runId));
+                        log.warn(
+                            "目标模式重复本地工具已拦截并继续等待目标终态: conversationId={}, runId={}, round={}, tool={}, 参数长度={}",
+                            command.conversationId(),
+                            runId,
+                            round + 1,
+                            toolCall.toolCode(),
+                            StrUtil.length(toolCall.arguments())
+                        );
+                        continue;
                     }
                     currentHistory.add(ChatMessage.create(
                         cn.hutool.core.util.IdUtil.getSnowflakeNextId(),
@@ -1721,7 +2117,7 @@ public class ChatApplicationService {
                     return;
                 } else {
                     try {
-                        String toolStepDisplayName = resolveLocalToolDisplayName(toolCall, toolSpecs);
+                        String toolStepDisplayName = resolveLocalToolDisplayName(toolCall, roundToolSpecs);
                         toolResult = executeModelToolCall(command, runId, toolCall, toolStepDisplayName);
                     } catch (RuntimeException exception) {
                         streamError[0] = exception;
@@ -1747,7 +2143,56 @@ public class ChatApplicationService {
                     StrUtil.length(toolResult.content()),
                     StrUtil.length(toolEvidenceContext)
                 );
-                log.debug("提示词上下文变化内容:\n{}", toolEvidenceContext);
+                    log.debug("提示词上下文变化内容:\n{}", toolEvidenceContext);
+                    planModeGoalAvailable = planModeGoalAvailable || isGoalAvailableToolResult(toolResult);
+                    planModeGoalMissingObserved = planModeGoalMissingObserved || isGoalMissingToolResult(toolResult);
+                    if (isGoalProgressUpdateToolResult(toolResult)) {
+                        planModeGoalExecutionObserved = true;
+                        planModeGoalProgressDirty = false;
+                        planModeGoalTerminalObserved = planModeGoalTerminalObserved || isTerminalGoalToolResult(toolResult);
+                        if (planModeGoalTerminalObserved) {
+                            planModeTerminalGoalSnapshot = extractPlanModeTerminalGoalSnapshot(toolResult, planModeTerminalGoalSnapshot);
+                        }
+                    } else if (planModeGoalAvailable && isPlanModeGoalWorkToolResult(toolResult)) {
+                        planModeGoalExecutionObserved = true;
+                        planModeGoalProgressDirty = true;
+                    } else if (planModeGoalAvailable && isPlanModeGoalExecutionToolResult(toolResult)) {
+                        planModeGoalExecutionObserved = true;
+                        if (effectivePlanMode && planModeExecutionRequested) {
+                            planModeGoalProgressDirty = true;
+                        }
+                    }
+                    if (effectivePlanMode) {
+                        log.info(
+                            "目标模式工具结果状态: conversationId={}, runId={}, round={}, tool={}, goalAvailable={}, goalMissingObserved={}, progressDirty={}, executionObserved={}, terminalObserved={}, metadataKeys={}",
+                            command.conversationId(),
+                            runId,
+                            round + 1,
+                            toolCall.toolCode(),
+                            planModeGoalAvailable,
+                            planModeGoalMissingObserved,
+                            planModeGoalProgressDirty,
+                            planModeGoalExecutionObserved,
+                            planModeGoalTerminalObserved,
+                            toolResult.metadata() == null ? List.of() : toolResult.metadata().keySet()
+                        );
+                    }
+                    if (shouldStopPlanModeToolLoopAfterTerminalGoal(command, planModeTerminalGoalSnapshot)) {
+                        // 终态目标已经由 update_goal 写入数据库，后续模型工具调用不能再改写已完成/已阻塞事实。
+                        appendAssistantDelta(
+                            command.conversationId(),
+                            builder,
+                            buildPlanModeTerminalGoalAnswer(planModeTerminalGoalSnapshot)
+                        );
+                        log.warn(
+                            "目标模式终态目标已收口，停止后续工具循环: conversationId={}, runId={}, round={}, goalStatus={}",
+                            command.conversationId(),
+                            runId,
+                            round + 1,
+                            planModeTerminalGoalSnapshot.status()
+                        );
+                        return;
+                    }
             }
             AgentLoopResult roundResult = loopCoordinator.resolveRoundResult(
                 round,
@@ -1757,11 +2202,60 @@ public class ChatApplicationService {
                 false
             );
             if (roundResult.completionReason() == AgentLoopCompletionReason.MAX_ROUNDS) {
+                if (shouldBlockPlanModeGoalAfterUnfinishedExecution(
+                    command,
+                    planModeExecutionRequested,
+                    planModeGoalAvailable,
+                    planModeGoalExecutionObserved,
+                    planModeGoalTerminalObserved
+                )) {
+                    planModeTerminalGoalSnapshot = blockPlanModeGoalAfterUnfinishedExecution(
+                        command,
+                        runId,
+                        planModeTerminalGoalSnapshot
+                    );
+                    appendAssistantDelta(
+                        command.conversationId(),
+                        builder,
+                        buildPlanModeTerminalGoalAnswer(planModeTerminalGoalSnapshot)
+                    );
+                    log.warn(
+                        "目标模式工具轮次耗尽前已写入阻塞目标: conversationId={}, runId={}, round={}",
+                        command.conversationId(),
+                        runId,
+                        round + 1
+                    );
+                    return;
+                }
                 streamError[0] = new IllegalStateException(roundResult.message());
                 return;
             }
         }
         // 连续工具调用仍未结束时，用明确异常提示用户收敛工具调用策略。
+        if (shouldBlockPlanModeGoalAfterUnfinishedExecution(
+            command,
+            planModeExecutionRequested,
+            planModeGoalAvailable,
+            planModeGoalExecutionObserved,
+            planModeGoalTerminalObserved
+        )) {
+            planModeTerminalGoalSnapshot = blockPlanModeGoalAfterUnfinishedExecution(
+                command,
+                runId,
+                planModeTerminalGoalSnapshot
+            );
+            appendAssistantDelta(
+                command.conversationId(),
+                builder,
+                buildPlanModeTerminalGoalAnswer(planModeTerminalGoalSnapshot)
+            );
+            log.warn(
+                "目标模式工具循环结束仍未终态，已写入阻塞目标: conversationId={}, runId={}",
+                command.conversationId(),
+                runId
+            );
+            return;
+        }
         streamError[0] = new IllegalStateException(loopCoordinator.maxRoundsMessage());
     }
 
@@ -1789,6 +2283,424 @@ public class ChatApplicationService {
             return false;
         }
         return true;
+    }
+
+    /**
+     * 判断后端本轮是否应按目标/规划模式执行。
+     * 业务约束：桌面端可能因为 UI 状态或改写链路没有把 planMode 参数传到后端，但用户原文已经明确要求
+     * “开启目标模式、创建目标、更新目标进度、直接执行验证提交”。此时后端必须启用同一套目标工具保护，
+     * 避免模型只在自然语言里伪造目标进度或完成状态。
+     *
+     * @param command 当前发送命令。
+     * @return true 表示本轮需要启用目标模式提示词、短路绕过、工具收窄和终态兜底。
+     */
+    private boolean isEffectivePlanMode(SendChatMessageCommand command) {
+        return command != null && (command.planMode() || isExplicitGoalModePrompt(command.content()));
+    }
+
+    /**
+     * 从用户原文识别显式目标模式口令。
+     * 关键约束：只匹配“目标模式/创建目标/检查目标”与“跟进进度/关键步骤/直接执行”等组合语义，
+     * 不把普通“帮我规划目标”误判成需要真实落库的执行型目标。
+     *
+     * @param content 用户原始输入。
+     * @return 是否为显式目标模式请求。
+     */
+    private boolean isExplicitGoalModePrompt(String content) {
+        String normalizedContent = StrUtil.trimToEmpty(content).replaceAll("\\s+", "");
+        if (StrUtil.isBlank(normalizedContent)) {
+            return false;
+        }
+        boolean goalModeSignal = normalizedContent.contains("开启目标模式")
+            || normalizedContent.contains("目标模式")
+            || normalizedContent.contains("创建一个目标")
+            || normalizedContent.contains("创建目标")
+            || normalizedContent.contains("检查当前线程是否已有目标");
+        boolean executionOrProgressSignal = normalizedContent.contains("更新目标进度")
+            || normalizedContent.contains("跟进进度")
+            || normalizedContent.contains("每完成一个关键步骤")
+            || normalizedContent.contains("执行过程中")
+            || normalizedContent.contains("不要只给方案")
+            || normalizedContent.contains("直接执行")
+            || normalizedContent.contains("验证、提交")
+            || normalizedContent.contains("完成提交");
+        return goalModeSignal && executionOrProgressSignal;
+    }
+
+    /**
+     * 判断是否跳过意图层澄清、直答和 MCP 缺失短路。
+     * 目标模式的业务入口要求模型先检查或创建真实目标，并在后续步骤中调用目标工具更新进度；
+     * 如果被天气澄清这类意图保护提前收口，模型完全没有机会看到目标工具提示词。
+     */
+    private boolean shouldBypassIntentShortCircuit(SendChatMessageCommand command) {
+        return isEffectivePlanMode(command);
+    }
+
+    /**
+     * 判断目标模式是否必须先写入真实目标进度再允许最终回答。
+     * 业务约束：右侧目标浮窗只消费数据库目标事件；模型在正文里说“目标进度更新”不会改变目标状态。
+     */
+    private boolean shouldRequirePlanModeGoalUpdate(
+        SendChatMessageCommand command,
+        boolean goalAvailable,
+        boolean goalProgressDirty
+    ) {
+        return isEffectivePlanMode(command) && goalAvailable && goalProgressDirty;
+    }
+
+    /**
+     * 判断执行型目标是否还处在目标启动阶段。
+     * 业务约束：用户明确要求创建/执行目标时，模型不能在 get_goal 返回空后用正文伪造目标；
+     * 只有 create_goal 真正返回目标 metadata 后，才允许进入读写文件、验证和提交等后续工具阶段。
+     */
+    private boolean shouldRequirePlanModeGoalBootstrap(
+        SendChatMessageCommand command,
+        boolean goalAvailable,
+        boolean executionRequested
+    ) {
+        return command != null
+            && isEffectivePlanMode(command)
+            && executionRequested
+            && !goalAvailable;
+    }
+
+    /**
+     * 判断目标模式在创建目标后是否还必须继续执行。
+     * 业务约束：当用户明确说“直接执行、验证、提交、跟进进度”时，create_goal 只是起点，不能作为最终交付。
+     */
+    private boolean shouldRequirePlanModeGoalExecution(
+        SendChatMessageCommand command,
+        boolean goalAvailable,
+        boolean executionRequested,
+        boolean goalTerminalObserved
+    ) {
+        return command != null
+            && isEffectivePlanMode(command)
+            && goalAvailable
+            && executionRequested
+            && !goalTerminalObserved;
+    }
+
+    /**
+     * 从原始用户输入中识别强执行语义，避免普通“帮我规划目标”被误推进到写文件或提交代码。
+     * 这里优先覆盖桌面目标模式常见口令：直接执行、验证、提交，以及要求每一步更新目标进度。
+     */
+    private boolean isPlanModeExecutionRequested(SendChatMessageCommand command) {
+        if (!isEffectivePlanMode(command)) {
+            return false;
+        }
+        String normalizedContent = StrUtil.trimToEmpty(command.content()).replaceAll("\\s+", "");
+        if (StrUtil.isBlank(normalizedContent)) {
+            return false;
+        }
+        return normalizedContent.contains("直接执行")
+            || normalizedContent.contains("不要只给方案")
+            || normalizedContent.contains("不要只给计划")
+            || normalizedContent.contains("执行过程中")
+            || normalizedContent.contains("验证、提交")
+            || normalizedContent.contains("验证,提交")
+            || normalizedContent.contains("完成提交")
+            || normalizedContent.contains("跟进进度")
+            || normalizedContent.contains("更新目标进度")
+            || normalizedContent.contains("每完成一个关键步骤");
+    }
+
+    /**
+     * 按目标模式当前阶段收窄模型可见工具，减少无效循环。
+     * 关键约束：
+     * 1. 目标尚未创建时保留 get_goal/create_goal，保证模型能建立数据库目标。
+     * 2. 目标已存在后隐藏 get_goal/create_goal，避免模型反复读取或重复创建目标导致轮次耗尽。
+     * 3. 关键工作完成但进度未落库时只暴露 update_goal，确保右侧目标浮窗先拿到真实数据库事件。
+         * 4. 执行型目标在已有执行工具时优先暴露读写、验证或提交工具；只有没有执行工具可用时才保留 update_goal 写入阻塞/完成状态。
+     */
+    private List<ChatToolSpec> resolvePlanModeRoundToolSpecs(
+        SendChatMessageCommand command,
+        List<ChatToolSpec> toolSpecs,
+        boolean goalAvailable,
+        boolean goalProgressUpdateRequired,
+        boolean executionRequested,
+        boolean goalMissingObserved,
+        boolean goalTerminalObserved,
+        boolean goalExecutionObserved
+    ) {
+        if (CollUtil.isEmpty(toolSpecs)) {
+            return List.of();
+        }
+        if (!isEffectivePlanMode(command)) {
+            return toolSpecs;
+        }
+        if (goalProgressUpdateRequired) {
+            return toolSpecs.stream()
+                .filter(toolSpec -> StrUtil.equalsIgnoreCase(toolSpec.name(), "update_goal"))
+                .toList();
+        }
+        if (executionRequested && !goalAvailable) {
+            return toolSpecs.stream()
+                .filter(toolSpec -> goalMissingObserved
+                    ? StrUtil.equalsIgnoreCase(toolSpec.name(), "create_goal")
+                    : isPlanModeGoalBootstrapTool(toolSpec.name()))
+                .toList();
+        }
+        if (!goalAvailable) {
+            return toolSpecs;
+        }
+        if (executionRequested && !goalTerminalObserved) {
+            List<ChatToolSpec> executionToolSpecs = toolSpecs.stream()
+                .filter(toolSpec -> !isPlanModeGoalBootstrapTool(toolSpec.name()))
+                .filter(toolSpec -> !StrUtil.equalsIgnoreCase(toolSpec.name(), "update_goal"))
+                .toList();
+            if (CollUtil.isNotEmpty(executionToolSpecs)) {
+                return executionToolSpecs;
+            }
+            // 如果当前工具集合只有目标工具，保留 update_goal，让模型能写入 BLOCKED/COMPLETED 而不是空工具死循环。
+            return toolSpecs.stream()
+                .filter(toolSpec -> !isPlanModeGoalBootstrapTool(toolSpec.name()))
+                .toList();
+        }
+        return toolSpecs.stream()
+            .filter(toolSpec -> !isPlanModeGoalBootstrapTool(toolSpec.name()))
+            .toList();
+    }
+
+    /**
+     * 判断是否属于目标启动工具；这些工具只应在目标尚不存在时暴露。
+     */
+    private boolean isPlanModeGoalBootstrapTool(String toolName) {
+        return StrUtil.equalsIgnoreCase(toolName, "get_goal")
+            || StrUtil.equalsIgnoreCase(toolName, "create_goal");
+    }
+
+    /**
+     * 判断工具结果是否代表当前会话已经存在可更新目标。
+     * get_goal 读到目标或 create_goal 创建/复用目标后，后续关键工作都必须由 update_goal 跟进。
+     */
+    private boolean isGoalAvailableToolResult(ChatToolExecutionResult toolResult) {
+        if (toolResult == null) {
+            return false;
+        }
+        if (StrUtil.equalsIgnoreCase(toolResult.toolCode(), "create_goal")) {
+            return true;
+        }
+        if (!StrUtil.equalsIgnoreCase(toolResult.toolCode(), "get_goal") || toolResult.metadata() == null) {
+            return false;
+        }
+        return toolResult.metadata().containsKey("goal");
+    }
+
+    /**
+     * 判断 get_goal 是否已经确认当前会话没有活动目标。
+     * 该信号会把下一轮可见工具收窄为 create_goal，避免模型继续读写文件或编造目标。
+     */
+    private boolean isGoalMissingToolResult(ChatToolExecutionResult toolResult) {
+        if (toolResult == null
+            || !StrUtil.equalsIgnoreCase(toolResult.toolCode(), "get_goal")
+            || toolResult.metadata() == null
+            || toolResult.metadata().containsKey("goal")) {
+            return false;
+        }
+        Object exists = toolResult.metadata().get("exists");
+        return Boolean.FALSE.equals(exists) || StrUtil.equalsIgnoreCase(String.valueOf(exists), "false");
+    }
+
+    /**
+     * 判断工具结果是否已经把进度写入目标数据库。
+     */
+    private boolean isGoalProgressUpdateToolResult(ChatToolExecutionResult toolResult) {
+        return toolResult != null && StrUtil.equalsIgnoreCase(toolResult.toolCode(), "update_goal");
+    }
+
+    /**
+     * 判断 update_goal 是否已经把当前目标推进到终态。
+     * 关键约束：执行型目标的中间进度通常仍是 ACTIVE，不能因为已经写过一次进度就允许最终答复；
+     * 只有模型明确把目标状态写成 COMPLETED、BLOCKED 或 CANCELLED 后，后端才允许收口。
+     */
+    private boolean isTerminalGoalToolResult(ChatToolExecutionResult toolResult) {
+        if (!isGoalProgressUpdateToolResult(toolResult) || toolResult.metadata() == null) {
+            return false;
+        }
+        String status = extractGoalStatus(toolResult.metadata().get("goal"));
+        if (StrUtil.isBlank(status)) {
+            status = extractMetadataString(toolResult.metadata(), "status", "state");
+        }
+        return ChatGoalStatus.normalize(status, ChatGoalStatus.ACTIVE) != ChatGoalStatus.ACTIVE;
+    }
+
+    /**
+     * 兼容真实工具 metadata 中的 ChatGoalView，以及单元测试常用的 Map 快照。
+     */
+    private String extractGoalStatus(Object goalMetadata) {
+        if (goalMetadata instanceof ChatGoalView goalView) {
+            return goalView.status();
+        }
+        if (goalMetadata instanceof Map<?, ?> goalMap) {
+            Object status = goalMap.get("status");
+            if (status == null) {
+                status = goalMap.get("state");
+            }
+            return status == null ? null : String.valueOf(status);
+        }
+        return null;
+    }
+
+    /**
+     * 从目标工具结果中提取终态目标快照。
+     * 业务约束：最终答复必须服从 update_goal 写入数据库后的权威状态；模型后续正文不能覆盖 BLOCKED/CANCELLED 等终态。
+     *
+     * @param toolResult update_goal 工具结果。
+     * @param previousSnapshot 上一次已提取快照，无法解析新快照时保留旧值。
+     * @return 可用于最终收口的目标快照。
+     */
+    private PlanModeTerminalGoalSnapshot extractPlanModeTerminalGoalSnapshot(
+        ChatToolExecutionResult toolResult,
+        PlanModeTerminalGoalSnapshot previousSnapshot
+    ) {
+        if (!isGoalProgressUpdateToolResult(toolResult) || toolResult.metadata() == null) {
+            return previousSnapshot;
+        }
+        Object goalMetadata = resolveGoalMetadata(toolResult.metadata());
+        if (goalMetadata instanceof ChatGoalView goalView) {
+            ChatGoalStatus status = ChatGoalStatus.normalize(goalView.status(), ChatGoalStatus.ACTIVE);
+            if (status == ChatGoalStatus.ACTIVE) {
+                return previousSnapshot;
+            }
+            return new PlanModeTerminalGoalSnapshot(goalView.title(), status, goalView.progressSummary());
+        }
+        if (goalMetadata instanceof Map<?, ?> goalMap) {
+            String statusText = valueAsString(goalMap.get("status"));
+            if (StrUtil.isBlank(statusText)) {
+                statusText = valueAsString(goalMap.get("state"));
+            }
+            ChatGoalStatus status = ChatGoalStatus.normalize(statusText, ChatGoalStatus.ACTIVE);
+            if (status == ChatGoalStatus.ACTIVE) {
+                return previousSnapshot;
+            }
+            String title = valueAsString(goalMap.get("title"));
+            String progressSummary = firstNotBlank(
+                valueAsString(goalMap.get("progressSummary")),
+                valueAsString(goalMap.get("progress_summary"))
+            );
+            return new PlanModeTerminalGoalSnapshot(title, status, progressSummary);
+        }
+        String statusText = extractMetadataString(toolResult.metadata(), "status", "state");
+        ChatGoalStatus status = ChatGoalStatus.normalize(statusText, ChatGoalStatus.ACTIVE);
+        if (status == ChatGoalStatus.ACTIVE) {
+            return previousSnapshot;
+        }
+        return new PlanModeTerminalGoalSnapshot(
+            extractMetadataString(toolResult.metadata(), "title"),
+            status,
+            extractMetadataString(toolResult.metadata(), "progressSummary", "progress_summary")
+        );
+    }
+
+    /**
+     * 从工具结果 metadata 中解析目标快照。
+     * 真实执行链路会被 ChatToolExecutionService 包一层 resultMetadata，旧单测则可能直接把 goal 放在顶层。
+     *
+     * @param metadata 工具 metadata。
+     * @return 目标快照对象，可为 ChatGoalView 或 Map。
+     */
+    private Object resolveGoalMetadata(Map<String, Object> metadata) {
+        if (metadata == null) {
+            return null;
+        }
+        Object goal = metadata.get("goal");
+        if (goal != null) {
+            return goal;
+        }
+        Object resultMetadata = metadata.get("resultMetadata");
+        if (resultMetadata instanceof Map<?, ?> resultMetadataMap) {
+            return resultMetadataMap.get("goal");
+        }
+        return null;
+    }
+
+    /**
+     * 将未知对象安全转换为字符串。
+     * @param value 候选对象。
+     * @return 非空字符串或 null。
+     */
+    private String valueAsString(Object value) {
+        return value == null ? null : String.valueOf(value);
+    }
+
+    /**
+     * 从工具 metadata 中读取字符串字段；用于兼容部分工具把状态直接放在顶层 metadata 的情况。
+     */
+    private String extractMetadataString(Map<String, Object> metadata, String... keys) {
+        if (metadata == null || keys == null) {
+            return null;
+        }
+        for (String key : keys) {
+            if (StrUtil.isBlank(key)) {
+                continue;
+            }
+            Object value = metadata.get(key);
+            if (value != null) {
+                return String.valueOf(value);
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 判断模型本轮是否已经选择通过 update_goal 写入真实目标进度。
+     */
+    private boolean isGoalProgressUpdateToolCall(AiToolCall toolCall) {
+        return toolCall != null && StrUtil.equalsIgnoreCase(toolCall.toolCode(), "update_goal");
+    }
+
+    /**
+     * 判断某次本地工具调用是否属于目标进度必须跟进的关键工作。
+     * 这些工具通常会改变文件、运行验证或提交代码，完成后必须让目标步骤快照同步到数据库。
+     */
+    private boolean isPlanModeGoalWorkToolResult(ChatToolExecutionResult toolResult) {
+        if (toolResult == null || StrUtil.isBlank(toolResult.toolCode())) {
+            return false;
+        }
+        String toolCode = StrUtil.trimToEmpty(toolResult.toolCode()).toLowerCase(java.util.Locale.ROOT);
+        return Set.of(
+            "write",
+            "edit",
+            "apply_patch",
+            "bash",
+            "shell_command",
+            "exec_command",
+            "write_stdin",
+            "git_diff",
+            "spawn_agent",
+            "send_message",
+            "send_input",
+            "wait_agent",
+            "report_agent_job_result"
+        ).contains(toolCode);
+    }
+
+    /**
+     * 判断目标创建后是否已经真正开始执行。
+     * 读目录、读文件等只证明已经开始推进任务；是否需要同步进度仍由 isPlanModeGoalWorkToolResult 控制。
+     */
+    private boolean isPlanModeGoalExecutionToolResult(ChatToolExecutionResult toolResult) {
+        if (toolResult == null || StrUtil.isBlank(toolResult.toolCode())) {
+            return false;
+        }
+        if (isGoalAvailableToolResult(toolResult)) {
+            return false;
+        }
+        if (isGoalProgressUpdateToolResult(toolResult) || isPlanModeGoalWorkToolResult(toolResult)) {
+            return true;
+        }
+        String toolCode = StrUtil.trimToEmpty(toolResult.toolCode()).toLowerCase(java.util.Locale.ROOT);
+        return Set.of(
+            "read",
+            "grep",
+            "find",
+            "ls",
+            "view_image",
+            "list_mcp_resources",
+            "list_mcp_resource_templates",
+            "read_mcp_resource"
+        ).contains(toolCode);
     }
 
     /**
@@ -1845,6 +2757,32 @@ public class ChatApplicationService {
             || normalizedContent.endsWith("中")
             || normalizedContent.endsWith("中...");
         return hasProgressPrefix && hasProgressSuffix;
+    }
+
+    /**
+     * 判断工具回灌后的当前正文前缀是否仍像内部执行进度。
+     * 业务约束：流式片段可能先到“正在执行”，下一片才补齐“页面信息读取...”，因此实时发布前要按前缀拦截。
+     *
+     * @param content 当前已累计正文。
+     * @return true 表示暂缓发布，等待本轮结束后再决定隐藏或回放。
+     */
+    private boolean isPotentialInternalToolProgressPrefix(String content) {
+        String normalizedContent = StrUtil.trimToEmpty(content).replaceAll("\\s+", "");
+        if (StrUtil.isBlank(normalizedContent)) {
+            return true;
+        }
+        if (isProgressOnlyToolRoundContent(content)
+            || isCommandPlanOnlyToolRoundContent(content)
+            || isExecutionNarrationOnlyToolRoundContent(content)) {
+            return true;
+        }
+        return normalizedContent.startsWith("正在")
+            || normalizedContent.startsWith("现在执行")
+            || normalizedContent.startsWith("准备执行")
+            || normalizedContent.startsWith("接下来")
+            || normalizedContent.startsWith("我将")
+            || normalizedContent.startsWith("我们先")
+            || normalizedContent.startsWith("我先");
     }
 
     /**
@@ -1940,47 +2878,39 @@ public class ChatApplicationService {
         /** 最终助手消息正文缓冲，实时发布和延迟回放都必须同步写入。 */
         private final StringBuilder builder;
 
-        /** 工具已经回灌后的轮次允许从“延迟缓冲”升级为“实时发布”。 */
-        private final boolean livePublishEligible;
-
         /** 本轮模型正文增量，未发布时用于后续隐藏或一次性确认；已发布后用于日志与判断。 */
         private final List<String> deltas = new ArrayList<>();
 
         /** 一旦本轮出现 tool_call，正文必须保持隐藏，不能再升级为用户可见内容。 */
         private boolean toolCallObserved;
 
-        /** 已确认本轮是用户可见的最终回答，后续 delta 直接走 SSE。 */
-        private boolean livePublishing;
-
         /** 已经发布到用户侧的增量数量，用于避免轮次结束时重复回放。 */
         private int publishedDeltaCount;
+
+        /** 工具结果回灌后的后续轮次允许恢复实时输出；首轮仍必须等确认无 tool_call 后再发布。 */
+        private final boolean immediatePublishAllowed;
 
         /**
          * @param conversationId 当前会话标识。
          * @param builder 最终助手消息正文缓冲。
-         * @param livePublishEligible 是否允许在本轮识别为最终回答后实时发布。
+         * @param immediatePublishAllowed 是否允许在当前轮次实时发布明确的用户可见答案。
          */
-        private ToolRoundContentBuffer(Long conversationId, StringBuilder builder, boolean livePublishEligible) {
+        private ToolRoundContentBuffer(Long conversationId, StringBuilder builder, boolean immediatePublishAllowed) {
             this.conversationId = conversationId;
             this.builder = builder;
-            this.livePublishEligible = livePublishEligible;
+            this.immediatePublishAllowed = immediatePublishAllowed;
         }
 
         /**
-         * 接收模型正文增量；工具回灌后的非进度正文会立即 flush 已缓冲片段并切入实时发布。
+         * 接收模型正文增量。
+         * 工具调用可能在正文增量之后才到达，因此必须等整轮结束确认没有 tool_call 后再发布。
          *
          * @param delta 模型流式正文片段。
          */
         private void add(String delta) {
             deltas.add(delta);
-            if (livePublishing) {
-                publish(delta);
-                publishedDeltaCount = deltas.size();
-                return;
-            }
-            if (livePublishEligible && !toolCallObserved && !isPossibleProgressOnlyContent()) {
-                flush();
-                livePublishing = true;
+            if (immediatePublishAllowed && !toolCallObserved && !isPotentialInternalToolProgressPrefix(content())) {
+                flushIfNeeded();
             }
         }
 
@@ -2027,35 +2957,6 @@ public class ChatApplicationService {
          */
         private boolean isCommandPlanOnlyContent() {
             return isCommandPlanOnlyToolRoundContent(String.join("", deltas));
-        }
-
-        /**
-         * 判断当前片段是否仍可能发展为内部进度句；命中时继续缓冲，避免把“正在执行/下一步行动”提前推给用户。
-         *
-         * @return 是否仍可能是内部进度说明。
-         */
-        private boolean isPossibleProgressOnlyContent() {
-            String content = StrUtil.trimToEmpty(String.join("", deltas));
-            if (StrUtil.isBlank(content)) {
-                return false;
-            }
-            if (isCommandPlanOnlyToolRoundContent(content) || isExecutionNarrationOnlyToolRoundContent(content)) {
-                return true;
-            }
-            if (content.length() > 80) {
-                return false;
-            }
-            String normalizedContent = content.replaceAll("\\s+", "");
-            return normalizedContent.startsWith("正在执行")
-                || normalizedContent.startsWith("正在读取")
-                || normalizedContent.startsWith("正在获取")
-                || normalizedContent.startsWith("正在检查")
-                || normalizedContent.startsWith("正在打开")
-                || normalizedContent.startsWith("正在访问")
-                || normalizedContent.startsWith("正在处理")
-                || normalizedContent.startsWith("正在加载")
-                || normalizedContent.startsWith("现在执行")
-                || normalizedContent.startsWith("接下来我将");
         }
 
         /**
@@ -2111,6 +3012,88 @@ public class ChatApplicationService {
             后端已隐藏该进度说明；请基于前面已经追加的工具结果，直接输出面向用户的最终回答。
             不要再输出“正在执行”“正在读取”“请稍等”等过程文案；如果信息不足，应说明缺少哪些目标或权限。
             """;
+    }
+
+    /**
+     * 构造目标模式进度未落库时的纠偏提示。
+     * 关键约束：该提示只要求模型调用 update_goal，不替模型自动推断步骤，避免后端写入虚假进度。
+     */
+    private String buildPlanModeGoalUpdateRequiredGuidance(String suppressedContent) {
+        String hiddenContentSection = StrUtil.isBlank(suppressedContent)
+            ? ""
+            : "\n上一轮被隐藏正文：" + normalizeEvidenceText(suppressedContent, 500);
+        return """
+            目标模式已检测到关键工作工具完成，但目标数据库还没有本轮进度更新。
+            后端已隐藏上一轮正文，因为正文里的“目标进度更新”不会更新右侧目标浮窗，也不会写入 chat_goal_event。%s
+
+            继续执行要求：
+            - 必须先调用 update_goal，把刚完成的关键步骤写入当前会话 active goal。
+            - update_goal 至少包含 progressSummary；如目标已有 steps，应传入最新 steps 快照并标记已完成或进行中的步骤。
+            - 如果只是中间进度，update_goal 的目标状态应保持 ACTIVE，成功后继续执行下一关键步骤。
+            - 只有任务已完成、阻塞或取消时，才能在 update_goal 中把目标状态写为 COMPLETED、BLOCKED 或 CANCELLED，然后输出面向用户的最终答复。
+            - 禁止只用自然语言说“目标进度更新”或“已更新进度”替代 update_goal。
+            """.formatted(hiddenContentSection);
+    }
+
+    /**
+     * 构造目标尚未真实创建时的纠偏提示。
+     * 关键约束：只有 create_goal 的工具结果会写入 chat_goal；自然语言里的目标编号不能驱动右侧浮窗。
+     */
+    private String buildPlanModeGoalBootstrapRequiredGuidance(
+        String suppressedContent,
+        List<ChatToolSpec> toolSpecs,
+        boolean goalMissingObserved
+    ) {
+        String hiddenContentSection = StrUtil.isBlank(suppressedContent)
+            ? ""
+            : "\n上一轮被隐藏正文：" + normalizeEvidenceText(suppressedContent, 500);
+        String visibleToolNames = CollUtil.isEmpty(toolSpecs)
+            ? "无"
+            : toolSpecs.stream()
+                .map(ChatToolSpec::name)
+                .filter(StrUtil::isNotBlank)
+                .distinct()
+                .collect(java.util.stream.Collectors.joining(", "));
+        String requiredAction = goalMissingObserved
+            ? "get_goal 已确认当前会话没有活动目标；下一步必须调用 create_goal 创建真实数据库目标。"
+            : "必须先调用 get_goal 检查当前会话目标；如果没有活动目标，继续调用 create_goal。";
+        return """
+            目标模式执行请求尚未创建真实目标，不能继续读写文件、执行验证、提交代码或输出最终答复。
+            后端已隐藏上一轮正文，因为自然语言里的“已创建目标”不会写入 chat_goal，也不会触发右侧目标浮窗。%s
+
+            继续执行要求：
+            - 当前可见工具：%s。
+            - %s
+            - create_goal 成功返回目标 metadata 后，才能进入后续执行、验证和进度更新阶段。
+            - 禁止编造 goalId、目标状态、文件创建或 Git 提交结果。
+            """.formatted(hiddenContentSection, visibleToolNames, requiredAction);
+    }
+
+    /**
+     * 构造目标已创建但模型停止执行时的纠偏提示。
+     * 关键约束：后端只阻止假完成，不代替模型选择具体执行工具，避免越权写入文件或伪造进度。
+     */
+    private String buildPlanModeGoalExecutionRequiredGuidance(String suppressedContent, List<ChatToolSpec> toolSpecs) {
+        String hiddenContentSection = StrUtil.isBlank(suppressedContent)
+            ? ""
+            : "\n上一轮被隐藏正文：" + normalizeEvidenceText(suppressedContent, 500);
+        String visibleToolNames = CollUtil.isEmpty(toolSpecs)
+            ? "无"
+            : toolSpecs.stream()
+                .map(ChatToolSpec::name)
+                .filter(StrUtil::isNotBlank)
+                .distinct()
+                .collect(java.util.stream.Collectors.joining(", "));
+        return """
+            目标模式已经创建或读取到当前会话目标，但用户明确要求不要只给方案，要直接执行、验证、提交并跟进进度。
+            后端已隐藏上一轮正文，因为当前目标仍未进入 COMPLETED、BLOCKED 或 CANCELLED 终态，不能用中间进度或下一步计划当作最终交付。%s
+
+            继续执行要求：
+            - 当前可见工具：%s。
+            - 必须调用合适的可见工具开始执行目标步骤；例如先检查仓库状态、创建或修改文件、运行验证或提交代码。
+            - 每完成一个关键步骤后调用 update_goal；中间进度保持 ACTIVE，真正完成时写 COMPLETED，无法继续时写 BLOCKED 并写清阻塞原因。
+            - 禁止在目标仍为 ACTIVE 时输出最终完成答复。
+            """.formatted(hiddenContentSection, visibleToolNames);
     }
 
     /**
@@ -2254,7 +3237,7 @@ public class ChatApplicationService {
         List<String> blockedToolCodes = new ArrayList<>();
         for (AiToolCall toolCall : toolCalls) {
             String normalizedToolCode = normalizeToolCode(toolCall == null ? null : toolCall.toolCode());
-            if (allowedToolCodes.contains(normalizedToolCode)) {
+            if (allowedToolCodes.contains(normalizedToolCode) || isAllowedTerminalGoalUpdateToolCall(toolCall)) {
                 allowedToolCalls.add(toolCall);
                 continue;
             }
@@ -2306,6 +3289,315 @@ public class ChatApplicationService {
 
     private String normalizeToolCode(String toolCode) {
         return StrUtil.trimToEmpty(toolCode).toLowerCase(java.util.Locale.ROOT);
+    }
+
+    /**
+     * 判断被阶段性隐藏的 update_goal 是否仍应放行。
+     * 业务意图：执行型目标在已有读写/验证工具时会隐藏 ACTIVE 进度更新，防止模型连续刷进度；
+     * 但模型明确写入 COMPLETED、BLOCKED 或 CANCELLED 时，说明本轮要真实收口，应允许目标事件落库并结束循环。
+     *
+     * @param toolCall 模型请求执行的工具调用。
+     * @return 是否为允许越过可见工具过滤的终态目标更新。
+     */
+    private boolean isAllowedTerminalGoalUpdateToolCall(AiToolCall toolCall) {
+        if (toolCall == null || !StrUtil.equalsIgnoreCase(toolCall.toolCode(), "update_goal")) {
+            return false;
+        }
+        try {
+            Object parsed = cn.hutool.json.JSONUtil.parse(StrUtil.blankToDefault(toolCall.arguments(), "{}"));
+            if (!(parsed instanceof cn.hutool.json.JSONObject object)) {
+                return false;
+            }
+            String status = firstNotBlank(object.getStr("status"), object.getStr("state"));
+            return ChatGoalStatus.normalize(status, ChatGoalStatus.ACTIVE) != ChatGoalStatus.ACTIVE;
+        } catch (Exception ignored) {
+            // 参数不是合法 JSON 时交给普通过滤路径处理，避免把不明 update_goal 当作终态收口。
+            return false;
+        }
+    }
+
+    /**
+     * 判断目标模式的模型流异常是否需要立刻写入 BLOCKED 终态。
+     * 业务意图：桌面端可能已经看到 write/edit 的参数预览，但完整 tool_call 未结束时文件并未落地；
+     * 如果 provider 随后首包后超时或断流，不能把目标继续留在 ACTIVE，也不能让用户误以为文件已写入。
+     */
+    private boolean shouldBlockPlanModeGoalOnStreamFailure(
+        SendChatMessageCommand command,
+        boolean executionRequested,
+        boolean goalAvailable,
+        boolean goalTerminalObserved
+    ) {
+        return command != null
+            && isEffectivePlanMode(command)
+            && executionRequested
+            && goalAvailable
+            && !goalTerminalObserved;
+    }
+
+    /**
+     * 判断空目标启动阶段的模型流异常是否需要先补建目标再阻塞。
+     * 业务意图：get_goal 已经落库记录并确认当前会话没有 active goal 后，模型下一轮只可见 create_goal；
+     * 如果 provider 在这一轮首包后超时或断流，直接把 run 置 ERROR 会导致右侧目标浮窗完全没有目标。
+     * 这里仅在已观察到真实 get_goal 空结果时兜底，避免普通目标提示或未执行工具的场景被后端凭空创建目标。
+     */
+    private boolean shouldCreateAndBlockPlanModeGoalOnStreamFailure(
+        SendChatMessageCommand command,
+        boolean executionRequested,
+        boolean goalAvailable,
+        boolean goalMissingObserved,
+        boolean goalTerminalObserved
+    ) {
+        return command != null
+            && isEffectivePlanMode(command)
+            && executionRequested
+            && !goalAvailable
+            && goalMissingObserved
+            && !goalTerminalObserved;
+    }
+
+    /**
+     * 模型流在目标已创建后失败时，通过真实 update_goal 工具把目标写为 BLOCKED。
+     * 关键约束：这里仍复用工具执行链路，确保 chat_goal、chat_goal_event、chat_execution_step 和 SSE 浮窗事件一致。
+     */
+    private PlanModeTerminalGoalSnapshot blockPlanModeGoalAfterStreamFailure(
+        SendChatMessageCommand command,
+        Long runId,
+        RuntimeException exception,
+        PlanModeTerminalGoalSnapshot previousSnapshot
+    ) {
+        String progressSummary = buildPlanModeStreamFailureProgressSummary(exception);
+        AiToolCall updateGoalCall = new AiToolCall(
+            "plan-mode-stream-failure-" + IdUtil.getSnowflakeNextId(),
+            "update_goal",
+            cn.hutool.json.JSONUtil.toJsonStr(Map.of(
+                "status", ChatGoalStatus.BLOCKED.name(),
+                "progressSummary", progressSummary
+            ))
+        );
+        ChatToolExecutionResult toolResult = executeModelToolCall(command, runId, updateGoalCall, "更新已有目标定义");
+        PlanModeTerminalGoalSnapshot snapshot = extractPlanModeTerminalGoalSnapshot(toolResult, previousSnapshot);
+        if (snapshot != null) {
+            return snapshot;
+        }
+        return new PlanModeTerminalGoalSnapshot(null, ChatGoalStatus.BLOCKED, progressSummary);
+    }
+
+    /**
+     * 模型在空目标启动阶段失败时，通过真实目标工具补建目标并立刻写入 BLOCKED。
+     * 关键约束：create_goal 和 update_goal 都必须走统一工具执行链路，保证前端实时事件、执行步骤和数据库事件一致。
+     */
+    private PlanModeTerminalGoalSnapshot createAndBlockPlanModeGoalAfterMissingGoalStreamFailure(
+        SendChatMessageCommand command,
+        Long runId,
+        RuntimeException exception,
+        PlanModeTerminalGoalSnapshot previousSnapshot
+    ) {
+        String title = StrUtil.blankToDefault(resolveGoalTitleFromPrompt(command), "目标模式任务");
+        AiToolCall createGoalCall = new AiToolCall(
+            "plan-mode-create-after-stream-failure-" + IdUtil.getSnowflakeNextId(),
+            "create_goal",
+            cn.hutool.json.JSONUtil.toJsonStr(Map.of(
+                "goalKey", "default",
+                "title", title,
+                "description", "模型流在目标创建阶段失败，后端先补建真实目标以保留右侧目标进度。",
+                "steps", List.of(
+                    Map.of(
+                        "stepKey", "create-goal",
+                        "title", "创建真实目标",
+                        "status", ChatGoalStatus.COMPLETED.name()
+                    ),
+                    Map.of(
+                        "stepKey", "execute-work",
+                        "title", "执行、验证并提交目标任务",
+                        "status", ChatGoalStatus.BLOCKED.name()
+                    )
+                )
+            ))
+        );
+        executeModelToolCall(command, runId, createGoalCall, "创建当前会话目标");
+
+        String progressSummary = buildPlanModeMissingGoalStreamFailureProgressSummary(exception);
+        AiToolCall updateGoalCall = new AiToolCall(
+            "plan-mode-block-after-create-stream-failure-" + IdUtil.getSnowflakeNextId(),
+            "update_goal",
+            cn.hutool.json.JSONUtil.toJsonStr(Map.of(
+                "goalKey", "default",
+                "status", ChatGoalStatus.BLOCKED.name(),
+                "progressSummary", progressSummary,
+                "steps", List.of(
+                    Map.of(
+                        "stepKey", "create-goal",
+                        "title", "创建真实目标",
+                        "status", ChatGoalStatus.COMPLETED.name()
+                    ),
+                    Map.of(
+                        "stepKey", "execute-work",
+                        "title", "执行、验证并提交目标任务",
+                        "status", ChatGoalStatus.BLOCKED.name(),
+                        "detail", progressSummary
+                    )
+                )
+            ))
+        );
+        ChatToolExecutionResult toolResult = executeModelToolCall(command, runId, updateGoalCall, "更新已有目标定义");
+        PlanModeTerminalGoalSnapshot snapshot = extractPlanModeTerminalGoalSnapshot(toolResult, previousSnapshot);
+        if (snapshot != null) {
+            return snapshot;
+        }
+        return new PlanModeTerminalGoalSnapshot(title, ChatGoalStatus.BLOCKED, progressSummary);
+    }
+
+    /**
+     * 构造目标模式模型流异常的用户可读阻塞摘要。
+     * @param exception 模型流异常。
+     * @return 写入目标进度的中文摘要。
+     */
+    private String buildPlanModeStreamFailureProgressSummary(RuntimeException exception) {
+        String message = StrUtil.blankToDefault(exception == null ? null : exception.getMessage(), "模型流式响应异常");
+        return message + "，文件写入未完成，后续验证和提交尚未执行。请重试或缩小单次写入内容。";
+    }
+
+    /**
+     * 构造空目标启动阶段模型流异常的阻塞摘要。
+     * 业务意图：明确告诉用户目标已被真实创建，但执行工具还没开始，避免把 create_goal 兜底误读为任务已执行。
+     */
+    private String buildPlanModeMissingGoalStreamFailureProgressSummary(RuntimeException exception) {
+        String message = StrUtil.blankToDefault(exception == null ? null : exception.getMessage(), "模型流式响应异常");
+        return message + "，目标已创建但执行工具尚未开始；后续文件写入、验证和提交没有真实完成。请重试或缩小单次写入内容。";
+    }
+
+    /**
+     * 将模型客户端回调里的 Throwable 统一转为 RuntimeException，便于目标模式兜底复用同一套异常摘要。
+     */
+    private RuntimeException toRuntimeException(Throwable throwable) {
+        if (throwable instanceof RuntimeException runtimeException) {
+            return runtimeException;
+        }
+        return new IllegalStateException(
+            throwable == null ? "模型流式响应异常" : StrUtil.blankToDefault(throwable.getMessage(), "模型流式响应异常"),
+            throwable
+        );
+    }
+
+    /**
+     * 判断执行型目标是否已经进入工作链路但仍未写入终态。
+     * 业务约束：只要目标已经创建且执行过工具或进度更新，最终自然语言就不能声称完成；
+     * 若模型停止在 ACTIVE，后端需要写入 BLOCKED，避免右侧目标浮窗和消息正文状态不一致。
+     *
+     * @param command 当前发送命令。
+     * @param executionRequested 用户是否明确要求直接执行。
+     * @param goalAvailable 目标是否已经创建或读取成功。
+     * @param goalExecutionObserved 是否已经观察到执行工具或目标进度。
+     * @param goalTerminalObserved 是否已经观察到终态目标更新。
+     * @return 是否需要由后端写入阻塞目标。
+     */
+    private boolean shouldBlockPlanModeGoalAfterUnfinishedExecution(
+        SendChatMessageCommand command,
+        boolean executionRequested,
+        boolean goalAvailable,
+        boolean goalExecutionObserved,
+        boolean goalTerminalObserved
+    ) {
+        return command != null
+            && isEffectivePlanMode(command)
+            && executionRequested
+            && goalAvailable
+            && goalExecutionObserved
+            && !goalTerminalObserved;
+    }
+
+    /**
+     * 模型在 ACTIVE 目标下输出终态交付语义时，通过真实 update_goal 写入 BLOCKED。
+     * 关键约束：仍走统一工具执行链路，确保 chat_goal、chat_goal_event、chat_execution_step 与 SSE 浮窗事件同步。
+     *
+     * @param command 当前发送命令。
+     * @param runId 当前运行标识。
+     * @param previousSnapshot 已有终态快照，解析失败时保留。
+     * @return 数据库权威目标快照。
+     */
+    private PlanModeTerminalGoalSnapshot blockPlanModeGoalAfterUnfinishedExecution(
+        SendChatMessageCommand command,
+        Long runId,
+        PlanModeTerminalGoalSnapshot previousSnapshot
+    ) {
+        String progressSummary = buildPlanModeUnfinishedExecutionProgressSummary();
+        AiToolCall updateGoalCall = new AiToolCall(
+            "plan-mode-unfinished-execution-" + IdUtil.getSnowflakeNextId(),
+            "update_goal",
+            cn.hutool.json.JSONUtil.toJsonStr(Map.of(
+                "status", ChatGoalStatus.BLOCKED.name(),
+                "progressSummary", progressSummary
+            ))
+        );
+        ChatToolExecutionResult toolResult = executeModelToolCall(command, runId, updateGoalCall, "更新已有目标定义");
+        PlanModeTerminalGoalSnapshot snapshot = extractPlanModeTerminalGoalSnapshot(toolResult, previousSnapshot);
+        if (snapshot != null) {
+            return snapshot;
+        }
+        return new PlanModeTerminalGoalSnapshot(resolveGoalTitleFromPrompt(command), ChatGoalStatus.BLOCKED, progressSummary);
+    }
+
+    /**
+     * 判断模型正文是否在没有终态目标工具证据时声称已经完成。
+     * @param content 模型尝试输出的最终正文。
+     * @return true 表示正文含有终态完成、验证或提交声明。
+     */
+    private boolean isPlanModeFalseCompletionClaim(String content) {
+        String normalizedContent = normalizePlanModeCompletionClaimContent(content);
+        if (StrUtil.isBlank(normalizedContent)) {
+            return false;
+        }
+        return normalizedContent.contains("目标状态：COMPLETED")
+            || normalizedContent.contains("目标状态:COMPLETED")
+            || normalizedContent.contains("statusCOMPLETED")
+            || normalizedContent.contains("目标已完成")
+            || normalizedContent.contains("已完成验证并提交")
+            || normalizedContent.contains("验证并提交")
+            || normalizedContent.contains("已提交")
+            || normalizedContent.contains("已模拟提交")
+            || normalizedContent.contains("提交准备就绪")
+            || normalizedContent.contains("可立即使用或提交")
+            || normalizedContent.contains("提交完成");
+    }
+
+    /**
+     * 归一化目标模式最终正文，去掉 Markdown 强调、标题符号和空白后再识别伪完成语义。
+     * 业务意图：桌面端实测会出现“目标状态：**COMPLETED**”这类 Markdown 包裹文本，不能漏判。
+     */
+    private String normalizePlanModeCompletionClaimContent(String content) {
+        return StrUtil.trimToEmpty(content).replaceAll("[\\s`*_#>\\-]+", "");
+    }
+
+    /**
+     * 构造未完成执行的统一阻塞摘要。
+     * @return 写入目标进度的中文摘要。
+     */
+    private String buildPlanModeUnfinishedExecutionProgressSummary() {
+        return "目标执行已开始，但模型未把目标推进到完成、阻塞或取消状态；后续验证和提交没有真实完成，已阻塞以避免误报完成。";
+    }
+
+    /**
+     * 从用户原文中提取“目标是：...”后的标题，作为兜底快照标题。
+     * @param command 当前发送命令。
+     * @return 目标标题，可为空。
+     */
+    private String resolveGoalTitleFromPrompt(SendChatMessageCommand command) {
+        String content = command == null ? null : command.content();
+        if (StrUtil.isBlank(content)) {
+            return null;
+        }
+        String normalizedContent = StrUtil.trimToEmpty(content);
+        int startIndex = Math.max(normalizedContent.indexOf("目标是："), normalizedContent.indexOf("目标是:"));
+        if (startIndex < 0) {
+            return null;
+        }
+        int titleStart = startIndex + (normalizedContent.charAt(startIndex + 3) == '：' ? 4 : 4);
+        String title = normalizedContent.substring(Math.min(titleStart, normalizedContent.length()));
+        int endIndex = title.indexOf('。');
+        if (endIndex >= 0) {
+            title = title.substring(0, endIndex);
+        }
+        return StrUtil.trimToNull(title);
     }
 
     /**
@@ -2576,6 +3868,9 @@ public class ChatApplicationService {
                     "任务需要确认：" + exception.getMessage()
                 );
             }
+            if (shouldRecoverPlanModeToolFailure(command, toolCall, exception)) {
+                return persistRecoverablePlanModeToolFailure(command, runId, toolCall, toolStepDisplayName, startedAt, exception);
+            }
             publishLocalToolCallError(command.conversationId(), toolCall, startedAt, exception);
             throw exception;
         } catch (RuntimeException exception) {
@@ -2586,6 +3881,79 @@ public class ChatApplicationService {
             // 步骤 6：恢复进入工具前的线程上下文，避免后续工具调用沿用错误目录。
             restoreToolExecutionContext(previousWorkingDirectory, previousSkillDirectories);
         }
+    }
+
+    /**
+     * 判断目标模式中的工具失败是否允许回灌给模型继续处理。
+     * 业务边界：目标工具自身失败、治理确认失败不能伪装成普通工具证据；文件编辑、读取、命令等工作工具失败可让模型更新目标进度或改用替代方案。
+     */
+    private boolean shouldRecoverPlanModeToolFailure(
+        SendChatMessageCommand command,
+        AiToolCall toolCall,
+        BusinessException exception
+    ) {
+        if (!isEffectivePlanMode(command) || toolCall == null || exception == null) {
+            return false;
+        }
+        if ("GOVERNANCE_PERMISSION_CONFIRM_REQUIRED".equals(exception.getCode())) {
+            return false;
+        }
+        String toolCode = normalizeToolCode(toolCall.toolCode());
+        return !StrUtil.equalsIgnoreCase(toolCode, "get_goal")
+            && !StrUtil.equalsIgnoreCase(toolCode, "create_goal")
+            && !StrUtil.equalsIgnoreCase(toolCode, "update_goal");
+    }
+
+    /**
+     * 将目标模式工作工具失败持久化为 FAILED 工具步骤，并作为工具证据回灌给模型继续决策。
+     * 关键约束：前端仍收到工具错误事件，维护者能看到失败；但聊天 run 不立刻失败，模型必须继续 update_goal 或采取替代工具。
+     */
+    private ChatToolExecutionResult persistRecoverablePlanModeToolFailure(
+        SendChatMessageCommand command,
+        Long runId,
+        AiToolCall toolCall,
+        String toolStepDisplayName,
+        LocalDateTime startedAt,
+        BusinessException exception
+    ) {
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("error", true);
+        metadata.put("recoverable", true);
+        metadata.put("errorCode", exception.getCode());
+        metadata.put("message", StrUtil.blankToDefault(exception.getMessage(), "工具执行失败"));
+        ChatToolExecutionResult toolResult = new ChatToolExecutionResult(
+            toolCall.toolCode(),
+            "工具执行失败：" + StrUtil.blankToDefault(exception.getMessage(), "未知错误"),
+            metadata
+        );
+        ChatExecutionStep toolStep = ChatExecutionStep.builder()
+            .id(cn.hutool.core.util.IdUtil.getSnowflakeNextId())
+            .runId(runId)
+            .stepType("tool")
+            .stepTitle("执行本地工具 " + toolCall.toolCode())
+            .stepStatus("FAILED")
+            .sequenceNo(1L)
+            .content(toolResult.content())
+            .metadataJson(cn.hutool.json.JSONUtil.toJsonStr(
+                buildLocalToolStepMetadata(toolCall, toolStepDisplayName, toolResult)
+            ))
+            .createdAt(java.time.LocalDateTime.now())
+            .updatedAt(java.time.LocalDateTime.now())
+            .build();
+        if (!command.localOnly()) {
+            chatExecutionStepRepository.save(toolStep);
+            chatStreamPublisher.publishStep(command.conversationId(), buildExecutionStepPayload(toolStep));
+        }
+        publishLocalToolCallError(command.conversationId(), toolCall, startedAt, exception);
+        log.warn(
+            "目标模式工作工具失败已回灌模型继续处理: conversationId={}, runId={}, tool={}, code={}, message={}",
+            command.conversationId(),
+            runId,
+            toolCall.toolCode(),
+            exception.getCode(),
+            exception.getMessage()
+        );
+        return toolResult;
     }
 
     /**
@@ -3137,18 +4505,22 @@ public class ChatApplicationService {
                 .filter(StrUtil::isNotBlank)
                 .orElse(null);
             if (StrUtil.isNotBlank(workingDirectory)) {
-                workingDirectorySection = "当前真实工作目录：" + workingDirectory + '\n'
-                    + "路径约束：后续读写文件必须基于当前真实工作目录；优先使用相对路径，不要编造 C:\\workspace 等虚拟根目录。";
+                workingDirectorySection = "当前真实工作目录：" + workingDirectory;
             }
             toolMetadataSection = "工具元数据："
                 + normalizeEvidenceText(cn.hutool.json.JSONUtil.toJsonStr(toolResult.metadata()), 2000);
         }
-        return promptTemplateLoader.render("local-tool-evidence-context", Map.of(
+        Map<String, String> slots = Map.of(
             "tool_code", StrUtil.blankToDefault(toolResult.toolCode(), "unknown"),
             "tool_output", normalizeEvidenceText(toolResult.content(), 4000),
             "working_directory_section", workingDirectorySection,
             "tool_metadata_section", toolMetadataSection
-        )).trim();
+        );
+        return renderPromptTemplate(
+            "local-tool-evidence-context",
+            slots,
+            buildLocalToolEvidenceFallback(slots)
+        );
     }
 
     /**
@@ -3198,6 +4570,163 @@ public class ChatApplicationService {
             return "已完成，文件已写入 `" + path + "`。";
         }
         return "已完成，文件已写入。";
+    }
+
+    /**
+     * 判断目标模式下重复 write 是否必须继续工具循环。
+     * 业务约束：普通聊天可以把同一路径重复写入视为已完成；但执行型目标的右侧浮窗只认 update_goal 终态，
+     * 因此目标仍为 ACTIVE 时不能用“文件已写入”快捷答复替代验证、提交或终态进度更新。
+     */
+    private boolean shouldContinuePlanModeAfterRepeatedWrite(
+        SendChatMessageCommand command,
+        boolean executionRequested,
+        boolean goalAvailable,
+        boolean goalTerminalObserved
+    ) {
+        return command != null
+            && isEffectivePlanMode(command)
+            && executionRequested
+            && goalAvailable
+            && !goalTerminalObserved;
+    }
+
+    /**
+     * 判断目标模式下重复非写工具是否必须继续工具循环。
+     * 业务约束：重复读取、列目录或搜索不能触发普通最终生成；目标仍为 ACTIVE 时，必须继续执行、验证、提交或写入终态目标。
+     */
+    private boolean shouldContinuePlanModeAfterRepeatedTool(
+        SendChatMessageCommand command,
+        boolean executionRequested,
+        boolean goalAvailable,
+        boolean goalTerminalObserved
+    ) {
+        return command != null
+            && isEffectivePlanMode(command)
+            && executionRequested
+            && goalAvailable
+            && !goalTerminalObserved;
+    }
+
+    /**
+     * 构造目标模式重复 write 被拦截后的纠偏提示。
+     * @param previousToolResult 上一次同路径写入结果。
+     * @return 写回模型历史的系统提示。
+     */
+    private String buildPlanModeRepeatedWriteGuidance(ChatToolExecutionResult previousToolResult) {
+        String path = Optional.ofNullable(previousToolResult)
+            .map(ChatToolExecutionResult::metadata)
+            .map(metadata -> metadata.get("path"))
+            .map(String::valueOf)
+            .filter(StrUtil::isNotBlank)
+            .orElse("同一路径文件");
+        return """
+            目标模式检测到你重复写入 %s；后端已拦截这次重复 write，避免同一路径反复覆盖。
+            上文已经包含第一次 write 的真实工具结果，不能把“文件已写入”当作最终交付。
+
+            继续执行要求：
+            - 当前目标仍未进入 COMPLETED、BLOCKED 或 CANCELLED 终态，禁止输出最终完成答复。
+            - 如果文件内容已经足够，请继续执行验证、提交等后续可见工具；若已经真实完成，必须调用 update_goal 写入 COMPLETED。
+            - 如果缺少可用工具导致无法验证或提交，必须调用 update_goal 写入 BLOCKED，并说明阻塞原因。
+            - 不要再次对同一路径发起 write；需要小改时优先使用 edit，无法修改时用 update_goal 写明阻塞或完成状态。
+            """.formatted(path);
+    }
+
+    /**
+     * 构造目标模式重复非写工具被拦截后的纠偏提示。
+     * @param toolCall 本轮被拦截的重复工具调用。
+     * @param previousToolResult 上一次真实执行结果。
+     * @return 写回模型历史的系统提示。
+     */
+    private String buildPlanModeRepeatedToolGuidance(AiToolCall toolCall, ChatToolExecutionResult previousToolResult) {
+        String toolCode = StrUtil.blankToDefault(toolCall == null ? null : toolCall.toolCode(), "unknown");
+        String previousOutput = normalizeEvidenceText(previousToolResult == null ? null : previousToolResult.content(), 300);
+        return """
+            目标模式检测到你重复调用本地工具 %s，后端已拦截这次重复调用，避免调研阶段无限循环。
+            上一次真实工具输出：%s
+
+            继续执行要求：
+            - 当前目标仍未进入 COMPLETED、BLOCKED 或 CANCELLED 终态，禁止输出最终完成答复。
+            - 如果已有工具证据足够，请继续执行验证、提交等后续可见工具；若已经真实完成，必须调用 update_goal 写入 COMPLETED。
+            - 如果缺少可用工具导致无法验证、提交或继续修改，必须调用 update_goal 写入 BLOCKED，并说明阻塞原因。
+            - 不要再次调用同一工具和同一参数；重复读取不会更新右侧目标浮窗，也不能证明任务完成。
+            """.formatted(toolCode, StrUtil.blankToDefault(previousOutput, "无"));
+    }
+
+    /**
+     * 判断终态目标是否应该覆盖模型最终正文。
+     * 关键约束：BLOCKED/CANCELLED 是数据库权威状态，模型后续任何“已完成/已提交”正文都不能覆盖它。
+     *
+     * @param command 当前用户请求。
+     * @param snapshot 终态目标快照。
+     * @param modelContent 模型尝试输出的最终正文。
+     * @return 是否用目标快照生成最终答复。
+     */
+    private boolean shouldUsePlanModeTerminalGoalSnapshotAnswer(
+        SendChatMessageCommand command,
+        PlanModeTerminalGoalSnapshot snapshot,
+        String modelContent
+    ) {
+        if (!isEffectivePlanMode(command) || snapshot == null) {
+            return false;
+        }
+        if (snapshot.status() == ChatGoalStatus.BLOCKED || snapshot.status() == ChatGoalStatus.CANCELLED) {
+            return snapshot.hasReadableContext();
+        }
+        return StrUtil.isBlank(modelContent);
+    }
+
+    /**
+     * 判断是否应在终态目标写库后立即停止工具循环。
+     * 业务约束：BLOCKED/CANCELLED 表示目标已不再是 active goal；继续让模型调用 edit/read/bash 后，外层兜底再写 update_goal 会查不到 active goal。
+     */
+    private boolean shouldStopPlanModeToolLoopAfterTerminalGoal(
+        SendChatMessageCommand command,
+        PlanModeTerminalGoalSnapshot snapshot
+    ) {
+        if (!isEffectivePlanMode(command) || snapshot == null) {
+            return false;
+        }
+        return snapshot.status() == ChatGoalStatus.BLOCKED || snapshot.status() == ChatGoalStatus.CANCELLED;
+    }
+
+    /**
+     * 基于数据库终态目标快照生成最终答复，避免模型编造提交结果或覆盖阻塞状态。
+     * @param snapshot 终态目标快照。
+     * @return 面向用户的短答复。
+     */
+    private String buildPlanModeTerminalGoalAnswer(PlanModeTerminalGoalSnapshot snapshot) {
+        String title = StrUtil.blankToDefault(snapshot.title(), "当前目标");
+        String progressSummary = StrUtil.blankToDefault(snapshot.progressSummary(), "");
+        return switch (snapshot.status()) {
+            case COMPLETED -> StrUtil.isBlank(progressSummary)
+                ? "目标已完成：" + title + "。"
+                : "目标已完成：" + title + "。\n进度摘要：" + progressSummary;
+            case BLOCKED -> StrUtil.isBlank(progressSummary)
+                ? "目标已阻塞：" + title + "。"
+                : "目标已阻塞：" + title + "。\n阻塞原因：" + progressSummary;
+            case CANCELLED -> StrUtil.isBlank(progressSummary)
+                ? "目标已取消：" + title + "。"
+                : "目标已取消：" + title + "。\n取消原因：" + progressSummary;
+            case ACTIVE -> StrUtil.isBlank(progressSummary)
+                ? "目标仍在进行中：" + title + "。"
+                : "目标仍在进行中：" + title + "。\n当前进度：" + progressSummary;
+        };
+    }
+
+    /**
+     * 目标模式终态快照，保存 update_goal 返回的数据库权威状态。
+     *
+     * @param title 目标标题。
+     * @param status 目标终态。
+     * @param progressSummary 目标进度摘要或阻塞原因。
+     */
+    private record PlanModeTerminalGoalSnapshot(String title, ChatGoalStatus status, String progressSummary) {
+        /**
+         * @return 是否有足够信息生成比模型正文更可靠的用户可见答复。
+         */
+        private boolean hasReadableContext() {
+            return StrUtil.isNotBlank(title) || StrUtil.isNotBlank(progressSummary);
+        }
     }
 
     /**
@@ -3477,10 +5006,15 @@ public class ChatApplicationService {
             }
             searchResultsBuilder.append('\n');
         }
-        return promptTemplateLoader.render("search-evidence-context", Map.of(
+        Map<String, String> slots = Map.of(
             "current_date", DateUtil.today(),
             "search_results", searchResultsBuilder.toString().trim()
-        )).trim();
+        );
+        return renderPromptTemplate(
+            "search-evidence-context",
+            slots,
+            buildSearchEvidenceFallback(slots)
+        );
     }
 
     /**
@@ -3494,11 +5028,63 @@ public class ChatApplicationService {
             toolMetadataSection = "工具元数据：\n"
                 + normalizeEvidenceText(cn.hutool.json.JSONUtil.toJsonStr(toolResult.metadata()), 2000);
         }
-        return promptTemplateLoader.render("tool-evidence-context", Map.of(
+        Map<String, String> slots = Map.of(
             "tool_id", StrUtil.blankToDefault(toolResult.toolId(), "unknown"),
             "tool_result", normalizeEvidenceText(toolResult.content(), 4000),
             "tool_metadata_section", toolMetadataSection
-        )).trim();
+        );
+        return renderPromptTemplate(
+            "tool-evidence-context",
+            slots,
+            buildToolEvidenceFallback(slots)
+        );
+    }
+
+    /**
+     * 渲染可维护 Prompt 模板并统一兜底空结果。
+     * 业务意图：单测中 PromptTemplateLoader 可能只对部分模板打桩，生产运行中模板也可能被错误清空；
+     * 调用方应拿到空字符串继续走既有降级，而不是因 `.trim()` 空指针中断整轮聊天。
+     *
+     * @param templateName Prompt 模板名。
+     * @param slots 模板占位符。
+     * @param fallback 模板为空时的最小可用证据段。
+     * @return 去除首尾空白后的 Prompt，渲染为空时返回兜底证据。
+     */
+    private String renderPromptTemplate(String templateName, Map<String, String> slots, String fallback) {
+        return StrUtil.blankToDefault(promptTemplateLoader.render(templateName, slots), fallback).trim();
+    }
+
+    /**
+     * 构造联网证据模板异常时的最小 system 片段。
+     * @param slots 已归一化模板字段。
+     * @return 可直接注入模型历史的兜底证据。
+     */
+    private String buildSearchEvidenceFallback(Map<String, String> slots) {
+        return "# 联网检索证据\n当前日期：" + slots.getOrDefault("current_date", DateUtil.today())
+            + "\n检索结果：\n" + slots.getOrDefault("search_results", "");
+    }
+
+    /**
+     * 构造 MCP 工具证据模板异常时的最小 system 片段。
+     * @param slots 已归一化模板字段。
+     * @return 可直接注入模型历史的兜底证据。
+     */
+    private String buildToolEvidenceFallback(Map<String, String> slots) {
+        return "# 工具执行证据\n工具标识：" + slots.getOrDefault("tool_id", "unknown")
+            + "\n工具结果：\n" + slots.getOrDefault("tool_result", "")
+            + "\n" + slots.getOrDefault("tool_metadata_section", "");
+    }
+
+    /**
+     * 构造本地工具证据模板异常时的最小 system 片段。
+     * @param slots 已归一化模板字段。
+     * @return 可直接注入模型历史的兜底证据。
+     */
+    private String buildLocalToolEvidenceFallback(Map<String, String> slots) {
+        return "# 本地工具执行结果\n工具标识：" + slots.getOrDefault("tool_code", "unknown")
+            + "\n工具输出：\n" + slots.getOrDefault("tool_output", "")
+            + "\n" + slots.getOrDefault("working_directory_section", "")
+            + "\n" + slots.getOrDefault("tool_metadata_section", "");
     }
 
     /**
@@ -3761,6 +5347,46 @@ public class ChatApplicationService {
         }
         return decisions.stream()
             .map(decision -> suppressCodeArtifactFollowUpSearchDecision(decision, originalQuestion))
+            .toList();
+    }
+
+    /**
+     * 显式目标模式执行请求不能被搜索意图抢占。
+     * 业务约束：右侧目标浮窗只消费 get_goal/create_goal/update_goal 写入的数据库事件；如果目标原文被拆成 SEARCH，
+     * 后续搜索证据会让本地工具关闭，模型只能在正文里伪造“目标已创建”。因此先把搜索子意图降级为普通模型决策，
+     * 让目标模式提示词和目标工具治理接管创建、进度和终态收口。
+     *
+     * @param decisions 子问题意图决策。
+     * @param command 当前发送命令，用于识别显式目标模式和执行语义。
+     * @return 搜索误判被降级后的子问题意图决策。
+     */
+    private List<SubQuestionIntentDecision> suppressPlanModeGoalSearchDecisions(
+        List<SubQuestionIntentDecision> decisions,
+        SendChatMessageCommand command
+    ) {
+        if (CollUtil.isEmpty(decisions) || !isEffectivePlanMode(command) || !isPlanModeExecutionRequested(command)) {
+            return decisions;
+        }
+        return decisions.stream()
+            .map(decision -> {
+                if (decision.intentDecision().action() != ConversationIntentAction.SEARCH) {
+                    return decision;
+                }
+                log.info(
+                    "目标模式搜索意图降级: 原意图={}, 子问题={}, conversationId={}",
+                    decision.intentDecision().intentCode(),
+                    logPreview(decision.question()),
+                    command.conversationId()
+                );
+                return new SubQuestionIntentDecision(
+                    decision.question(),
+                    new ConversationIntentDecision(
+                        decision.intentDecision().intentCode(),
+                        ConversationIntentAction.DIRECT,
+                        null
+                    )
+                );
+            })
             .toList();
     }
 

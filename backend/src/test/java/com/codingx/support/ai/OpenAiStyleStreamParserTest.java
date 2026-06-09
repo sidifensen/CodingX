@@ -188,6 +188,32 @@ class OpenAiStyleStreamParserTest {
     }
 
     /**
+     * 部分 OpenAI 兼容 provider 会用 finish_reason=tool_calls 结束当前工具轮次；解析器必须立刻派发完整工具调用，
+     * 不能继续等连接关闭，否则应用层只收到参数进度而不会真正执行工具。
+     */
+    @Test
+    void parseEmitsToolCallWhenFinishReasonIsToolCallsBeforeDone() {
+        String rawStream = """
+            data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"id\":\"call-write-1\",\"type\":\"function\",\"function\":{\"name\":\"write\",\"arguments\":\"{\\\"path\\\":\\\"notes.html\\\",\\\"content\\\":\\\"done\\\"}\"}}]}}]}
+            data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"tool_calls\"}]}
+            """;
+        OpenAiStyleStreamParser parser = new OpenAiStyleStreamParser();
+        List<AiToolCall> toolCalls = new ArrayList<>();
+
+        parser.parse(rawStream, new OpenAiStyleStreamParser.StreamConsumer() {
+            @Override
+            public void onToolCall(AiToolCall toolCall) {
+                toolCalls.add(toolCall);
+            }
+        });
+
+        assertEquals(1, toolCalls.size());
+        assertEquals("call-write-1", toolCalls.getFirst().callId());
+        assertEquals("write", toolCalls.getFirst().toolCode());
+        assertEquals("{\"path\":\"notes.html\",\"content\":\"done\"}", toolCalls.getFirst().arguments());
+    }
+
+    /**
      * 同一个解析器 Bean 会被多个 provider 流共享，工具参数累积必须按流隔离，不能串到另一个请求。
      */
     @Test

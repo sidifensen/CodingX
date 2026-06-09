@@ -170,5 +170,10 @@ public class AiProperties {
          * 首包等待超时时间；超过该窗口会切换候选，不能等到底层读超时才释放用户请求。
          */
         private Long firstPacketTimeoutMs = 15_000L;
+
+        /**
+         * 首包成功后的整条流式响应完成超时时间；超过该窗口会取消 provider 并让上层收口失败状态。
+         */
+        private Long streamCompletionTimeoutMs = 300_000L;
     }
 }

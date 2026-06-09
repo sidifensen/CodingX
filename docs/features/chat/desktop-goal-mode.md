@@ -11,7 +11,7 @@
 ## 核心流程
 
 1. 用户发送带 `planMode=true` 的聊天请求后，聊天执行链路会为当前工具调用绑定 `ChatToolExecutionContext.GovernanceContext`。该上下文包含 `userId`、`conversationId` 和 `runId`，由 `ChatStreamExecutionService` 或同步聊天执行入口在调用工具前写入线程上下文。缺少 `conversationId` 或 `userId` 时，目标工具会抛出中文 `BusinessException`，避免管理端探测或脱离会话的调用污染全局目标。
-2. 模型调用 `get_goal` 时，`CodexBuiltinChatToolExecutor` 从工具参数读取 `goalId` 或 `goalKey`，两者都未指定时读取当前会话 active goal。执行器不再访问进程内 Map，而是把当前 `conversationId/userId` 传给 `ChatGoalService.getGoal`。服务按目标 ID、目标键或当前 active goal 查询仓储，所有查询都带会话和用户过滤；目标不存在时返回 `CHAT_TOOL_GOAL_NOT_FOUND`。
+2. 模型调用 `get_goal` 时，`CodexBuiltinChatToolExecutor` 从工具参数读取 `goalId` 或 `goalKey`，两者都未指定时读取当前会话 active goal。执行器不再访问进程内 Map，而是把当前 `conversationId/userId` 传给 `ChatGoalService.getGoal`。服务按目标 ID、目标键或当前 active goal 查询仓储，所有查询都带会话和用户过滤；查询未命中时这是正常空状态，工具返回 `exists=false` 和“当前会话没有活动目标”的中文提示，让模型继续按用户要求调用 `create_goal`，不会把聊天运行收口成失败。
 3. 模型调用 `create_goal` 时，执行器把标题、说明和 steps 数组转换为 `CreateGoalCommand`。`ChatGoalService` 先查同一会话当前用户是否已有 `ACTIVE` 目标，已有时直接返回该目标，保证同一会话最多一个 active goal。没有 active goal 时，服务生成 Snowflake ID，写入 `chat_goal`，把 steps 写入 `chat_goal_step`，并向 `chat_goal_event` 追加 `GOAL_CREATED` 事件。
 4. 模型调用 `update_goal` 时，服务按 `goalId`、`goalKey` 或 active goal 定位目标，并更新标题、说明、状态和进度摘要。steps 入参非空时会替换该目标的步骤快照，旧步骤逻辑删除，新步骤按传入顺序重新保存。目标状态进入 `COMPLETED`、`BLOCKED` 或 `CANCELLED` 时写入终态时间，并追加 `GOAL_COMPLETED`、`GOAL_BLOCKED` 或 `GOAL_CANCELLED` 事件。
 5. 目标创建或更新成功后，`ChatGoalService` 通过 `ChatStreamPublisher.publishGoal` 发布 `goal` SSE 事件。`SseChatStreamPublisher` 只负责把应用层 `ChatGoalView` 快照路由到会话 SSE 通道，`NoopChatStreamPublisher` 在测试和降级场景中忽略该事件。前端收到 `goal` 事件后可直接更新 active goal 状态。

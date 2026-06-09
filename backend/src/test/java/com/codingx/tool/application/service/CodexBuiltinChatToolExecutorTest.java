@@ -153,6 +153,25 @@ class CodexBuiltinChatToolExecutorTest {
     }
 
     /**
+     * get_goal 查询当前 active goal 未命中是正常空状态，必须返回成功结果让模型继续调用 create_goal。
+     */
+    @Test
+    void getGoalWithoutActiveGoalShouldReturnEmptyStateInsteadOfThrowing() {
+        when(chatGoalService.getGoal(2001L, 1001L, null, null)).thenReturn(Optional.empty());
+        ChatToolExecutionContext.bindGovernanceContext(1001L, 2001L, 3001L);
+
+        try {
+            ChatToolExecutionResult result = codexBuiltinChatToolExecutor.execute("get_goal", "{}");
+
+            assertEquals("get_goal", result.toolCode());
+            assertEquals(false, result.metadata().get("exists"));
+            assertTrue(result.content().contains("没有活动目标"));
+        } finally {
+            ChatToolExecutionContext.clear();
+        }
+    }
+
+    /**
      * update_goal 必须把状态和步骤更新委托目标服务，后续由服务追加事件并发布 SSE。
      */
     @Test

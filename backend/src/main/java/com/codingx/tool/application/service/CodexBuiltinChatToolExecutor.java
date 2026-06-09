@@ -1923,15 +1923,20 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
         );
         Optional<ChatGoalView> goalOptional = chatGoalService.getGoal(context.conversationId(), context.userId(), goalId, goalKey);
         if (goalOptional.isEmpty()) {
-            log.warn(
-                "目标工具 get_goal 未找到目标: conversationId={}, userId={}, runId={}, goalId={}, goalKey={}",
+            log.info(
+                "目标工具 get_goal 未找到目标，返回空状态供模型继续创建: conversationId={}, userId={}, runId={}, goalId={}, goalKey={}",
                 context.conversationId(),
                 context.userId(),
                 context.runId(),
                 goalId,
                 goalKey
             );
-            throw new BusinessException("CHAT_TOOL_GOAL_NOT_FOUND", ErrorMessageCatalog.CHAT_TOOL_GOAL_NOT_FOUND);
+            // 查询空结果是目标模式的正常分支，不能作为工具异常终止聊天流；模型会据此继续调用 create_goal。
+            return new ChatToolExecutionResult(
+                "get_goal",
+                "当前会话没有活动目标，请根据用户要求调用 create_goal 创建目标。",
+                Map.of("exists", false)
+            );
         }
         ChatGoalView goalView = goalOptional.orElseThrow();
         log.info(

@@ -1,6 +1,6 @@
 import React from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeftOutlined, ReloadOutlined } from '@ant-design/icons';
+import { ArrowLeftOutlined, DownOutlined, ReloadOutlined, RightOutlined } from '@ant-design/icons';
 import { Alert, Button, Empty, List, Space, Spin, Tag, Typography } from 'antd';
 
 import {
@@ -105,30 +105,52 @@ export function TaskDetail() {
  * 目标记录区块展示 chat_goal、chat_goal_step 和 chat_goal_event 三张表的只读排障信息。
  */
 function GoalRecordsSection({ goals }: { goals: AdminChatGoalRecord[] }) {
+  const [expanded, setExpanded] = React.useState(false);
+  const detailPanelId = React.useId();
+
   if (goals.length === 0) {
     return null;
   }
+  const stepCount = goals.reduce((total, goal) => total + (goal.steps?.length ?? 0), 0);
+  const eventCount = goals.reduce((total, goal) => total + (goal.events?.length ?? 0), 0);
 
   return (
     <section
       data-testid="admin-conversation-goals-section"
-      className="border-t border-border-hairline bg-surface-container-low px-md py-lg sm:px-lg"
+      className="border-t border-border-hairline bg-surface-container-low px-md py-md sm:px-lg"
       style={{ marginTop: 40 }}
     >
-      <div className="mb-lg flex flex-col gap-xs">
-        <Typography.Title level={3} style={{ margin: 0, lineHeight: 1.35 }}>
-          目标记录
-        </Typography.Title>
-        <Typography.Text type="secondary">
-          只读展示当前会话下所有目标、步骤快照和事件流水。
-        </Typography.Text>
+      <div className="flex flex-col gap-sm sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <Space size={[8, 8]} wrap>
+            <Typography.Title level={3} style={{ margin: 0, lineHeight: 1.35 }}>
+              目标记录
+            </Typography.Title>
+            <Tag>目标 {goals.length}</Tag>
+            <Tag>步骤 {stepCount}</Tag>
+            <Tag>事件 {eventCount}</Tag>
+          </Space>
+        </div>
+        <Button
+          aria-controls={detailPanelId}
+          aria-expanded={expanded}
+          aria-label={expanded ? '收起目标记录' : '展开目标记录'}
+          icon={expanded ? <DownOutlined /> : <RightOutlined />}
+          onClick={() => setExpanded((current) => !current)}
+          size="small"
+          type="text"
+        >
+          {expanded ? '收起' : '展开'}
+        </Button>
       </div>
 
-      <div className="space-y-lg">
-        {goals.map((goal, index) => (
-          <GoalRecordItem key={goal.id || index} goal={goal} index={index} />
-        ))}
-      </div>
+      {expanded ? (
+        <div id={detailPanelId} className="mt-lg space-y-lg">
+          {goals.map((goal, index) => (
+            <GoalRecordItem key={goal.id || index} goal={goal} index={index} />
+          ))}
+        </div>
+      ) : null}
     </section>
   );
 }

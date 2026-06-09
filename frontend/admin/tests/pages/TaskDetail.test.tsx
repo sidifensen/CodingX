@@ -1,6 +1,6 @@
 import '@testing-library/jest-dom/vitest';
 
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -24,12 +24,20 @@ describe('TaskDetail', () => {
   });
 
   /**
-   * 会话详情应展示目标三表信息，帮助管理员在同一页完成目标模式排障。
+   * 有目标时先展示折叠入口，管理员展开后再查看三表明细。
    */
-  it('renders all goal records with steps and events', async () => {
+  it('renders goal records collapsed by default and expands details on demand', async () => {
     renderTaskDetailPage('/tasks/2001');
 
     expect(await screen.findByRole('heading', { name: '目标记录' })).toBeInTheDocument();
+    expect(screen.getByText('目标 1')).toBeInTheDocument();
+    expect(screen.getByText('步骤 1')).toBeInTheDocument();
+    expect(screen.getByText('事件 1')).toBeInTheDocument();
+    expect(screen.queryByText('修复聊天目标展示')).not.toBeInTheDocument();
+    expect(screen.queryByText('管理端展示目标三表')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '展开目标记录' }));
+
     expect(screen.getByText('修复聊天目标展示')).toBeInTheDocument();
     expect(screen.getByText('管理端展示目标三表')).toBeInTheDocument();
     expect(screen.getByText('补充管理端测试')).toBeInTheDocument();
@@ -61,7 +69,7 @@ describe('TaskDetail', () => {
   it('preserves large snowflake conversation id when loading detail', async () => {
     renderTaskDetailPage('/tasks/2057422673730453504');
 
-    await screen.findByRole('heading', { name: '目标记录' });
+    await screen.findByRole('button', { name: '展开目标记录' });
 
     expect(AdminChatApi.getConversationDetail).toHaveBeenCalledWith('2057422673730453504');
   });

@@ -117,13 +117,13 @@ function GoalRecordsSection({ goals }: { goals: AdminChatGoalRecord[] }) {
   return (
     <section
       data-testid="admin-conversation-goals-section"
-      className="border-t border-border-hairline bg-surface-container-low px-md py-md sm:px-lg"
-      style={{ marginTop: 40 }}
+      className="border-t border-border-hairline bg-surface-container-low px-sm py-sm sm:px-md"
+      style={{ marginTop: 24 }}
     >
       <div className="flex flex-col gap-sm sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
           <Space size={[8, 8]} wrap>
-            <Typography.Title level={3} style={{ margin: 0, lineHeight: 1.35 }}>
+            <Typography.Title level={4} style={{ margin: 0, lineHeight: 1.3 }}>
               目标记录
             </Typography.Title>
             <Tag>目标 {goals.length}</Tag>
@@ -145,7 +145,7 @@ function GoalRecordsSection({ goals }: { goals: AdminChatGoalRecord[] }) {
       </div>
 
       {expanded ? (
-        <div id={detailPanelId} className="mt-lg space-y-lg">
+        <div id={detailPanelId} className="mt-sm space-y-sm">
           {goals.map((goal, index) => (
             <GoalRecordItem key={goal.id || index} goal={goal} index={index} />
           ))}
@@ -163,110 +163,192 @@ function GoalRecordItem({ goal, index }: { goal: AdminChatGoalRecord; index: num
   const events = goal.events ?? [];
 
   return (
-    <article className="space-y-md border-t border-border-hairline py-md first:border-t-0">
-      <div className="flex flex-col gap-sm lg:flex-row lg:items-start lg:justify-between">
-        <div className="min-w-0">
-          <Space className="mb-xs" size={[8, 8]} wrap>
+    <article className="border-t border-border-hairline py-sm first:border-t-0">
+      <div className="flex min-w-0 flex-col gap-xs">
+        <div className="flex min-w-0 flex-wrap items-center gap-xs">
+          <Space size={[8, 8]} wrap>
             <Typography.Text code>#{formatNullable(goal.id)}</Typography.Text>
             <Tag color={toGoalStatusColor(goal.status)}>{toGoalStatusLabel(goal.status)}</Tag>
             <InlineHeaderMeta item={{ key: 'goalIndex', label: '序号', value: String(index + 1) }} />
           </Space>
-          <Typography.Title level={4} className="break-words" style={{ margin: 0, lineHeight: 1.35 }}>
+          <Typography.Text strong className="min-w-0 break-words text-ink">
             {formatNullable(goal.title)}
-          </Typography.Title>
+          </Typography.Text>
         </div>
+        <CompactGoalTable
+          rows={[
+            ['会话ID', goal.conversationId],
+            ['归属用户', goal.userId],
+            ['目标Key', goal.goalKey],
+            ['创建运行', goal.createdRunId],
+            ['更新运行', goal.updatedRunId],
+            ['创建时间', formatDateTimeFromUnknown(goal.createdAt)],
+            ['更新时间', formatDateTimeFromUnknown(goal.updatedAt)],
+            ['终态时间', formatDateTimeFromUnknown(goal.completedAt)],
+            ['目标说明', goal.description],
+            ['进度摘要', goal.progressSummary],
+          ]}
+        />
+        <GoalStepsTable steps={steps} />
+        <GoalEventsTable events={events} />
       </div>
-
-      <MetadataStrip compact items={buildGoalMetadataItems(goal)} />
-
-      {hasValue(goal.description) ? <MessageTextBlock title="目标说明" content={goal.description} /> : null}
-      {hasValue(goal.progressSummary) ? <MessageTextBlock title="进度摘要" content={goal.progressSummary} /> : null}
-
-      <GoalStepsList steps={steps} />
-      <GoalEventsList events={events} />
     </article>
   );
 }
 
 /**
- * 展示目标步骤快照；没有步骤时保留明确空状态，避免管理员误以为页面漏渲染。
+ * 用单行字段表展示目标主表，减少多列 MetadataStrip 带来的纵向间距。
  */
-function GoalStepsList({ steps }: { steps: AdminChatGoalStep[] }) {
+function CompactGoalTable({ rows }: { rows: Array<[string, unknown]> }) {
   return (
-    <div className="space-y-sm border-t border-border-hairline pt-md">
-      <SectionSubheading title="步骤快照" count={steps.length} />
+    <div className="overflow-x-auto border-t border-border-hairline">
+      <table className="min-w-[1280px] table-fixed text-left text-[12px] leading-tight">
+        <tbody>
+          {chunkRows(rows, 5).map((rowGroup, groupIndex) => (
+            <React.Fragment key={groupIndex}>
+              <tr>
+                {rowGroup.map(([label]) => (
+                  <th key={label} className="w-1/5 px-sm py-xs font-medium text-secondary">
+                    {label}
+                  </th>
+                ))}
+              </tr>
+              <tr className="border-b border-border-hairline last:border-b-0">
+                {rowGroup.map(([label, value]) => (
+                  <td key={label} className="px-sm pb-xs text-ink">
+                    <CompactCell value={value} />
+                  </td>
+                ))}
+              </tr>
+            </React.Fragment>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/**
+ * 步骤快照改为横向表格，管理员可扫状态和标题，不再为每个步骤生成大块详情。
+ */
+function GoalStepsTable({ steps }: { steps: AdminChatGoalStep[] }) {
+  return (
+    <CompactTableSection title="步骤快照" count={steps.length}>
       {steps.length === 0 ? (
-        <Empty description="当前目标暂无步骤快照" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+        <CompactEmptyText text="当前目标暂无步骤快照" />
       ) : (
-        <List
-          className="[&_.ant-list-items]:space-y-sm"
-          dataSource={steps}
-          renderItem={(step) => (
-            <List.Item className="border-t border-border-hairline bg-transparent !px-0 !py-md first:border-t-0">
-              <div className="w-full min-w-0 space-y-sm">
-                <Space size={[8, 8]} wrap>
-                  <Typography.Text code>#{formatNullable(step.id)}</Typography.Text>
-                  <Tag color={toGoalStepStatusColor(step.status)}>{toGoalStepStatusLabel(step.status)}</Tag>
-                  <InlineHeaderMeta item={{ key: 'sortNo', label: '排序', value: formatNullable(step.sortNo) }} />
-                </Space>
-                <Typography.Text strong className="block break-words text-ink">
-                  {formatNullable(step.title)}
-                </Typography.Text>
-                <MetadataStrip compact items={buildGoalStepMetadataItems(step)} />
-                {hasValue(step.detail) ? <MessageTextBlock title="步骤详情" content={step.detail} /> : null}
-              </div>
-            </List.Item>
-          )}
-          split={false}
-        />
+        <table className="min-w-[1280px] text-left text-[12px] leading-tight">
+          <thead>
+            <tr className="border-b border-border-hairline text-secondary">
+              <th className="px-sm py-xs font-medium">步骤ID</th>
+              <th className="px-sm py-xs font-medium">状态</th>
+              <th className="px-sm py-xs font-medium">排序</th>
+              <th className="px-sm py-xs font-medium">标题</th>
+              <th className="px-sm py-xs font-medium">目标ID</th>
+              <th className="px-sm py-xs font-medium">步骤Key</th>
+              <th className="px-sm py-xs font-medium">开始</th>
+              <th className="px-sm py-xs font-medium">完成</th>
+              <th className="px-sm py-xs font-medium">更新</th>
+              <th className="px-sm py-xs font-medium">详情</th>
+            </tr>
+          </thead>
+          <tbody>
+            {steps.map((step) => (
+              <tr key={step.id} className="border-b border-border-hairline last:border-b-0">
+                <td className="px-sm py-xs"><InlineCode value={step.id} /></td>
+                <td className="px-sm py-xs"><Tag color={toGoalStepStatusColor(step.status)}>{toGoalStepStatusLabel(step.status)}</Tag></td>
+                <td className="px-sm py-xs"><CompactCell value={step.sortNo} /></td>
+                <td className="px-sm py-xs font-semibold text-ink"><CompactCell value={step.title} /></td>
+                <td className="px-sm py-xs"><InlineCode value={step.goalId} /></td>
+                <td className="px-sm py-xs"><CompactCell value={step.stepKey} /></td>
+                <td className="px-sm py-xs"><CompactCell value={formatDateTimeFromUnknown(step.startedAt)} /></td>
+                <td className="px-sm py-xs"><CompactCell value={formatDateTimeFromUnknown(step.completedAt)} /></td>
+                <td className="px-sm py-xs"><CompactCell value={formatDateTimeFromUnknown(step.updatedAt)} /></td>
+                <td className="px-sm py-xs"><CompactCell value={step.detail} /></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       )}
-    </div>
+    </CompactTableSection>
   );
 }
 
 /**
- * 展示目标事件流水，payloadJson 保留后端原始文本，便于审计工具输入和目标快照。
+ * 事件流水使用紧凑审计表，payloadJson 保留原文并通过横向滚动避免撑高页面。
  */
-function GoalEventsList({ events }: { events: AdminChatGoalEvent[] }) {
+function GoalEventsTable({ events }: { events: AdminChatGoalEvent[] }) {
   return (
-    <div className="space-y-sm border-t border-border-hairline pt-md">
-      <SectionSubheading title="事件流水" count={events.length} />
+    <CompactTableSection title="事件流水" count={events.length}>
       {events.length === 0 ? (
-        <Empty description="当前目标暂无事件流水" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+        <CompactEmptyText text="当前目标暂无事件流水" />
       ) : (
-        <List
-          className="[&_.ant-list-items]:space-y-sm"
-          dataSource={events}
-          renderItem={(event) => (
-            <List.Item className="border-t border-border-hairline bg-transparent !px-0 !py-md first:border-t-0">
-              <div className="w-full min-w-0 space-y-sm">
-                <Space size={[8, 8]} wrap>
-                  <Typography.Text code>#{formatNullable(event.id)}</Typography.Text>
-                  <Tag color={toGoalEventColor(event.eventType)}>{formatNullable(event.eventType)}</Tag>
-                  <Typography.Text type="secondary">{formatDateTimeFromUnknown(event.createdAt)}</Typography.Text>
-                </Space>
-                <MetadataStrip compact items={buildGoalEventMetadataItems(event)} />
-                {hasValue(event.payloadJson) ? <MessageTextBlock title="事件载荷 JSON" content={event.payloadJson} /> : null}
-              </div>
-            </List.Item>
-          )}
-          split={false}
-        />
+        <table className="min-w-[1280px] text-left text-[12px] leading-tight">
+          <thead>
+            <tr className="border-b border-border-hairline text-secondary">
+              <th className="px-sm py-xs font-medium">事件ID</th>
+              <th className="px-sm py-xs font-medium">类型</th>
+              <th className="px-sm py-xs font-medium">目标ID</th>
+              <th className="px-sm py-xs font-medium">会话ID</th>
+              <th className="px-sm py-xs font-medium">运行ID</th>
+              <th className="px-sm py-xs font-medium">创建时间</th>
+              <th className="px-sm py-xs font-medium">payloadJson</th>
+            </tr>
+          </thead>
+          <tbody>
+            {events.map((event) => (
+              <tr key={event.id} className="border-b border-border-hairline last:border-b-0">
+                <td className="px-sm py-xs"><InlineCode value={event.id} /></td>
+                <td className="px-sm py-xs"><Tag color={toGoalEventColor(event.eventType)}>{formatNullable(event.eventType)}</Tag></td>
+                <td className="px-sm py-xs"><InlineCode value={event.goalId} /></td>
+                <td className="px-sm py-xs"><InlineCode value={event.conversationId} /></td>
+                <td className="px-sm py-xs"><InlineCode value={event.runId} /></td>
+                <td className="px-sm py-xs"><CompactCell value={formatDateTimeFromUnknown(event.createdAt)} /></td>
+                <td className="px-sm py-xs"><CompactCell value={event.payloadJson} /></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       )}
+    </CompactTableSection>
+  );
+}
+
+/**
+ * 紧凑表区统一标题和滚动容器，避免表格撑破详情页横向布局。
+ */
+function CompactTableSection({ title, count, children }: { title: string; count: number; children: React.ReactNode }) {
+  return (
+    <div className="border-t border-border-hairline pt-xs">
+      <div className="mb-xs flex items-center gap-xs">
+        <Typography.Text strong className="text-[12px] text-ink">{title}</Typography.Text>
+        <Tag>{count}</Tag>
+      </div>
+      <div className="overflow-x-auto">{children}</div>
     </div>
   );
 }
 
 /**
- * 明细小标题统一承载数量，便于管理员快速判断目标下是否有步骤或事件。
+ * 紧凑空状态只保留一行文字，不再使用大图标空态占用高度。
  */
-function SectionSubheading({ title, count }: { title: string; count: number }) {
-  return (
-    <div className="flex items-center gap-sm">
-      <Typography.Text strong className="text-ink">{title}</Typography.Text>
-      <Tag>{count}</Tag>
-    </div>
-  );
+function CompactEmptyText({ text }: { text: string }) {
+  return <Typography.Text type="secondary" className="block px-sm py-xs text-[12px]">{text}</Typography.Text>;
+}
+
+/**
+ * 表格单元格保持单行显示，长 JSON 或说明通过横向滚动查看完整内容。
+ */
+function CompactCell({ value }: { value: unknown }) {
+  return <span className="block whitespace-pre text-ink">{formatNullable(value)}</span>;
+}
+
+function chunkRows<T>(items: T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let index = 0; index < items.length; index += size) {
+    chunks.push(items.slice(index, index + size));
+  }
+  return chunks;
 }
 
 /**

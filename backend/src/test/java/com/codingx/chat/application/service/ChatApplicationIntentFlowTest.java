@@ -134,6 +134,38 @@ class ChatApplicationIntentFlowTest {
     }
 
     /**
+     * 客户端可能保留上一次选择的 MCP；纯问候仍应优先走确定性快答，避免被无关工具选择拖入改写和模型链路。
+     */
+    @Test
+    void sendMessageRepliesGreetingWithoutRewriteIntentOrModelCallWhenMcpSelected() {
+        Long runId = 9101003L;
+        ChatExecutionContext.start(runId);
+        ChatConversation conversation = ChatConversation.create(1L, "New Conversation", 1002L, ChatConversationStatus.ACTIVE);
+        when(chatConversationRepository.requireById(1L)).thenReturn(conversation);
+
+        chatApplicationService.sendMessage(new SendChatMessageCommand(1L, "你好", false, List.of("weather_query")), 1002L);
+
+        ArgumentCaptor<ChatMessage> captor = ArgumentCaptor.forClass(ChatMessage.class);
+        verify(chatMessageRepository, org.mockito.Mockito.times(2)).save(captor.capture());
+        assertEquals("你好", captor.getAllValues().get(0).getContent());
+        assertEquals(ChatMessageStatus.COMPLETED, captor.getAllValues().get(1).getStatus());
+        assertEquals("你好，我在。你可以直接说要查资料、改代码、看项目，或让我帮你梳理问题。", captor.getAllValues().get(1).getContent());
+        verify(chatStreamPublisher).publishAssistantCompleted(eq(1L), any(Long.class), eq("你好，我在。你可以直接说要查资料、改代码、看项目，或让我帮你梳理问题。"), eq("New Conversation"));
+        ArgumentCaptor<ChatExecutionRun> runCaptor = ArgumentCaptor.forClass(ChatExecutionRun.class);
+        verify(chatExecutionRunRepository).save(runCaptor.capture());
+        assertEquals(runId, runCaptor.getValue().getId());
+        assertEquals("sys-welcome", runCaptor.getValue().getIntentCode());
+        assertEquals(ChatMessageStatus.COMPLETED.name(), runCaptor.getValue().getStatus());
+        verify(chatMessageRepository, never()).findByConversationId(any());
+        verify(chatAttachmentService, never()).requireOwnedAttachments(any(), any(), any());
+        verify(chatExecutionStepRepository, never()).findByRunId(any());
+        verify(conversationRewriteService, never()).rewriteResult(any(), any());
+        verify(conversationIntentService, never()).route(any(), org.mockito.Mockito.anyBoolean());
+        org.mockito.Mockito.verifyNoInteractions(aiChatClient);
+        ChatExecutionContext.clear();
+    }
+
+    /**
      * 歧义问题应直接返回澄清消息，并跳过模型调用。
      */
     @Test

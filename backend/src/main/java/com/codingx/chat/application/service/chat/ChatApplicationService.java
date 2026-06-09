@@ -1067,8 +1067,9 @@ public class ChatApplicationService {
 
     /**
      * 判断当前消息是否可走确定性问候回复。
-     * 业务约束：只有纯文本问候且没有附件、技能、专家、MCP、深度思考、目标模式或仓库路径时才短路，
-     * 避免把“你好，帮我看这个文件”这类真实任务误判为简单问候。
+     * 业务约束：只有纯文本问候且没有附件、技能、专家、深度思考、目标模式或仓库路径时才短路，
+     * 避免把“你好，帮我看这个文件”这类真实任务误判为简单问候。MCP 选择属于输入框粘性配置，
+     * 纯问候没有工具执行意图，因此不应因为已选 MCP 被拖入改写、意图识别和模型工具链路。
      * @param command 当前发送命令。
      * @param plainQuestion 已去掉技能 mention 的用户问题。
      * @param selectedSkillCodes 当前消息显式选择或 mention 的技能。
@@ -1081,7 +1082,6 @@ public class ChatApplicationService {
     ) {
         return !command.deepThinking()
             && !command.planMode()
-            && CollUtil.isEmpty(command.mcpCodes())
             && CollUtil.isEmpty(selectedSkillCodes)
             && CollUtil.isEmpty(command.attachmentIds())
             && CollUtil.isEmpty(command.skillPaths())

@@ -481,8 +481,10 @@ class ChatApplicationToolCallFlowTest {
                 if (modelRound.incrementAndGet() == 1) {
                     String firstContent = "<!DOCTYPE html>\\n<html" + "x".repeat(820);
                     String secondContent = firstContent + "streaming-second-marker" + "y".repeat(145);
+                    String thirdContent = secondContent + "instant-tiny-marker";
                     String firstArguments = "{\"path\":\"rogue_snake.html\",\"content\":\"" + firstContent;
                     String secondArguments = "{\"path\":\"rogue_snake.html\",\"content\":\"" + secondContent;
+                    String thirdArguments = "{\"path\":\"rogue_snake.html\",\"content\":\"" + thirdContent;
                     handler.onToolCallDelta(new AiToolCallDelta(
                         "call-write-1",
                         "write",
@@ -494,6 +496,12 @@ class ChatApplicationToolCallFlowTest {
                         "write",
                         secondArguments.substring(firstArguments.length()),
                         secondArguments
+                    ));
+                    handler.onToolCallDelta(new AiToolCallDelta(
+                        "call-write-1",
+                        "write",
+                        thirdArguments.substring(secondArguments.length()),
+                        thirdArguments
                     ));
                     handler.onToolCall(new AiToolCall(
                         "call-write-1",
@@ -523,7 +531,7 @@ class ChatApplicationToolCallFlowTest {
             List<Map<String, Object>> progressPayloads = payloads.stream()
                 .filter(payload -> "progress".equals(payload.get("phase")))
                 .toList();
-            assertTrue(progressPayloads.size() >= 2);
+            assertTrue(progressPayloads.size() >= 3);
             Map<String, Object> progressPayload = progressPayloads.get(0);
             assertEquals("write", progressPayload.get("toolId"));
             assertEquals("正在编辑 rogue_snake.html", progressPayload.get("reactAction"));
@@ -532,8 +540,8 @@ class ChatApplicationToolCallFlowTest {
             assertEquals("rogue_snake.html", params.get("path"));
             assertTrue(String.valueOf(params.get("content")).contains("<!DOCTYPE html>"));
             @SuppressWarnings("unchecked")
-            Map<String, Object> latestParams = (Map<String, Object>) progressPayloads.get(1).get("params");
-            assertTrue(String.valueOf(latestParams.get("content")).contains("streaming-second-marker"));
+            Map<String, Object> latestParams = (Map<String, Object>) progressPayloads.get(2).get("params");
+            assertTrue(String.valueOf(latestParams.get("content")).contains("instant-tiny-marker"));
         } finally {
             ChatExecutionContext.clear();
         }

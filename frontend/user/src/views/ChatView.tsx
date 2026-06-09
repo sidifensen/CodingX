@@ -75,7 +75,6 @@ interface ChatViewProps {
 const CODE_REVIEW_SIDEBAR_DEFAULT_WIDTH = 380;
 const CODE_REVIEW_SIDEBAR_MIN_WIDTH = 320;
 const CODE_REVIEW_SIDEBAR_MAX_WIDTH = 720;
-const STREAMING_DIFF_PREVIEW_LINE_LIMIT = 120;
 
 /**
  * 渲染接入真实后端数据的聊天三栏工作台。
@@ -5953,25 +5952,13 @@ function AutoScrollingDiffBlock({
  */
 function DiffTextBlock({
   diffText,
-  isStreamingPreview = false,
 }: {
   diffText: string;
   isStreamingPreview?: boolean;
 }) {
-  const { lines, omittedCount } = React.useMemo(
-    () => buildDiffPreviewLines(diffText, isStreamingPreview),
-    [diffText, isStreamingPreview],
-  );
+  const lines = React.useMemo(() => diffText.split(/\r?\n/), [diffText]);
   return (
     <pre className="min-w-full whitespace-pre-wrap [overflow-wrap:anywhere] bg-background px-4 py-3 font-mono text-[12px] leading-5 text-foreground">
-      {omittedCount > 0 ? (
-        <span
-          data-testid="diff-preview-omitted"
-          className="mb-1 block border-l-2 border-accent-breeze/55 bg-accent-breeze/10 px-2 text-accent-breeze"
-        >
-          实时预览，仅渲染最新 {STREAMING_DIFF_PREVIEW_LINE_LIMIT} 行，已省略 {omittedCount} 行
-        </span>
-      ) : null}
       {lines.map((line, index) => (
         <span
           key={index}
@@ -5991,23 +5978,6 @@ function DiffTextBlock({
       ))}
     </pre>
   );
-}
-
-/**
- * 流式写入时只保留尾部 diff 预览，完成后的真实 diff 和工作区 diff 仍完整展示。
- */
-function buildDiffPreviewLines(
-  diffText: string,
-  isStreamingPreview: boolean,
-): { lines: string[]; omittedCount: number } {
-  const lines = diffText.split(/\r?\n/);
-  if (!isStreamingPreview || lines.length <= STREAMING_DIFF_PREVIEW_LINE_LIMIT) {
-    return { lines, omittedCount: 0 };
-  }
-  return {
-    lines: lines.slice(-STREAMING_DIFF_PREVIEW_LINE_LIMIT),
-    omittedCount: lines.length - STREAMING_DIFF_PREVIEW_LINE_LIMIT,
-  };
 }
 
 type ConversationDiffRound = {

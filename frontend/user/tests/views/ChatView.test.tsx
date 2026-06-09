@@ -937,9 +937,9 @@ describe('ChatView', () => {
   });
 
   /**
-   * 正在写入的大文件 diff 只渲染尾部实时预览，避免每个分片都把完整 diff 重绘一遍导致正文流式输出卡顿。
+   * 正在写入的大文件 diff 也必须完整展示，侧栏和弹窗不能省略早期差异行。
    */
-  it('应限制流式写入中的大文件差异预览行数', async () => {
+  it('应完整展示流式写入中的大文件差异', async () => {
     const largePendingDiff = [
       'diff --git a/src/large.ts b/src/large.ts',
       '--- a/src/large.ts',
@@ -996,10 +996,11 @@ describe('ChatView', () => {
     fireEvent.click(fileRow);
 
     const panel = screen.getByTestId('inline-file-diff-scroll');
-    expect(panel).toHaveTextContent('实时预览，仅渲染最新');
+    expect(panel).not.toHaveTextContent('实时预览，仅渲染最新');
+    expect(panel).not.toHaveTextContent('已省略');
     expect(panel).toHaveTextContent('+export const value259 = 259;');
-    expect(panel).not.toHaveTextContent('+export const value0 = 0;');
-    expect(within(panel).getAllByTestId('diff-line')).toHaveLength(120);
+    expect(panel).toHaveTextContent('+export const value0 = 0;');
+    expect(within(panel).getAllByTestId('diff-line')).toHaveLength(264);
   });
 
   /**

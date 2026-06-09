@@ -18,7 +18,7 @@
 4. 会话创建时，`ChatApplicationService` 在保存用户消息并发布用户 SSE 后调用可选的 `AutomationTaskChatCreationService`。该服务用 `AutomationTaskIntentParser` 做保守识别，只有同时出现明确计划和任务创建语义时才返回创建参数；每日时间支持 `18:11`、`18点`、`十二点`、`两点半` 这类常见写法，但普通聊天或“帮我制定每天学习计划”这类无创建意图文本会返回空结果并继续原聊天路径。创建成功后聊天服务保存一条助手消息，内容包含“已创建自动化任务”和计划时间，并发布助手完成事件。整个过程停留在当前聊天路由，不跳转 `/automation`，也不要求用户二次确认。
 5. 调度阶段由 `AutomationTaskScheduler.scanDueTasks` 定时触发，读取同一批扫描的当前时间后调用 `AutomationTaskService.triggerDueTasks`。服务从仓储查找 `enabled=1`、`deleted=0`、`nextRunAt <= now` 的任务，为每个候选先计算触发后的 `lastRunAt=now`、`lastRunStatus=TRIGGERED` 和新 `nextRunAt`。写入时仓储使用扫描时的旧 `nextRunAt` 做条件更新，只有仍停留在同一到期快照的任务才会被本轮认领；若重叠扫描已推进该任务，本轮会跳过并不返回重复触发快照。周期任务会把 `nextRunAt` 推进到未来下一次，一次性任务会清空下一次执行时间并停用。
 6. 认领成功后，调度器把触发快照交给 `AutomationTaskExecutionService`。聊天创建任务会校验 `sourceConversationId` 是否存在且属于任务用户，校验通过后把任务 `prompt` 包装成“自动化任务已到执行时间”的后台聊天消息，并调用 `ChatStreamExecutionService.dispatch` 复用原聊天搜索、模型、Trace、SSE 和会话未读提醒。手动创建任务如果没有来源会话，服务会创建标题为 `自动化任务：<任务名>` 的交付会话，写回 `automation_task.source_conversation_id`，再派发执行，后续周期继续复用同一会话。若来源会话缺失或归属不匹配，服务不会派发聊天执行，而是把任务 `lastRunStatus` 写为 `FAILED` 并记录中文日志，避免结果写入错误会话。
-7. 聊天执行链路触发 `BEFORE_TASK_START`、`TASK_FAILED` 和 `TASK_COMPLETED` Hook 后，`HookRuleService` 会对命中的 `DESKTOP_NOTIFY` 规则发布 `hook-notification` SSE。比如“每天推送新闻”的自动化任务到期后，模型会按任务 prompt 生成新闻结果并写回来源会话；任务完成时内置 `task-completed` Hook 会把 `CodingX 任务完成` 和“后台任务已完成，请回到会话查看结果”推给桌面端。用户前端只在 Electron 宿主声明 `desktopNotifications=true` 时调用 `codingxHost.showDesktopNotification`，Electron 主进程再调用 Windows 系统通知；Web 页面没有系统通知桥接时保持静默，仍可通过会话列表未读圆点发现结果。
+7. 聊天执行链路触发 `BEFORE_TASK_START`、`TASK_FAILED` 和 `TASK_COMPLETED` Hook 后，`HookRuleService` 会对命中的 `DESKTOP_NOTIFY` 规则发布 `hook-notification` SSE。比如“每天推送新闻”的自动化任务到期后，模型会按任务 prompt 生成新闻结果并写回来源会话；任务完成时内置 `task-completed` Hook 会把 `CodingX 任务完成` 和“后台任务已完成，请回到会话查看结果”推给桌面端。用户前端只在 Electron 宿主声明 `desktopNotifications=true` 且本机设置页系统通知开关开启时调用 `codingxHost.showDesktopNotification`，Electron 主进程再调用 Windows 系统通知；Web 页面没有系统通知桥接或用户关闭本地开关时保持静默，仍可通过会话列表未读圆点发现结果。
 8. 前端创建成功后不信任本地临时结果，而是重新调用列表接口刷新页面。任务列表展示名称、需求摘要、来源图标、计划文案、下一次运行时间和运行状态。空列表展示“暂无定时任务”和手动创建入口，同时提示也可在聊天中创建。任务执行结果通过聊天会话交付：用户在线并订阅该会话时会收到原有 SSE 完成事件和 Hook 通知事件；用户离线或不在该会话时，后台聊天完成后会把 `chat_conversation.task_completion_read` 置为 `0`，侧栏刷新后展示未读提醒圆点。暗色模式使用全局主题令牌，弹窗、列表和错误条均为不透明背景，保证文本和边框可读。
 
 ## 关键文件
@@ -32,6 +32,7 @@
 - `backend/src/main/java/com/codingx/automation/infrastructure/scheduler/AutomationTaskScheduler.java`：Spring 定时扫描入口。
 - `backend/src/main/java/com/codingx/governance/application/service/HookRuleService.java`：自动化任务执行过程中匹配 Hook 并发布桌面通知 SSE。
 - `frontend/desktop/src/desktopNotification.ts`、`frontend/desktop/src/main.ts`：桌面通知载荷清洗和 Windows 系统通知调用。
+- `frontend/user/src/views/SettingsView.tsx`、`frontend/user/src/host/desktopNotificationPreference.ts`：本机系统通知开关和 localStorage 偏好读写。
 - `backend/src/main/resources/db/migration/V20260608_181900__create_automation_task_table.sql`：自动化任务表迁移。
 - `backend/src/main/resources/db/schema.sql`：自动化任务表基线结构。
 - `frontend/user/src/views/AutomationView.tsx`：自动化页面编排。
@@ -51,11 +52,12 @@
 - `automation_task.last_run_status`：最近触发或派发状态摘要，当前使用 `PENDING`、`TRIGGERED` 和 `FAILED`。
 - `automation_task.enabled`、`automation_task.deleted`：调度和列表过滤字段。
 - `hook-notification` SSE：自动化执行链路复用聊天 Hook 通知事件，桌面端在线时可转成 Windows 系统通知。
+- `codingx.desktop.notifications.enabled`：本机系统通知开关缓存，未设置时默认开启，关闭后不影响任务执行和会话结果写入。
 
 ## 验证方式
 
 - 后端目标测试：`mvn -Dtest=AutomationTaskServiceTest test`、`mvn -Dtest=ChatApplicationServiceTest,AutomationTaskControllerTest test`、`mvn -Dtest=AutomationTaskIntentParserTest test`、`mvn -Dtest=AutomationTaskSchedulerTest test`、`mvn -Dtest=AutomationTaskExecutionServiceTest test`。
 - 前端目标测试：`npm run test:run -- AutomationView.test.tsx`。
-- Hook 通知目标测试：后端 `mvn "-Dtest=HookRuleServiceTest,SseChatStreamPublisherTest" test`，用户前端 `npm run test:run -- bridge.test.ts useChatWorkspace.test.ts -t "hook-notification|Web fallback"`，桌面端 `npm run test:run`。
+- Hook 通知目标测试：后端 `mvn "-Dtest=HookRuleServiceTest,SseChatStreamPublisherTest" test`，用户前端 `npm run test:run -- desktopNotificationPreference.test.ts App.test.tsx useChatWorkspace.test.ts -t "系统通知|hook-notification"`，桌面端 `npm run test:run`。
 - 完整验证：后端 `mvn compile`、`mvn test`，前端 `npm run build`、`npm run test:run`，桌面端 `npm run build`、`npm run test:run`。
 - 浏览器验证：启动后端和用户前端，打开 `http://localhost:5002/automation`，通过 CDP 截图和计算样式确认暗色弹窗背景不透明、文本可读；本次截图证据保存为 `logs/automation-dark-create-dialog.png`。

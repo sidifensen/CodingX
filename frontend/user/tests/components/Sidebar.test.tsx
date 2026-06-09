@@ -24,6 +24,7 @@ function createSidebarProps(overrides?: {
   onLoadMoreConversations?: ReturnType<typeof vi.fn>;
   desktopWidth?: number;
   onDesktopWidthChange?: ReturnType<typeof vi.fn>;
+  onOpenSettings?: ReturnType<typeof vi.fn>;
 }) {
   const defaultConversations = Array.from({ length: 11 }, (_, i) => createConversation(i + 1));
   return {
@@ -45,6 +46,7 @@ function createSidebarProps(overrides?: {
     },
     isAuthSubmitting: false,
     onOpenLogin: vi.fn(),
+    onOpenSettings: overrides?.onOpenSettings ?? vi.fn(),
     onLogout: vi.fn(async () => undefined),
     conversations: defaultConversations,
     activeConversationId: null,

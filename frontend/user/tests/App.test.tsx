@@ -1905,4 +1905,115 @@ describe('App', () => {
     expect(screen.getByRole('button', { name: '最大化窗口' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '关闭窗口' })).toBeInTheDocument();
   });
+
+  /**
+   * 桌面端设置页应提供本地系统通知开关，关闭后只写入浏览器本地缓存。
+   */
+  it('应在桌面设置页切换系统通知本地开关', async () => {
+    window.localStorage.setItem(
+      'codingx.auth.session',
+      JSON.stringify({
+        token: 'token-123',
+        userId: 1002,
+        username: 'user',
+        displayName: 'CodingX User',
+        userType: 'USER',
+      }),
+    );
+    window.codingxHost = {
+      getContext: async () => ({
+        hostType: 'desktop',
+        executionTargets: ['cloud', 'local'],
+        capabilities: {
+          localFiles: true,
+          localFolderPicker: true,
+          shell: true,
+          browserAutomation: true,
+          desktopNotifications: true,
+          officeInterop: true,
+          localMcp: true,
+          windowControls: true,
+        },
+        localResource: {
+          boundRepositoryPath: null,
+          permissionGranted: false,
+        },
+      }),
+      getWindowState: async () => ({
+        isMaximized: false,
+        isMinimized: false,
+        isFullScreen: false,
+      }),
+      minimizeWindow: async () => undefined,
+      toggleMaximizeWindow: async () => ({
+        isMaximized: true,
+        isMinimized: false,
+        isFullScreen: false,
+      }),
+      closeWindow: async () => undefined,
+      invokeDesktopMenuAction: async () => undefined,
+      showDesktopNotification: async () => true,
+      onWindowStateChanged: () => () => undefined,
+      pickRepositoryDirectory: async () => null,
+      bindRepositoryPath: async () => ({
+        hostType: 'desktop',
+        executionTargets: ['cloud', 'local'],
+        capabilities: {
+          localFiles: true,
+          localFolderPicker: true,
+          shell: true,
+          browserAutomation: true,
+          desktopNotifications: true,
+          officeInterop: true,
+          localMcp: true,
+          windowControls: true,
+        },
+        localResource: {
+          boundRepositoryPath: null,
+          permissionGranted: false,
+        },
+      }),
+      requestFileAccess: async () => true,
+      listDirectory: async () => [],
+    };
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url === '/api/auth/me') {
+        expect(init?.method).toBe('GET');
+        return new Response(
+          JSON.stringify({
+            success: true,
+            code: 'OK',
+            message: 'success',
+            data: {
+              userId: 1002,
+              username: 'user',
+              displayName: 'CodingX User',
+              userType: 'USER',
+            },
+          }),
+          { status: 200 },
+        );
+      }
+      return new Response(
+        JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+        { status: 200 },
+      );
+    });
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'CodingX User 个人中心' }));
+    fireEvent.click(screen.getByRole('button', { name: '设置' }));
+
+    expect(await screen.findByRole('heading', { name: '设置' })).toBeInTheDocument();
+    const notificationSwitch = screen.getByRole('switch', { name: '系统通知' });
+    expect(notificationSwitch).toHaveAttribute('aria-checked', 'true');
+
+    fireEvent.click(notificationSwitch);
+
+    expect(notificationSwitch).toHaveAttribute('aria-checked', 'false');
+    expect(window.localStorage.getItem('codingx.desktop.notifications.enabled')).toBe('false');
+    expect(new URL(window.location.href).pathname).toBe('/settings');
+  });
 });

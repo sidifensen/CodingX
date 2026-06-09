@@ -62,6 +62,7 @@ import {
 } from './localConversationStorage';
 import { buildOptimisticUserMessage } from './messagePresentation';
 import { resolveHostBridge } from '../../host/bridge';
+import { isDesktopNotificationAllowed } from '../../host/desktopNotificationPreference';
 
 const DEFAULT_CLOUD_WORKSPACE_LABEL = '云端历史记录';
 const DEFAULT_LOCAL_WORKSPACE_LABEL = '本地历史记录';
@@ -3633,8 +3634,8 @@ export function useChatWorkspace(
       return;
     }
     if (eventName === 'hook-notification' && isRecord(payload)) {
-      // 业务约束：Hook 通知只在桌面宿主且明确声明系统通知能力时触发，Web 页面保持静默消费。
-      if (hostContext?.hostType === 'desktop' && hostContext.capabilities.desktopNotifications) {
+      // 业务约束：Hook 通知只在桌面宿主、宿主能力可用且本机通知开关开启时触发。
+      if (isDesktopNotificationAllowed(hostContext)) {
         void hostBridge.showDesktopNotification(payload).catch((error) => {
           console.warn('桌面系统通知调用失败:', error);
         });

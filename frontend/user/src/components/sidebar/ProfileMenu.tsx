@@ -10,6 +10,7 @@ interface ProfileMenuProps {
   isSubmitting: boolean;
   displayName: string;
   onToggleTheme: () => void;
+  onOpenSettings: () => void;
   onLogout: () => Promise<void>;
 }
 
@@ -21,6 +22,7 @@ export default function ProfileMenu({
   isSubmitting,
   displayName,
   onToggleTheme,
+  onOpenSettings,
   onLogout,
 }: ProfileMenuProps) {
   // 步骤：维护下拉菜单开关状态。
@@ -32,6 +34,14 @@ export default function ProfileMenu({
   const handleLogout = async () => {
     // 步骤：调用上层退出逻辑，完成后关闭当前菜单面板。
     await onLogout();
+    setIsProfileOpen(false);
+  };
+
+  /**
+   * 打开设置页并收起个人菜单，避免浮层遮挡设置内容。
+   */
+  const handleOpenSettings = () => {
+    onOpenSettings();
     setIsProfileOpen(false);
   };
 
@@ -74,7 +84,10 @@ export default function ProfileMenu({
             </div>
 
             <div className="p-2 space-y-1">
-              <button className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-surface-container transition-colors text-muted hover:text-foreground text-left">
+              <button
+                className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-surface-container transition-colors text-muted hover:text-foreground text-left"
+                onClick={handleOpenSettings}
+              >
                 <Settings size={18} />
                 <span>设置</span>
               </button>

@@ -10,6 +10,7 @@ import SkillsView from './views/SkillsView';
 import ExpertsView from './views/ExpertsView';
 import CliLoginView from './views/CliLoginView';
 import MemoryView from './views/MemoryView';
+import SettingsView from './views/SettingsView';
 import Sidebar from './components/Sidebar';
 import LoginModal from './components/auth/LoginModal';
 import DesktopTitleBar from './components/DesktopTitleBar';
@@ -26,7 +27,7 @@ import {
 /**
  * 定义应用支持的主视图类型。
  */
-export type ViewType = 'chat' | 'mcp' | 'skills' | 'experts' | 'automation' | 'memories';
+export type ViewType = 'chat' | 'mcp' | 'skills' | 'experts' | 'automation' | 'memories' | 'settings';
 
 const VIEW_ROUTE_PATHS: Record<ViewType, string> = {
   chat: '/',
@@ -35,6 +36,7 @@ const VIEW_ROUTE_PATHS: Record<ViewType, string> = {
   experts: '/experts',
   automation: '/automation',
   memories: '/memories',
+  settings: '/settings',
 };
 const PATH_VIEW_MAP: Record<string, ViewType> = Object.entries(VIEW_ROUTE_PATHS).reduce(
   (viewMap, [view, path]) => ({
@@ -150,6 +152,14 @@ function MainApp() {
   const toggleTheme = () => {
     // 步骤：翻转主题布尔值，触发全局主题切换。
     setIsDarkMode(!isDarkMode);
+  };
+
+  /**
+   * 打开设置页；设置项属于当前设备偏好，不需要登录或后端确认。
+   */
+  const openSettingsView = () => {
+    navigateToView('settings');
+    setIsMobileMenuOpen(false);
   };
 
   /**
@@ -348,6 +358,7 @@ function MainApp() {
           authSession={session}
           isAuthSubmitting={isSubmitting}
           onOpenLogin={openLoginModal}
+          onOpenSettings={openSettingsView}
           onLogout={logout}
           conversations={chatWorkspace.conversations}
           activeConversationId={chatWorkspace.activeConversationId}
@@ -427,6 +438,9 @@ function MainApp() {
                 />
               )}
               {activeView === 'automation' && <AutomationView key="automation" />}
+              {activeView === 'settings' && (
+                <SettingsView key="settings" hostContext={hostContext} />
+              )}
               {activeView === 'memories' && (
                 <MemoryView
                   key="memories"

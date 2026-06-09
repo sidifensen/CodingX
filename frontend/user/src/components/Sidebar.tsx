@@ -62,6 +62,7 @@ interface SidebarProps {
   authSession: AuthSession | null;
   isAuthSubmitting: boolean;
   onOpenLogin: () => void;
+  onOpenSettings: () => void;
   onLogout: () => Promise<void>;
   /**
    * 兼容旧调用方仍传入当前会话列表；实际侧栏渲染以 workspaceGroups 为准，避免多分区历史串线。
@@ -132,6 +133,7 @@ export default function Sidebar({
   authSession,
   isAuthSubmitting,
   onOpenLogin,
+  onOpenSettings,
   onLogout,
   activeConversationId,
   onSelectConversation,
@@ -344,6 +346,7 @@ export default function Sidebar({
             isSubmitting={isAuthSubmitting}
             displayName={authSession.displayName}
             onToggleTheme={toggleTheme}
+            onOpenSettings={onOpenSettings}
             onLogout={onLogout}
           />
         ) : (

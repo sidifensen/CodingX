@@ -9463,5 +9463,170 @@ describe('useChatWorkspace', () => {
     await submitPromise;
     delete window.codingxHost;
   });
+
+  /**
+   * 用户在桌面设置页关闭系统通知后，Hook 通知事件应静默消费但不能调用系统通知桥接。
+   */
+  it('本地系统通知开关关闭时应忽略hook-notification系统通知', async () => {
+    window.localStorage.setItem(
+      'codingx.auth.session',
+      JSON.stringify({
+        token: 'token-123',
+        userId: '1002',
+        username: 'user',
+        displayName: 'CodingX User',
+        userType: 'USER',
+      }),
+    );
+    window.localStorage.setItem('codingx.desktop.notifications.enabled', 'false');
+    const showDesktopNotification = vi.fn(async () => true);
+    window.codingxHost = {
+      getContext: async () => ({
+        hostType: 'desktop',
+        executionTargets: ['cloud', 'local'],
+        capabilities: {
+          localFiles: true,
+          localFolderPicker: true,
+          shell: true,
+          browserAutomation: true,
+          desktopNotifications: true,
+          officeInterop: true,
+          localMcp: true,
+          windowControls: true,
+        },
+        localResource: {
+          boundRepositoryPath: 'D:/code/CodingX',
+          workspaceId: '3001',
+          workspaceName: 'CodingX',
+          permissionGranted: true,
+        },
+      }),
+      getWindowState: async () => ({
+        isMaximized: false,
+        isMinimized: false,
+        isFullScreen: false,
+      }),
+      minimizeWindow: async () => undefined,
+      toggleMaximizeWindow: async () => ({
+        isMaximized: false,
+        isMinimized: false,
+        isFullScreen: false,
+      }),
+      closeWindow: async () => undefined,
+      invokeDesktopMenuAction: async () => undefined,
+      showDesktopNotification,
+      onWindowStateChanged: () => () => undefined,
+      pickRepositoryDirectory: async () => 'D:/code/CodingX',
+      bindRepositoryPath: async () => ({
+        hostType: 'desktop',
+        executionTargets: ['cloud', 'local'],
+        capabilities: {
+          localFiles: true,
+          localFolderPicker: true,
+          shell: true,
+          browserAutomation: true,
+          desktopNotifications: true,
+          officeInterop: true,
+          localMcp: true,
+          windowControls: true,
+        },
+        localResource: {
+          boundRepositoryPath: 'D:/code/CodingX',
+          workspaceId: '3001',
+          workspaceName: 'CodingX',
+          permissionGranted: true,
+        },
+      }),
+      requestFileAccess: async () => true,
+      listDirectory: async () => [],
+    };
+    const hostContext = await window.codingxHost.getContext();
+    const readQueue: Array<{
+      resolve: (value: ReadableStreamReadResult<Uint8Array>) => void;
+      reject: (reason?: unknown) => void;
+    }> = [];
+    const hookEvent = new TextEncoder().encode(
+      'event:hook-notification\n' +
+        'data:{"hookCode":"task-completed","hookName":"任务完成通知","triggerPoint":"TASK_COMPLETED","actionType":"DESKTOP_NOTIFY","conversationId":"2001","runId":"3001","title":"CodingX 任务完成","body":"后台任务已完成"}\n\n',
+    );
+    const finishEvent = new TextEncoder().encode(
+      'event:finish\ndata:{"conversationId":"2001","content":"任务结果已写入会话","title":"自动化任务"}\n\n',
+    );
+    const mockReader = {
+      read: vi.fn(() => {
+        return new Promise<ReadableStreamReadResult<Uint8Array>>((resolve, reject) => {
+          readQueue.push({ resolve, reject });
+        });
+      }),
+    };
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (isConversationListRequest(url)) {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (
+        url === '/api/chat/sample-questions' ||
+        url === '/api/chat/experts' ||
+        url === '/api/chat/skills' ||
+        url === '/api/chat/mcps' ||
+        isConversationMessageListRequest(url, '2001') ||
+        url === '/api/chat/conversations/2001/steps' ||
+        url === '/api/chat/conversations/2001/references' ||
+        url === '/api/chat/conversations/2001/artifacts' ||
+        url === '/api/chat/conversations/2001/current-skills' ||
+        url === '/api/chat/conversations/2001/current-mcps' ||
+        url === '/api/chat/conversations/2001/current-experts'
+      ) {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (url.includes('/api/chat/stream')) {
+        return {
+          ok: true,
+          status: 200,
+          body: {
+            getReader: () => mockReader,
+          },
+        } as unknown as Response;
+      }
+      throw new Error(`Unhandled fetch in disabled hook notification test: ${url}`);
+    });
+
+    const { result } = renderHook(() => useChatWorkspace(true, { hostContext }));
+
+    await waitFor(() => {
+      expect(result.current.isBootstrapping).toBe(false);
+    });
+
+    await act(async () => {
+      result.current.setInputValue('执行自动化任务');
+    });
+    const submitPromise = result.current.submitMessage();
+
+    await waitFor(() => {
+      expect(result.current.isStreaming).toBe(true);
+      expect(readQueue.length).toBeGreaterThan(0);
+    });
+
+    await act(async () => {
+      readQueue.shift()?.resolve({ done: false, value: hookEvent });
+    });
+    await act(async () => {
+      readQueue.shift()?.resolve({ done: false, value: finishEvent });
+    });
+    await act(async () => {
+      readQueue.shift()?.resolve({ done: true, value: undefined });
+    });
+
+    await submitPromise;
+    expect(showDesktopNotification).not.toHaveBeenCalled();
+    delete window.codingxHost;
+  });
 });
 

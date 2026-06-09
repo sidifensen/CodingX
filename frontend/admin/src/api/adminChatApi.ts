@@ -53,6 +53,8 @@ export interface AdminTraceRunQuery {
   current?: number;
   size?: number;
   traceId?: string;
+  // Dashboard 慢链路入口使用该排序参数，旧调用不传时保持后端默认时间倒序。
+  sort?: 'duration_desc';
 }
 
 export interface AdminChatConversationListItem {
@@ -312,6 +314,10 @@ export interface AdminDashboardPerformance {
   runningRate: number;
   avgTraceDurationMs: number;
   p95TraceDurationMs: number;
+  timedTraceCount: number;
+  p95TraceRank: number;
+  slowTraceThresholdMs: number;
+  slowTraceCount: number;
 }
 
 export interface AdminDashboardTrendBucket {
@@ -633,6 +639,9 @@ export class AdminChatApi {
     searchParams.set('size', String(query.size ?? 10));
     if (query.traceId && query.traceId.trim()) {
       searchParams.set('traceId', query.traceId.trim());
+    }
+    if (query.sort) {
+      searchParams.set('sort', query.sort);
     }
     return this.request<AdminTraceRunPageResult>(`/api/admin/chat/traces?${searchParams.toString()}`);
   }

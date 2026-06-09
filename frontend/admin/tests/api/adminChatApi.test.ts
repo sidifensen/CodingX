@@ -313,6 +313,10 @@ describe('AdminChatApi unauthorized handling', () => {
               runningRate: 8.4,
               avgTraceDurationMs: 9200,
               p95TraceDurationMs: 15000,
+              timedTraceCount: 62,
+              p95TraceRank: 59,
+              slowTraceThresholdMs: 60000,
+              slowTraceCount: 4,
             },
             trendBuckets: [
               {
@@ -339,6 +343,10 @@ describe('AdminChatApi unauthorized handling', () => {
     expect(result.kpis.activeUserCount).toBe(12);
     expect(result.resources.toolCount).toBe(11);
     expect(result.performance.p95TraceDurationMs).toBe(15000);
+    expect(result.performance.timedTraceCount).toBe(62);
+    expect(result.performance.p95TraceRank).toBe(59);
+    expect(result.performance.slowTraceThresholdMs).toBe(60000);
+    expect(result.performance.slowTraceCount).toBe(4);
     expect(result.trendBuckets[0].label).toBe('05-22');
     expect(String(fetchMock.mock.calls[0][0])).toContain('/api/admin/chat/dashboard?window=7d');
   });

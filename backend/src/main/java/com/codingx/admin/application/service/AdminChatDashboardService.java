@@ -57,6 +57,11 @@ public class AdminChatDashboardService {
     private static final DateTimeFormatter DAY_LABEL_FORMATTER = DateTimeFormatter.ofPattern("MM-dd");
 
     /**
+     * Dashboard 用于标记慢链路的固定阈值，前端会直接展示该阈值口径。
+     */
+    private static final long SLOW_TRACE_THRESHOLD_MS = 60_000L;
+
+    /**
      * 会话 Mapper，用于统计窗口内新增会话。
      */
     private final ChatConversationMapper chatConversationMapper;
@@ -202,14 +207,23 @@ public class AdminChatDashboardService {
         long avgDuration = durations.isEmpty()
             ? 0L
             : Math.round(durations.stream().mapToLong(Long::longValue).average().orElse(0D));
-        long p95Duration = durations.isEmpty() ? 0L : durations.get(Math.max(0, (int) Math.ceil(durations.size() * 0.95D) - 1));
-        // 步骤 3：百分比在无数据时返回 0，避免前端展示 NaN。
+        int timedTraceCount = durations.size();
+        int p95TraceRank = timedTraceCount == 0 ? 0 : (int) Math.ceil(timedTraceCount * 0.95D);
+        long p95Duration = p95TraceRank == 0 ? 0L : durations.get(p95TraceRank - 1);
+        int slowTraceCount = (int) durations.stream()
+            .filter(duration -> duration > SLOW_TRACE_THRESHOLD_MS)
+            .count();
+        // 步骤 3：返回样本数、P95 排名和慢链路数量，帮助前端解释长尾指标而不是只展示一个孤立数值。
         return new AdminChatDashboardPerformanceView(
             toPercent(successCount, total),
             toPercent(failureCount, total),
             toPercent(runningCount, total),
             avgDuration,
-            p95Duration
+            p95Duration,
+            timedTraceCount,
+            p95TraceRank,
+            SLOW_TRACE_THRESHOLD_MS,
+            slowTraceCount
         );
     }
 

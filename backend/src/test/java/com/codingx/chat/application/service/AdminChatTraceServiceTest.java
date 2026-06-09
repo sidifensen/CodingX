@@ -46,7 +46,7 @@ class AdminChatTraceServiceTest {
      */
     @Test
     void pageTracesMapsUsernameAndForwardsFilter() {
-        when(chatTraceRunRepository.pageByFilters(2, 5, "trace-xyz")).thenReturn(new AdminTraceRunPageView(
+        when(chatTraceRunRepository.pageByFilters(2, 5, "trace-xyz", null)).thenReturn(new AdminTraceRunPageView(
             List.of(ChatTraceRun.builder()
                 .traceId("trace-xyz")
                 .traceName("chat-entry")
@@ -63,13 +63,33 @@ class AdminChatTraceServiceTest {
             User.create(2001L, "admin", "管理员", "hash", UserType.ADMIN, UserStatus.ACTIVE)
         ));
 
-        AdminTraceRunPageResultView pageView = adminChatTraceService.pageTraces(2, 5, "trace-xyz");
+        AdminTraceRunPageResultView pageView = adminChatTraceService.pageTraces(2, 5, "trace-xyz", null);
 
         assertEquals(11, pageView.total());
         assertEquals(1, pageView.records().size());
         assertEquals("admin", pageView.records().getFirst().username());
-        verify(chatTraceRunRepository).pageByFilters(2, 5, "trace-xyz");
+        verify(chatTraceRunRepository).pageByFilters(2, 5, "trace-xyz", null);
         verify(userRepository).findById(2001L);
+    }
+
+    /**
+     * Dashboard 的“查看最慢链路”入口会携带排序参数，服务层必须透传给仓储保持查询口径一致。
+     */
+    @Test
+    void pageTracesForwardsDurationSort() {
+        when(chatTraceRunRepository.pageByFilters(1, 10, null, "duration_desc")).thenReturn(new AdminTraceRunPageView(
+            List.of(ChatTraceRun.builder().traceId("trace-slow").traceName("chat-entry").durationMs(100_000L).status("SUCCESS").build()),
+            1,
+            10,
+            1,
+            1
+        ));
+
+        AdminTraceRunPageResultView pageView = adminChatTraceService.pageTraces(1, 10, null, "duration_desc");
+
+        assertEquals(1, pageView.records().size());
+        assertEquals(100_000L, pageView.records().getFirst().durationMs());
+        verify(chatTraceRunRepository).pageByFilters(1, 10, null, "duration_desc");
     }
 
     /**
@@ -77,7 +97,7 @@ class AdminChatTraceServiceTest {
      */
     @Test
     void pageTracesSkipsUserLookupWhenUserIdMissing() {
-        when(chatTraceRunRepository.pageByFilters(1, 10, null)).thenReturn(new AdminTraceRunPageView(
+        when(chatTraceRunRepository.pageByFilters(1, 10, null, null)).thenReturn(new AdminTraceRunPageView(
             List.of(ChatTraceRun.builder().traceId("trace-1").traceName("chat-entry").status("SUCCESS").build()),
             1,
             10,
@@ -85,10 +105,10 @@ class AdminChatTraceServiceTest {
             1
         ));
 
-        AdminTraceRunPageResultView pageView = adminChatTraceService.pageTraces(1, 10, null);
+        AdminTraceRunPageResultView pageView = adminChatTraceService.pageTraces(1, 10, null, null);
 
         assertEquals(1, pageView.records().size());
         assertEquals(null, pageView.records().getFirst().username());
-        verify(chatTraceRunRepository).pageByFilters(1, 10, null);
+        verify(chatTraceRunRepository).pageByFilters(1, 10, null, null);
     }
 }

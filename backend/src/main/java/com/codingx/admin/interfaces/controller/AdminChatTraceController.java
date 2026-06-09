@@ -28,15 +28,17 @@ public class AdminChatTraceController {
      * @param current 当前页码（从 1 开始）。
      * @param size 每页条数。
      * @param traceId 可选 traceId 过滤条件。
+     * @param sort 可选排序口径，duration_desc 表示按耗时倒序查看慢链路。
      * @return 分页结果。
      */
     @GetMapping
     public ApiResponse<AdminTraceRunPageResultView> listTraces(
         @RequestParam(defaultValue = "1") int current,
         @RequestParam(defaultValue = "10") int size,
-        @RequestParam(required = false) String traceId
+        @RequestParam(required = false) String traceId,
+        @RequestParam(required = false) String sort
     ) {
-        return ApiResponse.success(adminChatTraceService.pageTraces(current, size, traceId));
+        return ApiResponse.success(adminChatTraceService.pageTraces(current, size, traceId, sort));
     }
 
     /**

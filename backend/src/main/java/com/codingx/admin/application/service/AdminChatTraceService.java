@@ -44,14 +44,25 @@ public class AdminChatTraceService {
      * @param current 页码。
      * @param size 每页大小。
      * @param traceId 可选 traceId 过滤。
+     * @param sort 可选排序口径，duration_desc 用于慢链路排查入口。
      * @return 分页结果。
      */
-    public AdminTraceRunPageResultView pageTraces(int current, int size, String traceId) {
-        AdminTraceRunPageView pageView = chatTraceRunRepository.pageByFilters(current, size, traceId);
+    public AdminTraceRunPageResultView pageTraces(int current, int size, String traceId, String sort) {
+        AdminTraceRunPageView pageView = chatTraceRunRepository.pageByFilters(current, size, traceId, normalizeSort(sort));
         List<AdminTraceRunListItemView> records = pageView.records().stream()
             .map(traceRun -> AdminTraceRunListItemView.from(traceRun, resolveUsername(traceRun.getUserId())))
             .toList();
         return new AdminTraceRunPageResultView(records, pageView.total(), pageView.size(), pageView.current(), pageView.pages());
+    }
+
+    /**
+     * 只允许白名单排序值进入仓储，避免管理端 query 参数扩散成任意 SQL 片段。
+     *
+     * @param sort 前端传入的排序编码。
+     * @return 可识别排序编码，未知值返回 null 走默认时间倒序。
+     */
+    private String normalizeSort(String sort) {
+        return StrUtil.equals(sort, "duration_desc") ? "duration_desc" : null;
     }
 
     /**

@@ -1,5 +1,6 @@
 import React from 'react';
 import { Area, Column, Line, Pie } from '@ant-design/plots';
+import { Link } from 'react-router-dom';
 
 import {
   AdminChatApi,
@@ -12,6 +13,7 @@ import {
 const WINDOW_OPTIONS: AdminDashboardWindow[] = ['24h', '7d', '30d'];
 const MILLISECONDS_PER_SECOND = 1000;
 const LATENCY_WARNING_SECONDS = 15;
+const SLOW_TRACE_THRESHOLD_FALLBACK_MS = 60_000;
 
 /**
  * 管理端控制台首页：参考 ragent 的信息架构，但只展示当前仓库真实可得的数据域。
@@ -184,15 +186,15 @@ export function Dashboard() {
                   />
                 </TrendChartCard>
                 <TrendChartCard
-                  title="响应耗时趋势"
+                  title="平均响应耗时趋势"
                   meta="单位：秒"
-                  legendLabel="平均响应时间"
+                  legendLabel="平均响应耗时"
                   legendColor="#f59e0b"
                   annotation={`警告 > ${formatSeconds(LATENCY_WARNING_SECONDS)}`}
                   testId="dashboard-latency-chart"
                 >
                   <Line
-                    {...buildLineConfig(latencyTrendData, '#f59e0b', chartTheme, '秒', '平均响应时间', { domainMin: 0 })}
+                    {...buildLineConfig(latencyTrendData, '#f59e0b', chartTheme, '秒', '平均响应耗时', { domainMin: 0 })}
                     data-testid="dashboard-latency-plot"
                   />
                 </TrendChartCard>
@@ -224,10 +226,26 @@ export function Dashboard() {
               </div>
               <div className="space-y-3 text-[13px]">
                 <StatRow label="平均响应" value={formatDuration(dashboard?.performance.avgTraceDurationMs)} accent="text-emerald-500" />
-                <StatRow label="P95 响应" value={formatDuration(dashboard?.performance.p95TraceDurationMs)} accent="text-rose-500" />
+                <StatRow
+                  label="P95 响应"
+                  value={formatDuration(dashboard?.performance.p95TraceDurationMs)}
+                  accent="text-rose-500"
+                  description={formatP95Description(dashboard?.performance.timedTraceCount, dashboard?.performance.p95TraceRank)}
+                />
+                <StatRow
+                  label="慢链路"
+                  value={formatSlowTraceSummary(dashboard?.performance.slowTraceThresholdMs, dashboard?.performance.slowTraceCount)}
+                  accent="text-amber-500"
+                />
                 <StatRow label="运行中占比" value={`${dashboard?.performance.runningRate ?? 0}%`} accent="text-sky-500" />
                 <StatRow label="链路总数" value={`${dashboard?.kpis.traceCount ?? 0}`} />
               </div>
+              <Link
+                to="/traces?sort=duration_desc"
+                className="mt-4 inline-flex w-full items-center justify-center rounded-2xl border border-border-hairline bg-surface-container-low px-4 py-2.5 text-[13px] font-semibold text-ink transition-colors hover:bg-surface-container-high"
+              >
+                查看最慢链路
+              </Link>
             </section>
 
             <SidebarCard title="质量快照">
@@ -375,15 +393,20 @@ function StatRow({
   label,
   value,
   accent,
+  description,
 }: {
   label: string;
   value: string;
   accent?: string;
+  description?: string;
 }) {
   return (
-    <div className="flex items-center justify-between gap-3 text-[13px]">
-      <span className="text-secondary">{label}</span>
-      <span className={['font-semibold text-ink', accent ?? ''].join(' ')}>{value}</span>
+    <div className="space-y-1 text-[13px]">
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-secondary">{label}</span>
+        <span className={['font-semibold text-ink', accent ?? ''].join(' ')}>{value}</span>
+      </div>
+      {description ? <div className="text-right text-[11px] leading-5 text-secondary">{description}</div> : null}
     </div>
   );
 }
@@ -686,6 +709,18 @@ function formatDuration(value?: number) {
     return `${Math.round(value)}ms`;
   }
   return `${(value / 1000).toFixed(2)}s`;
+}
+
+function formatP95Description(timedTraceCount?: number, p95TraceRank?: number) {
+  if (!timedTraceCount || !p95TraceRank) {
+    return undefined;
+  }
+  return `${timedTraceCount} 条链路中，第 ${p95TraceRank} 条耗时`;
+}
+
+function formatSlowTraceSummary(thresholdMs?: number, count?: number) {
+  const thresholdSeconds = toLatencySeconds(thresholdMs && thresholdMs > 0 ? thresholdMs : SLOW_TRACE_THRESHOLD_FALLBACK_MS);
+  return `> ${formatSeconds(thresholdSeconds)}：${count ?? 0} 条`;
 }
 
 function resolveAverage(numerator?: number, denominator?: number) {

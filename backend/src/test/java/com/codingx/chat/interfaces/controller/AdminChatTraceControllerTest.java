@@ -1,6 +1,7 @@
 package com.codingx.chat.interfaces.controller;
 import com.codingx.admin.interfaces.controller.AdminChatTraceController;
 
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -39,7 +40,7 @@ class AdminChatTraceControllerTest {
      */
     @Test
     void listTracesReturnsPagedPayload() throws Exception {
-        when(adminChatTraceService.pageTraces(1, 10, "trace-1")).thenReturn(new AdminTraceRunPageResultView(
+        when(adminChatTraceService.pageTraces(1, 10, "trace-1", "duration_desc")).thenReturn(new AdminTraceRunPageResultView(
             List.of(
                 new AdminTraceRunListItemView(
                     "trace-1",
@@ -64,7 +65,8 @@ class AdminChatTraceControllerTest {
         mockMvc().perform(get("/api/admin/chat/traces")
                 .param("current", "1")
                 .param("size", "10")
-                .param("traceId", "trace-1"))
+                .param("traceId", "trace-1")
+                .param("sort", "duration_desc"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.success").value(true))
             .andExpect(jsonPath("$.data.records[0].traceId").value("trace-1"))
@@ -72,6 +74,7 @@ class AdminChatTraceControllerTest {
             .andExpect(jsonPath("$.data.size").value(10))
             .andExpect(jsonPath("$.data.current").value(1))
             .andExpect(jsonPath("$.data.pages").value(1));
+        verify(adminChatTraceService).pageTraces(1, 10, "trace-1", "duration_desc");
     }
 
     /**

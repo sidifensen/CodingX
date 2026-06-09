@@ -87,6 +87,10 @@ describe('Dashboard page', () => {
         runningRate: 8.4,
         avgTraceDurationMs: 9200,
         p95TraceDurationMs: 15000,
+        timedTraceCount: 62,
+        p95TraceRank: 59,
+        slowTraceThresholdMs: 60000,
+        slowTraceCount: 4,
       },
       trendBuckets: [
         {
@@ -182,19 +186,37 @@ describe('Dashboard page', () => {
   });
 
   /**
-   * 响应耗时趋势图接收后端毫秒值，但页面上必须按秒展示并保留小数。
+   * 平均响应趋势图接收后端毫秒值，但页面上必须按秒展示并保留小数，避免和 P95 指标混淆。
    */
-  it('renders latency trend in seconds with decimal precision', async () => {
+  it('renders average latency trend in seconds with decimal precision', async () => {
     render(
       <MemoryRouter>
         <Dashboard />
       </MemoryRouter>,
     );
 
+    expect(await screen.findByText('平均响应耗时趋势')).toBeInTheDocument();
     expect(await screen.findByText('单位：秒')).toBeInTheDocument();
+    expect(screen.getByText('平均响应耗时')).toBeInTheDocument();
     expect(screen.getByText('警告 > 15.0 秒')).toBeInTheDocument();
     expect(screen.getByTestId('dashboard-latency-plot-y-unit')).toHaveTextContent('秒');
     expect(screen.getByTestId('dashboard-latency-plot-first-value')).toHaveTextContent('9.2');
     expect(screen.getByTestId('dashboard-latency-plot-tooltip-preview')).toHaveTextContent('9.2 秒');
+  });
+
+  /**
+   * AI 性能卡必须解释 P95 的样本排名，并提供慢链路数量和最慢链路入口。
+   */
+  it('renders p95 explanation, slow trace count and slow trace entry', async () => {
+    render(
+      <MemoryRouter>
+        <Dashboard />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText('62 条链路中，第 59 条耗时')).toBeInTheDocument();
+    expect(screen.getByText('> 60.0 秒：4 条')).toBeInTheDocument();
+    const slowTraceLink = screen.getByRole('link', { name: '查看最慢链路' });
+    expect(slowTraceLink).toHaveAttribute('href', '/traces?sort=duration_desc');
   });
 });

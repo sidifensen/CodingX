@@ -28,6 +28,7 @@ import com.codingx.tool.domain.model.ChatTool;
 import com.codingx.tool.domain.repository.ChatToolRepository;
 import com.codingx.workspace.infrastructure.persistence.mapper.WorkspaceMapper;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -119,6 +120,39 @@ class AdminChatDashboardServiceTest {
         assertEquals(33.3, result.performance().runningRate());
         assertEquals(10000L, result.performance().avgTraceDurationMs());
         assertEquals(12000L, result.performance().p95TraceDurationMs());
+        assertEquals(2, result.performance().timedTraceCount());
+        assertEquals(2, result.performance().p95TraceRank());
+        assertEquals(60000L, result.performance().slowTraceThresholdMs());
+        assertEquals(0, result.performance().slowTraceCount());
+    }
+
+    /**
+     * P95 说明字段必须暴露样本数和排序位置，慢链路数量按 60 秒阈值统计，供前端解释长尾响应。
+     */
+    @Test
+    void getDashboardBuildsP95RankAndSlowTraceCount() {
+        LocalDateTime now = LocalDateTime.now();
+        List<ChatTraceRunDO> traces = new ArrayList<>();
+        for (int index = 1; index <= 58; index += 1) {
+            traces.add(trace("trace-normal-" + index, 1000L + index, "SUCCESS", now.minusMinutes(index), 20_000L + index));
+        }
+        traces.add(trace("trace-slow-59", 2059L, "SUCCESS", now.minusMinutes(59), 100_000L));
+        traces.add(trace("trace-slow-60", 2060L, "SUCCESS", now.minusMinutes(60), 105_000L));
+        traces.add(trace("trace-slow-61", 2061L, "SUCCESS", now.minusMinutes(61), 110_000L));
+        traces.add(trace("trace-slow-62", 2062L, "SUCCESS", now.minusMinutes(62), 115_000L));
+        traces.add(trace("trace-running", 3001L, "RUNNING", now.minusMinutes(1), null));
+        when(chatConversationMapper.selectList(any())).thenReturn(List.of());
+        when(chatMessageMapper.selectList(any())).thenReturn(List.of());
+        when(chatTraceRunMapper.selectList(any())).thenReturn(traces);
+        mockEmptyAssetCounts();
+
+        AdminChatDashboardView result = adminChatDashboardService.getDashboard("24h");
+
+        assertEquals(62, result.performance().timedTraceCount());
+        assertEquals(59, result.performance().p95TraceRank());
+        assertEquals(100_000L, result.performance().p95TraceDurationMs());
+        assertEquals(60000L, result.performance().slowTraceThresholdMs());
+        assertEquals(4, result.performance().slowTraceCount());
     }
 
     /**
@@ -145,6 +179,24 @@ class AdminChatDashboardServiceTest {
         assertEquals(30, thirtyDays.trendBuckets().size());
         assertEquals(0.0, sevenDays.performance().successRate());
         assertEquals(0L, sevenDays.performance().p95TraceDurationMs());
+        assertEquals(0, sevenDays.performance().timedTraceCount());
+        assertEquals(0, sevenDays.performance().p95TraceRank());
+        assertEquals(60000L, sevenDays.performance().slowTraceThresholdMs());
+        assertEquals(0, sevenDays.performance().slowTraceCount());
+    }
+
+    /**
+     * 管理端 Dashboard 聚合依赖多类资产统计，空数据测试统一回落到 0，避免每个用例重复桩配置。
+     */
+    private void mockEmptyAssetCounts() {
+        when(workspaceMapper.selectCount(any())).thenReturn(0L);
+        when(chatSkillRepository.findAll()).thenReturn(List.of());
+        when(chatToolRepository.findAll()).thenReturn(List.of());
+        when(chatExpertRepository.findAll()).thenReturn(List.of());
+        when(chatMcpRepository.findAll()).thenReturn(List.of());
+        when(chatIntentNodeRepository.findAllNodes()).thenReturn(List.of());
+        when(chatQueryTermMappingRepository.findAllMappings()).thenReturn(List.of());
+        when(chatSampleQuestionRepository.findEnabledQuestions()).thenReturn(List.of());
     }
 
     private ChatConversationDO conversation(Long id, Long createdBy, LocalDateTime createdAt) {

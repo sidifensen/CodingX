@@ -216,7 +216,7 @@ class AdminChatConversationControllerTest {
                 "2026-05-28T15:52:32",
                 new AdminChatDashboardKpiView(12, 18, 86, 6, 42, 5),
                 new AdminChatDashboardResourceView(9, 11, 3, 4, 22, 7, 5),
-                new AdminChatDashboardPerformanceView(83.3, 8.3, 8.4, 9200L, 15000L),
+                new AdminChatDashboardPerformanceView(83.3, 8.3, 8.4, 9200L, 15000L, 62, 59, 60000L, 4),
                 List.of(
                     new AdminChatDashboardTrendBucketView(
                         "05-22",
@@ -243,6 +243,10 @@ class AdminChatConversationControllerTest {
             .andExpect(jsonPath("$.data.kpis.activeUserCount").value(12))
             .andExpect(jsonPath("$.data.resources.skillCount").value(9))
             .andExpect(jsonPath("$.data.performance.successRate").value(83.3))
+            .andExpect(jsonPath("$.data.performance.timedTraceCount").value(62))
+            .andExpect(jsonPath("$.data.performance.p95TraceRank").value(59))
+            .andExpect(jsonPath("$.data.performance.slowTraceThresholdMs").value(60000))
+            .andExpect(jsonPath("$.data.performance.slowTraceCount").value(4))
             .andExpect(jsonPath("$.data.trendBuckets[0].label").value("05-22"))
             .andExpect(jsonPath("$.data.trendBuckets[0].messageCount").value(10));
     }

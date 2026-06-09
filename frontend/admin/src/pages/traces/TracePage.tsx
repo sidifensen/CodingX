@@ -1,8 +1,9 @@
 import React from 'react';
 import { ApartmentOutlined, ClockCircleOutlined, HeartOutlined, ReloadOutlined, RiseOutlined, SearchOutlined } from '@ant-design/icons';
 import { Button, Input, Space } from 'antd';
+import { useSearchParams } from 'react-router-dom';
 
-import { AdminChatApi, type AdminTraceRun, type AdminTraceRunPageResult } from '../../api/adminChatApi';
+import { AdminChatApi, type AdminTraceRun, type AdminTraceRunPageResult, type AdminTraceRunQuery } from '../../api/adminChatApi';
 import { TRACE_PAGE_SIZE, normalizeStatus, percentile } from './traceUtils';
 import { TraceStatCard, type TraceStatTone } from './components/TraceStatCard';
 import { TraceRunsTable } from './components/TraceRunsTable';
@@ -13,12 +14,14 @@ type DurationMetric = { value: string; unit: string };
  * 管理端链路追踪列表页：聚焦检索、统计与跳转详情。
  */
 export function TracePage() {
+  const [searchParams] = useSearchParams();
   const [traceIdFilter, setTraceIdFilter] = React.useState('');
   const [queryTraceId, setQueryTraceId] = React.useState('');
   const [pageNo, setPageNo] = React.useState(1);
   const [pageData, setPageData] = React.useState<AdminTraceRunPageResult | null>(null);
   const [loading, setLoading] = React.useState(false);
   const requestIdRef = React.useRef(0);
+  const sort = normalizeTraceSort(searchParams.get('sort'));
 
   const runs = pageData?.records || [];
 
@@ -30,6 +33,7 @@ export function TracePage() {
         current,
         size: TRACE_PAGE_SIZE,
         traceId: nextTraceId.trim() || undefined,
+        sort,
       });
       if (requestIdRef.current !== requestId) return;
       setPageData(result);
@@ -40,7 +44,7 @@ export function TracePage() {
       if (requestIdRef.current !== requestId) return;
       setLoading(false);
     }
-  }, [pageNo, queryTraceId]);
+  }, [pageNo, queryTraceId, sort]);
 
   React.useEffect(() => {
     void loadRuns();
@@ -190,4 +194,11 @@ function formatDurationMetric(durationMs: number): DurationMetric {
     return { value: (duration / 1000).toFixed(2), unit: 's' };
   }
   return { value: (duration / 1000).toFixed(1), unit: 's' };
+}
+
+/**
+ * Trace 列表只识别 Dashboard 慢链路入口需要的排序编码，未知 query 参数保持默认时间倒序。
+ */
+function normalizeTraceSort(sort: string | null): AdminTraceRunQuery['sort'] {
+  return sort === 'duration_desc' ? 'duration_desc' : undefined;
 }

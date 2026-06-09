@@ -217,4 +217,18 @@ describe('TracePage', () => {
     expect(scrollContainer).toHaveClass('flex-1');
     expect(scrollContainer).toHaveClass('overflow-auto');
   });
+
+  it('uses duration descending sort from dashboard slow trace entry', async () => {
+    render(
+      <MemoryRouter initialEntries={['/traces?sort=duration_desc']}>
+        <TracePage />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() =>
+      expect(AdminChatApi.listTraces).toHaveBeenCalledWith(
+        expect.objectContaining({ sort: 'duration_desc' }),
+      ),
+    );
+  });
 });

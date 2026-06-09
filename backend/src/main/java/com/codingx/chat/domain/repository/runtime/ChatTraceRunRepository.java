@@ -34,7 +34,8 @@ public interface ChatTraceRunRepository {
      * @param current 页码（从 1 开始）。
      * @param size 每页大小。
      * @param traceId 链路标识过滤条件，空值表示不过滤。
+     * @param sort 排序口径，duration_desc 表示按耗时倒序，否则按开始时间倒序。
      * @return 分页结果。
      */
-    com.codingx.admin.application.service.AdminTraceRunPageView pageByFilters(int current, int size, String traceId);
+    com.codingx.admin.application.service.AdminTraceRunPageView pageByFilters(int current, int size, String traceId, String sort);
 }

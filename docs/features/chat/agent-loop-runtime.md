@@ -12,9 +12,10 @@
 
 1. `ChatApplicationService` 构造模型历史、技能/专家/搜索上下文和模型可见工具 schema 后进入工具感知循环。若本轮没有可见工具，则直接走普通流式回答，不进入工具循环。
 2. 模型流式返回过程中，`buildStreamHandler` 收集助手正文、thinking 和 `tool_call`。当本轮包含工具调用时，助手正文先被延迟缓冲，避免“我现在执行”这类过程文案直接展示给用户。
-3. `AgentLoopCoordinator` 根据当前轮次、轮次上限、工具调用数量和去重键判断是否继续。重复工具调用会复用上一次结果并标记 `duplicateSkipped`，轮次达到上限后返回中文错误。
-4. 工具执行结果通过 `buildLocalToolEvidenceContext` 写成系统证据追加到下一轮模型历史。模型可基于真实工具输出继续调用工具或生成最终回答。
-5. 当模型不再发起工具调用时，最终正文通过 SSE 增量发布并落库。工具执行失败、轮次上限或用户取消会进入统一收口，更新运行状态并发布错误或终止事件。
+3. `RuntimeSettingService` 从系统配置表读取工具轮次预算。普通工具循环使用 `chat.tool.max_rounds`；目标模式里用户明确要求直接执行、验证或提交时，会再读取 `chat.tool.plan_execution_min_rounds` 作为最低轮次，避免创建目标、读写文件、失败恢复、验证、提交和多次 `update_goal` 在默认短预算内提前耗尽。两个配置最终都会经过 `AgentLoopCoordinator.normalizeMaxRounds` 裁剪，防止误配超出代码硬上限。
+4. `AgentLoopCoordinator` 根据当前轮次、轮次上限、工具调用数量和去重键判断是否继续。重复工具调用会复用上一次结果并标记 `duplicateSkipped`，轮次达到上限后返回中文错误。
+5. 工具执行结果通过 `buildLocalToolEvidenceContext` 写成系统证据追加到下一轮模型历史。模型可基于真实工具输出继续调用工具或生成最终回答。
+6. 当模型不再发起工具调用时，最终正文通过 SSE 增量发布并落库。工具执行失败、轮次上限或用户取消会进入统一收口，更新运行状态并发布错误或终止事件。
 
 ## 关键文件
 
@@ -22,7 +23,13 @@
 - `backend/src/main/java/com/codingx/chat/application/service/agent/AgentLoopResult.java`：描述单次循环判断结果。
 - `backend/src/main/java/com/codingx/chat/application/service/agent/AgentLoopCompletionReason.java`：定义循环收口原因。
 - `backend/src/main/java/com/codingx/chat/application/service/chat/ChatApplicationService.java`：执行模型工具调用、回灌工具证据、发布过程事件。
+- `backend/src/main/java/com/codingx/chat/application/service/support/RuntimeSettingService.java`：从系统配置表读取普通工具最大轮次和目标模式执行型最低轮次。
+- `backend/src/main/resources/db/migration/V20260610_000000__add_plan_mode_tool_round_setting.sql`：新增 `chat.tool.plan_execution_min_rounds` 系统配置项。
+
+## 关键配置
+
+`chat.tool.max_rounds` 表示普通本地工具调用最大轮次，默认值为 `10`。`chat.tool.plan_execution_min_rounds` 表示目标模式执行型任务最低工具轮次，默认值为 `20`。当用户开启目标模式并明确要求直接执行、验证或提交时，后端取两者较大值作为本轮请求预算，再由 `AgentLoopCoordinator` 裁剪到安全硬上限。
 
 ## 测试与验证
 
-- `mvn -Dtest=AgentLoopCoordinatorTest,ChatApplicationToolCallFlowTest test`
+- `mvn -Dtest=AgentLoopCoordinatorTest,ChatApplicationToolCallFlowTest,RuntimeSettingServiceTest test`

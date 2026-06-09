@@ -113,6 +113,70 @@ class RuntimeSettingServiceTest {
     }
 
     /**
+     * 目标模式执行型任务的最低工具轮次应由系统配置表控制，避免为了调整长任务预算必须改代码。
+     */
+    @Test
+    void planModeExecutionMinToolRoundsReadsConfiguredValue() {
+        when(chatRuntimeSettingRepository.findAll()).thenReturn(List.of(
+            ChatRuntimeSetting.builder()
+                .id(2L)
+                .settingKey("chat.tool.plan_execution_min_rounds")
+                .settingValue("18")
+                .valueType("INTEGER")
+                .categoryCode("chat.tool")
+                .description("目标模式执行型任务最低工具轮次")
+                .sortNo(20)
+                .restartRequired(false)
+                .createdAt(LocalDateTime.now())
+                .updatedAt(LocalDateTime.now())
+                .deleted(0)
+                .build()
+        ));
+
+        runtimeSettingService.init();
+
+        assertEquals(18, runtimeSettingService.planModeExecutionMinToolRounds());
+    }
+
+    /**
+     * 目标模式执行型最低轮次同样必须受工具循环硬上限保护，避免配置过大拖垮聊天执行线程。
+     */
+    @Test
+    void planModeExecutionMinToolRoundsClampsMisconfiguredLargeValue() {
+        when(chatRuntimeSettingRepository.findAll()).thenReturn(List.of(
+            ChatRuntimeSetting.builder()
+                .id(2L)
+                .settingKey("chat.tool.plan_execution_min_rounds")
+                .settingValue("10000")
+                .valueType("INTEGER")
+                .categoryCode("chat.tool")
+                .description("目标模式执行型任务最低工具轮次")
+                .sortNo(20)
+                .restartRequired(false)
+                .createdAt(LocalDateTime.now())
+                .updatedAt(LocalDateTime.now())
+                .deleted(0)
+                .build()
+        ));
+
+        runtimeSettingService.init();
+
+        assertEquals(20, runtimeSettingService.planModeExecutionMinToolRounds());
+    }
+
+    /**
+     * 新环境或迁移未执行时应回退到 20，保持目标模式长任务有足够预算完成验证和提交。
+     */
+    @Test
+    void planModeExecutionMinToolRoundsFallsBackToDefaultWhenMissing() {
+        when(chatRuntimeSettingRepository.findAll()).thenReturn(List.of());
+
+        runtimeSettingService.init();
+
+        assertEquals(20, runtimeSettingService.planModeExecutionMinToolRounds());
+    }
+
+    /**
      * 歧义引导参数由系统配置表统一控制，便于管理端按运行策略调整。
      */
     @Test

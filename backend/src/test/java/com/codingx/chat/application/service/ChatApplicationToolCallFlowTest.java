@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -98,6 +99,7 @@ class ChatApplicationToolCallFlowTest {
     @BeforeEach
     void stubRuntimeToolRoundLimit() {
         when(runtimeSettingService.chatToolMaxRounds()).thenReturn(10);
+        lenient().when(runtimeSettingService.planModeExecutionMinToolRounds()).thenReturn(20);
     }
 
     /**

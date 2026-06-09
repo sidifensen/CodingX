@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -66,6 +67,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -216,6 +218,14 @@ class ChatApplicationServiceTest {
      */
     @InjectMocks
     private ChatApplicationService chatApplicationService;
+
+    /**
+     * 目标模式执行型最低轮次默认来自系统配置；单测中使用 lenient 默认值保持长任务预算，避免普通聊天用例产生无关桩告警。
+     */
+    @BeforeEach
+    void stubPlanModeExecutionToolRoundLimit() {
+        lenient().when(runtimeSettingService.planModeExecutionMinToolRounds()).thenReturn(20);
+    }
 
     /**
      * 为当前测试线程绑定运行时 runId，避免单测绕过异步入口后丢失主链路上下文。

@@ -7,6 +7,9 @@ import {
   AdminChatApi,
   type AdminChatConversationDetail,
   type AdminChatConversationMessage,
+  type AdminChatGoalEvent,
+  type AdminChatGoalRecord,
+  type AdminChatGoalStep,
 } from '../api/adminChatApi';
 
 interface MetadataItem {
@@ -75,6 +78,8 @@ export function TaskDetail() {
 
           <MetadataStrip items={buildConversationMetadataItems(detail)} />
 
+          <GoalRecordsSection goals={detail.goals ?? []} />
+
           <div
             className="border-t border-border-hairline pt-xl"
             style={{ marginTop: 40 }}
@@ -92,6 +97,152 @@ export function TaskDetail() {
           </div>
         </section>
       ) : null}
+    </div>
+  );
+}
+
+/**
+ * 目标记录区块展示 chat_goal、chat_goal_step 和 chat_goal_event 三张表的只读排障信息。
+ */
+function GoalRecordsSection({ goals }: { goals: AdminChatGoalRecord[] }) {
+  return (
+    <section
+      data-testid="admin-conversation-goals-section"
+      className="border-t border-border-hairline bg-surface-container-low px-md py-lg sm:px-lg"
+      style={{ marginTop: 40 }}
+    >
+      <div className="mb-lg flex flex-col gap-xs">
+        <Typography.Title level={3} style={{ margin: 0, lineHeight: 1.35 }}>
+          目标记录
+        </Typography.Title>
+        <Typography.Text type="secondary">
+          只读展示当前会话下所有目标、步骤快照和事件流水。
+        </Typography.Text>
+      </div>
+
+      {goals.length === 0 ? (
+        <Empty description="当前会话暂无目标记录" />
+      ) : (
+        <div className="space-y-lg">
+          {goals.map((goal, index) => (
+            <GoalRecordItem key={goal.id || index} goal={goal} index={index} />
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+/**
+ * 单个目标记录把主表字段、步骤快照和事件流水放在同一分组内，便于按目标排查。
+ */
+function GoalRecordItem({ goal, index }: { goal: AdminChatGoalRecord; index: number }) {
+  const steps = goal.steps ?? [];
+  const events = goal.events ?? [];
+
+  return (
+    <article className="space-y-md border-t border-border-hairline py-md first:border-t-0">
+      <div className="flex flex-col gap-sm lg:flex-row lg:items-start lg:justify-between">
+        <div className="min-w-0">
+          <Space className="mb-xs" size={[8, 8]} wrap>
+            <Typography.Text code>#{formatNullable(goal.id)}</Typography.Text>
+            <Tag color={toGoalStatusColor(goal.status)}>{toGoalStatusLabel(goal.status)}</Tag>
+            <InlineHeaderMeta item={{ key: 'goalIndex', label: '序号', value: String(index + 1) }} />
+          </Space>
+          <Typography.Title level={4} className="break-words" style={{ margin: 0, lineHeight: 1.35 }}>
+            {formatNullable(goal.title)}
+          </Typography.Title>
+        </div>
+      </div>
+
+      <MetadataStrip compact items={buildGoalMetadataItems(goal)} />
+
+      {hasValue(goal.description) ? <MessageTextBlock title="目标说明" content={goal.description} /> : null}
+      {hasValue(goal.progressSummary) ? <MessageTextBlock title="进度摘要" content={goal.progressSummary} /> : null}
+
+      <GoalStepsList steps={steps} />
+      <GoalEventsList events={events} />
+    </article>
+  );
+}
+
+/**
+ * 展示目标步骤快照；没有步骤时保留明确空状态，避免管理员误以为页面漏渲染。
+ */
+function GoalStepsList({ steps }: { steps: AdminChatGoalStep[] }) {
+  return (
+    <div className="space-y-sm border-t border-border-hairline pt-md">
+      <SectionSubheading title="步骤快照" count={steps.length} />
+      {steps.length === 0 ? (
+        <Empty description="当前目标暂无步骤快照" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+      ) : (
+        <List
+          className="[&_.ant-list-items]:space-y-sm"
+          dataSource={steps}
+          renderItem={(step) => (
+            <List.Item className="border-t border-border-hairline bg-transparent !px-0 !py-md first:border-t-0">
+              <div className="w-full min-w-0 space-y-sm">
+                <Space size={[8, 8]} wrap>
+                  <Typography.Text code>#{formatNullable(step.id)}</Typography.Text>
+                  <Tag color={toGoalStepStatusColor(step.status)}>{toGoalStepStatusLabel(step.status)}</Tag>
+                  <InlineHeaderMeta item={{ key: 'sortNo', label: '排序', value: formatNullable(step.sortNo) }} />
+                </Space>
+                <Typography.Text strong className="block break-words text-ink">
+                  {formatNullable(step.title)}
+                </Typography.Text>
+                <MetadataStrip compact items={buildGoalStepMetadataItems(step)} />
+                {hasValue(step.detail) ? <MessageTextBlock title="步骤详情" content={step.detail} /> : null}
+              </div>
+            </List.Item>
+          )}
+          split={false}
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * 展示目标事件流水，payloadJson 保留后端原始文本，便于审计工具输入和目标快照。
+ */
+function GoalEventsList({ events }: { events: AdminChatGoalEvent[] }) {
+  return (
+    <div className="space-y-sm border-t border-border-hairline pt-md">
+      <SectionSubheading title="事件流水" count={events.length} />
+      {events.length === 0 ? (
+        <Empty description="当前目标暂无事件流水" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+      ) : (
+        <List
+          className="[&_.ant-list-items]:space-y-sm"
+          dataSource={events}
+          renderItem={(event) => (
+            <List.Item className="border-t border-border-hairline bg-transparent !px-0 !py-md first:border-t-0">
+              <div className="w-full min-w-0 space-y-sm">
+                <Space size={[8, 8]} wrap>
+                  <Typography.Text code>#{formatNullable(event.id)}</Typography.Text>
+                  <Tag color={toGoalEventColor(event.eventType)}>{formatNullable(event.eventType)}</Tag>
+                  <Typography.Text type="secondary">{formatDateTimeFromUnknown(event.createdAt)}</Typography.Text>
+                </Space>
+                <MetadataStrip compact items={buildGoalEventMetadataItems(event)} />
+                {hasValue(event.payloadJson) ? <MessageTextBlock title="事件载荷 JSON" content={event.payloadJson} /> : null}
+              </div>
+            </List.Item>
+          )}
+          split={false}
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * 明细小标题统一承载数量，便于管理员快速判断目标下是否有步骤或事件。
+ */
+function SectionSubheading({ title, count }: { title: string; count: number }) {
+  return (
+    <div className="flex items-center gap-sm">
+      <Typography.Text strong className="text-ink">{title}</Typography.Text>
+      <Tag>{count}</Tag>
     </div>
   );
 }
@@ -146,6 +297,47 @@ function buildConversationMetadataItems(detail: AdminChatConversationDetail): Me
     { key: 'lastRunId', label: '最近运行ID', value: <InlineCode value={detail.lastRunId} /> },
     { key: 'updatedAt', label: '更新时间', value: formatDateTime(detail.updatedAt) },
     { key: 'messageCount', label: '消息数量', value: String(detail.messages?.length ?? 0) },
+  ];
+}
+
+/**
+ * 目标主表字段按排障优先级展示，ID 与 runId 保留 code 样式方便复制比对。
+ */
+function buildGoalMetadataItems(goal: AdminChatGoalRecord): MetadataItem[] {
+  return [
+    { key: 'conversationId', label: '会话ID', value: <InlineCode value={goal.conversationId} /> },
+    { key: 'userId', label: '归属用户', value: <InlineCode value={goal.userId} /> },
+    { key: 'goalKey', label: '目标Key', value: <DetailText value={goal.goalKey} /> },
+    { key: 'createdRunId', label: '创建运行', value: <InlineCode value={goal.createdRunId} /> },
+    { key: 'updatedRunId', label: '更新运行', value: <InlineCode value={goal.updatedRunId} /> },
+    { key: 'createdAt', label: '创建时间', value: formatDateTimeFromUnknown(goal.createdAt) },
+    { key: 'updatedAt', label: '更新时间', value: formatDateTimeFromUnknown(goal.updatedAt) },
+    { key: 'completedAt', label: '终态时间', value: formatDateTimeFromUnknown(goal.completedAt) },
+  ];
+}
+
+/**
+ * 步骤字段覆盖步骤身份、归属和时间状态，辅助核对步骤快照是否被替换。
+ */
+function buildGoalStepMetadataItems(step: AdminChatGoalStep): MetadataItem[] {
+  return [
+    { key: 'goalId', label: '目标ID', value: <InlineCode value={step.goalId} /> },
+    { key: 'stepKey', label: '步骤Key', value: <DetailText value={step.stepKey} /> },
+    { key: 'startedAt', label: '开始时间', value: formatDateTimeFromUnknown(step.startedAt) },
+    { key: 'completedAt', label: '完成时间', value: formatDateTimeFromUnknown(step.completedAt) },
+    { key: 'updatedAt', label: '更新时间', value: formatDateTimeFromUnknown(step.updatedAt) },
+  ];
+}
+
+/**
+ * 事件字段保留会话、目标和运行标识，便于从事件跳回对应 trace/run。
+ */
+function buildGoalEventMetadataItems(event: AdminChatGoalEvent): MetadataItem[] {
+  return [
+    { key: 'goalId', label: '目标ID', value: <InlineCode value={event.goalId} /> },
+    { key: 'conversationId', label: '会话ID', value: <InlineCode value={event.conversationId} /> },
+    { key: 'runId', label: '运行ID', value: <InlineCode value={event.runId} /> },
+    { key: 'createdAt', label: '创建时间', value: formatDateTimeFromUnknown(event.createdAt) },
   ];
 }
 
@@ -301,6 +493,49 @@ function toMessageStatusLabel(status: string): string {
   if (status === 'FAILED') return '失败';
   if (status === 'CANCELLED') return '已取消';
   return status || '未知状态';
+}
+
+function toGoalStatusLabel(status?: string): string {
+  if (status === 'ACTIVE') return '进行中';
+  if (status === 'COMPLETED') return '已完成';
+  if (status === 'BLOCKED') return '已阻塞';
+  if (status === 'CANCELLED') return '已取消';
+  return status || '未知状态';
+}
+
+function toGoalStatusColor(status?: string): string | undefined {
+  if (status === 'ACTIVE') return 'processing';
+  if (status === 'COMPLETED') return 'success';
+  if (status === 'BLOCKED') return 'warning';
+  if (status === 'CANCELLED') return 'default';
+  return undefined;
+}
+
+function toGoalStepStatusLabel(status?: string): string {
+  if (status === 'PENDING') return '待处理';
+  if (status === 'IN_PROGRESS') return '进行中';
+  if (status === 'COMPLETED') return '已完成';
+  if (status === 'BLOCKED') return '已阻塞';
+  if (status === 'CANCELLED') return '已取消';
+  return status || '未知状态';
+}
+
+function toGoalStepStatusColor(status?: string): string | undefined {
+  if (status === 'PENDING') return 'default';
+  if (status === 'IN_PROGRESS') return 'processing';
+  if (status === 'COMPLETED') return 'success';
+  if (status === 'BLOCKED') return 'warning';
+  if (status === 'CANCELLED') return 'default';
+  return undefined;
+}
+
+function toGoalEventColor(eventType?: string): string | undefined {
+  if (eventType === 'GOAL_CREATED') return 'processing';
+  if (eventType === 'GOAL_COMPLETED') return 'success';
+  if (eventType === 'GOAL_BLOCKED') return 'warning';
+  if (eventType === 'GOAL_CANCELLED') return 'default';
+  if (eventType === 'GOAL_UPDATED') return 'blue';
+  return undefined;
 }
 
 function formatNullable(value: unknown): string {

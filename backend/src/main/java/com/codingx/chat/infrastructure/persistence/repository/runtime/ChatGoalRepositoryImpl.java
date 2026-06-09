@@ -81,6 +81,21 @@ public class ChatGoalRepositoryImpl implements ChatGoalRepository {
     }
 
     /**
+     * 管理端读取会话下全部未删除目标，包含 ACTIVE 和终态目标，便于排查完整目标历史。
+     */
+    @Override
+    public List<ChatGoal> findAllByConversationId(Long conversationId) {
+        return chatGoalMapper.selectList(new LambdaQueryWrapper<ChatGoalDO>()
+                .eq(ChatGoalDO::getConversationId, conversationId)
+                .eq(ChatGoalDO::getDeleted, 0)
+                .orderByDesc(ChatGoalDO::getUpdatedAt)
+                .orderByDesc(ChatGoalDO::getId))
+            .stream()
+            .map(this::toDomain)
+            .toList();
+    }
+
+    /**
      * 保存目标主表，已存在目标按主键更新，新增目标插入。
      */
     @Override
@@ -101,6 +116,25 @@ public class ChatGoalRepositoryImpl implements ChatGoalRepository {
         return chatGoalStepMapper.selectList(new LambdaQueryWrapper<ChatGoalStepDO>()
                 .eq(ChatGoalStepDO::getGoalId, goalId)
                 .eq(ChatGoalStepDO::getDeleted, 0)
+                .orderByAsc(ChatGoalStepDO::getSortNo)
+                .orderByAsc(ChatGoalStepDO::getId))
+            .stream()
+            .map(this::toDomain)
+            .toList();
+    }
+
+    /**
+     * 批量查询目标步骤快照，供管理端会话详情一次性聚合目标明细。
+     */
+    @Override
+    public List<ChatGoalStep> findStepsByGoalIds(List<Long> goalIds) {
+        if (goalIds == null || goalIds.isEmpty()) {
+            return List.of();
+        }
+        return chatGoalStepMapper.selectList(new LambdaQueryWrapper<ChatGoalStepDO>()
+                .in(ChatGoalStepDO::getGoalId, goalIds)
+                .eq(ChatGoalStepDO::getDeleted, 0)
+                .orderByAsc(ChatGoalStepDO::getGoalId)
                 .orderByAsc(ChatGoalStepDO::getSortNo)
                 .orderByAsc(ChatGoalStepDO::getId))
             .stream()
@@ -137,6 +171,20 @@ public class ChatGoalRepositoryImpl implements ChatGoalRepository {
         dataObject.setPayloadJson(eventRecord.payloadJson());
         dataObject.setCreatedAt(eventRecord.createdAt());
         chatGoalEventMapper.insert(dataObject);
+    }
+
+    /**
+     * 查询当前会话目标事件流水，事件表无逻辑删除字段，按写入顺序展示原始审计记录。
+     */
+    @Override
+    public List<ChatGoalEventRecord> findEventsByConversationId(Long conversationId) {
+        return chatGoalEventMapper.selectList(new LambdaQueryWrapper<ChatGoalEventDO>()
+                .eq(ChatGoalEventDO::getConversationId, conversationId)
+                .orderByAsc(ChatGoalEventDO::getCreatedAt)
+                .orderByAsc(ChatGoalEventDO::getId))
+            .stream()
+            .map(this::toEventRecord)
+            .toList();
     }
 
     /**
@@ -219,5 +267,20 @@ public class ChatGoalRepositoryImpl implements ChatGoalRepository {
             .updatedAt(dataObject.getUpdatedAt())
             .deleted(dataObject.getDeleted())
             .build();
+    }
+
+    /**
+     * 将目标事件数据库对象转换为仓储事件记录，保留 payloadJson 原文供管理端展示。
+     */
+    private ChatGoalEventRecord toEventRecord(ChatGoalEventDO dataObject) {
+        return new ChatGoalEventRecord(
+            dataObject.getId(),
+            dataObject.getGoalId(),
+            dataObject.getConversationId(),
+            dataObject.getRunId(),
+            dataObject.getEventType(),
+            dataObject.getPayloadJson(),
+            dataObject.getCreatedAt()
+        );
     }
 }

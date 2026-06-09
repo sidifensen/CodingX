@@ -1,13 +1,20 @@
 package com.codingx.admin.application.service;
 
+import cn.hutool.core.collection.CollUtil;
 import com.codingx.chat.application.service.ChatCapabilityMentionSupport;
 import com.codingx.chat.application.service.ChatAttachmentService;
 import com.codingx.chat.domain.model.ChatConversation;
 import com.codingx.chat.domain.model.ChatConversationStatus;
+import com.codingx.chat.domain.model.ChatGoal;
+import com.codingx.chat.domain.model.ChatGoalStep;
 import com.codingx.chat.domain.model.ChatMessage;
 import com.codingx.chat.domain.repository.ChatConversationRepository;
+import com.codingx.chat.domain.repository.ChatGoalRepository;
 import com.codingx.chat.domain.repository.ChatMessageRepository;
 import com.codingx.chat.interfaces.response.AdminChatConversationDetailResponse;
+import com.codingx.chat.interfaces.response.AdminChatConversationDetailResponse.AdminChatGoalEventResponse;
+import com.codingx.chat.interfaces.response.AdminChatConversationDetailResponse.AdminChatGoalRecordResponse;
+import com.codingx.chat.interfaces.response.AdminChatConversationDetailResponse.AdminChatGoalStepResponse;
 import com.codingx.chat.interfaces.response.AdminChatConversationListItemResponse;
 import com.codingx.chat.interfaces.response.ChatAttachmentResponse;
 import com.codingx.chat.interfaces.response.ChatMessageResponse;
@@ -15,6 +22,8 @@ import com.codingx.chat.interfaces.response.PageResult;
 import com.codingx.common.error.ErrorMessageCatalog;
 import com.codingx.common.exception.NotFoundException;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -31,6 +40,8 @@ public class AdminChatConversationService {
     private final ChatMessageRepository chatMessageRepository;
     /** 附件服务，用于把消息附件转换为管理端可展示结构。 */
     private final ChatAttachmentService chatAttachmentService;
+    /** 目标仓储，用于管理端会话详情只读聚合目标主表、步骤和事件。 */
+    private final ChatGoalRepository chatGoalRepository;
 
     /**
      * 分页查询会话列表，支持标题/ID 关键字过滤。
@@ -70,6 +81,7 @@ public class AdminChatConversationService {
         List<ChatMessageResponse> messages = chatMessageRepository.findByConversationId(conversationId).stream()
             .map(this::toMessageResponse)
             .toList();
+        List<AdminChatGoalRecordResponse> goals = buildGoalRecords(conversationId);
         return AdminChatConversationDetailResponse.builder()
             .id(conversation.getId())
             .title(conversation.getTitle())
@@ -81,7 +93,114 @@ public class AdminChatConversationService {
             .createdAt(conversation.getCreatedAt())
             .updatedAt(conversation.getUpdatedAt())
             .messages(messages)
+            .goals(goals)
             .build();
+    }
+
+    /**
+     * 聚合会话目标三表数据，供管理端在单个会话详情内完成目标模式排障。
+     * @param conversationId 会话标识。
+     * @return 目标记录响应列表，没有目标时返回空列表。
+     */
+    private List<AdminChatGoalRecordResponse> buildGoalRecords(Long conversationId) {
+        // 步骤 1：管理端需要查看所有历史目标，不能只读取 active goal。
+        List<ChatGoal> goals = CollUtil.emptyIfNull(chatGoalRepository.findAllByConversationId(conversationId));
+        if (goals.isEmpty()) {
+            return List.of();
+        }
+        List<Long> goalIds = goals.stream().map(ChatGoal::getId).toList();
+        // 步骤 2：批量读取步骤和事件后按目标 ID 分组，避免详情页为每个目标重复查询。
+        Map<Long, List<ChatGoalStep>> stepsByGoalId = CollUtil.emptyIfNull(chatGoalRepository.findStepsByGoalIds(goalIds)).stream()
+            .collect(Collectors.groupingBy(ChatGoalStep::getGoalId));
+        Map<Long, List<ChatGoalRepository.ChatGoalEventRecord>> eventsByGoalId = CollUtil.emptyIfNull(
+                chatGoalRepository.findEventsByConversationId(conversationId)
+            ).stream()
+            .collect(Collectors.groupingBy(ChatGoalRepository.ChatGoalEventRecord::goalId));
+        // 步骤 3：每个目标单独挂载自己的步骤和事件，Long ID 统一字符串化给前端。
+        return goals.stream()
+            .map(goal -> toGoalRecordResponse(
+                goal,
+                stepsByGoalId.getOrDefault(goal.getId(), List.of()),
+                eventsByGoalId.getOrDefault(goal.getId(), List.of())
+            ))
+            .toList();
+    }
+
+    /**
+     * 将目标主表和下属步骤、事件转换为管理端只读响应。
+     * @param goal 目标主表领域对象。
+     * @param steps 目标步骤列表。
+     * @param events 目标事件列表。
+     * @return 管理端目标记录响应。
+     */
+    private AdminChatGoalRecordResponse toGoalRecordResponse(
+        ChatGoal goal,
+        List<ChatGoalStep> steps,
+        List<ChatGoalRepository.ChatGoalEventRecord> events
+    ) {
+        return new AdminChatGoalRecordResponse(
+            stringifyId(goal.getId()),
+            stringifyId(goal.getConversationId()),
+            stringifyId(goal.getUserId()),
+            goal.getGoalKey(),
+            goal.getTitle(),
+            goal.getDescription(),
+            goal.getStatus() == null ? null : goal.getStatus().name(),
+            goal.getProgressSummary(),
+            stringifyId(goal.getCreatedRunId()),
+            stringifyId(goal.getUpdatedRunId()),
+            goal.getCreatedAt(),
+            goal.getUpdatedAt(),
+            goal.getCompletedAt(),
+            CollUtil.emptyIfNull(steps).stream().map(this::toGoalStepResponse).toList(),
+            CollUtil.emptyIfNull(events).stream().map(this::toGoalEventResponse).toList()
+        );
+    }
+
+    /**
+     * 将目标步骤转换为管理端展示结构。
+     * @param step 目标步骤领域对象。
+     * @return 目标步骤响应。
+     */
+    private AdminChatGoalStepResponse toGoalStepResponse(ChatGoalStep step) {
+        return new AdminChatGoalStepResponse(
+            stringifyId(step.getId()),
+            stringifyId(step.getGoalId()),
+            step.getStepKey(),
+            step.getTitle(),
+            step.getStatus() == null ? null : step.getStatus().name(),
+            step.getSortNo(),
+            step.getDetail(),
+            step.getStartedAt(),
+            step.getCompletedAt(),
+            step.getUpdatedAt()
+        );
+    }
+
+    /**
+     * 将目标事件转换为管理端展示结构，payloadJson 保留原文不解析。
+     * @param event 目标事件记录。
+     * @return 目标事件响应。
+     */
+    private AdminChatGoalEventResponse toGoalEventResponse(ChatGoalRepository.ChatGoalEventRecord event) {
+        return new AdminChatGoalEventResponse(
+            stringifyId(event.id()),
+            stringifyId(event.goalId()),
+            stringifyId(event.conversationId()),
+            stringifyId(event.runId()),
+            event.eventType(),
+            event.payloadJson(),
+            event.createdAt()
+        );
+    }
+
+    /**
+     * 将 Long ID 统一转换为字符串，避免管理端 JavaScript 读取 Snowflake ID 时发生精度丢失。
+     * @param id Long ID，可为空。
+     * @return 字符串 ID，空值返回 null。
+     */
+    private String stringifyId(Long id) {
+        return id == null ? null : String.valueOf(id);
     }
 
     /**

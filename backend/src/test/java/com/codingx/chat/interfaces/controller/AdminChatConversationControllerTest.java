@@ -23,6 +23,9 @@ import com.codingx.chat.domain.model.ChatConversationStatus;
 import com.codingx.chat.domain.model.ChatMessageRole;
 import com.codingx.chat.domain.model.ChatMessageStatus;
 import com.codingx.chat.interfaces.response.AdminChatConversationDetailResponse;
+import com.codingx.chat.interfaces.response.AdminChatConversationDetailResponse.AdminChatGoalEventResponse;
+import com.codingx.chat.interfaces.response.AdminChatConversationDetailResponse.AdminChatGoalRecordResponse;
+import com.codingx.chat.interfaces.response.AdminChatConversationDetailResponse.AdminChatGoalStepResponse;
 import com.codingx.chat.interfaces.response.AdminChatConversationListItemResponse;
 import com.codingx.chat.interfaces.response.ChatMessageResponse;
 import com.codingx.chat.interfaces.response.PageResult;
@@ -128,6 +131,42 @@ class AdminChatConversationControllerTest {
                     List.of(),
                     null
                 )))
+                .goals(List.of(new AdminChatGoalRecordResponse(
+                    "7001",
+                    "2001",
+                    "1002",
+                    "default",
+                    "修复聊天目标展示",
+                    "管理端展示目标三表",
+                    "ACTIVE",
+                    "已进入实现阶段",
+                    "5001",
+                    "5002",
+                    LocalDateTime.of(2026, 6, 9, 10, 1, 0),
+                    LocalDateTime.of(2026, 6, 9, 10, 4, 0),
+                    null,
+                    List.of(new AdminChatGoalStepResponse(
+                        "8001",
+                        "7001",
+                        "step-1",
+                        "补充管理端测试",
+                        "COMPLETED",
+                        0,
+                        "先证明目标三表还未返回",
+                        LocalDateTime.of(2026, 6, 9, 10, 2, 0),
+                        LocalDateTime.of(2026, 6, 9, 10, 3, 0),
+                        LocalDateTime.of(2026, 6, 9, 10, 3, 0)
+                    )),
+                    List.of(new AdminChatGoalEventResponse(
+                        "9001",
+                        "7001",
+                        "2001",
+                        "5002",
+                        "GOAL_UPDATED",
+                        "{\"goal\":{\"title\":\"修复聊天目标展示\"}}",
+                        LocalDateTime.of(2026, 6, 9, 10, 4, 0)
+                    ))
+                )))
                 .build()
         );
 
@@ -135,7 +174,11 @@ class AdminChatConversationControllerTest {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.success").value(true))
             .andExpect(jsonPath("$.data.id").value(2001))
-            .andExpect(jsonPath("$.data.messages[0].content").value("怎么报销？"));
+            .andExpect(jsonPath("$.data.messages[0].content").value("怎么报销？"))
+            .andExpect(jsonPath("$.data.goals[0].id").value("7001"))
+            .andExpect(jsonPath("$.data.goals[0].steps[0].title").value("补充管理端测试"))
+            .andExpect(jsonPath("$.data.goals[0].events[0].eventType").value("GOAL_UPDATED"))
+            .andExpect(jsonPath("$.data.goals[0].events[0].payloadJson").value("{\"goal\":{\"title\":\"修复聊天目标展示\"}}"));
     }
 
     /**

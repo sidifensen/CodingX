@@ -217,6 +217,13 @@ class ChatGoalServiceTest {
         }
 
         @Override
+        public List<ChatGoal> findAllByConversationId(Long conversationId) {
+            return goals.values().stream()
+                .filter(goal -> conversationId.equals(goal.getConversationId()))
+                .toList();
+        }
+
+        @Override
         public void saveGoal(ChatGoal goal) {
             savedGoals.add(goal);
             goals.put(String.valueOf(goal.getId()), goal);
@@ -225,6 +232,16 @@ class ChatGoalServiceTest {
         @Override
         public List<ChatGoalStep> findStepsByGoalId(Long goalId) {
             return stepsByGoalId.getOrDefault(String.valueOf(goalId), List.of());
+        }
+
+        @Override
+        public List<ChatGoalStep> findStepsByGoalIds(List<Long> goalIds) {
+            if (goalIds == null || goalIds.isEmpty()) {
+                return List.of();
+            }
+            return goalIds.stream()
+                .flatMap(goalId -> findStepsByGoalId(goalId).stream())
+                .toList();
         }
 
         @Override
@@ -237,6 +254,13 @@ class ChatGoalServiceTest {
         @Override
         public void appendEvent(ChatGoalRepository.ChatGoalEventRecord eventRecord) {
             events.add(eventRecord);
+        }
+
+        @Override
+        public List<ChatGoalRepository.ChatGoalEventRecord> findEventsByConversationId(Long conversationId) {
+            return events.stream()
+                .filter(event -> conversationId.equals(event.conversationId()))
+                .toList();
         }
     }
 

@@ -106,8 +106,51 @@ export interface AdminChatConversationMessage {
   userVote?: number | null;
 }
 
+export interface AdminChatGoalStep {
+  id: string;
+  goalId: string;
+  stepKey?: string;
+  title?: string;
+  status?: string;
+  sortNo?: number;
+  detail?: string;
+  startedAt?: string;
+  completedAt?: string;
+  updatedAt?: string;
+}
+
+export interface AdminChatGoalEvent {
+  id: string;
+  goalId: string;
+  conversationId: string;
+  runId?: string;
+  eventType?: string;
+  payloadJson?: string;
+  createdAt?: string;
+}
+
+export interface AdminChatGoalRecord {
+  id: string;
+  conversationId: string;
+  userId: string;
+  goalKey?: string;
+  title?: string;
+  description?: string;
+  status?: string;
+  progressSummary?: string;
+  createdRunId?: string;
+  updatedRunId?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  completedAt?: string;
+  steps?: AdminChatGoalStep[];
+  events?: AdminChatGoalEvent[];
+}
+
 export interface AdminChatConversationDetail extends AdminChatConversationListItem {
   messages: AdminChatConversationMessage[];
+  // 管理端会话详情只读展示目标三表数据，缺失时按空数组处理。
+  goals?: AdminChatGoalRecord[];
 }
 
 export interface AdminChatConversationQuery {

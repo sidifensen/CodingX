@@ -41,6 +41,14 @@ public interface ChatGoalRepository {
     Optional<ChatGoal> findByGoalKeyAndConversationIdAndUserId(String goalKey, Long conversationId, Long userId);
 
     /**
+     * 管理端按会话查询全部未删除目标，用于会话详情只读排障。
+     *
+     * @param conversationId 会话 ID。
+     * @return 当前会话下全部未删除目标，通常按更新时间倒序排列。
+     */
+    List<ChatGoal> findAllByConversationId(Long conversationId);
+
+    /**
      * 保存目标主表，存在则更新，不存在则插入。
      *
      * @param goal 目标实体。
@@ -54,6 +62,14 @@ public interface ChatGoalRepository {
      * @return 按排序号升序排列的步骤列表。
      */
     List<ChatGoalStep> findStepsByGoalId(Long goalId);
+
+    /**
+     * 管理端批量查询多个目标的未删除步骤快照，避免会话详情逐目标查询。
+     *
+     * @param goalIds 目标 ID 列表。
+     * @return 目标步骤列表，按目标 ID、排序号和步骤 ID 稳定排列。
+     */
+    List<ChatGoalStep> findStepsByGoalIds(List<Long> goalIds);
 
     /**
      * 替换目标步骤快照，旧步骤逻辑删除，新步骤重新写入。
@@ -70,6 +86,14 @@ public interface ChatGoalRepository {
      * @param eventRecord 事件记录。
      */
     void appendEvent(ChatGoalEventRecord eventRecord);
+
+    /**
+     * 管理端按会话查询目标事件流水，用于展示 chat_goal_event 原始审计记录。
+     *
+     * @param conversationId 会话 ID。
+     * @return 当前会话下全部目标事件，按创建时间和事件 ID 稳定排列。
+     */
+    List<ChatGoalEventRecord> findEventsByConversationId(Long conversationId);
 
     /**
      * 目标事件记录，保存工具输入和更新结果快照，便于审计和恢复。

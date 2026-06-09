@@ -2766,7 +2766,7 @@ function CodeReviewSidebar({
             <div className="space-y-1 border-b border-border px-3 py-3">
               {visibleFileDiffs.map((fileDiff) => (
                 <button
-                  key={`${fileDiff.path}-${fileDiff.diff}`}
+                  key={getFileDiffStableKey(fileDiff)}
                   type="button"
                   onClick={() => setActivePath(fileDiff.path)}
                   className={`flex w-full min-w-0 items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors ${
@@ -5820,7 +5820,7 @@ function EditedFilesSummary({
           const isActive = activeFileDiff?.path === fileDiff.path;
           const panelId = `edited-file-diff-panel-${messageId}-${cardId}-${fileDiffSlug}`;
           return (
-            <div key={`${fileDiff.path}-${fileDiff.diff}`} className="space-y-1">
+            <div key={getFileDiffStableKey(fileDiff)} className="space-y-1">
               <button
                 type="button"
                 data-testid={`edited-file-row-${messageId}-${cardId}-${fileDiffSlug}`}
@@ -5973,7 +5973,7 @@ function DiffTextBlock({
       ) : null}
       {lines.map((line, index) => (
         <span
-          key={`${index}-${line}`}
+          key={index}
           data-testid="diff-line"
           className={`block border-l-2 px-2 ${
             line.startsWith('+') && !line.startsWith('+++')
@@ -6082,6 +6082,13 @@ function getFileDiffSlug(path: string): string {
     .trim()
     .replace(/[^A-Za-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '') || 'file';
+}
+
+/**
+ * 构造文件差异的 React 稳定键；流式写入时 diff 会频繁增长，组件身份只能绑定文件路径。
+ */
+function getFileDiffStableKey(fileDiff: FileDiffItem): string {
+  return fileDiff.path || fileDiff.newPath || fileDiff.oldPath || 'unknown';
 }
 
 /**

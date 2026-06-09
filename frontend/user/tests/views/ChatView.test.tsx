@@ -1003,6 +1003,90 @@ describe('ChatView', () => {
   });
 
   /**
+   * 同一个文件在流式写入中不断更新 diff 时，已展开的内嵌面板必须原地更新，不能卸载重建造成闪烁。
+   */
+  it('应在同一文件差异流式更新时保持内嵌弹窗节点稳定', async () => {
+    const buildWorkspaceWithDiff = (diffText: string) =>
+      createWorkspace({
+        messages: [
+          {
+            id: '706c',
+            conversationId: '2001',
+            role: 'ASSISTANT',
+            content: '正在编辑',
+            processCards: [
+              {
+                id: 'tool-call-706c',
+                type: 'tool_call',
+                title: '行动',
+                summary: '正在编辑 src/live.ts',
+                status: 'running',
+                toolId: 'write',
+                displayName: '写文件',
+                diffSummary: { filesChanged: 1, additions: 2, deletions: 0 },
+                fileDiffs: [
+                  {
+                    path: 'src/live.ts',
+                    oldPath: 'src/live.ts',
+                    newPath: 'src/live.ts',
+                    status: 'pending',
+                    additions: 2,
+                    deletions: 0,
+                    diff: diffText,
+                  },
+                ],
+              },
+            ],
+            status: 'streaming',
+          } as any,
+        ],
+        executionSteps: [],
+        references: [],
+        artifacts: [],
+        isStreaming: true,
+      });
+
+    const firstDiff = [
+      'diff --git a/src/live.ts b/src/live.ts',
+      '--- a/src/live.ts',
+      '+++ b/src/live.ts',
+      '@@ -1 +1 @@',
+      '+export const first = true;',
+    ].join('\n');
+    const secondDiff = [
+      firstDiff,
+      '+export const second = true;',
+    ].join('\n');
+    const { rerender } = render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={buildWorkspaceWithDiff(firstDiff)}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId('edited-file-row-706c-tool-call-706c-src-live-ts'));
+    const dialogBefore = screen.getByRole('dialog', { name: '文件差异内容：src/live.ts' });
+    expect(dialogBefore).toHaveTextContent('+export const first = true;');
+
+    rerender(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={buildWorkspaceWithDiff(secondDiff)}
+      />,
+    );
+
+    const dialogAfter = screen.getByRole('dialog', { name: '文件差异内容：src/live.ts' });
+    expect(dialogAfter).toBe(dialogBefore);
+    expect(dialogAfter).toHaveTextContent('+export const second = true;');
+    expect(screen.getByTestId('edited-file-row-706c-tool-call-706c-src-live-ts')).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    );
+  });
+
+  /**
    * 右侧代码审查栏应支持本轮、上轮和 git 工作区差异模式切换。
    */
   it('应在右侧代码审查栏切换会话差异和工作区git差异', async () => {

@@ -80,6 +80,8 @@ import org.springframework.stereotype.Service;
 public class ChatApplicationService {
 
     private static final int PROMPT_CONTEXT_LOG_PREVIEW_LENGTH = 1_800;
+    private static final int TOOL_ARGUMENT_PROGRESS_INITIAL_EAGER_LENGTH = 320;
+    private static final int TOOL_ARGUMENT_PROGRESS_CHUNK_SIZE = 160;
     private static final String QUICK_GREETING_REPLY = "你好，我在。你可以直接说要查资料、改代码、看项目，或让我帮你梳理问题。";
     private static final Set<String> QUICK_GREETING_TEXTS = Set.of(
         "你好",
@@ -2442,7 +2444,8 @@ public class ChatApplicationService {
 
     /**
      * 判断本次工具参数进度是否需要推送给前端。
-     * 业务约束：write.content 可能按 token 级分片返回，首片必须立即显示，后续按长度间隔刷新即可。
+     * 业务约束：write.content 可能按 token 级分片返回，首片必须立即显示；
+     * 超过初始预览长度后仍要按小块刷新，避免前端几秒后一次性冒出几十行代码。
      *
      * @param toolCallDelta 工具参数进度。
      * @param publishedLengths 已发布长度缓存。
@@ -2455,7 +2458,11 @@ public class ChatApplicationService {
         String key = StrUtil.blankToDefault(toolCallDelta.callId(), toolCallDelta.toolCode());
         int currentLength = StrUtil.length(toolCallDelta.accumulatedArguments());
         Integer previousLength = publishedLengths.get(key);
-        if (previousLength == null || currentLength < 800 || currentLength - previousLength >= 800) {
+        if (
+            previousLength == null ||
+                currentLength <= TOOL_ARGUMENT_PROGRESS_INITIAL_EAGER_LENGTH ||
+                currentLength - previousLength >= TOOL_ARGUMENT_PROGRESS_CHUNK_SIZE
+        ) {
             publishedLengths.put(key, currentLength);
             return true;
         }

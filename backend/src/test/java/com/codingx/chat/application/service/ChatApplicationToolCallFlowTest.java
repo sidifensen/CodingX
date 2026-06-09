@@ -465,6 +465,7 @@ class ChatApplicationToolCallFlowTest {
             when(conversationSummaryService.buildModelHistory(any(), any())).thenAnswer(invocation -> invocation.getArgument(1));
             when(conversationTitleService.generateTitle(any(), any())).thenReturn("肉鸽贪吃蛇");
             when(llmResponseCleaner.clean(any())).thenAnswer(invocation -> invocation.getArgument(0));
+            when(promptTemplateLoader.render(eq("local-tool-evidence-context"), any())).thenReturn("工具证据上下文");
             when(chatToolSpecService.listModelVisibleToolSpecs()).thenReturn(List.of(
                 new ChatToolSpec("write", "写文件", Map.of("type", "object"))
             ));
@@ -478,12 +479,21 @@ class ChatApplicationToolCallFlowTest {
             doAnswer(invocation -> {
                 AiChatClient.ToolAwareStreamHandler handler = invocation.getArgument(3);
                 if (modelRound.incrementAndGet() == 1) {
-                    String firstArguments = "{\"path\":\"rogue_snake.html\",\"content\":\"<!DOCTYPE html>\\n<html";
+                    String firstContent = "<!DOCTYPE html>\\n<html" + "x".repeat(820);
+                    String secondContent = firstContent + "streaming-second-marker" + "y".repeat(145);
+                    String firstArguments = "{\"path\":\"rogue_snake.html\",\"content\":\"" + firstContent;
+                    String secondArguments = "{\"path\":\"rogue_snake.html\",\"content\":\"" + secondContent;
                     handler.onToolCallDelta(new AiToolCallDelta(
                         "call-write-1",
                         "write",
                         firstArguments,
                         firstArguments
+                    ));
+                    handler.onToolCallDelta(new AiToolCallDelta(
+                        "call-write-1",
+                        "write",
+                        secondArguments.substring(firstArguments.length()),
+                        secondArguments
                     ));
                     handler.onToolCall(new AiToolCall(
                         "call-write-1",
@@ -510,16 +520,20 @@ class ChatApplicationToolCallFlowTest {
                 .filter(Map.class::isInstance)
                 .map(payload -> (Map<String, Object>) payload)
                 .toList();
-            Map<String, Object> progressPayload = payloads.stream()
+            List<Map<String, Object>> progressPayloads = payloads.stream()
                 .filter(payload -> "progress".equals(payload.get("phase")))
-                .findFirst()
-                .orElseThrow();
+                .toList();
+            assertTrue(progressPayloads.size() >= 2);
+            Map<String, Object> progressPayload = progressPayloads.get(0);
             assertEquals("write", progressPayload.get("toolId"));
             assertEquals("正在编辑 rogue_snake.html", progressPayload.get("reactAction"));
             @SuppressWarnings("unchecked")
             Map<String, Object> params = (Map<String, Object>) progressPayload.get("params");
             assertEquals("rogue_snake.html", params.get("path"));
             assertTrue(String.valueOf(params.get("content")).contains("<!DOCTYPE html>"));
+            @SuppressWarnings("unchecked")
+            Map<String, Object> latestParams = (Map<String, Object>) progressPayloads.get(1).get("params");
+            assertTrue(String.valueOf(latestParams.get("content")).contains("streaming-second-marker"));
         } finally {
             ChatExecutionContext.clear();
         }

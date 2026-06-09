@@ -35,4 +35,22 @@ class SseChatStreamPublisherTest {
         assertEquals("回答内容", payload.get("content"));
         assertEquals("会话标题", payload.get("title"));
     }
+
+    /**
+     * Hook 通知应使用独立 SSE 事件名，避免和消息正文、工具过程事件混淆。
+     */
+    @Test
+    void publishHookNotificationShouldPublishHookNotificationEvent() {
+        ChatSseRegistry registry = org.mockito.Mockito.mock(ChatSseRegistry.class);
+        SseChatStreamPublisher publisher = new SseChatStreamPublisher(registry);
+        Map<String, Object> notification = Map.of(
+            "hookCode", "task-completed",
+            "title", "CodingX 任务完成",
+            "body", "后台任务已完成"
+        );
+
+        publisher.publishHookNotification(2001L, notification);
+
+        verify(registry).publish(2001L, "hook-notification", notification);
+    }
 }

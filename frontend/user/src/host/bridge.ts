@@ -1,4 +1,10 @@
-import { CodingxHostBridge, HostContext, HostWindowState, LocalDirectoryEntry } from './types';
+import {
+  CodingxHostBridge,
+  DesktopNotificationPayload,
+  HostContext,
+  HostWindowState,
+  LocalDirectoryEntry,
+} from './types';
 
 /**
  * 在开发态浏览器验证场景可通过全局开关注入桌面宿主模式，便于复用同一套标题栏交互。
@@ -83,6 +89,10 @@ function createWebFallbackBridge(): CodingxHostBridge {
     },
     async invokeDesktopMenuAction(): Promise<void> {
       return;
+    },
+    async showDesktopNotification(_payload: DesktopNotificationPayload): Promise<boolean> {
+      // Web 宿主没有系统通知桥接，显式返回 false 方便调用方区分已忽略和已展示。
+      return false;
     },
     onWindowStateChanged(): () => void {
       return () => undefined;

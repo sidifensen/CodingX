@@ -42,3 +42,19 @@ export type DesktopMenuAction =
   | 'window-maximize-toggle'
   | 'window-close'
   | 'toggle-dev-tools';
+
+/**
+ * 渲染层请求桌面系统通知时传入的载荷；字段主要来自后端 Hook SSE。
+ */
+export interface DesktopNotificationPayload {
+  title?: string;
+  body?: string;
+  conversationId?: string | number | null;
+  runId?: string | number | null;
+  hookCode?: string | null;
+  hookName?: string | null;
+  triggerPoint?: string | null;
+  actionType?: string | null;
+  contextText?: string | null;
+  toolCode?: string | null;
+}

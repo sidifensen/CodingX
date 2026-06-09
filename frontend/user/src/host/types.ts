@@ -47,6 +47,22 @@ export type DesktopMenuAction =
   | 'toggle-dev-tools';
 
 /**
+ * 描述桌面系统通知载荷；后端 Hook 通知与前端宿主桥接复用该结构。
+ */
+export interface DesktopNotificationPayload {
+  title?: string;
+  body?: string;
+  conversationId?: string | number | null;
+  runId?: string | number | null;
+  hookCode?: string | null;
+  hookName?: string | null;
+  triggerPoint?: string | null;
+  actionType?: string | null;
+  contextText?: string | null;
+  toolCode?: string | null;
+}
+
+/**
  * 描述本地目录浏览结果项。
  */
 export interface LocalDirectoryEntry {
@@ -65,6 +81,7 @@ export interface CodingxHostBridge {
   toggleMaximizeWindow: () => Promise<HostWindowState | null>;
   closeWindow: () => Promise<void>;
   invokeDesktopMenuAction: (action: DesktopMenuAction) => Promise<void>;
+  showDesktopNotification: (payload: DesktopNotificationPayload) => Promise<boolean>;
   onWindowStateChanged: (listener: (state: HostWindowState) => void) => (() => void);
   pickRepositoryDirectory: () => Promise<string | null>;
   bindRepositoryPath: (

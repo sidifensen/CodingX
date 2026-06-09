@@ -61,6 +61,7 @@ import {
   writeWorkspaceSnapshot,
 } from './localConversationStorage';
 import { buildOptimisticUserMessage } from './messagePresentation';
+import { resolveHostBridge } from '../../host/bridge';
 
 const DEFAULT_CLOUD_WORKSPACE_LABEL = '云端历史记录';
 const DEFAULT_LOCAL_WORKSPACE_LABEL = '本地历史记录';
@@ -546,6 +547,7 @@ export function useChatWorkspace(
   const onUnauthorizedRef = useRef(options?.onUnauthorized);
   onUnauthorizedRef.current = options?.onUnauthorized;
   const hostContext = options?.hostContext ?? null;
+  const hostBridge = useMemo(() => resolveHostBridge(), []);
   const hostType = hostContext?.hostType ?? 'web';
   const hostBoundRepositoryPath = hostContext?.localResource?.boundRepositoryPath ?? null;
   const hostWorkspaceId = normalizeWorkspaceId(hostContext?.localResource?.workspaceId);
@@ -3530,6 +3532,15 @@ export function useChatWorkspace(
     submitLockId?: number,
   ) => {
     if (!isActiveStreamSession(streamSessionId)) {
+      return;
+    }
+    if (eventName === 'hook-notification' && isRecord(payload)) {
+      // 业务约束：Hook 通知只在桌面宿主且明确声明系统通知能力时触发，Web 页面保持静默消费。
+      if (hostContext?.hostType === 'desktop' && hostContext.capabilities.desktopNotifications) {
+        void hostBridge.showDesktopNotification(payload).catch((error) => {
+          console.warn('桌面系统通知调用失败:', error);
+        });
+      }
       return;
     }
     if (eventName === 'meta' && isRecord(payload)) {

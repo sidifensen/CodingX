@@ -14,6 +14,18 @@ describe('resolveHostBridge', () => {
     expect(context.capabilities.localFolderPicker).toBe(false);
   });
 
+  it('应在 Web fallback 中忽略桌面通知请求', async () => {
+    const bridge = resolveHostBridge();
+
+    await expect(
+      bridge.showDesktopNotification({
+        title: 'CodingX 任务完成',
+        body: '后台任务已完成',
+        conversationId: '2001',
+      }),
+    ).resolves.toBe(false);
+  });
+
   it('应优先返回桌面宿主注入的桥接对象', async () => {
     const desktopBridge = {
       getContext: async () => ({
@@ -72,6 +84,7 @@ describe('resolveHostBridge', () => {
       }),
       closeWindow: async () => undefined,
       invokeDesktopMenuAction: async () => undefined,
+      showDesktopNotification: async () => true,
       onWindowStateChanged: () => () => undefined,
     };
 

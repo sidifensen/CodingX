@@ -61,6 +61,15 @@ public class NoopChatStreamPublisher implements ChatStreamPublisher {
     }
 
     /**
+     * 忽略 Hook 桌面通知事件。
+     * @param conversationId 会话标识。
+     * @param payload Hook 通知载荷。
+     */
+    @Override
+    public void publishHookNotification(Long conversationId, Object payload) {
+    }
+
+    /**
      * 忽略助手完成事件。
      * @param conversationId 会话标识。
      * @param content 助手完整回复。

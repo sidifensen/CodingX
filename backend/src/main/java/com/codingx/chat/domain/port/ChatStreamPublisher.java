@@ -69,6 +69,15 @@ public interface ChatStreamPublisher {
     void publishGoal(Long conversationId, Object payload);
 
     /**
+     * 发布 Hook 桌面通知事件，供桌面宿主把任务生命周期提醒转成系统通知。
+     * @param conversationId 会话标识；为空时基础设施层会忽略该事件。
+     * @param payload Hook 通知载荷，包含标题、正文、触发点和规则编码等上下文。
+     */
+    default void publishHookNotification(Long conversationId, Object payload) {
+        // 默认空实现用于历史测试桩和非 SSE 场景；真实桌面通知由 SseChatStreamPublisher 发布。
+    }
+
+    /**
      * 发布助手回复完成事件。
      * 业务约束：本地临时会话没有云端消息主键，继续使用该兼容入口，不向前端伪造可反馈的消息 ID。
      * @param conversationId 会话标识。

@@ -74,7 +74,7 @@ public class AutomationTaskExecutionService {
         } catch (Exception exception) {
             // 步骤 2：交付会话解析失败属于自动化执行失败，必须记录状态但不能影响下一轮调度扫描。
             log.warn(
-                "自动化任务执行派发失败: taskId={}, userId={}, sourceConversationId={}, message={}",
+                "自动化任务执行派发失败: 任务ID={}, 用户ID={}, 来源会话ID={}, 异常信息={}",
                 dispatchSnapshot.getId(),
                 dispatchSnapshot.getUserId(),
                 dispatchSnapshot.getSourceConversationId(),

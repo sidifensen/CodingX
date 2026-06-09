@@ -35,7 +35,7 @@ public class AutomationTaskScheduler {
         List<AutomationTask> triggeredTasks = automationTaskService.triggerDueTasks(now);
         // 步骤 3：仅在有任务触发时打印摘要日志，避免空扫描持续刷屏。
         if (!triggeredTasks.isEmpty()) {
-            log.info("automation scheduler triggered {} due task(s) at {}", triggeredTasks.size(), now);
+            log.info("自动化调度器已触发到期任务: 数量={}, 扫描时间={}", triggeredTasks.size(), now);
             // 步骤 4：状态认领成功后继续派发真实执行，避免任务只显示触发但没有结果。
             automationTaskExecutionService.executeTriggeredTasks(triggeredTasks);
         }

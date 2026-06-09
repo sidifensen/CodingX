@@ -1,10 +1,17 @@
-import { app, BrowserWindow, dialog, ipcMain, session } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Notification, session } from 'electron';
 import { existsSync } from 'node:fs';
 import { readdir } from 'node:fs/promises';
 import path from 'node:path';
 import dotenv from 'dotenv';
-import { DesktopMenuAction, HostContext, HostWindowState, LocalDirectoryEntry } from './types';
+import {
+  DesktopMenuAction,
+  DesktopNotificationPayload,
+  HostContext,
+  HostWindowState,
+  LocalDirectoryEntry,
+} from './types';
 import { resolvePackagedApiRedirectUrl } from './apiProxy';
+import { normalizeDesktopNotificationPayload } from './desktopNotification';
 
 let mainWindow: BrowserWindow | null = null;
 let packagedApiProxyRegistered = false;
@@ -253,6 +260,32 @@ function registerIpcHandlers() {
     await handleDesktopMenuAction(action);
   });
 
+  ipcMain.handle('host:show-desktop-notification', async (_event, payload: DesktopNotificationPayload) => {
+    if (!mainWindow || !Notification.isSupported()) {
+      return false;
+    }
+    // 步骤 1：主进程统一清洗通知文本，避免渲染层或后端传入空标题导致系统通知不可读。
+    const normalizedPayload = normalizeDesktopNotificationPayload(payload);
+    const notification = new Notification({
+      title: normalizedPayload.title,
+      body: normalizedPayload.body,
+      silent: false,
+    });
+    // 步骤 2：点击系统通知时只聚焦现有窗口，不在主进程中擅自改路由或切换会话。
+    notification.on('click', () => {
+      if (!mainWindow) {
+        return;
+      }
+      if (mainWindow.isMinimized()) {
+        mainWindow.restore();
+      }
+      mainWindow.show();
+      mainWindow.focus();
+    });
+    notification.show();
+    return true;
+  });
+
   ipcMain.handle('host:pick-repository-directory', async () => {
     const result = await dialog.showOpenDialog({
       title: '选择本地仓库目录',
@@ -298,6 +331,10 @@ function registerIpcHandlers() {
 
 app.whenReady().then(async () => {
   loadDesktopEnv();
+  if (process.platform === 'win32') {
+    // Windows 通知中心需要稳定 AppUserModelId 才能把通知归到 CodingX 应用名下。
+    app.setAppUserModelId('com.codingx.desktop');
+  }
   registerIpcHandlers();
   await createWindow();
   if (mainWindow) {

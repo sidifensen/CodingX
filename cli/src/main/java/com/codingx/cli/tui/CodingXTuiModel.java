@@ -390,9 +390,8 @@ public class CodingXTuiModel implements Model {
                     return UpdateResult.from(this, null);
                 }
                 if (isSubmitKey(keyPressMessage)) {
-                    if (selectSlashCommand()) {
-                        return UpdateResult.from(this, null);
-                    }
+                    // Enter 与 Tab 的语义不同：Enter 先落入当前高亮命令，再继续走下方提交链路。
+                    applyHighlightedSlashCommand();
                 }
                 if (isTabKey(keyPressMessage)) {
                     if (selectSlashCommand() || completeUniqueSlashCommand()) {
@@ -1138,19 +1137,29 @@ public class CodingXTuiModel implements Model {
     }
 
     /**
-     * 选中当前高亮的命令填入输入框；输入已经与某个命令完全匹配时不消费按键，让 Enter 走提交流程。
+     * 选中当前高亮的命令填入输入框；输入已经与某个命令完全匹配时不消费 Tab，让用户继续编辑。
      *
      * @return true 表示已选中并消费了本次操作。
      */
     private boolean selectSlashCommand() {
         String value = normalizeRendererNewlines(textarea.value()).trim();
+        // 输入已经是完整命令时 Tab 不重复选中自己，保留当前输入状态。
+        if (slashCommandDisplays().stream().anyMatch(c -> c.command().equalsIgnoreCase(value))) {
+            return false;
+        }
+        return applyHighlightedSlashCommand();
+    }
+
+    /**
+     * 将当前高亮命令写入输入框；Enter 会调用它后继续走提交链路，Tab 则由调用方直接消费。
+     *
+     * @return true 表示存在可落入输入框的高亮命令。
+     */
+    private boolean applyHighlightedSlashCommand() {
+        String value = normalizeRendererNewlines(textarea.value()).trim();
         String keyword = slashCommandKeyword(value);
         List<SlashCommandDisplay> filtered = filteredSlashCommands(keyword);
         if (filtered.isEmpty()) {
-            return false;
-        }
-        // 输入已经是完整命令时让 Enter 直接提交，而不是重新选中自己。
-        if (slashCommandDisplays().stream().anyMatch(c -> c.command().equalsIgnoreCase(value))) {
             return false;
         }
         int index = Math.min(slashCommandSelectedIndex, filtered.size() - 1);

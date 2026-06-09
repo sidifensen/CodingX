@@ -752,7 +752,7 @@ class CodingXTuiModelTest {
     }
 
     @Test
-    void enterShouldSelectHighlightedSlashCommand() {
+    void enterShouldSubmitHighlightedSlashCommand() {
         CapturingStreamingEventSource eventSource = new CapturingStreamingEventSource();
         CodingXTuiModel model = new CodingXTuiModel(
             tempDir.resolve("workspace"),
@@ -769,8 +769,30 @@ class CodingXTuiModelTest {
         model.update(new KeyPressMessage(new Key(KeyType.keyCR)));
 
         String view = stripAnsi(model.view());
-        assertTrue(view.contains("› /help█"), view);
+        assertTrue(view.contains("可用命令"), view);
+        assertTrue(view.contains("/login   登录 CodingX"), view);
+        assertFalse(view.contains("› /help█"), view);
         assertTrue(eventSource.tasks.isEmpty(), "命令面板选中不应提交任务");
+    }
+
+    @Test
+    void enterShouldSubmitHighlightedBackendSlashCommand() {
+        CapturingStreamingEventSource eventSource = new CapturingStreamingEventSource();
+        CodingXTuiModel model = new CodingXTuiModel(
+            tempDir.resolve("workspace"),
+            eventSource,
+            new TerminalRenderer(),
+            null,
+            backendSlashCatalog()
+        );
+
+        pressRunes(model, "/r");
+        model.update(new KeyPressMessage(new Key(KeyType.keyCR)));
+
+        String view = stripAnsi(model.view());
+        assertEquals(List.of("/review"), eventSource.tasks);
+        assertTrue(view.contains("› /review"), view);
+        assertFalse(view.contains("› /r█"), view);
     }
 
     @Test

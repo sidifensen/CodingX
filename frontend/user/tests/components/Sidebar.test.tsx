@@ -22,6 +22,8 @@ function createConversation(index: number) {
 function createSidebarProps(overrides?: {
   workspaceGroups?: WorkspaceConversationGroup[];
   onLoadMoreConversations?: ReturnType<typeof vi.fn>;
+  desktopWidth?: number;
+  onDesktopWidthChange?: ReturnType<typeof vi.fn>;
 }) {
   const defaultConversations = Array.from({ length: 11 }, (_, i) => createConversation(i + 1));
   return {
@@ -30,6 +32,8 @@ function createSidebarProps(overrides?: {
     isMobileMenuOpen: false,
     setIsMobileMenuOpen: vi.fn(),
     isDesktopCollapsed: false,
+    desktopWidth: overrides?.desktopWidth ?? 256,
+    onDesktopWidthChange: overrides?.onDesktopWidthChange ?? vi.fn(),
     isDarkMode: true,
     toggleTheme: vi.fn(),
     authSession: {
@@ -73,6 +77,50 @@ function createSidebarProps(overrides?: {
 }
 
 describe('Sidebar conversation collapse behavior', () => {
+  it('桌面端侧边栏应暴露可拖拽宽度控制点并写入当前宽度变量', () => {
+    // 业务意图：左侧栏由 App 统一持有宽度，Sidebar 只负责把宽度映射到桌面布局和可访问拖拽入口。
+    render(<Sidebar {...createSidebarProps({ desktopWidth: 288 })} />);
+
+    const sidebar = screen.getByRole('complementary');
+    expect(sidebar).toHaveStyle({ '--codingx-sidebar-width': '288px' });
+
+    const resizeHandle = screen.getByTestId('desktop-sidebar-resize-handle');
+    expect(resizeHandle).toHaveAttribute('role', 'separator');
+    expect(resizeHandle).toHaveAttribute('aria-label', '调整左侧边栏宽度');
+    expect(resizeHandle).toHaveAttribute('aria-orientation', 'vertical');
+    expect(resizeHandle).toHaveAttribute('aria-valuenow', '288');
+  });
+
+  it('拖拽左侧栏边缘时应按鼠标位移回传夹紧后的桌面宽度', () => {
+    // 业务意图：鼠标向右拖宽、向左拖窄，并由组件保护最小/最大宽度，避免主内容区被挤压或侧栏不可用。
+    const onDesktopWidthChange = vi.fn();
+    render(
+      <Sidebar
+        {...createSidebarProps({
+          desktopWidth: 256,
+          onDesktopWidthChange,
+        })}
+      />,
+    );
+
+    const resizeHandle = screen.getByTestId('desktop-sidebar-resize-handle');
+    fireEvent.mouseDown(resizeHandle, { clientX: 256 });
+    fireEvent.mouseMove(window, { clientX: 320 });
+    fireEvent.mouseMove(window, { clientX: 1000 });
+    fireEvent.mouseMove(window, { clientX: -1000 });
+    fireEvent.mouseUp(window);
+
+    expect(onDesktopWidthChange).toHaveBeenNthCalledWith(1, 320);
+    expect(onDesktopWidthChange).toHaveBeenNthCalledWith(2, 360);
+    expect(onDesktopWidthChange).toHaveBeenNthCalledWith(3, 220);
+  });
+
+  it('左侧栏折叠时不应渲染桌面拖拽控制点', () => {
+    render(<Sidebar {...createSidebarProps()} isDesktopCollapsed />);
+
+    expect(screen.queryByTestId('desktop-sidebar-resize-handle')).not.toBeInTheDocument();
+  });
+
   it('应展示记忆管理导航入口', () => {
     render(<Sidebar {...createSidebarProps()} />);
 

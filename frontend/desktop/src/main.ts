@@ -24,6 +24,17 @@ const hostState: {
 const DEFAULT_CODINGX_USER_URL = 'http://localhost:5002';
 
 /**
+ * 解析桌面窗口图标路径，开发态读取源码资产，打包态读取 electron-builder 注入的 resources 资产。
+ * Windows 任务栏和窗口缩略图依赖该 PNG；安装包与 EXE 图标由 package.json 的 win.icon 使用 ICO。
+ */
+function resolveDesktopWindowIconPath() {
+  if (app.isPackaged) {
+    return path.join(process.resourcesPath, 'assets', 'icon.png');
+  }
+  return path.resolve(__dirname, '..', 'assets', 'icon.png');
+}
+
+/**
  * 桌面主进程按环境优先级加载 .env 配置，并兜底关键入口地址默认值。
  * 打包应用固定读取 production 配置，开发态固定读取 development 配置。
  * dotenv 默认不会覆盖系统已存在同名变量，避免污染 CI/外部启动参数。
@@ -107,6 +118,7 @@ async function createWindow() {
     frame: false,
     titleBarStyle: 'hidden',
     autoHideMenuBar: true,
+    icon: resolveDesktopWindowIconPath(),
     show: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),

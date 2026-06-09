@@ -80,6 +80,23 @@ import org.springframework.stereotype.Service;
 public class ChatApplicationService {
 
     private static final int PROMPT_CONTEXT_LOG_PREVIEW_LENGTH = 1_800;
+    private static final String QUICK_GREETING_REPLY = "你好，我在。你可以直接说要查资料、改代码、看项目，或让我帮你梳理问题。";
+    private static final Set<String> QUICK_GREETING_TEXTS = Set.of(
+        "你好",
+        "您好",
+        "你好呀",
+        "你好啊",
+        "嗨",
+        "哈喽",
+        "hello",
+        "hi",
+        "在吗",
+        "早上好",
+        "上午好",
+        "中午好",
+        "下午好",
+        "晚上好"
+    );
     /** 会话聚合仓储，负责读取与更新会话主状态（归属、标题、最后活跃时间等） */
     private final ChatConversationRepository chatConversationRepository;
     /** 消息仓储，负责会话消息历史读写与按会话回放 */
@@ -448,6 +465,7 @@ public class ChatApplicationService {
             command.expertCode(),
             searchReferences,
             buildGovernanceAgentContext(conversation, rewrittenQuestion),
+            command.deepThinking(),
             command.planMode()
         );
         log.info(
@@ -710,6 +728,15 @@ public class ChatApplicationService {
         chatRuntimeGuardService.ensureAccepted(command.conversationId());
         List<String> selectedSkillCodes = ChatCapabilityMentionSupport.mergeSkillCodes(command.skillCodes(), command.content());
         String plainQuestion = ChatCapabilityMentionSupport.stripSelectedSkillMentions(command.content(), selectedSkillCodes);
+        // 步骤 3：纯问候不需要历史、附件、改写、意图识别和模型工具循环，先落库用户输入后直接确定性收口。
+        if (shouldReplyWithQuickGreeting(command, plainQuestion, selectedSkillCodes)) {
+            ChatMessage userMessage = ChatMessage.userMessage(command.conversationId(), plainQuestion).attachRun(runId);
+            chatMessageRepository.save(userMessage);
+            chatStreamPublisher.publishUserMessage(command.conversationId(), plainQuestion);
+            completeQuickGreetingReply(conversation, userMessage, command, runId);
+            return;
+        }
+        // 步骤 4：非问候请求需要保存能力上下文，并读取历史与附件后进入完整编排链路。
         saveRunCapabilityContext(runId, command.mcpCodes(), selectedSkillCodes, command.expertCode());
         List<ChatMessage> history = new ArrayList<>(chatMessageRepository.findByConversationId(command.conversationId()));
         List<ChatAttachment> validatedAttachments = chatAttachmentService.requireOwnedAttachments(
@@ -717,7 +744,7 @@ public class ChatApplicationService {
             command.conversationId(),
             userId
         );
-        // 步骤 3：写入用户消息和附件绑定，再通过 SSE 立即回传用户输入，保证前端历史先落地。
+        // 步骤 5：写入用户消息和附件绑定，再通过 SSE 立即回传用户输入，保证前端历史先落地。
         ChatMessage userMessage = ChatMessage.userMessage(
             command.conversationId(),
             ChatCapabilityMentionSupport.formatContentWithSkillMentions(selectedSkillCodes, plainQuestion)
@@ -728,7 +755,7 @@ public class ChatApplicationService {
         }
         chatStreamPublisher.publishUserMessage(command.conversationId(), plainQuestion);
         history.add(userMessage);
-        // 步骤 4：明确的定时任务创建请求在会话内直接落库并回复摘要，不跳转到自动化页面确认。
+        // 步骤 6：明确的定时任务创建请求在会话内直接落库并回复摘要，不跳转到自动化页面确认。
         Optional<AutomationTaskChatCreationResult> automationCreationResult = tryCreateAutomationTaskFromChat(
             conversation,
             plainQuestion,
@@ -755,7 +782,7 @@ public class ChatApplicationService {
             chatStreamPublisher.publishAssistantCompleted(command.conversationId(), assistantMessage.getId(), assistantMessage.getContent(), conversation.getTitle());
             return;
         }
-        // 步骤 5：改写问题并执行意图分流，多子问题会在后续分别触发搜索或 MCP。
+        // 步骤 7：改写问题并执行意图分流，多子问题会在后续分别触发搜索或 MCP。
         ConversationRewriteResult rewriteResult = conversationRewriteService.rewriteResult(
             plainUserContents(history),
             plainQuestion
@@ -775,7 +802,7 @@ public class ChatApplicationService {
         );
         ConversationIntentDecision intentDecision = primaryIntentDecision(subQuestionDecisions);
         logChatDecision("发送消息", command, runId, intentDecision, rewriteResult);
-        // 步骤 6：优先处理无需进入模型的短路分支，包括澄清、直答和 MCP 未启用提示。
+        // 步骤 8：优先处理无需进入模型的短路分支，包括澄清、直答和 MCP 未启用提示。
         // 已选技能短指代应继续进入模型，由技能上下文解释当前引用的技能或追问执行目标。
         Optional<SubQuestionIntentDecision> clarifyDecision = firstDecisionWithAction(
             subQuestionDecisions,
@@ -872,7 +899,7 @@ public class ChatApplicationService {
             chatStreamPublisher.publishAssistantCompleted(command.conversationId(), assistantMessage.getId(), assistantMessage.getContent(), conversation.getTitle());
             return;
         }
-        // 步骤 7：执行可用的 MCP 和搜索分支，搜索引用会同时写入引用表并生成文档产物占位。
+        // 步骤 9：执行可用的 MCP 和搜索分支，搜索引用会同时写入引用表并生成文档产物占位。
         long nextSequenceNo = executeMcpDecisions(subQuestionDecisions, command, runId, history, 1L);
         List<String> searchQuestions = searchQuestions(subQuestionDecisions);
         if (CollUtil.isNotEmpty(searchQuestions)) {
@@ -885,7 +912,7 @@ public class ChatApplicationService {
             searchReferenceCollector.collect(runId, userMessage.getId(), command.conversationId(), searchReferences);
             documentArtifactService.createDocxArtifact(runId, userMessage.getId(), command.conversationId(), "搜索结果整理中");
         }
-        // 步骤 8：组装模型上下文，包含摘要裁剪后的历史、能力上下文、专家提示和搜索引用。
+        // 步骤 10：组装模型上下文，包含摘要裁剪后的历史、能力上下文、专家提示和搜索引用。
         StringBuilder builder = new StringBuilder();
         StringBuilder thinkingBuilder = new StringBuilder();
         AtomicReference<LocalDateTime> thinkingStartedAt = new AtomicReference<>();
@@ -900,6 +927,7 @@ public class ChatApplicationService {
             command.expertCode(),
             searchReferences,
             buildGovernanceAgentContext(conversation, rewrittenQuestion),
+            command.deepThinking(),
             command.planMode()
         );
         log.info(
@@ -914,7 +942,7 @@ public class ChatApplicationService {
         tokenCounterService.estimateConversationTokens(aiHistory);
         final Long activeRunId = runId;
         try {
-            // 步骤 9：进入支持工具调用的模型循环，流式内容、thinking 与工具事件都会写入缓冲区或 SSE。
+            // 步骤 11：进入支持工具调用的模型循环，流式内容、thinking 与工具事件都会写入缓冲区或 SSE。
             runAiToolAwareLoop(
                 command,
                 runId,
@@ -930,7 +958,7 @@ public class ChatApplicationService {
                 shouldExposeModelTools(searchReferences, selectedSkillCodes, rewrittenQuestion)
             );
         } catch (RuntimeException exception) {
-            // 步骤 10：模型循环中被用户取消时记录取消态，否则继续抛出交由外层异常处理。
+            // 步骤 12：模型循环中被用户取消时记录取消态，否则继续抛出交由外层异常处理。
             if (chatRuntimeGuardService.isCancelled(command.conversationId(), activeRunId)) {
                 ChatMessage cancelledMessage = ChatMessage.assistantMessage(
                     command.conversationId(),
@@ -951,7 +979,7 @@ public class ChatApplicationService {
             }
             throw exception;
         }
-        // 步骤 11：模型循环结束后再次检查取消状态，覆盖流结束与取消请求竞态。
+        // 步骤 13：模型循环结束后再次检查取消状态，覆盖流结束与取消请求竞态。
         if (chatRuntimeGuardService.isCancelled(command.conversationId(), activeRunId)) {
             ChatMessage cancelledMessage = ChatMessage.assistantMessage(
                 command.conversationId(),
@@ -970,7 +998,7 @@ public class ChatApplicationService {
             finishTrace(runId, "CANCELLED", null);
             return;
         }
-        // 步骤 12：流式异常时保留已经生成的部分回答，并把错误状态写入消息、run 和 Trace。
+        // 步骤 14：流式异常时保留已经生成的部分回答，并把错误状态写入消息、run 和 Trace。
         if (streamError[0] != null) {
 
             ChatMessage failedMessage = ChatMessage.assistantMessage(
@@ -992,7 +1020,7 @@ public class ChatApplicationService {
             finishTrace(runId, "ERROR", streamError[0].getMessage());
             return;
         }
-        // 步骤 13：正常完成时保存助手消息、刷新标题和摘要，最后发布完成事件给前端。
+        // 步骤 15：正常完成时保存助手消息、刷新标题和摘要，最后发布完成事件给前端。
         ChatMessage assistantMessage = ChatMessage.assistantMessage(
             command.conversationId(),
             StrUtil.blankToDefault(llmResponseCleaner.clean(builder.toString()), ""),
@@ -1038,6 +1066,72 @@ public class ChatApplicationService {
     }
 
     /**
+     * 判断当前消息是否可走确定性问候回复。
+     * 业务约束：只有纯文本问候且没有附件、技能、专家、MCP、深度思考、目标模式或仓库路径时才短路，
+     * 避免把“你好，帮我看这个文件”这类真实任务误判为简单问候。
+     * @param command 当前发送命令。
+     * @param plainQuestion 已去掉技能 mention 的用户问题。
+     * @param selectedSkillCodes 当前消息显式选择或 mention 的技能。
+     * @return true 表示可直接返回内置问候。
+     */
+    private boolean shouldReplyWithQuickGreeting(
+        SendChatMessageCommand command,
+        String plainQuestion,
+        List<String> selectedSkillCodes
+    ) {
+        return !command.deepThinking()
+            && !command.planMode()
+            && CollUtil.isEmpty(command.mcpCodes())
+            && CollUtil.isEmpty(selectedSkillCodes)
+            && CollUtil.isEmpty(command.attachmentIds())
+            && CollUtil.isEmpty(command.skillPaths())
+            && StrUtil.isBlank(command.expertCode())
+            && StrUtil.isBlank(command.repositoryPath())
+            && QUICK_GREETING_TEXTS.contains(normalizeQuickGreetingText(plainQuestion));
+    }
+
+    /**
+     * 将问候文本归一为稳定匹配键，兼容中英文大小写、空白和常见标点。
+     * @param question 用户输入。
+     * @return 用于集合匹配的问候键。
+     */
+    private String normalizeQuickGreetingText(String question) {
+        return StrUtil.blankToDefault(question, "")
+            .replaceAll("[\\p{Punct}\\s，。？！、：；“”‘’（）【】《》]+", "")
+            .toLowerCase(java.util.Locale.ROOT);
+    }
+
+    /**
+     * 完成云端会话的确定性问候回复，并按普通成功链路写入消息、run、trace 与 SSE 完成事件。
+     * @param conversation 当前会话。
+     * @param userMessage 已保存的用户消息。
+     * @param command 当前发送命令。
+     * @param runId 当前运行标识。
+     */
+    private void completeQuickGreetingReply(
+        ChatConversation conversation,
+        ChatMessage userMessage,
+        SendChatMessageCommand command,
+        Long runId
+    ) {
+        ChatMessage assistantMessage = ChatMessage.assistantMessage(
+            command.conversationId(),
+            QUICK_GREETING_REPLY,
+            ChatMessageStatus.COMPLETED,
+            null,
+            null,
+            null
+        ).attachRun(runId);
+        chatMessageRepository.save(assistantMessage);
+        conversation.touch();
+        conversation.recordLastRunId(runId);
+        chatConversationRepository.save(conversation);
+        recordExecutionOutcome(conversation, userMessage.getId(), assistantMessage.getId(), "sys-welcome", false, false, ChatMessageStatus.COMPLETED, null);
+        finishTrace(runId, "SUCCESS", null);
+        chatStreamPublisher.publishAssistantCompleted(command.conversationId(), assistantMessage.getId(), assistantMessage.getContent(), conversation.getTitle());
+    }
+
+    /**
      * 执行本地临时聊天链路，只向 SSE 推送运行结果，不读写云端会话、消息、run 或任务相关表。
      * 关键约束：本地历史的 source of truth 是客户端本地快照，后端仅用临时 conversationId 做流式路由。
      *
@@ -1055,6 +1149,14 @@ public class ChatApplicationService {
         history.add(userMessage);
         chatStreamPublisher.publishUserMessage(command.conversationId(), userMessage.getContent());
         // 步骤 2：本地模式允许澄清、直答和 MCP 未启用提示短路，但技能说明不得静态伪造成执行结果。
+        if (shouldReplyWithQuickGreeting(command, plainQuestion, selectedSkillCodes)) {
+            chatStreamPublisher.publishAssistantCompleted(
+                command.conversationId(),
+                QUICK_GREETING_REPLY,
+                resolveLocalConversationTitle(command)
+            );
+            return;
+        }
         // 步骤 3：改写并路由本地问题，但不写入云端消息、run、Trace 或任务表。
         ConversationRewriteResult rewriteResult = conversationRewriteService.rewriteResult(
             List.of(plainQuestion),
@@ -1107,6 +1209,7 @@ public class ChatApplicationService {
             command.expertCode(),
             List.of(),
             "",
+            command.deepThinking(),
             command.planMode()
         );
         log.info(
@@ -2996,23 +3099,26 @@ public class ChatApplicationService {
      * @return 系统证据文本。
      */
     private String buildLocalToolEvidenceContext(ChatToolExecutionResult toolResult) {
-        StringBuilder contextBuilder = new StringBuilder();
-        contextBuilder.append("# 本地工具执行结果\n");
-        contextBuilder.append("工具标识：").append(StrUtil.blankToDefault(toolResult.toolCode(), "unknown")).append('\n');
-        contextBuilder.append("工具输出：").append(normalizeEvidenceText(toolResult.content(), 4000)).append('\n');
+        String workingDirectorySection = "";
+        String toolMetadataSection = "";
         if (toolResult.metadata() != null && !toolResult.metadata().isEmpty()) {
             String workingDirectory = Optional.ofNullable(toolResult.metadata().get("workingDirectory"))
                 .map(String::valueOf)
                 .filter(StrUtil::isNotBlank)
                 .orElse(null);
             if (StrUtil.isNotBlank(workingDirectory)) {
-                contextBuilder.append("当前真实工作目录：").append(workingDirectory).append('\n');
-                contextBuilder.append("路径约束：后续读写文件必须基于当前真实工作目录；优先使用相对路径，不要编造 C:\\workspace 等虚拟根目录。\n");
+                workingDirectorySection = "当前真实工作目录：" + workingDirectory + '\n'
+                    + "路径约束：后续读写文件必须基于当前真实工作目录；优先使用相对路径，不要编造 C:\\workspace 等虚拟根目录。";
             }
-            contextBuilder.append("工具元数据：")
-                .append(normalizeEvidenceText(cn.hutool.json.JSONUtil.toJsonStr(toolResult.metadata()), 2000));
+            toolMetadataSection = "工具元数据："
+                + normalizeEvidenceText(cn.hutool.json.JSONUtil.toJsonStr(toolResult.metadata()), 2000);
         }
-        return contextBuilder.toString().trim();
+        return promptTemplateLoader.render("local-tool-evidence-context", Map.of(
+            "tool_code", StrUtil.blankToDefault(toolResult.toolCode(), "unknown"),
+            "tool_output", normalizeEvidenceText(toolResult.content(), 4000),
+            "working_directory_section", workingDirectorySection,
+            "tool_metadata_section", toolMetadataSection
+        )).trim();
     }
 
     /**
@@ -3232,6 +3338,7 @@ public class ChatApplicationService {
         String selectedExpertCode,
         List<SearchReferenceCandidate> searchReferences,
         String governanceContext,
+        boolean deepThinking,
         boolean planMode
     ) {
         String systemPrompt = resolveSystemPromptFromIntent(intentDecision);
@@ -3239,6 +3346,7 @@ public class ChatApplicationService {
         String expertContext = chatExpertContextService.buildExpertContext(selectedExpertCode);
         String skillContext = chatSkillContextService.buildSkillContext(selectedSkillCodes);
         String searchEvidenceContext = buildSearchEvidenceContext(intentDecision, searchReferences);
+        String chineseThinkingGuidance = buildChineseThinkingGuidance(deepThinking);
         if (
             StrUtil.isBlank(systemPrompt)
             && StrUtil.isBlank(planModeContext)
@@ -3246,12 +3354,16 @@ public class ChatApplicationService {
             && StrUtil.isBlank(skillContext)
             && StrUtil.isBlank(searchEvidenceContext)
             && StrUtil.isBlank(governanceContext)
+            && StrUtil.isBlank(chineseThinkingGuidance)
         ) {
             return modelVisibleAiMessages(history);
         }
         List<String> promptSegments = new ArrayList<>();
         if (StrUtil.isNotBlank(systemPrompt)) {
             promptSegments.add(systemPrompt);
+        }
+        if (StrUtil.isNotBlank(chineseThinkingGuidance)) {
+            promptSegments.add(chineseThinkingGuidance);
         }
         if (StrUtil.isNotBlank(planModeContext)) {
             promptSegments.add(planModeContext);
@@ -3285,6 +3397,15 @@ public class ChatApplicationService {
     }
 
     /**
+     * 深度思考模式下统一约束模型把对外可见 reasoning 输出为中文，避免前端展示英文思考。
+     * @param deepThinking 是否开启深度思考。
+     * @return 可注入模型的中文思考约束片段。
+     */
+    private String buildChineseThinkingGuidance(boolean deepThinking) {
+        return deepThinking ? StrUtil.trim(promptTemplateLoader.load("deep-thinking-language-guidance")) : "";
+    }
+
+    /**
      * 构造规划/目标模式运行约束，统一覆盖 CLI 与桌面端入口。
      * @param planMode 是否开启规划/目标模式。
      * @return 可注入模型的系统提示片段。
@@ -3310,34 +3431,26 @@ public class ChatApplicationService {
         if (intentDecision.action() != ConversationIntentAction.SEARCH || references == null || references.isEmpty()) {
             return "";
         }
-        StringBuilder contextBuilder = new StringBuilder();
-        contextBuilder.append("# 联网检索证据\n");
-        contextBuilder.append("当前日期：").append(DateUtil.today()).append('\n');
-        contextBuilder.append("回答约束：\n");
-        contextBuilder.append("1. 你只能依据下方检索证据回答，不得引用训练记忆中的旧时间、旧版本或旧结论\n");
-        contextBuilder.append("2. 当联网证据与模型记忆冲突时，必须以联网证据为准\n");
-        contextBuilder.append("3. 优先采用来源可靠且信息更新的条目；若证据冲突，说明冲突并给出更可信来源\n");
-        contextBuilder.append("4. 询问最新/当前公开产品、模型、版本时，优先采用官方产品页、开发者文档或发布公告；版本号冲突时必须比较版本号新旧\n");
-        contextBuilder.append("5. 只有第三方来源声称存在更新版本而官方证据未确认时，不得把第三方说法写成已确认结论\n");
-        contextBuilder.append("6. 若证据不足以得出结论，必须明确回答“当前检索证据不足，无法确认”\n");
-        contextBuilder.append("7. 最终回答每个关键结论都必须带引用编号，如 [R1]、[R2]\n");
-        contextBuilder.append("检索结果：\n");
+        StringBuilder searchResultsBuilder = new StringBuilder();
         int rank = 1;
         for (SearchReferenceCandidate reference : references) {
-            contextBuilder.append(rank++).append(". ");
-            contextBuilder.append("标题：").append(normalizeEvidenceText(reference.title(), 120));
+            searchResultsBuilder.append(rank++).append(". ");
+            searchResultsBuilder.append("标题：").append(normalizeEvidenceText(reference.title(), 120));
             if (StrUtil.isNotBlank(reference.siteName())) {
-                contextBuilder.append("；站点：").append(normalizeEvidenceText(reference.siteName(), 80));
+                searchResultsBuilder.append("；站点：").append(normalizeEvidenceText(reference.siteName(), 80));
             }
             if (StrUtil.isNotBlank(reference.url())) {
-                contextBuilder.append("；链接：").append(normalizeEvidenceText(reference.url(), 300));
+                searchResultsBuilder.append("；链接：").append(normalizeEvidenceText(reference.url(), 300));
             }
             if (StrUtil.isNotBlank(reference.snippet())) {
-                contextBuilder.append("；摘要：").append(normalizeEvidenceText(reference.snippet(), 220));
+                searchResultsBuilder.append("；摘要：").append(normalizeEvidenceText(reference.snippet(), 220));
             }
-            contextBuilder.append('\n');
+            searchResultsBuilder.append('\n');
         }
-        return contextBuilder.toString().trim();
+        return promptTemplateLoader.render("search-evidence-context", Map.of(
+            "current_date", DateUtil.today(),
+            "search_results", searchResultsBuilder.toString().trim()
+        )).trim();
     }
 
     /**
@@ -3346,20 +3459,16 @@ public class ChatApplicationService {
      * @return 可注入模型上下文的证据文本。
      */
     private String buildToolEvidenceContext(ChatMcpToolResult toolResult) {
-        StringBuilder contextBuilder = new StringBuilder();
-        contextBuilder.append("# 工具执行证据\n");
-        contextBuilder.append("工具标识：").append(StrUtil.blankToDefault(toolResult.toolId(), "unknown")).append('\n');
-        contextBuilder.append("回答约束：\n");
-        contextBuilder.append("1. 你必须基于本次工具结果整理最终回答，而不是直接复述工具原文\n");
-        contextBuilder.append("2. 如果工具结果不足以回答问题，要明确说明不足\n");
-        contextBuilder.append("3. 如果工具结果包含结构化数据，应先提炼结论再回答\n");
-        contextBuilder.append("工具结果：\n");
-        contextBuilder.append(normalizeEvidenceText(toolResult.content(), 4000)).append('\n');
+        String toolMetadataSection = "";
         if (toolResult.metadata() != null && !toolResult.metadata().isEmpty()) {
-            contextBuilder.append("工具元数据：\n");
-            contextBuilder.append(normalizeEvidenceText(cn.hutool.json.JSONUtil.toJsonStr(toolResult.metadata()), 2000)).append('\n');
+            toolMetadataSection = "工具元数据：\n"
+                + normalizeEvidenceText(cn.hutool.json.JSONUtil.toJsonStr(toolResult.metadata()), 2000);
         }
-        return contextBuilder.toString().trim();
+        return promptTemplateLoader.render("tool-evidence-context", Map.of(
+            "tool_id", StrUtil.blankToDefault(toolResult.toolId(), "unknown"),
+            "tool_result", normalizeEvidenceText(toolResult.content(), 4000),
+            "tool_metadata_section", toolMetadataSection
+        )).trim();
     }
 
     /**

@@ -10,6 +10,8 @@ import {
 } from '../api/adminChatApi';
 
 const WINDOW_OPTIONS: AdminDashboardWindow[] = ['24h', '7d', '30d'];
+const MILLISECONDS_PER_SECOND = 1000;
+const LATENCY_WARNING_SECONDS = 15;
 
 /**
  * 管理端控制台首页：参考 ragent 的信息架构，但只展示当前仓库真实可得的数据域。
@@ -43,7 +45,8 @@ export function Dashboard() {
   }));
   const latencyTrendData = trendBuckets.map((bucket) => ({
     label: bucket.label,
-    value: bucket.avgDurationMs,
+    // 后端趋势桶仍返回毫秒，工作台图表按秒展示，便于管理员直接阅读耗时量级。
+    value: toLatencySeconds(bucket.avgDurationMs),
   }));
   const qualityTrendData = trendBuckets.flatMap((bucket) => ([
     { label: bucket.label, type: '成功', value: bucket.successCount },
@@ -182,14 +185,14 @@ export function Dashboard() {
                 </TrendChartCard>
                 <TrendChartCard
                   title="响应耗时趋势"
-                  meta="单位：毫秒"
+                  meta="单位：秒"
                   legendLabel="平均响应时间"
                   legendColor="#f59e0b"
-                  annotation="警告 > 15000ms"
+                  annotation={`警告 > ${formatSeconds(LATENCY_WARNING_SECONDS)}`}
                   testId="dashboard-latency-chart"
                 >
                   <Line
-                    {...buildLineConfig(latencyTrendData, '#f59e0b', chartTheme, '毫秒', '平均响应时间', { domainMin: 0 })}
+                    {...buildLineConfig(latencyTrendData, '#f59e0b', chartTheme, '秒', '平均响应时间', { domainMin: 0 })}
                     data-testid="dashboard-latency-plot"
                   />
                 </TrendChartCard>
@@ -707,8 +710,8 @@ function buildSingleSeriesTooltipItem(seriesLabel: string, unit: string) {
 }
 
 function formatTooltipValue(value: number, unit: string) {
-  if (unit === '毫秒') {
-    return `${Math.round(value).toLocaleString('zh-CN')} ms`;
+  if (unit === '秒') {
+    return formatSeconds(value);
   }
   if (unit === '人') {
     return `${value} 人`;
@@ -717,6 +720,14 @@ function formatTooltipValue(value: number, unit: string) {
     return `${value} ${unit}`;
   }
   return String(value);
+}
+
+function toLatencySeconds(value: number) {
+  return Number((value / MILLISECONDS_PER_SECOND).toFixed(1));
+}
+
+function formatSeconds(value: number) {
+  return `${value.toFixed(1)} 秒`;
 }
 
 function buildSparseLabelFormatter(labels: string[], maxVisible = 5) {

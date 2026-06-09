@@ -4832,11 +4832,9 @@ describe('ChatView', () => {
   });
 
   /**
-   * 工作区记忆条应展示已生效长期记忆，不再要求用户进行确认操作。
+   * 工作区记忆条只展示生效数量，具体记忆正文由记忆管理页承载。
    */
-  it('应展示工作区记忆条和已生效长期记忆', async () => {
-    const updateLongTermMemoryStatus = vi.fn().mockResolvedValue(undefined);
-
+  it('应只展示工作区记忆生效数量', async () => {
     render(
       <ChatView
         isAuthenticated={true}
@@ -4844,32 +4842,40 @@ describe('ChatView', () => {
         workspace={createWorkspace({
           activeConversationId: null,
           messages: [],
-          activeMemoryCount: 1,
+          activeMemoryCount: 2,
           longTermMemories: [
             {
               id: '9001',
               memoryScope: 'PROJECT',
               userId: '1002',
               workspaceId: '3001',
-              content: '以后都按项目注释规范编写 Java 注释',
+              content: '你要记住',
               status: 'ACTIVE',
-              keywordJson: '["注释规范"]',
+              keywordJson: '["记住"]',
+            },
+            {
+              id: '9002',
+              memoryScope: 'PROJECT',
+              userId: '1002',
+              workspaceId: '3001',
+              content: '我这个项目是用来测试的',
+              status: 'ACTIVE',
+              keywordJson: '["测试"]',
             },
           ],
-          updateLongTermMemoryStatus,
         })}
       />,
     );
 
     const strip = await screen.findByTestId('workspace-intelligence-strip');
     expect(strip).toHaveTextContent('工作区记忆');
-    expect(strip).toHaveTextContent('已生效 1 条');
-    expect(strip).toHaveTextContent('以后都按项目注释规范编写 Java 注释');
-    expect(strip).not.toHaveTextContent('项目画像');
-    expect(screen.queryByRole('button', { name: '确认长期记忆 9001' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: '拒绝长期记忆 9001' })).not.toBeInTheDocument();
-    expect(updateLongTermMemoryStatus).not.toHaveBeenCalled();
+    expect(strip).toHaveTextContent('已生效 2 条');
+    expect(within(strip).queryByText('已生效的用户或项目记忆会随当前工作空间参与上下文。')).not.toBeInTheDocument();
+    expect(within(strip).queryByText('你要记住')).not.toBeInTheDocument();
+    expect(within(strip).queryByText('我这个项目是用来测试的')).not.toBeInTheDocument();
+    expect(within(strip).queryByRole('button', { name: '刷新长期记忆' })).not.toBeInTheDocument();
   });
+
 });
 
 /**

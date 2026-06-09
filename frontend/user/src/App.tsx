@@ -44,6 +44,7 @@ const PATH_VIEW_MAP: Record<string, ViewType> = Object.entries(VIEW_ROUTE_PATHS)
   {} as Record<string, ViewType>,
 );
 const CONVERSATION_ID_QUERY_KEY = 'conversationId';
+const DESKTOP_SIDEBAR_DEFAULT_WIDTH = 256;
 
 export default function App() {
   // CLI 登录页是独立授权面，不启动聊天工作区，避免无关接口请求干扰终端登录。
@@ -65,6 +66,8 @@ function MainApp() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   // 步骤：维护桌面端左侧边栏折叠状态，保证聊天内容区可获得更大可视宽度。
   const [isDesktopSidebarCollapsed, setIsDesktopSidebarCollapsed] = useState(false);
+  // 步骤：维护桌面端左侧栏宽度；拖拽仅影响桌面布局，移动端抽屉继续使用固定宽度。
+  const [desktopSidebarWidth, setDesktopSidebarWidth] = useState(DESKTOP_SIDEBAR_DEFAULT_WIDTH);
   // 步骤：维护登录弹窗显示状态。
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   // 步骤：在开发环境预填默认账号密码，降低本地联调成本。
@@ -338,6 +341,8 @@ function MainApp() {
           isMobileMenuOpen={isMobileMenuOpen}
           setIsMobileMenuOpen={setIsMobileMenuOpen}
           isDesktopCollapsed={isDesktopSidebarCollapsed}
+          desktopWidth={desktopSidebarWidth}
+          onDesktopWidthChange={setDesktopSidebarWidth}
           isDarkMode={isDarkMode}
           toggleTheme={toggleTheme}
           authSession={session}

@@ -16,7 +16,26 @@ vi.mock('@/api/adminChatApi', () => ({
 
 vi.mock('@ant-design/plots', () => ({
   Area: (props: { ['data-testid']?: string }) => <div data-testid={props['data-testid'] ?? 'mock-area-chart'} />,
-  Line: (props: { ['data-testid']?: string }) => <div data-testid={props['data-testid'] ?? 'mock-line-chart'} />,
+  Line: (props: {
+    ['data-testid']?: string;
+    data?: Array<{ value: number }>;
+    axis?: { y?: { title?: string | boolean } };
+    tooltip?: {
+      items?: Array<(datum: { value: number }) => { name: string; value: string }>;
+    };
+  }) => {
+    const testId = props['data-testid'] ?? 'mock-line-chart';
+    const firstDatum = props.data?.[0] ?? { value: 0 };
+    const tooltipItem = props.tooltip?.items?.[0]?.(firstDatum);
+
+    return (
+      <div data-testid={testId}>
+        <span data-testid={`${testId}-first-value`}>{firstDatum.value}</span>
+        <span data-testid={`${testId}-y-unit`}>{String(props.axis?.y?.title ?? '')}</span>
+        {tooltipItem ? <span data-testid={`${testId}-tooltip-preview`}>{tooltipItem.value}</span> : null}
+      </div>
+    );
+  },
   Column: (props: { ['data-testid']?: string }) => <div data-testid={props['data-testid'] ?? 'mock-column-chart'} />,
   Pie: (props: {
     ['data-testid']?: string;
@@ -160,5 +179,22 @@ describe('Dashboard page', () => {
     );
 
     expect(await screen.findByTestId('dashboard-success-ring-tooltip-preview')).toHaveTextContent('成功率83.3%');
+  });
+
+  /**
+   * 响应耗时趋势图接收后端毫秒值，但页面上必须按秒展示并保留小数。
+   */
+  it('renders latency trend in seconds with decimal precision', async () => {
+    render(
+      <MemoryRouter>
+        <Dashboard />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText('单位：秒')).toBeInTheDocument();
+    expect(screen.getByText('警告 > 15.0 秒')).toBeInTheDocument();
+    expect(screen.getByTestId('dashboard-latency-plot-y-unit')).toHaveTextContent('秒');
+    expect(screen.getByTestId('dashboard-latency-plot-first-value')).toHaveTextContent('9.2');
+    expect(screen.getByTestId('dashboard-latency-plot-tooltip-preview')).toHaveTextContent('9.2 秒');
   });
 });

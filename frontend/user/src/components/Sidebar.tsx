@@ -26,6 +26,19 @@ import {
  * 侧边栏品牌图标复用浏览器页 favicon，保持 Web、IDEA 与 Electron 图标来源一致。
  */
 const BRAND_ICON_SRC = '/brand-favicon.svg';
+const DESKTOP_SIDEBAR_MIN_WIDTH = 220;
+const DESKTOP_SIDEBAR_MAX_WIDTH = 360;
+const DESKTOP_SIDEBAR_KEYBOARD_STEP = 16;
+
+/**
+ * 限制桌面端侧栏宽度，避免拖拽后挤压主内容或导致侧栏控件不可读。
+ */
+function clampDesktopSidebarWidth(nextWidth: number) {
+  return Math.min(
+    Math.max(nextWidth, DESKTOP_SIDEBAR_MIN_WIDTH),
+    DESKTOP_SIDEBAR_MAX_WIDTH,
+  );
+}
 
 /**
  * 定义 Sidebar 组件需要的输入属性。
@@ -36,6 +49,14 @@ interface SidebarProps {
   isMobileMenuOpen: boolean;
   setIsMobileMenuOpen: (isOpen: boolean) => void;
   isDesktopCollapsed: boolean;
+  /**
+   * 桌面端侧边栏当前宽度，由 App 持有以便折叠/展开与主内容布局保持同一个状态源。
+   */
+  desktopWidth: number;
+  /**
+   * 桌面端拖拽或键盘调整宽度时回传给 App，移动端抽屉不消费该值。
+   */
+  onDesktopWidthChange: (width: number) => void;
   isDarkMode: boolean;
   toggleTheme: () => void;
   authSession: AuthSession | null;
@@ -104,6 +125,8 @@ export default function Sidebar({
   isMobileMenuOpen: _isMobileMenuOpen,
   setIsMobileMenuOpen,
   isDesktopCollapsed,
+  desktopWidth,
+  onDesktopWidthChange,
   isDarkMode,
   toggleTheme,
   authSession,
@@ -127,6 +150,66 @@ export default function Sidebar({
   onSelectWorkspacePath,
   onPickRepositoryDirectory: _onPickRepositoryDirectory,
 }: SidebarProps) {
+  const [isDesktopResizing, setIsDesktopResizing] = React.useState(false);
+  const resolvedDesktopWidth = clampDesktopSidebarWidth(desktopWidth);
+  const sidebarStyle = isDesktopCollapsed
+    ? undefined
+    : ({
+        '--codingx-sidebar-width': `${resolvedDesktopWidth}px`,
+      } as React.CSSProperties);
+
+  const startDesktopResize = React.useCallback(
+    (event: React.MouseEvent<HTMLButtonElement>) => {
+      event.preventDefault();
+      setIsDesktopResizing(true);
+      const startX = event.clientX;
+      const startWidth = resolvedDesktopWidth;
+
+      const handleMouseMove = (moveEvent: MouseEvent) => {
+        // 左侧栏固定在左侧，鼠标向右移动时增加宽度，向左移动时减少宽度。
+        onDesktopWidthChange(
+          clampDesktopSidebarWidth(startWidth + (moveEvent.clientX - startX)),
+        );
+      };
+
+      const stopResize = () => {
+        setIsDesktopResizing(false);
+        window.removeEventListener('mousemove', handleMouseMove);
+        window.removeEventListener('mouseup', stopResize);
+      };
+
+      window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('mouseup', stopResize);
+    },
+    [onDesktopWidthChange, resolvedDesktopWidth],
+  );
+
+  const handleDesktopResizeKeyDown = React.useCallback(
+    (event: React.KeyboardEvent<HTMLButtonElement>) => {
+      if (event.key === 'ArrowLeft') {
+        event.preventDefault();
+        onDesktopWidthChange(
+          clampDesktopSidebarWidth(resolvedDesktopWidth - DESKTOP_SIDEBAR_KEYBOARD_STEP),
+        );
+      }
+      if (event.key === 'ArrowRight') {
+        event.preventDefault();
+        onDesktopWidthChange(
+          clampDesktopSidebarWidth(resolvedDesktopWidth + DESKTOP_SIDEBAR_KEYBOARD_STEP),
+        );
+      }
+      if (event.key === 'Home') {
+        event.preventDefault();
+        onDesktopWidthChange(DESKTOP_SIDEBAR_MIN_WIDTH);
+      }
+      if (event.key === 'End') {
+        event.preventDefault();
+        onDesktopWidthChange(DESKTOP_SIDEBAR_MAX_WIDTH);
+      }
+    },
+    [onDesktopWidthChange, resolvedDesktopWidth],
+  );
+
   const NavItem = ({
     id,
     label,
@@ -170,10 +253,28 @@ export default function Sidebar({
       className={`absolute left-[-18rem] z-50 flex h-full shrink-0 flex-col overflow-hidden border-r border-border bg-surface text-foreground shadow-2xl [contain:layout_paint] transition-[width,padding,opacity,border-color] duration-300 will-change-[width,opacity] md:relative md:left-0 md:shadow-none ${
         isDesktopCollapsed
           ? 'md:w-0 md:border-r-0 md:px-0 md:pb-0 md:pt-0 md:opacity-0 md:pointer-events-none'
-          : 'w-72 md:w-64'
+          : 'w-72 md:w-[var(--codingx-sidebar-width)]'
+      } ${
+        isDesktopResizing ? 'transition-none duration-0' : ''
       }`}
       aria-hidden={isDesktopCollapsed}
+      style={sidebarStyle}
     >
+      {!isDesktopCollapsed ? (
+        <button
+          type="button"
+          data-testid="desktop-sidebar-resize-handle"
+          role="separator"
+          aria-label="调整左侧边栏宽度"
+          aria-orientation="vertical"
+          aria-valuemin={DESKTOP_SIDEBAR_MIN_WIDTH}
+          aria-valuemax={DESKTOP_SIDEBAR_MAX_WIDTH}
+          aria-valuenow={resolvedDesktopWidth}
+          onMouseDown={startDesktopResize}
+          onKeyDown={handleDesktopResizeKeyDown}
+          className="absolute right-0 top-0 z-20 hidden h-full w-2 cursor-col-resize border-r border-transparent transition-colors hover:border-foreground/40 focus-visible:border-foreground focus-visible:outline-none md:block"
+        />
+      ) : null}
       <div
         className={`flex h-full flex-col transition-[opacity,transform] duration-200 ${
           isDesktopCollapsed ? 'translate-x-4 opacity-0' : 'translate-x-0 opacity-100'

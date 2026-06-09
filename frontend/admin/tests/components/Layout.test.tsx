@@ -29,6 +29,7 @@ describe('Layout', () => {
     expect(main).toHaveClass('min-w-0');
     expect(main).toHaveClass('overflow-y-auto');
     expect(main).toHaveClass('overflow-x-hidden');
+    expect(screen.getByTestId('admin-brand-logo')).toHaveAttribute('src', '/brand-favicon.svg');
   });
 
   /**

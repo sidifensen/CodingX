@@ -275,11 +275,11 @@ class ChatApplicationServiceTest {
         when(chatAttachmentService.requireOwnedAttachments(any(), eq(1L), eq(1002L))).thenReturn(List.of());
         when(conversationTitleService.generateTitle(org.mockito.ArgumentMatchers.eq(conversation), any())).thenReturn("AI搜索重构计划");
         when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
-            new ConversationRewriteResult("Hi", false, List.of("Hi"))
+            new ConversationRewriteResult("普通聊天问题", false, List.of("普通聊天问题"))
         );
         when(conversationSummaryService.buildModelHistory(any(), any())).thenAnswer(invocation -> invocation.getArgument(1));
         when(llmResponseCleaner.clean(any())).thenAnswer(invocation -> invocation.getArgument(0));
-        when(conversationIntentService.route("Hi", false)).thenReturn(new ConversationIntentDecision("chat.normal", ConversationIntentAction.DIRECT, null));
+        when(conversationIntentService.route("普通聊天问题", false)).thenReturn(new ConversationIntentDecision("chat.normal", ConversationIntentAction.DIRECT, null));
         when(chatIntentNodeRepository.findByIntentCode("chat.normal")).thenReturn(null);
         when(chatSkillContextService.buildSkillContext(any())).thenReturn("");
         doAnswer(invocation -> {
@@ -291,7 +291,7 @@ class ChatApplicationServiceTest {
             handler.onComplete();
             return null;
         }).when(aiChatClient).streamChat(any(), org.mockito.ArgumentMatchers.anyBoolean(), any());
-        chatApplicationService.sendMessage(new SendChatMessageCommand(1L, "Hi", false), 1002L);
+        chatApplicationService.sendMessage(new SendChatMessageCommand(1L, "普通聊天问题", false), 1002L);
 
         ArgumentCaptor<ChatMessage> captor = ArgumentCaptor.forClass(ChatMessage.class);
         ArgumentCaptor<ChatExecutionRun> runCaptor = ArgumentCaptor.forClass(ChatExecutionRun.class);
@@ -365,10 +365,10 @@ class ChatApplicationServiceTest {
         when(chatMessageRepository.findByConversationId(1L)).thenReturn(new ArrayList<>());
         when(chatAttachmentService.requireOwnedAttachments(any(), eq(1L), eq(1002L))).thenReturn(List.of());
         when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
-            new ConversationRewriteResult("Hi", false, List.of("Hi"))
+            new ConversationRewriteResult("普通聊天问题", false, List.of("普通聊天问题"))
         );
         when(conversationSummaryService.buildModelHistory(any(), any())).thenAnswer(invocation -> invocation.getArgument(1));
-        when(conversationIntentService.route("Hi", false)).thenReturn(new ConversationIntentDecision("chat.normal", ConversationIntentAction.DIRECT, null));
+        when(conversationIntentService.route("普通聊天问题", false)).thenReturn(new ConversationIntentDecision("chat.normal", ConversationIntentAction.DIRECT, null));
         when(chatIntentNodeRepository.findByIntentCode("chat.normal")).thenReturn(null);
         when(chatSkillContextService.buildSkillContext(any())).thenReturn("");
         AtomicInteger cancelChecks = new AtomicInteger();
@@ -381,7 +381,7 @@ class ChatApplicationServiceTest {
             return null;
         }).when(aiChatClient).streamChat(any(), org.mockito.ArgumentMatchers.anyBoolean(), any());
 
-        chatApplicationService.sendMessage(new SendChatMessageCommand(1L, "Hi", false), 1002L);
+        chatApplicationService.sendMessage(new SendChatMessageCommand(1L, "普通聊天问题", false), 1002L);
 
         ArgumentCaptor<ChatMessage> captor = ArgumentCaptor.forClass(ChatMessage.class);
         verify(chatMessageRepository, org.mockito.Mockito.times(2)).save(captor.capture());
@@ -401,10 +401,10 @@ class ChatApplicationServiceTest {
         when(chatMessageRepository.findByConversationId(1L)).thenReturn(new ArrayList<>());
         when(chatAttachmentService.requireOwnedAttachments(any(), eq(1L), eq(1002L))).thenReturn(List.of());
         when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
-            new ConversationRewriteResult("Hi", false, List.of("Hi"))
+            new ConversationRewriteResult("普通聊天问题", false, List.of("普通聊天问题"))
         );
         when(conversationSummaryService.buildModelHistory(any(), any())).thenAnswer(invocation -> invocation.getArgument(1));
-        when(conversationIntentService.route("Hi", false)).thenReturn(new ConversationIntentDecision("chat.normal", ConversationIntentAction.DIRECT, null));
+        when(conversationIntentService.route("普通聊天问题", false)).thenReturn(new ConversationIntentDecision("chat.normal", ConversationIntentAction.DIRECT, null));
         when(chatIntentNodeRepository.findByIntentCode("chat.normal")).thenReturn(null);
         when(chatSkillContextService.buildSkillContext(any())).thenReturn("");
         when(chatRuntimeGuardService.isCancelled(eq(1L), any(Long.class))).thenReturn(true);
@@ -412,7 +412,7 @@ class ChatApplicationServiceTest {
             throw new IllegalStateException("interrupted");
         }).when(aiChatClient).streamChat(any(), org.mockito.ArgumentMatchers.anyBoolean(), any());
 
-        chatApplicationService.sendMessage(new SendChatMessageCommand(1L, "Hi", false), 1002L);
+        chatApplicationService.sendMessage(new SendChatMessageCommand(1L, "普通聊天问题", false), 1002L);
 
         ArgumentCaptor<ChatMessage> captor = ArgumentCaptor.forClass(ChatMessage.class);
         verify(chatMessageRepository, org.mockito.Mockito.times(2)).save(captor.capture());
@@ -636,6 +636,93 @@ class ChatApplicationServiceTest {
         verify(chatStreamPublisher).publishAssistantCompleted(eq(1L), any(Long.class), eq("已进入目标模式"), eq("目标模式"));
         verify(promptTemplateLoader).load("plan-mode-goal-context");
         ChatExecutionContext.clear();
+    }
+
+    /**
+     * 开启深度思考时，系统提示必须明确要求思考过程和最终回答都使用中文，避免前端直接展示英文 reasoning。
+     */
+    @Test
+    void deepThinkingShouldInjectChineseReasoningGuidance() {
+        bindRunContext();
+        ChatConversation conversation = ChatConversation.create(1L, "Thinking", 1002L, ChatConversationStatus.ACTIVE);
+        String deepThinkingPrompt = new PromptTemplateLoader(Path.of("src/main/resources/prompt"))
+            .load("deep-thinking-language-guidance");
+        when(chatConversationRepository.requireById(1L)).thenReturn(conversation);
+        when(chatMessageRepository.findByConversationId(1L)).thenReturn(new ArrayList<>());
+        when(chatAttachmentService.requireOwnedAttachments(any(), eq(1L), eq(1002L))).thenReturn(List.of());
+        when(promptTemplateLoader.load("deep-thinking-language-guidance")).thenReturn(deepThinkingPrompt);
+        when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+            new ConversationRewriteResult("请帮我分析一下这个方案", false, List.of("请帮我分析一下这个方案"))
+        );
+        when(conversationIntentService.route("请帮我分析一下这个方案", false)).thenReturn(
+            new ConversationIntentDecision("chat.normal", ConversationIntentAction.DIRECT, null)
+        );
+        when(chatIntentNodeRepository.findByIntentCode("chat.normal")).thenReturn(null);
+        when(chatSkillContextService.buildSkillContext(any())).thenReturn("");
+        when(chatExpertContextService.buildExpertContext(any())).thenReturn("");
+        when(governanceAgentContextService.buildAgentContext(any(), any(), any())).thenReturn("");
+        when(conversationSummaryService.buildModelHistory(any(), any())).thenAnswer(invocation -> invocation.getArgument(1));
+        when(llmResponseCleaner.clean(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(conversationTitleService.generateTitle(any(), any())).thenReturn("中文思考");
+        doAnswer(invocation -> {
+            @SuppressWarnings("unchecked")
+            List<ChatMessage> aiHistory = invocation.getArgument(0, List.class);
+            String systemPrompt = aiHistory.getFirst().getContent();
+            assertTrue(systemPrompt.contains("中文"), "深度思考模式应显式约束中文输出");
+            assertTrue(systemPrompt.contains("思考过程"), "深度思考模式应显式约束 thinking 使用中文");
+            AiChatClient.StreamHandler handler = invocation.getArgument(2);
+            handler.onThinkingDelta("先分析需求");
+            handler.onDelta("结论如下");
+            handler.onComplete();
+            return null;
+        }).when(aiChatClient).streamChat(any(), eq(true), any());
+
+        chatApplicationService.sendMessage(
+            new SendChatMessageCommand(1L, "请帮我分析一下这个方案", true),
+            1002L
+        );
+
+        verify(chatStreamPublisher).publishAssistantCompleted(eq(1L), any(Long.class), eq("结论如下"), eq("中文思考"));
+        verify(promptTemplateLoader).load("deep-thinking-language-guidance");
+        ChatExecutionContext.clear();
+    }
+
+    /**
+     * 深度思考语言约束属于可维护 Prompt 资产，必须放在 resources/prompt 下，避免业务文案散落在编排代码里。
+     */
+    @Test
+    void deepThinkingGuidanceShouldBeStoredAsPromptResource() throws IOException {
+        Path promptResource = Path.of("src/main/resources/prompt/deep-thinking-language-guidance.st");
+        assertTrue(Files.exists(promptResource));
+        String promptContent = new PromptTemplateLoader(promptResource.getParent()).load("deep-thinking-language-guidance");
+        assertTrue(promptContent.contains("深度思考语言约束"));
+        assertTrue(promptContent.contains("简体中文"));
+
+        String serviceSource = Files.readString(
+            Path.of("src/main/java/com/codingx/chat/application/service/chat/ChatApplicationService.java"),
+            StandardCharsets.UTF_8
+        );
+        assertFalse(serviceSource.contains("即使模型内部默认使用英文推理"));
+    }
+
+    /**
+     * 搜索证据、本地工具证据与工具执行证据都属于可维护 Prompt 资产，不应继续内联在编排服务里。
+     */
+    @Test
+    void evidencePromptsShouldBeStoredAsPromptResources() throws IOException {
+        Path promptDir = Path.of("src/main/resources/prompt");
+        PromptTemplateLoader loader = new PromptTemplateLoader(promptDir);
+        assertTrue(loader.load("search-evidence-context").contains("# 联网检索证据"));
+        assertTrue(loader.load("tool-evidence-context").contains("# 工具执行证据"));
+        assertTrue(loader.load("local-tool-evidence-context").contains("# 本地工具执行结果"));
+
+        String serviceSource = Files.readString(
+            Path.of("src/main/java/com/codingx/chat/application/service/chat/ChatApplicationService.java"),
+            StandardCharsets.UTF_8
+        );
+        assertFalse(serviceSource.contains("你只能依据下方检索证据回答"));
+        assertFalse(serviceSource.contains("你必须基于本次工具结果整理最终回答"));
+        assertFalse(serviceSource.contains("路径约束：后续读写文件必须基于当前真实工作目录"));
     }
 
     /**

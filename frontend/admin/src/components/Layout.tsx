@@ -45,6 +45,11 @@ const navItems = [
   { path: '/notifications', icon: <BellOutlined />, label: '通知中心' },
 ];
 
+/**
+ * 管理端侧边栏品牌图标复用浏览器页 favicon，保持用户端、管理端与桌面壳品牌识别一致。
+ */
+const ADMIN_BRAND_ICON_SRC = '/brand-favicon.svg';
+
 interface SidebarProps {
   isCollapsed: boolean;
   setIsCollapsed: (value: boolean) => void;
@@ -93,21 +98,30 @@ function Sidebar({ isCollapsed, setIsCollapsed, isDarkMode, toggleTheme, onLogou
         isCollapsed ? 'w-[68px]' : 'w-[200px]',
       )}
     >
-      <div className={clsx('mb-xl flex items-center h-[52px]', isCollapsed ? 'justify-center px-1' : 'justify-between px-md')}>
-        <div
-          className={clsx(
-            'overflow-hidden whitespace-nowrap transition-all duration-300 flex flex-col justify-center',
-            isCollapsed ? 'w-0 opacity-0' : 'w-[120px] opacity-100',
-          )}
-        >
-          <h1 className="font-headline-sm text-headline-sm font-bold text-ink tracking-tight">CodingX</h1>
-          <p className="font-label-caps text-label-caps text-secondary uppercase tracking-widest mt-1">管理后台</p>
+      <div className={clsx('mb-xl flex h-[52px] items-center', isCollapsed ? 'justify-between px-1' : 'justify-between px-md')}>
+        <div className="flex min-w-0 items-center gap-xs">
+          <img
+            src={ADMIN_BRAND_ICON_SRC}
+            alt=""
+            aria-hidden="true"
+            data-testid="admin-brand-logo"
+            className={clsx('shrink-0 rounded-md object-contain', isCollapsed ? 'h-7 w-7' : 'h-8 w-8')}
+          />
+          <div
+            className={clsx(
+              'flex flex-col justify-center overflow-hidden whitespace-nowrap transition-all duration-300',
+              isCollapsed ? 'w-0 opacity-0' : 'w-[120px] opacity-100',
+            )}
+          >
+            <h1 className="font-headline-sm text-headline-sm font-bold text-ink tracking-tight">CodingX</h1>
+            <p className="font-label-caps text-label-caps text-secondary uppercase tracking-widest mt-1">管理后台</p>
+          </div>
         </div>
         <Button
           aria-label={isCollapsed ? '展开菜单' : '收起菜单'}
           icon={isCollapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
           onClick={() => setIsCollapsed(!isCollapsed)}
-          className="shrink-0"
+          className={clsx('shrink-0', isCollapsed && 'h-7 w-7 p-0')}
           title={isCollapsed ? '展开菜单' : '收起菜单'}
           type="text"
         />

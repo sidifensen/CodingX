@@ -39,9 +39,14 @@
       {
         "from": "../user/dist",
         "to": "user-dist"
+      },
+      {
+        "from": "assets",
+        "to": "assets"
       }
     ],
     "win": {
+      "icon": "assets/icon.ico",
       "target": [
         "nsis"
       ]

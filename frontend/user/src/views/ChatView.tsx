@@ -46,7 +46,6 @@ import {
   ExecutionStepItem,
   FileDiffItem,
   ChatMessageItem,
-  LongTermMemoryItem,
   MessageTimelineItem,
   MessageSearchProgress,
   MessageSearchProgressItem,
@@ -102,7 +101,6 @@ export default function ChatView({
     workspaceId,
     activeMemoryCount,
     longTermMemories,
-    isMemoryLoading,
     messages,
     hasMoreMessagesBefore,
     isLoadingOlderMessages,
@@ -149,7 +147,6 @@ export default function ChatView({
     regenerateConversation,
     resendUserMessage,
     pickRepositoryDirectory,
-    refreshLongTermMemories,
     renameDialog,
     deleteDialog,
     renameConversation,
@@ -1114,7 +1111,9 @@ export default function ChatView({
     () => longTermMemories.filter((memory) => String(memory.status).toUpperCase() === 'ACTIVE'),
     [longTermMemories],
   );
-  const showWorkspaceIntelligenceStrip = activeMemoryCount > 0 || activeLongTermMemories.length > 0;
+  // 业务意图：聊天输入区只提示“当前有多少条记忆会生效”，具体内容留给记忆管理页维护。
+  const activeWorkspaceMemoryCount = activeMemoryCount > 0 ? activeMemoryCount : activeLongTermMemories.length;
+  const showWorkspaceIntelligenceStrip = activeWorkspaceMemoryCount > 0;
 
   /**
    * 粘贴图片或文件时直接加入待发送附件队列。
@@ -2099,12 +2098,7 @@ export default function ChatView({
               </div>
             </form>
             {showWorkspaceIntelligenceStrip ? (
-              <WorkspaceIntelligenceStrip
-                activeMemoryCount={activeMemoryCount}
-                activeMemories={activeLongTermMemories}
-                isMemoryLoading={isMemoryLoading}
-                onRefresh={() => void refreshLongTermMemories()}
-              />
+              <WorkspaceIntelligenceStrip activeMemoryCount={activeWorkspaceMemoryCount} />
             ) : null}
             {showRuntimeWorkspaceSwitcher ? (
               <div
@@ -5035,64 +5029,25 @@ function EmptyBlock({ text }: { text: string }) {
 }
 
 /**
- * 渲染当前工作空间已生效长期记忆，帮助用户理解 Agent 当前会带入哪些持久约束。
+ * 渲染当前工作空间已生效长期记忆数量；记忆正文只在记忆管理页展示和编辑。
  */
 function WorkspaceIntelligenceStrip({
   activeMemoryCount,
-  activeMemories,
-  isMemoryLoading,
-  onRefresh,
 }: {
   activeMemoryCount: number;
-  activeMemories: LongTermMemoryItem[];
-  isMemoryLoading: boolean;
-  onRefresh: () => void;
 }) {
-  const visibleActiveMemories = activeMemories.slice(0, 3);
-
   return (
     <section
       data-testid="workspace-intelligence-strip"
-      className="mt-3 rounded-xl border border-border bg-surface/95 px-3 py-2.5 text-left text-xs text-muted shadow-[0_10px_28px_rgba(0,0,0,0.12)] backdrop-blur"
+      className="mt-3 flex items-center gap-2 rounded-xl border border-border bg-surface/95 px-3 py-2 text-left text-xs text-muted shadow-[0_10px_28px_rgba(0,0,0,0.12)] backdrop-blur"
     >
-      <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="inline-flex items-center gap-1.5 font-medium text-foreground">
-              <Brain size={14} />
-              工作区记忆
-            </span>
-            {activeMemoryCount > 0 ? (
-              <span className="rounded-full border border-border bg-surface-container px-2 py-0.5 text-[11px] text-foreground">
-                已生效 {activeMemoryCount} 条
-              </span>
-            ) : null}
-            {isMemoryLoading ? <span className="text-[11px] text-muted">同步中</span> : null}
-          </div>
-          <p className="mt-1 text-muted">已生效的用户或项目记忆会随当前工作空间参与上下文。</p>
-        </div>
-        <button
-          type="button"
-          aria-label="刷新长期记忆"
-          onClick={onRefresh}
-          className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-border px-2 py-1 text-[11px] text-muted transition-colors hover:border-border-active hover:bg-surface-container hover:text-foreground"
-        >
-          <RotateCcw size={12} />
-          刷新
-        </button>
-      </div>
-      {visibleActiveMemories.length > 0 ? (
-        <div className="mt-2 divide-y divide-border border-t border-border pt-1.5">
-          {visibleActiveMemories.map((memory) => (
-            <div key={memory.id} className="flex min-w-0 items-center gap-2 py-1.5">
-              <span className="shrink-0 rounded-full border border-border px-1.5 py-0.5 text-[10px] text-muted">
-                {memory.memoryScope === 'PROJECT' ? '项目' : '用户'}
-              </span>
-              <span className="min-w-0 flex-1 truncate text-foreground">{memory.content}</span>
-            </div>
-          ))}
-        </div>
-      ) : null}
+      <span className="inline-flex min-w-0 items-center gap-1.5 font-medium text-foreground">
+        <Brain size={14} />
+        工作区记忆
+      </span>
+      <span className="rounded-full border border-border bg-surface-container px-2 py-0.5 text-[11px] text-foreground">
+        已生效 {activeMemoryCount} 条
+      </span>
     </section>
   );
 }

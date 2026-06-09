@@ -2,15 +2,19 @@ import React, { useMemo, useState } from 'react';
 import { motion } from 'motion/react';
 import { CalendarClock, MessageSquareText, Plus, RotateCcw } from 'lucide-react';
 
+import { Button } from '../components/ui/Button';
 import { AutomationTaskCreateDialog } from './automation/AutomationTaskCreateDialog';
 import { AutomationTaskList } from './automation/AutomationTaskList';
+import { AutomationTask, AutomationTaskSavePayload } from './automation/types';
 import { useAutomationTasks } from './automation/useAutomationTasks';
 
 /**
- * 渲染自动化定时任务页面，支持手动创建和查看聊天创建的任务。
+ * 渲染自动化定时任务页面，支持手动创建、会话创建任务查看，以及任务编辑/启停/删除。
  */
 export default function AutomationView() {
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
+  const [editingTask, setEditingTask] = useState<AutomationTask | null>(null);
+  const [deletingTask, setDeletingTask] = useState<AutomationTask | null>(null);
   const {
     tasks,
     isLoading,
@@ -19,6 +23,9 @@ export default function AutomationView() {
     setErrorMessage,
     reloadTasks,
     createTask,
+    updateTask,
+    updateTaskEnabled,
+    deleteTask,
   } = useAutomationTasks();
 
   const activeTaskCount = useMemo(() => tasks.filter((task) => task.enabled).length, [tasks]);
@@ -31,7 +38,7 @@ export default function AutomationView() {
   /**
    * 提交创建表单，成功后关闭弹窗；失败时保留弹窗并原样展示后端 message。
    */
-  const handleCreateSubmit: Parameters<typeof AutomationTaskCreateDialog>[0]['onSubmit'] = async (payload) => {
+  const handleCreateSubmit = async (payload: AutomationTaskSavePayload) => {
     try {
       await createTask(payload);
       setIsCreateDialogOpen(false);
@@ -39,6 +46,51 @@ export default function AutomationView() {
       setErrorMessage(error instanceof Error ? error.message : '自动化任务请求失败');
     }
   };
+
+  /**
+   * 编辑任务成功后关闭弹窗；失败时保留弹窗并展示后端中文 message。
+   */
+  const handleEditSubmit = async (payload: AutomationTaskSavePayload) => {
+    if (!editingTask) {
+      return;
+    }
+
+    try {
+      await updateTask(editingTask.id, payload);
+      setEditingTask(null);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : '自动化任务请求失败');
+    }
+  };
+
+  /**
+   * 启停任务时不做本地乐观更新，避免 nextRunAt 与服务端重新计算结果不一致。
+   */
+  const handleToggleEnabled = async (task: AutomationTask) => {
+    try {
+      await updateTaskEnabled(task.id, !task.enabled);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : '自动化任务请求失败');
+    }
+  };
+
+  /**
+   * 删除确认后由后端逻辑删除任务，刷新列表为空时回到空态。
+   */
+  const handleDeleteConfirm = async () => {
+    if (!deletingTask) {
+      return;
+    }
+
+    try {
+      await deleteTask(deletingTask.id);
+      setDeletingTask(null);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : '自动化任务请求失败');
+    }
+  };
+
+  const isAnyDialogOpen = isCreateDialogOpen || editingTask !== null || deletingTask !== null;
 
   return (
     <motion.div
@@ -63,25 +115,22 @@ export default function AutomationView() {
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
-            <button
-              className="inline-flex h-10 items-center gap-2 rounded-md border border-border bg-surface px-4 text-sm font-medium text-muted transition-colors hover:border-border-active hover:text-foreground"
+            <Button
               onClick={() => void reloadTasks()}
-              type="button"
+              variant="outline"
             >
               <RotateCcw size={16} />
               刷新
-            </button>
-            <button
-              className="inline-flex h-10 items-center gap-2 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90"
+            </Button>
+            <Button
               onClick={() => {
                 setErrorMessage('');
                 setIsCreateDialogOpen(true);
               }}
-              type="button"
             >
               <Plus size={16} />
               新建定时任务
-            </button>
+            </Button>
           </div>
         </header>
 
@@ -91,7 +140,7 @@ export default function AutomationView() {
           <AutomationMetric label="下次运行" value={nextRunLabel} />
         </section>
 
-        {errorMessage && !isCreateDialogOpen && (
+        {errorMessage && !isAnyDialogOpen && (
           <div className="rounded-md border border-error/35 bg-error/10 px-4 py-3 text-sm text-error">
             {errorMessage}
           </div>
@@ -102,6 +151,18 @@ export default function AutomationView() {
           onCreate={() => {
             setErrorMessage('');
             setIsCreateDialogOpen(true);
+          }}
+          onDelete={(task) => {
+            setErrorMessage('');
+            setDeletingTask(task);
+          }}
+          onEdit={(task) => {
+            setErrorMessage('');
+            setEditingTask(task);
+          }}
+          onToggleEnabled={(task) => {
+            setErrorMessage('');
+            void handleToggleEnabled(task);
           }}
           tasks={tasks}
         />
@@ -118,7 +179,82 @@ export default function AutomationView() {
         }}
         onSubmit={handleCreateSubmit}
       />
+      <AutomationTaskCreateDialog
+        errorMessage={errorMessage}
+        initialTask={editingTask}
+        isOpen={editingTask !== null}
+        isSaving={isSaving}
+        mode="edit"
+        onClearError={() => setErrorMessage('')}
+        onClose={() => {
+          setErrorMessage('');
+          setEditingTask(null);
+        }}
+        onSubmit={handleEditSubmit}
+      />
+      <AutomationTaskDeleteDialog
+        isOpen={deletingTask !== null}
+        isSaving={isSaving}
+        onClose={() => {
+          setErrorMessage('');
+          setDeletingTask(null);
+        }}
+        onConfirm={handleDeleteConfirm}
+        task={deletingTask}
+      />
     </motion.div>
+  );
+}
+
+/**
+ * 删除确认弹窗使用项目内浮层，避免浏览器原生 confirm 破坏主题与交互一致性。
+ */
+function AutomationTaskDeleteDialog({
+  isOpen,
+  isSaving,
+  task,
+  onClose,
+  onConfirm,
+}: {
+  isOpen: boolean;
+  isSaving: boolean;
+  task: AutomationTask | null;
+  onClose: () => void;
+  onConfirm: () => Promise<void>;
+}) {
+  if (!isOpen || !task) {
+    return null;
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-background/82 px-4 py-6 backdrop-blur-sm"
+      role="presentation"
+    >
+      <section
+        aria-labelledby="automation-delete-dialog-title"
+        aria-modal="true"
+        className="w-full max-w-[420px] rounded-lg border border-border bg-surface p-5 text-foreground shadow-[0_24px_70px_rgba(0,0,0,0.34)]"
+        role="dialog"
+      >
+        <h2 id="automation-delete-dialog-title" className="text-lg font-semibold text-foreground">
+          删除定时任务
+        </h2>
+        <p className="mt-3 text-sm leading-6 text-muted">
+          确认删除
+          <span className="mx-1 font-medium text-foreground">{task.name}</span>
+          后，系统将停止后续调度，并从任务列表中移除。
+        </p>
+        <footer className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+          <Button onClick={onClose} variant="outline">
+            取消
+          </Button>
+          <Button disabled={isSaving} onClick={() => void onConfirm()} variant="danger">
+            删除
+          </Button>
+        </footer>
+      </section>
+    </div>
   );
 }
 

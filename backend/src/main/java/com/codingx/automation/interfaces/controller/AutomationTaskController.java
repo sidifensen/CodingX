@@ -4,13 +4,19 @@ import cn.dev33.satoken.stp.StpUtil;
 import com.codingx.automation.application.service.AutomationTaskService;
 import com.codingx.automation.domain.model.AutomationTask;
 import com.codingx.automation.interfaces.request.AutomationTaskCreateRequest;
+import com.codingx.automation.interfaces.request.AutomationTaskEnabledRequest;
+import com.codingx.automation.interfaces.request.AutomationTaskUpdateRequest;
 import com.codingx.automation.interfaces.response.AutomationTaskResponse;
 import com.codingx.common.model.ApiResponse;
 import java.time.LocalDateTime;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -58,6 +64,66 @@ public class AutomationTaskController {
             LocalDateTime.now()
         );
         return ApiResponse.success(toResponse(task));
+    }
+
+    /**
+     * 编辑当前用户自己的自动化任务。
+     * @param taskId 路径中的任务主键。
+     * @param request 编辑请求。
+     * @return 更新后的任务响应。
+     */
+    @PutMapping("/{taskId}")
+    public ApiResponse<AutomationTaskResponse> updateTask(
+        @PathVariable Long taskId,
+        @RequestBody AutomationTaskUpdateRequest request
+    ) {
+        Long userId = StpUtil.getLoginIdAsLong();
+        AutomationTask task = automationTaskService.updateTask(
+            userId,
+            taskId,
+            request.workspaceId(),
+            request.name(),
+            request.prompt(),
+            automationTaskService.parseScheduleType(request.scheduleType()),
+            request.scheduleTime(),
+            request.scheduleDayOfWeek(),
+            request.onceExecuteAt(),
+            LocalDateTime.now()
+        );
+        return ApiResponse.success(toResponse(task));
+    }
+
+    /**
+     * 启用或停用当前用户自己的自动化任务。
+     * @param taskId 路径中的任务主键。
+     * @param request 启停请求。
+     * @return 更新后的任务响应。
+     */
+    @PatchMapping("/{taskId}/enabled")
+    public ApiResponse<AutomationTaskResponse> updateTaskEnabled(
+        @PathVariable Long taskId,
+        @RequestBody AutomationTaskEnabledRequest request
+    ) {
+        Long userId = StpUtil.getLoginIdAsLong();
+        AutomationTask task = automationTaskService.updateTaskEnabled(
+            userId,
+            taskId,
+            Boolean.TRUE.equals(request.enabled()),
+            LocalDateTime.now()
+        );
+        return ApiResponse.success(toResponse(task));
+    }
+
+    /**
+     * 逻辑删除当前用户自己的自动化任务。
+     * @param taskId 路径中的任务主键。
+     * @return 无数据成功响应。
+     */
+    @DeleteMapping("/{taskId}")
+    public ApiResponse<Void> deleteTask(@PathVariable Long taskId) {
+        Long userId = StpUtil.getLoginIdAsLong();
+        automationTaskService.deleteTask(userId, taskId, LocalDateTime.now());
+        return ApiResponse.successMessage("自动化任务已删除");
     }
 
     /**

@@ -7,6 +7,7 @@ import com.codingx.automation.domain.model.AutomationTask;
 import com.codingx.automation.domain.model.AutomationTaskSourceType;
 import com.codingx.automation.domain.repository.AutomationTaskRepository;
 import com.codingx.common.exception.BusinessException;
+import com.codingx.common.exception.NotFoundException;
 import com.codingx.workspace.domain.repository.WorkspaceRepository;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -124,6 +125,106 @@ public class AutomationTaskService {
     public List<AutomationTask> listTasks(Long userId) {
         requireUserId(userId);
         return automationTaskRepository.findByUserId(userId);
+    }
+
+    /**
+     * 编辑当前用户自己的自动化任务配置，并按新的计划字段重新计算下一次执行时间。
+     * @param userId 当前用户标识。
+     * @param taskId 目标任务主键。
+     * @param workspaceId 新工作空间标识，可为空。
+     * @param name 新任务名称。
+     * @param prompt 新任务需求说明。
+     * @param scheduleType 新计划类型。
+     * @param scheduleTime 新固定执行时间。
+     * @param scheduleDayOfWeek 新每周执行星期。
+     * @param onceExecuteAt 新一次性执行时间。
+     * @param now 当前时间，测试可传入固定值。
+     * @return 更新后的任务快照。
+     */
+    public AutomationTask updateTask(
+        Long userId,
+        Long taskId,
+        Long workspaceId,
+        String name,
+        String prompt,
+        AutomationScheduleType scheduleType,
+        String scheduleTime,
+        Integer scheduleDayOfWeek,
+        LocalDateTime onceExecuteAt,
+        LocalDateTime now
+    ) {
+        AutomationTask existingTask = requireOwnedTask(userId, taskId);
+        validateWorkspaceOwnership(workspaceId, userId);
+        String normalizedName = requireText(name, "AUTOMATION_NAME_REQUIRED", "任务名称不能为空");
+        String normalizedPrompt = requireText(prompt, "AUTOMATION_PROMPT_REQUIRED", "需求说明不能为空");
+        AutomationScheduleType effectiveScheduleType = scheduleType == null ? AutomationScheduleType.DAILY : scheduleType;
+        LocalDateTime effectiveNow = now == null ? LocalDateTime.now() : now;
+        LocalTime parsedTime = parseScheduleTime(effectiveScheduleType, scheduleTime);
+        Integer normalizedDayOfWeek = normalizeDayOfWeek(effectiveScheduleType, scheduleDayOfWeek, effectiveNow);
+        LocalDateTime normalizedOnceExecuteAt = normalizeOnceExecuteAt(effectiveScheduleType, onceExecuteAt, parsedTime, effectiveNow);
+        LocalDateTime nextRunAt = existingTask.isEnabled()
+            ? calculateNextRunAt(effectiveScheduleType, parsedTime, normalizedDayOfWeek, normalizedOnceExecuteAt, effectiveNow)
+            : null;
+        AutomationTask updatedTask = existingTask.toBuilder()
+            .workspaceId(workspaceId)
+            .name(normalizedName)
+            .prompt(normalizedPrompt)
+            .scheduleType(effectiveScheduleType)
+            .scheduleTime(parsedTime == null ? null : parsedTime.format(TIME_FORMATTER))
+            .scheduleDayOfWeek(normalizedDayOfWeek)
+            .onceExecuteAt(normalizedOnceExecuteAt)
+            .nextRunAt(nextRunAt)
+            .updatedAt(effectiveNow)
+            .build();
+        automationTaskRepository.save(updatedTask);
+        return updatedTask;
+    }
+
+    /**
+     * 更新任务启停状态；关闭时清空下一次运行时间，重新开启时按当前时间恢复调度点。
+     * @param userId 当前用户标识。
+     * @param taskId 目标任务主键。
+     * @param enabled 是否启用。
+     * @param now 当前时间，测试可传入固定值。
+     * @return 更新后的任务快照。
+     */
+    public AutomationTask updateTaskEnabled(Long userId, Long taskId, boolean enabled, LocalDateTime now) {
+        AutomationTask existingTask = requireOwnedTask(userId, taskId);
+        LocalDateTime effectiveNow = now == null ? LocalDateTime.now() : now;
+        LocalDateTime nextRunAt = enabled
+            ? calculateNextRunAt(
+                existingTask.getScheduleType(),
+                parseScheduleTime(existingTask.getScheduleType(), existingTask.getScheduleTime()),
+                existingTask.getScheduleDayOfWeek(),
+                existingTask.getOnceExecuteAt(),
+                effectiveNow
+            )
+            : null;
+        AutomationTask updatedTask = existingTask.toBuilder()
+            .enabled(enabled)
+            .nextRunAt(nextRunAt)
+            .updatedAt(effectiveNow)
+            .build();
+        automationTaskRepository.save(updatedTask);
+        return updatedTask;
+    }
+
+    /**
+     * 逻辑删除当前用户自己的自动化任务；删除后不再展示或参与调度。
+     * @param userId 当前用户标识。
+     * @param taskId 目标任务主键。
+     * @param now 当前时间，测试可传入固定值。
+     */
+    public void deleteTask(Long userId, Long taskId, LocalDateTime now) {
+        AutomationTask existingTask = requireOwnedTask(userId, taskId);
+        LocalDateTime effectiveNow = now == null ? LocalDateTime.now() : now;
+        AutomationTask deletedTask = existingTask.toBuilder()
+            .enabled(false)
+            .nextRunAt(null)
+            .deleted(true)
+            .updatedAt(effectiveNow)
+            .build();
+        automationTaskRepository.save(deletedTask);
     }
 
     /**
@@ -329,6 +430,23 @@ public class AutomationTaskService {
         if (userId == null) {
             throw new BusinessException("AUTOMATION_USER_REQUIRED", "用户身份不能为空");
         }
+    }
+
+    /**
+     * 按用户归属读取任务，任务不存在、已删除或属于其他用户时统一按不可见处理。
+     */
+    private AutomationTask requireOwnedTask(Long userId, Long taskId) {
+        requireUserId(userId);
+        if (taskId == null) {
+            throw new NotFoundException("自动化任务不存在");
+        }
+        AutomationTask task = automationTaskRepository.findById(taskId)
+            .filter(candidate -> userId.equals(candidate.getUserId()))
+            .orElseThrow(() -> new NotFoundException("自动化任务不存在"));
+        if (task.isDeleted()) {
+            throw new NotFoundException("自动化任务不存在");
+        }
+        return task;
     }
 
     /**

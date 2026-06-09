@@ -8,12 +8,18 @@ import { AutomationTask } from '@/views/automation/types';
 
 const listAutomationTasksMock = vi.fn();
 const createAutomationTaskMock = vi.fn();
+const updateAutomationTaskMock = vi.fn();
+const updateAutomationTaskEnabledMock = vi.fn();
+const deleteAutomationTaskMock = vi.fn();
 const getSessionMock = vi.fn();
 
 vi.mock('@/api/automationApi', () => ({
   AutomationApi: {
     listTasks: (...args: unknown[]) => listAutomationTasksMock(...args),
     createTask: (...args: unknown[]) => createAutomationTaskMock(...args),
+    updateTask: (...args: unknown[]) => updateAutomationTaskMock(...args),
+    updateTaskEnabled: (...args: unknown[]) => updateAutomationTaskEnabledMock(...args),
+    deleteTask: (...args: unknown[]) => deleteAutomationTaskMock(...args),
   },
 }));
 
@@ -40,11 +46,30 @@ const createdTask: AutomationTask = {
   workspaceId: null,
 };
 
+const updatedTask: AutomationTask = {
+  ...createdTask,
+  name: 'AI 新闻',
+  prompt: '推送今天 AI 新闻摘要',
+  scheduleType: 'WEEKLY',
+  scheduleTime: '12:00',
+  scheduleDayOfWeek: 3,
+  nextRunAt: '2026-06-10T12:00:00',
+};
+
+const disabledTask: AutomationTask = {
+  ...createdTask,
+  enabled: false,
+  nextRunAt: null,
+};
+
 describe('AutomationView', () => {
   beforeEach(() => {
     getSessionMock.mockReturnValue({ token: 'token-123' });
     listAutomationTasksMock.mockResolvedValue([]);
     createAutomationTaskMock.mockResolvedValue(createdTask);
+    updateAutomationTaskMock.mockResolvedValue(updatedTask);
+    updateAutomationTaskEnabledMock.mockResolvedValue(disabledTask);
+    deleteAutomationTaskMock.mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -164,5 +189,108 @@ describe('AutomationView', () => {
     fireEvent.click(within(dialog).getByRole('button', { name: '创建任务' }));
 
     expect(await screen.findByText('执行时间格式不正确')).toBeInTheDocument();
+  });
+
+  /**
+   * 编辑任务应复用自定义任务表单弹窗，回填当前任务并提交到更新接口。
+   */
+  it('edits an automation task and refreshes the list', async () => {
+    listAutomationTasksMock
+      .mockResolvedValueOnce([createdTask])
+      .mockResolvedValueOnce([updatedTask]);
+
+    render(<AutomationView />);
+
+    expect(await screen.findByRole('heading', { name: '每日项目总结' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '编辑自动化任务 每日项目总结' }));
+
+    const dialog = screen.getByRole('dialog', { name: '编辑定时任务' });
+    expect(within(dialog).getByLabelText('任务名称')).toHaveValue('每日项目总结');
+    expect(within(dialog).getByLabelText('任务需求')).toHaveValue('总结项目状态并给出风险项');
+
+    fireEvent.change(within(dialog).getByLabelText('任务名称'), {
+      target: { value: 'AI 新闻' },
+    });
+    fireEvent.change(within(dialog).getByLabelText('任务需求'), {
+      target: { value: '推送今天 AI 新闻摘要' },
+    });
+    fireEvent.change(within(dialog).getByLabelText('计划类型'), {
+      target: { value: 'WEEKLY' },
+    });
+    fireEvent.change(within(dialog).getByLabelText('执行星期'), {
+      target: { value: '3' },
+    });
+    fireEvent.change(within(dialog).getByLabelText('执行时间'), {
+      target: { value: '12:00' },
+    });
+    fireEvent.click(within(dialog).getByRole('button', { name: '保存任务' }));
+
+    await waitFor(() => {
+      expect(updateAutomationTaskMock).toHaveBeenCalledWith('token-123', '91001', {
+        name: 'AI 新闻',
+        prompt: '推送今天 AI 新闻摘要',
+        scheduleType: 'WEEKLY',
+        scheduleTime: '12:00',
+        scheduleDayOfWeek: 3,
+        onceExecuteAt: null,
+        workspaceId: null,
+      });
+    });
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog', { name: '编辑定时任务' })).not.toBeInTheDocument();
+    });
+    expect(screen.getByRole('heading', { name: 'AI 新闻' })).toBeInTheDocument();
+    expect(screen.getByText('每周三 12:00')).toBeInTheDocument();
+  });
+
+  /**
+   * 任务行启停操作应直接调用启停接口，成功后刷新列表并展示停用状态。
+   */
+  it('pauses and resumes an automation task from the list', async () => {
+    listAutomationTasksMock
+      .mockResolvedValueOnce([createdTask])
+      .mockResolvedValueOnce([disabledTask])
+      .mockResolvedValueOnce([createdTask]);
+    updateAutomationTaskEnabledMock
+      .mockResolvedValueOnce(disabledTask)
+      .mockResolvedValueOnce(createdTask);
+
+    render(<AutomationView />);
+
+    expect(await screen.findByRole('heading', { name: '每日项目总结' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '暂停自动化任务 每日项目总结' }));
+
+    await waitFor(() => {
+      expect(updateAutomationTaskEnabledMock).toHaveBeenCalledWith('token-123', '91001', false);
+    });
+    expect(await screen.findByText('已停用')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '开启自动化任务 每日项目总结' }));
+    await waitFor(() => {
+      expect(updateAutomationTaskEnabledMock).toHaveBeenLastCalledWith('token-123', '91001', true);
+    });
+  });
+
+  /**
+   * 删除操作必须使用项目内确认弹窗，确认后调用删除接口并从列表刷新移除。
+   */
+  it('deletes an automation task after custom confirmation', async () => {
+    listAutomationTasksMock
+      .mockResolvedValueOnce([createdTask])
+      .mockResolvedValueOnce([]);
+
+    render(<AutomationView />);
+
+    expect(await screen.findByRole('heading', { name: '每日项目总结' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '删除自动化任务 每日项目总结' }));
+
+    const dialog = screen.getByRole('dialog', { name: '删除定时任务' });
+    expect(within(dialog).getByText('每日项目总结')).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole('button', { name: '删除' }));
+
+    await waitFor(() => {
+      expect(deleteAutomationTaskMock).toHaveBeenCalledWith('token-123', '91001');
+    });
+    expect(await screen.findByText('暂无定时任务')).toBeInTheDocument();
   });
 });

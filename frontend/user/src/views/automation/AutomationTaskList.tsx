@@ -1,6 +1,18 @@
 import React from 'react';
-import { Bot, CalendarClock, Clock3, LoaderCircle, MessageSquareText, Plus } from 'lucide-react';
+import {
+  Bot,
+  CalendarClock,
+  Clock3,
+  LoaderCircle,
+  MessageSquareText,
+  Pause,
+  PencilLine,
+  Play,
+  Plus,
+  Trash2,
+} from 'lucide-react';
 
+import { Button } from '../../components/ui/Button';
 import { formatDateTime, formatScheduleLabel } from './formatters';
 import { AutomationTask } from './types';
 
@@ -11,12 +23,25 @@ interface AutomationTaskListProps {
   isLoading: boolean;
   /** 打开创建弹窗的回调。 */
   onCreate: () => void;
+  /** 打开编辑弹窗的回调。 */
+  onEdit: (task: AutomationTask) => void;
+  /** 切换任务启停状态的回调。 */
+  onToggleEnabled: (task: AutomationTask) => void;
+  /** 打开删除确认弹窗的回调。 */
+  onDelete: (task: AutomationTask) => void;
 }
 
 /**
- * 渲染自动化任务列表、加载态和空态。
+ * 渲染自动化任务列表、加载态和空态；列表只触发操作，具体保存由页面层编排。
  */
-export function AutomationTaskList({ tasks, isLoading, onCreate }: AutomationTaskListProps) {
+export function AutomationTaskList({
+  tasks,
+  isLoading,
+  onCreate,
+  onEdit,
+  onToggleEnabled,
+  onDelete,
+}: AutomationTaskListProps) {
   if (isLoading) {
     return (
       <div className="flex min-h-[360px] items-center justify-center rounded-lg border border-border bg-surface">
@@ -34,16 +59,17 @@ export function AutomationTaskList({ tasks, isLoading, onCreate }: AutomationTas
 
   return (
     <section className="overflow-hidden rounded-lg border border-border bg-surface">
-      <header className="grid grid-cols-[1fr_auto] gap-4 border-b border-border bg-surface-container px-5 py-3 text-xs font-medium text-muted md:grid-cols-[1.4fr_0.8fr_0.8fr_auto]">
+      <header className="grid grid-cols-[1fr_auto] gap-4 border-b border-border bg-surface-container px-5 py-3 text-xs font-medium text-muted md:grid-cols-[1.4fr_0.75fr_0.75fr_auto_auto]">
         <span>任务</span>
         <span className="hidden md:block">计划</span>
         <span className="hidden md:block">下次运行</span>
         <span className="text-right">状态</span>
+        <span className="hidden text-right md:block">操作</span>
       </header>
       <div className="divide-y divide-border">
         {tasks.map((task) => (
           <article
-            className="grid gap-4 px-5 py-4 transition-colors hover:bg-surface-container md:grid-cols-[1.4fr_0.8fr_0.8fr_auto] md:items-center"
+            className="grid gap-4 px-5 py-4 transition-colors hover:bg-surface-container md:grid-cols-[1.4fr_0.75fr_0.75fr_auto_auto] md:items-center"
             key={task.id}
           >
             <div className="min-w-0">
@@ -79,6 +105,37 @@ export function AutomationTaskList({ tasks, isLoading, onCreate }: AutomationTas
                 {task.enabled ? '运行中' : '已停用'}
               </span>
             </div>
+
+            <div className="flex items-center justify-end gap-1.5">
+              <Button
+                aria-label={`编辑自动化任务 ${task.name}`}
+                onClick={() => onEdit(task)}
+                size="icon"
+                title="编辑"
+                variant="ghost"
+              >
+                <PencilLine size={16} />
+              </Button>
+              <Button
+                aria-label={`${task.enabled ? '暂停' : '开启'}自动化任务 ${task.name}`}
+                onClick={() => onToggleEnabled(task)}
+                size="icon"
+                title={task.enabled ? '暂停' : '开启'}
+                variant="ghost"
+              >
+                {task.enabled ? <Pause size={16} /> : <Play size={16} />}
+              </Button>
+              <Button
+                aria-label={`删除自动化任务 ${task.name}`}
+                className="text-error hover:bg-error/10 hover:text-error"
+                onClick={() => onDelete(task)}
+                size="icon"
+                title="删除"
+                variant="ghost"
+              >
+                <Trash2 size={16} />
+              </Button>
+            </div>
           </article>
         ))}
       </div>
@@ -99,14 +156,10 @@ function AutomationTaskEmptyState({ onCreate }: { onCreate: () => void }) {
       <p className="mt-2 max-w-md text-sm leading-6 text-muted">
         可以在这里手动创建，也可以直接在聊天里说“每天 18:11 帮我总结项目状态”。
       </p>
-      <button
-        className="mt-6 inline-flex h-10 items-center gap-2 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90"
-        onClick={onCreate}
-        type="button"
-      >
+      <Button className="mt-6" onClick={onCreate}>
         <Plus size={16} />
         创建第一个任务
-      </button>
+      </Button>
     </section>
   );
 }

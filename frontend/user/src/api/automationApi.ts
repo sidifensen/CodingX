@@ -1,6 +1,10 @@
 import { ApiResponseParser } from './apiResponse';
 import { ApiResponseEnvelope } from '../types/auth';
-import { AutomationTask, AutomationTaskCreatePayload } from '../views/automation/types';
+import {
+  AutomationTask,
+  AutomationTaskCreatePayload,
+  AutomationTaskUpdatePayload,
+} from '../views/automation/types';
 
 const AUTOMATION_REQUEST_FAILED = '自动化任务请求失败';
 
@@ -33,6 +37,63 @@ export class AutomationApi {
       body: JSON.stringify(payload),
     });
     return normalizeAutomationTask(envelope.data);
+  }
+
+  /**
+   * 编辑当前用户自己的自动化任务。
+   * @param token 当前登录令牌。
+   * @param taskId 任务主键。
+   * @param payload 编辑后的任务表单请求体。
+   * @returns 更新后的任务快照。
+   */
+  static async updateTask(
+    token: string,
+    taskId: string,
+    payload: AutomationTaskUpdatePayload,
+  ): Promise<AutomationTask> {
+    const envelope = await this.request<AutomationTask>(
+      `/api/automation/tasks/${encodeURIComponent(taskId)}`,
+      token,
+      {
+        method: 'PUT',
+        body: JSON.stringify(payload),
+      },
+    );
+    return normalizeAutomationTask(envelope.data);
+  }
+
+  /**
+   * 更新当前用户自己的自动化任务启停状态。
+   * @param token 当前登录令牌。
+   * @param taskId 任务主键。
+   * @param enabled true 表示开启调度，false 表示暂停调度。
+   * @returns 更新后的任务快照。
+   */
+  static async updateTaskEnabled(
+    token: string,
+    taskId: string,
+    enabled: boolean,
+  ): Promise<AutomationTask> {
+    const envelope = await this.request<AutomationTask>(
+      `/api/automation/tasks/${encodeURIComponent(taskId)}/enabled`,
+      token,
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ enabled }),
+      },
+    );
+    return normalizeAutomationTask(envelope.data);
+  }
+
+  /**
+   * 删除当前用户自己的自动化任务；后端执行逻辑删除。
+   * @param token 当前登录令牌。
+   * @param taskId 任务主键。
+   */
+  static async deleteTask(token: string, taskId: string): Promise<void> {
+    await this.request<void>(`/api/automation/tasks/${encodeURIComponent(taskId)}`, token, {
+      method: 'DELETE',
+    });
   }
 
   /**

@@ -43,9 +43,9 @@ export interface AutomationTask {
 }
 
 /**
- * 手动创建自动化任务的请求体。
+ * 自动化任务保存请求体；创建和编辑使用同一组计划字段，避免两套表单协议漂移。
  */
-export interface AutomationTaskCreatePayload {
+export interface AutomationTaskSavePayload {
   /** 任务名称，不能为空。 */
   name: string;
   /** 任务需求说明，不能为空。 */
@@ -61,3 +61,13 @@ export interface AutomationTaskCreatePayload {
   /** 当前工作空间 ID，自动化页暂未绑定具体工作空间时为空。 */
   workspaceId: string | null;
 }
+
+/**
+ * 手动创建自动化任务的请求体。
+ */
+export type AutomationTaskCreatePayload = AutomationTaskSavePayload;
+
+/**
+ * 编辑自动化任务的请求体。
+ */
+export type AutomationTaskUpdatePayload = AutomationTaskSavePayload;

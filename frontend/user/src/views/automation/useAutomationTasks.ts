@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { AutomationApi } from '../../api/automationApi';
 import { AuthStorage } from '../../utils/authStorage';
-import { AutomationTask, AutomationTaskCreatePayload } from './types';
+import { AutomationTask, AutomationTaskCreatePayload, AutomationTaskUpdatePayload } from './types';
 
 /**
  * 聚合自动化任务列表和创建流程，隔离页面组件中的请求副作用。
@@ -68,6 +68,62 @@ export function useAutomationTasks() {
     [currentToken, reloadTasks],
   );
 
+  /**
+   * 编辑任务后重新拉取服务端列表，避免本地乐观更新遗漏后端重新计算的 nextRunAt。
+   */
+  const updateTask = useCallback(
+    async (taskId: string, payload: AutomationTaskUpdatePayload) => {
+      const token = currentToken();
+      if (!token) {
+        throw new Error('请先登录后再编辑自动化任务');
+      }
+
+      setIsSaving(true);
+      try {
+        await AutomationApi.updateTask(token, taskId, payload);
+        await reloadTasks();
+        setErrorMessage('');
+      } finally {
+        setIsSaving(false);
+      }
+    },
+    [currentToken, reloadTasks],
+  );
+
+  /**
+   * 启用或停用任务；调度状态由后端计算后再通过刷新列表回填页面。
+   */
+  const updateTaskEnabled = useCallback(
+    async (taskId: string, enabled: boolean) => {
+      const token = currentToken();
+      if (!token) {
+        throw new Error('请先登录后再管理自动化任务');
+      }
+
+      await AutomationApi.updateTaskEnabled(token, taskId, enabled);
+      await reloadTasks();
+      setErrorMessage('');
+    },
+    [currentToken, reloadTasks],
+  );
+
+  /**
+   * 删除任务；后端执行逻辑删除，页面以刷新后的任务列表为准。
+   */
+  const deleteTask = useCallback(
+    async (taskId: string) => {
+      const token = currentToken();
+      if (!token) {
+        throw new Error('请先登录后再删除自动化任务');
+      }
+
+      await AutomationApi.deleteTask(token, taskId);
+      await reloadTasks();
+      setErrorMessage('');
+    },
+    [currentToken, reloadTasks],
+  );
+
   return useMemo(
     () => ({
       tasks,
@@ -77,7 +133,20 @@ export function useAutomationTasks() {
       setErrorMessage,
       reloadTasks,
       createTask,
+      updateTask,
+      updateTaskEnabled,
+      deleteTask,
     }),
-    [tasks, isLoading, isSaving, errorMessage, reloadTasks, createTask],
+    [
+      tasks,
+      isLoading,
+      isSaving,
+      errorMessage,
+      reloadTasks,
+      createTask,
+      updateTask,
+      updateTaskEnabled,
+      deleteTask,
+    ],
   );
 }

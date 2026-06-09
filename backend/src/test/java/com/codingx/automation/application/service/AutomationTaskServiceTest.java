@@ -181,6 +181,145 @@ class AutomationTaskServiceTest {
     }
 
     /**
+     * 编辑当前用户自己的任务时，应复用创建校验并按新计划重新计算下一次运行时间。
+     */
+    @Test
+    void updateTaskShouldModifyOwnedTaskAndRecalculateNextRunAt() {
+        InMemoryAutomationTaskRepository repository = new InMemoryAutomationTaskRepository();
+        AutomationTaskService service = new AutomationTaskService(repository, allowAnyWorkspace());
+        LocalDateTime createdAt = LocalDateTime.of(2026, 6, 8, 12, 0);
+        AutomationTask task = service.createManualTask(1001L, null, "旧任务", "旧需求", AutomationScheduleType.DAILY, "18:00", null, null, createdAt);
+
+        AutomationTask updatedTask = service.updateTask(
+            1001L,
+            task.getId(),
+            null,
+            "AI 新闻",
+            "推送今天 AI 新闻摘要",
+            AutomationScheduleType.WEEKLY,
+            "12:00",
+            3,
+            null,
+            LocalDateTime.of(2026, 6, 9, 16, 0)
+        );
+
+        assertEquals(task.getId(), updatedTask.getId());
+        assertEquals(AutomationTaskSourceType.MANUAL, updatedTask.getSourceType());
+        assertEquals("AI 新闻", updatedTask.getName());
+        assertEquals("推送今天 AI 新闻摘要", updatedTask.getPrompt());
+        assertEquals(AutomationScheduleType.WEEKLY, updatedTask.getScheduleType());
+        assertEquals(Integer.valueOf(3), updatedTask.getScheduleDayOfWeek());
+        assertEquals(LocalDateTime.of(2026, 6, 10, 12, 0), updatedTask.getNextRunAt());
+        assertTrue(updatedTask.isEnabled());
+    }
+
+    /**
+     * 编辑任务必须按用户归属校验，不能通过任务 ID 修改其他用户的自动化配置。
+     */
+    @Test
+    void updateTaskShouldRejectForeignTask() {
+        InMemoryAutomationTaskRepository repository = new InMemoryAutomationTaskRepository();
+        AutomationTaskService service = new AutomationTaskService(repository, allowAnyWorkspace());
+        AutomationTask foreignTask = service.createManualTask(
+            2002L,
+            null,
+            "他人任务",
+            "不可修改",
+            AutomationScheduleType.DAILY,
+            "18:00",
+            null,
+            null,
+            LocalDateTime.of(2026, 6, 8, 12, 0)
+        );
+
+        NotFoundException exception = assertThrows(
+            NotFoundException.class,
+            () -> service.updateTask(
+                1001L,
+                foreignTask.getId(),
+                null,
+                "越权修改",
+                "不应该成功",
+                AutomationScheduleType.DAILY,
+                "19:00",
+                null,
+                null,
+                LocalDateTime.of(2026, 6, 8, 13, 0)
+            )
+        );
+
+        assertEquals("NOT_FOUND", exception.getCode());
+        assertEquals("自动化任务不存在", exception.getMessage());
+    }
+
+    /**
+     * 关闭任务时应停止后续调度，重新开启时按当前时间重新计算下一次运行时间。
+     */
+    @Test
+    void updateTaskEnabledShouldPauseAndResumeWithNextRunAt() {
+        InMemoryAutomationTaskRepository repository = new InMemoryAutomationTaskRepository();
+        AutomationTaskService service = new AutomationTaskService(repository, allowAnyWorkspace());
+        AutomationTask task = service.createManualTask(
+            1001L,
+            null,
+            "每日任务",
+            "执行",
+            AutomationScheduleType.DAILY,
+            "18:00",
+            null,
+            null,
+            LocalDateTime.of(2026, 6, 8, 12, 0)
+        );
+
+        AutomationTask disabledTask = service.updateTaskEnabled(
+            1001L,
+            task.getId(),
+            false,
+            LocalDateTime.of(2026, 6, 8, 13, 0)
+        );
+        AutomationTask enabledTask = service.updateTaskEnabled(
+            1001L,
+            task.getId(),
+            true,
+            LocalDateTime.of(2026, 6, 8, 19, 0)
+        );
+
+        assertFalse(disabledTask.isEnabled());
+        assertEquals(null, disabledTask.getNextRunAt());
+        assertTrue(enabledTask.isEnabled());
+        assertEquals(LocalDateTime.of(2026, 6, 9, 18, 0), enabledTask.getNextRunAt());
+    }
+
+    /**
+     * 删除任务应写入逻辑删除状态，列表和后续单任务变更都不能再看到该任务。
+     */
+    @Test
+    void deleteTaskShouldSoftDeleteAndHideFromList() {
+        InMemoryAutomationTaskRepository repository = new InMemoryAutomationTaskRepository();
+        AutomationTaskService service = new AutomationTaskService(repository, allowAnyWorkspace());
+        AutomationTask task = service.createManualTask(
+            1001L,
+            null,
+            "待删除任务",
+            "执行",
+            AutomationScheduleType.DAILY,
+            "18:00",
+            null,
+            null,
+            LocalDateTime.of(2026, 6, 8, 12, 0)
+        );
+
+        service.deleteTask(1001L, task.getId(), LocalDateTime.of(2026, 6, 8, 13, 0));
+
+        assertTrue(service.listTasks(1001L).isEmpty());
+        assertTrue(repository.findById(task.getId()).isEmpty());
+        assertThrows(
+            NotFoundException.class,
+            () -> service.updateTaskEnabled(1001L, task.getId(), true, LocalDateTime.of(2026, 6, 8, 14, 0))
+        );
+    }
+
+    /**
      * 测试用内存仓储，只模拟服务需要的持久化行为，避免单元测试依赖数据库。
      */
     private static class InMemoryAutomationTaskRepository implements AutomationTaskRepository {
@@ -198,7 +337,10 @@ class AutomationTaskServiceTest {
 
         @Override
         public Optional<AutomationTask> findById(Long taskId) {
-            return tasks.stream().filter(task -> task.getId().equals(taskId)).findFirst();
+            return tasks.stream()
+                .filter(task -> task.getId().equals(taskId))
+                .filter(task -> !task.isDeleted())
+                .findFirst();
         }
 
         @Override

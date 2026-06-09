@@ -1,20 +1,29 @@
-import React, { FormEvent, useMemo, useState } from 'react';
+import React, { FormEvent, useEffect, useMemo, useState } from 'react';
 import { CalendarClock, LoaderCircle, X } from 'lucide-react';
 
+import { Button } from '../../components/ui/Button';
 import { formatScheduleTypeLabel } from './formatters';
-import { AutomationScheduleType, AutomationTaskCreatePayload } from './types';
+import {
+  AutomationScheduleType,
+  AutomationTask,
+  AutomationTaskSavePayload,
+} from './types';
 
 interface AutomationTaskCreateDialogProps {
+  /** 弹窗模式；编辑模式会从 initialTask 回填当前任务字段。 */
+  mode?: 'create' | 'edit';
   /** 弹窗是否打开；关闭时不渲染遮罩，避免隐藏内容抢占焦点。 */
   isOpen: boolean;
-  /** 创建接口是否正在提交，用于禁用重复点击。 */
+  /** 保存接口是否正在提交，用于禁用重复点击。 */
   isSaving: boolean;
+  /** 编辑模式的初始任务；创建模式为空。 */
+  initialTask?: AutomationTask | null;
   /** 后端或本地校验错误文案，优先原样展示。 */
   errorMessage: string;
   /** 用户关闭弹窗时调用。 */
   onClose: () => void;
   /** 提交合法表单时调用，由上层完成 API 保存。 */
-  onSubmit: (payload: AutomationTaskCreatePayload) => Promise<void>;
+  onSubmit: (payload: AutomationTaskSavePayload) => Promise<void>;
   /** 清理错误文案，用户再次编辑时避免旧错误残留。 */
   onClearError: () => void;
 }
@@ -22,11 +31,13 @@ interface AutomationTaskCreateDialogProps {
 const scheduleOptions: AutomationScheduleType[] = ['DAILY', 'WEEKLY', 'ONCE'];
 
 /**
- * 渲染自动化任务创建弹窗，使用项目内浮层替代浏览器原生弹窗。
+ * 渲染自动化任务保存弹窗，创建和编辑共用同一套计划字段，避免协议漂移。
  */
 export function AutomationTaskCreateDialog({
+  mode = 'create',
   isOpen,
   isSaving,
+  initialTask = null,
   errorMessage,
   onClose,
   onSubmit,
@@ -39,6 +50,31 @@ export function AutomationTaskCreateDialog({
   const [scheduleDayOfWeek, setScheduleDayOfWeek] = useState(1);
   const [onceExecuteAt, setOnceExecuteAt] = useState('');
   const [localErrorMessage, setLocalErrorMessage] = useState('');
+
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+
+    if (mode === 'edit' && initialTask) {
+      setName(initialTask.name);
+      setPrompt(initialTask.prompt);
+      setScheduleType(initialTask.scheduleType);
+      setScheduleTime(initialTask.scheduleTime ?? '');
+      setScheduleDayOfWeek(initialTask.scheduleDayOfWeek ?? 1);
+      setOnceExecuteAt(toDateTimeLocalValue(initialTask.onceExecuteAt));
+      setLocalErrorMessage('');
+      return;
+    }
+
+    setName('');
+    setPrompt('');
+    setScheduleType('DAILY');
+    setScheduleTime('');
+    setScheduleDayOfWeek(1);
+    setOnceExecuteAt('');
+    setLocalErrorMessage('');
+  }, [initialTask, isOpen, mode]);
 
   const isFormReady = useMemo(() => {
     const hasBasicFields = name.trim().length > 0 && prompt.trim().length > 0;
@@ -83,6 +119,14 @@ export function AutomationTaskCreateDialog({
   };
 
   const visibleErrorMessage = localErrorMessage || errorMessage;
+  const title = mode === 'edit' ? '编辑定时任务' : '新建定时任务';
+  const description =
+    mode === 'edit'
+      ? '调整执行时间和任务需求，保存后系统会重新计算下一次运行时间。'
+      : '填写执行时间和需求，系统会按计划自动创建会话任务。';
+  const closeLabel = mode === 'edit' ? '关闭编辑定时任务弹窗' : '关闭新建定时任务弹窗';
+  const submitLabel = mode === 'edit' ? '保存任务' : '创建任务';
+  const dialogTitleId = mode === 'edit' ? 'automation-edit-dialog-title' : 'automation-create-dialog-title';
 
   return (
     <div
@@ -90,7 +134,7 @@ export function AutomationTaskCreateDialog({
       role="presentation"
     >
       <section
-        aria-labelledby="automation-create-dialog-title"
+        aria-labelledby={dialogTitleId}
         aria-modal="true"
         className="w-full max-w-[560px] overflow-hidden rounded-lg border border-border bg-surface text-foreground shadow-[0_24px_70px_rgba(0,0,0,0.34)]"
         role="dialog"
@@ -101,22 +145,23 @@ export function AutomationTaskCreateDialog({
               <CalendarClock size={20} className="text-foreground" />
             </span>
             <div className="min-w-0">
-              <h2 id="automation-create-dialog-title" className="text-lg font-semibold text-foreground">
-                新建定时任务
+              <h2 id={dialogTitleId} className="text-lg font-semibold text-foreground">
+                {title}
               </h2>
               <p className="mt-1 text-sm leading-6 text-muted">
-                填写执行时间和需求，系统会按计划自动创建会话任务。
+                {description}
               </p>
             </div>
           </div>
-          <button
-            aria-label="关闭新建定时任务弹窗"
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-border bg-surface text-muted transition-colors hover:border-border-active hover:text-foreground"
+          <Button
+            aria-label={closeLabel}
+            className="h-9 w-9"
             onClick={onClose}
-            type="button"
+            size="icon"
+            variant="outline"
           >
             <X size={18} />
-          </button>
+          </Button>
         </header>
 
         <form className="space-y-5 px-5 py-5" onSubmit={handleSubmit}>
@@ -209,21 +254,16 @@ export function AutomationTaskCreateDialog({
           )}
 
           <footer className="flex flex-col-reverse gap-3 border-t border-border pt-5 sm:flex-row sm:justify-end">
-            <button
-              className="h-10 rounded-md border border-border bg-surface px-4 text-sm font-medium text-muted transition-colors hover:border-border-active hover:text-foreground"
-              onClick={onClose}
-              type="button"
-            >
+            <Button onClick={onClose} variant="outline">
               取消
-            </button>
-            <button
-              className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground transition-opacity disabled:cursor-not-allowed disabled:opacity-45"
+            </Button>
+            <Button
               disabled={!isFormReady || isSaving}
               type="submit"
             >
               {isSaving && <LoaderCircle size={16} className="animate-spin" />}
-              创建任务
-            </button>
+              {submitLabel}
+            </Button>
           </footer>
         </form>
       </section>
@@ -236,4 +276,14 @@ export function AutomationTaskCreateDialog({
  */
 function normalizeOnceExecuteAt(value: string): string {
   return value.length === 16 ? `${value}:00` : value;
+}
+
+/**
+ * 后端 LocalDateTime 可能带秒或使用空格分隔，datetime-local 只接收分钟级本地值。
+ */
+function toDateTimeLocalValue(value: string | null): string {
+  if (!value) {
+    return '';
+  }
+  return value.replace(' ', 'T').slice(0, 16);
 }

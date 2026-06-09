@@ -1,7 +1,7 @@
 import '@testing-library/jest-dom/vitest';
 
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useParams } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AdminChatApi } from '@/api/adminChatApi';
@@ -42,15 +42,18 @@ describe('WorkspaceDetailPage', () => {
   });
 
   /**
-   * 详情页应展示当前工作空间下的会话，并提供现有会话详情入口。
+   * 详情页应展示当前工作空间下的会话，并提供站内会话详情入口。
    */
-  it('renders workspace conversations and task detail links', async () => {
+  it('opens conversation detail through client-side routing', async () => {
     renderWorkspaceDetailPage('/workspaces/3001');
 
     expect(await screen.findByRole('heading', { name: '工作空间 #3001' })).toBeInTheDocument();
     expect(screen.getByText('本地项目会话')).toBeInTheDocument();
     expect(screen.getByText('活跃')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /查看详情/ })).toHaveAttribute('href', '/tasks/2001');
+
+    fireEvent.click(screen.getByText('查看详情'));
+
+    expect(await screen.findByTestId('task-detail-route')).toHaveTextContent('当前会话 2001');
   });
 
   /**
@@ -134,7 +137,17 @@ function renderWorkspaceDetailPage(initialPath: string) {
     <MemoryRouter initialEntries={[initialPath]}>
       <Routes>
         <Route path="/workspaces/:workspaceId" element={<WorkspaceDetailPage />} />
+        <Route path="/tasks/:id" element={<TaskDetailRouteProbe />} />
       </Routes>
     </MemoryRouter>,
   );
+}
+
+/**
+ * 测试探针用于确认工作空间会话入口没有触发浏览器整页跳转。
+ */
+function TaskDetailRouteProbe() {
+  const { id } = useParams();
+
+  return <div data-testid="task-detail-route">当前会话 {id}</div>;
 }

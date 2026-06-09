@@ -1,5 +1,5 @@
 import React from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { EyeOutlined, FilterOutlined, ReloadOutlined, SearchOutlined } from '@ant-design/icons';
 import { Alert, Button, Input, Select, Space, Statistic, Tag, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
@@ -19,6 +19,7 @@ type RuntimeTargetFilter = 'ALL' | 'cloud' | 'local';
  * 管理端工作空间管理页：只读展示空间归属、运行目标和关联会话规模。
  */
 export function WorkspacePage() {
+  const navigate = useNavigate();
   const [pageNo, setPageNo] = React.useState(1);
   const [keywordInput, setKeywordInput] = React.useState('');
   const [keyword, setKeyword] = React.useState('');
@@ -133,12 +134,12 @@ export function WorkspacePage() {
             key: 'detail',
             label: '查看详情',
             icon: <EyeOutlined />,
-            href: `/workspaces/${item.id}`,
+            onClick: () => navigate(`/workspaces/${item.id}`),
           }]}
         />
       ),
     },
-  ], []);
+  ], [navigate]);
 
   return (
     <div className="w-full space-y-lg p-lg">

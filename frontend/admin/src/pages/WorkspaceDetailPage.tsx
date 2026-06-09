@@ -1,5 +1,5 @@
 import React from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeftOutlined, EyeOutlined, ReloadOutlined, SearchOutlined } from '@ant-design/icons';
 import { Alert, Button, Input, Space, Statistic, Tag, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
@@ -18,6 +18,7 @@ const PAGE_SIZE = 10;
  */
 export function WorkspaceDetailPage() {
   const { workspaceId = '' } = useParams();
+  const navigate = useNavigate();
   const [pageNo, setPageNo] = React.useState(1);
   const [keywordInput, setKeywordInput] = React.useState('');
   const [keyword, setKeyword] = React.useState('');
@@ -111,18 +112,18 @@ export function WorkspaceDetailPage() {
             key: 'detail',
             label: '查看详情',
             icon: <EyeOutlined />,
-            href: `/tasks/${item.id}`,
+            onClick: () => navigate(`/tasks/${item.id}`),
           }]}
         />
       ),
     },
-  ], []);
+  ], [navigate]);
 
   return (
     <div className="w-full space-y-lg p-lg">
       <header className="flex flex-col gap-md lg:flex-row lg:items-end lg:justify-between">
         <div className="space-y-sm">
-          <Button icon={<ArrowLeftOutlined />} type="link" href="/workspaces">
+          <Button icon={<ArrowLeftOutlined />} type="link" onClick={() => navigate('/workspaces')}>
             返回工作空间列表
           </Button>
           <div>

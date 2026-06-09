@@ -1,7 +1,7 @@
 import '@testing-library/jest-dom/vitest';
 
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useParams } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AdminChatApi } from '@/api/adminChatApi';
@@ -69,6 +69,19 @@ describe('WorkspacePage', () => {
   });
 
   /**
+   * 操作列详情按钮也属于管理端站内路由，不能触发浏览器整页刷新。
+   */
+  it('opens workspace detail through client-side routing from action button', async () => {
+    renderWorkspacePage();
+
+    expect(await screen.findByText('本地项目')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText('查看详情'));
+
+    expect(await screen.findByTestId('workspace-detail-route')).toHaveTextContent('当前工作空间 3001');
+  });
+
+  /**
    * 运行目标筛选应重置到首页并传递 local 参数。
    */
   it('submits runtime target filter', async () => {
@@ -129,8 +142,20 @@ describe('WorkspacePage', () => {
  */
 function renderWorkspacePage() {
   return render(
-    <MemoryRouter>
-      <WorkspacePage />
+    <MemoryRouter initialEntries={['/workspaces']}>
+      <Routes>
+        <Route path="/workspaces" element={<WorkspacePage />} />
+        <Route path="/workspaces/:workspaceId" element={<WorkspaceDetailRouteProbe />} />
+      </Routes>
     </MemoryRouter>,
   );
+}
+
+/**
+ * 测试探针用于确认工作空间操作列详情入口没有触发浏览器整页跳转。
+ */
+function WorkspaceDetailRouteProbe() {
+  const { workspaceId } = useParams();
+
+  return <div data-testid="workspace-detail-route">当前工作空间 {workspaceId}</div>;
 }

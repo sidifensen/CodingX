@@ -1364,6 +1364,121 @@ export function useChatWorkspace(
   };
 
   /**
+   * 按会话和工作空间分区查找仍在前端内存中消费的后台流。
+   * 业务约束：只有同一运行目标与同一工作空间路径下的流才能重新接回，避免本地/云端分区串线。
+   * @param conversationId 会话标识。
+   * @param runtimeTarget 期望的运行目标。
+   * @param workspacePathValue 期望的工作空间路径。
+   * @returns 后台流会话编号与上下文；不存在时返回 null。
+   */
+  const findBackgroundStreamContextByConversationId = (
+    conversationId: string,
+    runtimeTarget: 'cloud' | 'local',
+    workspacePathValue: string | null,
+  ): { streamSessionId: number; context: BackgroundStreamContext } | null => {
+    const normalizedWorkspacePath = workspacePathValue ?? null;
+    for (const [streamSessionIdText, context] of Object.entries(backgroundStreamContextsRef.current)) {
+      if (
+        context.conversationId === conversationId &&
+        context.runtimeTarget === runtimeTarget &&
+        (context.workspacePath ?? null) === normalizedWorkspacePath
+      ) {
+        return {
+          streamSessionId: Number(streamSessionIdText),
+          context,
+        };
+      }
+    }
+    return null;
+  };
+
+  /**
+   * 将已在前端后台消费的旧流重新绑定到当前主区。
+   * 业务意图：同一页面内切走再切回时继续消费原来的 submit SSE，避免额外打开后端续流连接造成重复加载。
+   * @param conversationId 会话标识。
+   * @param conversationList 当前侧栏会话列表快照。
+   * @param runtimeTarget 期望的运行目标。
+   * @param workspacePathValue 期望的工作空间路径。
+   * @returns 是否找到并接回了前端后台流。
+   */
+  const reattachBackgroundStreamToActiveConversation = (
+    conversationId: string,
+    conversationList: ConversationItem[],
+    runtimeTarget: 'cloud' | 'local',
+    workspacePathValue: string | null,
+  ) => {
+    const backgroundStreamEntry = findBackgroundStreamContextByConversationId(
+      conversationId,
+      runtimeTarget,
+      workspacePathValue,
+    );
+    if (!backgroundStreamEntry) {
+      return false;
+    }
+
+    const { streamSessionId, context } = backgroundStreamEntry;
+    const mergedConversations = mergeConversationListById(
+      conversationList,
+      context.conversations,
+      { mergeExisting: true },
+    );
+
+    // 步骤 1：把后台流从脱离态转回当前页面态，后续 SSE 事件会走主区更新路径。
+    delete backgroundStreamContextsRef.current[streamSessionId];
+    detachedStreamSessionIdsRef.current.delete(streamSessionId);
+    activeStreamSessionIdRef.current = streamSessionId;
+    abortControllerRef.current = context.abortController;
+    streamStateRef.current = {
+      conversationId,
+      activeMessageId: context.activeMessageId,
+    };
+    activeConversationIdRef.current = conversationId;
+
+    // 步骤 2：同步恢复主区和右栏引用；这些 ref 会被后续 token、finish 和再次切换立即读取。
+    conversationsRef.current = mergedConversations;
+    executionStepsRef.current = context.executionSteps;
+    referencesRef.current = context.references;
+    artifactsRef.current = context.artifacts;
+    currentExpertsRef.current = context.currentExperts;
+    currentSkillsRef.current = context.currentSkills;
+    currentMcpsRef.current = context.currentMcps;
+    setConversations(mergedConversations);
+    setMessages(context.messages);
+    setExecutionSteps(context.executionSteps);
+    setReferences(context.references);
+    setArtifacts(context.artifacts);
+    setCurrentExperts(context.currentExperts);
+    setCurrentSkills(context.currentSkills);
+    setCurrentMcps(context.currentMcps);
+    setIsStreaming(true);
+    setStreamError('');
+    hideStreamQueueState();
+
+    // 步骤 3：把接回后的会话快照落到当前分区，刷新侧栏时仍能看到旧会话的运行态。
+    saveConversationRecordToWorkspace(
+      context.runtimeTarget,
+      context.workspacePath,
+      conversationId,
+      mergedConversations,
+      {
+        messages: context.messages,
+        executionSteps: context.executionSteps,
+        references: context.references,
+        artifacts: context.artifacts,
+        currentExperts: context.currentExperts,
+        currentSkills: context.currentSkills,
+        currentMcps: context.currentMcps,
+      },
+    );
+    upsertWorkspaceSnapshot(context.runtimeTarget, context.workspacePath, {
+      conversations: mergedConversations,
+      activeConversationId: conversationId,
+    });
+    refreshWorkspaceGroups('all');
+    return true;
+  };
+
+  /**
    * 为已脱离页面的流更新会话列表投影，避免后台事件污染当前打开会话。
    * @param context 后台流上下文。
    * @param conversationId 会话标识。
@@ -2810,14 +2925,22 @@ export function useChatWorkspace(
       });
       refreshWorkspaceGroups('all');
       if (selectedConversation && isConversationTaskRunning(selectedConversation)) {
-        resumeRunningConversationStream(token, conversationId, conversationList, nextReplayMessagesWithPanels, {
-          executionSteps: nextSteps,
-          references: nextReferences,
-          artifacts: nextArtifacts,
-          currentExperts: nextCurrentExperts,
-          currentSkills: nextCurrentSkills,
-          currentMcps: nextCurrentMcps,
-        });
+        const didReattachBackgroundStream = reattachBackgroundStreamToActiveConversation(
+          conversationId,
+          conversationList,
+          snapshotContext.runtimeTarget,
+          snapshotContext.workspacePath,
+        );
+        if (!didReattachBackgroundStream) {
+          resumeRunningConversationStream(token, conversationId, conversationList, nextReplayMessagesWithPanels, {
+            executionSteps: nextSteps,
+            references: nextReferences,
+            artifacts: nextArtifacts,
+            currentExperts: nextCurrentExperts,
+            currentSkills: nextCurrentSkills,
+            currentMcps: nextCurrentMcps,
+          });
+        }
       }
       return;
     }
@@ -2831,14 +2954,22 @@ export function useChatWorkspace(
       currentMcps: nextCurrentMcps,
     });
     if (selectedConversation && isConversationTaskRunning(selectedConversation)) {
-      resumeRunningConversationStream(token, conversationId, conversationList, nextReplayMessagesWithPanels, {
-        executionSteps: nextSteps,
-        references: nextReferences,
-        artifacts: nextArtifacts,
-        currentExperts: nextCurrentExperts,
-        currentSkills: nextCurrentSkills,
-        currentMcps: nextCurrentMcps,
-      });
+      const didReattachBackgroundStream = reattachBackgroundStreamToActiveConversation(
+        conversationId,
+        conversationList,
+        seenRuntimeTarget,
+        seenWorkspacePath,
+      );
+      if (!didReattachBackgroundStream) {
+        resumeRunningConversationStream(token, conversationId, conversationList, nextReplayMessagesWithPanels, {
+          executionSteps: nextSteps,
+          references: nextReferences,
+          artifacts: nextArtifacts,
+          currentExperts: nextCurrentExperts,
+          currentSkills: nextCurrentSkills,
+          currentMcps: nextCurrentMcps,
+        });
+      }
     }
   };
 
@@ -3237,11 +3368,7 @@ export function useChatWorkspace(
     createContext?: WorkspaceConversationCreateContext,
   ) => {
     // 离开当前会话只断开本地 SSE 订阅；后台任务是否停止必须由“停止生成”显式触发。
-    markActiveStreamDetached();
-    persistActiveStreamSnapshot();
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-    }
+    detachActiveStreamSubscription();
     // 新建态表示用户已经离开当前流；推进会话版本，拦截旧 finish 链路后续的慢回放。
     streamSessionSeedRef.current += 1;
     finishedStreamSessionIdsRef.current.clear();

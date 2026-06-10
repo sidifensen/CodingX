@@ -1171,9 +1171,9 @@ describe('useChatWorkspace submit behavior', () => {
   });
 
   /**
-   * 新会话流式 meta 创建的本地侧栏条目也必须携带运行态；否则离开后点回只会静态回放，无法续接后台输出。
+   * 同一前端页面内切回仍在消费的旧会话时，应优先接回前端后台流，不能重新请求后端续流接口。
    */
-  it('重新打开由流式 meta 创建的运行中会话时应续接会话流', async () => {
+  it('重新打开由流式 meta 创建的运行中会话时应接回前端后台流', async () => {
     const submitReadQueue: Array<{
       resolve: (value: ReadableStreamReadResult<Uint8Array>) => void;
       reject: (reason?: unknown) => void;
@@ -1305,12 +1305,30 @@ describe('useChatWorkspace submit behavior', () => {
     });
 
     await waitFor(() => {
-      expect(streamUrls).toEqual(['/api/chat/conversations/2001/stream']);
-      expect(resumeReadQueue.length).toBeGreaterThan(0);
+      expect(result.current.activeConversationId).toBe('2001');
+    });
+    expect(streamUrls).toEqual([]);
+    expect(resumeReadQueue).toHaveLength(0);
+
+    await act(async () => {
+      submitReadQueue.shift()?.resolve({
+        done: false,
+        value: new TextEncoder().encode(
+          'event:message\ndata:{"type":"response","delta":"前端后台继续输出"}\n\n',
+        ),
+      });
+    });
+    await waitFor(() => {
+      const assistantMessage = result.current.messages.find((message) => message.role === 'ASSISTANT');
+      expect(assistantMessage).toEqual(
+        expect.objectContaining({
+          content: '前端后台继续输出',
+          status: 'streaming',
+        }),
+      );
     });
 
     await act(async () => {
-      resumeReadQueue.shift()?.resolve({ done: true, value: undefined });
       submitReadQueue.shift()?.resolve({ done: true, value: undefined });
     });
     await act(async () => {

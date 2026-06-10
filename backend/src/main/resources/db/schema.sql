@@ -222,7 +222,6 @@ CREATE TABLE IF NOT EXISTS chat_execution_run (
     conversation_id BIGINT NOT NULL,
     request_message_id BIGINT,
     response_message_id BIGINT,
-    task_id BIGINT NOT NULL,
     intent_code VARCHAR(128),
     status VARCHAR(32) NOT NULL,
     queue_status VARCHAR(32),
@@ -239,7 +238,6 @@ COMMENT ON COLUMN chat_execution_run.id IS '执行记录主键 ID';
 COMMENT ON COLUMN chat_execution_run.conversation_id IS '所属会话 ID';
 COMMENT ON COLUMN chat_execution_run.request_message_id IS '请求消息 ID';
 COMMENT ON COLUMN chat_execution_run.response_message_id IS '响应消息 ID';
-COMMENT ON COLUMN chat_execution_run.task_id IS '任务 ID';
 COMMENT ON COLUMN chat_execution_run.intent_code IS '命中的意图编码';
 COMMENT ON COLUMN chat_execution_run.status IS '执行状态';
 COMMENT ON COLUMN chat_execution_run.queue_status IS '排队状态';
@@ -1004,7 +1002,6 @@ CREATE INDEX IF NOT EXISTS idx_chat_conversation_summary_conv_user ON chat_conve
 CREATE INDEX IF NOT EXISTS idx_chat_message_feedback_message_user ON chat_message_feedback (message_id, user_id);
 CREATE INDEX IF NOT EXISTS idx_chat_message_feedback_conversation ON chat_message_feedback (conversation_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_chat_execution_run_conversation ON chat_execution_run (conversation_id, created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_chat_execution_run_task ON chat_execution_run (task_id);
 CREATE INDEX IF NOT EXISTS idx_chat_execution_step_run_seq ON chat_execution_step (run_id, sequence_no ASC);
 CREATE INDEX IF NOT EXISTS idx_chat_message_reference_run ON chat_message_reference (run_id, rank_no ASC);
 CREATE INDEX IF NOT EXISTS idx_chat_message_reference_conversation ON chat_message_reference (conversation_id, created_at DESC);

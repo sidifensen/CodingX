@@ -106,10 +106,10 @@ class LongTermMemoryServiceTest {
     }
 
     /**
-     * 检索只返回当前用户/项目范围内的 ACTIVE 且关键词命中的记忆。
+     * 检索只返回当前用户和当前项目范围内的 ACTIVE 记忆，范围过滤仍由仓储层先完成。
      */
     @Test
-    void retrieveActiveMemoriesShouldFilterByScopeStatusAndKeywords() {
+    void retrieveActiveMemoriesShouldFilterByScopeAndStatus() {
         InMemoryLongTermMemoryRepository repository = new InMemoryLongTermMemoryRepository();
         repository.save(sampleMemory("ACTIVE").toBuilder().id(1L).userId(200L).workspaceId(null).content("代码风格偏好：业务注释").keywordJson("[\"业务注释\"]").build());
         repository.save(sampleMemory("REJECTED").toBuilder().id(2L).userId(200L).workspaceId(300L).content("已停用").keywordJson("[\"业务注释\"]").build());
@@ -140,10 +140,10 @@ class LongTermMemoryServiceTest {
     }
 
     /**
-     * 项目归属类提问应命中当前工作空间内的项目记忆，避免“候选已加载但关键词未完全包含”导致回注为空。
+     * 当前工作空间内的 ACTIVE 项目记忆即使和问题没有关键词重叠，也应进入上下文候选。
      */
     @Test
-    void retrieveActiveMemoriesShouldMatchProjectOwnershipQuestion() {
+    void retrieveActiveMemoriesShouldIncludeCurrentScopeActiveProjectMemoryWithoutQueryOverlap() {
         InMemoryLongTermMemoryRepository repository = new InMemoryLongTermMemoryRepository();
         repository.save(sampleMemory("ACTIVE")
             .toBuilder()
@@ -151,15 +151,48 @@ class LongTermMemoryServiceTest {
             .memoryScope("PROJECT")
             .userId(200L)
             .workspaceId(300L)
-            .content("这个项目是斯蒂芬森的")
-            .keywordJson("[\"这个项目是斯蒂芬森的\"]")
+            .content("仓库归属：斯蒂芬森")
+            .keywordJson("[\"斯蒂芬森\"]")
             .build());
         LongTermMemoryService service = new LongTermMemoryService(repository);
 
-        List<GovernanceLongTermMemory> memories = service.retrieveActiveMemories(200L, 300L, "这个项目是谁的", 10);
+        List<GovernanceLongTermMemory> memories = service.retrieveActiveMemories(200L, 300L, "随便问一个不相干的问题", 10);
 
         assertEquals(1, memories.size());
         assertEquals(10L, memories.getFirst().getId());
+    }
+
+    /**
+     * 当上下文条数有限时，正文或关键词相关的记忆应排在仅因当前作用域生效而回注的记忆前面。
+     */
+    @Test
+    void retrieveActiveMemoriesShouldPrioritizeRelevantMemoriesBeforeGenericScopeMemories() {
+        InMemoryLongTermMemoryRepository repository = new InMemoryLongTermMemoryRepository();
+        repository.save(sampleMemory("ACTIVE")
+            .toBuilder()
+            .id(20L)
+            .memoryScope("PROJECT")
+            .userId(200L)
+            .workspaceId(300L)
+            .content("项目归属：斯蒂芬森")
+            .keywordJson("[\"斯蒂芬森\"]")
+            .build());
+        repository.save(sampleMemory("ACTIVE")
+            .toBuilder()
+            .id(21L)
+            .memoryScope("PROJECT")
+            .userId(200L)
+            .workspaceId(300L)
+            .content("测试框架使用 JUnit 5")
+            .keywordJson("[\"JUnit 5\"]")
+            .build());
+        LongTermMemoryService service = new LongTermMemoryService(repository);
+
+        List<GovernanceLongTermMemory> memories = service.retrieveActiveMemories(200L, 300L, "这次测试框架继续使用 JUnit 5", 2);
+
+        assertEquals(2, memories.size());
+        assertEquals(21L, memories.get(0).getId());
+        assertEquals(20L, memories.get(1).getId());
     }
 
     /**

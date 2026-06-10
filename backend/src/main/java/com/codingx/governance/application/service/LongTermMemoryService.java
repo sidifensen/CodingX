@@ -14,6 +14,7 @@ import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -32,27 +33,6 @@ public class LongTermMemoryService {
 
     private static final int DEFAULT_USER_LIST_LIMIT = 100;
     private static final int MAX_CONTEXT_MEMORY_COUNT = 6;
-    /** 项目类长期记忆的主题词，用于把“这个项目是谁的”等短问句和项目事实记忆关联起来。 */
-    private static final List<String> PROJECT_TOPIC_TERMS = List.of("这个项目", "本项目", "项目", "仓库", "代码库", "工作空间");
-    /** 项目事实类问句标记，命中后允许当前工作空间的项目记忆参与回注。 */
-    private static final List<String> PROJECT_QUESTION_TERMS = List.of(
-        "谁",
-        "谁的",
-        "属于谁",
-        "负责人",
-        "所有者",
-        "作者",
-        "什么",
-        "干嘛",
-        "用途",
-        "用来",
-        "怎么",
-        "如何",
-        "为什么",
-        "是否",
-        "是不是",
-        "吗"
-    );
 
     /** 长期记忆仓储，用于记忆去重、状态更新和上下文检索。 */
     private final GovernanceLongTermMemoryRepository memoryRepository;
@@ -327,9 +307,9 @@ public class LongTermMemoryService {
      * 检索可参与模型上下文回注的 ACTIVE 记忆。
      * @param userId 当前用户 ID。
      * @param workspaceId 当前工作空间 ID，可为空。
-     * @param query 用户本轮问题，用于关键词命中过滤。
+     * @param query 用户本轮问题，用于给正文或关键词命中的记忆排序，不再作为硬过滤条件。
      * @param limit 最大返回条数。
-     * @return 命中的 ACTIVE 记忆。
+     * @return 当前作用域内选中的 ACTIVE 记忆，相关记忆会排在前面。
      */
     public List<GovernanceLongTermMemory> retrieveActiveMemories(Long userId, Long workspaceId, String query, int limit) {
         if (userId == null) {
@@ -349,17 +329,20 @@ public class LongTermMemoryService {
         List<MemoryMatchResult> matchResults = candidates.stream()
             .map(memory -> matchMemory(memory, normalizedQuery))
             .toList();
-        List<GovernanceLongTermMemory> memories = matchResults.stream()
+        List<MemoryMatchResult> selectedResults = matchResults.stream()
             .filter(MemoryMatchResult::matched)
-            .map(MemoryMatchResult::memory)
+            .sorted(Comparator.comparingInt(MemoryMatchResult::priority))
             .limit(normalizedLimit)
             .toList();
+        List<GovernanceLongTermMemory> memories = selectedResults.stream()
+            .map(MemoryMatchResult::memory)
+            .toList();
         log.info(
-            "长期记忆回注结果: candidateCount={}, matchedCount={}, memoryIds={}, matchReasons={}",
+            "长期记忆回注结果: candidateCount={}, selectedCount={}, memoryIds={}, matchReasons={}",
             candidates.size(),
             memories.size(),
             previewMemoryIds(memories),
-            previewMatchReasons(matchResults)
+            previewMatchReasons(selectedResults)
         );
         return memories;
     }
@@ -515,63 +498,29 @@ public class LongTermMemoryService {
     }
 
     /**
-     * 匹配单条长期记忆并给出命中原因，便于日志解释“候选已加载但未回注”的具体原因。
+     * 给候选记忆计算回注原因和排序优先级。
+     * 业务意图：仓储已按用户和工作空间过滤，ACTIVE 候选默认可回注；正文或关键词命中只提升排序。
      * @param memory 候选长期记忆。
      * @param query 本轮用户问题。
-     * @return 匹配结果，未命中时 reason 保存过滤原因。
+     * @return 匹配结果，reason 用于日志解释排序来源。
      */
     private MemoryMatchResult matchMemory(GovernanceLongTermMemory memory, String query) {
         if (memory == null || !"ACTIVE".equals(memory.getStatus())) {
             return MemoryMatchResult.unmatched(memory, "STATUS_NOT_ACTIVE");
         }
         if (StrUtil.isBlank(query)) {
-            return MemoryMatchResult.matched(memory, "EMPTY_QUERY");
+            return MemoryMatchResult.matched(memory, "CURRENT_SCOPE_ACTIVE", 10);
         }
         String content = StrUtil.blankToDefault(memory.getContent(), "");
         if (query.contains(content) || content.contains(query)) {
-            return MemoryMatchResult.matched(memory, "CONTENT_OVERLAP");
+            return MemoryMatchResult.matched(memory, "CONTENT_OVERLAP", 0);
         }
         for (String keyword : parseKeywords(memory.getKeywordJson())) {
             if (StrUtil.isNotBlank(keyword) && query.contains(keyword)) {
-                return MemoryMatchResult.matched(memory, "KEYWORD");
+                return MemoryMatchResult.matched(memory, "KEYWORD", 0);
             }
         }
-        if (matchesProjectTopicQuestion(memory, content, query)) {
-            return MemoryMatchResult.matched(memory, "PROJECT_TOPIC_QUESTION");
-        }
-        return MemoryMatchResult.unmatched(memory, "QUERY_NOT_RELATED");
-    }
-
-    /**
-     * 判断项目事实类短问句是否应回注当前工作空间的项目记忆。
-     * 业务意图：用户问“这个项目是谁的/干嘛的”时，项目记忆正文往往是陈述句，不会包含问句关键词。
-     * @param memory 候选长期记忆。
-     * @param content 记忆正文。
-     * @param query 本轮用户问题。
-     * @return 是否按项目主题问句命中。
-     */
-    private boolean matchesProjectTopicQuestion(GovernanceLongTermMemory memory, String content, String query) {
-        if (!"PROJECT".equals(StrUtil.blankToDefault(memory.getMemoryScope(), "").toUpperCase(Locale.ROOT))) {
-            return false;
-        }
-        String normalizedContent = normalizeForMatch(content);
-        String normalizedQuery = normalizeForMatch(query);
-        return containsAnyTerm(normalizedContent, PROJECT_TOPIC_TERMS)
-            && containsAnyTerm(normalizedQuery, PROJECT_TOPIC_TERMS)
-            && containsAnyTerm(normalizedQuery, PROJECT_QUESTION_TERMS);
-    }
-
-    /**
-     * 归一化短中文问句和记忆正文，减少空格与标点对轻量匹配的影响。
-     * @param value 原始文本。
-     * @return 去除空白和常见标点后的文本。
-     */
-    private String normalizeForMatch(String value) {
-        return StrUtil.trimToEmpty(value).replaceAll("[\\s，。；;:：、？！!?（）()【】\\[\\]\"'`]+", "");
-    }
-
-    private boolean containsAnyTerm(String value, List<String> terms) {
-        return StrUtil.isNotBlank(value) && terms.stream().anyMatch(value::contains);
+        return MemoryMatchResult.matched(memory, "CURRENT_SCOPE_ACTIVE", 10);
     }
 
     private List<String> parseKeywords(String keywordJson) {
@@ -588,16 +537,16 @@ public class LongTermMemoryService {
     }
 
     /**
-     * 记忆匹配结果，reason 用于精简日志解释命中或过滤原因。
+     * 记忆匹配结果，reason 用于精简日志解释命中原因，priority 用于把相关记忆排在前面。
      */
-    private record MemoryMatchResult(GovernanceLongTermMemory memory, String reason, boolean matched) {
+    private record MemoryMatchResult(GovernanceLongTermMemory memory, String reason, boolean matched, int priority) {
 
-        private static MemoryMatchResult matched(GovernanceLongTermMemory memory, String reason) {
-            return new MemoryMatchResult(memory, reason, true);
+        private static MemoryMatchResult matched(GovernanceLongTermMemory memory, String reason, int priority) {
+            return new MemoryMatchResult(memory, reason, true, priority);
         }
 
         private static MemoryMatchResult unmatched(GovernanceLongTermMemory memory, String reason) {
-            return new MemoryMatchResult(memory, reason, false);
+            return new MemoryMatchResult(memory, reason, false, 100);
         }
     }
 }

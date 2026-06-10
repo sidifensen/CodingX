@@ -1220,6 +1220,7 @@ describe('ChatView', () => {
     let sidebar = screen.getByTestId('right-workbench-sidebar');
     expect(sidebar).toBeInTheDocument();
     expect(sidebar).toHaveStyle({ width: '420px' });
+    expect(sidebar).toHaveClass('md:flex');
     expect(within(sidebar).getByTestId('right-workbench-launcher')).toBeInTheDocument();
     fireEvent.click(within(sidebar).getByRole('button', { name: '打开审查面板' }));
     expect(within(sidebar).getByRole('button', { name: '切换到审查选项卡' })).toBeInTheDocument();
@@ -1292,6 +1293,8 @@ describe('ChatView', () => {
       toggleMaximizeWindow: vi.fn().mockResolvedValue(null),
       closeWindow: vi.fn().mockResolvedValue(undefined),
       invokeDesktopMenuAction: vi.fn().mockResolvedValue(undefined),
+      openExternalUrl: vi.fn().mockResolvedValue(undefined),
+      captureWorkbenchBrowserScreenshot: vi.fn().mockResolvedValue(true),
       showDesktopNotification: vi.fn().mockResolvedValue(false),
       onWindowStateChanged: vi.fn(() => () => undefined),
       pickRepositoryDirectory: vi.fn().mockResolvedValue(null),
@@ -1336,6 +1339,104 @@ describe('ChatView', () => {
       expect(within(sidebar).queryByTestId('file-workbench-directory')).not.toBeInTheDocument();
       fireEvent.click(within(sidebar).getByRole('button', { name: '展开文件目录' }));
       expect(within(sidebar).getByTestId('file-workbench-directory')).toBeInTheDocument();
+    } finally {
+      delete window.codingxHost;
+    }
+  });
+
+  /**
+   * 浏览器面板的系统级动作必须通过桌面宿主桥接执行，避免误在 Electron 壳内新开页面。
+   */
+  it('应通过桌面宿主打开外部浏览器、截图到剪贴板并打开开发者工具', async () => {
+    window.codingxHost = {
+      getContext: vi.fn().mockResolvedValue({}),
+      getWindowState: vi.fn().mockResolvedValue(null),
+      minimizeWindow: vi.fn().mockResolvedValue(undefined),
+      toggleMaximizeWindow: vi.fn().mockResolvedValue(null),
+      closeWindow: vi.fn().mockResolvedValue(undefined),
+      invokeDesktopMenuAction: vi.fn().mockResolvedValue(undefined),
+      openExternalUrl: vi.fn().mockResolvedValue(undefined),
+      captureWorkbenchBrowserScreenshot: vi.fn().mockResolvedValue(true),
+      showDesktopNotification: vi.fn().mockResolvedValue(false),
+      onWindowStateChanged: vi.fn(() => () => undefined),
+      pickRepositoryDirectory: vi.fn().mockResolvedValue(null),
+      bindRepositoryPath: vi.fn().mockResolvedValue({}),
+      requestFileAccess: vi.fn().mockResolvedValue(true),
+      listDirectory: vi.fn().mockResolvedValue([]),
+      readTextFile: vi.fn().mockResolvedValue({ path: '', content: '' }),
+    };
+    const windowOpenSpy = vi.spyOn(window, 'open').mockReturnValue(null);
+
+    try {
+      render(
+        <ChatView
+          isAuthenticated={true}
+          onRequireLogin={vi.fn()}
+          workspace={createWorkspace()}
+        />,
+      );
+
+      fireEvent.click(screen.getByTestId('code-review-sidebar-toggle'));
+      const sidebar = screen.getByTestId('right-workbench-sidebar');
+      fireEvent.click(within(sidebar).getByRole('button', { name: '打开浏览器面板' }));
+
+      fireEvent.click(within(sidebar).getByRole('button', { name: '在默认浏览器中打开' }));
+      expect(window.codingxHost.openExternalUrl).toHaveBeenCalledWith('http://localhost:5002/');
+      expect(windowOpenSpy).not.toHaveBeenCalled();
+
+      fireEvent.click(within(sidebar).getByRole('button', { name: '截图到剪贴板' }));
+      expect(window.codingxHost.captureWorkbenchBrowserScreenshot).toHaveBeenCalled();
+
+      fireEvent.click(within(sidebar).getByRole('button', { name: '浏览器更多选项' }));
+      fireEvent.click(within(sidebar).getByRole('menuitem', { name: '打开开发者工具' }));
+      expect(window.codingxHost.invokeDesktopMenuAction).toHaveBeenCalledWith('toggle-dev-tools');
+    } finally {
+      windowOpenSpy.mockRestore();
+      delete window.codingxHost;
+    }
+  });
+
+  /**
+   * 旧桌面进程缺少 readTextFile IPC handler 时，应展示可恢复提示而不是原始 Electron 报错。
+   */
+  it('应在桌面文件预览能力未加载时提示重启桌面端', async () => {
+    window.codingxHost = {
+      getContext: vi.fn().mockResolvedValue({}),
+      getWindowState: vi.fn().mockResolvedValue(null),
+      minimizeWindow: vi.fn().mockResolvedValue(undefined),
+      toggleMaximizeWindow: vi.fn().mockResolvedValue(null),
+      closeWindow: vi.fn().mockResolvedValue(undefined),
+      invokeDesktopMenuAction: vi.fn().mockResolvedValue(undefined),
+      openExternalUrl: vi.fn().mockResolvedValue(undefined),
+      captureWorkbenchBrowserScreenshot: vi.fn().mockResolvedValue(true),
+      showDesktopNotification: vi.fn().mockResolvedValue(false),
+      onWindowStateChanged: vi.fn(() => () => undefined),
+      pickRepositoryDirectory: vi.fn().mockResolvedValue(null),
+      bindRepositoryPath: vi.fn().mockResolvedValue({}),
+      requestFileAccess: vi.fn().mockResolvedValue(true),
+      listDirectory: vi.fn().mockResolvedValue([
+        { name: 'AGENTS.md', path: 'D:/code/CodingX/AGENTS.md', entryType: 'file' },
+      ]),
+      readTextFile: vi.fn().mockRejectedValue(
+        new Error("Error invoking remote method 'host:read-text-file': Error: No handler registered for 'host:read-text-file'"),
+      ),
+    };
+
+    try {
+      render(
+        <ChatView
+          isAuthenticated={true}
+          onRequireLogin={vi.fn()}
+          workspace={createWorkspace()}
+        />,
+      );
+
+      fireEvent.click(screen.getByTestId('code-review-sidebar-toggle'));
+      const sidebar = screen.getByTestId('right-workbench-sidebar');
+      fireEvent.click(within(sidebar).getByRole('button', { name: '打开文件面板' }));
+      fireEvent.click(await within(sidebar).findByRole('button', { name: '打开文件 AGENTS.md' }));
+
+      expect(await within(sidebar).findByText('桌面端文件预览能力未加载，请重启 CodingX 后重试。')).toBeInTheDocument();
     } finally {
       delete window.codingxHost;
     }

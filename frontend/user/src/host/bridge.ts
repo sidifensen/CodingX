@@ -4,6 +4,7 @@ import {
   HostContext,
   HostWindowState,
   LocalDirectoryEntry,
+  WorkbenchBrowserScreenshotRegion,
 } from './types';
 
 /**
@@ -111,6 +112,14 @@ function createWebFallbackBridge(): CodingxHostBridge {
     },
     async readTextFile(): Promise<never> {
       throw new Error('当前 Web 环境不支持本地文件预览');
+    },
+    async openExternalUrl(url: string): Promise<boolean> {
+      // Web 调试环境没有系统 shell 桥接，只能回退到浏览器新标签页。
+      window.open(url, '_blank', 'noopener,noreferrer');
+      return true;
+    },
+    async captureWorkbenchBrowserScreenshot(_region?: WorkbenchBrowserScreenshotRegion): Promise<boolean> {
+      return false;
     },
   };
 }

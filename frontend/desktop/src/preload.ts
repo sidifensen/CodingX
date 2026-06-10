@@ -6,6 +6,7 @@ import {
   HostWindowState,
   LocalDirectoryEntry,
   LocalTextFileContent,
+  WorkbenchBrowserScreenshotRegion,
 } from './types';
 
 /**
@@ -40,4 +41,8 @@ contextBridge.exposeInMainWorld('codingxHost', {
   requestFileAccess: (path: string): Promise<boolean> => ipcRenderer.invoke('host:request-file-access', path),
   listDirectory: (path: string): Promise<LocalDirectoryEntry[]> => ipcRenderer.invoke('host:list-directory', path),
   readTextFile: (path: string): Promise<LocalTextFileContent> => ipcRenderer.invoke('host:read-text-file', path),
+  openExternalUrl: (url: string): Promise<boolean> => ipcRenderer.invoke('host:open-external-url', url),
+  captureWorkbenchBrowserScreenshot: (
+    region?: WorkbenchBrowserScreenshotRegion,
+  ): Promise<boolean> => ipcRenderer.invoke('host:capture-workbench-browser-screenshot', region),
 });

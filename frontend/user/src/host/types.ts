@@ -80,6 +80,16 @@ export interface LocalTextFileContent {
 }
 
 /**
+ * 浏览器工作台截图区域，使用浏览器视口 CSS 像素坐标，由桌面主进程裁剪并写入系统剪贴板。
+ */
+export interface WorkbenchBrowserScreenshotRegion {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/**
  * 定义前端可调用的宿主桥接能力。
  */
 export interface CodingxHostBridge {
@@ -99,4 +109,8 @@ export interface CodingxHostBridge {
   requestFileAccess: (path: string) => Promise<boolean>;
   listDirectory: (path: string) => Promise<LocalDirectoryEntry[]>;
   readTextFile: (path: string) => Promise<LocalTextFileContent>;
+  openExternalUrl: (url: string) => Promise<boolean>;
+  captureWorkbenchBrowserScreenshot: (
+    region?: WorkbenchBrowserScreenshotRegion
+  ) => Promise<boolean>;
 }

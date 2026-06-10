@@ -6,6 +6,7 @@ import {
   ArrowUp,
   ArrowLeft,
   ArrowRight,
+  Camera,
   ExternalLink,
   ChevronDown,
   ChevronRight,
@@ -2858,7 +2859,7 @@ function RightWorkbenchSidebar({
     <aside
       data-testid="right-workbench-sidebar"
       aria-label="右侧工作台"
-      className="relative hidden h-full shrink-0 border-l border-border bg-surface text-foreground shadow-[-18px_0_46px_rgba(0,0,0,0.18)] lg:flex lg:flex-col"
+      className="relative hidden h-full shrink-0 border-l border-border bg-surface text-foreground shadow-[-18px_0_46px_rgba(0,0,0,0.18)] md:flex md:flex-col"
       style={{ width }}
     >
       <button
@@ -3104,7 +3105,7 @@ function FileWorkbenchPanel({
       setSelectedFileContent(fileContent.content);
     } catch (error) {
       setSelectedFileContent('');
-      setFileError(error instanceof Error ? error.message : '读取文件失败');
+      setFileError(normalizeFileWorkbenchError(error, '读取文件失败'));
     } finally {
       setIsLoadingFile(false);
     }
@@ -3254,6 +3255,8 @@ function BrowserWorkbenchPanel({
 }: {
   workspaceLabel: string;
 }) {
+  const hostBridge = React.useMemo(() => resolveHostBridge(), []);
+  const browserViewportRef = React.useRef<HTMLDivElement | null>(null);
   const [addressInput, setAddressInput] = React.useState('http://localhost:5002/');
   const [browserUrl, setBrowserUrl] = React.useState('http://localhost:5002/');
   const [historyStack, setHistoryStack] = React.useState(['http://localhost:5002/']);
@@ -3261,6 +3264,8 @@ function BrowserWorkbenchPanel({
   const [frameKey, setFrameKey] = React.useState(0);
   const [zoomPercent, setZoomPercent] = React.useState(100);
   const [isMoreMenuOpen, setIsMoreMenuOpen] = React.useState(false);
+  const [browserActionMessage, setBrowserActionMessage] = React.useState('');
+  const [browserActionError, setBrowserActionError] = React.useState('');
   const moreMenuRef = React.useRef<HTMLDivElement | null>(null);
 
   const navigateToAddress = React.useCallback((rawAddress: string) => {
@@ -3286,6 +3291,50 @@ function BrowserWorkbenchPanel({
     setAddressInput(nextUrl);
     setFrameKey((currentKey) => currentKey + 1);
   }, [historyIndex, historyStack]);
+
+  const openExternalBrowser = React.useCallback(async () => {
+    setBrowserActionMessage('');
+    setBrowserActionError('');
+    try {
+      await hostBridge.openExternalUrl(browserUrl);
+      setBrowserActionMessage('已在默认浏览器中打开');
+    } catch (error) {
+      setBrowserActionError(error instanceof Error ? error.message : '打开默认浏览器失败');
+    }
+  }, [browserUrl, hostBridge]);
+
+  const captureBrowserScreenshot = React.useCallback(async () => {
+    setBrowserActionMessage('');
+    setBrowserActionError('');
+    const viewportRect = browserViewportRef.current?.getBoundingClientRect();
+    try {
+      const copied = await hostBridge.captureWorkbenchBrowserScreenshot(
+        viewportRect && viewportRect.width > 0 && viewportRect.height > 0
+          ? {
+              x: viewportRect.x,
+              y: viewportRect.y,
+              width: viewportRect.width,
+              height: viewportRect.height,
+            }
+          : undefined,
+      );
+      setBrowserActionMessage(copied ? '已截图到剪贴板' : '当前环境不支持截图到剪贴板');
+    } catch (error) {
+      setBrowserActionError(error instanceof Error ? error.message : '截图到剪贴板失败');
+    }
+  }, [hostBridge]);
+
+  const openDeveloperTools = React.useCallback(async () => {
+    setBrowserActionMessage('');
+    setBrowserActionError('');
+    try {
+      await hostBridge.invokeDesktopMenuAction('toggle-dev-tools');
+      setBrowserActionMessage('已打开开发者工具');
+      setIsMoreMenuOpen(false);
+    } catch (error) {
+      setBrowserActionError(error instanceof Error ? error.message : '打开开发者工具失败');
+    }
+  }, [hostBridge]);
 
   React.useEffect(() => {
     if (!isMoreMenuOpen) {
@@ -3353,7 +3402,7 @@ function BrowserWorkbenchPanel({
               <button
                 type="button"
                 aria-label="在默认浏览器中打开"
-                onClick={() => window.open(browserUrl, '_blank', 'noopener,noreferrer')}
+                onClick={() => void openExternalBrowser()}
                 className="absolute right-1 top-1 inline-flex h-7 w-7 items-center justify-center rounded-lg text-muted transition-colors hover:bg-surface-container hover:text-foreground"
               >
                 <ExternalLink size={14} />
@@ -3362,10 +3411,11 @@ function BrowserWorkbenchPanel({
           </form>
           <button
             type="button"
-            aria-label="显示设备工具栏"
+            aria-label="截图到剪贴板"
+            onClick={() => void captureBrowserScreenshot()}
             className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-muted transition-colors hover:bg-surface-container hover:text-foreground"
           >
-            <Monitor size={16} />
+            <Camera size={16} />
           </button>
           <button
             type="button"
@@ -3403,9 +3453,10 @@ function BrowserWorkbenchPanel({
                 <button
                   type="button"
                   role="menuitem"
+                  onClick={() => void openDeveloperTools()}
                   className="block w-full rounded-lg px-2 py-2 text-left hover:bg-surface-container"
                 >
-                  显示设备工具栏
+                  打开开发者工具
                 </button>
                 <div className="my-2 border-t border-border" />
                 <div className="flex items-center justify-between gap-3 px-2 py-1">
@@ -3457,8 +3508,19 @@ function BrowserWorkbenchPanel({
             ) : null}
           </div>
         </div>
+        {browserActionMessage || browserActionError ? (
+          <div
+            className={`mt-2 rounded-lg px-3 py-2 text-xs ${
+              browserActionError
+                ? 'border border-error/30 bg-error/10 text-error'
+                : 'border border-success/20 bg-success/10 text-success'
+            }`}
+          >
+            {browserActionError || browserActionMessage}
+          </div>
+        ) : null}
       </div>
-      <div className="min-h-0 overflow-hidden bg-background">
+      <div ref={browserViewportRef} className="min-h-0 overflow-hidden bg-background">
         <iframe
           key={frameKey}
           title={`内置浏览器：${workspaceLabel || 'CodingX'}`}
@@ -3469,6 +3531,17 @@ function BrowserWorkbenchPanel({
       </div>
     </div>
   );
+}
+
+/**
+ * 将桌面端 IPC 原始错误转成用户可理解的文件面板提示，尤其覆盖旧桌面进程未加载新 handler 的场景。
+ */
+function normalizeFileWorkbenchError(error: unknown, fallbackMessage: string) {
+  const rawMessage = error instanceof Error ? error.message : '';
+  if (rawMessage.includes('No handler registered') && rawMessage.includes('host:read-text-file')) {
+    return '桌面端文件预览能力未加载，请重启 CodingX 后重试。';
+  }
+  return rawMessage || fallbackMessage;
 }
 
 /**

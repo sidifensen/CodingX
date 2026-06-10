@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Notification, session } from 'electron';
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Notification, session, shell } from 'electron';
 import { existsSync } from 'node:fs';
 import { readFile, readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
@@ -10,6 +10,7 @@ import {
   HostWindowState,
   LocalDirectoryEntry,
   LocalTextFileContent,
+  WorkbenchBrowserScreenshotRegion,
 } from './types';
 import { resolvePackagedApiRedirectUrl } from './apiProxy';
 import { normalizeDesktopNotificationPayload } from './desktopNotification';
@@ -31,6 +32,41 @@ const hostState: {
 
 const DEFAULT_CODINGX_USER_URL = 'http://localhost:5002';
 const LOCAL_TEXT_FILE_MAX_BYTES = 1024 * 1024;
+
+/**
+ * 校验工作台传入的外部 URL，只允许交给系统默认浏览器处理明确的浏览器协议。
+ */
+function normalizeExternalBrowserUrl(rawUrl: string) {
+  const trimmedUrl = rawUrl.trim();
+  const parsedUrl = new URL(trimmedUrl);
+  if (!['http:', 'https:', 'about:'].includes(parsedUrl.protocol)) {
+    throw new Error('仅支持打开 http、https 或 about 地址');
+  }
+  return parsedUrl.toString();
+}
+
+/**
+ * 将渲染层传入的 CSS 像素区域限制在当前窗口范围内，供 capturePage 安全截图。
+ */
+function normalizeScreenshotRegion(
+  targetWindow: BrowserWindow,
+  region?: WorkbenchBrowserScreenshotRegion,
+) {
+  const windowBounds = targetWindow.getBounds();
+  if (!region) {
+    return undefined;
+  }
+  const x = Math.max(0, Math.floor(region.x));
+  const y = Math.max(0, Math.floor(region.y));
+  const width = Math.max(1, Math.floor(region.width));
+  const height = Math.max(1, Math.floor(region.height));
+  return {
+    x,
+    y,
+    width: Math.min(width, Math.max(1, windowBounds.width - x)),
+    height: Math.min(height, Math.max(1, windowBounds.height - y)),
+  };
+}
 
 /**
  * 解析桌面窗口图标路径，开发态读取源码资产，打包态读取 electron-builder 注入的 resources 资产。
@@ -301,6 +337,26 @@ function registerIpcHandlers() {
       mainWindow.focus();
     });
     notification.show();
+    return true;
+  });
+
+  ipcMain.handle('host:open-external-url', async (_event, rawUrl: string) => {
+    // 工作台内置浏览器的“外部打开”必须交给系统默认浏览器，而不是在 Electron 壳内再开一个页签。
+    const externalUrl = normalizeExternalBrowserUrl(rawUrl);
+    await shell.openExternal(externalUrl);
+    return true;
+  });
+
+  ipcMain.handle('host:capture-workbench-browser-screenshot', async (_event, region?: WorkbenchBrowserScreenshotRegion) => {
+    if (!mainWindow) {
+      return false;
+    }
+    // 截图由主进程完成并写入系统剪贴板，渲染层只传递可见浏览器区域，避免暴露 Node 权限。
+    const image = await mainWindow.webContents.capturePage(normalizeScreenshotRegion(mainWindow, region));
+    if (image.isEmpty()) {
+      return false;
+    }
+    clipboard.writeImage(image);
     return true;
   });
 

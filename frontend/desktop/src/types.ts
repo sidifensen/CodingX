@@ -30,6 +30,16 @@ export interface LocalTextFileContent {
   content: string;
 }
 
+/**
+ * 浏览器工作台截图区域，使用渲染层 CSS 像素坐标，由主进程裁剪窗口截图。
+ */
+export interface WorkbenchBrowserScreenshotRegion {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 export interface HostWindowState {
   isMaximized: boolean;
   isMinimized: boolean;

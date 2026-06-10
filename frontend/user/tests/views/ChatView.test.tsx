@@ -3,6 +3,15 @@ import ChatView from '@/views/ChatView';
 import { within } from '@testing-library/react';
 import { ChatWorkspaceController } from '@/views/chat/types';
 
+// 歧义引导文案来自后端模板，前端测试保持真实换行与编号格式，避免解析规则和生产提示脱节。
+const AMBIGUITY_GUIDANCE_CONTENT = [
+  '关于系统介绍，我识别到以下可能的方向：',
+  '1) 联网搜索 > OA系统 > 系统介绍',
+  '2) 联网搜索 > 保险系统 > 系统介绍',
+  '',
+  '请告诉我你具体想了解哪一个。你可以直接回复序号，例如 `1` 或 `2`。',
+].join('\n');
+
 /**
  * 验证聊天工作区会真实加载后端数据并消费 SSE 流。
  */
@@ -1882,6 +1891,195 @@ describe('ChatView', () => {
   });
 
   /**
+   * 最新歧义引导应升级为可点击选项，点击后提交完整语义文本而不是裸序号。
+   */
+  it('应将最新歧义引导渲染为可点击选择按钮并提交完整文本', async () => {
+    const submitMessage = vi.fn().mockResolvedValue(undefined);
+    const setInputValue = vi.fn();
+
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          inputValue: '',
+          setInputValue,
+          submitMessage,
+          messages: [
+            {
+              id: '501',
+              conversationId: '2001',
+              role: 'ASSISTANT',
+              content: AMBIGUITY_GUIDANCE_CONTENT,
+              status: 'COMPLETED',
+            },
+          ],
+          executionSteps: [],
+          references: [],
+          artifacts: [],
+        })}
+      />,
+    );
+
+    expect(screen.getByTestId('ambiguity-choice-panel-501')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '选择方向 1：联网搜索 > OA系统 > 系统介绍' }))
+      .toHaveAttribute('aria-pressed', 'true');
+
+    fireEvent.click(
+      screen.getByRole('button', { name: '选择方向 2：联网搜索 > 保险系统 > 系统介绍' }),
+    );
+
+    await waitFor(() => {
+      expect(setInputValue).toHaveBeenCalledWith('我想了解：联网搜索 > 保险系统 > 系统介绍');
+      expect(submitMessage).toHaveBeenCalledWith('我想了解：联网搜索 > 保险系统 > 系统介绍');
+    });
+  });
+
+  /**
+   * 用户可以不用鼠标，通过方向键调整高亮选项，并用回车提交当前完整选项文本。
+   */
+  it('应支持方向键切换歧义选项并用回车发送当前选项', async () => {
+    const submitMessage = vi.fn().mockResolvedValue(undefined);
+    const setInputValue = vi.fn();
+
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          inputValue: '',
+          setInputValue,
+          submitMessage,
+          messages: [
+            {
+              id: '501',
+              conversationId: '2001',
+              role: 'ASSISTANT',
+              content: AMBIGUITY_GUIDANCE_CONTENT,
+              status: 'COMPLETED',
+            },
+          ],
+          executionSteps: [],
+          references: [],
+          artifacts: [],
+        })}
+      />,
+    );
+
+    const scrollRegion = screen.getByTestId('chat-scroll-region');
+    fireEvent.keyDown(scrollRegion, { key: 'ArrowDown' });
+    expect(screen.getByRole('button', { name: '选择方向 2：联网搜索 > 保险系统 > 系统介绍' }))
+      .toHaveAttribute('aria-pressed', 'true');
+
+    fireEvent.keyDown(scrollRegion, { key: 'Enter' });
+
+    await waitFor(() => {
+      expect(setInputValue).toHaveBeenCalledWith('我想了解：联网搜索 > 保险系统 > 系统介绍');
+      expect(submitMessage).toHaveBeenCalledWith('我想了解：联网搜索 > 保险系统 > 系统介绍');
+    });
+  });
+
+  /**
+   * 输入框已有用户正文时，歧义面板快捷键不能覆盖用户正在编辑的内容。
+   */
+  it('已有输入内容时回车不应覆盖为歧义选项', async () => {
+    const submitMessage = vi.fn().mockResolvedValue(undefined);
+    const setInputValue = vi.fn();
+
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          inputValue: '我已经手动输入了更具体的问题',
+          setInputValue,
+          submitMessage,
+          messages: [
+            {
+              id: '501',
+              conversationId: '2001',
+              role: 'ASSISTANT',
+              content: AMBIGUITY_GUIDANCE_CONTENT,
+              status: 'COMPLETED',
+            },
+          ],
+          executionSteps: [],
+          references: [],
+          artifacts: [],
+        })}
+      />,
+    );
+
+    fireEvent.keyDown(screen.getByTestId('chat-scroll-region'), { key: 'Enter' });
+
+    expect(setInputValue).not.toHaveBeenCalledWith('我想了解：联网搜索 > OA系统 > 系统介绍');
+    expect(submitMessage).not.toHaveBeenCalledWith('我想了解：联网搜索 > OA系统 > 系统介绍');
+  });
+
+  /**
+   * 普通 Markdown 编号列表不能误识别为歧义引导，否则会破坏常规回答阅读体验。
+   */
+  it('不应把普通编号列表渲染为歧义选择按钮', async () => {
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          messages: [
+            {
+              id: '501',
+              conversationId: '2001',
+              role: 'ASSISTANT',
+              content: '建议步骤：\n1) 安装依赖\n2) 运行测试',
+              status: 'COMPLETED',
+            },
+          ],
+          executionSteps: [],
+          references: [],
+          artifacts: [],
+        })}
+      />,
+    );
+
+    expect(screen.queryByTestId('ambiguity-choice-panel-501')).not.toBeInTheDocument();
+  });
+
+  /**
+   * 历史歧义引导只作为聊天记录保留，避免用户在过期上下文里误点旧选项。
+   */
+  it('不应给非最新歧义引导消息渲染选择按钮', async () => {
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          messages: [
+            {
+              id: '501',
+              conversationId: '2001',
+              role: 'ASSISTANT',
+              content: AMBIGUITY_GUIDANCE_CONTENT,
+              status: 'COMPLETED',
+            },
+            {
+              id: '502',
+              conversationId: '2001',
+              role: 'ASSISTANT',
+              content: '后续已经进入新的回答。',
+              status: 'COMPLETED',
+            },
+          ],
+          executionSteps: [],
+          references: [],
+          artifacts: [],
+        })}
+      />,
+    );
+
+    expect(screen.queryByTestId('ambiguity-choice-panel-501')).not.toBeInTheDocument();
+  });
+
+  /**
    * 用户消息悬浮操作应提供编辑、复制和删除三个入口，贴近千问消息气泡交互。
    */
   it('应渲染用户消息悬浮操作栏', async () => {
@@ -3103,7 +3301,7 @@ describe('ChatView', () => {
   });
 
   /**
-   * 目标模式开关只是发送 planMode 的入口；没有后端 active goal 时不应显示浮窗。
+   * 目标模式开关只是发送 planMode 的入口；没有后端 active goal 时不应显示置顶摘要入口和浮窗。
    */
   it('目标模式开启但没有active goal时不应展示右侧目标进度窗', async () => {
     render(
@@ -3136,10 +3334,11 @@ describe('ChatView', () => {
     );
 
     expect(screen.queryByTestId('goal-progress-panel')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('pinned-summary-toggle')).not.toBeInTheDocument();
   });
 
   /**
-   * active goal 是右侧浮窗的唯一数据源，应展示标题、状态、摘要和步骤完成数。
+   * active goal 是置顶摘要的唯一数据源；按钮负责显隐聊天主区内的目标进度浮窗。
    */
   it('存在active goal时应展示右侧目标进度窗', async () => {
     render(
@@ -3180,12 +3379,28 @@ describe('ChatView', () => {
     );
 
     const panel = screen.getByTestId('goal-progress-panel');
+    const toggleButton = screen.getByTestId('pinned-summary-toggle');
+    expect(toggleButton).toHaveTextContent('置顶摘要');
+    expect(toggleButton).toHaveAttribute('aria-pressed', 'true');
     expect(panel).toHaveTextContent('完成真实目标模式');
     expect(panel).toHaveTextContent('ACTIVE');
     expect(panel).toHaveTextContent('1/2');
     expect(panel).toHaveTextContent('接口和 Hook 已接入真实目标状态');
     expect(panel).toHaveTextContent('读取 active goal');
     expect(panel).toHaveTextContent('渲染目标浮窗');
+    expect(panel).toHaveClass('absolute');
+    expect(panel).toHaveClass('right-5');
+    expect(panel).toHaveClass('top-20');
+    expect(panel).not.toHaveClass('fixed');
+
+    fireEvent.click(toggleButton);
+    expect(screen.queryByTestId('goal-progress-panel')).not.toBeInTheDocument();
+    expect(toggleButton).toHaveAttribute('aria-pressed', 'false');
+    expect(toggleButton).toHaveAttribute('aria-label', '显示置顶摘要');
+
+    fireEvent.click(toggleButton);
+    expect(screen.getByTestId('goal-progress-panel')).toHaveTextContent('完成真实目标模式');
+    expect(toggleButton).toHaveAttribute('aria-pressed', 'true');
   });
 
   /**
@@ -3205,6 +3420,7 @@ describe('ChatView', () => {
     );
 
     expect(screen.queryByTestId('goal-progress-panel')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('pinned-summary-toggle')).not.toBeInTheDocument();
   });
 
   /**
@@ -3224,6 +3440,7 @@ describe('ChatView', () => {
     );
 
     expect(screen.queryByTestId('goal-progress-panel')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('pinned-summary-toggle')).not.toBeInTheDocument();
   });
 
   /**

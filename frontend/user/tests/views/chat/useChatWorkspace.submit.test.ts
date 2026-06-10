@@ -114,6 +114,82 @@ describe('useChatWorkspace submit behavior', () => {
   });
 
   /**
+   * 歧义引导按钮会在一次点击中写入并提交完整选项文本，提交函数必须支持显式覆盖值。
+   */
+  it('应允许提交时用显式文本覆盖当前输入状态', async () => {
+    let streamRequestUrl = '';
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (
+        isConversationListRequest(url) ||
+        url === '/api/chat/sample-questions' ||
+        url === '/api/chat/experts' ||
+        url === '/api/chat/skills' ||
+        url === '/api/chat/mcps' ||
+        isConversationMessageListRequest(url, 'pending-conversation') ||
+        url === '/api/chat/conversations/pending-conversation/steps' ||
+        url === '/api/chat/conversations/pending-conversation/references' ||
+        url === '/api/chat/conversations/pending-conversation/artifacts' ||
+        url === '/api/chat/conversations/pending-conversation/current-skills' ||
+        url === '/api/chat/conversations/pending-conversation/current-mcps' ||
+        url === '/api/chat/conversations/pending-conversation/current-experts' ||
+        isConversationMessageListRequest(url, '2001') ||
+        url === '/api/chat/conversations/2001/steps' ||
+        url === '/api/chat/conversations/2001/references' ||
+        url === '/api/chat/conversations/2001/artifacts' ||
+        url === '/api/chat/conversations/2001/current-skills' ||
+        url === '/api/chat/conversations/2001/current-mcps' ||
+        url === '/api/chat/conversations/2001/current-experts'
+      ) {
+        if (isConversationListRequest(url)) {
+          return new Response(
+            JSON.stringify({
+              success: true,
+              code: 'OK',
+              message: 'success',
+              data: [],
+            }),
+            { status: 200 },
+          );
+        }
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      if (url.includes('/api/chat/stream')) {
+        streamRequestUrl = url;
+        return {
+          ok: true,
+          status: 200,
+          body: {
+            getReader: () => ({
+              read: vi.fn().mockResolvedValue({ done: true, value: undefined }),
+            }),
+          },
+        } as unknown as Response;
+      }
+      throw new Error(`Unhandled fetch in explicit submit text test: ${url}`);
+    });
+
+    const { result } = renderHook(() => useChatWorkspace(true));
+    await waitFor(() => {
+      expect(result.current.isBootstrapping).toBe(false);
+    });
+
+    await act(async () => {
+      result.current.setInputValue('旧输入不应被提交');
+    });
+    await act(async () => {
+      await result.current.submitMessage('我想了解：联网搜索 > 保险系统 > 系统介绍');
+    });
+
+    const requestUrl = new URL(streamRequestUrl, 'http://localhost');
+    expect(requestUrl.searchParams.get('question')).toBe('我想了解：联网搜索 > 保险系统 > 系统介绍');
+  });
+
+  /**
    * 提交锁必须覆盖 React 状态更新前的异步窗口，避免双击发送或回车重复触发导致同一问题进入两条流。
    */
   it('应在第一次流式请求未返回时忽略重复提交', async () => {

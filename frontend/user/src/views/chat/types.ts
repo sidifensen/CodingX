@@ -683,7 +683,10 @@ export interface ChatWorkspaceController {
     memoryId: string,
     status: LongTermMemoryStatus,
   ) => Promise<void>;
-  submitMessage: () => Promise<void>;
+  /**
+   * 提交当前输入；歧义引导按钮等快捷入口可传入显式文本，避免等待 React 输入状态刷新。
+   */
+  submitMessage: (overrideInputValue?: string) => Promise<void>;
   cancelCurrentStream: () => Promise<void>;
   selectConversation: (
     conversationId: string,

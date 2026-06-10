@@ -2976,8 +2976,9 @@ export function useChatWorkspace(
   /**
    * 提交聊天请求并在本地模拟最小流式状态，随后从后端回放最新数据。
    */
-  const submitMessage = async () => {
-    const question = inputValue.trim();
+  const submitMessage = async (overrideInputValue?: string) => {
+    const effectiveInputValue = overrideInputValue ?? inputValue;
+    const question = effectiveInputValue.trim();
     if (!question) {
       return;
     }
@@ -3010,7 +3011,7 @@ export function useChatWorkspace(
           setWorkspaceId(effectiveWorkspaceId);
         }
       }
-      const submittedInputValue = inputValue;
+      const submittedInputValue = effectiveInputValue;
       const submittedAttachments = pendingAttachments;
       const submittedSlashCommand = selectedSlashCommand;
       // 交互约束：点击发送后立即清空输入与待发送附件，避免用户误判请求未触发。

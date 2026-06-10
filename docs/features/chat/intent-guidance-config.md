@@ -7,6 +7,7 @@
 ## 使用入口
 
 - 用户入口：聊天页发送含糊问题，例如“系统介绍是什么”。
+- 用户入口：最新歧义澄清回复会在聊天页渲染为选项面板，用户可点击选项，或用方向键上下切换后按回车提交。
 - 管理入口：管理端“系统配置”页中的“歧义引导”分类。
 
 ## 核心流程
@@ -19,6 +20,7 @@
 6. 分数比值达到阈值时直接澄清；处于边界区间时调用 LLM 二次确认。
 7. 命中歧义后记录 `歧义引导触发` INFO 日志，包含问题、主题、候选数和候选摘要。
 8. 渲染 `guidance-prompt.st`，返回给聊天主链路作为澄清回复。
+9. 用户端只对最新且已完成的助手澄清消息做前端增强：识别“我识别到以下可能的方向”和 `N) 选项` 格式后，在 Markdown 下方追加按钮式选项面板。用户点击或用方向键选择后，前端提交 `我想了解：<完整选项文本>`，继续复用原聊天流式提交链路；历史澄清消息和普通编号列表仍只按 Markdown 展示。
 
 ## 配置项
 
@@ -39,6 +41,8 @@
 - `backend/src/main/java/com/codingx/chat/application/service/support/RuntimeSettingService.java`：运行时配置读取。
 - `backend/src/main/resources/db/migration/V20260527_200000__add_chat_intent_guidance_settings.sql`：新增系统配置数据迁移。
 - `frontend/admin/src/pages/Settings.tsx`：系统配置页中文分类展示。
+- `frontend/user/src/views/ChatView.tsx`：最新歧义澄清消息的按钮式选项面板、方向键选择和完整文本提交。
+- `frontend/user/src/views/chat/useChatWorkspace.ts`：聊天提交函数支持显式输入覆盖，保证选项点击后立即提交完整语义文本。
 
 ## 边界说明
 
@@ -50,3 +54,5 @@
 - `mvn "-Dtest=RuntimeSettingServiceTest" test`
 - `mvn "-Dtest=ChatRuntimePersistenceStructureTest#chatIntentGuidanceRuntimeSettingsAreSeeded" test`
 - `npm run test:run -- Settings.test.tsx`
+- `npm run test:run -- ChatView.test.tsx`
+- `npm run test:run -- useChatWorkspace.submit.test.ts`

@@ -75,9 +75,21 @@ interface ChatViewProps {
 const CODE_REVIEW_SIDEBAR_DEFAULT_WIDTH = 380;
 const CODE_REVIEW_SIDEBAR_MIN_WIDTH = 320;
 const CODE_REVIEW_SIDEBAR_MAX_WIDTH = 720;
+const AMBIGUITY_GUIDANCE_PHRASE = '我识别到以下可能的方向';
 // 业务约束：输入区选择器位于紧凑工具栏上方，滚动条必须轻量，避免挤占 MCP/技能/专家名称宽度。
 const INPUT_SELECTOR_SCROLL_CLASS =
   'chat-input-selector-scrollbar max-h-64 overflow-y-auto pr-1 [scrollbar-width:thin] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-border hover:[&::-webkit-scrollbar-thumb]:bg-border-active';
+
+interface AmbiguityChoiceOption {
+  index: number;
+  label: string;
+  submitText: string;
+}
+
+interface AmbiguityChoicePrompt {
+  topic: string;
+  options: AmbiguityChoiceOption[];
+}
 
 /**
  * 渲染接入真实后端数据的聊天三栏工作台。
@@ -164,6 +176,20 @@ export default function ChatView({
   const latestAssistantMessageId = React.useMemo(() => {
     return [...messages].reverse().find((message) => message.role === 'ASSISTANT')?.id ?? null;
   }, [messages]);
+  const latestAmbiguityChoicePrompt = React.useMemo(() => {
+    const latestMessage = messages[messages.length - 1];
+    if (!latestMessage || latestMessage.role !== 'ASSISTANT' || latestMessage.status === 'streaming') {
+      return null;
+    }
+    const prompt = parseAmbiguityChoicePrompt(latestMessage.content);
+    if (!prompt) {
+      return null;
+    }
+    return {
+      messageId: latestMessage.id,
+      prompt,
+    };
+  }, [messages]);
   const shouldShowStreamError = React.useMemo(() => {
     if (!streamError) {
       return false;
@@ -194,6 +220,7 @@ export default function ChatView({
   const [slashCommandSearchKeyword, setSlashCommandSearchKeyword] = React.useState('');
   const [activeSlashCommandOptionIndex, setActiveSlashCommandOptionIndex] = React.useState(-1);
   const [expertSearchKeyword, setExpertSearchKeyword] = React.useState('');
+  const [activeAmbiguityChoiceIndex, setActiveAmbiguityChoiceIndex] = React.useState(0);
   const [skillSelectorSource, setSkillSelectorSource] = React.useState<'button' | 'slash' | null>(
     null,
   );
@@ -1018,6 +1045,13 @@ export default function ChatView({
   }, [messages, scrollToLatestMessage]);
 
   /**
+   * 最新歧义引导变化后默认回到第一项，避免新问题沿用上一轮键盘高亮位置。
+   */
+  React.useEffect(() => {
+    setActiveAmbiguityChoiceIndex(0);
+  }, [latestAmbiguityChoicePrompt?.messageId]);
+
+  /**
    * 根据输入内容动态计算输入框高度，保持 1 行起步、最多 9 行后内部滚动。
    */
   React.useEffect(() => {
@@ -1059,6 +1093,108 @@ export default function ChatView({
     scrollToLatestMessage();
     await submitMessage();
   };
+
+  /**
+   * 提交歧义引导的完整选项文本，复用现有聊天发送链路，避免新增一次性接口。
+   * @param optionIndex 当前选择项下标。
+   */
+  const submitAmbiguityChoice = React.useCallback(
+    async (optionIndex: number) => {
+      const option = latestAmbiguityChoicePrompt?.prompt.options[optionIndex];
+      if (!option || isStreaming) {
+        return;
+      }
+      if (!isAuthenticated) {
+        onRequireLogin();
+        return;
+      }
+      setInputValue(option.submitText);
+      shouldFollowLatestMessageRef.current = true;
+      scrollToLatestMessage();
+      await submitMessage(option.submitText);
+    },
+    [
+      isAuthenticated,
+      isStreaming,
+      latestAmbiguityChoicePrompt,
+      onRequireLogin,
+      scrollToLatestMessage,
+      setInputValue,
+      submitMessage,
+    ],
+  );
+
+  /**
+   * 处理歧义引导面板的全局键盘选择；输入框已有正文时不抢占 Enter。
+   * @param event 消息滚动区键盘事件。
+   */
+  const handleChatRegionKeyDown = React.useCallback(
+    (event: React.KeyboardEvent<HTMLDivElement>) => {
+      const prompt = latestAmbiguityChoicePrompt?.prompt;
+      if (!prompt) {
+        return;
+      }
+      const target = event.target as HTMLElement | null;
+      if (target?.closest('button, input, textarea, select, [contenteditable="true"]')) {
+        return;
+      }
+      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+        event.preventDefault();
+        setActiveAmbiguityChoiceIndex((currentIndex) => {
+          const offset = event.key === 'ArrowDown' ? 1 : -1;
+          return (currentIndex + offset + prompt.options.length) % prompt.options.length;
+        });
+        return;
+      }
+      if (event.key !== 'Enter' || inputValue.trim()) {
+        return;
+      }
+      event.preventDefault();
+      void submitAmbiguityChoice(activeAmbiguityChoiceIndex);
+    },
+    [
+      activeAmbiguityChoiceIndex,
+      inputValue,
+      latestAmbiguityChoicePrompt,
+      submitAmbiguityChoice,
+    ],
+  );
+
+  /**
+   * 输入框聚焦时也允许操作最新歧义候选；已有输入内容时 Enter 保持原提交输入行为。
+   * @param event 输入框键盘事件。
+   * @returns 是否已由歧义候选快捷键处理。
+   */
+  const handleAmbiguityChoiceInputKeyDown = React.useCallback(
+    (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      const prompt = latestAmbiguityChoicePrompt?.prompt;
+      if (!prompt || inputValue.trim()) {
+        return false;
+      }
+      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+        event.preventDefault();
+        event.stopPropagation();
+        setActiveAmbiguityChoiceIndex((currentIndex) => {
+          const offset = event.key === 'ArrowDown' ? 1 : -1;
+          return (currentIndex + offset + prompt.options.length) % prompt.options.length;
+        });
+        return true;
+      }
+      if (event.key === 'Enter' && !event.shiftKey) {
+        event.preventDefault();
+        event.stopPropagation();
+        void submitAmbiguityChoice(activeAmbiguityChoiceIndex);
+        return true;
+      }
+      return false;
+    },
+    [
+      activeAmbiguityChoiceIndex,
+      inputValue,
+      latestAmbiguityChoicePrompt,
+      submitAmbiguityChoice,
+    ],
+  );
 
   /**
    * 统一处理底部输入提交。
@@ -1240,6 +1376,7 @@ export default function ChatView({
           data-testid="chat-scroll-region"
           className="chat-scroll-region relative min-h-0 flex-1 overflow-y-auto px-4 pt-6 md:px-8 md:pt-20"
           onScroll={handleChatScroll}
+          onKeyDown={handleChatRegionKeyDown}
           style={{
             paddingBottom: `${CHAT_SCROLL_BOTTOM_GAP}px`,
             scrollPaddingTop: '96px',
@@ -1365,6 +1502,10 @@ export default function ChatView({
                   : null;
                 const messageContent =
                   message.content || (message.status === 'streaming' ? '正在生成回答...' : '');
+                const ambiguityChoicePrompt =
+                  latestAmbiguityChoicePrompt?.messageId === message.id
+                    ? latestAmbiguityChoicePrompt.prompt
+                    : null;
                 // 业务约束：AI 回复在流式生成中禁止露出复制、反馈等操作，只有结束、停止或异常后才允许操作。
                 const shouldShowAssistantActions = isAssistant && message.status !== 'streaming';
                 return (
@@ -1394,6 +1535,11 @@ export default function ChatView({
                             timelineItems={message.timelineItems}
                             references={references}
                             referenceMessageId={referenceMessageId}
+                            ambiguityChoicePrompt={ambiguityChoicePrompt}
+                            activeAmbiguityChoiceIndex={activeAmbiguityChoiceIndex}
+                            isAmbiguityChoiceDisabled={isStreaming}
+                            onHighlightAmbiguityChoice={setActiveAmbiguityChoiceIndex}
+                            onSelectAmbiguityChoice={submitAmbiguityChoice}
                           />
                           {shouldShowAssistantActions ? (
                             <div className="mt-3 space-y-1.5">
@@ -1992,6 +2138,9 @@ export default function ChatView({
                             syncSelectedSkillCodesFromInput(nextInput);
                           }}
                           onKeyDown={(event) => {
+                            if (handleAmbiguityChoiceInputKeyDown(event)) {
+                              return;
+                            }
                             if (handleSlashCommandSelectorKeyDown(event)) {
                               return;
                             }
@@ -3478,6 +3627,42 @@ function resolveAssistantReferenceMessageId(messages: ChatMessageItem[], current
 }
 
 /**
+ * 从后端歧义引导 Markdown 中提取可点击候选；普通编号列表缺少固定引导语时不会命中。
+ * @param content 助手消息正文。
+ * @returns 可渲染选择提示；格式不匹配时返回 null。
+ */
+function parseAmbiguityChoicePrompt(content: string): AmbiguityChoicePrompt | null {
+  if (!content.includes(AMBIGUITY_GUIDANCE_PHRASE)) {
+    return null;
+  }
+  const lines = content.split(/\r?\n/).map((line) => line.trim());
+  const heading = lines.find((line) => line.includes(AMBIGUITY_GUIDANCE_PHRASE)) ?? '';
+  const topicMatch = heading.match(/^关于(.+?)，/);
+  const topic = topicMatch?.[1]?.trim() || '当前方向';
+  const options = lines
+    .map((line) => {
+      const match = line.match(/^(\d+)[).、]\s*(.+)$/);
+      if (!match) {
+        return null;
+      }
+      const label = match[2].trim();
+      if (!label) {
+        return null;
+      }
+      return {
+        index: Number.parseInt(match[1], 10),
+        label,
+        submitText: `我想了解：${label}`,
+      };
+    })
+    .filter((option): option is AmbiguityChoiceOption => option != null);
+  if (options.length < 2) {
+    return null;
+  }
+  return { topic, options };
+}
+
+/**
  * 把正文中形如 [R1] 的纯文本片段转换为链接节点，避免破坏既有 Markdown 结构。
  * @param citationReferenceLinks 编号到来源链接的映射。
  * @returns remark 插件。
@@ -3589,6 +3774,11 @@ function AssistantMessageBody({
   timelineItems,
   references,
   referenceMessageId,
+  ambiguityChoicePrompt,
+  activeAmbiguityChoiceIndex,
+  isAmbiguityChoiceDisabled,
+  onHighlightAmbiguityChoice,
+  onSelectAmbiguityChoice,
 }: {
   messageId: string;
   conversationId?: string;
@@ -3597,6 +3787,11 @@ function AssistantMessageBody({
   timelineItems?: MessageTimelineItem[];
   references?: ReferenceItem[];
   referenceMessageId?: string | null;
+  ambiguityChoicePrompt?: AmbiguityChoicePrompt | null;
+  activeAmbiguityChoiceIndex?: number;
+  isAmbiguityChoiceDisabled?: boolean;
+  onHighlightAmbiguityChoice?: (optionIndex: number) => void;
+  onSelectAmbiguityChoice?: (optionIndex: number) => void;
 }) {
   const hasTimeline = timelineItems && timelineItems.length > 0;
   const citationReferenceLinks = React.useMemo(
@@ -3617,6 +3812,16 @@ function AssistantMessageBody({
           messageId={messageId}
           citationReferenceLinks={citationReferenceLinks}
         />
+        {ambiguityChoicePrompt ? (
+          <AmbiguityChoicePanel
+            messageId={messageId}
+            prompt={ambiguityChoicePrompt}
+            activeOptionIndex={activeAmbiguityChoiceIndex ?? 0}
+            disabled={Boolean(isAmbiguityChoiceDisabled)}
+            onHighlightOption={onHighlightAmbiguityChoice}
+            onSelectOption={onSelectAmbiguityChoice}
+          />
+        ) : null}
       </div>
     );
   }
@@ -3639,6 +3844,73 @@ function AssistantMessageBody({
           />
         ),
       )}
+      {ambiguityChoicePrompt ? (
+        <AmbiguityChoicePanel
+          messageId={messageId}
+          prompt={ambiguityChoicePrompt}
+          activeOptionIndex={activeAmbiguityChoiceIndex ?? 0}
+          disabled={Boolean(isAmbiguityChoiceDisabled)}
+          onHighlightOption={onHighlightAmbiguityChoice}
+          onSelectOption={onSelectAmbiguityChoice}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * 渲染歧义引导候选按钮；高亮态由上层统一管理，便于方向键和鼠标共享同一选择状态。
+ */
+function AmbiguityChoicePanel({
+  messageId,
+  prompt,
+  activeOptionIndex,
+  disabled,
+  onHighlightOption,
+  onSelectOption,
+}: {
+  messageId: string;
+  prompt: AmbiguityChoicePrompt;
+  activeOptionIndex: number;
+  disabled: boolean;
+  onHighlightOption?: (optionIndex: number) => void;
+  onSelectOption?: (optionIndex: number) => void;
+}) {
+  return (
+    <div
+      data-testid={`ambiguity-choice-panel-${messageId}`}
+      role="group"
+      aria-label={`${prompt.topic}方向选择`}
+      className="mt-4 w-full max-w-2xl overflow-hidden rounded-lg border border-border bg-surface text-foreground shadow-[0_18px_44px_rgba(0,0,0,0.18)]"
+    >
+      <div className="border-b border-border bg-surface-container px-4 py-3 text-sm font-medium">
+        选择你想了解的方向
+      </div>
+      <div className="space-y-1 p-2">
+        {prompt.options.map((option, optionIndex) => {
+          const isActive = optionIndex === activeOptionIndex;
+          return (
+            <button
+              key={`${option.index}-${option.label}`}
+              type="button"
+              aria-pressed={isActive}
+              aria-label={`选择方向 ${option.index}：${option.label}`}
+              disabled={disabled}
+              onMouseEnter={() => onHighlightOption?.(optionIndex)}
+              onFocus={() => onHighlightOption?.(optionIndex)}
+              onClick={() => onSelectOption?.(optionIndex)}
+              className={`flex min-h-11 w-full min-w-0 items-center gap-3 rounded-md px-3 py-2 text-left text-sm transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border ${
+                isActive
+                  ? 'bg-surface-container-high text-foreground'
+                  : 'text-muted hover:bg-surface-container hover:text-foreground'
+              } disabled:cursor-not-allowed disabled:opacity-60`}
+            >
+              <span className="w-6 shrink-0 font-mono text-xs text-muted">{option.index}.</span>
+              <span className="min-w-0 flex-1 break-words font-medium">{option.label}</span>
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }

@@ -33,7 +33,9 @@ public class RuntimeSettingService {
     private static final String TYPE_STRING = "STRING";
     private static final int DEFAULT_CHAT_TOOL_MAX_ROUNDS = 10;
     private static final int DEFAULT_PLAN_MODE_EXECUTION_MIN_TOOL_ROUNDS = 20;
+    private static final int DEFAULT_CHAT_REWRITE_HISTORY_TURNS = 3;
     private static final int HARD_CHAT_TOOL_MAX_ROUNDS = 20;
+    private static final int HARD_CHAT_REWRITE_HISTORY_TURNS = 10;
     private static final List<String> DEFAULT_WEB_SEARCH_PROVIDER_ORDER = List.of(
         "tavily",
         "serpapi",
@@ -424,6 +426,16 @@ public class RuntimeSettingService {
      */
     public int chatIntentGuidanceMaxOptions() {
         return getInt("chat.intent.guidance.max_options", 6);
+    }
+
+    /**
+     * 获取聊天改写阶段可使用的历史上下文轮次。
+     * 业务约束：该值只影响改写模型输入，搜索 provider 仍只接收改写后的独立查询。
+     * @return 改写阶段历史上下文轮次。
+     */
+    public int chatRewriteHistoryTurns() {
+        int configuredTurns = getInt("chat.rewrite.history_turns", DEFAULT_CHAT_REWRITE_HISTORY_TURNS);
+        return Math.min(HARD_CHAT_REWRITE_HISTORY_TURNS, Math.max(0, configuredTurns));
     }
 
     /**

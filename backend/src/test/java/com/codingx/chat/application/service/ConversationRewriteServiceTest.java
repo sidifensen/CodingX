@@ -3,12 +3,25 @@ package com.codingx.chat.application.service;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verify;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
+import com.codingx.chat.domain.model.ChatMessage;
+import com.codingx.chat.domain.model.ChatMessageRole;
+import com.codingx.chat.domain.model.ChatMessageStatus;
 import java.util.List;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Mockito;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 /**
@@ -26,8 +39,19 @@ class ConversationRewriteServiceTest {
     @Mock
     private ConversationQueryTermMappingService conversationQueryTermMappingService;
 
+    @Mock
+    private RuntimeSettingService runtimeSettingService;
+
     @InjectMocks
     private ConversationRewriteService conversationRewriteService;
+
+    /**
+     * 默认使用产品约定的 3 轮历史上下文；单个用例可以覆盖该值验证配置行为。
+     */
+    @BeforeEach
+    void stubDefaultRewriteHistoryTurns() {
+        Mockito.lenient().when(runtimeSettingService.chatRewriteHistoryTurns()).thenReturn(3);
+    }
 
     /**
      * 改写服务应解析模型返回的 JSON，并提取 rewrite 字段。
@@ -38,7 +62,7 @@ class ConversationRewriteServiceTest {
         when(promptTemplateLoader.load("rewrite")).thenReturn("rewrite prompt");
         when(aiPromptExecutionService.complete(
             "rewrite prompt",
-            "历史上下文：上一轮问的是 CodingX 聊天架构\n当前问题：CodingX 聊天架构怎么改"
+            "历史上下文：\n用户：上一轮问的是 CodingX 聊天架构\n当前问题：CodingX 聊天架构怎么改"
         )).thenReturn("""
             {
               "rewrite":"CodingX 聊天架构应该怎么改",
@@ -50,6 +74,51 @@ class ConversationRewriteServiceTest {
         String rewritten = conversationRewriteService.rewrite(List.of("上一轮问的是 CodingX 聊天架构"), "这个要怎么改");
 
         assertEquals("CodingX 聊天架构应该怎么改", rewritten);
+    }
+
+    /**
+     * 指代问题改写必须使用上一轮真实对话上下文，且不能把本轮问题重复写入历史上下文。
+     */
+    @Test
+    void rewriteResultUsesPriorTurnsAndExcludesCurrentQuestion() {
+        String question = "那个有什么用";
+        List<ChatMessage> history = List.of(
+            ChatMessage.create(1L, 1L, ChatMessageRole.USER, "牛顿力学是什么", ChatMessageStatus.COMPLETED, null, null, null),
+            ChatMessage.create(2L, 1L, ChatMessageRole.ASSISTANT, "牛顿力学是经典力学体系。", ChatMessageStatus.COMPLETED, null, null, null),
+            ChatMessage.create(3L, 1L, ChatMessageRole.USER, question, ChatMessageStatus.COMPLETED, null, null, null)
+        );
+        Logger logger = (Logger) org.slf4j.LoggerFactory.getLogger(ConversationRewriteService.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        when(conversationQueryTermMappingService.normalize(question)).thenReturn(question);
+        when(promptTemplateLoader.load("rewrite")).thenReturn("rewrite prompt");
+        when(aiPromptExecutionService.complete(eq("rewrite prompt"), anyString())).thenReturn("""
+            {
+              "rewrite":"牛顿力学有什么用",
+              "should_split":false,
+              "sub_questions":["牛顿力学有什么用"]
+            }
+            """);
+
+        try {
+            ConversationRewriteResult result = conversationRewriteService.rewriteResultFromMessages(history, question);
+
+            ArgumentCaptor<String> userPromptCaptor = ArgumentCaptor.forClass(String.class);
+            verify(aiPromptExecutionService).complete(eq("rewrite prompt"), userPromptCaptor.capture());
+            String userPrompt = userPromptCaptor.getValue();
+            assertEquals("牛顿力学有什么用", result.rewrite());
+            org.junit.jupiter.api.Assertions.assertTrue(userPrompt.contains("用户：牛顿力学是什么"));
+            org.junit.jupiter.api.Assertions.assertTrue(userPrompt.contains("助手：牛顿力学是经典力学体系。"));
+            org.junit.jupiter.api.Assertions.assertTrue(userPrompt.contains("当前问题：那个有什么用"));
+            org.junit.jupiter.api.Assertions.assertEquals(1, countOccurrences(userPrompt, "那个有什么用"));
+            org.junit.jupiter.api.Assertions.assertTrue(appender.list.stream()
+                .anyMatch(event -> event.getLevel().equals(Level.INFO)
+                    && event.getFormattedMessage().contains("改写历史上下文")
+                    && event.getFormattedMessage().contains("牛顿力学是什么")));
+        } finally {
+            logger.detachAppender(appender);
+        }
     }
 
     /**
@@ -193,5 +262,18 @@ class ConversationRewriteServiceTest {
         assertEquals("你好", result.rewrite());
         assertEquals(false, result.shouldSplit());
         assertEquals(List.of("你好"), result.subQuestions());
+    }
+
+    /**
+     * 统计指定文本在目标字符串中的出现次数，避免误把本轮短指代重复写入历史上下文。
+     */
+    private int countOccurrences(String value, String target) {
+        int count = 0;
+        int index = 0;
+        while ((index = value.indexOf(target, index)) >= 0) {
+            count++;
+            index += target.length();
+        }
+        return count;
     }
 }

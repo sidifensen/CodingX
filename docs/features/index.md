@@ -12,6 +12,7 @@
 ## Chat
 
 - [聊天歧义引导配置](chat/intent-guidance-config.md)
+- [聊天改写历史上下文](chat/rewrite-history-context.md)
 - [天气 MCP 城市澄清](chat/weather-mcp-city-clarify.md)
 - [聊天 MCP 工具运行边界](chat/mcp-runtime-boundary.md)
 - [聊天拆分问题逐题意图路由](chat/split-intent-routing.md)

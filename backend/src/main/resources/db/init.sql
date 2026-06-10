@@ -287,7 +287,8 @@ VALUES
     (7069, 'chat.intent.guidance.enabled', 'true', NULL, FALSE, NULL, NULL, NULL, 'BOOLEAN', 'chat.intent.guidance', '是否启用聊天歧义引导', 10, FALSE, 0),
     (7070, 'chat.intent.guidance.ambiguity_score_ratio', '0.8', NULL, FALSE, NULL, NULL, NULL, 'DECIMAL', 'chat.intent.guidance', '歧义引导分数比值阈值', 20, FALSE, 0),
     (7071, 'chat.intent.guidance.ambiguity_margin', '0.15', NULL, FALSE, NULL, NULL, NULL, 'DECIMAL', 'chat.intent.guidance', '歧义引导边界缓冲宽度', 30, FALSE, 0),
-    (7072, 'chat.intent.guidance.max_options', '6', NULL, FALSE, NULL, NULL, NULL, 'INTEGER', 'chat.intent.guidance', '歧义引导最大候选数量', 40, FALSE, 0)
+    (7072, 'chat.intent.guidance.max_options', '6', NULL, FALSE, NULL, NULL, NULL, 'INTEGER', 'chat.intent.guidance', '歧义引导最大候选数量', 40, FALSE, 0),
+    (7073, 'chat.rewrite.history_turns', '3', NULL, FALSE, NULL, NULL, NULL, 'INTEGER', 'chat.rewrite', '聊天改写历史上下文轮次', 10, FALSE, 0)
 ON CONFLICT (setting_key) DO UPDATE
 SET
     setting_value = EXCLUDED.setting_value,

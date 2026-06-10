@@ -236,6 +236,60 @@ class RuntimeSettingServiceTest {
     }
 
     /**
+     * 改写阶段历史上下文轮次应由系统设置控制，便于按搜索质量和延迟动态调整。
+     */
+    @Test
+    void chatRewriteHistoryTurnsReadsConfiguredValue() {
+        when(chatRuntimeSettingRepository.findAll()).thenReturn(List.of(
+            ChatRuntimeSetting.builder()
+                .settingKey("chat.rewrite.history_turns")
+                .settingValue("5")
+                .valueType("INTEGER")
+                .categoryCode("chat.rewrite")
+                .description("聊天改写历史上下文轮次")
+                .build()
+        ));
+
+        runtimeSettingService.init();
+
+        assertEquals(5, runtimeSettingService.chatRewriteHistoryTurns());
+    }
+
+    /**
+     * 改写历史上下文默认取最近 3 轮，兼顾指代消解质量与改写模型延迟。
+     */
+    @Test
+    void chatRewriteHistoryTurnsFallsBackToDefaultWhenMissing() {
+        when(chatRuntimeSettingRepository.findAll()).thenReturn(List.of());
+
+        runtimeSettingService.init();
+
+        assertEquals(3, runtimeSettingService.chatRewriteHistoryTurns());
+    }
+
+    /**
+     * 历史上下文轮次必须有上下限，避免误配置导致完全不可控的 prompt 膨胀。
+     */
+    @Test
+    void chatRewriteHistoryTurnsClampsMisconfiguredValues() {
+        when(chatRuntimeSettingRepository.findAll()).thenReturn(List.of(
+            setting("chat.rewrite.history_turns", "10000")
+        ));
+
+        runtimeSettingService.init();
+
+        assertEquals(10, runtimeSettingService.chatRewriteHistoryTurns());
+
+        when(chatRuntimeSettingRepository.findAll()).thenReturn(List.of(
+            setting("chat.rewrite.history_turns", "-1")
+        ));
+
+        runtimeSettingService.refresh();
+
+        assertEquals(0, runtimeSettingService.chatRewriteHistoryTurns());
+    }
+
+    /**
      * 未配置 provider_order 时应使用内置默认顺序，确保新环境升级后天然具备多 provider 兜底能力。
      */
     @Test

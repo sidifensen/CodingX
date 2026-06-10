@@ -317,8 +317,8 @@ public class ChatApplicationService {
         if (history.stream().noneMatch(message -> message.getId().equals(requestMessage.getId()))) {
             history.add(requestMessage);
         }
-        ConversationRewriteResult rewriteResult = conversationRewriteService.rewriteResult(
-            plainUserContents(history),
+        ConversationRewriteResult rewriteResult = conversationRewriteService.rewriteResultFromMessages(
+            plainAiMessages(history),
             command.content()
         );
         List<SearchReferenceCandidate> searchReferences = List.of();
@@ -768,8 +768,8 @@ public class ChatApplicationService {
             return;
         }
         // 步骤 7：改写问题并执行意图分流，多子问题会在后续分别触发搜索或 MCP。
-        ConversationRewriteResult rewriteResult = conversationRewriteService.rewriteResult(
-            plainUserContents(history),
+        ConversationRewriteResult rewriteResult = conversationRewriteService.rewriteResultFromMessages(
+            plainAiMessages(history),
             plainQuestion
         );
         List<SearchReferenceCandidate> searchReferences = List.of();

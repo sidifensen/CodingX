@@ -1097,9 +1097,9 @@ describe('ChatView', () => {
   });
 
   /**
-   * 右侧代码审查栏应支持本轮、上轮和 git 工作区差异模式切换。
+   * 右侧工作台默认展示工具入口，并在审查选项卡中复用会话差异与 git 工作区差异。
    */
-  it('应在右侧代码审查栏切换会话差异和工作区git差异', async () => {
+  it('应在右侧工作台中打开审查选项卡并切换会话差异和git差异', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(
         JSON.stringify({
@@ -1210,35 +1210,41 @@ describe('ChatView', () => {
       />,
     );
 
-    // 业务约束：差异栏默认隐藏，避免一直挤占聊天区域，用户从右上角按钮按需打开。
-    expect(screen.queryByTestId('code-review-sidebar')).not.toBeInTheDocument();
+    // 业务约束：右侧工作台默认隐藏，避免一直挤占聊天区域，用户从右上角图标按需打开。
+    expect(screen.queryByTestId('right-workbench-sidebar')).not.toBeInTheDocument();
     const sidebarToggle = screen.getByTestId('code-review-sidebar-toggle');
-    expect(sidebarToggle).toHaveAccessibleName('打开代码差异侧边栏');
+    expect(sidebarToggle).toHaveAccessibleName('打开右侧工作台');
+    expect(within(sidebarToggle).queryByText('代码差异')).not.toBeInTheDocument();
 
     fireEvent.click(sidebarToggle);
-    let sidebar = screen.getByTestId('code-review-sidebar');
+    let sidebar = screen.getByTestId('right-workbench-sidebar');
     expect(sidebar).toBeInTheDocument();
-    expect(sidebar).toHaveStyle({ width: '380px' });
+    expect(sidebar).toHaveStyle({ width: '420px' });
+    expect(within(sidebar).getByTestId('right-workbench-launcher')).toBeInTheDocument();
+    fireEvent.click(within(sidebar).getByRole('button', { name: '打开审查面板' }));
+    expect(within(sidebar).getByRole('button', { name: '切换到审查选项卡' })).toBeInTheDocument();
+    const reviewPanel = within(sidebar).getByTestId('code-review-sidebar');
     const modeMenuButton = within(sidebar).getByTestId('code-review-mode-menu-button');
     expect(modeMenuButton).toHaveTextContent('本轮编辑');
-    expect(within(sidebar).queryByRole('menuitemradio', { name: '上轮对话' })).not.toBeInTheDocument();
-    expect(sidebar).toHaveTextContent('src/current.ts');
+    expect(within(reviewPanel).queryByRole('menuitemradio', { name: '上轮对话' })).not.toBeInTheDocument();
+    expect(reviewPanel).toHaveTextContent('src/current.ts');
 
-    // 侧栏在右侧展开，拖动左侧边缘向左会增加宽度。
+    // 工作台在右侧展开，拖动左侧边缘向左会增加宽度。
     fireEvent.mouseDown(screen.getByTestId('code-review-sidebar-resize-handle'), {
       clientX: 1000,
     });
     fireEvent.mouseMove(window, { clientX: 920 });
     fireEvent.mouseUp(window);
-    expect(sidebar).toHaveStyle({ width: '460px' });
+    expect(sidebar).toHaveStyle({ width: '500px' });
 
-    fireEvent.click(within(sidebar).getByRole('button', { name: '关闭代码差异侧边栏' }));
-    expect(screen.queryByTestId('code-review-sidebar')).not.toBeInTheDocument();
-    expect(sidebarToggle).toHaveAccessibleName('打开代码差异侧边栏');
+    fireEvent.click(within(sidebar).getByRole('button', { name: '关闭右侧工作台' }));
+    expect(screen.queryByTestId('right-workbench-sidebar')).not.toBeInTheDocument();
+    expect(sidebarToggle).toHaveAccessibleName('打开右侧工作台');
 
     fireEvent.click(sidebarToggle);
-    sidebar = screen.getByTestId('code-review-sidebar');
-    expect(sidebar).toHaveStyle({ width: '460px' });
+    sidebar = screen.getByTestId('right-workbench-sidebar');
+    expect(sidebar).toHaveStyle({ width: '500px' });
+    fireEvent.click(within(sidebar).getByRole('button', { name: '打开审查面板' }));
 
     fireEvent.click(within(sidebar).getByTestId('code-review-mode-menu-button'));
     for (const label of ['本轮编辑', '上轮对话', '未暂存', '已暂存', '提交', '分支']) {
@@ -1270,6 +1276,69 @@ describe('ChatView', () => {
     expect(sidebar).toHaveTextContent(
       '+export const workspace = "local";',
     );
+    fireEvent.click(within(sidebar).getByRole('button', { name: '添加侧栏选项卡' }));
+    fireEvent.click(within(sidebar).getByRole('menuitem', { name: /浏览器\s*Ctrl\+T/ }));
+    expect(within(sidebar).getByTestId('browser-workbench-panel')).toBeInTheDocument();
+  });
+
+  /**
+   * 文件选项卡应使用桌面宿主目录和只读文件内容能力，并支持折叠右侧目录。
+   */
+  it('应在文件选项卡中浏览目录并显示文件内容', async () => {
+    window.codingxHost = {
+      getContext: vi.fn().mockResolvedValue({}),
+      getWindowState: vi.fn().mockResolvedValue(null),
+      minimizeWindow: vi.fn().mockResolvedValue(undefined),
+      toggleMaximizeWindow: vi.fn().mockResolvedValue(null),
+      closeWindow: vi.fn().mockResolvedValue(undefined),
+      invokeDesktopMenuAction: vi.fn().mockResolvedValue(undefined),
+      showDesktopNotification: vi.fn().mockResolvedValue(false),
+      onWindowStateChanged: vi.fn(() => () => undefined),
+      pickRepositoryDirectory: vi.fn().mockResolvedValue(null),
+      bindRepositoryPath: vi.fn().mockResolvedValue({}),
+      requestFileAccess: vi.fn().mockResolvedValue(true),
+      listDirectory: vi.fn().mockResolvedValue([
+        { name: 'backend', path: 'D:/code/CodingX/backend', entryType: 'directory' },
+        { name: 'AGENTS.md', path: 'D:/code/CodingX/AGENTS.md', entryType: 'file' },
+      ]),
+      readTextFile: vi.fn().mockResolvedValue({
+        path: 'D:/code/CodingX/AGENTS.md',
+        content: '# 多会话协作规范\n- 保持其他会话成果',
+      }),
+    };
+
+    try {
+      render(
+        <ChatView
+          isAuthenticated={true}
+          onRequireLogin={vi.fn()}
+          workspace={createWorkspace()}
+        />,
+      );
+
+      fireEvent.click(screen.getByTestId('code-review-sidebar-toggle'));
+      const sidebar = screen.getByTestId('right-workbench-sidebar');
+      fireEvent.click(within(sidebar).getByRole('button', { name: '打开文件面板' }));
+
+      await waitFor(() => {
+        expect(window.codingxHost?.listDirectory).toHaveBeenCalledWith('D:/code/CodingX');
+      });
+      expect(within(sidebar).getByTestId('file-workbench-panel')).toHaveTextContent('CodingX');
+      expect(within(sidebar).getByRole('combobox', { name: '选择打开方式' })).toBeInTheDocument();
+
+      fireEvent.click(await within(sidebar).findByRole('button', { name: '打开文件 AGENTS.md' }));
+      await waitFor(() => {
+        expect(window.codingxHost?.readTextFile).toHaveBeenCalledWith('D:/code/CodingX/AGENTS.md');
+      });
+      expect(within(sidebar).getByText('# 多会话协作规范', { exact: false })).toBeInTheDocument();
+
+      fireEvent.click(within(sidebar).getByRole('button', { name: '折叠文件目录' }));
+      expect(within(sidebar).queryByTestId('file-workbench-directory')).not.toBeInTheDocument();
+      fireEvent.click(within(sidebar).getByRole('button', { name: '展开文件目录' }));
+      expect(within(sidebar).getByTestId('file-workbench-directory')).toBeInTheDocument();
+    } finally {
+      delete window.codingxHost;
+    }
   });
 
   /**

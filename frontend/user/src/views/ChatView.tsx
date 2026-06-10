@@ -4,8 +4,11 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import {
   ArrowUp,
+  ArrowLeft,
+  ArrowRight,
   ExternalLink,
   ChevronDown,
+  ChevronRight,
   CheckCircle2,
   CircleStop,
   Cloud,
@@ -13,6 +16,7 @@ import {
   Database,
   File,
   Image as ImageIcon,
+  Folder,
   X,
   FileText,
   Globe2,
@@ -23,7 +27,10 @@ import {
   PanelRightOpen,
   FolderOpen,
   Monitor,
+  MoreVertical,
   Plug,
+  Plus,
+  RefreshCw,
   Search,
   Pencil,
   RotateCcw,
@@ -35,6 +42,8 @@ import {
   WandSparkles,
 } from 'lucide-react';
 import { AuthStorage } from '../utils/authStorage';
+import { resolveHostBridge } from '../host/bridge';
+import { LocalDirectoryEntry } from '../host/types';
 import { ChatApi } from './chat/chatApi';
 import ChatMessageList from './chat/ChatMessageList';
 import {
@@ -72,9 +81,9 @@ interface ChatViewProps {
   workspace: ChatWorkspaceController;
 }
 
-const CODE_REVIEW_SIDEBAR_DEFAULT_WIDTH = 380;
-const CODE_REVIEW_SIDEBAR_MIN_WIDTH = 320;
-const CODE_REVIEW_SIDEBAR_MAX_WIDTH = 720;
+const RIGHT_WORKBENCH_DEFAULT_WIDTH = 420;
+const RIGHT_WORKBENCH_MIN_WIDTH = 340;
+const RIGHT_WORKBENCH_MAX_WIDTH = 760;
 const AMBIGUITY_GUIDANCE_PHRASE = '我识别到以下可能的方向';
 // 业务约束：输入区选择器位于紧凑工具栏上方，滚动条必须轻量，避免挤占 MCP/技能/专家名称宽度。
 const INPUT_SELECTOR_SCROLL_CLASS =
@@ -210,15 +219,16 @@ export default function ChatView({
   const [activeRuntimeWorkspaceMenu, setActiveRuntimeWorkspaceMenu] = React.useState<
     'runtime' | 'workspace' | null
   >(null);
-  const [isCodeReviewSidebarOpen, setIsCodeReviewSidebarOpen] = React.useState(false);
-  const [codeReviewSidebarWidth, setCodeReviewSidebarWidth] = React.useState(
-    CODE_REVIEW_SIDEBAR_DEFAULT_WIDTH,
+  const [isRightWorkbenchOpen, setIsRightWorkbenchOpen] = React.useState(false);
+  const [rightWorkbenchWidth, setRightWorkbenchWidth] = React.useState(
+    RIGHT_WORKBENCH_DEFAULT_WIDTH,
   );
   const [mcpSearchKeyword, setMcpSearchKeyword] = React.useState('');
   const [skillSearchKeyword, setSkillSearchKeyword] = React.useState('');
   const [activeSkillOptionIndex, setActiveSkillOptionIndex] = React.useState(-1);
   const [slashCommandSearchKeyword, setSlashCommandSearchKeyword] = React.useState('');
   const [activeSlashCommandOptionIndex, setActiveSlashCommandOptionIndex] = React.useState(-1);
+
   const [expertSearchKeyword, setExpertSearchKeyword] = React.useState('');
   const [activeAmbiguityChoiceIndex, setActiveAmbiguityChoiceIndex] = React.useState(0);
   const [skillSelectorSource, setSkillSelectorSource] = React.useState<'button' | 'slash' | null>(
@@ -1358,17 +1368,16 @@ export default function ChatView({
           <button
             type="button"
             data-testid="code-review-sidebar-toggle"
-            aria-label={isCodeReviewSidebarOpen ? '关闭代码差异侧边栏' : '打开代码差异侧边栏'}
-            aria-pressed={isCodeReviewSidebarOpen}
-            onClick={() => setIsCodeReviewSidebarOpen((current) => !current)}
-            className={`pointer-events-auto inline-flex h-10 items-center gap-2 rounded-lg border px-3 text-sm font-medium shadow-sm transition-colors ${
-              isCodeReviewSidebarOpen
+            aria-label={isRightWorkbenchOpen ? '关闭右侧工作台' : '打开右侧工作台'}
+            aria-pressed={isRightWorkbenchOpen}
+            onClick={() => setIsRightWorkbenchOpen((current) => !current)}
+            className={`pointer-events-auto inline-flex h-10 w-10 items-center justify-center rounded-lg border text-sm font-medium shadow-sm transition-colors ${
+              isRightWorkbenchOpen
                 ? 'border-foreground bg-foreground text-background'
                 : 'border-border bg-surface text-muted hover:bg-surface-container hover:text-foreground'
             }`}
           >
-            {isCodeReviewSidebarOpen ? <PanelRightClose size={16} /> : <PanelRightOpen size={16} />}
-            <span>代码差异</span>
+            {isRightWorkbenchOpen ? <PanelRightClose size={16} /> : <PanelRightOpen size={16} />}
           </button>
         </div>
         <div
@@ -2433,14 +2442,17 @@ export default function ChatView({
       ) : null}
       </section>
 
-      {isCodeReviewSidebarOpen ? (
-        <CodeReviewSidebar
+      {isRightWorkbenchOpen ? (
+        <RightWorkbenchSidebar
           messages={messages}
-          width={codeReviewSidebarWidth}
+          width={rightWorkbenchWidth}
+          workspaceLabel={workspaceLabel}
           workspaceId={workspaceId}
+          workspacePath={workspacePath}
           repositoryPath={activeRuntimeTarget === 'local' ? workspacePath : null}
-          onClose={() => setIsCodeReviewSidebarOpen(false)}
-          onResize={setCodeReviewSidebarWidth}
+          onPickRepositoryDirectory={pickRepositoryDirectory}
+          onClose={() => setIsRightWorkbenchOpen(false)}
+          onResize={setRightWorkbenchWidth}
         />
       ) : null}
 
@@ -2703,23 +2715,830 @@ const CODE_REVIEW_MODES: Array<{ mode: CodeReviewMode; label: string }> = [
 
 const GIT_DIFF_REVIEW_MODES = new Set<CodeReviewMode>(['unstaged', 'staged', 'commit', 'branch']);
 
+type RightWorkbenchTool = 'files' | 'browser' | 'review';
+
+type RightWorkbenchTab = {
+  id: string;
+  tool: RightWorkbenchTool;
+  title: string;
+};
+
+const RIGHT_WORKBENCH_TOOLS: Array<{
+  tool: RightWorkbenchTool;
+  title: string;
+  description: string;
+  shortcut: string;
+  icon: React.ComponentType<{ size?: number; className?: string }>;
+}> = [
+  { tool: 'files', title: '文件', description: '浏览项目文件', shortcut: 'Ctrl+P', icon: FolderOpen },
+  { tool: 'browser', title: '浏览器', description: '打开网站', shortcut: 'Ctrl+T', icon: Globe2 },
+  { tool: 'review', title: '审查', description: '查看代码更改', shortcut: 'Ctrl+Shift+G', icon: FileText },
+];
+
 /**
- * 右侧代码审查栏聚合本轮/上轮工具差异，并可按模式读取当前工作区 git diff。
+ * 右侧工作台承载文件、浏览器和代码审查多个面板；默认入口参考用户提供的桌面端截图。
  */
-function CodeReviewSidebar({
+function RightWorkbenchSidebar({
   messages,
   width,
+  workspaceLabel,
   workspaceId,
+  workspacePath,
   repositoryPath,
+  onPickRepositoryDirectory,
   onClose,
   onResize,
 }: {
   messages: ChatMessageItem[];
   width: number;
+  workspaceLabel: string;
   workspaceId: string | null;
+  workspacePath: string | null;
   repositoryPath: string | null;
+  onPickRepositoryDirectory: () => Promise<void>;
   onClose: () => void;
   onResize: (nextWidth: number) => void;
+}) {
+  const [tabs, setTabs] = React.useState<RightWorkbenchTab[]>([]);
+  const [activeTabId, setActiveTabId] = React.useState('');
+  const [isAddMenuOpen, setIsAddMenuOpen] = React.useState(false);
+  const addMenuRef = React.useRef<HTMLDivElement | null>(null);
+  const activeTab = tabs.find((tab) => tab.id === activeTabId) ?? null;
+
+  const openTool = React.useCallback((tool: RightWorkbenchTool) => {
+    const toolDefinition = RIGHT_WORKBENCH_TOOLS.find((item) => item.tool === tool);
+    if (!toolDefinition) {
+      return;
+    }
+    const existingTab = tabs.find((tab) => tab.tool === tool);
+    if (existingTab) {
+      setActiveTabId(existingTab.id);
+      setIsAddMenuOpen(false);
+      return;
+    }
+    const nextTab = {
+      id: `${tool}-${Date.now()}`,
+      tool,
+      title: toolDefinition.title,
+    };
+    setTabs((currentTabs) => (
+      currentTabs.some((tab) => tab.id === nextTab.id) ? currentTabs : [...currentTabs, nextTab]
+    ));
+    setActiveTabId(nextTab.id);
+    setIsAddMenuOpen(false);
+  }, [tabs]);
+
+  const closeTab = React.useCallback((tabId: string) => {
+    setTabs((currentTabs) => {
+      const closingIndex = currentTabs.findIndex((tab) => tab.id === tabId);
+      const nextTabs = currentTabs.filter((tab) => tab.id !== tabId);
+      if (activeTabId === tabId) {
+        const nextActiveTab = nextTabs[Math.max(0, closingIndex - 1)] ?? nextTabs[0] ?? null;
+        setActiveTabId(nextActiveTab?.id ?? '');
+      }
+      return nextTabs;
+    });
+  }, [activeTabId]);
+
+  const clampSidebarWidth = React.useCallback((nextWidth: number) => {
+    const viewportLimit =
+      typeof window === 'undefined'
+        ? RIGHT_WORKBENCH_MAX_WIDTH
+        : Math.max(RIGHT_WORKBENCH_MIN_WIDTH, window.innerWidth - 520);
+    return Math.min(
+      Math.max(nextWidth, RIGHT_WORKBENCH_MIN_WIDTH),
+      Math.min(RIGHT_WORKBENCH_MAX_WIDTH, viewportLimit),
+    );
+  }, []);
+
+  const startResize = React.useCallback(
+    (event: React.MouseEvent<HTMLButtonElement>) => {
+      event.preventDefault();
+      const startX = event.clientX;
+      const startWidth = width;
+      const handleMouseMove = (moveEvent: MouseEvent) => {
+        // 右侧固定面板向左拖宽、向右拖窄；宽度仍受视口和最大值限制。
+        onResize(clampSidebarWidth(startWidth - (moveEvent.clientX - startX)));
+      };
+      const stopResize = () => {
+        window.removeEventListener('mousemove', handleMouseMove);
+        window.removeEventListener('mouseup', stopResize);
+      };
+      window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('mouseup', stopResize);
+    },
+    [clampSidebarWidth, onResize, width],
+  );
+
+  React.useEffect(() => {
+    if (!isAddMenuOpen) {
+      return undefined;
+    }
+    const handlePointerDown = (event: MouseEvent) => {
+      const target = event.target;
+      if (target instanceof Node && addMenuRef.current?.contains(target)) {
+        return;
+      }
+      setIsAddMenuOpen(false);
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setIsAddMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isAddMenuOpen]);
+
+  return (
+    <aside
+      data-testid="right-workbench-sidebar"
+      aria-label="右侧工作台"
+      className="relative hidden h-full shrink-0 border-l border-border bg-surface text-foreground shadow-[-18px_0_46px_rgba(0,0,0,0.18)] lg:flex lg:flex-col"
+      style={{ width }}
+    >
+      <button
+        type="button"
+        data-testid="code-review-sidebar-resize-handle"
+        role="separator"
+        aria-label="调整右侧工作台宽度"
+        aria-orientation="vertical"
+        onMouseDown={startResize}
+        className="absolute -left-1 top-0 z-10 h-full w-2 cursor-col-resize border-l border-transparent transition-colors hover:border-foreground/40 focus-visible:border-foreground focus-visible:outline-none"
+      />
+      <div className="flex h-14 shrink-0 items-center gap-2 border-b border-border px-3">
+        {tabs.length > 0 ? (
+          <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
+            {tabs.map((tab) => {
+              const toolDefinition = RIGHT_WORKBENCH_TOOLS.find((item) => item.tool === tab.tool);
+              const TabIcon = toolDefinition?.icon ?? FileText;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  aria-label={`切换到${tab.title}选项卡`}
+                  aria-pressed={activeTabId === tab.id}
+                  onClick={() => setActiveTabId(tab.id)}
+                  className={`inline-flex h-9 max-w-[160px] shrink-0 items-center gap-2 rounded-lg px-3 text-sm transition-colors ${
+                    activeTabId === tab.id
+                      ? 'bg-surface-container text-foreground'
+                      : 'text-muted hover:bg-surface-container hover:text-foreground'
+                  }`}
+                >
+                  <TabIcon size={15} />
+                  <span className="truncate">{tab.title}</span>
+                  <span
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`关闭${tab.title}选项卡`}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      closeTab(tab.id);
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        closeTab(tab.id);
+                      }
+                    }}
+                    className="rounded p-0.5 text-muted hover:bg-background hover:text-foreground"
+                  >
+                    <X size={12} />
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="min-w-0 flex-1 text-sm font-semibold text-foreground">工作台</div>
+        )}
+        <div ref={addMenuRef} className="relative">
+          <button
+            type="button"
+            aria-label="添加侧栏选项卡"
+            aria-haspopup="menu"
+            aria-expanded={isAddMenuOpen}
+            onClick={() => setIsAddMenuOpen((current) => !current)}
+            className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-muted transition-colors hover:bg-surface-container hover:text-foreground"
+          >
+            <Plus size={17} />
+          </button>
+          {isAddMenuOpen ? (
+            <div
+              role="menu"
+              aria-label="添加工作台功能"
+              className="absolute right-0 top-10 z-30 w-64 rounded-xl border border-border bg-surface p-2 text-sm text-foreground shadow-[0_18px_44px_rgba(0,0,0,0.28)]"
+            >
+              {RIGHT_WORKBENCH_TOOLS.map((item) => {
+                const ToolIcon = item.icon;
+                return (
+                  <button
+                    key={item.tool}
+                    type="button"
+                    role="menuitem"
+                    onClick={() => openTool(item.tool)}
+                    className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-surface-container"
+                  >
+                    <ToolIcon size={17} className="text-muted" />
+                    <span className="min-w-0 flex-1">{item.title}</span>
+                    <span className="font-mono text-xs text-muted">{item.shortcut}</span>
+                  </button>
+                );
+              })}
+            </div>
+          ) : null}
+        </div>
+        <button
+          type="button"
+          aria-label="关闭右侧工作台"
+          onClick={onClose}
+          className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-muted transition-colors hover:bg-surface-container hover:text-foreground"
+        >
+          <PanelRightClose size={17} />
+        </button>
+      </div>
+      <div className="min-h-0 flex-1 overflow-hidden">
+        {!activeTab ? (
+          <RightWorkbenchLauncher onOpenTool={openTool} />
+        ) : activeTab.tool === 'review' ? (
+          <CodeReviewPanel
+            messages={messages}
+            workspaceId={workspaceId}
+            repositoryPath={repositoryPath}
+          />
+        ) : activeTab.tool === 'files' ? (
+          <FileWorkbenchPanel
+            workspaceLabel={workspaceLabel}
+            workspacePath={workspacePath}
+            onPickRepositoryDirectory={onPickRepositoryDirectory}
+          />
+        ) : (
+          <BrowserWorkbenchPanel workspaceLabel={workspaceLabel} />
+        )}
+      </div>
+    </aside>
+  );
+}
+
+/**
+ * 工作台默认入口，按用户参考图提供文件、浏览器和审查三个主功能。
+ */
+function RightWorkbenchLauncher({
+  onOpenTool,
+}: {
+  onOpenTool: (tool: RightWorkbenchTool) => void;
+}) {
+  return (
+    <div
+      data-testid="right-workbench-launcher"
+      className="flex h-full flex-col justify-center gap-4 overflow-auto px-8 py-8"
+    >
+      {RIGHT_WORKBENCH_TOOLS.map((item) => {
+        const ToolIcon = item.icon;
+        return (
+          <button
+            key={item.tool}
+            type="button"
+            aria-label={`打开${item.title}面板`}
+            onClick={() => onOpenTool(item.tool)}
+            className="flex min-h-[128px] flex-col items-center justify-center gap-3 rounded-lg border border-transparent bg-background text-center transition-colors hover:border-border-active hover:bg-surface-container"
+          >
+            <ToolIcon size={25} className="text-muted" />
+            <span className="text-base font-semibold text-foreground">{item.title}</span>
+            <span className="text-sm text-muted">{item.description}</span>
+            <span className="rounded-full bg-surface-container px-2 py-0.5 font-mono text-[11px] text-muted">
+              {item.shortcut}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/**
+ * 资源管理器式文件面板：目录来自桌面宿主桥接，文件正文通过只读文本预览加载。
+ */
+function FileWorkbenchPanel({
+  workspaceLabel,
+  workspacePath,
+  onPickRepositoryDirectory,
+}: {
+  workspaceLabel: string;
+  workspacePath: string | null;
+  onPickRepositoryDirectory: () => Promise<void>;
+}) {
+  const hostBridge = React.useMemo(() => resolveHostBridge(), []);
+  const [currentDirectory, setCurrentDirectory] = React.useState(workspacePath ?? '');
+  const [directoryEntries, setDirectoryEntries] = React.useState<LocalDirectoryEntry[]>([]);
+  const [selectedFilePath, setSelectedFilePath] = React.useState('');
+  const [selectedFileContent, setSelectedFileContent] = React.useState('');
+  const [isDirectoryVisible, setIsDirectoryVisible] = React.useState(true);
+  const [fileSearchKeyword, setFileSearchKeyword] = React.useState('');
+  const [openWith, setOpenWith] = React.useState('codingx');
+  const [isLoadingDirectory, setIsLoadingDirectory] = React.useState(false);
+  const [isLoadingFile, setIsLoadingFile] = React.useState(false);
+  const [fileError, setFileError] = React.useState('');
+
+  React.useEffect(() => {
+    setCurrentDirectory(workspacePath ?? '');
+    setSelectedFilePath('');
+    setSelectedFileContent('');
+  }, [workspacePath]);
+
+  React.useEffect(() => {
+    if (!currentDirectory) {
+      setDirectoryEntries([]);
+      return;
+    }
+    let cancelled = false;
+    const loadDirectory = async () => {
+      setIsLoadingDirectory(true);
+      setFileError('');
+      try {
+        const entries = await hostBridge.listDirectory(currentDirectory);
+        if (cancelled) {
+          return;
+        }
+        setDirectoryEntries(entries.slice().sort(sortDirectoryEntries));
+      } catch (error) {
+        if (!cancelled) {
+          setDirectoryEntries([]);
+          setFileError(error instanceof Error ? error.message : '读取目录失败');
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoadingDirectory(false);
+        }
+      }
+    };
+    void loadDirectory();
+    return () => {
+      cancelled = true;
+    };
+  }, [currentDirectory, hostBridge]);
+
+  const filteredEntries = React.useMemo(() => {
+    const keyword = fileSearchKeyword.trim().toLowerCase();
+    if (!keyword) {
+      return directoryEntries;
+    }
+    return directoryEntries.filter((entry) => entry.name.toLowerCase().includes(keyword));
+  }, [directoryEntries, fileSearchKeyword]);
+
+  const openDirectoryEntry = React.useCallback(async (entry: LocalDirectoryEntry) => {
+    if (entry.entryType === 'directory') {
+      setCurrentDirectory(entry.path);
+      return;
+    }
+    setSelectedFilePath(entry.path);
+    setIsLoadingFile(true);
+    setFileError('');
+    try {
+      const fileContent = await hostBridge.readTextFile(entry.path);
+      setSelectedFileContent(fileContent.content);
+    } catch (error) {
+      setSelectedFileContent('');
+      setFileError(error instanceof Error ? error.message : '读取文件失败');
+    } finally {
+      setIsLoadingFile(false);
+    }
+  }, [hostBridge]);
+
+  const breadcrumbParts = React.useMemo(
+    () => buildWorkspaceBreadcrumb(workspaceLabel, workspacePath, currentDirectory),
+    [currentDirectory, workspaceLabel, workspacePath],
+  );
+
+  return (
+    <div
+      data-testid="file-workbench-panel"
+      className="grid h-full min-h-0 grid-rows-[auto_1fr] bg-surface text-foreground"
+    >
+      <div className="border-b border-border px-4 py-3">
+        <div className="flex min-w-0 items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-2 text-sm">
+            {breadcrumbParts.map((part, index) => (
+              <React.Fragment key={`${part}-${index}`}>
+                {index > 0 ? <ChevronRight size={14} className="shrink-0 text-muted" /> : null}
+                <span className={`truncate ${index === breadcrumbParts.length - 1 ? 'font-semibold' : 'text-muted'}`}>
+                  {part}
+                </span>
+              </React.Fragment>
+            ))}
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <select
+              aria-label="选择打开方式"
+              value={openWith}
+              onChange={(event) => setOpenWith(event.target.value)}
+              className="h-9 rounded-lg border border-border bg-background px-2 text-sm text-foreground outline-none"
+            >
+              <option value="codingx">CodingX 打开</option>
+              <option value="system">系统默认软件</option>
+              <option value="editor">代码编辑器</option>
+            </select>
+            <button
+              type="button"
+              aria-label={isDirectoryVisible ? '折叠文件目录' : '展开文件目录'}
+              aria-pressed={isDirectoryVisible}
+              onClick={() => setIsDirectoryVisible((current) => !current)}
+              className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-background text-muted transition-colors hover:bg-surface-container hover:text-foreground"
+            >
+              <Folder size={16} />
+            </button>
+          </div>
+        </div>
+      </div>
+      {!workspacePath ? (
+        <div className="flex h-full flex-col items-center justify-center gap-3 px-8 text-center">
+          <FolderOpen size={28} className="text-muted" />
+          <div className="text-base font-semibold">还没有绑定本地工作区</div>
+          <button
+            type="button"
+            onClick={() => void onPickRepositoryDirectory()}
+            className="rounded-lg bg-foreground px-4 py-2 text-sm font-medium text-background"
+          >
+            选择本地目录
+          </button>
+        </div>
+      ) : (
+        <div
+          className={`grid min-h-0 ${
+            isDirectoryVisible ? 'grid-cols-[minmax(0,1fr)_240px]' : 'grid-cols-1'
+          }`}
+        >
+          <div className="min-h-0 overflow-auto px-5 py-5">
+            <div className="mb-3 text-xs text-muted">文件信息</div>
+            {selectedFilePath ? (
+              <div className="space-y-3">
+                <div className="truncate font-mono text-sm font-semibold" title={selectedFilePath}>
+                  {selectedFilePath}
+                </div>
+                {fileError ? (
+                  <div className="rounded-lg border border-error/30 bg-error/10 px-3 py-2 text-sm text-error">
+                    {fileError}
+                  </div>
+                ) : null}
+                {isLoadingFile ? (
+                  <div className="text-sm text-muted">正在加载文件内容...</div>
+                ) : (
+                  <pre className="min-h-[320px] whitespace-pre-wrap [overflow-wrap:anywhere] rounded-lg border border-border bg-background px-4 py-3 font-mono text-xs leading-5 text-foreground">
+                    {selectedFileContent || '选择右侧目录中的文件后显示内容。'}
+                  </pre>
+                )}
+              </div>
+            ) : (
+              <div className="rounded-lg border border-dashed border-border bg-background px-4 py-8 text-sm leading-6 text-muted">
+                从右侧文件目录选择一个文件后，内容会在这里显示。目录可通过右上角文件夹按钮折叠。
+              </div>
+            )}
+          </div>
+          {isDirectoryVisible ? (
+            <div
+              data-testid="file-workbench-directory"
+              className="min-h-0 border-l border-border bg-background px-3 py-3"
+            >
+              <label className="relative block">
+                <Search size={14} className="pointer-events-none absolute left-3 top-2.5 text-muted" />
+                <input
+                  aria-label="筛选文件"
+                  value={fileSearchKeyword}
+                  onChange={(event) => setFileSearchKeyword(event.target.value)}
+                  placeholder="筛选文件..."
+                  className="h-9 w-full rounded-lg border border-border bg-surface pl-9 pr-3 text-sm text-foreground outline-none placeholder:text-muted"
+                />
+              </label>
+              <div className="mt-3 max-h-full space-y-1 overflow-auto">
+                {isLoadingDirectory ? (
+                  <div className="px-2 py-2 text-sm text-muted">正在加载目录...</div>
+                ) : filteredEntries.length === 0 ? (
+                  <div className="px-2 py-2 text-sm text-muted">没有匹配的文件</div>
+                ) : (
+                  filteredEntries.map((entry) => (
+                    <button
+                      key={entry.path}
+                      type="button"
+                      aria-label={`${entry.entryType === 'directory' ? '打开目录' : '打开文件'} ${entry.name}`}
+                      onClick={() => void openDirectoryEntry(entry)}
+                      className={`flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-sm transition-colors ${
+                        selectedFilePath === entry.path
+                          ? 'bg-surface-container text-foreground'
+                          : 'text-muted hover:bg-surface-container hover:text-foreground'
+                      }`}
+                    >
+                      {entry.entryType === 'directory' ? <ChevronRight size={14} /> : <File size={14} />}
+                      <span className="truncate">{entry.name}</span>
+                    </button>
+                  ))
+                )}
+              </div>
+            </div>
+          ) : null}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * 浏览器式面板使用 iframe 承载可嵌入页面；被站点拒绝时仍提供外部打开入口。
+ */
+function BrowserWorkbenchPanel({
+  workspaceLabel,
+}: {
+  workspaceLabel: string;
+}) {
+  const [addressInput, setAddressInput] = React.useState('http://localhost:5002/');
+  const [browserUrl, setBrowserUrl] = React.useState('http://localhost:5002/');
+  const [historyStack, setHistoryStack] = React.useState(['http://localhost:5002/']);
+  const [historyIndex, setHistoryIndex] = React.useState(0);
+  const [frameKey, setFrameKey] = React.useState(0);
+  const [zoomPercent, setZoomPercent] = React.useState(100);
+  const [isMoreMenuOpen, setIsMoreMenuOpen] = React.useState(false);
+  const moreMenuRef = React.useRef<HTMLDivElement | null>(null);
+
+  const navigateToAddress = React.useCallback((rawAddress: string) => {
+    const nextUrl = normalizeBrowserWorkbenchUrl(rawAddress);
+    setBrowserUrl(nextUrl);
+    setAddressInput(nextUrl);
+    setHistoryStack((currentHistory) => {
+      const trimmedHistory = currentHistory.slice(0, historyIndex + 1);
+      return [...trimmedHistory, nextUrl];
+    });
+    setHistoryIndex((currentIndex) => currentIndex + 1);
+    setFrameKey((currentKey) => currentKey + 1);
+  }, [historyIndex]);
+
+  const navigateHistory = React.useCallback((offset: number) => {
+    const nextIndex = historyIndex + offset;
+    const nextUrl = historyStack[nextIndex];
+    if (!nextUrl) {
+      return;
+    }
+    setHistoryIndex(nextIndex);
+    setBrowserUrl(nextUrl);
+    setAddressInput(nextUrl);
+    setFrameKey((currentKey) => currentKey + 1);
+  }, [historyIndex, historyStack]);
+
+  React.useEffect(() => {
+    if (!isMoreMenuOpen) {
+      return undefined;
+    }
+    const handlePointerDown = (event: MouseEvent) => {
+      const target = event.target;
+      if (target instanceof Node && moreMenuRef.current?.contains(target)) {
+        return;
+      }
+      setIsMoreMenuOpen(false);
+    };
+    document.addEventListener('mousedown', handlePointerDown);
+    return () => document.removeEventListener('mousedown', handlePointerDown);
+  }, [isMoreMenuOpen]);
+
+  return (
+    <div
+      data-testid="browser-workbench-panel"
+      className="grid h-full min-h-0 grid-rows-[auto_1fr] bg-surface text-foreground"
+    >
+      <div className="border-b border-border px-3 py-3">
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            aria-label="浏览器后退"
+            disabled={historyIndex <= 0}
+            onClick={() => navigateHistory(-1)}
+            className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-muted transition-colors hover:bg-surface-container hover:text-foreground disabled:opacity-40"
+          >
+            <ArrowLeft size={16} />
+          </button>
+          <button
+            type="button"
+            aria-label="浏览器前进"
+            disabled={historyIndex >= historyStack.length - 1}
+            onClick={() => navigateHistory(1)}
+            className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-muted transition-colors hover:bg-surface-container hover:text-foreground disabled:opacity-40"
+          >
+            <ArrowRight size={16} />
+          </button>
+          <button
+            type="button"
+            aria-label="刷新浏览器"
+            onClick={() => setFrameKey((currentKey) => currentKey + 1)}
+            className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-muted transition-colors hover:bg-surface-container hover:text-foreground"
+          >
+            <RefreshCw size={16} />
+          </button>
+          <form
+            className="min-w-0 flex-1"
+            onSubmit={(event) => {
+              event.preventDefault();
+              navigateToAddress(addressInput);
+            }}
+          >
+            <label className="relative block">
+              <Globe2 size={14} className="pointer-events-none absolute left-3 top-2.5 text-muted" />
+              <input
+                aria-label="浏览器地址栏"
+                value={addressInput}
+                onChange={(event) => setAddressInput(event.target.value)}
+                className="h-9 w-full rounded-xl border border-border bg-background pl-9 pr-10 font-mono text-sm text-foreground outline-none"
+              />
+              <button
+                type="button"
+                aria-label="在默认浏览器中打开"
+                onClick={() => window.open(browserUrl, '_blank', 'noopener,noreferrer')}
+                className="absolute right-1 top-1 inline-flex h-7 w-7 items-center justify-center rounded-lg text-muted transition-colors hover:bg-surface-container hover:text-foreground"
+              >
+                <ExternalLink size={14} />
+              </button>
+            </label>
+          </form>
+          <button
+            type="button"
+            aria-label="显示设备工具栏"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-muted transition-colors hover:bg-surface-container hover:text-foreground"
+          >
+            <Monitor size={16} />
+          </button>
+          <button
+            type="button"
+            aria-label="新增浏览器页"
+            onClick={() => navigateToAddress('http://localhost:5002/')}
+            className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-muted transition-colors hover:bg-surface-container hover:text-foreground"
+          >
+            <Plus size={16} />
+          </button>
+          <div ref={moreMenuRef} className="relative">
+            <button
+              type="button"
+              aria-label="浏览器更多选项"
+              aria-haspopup="menu"
+              aria-expanded={isMoreMenuOpen}
+              onClick={() => setIsMoreMenuOpen((current) => !current)}
+              className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-muted transition-colors hover:bg-surface-container hover:text-foreground"
+            >
+              <MoreVertical size={16} />
+            </button>
+            {isMoreMenuOpen ? (
+              <div
+                role="menu"
+                aria-label="浏览器更多功能"
+                className="absolute right-0 top-10 z-30 w-72 rounded-xl border border-border bg-surface p-3 text-sm text-foreground shadow-[0_18px_44px_rgba(0,0,0,0.28)]"
+              >
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => setFrameKey((currentKey) => currentKey + 1)}
+                  className="block w-full rounded-lg px-2 py-2 text-left hover:bg-surface-container"
+                >
+                  强制重新加载
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="block w-full rounded-lg px-2 py-2 text-left hover:bg-surface-container"
+                >
+                  显示设备工具栏
+                </button>
+                <div className="my-2 border-t border-border" />
+                <div className="flex items-center justify-between gap-3 px-2 py-1">
+                  <span>缩放</span>
+                  <div className="flex items-center rounded-lg border border-border">
+                    <button
+                      type="button"
+                      aria-label="缩小浏览器"
+                      onClick={() => setZoomPercent((value) => Math.max(50, value - 10))}
+                      className="h-8 w-8 text-muted hover:text-foreground"
+                    >
+                      -
+                    </button>
+                    <span className="w-14 text-center font-mono text-xs">{zoomPercent}%</span>
+                    <button
+                      type="button"
+                      aria-label="放大浏览器"
+                      onClick={() => setZoomPercent((value) => Math.min(200, value + 10))}
+                      className="h-8 w-8 text-muted hover:text-foreground"
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
+                <div className="my-2 border-t border-border" />
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setHistoryStack(['http://localhost:5002/']);
+                    setHistoryIndex(0);
+                    setBrowserUrl('http://localhost:5002/');
+                    setAddressInput('http://localhost:5002/');
+                    setFrameKey((currentKey) => currentKey + 1);
+                  }}
+                  className="block w-full rounded-lg px-2 py-2 text-left hover:bg-surface-container"
+                >
+                  清除 Cookie
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => setFrameKey((currentKey) => currentKey + 1)}
+                  className="block w-full rounded-lg px-2 py-2 text-left hover:bg-surface-container"
+                >
+                  清除缓存
+                </button>
+              </div>
+            ) : null}
+          </div>
+        </div>
+      </div>
+      <div className="min-h-0 overflow-hidden bg-background">
+        <iframe
+          key={frameKey}
+          title={`内置浏览器：${workspaceLabel || 'CodingX'}`}
+          src={browserUrl}
+          className="h-full w-full border-0 bg-background"
+          style={{ transform: `scale(${zoomPercent / 100})`, transformOrigin: 'top left', width: `${10000 / zoomPercent}%`, height: `${10000 / zoomPercent}%` }}
+        />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * 目录项按“目录优先、名称升序”展示，贴近桌面资源管理器扫描习惯。
+ */
+function sortDirectoryEntries(left: LocalDirectoryEntry, right: LocalDirectoryEntry) {
+  if (left.entryType !== right.entryType) {
+    return left.entryType === 'directory' ? -1 : 1;
+  }
+  return left.name.localeCompare(right.name, 'zh-Hans-CN');
+}
+
+/**
+ * 构建文件面板顶部面包屑；根节点使用工作区名，后续只展示相对路径片段。
+ */
+function buildWorkspaceBreadcrumb(
+  workspaceLabel: string,
+  workspacePath: string | null,
+  currentDirectory: string,
+) {
+  const rootLabel = workspaceLabel?.trim() || '工作区';
+  if (!workspacePath || !currentDirectory) {
+    return [rootLabel];
+  }
+  const normalizedRoot = normalizeLocalPath(workspacePath);
+  const normalizedCurrent = normalizeLocalPath(currentDirectory);
+  const relativePath = normalizedCurrent.startsWith(normalizedRoot)
+    ? normalizedCurrent.slice(normalizedRoot.length).replace(/^\/+/, '')
+    : '';
+  if (!relativePath) {
+    return [rootLabel];
+  }
+  return [rootLabel, ...relativePath.split('/').filter(Boolean)];
+}
+
+/**
+ * 统一 Windows 与 POSIX 分隔符，便于浏览器端做只读路径展示。
+ */
+function normalizeLocalPath(pathValue: string) {
+  return pathValue.replace(/\\/g, '/').replace(/\/+$/, '');
+}
+
+/**
+ * 地址栏输入可写裸域名、localhost 或完整 URL；普通文本兜底为搜索地址。
+ */
+function normalizeBrowserWorkbenchUrl(rawAddress: string) {
+  const trimmedAddress = rawAddress.trim();
+  if (!trimmedAddress) {
+    return 'about:blank';
+  }
+  if (/^(https?:|about:)/i.test(trimmedAddress)) {
+    return trimmedAddress;
+  }
+  if (/^(localhost|127\.0\.0\.1|\[::1\]|[\w-]+\.[\w.-]+)/i.test(trimmedAddress)) {
+    return `http://${trimmedAddress}`;
+  }
+  return `https://www.bing.com/search?q=${encodeURIComponent(trimmedAddress)}`;
+}
+
+/**
+ * 右侧代码审查栏聚合本轮/上轮工具差异，并可按模式读取当前工作区 git diff。
+ */
+function CodeReviewPanel({
+  messages,
+  workspaceId,
+  repositoryPath,
+}: {
+  messages: ChatMessageItem[];
+  workspaceId: string | null;
+  repositoryPath: string | null;
 }) {
   const [activeMode, setActiveMode] = React.useState<CodeReviewMode>('current');
   const [workspaceDiffs, setWorkspaceDiffs] = React.useState<FileDiffItem[]>([]);
@@ -2753,36 +3572,6 @@ function CodeReviewSidebar({
     setActiveMode(nextMode);
     setIsModeMenuOpen(false);
   }, []);
-  const clampSidebarWidth = React.useCallback((nextWidth: number) => {
-    const viewportLimit =
-      typeof window === 'undefined'
-        ? CODE_REVIEW_SIDEBAR_MAX_WIDTH
-        : Math.max(CODE_REVIEW_SIDEBAR_MIN_WIDTH, window.innerWidth - 520);
-    return Math.min(
-      Math.max(nextWidth, CODE_REVIEW_SIDEBAR_MIN_WIDTH),
-      Math.min(CODE_REVIEW_SIDEBAR_MAX_WIDTH, viewportLimit),
-    );
-  }, []);
-
-  const startResize = React.useCallback(
-    (event: React.MouseEvent<HTMLButtonElement>) => {
-      event.preventDefault();
-      const startX = event.clientX;
-      const startWidth = width;
-      const handleMouseMove = (moveEvent: MouseEvent) => {
-        // 面板固定在右侧，鼠标向左移动时宽度增加，向右移动时宽度减少。
-        onResize(clampSidebarWidth(startWidth - (moveEvent.clientX - startX)));
-      };
-      const stopResize = () => {
-        window.removeEventListener('mousemove', handleMouseMove);
-        window.removeEventListener('mouseup', stopResize);
-      };
-      window.addEventListener('mousemove', handleMouseMove);
-      window.addEventListener('mouseup', stopResize);
-    },
-    [clampSidebarWidth, onResize, width],
-  );
-
   React.useEffect(() => {
     if (!visibleFileDiffs.some((fileDiff) => fileDiff.path === activePath)) {
       setActivePath(visibleFileDiffs[0]?.path ?? '');
@@ -2861,88 +3650,63 @@ function CodeReviewSidebar({
   }, [activeMode, isWorkspaceMode, repositoryPath, workspaceId]);
 
   return (
-    <aside
+    <div
       data-testid="code-review-sidebar"
       aria-label="代码差异审查栏"
-      className="relative hidden h-full shrink-0 border-l border-border bg-surface text-foreground shadow-[-18px_0_46px_rgba(0,0,0,0.18)] lg:flex lg:flex-col"
-      style={{ width }}
+      className="flex h-full min-h-0 flex-col bg-surface text-foreground"
     >
-      <button
-        type="button"
-        data-testid="code-review-sidebar-resize-handle"
-        role="separator"
-        aria-label="调整代码差异侧边栏宽度"
-        aria-orientation="vertical"
-        onMouseDown={startResize}
-        className="absolute -left-1 top-0 z-10 h-full w-2 cursor-col-resize border-l border-transparent transition-colors hover:border-foreground/40 focus-visible:border-foreground focus-visible:outline-none"
-      />
       <div className="border-b border-border px-4 py-3">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2 text-sm font-semibold">
-              <FileText size={16} className="text-muted" />
-              代码差异
-            </div>
-            <div className="mt-1 text-xs text-muted">审查本次会话与工作区变更</div>
-          </div>
-          <button
-            type="button"
-            aria-label="关闭代码差异侧边栏"
-            onClick={onClose}
-            className="rounded-md p-1.5 text-muted transition-colors hover:bg-surface-container hover:text-foreground"
-          >
-            <X size={16} />
-          </button>
-        </div>
-        <div ref={modeMenuRef} className="relative mt-3">
-          <button
-            type="button"
-            data-testid="code-review-mode-menu-button"
-            aria-haspopup="menu"
-            aria-expanded={isModeMenuOpen}
-            aria-label={`选择差异类型：${activeModeItem.label}`}
-            onClick={() => setIsModeMenuOpen((current) => !current)}
-            className="inline-flex h-9 max-w-full items-center gap-2 rounded-md border border-border bg-surface-container px-3 text-xs font-medium text-foreground shadow-sm transition-colors hover:border-foreground/40 hover:bg-surface focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border"
-          >
-            <span className="truncate">{activeModeItem.label}</span>
-            <span aria-hidden="true" className="rounded-full bg-surface px-1.5 font-mono text-[11px] text-muted">
-              {visibleSummary.filesChanged}
-            </span>
-            <ChevronDown
-              size={14}
-              className={`shrink-0 text-muted transition-transform ${isModeMenuOpen ? 'rotate-180' : ''}`}
-            />
-          </button>
-          {isModeMenuOpen ? (
-            <div
-              role="menu"
-              aria-label="差异类型"
-              className="absolute left-0 top-10 z-20 w-52 rounded-lg border border-border bg-surface p-1.5 text-xs text-foreground shadow-[0_18px_44px_rgba(0,0,0,0.28)]"
+        <div className="flex min-w-0 items-center justify-between gap-3">
+          <div ref={modeMenuRef} className="relative min-w-0">
+            <button
+              type="button"
+              data-testid="code-review-mode-menu-button"
+              aria-haspopup="menu"
+              aria-expanded={isModeMenuOpen}
+              aria-label={`选择差异类型：${activeModeItem.label}`}
+              onClick={() => setIsModeMenuOpen((current) => !current)}
+              className="inline-flex h-9 max-w-full items-center gap-2 rounded-lg bg-background px-3 text-sm font-medium text-foreground transition-colors hover:bg-surface-container focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border"
             >
-              {CODE_REVIEW_MODES.map((item) => (
-                <button
-                  key={item.mode}
-                  type="button"
-                  role="menuitemradio"
-                  aria-checked={activeMode === item.mode}
-                  onClick={() => selectCodeReviewMode(item.mode)}
-                  className={`flex w-full items-center justify-between gap-3 rounded-md px-2.5 py-2 text-left transition-colors ${
-                    activeMode === item.mode
-                      ? 'bg-surface-container text-foreground'
-                      : 'text-muted hover:bg-surface-container hover:text-foreground'
-                  }`}
-                >
-                  <span>{item.label}</span>
-                  {activeMode === item.mode ? <CheckCircle2 size={13} aria-hidden="true" /> : null}
-                </button>
-              ))}
-            </div>
-          ) : null}
+              <span className="truncate">{activeModeItem.label}</span>
+              <ChevronDown
+                size={14}
+                className={`shrink-0 text-muted transition-transform ${isModeMenuOpen ? 'rotate-180' : ''}`}
+              />
+            </button>
+            {isModeMenuOpen ? (
+              <div
+                role="menu"
+                aria-label="差异类型"
+                className="absolute left-0 top-10 z-20 w-52 rounded-lg border border-border bg-surface p-1.5 text-xs text-foreground shadow-[0_18px_44px_rgba(0,0,0,0.28)]"
+              >
+                {CODE_REVIEW_MODES.map((item) => (
+                  <button
+                    key={item.mode}
+                    type="button"
+                    role="menuitemradio"
+                    aria-checked={activeMode === item.mode}
+                    onClick={() => selectCodeReviewMode(item.mode)}
+                    className={`flex w-full items-center justify-between gap-3 rounded-md px-2.5 py-2 text-left transition-colors ${
+                      activeMode === item.mode
+                        ? 'bg-surface-container text-foreground'
+                        : 'text-muted hover:bg-surface-container hover:text-foreground'
+                    }`}
+                  >
+                    <span>{item.label}</span>
+                    {activeMode === item.mode ? <CheckCircle2 size={13} aria-hidden="true" /> : null}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </div>
+          <div className="flex shrink-0 items-center gap-2 text-sm">
+            <span className="font-mono text-success">+{visibleSummary.additions}</span>
+            <span className="font-mono text-error">-{visibleSummary.deletions}</span>
+          </div>
         </div>
         <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted">
           <span>{visibleSummary.filesChanged} 个文件</span>
-          <span className="font-mono text-success">+{visibleSummary.additions}</span>
-          <span className="font-mono text-error">-{visibleSummary.deletions}</span>
+          <span>{isWorkspaceMode ? 'Git 工作区差异' : '会话文件差异'}</span>
         </div>
       </div>
       <div className="min-h-0 flex-1 overflow-hidden">
@@ -2987,7 +3751,7 @@ function CodeReviewSidebar({
           </div>
         )}
       </div>
-    </aside>
+    </div>
   );
 }
 

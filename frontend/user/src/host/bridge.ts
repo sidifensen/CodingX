@@ -109,6 +109,9 @@ function createWebFallbackBridge(): CodingxHostBridge {
     async listDirectory(): Promise<LocalDirectoryEntry[]> {
       return [];
     },
+    async readTextFile(): Promise<never> {
+      throw new Error('当前 Web 环境不支持本地文件预览');
+    },
   };
 }
 

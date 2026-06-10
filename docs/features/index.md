@@ -28,6 +28,7 @@
 - [本地会话云端持久化](chat/cloud-persisted-local-chat.md)
 - [本地工具运行时](chat/local-tool-runtime.md)
 - [聊天代码差异审查](chat/code-diff-review.md)
+- [聊天右侧工作台](chat/right-workbench-sidebar.md)
 - [Agent Loop 运行时](chat/agent-loop-runtime.md)
 - [外部 MCP Server 运行时](chat/mcp-external-server-runtime.md)
 - [AI 路由默认策略](chat/ai-routing-defaults.md)

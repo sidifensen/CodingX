@@ -1,6 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain, Notification, session } from 'electron';
 import { existsSync } from 'node:fs';
-import { readdir } from 'node:fs/promises';
+import { readFile, readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
 import dotenv from 'dotenv';
 import {
@@ -9,6 +9,7 @@ import {
   HostContext,
   HostWindowState,
   LocalDirectoryEntry,
+  LocalTextFileContent,
 } from './types';
 import { resolvePackagedApiRedirectUrl } from './apiProxy';
 import { normalizeDesktopNotificationPayload } from './desktopNotification';
@@ -29,6 +30,7 @@ const hostState: {
 };
 
 const DEFAULT_CODINGX_USER_URL = 'http://localhost:5002';
+const LOCAL_TEXT_FILE_MAX_BYTES = 1024 * 1024;
 
 /**
  * 解析桌面窗口图标路径，开发态读取源码资产，打包态读取 electron-builder 注入的 resources 资产。
@@ -179,6 +181,22 @@ function emitWindowState(targetWindow: BrowserWindow) {
 }
 
 /**
+ * 判断目标路径是否仍位于当前已绑定仓库下，避免文件工作台读取任意系统文件。
+ */
+function assertPathInsideBoundRepository(targetPath: string) {
+  if (!hostState.boundRepositoryPath) {
+    throw new Error('尚未绑定本地仓库');
+  }
+  const repositoryRoot = path.resolve(hostState.boundRepositoryPath);
+  const resolvedTargetPath = path.resolve(targetPath);
+  const relativePath = path.relative(repositoryRoot, resolvedTargetPath);
+  if (relativePath.startsWith('..') || path.isAbsolute(relativePath)) {
+    throw new Error('只能读取当前绑定仓库内的文件');
+  }
+  return resolvedTargetPath;
+}
+
+/**
  * 执行桌面标题栏菜单动作，统一由主进程承接系统级能力调用。
  * @param action 渲染层触发的菜单动作标识。
  */
@@ -320,12 +338,28 @@ function registerIpcHandlers() {
   });
 
   ipcMain.handle('host:list-directory', async (_event, targetPath: string) => {
-    const entries = await readdir(targetPath, { withFileTypes: true });
+    const safeTargetPath = assertPathInsideBoundRepository(targetPath);
+    const entries = await readdir(safeTargetPath, { withFileTypes: true });
     return entries.map((entry): LocalDirectoryEntry => ({
       name: entry.name,
-      path: path.join(targetPath, entry.name),
+      path: path.join(safeTargetPath, entry.name),
       entryType: entry.isDirectory() ? 'directory' : 'file',
     }));
+  });
+
+  ipcMain.handle('host:read-text-file', async (_event, targetPath: string): Promise<LocalTextFileContent> => {
+    const safeTargetPath = assertPathInsideBoundRepository(targetPath);
+    const fileStat = await stat(safeTargetPath);
+    if (!fileStat.isFile()) {
+      throw new Error('只能读取普通文件');
+    }
+    if (fileStat.size > LOCAL_TEXT_FILE_MAX_BYTES) {
+      throw new Error('文件超过 1MB，暂不在侧栏预览');
+    }
+    return {
+      path: safeTargetPath,
+      content: await readFile(safeTargetPath, 'utf-8'),
+    };
   });
 }
 

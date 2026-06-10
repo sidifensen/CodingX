@@ -72,6 +72,14 @@ export interface LocalDirectoryEntry {
 }
 
 /**
+ * 本地文本文件预览内容；只用于侧栏只读展示，不承载写入能力。
+ */
+export interface LocalTextFileContent {
+  path: string;
+  content: string;
+}
+
+/**
  * 定义前端可调用的宿主桥接能力。
  */
 export interface CodingxHostBridge {
@@ -90,4 +98,5 @@ export interface CodingxHostBridge {
   ) => Promise<HostContext>;
   requestFileAccess: (path: string) => Promise<boolean>;
   listDirectory: (path: string) => Promise<LocalDirectoryEntry[]>;
+  readTextFile: (path: string) => Promise<LocalTextFileContent>;
 }

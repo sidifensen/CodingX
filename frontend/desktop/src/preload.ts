@@ -5,6 +5,7 @@ import {
   HostContext,
   HostWindowState,
   LocalDirectoryEntry,
+  LocalTextFileContent,
 } from './types';
 
 /**
@@ -38,4 +39,5 @@ contextBridge.exposeInMainWorld('codingxHost', {
   ): Promise<HostContext> => ipcRenderer.invoke('host:bind-repository-path', path, workspaceContext),
   requestFileAccess: (path: string): Promise<boolean> => ipcRenderer.invoke('host:request-file-access', path),
   listDirectory: (path: string): Promise<LocalDirectoryEntry[]> => ipcRenderer.invoke('host:list-directory', path),
+  readTextFile: (path: string): Promise<LocalTextFileContent> => ipcRenderer.invoke('host:read-text-file', path),
 });

@@ -25,6 +25,11 @@ export interface LocalDirectoryEntry {
   entryType: 'file' | 'directory';
 }
 
+export interface LocalTextFileContent {
+  path: string;
+  content: string;
+}
+
 export interface HostWindowState {
   isMaximized: boolean;
   isMinimized: boolean;

@@ -673,6 +673,7 @@ export function useChatWorkspace(
   const streamMcpCallsRef = useRef<Record<string, McpCallItem[]>>({});
   const streamResumeSkipRef = useRef<Record<string, StreamResumeSkipState>>({});
   const streamSessionSeedRef = useRef(0);
+  const conversationSelectionSeedRef = useRef(0);
   const activeStreamSessionIdRef = useRef<number | null>(null);
   const finishedStreamSessionIdsRef = useRef<Set<number>>(new Set());
   const detachedStreamSessionIdsRef = useRef<Set<number>>(new Set());
@@ -1105,6 +1106,15 @@ export function useChatWorkspace(
   }, [activeConversationId]);
 
   /**
+   * 同步更新当前激活会话状态和引用，避免同一事件循环里的慢回放用旧 ref 判断目标会话。
+   * @param conversationId 新的激活会话标识；null 表示回到新建态。
+   */
+  const updateActiveConversationId = (conversationId: string | null) => {
+    activeConversationIdRef.current = conversationId;
+    setActiveConversationId(conversationId);
+  };
+
+  /**
    * 清理排队提示延迟任务，防止旧流事件在新流阶段误触发提示。
    */
   const clearStreamQueueTimer = () => {
@@ -1231,14 +1241,24 @@ export function useChatWorkspace(
   };
 
   /**
-   * 按会话读取后端真实 active goal；失败时清空本地目标，避免切换会话后继续显示旧目标。
+   * 按会话读取后端真实最新目标；失败时清空本地目标，避免切换会话后继续显示旧目标。
    * @param token 当前登录令牌。
    * @param conversationId 会话标识。
-   * @returns 当前 active goal 或 null。
+   * @param options 可选写入门禁，防止旧会话慢响应覆盖当前目标浮窗。
+   * @returns 当前会话最新目标或 null。
    */
-  const loadActiveGoal = async (token: string, conversationId: string) => {
+  const loadActiveGoal = async (
+    token: string,
+    conversationId: string,
+    options?: {
+      shouldApply?: () => boolean;
+    },
+  ) => {
     try {
       const nextGoal = await ChatApi.getActiveGoal(token, conversationId);
+      if (options?.shouldApply && !options.shouldApply()) {
+        return nextGoal;
+      }
       activeGoalRef.current = nextGoal;
       setActiveGoal(nextGoal);
       return nextGoal;
@@ -1246,7 +1266,10 @@ export function useChatWorkspace(
       if (error instanceof ChatApi.UnauthorizedError) {
         throw error;
       }
-      // 目标浮窗只展示后端权威 active goal，查询失败或目标不存在时都不能沿用旧会话目标。
+      if (options?.shouldApply && !options.shouldApply()) {
+        return null;
+      }
+      // 目标浮窗只展示后端权威最新目标，查询失败或目标不存在时都不能沿用旧会话目标。
       activeGoalRef.current = null;
       setActiveGoal(null);
       return null;
@@ -2737,10 +2760,15 @@ export function useChatWorkspace(
     if (!token) {
       return;
     }
-    if (activeConversationId !== conversationId) {
+    const selectionGeneration = conversationSelectionSeedRef.current + 1;
+    conversationSelectionSeedRef.current = selectionGeneration;
+    const isCurrentConversationSelection = () =>
+      conversationSelectionSeedRef.current === selectionGeneration &&
+      activeConversationIdRef.current === conversationId;
+    if (activeConversationIdRef.current !== conversationId) {
       detachActiveStreamSubscription();
     }
-    setActiveConversationId(conversationId);
+    updateActiveConversationId(conversationId);
     if (syncUrl) {
       // 仅用户显式切换会话时更新 URL，初始化恢复阶段由独立分支控制，避免误覆盖初始参数。
       writeConversationIdToUrl(conversationId);
@@ -2761,6 +2789,9 @@ export function useChatWorkspace(
       selectedConversationForSeenState?.taskCompletionRead === false;
     if (shouldMarkBackendTaskCompletionRead) {
       await ChatApi.markTaskCompletionRead(token, conversationId);
+      if (!isCurrentConversationSelection()) {
+        return;
+      }
     }
     if (selectedConversationForSeenState?.lastTaskFinishedAt) {
       if (selectedConversationForSeenState.taskCompletionRead == null) {
@@ -2819,15 +2850,32 @@ export function useChatWorkspace(
     const nextMessagePagePromise = ChatApi.listMessagePage(token, conversationId, {
       pageSize: CHAT_MESSAGE_PAGE_SIZE,
     });
-    const nextActiveGoalPromise = loadActiveGoal(token, conversationId);
+    const nextActiveGoalPromise = loadActiveGoal(token, conversationId, {
+      shouldApply: isCurrentConversationSelection,
+    });
     const nextStepsPromise = ChatApi.listSteps(token, conversationId);
     const nextReferencesPromise = ChatApi.listReferences(token, conversationId);
     const nextArtifactsPromise = ChatApi.listArtifacts(token, conversationId);
     const nextCurrentExpertsPromise = ChatApi.listCurrentExperts(token, conversationId);
     const nextCurrentSkillsPromise = ChatApi.listCurrentSkills(token, conversationId);
     const nextCurrentMcpsPromise = ChatApi.listCurrentMcps(token, conversationId);
+    const settleReplaySideRequests = () =>
+      Promise.allSettled([
+        nextActiveGoalPromise,
+        nextStepsPromise,
+        nextReferencesPromise,
+        nextArtifactsPromise,
+        nextCurrentExpertsPromise,
+        nextCurrentSkillsPromise,
+        nextCurrentMcpsPromise,
+      ]);
 
     const nextMessagePage = await nextMessagePagePromise;
+    if (!isCurrentConversationSelection()) {
+      // 旧会话的消息页可能慢于用户后续选择；过期回放只能丢弃，不能覆盖当前主区。
+      await settleReplaySideRequests();
+      return;
+    }
     const nextMessages = nextMessagePage.items;
     setMessagePagination({
       conversationId,
@@ -2854,6 +2902,18 @@ export function useChatWorkspace(
 
     // 业务意图：引用是正文中 [R1]/[R2] 可点击化的前置条件，必须先回填，不能等步骤/产物等慢接口。
     const nextReferences = await nextReferencesPromise;
+    if (!isCurrentConversationSelection()) {
+      // 引用接口独立返回，必须再次确认选择版本，避免旧会话右栏数据迟到后串到当前会话。
+      await Promise.allSettled([
+        nextActiveGoalPromise,
+        nextStepsPromise,
+        nextArtifactsPromise,
+        nextCurrentExpertsPromise,
+        nextCurrentSkillsPromise,
+        nextCurrentMcpsPromise,
+      ]);
+      return;
+    }
     setReferences(nextReferences);
 
     const [
@@ -2871,6 +2931,10 @@ export function useChatWorkspace(
       nextCurrentSkillsPromise,
       nextCurrentMcpsPromise,
     ]);
+    if (!isCurrentConversationSelection()) {
+      // 步骤、目标、产物和能力上下文是多接口聚合结果；只允许最新选择写入。
+      return;
+    }
     const nextReplayMessagesWithPanels = patchLatestAssistantReplayPanels(nextMessages, {
       latestAssistantMcpCalls,
       previousMessages: nextReplayMessages,
@@ -4349,7 +4413,7 @@ export function useChatWorkspace(
           conversationId,
           activeMessageId: optimisticAssistantId,
         };
-        setActiveConversationId(conversationId);
+        updateActiveConversationId(conversationId);
         const nextConversations = upsertConversationFromStreamMeta(
           conversationId,
           undefined,
@@ -4393,7 +4457,7 @@ export function useChatWorkspace(
           conversationId: goalConversationId,
           activeMessageId: optimisticAssistantId,
         };
-        setActiveConversationId(goalConversationId);
+        updateActiveConversationId(goalConversationId);
       }
       return;
     }
@@ -4717,7 +4781,7 @@ export function useChatWorkspace(
           // 否则收尾 setMessages 仍会把旧乐观消息视作“活跃流”重新追加回列表。
           activeMessageId: finishAssistantMessageId ?? optimisticAssistantId,
         };
-        setActiveConversationId(finishConversationId);
+        updateActiveConversationId(finishConversationId);
         const conversationListAfterFinishUpsert = upsertConversationFromStreamMeta(finishConversationId, finishTitle);
         const existingConversation = conversationListAfterFinishUpsert.find(
           (conversation) => conversation.id === finishConversationId,
@@ -5749,7 +5813,7 @@ export function useChatWorkspace(
       !nextWorkspaceConversations.some((conversation) => conversation.id === effectiveActiveConversationId)
     ) {
       const nextConversationId = nextWorkspaceConversations[0]?.id ?? null;
-      setActiveConversationId(nextConversationId);
+      updateActiveConversationId(nextConversationId);
       writeConversationIdToUrl(nextConversationId);
     }
     refreshWorkspaceGroups('all');
@@ -5760,7 +5824,7 @@ export function useChatWorkspace(
    * 清空当前主区与右栏回放状态，但保留左侧真实会话历史。
    */
   function clearConversationPlayback(keepUrl = false) {
-    setActiveConversationId(null);
+    updateActiveConversationId(null);
     if (!keepUrl) {
       writeConversationIdToUrl(null);
     }
@@ -5823,6 +5887,18 @@ export function useChatWorkspace(
    */
   async function restoreWorkspaceSnapshot(partitionKey: string, conversationId: string) {
     const snapshot = readWorkspaceSnapshot(partitionKey);
+    const restoreToken = currentToken();
+    const restoreLatestGoal = () => {
+      if (!restoreToken) {
+        activeGoalRef.current = null;
+        setActiveGoal(null);
+        return;
+      }
+      // 步骤：快照只保存本地回放，目标进度必须回查后端最新状态，避免刷新后置顶摘要丢失。
+      void loadActiveGoal(restoreToken, conversationId, {
+        shouldApply: () => activeConversationIdRef.current === conversationId,
+      });
+    };
     setConversations(snapshot.conversations);
     refreshWorkspaceGroups('all');
     // 刷新恢复链路保持 URL 与当前会话一致，确保分享链接和硬刷新都能恢复到同一会话。
@@ -5831,7 +5907,7 @@ export function useChatWorkspace(
     if (!record) {
       if (snapshot.runtimeTarget === 'local') {
         // 本地分区禁止回退到云端回放接口；缺失记录时只恢复空本地会话壳。
-        setActiveConversationId(conversationId);
+        updateActiveConversationId(conversationId);
         setMessages([]);
         setExecutionSteps([]);
         setReferences([]);
@@ -5839,6 +5915,9 @@ export function useChatWorkspace(
         setCurrentExperts([]);
         setCurrentSkills([]);
         setCurrentMcps([]);
+        activeGoalRef.current = null;
+        setActiveGoal(null);
+        restoreLatestGoal();
         return;
       }
       await selectConversation(conversationId, snapshot.conversations, undefined, false);
@@ -5855,7 +5934,7 @@ export function useChatWorkspace(
       executionSteps: record.executionSteps,
       references: record.references,
     });
-    setActiveConversationId(conversationId);
+    updateActiveConversationId(conversationId);
     setMessages(replayMessages);
     setExecutionSteps(record.executionSteps);
     setReferences(record.references);
@@ -5863,6 +5942,9 @@ export function useChatWorkspace(
     setCurrentExperts(record.currentExperts ?? []);
     setCurrentSkills(record.currentSkills);
     setCurrentMcps(record.currentMcps);
+    activeGoalRef.current = null;
+    setActiveGoal(null);
+    restoreLatestGoal();
     // 刷新首屏恢复时 activeWorkspacePartitionKey 可能尚未完成 React 状态同步；
     // 这里必须直接写回正在读取的分区，才能把旧空 streaming 占位从本地快照中清掉。
     writeWorkspaceSnapshot(partitionKey, {

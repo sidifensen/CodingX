@@ -1685,6 +1685,151 @@ describe('useChatWorkspace', () => {
   });
 
   /**
+   * 刷新恢复会话快照时，目标进度仍以后端最新目标为准，不能因为命中本地快照而丢失置顶摘要数据。
+   */
+  it('刷新恢复本地快照后应异步回填后端最新目标', async () => {
+    window.localStorage.setItem(
+      'codingx.auth.session',
+      JSON.stringify({
+        token: 'token-123',
+        userId: '1002',
+        username: 'user',
+        displayName: 'CodingX User',
+        userType: 'USER',
+      }),
+    );
+    window.history.replaceState(window.history.state, '', '/?conversationId=2001');
+    window.localStorage.setItem(
+      'codingx.chat.workspace.conversations.v1',
+      JSON.stringify({
+        version: 1,
+        snapshots: {
+          'cloud::__no_workspace__': {
+            workspacePath: null,
+            workspaceLabel: '云端历史记录',
+            runtimeTarget: 'cloud',
+            lastOpenedAt: Date.now(),
+            activeConversationId: '2001',
+            conversations: [
+              {
+                id: '2001',
+                title: '带目标的刷新恢复会话',
+                status: 'ACTIVE',
+                lastRunId: '5002',
+              },
+            ],
+            conversationRecords: {
+              '2001': {
+                owned: true,
+                messages: [
+                  {
+                    id: '9201',
+                    conversationId: '2001',
+                    role: 'ASSISTANT',
+                    content: '先从本地快照恢复的消息',
+                    status: 'COMPLETED',
+                  },
+                ],
+                executionSteps: [],
+                references: [],
+                artifacts: [],
+                currentExperts: [],
+                currentSkills: [],
+                currentMcps: [],
+              },
+            },
+          },
+        },
+      }),
+    );
+
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (isConversationListRequest(url)) {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            code: 'OK',
+            message: 'success',
+            data: [
+              {
+                id: '2001',
+                title: '带目标的刷新恢复会话',
+                status: 'ACTIVE',
+                lastRunId: '5002',
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      if (url === '/api/chat/conversations/2001/goal/active') {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            code: 'OK',
+            message: 'success',
+            data: {
+              id: 'goal-restore-1',
+              conversationId: '2001',
+              goalKey: 'default',
+              title: '刷新后仍显示目标进度',
+              status: 'BLOCKED',
+              progressSummary: '后端目标状态应回填到置顶摘要',
+              steps: [
+                {
+                  id: 'goal-step-restore-1',
+                  goalId: 'goal-restore-1',
+                  stepKey: 'restore',
+                  title: '恢复目标摘要',
+                  status: 'IN_PROGRESS',
+                  sortNo: 1,
+                },
+              ],
+            },
+          }),
+          { status: 200 },
+        );
+      }
+      if (
+        url === '/api/chat/sample-questions' ||
+        url === '/api/chat/experts' ||
+        url === '/api/chat/skills' ||
+        url === '/api/chat/mcps'
+      ) {
+        return new Response(
+          JSON.stringify({ success: true, code: 'OK', message: 'success', data: [] }),
+          { status: 200 },
+        );
+      }
+      throw new Error(`Unhandled fetch in snapshot goal restore test: ${url}`);
+    });
+
+    const { result } = renderHook(() => useChatWorkspace(true));
+
+    await waitFor(() => {
+      expect(result.current.activeConversationId).toBe('2001');
+      expect(
+        result.current.messages.some((message) => message.content === '先从本地快照恢复的消息'),
+      ).toBe(true);
+    });
+
+    await waitFor(() => {
+      expect(result.current.activeGoal).toEqual(
+        expect.objectContaining({
+          id: 'goal-restore-1',
+          title: '刷新后仍显示目标进度',
+          status: 'BLOCKED',
+        }),
+      );
+    });
+    expect(fetchSpy).toHaveBeenCalledWith(
+      '/api/chat/conversations/2001/goal/active',
+      expect.any(Object),
+    );
+  });
+
+  /**
    * 刷新恢复命中本地快照且会话仍在运行时，不能只做静态回放，必须续接会话 SSE。
    */
   it('刷新恢复运行中会话快照时应重新订阅会话流', async () => {

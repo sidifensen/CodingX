@@ -285,6 +285,7 @@ describe('ChatView', () => {
       expect(resolvePermissionApproval).toHaveBeenCalledWith('approval-1', 'DENY');
     });
   });
+
   /**
    * 新建对话空态下若发送失败，仍应展示错误提示，避免用户误判为发送按钮失效。
    */

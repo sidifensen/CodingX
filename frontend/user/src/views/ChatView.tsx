@@ -26,6 +26,7 @@ import {
   Paperclip,
   PanelRightClose,
   PanelRightOpen,
+  Pin,
   FolderOpen,
   Monitor,
   MoreVertical,
@@ -33,6 +34,7 @@ import {
   Plus,
   RefreshCw,
   Search,
+  Sidebar,
   Pencil,
   ShieldAlert,
   RotateCcw,
@@ -215,8 +217,10 @@ export default function ChatView({
     () => buildGoalProgressView(activeGoal),
     [activeGoal],
   );
-  // 目标浮窗只展示后端 active goal；目标模式开关仅影响发送 planMode，不再单独驱动浮窗。
-  const showGoalProgressPanel = goalProgress != null;
+  const [isPinnedSummaryOpen, setIsPinnedSummaryOpen] = React.useState(true);
+  // 置顶摘要只展示后端最新目标；目标模式开关仅影响发送 planMode，不再单独驱动浮窗。
+  const hasPinnedSummary = goalProgress != null;
+  const showPinnedSummaryPanel = hasPinnedSummary && isPinnedSummaryOpen;
   const latestMessageAnchorRef = React.useRef<HTMLDivElement | null>(null);
   const chatScrollRegionRef = React.useRef<HTMLDivElement | null>(null);
   const shouldFollowLatestMessageRef = React.useRef(true);
@@ -234,6 +238,11 @@ export default function ChatView({
   const [slashCommandSearchKeyword, setSlashCommandSearchKeyword] = React.useState('');
   const [activeSlashCommandOptionIndex, setActiveSlashCommandOptionIndex] = React.useState(-1);
 
+  React.useEffect(() => {
+    if (goalProgress) {
+      setIsPinnedSummaryOpen(true);
+    }
+  }, [goalProgress?.goal.id]);
   const [expertSearchKeyword, setExpertSearchKeyword] = React.useState('');
   const [activeAmbiguityChoiceIndex, setActiveAmbiguityChoiceIndex] = React.useState(0);
   const [skillSelectorSource, setSkillSelectorSource] = React.useState<'button' | 'slash' | null>(
@@ -1361,7 +1370,7 @@ export default function ChatView({
     >
       <section className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(71,96,122,0.16),transparent_38%),radial-gradient(circle_at_80%_18%,rgba(188,75,0,0.12),transparent_26%)]" />
-        {showGoalProgressPanel ? (
+        {showPinnedSummaryPanel && goalProgress ? (
           <GoalProgressPanel
             progress={goalProgress}
           />
@@ -1370,20 +1379,39 @@ export default function ChatView({
           <div className={`${isDesktopSidebarCollapsed ? '' : 'w-10'}`}>
             {/* 步骤：左上角预留壳层折叠按钮占位，避免与主内容视觉挤压；真实交互由 App 壳层负责。 */}
           </div>
-          <button
-            type="button"
-            data-testid="code-review-sidebar-toggle"
-            aria-label={isRightWorkbenchOpen ? '关闭右侧工作台' : '打开右侧工作台'}
-            aria-pressed={isRightWorkbenchOpen}
-            onClick={() => setIsRightWorkbenchOpen((current) => !current)}
-            className={`pointer-events-auto inline-flex h-10 w-10 items-center justify-center rounded-lg border text-sm font-medium shadow-sm transition-colors ${
-              isRightWorkbenchOpen
-                ? 'border-foreground bg-foreground text-background'
-                : 'border-border bg-surface text-muted hover:bg-surface-container hover:text-foreground'
-            }`}
-          >
-            {isRightWorkbenchOpen ? <PanelRightClose size={16} /> : <PanelRightOpen size={16} />}
-          </button>
+          <div className="flex items-center gap-2">
+            {hasPinnedSummary ? (
+              <button
+                type="button"
+                data-testid="pinned-summary-toggle"
+                aria-label={isPinnedSummaryOpen ? '隐藏置顶摘要' : '显示置顶摘要'}
+                aria-pressed={isPinnedSummaryOpen}
+                onClick={() => setIsPinnedSummaryOpen((current) => !current)}
+                className={`pointer-events-auto inline-flex h-10 items-center gap-2 rounded-lg border px-3 text-sm font-medium shadow-sm transition-colors ${
+                  isPinnedSummaryOpen
+                    ? 'border-foreground bg-foreground text-background'
+                    : 'border-border bg-surface text-muted hover:bg-surface-container hover:text-foreground'
+                }`}
+              >
+                <Pin size={16} />
+                <span>置顶摘要</span>
+              </button>
+            ) : null}
+            <button
+              type="button"
+              data-testid="code-review-sidebar-toggle"
+              aria-label={isRightWorkbenchOpen ? '关闭右侧工作台' : '打开右侧工作台'}
+              aria-pressed={isRightWorkbenchOpen}
+              onClick={() => setIsRightWorkbenchOpen((current) => !current)}
+              className={`pointer-events-auto inline-flex h-10 w-10 items-center justify-center rounded-lg border text-sm font-medium shadow-sm transition-colors ${
+                isRightWorkbenchOpen
+                  ? 'border-foreground bg-foreground text-background'
+                  : 'border-border bg-surface text-muted hover:bg-surface-container hover:text-foreground'
+              }`}
+            >
+              {isRightWorkbenchOpen ? <PanelRightClose size={16} /> : <PanelRightOpen size={16} />}
+            </button>
+          </div>
         </div>
         <div
           ref={chatScrollRegionRef}
@@ -2596,6 +2624,15 @@ export default function ChatView({
   );
 }
 
+type GoalProgressView = {
+  goal: ChatGoalItem;
+  completedCount: number;
+  totalCount: number;
+  statusLabel: string;
+  statusTone: 'running' | 'completed' | 'error' | 'cancelled' | 'idle';
+  steps: ChatGoalStepItem[];
+};
+
 /**
  * 渲染危险命令的一次性确认卡片；该交互只对应当前 requestId，不产生长期授权。
  */
@@ -2672,18 +2709,9 @@ function DangerousCommandApprovalCard({
   );
 }
 
-type GoalProgressView = {
-  goal: ChatGoalItem;
-  completedCount: number;
-  totalCount: number;
-  statusLabel: string;
-  statusTone: 'running' | 'completed' | 'error' | 'cancelled' | 'idle';
-  steps: ChatGoalStepItem[];
-};
-
 /**
- * 右侧目标进度窗只消费后端 active goal，避免普通执行步骤被误判为目标进度。
- * @param goal 当前会话 active goal。
+ * 右侧目标进度窗只消费后端最新目标，避免普通执行步骤被误判为目标进度。
+ * @param goal 当前会话最新目标。
  * @returns 可直接渲染的目标进度视图。
  */
 function buildGoalProgressView(goal: ChatGoalItem | null): GoalProgressView | null {
@@ -2719,7 +2747,7 @@ function buildGoalProgressView(goal: ChatGoalItem | null): GoalProgressView | nu
 }
 
 /**
- * 渲染桌面端右侧悬浮目标进度窗，帮助用户跟进 AI 编码任务的当前阶段。
+ * 渲染桌面端聊天区内的置顶摘要，帮助用户跟进 AI 编码任务的当前阶段。
  */
 function GoalProgressPanel({
   progress,
@@ -2740,8 +2768,8 @@ function GoalProgressPanel({
   return (
     <aside
       data-testid="goal-progress-panel"
-      aria-label="目标进度"
-      className="pointer-events-auto fixed right-5 top-24 z-30 hidden w-72 rounded-lg border border-border bg-surface p-4 text-foreground shadow-[0_18px_46px_rgba(0,0,0,0.22)] md:block"
+      aria-label="置顶摘要"
+      className="pointer-events-auto absolute right-5 top-20 z-30 hidden w-72 rounded-lg border border-border bg-surface p-4 text-foreground shadow-[0_18px_46px_rgba(0,0,0,0.22)] md:block"
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">

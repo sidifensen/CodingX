@@ -101,10 +101,10 @@ export class ChatApi {
   }
 
   /**
-   * 读取当前会话的真实 active goal；没有目标时返回 null，页面不得自行制造占位进度。
+   * 读取当前会话最新目标；后端兼容旧 active 路径，但会返回 COMPLETED/BLOCKED 等终态目标。
    * @param token 当前登录令牌。
    * @param conversationId 会话标识。
-   * @returns 归一化后的 active goal，或 null。
+   * @returns 归一化后的最新目标，或 null。
    */
   static async getActiveGoal(
     token: string,

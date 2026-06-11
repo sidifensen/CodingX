@@ -6,6 +6,7 @@ import com.codingx.cli.auth.SystemBrowserLauncher;
 import com.codingx.cli.command.CliCommandRunner;
 import com.codingx.cli.config.CliConfigStore;
 import com.codingx.cli.render.TerminalRenderer;
+import com.codingx.cli.session.BackendConversationClient;
 import com.codingx.cli.slash.BackendSlashCommandCatalog;
 import com.codingx.cli.slash.SlashCommandCatalog;
 import com.codingx.cli.tui.CodingXTuiLauncher;
@@ -62,7 +63,8 @@ public final class CodingXCli {
                 tuiAuthService,
                 slashCommandCatalog
             ),
-            commandAuthService
+            commandAuthService,
+            new BackendConversationClient(configStore)
         );
         CliCommandRunner.Result result = runner.run(args);
         System.out.print(result.output());

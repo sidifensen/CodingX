@@ -2,12 +2,17 @@ package com.codingx.cli.command;
 
 import com.codingx.cli.config.CliConfigStore;
 import com.codingx.cli.auth.CliAuthService;
+import com.codingx.cli.config.CliConfig;
+import com.codingx.cli.session.CliConversation;
+import com.codingx.cli.session.CliConversationService;
 import com.codingx.cli.tui.TuiLauncher;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -69,7 +74,7 @@ class CliCommandRunnerTest {
     }
 
     @Test
-    void resumeAndSessionsShouldBeRejectedBecauseSessionOperationsRunInTui() {
+    void execShouldRemainRejectedAfterSessionCommandsAreEnabled() {
         FakeTuiLauncher tuiLauncher = new FakeTuiLauncher();
         CliCommandRunner runner = new CliCommandRunner(
             new CliConfigStore(tempDir.resolve("home")),
@@ -77,14 +82,130 @@ class CliCommandRunnerTest {
             new FakeCliAuthService()
         );
 
-        CliCommandRunner.Result resumeResult = runner.run(new String[] {"resume"});
-        CliCommandRunner.Result sessionsResult = runner.run(new String[] {"sessions"});
+        CliCommandRunner.Result execResult = runner.run(new String[] {"exec", "分析这个项目"});
 
-        assertEquals(1, resumeResult.exitCode());
-        assertEquals(1, sessionsResult.exitCode());
+        assertEquals(1, execResult.exitCode());
         assertEquals(0, tuiLauncher.launchCount());
-        assertTrue(resumeResult.output().contains("只支持 TUI 交互模式"));
-        assertTrue(sessionsResult.output().contains("只支持 TUI 交互模式"));
+        assertTrue(execResult.output().contains("只支持 TUI 交互模式"));
+    }
+
+    @Test
+    void sessionsShouldListRecentBackendConversationsWithoutLaunchingTui() {
+        FakeTuiLauncher tuiLauncher = new FakeTuiLauncher();
+        FakeConversationService conversationService = new FakeConversationService(List.of(
+            new CliConversation("101", "修复登录", "ACTIVE", "2026-06-11T10:00:00", "9", "LOCAL"),
+            new CliConversation("102", "聊天优化", "ACTIVE", "2026-06-11T09:00:00", "", "CLOUD")
+        ));
+        CliCommandRunner runner = new CliCommandRunner(
+            new CliConfigStore(tempDir.resolve("home")),
+            tuiLauncher,
+            new FakeCliAuthService(),
+            conversationService
+        );
+
+        CliCommandRunner.Result result = runner.run(new String[] {"sessions"});
+
+        assertEquals(0, result.exitCode());
+        assertEquals(0, tuiLauncher.launchCount());
+        assertEquals(20, conversationService.requestedPageSizes.getFirst());
+        assertTrue(result.output().contains("最近会话"));
+        assertTrue(result.output().contains("101"));
+        assertTrue(result.output().contains("修复登录"));
+        assertTrue(result.output().contains("LOCAL"));
+    }
+
+    @Test
+    void sessionsShouldShowEmptyStateWithoutLaunchingTui() {
+        FakeTuiLauncher tuiLauncher = new FakeTuiLauncher();
+        CliCommandRunner runner = new CliCommandRunner(
+            new CliConfigStore(tempDir.resolve("home")),
+            tuiLauncher,
+            new FakeCliAuthService(),
+            new FakeConversationService(List.of())
+        );
+
+        CliCommandRunner.Result result = runner.run(new String[] {"sessions"});
+
+        assertEquals(0, result.exitCode());
+        assertEquals(0, tuiLauncher.launchCount());
+        assertTrue(result.output().contains("暂无可恢复会话"));
+    }
+
+    @Test
+    void sessionsShouldReturnBackendErrorMessage() {
+        FakeTuiLauncher tuiLauncher = new FakeTuiLauncher();
+        FakeConversationService conversationService = new FakeConversationService(List.of());
+        conversationService.failure = new IllegalStateException("登录已过期，请重新登录");
+        CliCommandRunner runner = new CliCommandRunner(
+            new CliConfigStore(tempDir.resolve("home")),
+            tuiLauncher,
+            new FakeCliAuthService(),
+            conversationService
+        );
+
+        CliCommandRunner.Result result = runner.run(new String[] {"sessions"});
+
+        assertEquals(1, result.exitCode());
+        assertEquals(0, tuiLauncher.launchCount());
+        assertTrue(result.output().contains("登录已过期，请重新登录"));
+    }
+
+    @Test
+    void resumeWithConversationIdShouldSaveLastSessionIdWithoutLaunchingTui() {
+        FakeTuiLauncher tuiLauncher = new FakeTuiLauncher();
+        CliConfigStore configStore = new CliConfigStore(tempDir.resolve("home"));
+        configStore.save(new CliConfig("http://localhost:5001", "token-123", "conservative", null));
+        CliCommandRunner runner = new CliCommandRunner(
+            configStore,
+            tuiLauncher,
+            new FakeCliAuthService(),
+            new FakeConversationService(List.of())
+        );
+
+        CliCommandRunner.Result result = runner.run(new String[] {"resume", "101"});
+
+        assertEquals(0, result.exitCode());
+        assertEquals(0, tuiLauncher.launchCount());
+        assertTrue(result.output().contains("101"));
+        assertEquals("101", configStore.load().lastSessionId());
+        assertEquals("token-123", configStore.load().token());
+    }
+
+    @Test
+    void resumeWithoutConversationIdShouldExplainHowToListSessions() {
+        FakeTuiLauncher tuiLauncher = new FakeTuiLauncher();
+        CliCommandRunner runner = new CliCommandRunner(
+            new CliConfigStore(tempDir.resolve("home")),
+            tuiLauncher,
+            new FakeCliAuthService(),
+            new FakeConversationService(List.of())
+        );
+
+        CliCommandRunner.Result result = runner.run(new String[] {"resume"});
+
+        assertEquals(1, result.exitCode());
+        assertEquals(0, tuiLauncher.launchCount());
+        assertTrue(result.output().contains("codingx sessions"));
+    }
+
+    @Test
+    void resumeShouldRejectNonNumericConversationId() {
+        FakeTuiLauncher tuiLauncher = new FakeTuiLauncher();
+        CliConfigStore configStore = new CliConfigStore(tempDir.resolve("home"));
+        configStore.save(new CliConfig("http://localhost:5001", "token-123", "conservative", "88"));
+        CliCommandRunner runner = new CliCommandRunner(
+            configStore,
+            tuiLauncher,
+            new FakeCliAuthService(),
+            new FakeConversationService(List.of())
+        );
+
+        CliCommandRunner.Result result = runner.run(new String[] {"resume", "abc"});
+
+        assertEquals(1, result.exitCode());
+        assertEquals(0, tuiLauncher.launchCount());
+        assertTrue(result.output().contains("会话 ID 必须是数字"));
+        assertEquals("88", configStore.load().lastSessionId());
     }
 
     @Test
@@ -237,6 +358,40 @@ class CliCommandRunnerTest {
         public boolean logout() {
             logoutCount++;
             return true;
+        }
+    }
+
+    /**
+     * 测试专用会话服务，避免命令测试访问真实后端。
+     */
+    private static class FakeConversationService implements CliConversationService {
+
+        /**
+         * 后端返回的会话快照。
+         */
+        private final List<CliConversation> conversations;
+
+        /**
+         * 命令层请求过的 pageSize。
+         */
+        private final List<Integer> requestedPageSizes = new ArrayList<>();
+
+        /**
+         * 可选失败，用于验证后端中文错误能透传到 CLI。
+         */
+        private RuntimeException failure;
+
+        FakeConversationService(List<CliConversation> conversations) {
+            this.conversations = conversations;
+        }
+
+        @Override
+        public List<CliConversation> listRecentConversations(int pageSize) {
+            requestedPageSizes.add(pageSize);
+            if (failure != null) {
+                throw failure;
+            }
+            return conversations;
         }
     }
 }

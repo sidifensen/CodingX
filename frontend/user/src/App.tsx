@@ -1,16 +1,9 @@
-import React, { useState, useEffect } from 'react';
-import { Menu, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import React, { Suspense, lazy, useState, useEffect } from 'react';
+import { Loader2, Menu, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { AnimatePresence } from 'motion/react';
 
-// 视图组件
+// 视图组件：聊天页是首屏默认视图，保持静态导入保证首帧渲染；SharedChatView 与其同模块导出。
 import ChatView, { SharedChatView } from './views/ChatView';
-import AutomationView from './views/AutomationView';
-import McpView from './views/McpView';
-import SkillsView from './views/SkillsView';
-import ExpertsView from './views/ExpertsView';
-import CliLoginView from './views/CliLoginView';
-import MemoryView from './views/MemoryView';
-import SettingsView from './views/SettingsView';
 import Sidebar from './components/Sidebar';
 import LoginModal from './components/auth/LoginModal';
 import DesktopTitleBar from './components/DesktopTitleBar';
@@ -23,6 +16,24 @@ import {
   WorkspaceConversationCreateContext,
   WorkspaceConversationSelectionContext,
 } from './views/chat/types';
+
+// 低频功能页按路由懒加载，拆分独立 chunk，避免它们的依赖进入聊天首屏包。
+// loader 单独收敛成映射：视图切换前先 await 对应 chunk，保证 AnimatePresence 过渡期间组件不挂起。
+const lazyViewLoaders: Partial<Record<ViewType, () => Promise<unknown>>> = {
+  automation: () => import('./views/AutomationView'),
+  mcp: () => import('./views/McpView'),
+  skills: () => import('./views/SkillsView'),
+  experts: () => import('./views/ExpertsView'),
+  memories: () => import('./views/MemoryView'),
+  settings: () => import('./views/SettingsView'),
+};
+const AutomationView = lazy(() => import('./views/AutomationView'));
+const McpView = lazy(() => import('./views/McpView'));
+const SkillsView = lazy(() => import('./views/SkillsView'));
+const ExpertsView = lazy(() => import('./views/ExpertsView'));
+const CliLoginView = lazy(() => import('./views/CliLoginView'));
+const MemoryView = lazy(() => import('./views/MemoryView'));
+const SettingsView = lazy(() => import('./views/SettingsView'));
 
 /**
  * 定义应用支持的主视图类型。
@@ -51,9 +62,24 @@ const DESKTOP_SIDEBAR_DEFAULT_WIDTH = 256;
 export default function App() {
   // CLI 登录页是独立授权面，不启动聊天工作区，避免无关接口请求干扰终端登录。
   if (isCliLoginRoute(window.location.pathname)) {
-    return <CliLoginView />;
+    return (
+      <Suspense fallback={<LazyViewFallback />}>
+        <CliLoginView />
+      </Suspense>
+    );
   }
   return <MainApp />;
+}
+
+/**
+ * 懒加载视图的统一加载占位：居中转圈，主题令牌配色，亮暗模式下都可辨识。
+ */
+function LazyViewFallback() {
+  return (
+    <div className="flex h-full w-full items-center justify-center bg-background text-muted-foreground">
+      <Loader2 size={22} className="animate-spin" aria-label="页面加载中" />
+    </div>
+  );
 }
 
 /**
@@ -137,11 +163,43 @@ function MainApp() {
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
+  useEffect(() => {
+    // 首帧渲染完成后空闲预取懒加载页 chunk：保持首屏包瘦身收益，同时让侧栏切换即点即开，
+    // 避免 Suspense 挂起与 AnimatePresence mode="wait" 组合时卡在退出动画的空白占位上。
+    const prefetchLazyViews = () => {
+      Object.values(lazyViewLoaders).forEach((load) => {
+        load().catch(() => {
+          // 预取失败不影响运行：真正切换该页时 Suspense 会重新发起加载并展示占位。
+        });
+      });
+    };
+    const idleWindow = window as Window & {
+      requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number;
+      cancelIdleCallback?: (handle: number) => void;
+    };
+    if (typeof idleWindow.requestIdleCallback === 'function') {
+      const idleHandle = idleWindow.requestIdleCallback(prefetchLazyViews, { timeout: 3000 });
+      return () => idleWindow.cancelIdleCallback?.(idleHandle);
+    }
+    const timerHandle = window.setTimeout(prefetchLazyViews, 1500);
+    return () => window.clearTimeout(timerHandle);
+  }, []);
+
   /**
    * 切换页面级视图并同步浏览器地址栏，避免会话参数残留在功能页路由上。
+   * 懒加载页先 await 对应 chunk 再切视图：组件挂载时模块已就绪，不会在
+   * AnimatePresence mode="wait" 的过渡中触发 Suspense 挂起导致新页面无法上屏。
    * @param nextView 目标主视图。
    */
-  const navigateToView = (nextView: ViewType) => {
+  const navigateToView = async (nextView: ViewType) => {
+    const preload = lazyViewLoaders[nextView];
+    if (preload) {
+      try {
+        await preload();
+      } catch {
+        // chunk 预载失败（如网络抖动）时继续切换，由 Suspense 占位兜底重新加载。
+      }
+    }
     setActiveView(nextView);
     writeViewRouteToUrl(nextView);
   };
@@ -417,6 +475,11 @@ function MainApp() {
                 <PanelLeftClose size={18} />
               )}
             </button>
+            {/*
+             * Suspense 边界必须放在 AnimatePresence 内部按子项包裹：
+             * 若包在外层，懒加载挂起会把整个 AnimatePresence 子树替换成 fallback，
+             * 打断上一页的退出动画并丢失 presence 状态，导致新页面永远无法挂载。
+             */}
             <AnimatePresence mode="wait">
               {activeView === 'chat' && (
                 <ChatView
@@ -428,36 +491,49 @@ function MainApp() {
                 />
               )}
               {activeView === 'mcp' && (
-                <McpView
-                  key="mcp"
-                  availableMcps={chatWorkspace.availableMcps}
-                  selectedMcpCodes={chatWorkspace.selectedMcpCodes}
-                  mcpConnected={chatWorkspace.mcpConnected}
-                  setSelectedMcpCodes={chatWorkspace.setSelectedMcpCodes}
-                  setMcpConnected={chatWorkspace.setMcpConnected}
-                />
+                <Suspense key="mcp" fallback={<LazyViewFallback />}>
+                  <McpView
+                    availableMcps={chatWorkspace.availableMcps}
+                    selectedMcpCodes={chatWorkspace.selectedMcpCodes}
+                    mcpConnected={chatWorkspace.mcpConnected}
+                    setSelectedMcpCodes={chatWorkspace.setSelectedMcpCodes}
+                    setMcpConnected={chatWorkspace.setMcpConnected}
+                  />
+                </Suspense>
               )}
-              {activeView === 'automation' && <AutomationView key="automation" />}
+              {activeView === 'automation' && (
+                <Suspense key="automation" fallback={<LazyViewFallback />}>
+                  <AutomationView />
+                </Suspense>
+              )}
               {activeView === 'settings' && (
-                <SettingsView key="settings" hostContext={hostContext} />
+                <Suspense key="settings" fallback={<LazyViewFallback />}>
+                  <SettingsView hostContext={hostContext} />
+                </Suspense>
               )}
               {activeView === 'memories' && (
-                <MemoryView
-                  key="memories"
-                  isAuthenticated={isAuthenticated}
-                  onRequireLogin={openLoginModal}
-                  workspaceId={chatWorkspace.workspaceId}
-                  workspaceLabel={chatWorkspace.workspaceLabel}
-                  workspaceGroups={chatWorkspace.workspaceGroups}
-                />
+                <Suspense key="memories" fallback={<LazyViewFallback />}>
+                  <MemoryView
+                    isAuthenticated={isAuthenticated}
+                    onRequireLogin={openLoginModal}
+                    workspaceId={chatWorkspace.workspaceId}
+                    workspaceLabel={chatWorkspace.workspaceLabel}
+                    workspaceGroups={chatWorkspace.workspaceGroups}
+                  />
+                </Suspense>
               )}
-              {activeView === 'skills' && <SkillsView key="skills" />}
+              {activeView === 'skills' && (
+                <Suspense key="skills" fallback={<LazyViewFallback />}>
+                  <SkillsView />
+                </Suspense>
+              )}
               {activeView === 'experts' && (
-                <ExpertsView
-                  key="experts"
-                  workspace={chatWorkspace}
-                  onSelectExpert={() => navigateToView('chat')}
-                />
+                <Suspense key="experts" fallback={<LazyViewFallback />}>
+                  <ExpertsView
+                    workspace={chatWorkspace}
+                    onSelectExpert={() => navigateToView('chat')}
+                  />
+                </Suspense>
               )}
             </AnimatePresence>
           </div>

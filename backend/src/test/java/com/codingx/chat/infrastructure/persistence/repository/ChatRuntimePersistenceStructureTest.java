@@ -175,7 +175,8 @@ class ChatRuntimePersistenceStructureTest {
         );
         Path migration = Path.of("src/main/resources/db/migration/V20260610_110000__drop_chat_execution_run_task_id.sql");
         assertTrue(Files.exists(migration), "缺少删除 chat_execution_run.task_id 的迁移脚本");
-        String migrationSql = Files.readString(migration, StandardCharsets.UTF_8);
+        // 迁移脚本允许跨行书写 ALTER 语句，断言前先把空白归一化为单空格再匹配。
+        String migrationSql = Files.readString(migration, StandardCharsets.UTF_8).replaceAll("\\s+", " ");
         assertTrue(migrationSql.contains("DROP INDEX IF EXISTS idx_chat_execution_run_task"), "迁移脚本应先删除 task_id 索引");
         assertTrue(migrationSql.contains("ALTER TABLE chat_execution_run DROP COLUMN IF EXISTS task_id"), "迁移脚本应删除 task_id 列");
     }

@@ -32,6 +32,7 @@ CLI 会话命令让终端端直接复用 Web 端的聊天会话历史。用户�
 
 ## 验证方式
 
+- `cd cli && mvn -Dtest=CodingXCliTerminalTest test`
 - `cd cli && mvn -Dtest=BackendConversationClientTest test`
 - `cd cli && mvn -Dtest=CliCommandRunnerTest test`
 - `cd cli && mvn test`

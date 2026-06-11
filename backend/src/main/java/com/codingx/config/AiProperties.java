@@ -172,7 +172,8 @@ public class AiProperties {
         private Long firstPacketTimeoutMs = 15_000L;
 
         /**
-         * 首包成功后的整条流式响应完成超时时间；超过该窗口会取消 provider 并让上层收口失败状态。
+         * 首包成功后的流式空闲超时时间；表示允许的最长连续静默窗口，流持续产出事件时不会触发，
+         * 连续静默超过该窗口才取消 provider 并让上层收口失败状态。
          */
         private Long streamCompletionTimeoutMs = 300_000L;
     }

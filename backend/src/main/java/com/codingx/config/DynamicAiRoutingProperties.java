@@ -44,11 +44,11 @@ public class DynamicAiRoutingProperties {
     }
 
     /**
-     * 获取首包成功后的整流完成超时毫秒。
-     * @return 首包后整流完成超时毫秒。
+     * 获取首包成功后的流式空闲超时毫秒；连续静默超过该窗口才判定 provider 挂起。
+     * @return 首包后流式空闲超时毫秒。
      */
     public long streamCompletionTimeoutMs() {
-        // 步骤 1：整流完成超时由系统配置动态控制，避免慢流或异常长连接永久占用聊天线程。
+        // 步骤 1：空闲超时由系统配置动态控制，避免挂起 provider 永久占用聊天线程，同时不掐断健康长流。
         return runtimeSettingService.aiStreamCompletionTimeoutMs();
     }
 

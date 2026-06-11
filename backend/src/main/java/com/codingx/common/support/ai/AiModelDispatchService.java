@@ -148,7 +148,10 @@ public class AiModelDispatchService {
             publishAttemptSnapshot(attemptedProviders);
             FirstTokenAwaiter awaiter = new FirstTokenAwaiter();
             FirstTokenBufferingHandler bufferingHandler = new FirstTokenBufferingHandler(handler, awaiter);
-            AiStreamHandler providerHandler = guardThinkingEvents(request, bufferingHandler);
+            // 步骤 4.1：活动跟踪器包在最外层，provider 任何事件（含将被过滤的 thinking）都刷新活跃时间，
+            // 供首包后空闲超时判定使用；guard 过滤只影响下游可见性，不影响“流还活着”的判定。
+            StreamActivityTracker activityTracker = new StreamActivityTracker();
+            AiStreamHandler providerHandler = trackActivity(activityTracker, guardThinkingEvents(request, bufferingHandler));
             AiStreamSession session;
             try {
                 // 步骤 5：启动 provider 流式请求；启动阶段异常表示首包前失败，可尝试下一个候选。
@@ -182,8 +185,10 @@ public class AiModelDispatchService {
                 handler.onMetadata(logicalProvider, target.candidate().getModel());
                 bufferingHandler.commit();
                 try {
-                    // 步骤 9：首包后异常或超时说明响应已开始，不能再 fallback，转换为可观察错误并交给聊天 run 收口。
-                    session.completion().get(resolveStreamCompletionTimeoutMs(request), TimeUnit.MILLISECONDS);
+                    // 步骤 9：首包后按空闲超时等待整流完成；流持续产出事件时不掐断健康长流，
+                    // 只有连续静默超过配置窗口才判定 provider 挂起。异常或挂起说明响应已开始，
+                    // 不能再 fallback，转换为可观察错误并交给聊天 run 收口。
+                    awaitCompletionWithIdleTimeout(session, activityTracker, resolveStreamCompletionTimeoutMs(request));
                 } catch (CompletionException completionException) {
                     healthRegistry.markFailure(modelId);
                     Throwable cause = completionException.getCause() == null ? completionException : completionException.getCause();
@@ -294,10 +299,11 @@ public class AiModelDispatchService {
     }
 
     /**
-     * 解析本次流式响应完成等待窗口。
-     * 业务意图：普通聊天沿用全局长窗口；目标模式等执行链路可通过请求级覆盖值更快失败并让上层写入可见阻塞状态。
+     * 解析本次流式响应空闲超时窗口。
+     * 业务意图：该窗口表示首包后允许的最长连续静默时间，而不是整条流的总时长上限；
+     * 普通聊天沿用全局长窗口，目标模式等执行链路可通过请求级覆盖值更快识别挂起 provider。
      * @param request 本次模型请求。
-     * @return 首包后整流完成等待毫秒数。
+     * @return 首包后流式空闲超时毫秒数。
      */
     private long resolveStreamCompletionTimeoutMs(AiConversationRequest request) {
         Long overrideTimeoutMs = request == null ? null : request.streamCompletionTimeoutOverrideMs();
@@ -305,6 +311,121 @@ public class AiModelDispatchService {
             return overrideTimeoutMs;
         }
         return aiModelSelector.streamCompletionTimeoutMs();
+    }
+
+    /**
+     * 按空闲超时语义等待流式会话收口。
+     * 关键约束：大型文件写入等长工具参数流可能持续数分钟，只要事件持续到达就不能掐断；
+     * 仅当连续静默超过空闲窗口时才判定 provider 挂起，取消会话并抛出 TimeoutException。
+     *
+     * @param session 当前 provider 流式会话。
+     * @param activityTracker 流活动跟踪器，记录最近一次事件时间。
+     * @param idleTimeoutMs 允许的最长连续静默毫秒数。
+     * @throws CompletionException 流执行中抛出未受检异常时透传。
+     * @throws java.util.concurrent.ExecutionException 流执行失败时透传。
+     * @throws TimeoutException 连续静默超过空闲窗口时抛出。
+     * @throws InterruptedException 等待线程被中断时抛出。
+     */
+    private void awaitCompletionWithIdleTimeout(
+        AiStreamSession session,
+        StreamActivityTracker activityTracker,
+        long idleTimeoutMs
+    ) throws java.util.concurrent.ExecutionException, TimeoutException, InterruptedException {
+        // 步骤 1：等待开始前先刷新基准时间，避免首包确认与等待开始之间的间隔被误算成静默。
+        activityTracker.touch();
+        while (true) {
+            // 步骤 2：每轮只等待“距离空闲窗口耗尽的剩余时间”，到期后重新检查活跃度。
+            long idleElapsedMs = activityTracker.idleElapsedMs();
+            long waitMs = Math.max(1L, idleTimeoutMs - idleElapsedMs);
+            try {
+                session.completion().get(waitMs, TimeUnit.MILLISECONDS);
+                return;
+            } catch (TimeoutException timeoutException) {
+                // 步骤 3：本轮等待超时不代表挂起；若窗口期内仍有事件到达，则继续下一轮等待。
+                if (activityTracker.idleElapsedMs() < idleTimeoutMs) {
+                    continue;
+                }
+                // 步骤 4：连续静默已超过空闲窗口，判定 provider 挂起，由调用方取消会话并收口。
+                throw timeoutException;
+            }
+        }
+    }
+
+    /**
+     * 包装下游处理器，在每个流事件到达时刷新活动跟踪器。
+     * 错误与完成事件也会刷新活跃时间，保证 completion Future 的终态判定不被空闲超时抢先。
+     *
+     * @param activityTracker 流活动跟踪器。
+     * @param delegate 原始下游处理器。
+     * @return 带活动记录的处理器。
+     */
+    private AiStreamHandler trackActivity(StreamActivityTracker activityTracker, AiStreamHandler delegate) {
+        return new AiStreamHandler() {
+            @Override
+            public void onMetadata(String provider, String model) {
+                activityTracker.touch();
+                delegate.onMetadata(provider, model);
+            }
+
+            @Override
+            public void onThinkingDelta(String delta) {
+                activityTracker.touch();
+                delegate.onThinkingDelta(delta);
+            }
+
+            @Override
+            public void onContentDelta(String delta) {
+                activityTracker.touch();
+                delegate.onContentDelta(delta);
+            }
+
+            @Override
+            public void onToolCall(AiToolCall toolCall) {
+                activityTracker.touch();
+                delegate.onToolCall(toolCall);
+            }
+
+            @Override
+            public void onToolCallDelta(AiToolCallDelta toolCallDelta) {
+                activityTracker.touch();
+                delegate.onToolCallDelta(toolCallDelta);
+            }
+
+            @Override
+            public void onComplete() {
+                activityTracker.touch();
+                delegate.onComplete();
+            }
+
+            @Override
+            public void onError(Throwable throwable) {
+                activityTracker.touch();
+                delegate.onError(throwable);
+            }
+        };
+    }
+
+    /**
+     * 流活动跟踪器，记录最近一次流事件的单调时钟时间。
+     * 使用 nanoTime 避免系统时钟回拨影响空闲判定；volatile 保证 provider 回调线程与等待线程之间可见。
+     */
+    private static final class StreamActivityTracker {
+
+        /** 最近一次流事件的单调时钟纳秒值。 */
+        private volatile long lastEventAtNanos = System.nanoTime();
+
+        /** 刷新最近事件时间，由 provider 回调线程在每个事件到达时调用。 */
+        void touch() {
+            lastEventAtNanos = System.nanoTime();
+        }
+
+        /**
+         * 计算自最近一次事件以来的静默毫秒数。
+         * @return 静默毫秒数。
+         */
+        long idleElapsedMs() {
+            return (System.nanoTime() - lastEventAtNanos) / 1_000_000L;
+        }
     }
 
     /**

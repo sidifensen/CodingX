@@ -1631,6 +1631,8 @@ public class ChatApplicationService {
             planModeExecutionRequested
         );
         PlanModeTerminalGoalSnapshot planModeTerminalGoalSnapshot = null;
+        // 目标模式流失败重试标记：第一次流失败先回灌重试提示再给模型一轮机会，连续两次失败才写阻塞终态。
+        boolean planModeStreamFailureRetried = false;
         if (effectivePlanMode) {
             log.info(
                 "目标模式初始化: 用户开关={}，实际启用={}，执行要求={}，最大工具轮次={}，可见工具={}个，问题={}",
@@ -1686,6 +1688,32 @@ public class ChatApplicationService {
                     deferredContentDeltas
                 ));
             } catch (RuntimeException exception) {
+                if (shouldRetryPlanModeStreamFailureBeforeTerminal(
+                    command,
+                    planModeExecutionRequested,
+                    planModeGoalProgressDirty,
+                    planModeGoalTerminalObserved,
+                    planModeStreamFailureRetried
+                )) {
+                    // 第一次流失败先回灌重试提示并再给模型一轮机会，避免偶发断流直接把目标写成阻塞终态。
+                    planModeStreamFailureRetried = true;
+                    currentHistory.add(ChatMessage.create(
+                        cn.hutool.core.util.IdUtil.getSnowflakeNextId(),
+                        command.conversationId(),
+                        ChatMessageRole.SYSTEM,
+                        buildPlanModeStreamFailureRetryGuidance(exception),
+                        ChatMessageStatus.COMPLETED,
+                        null,
+                        null,
+                        null
+                    ).attachRun(runId));
+                    log.warn(
+                        "目标模式第{}轮模型流失败: 原因={}，处理=首次失败已回灌重试提示，再给模型一轮机会",
+                        round + 1,
+                        exception.getMessage()
+                    );
+                    continue;
+                }
                 if (shouldCreateAndBlockPlanModeGoalOnStreamFailure(
                     command,
                     planModeExecutionRequested,
@@ -1786,6 +1814,33 @@ public class ChatApplicationService {
             );
             if (streamError[0] != null) {
                 RuntimeException streamFailure = toRuntimeException(streamError[0]);
+                if (shouldRetryPlanModeStreamFailureBeforeTerminal(
+                    command,
+                    planModeExecutionRequested,
+                    planModeGoalProgressDirty,
+                    planModeGoalTerminalObserved,
+                    planModeStreamFailureRetried
+                )) {
+                    // onError 回调路径同样适用首次失败重试，保证两条失败入口的恢复语义一致。
+                    planModeStreamFailureRetried = true;
+                    currentHistory.add(ChatMessage.create(
+                        cn.hutool.core.util.IdUtil.getSnowflakeNextId(),
+                        command.conversationId(),
+                        ChatMessageRole.SYSTEM,
+                        buildPlanModeStreamFailureRetryGuidance(streamFailure),
+                        ChatMessageStatus.COMPLETED,
+                        null,
+                        null,
+                        null
+                    ).attachRun(runId));
+                    streamError[0] = null;
+                    log.warn(
+                        "目标模式第{}轮模型流返回错误: 原因={}，处理=首次失败已回灌重试提示，再给模型一轮机会",
+                        round + 1,
+                        streamFailure.getMessage()
+                    );
+                    continue;
+                }
                 if (shouldCreateAndBlockPlanModeGoalOnStreamFailure(
                     command,
                     planModeExecutionRequested,
@@ -3595,6 +3650,55 @@ public class ChatApplicationService {
             - 随后继续执行验证、提交等后续可见工具；每完成一个关键步骤后继续 update_goal。
             - 只有验证、提交等真实完成后才能把目标写为 COMPLETED；确实无法继续时才写 BLOCKED，并说明具体原因。
             - 不要声称刚才成功的文件编辑或命令没有落地，也不要只输出自然语言进度。
+            """.formatted(message);
+    }
+
+    /**
+     * 判断目标模式首次模型流失败是否应先重试一轮而不是立即写终态。
+     * 业务意图：大型文件写入的工具参数流可能偶发断流；第一次失败先回灌提示让模型缩小单次写入重试，
+     * 连续第二次失败才走 BLOCKED 收口，避免一次网络抖动就把任务判死。
+     * progressDirty 的恢复路径（已有工作成果待同步）优先级更高，由调用方先行判断。
+     *
+     * @param command 当前发送命令。
+     * @param executionRequested 用户是否要求直接执行、验证和提交。
+     * @param goalProgressDirty 是否已有工作结果等待 update_goal 同步。
+     * @param goalTerminalObserved 是否已经观察到目标终态。
+     * @param alreadyRetried 本次 run 是否已经消耗过首次失败重试机会。
+     * @return true 表示应回灌重试提示并继续下一轮。
+     */
+    private boolean shouldRetryPlanModeStreamFailureBeforeTerminal(
+        SendChatMessageCommand command,
+        boolean executionRequested,
+        boolean goalProgressDirty,
+        boolean goalTerminalObserved,
+        boolean alreadyRetried
+    ) {
+        return command != null
+            && isEffectivePlanMode(command)
+            && executionRequested
+            && !goalProgressDirty
+            && !goalTerminalObserved
+            && !alreadyRetried;
+    }
+
+    /**
+     * 构造目标模式首次流失败的重试提示。
+     * 关键约束：提示必须要求模型缩小单次输出（尤其是大文件写入），并继续通过真实工具推进目标；
+     * 不允许模型只输出自然语言进度或直接宣布失败。
+     *
+     * @param exception 模型流异常。
+     * @return 写入模型历史的系统提示。
+     */
+    private String buildPlanModeStreamFailureRetryGuidance(RuntimeException exception) {
+        String message = StrUtil.blankToDefault(exception == null ? null : exception.getMessage(), "模型流式响应异常");
+        return """
+            上一轮模型流式响应失败：%s
+            这是本次任务的首次流失败，后端已自动重试，本轮请继续推进目标，不要直接宣布失败。
+
+            继续执行要求：
+            - 缩小单次输出量：大型文件必须分块写入，先 write 文件骨架，再用 edit 分段补全，单次工具参数不要携带超长内容。
+            - 每完成一个关键步骤后调用 update_goal 同步真实进度，目标状态保持 ACTIVE。
+            - 只有验证、提交等真实完成后才能把目标写为 COMPLETED；如果本轮再次失败，后端会把目标写为 BLOCKED。
             """.formatted(message);
     }
 

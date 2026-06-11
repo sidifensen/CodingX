@@ -81,8 +81,8 @@ public class AiModelSelector {
     }
 
     /**
-     * 返回首包成功后的整流完成超时时间，供路由层防止 provider 长连接永久挂起聊天线程。
-     * @return 整流完成超时毫秒数。
+     * 返回首包成功后的流式空闲超时时间，供路由层识别挂起 provider；健康长流持续产出事件时不会触发。
+     * @return 流式空闲超时毫秒数。
      */
     public long streamCompletionTimeoutMs() {
         // 步骤 1：优先读取动态运行时配置，缺省时回退静态配置。

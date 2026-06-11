@@ -350,6 +350,124 @@ class AiModelDispatchServiceTest {
     }
 
     /**
+     * 首包后超时是空闲超时语义：流持续产出事件时即使总时长超过配置窗口，也不能掐断健康长流。
+     * 业务场景：目标模式 write 大型 HTML 的工具参数流可能持续数分钟，期间每秒都有增量事件。
+     */
+    @Test
+    void streamChatKeepsActiveSlowStreamAliveBeyondIdleWindow() throws Exception {
+        CompletableFuture<Void> completion = new CompletableFuture<>();
+        java.util.concurrent.atomic.AtomicBoolean cancelled = new java.util.concurrent.atomic.AtomicBoolean(false);
+        AiProviderClient slowActiveProvider = new AiProviderClient() {
+            @Override
+            public String provider() {
+                return "primary";
+            }
+
+            @Override
+            public AiStreamSession streamChat(AiConversationRequest request, AiModelTarget target, AiStreamHandler handler) {
+                // 后台线程模拟慢但健康的长流：每 20ms 一个增量，总时长约 300ms，远超 80ms 空闲窗口。
+                Thread streamThread = new Thread(() -> {
+                    try {
+                        for (int index = 0; index < 15; index++) {
+                            handler.onContentDelta("chunk-" + index);
+                            Thread.sleep(20L);
+                        }
+                        handler.onComplete();
+                        completion.complete(null);
+                    } catch (InterruptedException exception) {
+                        Thread.currentThread().interrupt();
+                        completion.completeExceptionally(exception);
+                    }
+                });
+                streamThread.setDaemon(true);
+                streamThread.start();
+                return new AiStreamSession(() -> cancelled.set(true), completion);
+            }
+        };
+        AiProperties properties = minimalPropertiesWithCandidates(
+            candidate("deepseek-chat", "primary", "deepseek-chat", 1, false)
+        );
+        properties.getSelection().setStreamCompletionTimeoutMs(80L);
+        AiModelDispatchService service = new AiModelDispatchService(
+            List.of(slowActiveProvider),
+            new AiProviderHealthRegistry(2, 30_000L),
+            new AiModelSelector(properties)
+        );
+        List<String> deltas = new ArrayList<>();
+
+        service.streamChat(
+            AiConversationRequest.builder()
+                .messages(List.of(ChatMessage.userMessage(1L, "写一个大型 HTML")))
+                .stream(true)
+                .build(),
+            new AiStreamHandler() {
+                @Override
+                public void onContentDelta(String delta) {
+                    deltas.add(delta);
+                }
+            }
+        );
+
+        assertFalse(cancelled.get(), "active slow stream must not be cancelled while events keep flowing");
+        assertEquals(15, deltas.size());
+    }
+
+    /**
+     * 首包后先活跃一段时间、随后彻底静默的流，空闲窗口耗尽后仍必须取消并抛错。
+     * 该用例保证空闲超时改造不会把真挂起的 provider 永久留在 RUNNING。
+     */
+    @Test
+    void streamChatTimesOutWhenStreamGoesIdleAfterInitialActivity() {
+        CompletableFuture<Void> hangingCompletion = new CompletableFuture<>();
+        java.util.concurrent.atomic.AtomicBoolean cancelled = new java.util.concurrent.atomic.AtomicBoolean(false);
+        AiProviderClient idleAfterActivityProvider = new AiProviderClient() {
+            @Override
+            public String provider() {
+                return "primary";
+            }
+
+            @Override
+            public AiStreamSession streamChat(AiConversationRequest request, AiModelTarget target, AiStreamHandler handler) {
+                Thread streamThread = new Thread(() -> {
+                    try {
+                        // 先产出三个增量保持活跃，然后彻底静默模拟 provider 挂起。
+                        for (int index = 0; index < 3; index++) {
+                            handler.onContentDelta("active-" + index);
+                            Thread.sleep(10L);
+                        }
+                    } catch (InterruptedException exception) {
+                        Thread.currentThread().interrupt();
+                    }
+                });
+                streamThread.setDaemon(true);
+                streamThread.start();
+                return new AiStreamSession(() -> cancelled.set(true), hangingCompletion);
+            }
+        };
+        AiProperties properties = minimalPropertiesWithCandidates(
+            candidate("deepseek-chat", "primary", "deepseek-chat", 1, false)
+        );
+        properties.getSelection().setStreamCompletionTimeoutMs(80L);
+        AiModelDispatchService service = new AiModelDispatchService(
+            List.of(idleAfterActivityProvider),
+            new AiProviderHealthRegistry(2, 30_000L),
+            new AiModelSelector(properties)
+        );
+
+        IllegalStateException exception = assertThrows(IllegalStateException.class, () -> service.streamChat(
+            AiConversationRequest.builder()
+                .messages(List.of(ChatMessage.userMessage(1L, "你好")))
+                .stream(true)
+                .build(),
+            new AiStreamHandler() {
+            }
+        ));
+
+        assertEquals(ErrorMessageCatalog.AI_STREAM_FAILED_AFTER_FIRST_TOKEN, exception.getMessage());
+        assertTrue(cancelled.get(), "idle stream should be cancelled after idle window elapses");
+    }
+
+    /**
      * 请求级完成超时应优先于全局路由配置，供目标模式这类执行链路快速失败并由上层写入阻塞状态。
      */
     @Test

@@ -515,8 +515,8 @@ public class RuntimeSettingService {
     }
 
     /**
-     * 获取模型路由首包后整流完成超时毫秒。
-     * @return 首包后整流完成超时毫秒。
+     * 获取模型路由首包后流式空闲超时毫秒；表示允许的最长连续静默窗口，不是整条流的总时长上限。
+     * @return 首包后流式空闲超时毫秒。
      */
     public long aiStreamCompletionTimeoutMs() {
         Long fallback = aiProperties.getSelection() == null ? null : aiProperties.getSelection().getStreamCompletionTimeoutMs();

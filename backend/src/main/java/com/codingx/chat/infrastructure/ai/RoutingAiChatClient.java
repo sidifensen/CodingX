@@ -22,7 +22,7 @@ import org.springframework.stereotype.Component;
 @Primary
 public class RoutingAiChatClient implements AiChatClient {
 
-    /** 目标模式首包后模型流完成等待窗口，避免长工具参数流把桌面端长期卡在 RUNNING/ACTIVE。 */
+    /** 目标模式首包后模型流空闲超时窗口：连续静默超过该时长才判定挂起；流持续产出工具参数时不会被掐断。 */
     private static final long PLAN_MODE_STREAM_COMPLETION_TIMEOUT_MS = 90_000L;
 
     /** 模型调度服务，用于把旧领域接口请求路由到当前可用 provider/model。 */
@@ -146,9 +146,10 @@ public class RoutingAiChatClient implements AiChatClient {
     }
 
     /**
-     * 目标模式需要比普通聊天更快收口模型长流，防止右侧目标浮窗停留在 ACTIVE 且 run 长时间 RUNNING。
+     * 目标模式使用独立的流式空闲超时：连续静默 90 秒才判定 provider 挂起，防止目标长期停留 ACTIVE 且 run 长时间 RUNNING；
+     * 健康长流（如大型 HTML 的 write 工具参数）只要持续产出事件就不会被该窗口掐断。
      * @param history 本次送入模型的历史，应用层会在目标模式下追加系统约束。
-     * @return 请求级整流完成超时；空值表示沿用全局路由配置。
+     * @return 请求级流式空闲超时；空值表示沿用全局路由配置。
      */
     private Long resolveStreamCompletionTimeoutOverrideMs(List<ChatMessage> history) {
         if (history == null) {

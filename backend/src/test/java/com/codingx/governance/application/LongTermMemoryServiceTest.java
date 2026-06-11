@@ -1,11 +1,15 @@
 package com.codingx.governance.application;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.codingx.chat.domain.model.ChatConversation;
 import com.codingx.chat.domain.model.ChatConversationStatus;
 import com.codingx.chat.domain.model.ChatMessage;
@@ -17,6 +21,7 @@ import com.codingx.governance.domain.repository.GovernanceLongTermMemoryReposito
 import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 
 /**
  * 验证长期记忆提取、管理状态和检索回注的确定性规则。
@@ -193,6 +198,42 @@ class LongTermMemoryServiceTest {
         assertEquals(2, memories.size());
         assertEquals(21L, memories.get(0).getId());
         assertEquals(20L, memories.get(1).getId());
+    }
+
+    /**
+     * 回注检索只应打印单条汇总日志，避免同一轮聊天同时出现“开始”和“结果”两条重复 INFO。
+     */
+    @Test
+    void retrieveActiveMemoriesShouldLogContextLoadOnceWithSummary() {
+        InMemoryLongTermMemoryRepository repository = new InMemoryLongTermMemoryRepository();
+        repository.save(sampleMemory("ACTIVE").toBuilder().id(30L).userId(200L).workspaceId(300L).content("测试框架使用 JUnit 5").keywordJson("[\"JUnit 5\"]").build());
+        LongTermMemoryService service = new LongTermMemoryService(repository);
+        Logger logger = (Logger) LoggerFactory.getLogger(LongTermMemoryService.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            service.retrieveActiveMemories(200L, 300L, "这次测试框架继续使用 JUnit 5", 6);
+        } finally {
+            logger.detachAppender(appender);
+        }
+
+        String logs = appender.list.stream()
+            .map(ILoggingEvent::getFormattedMessage)
+            .reduce("", (left, right) -> left + "\n" + right);
+        long contextLogCount = appender.list.stream()
+            .filter(event -> event.getFormattedMessage().contains("长期记忆回注"))
+            .count();
+        assertEquals(1L, contextLogCount);
+        assertTrue(logs.contains("长期记忆回注已加载"));
+        assertFalse(logs.contains("userId=200"));
+        assertFalse(logs.contains("workspaceId=300"));
+        assertTrue(logs.contains("candidateCount=1"));
+        assertTrue(logs.contains("selectedCount=1"));
+        assertTrue(logs.contains("matchReasons=[CURRENT_SCOPE_ACTIVE]"));
+        assertFalse(logs.contains("memoryIds="));
+        assertFalse(logs.contains("长期记忆回注开始"));
+        assertFalse(logs.contains("长期记忆回注结果"));
     }
 
     /**

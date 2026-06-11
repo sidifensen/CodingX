@@ -1,6 +1,7 @@
 package com.codingx.governance.application;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -93,12 +94,12 @@ class RepositoryInstructionContextServiceTest {
     }
 
     /**
-     * 识别流程应打印命中文件与短预览，但不能把完整大段规范正文写入日志。
+     * 识别流程只打印单条汇总日志，避免常规成功路径出现开始日志、逐文件日志和正文预览。
      * @param tempDir 临时仓库目录。
      * @throws Exception 文件创建失败时抛出。
      */
     @Test
-    void buildInstructionContextShouldLogDiscoveryFlowWithShortPreview(@TempDir Path tempDir) throws Exception {
+    void buildInstructionContextShouldLogLoadedSummaryWithoutContentPreview(@TempDir Path tempDir) throws Exception {
         write(tempDir.resolve("AGENTS.md"), "第一行规则\n第二行规则\n" + "尾部内容".repeat(80));
         when(workspaceMapper.selectOne(any())).thenReturn(workspace(tempDir));
         Logger logger = (Logger) LoggerFactory.getLogger(RepositoryInstructionContextService.class);
@@ -116,10 +117,17 @@ class RepositoryInstructionContextServiceTest {
         String logs = appender.list.stream()
             .map(ILoggingEvent::getFormattedMessage)
             .reduce("", (left, right) -> left + "\n" + right);
-        assertTrue(logs.contains("开始识别仓库规范文件"));
-        assertTrue(logs.contains("识别到仓库规范文件"));
+        long infoLogCount = appender.list.stream()
+            .filter(event -> event.getFormattedMessage().contains("仓库规范文件"))
+            .count();
+        assertEquals(1L, infoLogCount);
+        assertTrue(logs.contains("仓库规范文件已加载"));
+        assertFalse(logs.contains("userId=2002"));
+        assertFalse(logs.contains("workspaceId=3001"));
         assertTrue(logs.contains("AGENTS.md"));
-        assertTrue(logs.contains("第一行规则 第二行规则"));
+        assertFalse(logs.contains("开始识别仓库规范文件"));
+        assertFalse(logs.contains("识别到仓库规范文件"));
+        assertFalse(logs.contains("第一行规则 第二行规则"));
         assertFalse(logs.contains("尾部内容尾部内容尾部内容尾部内容尾部内容尾部内容尾部内容尾部内容尾部内容尾部内容"));
     }
 
@@ -223,7 +231,8 @@ class RepositoryInstructionContextServiceTest {
             .map(ILoggingEvent::getFormattedMessage)
             .reduce("", (left, right) -> left + "\n" + right);
         assertTrue(logs.contains("读取仓库规范文件大小失败"));
-        assertTrue(logs.contains("workspaceId=3001"));
+        assertTrue(logs.contains("path=AGENTS.md"));
+        assertFalse(logs.contains("workspaceId=3001"));
         assertFalse(logs.contains("workspaceId=null"));
     }
 

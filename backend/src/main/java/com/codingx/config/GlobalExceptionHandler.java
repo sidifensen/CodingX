@@ -204,7 +204,7 @@ public class GlobalExceptionHandler {
         if (includeStack) {
             log.error("接口异常 | 状态码={} | 错误码={} | 接口={} | 返回信息={}", status.value(), normalizedCode, endpoint, normalizedMessage, exception);
         } else {
-            log.warn("接口异常 | 状态码={} | 错误码={} | 接口={} | 返回信息={} | 原始异常={}", status.value(), normalizedCode, endpoint, normalizedMessage, exception.getMessage());
+            log.warn("接口异常 | 状态码={} | 错误码={} | 接口={} | 返回信息={}", status.value(), normalizedCode, endpoint, normalizedMessage);
         }
 
         return ResponseEntity.status(status).body(ApiResponse.failure(normalizedCode, normalizedMessage));

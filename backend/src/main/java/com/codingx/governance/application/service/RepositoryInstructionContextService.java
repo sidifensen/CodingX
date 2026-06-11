@@ -28,9 +28,6 @@ public class RepositoryInstructionContextService {
     private static final int MAX_FILE_CHARS = 12_000;
     /** 本轮所有规范文件最大注入字符数，超过后停止追加后续来源。 */
     private static final int MAX_TOTAL_CHARS = 24_000;
-    /** 日志预览最大字符数，只打印开头摘要，避免把完整规则写入日志。 */
-    private static final int MAX_PREVIEW_CHARS = 48;
-
     /** 工作空间 Mapper，用于按当前用户和 workspaceId 查询本地工作目录。 */
     private final WorkspaceMapper workspaceMapper;
 
@@ -74,13 +71,12 @@ public class RepositoryInstructionContextService {
         if (workspacePath == null) {
             return "";
         }
-        log.info("开始识别仓库规范文件: userId={}, workspaceId={}, path={}", userId, workspaceId, workspacePath);
         List<InstructionFile> instructionFiles = discoverInstructionFiles(workspaceId, workspacePath);
         if (instructionFiles.isEmpty()) {
-            log.info("未识别到仓库规范文件: workspaceId={}, path={}", workspaceId, workspacePath);
+            log.debug("未识别到仓库规范文件: path={}", workspacePath);
             return "";
         }
-        return renderInstructionContext(workspaceId, instructionFiles);
+        return renderInstructionContext(workspaceId, workspacePath, instructionFiles);
     }
 
     /**
@@ -110,7 +106,7 @@ public class RepositoryInstructionContextService {
 
     /**
      * 按固定候选顺序发现规范文件，同一路径只保留第一次命中，避免重复注入。
-     * @param workspaceId 当前会话工作空间 ID，用于发现阶段异常日志定位具体仓库。
+     * @param workspaceId 当前会话工作空间 ID，用于限定规范发现所属仓库。
      * @param workspacePath 已校验的本地工作目录。
      * @return 规范文件列表。
      */
@@ -129,7 +125,7 @@ public class RepositoryInstructionContextService {
 
     /**
      * 扫描目录型规则文件，目录不存在或文件不可读时跳过，不影响其它候选。
-     * @param workspaceId 当前会话工作空间 ID，用于发现阶段异常日志定位具体仓库。
+     * @param workspaceId 当前会话工作空间 ID，用于限定规范发现所属仓库。
      * @param workspacePath 工作目录。
      * @param filesByPath 已命中的文件集合。
      * @param candidate 目录候选定义。
@@ -157,7 +153,7 @@ public class RepositoryInstructionContextService {
 
     /**
      * Roo 约定允许 `.roo/rules-*` 多目录规则，这里单独扫描以避免对 `.roo` 做无限制宽搜。
-     * @param workspaceId 当前会话工作空间 ID，用于发现阶段异常日志定位具体仓库。
+     * @param workspaceId 当前会话工作空间 ID，用于限定规范发现所属仓库。
      * @param workspacePath 工作目录。
      * @param filesByPath 已命中的文件集合。
      */
@@ -183,7 +179,7 @@ public class RepositoryInstructionContextService {
 
     /**
      * 添加单个候选文件；显式排除路径、目录、空文件和越界路径都会被跳过。
-     * @param workspaceId 当前会话工作空间 ID，用于文件元信息读取失败时定位仓库。
+     * @param workspaceId 当前会话工作空间 ID，用于限定规范发现所属仓库。
      * @param workspacePath 工作目录。
      * @param filesByPath 已命中的文件集合。
      * @param path 候选文件路径。
@@ -204,10 +200,9 @@ public class RepositoryInstructionContextService {
                 return;
             }
         } catch (Exception exception) {
-            // 发现阶段只读文件大小，失败时跳过当前文件并保留 workspaceId，便于定位异常仓库。
+            // 发现阶段只读文件大小，失败时跳过当前文件并保留文件路径，便于定位异常来源。
             log.warn(
-                "读取仓库规范文件大小失败: workspaceId={}, path={}, message={}",
-                workspaceId,
+                "读取仓库规范文件大小失败: path={}, message={}",
                 toRelativePath(workspacePath, path),
                 exception.getMessage()
             );
@@ -219,39 +214,32 @@ public class RepositoryInstructionContextService {
     /**
      * 渲染规范文件上下文；读取失败时记录日志并跳过该文件。
      * @param workspaceId 当前会话工作空间 ID。
+     * @param workspacePath 已校验的本地工作目录。
      * @param instructionFiles 已发现的规范文件。
      * @return 可注入模型的上下文。
      */
-    private String renderInstructionContext(Long workspaceId, List<InstructionFile> instructionFiles) {
+    private String renderInstructionContext(Long workspaceId, Path workspacePath, List<InstructionFile> instructionFiles) {
         StringBuilder builder = new StringBuilder();
         builder.append("# 仓库规范文件\n");
         builder.append("使用方式：以下内容来自仓库内的 Agent/AI 规范文件。请优先遵守与当前任务相关且更具体的规则，不要逐字复述给用户。\n");
         int totalChars = 0;
         int appendedFileCount = 0;
+        List<String> fileSummaries = new ArrayList<>();
         for (InstructionFile instructionFile : instructionFiles) {
             try {
                 String content = Files.readString(instructionFile.path(), StandardCharsets.UTF_8);
                 long bytes = Files.size(instructionFile.path());
-                log.info(
-                    "识别到仓库规范文件: workspaceId={}, sourceType={}, path={}, bytes={}, preview={}",
-                    workspaceId,
-                    instructionFile.sourceType(),
-                    instructionFile.relativePath(),
-                    bytes,
-                    preview(content)
-                );
                 String normalizedContent = StrUtil.nullToDefault(content, "");
                 if (normalizedContent.length() > MAX_FILE_CHARS) {
                     normalizedContent = normalizedContent.substring(0, MAX_FILE_CHARS) + "\n\n[内容已截断，剩余内容未注入]";
                     log.warn(
-                        "仓库规范文件内容已截断: workspaceId={}, path={}, maxChars={}",
-                        workspaceId,
+                        "仓库规范文件内容已截断: path={}, maxChars={}",
                         instructionFile.relativePath(),
                         MAX_FILE_CHARS
                     );
                 }
                 if (totalChars + normalizedContent.length() > MAX_TOTAL_CHARS) {
-                    log.warn("仓库规范文件总内容已截断: workspaceId={}, maxChars={}", workspaceId, MAX_TOTAL_CHARS);
+                    log.warn("仓库规范文件总内容已截断: maxChars={}", MAX_TOTAL_CHARS);
                     break;
                 }
                 builder.append("\n## ")
@@ -263,10 +251,10 @@ public class RepositoryInstructionContextService {
                     .append('\n');
                 totalChars += normalizedContent.length();
                 appendedFileCount++;
+                fileSummaries.add(fileSummary(instructionFile, bytes));
             } catch (Exception exception) {
                 log.warn(
-                    "读取仓库规范文件失败: workspaceId={}, path={}, message={}",
-                    workspaceId,
+                    "读取仓库规范文件失败: path={}, message={}",
                     instructionFile.relativePath(),
                     exception.getMessage()
                 );
@@ -276,6 +264,14 @@ public class RepositoryInstructionContextService {
             return "";
         }
         String context = builder.toString().trim();
+        log.info(
+            "仓库规范文件已加载: path={}, discoveredCount={}, appendedCount={}, totalChars={}, files={}",
+            workspacePath,
+            instructionFiles.size(),
+            appendedFileCount,
+            totalChars,
+            previewList(fileSummaries, 8)
+        );
         return "# 仓库规范文件".equals(context) ? "" : context;
     }
 
@@ -315,15 +311,28 @@ public class RepositoryInstructionContextService {
     }
 
     /**
-     * 生成日志预览，压缩换行和空白并限制长度。
-     * @param content 文件正文。
-     * @return 短预览文本。
+     * 汇总单个规范文件的关键信息，避免 INFO 日志逐文件打印正文预览。
+     * @param instructionFile 已注入的规范文件。
+     * @param bytes 文件字节数。
+     * @return 适合放在汇总日志中的短片段。
      */
-    private String preview(String content) {
-        String compact = StrUtil.blankToDefault(content, "")
-            .replaceAll("\\s+", " ")
-            .trim();
-        return StrUtil.maxLength(compact, MAX_PREVIEW_CHARS);
+    private String fileSummary(InstructionFile instructionFile, long bytes) {
+        return instructionFile.relativePath() + "(" + instructionFile.sourceType() + "," + bytes + "B)";
+    }
+
+    /**
+     * 限制列表型日志长度，避免多规则文件仓库刷屏。
+     * @param values 原始列表。
+     * @param limit 最多展示数量。
+     * @return 截断后的列表字符串。
+     */
+    private String previewList(List<String> values, int limit) {
+        if (values.size() <= limit) {
+            return values.toString();
+        }
+        List<String> limited = new ArrayList<>(values.stream().limit(limit).toList());
+        limited.add("...+" + (values.size() - limit));
+        return limited.toString();
     }
 
     /**

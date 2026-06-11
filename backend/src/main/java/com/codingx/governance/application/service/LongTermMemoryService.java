@@ -68,20 +68,10 @@ public class LongTermMemoryService {
         List<String> keywords = extractKeywords(memoryContent);
         String keywordJson = JSONUtil.toJsonStr(keywords);
         String memoryKey = buildMemoryKey(scope, conversation.getCreatedBy(), memoryWorkspaceId, memoryContent);
-        log.info(
-            "长期记忆提取开始: userId={}, workspaceId={}, sourceConversationId={}, sourceMessageId={}, scope={}, contentPreview={}",
-            conversation.getCreatedBy(),
-            memoryWorkspaceId,
-            conversation.getId(),
-            userMessage.getId(),
-            scope,
-            previewContent(memoryContent)
-        );
         if (memoryRepository.findByMemoryKey(memoryKey) != null) {
             log.info(
-                "长期记忆跳过重复: scope={}, memoryKey={}, contentPreview={}",
+                "长期记忆提取已跳过: scope={}, reason=DUPLICATE, contentPreview={}",
                 scope,
-                memoryKey,
                 previewContent(memoryContent)
             );
             return List.of();
@@ -106,8 +96,7 @@ public class LongTermMemoryService {
             .build();
         memoryRepository.save(memory);
         log.info(
-            "长期记忆已添加: memoryId={}, scope={}, status={}, keywordCount={}, contentPreview={}",
-            memory.getId(),
+            "长期记忆已添加: scope={}, status={}, keywordCount={}, contentPreview={}",
             memory.getMemoryScope(),
             memory.getStatus(),
             keywords.size(),
@@ -150,17 +139,11 @@ public class LongTermMemoryService {
         } else {
             memories = memoryRepository.findForUser(userId, workspaceId, normalizedStatus, DEFAULT_USER_LIST_LIMIT);
         }
-        log.info(
-            "长期记忆列表加载开始: userId={}, workspaceId={}, status={}, includeAllWorkspaces={}",
-            userId,
-            workspaceId,
+        log.debug(
+            "长期记忆列表已加载: status={}, includeAllWorkspaces={}, count={}",
             displayStatus(normalizedStatus),
-            includeAllWorkspaces
-        );
-        log.info(
-            "长期记忆列表已加载: count={}, memoryIds={}",
-            memories.size(),
-            previewMemoryIds(memories)
+            includeAllWorkspaces,
+            memories.size()
         );
         return memories;
     }
@@ -174,12 +157,11 @@ public class LongTermMemoryService {
     public List<GovernanceLongTermMemory> listAdminMemories(String status, int limit) {
         String normalizedStatus = normalizeStatusOrNull(status);
         List<GovernanceLongTermMemory> memories = memoryRepository.findForAdmin(normalizedStatus, limit);
-        log.info(
-            "管理端长期记忆列表已加载: status={}, limit={}, count={}, memoryIds={}",
+        log.debug(
+            "管理端长期记忆列表已加载: status={}, limit={}, count={}",
             displayStatus(normalizedStatus),
             limit,
-            memories.size(),
-            previewMemoryIds(memories)
+            memories.size()
         );
         return memories;
     }
@@ -195,13 +177,6 @@ public class LongTermMemoryService {
         requireUserId(userId);
         GovernanceLongTermMemory memory = requireMemory(memoryId);
         requireOwnedMemory(memory, userId);
-        log.info(
-            "长期记忆状态更新开始: userId={}, workspaceId={}, memoryId={}, targetStatus={}",
-            userId,
-            memory.getWorkspaceId(),
-            memoryId,
-            status
-        );
         return updateStatus(memory, status);
     }
 
@@ -220,13 +195,6 @@ public class LongTermMemoryService {
         if (StrUtil.isBlank(normalizedContent)) {
             throw new BusinessException("GOVERNANCE_MEMORY_CONTENT_REQUIRED", "长期记忆内容不能为空");
         }
-        log.info(
-            "长期记忆编辑开始: userId={}, workspaceId={}, memoryId={}, contentPreview={}",
-            userId,
-            memory.getWorkspaceId(),
-            memoryId,
-            previewContent(normalizedContent)
-        );
         String memoryKey = buildMemoryKey(
             StrUtil.blankToDefault(memory.getMemoryScope(), "USER"),
             memory.getUserId(),
@@ -242,8 +210,7 @@ public class LongTermMemoryService {
             .build();
         memoryRepository.save(updated);
         log.info(
-            "长期记忆已编辑: memoryId={}, scope={}, status={}, contentPreview={}",
-            updated.getId(),
+            "长期记忆已编辑: scope={}, status={}, contentPreview={}",
             updated.getMemoryScope(),
             updated.getStatus(),
             previewContent(updated.getContent())
@@ -260,20 +227,13 @@ public class LongTermMemoryService {
         requireUserId(userId);
         GovernanceLongTermMemory memory = requireMemory(memoryId);
         requireOwnedMemory(memory, userId);
-        log.info(
-            "长期记忆删除开始: userId={}, workspaceId={}, memoryId={}",
-            userId,
-            memory.getWorkspaceId(),
-            memoryId
-        );
         GovernanceLongTermMemory deleted = memory.toBuilder()
             .deleted(1)
             .updatedAt(LocalDateTime.now())
             .build();
         memoryRepository.save(deleted);
         log.info(
-            "长期记忆已删除: memoryId={}, scope={}, previousStatus={}",
-            deleted.getId(),
+            "长期记忆已删除: scope={}, previousStatus={}",
             deleted.getMemoryScope(),
             memory.getStatus()
         );
@@ -286,7 +246,6 @@ public class LongTermMemoryService {
      * @return 更新后的记忆。
      */
     public GovernanceLongTermMemory updateAdminMemoryStatus(Long memoryId, String status) {
-        log.info("管理端长期记忆状态更新开始: memoryId={}, targetStatus={}", memoryId, status);
         return updateStatus(requireMemory(memoryId), status);
     }
 
@@ -317,14 +276,6 @@ public class LongTermMemoryService {
         }
         int normalizedLimit = Math.min(Math.max(limit, 1), MAX_CONTEXT_MEMORY_COUNT);
         String normalizedQuery = StrUtil.trimToEmpty(query);
-        log.info(
-            "长期记忆回注开始: userId={}, workspaceId={}, requestedLimit={}, normalizedLimit={}, queryPreview={}",
-            userId,
-            workspaceId,
-            limit,
-            normalizedLimit,
-            previewContent(normalizedQuery)
-        );
         List<GovernanceLongTermMemory> candidates = memoryRepository.findActiveForContext(userId, workspaceId, normalizedLimit * 3);
         List<MemoryMatchResult> matchResults = candidates.stream()
             .map(memory -> matchMemory(memory, normalizedQuery))
@@ -338,10 +289,12 @@ public class LongTermMemoryService {
             .map(MemoryMatchResult::memory)
             .toList();
         log.info(
-            "长期记忆回注结果: candidateCount={}, selectedCount={}, memoryIds={}, matchReasons={}",
+            "长期记忆回注已加载: requestedLimit={}, normalizedLimit={}, queryPreview={}, candidateCount={}, selectedCount={}, matchReasons={}",
+            limit,
+            normalizedLimit,
+            previewContent(normalizedQuery),
             candidates.size(),
             memories.size(),
-            previewMemoryIds(memories),
             previewMatchReasons(selectedResults)
         );
         return memories;
@@ -355,8 +308,7 @@ public class LongTermMemoryService {
             .build();
         memoryRepository.save(updated);
         log.info(
-            "长期记忆状态已更新: memoryId={}, scope={}, fromStatus={}, toStatus={}",
-            updated.getId(),
+            "长期记忆状态已更新: scope={}, fromStatus={}, toStatus={}",
             updated.getMemoryScope(),
             memory.getStatus(),
             normalizedStatus
@@ -419,29 +371,13 @@ public class LongTermMemoryService {
     }
 
     /**
-     * 仅输出少量记忆 ID，帮助定位记忆加载链路，同时避免日志过长。
-     * @param memories 已加载或命中的记忆列表。
-     * @return 最多 10 个记忆 ID。
-     */
-    private String previewMemoryIds(List<GovernanceLongTermMemory> memories) {
-        return memories.stream()
-            .map(GovernanceLongTermMemory::getId)
-            .filter(id -> id != null)
-            .map(String::valueOf)
-            .limit(10)
-            .toList()
-            .toString();
-    }
-
-    /**
-     * 预览候选记忆的命中/过滤原因，帮助排查候选存在但未回注的问题。
+     * 预览候选记忆的排序原因类型，避免 INFO 日志暴露记忆 ID。
      * @param matchResults 候选记忆匹配结果。
-     * @return 最多 10 个“记忆ID:原因”片段。
+     * @return 最多 10 个命中原因。
      */
     private String previewMatchReasons(List<MemoryMatchResult> matchResults) {
         return matchResults.stream()
-            .filter(result -> result.memory() != null && result.memory().getId() != null)
-            .map(result -> result.memory().getId() + ":" + result.reason())
+            .map(MemoryMatchResult::reason)
             .limit(10)
             .toList()
             .toString();

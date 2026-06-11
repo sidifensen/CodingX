@@ -80,7 +80,7 @@ class ChatApplicationMcpFlowTest {
         when(chatConversationRepository.requireById(1L)).thenReturn(conversation);
         when(chatMessageRepository.findByConversationId(1L)).thenReturn(new ArrayList<>());
         when(chatAttachmentService.requireOwnedAttachments(any(), eq(1L), eq(1002L))).thenReturn(java.util.List.of());
-        when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+        when(conversationRewriteService.rewriteResultFromMessages(any(), any())).thenReturn(
             new ConversationRewriteResult("北京今天天气怎么样", false, java.util.List.of("北京今天天气怎么样"))
         );
         when(conversationIntentService.route("北京今天天气怎么样", true)).thenReturn(

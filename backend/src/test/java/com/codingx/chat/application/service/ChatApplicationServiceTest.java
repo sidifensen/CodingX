@@ -334,7 +334,7 @@ class ChatApplicationServiceTest {
         when(chatMessageRepository.findByConversationId(1L)).thenReturn(history);
         when(chatAttachmentService.requireOwnedAttachments(any(), eq(1L), eq(1002L))).thenReturn(List.of());
         when(conversationTitleService.generateTitle(org.mockito.ArgumentMatchers.eq(conversation), any())).thenReturn("AI搜索重构计划");
-        when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+        when(conversationRewriteService.rewriteResultFromMessages(any(), any())).thenReturn(
             new ConversationRewriteResult("普通聊天问题", false, List.of("普通聊天问题"))
         );
         when(conversationSummaryService.buildModelHistory(any(), any())).thenAnswer(invocation -> invocation.getArgument(1));
@@ -424,7 +424,7 @@ class ChatApplicationServiceTest {
         when(chatConversationRepository.requireById(1L)).thenReturn(conversation);
         when(chatMessageRepository.findByConversationId(1L)).thenReturn(new ArrayList<>());
         when(chatAttachmentService.requireOwnedAttachments(any(), eq(1L), eq(1002L))).thenReturn(List.of());
-        when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+        when(conversationRewriteService.rewriteResultFromMessages(any(), any())).thenReturn(
             new ConversationRewriteResult("普通聊天问题", false, List.of("普通聊天问题"))
         );
         when(conversationSummaryService.buildModelHistory(any(), any())).thenAnswer(invocation -> invocation.getArgument(1));
@@ -460,7 +460,7 @@ class ChatApplicationServiceTest {
         when(chatConversationRepository.requireById(1L)).thenReturn(conversation);
         when(chatMessageRepository.findByConversationId(1L)).thenReturn(new ArrayList<>());
         when(chatAttachmentService.requireOwnedAttachments(any(), eq(1L), eq(1002L))).thenReturn(List.of());
-        when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+        when(conversationRewriteService.rewriteResultFromMessages(any(), any())).thenReturn(
             new ConversationRewriteResult("普通聊天问题", false, List.of("普通聊天问题"))
         );
         when(conversationSummaryService.buildModelHistory(any(), any())).thenAnswer(invocation -> invocation.getArgument(1));
@@ -500,7 +500,7 @@ class ChatApplicationServiceTest {
         when(chatConversationRepository.requireById(1L)).thenReturn(conversation);
         when(chatMessageRepository.findByConversationId(1L)).thenReturn(new ArrayList<>());
         when(chatAttachmentService.requireOwnedAttachments(any(), eq(1L), eq(1002L))).thenReturn(List.of(attachment));
-        when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+        when(conversationRewriteService.rewriteResultFromMessages(any(), any())).thenReturn(
             new ConversationRewriteResult("Hi", false, List.of("Hi"))
         );
         when(conversationSummaryService.buildModelHistory(any(), any())).thenAnswer(invocation -> invocation.getArgument(1));
@@ -537,7 +537,7 @@ class ChatApplicationServiceTest {
         when(chatConversationRepository.requireById(1L)).thenReturn(conversation);
         when(chatMessageRepository.findByConversationId(1L)).thenReturn(new ArrayList<>());
         when(chatAttachmentService.requireOwnedAttachments(any(), eq(1L), eq(1002L))).thenReturn(List.of());
-        when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+        when(conversationRewriteService.rewriteResultFromMessages(any(), any())).thenReturn(
             new ConversationRewriteResult("Hi", false, List.of("Hi"))
         );
         when(conversationSummaryService.buildModelHistory(any(), any())).thenAnswer(invocation -> invocation.getArgument(1));
@@ -587,7 +587,7 @@ class ChatApplicationServiceTest {
         when(chatConversationRepository.requireById(1L)).thenReturn(conversation);
         when(chatMessageRepository.findByConversationId(1L)).thenReturn(new ArrayList<>());
         when(chatAttachmentService.requireOwnedAttachments(any(), eq(1L), eq(1002L))).thenReturn(List.of());
-        when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+        when(conversationRewriteService.rewriteResultFromMessages(any(), any())).thenReturn(
             new ConversationRewriteResult("请记住我的代码风格偏好：优先写清楚业务注释", false, List.of("请记住我的代码风格偏好：优先写清楚业务注释"))
         );
         when(conversationIntentService.route("请记住我的代码风格偏好：优先写清楚业务注释", false)).thenReturn(
@@ -645,7 +645,7 @@ class ChatApplicationServiceTest {
         when(chatConversationRepository.requireById(1L)).thenReturn(conversation);
         when(chatMessageRepository.findByConversationId(1L)).thenReturn(new ArrayList<>());
         when(chatAttachmentService.requireOwnedAttachments(any(), eq(1L), eq(1002L))).thenReturn(List.of());
-        when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+        when(conversationRewriteService.rewriteResultFromMessages(any(), any())).thenReturn(
             new ConversationRewriteResult("请帮我写一个 Java 工具类", false, List.of("请帮我写一个 Java 工具类"))
         );
         when(governanceAgentContextService.buildAgentContextAsync(1002L, 3001L, "请帮我写一个 Java 工具类"))
@@ -691,7 +691,7 @@ class ChatApplicationServiceTest {
         when(chatMessageRepository.findByConversationId(1L)).thenReturn(new ArrayList<>());
         when(chatAttachmentService.requireOwnedAttachments(any(), eq(1L), eq(1002L))).thenReturn(List.of());
         when(promptTemplateLoader.load("plan-mode-goal-context")).thenReturn(planModePrompt);
-        when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+        when(conversationRewriteService.rewriteResultFromMessages(any(), any())).thenReturn(
             new ConversationRewriteResult("请创建目标并跟进桌面目标模式改造", false, List.of("请创建目标并跟进桌面目标模式改造"))
         );
         when(conversationIntentService.route("请创建目标并跟进桌面目标模式改造", false)).thenReturn(
@@ -761,7 +761,7 @@ class ChatApplicationServiceTest {
             Map<String, String> slots = invocation.getArgument(1, Map.class);
             return "工具标识：" + slots.get("tool_code") + "\n工具输出：" + slots.get("tool_output");
         });
-        when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+        when(conversationRewriteService.rewriteResultFromMessages(any(), any())).thenReturn(
             new ConversationRewriteResult(question, false, List.of(question))
         );
         when(conversationIntentService.route(question, true)).thenReturn(
@@ -848,7 +848,7 @@ class ChatApplicationServiceTest {
             Map<String, String> slots = invocation.getArgument(1, Map.class);
             return "工具标识：" + slots.get("tool_code") + "\n工具输出：" + slots.get("tool_output");
         });
-        when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+        when(conversationRewriteService.rewriteResultFromMessages(any(), any())).thenReturn(
             new ConversationRewriteResult(question, false, List.of(question))
         );
         when(conversationIntentService.route(question, false)).thenReturn(
@@ -934,7 +934,7 @@ class ChatApplicationServiceTest {
             Map<String, String> slots = invocation.getArgument(1, Map.class);
             return "工具标识：" + slots.get("tool_code") + "\n工具输出：" + slots.get("tool_output");
         });
-        when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+        when(conversationRewriteService.rewriteResultFromMessages(any(), any())).thenReturn(
             new ConversationRewriteResult(question, false, List.of(question))
         );
         when(conversationIntentService.route(question, false)).thenReturn(
@@ -1046,7 +1046,7 @@ class ChatApplicationServiceTest {
             Map<String, String> slots = invocation.getArgument(1, Map.class);
             return "工具标识：" + slots.get("tool_code") + "\n工具输出：" + slots.get("tool_output");
         });
-        when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+        when(conversationRewriteService.rewriteResultFromMessages(any(), any())).thenReturn(
             new ConversationRewriteResult(question, false, List.of(question))
         );
         when(conversationIntentService.route(question, false)).thenReturn(
@@ -1133,7 +1133,7 @@ class ChatApplicationServiceTest {
             Map<String, String> slots = invocation.getArgument(1, Map.class);
             return "工具标识：" + slots.get("tool_code") + "\n工具输出：" + slots.get("tool_output");
         });
-        when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+        when(conversationRewriteService.rewriteResultFromMessages(any(), any())).thenReturn(
             new ConversationRewriteResult(question, false, List.of(question))
         );
         when(conversationIntentService.route(question, false)).thenReturn(
@@ -1220,7 +1220,7 @@ class ChatApplicationServiceTest {
             Map<String, String> slots = invocation.getArgument(1, Map.class);
             return "工具标识：" + slots.get("tool_code") + "\n工具输出：" + slots.get("tool_output");
         });
-        when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+        when(conversationRewriteService.rewriteResultFromMessages(any(), any())).thenReturn(
             new ConversationRewriteResult(question, false, List.of(question))
         );
         when(conversationIntentService.route(question, false)).thenReturn(
@@ -1311,7 +1311,7 @@ class ChatApplicationServiceTest {
             Map<String, String> slots = invocation.getArgument(1, Map.class);
             return "工具标识：" + slots.get("tool_code") + "\n工具输出：" + slots.get("tool_output");
         });
-        when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+        when(conversationRewriteService.rewriteResultFromMessages(any(), any())).thenReturn(
             new ConversationRewriteResult(question, true, List.of("创建目标：做一个大型笔记HTML并完成提交"))
         );
         when(conversationIntentService.route("创建目标：做一个大型笔记HTML并完成提交", false)).thenReturn(
@@ -1400,7 +1400,7 @@ class ChatApplicationServiceTest {
             Map<String, String> slots = invocation.getArgument(1, Map.class);
             return "工具标识：" + slots.get("tool_code") + "\n工具输出：" + slots.get("tool_output");
         });
-        when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+        when(conversationRewriteService.rewriteResultFromMessages(any(), any())).thenReturn(
             new ConversationRewriteResult(question, false, List.of(question))
         );
         when(conversationIntentService.route(question, false)).thenReturn(
@@ -1485,7 +1485,7 @@ class ChatApplicationServiceTest {
             Map<String, String> slots = invocation.getArgument(1, Map.class);
             return "工具标识：" + slots.get("tool_code") + "\n工具输出：" + slots.get("tool_output");
         });
-        when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+        when(conversationRewriteService.rewriteResultFromMessages(any(), any())).thenReturn(
             new ConversationRewriteResult(question, false, List.of(question))
         );
         when(conversationIntentService.route(question, false)).thenReturn(
@@ -1573,7 +1573,7 @@ class ChatApplicationServiceTest {
             Map<String, String> slots = invocation.getArgument(1, Map.class);
             return "工具标识：" + slots.get("tool_code") + "\n工具输出：" + slots.get("tool_output");
         });
-        when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+        when(conversationRewriteService.rewriteResultFromMessages(any(), any())).thenReturn(
             new ConversationRewriteResult(question, false, List.of(question))
         );
         when(conversationIntentService.route(question, false)).thenReturn(
@@ -1671,7 +1671,7 @@ class ChatApplicationServiceTest {
             Map<String, String> slots = invocation.getArgument(1, Map.class);
             return "工具标识：" + slots.get("tool_code") + "\n工具输出：" + slots.get("tool_output");
         });
-        when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+        when(conversationRewriteService.rewriteResultFromMessages(any(), any())).thenReturn(
             new ConversationRewriteResult(question, false, List.of(question))
         );
         when(conversationIntentService.route(question, false)).thenReturn(
@@ -1758,7 +1758,7 @@ class ChatApplicationServiceTest {
             Map<String, String> slots = invocation.getArgument(1, Map.class);
             return "工具标识：" + slots.get("tool_code") + "\n工具输出：" + slots.get("tool_output");
         });
-        when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+        when(conversationRewriteService.rewriteResultFromMessages(any(), any())).thenReturn(
             new ConversationRewriteResult(question, false, List.of(question))
         );
         when(conversationIntentService.route(question, false)).thenReturn(
@@ -1908,7 +1908,7 @@ class ChatApplicationServiceTest {
             Map<String, String> slots = invocation.getArgument(1, Map.class);
             return "工具标识：" + slots.get("tool_code") + "\n工具输出：" + slots.get("tool_output");
         });
-        when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+        when(conversationRewriteService.rewriteResultFromMessages(any(), any())).thenReturn(
             new ConversationRewriteResult(question, false, List.of(question))
         );
         when(conversationIntentService.route(question, false)).thenReturn(
@@ -2013,7 +2013,7 @@ class ChatApplicationServiceTest {
             Map<String, String> slots = invocation.getArgument(1, Map.class);
             return "工具标识：" + slots.get("tool_code") + "\n工具输出：" + slots.get("tool_output");
         });
-        when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+        when(conversationRewriteService.rewriteResultFromMessages(any(), any())).thenReturn(
             new ConversationRewriteResult(question, false, List.of(question))
         );
         when(conversationIntentService.route(question, false)).thenReturn(
@@ -2099,7 +2099,7 @@ class ChatApplicationServiceTest {
             Map<String, String> slots = invocation.getArgument(1, Map.class);
             return "工具标识：" + slots.get("tool_code") + "\n工具输出：" + slots.get("tool_output");
         });
-        when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+        when(conversationRewriteService.rewriteResultFromMessages(any(), any())).thenReturn(
             new ConversationRewriteResult(question, false, List.of(question))
         );
         when(conversationIntentService.route(question, false)).thenReturn(
@@ -2195,7 +2195,7 @@ class ChatApplicationServiceTest {
             Map<String, String> slots = invocation.getArgument(1, Map.class);
             return "工具标识：" + slots.get("tool_code") + "\n工具输出：" + slots.get("tool_output");
         });
-        when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+        when(conversationRewriteService.rewriteResultFromMessages(any(), any())).thenReturn(
             new ConversationRewriteResult(question, false, List.of(question))
         );
         when(conversationIntentService.route(question, false)).thenReturn(
@@ -2291,7 +2291,7 @@ class ChatApplicationServiceTest {
             Map<String, String> slots = invocation.getArgument(1, Map.class);
             return "工具标识：" + slots.get("tool_code") + "\n工具输出：" + slots.get("tool_output");
         });
-        when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+        when(conversationRewriteService.rewriteResultFromMessages(any(), any())).thenReturn(
             new ConversationRewriteResult(question, false, List.of(question))
         );
         when(conversationIntentService.route(question, false)).thenReturn(
@@ -2395,7 +2395,7 @@ class ChatApplicationServiceTest {
             Map<String, String> slots = invocation.getArgument(1, Map.class);
             return "工具标识：" + slots.get("tool_code") + "\n工具输出：" + slots.get("tool_output");
         });
-        when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+        when(conversationRewriteService.rewriteResultFromMessages(any(), any())).thenReturn(
             new ConversationRewriteResult(question, false, List.of(question))
         );
         when(conversationIntentService.route(question, false)).thenReturn(
@@ -2508,7 +2508,7 @@ class ChatApplicationServiceTest {
             Map<String, String> slots = invocation.getArgument(1, Map.class);
             return "工具标识：" + slots.get("tool_code") + "\n工具输出：" + slots.get("tool_output");
         });
-        when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+        when(conversationRewriteService.rewriteResultFromMessages(any(), any())).thenReturn(
             new ConversationRewriteResult(question, false, List.of(question))
         );
         when(conversationIntentService.route(question, false)).thenReturn(
@@ -2610,7 +2610,7 @@ class ChatApplicationServiceTest {
             Map<String, String> slots = invocation.getArgument(1, Map.class);
             return "工具标识：" + slots.get("tool_code") + "\n工具输出：" + slots.get("tool_output");
         });
-        when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+        when(conversationRewriteService.rewriteResultFromMessages(any(), any())).thenReturn(
             new ConversationRewriteResult(question, false, List.of(question))
         );
         when(conversationIntentService.route(question, false)).thenReturn(
@@ -2701,7 +2701,7 @@ class ChatApplicationServiceTest {
             Map<String, String> slots = invocation.getArgument(1, Map.class);
             return "工具标识：" + slots.get("tool_code") + "\n工具输出：" + slots.get("tool_output");
         });
-        when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+        when(conversationRewriteService.rewriteResultFromMessages(any(), any())).thenReturn(
             new ConversationRewriteResult(question, false, List.of(question))
         );
         when(conversationIntentService.route(question, false)).thenReturn(
@@ -2826,7 +2826,7 @@ class ChatApplicationServiceTest {
             Map<String, String> slots = invocation.getArgument(1, Map.class);
             return "工具标识：" + slots.get("tool_code") + "\n工具输出：" + slots.get("tool_output");
         });
-        when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+        when(conversationRewriteService.rewriteResultFromMessages(any(), any())).thenReturn(
             new ConversationRewriteResult(question, false, List.of(question))
         );
         when(conversationIntentService.route(question, false)).thenReturn(
@@ -2944,7 +2944,7 @@ class ChatApplicationServiceTest {
             Map<String, String> slots = invocation.getArgument(1, Map.class);
             return "工具标识：" + slots.get("tool_code") + "\n工具输出：" + slots.get("tool_output");
         });
-        when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+        when(conversationRewriteService.rewriteResultFromMessages(any(), any())).thenReturn(
             new ConversationRewriteResult(question, false, List.of(question))
         );
         when(conversationIntentService.route(question, false)).thenReturn(
@@ -3038,7 +3038,7 @@ class ChatApplicationServiceTest {
             Map<String, String> slots = invocation.getArgument(1, Map.class);
             return "工具标识：" + slots.get("tool_code") + "\n工具输出：" + slots.get("tool_output");
         });
-        when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+        when(conversationRewriteService.rewriteResultFromMessages(any(), any())).thenReturn(
             new ConversationRewriteResult(question, false, List.of(question))
         );
         when(conversationIntentService.route(question, false)).thenReturn(
@@ -3131,7 +3131,7 @@ class ChatApplicationServiceTest {
             Map<String, String> slots = invocation.getArgument(1, Map.class);
             return "工具标识：" + slots.get("tool_code") + "\n工具输出：" + slots.get("tool_output");
         });
-        when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+        when(conversationRewriteService.rewriteResultFromMessages(any(), any())).thenReturn(
             new ConversationRewriteResult("检查当前线程是否已有目标；如果没有，则创建目标：做一个大型笔记html并完成提交", false, List.of("检查当前线程是否已有目标"))
         );
         when(conversationIntentService.route(any(), eq(false))).thenReturn(
@@ -3217,7 +3217,7 @@ class ChatApplicationServiceTest {
         when(chatMessageRepository.findByConversationId(1L)).thenReturn(new ArrayList<>());
         when(chatAttachmentService.requireOwnedAttachments(any(), eq(1L), eq(1002L))).thenReturn(List.of());
         when(promptTemplateLoader.load("deep-thinking-language-guidance")).thenReturn(deepThinkingPrompt);
-        when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+        when(conversationRewriteService.rewriteResultFromMessages(any(), any())).thenReturn(
             new ConversationRewriteResult("请帮我分析一下这个方案", false, List.of("请帮我分析一下这个方案"))
         );
         when(conversationIntentService.route("请帮我分析一下这个方案", false)).thenReturn(
@@ -3321,7 +3321,7 @@ class ChatApplicationServiceTest {
         when(chatConversationRepository.requireById(1L)).thenReturn(conversation);
         when(chatMessageRepository.findByConversationId(1L)).thenReturn(new ArrayList<>());
         when(chatAttachmentService.requireOwnedAttachments(any(), eq(1L), eq(1002L))).thenReturn(List.of());
-        when(conversationRewriteService.rewriteResult(any(), eq("请阅读 https://example.com"))).thenReturn(
+        when(conversationRewriteService.rewriteResultFromMessages(any(), eq("请阅读 https://example.com"))).thenReturn(
             new ConversationRewriteResult("请阅读 https://example.com", false, List.of("请阅读 https://example.com"))
         );
         when(conversationIntentService.route("请阅读 https://example.com", false)).thenReturn(
@@ -3368,7 +3368,7 @@ class ChatApplicationServiceTest {
         when(chatConversationRepository.requireById(1L)).thenReturn(conversation);
         when(chatMessageRepository.findByConversationId(1L)).thenReturn(new ArrayList<>());
         when(chatAttachmentService.requireOwnedAttachments(any(), eq(1L), eq(1002L))).thenReturn(List.of());
-        when(conversationRewriteService.rewriteResult(any(), eq("这是啥"))).thenReturn(
+        when(conversationRewriteService.rewriteResultFromMessages(any(), eq("这是啥"))).thenReturn(
             new ConversationRewriteResult("这是啥", false, List.of("这是啥"))
         );
         when(conversationIntentService.route("这是啥", false)).thenReturn(
@@ -3414,7 +3414,7 @@ class ChatApplicationServiceTest {
         assertEquals("chat.normal", runCaptor.getValue().getIntentCode());
         verify(chatStreamPublisher).publishUserMessage(1L, "这是啥");
         verify(chatStreamPublisher).publishAssistantCompleted(eq(1L), any(Long.class), eq("web-access 是联网访问技能，可以搜索、抓取网页或操作浏览器。"), eq("技能对话"));
-        verify(conversationRewriteService).rewriteResult(any(), eq("这是啥"));
+        verify(conversationRewriteService).rewriteResultFromMessages(any(), eq("这是啥"));
         verify(chatSkillContextService).buildSkillContext(List.of("web-access"));
         verify(conversationSummaryService).buildModelHistory(any(), any());
         verify(aiChatClient, never()).streamChatWithTools(any(), org.mockito.ArgumentMatchers.anyBoolean(), any(), any());
@@ -3428,6 +3428,7 @@ class ChatApplicationServiceTest {
     @Test
     void sendMessageLocalOnlyStreamsWithoutPersistingConversationMessages() {
         Long runId = bindRunContext();
+        // 本地链路仍走字符串历史版 rewriteResult，与云端链路的消息历史版打桩区分开。
         when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
             new ConversationRewriteResult("分析本地代码", false, List.of("分析本地代码"))
         );
@@ -3469,6 +3470,7 @@ class ChatApplicationServiceTest {
     @Test
     void sendMessageLocalOnlySearchIntentSkipsPersistentProcessRecords() {
         bindRunContext();
+        // 本地链路仍走字符串历史版 rewriteResult，与云端链路的消息历史版打桩区分开。
         when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
             new ConversationRewriteResult("搜索本地依赖资料", false, List.of("搜索本地依赖资料"))
         );
@@ -3509,7 +3511,7 @@ class ChatApplicationServiceTest {
         when(chatConversationRepository.requireById(1L)).thenReturn(conversation);
         when(chatMessageRepository.findByConversationId(1L)).thenReturn(new ArrayList<>());
         when(chatAttachmentService.requireOwnedAttachments(any(), eq(1L), eq(1002L))).thenReturn(List.of());
-        when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+        when(conversationRewriteService.rewriteResultFromMessages(any(), any())).thenReturn(
             new ConversationRewriteResult("请联网搜索最新 Java 版本", false, List.of("请联网搜索最新 Java 版本"))
         );
         when(conversationIntentService.route("请联网搜索最新 Java 版本", false)).thenReturn(
@@ -3578,7 +3580,7 @@ class ChatApplicationServiceTest {
             Map<String, String> slots = invocation.getArgument(1, Map.class);
             return "工具标识：" + slots.get("tool_code") + "\n工具输出：" + slots.get("tool_output");
         });
-        when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+        when(conversationRewriteService.rewriteResultFromMessages(any(), any())).thenReturn(
             new ConversationRewriteResult("帮我创建 HTML 游戏", false, List.of("帮我创建 HTML 游戏"))
         );
         when(conversationIntentService.route("帮我创建 HTML 游戏", false)).thenReturn(
@@ -3634,7 +3636,7 @@ class ChatApplicationServiceTest {
         when(chatConversationRepository.requireById(1L)).thenReturn(conversation);
         when(chatMessageRepository.findByConversationId(1L)).thenReturn(new ArrayList<>());
         when(chatAttachmentService.requireOwnedAttachments(any(), eq(1L), eq(1002L))).thenReturn(List.of());
-        when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+        when(conversationRewriteService.rewriteResultFromMessages(any(), any())).thenReturn(
             new ConversationRewriteResult("先制定计划", false, List.of("先制定计划"))
         );
         when(conversationIntentService.route("先制定计划", false)).thenReturn(
@@ -3724,7 +3726,7 @@ class ChatApplicationServiceTest {
             ChatTraceRun.builder().traceId("trace-1").conversationId(1L).taskId(9001L).userId(1002L).status("RUNNING").build()
         );
         when(chatToolSpecService.listModelVisibleToolSpecs()).thenReturn(List.of());
-        when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+        when(conversationRewriteService.rewriteResultFromMessages(any(), any())).thenReturn(
             new ConversationRewriteResult("第一条问题", false, List.of("第一条问题"))
         );
         when(conversationIntentService.route("第一条问题", true)).thenReturn(

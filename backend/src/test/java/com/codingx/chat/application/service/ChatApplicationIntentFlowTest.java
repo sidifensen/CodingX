@@ -127,7 +127,7 @@ class ChatApplicationIntentFlowTest {
         verify(chatMessageRepository, never()).findByConversationId(any());
         verify(chatAttachmentService, never()).requireOwnedAttachments(any(), any(), any());
         verify(chatExecutionStepRepository, never()).findByRunId(any());
-        verify(conversationRewriteService, never()).rewriteResult(any(), any());
+        verify(conversationRewriteService, never()).rewriteResultFromMessages(any(), any());
         verify(conversationIntentService, never()).route(any(), org.mockito.Mockito.anyBoolean());
         org.mockito.Mockito.verifyNoInteractions(aiChatClient);
         ChatExecutionContext.clear();
@@ -159,7 +159,7 @@ class ChatApplicationIntentFlowTest {
         verify(chatMessageRepository, never()).findByConversationId(any());
         verify(chatAttachmentService, never()).requireOwnedAttachments(any(), any(), any());
         verify(chatExecutionStepRepository, never()).findByRunId(any());
-        verify(conversationRewriteService, never()).rewriteResult(any(), any());
+        verify(conversationRewriteService, never()).rewriteResultFromMessages(any(), any());
         verify(conversationIntentService, never()).route(any(), org.mockito.Mockito.anyBoolean());
         org.mockito.Mockito.verifyNoInteractions(aiChatClient);
         ChatExecutionContext.clear();
@@ -176,7 +176,7 @@ class ChatApplicationIntentFlowTest {
         when(chatConversationRepository.requireById(1L)).thenReturn(conversation);
         when(chatMessageRepository.findByConversationId(1L)).thenReturn(new ArrayList<>());
         when(chatAttachmentService.requireOwnedAttachments(any(), eq(1L), eq(1002L))).thenReturn(List.of());
-        when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+        when(conversationRewriteService.rewriteResultFromMessages(any(), any())).thenReturn(
             new ConversationRewriteResult("这个要怎么改", false, java.util.List.of("这个要怎么改"))
         );
         when(conversationIntentService.route("这个要怎么改", false)).thenReturn(
@@ -205,7 +205,7 @@ class ChatApplicationIntentFlowTest {
         when(chatConversationRepository.requireById(1L)).thenReturn(conversation);
         when(chatMessageRepository.findByConversationId(1L)).thenReturn(new ArrayList<>());
         when(chatAttachmentService.requireOwnedAttachments(any(), eq(1L), eq(1002L))).thenReturn(List.of());
-        when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+        when(conversationRewriteService.rewriteResultFromMessages(any(), any())).thenReturn(
             new ConversationRewriteResult("你是谁", false, java.util.List.of("你是谁"))
         );
         when(conversationSummaryService.buildModelHistory(any(), any())).thenAnswer(invocation -> invocation.getArgument(1));

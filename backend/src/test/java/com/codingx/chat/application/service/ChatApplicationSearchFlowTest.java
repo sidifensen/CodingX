@@ -92,7 +92,7 @@ class ChatApplicationSearchFlowTest {
         when(chatConversationRepository.requireById(1L)).thenReturn(conversation);
         when(chatMessageRepository.findByConversationId(1L)).thenReturn(new ArrayList<>());
         when(chatAttachmentService.requireOwnedAttachments(any(), eq(1L), eq(1002L))).thenReturn(List.of());
-        when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+        when(conversationRewriteService.rewriteResultFromMessages(any(), any())).thenReturn(
             new ConversationRewriteResult("请搜索 Spring Boot SSE", false, List.of("请搜索 Spring Boot SSE"))
         );
         when(conversationSummaryService.buildModelHistory(any(), any())).thenAnswer(invocation -> invocation.getArgument(1));
@@ -135,7 +135,7 @@ class ChatApplicationSearchFlowTest {
         when(chatConversationRepository.requireById(1L)).thenReturn(conversation);
         when(chatMessageRepository.findByConversationId(1L)).thenReturn(new ArrayList<>());
         when(chatAttachmentService.requireOwnedAttachments(any(), eq(1L), eq(1002L))).thenReturn(List.of());
-        when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+        when(conversationRewriteService.rewriteResultFromMessages(any(), any())).thenReturn(
             new ConversationRewriteResult("介绍 OA 系统和保险系统", true, List.of("介绍 OA 系统", "介绍 保险系统"))
         );
         when(conversationSummaryService.buildModelHistory(any(), any())).thenAnswer(invocation -> invocation.getArgument(1));
@@ -184,7 +184,7 @@ class ChatApplicationSearchFlowTest {
         when(chatConversationRepository.requireById(1L)).thenReturn(conversation);
         when(chatMessageRepository.findByConversationId(1L)).thenReturn(new ArrayList<>());
         when(chatAttachmentService.requireOwnedAttachments(any(), eq(1L), eq(1002L))).thenReturn(List.of());
-        when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+        when(conversationRewriteService.rewriteResultFromMessages(any(), any())).thenReturn(
             new ConversationRewriteResult(
                 "当前最强的AI模型、今天北京的天气、量子力学的定义",
                 true,
@@ -262,7 +262,7 @@ class ChatApplicationSearchFlowTest {
         when(chatConversationRepository.requireById(1L)).thenReturn(conversation);
         when(chatMessageRepository.findByConversationId(1L)).thenReturn(new ArrayList<>());
         when(chatAttachmentService.requireOwnedAttachments(any(), eq(1L), eq(1002L))).thenReturn(List.of());
-        when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+        when(conversationRewriteService.rewriteResultFromMessages(any(), any())).thenReturn(
             new ConversationRewriteResult("请搜索 Spring Boot SSE", false, List.of("请搜索 Spring Boot SSE"))
         );
         when(conversationSummaryService.buildModelHistory(any(), any())).thenAnswer(invocation -> invocation.getArgument(1));
@@ -313,7 +313,7 @@ class ChatApplicationSearchFlowTest {
             ChatMessage.create(12L, 1L, ChatMessageRole.ASSISTANT, "文件已写入：D:/code/test/index.html", ChatMessageStatus.COMPLETED, null, null, null)
         )));
         when(chatAttachmentService.requireOwnedAttachments(any(), eq(1L), eq(1002L))).thenReturn(List.of());
-        when(conversationRewriteService.rewriteResult(any(), eq("丰富一下"))).thenReturn(
+        when(conversationRewriteService.rewriteResultFromMessages(any(), eq("丰富一下"))).thenReturn(
             new ConversationRewriteResult("丰富一下", false, List.of("丰富一下"))
         );
         when(conversationSummaryService.buildModelHistory(any(), any())).thenAnswer(invocation -> invocation.getArgument(1));
@@ -358,7 +358,7 @@ class ChatApplicationSearchFlowTest {
         when(chatConversationRepository.requireById(1L)).thenReturn(conversation);
         when(chatMessageRepository.findByConversationId(1L)).thenReturn(new ArrayList<>());
         when(chatAttachmentService.requireOwnedAttachments(any(), eq(1L), eq(1002L))).thenReturn(List.of());
-        when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+        when(conversationRewriteService.rewriteResultFromMessages(any(), any())).thenReturn(
             new ConversationRewriteResult("搜一下今天的新闻", false, List.of("搜一下今天的新闻"))
         );
         when(conversationSummaryService.buildModelHistory(any(), any())).thenAnswer(invocation -> invocation.getArgument(1));

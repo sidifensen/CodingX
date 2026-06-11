@@ -118,7 +118,7 @@ class ChatApplicationToolCallFlowTest {
         when(chatConversationRepository.requireById(1L)).thenReturn(conversation);
         when(chatMessageRepository.findByConversationId(1L)).thenReturn(new ArrayList<>());
         when(chatAttachmentService.requireOwnedAttachments(any(), eq(1L), eq(1002L))).thenReturn(List.of());
-        when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+        when(conversationRewriteService.rewriteResultFromMessages(any(), any())).thenReturn(
             new ConversationRewriteResult("创建一个本地文件", false, List.of("创建一个本地文件"))
         );
         when(conversationIntentService.route("创建一个本地文件", false)).thenReturn(
@@ -224,7 +224,7 @@ class ChatApplicationToolCallFlowTest {
         when(chatConversationRepository.requireById(5L)).thenReturn(conversation);
         when(chatMessageRepository.findByConversationId(5L)).thenReturn(new ArrayList<>());
         when(chatAttachmentService.requireOwnedAttachments(any(), eq(5L), eq(1002L))).thenReturn(List.of());
-        when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+        when(conversationRewriteService.rewriteResultFromMessages(any(), any())).thenReturn(
             new ConversationRewriteResult("检查目录后继续说明", false, List.of("检查目录后继续说明"))
         );
         when(conversationIntentService.route("检查目录后继续说明", false)).thenReturn(
@@ -293,7 +293,7 @@ class ChatApplicationToolCallFlowTest {
             when(chatConversationRepository.requireById(8L)).thenReturn(conversation);
             when(chatMessageRepository.findByConversationId(8L)).thenReturn(new ArrayList<>());
             when(chatAttachmentService.requireOwnedAttachments(any(), eq(8L), eq(1002L))).thenReturn(List.of());
-            when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+            when(conversationRewriteService.rewriteResultFromMessages(any(), any())).thenReturn(
                 new ConversationRewriteResult("帮我写个简单的日记html", false, List.of("帮我写个简单的日记html"))
             );
             when(conversationIntentService.route("帮我写个简单的日记html", false)).thenReturn(
@@ -371,7 +371,7 @@ class ChatApplicationToolCallFlowTest {
             when(chatConversationRepository.requireById(17L)).thenReturn(conversation);
             when(chatMessageRepository.findByConversationId(17L)).thenReturn(new ArrayList<>());
             when(chatAttachmentService.requireOwnedAttachments(any(), eq(17L), eq(1002L))).thenReturn(List.of());
-            when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+            when(conversationRewriteService.rewriteResultFromMessages(any(), any())).thenReturn(
                 new ConversationRewriteResult("丰富 snake-game.html 功能", false, List.of("丰富 snake-game.html 功能"))
             );
             when(conversationIntentService.route("丰富 snake-game.html 功能", false)).thenReturn(
@@ -455,7 +455,7 @@ class ChatApplicationToolCallFlowTest {
             when(chatConversationRepository.requireById(19L)).thenReturn(conversation);
             when(chatMessageRepository.findByConversationId(19L)).thenReturn(new ArrayList<>());
             when(chatAttachmentService.requireOwnedAttachments(any(), eq(19L), eq(1002L))).thenReturn(List.of());
-            when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+            when(conversationRewriteService.rewriteResultFromMessages(any(), any())).thenReturn(
                 new ConversationRewriteResult("帮我写个肉鸽贪吃蛇html", false, List.of("帮我写个肉鸽贪吃蛇html"))
             );
             when(conversationIntentService.route("帮我写个肉鸽贪吃蛇html", false)).thenReturn(
@@ -582,7 +582,7 @@ class ChatApplicationToolCallFlowTest {
                 pollutedAssistantMessage
             )));
             when(chatAttachmentService.requireOwnedAttachments(any(), eq(18L), eq(1002L))).thenReturn(List.of());
-            when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+            when(conversationRewriteService.rewriteResultFromMessages(any(), any())).thenReturn(
                 new ConversationRewriteResult("同意", false, List.of("同意"))
             );
             when(conversationIntentService.route("同意", false)).thenReturn(
@@ -645,7 +645,7 @@ class ChatApplicationToolCallFlowTest {
             when(chatConversationRepository.requireById(16L)).thenReturn(conversation);
             when(chatMessageRepository.findByConversationId(16L)).thenReturn(new ArrayList<>());
             when(chatAttachmentService.requireOwnedAttachments(any(), eq(16L), eq(1002L))).thenReturn(List.of());
-            when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+            when(conversationRewriteService.rewriteResultFromMessages(any(), any())).thenReturn(
                 new ConversationRewriteResult("帮我写一个 note.html", false, List.of("帮我写一个 note.html"))
             );
             when(conversationIntentService.route("帮我写一个 note.html", false)).thenReturn(
@@ -731,7 +731,7 @@ class ChatApplicationToolCallFlowTest {
             when(chatConversationRepository.requireById(19L)).thenReturn(conversation);
             when(chatMessageRepository.findByConversationId(19L)).thenReturn(new ArrayList<>());
             when(chatAttachmentService.requireOwnedAttachments(any(), eq(19L), eq(1002L))).thenReturn(List.of());
-            when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+            when(conversationRewriteService.rewriteResultFromMessages(any(), any())).thenReturn(
                 new ConversationRewriteResult("继续分析 README", false, List.of("继续分析 README"))
             );
             when(conversationIntentService.route("继续分析 README", false)).thenReturn(
@@ -821,7 +821,7 @@ class ChatApplicationToolCallFlowTest {
             when(chatConversationRepository.requireById(10L)).thenReturn(conversation);
             when(chatMessageRepository.findByConversationId(10L)).thenReturn(new ArrayList<>());
             when(chatAttachmentService.requireOwnedAttachments(any(), eq(10L), eq(1002L))).thenReturn(List.of());
-            when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+            when(conversationRewriteService.rewriteResultFromMessages(any(), any())).thenReturn(
                 new ConversationRewriteResult("访问订阅页", false, List.of("访问订阅页"))
             );
             when(conversationIntentService.route("访问订阅页", false)).thenReturn(
@@ -893,7 +893,7 @@ class ChatApplicationToolCallFlowTest {
             when(chatConversationRepository.requireById(11L)).thenReturn(conversation);
             when(chatMessageRepository.findByConversationId(11L)).thenReturn(new ArrayList<>());
             when(chatAttachmentService.requireOwnedAttachments(any(), eq(11L), eq(1002L))).thenReturn(List.of());
-            when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+            when(conversationRewriteService.rewriteResultFromMessages(any(), any())).thenReturn(
                 new ConversationRewriteResult("搜索后流式回答", false, List.of("搜索后流式回答"))
             );
             when(conversationIntentService.route("搜索后流式回答", false)).thenReturn(
@@ -962,7 +962,7 @@ class ChatApplicationToolCallFlowTest {
             when(chatConversationRepository.requireById(12L)).thenReturn(conversation);
             when(chatMessageRepository.findByConversationId(12L)).thenReturn(new ArrayList<>());
             when(chatAttachmentService.requireOwnedAttachments(any(), eq(12L), eq(1002L))).thenReturn(List.of());
-            when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+            when(conversationRewriteService.rewriteResultFromMessages(any(), any())).thenReturn(
                 new ConversationRewriteResult("访问订阅页", false, List.of("访问订阅页"))
             );
             when(conversationIntentService.route("访问订阅页", false)).thenReturn(
@@ -1038,7 +1038,7 @@ class ChatApplicationToolCallFlowTest {
             when(chatConversationRepository.requireById(13L)).thenReturn(conversation);
             when(chatMessageRepository.findByConversationId(13L)).thenReturn(new ArrayList<>());
             when(chatAttachmentService.requireOwnedAttachments(any(), eq(13L), eq(1002L))).thenReturn(List.of());
-            when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+            when(conversationRewriteService.rewriteResultFromMessages(any(), any())).thenReturn(
                 new ConversationRewriteResult("连接订阅页", false, List.of("连接订阅页"))
             );
             when(conversationIntentService.route("连接订阅页", false)).thenReturn(
@@ -1131,7 +1131,7 @@ class ChatApplicationToolCallFlowTest {
             when(chatConversationRepository.requireById(14L)).thenReturn(conversation);
             when(chatMessageRepository.findByConversationId(14L)).thenReturn(new ArrayList<>());
             when(chatAttachmentService.requireOwnedAttachments(any(), eq(14L), eq(1002L))).thenReturn(List.of());
-            when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+            when(conversationRewriteService.rewriteResultFromMessages(any(), any())).thenReturn(
                 new ConversationRewriteResult("连接订阅页", false, List.of("连接订阅页"))
             );
             when(conversationIntentService.route("连接订阅页", false)).thenReturn(
@@ -1223,7 +1223,7 @@ class ChatApplicationToolCallFlowTest {
         when(chatConversationRepository.requireById(6L)).thenReturn(conversation);
         when(chatMessageRepository.findByConversationId(6L)).thenReturn(new ArrayList<>());
         when(chatAttachmentService.requireOwnedAttachments(any(), eq(6L), eq(1002L))).thenReturn(List.of());
-        when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+        when(conversationRewriteService.rewriteResultFromMessages(any(), any())).thenReturn(
             new ConversationRewriteResult("深度思考后调用工具", false, List.of("深度思考后调用工具"))
         );
         when(conversationIntentService.route("深度思考后调用工具", false)).thenReturn(
@@ -1289,7 +1289,7 @@ class ChatApplicationToolCallFlowTest {
             when(chatConversationRepository.requireById(7L)).thenReturn(conversation);
             when(chatMessageRepository.findByConversationId(7L)).thenReturn(new ArrayList<>());
             when(chatAttachmentService.requireOwnedAttachments(any(), eq(7L), eq(1002L))).thenReturn(List.of());
-            when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+            when(conversationRewriteService.rewriteResultFromMessages(any(), any())).thenReturn(
                 new ConversationRewriteResult("连续调用本地工具", false, List.of("连续调用本地工具"))
             );
             when(conversationIntentService.route("连续调用本地工具", false)).thenReturn(
@@ -1372,7 +1372,7 @@ class ChatApplicationToolCallFlowTest {
         when(chatConversationRepository.requireById(2L)).thenReturn(conversation);
         when(chatMessageRepository.findByConversationId(2L)).thenReturn(new ArrayList<>());
         when(chatAttachmentService.requireOwnedAttachments(any(), eq(2L), eq(1002L))).thenReturn(List.of());
-        when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+        when(conversationRewriteService.rewriteResultFromMessages(any(), any())).thenReturn(
             new ConversationRewriteResult("通过本地工具操作 workspace 文件", false, List.of("通过本地工具操作 workspace 文件"))
         );
         when(conversationIntentService.route("通过本地工具操作 workspace 文件", false)).thenReturn(
@@ -1441,7 +1441,7 @@ class ChatApplicationToolCallFlowTest {
         when(chatConversationRepository.requireById(8L)).thenReturn(conversation);
         when(chatMessageRepository.findByConversationId(8L)).thenReturn(new ArrayList<>());
         when(chatAttachmentService.requireOwnedAttachments(any(), eq(8L), eq(1002L))).thenReturn(List.of());
-        when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+        when(conversationRewriteService.rewriteResultFromMessages(any(), any())).thenReturn(
             new ConversationRewriteResult("连续调用技能工具", false, List.of("连续调用技能工具"))
         );
         when(conversationIntentService.route("连续调用技能工具", false)).thenReturn(
@@ -1506,7 +1506,7 @@ class ChatApplicationToolCallFlowTest {
         when(chatConversationRepository.requireById(9L)).thenReturn(conversation);
         when(chatMessageRepository.findByConversationId(9L)).thenReturn(new ArrayList<>());
         when(chatAttachmentService.requireOwnedAttachments(any(), eq(9L), eq(1002L))).thenReturn(List.of());
-        when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+        when(conversationRewriteService.rewriteResultFromMessages(any(), any())).thenReturn(
             new ConversationRewriteResult("帮我打开小红书", false, List.of("帮我打开小红书"))
         );
         when(conversationIntentService.route("帮我打开小红书", false)).thenReturn(
@@ -1585,7 +1585,7 @@ class ChatApplicationToolCallFlowTest {
         when(chatConversationRepository.requireById(4L)).thenReturn(conversation);
         when(chatMessageRepository.findByConversationId(4L)).thenReturn(new ArrayList<>());
         when(chatAttachmentService.requireOwnedAttachments(any(), eq(4L), eq(1002L))).thenReturn(List.of(attachment));
-        when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+        when(conversationRewriteService.rewriteResultFromMessages(any(), any())).thenReturn(
             new ConversationRewriteResult("这张图里是谁", false, List.of("这张图里是谁"))
         );
         when(conversationIntentService.route("这张图里是谁", false)).thenReturn(
@@ -1635,7 +1635,7 @@ class ChatApplicationToolCallFlowTest {
         when(chatConversationRepository.requireById(3L)).thenReturn(conversation);
         when(chatMessageRepository.findByConversationId(3L)).thenReturn(new ArrayList<>());
         when(chatAttachmentService.requireOwnedAttachments(any(), eq(3L), eq(1002L))).thenReturn(List.of());
-        when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+        when(conversationRewriteService.rewriteResultFromMessages(any(), any())).thenReturn(
             new ConversationRewriteResult("调用不可用工具", false, List.of("调用不可用工具"))
         );
         when(conversationIntentService.route("调用不可用工具", false)).thenReturn(

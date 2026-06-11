@@ -36,7 +36,12 @@
 
 ## 关键文件
 
-- `frontend/user/src/views/ChatView.tsx`：渲染右侧工作台、入口、选项卡、文件面板、浏览器面板和审查面板。
+- `frontend/user/src/views/chat/workbench/RightWorkbench.tsx`：右侧工作台容器，包含选项卡管理、宽度拖拽、添加菜单、默认启动器和默认宽度常量。
+- `frontend/user/src/views/chat/workbench/FileWorkbenchPanel.tsx`：文件面板，含目录读取、面包屑构建和桌面端 IPC 错误转译。
+- `frontend/user/src/views/chat/workbench/BrowserWorkbenchPanel.tsx`：浏览器面板，含地址栏规范化、历史栈导航、截图与开发者工具入口。
+- `frontend/user/src/views/chat/workbench/CodeReviewPanel.tsx`：代码审查面板，含差异模式切换与工作区 git diff 加载。
+- `frontend/user/src/views/chat/diffPresentation.tsx`：工作台与消息流共享的 diff 渲染组件和按轮次收集差异的纯函数。
+- `frontend/user/src/views/ChatView.tsx`：聊天页编排层，负责工作台开关状态、宽度状态并传入会话上下文。
 - `frontend/user/src/host/types.ts`：定义用户端宿主桥接中的只读文本文件返回结构、外部打开和截图区域协议。
 - `frontend/user/src/host/bridge.ts`：Web 环境提供安全降级，无法读取本地文件或截图到剪贴板时返回中文错误或不支持状态。
 - `frontend/desktop/src/main.ts`：注册 `host:read-text-file`、`host:open-external-url` 和 `host:capture-workbench-browser-screenshot`，限制文件读取范围，并把浏览器截图写入系统剪贴板。

@@ -29,8 +29,10 @@
 - `backend/src/main/java/com/codingx/tool/application/service/ChatToolUserService.java`：把 `git_diff` 纳入聊天工具调用白名单，并按显式工作区绑定工具执行目录。
 - `backend/src/main/java/com/codingx/chat/interfaces/controller/ChatToolController.java`：接收并透传 `workspaceId` 与 `repositoryPath`。
 - `frontend/user/src/views/chat/fileDiffs.ts`：统一归一化后端 diff metadata，并从工具开始参数构造临时 pending diff。
+- `frontend/user/src/views/chat/diffPresentation.tsx`：共享 diff 渲染组件（自动滚动、行级高亮、行内差异面板）和按轮次收集差异的纯函数，供消息流与右侧栏共用。
 - `frontend/user/src/views/chat/useChatWorkspace.ts`：在 SSE start、complete 和历史 replay 链路中写入 `fileDiffs`、`diffSummary`。
-- `frontend/user/src/views/ChatView.tsx`：渲染消息内编辑文件摘要、行内 diff 面板和右侧代码审查栏。
+- `frontend/user/src/views/ChatView.tsx`：渲染消息内编辑文件摘要与行内 diff 面板的编排层。
+- `frontend/user/src/views/chat/workbench/CodeReviewPanel.tsx`：右侧代码审查栏，含差异模式切换与工作区 git diff 加载。
 - `frontend/user/src/views/chat/chatApi.ts`：提供统一工具调用入口，供右侧栏读取工作区 git diff 并携带当前工作区上下文。
 
 ## 关键数据结构

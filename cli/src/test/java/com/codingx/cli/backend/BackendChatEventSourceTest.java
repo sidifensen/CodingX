@@ -183,6 +183,22 @@ class BackendChatEventSourceTest {
         assertTrue(messages.contains("\"content\":\"请审查当前改动\""), messages);
     }
 
+    @Test
+    void resolvePermissionApprovalShouldPostDecisionToBackend() throws Exception {
+        CliConfigStore configStore = new CliConfigStore(tempDir.resolve("home"));
+        CapturedRequest capturedRequest = new CapturedRequest();
+        server = startApprovalServer(capturedRequest, 200, "{\"success\":true,\"code\":\"OK\",\"message\":\"success\",\"data\":{}}");
+        configStore.save(new CliConfig(baseUrl(), "token-123", "conservative", "67890"));
+
+        BackendChatEventSource eventSource = new BackendChatEventSource(configStore);
+        eventSource.resolvePermissionApproval("approval-1", "ALLOW");
+
+        assertEquals("/api/chat/permission-approvals/approval-1", capturedRequest.path);
+        assertEquals("POST", capturedRequest.method);
+        assertEquals("token-123", capturedRequest.headers.get("satoken"));
+        assertTrue(capturedRequest.body.contains("\"decision\":\"ALLOW\""));
+    }
+
     /**
      * 启动测试用 HTTP 服务；handler 记录请求后按指定状态码和正文返回。
      *
@@ -194,6 +210,17 @@ class BackendChatEventSourceTest {
     private HttpServer startServer(CapturedRequest capturedRequest, int statusCode, String body) throws IOException {
         HttpServer httpServer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         httpServer.createContext("/api/chat/stream", exchange -> handleStream(exchange, capturedRequest, statusCode, body));
+        httpServer.start();
+        return httpServer;
+    }
+
+    /**
+     * 启动审批接口测试服务，记录 TUI 允许/拒绝请求。
+     */
+    private HttpServer startApprovalServer(CapturedRequest capturedRequest, int statusCode, String body) throws IOException {
+        HttpServer httpServer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        httpServer.createContext("/api/chat/permission-approvals/approval-1", exchange ->
+            handleJson(exchange, capturedRequest, statusCode, body));
         httpServer.start();
         return httpServer;
     }
@@ -223,6 +250,33 @@ class BackendChatEventSourceTest {
         } else {
             exchange.getResponseHeaders().set("Content-Type", "application/json;charset=UTF-8");
         }
+        exchange.sendResponseHeaders(statusCode, bytes.length);
+        exchange.getResponseBody().write(bytes);
+        exchange.close();
+    }
+
+    /**
+     * 记录 JSON 请求体并返回模拟 ApiResponse。
+     */
+    private void handleJson(
+        HttpExchange exchange,
+        CapturedRequest capturedRequest,
+        int statusCode,
+        String body
+    ) throws IOException {
+        URI uri = exchange.getRequestURI();
+        capturedRequest.method = exchange.getRequestMethod();
+        capturedRequest.path = uri.getPath();
+        capturedRequest.query = parseQuery(uri.getRawQuery());
+        capturedRequest.headers = new LinkedHashMap<>();
+        exchange.getRequestHeaders().forEach((key, values) -> {
+            if (!values.isEmpty()) {
+                capturedRequest.headers.put(key.toLowerCase(), values.getFirst());
+            }
+        });
+        capturedRequest.body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+        byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
+        exchange.getResponseHeaders().set("Content-Type", "application/json;charset=UTF-8");
         exchange.sendResponseHeaders(statusCode, bytes.length);
         exchange.getResponseBody().write(bytes);
         exchange.close();
@@ -291,5 +345,10 @@ class BackendChatEventSourceTest {
          * 小写 header 到首个 header 值的映射。
          */
         private Map<String, String> headers = new LinkedHashMap<>();
+
+        /**
+         * JSON 请求体。
+         */
+        private String body = "";
     }
 }

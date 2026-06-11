@@ -48,6 +48,15 @@ public interface ChatStreamPublisher {
     void publishToolCall(Long conversationId, Object payload);
 
     /**
+     * 发布危险命令确认请求，供桌面输入区和 CLI 暂停当前工具调用并等待用户明确选择。
+     * @param conversationId 会话标识。
+     * @param payload 审批请求载荷，包含 requestId、命令、策略和风险等级。
+     */
+    default void publishApprovalRequest(Long conversationId, Object payload) {
+        // 默认空实现兼容旧测试桩；真实 SSE 发布由 SseChatStreamPublisher 承接。
+    }
+
+    /**
      * 发布参考来源事件，供前端右栏在搜索完成后即时展示。
      * @param conversationId 会话标识。
      * @param payload 来源载荷。

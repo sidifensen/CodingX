@@ -23,6 +23,7 @@ import com.codingx.chat.domain.model.ChatMessage;
 import com.codingx.chat.infrastructure.stream.ChatSseRegistry;
 import com.codingx.expert.domain.model.ChatExpert;
 import com.codingx.expert.domain.repository.ChatExpertRepository;
+import com.codingx.governance.application.service.PermissionApprovalService;
 import com.codingx.governance.application.service.SlashCommandService;
 import com.codingx.mcp.domain.model.ChatMcp;
 import com.codingx.mcp.domain.repository.ChatMcpRepository;
@@ -93,6 +94,12 @@ class ChatStreamControllerTest {
     private SlashCommandService slashCommandService;
 
     /**
+     * 危险命令审批服务依赖，Controller 审批接口需要它处理一次性允许/拒绝决定。
+     */
+    @Mock
+    private PermissionApprovalService permissionApprovalService;
+
+    /**
      * 被测应用服务，保留真实 meta 构建逻辑以覆盖 Controller 到应用层的流入口契约。
      */
     @InjectMocks
@@ -108,7 +115,7 @@ class ChatStreamControllerTest {
      */
     @BeforeEach
     void setUp() {
-        chatStreamController = new ChatStreamController(chatStreamRequestApplicationService);
+        chatStreamController = new ChatStreamController(chatStreamRequestApplicationService, permissionApprovalService);
     }
 
     /**

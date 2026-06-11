@@ -502,6 +502,31 @@ export interface StreamQueueState {
 }
 
 /**
+ * 描述后端危险命令确认请求；只代表一次待处理工具调用，不表示长期授权。
+ */
+export interface PendingPermissionApproval {
+  requestId: string;
+  conversationId?: string | null;
+  runId?: string | null;
+  toolCode: string;
+  toolInput: string;
+  command: string;
+  workingDirectory?: string | null;
+  matchedPolicyCode?: string | null;
+  riskLevel?: string | null;
+  message: string;
+  status: string;
+  summary?: string;
+  createdAt?: string;
+  expiresAt?: string;
+}
+
+/**
+ * 用户对危险命令确认请求的处理决定；允许只对当前 requestId 生效一次。
+ */
+export type PermissionApprovalDecision = 'ALLOW' | 'DENY';
+
+/**
  * 描述左侧工作空间树中的单个分组项。
  */
 export interface WorkspaceConversationGroup {
@@ -660,6 +685,7 @@ export interface ChatWorkspaceController {
    */
   goalModeEnabled: boolean;
   streamQueueState: StreamQueueState | null;
+  pendingPermissionApproval: PendingPermissionApproval | null;
   streamError: string;
   inputValue: string;
   pendingAttachments: PendingAttachmentItem[];
@@ -688,6 +714,10 @@ export interface ChatWorkspaceController {
    */
   submitMessage: (overrideInputValue?: string) => Promise<void>;
   cancelCurrentStream: () => Promise<void>;
+  resolvePermissionApproval: (
+    requestId: string,
+    decision: PermissionApprovalDecision,
+  ) => Promise<void>;
   selectConversation: (
     conversationId: string,
     sourceConversations?: ConversationItem[],

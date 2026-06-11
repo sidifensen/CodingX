@@ -4,6 +4,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import com.codingx.common.exception.BusinessException;
+import com.codingx.governance.application.service.PermissionApprovalDecision;
+import com.codingx.governance.application.service.PermissionApprovalRequiredException;
+import com.codingx.governance.application.service.PermissionApprovalService;
 import com.codingx.governance.application.service.PermissionPolicyService;
 import com.codingx.governance.domain.model.GovernancePermissionAudit;
 import com.codingx.governance.domain.model.GovernancePermissionPolicy;
@@ -12,6 +15,7 @@ import com.codingx.governance.domain.repository.GovernancePermissionPolicyReposi
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -122,6 +126,93 @@ class ChatToolExecutionServiceTest {
         assertEquals("GOVERNANCE_PERMISSION_DENIED", exception.getCode());
         assertEquals(1, auditRepository.savedAudits.size());
         assertEquals("DENIED", auditRepository.savedAudits.getFirst().getResult());
+    }
+
+    /**
+     * 命中确认策略时，第一次调用只创建审批请求，不能提前执行真实命令。
+     */
+    @Test
+    void executeShouldPauseBeforeExecutorWhenPermissionPolicyRequiresApproval() {
+        AtomicInteger executionCount = new AtomicInteger();
+        ChatToolExecutionService service = buildConfirmProtectedShellService(executionCount);
+
+        PermissionApprovalRequiredException exception = assertThrows(
+            PermissionApprovalRequiredException.class,
+            () -> service.execute("shell_command", "{\"command\":\"git clean -fd\"}")
+        );
+
+        assertEquals(0, executionCount.get());
+        assertEquals("git clean -fd", exception.request().commandText());
+    }
+
+    /**
+     * 用户允许同一审批请求后，工具执行服务才会进入真实执行器且只执行一次。
+     */
+    @Test
+    void executeShouldRunExecutorAfterMatchingApprovalIsAllowed() {
+        AtomicInteger executionCount = new AtomicInteger();
+        PermissionApprovalService approvalService = new PermissionApprovalService();
+        ChatToolExecutionService service = buildConfirmProtectedShellService(executionCount, approvalService);
+        PermissionApprovalRequiredException exception = assertThrows(
+            PermissionApprovalRequiredException.class,
+            () -> service.execute("shell_command", "{\"command\":\"git clean -fd\"}")
+        );
+        approvalService.resolve(exception.request().requestId(), null, PermissionApprovalDecision.ALLOW);
+        ChatToolExecutionContext.bindApprovalRequestId(exception.request().requestId());
+
+        ChatToolExecutionResult result = service.execute("shell_command", "{\"command\":\"git clean -fd\"}");
+        ChatToolExecutionContext.bindApprovalRequestId(null);
+
+        assertEquals("已执行", result.content());
+        assertEquals(1, executionCount.get());
+    }
+
+    /**
+     * 构造被确认策略保护的 shell 工具服务，默认使用独立的一次性审批服务。
+     */
+    private ChatToolExecutionService buildConfirmProtectedShellService(AtomicInteger executionCount) {
+        return buildConfirmProtectedShellService(executionCount, new PermissionApprovalService());
+    }
+
+    /**
+     * 构造被确认策略保护的 shell 工具服务，并注入指定审批服务便于测试 allow/deny 状态。
+     */
+    private ChatToolExecutionService buildConfirmProtectedShellService(
+        AtomicInteger executionCount,
+        PermissionApprovalService approvalService
+    ) {
+        ChatToolExecutor shellExecutor = new ChatToolExecutor() {
+            @Override
+            public List<String> toolCodes() {
+                return List.of("shell_command");
+            }
+
+            @Override
+            public ChatToolExecutionResult execute(String toolCode, String question) {
+                executionCount.incrementAndGet();
+                return new ChatToolExecutionResult(toolCode, "已执行", Map.of("question", question));
+            }
+        };
+        ChatToolRegistry registry = new ChatToolRegistry(List.of(shellExecutor));
+        registry.init();
+        PermissionPolicyService permissionPolicyService = new PermissionPolicyService(
+            new InMemoryPermissionPolicyRepository(List.of(
+                GovernancePermissionPolicy.builder()
+                    .id(2L)
+                    .policyCode("confirm-git-clean")
+                    .policyName("清理工作区确认")
+                    .toolCode("shell_command")
+                    .commandPattern("git clean")
+                    .action("CONFIRM")
+                    .riskLevel("HIGH")
+                    .enabled(1)
+                    .sortNo(1)
+                    .build()
+            )),
+            new InMemoryPermissionAuditRepository(),
+            approvalService
+        );
+        return new ChatToolExecutionService(registry, new LocalToolAliasService(), permissionPolicyService);
     }
 
     private record InMemoryPermissionPolicyRepository(List<GovernancePermissionPolicy> policies)

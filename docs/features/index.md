@@ -59,5 +59,6 @@
 ## Governance
 
 - [软件端治理工作台](governance/governed-workbench.md)
+- [危险命令即时确认](governance/dangerous-command-approval.md)
 - [Hook 自动化规则](governance/hook-automation.md)
 - [仓库规范文件与长期记忆](governance/repository-instruction-context-long-term-memory.md)

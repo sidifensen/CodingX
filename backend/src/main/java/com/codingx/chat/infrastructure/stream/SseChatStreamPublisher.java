@@ -86,6 +86,17 @@ public class SseChatStreamPublisher implements ChatStreamPublisher {
     }
 
     /**
+     * 发布危险命令确认请求。
+     * @param conversationId 会话标识。
+     * @param payload 审批请求载荷。
+     */
+    @Override
+    public void publishApprovalRequest(Long conversationId, Object payload) {
+        // 步骤 1：确认请求使用独立 approval 事件，避免前端把它误渲染为普通工具进度。
+        chatSseRegistry.publish(conversationId, "approval", payload);
+    }
+
+    /**
      * 发布参考来源事件。
      * @param conversationId 会话标识。
      * @param payload 来源载荷。

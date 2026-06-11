@@ -12,6 +12,7 @@ public final class ChatToolExecutionContext {
     private static final ThreadLocal<Path> CURRENT_TOOL_WORKING_DIRECTORY = new ThreadLocal<>();
     private static final ThreadLocal<Map<String, Path>> SKILL_DIRECTORIES = new ThreadLocal<>();
     private static final ThreadLocal<GovernanceContext> GOVERNANCE_CONTEXT = new ThreadLocal<>();
+    private static final ThreadLocal<String> APPROVAL_REQUEST_ID = new ThreadLocal<>();
 
     private ChatToolExecutionContext() {
     }
@@ -80,12 +81,35 @@ public final class ChatToolExecutionContext {
     }
 
     /**
+     * 绑定当前工具调用要消费的一次性危险命令审批请求。
+     *
+     * @param requestId 审批请求 ID；为空时清理绑定，下一次 CONFIRM 会重新创建请求。
+     */
+    public static void bindApprovalRequestId(String requestId) {
+        if (requestId == null || requestId.isBlank()) {
+            APPROVAL_REQUEST_ID.remove();
+            return;
+        }
+        APPROVAL_REQUEST_ID.set(requestId.trim());
+    }
+
+    /**
+     * 获取当前工具调用要消费的一次性审批请求。
+     *
+     * @return 审批请求 ID，未绑定时为空。
+     */
+    public static Optional<String> currentApprovalRequestId() {
+        return Optional.ofNullable(APPROVAL_REQUEST_ID.get());
+    }
+
+    /**
      * 清理当前线程的工具上下文。
      */
     public static void clear() {
         CURRENT_TOOL_WORKING_DIRECTORY.remove();
         SKILL_DIRECTORIES.remove();
         GOVERNANCE_CONTEXT.remove();
+        APPROVAL_REQUEST_ID.remove();
     }
 
     /**

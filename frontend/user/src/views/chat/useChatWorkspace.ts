@@ -33,6 +33,8 @@ import {
   MessageSearchProgress,
   MessageSearchProgressItem,
   PendingAttachmentItem,
+  PendingPermissionApproval,
+  PermissionApprovalDecision,
   ProcessCardItem,
   ReferenceItem,
   RegenerateConversationOptions,
@@ -119,6 +121,7 @@ interface BackgroundStreamContext {
   currentExperts: CurrentExpertItem[];
   currentSkills: CurrentSkillItem[];
   currentMcps: CurrentMcpItem[];
+  pendingPermissionApproval?: PendingPermissionApproval | null;
 }
 
 /**
@@ -640,6 +643,7 @@ export function useChatWorkspace(
   const [deepThinkingEnabled, setDeepThinkingEnabled] = useState(false);
   const [goalModeEnabled, setGoalModeEnabled] = useState(false);
   const [streamQueueState, setStreamQueueState] = useState<StreamQueueState | null>(null);
+  const [pendingPermissionApproval, setPendingPermissionApprovalState] = useState<PendingPermissionApproval | null>(null);
   const [streamError, setStreamError] = useState('');
   const [inputValue, setInputValue] = useState('');
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachmentItem[]>([]);
@@ -680,6 +684,7 @@ export function useChatWorkspace(
   const submitLockSeedRef = useRef(0);
   const submitMessageInFlightRef = useRef<number | null>(null);
   const streamQueueTimerRef = useRef<number | null>(null);
+  const pendingPermissionApprovalRef = useRef<PendingPermissionApproval | null>(null);
   const skipNextRuntimeSyncRef = useRef(false);
   const bootstrapWorkspaceLifecycleRef = useRef<{
     inFlightKey: string | null;
@@ -1115,6 +1120,14 @@ export function useChatWorkspace(
   };
 
   /**
+   * 同步更新危险命令确认请求的 state 与 ref，避免异步按钮处理读取到旧闭包。
+   */
+  const setPendingPermissionApproval = (approval: PendingPermissionApproval | null) => {
+    pendingPermissionApprovalRef.current = approval;
+    setPendingPermissionApprovalState(approval);
+  };
+
+  /**
    * 清理排队提示延迟任务，防止旧流事件在新流阶段误触发提示。
    */
   const clearStreamQueueTimer = () => {
@@ -1162,6 +1175,7 @@ export function useChatWorkspace(
         currentExperts: currentExpertsRef.current,
         currentSkills: currentSkillsRef.current,
         currentMcps: currentMcpsRef.current,
+        pendingPermissionApproval: pendingPermissionApprovalRef.current,
       };
       // 业务约束：切换会话只让旧流转入后台消费；旧事件后续只能更新其会话快照，不能再占用主区。
       detachedStreamSessionIdsRef.current.add(streamSessionId);
@@ -1178,6 +1192,7 @@ export function useChatWorkspace(
     setIsStreaming(false);
     setIsCancelling(false);
     hideStreamQueueState();
+    setPendingPermissionApproval(null);
   };
 
   /**
@@ -1476,6 +1491,7 @@ export function useChatWorkspace(
     setIsStreaming(true);
     setStreamError('');
     hideStreamQueueState();
+    setPendingPermissionApproval(context.pendingPermissionApproval ?? null);
 
     // 步骤 3：把接回后的会话快照落到当前分区，刷新侧栏时仍能看到旧会话的运行态。
     saveConversationRecordToWorkspace(
@@ -1672,6 +1688,11 @@ export function useChatWorkspace(
           taskId,
         );
       }
+    } else if (eventName === 'approval' && isRecord(payload)) {
+      nextContext = {
+        ...nextContext,
+        pendingPermissionApproval: normalizePermissionApprovalPayload(payload),
+      };
     } else if (eventName === 'message' && isRecord(payload) && payload.type === 'response') {
       const delta = String(payload.delta ?? '');
       if (!delta) {
@@ -3409,6 +3430,7 @@ export function useChatWorkspace(
     setIsStreaming(false);
     setStreamError('已停止当前生成');
     hideStreamQueueState();
+    setPendingPermissionApproval(null);
     clearConversationRunningTaskProjection(runningConversationId);
     const token = currentToken();
     if (
@@ -3423,6 +3445,40 @@ export function useChatWorkspace(
       await ChatApi.cancelConversation(token, runningConversationId);
     } finally {
       setIsCancelling(false);
+    }
+  };
+
+  /**
+   * 处理危险命令确认卡片的用户决定。
+   * @param requestId 审批请求 ID。
+   * @param decision 用户决定，ALLOW 仅允许当前请求继续执行一次。
+   */
+  const resolvePermissionApproval = async (
+    requestId: string,
+    decision: PermissionApprovalDecision,
+  ) => {
+    const normalizedRequestId = String(requestId ?? '').trim();
+    if (!normalizedRequestId) {
+      return;
+    }
+    const token = currentToken();
+    if (!token) {
+      setStreamError(UserErrorMessages.AUTH_SESSION_EXPIRED);
+      onUnauthorizedRef.current?.();
+      return;
+    }
+    try {
+      await ChatApi.resolvePermissionApproval(token, normalizedRequestId, decision);
+      if (pendingPermissionApprovalRef.current?.requestId === normalizedRequestId) {
+        setPendingPermissionApproval(null);
+      }
+      setStreamError('');
+    } catch (error) {
+      if (error instanceof ChatApi.UnauthorizedError) {
+        onUnauthorizedRef.current?.();
+        return;
+      }
+      setStreamError(error instanceof Error ? error.message : UserErrorMessages.CHAT_REQUEST_FAILED);
     }
   };
 
@@ -3444,6 +3500,7 @@ export function useChatWorkspace(
     setIsStreaming(false);
     setIsCancelling(false);
     hideStreamQueueState();
+    setPendingPermissionApproval(null);
     setStreamError('');
     setInputValue('');
     activeGoalRef.current = null;
@@ -4329,6 +4386,7 @@ export function useChatWorkspace(
         '',
     ).trim();
     hideStreamQueueState();
+    setPendingPermissionApproval(null);
     clearConversationRunningTaskProjection(terminalConversationId);
     if (status === 'error') {
       setStreamError(errorMessage ?? UserErrorMessages.CHAT_REQUEST_FAILED);
@@ -4471,6 +4529,13 @@ export function useChatWorkspace(
 
     if (eventName === 'queue-accepted') {
       hideStreamQueueState();
+      return;
+    }
+
+    if (eventName === 'approval' && isRecord(payload)) {
+      setPendingPermissionApproval(normalizePermissionApprovalPayload(payload));
+      hideStreamQueueState();
+      setStreamError('');
       return;
     }
 
@@ -4817,6 +4882,7 @@ export function useChatWorkspace(
         writeConversationIdToUrl(finishConversationId);
       }
       hideStreamQueueState();
+      setPendingPermissionApproval(null);
       // 业务约束：finish 事件表示模型输出已完成，需立刻恢复输入区发送态，避免“停止”按钮滞留。
       setIsStreaming(false);
       const finishedMessages = messagesRef.current.map((message) =>
@@ -4937,6 +5003,7 @@ export function useChatWorkspace(
     deepThinkingEnabled,
     goalModeEnabled,
     streamQueueState,
+    pendingPermissionApproval,
     streamError,
     inputValue,
     pendingAttachments,
@@ -4959,6 +5026,7 @@ export function useChatWorkspace(
     updateLongTermMemoryStatus,
     submitMessage,
     cancelCurrentStream,
+    resolvePermissionApproval,
     selectConversation,
     selectConversationInWorkspace,
     loadMoreConversations,
@@ -6628,6 +6696,33 @@ function parseSkillMessage(rawQuestion: string): {
  */
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
+}
+
+/**
+ * 归一化后端危险命令确认事件，确保输入区确认卡只依赖稳定的字符串字段。
+ * @param payload 后端 approval SSE 载荷。
+ * @returns 前端可渲染的待确认请求。
+ */
+function normalizePermissionApprovalPayload(payload: Record<string, unknown>): PendingPermissionApproval {
+  const requestId = String(payload.requestId ?? '').trim();
+  const command = String(payload.command ?? payload.commandText ?? '').trim();
+  const toolCode = String(payload.toolCode ?? 'unknown').trim() || 'unknown';
+  return {
+    requestId,
+    conversationId: payload.conversationId == null ? null : String(payload.conversationId),
+    runId: payload.runId == null ? null : String(payload.runId),
+    toolCode,
+    toolInput: String(payload.toolInput ?? ''),
+    command: command || String(payload.toolInput ?? toolCode),
+    workingDirectory: payload.workingDirectory == null ? null : String(payload.workingDirectory),
+    matchedPolicyCode: payload.matchedPolicyCode == null ? null : String(payload.matchedPolicyCode),
+    riskLevel: payload.riskLevel == null ? null : String(payload.riskLevel),
+    message: String(payload.message ?? '当前命令需要确认后再执行'),
+    status: String(payload.status ?? 'PENDING'),
+    summary: payload.summary == null ? undefined : String(payload.summary),
+    createdAt: payload.createdAt == null ? undefined : String(payload.createdAt),
+    expiresAt: payload.expiresAt == null ? undefined : String(payload.expiresAt),
+  };
 }
 
 /**

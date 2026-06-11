@@ -4,6 +4,7 @@ import com.codingx.cli.agent.AgentEvent;
 import com.codingx.cli.agent.AgentEventSource;
 import com.codingx.cli.agent.AgentEventType;
 import com.codingx.cli.agent.MockAgentEventSource;
+import com.codingx.cli.agent.PermissionApprovalResolver;
 import com.codingx.cli.agent.StreamingAgentEventSource;
 import com.codingx.cli.auth.CliAuthService;
 import com.codingx.cli.render.TerminalRenderer;
@@ -899,6 +900,42 @@ class CodingXTuiModelTest {
     }
 
     @Test
+    void approvalRequestedShouldAllowKeyboardDecision() {
+        CapturingApprovalEventSource eventSource = new CapturingApprovalEventSource();
+        CodingXTuiModel model = new CodingXTuiModel(
+            tempDir.resolve("workspace"),
+            eventSource,
+            new TerminalRenderer(),
+            null,
+            backendSlashCatalog()
+        );
+
+        model.update(new AgentEventsMessage(List.of(
+            AgentEvent.of("session", "turn", 1, AgentEventType.APPROVAL_REQUESTED, Map.of(
+                "requestId", "approval-1",
+                "summary", "需要确认执行：git clean -fd",
+                "command", "git clean -fd",
+                "riskLevel", "HIGH"
+            ))
+        )));
+        assertTrue(stripAnsi(model.view()).contains("按 a 允许，按 d 拒绝"), model.view());
+
+        model.update(new KeyPressMessage(new Key(KeyType.KeyRunes, new char[]{'a'})));
+        assertEquals(List.of("approval-1:ALLOW"), eventSource.decisions);
+
+        model.update(new AgentEventsMessage(List.of(
+            AgentEvent.of("session", "turn", 2, AgentEventType.APPROVAL_REQUESTED, Map.of(
+                "requestId", "approval-2",
+                "summary", "需要确认执行：Remove-Item",
+                "command", "Remove-Item",
+                "riskLevel", "HIGH"
+            ))
+        )));
+        model.update(new KeyPressMessage(new Key(KeyType.KeyRunes, new char[]{'d'})));
+        assertEquals(List.of("approval-1:ALLOW", "approval-2:DENY"), eventSource.decisions);
+    }
+
+    @Test
     void slashLoginShouldUseCliAuthWithoutSubmittingChatRequest() {
         CapturingStreamingEventSource eventSource = new CapturingStreamingEventSource();
         FakeCliAuthService authService = new FakeCliAuthService();
@@ -1173,6 +1210,27 @@ class CodingXTuiModelTest {
         @Override
         public void startTurn(String task, Path workspace, java.util.function.Consumer<AgentEvent> eventConsumer) {
             startTurn(task, workspace, false, eventConsumer);
+        }
+    }
+
+    /**
+     * 测试专用审批事件源，只记录 TUI 回写的危险命令允许/拒绝决定。
+     */
+    private static class CapturingApprovalEventSource implements StreamingAgentEventSource, PermissionApprovalResolver {
+
+        /**
+         * 已提交的审批决定，格式为 `requestId:decision`，便于断言热键没有串用旧请求。
+         */
+        private final List<String> decisions = new CopyOnWriteArrayList<>();
+
+        @Override
+        public void resolvePermissionApproval(String requestId, String decision) {
+            decisions.add(requestId + ":" + decision);
+        }
+
+        @Override
+        public void startTurn(String task, Path workspace, java.util.function.Consumer<AgentEvent> eventConsumer) {
+            // 审批热键测试只验证回写链路，不需要真实启动聊天流。
         }
     }
 

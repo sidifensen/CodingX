@@ -242,6 +242,50 @@ describe('ChatView', () => {
   });
 
   /**
+   * 危险命令确认请求应显示在输入区上方，并只提供拒绝和允许执行两个动作。
+   */
+  it('应在输入区上方渲染危险命令确认卡片', async () => {
+    const resolvePermissionApproval = vi.fn().mockResolvedValue(undefined);
+
+    render(
+      <ChatView
+        isAuthenticated={true}
+        onRequireLogin={vi.fn()}
+        workspace={createWorkspace({
+          pendingPermissionApproval: {
+            requestId: 'approval-1',
+            conversationId: '2001',
+            runId: '5002',
+            toolCode: 'shell_command',
+            toolInput: '{"command":"git clean -fd"}',
+            command: 'git clean -fd',
+            workingDirectory: 'D:\\code\\CodingX',
+            matchedPolicyCode: 'confirm-git-clean',
+            riskLevel: 'HIGH',
+            message: '当前操作需要确认后再执行',
+            status: 'PENDING',
+          },
+          resolvePermissionApproval,
+        })}
+      />,
+    );
+
+    const card = screen.getByTestId('dangerous-command-approval-card');
+    expect(card).toHaveTextContent('是否允许执行该命令？');
+    expect(card).toHaveTextContent('git clean -fd');
+    expect(card).toHaveTextContent('confirm-git-clean');
+    expect(within(card).getAllByRole('button')).toHaveLength(2);
+
+    fireEvent.click(within(card).getByRole('button', { name: '允许执行' }));
+    await waitFor(() => {
+      expect(resolvePermissionApproval).toHaveBeenCalledWith('approval-1', 'ALLOW');
+    });
+    fireEvent.click(within(card).getByRole('button', { name: '拒绝' }));
+    await waitFor(() => {
+      expect(resolvePermissionApproval).toHaveBeenCalledWith('approval-1', 'DENY');
+    });
+  });
+  /**
    * 新建对话空态下若发送失败，仍应展示错误提示，避免用户误判为发送按钮失效。
    */
   it('应在新建对话空态展示发送错误提示', async () => {
@@ -5702,6 +5746,7 @@ function createWorkspace(overrides?: Partial<ChatWorkspaceController>): ChatWork
     deepThinkingEnabled: false,
     goalModeEnabled: false,
     streamQueueState: null,
+    pendingPermissionApproval: null,
     streamError: '',
     inputValue: '请搜索 Spring Boot SSE 最佳实践',
     pendingAttachments: [],
@@ -5724,6 +5769,7 @@ function createWorkspace(overrides?: Partial<ChatWorkspaceController>): ChatWork
     updateLongTermMemoryStatus: vi.fn().mockResolvedValue(undefined),
     submitMessage: vi.fn().mockResolvedValue(undefined),
     cancelCurrentStream: vi.fn().mockResolvedValue(undefined),
+    resolvePermissionApproval: vi.fn().mockResolvedValue(undefined),
     selectConversation: vi.fn().mockResolvedValue(undefined),
     selectConversationInWorkspace: vi.fn().mockResolvedValue(undefined),
     loadMoreConversations: vi.fn().mockResolvedValue(undefined),

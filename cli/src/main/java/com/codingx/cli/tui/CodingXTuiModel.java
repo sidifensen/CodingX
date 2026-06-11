@@ -3,6 +3,7 @@ package com.codingx.cli.tui;
 import com.codingx.cli.agent.AgentEvent;
 import com.codingx.cli.agent.AgentEventSource;
 import com.codingx.cli.agent.AgentEventType;
+import com.codingx.cli.agent.PermissionApprovalResolver;
 import com.codingx.cli.agent.StreamingAgentEventSource;
 import com.codingx.cli.auth.CliAuthService;
 import com.codingx.cli.render.TerminalRenderer;
@@ -198,6 +199,16 @@ public class CodingXTuiModel implements Model {
     private boolean planMode;
 
     /**
+     * 当前等待用户处理的一次性危险命令审批请求 ID；为空表示没有待处理审批。
+     */
+    private String pendingApprovalRequestId;
+
+    /**
+     * 当前审批请求的展示摘要，用于提交失败时给用户保留上下文。
+     */
+    private String pendingApprovalSummary;
+
+    /**
      * 当前运行状态，展示在底部状态栏。
      */
     private volatile String status;
@@ -303,6 +314,8 @@ public class CodingXTuiModel implements Model {
         this.activeAssistantLineIndex = -1;
         this.activeAssistantText = new StringBuilder();
         this.slashCommandSelectedIndex = 0;
+        this.pendingApprovalRequestId = null;
+        this.pendingApprovalSummary = null;
 
         configureTextarea();
     }
@@ -385,6 +398,9 @@ public class CodingXTuiModel implements Model {
             }
             if ("shift+tab".equals(key) || keyPressMessage.type() == KeyType.KeyShiftTab) {
                 planMode = !planMode;
+                return UpdateResult.from(this, null);
+            }
+            if (handlePendingApprovalKey(keyPressMessage)) {
                 return UpdateResult.from(this, null);
             }
 
@@ -742,6 +758,7 @@ public class CodingXTuiModel implements Model {
                 appendAssistantDelta(event.payloadText("delta"));
                 continue;
             }
+            updatePendingApprovalFromEvent(event);
             closeAssistantBlock();
             for (String line : transcriptRenderer.render(List.of(event))) {
                 appendLine(line);
@@ -749,18 +766,102 @@ public class CodingXTuiModel implements Model {
         }
         if (events.stream().anyMatch(event -> event.eventType() == AgentEventType.ERROR)) {
             activeStreamTask = null;
+            clearPendingApproval();
             status = "error";
             return;
         }
         if (events.stream().anyMatch(event -> event.eventType() == AgentEventType.TURN_INTERRUPTED)) {
             activeStreamTask = null;
+            clearPendingApproval();
             status = "interrupted";
             return;
         }
         if (events.stream().anyMatch(event -> event.eventType() == AgentEventType.TURN_COMPLETED)) {
             activeStreamTask = null;
+            clearPendingApproval();
             status = "completed";
         }
+    }
+
+    /**
+     * 在当前存在审批请求时拦截 `a/d` 单键，避免它们被写入普通输入框。
+     *
+     * @param keyPressMessage 键盘事件。
+     * @return true 表示按键已被审批流程消费。
+     */
+    private boolean handlePendingApprovalKey(KeyPressMessage keyPressMessage) {
+        if (pendingApprovalRequestId == null || pendingApprovalRequestId.isBlank()) {
+            return false;
+        }
+        String decision = approvalDecisionFromKey(keyPressMessage);
+        if (decision == null) {
+            return false;
+        }
+        closeAssistantBlock();
+        if (!(eventSource instanceof PermissionApprovalResolver approvalResolver)) {
+            appendSystemLine("当前 CLI 事件源不支持危险命令审批回写。");
+            status = "error";
+            refreshViewport();
+            return true;
+        }
+        String requestId = pendingApprovalRequestId;
+        String summary = pendingApprovalSummary == null || pendingApprovalSummary.isBlank()
+            ? requestId
+            : pendingApprovalSummary;
+        try {
+            approvalResolver.resolvePermissionApproval(requestId, decision);
+            appendSystemLine("ALLOW".equals(decision)
+                ? "已允许执行危险命令：" + summary
+                : "已拒绝执行危险命令：" + summary);
+            clearPendingApproval();
+        } catch (RuntimeException exception) {
+            appendSystemLine("危险命令审批提交失败：" + exception.getMessage());
+            status = "error";
+        }
+        refreshViewport();
+        return true;
+    }
+
+    /**
+     * 将审批热键转换成后端协议值；只接受单字符 `a/A` 与 `d/D`。
+     */
+    private String approvalDecisionFromKey(KeyPressMessage keyPressMessage) {
+        if (keyPressMessage.type() != KeyType.KeyRunes || keyPressMessage.runes().length != 1) {
+            return null;
+        }
+        char rune = Character.toLowerCase(keyPressMessage.runes()[0]);
+        if (rune == 'a') {
+            return "ALLOW";
+        }
+        if (rune == 'd') {
+            return "DENY";
+        }
+        return null;
+    }
+
+    /**
+     * 根据后端审批相关事件更新本地待处理状态，保证热键只作用于当前 requestId。
+     */
+    private void updatePendingApprovalFromEvent(AgentEvent event) {
+        if (event.eventType() == AgentEventType.APPROVAL_REQUESTED) {
+            pendingApprovalRequestId = event.payloadText("requestId");
+            pendingApprovalSummary = event.payloadText("summary");
+            if (pendingApprovalSummary == null || pendingApprovalSummary.isBlank()) {
+                pendingApprovalSummary = event.payloadText("command");
+            }
+            return;
+        }
+        if (event.eventType() == AgentEventType.APPROVAL_RESOLVED) {
+            clearPendingApproval();
+        }
+    }
+
+    /**
+     * 清理一次性审批状态，避免完成、失败或中断后旧 requestId 被后续按键误用。
+     */
+    private void clearPendingApproval() {
+        pendingApprovalRequestId = null;
+        pendingApprovalSummary = null;
     }
 
     /**
@@ -804,6 +905,7 @@ public class CodingXTuiModel implements Model {
         }
         runningTurnStartedAtNanos = 0L;
         status = "interrupted";
+        clearPendingApproval();
         appendLine("• Interrupted");
         refreshViewport();
     }

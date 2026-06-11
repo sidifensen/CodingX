@@ -3,6 +3,7 @@ package com.codingx.cli.backend;
 import cn.hutool.core.util.StrUtil;
 import cn.hutool.json.JSONUtil;
 import com.codingx.cli.agent.AgentEvent;
+import com.codingx.cli.agent.PermissionApprovalResolver;
 import com.codingx.cli.agent.StreamingAgentEventSource;
 import com.codingx.cli.config.CliConfig;
 import com.codingx.cli.config.CliConfigStore;
@@ -32,7 +33,7 @@ import java.util.regex.Pattern;
 /**
  * 调用现有后端 `/api/chat/stream` 的 CLI 事件源，把 SSE 流转换为 TUI 可消费的 `AgentEvent`。
  */
-public class BackendChatEventSource implements StreamingAgentEventSource {
+public class BackendChatEventSource implements StreamingAgentEventSource, PermissionApprovalResolver {
 
     /**
      * 后端 Long 类型会话参数只接受数值字符串，非数值本地快照不能透传。
@@ -151,6 +152,42 @@ public class BackendChatEventSource implements StreamingAgentEventSource {
         }
     }
 
+    @Override
+    public void resolvePermissionApproval(String requestId, String decision) {
+        CliConfig config = configStore.load();
+        if (StrUtil.isBlank(config.token())) {
+            throw new IllegalStateException("未登录或登录已失效，请先运行 /login。");
+        }
+        String normalizedRequestId = StrUtil.trimToEmpty(requestId);
+        if (StrUtil.isBlank(normalizedRequestId)) {
+            throw new IllegalArgumentException("审批请求 ID 不能为空。");
+        }
+        String normalizedDecision = normalizeApprovalDecision(decision);
+        String body = JSONUtil.createObj()
+            .set("decision", normalizedDecision)
+            .toString();
+        try {
+            HttpRequest request = HttpRequest.newBuilder(buildApprovalUri(config.serverUrl(), normalizedRequestId))
+                .timeout(Duration.ofSeconds(30))
+                .header("satoken", config.token().trim())
+                .header("Accept", "application/json")
+                .header("Content-Type", "application/json;charset=UTF-8")
+                .POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
+                .build();
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+            if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                throw new IllegalStateException(resolveErrorMessage(response.body()));
+            }
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("审批请求已中断。", exception);
+        } catch (IllegalArgumentException | IllegalStateException exception) {
+            throw exception;
+        } catch (Exception exception) {
+            throw new IllegalStateException("审批请求提交失败：" + exception.getMessage(), exception);
+        }
+    }
+
     /**
      * 构造后端聊天流请求，参数与 Web 端 `buildStreamRequestUrl` 保持同名。
      */
@@ -187,6 +224,16 @@ public class BackendChatEventSource implements StreamingAgentEventSource {
             .append("/api/chat/stream?")
             .append(encodeQuery(query));
         return URI.create(builder.toString());
+    }
+
+    /**
+     * 构造危险命令审批回写 URI；requestId 只作为单个路径段传递，避免特殊字符破坏路径结构。
+     */
+    private URI buildApprovalUri(String serverUrl, String requestId) {
+        String normalizedServerUrl = StrUtil.removeSuffix(StrUtil.trimToEmpty(serverUrl), "/");
+        String encodedRequestId = URLEncoder.encode(requestId, StandardCharsets.UTF_8)
+            .replace("+", "%20");
+        return URI.create(normalizedServerUrl + "/api/chat/permission-approvals/" + encodedRequestId);
     }
 
     /**
@@ -289,18 +336,36 @@ public class BackendChatEventSource implements StreamingAgentEventSource {
     private String resolveErrorMessage(InputStream body) {
         try (InputStream inputStream = body) {
             String text = new String(inputStream.readAllBytes(), StandardCharsets.UTF_8);
-            if (StrUtil.isBlank(text)) {
-                return "聊天流请求失败";
-            }
-            try {
-                String message = JSONUtil.parseObj(text).getStr("message");
-                return StrUtil.blankToDefault(message, "聊天流请求失败");
-            } catch (RuntimeException exception) {
-                return text;
-            }
+            return resolveErrorMessage(text);
         } catch (Exception exception) {
             return "聊天流请求失败：" + exception.getMessage();
         }
+    }
+
+    /**
+     * HTTP 错误响应优先读取后端 `ApiResponse.message`，审批接口和聊天流共用同一错误语义。
+     */
+    private String resolveErrorMessage(String text) {
+        if (StrUtil.isBlank(text)) {
+            return "聊天流请求失败";
+        }
+        try {
+            String message = JSONUtil.parseObj(text).getStr("message");
+            return StrUtil.blankToDefault(message, "聊天流请求失败");
+        } catch (RuntimeException exception) {
+            return text;
+        }
+    }
+
+    /**
+     * 标准化 CLI 侧审批决定，防止任意字符串进入后端审批接口。
+     */
+    private String normalizeApprovalDecision(String decision) {
+        String normalizedDecision = StrUtil.trimToEmpty(decision).toUpperCase(Locale.ROOT);
+        if (!"ALLOW".equals(normalizedDecision) && !"DENY".equals(normalizedDecision)) {
+            throw new IllegalArgumentException("审批决定只允许 ALLOW 或 DENY。");
+        }
+        return normalizedDecision;
     }
 
     /**

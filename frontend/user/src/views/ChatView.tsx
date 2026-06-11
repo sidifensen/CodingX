@@ -34,6 +34,7 @@ import {
   RefreshCw,
   Search,
   Pencil,
+  ShieldAlert,
   RotateCcw,
   Share2,
   Target,
@@ -61,6 +62,7 @@ import {
   MessageSearchProgressItem,
   McpItem,
   PendingAttachmentItem,
+  PendingPermissionApproval,
   ProcessCardItem,
   SharedConversationPayload,
   SlashCommandItem,
@@ -147,6 +149,7 @@ export default function ChatView({
     deepThinkingEnabled,
     goalModeEnabled,
     streamQueueState,
+    pendingPermissionApproval,
     streamError,
     inputValue,
     pendingAttachments,
@@ -165,6 +168,7 @@ export default function ChatView({
     setActiveRuntimeTarget,
     submitMessage,
     cancelCurrentStream,
+    resolvePermissionApproval,
     loadOlderMessages,
     shareConversation,
     deleteConversationMessages,
@@ -1634,6 +1638,17 @@ export default function ChatView({
                 {streamQueueState.message}
               </div>
             ) : null}
+            {pendingPermissionApproval ? (
+              <DangerousCommandApprovalCard
+                approval={pendingPermissionApproval}
+                onDeny={() =>
+                  void resolvePermissionApproval(pendingPermissionApproval.requestId, 'DENY')
+                }
+                onAllow={() =>
+                  void resolvePermissionApproval(pendingPermissionApproval.requestId, 'ALLOW')
+                }
+              />
+            ) : null}
             <form
               onSubmit={(event) => void handleSubmit(event)}
               // 业务意图：只保留输入操作栏自身边界，外层 dock 不再额外包装成卡片或分区。
@@ -2578,6 +2593,82 @@ export default function ChatView({
         />
       ) : null}
     </motion.div>
+  );
+}
+
+/**
+ * 渲染危险命令的一次性确认卡片；该交互只对应当前 requestId，不产生长期授权。
+ */
+function DangerousCommandApprovalCard({
+  approval,
+  onDeny,
+  onAllow,
+}: {
+  approval: PendingPermissionApproval;
+  onDeny: () => void;
+  onAllow: () => void;
+}) {
+  const riskLabel = approval.riskLevel ? approval.riskLevel.toUpperCase() : 'CONFIRM';
+  return (
+    <section
+      role="alertdialog"
+      aria-label="危险命令确认"
+      data-testid="dangerous-command-approval-card"
+      className="mb-3 rounded-2xl border border-amber-500/45 bg-amber-50 p-4 text-foreground shadow-[0_16px_42px_rgba(0,0,0,0.14)] dark:bg-amber-500/12 dark:shadow-[0_16px_42px_rgba(0,0,0,0.22)]"
+    >
+      <div className="flex items-start gap-3">
+        <div className="mt-0.5 rounded-full border border-amber-500/45 bg-amber-100 p-2 text-amber-700 dark:border-amber-400/45 dark:bg-amber-400/15 dark:text-amber-200">
+          <ShieldAlert size={18} />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="text-sm font-semibold tracking-normal text-foreground">
+              是否允许执行该命令？
+            </h2>
+            <span className="rounded-full border border-amber-500/40 bg-amber-100/70 px-2 py-0.5 font-mono text-[11px] text-amber-800 dark:border-amber-400/35 dark:bg-transparent dark:text-amber-100">
+              {riskLabel}
+            </span>
+          </div>
+          <p className="mt-1 text-xs leading-5 text-muted">
+            {approval.message || approval.summary || '当前命令需要确认后再执行。'}
+          </p>
+          <pre className="mt-3 max-h-28 overflow-auto rounded-lg border border-border bg-background/70 px-3 py-2 font-mono text-xs leading-5 text-foreground [scrollbar-width:thin]">
+            {approval.command}
+          </pre>
+          <div className="mt-3 grid gap-1 text-[11px] leading-5 text-muted sm:grid-cols-2">
+            {approval.workingDirectory ? (
+              <div className="min-w-0 truncate">
+                <span className="text-foreground/75">目录：</span>
+                {approval.workingDirectory}
+              </div>
+            ) : null}
+            {approval.matchedPolicyCode ? (
+              <div className="min-w-0 truncate">
+                <span className="text-foreground/75">策略：</span>
+                {approval.matchedPolicyCode}
+              </div>
+            ) : null}
+          </div>
+        </div>
+      </div>
+      <div className="mt-4 flex flex-wrap justify-end gap-2">
+        <button
+          type="button"
+          autoFocus
+          onClick={onDeny}
+          className="rounded-full border border-border bg-surface-container px-4 py-2 text-sm font-medium text-foreground transition-[background-color,border-color] hover:border-border-active hover:bg-surface"
+        >
+          拒绝
+        </button>
+        <button
+          type="button"
+          onClick={onAllow}
+          className="rounded-full border border-amber-300/60 bg-amber-400 px-4 py-2 text-sm font-semibold text-zinc-950 transition-[opacity,box-shadow] hover:opacity-90 hover:shadow-[0_10px_28px_rgba(245,158,11,0.28)]"
+        >
+          允许执行
+        </button>
+      </div>
+    </section>
   );
 }
 

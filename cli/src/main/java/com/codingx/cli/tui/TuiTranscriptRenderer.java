@@ -44,14 +44,35 @@ public class TuiTranscriptRenderer {
             case COMMAND_OUTPUT_DELTA -> renderOutput(event.payloadText("delta"));
             case COMMAND_COMPLETED -> List.of("  Command exited: " + event.payloadText("exitCode"));
             case FILE_DIFF -> List.of("  Diff: " + event.payloadText("path"));
-            case APPROVAL_REQUESTED -> List.of("  Approval required: " + event.payloadText("summary"));
-            case APPROVAL_RESOLVED -> List.of("  Approval: " + event.payloadText("result"));
+            case APPROVAL_REQUESTED -> renderApprovalRequested(event);
+            case APPROVAL_RESOLVED -> List.of("  危险命令审批已处理：" + event.payloadText("result"));
             // 完成事件只驱动状态栏变为 completed，不再写入 transcript，避免每轮回答后出现英文完成噪音。
             case TURN_COMPLETED -> List.of();
             case TURN_INTERRUPTED -> List.of("  Task interrupted");
             case ERROR -> List.of("! Error: " + event.payloadText("message"));
             case UNKNOWN -> List.of("  Unknown event");
         };
+    }
+
+    /**
+     * 渲染危险命令即时确认提示；CLI 只有键盘交互，所以必须把允许/拒绝热键直接写在输入区上方。
+     *
+     * @param event 后端下发的一次性审批请求。
+     * @return 审批提示行。
+     */
+    private List<String> renderApprovalRequested(AgentEvent event) {
+        List<String> lines = new ArrayList<>();
+        String summary = event.payloadText("summary");
+        if (summary.isBlank()) {
+            summary = "检测到需要确认的危险命令";
+        }
+        lines.add("  需要确认：" + summary);
+        String command = event.payloadText("command");
+        if (!command.isBlank()) {
+            lines.add("    命令: " + command);
+        }
+        lines.add("    按 a 允许，按 d 拒绝");
+        return lines;
     }
 
     /**

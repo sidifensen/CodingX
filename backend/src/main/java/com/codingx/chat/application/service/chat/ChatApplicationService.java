@@ -34,6 +34,9 @@ import com.codingx.common.support.ai.AiToolCallDelta;
 import com.codingx.expert.application.service.ChatExpertContextService;
 import com.codingx.governance.application.service.GovernanceAgentContextService;
 import com.codingx.governance.application.service.HookRuleService;
+import com.codingx.governance.application.service.PermissionApprovalRequiredException;
+import com.codingx.governance.application.service.PermissionApprovalService;
+import com.codingx.governance.application.service.PermissionApprovalStatus;
 import com.codingx.mcp.application.service.ChatMcpExecutionService;
 import com.codingx.mcp.application.service.ChatMcpQueryService;
 import com.codingx.mcp.application.executor.ChatMcpProgressListener;
@@ -149,6 +152,8 @@ public class ChatApplicationService {
     private final ChatToolExecutionService chatToolExecutionService;
     /** Hook 规则服务，用于匹配任务生命周期自动化动作，供桌面通知或宠物联动消费。 */
     private final HookRuleService hookRuleService;
+    /** 危险命令一次性审批服务，用于在 CONFIRM 策略命中时暂停工具调用并等待用户选择。 */
+    private final PermissionApprovalService permissionApprovalService;
     /** 治理上下文服务，负责把仓库规范文件和已生效长期记忆注入模型，并在完成后提取新的长期记忆 */
     private final GovernanceAgentContextService governanceAgentContextService;
     /** 会话 workspace 绑定服务，负责把本地空间映射为真实仓库目录 */
@@ -3865,29 +3870,35 @@ public class ChatApplicationService {
         publishLocalToolCallEvent(command.conversationId(), toolCall, "start", startedAt, null, null);
         try {
             // 步骤 2：执行模型指定工具，并把工具输出转成 chat_execution_step 供前端时间线展示。
-            ChatToolExecutionResult toolResult = chatToolExecutionService.execute(toolCall.toolCode(), toolCall.arguments());
-            ChatExecutionStep toolStep = ChatExecutionStep.builder()
-                .id(cn.hutool.core.util.IdUtil.getSnowflakeNextId())
-                .runId(runId)
-                .stepType("tool")
-                .stepTitle("执行本地工具 " + toolCall.toolCode())
-                .stepStatus("COMPLETED")
-                .sequenceNo(1L)
-                .content(toolResult.content())
-                .metadataJson(cn.hutool.json.JSONUtil.toJsonStr(
-                    buildLocalToolStepMetadata(toolCall, toolStepDisplayName, toolResult)
-                ))
-                .createdAt(java.time.LocalDateTime.now())
-                .updatedAt(java.time.LocalDateTime.now())
-                .build();
-            if (!command.localOnly()) {
-                chatExecutionStepRepository.save(toolStep);
-                chatStreamPublisher.publishStep(command.conversationId(), buildExecutionStepPayload(toolStep));
+            return executeAndPersistLocalTool(command, runId, toolCall, toolStepDisplayName, startedAt);
+        } catch (PermissionApprovalRequiredException exception) {
+            // 步骤 3：危险命令需要确认时先发布 approval 事件并暂停，用户允许后只重试同一工具调用一次。
+            try {
+                triggerGovernanceHook(
+                    "TASK_CONFIRM_REQUIRED",
+                    command.conversationId(),
+                    runId,
+                    toolCall.toolCode(),
+                    "任务需要确认：" + exception.getMessage()
+                );
+                chatStreamPublisher.publishApprovalRequest(
+                    command.conversationId(),
+                    permissionApprovalService.toPayload(exception.request())
+                );
+                var approvedRequest = permissionApprovalService.awaitDecision(exception.request().requestId(), null);
+                if (approvedRequest.status() != PermissionApprovalStatus.ALLOWED) {
+                    throw new BusinessException("GOVERNANCE_PERMISSION_DENIED", "用户已拒绝执行该命令");
+                }
+                ChatToolExecutionContext.bindApprovalRequestId(exception.request().requestId());
+                try {
+                    return executeAndPersistLocalTool(command, runId, toolCall, toolStepDisplayName, startedAt);
+                } finally {
+                    ChatToolExecutionContext.bindApprovalRequestId(null);
+                }
+            } catch (BusinessException approvalException) {
+                publishLocalToolCallError(command.conversationId(), toolCall, startedAt, approvalException);
+                throw approvalException;
             }
-            persistPlanStepsIfNeeded(command, runId, toolResult);
-            // 步骤 3：发布工具完成事件并返回工具内容给模型循环，模型可继续基于结果生成回答。
-            publishLocalToolCallEvent(command.conversationId(), toolCall, "complete", startedAt, LocalDateTime.now(), toolResult);
-            return toolResult;
         } catch (BusinessException exception) {
             // 步骤 4：权限策略要求用户确认时触发任务级 Hook，供后续桌面通知或宠物联动提醒用户处理。
             if ("GOVERNANCE_PERMISSION_CONFIRM_REQUIRED".equals(exception.getCode())) {
@@ -3912,6 +3923,49 @@ public class ChatApplicationService {
             // 步骤 6：恢复进入工具前的线程上下文，避免后续工具调用沿用错误目录。
             restoreToolExecutionContext(previousWorkingDirectory, previousSkillDirectories);
         }
+    }
+
+    /**
+     * 执行模型工具调用并落库/发布完成事件。
+     * 业务意图：普通工具执行与危险命令确认后的重试必须共享同一套持久化和 SSE 完成逻辑，
+     * 避免审批路径出现只执行不记录、或记录字段与普通工具不一致的问题。
+     *
+     * @param command 当前消息命令。
+     * @param runId 运行标识。
+     * @param toolCall 模型工具调用。
+     * @param toolStepDisplayName 持久化步骤展示名。
+     * @param startedAt 工具开始时间。
+     * @return 工具执行结果。
+     */
+    private ChatToolExecutionResult executeAndPersistLocalTool(
+        SendChatMessageCommand command,
+        Long runId,
+        AiToolCall toolCall,
+        String toolStepDisplayName,
+        LocalDateTime startedAt
+    ) {
+        ChatToolExecutionResult toolResult = chatToolExecutionService.execute(toolCall.toolCode(), toolCall.arguments());
+        ChatExecutionStep toolStep = ChatExecutionStep.builder()
+            .id(cn.hutool.core.util.IdUtil.getSnowflakeNextId())
+            .runId(runId)
+            .stepType("tool")
+            .stepTitle("执行本地工具 " + toolCall.toolCode())
+            .stepStatus("COMPLETED")
+            .sequenceNo(1L)
+            .content(toolResult.content())
+            .metadataJson(cn.hutool.json.JSONUtil.toJsonStr(
+                buildLocalToolStepMetadata(toolCall, toolStepDisplayName, toolResult)
+            ))
+            .createdAt(java.time.LocalDateTime.now())
+            .updatedAt(java.time.LocalDateTime.now())
+            .build();
+        if (!command.localOnly()) {
+            chatExecutionStepRepository.save(toolStep);
+            chatStreamPublisher.publishStep(command.conversationId(), buildExecutionStepPayload(toolStep));
+        }
+        persistPlanStepsIfNeeded(command, runId, toolResult);
+        publishLocalToolCallEvent(command.conversationId(), toolCall, "complete", startedAt, LocalDateTime.now(), toolResult);
+        return toolResult;
     }
 
     /**

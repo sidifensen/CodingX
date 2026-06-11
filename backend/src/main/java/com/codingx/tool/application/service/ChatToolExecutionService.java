@@ -82,7 +82,8 @@ public class ChatToolExecutionService {
             context.runId(),
             canonicalToolCode,
             normalizedQuestion,
-            workingDirectory
+            workingDirectory,
+            ChatToolExecutionContext.currentApprovalRequestId().orElse(null)
         );
     }
 

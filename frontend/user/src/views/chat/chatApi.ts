@@ -930,6 +930,27 @@ export class ChatApi {
   }
 
   /**
+   * 处理危险命令确认请求，允许或拒绝都只作用于当前 requestId。
+   * @param token 当前登录令牌。
+   * @param requestId 后端 approval 事件下发的请求 ID。
+   * @param decision 用户决定，ALLOW 表示仅本次允许，DENY 表示拒绝执行。
+   */
+  static async resolvePermissionApproval(
+    token: string,
+    requestId: string,
+    decision: 'ALLOW' | 'DENY',
+  ) {
+    return this.request<Record<string, unknown>>(
+      `/api/chat/permission-approvals/${encodeURIComponent(requestId)}`,
+      token,
+      {
+        method: 'POST',
+        body: JSON.stringify({ decision }),
+      },
+    );
+  }
+
+  /**
    * 公开接口不需要 satoken，但仍复用 ApiResponse 解析，保证错误语义一致。
    * @param path 接口路径。
    * @returns 统一响应包。

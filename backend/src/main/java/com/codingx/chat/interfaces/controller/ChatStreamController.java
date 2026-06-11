@@ -4,11 +4,15 @@ import cn.dev33.satoken.stp.StpUtil;
 import com.codingx.chat.application.service.chat.ChatStreamRequestApplicationService;
 import com.codingx.chat.application.service.chat.ChatStreamRequestApplicationService.StreamChatRequest;
 import com.codingx.common.idempotent.IdempotentSubmit;
+import com.codingx.common.model.ApiResponse;
+import com.codingx.governance.application.service.PermissionApprovalService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
@@ -24,6 +28,10 @@ public class ChatStreamController {
      * 聊天流请求应用服务，承接参数解析、会话解析、能力选择、SSE 注册和后台派发。
      */
     private final ChatStreamRequestApplicationService chatStreamRequestApplicationService;
+    /**
+     * 危险命令一次性审批服务，负责处理桌面和 CLI 回传的允许/拒绝决定。
+     */
+    private final PermissionApprovalService permissionApprovalService;
 
     /**
      * 建立单次 SSE 聊天入口，并在同一请求内完成注册与消息发送。
@@ -254,5 +262,31 @@ public class ChatStreamController {
         // 步骤 1：Controller 只做登录入口校验，订阅权限校验交给应用服务。
         StpUtil.checkLogin();
         return chatStreamRequestApplicationService.subscribeConversation(conversationId, StpUtil.getLoginIdAsLong());
+    }
+
+    /**
+     * 处理危险命令确认请求。
+     * @param requestId 审批请求 ID。
+     * @param request 前端或 CLI 提交的确认决定。
+     * @return 处理后的请求快照。
+     */
+    @PostMapping("/permission-approvals/{requestId}")
+    public ApiResponse<Object> resolvePermissionApproval(
+        @PathVariable String requestId,
+        @RequestBody PermissionApprovalResolveRequest request
+    ) {
+        // 步骤 1：Controller 只做登录和协议适配，用户归属、状态合法性和重复消费由审批服务统一校验。
+        StpUtil.checkLogin();
+        var decision = permissionApprovalService.parseDecision(request == null ? null : request.decision());
+        var resolved = permissionApprovalService.resolve(requestId, StpUtil.getLoginIdAsLong(), decision);
+        // 步骤 2：返回同一份审批载荷，调用方可据此清理本地 pending 状态或展示已拒绝结果。
+        return ApiResponse.success(permissionApprovalService.toPayload(resolved));
+    }
+
+    /**
+     * 危险命令确认请求体。
+     * @param decision 用户决定，支持 ALLOW 或 DENY。
+     */
+    public record PermissionApprovalResolveRequest(String decision) {
     }
 }

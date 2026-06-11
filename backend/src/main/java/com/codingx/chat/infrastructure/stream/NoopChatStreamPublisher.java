@@ -43,6 +43,15 @@ public class NoopChatStreamPublisher implements ChatStreamPublisher {
     public void publishToolCall(Long conversationId, Object payload) {
     }
 
+    /**
+     * 忽略危险命令确认请求发布。
+     * @param conversationId 会话标识。
+     * @param payload 审批请求载荷。
+     */
+    @Override
+    public void publishApprovalRequest(Long conversationId, Object payload) {
+    }
+
     @Override
     public void publishReference(Long conversationId, Object payload) {
     }

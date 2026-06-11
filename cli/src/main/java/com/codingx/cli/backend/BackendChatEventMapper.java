@@ -87,6 +87,7 @@ class BackendChatEventMapper {
             case "message" -> mapMessage(payload);
             case "thinking" -> mapThinking(payload);
             case "tool-call", "mcp-call" -> mapToolCall(payload);
+            case "approval" -> List.of(event(AgentEventType.APPROVAL_REQUESTED, payload));
             case "step", "reference", "artifact" -> mapProcessEvent(sseEvent.eventName(), payload);
             case "finish" -> List.of(event(AgentEventType.TURN_COMPLETED, withDefault(payload, "status", "COMPLETED")));
             case "cancel" -> List.of(event(AgentEventType.TURN_INTERRUPTED, payload));

@@ -14,6 +14,7 @@ import com.codingx.chat.domain.model.ChatGoalStepStatus;
 import com.codingx.chat.domain.repository.ChatGoalRepository;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -263,6 +264,16 @@ class ChatGoalServiceTest {
                 .filter(goal -> userId.equals(goal.getUserId()))
                 .filter(goal -> goal.getStatus() == ChatGoalStatus.ACTIVE)
                 .findFirst();
+        }
+
+        @Override
+        public Optional<ChatGoal> findLatestByConversationIdAndUserId(Long conversationId, Long userId) {
+            // 与 MyBatis 实现保持一致：不过滤状态，按更新时间倒序取最新目标，更新时间相同按 ID 倒序。
+            return goals.values().stream()
+                .filter(goal -> conversationId.equals(goal.getConversationId()))
+                .filter(goal -> userId.equals(goal.getUserId()))
+                .max(Comparator.comparing(ChatGoal::getUpdatedAt, Comparator.nullsFirst(Comparator.naturalOrder()))
+                    .thenComparing(ChatGoal::getId, Comparator.nullsFirst(Comparator.naturalOrder())));
         }
 
         @Override

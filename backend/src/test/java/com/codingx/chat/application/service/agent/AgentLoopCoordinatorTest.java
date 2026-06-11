@@ -12,7 +12,7 @@ import org.junit.jupiter.api.Test;
 class AgentLoopCoordinatorTest {
 
     /**
-     * 工具轮次必须被限制在 1 到 20 之间，避免配置错误导致无限 ReAct 循环。
+     * 工具轮次必须被限制在 1 到 60 之间，避免配置错误导致无限 ReAct 循环。
      */
     @Test
     void normalizeMaxRoundsShouldClampToSupportedRange() {
@@ -21,7 +21,7 @@ class AgentLoopCoordinatorTest {
         assertEquals(1, coordinator.normalizeMaxRounds(0));
         assertEquals(1, coordinator.normalizeMaxRounds(-5));
         assertEquals(8, coordinator.normalizeMaxRounds(8));
-        assertEquals(20, coordinator.normalizeMaxRounds(100));
+        assertEquals(60, coordinator.normalizeMaxRounds(100));
     }
 
     /**

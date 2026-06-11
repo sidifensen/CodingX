@@ -24,12 +24,12 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 /**
- * 验证会话 active goal 查询接口，确保 Controller 只做身份和协议适配。
+ * 验证会话最新目标查询接口，确保 Controller 只做身份和协议适配；路径保留 active 命名兼容旧前端。
  */
 @ExtendWith(MockitoExtension.class)
 class ChatGoalControllerTest {
 
-    /** 目标应用服务，负责归属校验和 active goal 查询。 */
+    /** 目标应用服务，负责归属校验和最新目标查询。 */
     @Mock
     private ChatGoalService chatGoalService;
 
@@ -38,7 +38,7 @@ class ChatGoalControllerTest {
     private ChatGoalController chatGoalController;
 
     /**
-     * active goal 查询应把路径会话和当前用户透传给服务，并返回前端可消费的目标快照。
+     * 最新目标查询应把路径会话和当前用户透传给服务，并返回前端可消费的目标快照。
      *
      * @throws Exception MockMvc 断言失败时抛出。
      */
@@ -58,7 +58,7 @@ class ChatGoalControllerTest {
             null,
             List.of(new ChatGoalView.StepView("9101", "schema", "建表", "COMPLETED", "已完成", 0))
         );
-        when(chatGoalService.getActiveGoal(1001L, 2001L)).thenReturn(Optional.of(goal));
+        when(chatGoalService.getLatestGoal(1001L, 2001L)).thenReturn(Optional.of(goal));
 
         try (MockedStatic<StpUtil> mocked = Mockito.mockStatic(StpUtil.class)) {
             mocked.when(StpUtil::getLoginIdAsLong).thenReturn(2001L);
@@ -73,17 +73,17 @@ class ChatGoalControllerTest {
                 .andExpect(jsonPath("$.data.steps[0].status").value("COMPLETED"));
         }
 
-        verify(chatGoalService).getActiveGoal(1001L, 2001L);
+        verify(chatGoalService).getLatestGoal(1001L, 2001L);
     }
 
     /**
-     * 会话没有 active goal 时仍返回成功响应，data 为 null，前端据此清空目标浮窗。
+     * 会话没有任何目标时仍返回成功响应，data 为 null，前端据此清空目标浮窗。
      *
      * @throws Exception MockMvc 断言失败时抛出。
      */
     @Test
     void getActiveGoalReturnsNullWhenConversationHasNoActiveGoal() throws Exception {
-        when(chatGoalService.getActiveGoal(1001L, 2001L)).thenReturn(Optional.empty());
+        when(chatGoalService.getLatestGoal(1001L, 2001L)).thenReturn(Optional.empty());
 
         try (MockedStatic<StpUtil> mocked = Mockito.mockStatic(StpUtil.class)) {
             mocked.when(StpUtil::getLoginIdAsLong).thenReturn(2001L);

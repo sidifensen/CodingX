@@ -37,11 +37,6 @@ public class ChatExecutionRun {
     private Long responseMessageId;
 
     /**
-     * 关联后台任务主键，可为空；普通聊天没有后台任务时不写入。
-     */
-    private Long taskId;
-
-    /**
      * 命中的意图编码，可为空；未命中明确意图或跳过意图识别时为空。
      */
     private String intentCode;

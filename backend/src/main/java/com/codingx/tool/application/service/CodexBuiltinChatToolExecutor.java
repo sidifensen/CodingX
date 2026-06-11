@@ -1914,21 +1914,15 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
         String goalId = readString(input.object(), "goalId", "goal_id", "id");
         String goalKey = readString(input.object(), "goalKey", "goal_key", "key");
         log.info(
-            "目标工具 get_goal 调用开始: conversationId={}, userId={}, runId={}, goalId={}, goalKey={}",
-            context.conversationId(),
-            context.userId(),
-            context.runId(),
-            goalId,
+            "目标工具 get_goal 调用开始: lookupMode={}, goalKey={}",
+            StrUtil.isNotBlank(goalId) ? "goalId" : (StrUtil.isNotBlank(goalKey) ? "goalKey" : "active"),
             goalKey
         );
         Optional<ChatGoalView> goalOptional = chatGoalService.getGoal(context.conversationId(), context.userId(), goalId, goalKey);
         if (goalOptional.isEmpty()) {
             log.info(
-                "目标工具 get_goal 未找到目标，返回空状态供模型继续创建: conversationId={}, userId={}, runId={}, goalId={}, goalKey={}",
-                context.conversationId(),
-                context.userId(),
-                context.runId(),
-                goalId,
+                "目标工具 get_goal 未找到目标，返回空状态供模型继续创建: lookupMode={}, goalKey={}",
+                StrUtil.isNotBlank(goalId) ? "goalId" : (StrUtil.isNotBlank(goalKey) ? "goalKey" : "active"),
                 goalKey
             );
             // 查询空结果是目标模式的正常分支，不能作为工具异常终止聊天流；模型会据此继续调用 create_goal。
@@ -1940,11 +1934,7 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
         }
         ChatGoalView goalView = goalOptional.orElseThrow();
         log.info(
-            "目标工具 get_goal 调用完成: conversationId={}, userId={}, runId={}, goalId={}, status={}, stepCount={}",
-            context.conversationId(),
-            context.userId(),
-            context.runId(),
-            goalView.id(),
+            "目标工具 get_goal 调用完成: status={}, stepCount={}",
             goalView.status(),
             goalView.steps().size()
         );
@@ -1965,22 +1955,14 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
             steps
         );
         log.info(
-            "目标工具 create_goal 调用开始: conversationId={}, userId={}, runId={}, goalId={}, goalKey={}, requestedStepCount={}, titleLength={}",
-            context.conversationId(),
-            context.userId(),
-            context.runId(),
-            command.goalId(),
+            "目标工具 create_goal 调用开始: goalKey={}, requestedStepCount={}, titleLength={}",
             command.goalKey(),
             steps.size(),
             StrUtil.length(command.title())
         );
         ChatGoalView goalView = chatGoalService.createGoal(context.conversationId(), context.userId(), context.runId(), command);
         log.info(
-            "目标工具 create_goal 调用完成: conversationId={}, userId={}, runId={}, goalId={}, eventType={}, status={}, stepCount={}",
-            context.conversationId(),
-            context.userId(),
-            context.runId(),
-            goalView.id(),
+            "目标工具 create_goal 调用完成: eventType={}, status={}, stepCount={}",
             goalView.eventType(),
             goalView.status(),
             goalView.steps().size()
@@ -2004,22 +1986,14 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
             steps
         );
         log.info(
-            "目标工具 update_goal 调用开始: conversationId={}, userId={}, runId={}, goalId={}, goalKey={}, status={}, requestedStepCount={}",
-            context.conversationId(),
-            context.userId(),
-            context.runId(),
-            command.goalId(),
+            "目标工具 update_goal 调用开始: goalKey={}, status={}, requestedStepCount={}",
             command.goalKey(),
             command.status(),
             steps.size()
         );
         ChatGoalView goalView = chatGoalService.updateGoal(context.conversationId(), context.userId(), context.runId(), command);
         log.info(
-            "目标工具 update_goal 调用完成: conversationId={}, userId={}, runId={}, goalId={}, eventType={}, status={}, stepCount={}",
-            context.conversationId(),
-            context.userId(),
-            context.runId(),
-            goalView.id(),
+            "目标工具 update_goal 调用完成: eventType={}, status={}, stepCount={}",
             goalView.eventType(),
             goalView.status(),
             goalView.steps().size()
@@ -2038,10 +2012,10 @@ public class CodexBuiltinChatToolExecutor implements ChatToolExecutor {
             });
         if (context.conversationId() == null || context.userId() == null) {
             log.warn(
-                "目标工具上下文不完整，拒绝执行目标工具: conversationId={}, userId={}, runId={}",
-                context.conversationId(),
-                context.userId(),
-                context.runId()
+                "目标工具上下文不完整，拒绝执行目标工具: hasConversation={}, hasUser={}, hasRun={}",
+                context.conversationId() != null,
+                context.userId() != null,
+                context.runId() != null
             );
             throw new BusinessException("CHAT_TOOL_GOAL_CONTEXT_REQUIRED", "目标工具必须在聊天会话中执行");
         }

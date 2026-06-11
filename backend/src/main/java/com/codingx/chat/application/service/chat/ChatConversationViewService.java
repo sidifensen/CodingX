@@ -183,17 +183,17 @@ public class ChatConversationViewService {
             return ConversationTaskProjection.empty();
         }
 
-        // 步骤 1：优先用会话最近 run 或兼容 task 标识匹配执行记录，兼容 lastRunId 存 runId 或 taskId 的历史数据。
+        // 步骤 1：优先用会话最近 run 主键匹配执行记录，chat_execution_run 现在只保留 run.id。
         ChatExecutionRun latestRun = chatExecutionRunRepository.findByConversationId(conversation.getId()).stream()
-            .filter(run -> conversation.getLastRunId().equals(run.getId()) || conversation.getLastRunId().equals(run.getTaskId()))
+            .filter(run -> conversation.getLastRunId().equals(run.getId()))
             .findFirst()
             .orElse(null);
         if (latestRun == null) {
             return ConversationTaskProjection.empty();
         }
 
-        // 步骤 2：兼容字段的标识来自聊天 run；taskId 兼容列缺失时回退到 run 自身标识。
-        Long runProjectionId = latestRun.getTaskId() != null ? latestRun.getTaskId() : latestRun.getId();
+        // 步骤 2：投影标识直接来自聊天 run 主键，不再依赖已删除的 task_id 列。
+        Long runProjectionId = latestRun.getId();
         String runStatus = normalizeRunStatus(latestRun.getStatus(), latestRun.getQueueStatus());
         java.time.LocalDateTime finishedAt = latestRun.getFinishedAt();
 

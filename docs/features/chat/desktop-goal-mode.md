@@ -16,9 +16,12 @@
 2. 模型调用 `get_goal` 时，`CodexBuiltinChatToolExecutor` 从工具参数读取 `goalId` 或 `goalKey`，两者都未指定时读取当前会话 active goal。执行器不再访问进程内 Map，而是把当前 `conversationId/userId` 传给 `ChatGoalService.getGoal`。服务按目标 ID、目标键或当前 active goal 查询仓储，所有查询都带会话和用户过滤；查询未命中时这是正常空状态，工具返回 `exists=false` 和“当前会话没有活动目标”的中文提示，让模型继续按用户要求调用 `create_goal`，不会把聊天运行收口成失败。
 3. 模型调用 `create_goal` 时，执行器把标题、说明和 steps 数组转换为 `CreateGoalCommand`。`ChatGoalService` 先查同一会话当前用户是否已有 `ACTIVE` 目标，已有时直接返回该目标，保证同一会话最多一个 active goal。没有 active goal 时，服务生成 Snowflake ID，写入 `chat_goal`，把 steps 写入 `chat_goal_step`，并向 `chat_goal_event` 追加 `GOAL_CREATED` 事件。
 4. 模型调用 `update_goal` 时，服务按 `goalId`、`goalKey` 或 active goal 定位目标，并更新标题、说明、状态和进度摘要。steps 入参非空时会替换该目标的步骤快照，旧步骤逻辑删除，新步骤按传入顺序重新保存。目标状态进入 `COMPLETED`、`BLOCKED` 或 `CANCELLED` 时写入终态时间，并追加 `GOAL_COMPLETED`、`GOAL_BLOCKED` 或 `GOAL_CANCELLED` 事件。
-5. 目标创建或更新成功后，`ChatGoalService` 通过 `ChatStreamPublisher.publishGoal` 发布 `goal` SSE 事件。`SseChatStreamPublisher` 只负责把应用层 `ChatGoalView` 快照路由到会话 SSE 通道，`NoopChatStreamPublisher` 在测试和降级场景中忽略该事件。前端收到 `goal` 事件后可直接更新 active goal 状态。
-6. 用户进入或切换会话时，查询接口 `GET /api/chat/conversations/{conversationId}/goal/active` 从登录态读取当前用户 ID，并委托 `ChatGoalService.getActiveGoal` 查询数据库。接口只返回 `ACTIVE` 目标；没有 active goal 时 `ApiResponse.success(null)`，前端据此清空目标浮窗。已完成或取消的目标仍保留在数据库和事件流水中，但刷新后不再作为当前目标展示。
-7. 管理员打开管理端会话详情 `GET /api/admin/chat/conversations/{conversationId}` 时，`AdminChatConversationService` 先读取会话本体和消息列表，再通过 `ChatGoalRepository.findAllByConversationId` 读取该会话所有未删除目标。服务随后批量读取这些目标的未删除步骤快照，并按会话读取事件流水，按 `goalId` 分组后挂载到每个目标响应。所有目标、步骤、事件 ID 和 runId 都在响应层转成字符串，前端 `TaskDetail` 只读渲染 `goals[].steps[]` 和 `goals[].events[]`；没有目标时显示“当前会话暂无目标记录”，不会影响消息列表展示。
+5. 模型误用 `update_plan` 更新阶段计划时，`ChatApplicationService` 仍会把原始 plan 步骤保存为 `chat_execution_step` 并通过 `step` 事件展示在过程时间线。若本轮已经创建或读取到真实 active goal，服务会把 `update_plan.steps` 转换为 `update_goal.steps`，按步骤完成比例生成 `progressSummary`，并通过真实 `update_goal` 写入目标表。全部步骤完成时目标主状态写为 `COMPLETED`，存在阻塞或取消步骤时写为 `BLOCKED` 或 `CANCELLED`，否则保持 `ACTIVE`；这样右侧目标浮窗能收到 `goal` SSE，而普通聊天的 `update_plan` 不会误写目标。
+6. 目标创建或更新成功后，`ChatGoalService` 通过 `ChatStreamPublisher.publishGoal` 发布 `goal` SSE 事件。`SseChatStreamPublisher` 只负责把应用层 `ChatGoalView` 快照路由到会话 SSE 通道，`NoopChatStreamPublisher` 在测试和降级场景中忽略该事件。前端收到 `goal` 事件后可直接更新 active goal 状态。
+7. 目标模式执行型任务使用独立工具预算。`RuntimeSettingService` 先读取普通 `chat.tool.max_rounds`，普通聊天仍裁到最多 20 轮；当本轮是目标模式且用户明确要求执行、验证或提交时，再读取 `chat.tool.plan_execution_min_rounds`，默认 60，并取两者较大值。`AgentLoopCoordinator` 的全局安全上限为 60，因此大型 HTML 生成、验证和提交链路不会在第 20 轮 ACTIVE 进度后被误写为 `BLOCKED`；配置误填成超大值时仍会被裁剪。
+8. 模型流在目标已创建后失败时，后端会区分工具是否已经真实落地。若失败发生在 write/edit 等完整工具调用之前，服务通过真实 `update_goal` 写入 `BLOCKED`，避免用户误以为半截工具参数已经写入文件；若上一轮工作工具已经成功返回且目标进度仍待同步，服务把异常作为系统提示回灌给模型，要求先 `update_goal` 同步已完成工作，再继续验证和提交。该恢复路径不会覆盖已成功的文件编辑或命令结果，也不会把任务提前标记为阻塞。
+9. 用户进入或切换会话时，查询接口 `GET /api/chat/conversations/{conversationId}/goal/active` 从登录态读取当前用户 ID，并委托 `ChatGoalService.getActiveGoal` 查询数据库。接口只返回 `ACTIVE` 目标；没有 active goal 时 `ApiResponse.success(null)`，前端据此清空目标浮窗。已完成或取消的目标仍保留在数据库和事件流水中，但刷新后不再作为当前目标展示。
+10. 管理员打开管理端会话详情 `GET /api/admin/chat/conversations/{conversationId}` 时，`AdminChatConversationService` 先读取会话本体和消息列表，再通过 `ChatGoalRepository.findAllByConversationId` 读取该会话所有未删除目标。服务随后批量读取这些目标的未删除步骤快照，并按会话读取事件流水，按 `goalId` 分组后挂载到每个目标响应。所有目标、步骤、事件 ID 和 runId 都在响应层转成字符串，前端 `TaskDetail` 只读渲染 `goals[].steps[]` 和 `goals[].events[]`；没有目标时显示“当前会话暂无目标记录”，不会影响消息列表展示。
 
 ## 关键文件
 
@@ -28,6 +31,7 @@
 - `backend/src/main/java/com/codingx/chat/domain/repository/ChatGoalRepository.java` 与 `ChatGoalRepositoryImpl.java`：目标、步骤、事件的持久化端口和 MyBatis 实现。
 - `backend/src/main/java/com/codingx/admin/application/service/AdminChatConversationService.java`：管理端会话详情聚合目标主表、步骤快照和事件流水。
 - `backend/src/main/java/com/codingx/tool/application/service/CodexBuiltinChatToolExecutor.java`：把目标工具从内存 Map 改为调用 `ChatGoalService`。
+- `backend/src/main/java/com/codingx/chat/application/service/chat/ChatApplicationService.java`：目标模式工具循环、`update_plan` 到 `update_goal` 桥接、流失败恢复和终态收口保护。
 - `backend/src/main/java/com/codingx/chat/interfaces/controller/ChatGoalController.java`：当前会话 active goal 查询接口。
 - `frontend/admin/src/pages/TaskDetail.tsx`：管理端会话详情目标记录只读展示区。
 
@@ -48,6 +52,7 @@
 - `cd backend && mvn -Dtest=AdminChatConversationServiceTest test`
 - `cd backend && mvn -Dtest=AdminChatConversationControllerTest test`
 - `cd backend && mvn -Dtest=ChatToolSpecServiceTest test`
+- `cd backend && mvn -Dtest=ChatApplicationServiceTest#planModeShouldBridgeUpdatePlanToGoalProgressWhenGoalExists+planModeShouldContinueAfterStreamFailureWhenWorkToolAlreadySucceeded+planModeExecutionShouldUseConfiguredBudgetBeyondTwentyRounds test`
 - `cd frontend/admin && npm run test:run -- TaskDetail.test.tsx`
 - `cd backend && mvn compile`
 - `cd backend && mvn test`

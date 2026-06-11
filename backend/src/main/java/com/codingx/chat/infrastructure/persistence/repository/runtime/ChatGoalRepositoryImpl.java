@@ -51,6 +51,22 @@ public class ChatGoalRepositoryImpl implements ChatGoalRepository {
     }
 
     /**
+     * 查询当前会话的最新目标，终态目标也要返回给右侧浮窗继续展示完成结果。
+     */
+    @Override
+    public Optional<ChatGoal> findLatestByConversationIdAndUserId(Long conversationId, Long userId) {
+        return chatGoalMapper.selectList(new LambdaQueryWrapper<ChatGoalDO>()
+                .eq(ChatGoalDO::getConversationId, conversationId)
+                .eq(ChatGoalDO::getUserId, userId)
+                .eq(ChatGoalDO::getDeleted, 0)
+                .orderByDesc(ChatGoalDO::getUpdatedAt)
+                .orderByDesc(ChatGoalDO::getId))
+            .stream()
+            .findFirst()
+            .map(this::toDomain);
+    }
+
+    /**
      * 按目标 ID、会话和用户读取目标，避免工具调用跨会话命中同名目标。
      */
     @Override

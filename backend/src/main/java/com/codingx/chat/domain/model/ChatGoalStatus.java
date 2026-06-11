@@ -8,7 +8,7 @@ import java.util.Locale;
 public enum ChatGoalStatus {
     /** 目标正在进行，active goal 查询只返回该状态。 */
     ACTIVE,
-    /** 目标已完成，刷新后不再作为 active goal 常驻展示。 */
+    /** 目标已完成，仍可作为会话最新目标在右侧浮窗展示。 */
     COMPLETED,
     /** 目标被阻塞，需要用户或下游条件解除后才能继续。 */
     BLOCKED,

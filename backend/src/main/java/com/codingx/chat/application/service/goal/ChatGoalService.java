@@ -55,26 +55,23 @@ public class ChatGoalService {
     }
 
     /**
-     * 查询当前会话的 active goal。
+     * 查询当前会话最新目标，包含已完成或已阻塞目标，用于右侧浮窗在终态后继续展示。
      *
      * @param conversationId 会话 ID。
      * @param userId 当前用户 ID。
-     * @return active goal 视图，不存在时为空。
+     * @return 最新目标视图，不存在时为空。
      */
-    public Optional<ChatGoalView> getActiveGoal(Long conversationId, Long userId) {
+    public Optional<ChatGoalView> getLatestGoal(Long conversationId, Long userId) {
         validateContext(conversationId, userId);
-        Optional<ChatGoal> activeGoal = chatGoalRepository.findActiveByConversationIdAndUserId(conversationId, userId);
-        if (activeGoal.isEmpty()) {
-            log.debug("目标模式查询 active goal 未命中: conversationId={}, userId={}", conversationId, userId);
+        Optional<ChatGoal> latestGoal = chatGoalRepository.findLatestByConversationIdAndUserId(conversationId, userId);
+        if (latestGoal.isEmpty()) {
+            log.debug("目标模式查询 latest goal 未命中");
             return Optional.empty();
         }
-        ChatGoal goal = activeGoal.orElseThrow();
+        ChatGoal goal = latestGoal.orElseThrow();
         List<ChatGoalStep> steps = chatGoalRepository.findStepsByGoalId(goal.getId());
         log.debug(
-            "目标模式查询 active goal 命中: conversationId={}, userId={}, goalId={}, status={}, stepCount={}",
-            conversationId,
-            userId,
-            goal.getId(),
+            "目标模式查询 latest goal 命中: status={}, stepCount={}",
             goal.getStatus(),
             steps.size()
         );
@@ -94,21 +91,15 @@ public class ChatGoalService {
         validateContext(conversationId, userId);
         String lookupMode = StrUtil.isNotBlank(goalId) ? "goalId" : (StrUtil.isNotBlank(goalKey) ? "goalKey" : "active");
         log.debug(
-            "目标模式读取目标开始: conversationId={}, userId={}, lookupMode={}, goalId={}, goalKey={}",
-            conversationId,
-            userId,
+            "目标模式读取目标开始: lookupMode={}, goalKey={}",
             lookupMode,
-            goalId,
             goalKey
         );
         Optional<ChatGoal> goalOptional = resolveGoal(conversationId, userId, goalId, goalKey);
         if (goalOptional.isEmpty()) {
             log.warn(
-                "目标模式读取目标未命中: conversationId={}, userId={}, lookupMode={}, goalId={}, goalKey={}",
-                conversationId,
-                userId,
+                "目标模式读取目标未命中: lookupMode={}, goalKey={}",
                 lookupMode,
-                goalId,
                 goalKey
             );
             return Optional.empty();
@@ -116,10 +107,7 @@ public class ChatGoalService {
         ChatGoal goal = goalOptional.orElseThrow();
         List<ChatGoalStep> steps = chatGoalRepository.findStepsByGoalId(goal.getId());
         log.debug(
-            "目标模式读取目标成功: conversationId={}, userId={}, goalId={}, status={}, stepCount={}",
-            conversationId,
-            userId,
-            goal.getId(),
+            "目标模式读取目标成功: status={}, stepCount={}",
             goal.getStatus(),
             steps.size()
         );
@@ -142,10 +130,7 @@ public class ChatGoalService {
             : command;
         int requestedStepCount = safeCommand.steps() == null ? 0 : safeCommand.steps().size();
         log.info(
-            "目标模式创建目标开始: conversationId={}, userId={}, runId={}, goalKey={}, requestedStepCount={}, titleLength={}",
-            conversationId,
-            userId,
-            runId,
+            "目标模式创建目标开始: goalKey={}, requestedStepCount={}, titleLength={}",
             StrUtil.blankToDefault(safeCommand.goalKey(), "default"),
             requestedStepCount,
             StrUtil.length(safeCommand.title())
@@ -155,11 +140,7 @@ public class ChatGoalService {
             ChatGoal existing = activeGoal.orElseThrow();
             List<ChatGoalStep> existingSteps = chatGoalRepository.findStepsByGoalId(existing.getId());
             log.info(
-                "目标模式复用已有 active goal: conversationId={}, userId={}, runId={}, goalId={}, status={}, stepCount={}",
-                conversationId,
-                userId,
-                runId,
-                existing.getId(),
+                "目标模式复用已有 active goal: status={}, stepCount={}",
                 existing.getStatus(),
                 existingSteps.size()
             );
@@ -192,11 +173,7 @@ public class ChatGoalService {
         appendEvent(goal, runId, "GOAL_CREATED", safeCommand, view, now);
         publishGoal(conversationId, view);
         log.info(
-            "目标模式创建目标完成: conversationId={}, userId={}, runId={}, goalId={}, eventType={}, stepCount={}",
-            conversationId,
-            userId,
-            runId,
-            goalId,
+            "目标模式创建目标完成: eventType={}, stepCount={}",
             "GOAL_CREATED",
             steps.size()
         );
@@ -219,11 +196,7 @@ public class ChatGoalService {
             : command;
         int requestedStepCount = safeCommand.steps() == null ? 0 : safeCommand.steps().size();
         log.info(
-            "目标模式更新目标开始: conversationId={}, userId={}, runId={}, goalId={}, goalKey={}, status={}, requestedStepCount={}",
-            conversationId,
-            userId,
-            runId,
-            safeCommand.goalId(),
+            "目标模式更新目标开始: goalKey={}, status={}, requestedStepCount={}",
             safeCommand.goalKey(),
             safeCommand.status(),
             requestedStepCount
@@ -231,11 +204,7 @@ public class ChatGoalService {
         Optional<ChatGoal> existingOptional = resolveGoalForUpdate(conversationId, userId, runId, safeCommand);
         if (existingOptional.isEmpty()) {
             log.warn(
-                "目标模式更新目标未命中: conversationId={}, userId={}, runId={}, goalId={}, goalKey={}",
-                conversationId,
-                userId,
-                runId,
-                safeCommand.goalId(),
+                "目标模式更新目标未命中: goalKey={}",
                 safeCommand.goalKey()
             );
             throw new BusinessException("CHAT_TOOL_GOAL_NOT_FOUND", ErrorMessageCatalog.CHAT_TOOL_GOAL_NOT_FOUND);
@@ -267,11 +236,7 @@ public class ChatGoalService {
         appendEvent(updated, runId, eventType, safeCommand, view, now);
         publishGoal(conversationId, view);
         log.info(
-            "目标模式更新目标完成: conversationId={}, userId={}, runId={}, goalId={}, oldStatus={}, newStatus={}, eventType={}, stepsReplaced={}, stepCount={}",
-            conversationId,
-            userId,
-            runId,
-            existing.getId(),
+            "目标模式更新目标完成: oldStatus={}, newStatus={}, eventType={}, stepsReplaced={}, stepCount={}",
             existing.getStatus(),
             status,
             eventType,
@@ -303,13 +268,8 @@ public class ChatGoalService {
         // 模型在同一轮 create_goal 后常会继续使用自造 goalId；此时 active goal 才是数据库事实来源。
         Optional<ChatGoal> activeGoal = chatGoalRepository.findActiveByConversationIdAndUserId(conversationId, userId);
         activeGoal.ifPresent(goal -> log.warn(
-            "目标模式更新目标标识未命中，已回退 active goal: conversationId={}, userId={}, runId={}, providedGoalId={}, providedGoalKey={}, activeGoalId={}",
-            conversationId,
-            userId,
-            runId,
-            command.goalId(),
-            command.goalKey(),
-            goal.getId()
+            "目标模式更新目标标识未命中，已回退 active goal: providedGoalKey={}",
+            command.goalKey()
         ));
         return activeGoal;
     }
@@ -385,10 +345,7 @@ public class ChatGoalService {
             now
         ));
         log.debug(
-            "目标模式事件已写入: conversationId={}, goalId={}, runId={}, eventType={}",
-            goal.getConversationId(),
-            goal.getId(),
-            runId,
+            "目标模式事件已写入: eventType={}",
             eventType
         );
     }
@@ -400,15 +357,13 @@ public class ChatGoalService {
         if (chatStreamPublisher != null) {
             chatStreamPublisher.publishGoal(conversationId, view);
             log.debug(
-                "目标模式 SSE 事件已发布: conversationId={}, goalId={}, eventType={}, status={}",
-                conversationId,
-                view.id(),
+                "目标模式 SSE 事件已发布: eventType={}, status={}",
                 view.eventType(),
                 view.status()
             );
             return;
         }
-        log.debug("目标模式 SSE 发布器未注入，跳过推送: conversationId={}, goalId={}", conversationId, view.id());
+        log.debug("目标模式 SSE 发布器未注入，跳过推送: eventType={}, status={}", view.eventType(), view.status());
     }
 
     /**
@@ -457,7 +412,7 @@ public class ChatGoalService {
      */
     private void validateContext(Long conversationId, Long userId) {
         if (conversationId == null || userId == null) {
-            log.warn("目标工具缺少会话上下文: conversationId={}, userId={}", conversationId, userId);
+            log.warn("目标工具缺少会话上下文: hasConversation={}, hasUser={}", conversationId != null, userId != null);
             throw new BusinessException("CHAT_TOOL_GOAL_CONTEXT_REQUIRED", "目标工具必须在聊天会话中执行");
         }
     }

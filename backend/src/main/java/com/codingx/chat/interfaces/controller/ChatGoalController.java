@@ -20,31 +20,31 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 public class ChatGoalController {
 
-    /** 目标应用服务，负责会话归属过滤和 active goal 查询。 */
+    /** 目标应用服务，负责会话归属过滤和最新目标查询。 */
     private final ChatGoalService chatGoalService;
 
     /**
-     * 查询当前用户当前会话的 active goal；没有 active goal 时 data 返回 null。
+     * 查询当前用户当前会话的最新目标；路径保留 active 兼容旧前端命名，返回值包含终态目标。
      *
      * @param conversationId 会话 ID。
-     * @return active goal 响应或 null。
+     * @return 最新目标响应或 null。
      */
     @GetMapping("/{conversationId}/goal/active")
     public ApiResponse<ChatGoalResponse> getActiveGoal(@PathVariable Long conversationId) {
         // 步骤 1：从登录态读取用户 ID，目标归属校验由应用服务和仓储过滤完成。
         Long userId = StpUtil.getLoginIdAsLong();
-        log.debug("目标浮窗查询 active goal 请求进入: conversationId={}, userId={}", conversationId, userId);
-        // 步骤 2：只查询 ACTIVE 状态目标，已完成或取消目标不在刷新后常驻右侧浮窗。
-        ChatGoalResponse response = chatGoalService.getActiveGoal(conversationId, userId)
+        log.debug("目标浮窗查询 latest goal 请求进入: conversationId={}, userId={}", conversationId, userId);
+        // 步骤 2：查询最新未删除目标，完成/阻塞后仍作为本会话当前目标展示，直到新目标替换。
+        ChatGoalResponse response = chatGoalService.getLatestGoal(conversationId, userId)
             .map(ChatGoalResponse::from)
             .orElse(null);
         log.debug(
-            "目标浮窗查询 active goal 请求完成: conversationId={}, userId={}, hit={}",
+            "目标浮窗查询 latest goal 请求完成: conversationId={}, userId={}, hit={}",
             conversationId,
             userId,
             response != null
         );
-        // 步骤 3：无 active goal 仍返回成功响应，前端据此清空 activeGoal 状态。
+        // 步骤 3：无任何目标仍返回成功响应，前端据此清空目标浮窗。
         return ApiResponse.success(response);
     }
 }

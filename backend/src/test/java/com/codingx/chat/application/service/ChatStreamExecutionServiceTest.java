@@ -436,7 +436,7 @@ class ChatStreamExecutionServiceTest {
     }
 
     /**
-     * 派发入口必须复用控制器下发的运行标识，并以 runId 写入兼容列 taskId。
+     * 派发入口必须复用控制器下发的运行标识，并把它作为 run 主键持久化。
      * @throws Exception 等待后台线程执行时抛出。
      */
     @Test
@@ -460,7 +460,6 @@ class ChatStreamExecutionServiceTest {
         verify(chatExecutionRunRepository).save(runCaptor.capture());
         ChatExecutionRun savedRun = runCaptor.getValue();
         assertEquals(runId, savedRun.getId());
-        assertEquals(runId, savedRun.getTaskId());
         assertEquals(1001L, savedRun.getConversationId());
         assertEquals("RUNNING", savedRun.getStatus());
         assertEquals("WAITING", savedRun.getQueueStatus());
@@ -482,7 +481,6 @@ class ChatStreamExecutionServiceTest {
         ChatExecutionRun oldRunningRun = ChatExecutionRun.builder()
             .id(oldRunId)
             .conversationId(1001L)
-            .taskId(oldRunId)
             .status("RUNNING")
             .queueStatus("ACQUIRED")
             .createdAt(java.time.LocalDateTime.now().minusMinutes(10))

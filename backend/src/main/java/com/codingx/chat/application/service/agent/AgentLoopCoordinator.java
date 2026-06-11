@@ -16,8 +16,8 @@ import org.springframework.stereotype.Service;
 @Service
 public class AgentLoopCoordinator {
 
-    /** Agent Loop 支持的最大安全轮次，防止配置错误造成无限工具循环。 */
-    private static final int MAX_SUPPORTED_ROUNDS = 20;
+    /** Agent Loop 支持的最大安全轮次，目标模式长任务可用；普通聊天在 RuntimeSettingService 中仍先裁到 20。 */
+    private static final int MAX_SUPPORTED_ROUNDS = 60;
     /** 工具轮次超过上限时返回给用户和日志的统一中文提示。 */
     private static final String MAX_ROUNDS_MESSAGE = "本地工具调用轮次超过上限，请收敛工具调用后重试";
     /** write 工具参数中的目标路径字段，去重时只依赖该字段而不依赖完整 content。 */
@@ -29,7 +29,7 @@ public class AgentLoopCoordinator {
     /**
      * 将运行时配置的工具轮次裁剪到安全范围。
      * @param configuredRounds 配置中心读取的轮次。
-     * @return 1 到 20 之间的安全轮次。
+     * @return 1 到 60 之间的安全轮次。
      */
     public int normalizeMaxRounds(int configuredRounds) {
         return Math.max(1, Math.min(configuredRounds, MAX_SUPPORTED_ROUNDS));

@@ -139,7 +139,7 @@ class RuntimeSettingServiceTest {
     }
 
     /**
-     * 目标模式执行型最低轮次同样必须受工具循环硬上限保护，避免配置过大拖垮聊天执行线程。
+     * 目标模式执行型最低轮次使用独立上限，避免大型目标任务被普通聊天 20 轮保护提前截断。
      */
     @Test
     void planModeExecutionMinToolRoundsClampsMisconfiguredLargeValue() {
@@ -161,11 +161,11 @@ class RuntimeSettingServiceTest {
 
         runtimeSettingService.init();
 
-        assertEquals(20, runtimeSettingService.planModeExecutionMinToolRounds());
+        assertEquals(60, runtimeSettingService.planModeExecutionMinToolRounds());
     }
 
     /**
-     * 新环境或迁移未执行时应回退到 20，保持目标模式长任务有足够预算完成验证和提交。
+     * 新环境或迁移未执行时应回退到 60，保持目标模式长任务有足够预算完成验证和提交。
      */
     @Test
     void planModeExecutionMinToolRoundsFallsBackToDefaultWhenMissing() {
@@ -173,7 +173,7 @@ class RuntimeSettingServiceTest {
 
         runtimeSettingService.init();
 
-        assertEquals(20, runtimeSettingService.planModeExecutionMinToolRounds());
+        assertEquals(60, runtimeSettingService.planModeExecutionMinToolRounds());
     }
 
     /**

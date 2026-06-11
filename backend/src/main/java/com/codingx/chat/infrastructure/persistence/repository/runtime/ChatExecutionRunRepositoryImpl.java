@@ -45,7 +45,6 @@ public class ChatExecutionRunRepositoryImpl implements ChatExecutionRunRepositor
         dataObject.setConversationId(run.getConversationId());
         dataObject.setRequestMessageId(run.getRequestMessageId());
         dataObject.setResponseMessageId(run.getResponseMessageId());
-        dataObject.setTaskId(run.getTaskId());
         dataObject.setIntentCode(run.getIntentCode());
         dataObject.setStatus(run.getStatus());
         dataObject.setQueueStatus(run.getQueueStatus());
@@ -65,7 +64,6 @@ public class ChatExecutionRunRepositoryImpl implements ChatExecutionRunRepositor
             .conversationId(dataObject.getConversationId())
             .requestMessageId(dataObject.getRequestMessageId())
             .responseMessageId(dataObject.getResponseMessageId())
-            .taskId(dataObject.getTaskId())
             .intentCode(dataObject.getIntentCode())
             .status(dataObject.getStatus())
             .queueStatus(dataObject.getQueueStatus())

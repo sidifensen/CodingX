@@ -155,7 +155,7 @@ public class ChatStreamExecutionService {
     }
 
     /**
-     * 按指定运行标识派发聊天处理；taskId 字段仅作为兼容列继续写入同一个 runId。
+     * 按指定运行标识派发聊天处理。
      * @param runId 后台运行标识。
      * @param command 聊天消息命令。
      * @param userId 当前用户标识。
@@ -195,7 +195,6 @@ public class ChatStreamExecutionService {
         chatExecutionRunRepository.save(ChatExecutionRun.builder()
             .id(runId)
             .conversationId(command.conversationId())
-            .taskId(runId)
             .status("RUNNING")
             .queueStatus("WAITING")
             .startedAt(now)
@@ -585,7 +584,6 @@ public class ChatStreamExecutionService {
         chatExecutionRunRepository.save(ChatExecutionRun.builder()
             .id(runId)
             .conversationId(conversationId)
-            .taskId(runId)
             .status("ERROR")
             .queueStatus("FAILED")
             .errorMessage(throwable.getMessage())
@@ -609,7 +607,6 @@ public class ChatStreamExecutionService {
         chatExecutionRunRepository.save(ChatExecutionRun.builder()
             .id(runId)
             .conversationId(conversationId)
-            .taskId(runId)
             .status("REJECTED")
             .queueStatus("REJECTED")
             .errorMessage(message)

@@ -821,7 +821,13 @@ class ChatApplicationServiceTest {
 
         verify(chatToolExecutionService).execute(eq("get_goal"), any());
         verify(chatToolExecutionService).execute(eq("create_goal"), any());
-        verify(chatStreamPublisher).publishAssistantCompleted(eq(1L), any(Long.class), eq("目标工具链已进入。"), eq("目标模式"));
+        verify(chatToolExecutionService).execute(eq("update_goal"), any());
+        verify(chatStreamPublisher).publishAssistantCompleted(
+            eq(1L),
+            any(Long.class),
+            eq("目标已阻塞：做一个大型笔记html并完成提交。\n阻塞原因：目标已创建，等待实际执行工具"),
+            eq("目标模式")
+        );
         ChatExecutionContext.clear();
     }
 
@@ -905,6 +911,119 @@ class ChatApplicationServiceTest {
             eq(1L),
             any(Long.class),
             eq("目标已完成：做一个大型笔记html并完成提交。\n进度摘要：已完成大型笔记 HTML 初稿"),
+            eq("目标模式")
+        );
+        ChatExecutionContext.clear();
+    }
+
+    /**
+     * 目标模式中模型误用 update_plan 跟进步骤时，后端应桥接为真实 update_goal，保证右侧目标浮窗收到 goal SSE。
+     * 真实桌面现象是过程区显示 update_plan 已更新，但目标浮窗只监听 chat_goal，导致浮窗停留在旧进度。
+     */
+    @Test
+    void planModeShouldBridgeUpdatePlanToGoalProgressWhenGoalExists() {
+        bindRunContext();
+        ChatConversation conversation = ChatConversation.create(1L, "Goal", 1002L, 3001L, ChatConversationStatus.ACTIVE);
+        String question = "开启目标模式。请先检查当前线程是否已有目标；如果没有，请创建一个目标。目标是：做一个大型笔记html并完成提交。执行过程中每完成一个关键步骤，都要更新目标进度。不要只给方案，请直接执行、验证、提交。";
+        when(chatConversationRepository.requireById(1L)).thenReturn(conversation);
+        when(chatMessageRepository.findByConversationId(1L)).thenReturn(new ArrayList<>());
+        when(chatAttachmentService.requireOwnedAttachments(any(), eq(1L), eq(1002L))).thenReturn(List.of());
+        when(promptTemplateLoader.load("plan-mode-goal-context")).thenReturn("# 规划/目标模式\nupdate_plan 只能作为计划过程，右侧浮窗必须同步真实目标。");
+        when(promptTemplateLoader.render(eq("local-tool-evidence-context"), any())).thenAnswer(invocation -> {
+            @SuppressWarnings("unchecked")
+            Map<String, String> slots = invocation.getArgument(1, Map.class);
+            return "工具标识：" + slots.get("tool_code") + "\n工具输出：" + slots.get("tool_output");
+        });
+        when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+            new ConversationRewriteResult(question, false, List.of(question))
+        );
+        when(conversationIntentService.route(question, false)).thenReturn(
+            new ConversationIntentDecision("chat.normal", ConversationIntentAction.DIRECT, null)
+        );
+        when(chatIntentNodeRepository.findByIntentCode("chat.normal")).thenReturn(null);
+        when(chatSkillContextService.buildSkillContext(any())).thenReturn("");
+        when(chatExpertContextService.buildExpertContext(any())).thenReturn("");
+        when(governanceAgentContextService.buildAgentContext(any(), any(), any())).thenReturn("");
+        when(chatToolSpecService.listModelVisibleToolSpecs()).thenReturn(List.of(
+            new ChatToolSpec("get_goal", "读取目标", Map.of()),
+            new ChatToolSpec("create_goal", "创建目标", Map.of()),
+            new ChatToolSpec("update_plan", "更新计划", Map.of()),
+            new ChatToolSpec("update_goal", "更新目标", Map.of())
+        ));
+        when(runtimeSettingService.chatToolMaxRounds()).thenReturn(6);
+        when(chatToolExecutionService.execute(eq("get_goal"), any())).thenReturn(
+            new ChatToolExecutionResult("get_goal", "当前会话没有活动目标，请根据用户要求调用 create_goal 创建目标。", Map.of("exists", false))
+        );
+        when(chatToolExecutionService.execute(eq("create_goal"), any())).thenReturn(
+            new ChatToolExecutionResult("create_goal", "目标已创建", Map.of("goal", Map.of("id", "goal-1", "status", "ACTIVE")))
+        );
+        when(chatToolExecutionService.execute(eq("update_plan"), any()))
+            .thenReturn(new ChatToolExecutionResult("update_plan", "计划已更新，共 2 个步骤", Map.of(
+                "planId", "default",
+                "steps", List.of(
+                    Map.of("step", "创建大型笔记 HTML", "status", "completed"),
+                    Map.of("step", "验证并提交", "status", "in_progress")
+                )
+            )))
+            .thenReturn(new ChatToolExecutionResult("update_plan", "计划已更新，共 2 个步骤", Map.of(
+                "planId", "default",
+                "steps", List.of(
+                    Map.of("step", "创建大型笔记 HTML", "status", "completed"),
+                    Map.of("step", "验证并提交", "status", "completed")
+                )
+            )));
+        when(chatToolExecutionService.execute(eq("update_goal"), any())).thenAnswer(invocation -> {
+            String arguments = invocation.getArgument(1, String.class);
+            String status = cn.hutool.json.JSONUtil.parseObj(arguments).getStr("status");
+            if ("COMPLETED".equals(status)) {
+                return completedGoalToolResult("计划进度已同步：2/2 个步骤完成");
+            }
+            if ("BLOCKED".equals(status)) {
+                return blockedGoalToolResult("不应因 update_plan 未桥接而阻塞目标");
+            }
+            return activeGoalToolResult("计划进度已同步：1/2 个步骤完成");
+        });
+        when(conversationSummaryService.buildModelHistory(any(), any())).thenAnswer(invocation -> invocation.getArgument(1));
+        when(llmResponseCleaner.clean(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(conversationTitleService.generateTitle(any(), any())).thenReturn("目标模式");
+        AtomicInteger modelRound = new AtomicInteger();
+        doAnswer(invocation -> {
+            AiChatClient.ToolAwareStreamHandler handler = invocation.getArgument(3);
+            int round = modelRound.incrementAndGet();
+            if (round == 1) {
+                handler.onToolCall(new AiToolCall("call-1", "get_goal", "{}"));
+            } else if (round == 2) {
+                handler.onToolCall(new AiToolCall("call-2", "create_goal", "{\"title\":\"大型笔记 HTML\"}"));
+            } else if (round == 3) {
+                handler.onToolCall(new AiToolCall("call-3", "update_plan", "{\"steps\":[{\"step\":\"创建大型笔记 HTML\",\"status\":\"completed\"},{\"step\":\"验证并提交\",\"status\":\"in_progress\"}]}"));
+            } else if (round == 4) {
+                handler.onToolCall(new AiToolCall("call-4", "update_plan", "{\"steps\":[{\"step\":\"创建大型笔记 HTML\",\"status\":\"completed\"},{\"step\":\"验证并提交\",\"status\":\"completed\"}]}"));
+            } else {
+                handler.onDelta("计划步骤已全部完成。");
+            }
+            handler.onComplete();
+            return null;
+        }).when(aiChatClient).streamChatWithTools(any(), eq(false), any(), any());
+
+        chatApplicationService.sendMessage(
+            new SendChatMessageCommand(1L, question, false, List.of(), List.of(), Map.of(), null, "D:\\code\\test", List.of(), false, false, true),
+            1002L
+        );
+
+        ArgumentCaptor<String> goalUpdateArgsCaptor = ArgumentCaptor.forClass(String.class);
+        verify(chatToolExecutionService, times(2)).execute(eq("update_goal"), goalUpdateArgsCaptor.capture());
+        assertTrue(goalUpdateArgsCaptor.getAllValues().getFirst().contains("\"status\":\"ACTIVE\""));
+        assertTrue(goalUpdateArgsCaptor.getAllValues().getLast().contains("\"status\":\"COMPLETED\""));
+        verify(chatStreamPublisher, never()).publishAssistantCompleted(
+            eq(1L),
+            any(Long.class),
+            eq("目标已阻塞：做一个大型笔记html并完成提交。\n阻塞原因：不应因 update_plan 未桥接而阻塞目标"),
+            eq("目标模式")
+        );
+        verify(chatStreamPublisher).publishAssistantCompleted(
+            eq(1L),
+            any(Long.class),
+            eq("目标已完成：做一个大型笔记html并完成提交。\n进度摘要：计划进度已同步：2/2 个步骤完成"),
             eq("目标模式")
         );
         ChatExecutionContext.clear();
@@ -1769,6 +1888,115 @@ class ChatApplicationServiceTest {
     }
 
     /**
+     * 执行型目标的配置预算必须能超过普通聊天 20 轮保护。
+     * 真实桌面端的大型 HTML 任务会经历创建目标、反复执行命令、同步进度、验证和提交；
+     * 如果目标模式也被 AgentLoopCoordinator 固定裁到 20 轮，第 20 轮 ACTIVE 进度后会被后端误写 BLOCKED。
+     */
+    @Test
+    void planModeExecutionShouldUseConfiguredBudgetBeyondTwentyRounds() {
+        bindRunContext();
+        ChatConversation conversation = ChatConversation.create(1L, "Goal", 1002L, 3001L, ChatConversationStatus.ACTIVE);
+        String question = "开启目标模式。请先检查当前线程是否已有目标；如果没有，请创建一个目标。目标是：做一个大型笔记html并完成提交。执行过程中每完成一个关键步骤，都要更新目标进度。不要只给方案，请直接执行、验证、提交。";
+        String completedSummary = "已完成大型笔记 HTML，验证通过并完成提交";
+        String unfinishedSummary = "目标执行已开始，但模型未把目标推进到完成、阻塞或取消状态；后续验证和提交没有真实完成，已阻塞以避免误报完成。";
+        when(chatConversationRepository.requireById(1L)).thenReturn(conversation);
+        when(chatMessageRepository.findByConversationId(1L)).thenReturn(new ArrayList<>());
+        when(chatAttachmentService.requireOwnedAttachments(any(), eq(1L), eq(1002L))).thenReturn(List.of());
+        when(promptTemplateLoader.load("plan-mode-goal-context")).thenReturn("# 规划/目标模式\n执行型目标必须使用目标模式配置预算。");
+        when(promptTemplateLoader.render(eq("local-tool-evidence-context"), any())).thenAnswer(invocation -> {
+            @SuppressWarnings("unchecked")
+            Map<String, String> slots = invocation.getArgument(1, Map.class);
+            return "工具标识：" + slots.get("tool_code") + "\n工具输出：" + slots.get("tool_output");
+        });
+        when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+            new ConversationRewriteResult(question, false, List.of(question))
+        );
+        when(conversationIntentService.route(question, false)).thenReturn(
+            new ConversationIntentDecision("chat.normal", ConversationIntentAction.DIRECT, null)
+        );
+        when(chatIntentNodeRepository.findByIntentCode("chat.normal")).thenReturn(null);
+        when(chatSkillContextService.buildSkillContext(any())).thenReturn("");
+        when(chatExpertContextService.buildExpertContext(any())).thenReturn("");
+        when(governanceAgentContextService.buildAgentContext(any(), any(), any())).thenReturn("");
+        when(chatToolSpecService.listModelVisibleToolSpecs()).thenReturn(List.of(
+            new ChatToolSpec("get_goal", "读取目标", Map.of()),
+            new ChatToolSpec("create_goal", "创建目标", Map.of()),
+            new ChatToolSpec("bash", "执行命令", Map.of()),
+            new ChatToolSpec("update_goal", "更新目标", Map.of())
+        ));
+        when(runtimeSettingService.chatToolMaxRounds()).thenReturn(10);
+        when(runtimeSettingService.planModeExecutionMinToolRounds()).thenReturn(30);
+        when(chatToolExecutionService.execute(eq("get_goal"), any())).thenReturn(
+            new ChatToolExecutionResult("get_goal", "当前会话没有活动目标，请根据用户要求调用 create_goal 创建目标。", Map.of("exists", false))
+        );
+        when(chatToolExecutionService.execute(eq("create_goal"), any())).thenReturn(
+            new ChatToolExecutionResult("create_goal", "目标已创建", Map.of("goal", Map.of("id", "goal-1", "status", "ACTIVE")))
+        );
+        when(chatToolExecutionService.execute(eq("bash"), any())).thenReturn(
+            new ChatToolExecutionResult("bash", "exitCode: 0\nstdout: ok", Map.of("exitCode", 0))
+        );
+        when(chatToolExecutionService.execute(eq("update_goal"), any())).thenAnswer(invocation -> {
+            String arguments = invocation.getArgument(1, String.class);
+            if (arguments.contains("COMPLETED")) {
+                return completedGoalToolResult(completedSummary);
+            }
+            if (arguments.contains("BLOCKED")) {
+                return blockedGoalToolResult(unfinishedSummary);
+            }
+            return activeGoalToolResult("执行检查点已同步，继续推进验证和提交");
+        });
+        when(conversationSummaryService.buildModelHistory(any(), any())).thenAnswer(invocation -> invocation.getArgument(1));
+        when(llmResponseCleaner.clean(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(conversationTitleService.generateTitle(any(), any())).thenReturn("目标模式");
+        AtomicInteger modelRound = new AtomicInteger();
+        doAnswer(invocation -> {
+            AiChatClient.ToolAwareStreamHandler handler = invocation.getArgument(3);
+            int round = modelRound.incrementAndGet();
+            if (round == 1) {
+                handler.onToolCall(new AiToolCall("call-1", "get_goal", "{}"));
+            } else if (round == 2) {
+                handler.onToolCall(new AiToolCall("call-2", "create_goal", "{\"title\":\"做一个大型笔记html并完成提交\"}"));
+            } else if (round <= 21 && round % 2 == 1) {
+                handler.onToolCall(new AiToolCall("call-" + round, "bash", "{\"command\":\"Write-Output checkpoint-" + round + "\"}"));
+            } else if (round <= 20) {
+                handler.onToolCall(new AiToolCall(
+                    "call-" + round,
+                    "update_goal",
+                    "{\"status\":\"ACTIVE\",\"progressSummary\":\"已完成第 " + round + " 个执行检查点\"}"
+                ));
+            } else {
+                handler.onToolCall(new AiToolCall(
+                    "call-" + round,
+                    "update_goal",
+                    "{\"status\":\"COMPLETED\",\"progressSummary\":\"" + completedSummary + "\"}"
+                ));
+            }
+            handler.onComplete();
+            return null;
+        }).when(aiChatClient).streamChatWithTools(any(), eq(false), any(), any());
+
+        chatApplicationService.sendMessage(
+            new SendChatMessageCommand(1L, question, false, List.of(), List.of(), Map.of(), null, "D:\\code\\test", List.of(), false, false, true),
+            1002L
+        );
+
+        verify(chatToolExecutionService, times(10)).execute(eq("bash"), any());
+        verify(chatStreamPublisher, never()).publishAssistantCompleted(
+            eq(1L),
+            any(Long.class),
+            eq("目标已阻塞：做一个大型笔记html并完成提交。\n阻塞原因：" + unfinishedSummary),
+            eq("目标模式")
+        );
+        verify(chatStreamPublisher).publishAssistantCompleted(
+            eq(1L),
+            any(Long.class),
+            eq("目标已完成：做一个大型笔记html并完成提交。\n进度摘要：" + completedSummary),
+            eq("目标模式")
+        );
+        ChatExecutionContext.clear();
+    }
+
+    /**
      * 目标创建后的只读调研也是目标执行进展，不能用 `</think>` 或空正文直接收口，必须先 update_goal。
      */
     @Test
@@ -2448,6 +2676,244 @@ class ChatApplicationServiceTest {
             eq(1L),
             any(Long.class),
             eq("目标已阻塞：做一个大型笔记html并完成提交。\n阻塞原因：" + blockedSummary),
+            eq("目标模式")
+        );
+        ChatExecutionContext.clear();
+    }
+
+    /**
+     * 目标模式中如果工作工具已经真实成功，下一轮 provider 流失败应回灌为可恢复证据继续执行，不能立即写 BLOCKED。
+     * 桌面端真实场景是 large-notes.html 已被 edit 改完，但模型流失败后后端把目标标记 BLOCKED，导致验证和提交无法继续。
+     */
+    @Test
+    void planModeShouldContinueAfterStreamFailureWhenWorkToolAlreadySucceeded() {
+        bindRunContext();
+        ChatConversation conversation = ChatConversation.create(1L, "Goal", 1002L, 3001L, ChatConversationStatus.ACTIVE);
+        String question = "开启目标模式。请先检查当前线程是否已有目标；如果没有，请创建一个目标。目标是：做一个大型笔记html并完成提交。执行过程中每完成一个关键步骤，都要更新目标进度。不要只给方案，请直接执行、验证、提交。";
+        String blockedSummary = "模型流式响应在首包后失败，文件写入未完成，后续验证和提交尚未执行。请重试或缩小单次写入内容。";
+        String completedSummary = "已编辑大型笔记 HTML，验证通过并完成提交";
+        when(chatConversationRepository.requireById(1L)).thenReturn(conversation);
+        when(chatMessageRepository.findByConversationId(1L)).thenReturn(new ArrayList<>());
+        when(chatAttachmentService.requireOwnedAttachments(any(), eq(1L), eq(1002L))).thenReturn(List.of());
+        when(promptTemplateLoader.load("plan-mode-goal-context")).thenReturn("# 规划/目标模式\n工作工具成功后遇到流失败应继续恢复验证和提交。");
+        when(promptTemplateLoader.render(eq("local-tool-evidence-context"), any())).thenAnswer(invocation -> {
+            @SuppressWarnings("unchecked")
+            Map<String, String> slots = invocation.getArgument(1, Map.class);
+            return "工具标识：" + slots.get("tool_code") + "\n工具输出：" + slots.get("tool_output");
+        });
+        when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+            new ConversationRewriteResult(question, false, List.of(question))
+        );
+        when(conversationIntentService.route(question, false)).thenReturn(
+            new ConversationIntentDecision("chat.normal", ConversationIntentAction.DIRECT, null)
+        );
+        when(chatIntentNodeRepository.findByIntentCode("chat.normal")).thenReturn(null);
+        when(chatSkillContextService.buildSkillContext(any())).thenReturn("");
+        when(chatExpertContextService.buildExpertContext(any())).thenReturn("");
+        when(governanceAgentContextService.buildAgentContext(any(), any(), any())).thenReturn("");
+        when(chatToolSpecService.listModelVisibleToolSpecs()).thenReturn(List.of(
+            new ChatToolSpec("get_goal", "读取目标", Map.of()),
+            new ChatToolSpec("create_goal", "创建目标", Map.of()),
+            new ChatToolSpec("edit", "编辑文件", Map.of()),
+            new ChatToolSpec("bash", "执行命令", Map.of()),
+            new ChatToolSpec("update_goal", "更新目标", Map.of())
+        ));
+        when(runtimeSettingService.chatToolMaxRounds()).thenReturn(8);
+        when(chatToolExecutionService.execute(eq("get_goal"), any())).thenReturn(
+            new ChatToolExecutionResult("get_goal", "当前会话没有活动目标，请根据用户要求调用 create_goal 创建目标。", Map.of("exists", false))
+        );
+        when(chatToolExecutionService.execute(eq("create_goal"), any())).thenReturn(
+            new ChatToolExecutionResult("create_goal", "目标已创建", Map.of("goal", Map.of("id", "goal-1", "status", "ACTIVE")))
+        );
+        when(chatToolExecutionService.execute(eq("edit"), any())).thenReturn(
+            new ChatToolExecutionResult("edit", "large-notes.html 已更新", Map.of("path", "large-notes.html"))
+        );
+        when(chatToolExecutionService.execute(eq("bash"), any())).thenReturn(
+            new ChatToolExecutionResult("bash", "exitCode: 0\nstdout: ok", Map.of("exitCode", 0))
+        );
+        when(chatToolExecutionService.execute(eq("update_goal"), any())).thenAnswer(invocation -> {
+            String arguments = invocation.getArgument(1, String.class);
+            if (arguments.contains("BLOCKED")) {
+                return blockedGoalToolResult(blockedSummary);
+            }
+            if (arguments.contains("COMPLETED")) {
+                return completedGoalToolResult(completedSummary);
+            }
+            return activeGoalToolResult("已编辑大型笔记 HTML，继续验证");
+        });
+        when(conversationSummaryService.buildModelHistory(any(), any())).thenAnswer(invocation -> invocation.getArgument(1));
+        when(llmResponseCleaner.clean(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(conversationTitleService.generateTitle(any(), any())).thenReturn("目标模式");
+        AtomicInteger modelRound = new AtomicInteger();
+        doAnswer(invocation -> {
+            AiChatClient.ToolAwareStreamHandler handler = invocation.getArgument(3);
+            int round = modelRound.incrementAndGet();
+            if (round == 1) {
+                handler.onToolCall(new AiToolCall("call-1", "get_goal", "{}"));
+                handler.onComplete();
+                return null;
+            }
+            if (round == 2) {
+                handler.onToolCall(new AiToolCall("call-2", "create_goal", "{\"title\":\"大型笔记 HTML\"}"));
+                handler.onComplete();
+                return null;
+            }
+            if (round == 3) {
+                handler.onToolCall(new AiToolCall("call-3", "edit", "{\"path\":\"large-notes.html\",\"oldText\":\"旧内容\",\"newText\":\"新内容\"}"));
+                handler.onComplete();
+                return null;
+            }
+            if (round == 4) {
+                throw new IllegalStateException(ErrorMessageCatalog.AI_STREAM_FAILED_AFTER_FIRST_TOKEN);
+            }
+            if (round == 5) {
+                handler.onToolCall(new AiToolCall("call-5", "update_goal", "{\"status\":\"ACTIVE\",\"progressSummary\":\"已编辑大型笔记 HTML，继续验证\"}"));
+            } else if (round == 6) {
+                handler.onToolCall(new AiToolCall("call-6", "bash", "{\"command\":\"Get-Item large-notes.html\"}"));
+            } else if (round == 7) {
+                handler.onToolCall(new AiToolCall("call-7", "update_goal", "{\"status\":\"ACTIVE\",\"progressSummary\":\"本地验证通过，继续提交\"}"));
+            } else if (round == 8) {
+                handler.onToolCall(new AiToolCall("call-8", "bash", "{\"command\":\"git add large-notes.html; git commit -m 'feat(notes): 创建大型笔记页面'\"}"));
+            } else {
+                handler.onToolCall(new AiToolCall("call-9", "update_goal", "{\"status\":\"COMPLETED\",\"progressSummary\":\"" + completedSummary + "\"}"));
+            }
+            handler.onComplete();
+            return null;
+        }).when(aiChatClient).streamChatWithTools(any(), eq(false), any(), any());
+
+        chatApplicationService.sendMessage(
+            new SendChatMessageCommand(1L, question, false, List.of(), List.of(), Map.of(), null, "D:\\code\\test", List.of(), false, false, true),
+            1002L
+        );
+
+        verify(chatToolExecutionService).execute(eq("edit"), any());
+        verify(chatToolExecutionService, times(2)).execute(eq("bash"), any());
+        verify(chatToolExecutionService, times(3)).execute(eq("update_goal"), any());
+        verify(chatStreamPublisher, never()).publishAssistantCompleted(
+            eq(1L),
+            any(Long.class),
+            eq("目标已阻塞：做一个大型笔记html并完成提交。\n阻塞原因：" + blockedSummary),
+            eq("目标模式")
+        );
+        verify(chatStreamPublisher).publishAssistantCompleted(
+            eq(1L),
+            any(Long.class),
+            eq("目标已完成：做一个大型笔记html并完成提交。\n进度摘要：" + completedSummary),
+            eq("目标模式")
+        );
+        ChatExecutionContext.clear();
+    }
+
+    /**
+     * 目标仍为 ACTIVE 时，模型如果在 git add 后输出“已提交/已完成”这类伪完成正文，
+     * 后端应先压掉正文并继续给模型工具轮次，直到它真实执行 git commit 并用 update_goal 写入 COMPLETED。
+     * 真实桌面失败链路是：large-notes.html 已暂存，模型随后没有发起 commit，后端过早把目标写成 BLOCKED。
+     */
+    @Test
+    void planModeShouldContinueAfterFalseCompletionWhenCommitStillMissing() {
+        bindRunContext();
+        ChatConversation conversation = ChatConversation.create(1L, "Goal", 1002L, 3001L, ChatConversationStatus.ACTIVE);
+        String question = "开启目标模式。请先检查当前线程是否已有目标；如果没有，请创建一个目标。目标是：做一个大型笔记html并完成提交。执行过程中每完成一个关键步骤，都要更新目标进度。不要只给方案，请直接执行、验证、提交。";
+        String completedSummary = "已完成大型笔记 HTML，验证通过并完成 Git 提交";
+        String blockedSummary = "目标执行已开始，但模型未把目标推进到完成、阻塞或取消状态；后续验证和提交没有真实完成，已阻塞以避免误报完成。";
+        String falseCompletionContent = "目标状态：COMPLETED。large-notes.html 已提交，提交完成。";
+        when(chatConversationRepository.requireById(1L)).thenReturn(conversation);
+        when(chatMessageRepository.findByConversationId(1L)).thenReturn(new ArrayList<>());
+        when(chatAttachmentService.requireOwnedAttachments(any(), eq(1L), eq(1002L))).thenReturn(List.of());
+        when(promptTemplateLoader.load("plan-mode-goal-context")).thenReturn("# 规划/目标模式\n伪完成正文必须被拦截后继续真实提交。");
+        when(promptTemplateLoader.render(eq("local-tool-evidence-context"), any())).thenAnswer(invocation -> {
+            @SuppressWarnings("unchecked")
+            Map<String, String> slots = invocation.getArgument(1, Map.class);
+            return "工具标识：" + slots.get("tool_code") + "\n工具输出：" + slots.get("tool_output");
+        });
+        when(conversationRewriteService.rewriteResult(any(), any())).thenReturn(
+            new ConversationRewriteResult(question, false, List.of(question))
+        );
+        when(conversationIntentService.route(question, false)).thenReturn(
+            new ConversationIntentDecision("chat.normal", ConversationIntentAction.DIRECT, null)
+        );
+        when(chatIntentNodeRepository.findByIntentCode("chat.normal")).thenReturn(null);
+        when(chatSkillContextService.buildSkillContext(any())).thenReturn("");
+        when(chatExpertContextService.buildExpertContext(any())).thenReturn("");
+        when(governanceAgentContextService.buildAgentContext(any(), any(), any())).thenReturn("");
+        when(chatToolSpecService.listModelVisibleToolSpecs()).thenReturn(List.of(
+            new ChatToolSpec("get_goal", "读取目标", Map.of()),
+            new ChatToolSpec("create_goal", "创建目标", Map.of()),
+            new ChatToolSpec("bash", "执行命令", Map.of()),
+            new ChatToolSpec("update_goal", "更新目标", Map.of())
+        ));
+        when(runtimeSettingService.chatToolMaxRounds()).thenReturn(8);
+        when(chatToolExecutionService.execute(eq("get_goal"), any())).thenReturn(
+            new ChatToolExecutionResult("get_goal", "当前会话没有活动目标，请根据用户要求调用 create_goal 创建目标。", Map.of("exists", false))
+        );
+        when(chatToolExecutionService.execute(eq("create_goal"), any())).thenReturn(
+            new ChatToolExecutionResult("create_goal", "目标已创建", Map.of("goal", Map.of("id", "goal-1", "status", "ACTIVE")))
+        );
+        when(chatToolExecutionService.execute(eq("bash"), any())).thenAnswer(invocation -> {
+            String arguments = invocation.getArgument(1, String.class);
+            if (arguments.contains("git commit")) {
+                return new ChatToolExecutionResult("bash", "exitCode: 0\nstdout: [master (root-commit) abc1234] feat(notes): 创建大型笔记页面", Map.of("exitCode", 0));
+            }
+            return new ChatToolExecutionResult("bash", "exitCode: 0\nstderr: warning: LF will be replaced by CRLF", Map.of("exitCode", 0));
+        });
+        when(chatToolExecutionService.execute(eq("update_goal"), any())).thenAnswer(invocation -> {
+            String arguments = invocation.getArgument(1, String.class);
+            if (arguments.contains("BLOCKED")) {
+                return blockedGoalToolResult(blockedSummary);
+            }
+            if (arguments.contains("COMPLETED")) {
+                return completedGoalToolResult(completedSummary);
+            }
+            return activeGoalToolResult("large-notes.html 已暂存，继续执行 git commit");
+        });
+        when(conversationSummaryService.buildModelHistory(any(), any())).thenAnswer(invocation -> invocation.getArgument(1));
+        when(llmResponseCleaner.clean(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(conversationTitleService.generateTitle(any(), any())).thenReturn("目标模式");
+        AtomicInteger modelRound = new AtomicInteger();
+        doAnswer(invocation -> {
+            AiChatClient.ToolAwareStreamHandler handler = invocation.getArgument(3);
+            int round = modelRound.incrementAndGet();
+            if (round == 1) {
+                handler.onToolCall(new AiToolCall("call-1", "get_goal", "{}"));
+            } else if (round == 2) {
+                handler.onToolCall(new AiToolCall("call-2", "create_goal", "{\"title\":\"大型笔记 HTML\"}"));
+            } else if (round == 3) {
+                handler.onToolCall(new AiToolCall("call-3", "bash", "{\"command\":\"git add large-notes.html\"}"));
+            } else if (round == 4) {
+                handler.onToolCall(new AiToolCall("call-4", "update_goal", "{\"status\":\"ACTIVE\",\"progressSummary\":\"large-notes.html 已暂存，继续执行 git commit\"}"));
+            } else if (round == 5) {
+                handler.onDelta(falseCompletionContent);
+            } else if (round == 6) {
+                handler.onToolCall(new AiToolCall("call-6", "bash", "{\"command\":\"git commit -m 'feat(notes): 创建大型笔记页面'\"}"));
+            } else {
+                handler.onToolCall(new AiToolCall("call-7", "update_goal", "{\"status\":\"COMPLETED\",\"progressSummary\":\"" + completedSummary + "\"}"));
+            }
+            handler.onComplete();
+            return null;
+        }).when(aiChatClient).streamChatWithTools(any(), eq(false), any(), any());
+
+        chatApplicationService.sendMessage(
+            new SendChatMessageCommand(1L, question, false, List.of(), List.of(), Map.of(), null, "D:\\code\\test", List.of(), false, false, true),
+            1002L
+        );
+
+        ArgumentCaptor<String> commandCaptor = ArgumentCaptor.forClass(String.class);
+        verify(chatToolExecutionService, times(2)).execute(eq("bash"), commandCaptor.capture());
+        assertTrue(commandCaptor.getAllValues().getLast().contains("git commit"));
+        ArgumentCaptor<String> goalUpdateArgsCaptor = ArgumentCaptor.forClass(String.class);
+        verify(chatToolExecutionService, times(2)).execute(eq("update_goal"), goalUpdateArgsCaptor.capture());
+        assertTrue(goalUpdateArgsCaptor.getAllValues().getLast().contains("\"status\":\"COMPLETED\""));
+        verify(chatStreamPublisher, never()).publishAssistantCompleted(eq(1L), any(Long.class), eq(falseCompletionContent), eq("目标模式"));
+        verify(chatStreamPublisher, never()).publishAssistantCompleted(
+            eq(1L),
+            any(Long.class),
+            eq("目标已阻塞：做一个大型笔记html并完成提交。\n阻塞原因：" + blockedSummary),
+            eq("目标模式")
+        );
+        verify(chatStreamPublisher).publishAssistantCompleted(
+            eq(1L),
+            any(Long.class),
+            eq("目标已完成：做一个大型笔记html并完成提交。\n进度摘要：" + completedSummary),
             eq("目标模式")
         );
         ChatExecutionContext.clear();

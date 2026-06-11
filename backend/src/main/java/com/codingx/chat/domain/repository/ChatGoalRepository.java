@@ -21,6 +21,15 @@ public interface ChatGoalRepository {
     Optional<ChatGoal> findActiveByConversationIdAndUserId(Long conversationId, Long userId);
 
     /**
+     * 查询当前会话当前用户的最新目标，包含 COMPLETED/BLOCKED/CANCELLED 终态。
+     *
+     * @param conversationId 会话 ID。
+     * @param userId 当前用户 ID。
+     * @return 最新目标，不存在时为空。
+     */
+    Optional<ChatGoal> findLatestByConversationIdAndUserId(Long conversationId, Long userId);
+
+    /**
      * 按目标 ID、会话和用户查询目标，避免跨会话或跨用户读取。
      *
      * @param goalId 目标 ID。

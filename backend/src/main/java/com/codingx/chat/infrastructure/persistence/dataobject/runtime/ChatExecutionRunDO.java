@@ -16,7 +16,6 @@ public class ChatExecutionRunDO {
     @TableField("conversation_id") private Long conversationId; // run 所属会话主键。
     @TableField("request_message_id") private Long requestMessageId; // 触发 run 的用户消息主键。
     @TableField("response_message_id") private Long responseMessageId; // run 生成的助手消息主键，可为空。
-    @TableField("task_id") private Long taskId; // 关联后台任务主键，本地运行或排队执行时使用。
     @TableField("intent_code") private String intentCode; // 本次执行命中的意图编码。
     @TableField("status") private String status; // run 执行状态，例如 RUNNING、COMPLETED、FAILED。
     @TableField("queue_status") private String queueStatus; // 队列状态，例如 WAITING、ACQUIRED、REJECTED。

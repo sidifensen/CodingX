@@ -32,9 +32,10 @@ public class RuntimeSettingService {
     private static final String TYPE_DECIMAL = "DECIMAL";
     private static final String TYPE_STRING = "STRING";
     private static final int DEFAULT_CHAT_TOOL_MAX_ROUNDS = 10;
-    private static final int DEFAULT_PLAN_MODE_EXECUTION_MIN_TOOL_ROUNDS = 20;
+    private static final int DEFAULT_PLAN_MODE_EXECUTION_MIN_TOOL_ROUNDS = 60;
     private static final int DEFAULT_CHAT_REWRITE_HISTORY_TURNS = 3;
     private static final int HARD_CHAT_TOOL_MAX_ROUNDS = 20;
+    private static final int HARD_PLAN_MODE_EXECUTION_TOOL_MAX_ROUNDS = 60;
     private static final int HARD_CHAT_REWRITE_HISTORY_TURNS = 10;
     private static final List<String> DEFAULT_WEB_SEARCH_PROVIDER_ORDER = List.of(
         "tavily",
@@ -385,7 +386,7 @@ public class RuntimeSettingService {
     /**
      * 获取目标模式执行型任务最低工具轮次。
      * 业务约束：该值用于覆盖创建目标、执行工具、失败恢复、验证、提交和多次 update_goal；
-     * 仍必须受工具循环硬上限保护，避免系统配置误填超大值导致单次聊天长期占用线程。
+     * 使用独立于普通聊天的硬上限，避免大型桌面目标在第 20 轮自然耗尽后被误写 BLOCKED。
      * @return 目标模式执行型任务最低工具轮次。
      */
     public int planModeExecutionMinToolRounds() {
@@ -393,7 +394,7 @@ public class RuntimeSettingService {
             "chat.tool.plan_execution_min_rounds",
             DEFAULT_PLAN_MODE_EXECUTION_MIN_TOOL_ROUNDS
         );
-        return Math.min(HARD_CHAT_TOOL_MAX_ROUNDS, Math.max(1, configuredMinRounds));
+        return Math.min(HARD_PLAN_MODE_EXECUTION_TOOL_MAX_ROUNDS, Math.max(1, configuredMinRounds));
     }
 
     /**

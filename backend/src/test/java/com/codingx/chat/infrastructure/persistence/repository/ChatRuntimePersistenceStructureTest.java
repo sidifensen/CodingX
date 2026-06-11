@@ -148,10 +148,18 @@ class ChatRuntimePersistenceStructureTest {
     @Test
     void schemaUsesChatExecutionRunWithoutLegacyTaskTables() throws Exception {
         String schemaSql = Files.readString(Path.of("src/main/resources/db/schema.sql"), StandardCharsets.UTF_8);
+        String chatExecutionRunTableSql = schemaSql.substring(
+            schemaSql.indexOf("CREATE TABLE IF NOT EXISTS chat_execution_run ("),
+            schemaSql.indexOf("COMMENT ON TABLE chat_execution_run")
+        );
 
         assertTrue(
             schemaSql.contains("CREATE TABLE IF NOT EXISTS chat_execution_run ("),
             "聊天运行状态权威表 chat_execution_run 必须保留"
+        );
+        assertFalse(
+            chatExecutionRunTableSql.contains("task_id"),
+            "chat_execution_run 不应再定义 task_id"
         );
         assertFalse(
             schemaSql.contains("CREATE TABLE IF NOT EXISTS task ("),
@@ -161,6 +169,15 @@ class ChatRuntimePersistenceStructureTest {
             schemaSql.contains("CREATE TABLE IF NOT EXISTS task_expert ("),
             "schema.sql 不应再定义旧 task_expert 表"
         );
+        assertFalse(
+            schemaSql.contains("CREATE INDEX IF NOT EXISTS idx_chat_execution_run_task"),
+            "schema.sql 不应再保留 chat_execution_run.task_id 索引"
+        );
+        Path migration = Path.of("src/main/resources/db/migration/V20260610_110000__drop_chat_execution_run_task_id.sql");
+        assertTrue(Files.exists(migration), "缺少删除 chat_execution_run.task_id 的迁移脚本");
+        String migrationSql = Files.readString(migration, StandardCharsets.UTF_8);
+        assertTrue(migrationSql.contains("DROP INDEX IF EXISTS idx_chat_execution_run_task"), "迁移脚本应先删除 task_id 索引");
+        assertTrue(migrationSql.contains("ALTER TABLE chat_execution_run DROP COLUMN IF EXISTS task_id"), "迁移脚本应删除 task_id 列");
     }
 
     /**

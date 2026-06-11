@@ -283,7 +283,7 @@ VALUES
     (7065, 'chat.executor.search_queue_capacity', '256', NULL, FALSE, NULL, NULL, NULL, 'INTEGER', 'chat.executor', '搜索线程池队列容量', 60, TRUE, 0),
     (7066, 'chat.executor.keep_alive_seconds', '60', NULL, FALSE, NULL, NULL, NULL, 'LONG', 'chat.executor', '聊天线程池保活秒数', 70, TRUE, 0),
     (7359, 'chat.tool.max_rounds', '10', NULL, FALSE, NULL, NULL, NULL, 'INTEGER', 'chat.tool', '本地工具调用最大轮次', 10, FALSE, 0),
-    (7360, 'chat.tool.plan_execution_min_rounds', '20', NULL, FALSE, NULL, NULL, NULL, 'INTEGER', 'chat.tool', '目标模式执行型任务最低工具轮次', 20, FALSE, 0),
+    (7360, 'chat.tool.plan_execution_min_rounds', '60', NULL, FALSE, NULL, NULL, NULL, 'INTEGER', 'chat.tool', '目标模式执行型任务最低工具轮次', 20, FALSE, 0),
     (7069, 'chat.intent.guidance.enabled', 'true', NULL, FALSE, NULL, NULL, NULL, 'BOOLEAN', 'chat.intent.guidance', '是否启用聊天歧义引导', 10, FALSE, 0),
     (7070, 'chat.intent.guidance.ambiguity_score_ratio', '0.8', NULL, FALSE, NULL, NULL, NULL, 'DECIMAL', 'chat.intent.guidance', '歧义引导分数比值阈值', 20, FALSE, 0),
     (7071, 'chat.intent.guidance.ambiguity_margin', '0.15', NULL, FALSE, NULL, NULL, NULL, 'DECIMAL', 'chat.intent.guidance', '歧义引导边界缓冲宽度', 30, FALSE, 0),

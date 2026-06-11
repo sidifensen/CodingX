@@ -190,7 +190,7 @@
 - `docs/superpowers/acceptance/` — 验收标准文档（`YYYY-MM-DD-HHMMSS-<feature>-acceptance.md`）
 
 ```bash
-# 后端服务 http://localhost:5001（默认由 IDEA 启动）
+# 后端服务 http://localhost:5001
 cd backend && mvn spring-boot:run
 
 # 用户前端 http://localhost:5002
@@ -202,8 +202,7 @@ cd frontend/admin && npm run dev
 
 ## 本地服务管理
 
-- 后端 `5001` 默认由 IDEA + Spring Boot DevTools 管理，AI 禁止自动结束该端口占用进程，也禁止自行启动新的后端服务。
-- 后端改动后如需触发 IDEA 进程内重启，AI 仅允许执行 `cd backend && mvn compile`；若仍未重启，必须提示用户在 IDEA 中手动重启。
+- 若验证前端新增/变更功能必须依赖最新后端数据、接口或 SSE 行为，助手必须自行重启后端 `5001` 服务；重启前必须先确认并停止当前占用 `5001` 的后端进程，避免旧代码继续提供数据导致验证失真。
 - 用户前端 `5002`、管理端前端 `5003` 启动前需检查端口占用；如端口被无关进程占用，再按需结束占用进程。
 
 ## 完成验证要求

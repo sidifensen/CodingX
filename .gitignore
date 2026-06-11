@@ -15,6 +15,9 @@ logs/
 /frontend/desktop/dist/
 /frontend/desktop/release/
 /frontend/desktop/release-tmp/
+/frontend/e2e/node_modules/
+/frontend/e2e/playwright-report/
+/frontend/e2e/test-results/
 
 # stray desktop shell dependency cache
 /desktop-shell/node_modules/

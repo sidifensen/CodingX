@@ -230,7 +230,8 @@ class LongTermMemoryServiceTest {
         assertFalse(logs.contains("workspaceId=300"));
         assertTrue(logs.contains("candidateCount=1"));
         assertTrue(logs.contains("selectedCount=1"));
-        assertTrue(logs.contains("matchReasons=[CURRENT_SCOPE_ACTIVE]"));
+        // 查询语句命中关键词 "JUnit 5"，排序原因应为 KEYWORD 而非默认的 CURRENT_SCOPE_ACTIVE。
+        assertTrue(logs.contains("matchReasons=[KEYWORD]"));
         assertFalse(logs.contains("memoryIds="));
         assertFalse(logs.contains("长期记忆回注开始"));
         assertFalse(logs.contains("长期记忆回注结果"));

@@ -1371,13 +1371,18 @@ describe('ChatView', () => {
       await waitFor(() => {
         expect(window.codingxHost?.listDirectory).toHaveBeenCalledWith('D:/code/CodingX');
       });
-      expect(within(sidebar).getByTestId('file-workbench-panel')).toHaveTextContent('CodingX');
+      expect(within(sidebar).getByTestId('file-workbench-panel')).toBeInTheDocument();
+      // 业务约束：顶部不再展示工作区面包屑与“文件信息”标签，未选择文件时只显示占位提示。
+      expect(within(sidebar).getByText('未选择文件')).toBeInTheDocument();
+      expect(within(sidebar).queryByText('文件信息')).not.toBeInTheDocument();
       expect(within(sidebar).getByRole('combobox', { name: '选择打开方式' })).toBeInTheDocument();
 
       fireEvent.click(await within(sidebar).findByRole('button', { name: '打开文件 AGENTS.md' }));
       await waitFor(() => {
         expect(window.codingxHost?.readTextFile).toHaveBeenCalledWith('D:/code/CodingX/AGENTS.md');
       });
+      // 选中文件后顶部直接显示完整文件路径，替代原工作区名展示位。
+      expect(within(sidebar).getByText('D:/code/CodingX/AGENTS.md')).toBeInTheDocument();
       expect(within(sidebar).getByText('# 多会话协作规范', { exact: false })).toBeInTheDocument();
 
       fireEvent.click(within(sidebar).getByRole('button', { name: '折叠文件目录' }));

@@ -5,13 +5,12 @@ import { LocalDirectoryEntry } from '../../../host/types';
 
 /**
  * 资源管理器式文件面板：目录来自桌面宿主桥接，文件正文通过只读文本预览加载。
+ * 顶部直接展示当前选中文件的完整路径，内容区不再包裹卡片边框，正文铺满面板。
  */
 export function FileWorkbenchPanel({
-  workspaceLabel,
   workspacePath,
   onPickRepositoryDirectory,
 }: {
-  workspaceLabel: string;
   workspacePath: string | null;
   onPickRepositoryDirectory: () => Promise<void>;
 }) {
@@ -92,11 +91,6 @@ export function FileWorkbenchPanel({
     }
   }, [hostBridge]);
 
-  const breadcrumbParts = React.useMemo(
-    () => buildWorkspaceBreadcrumb(workspaceLabel, workspacePath, currentDirectory),
-    [currentDirectory, workspaceLabel, workspacePath],
-  );
-
   return (
     <div
       data-testid="file-workbench-panel"
@@ -104,15 +98,14 @@ export function FileWorkbenchPanel({
     >
       <div className="border-b border-border px-4 py-3">
         <div className="flex min-w-0 items-center justify-between gap-3">
-          <div className="flex min-w-0 items-center gap-2 text-sm">
-            {breadcrumbParts.map((part, index) => (
-              <React.Fragment key={`${part}-${index}`}>
-                {index > 0 ? <ChevronRight size={14} className="shrink-0 text-muted" /> : null}
-                <span className={`truncate ${index === breadcrumbParts.length - 1 ? 'font-semibold' : 'text-muted'}`}>
-                  {part}
-                </span>
-              </React.Fragment>
-            ))}
+          {/* 顶部直接展示选中文件完整路径，未选择文件时给出占位提示，替代原工作区面包屑。 */}
+          <div
+            className={`min-w-0 flex-1 truncate font-mono text-sm ${
+              selectedFilePath ? 'font-semibold text-foreground' : 'text-muted'
+            }`}
+            title={selectedFilePath || undefined}
+          >
+            {selectedFilePath || '未选择文件'}
           </div>
           <div className="flex shrink-0 items-center gap-2">
             <select
@@ -155,28 +148,25 @@ export function FileWorkbenchPanel({
             isDirectoryVisible ? 'grid-cols-[minmax(0,1fr)_240px]' : 'grid-cols-1'
           }`}
         >
-          <div className="min-h-0 overflow-auto px-5 py-5">
-            <div className="mb-3 text-xs text-muted">文件信息</div>
-            {selectedFilePath ? (
-              <div className="space-y-3">
-                <div className="truncate font-mono text-sm font-semibold" title={selectedFilePath}>
-                  {selectedFilePath}
-                </div>
-                {fileError ? (
-                  <div className="rounded-lg border border-error/30 bg-error/10 px-3 py-2 text-sm text-error">
-                    {fileError}
-                  </div>
-                ) : null}
-                {isLoadingFile ? (
-                  <div className="text-sm text-muted">正在加载文件内容...</div>
-                ) : (
-                  <pre className="min-h-[320px] whitespace-pre-wrap [overflow-wrap:anywhere] rounded-lg border border-border bg-background px-4 py-3 font-mono text-xs leading-5 text-foreground">
-                    {selectedFileContent || '选择右侧目录中的文件后显示内容。'}
-                  </pre>
-                )}
+          {/* 内容区不再包裹卡片边框：正文铺满面板，错误与加载提示按需展示。 */}
+          <div className="grid min-h-0 grid-rows-[auto_1fr]">
+            {fileError ? (
+              <div className="mx-5 mt-4 rounded-lg border border-error/30 bg-error/10 px-3 py-2 text-sm text-error">
+                {fileError}
               </div>
             ) : (
-              <div className="rounded-lg border border-dashed border-border bg-background px-4 py-8 text-sm leading-6 text-muted">
+              <div />
+            )}
+            {selectedFilePath ? (
+              isLoadingFile ? (
+                <div className="px-5 py-4 text-sm text-muted">正在加载文件内容...</div>
+              ) : (
+                <pre className="min-h-0 overflow-auto whitespace-pre-wrap [overflow-wrap:anywhere] px-5 py-4 font-mono text-xs leading-5 text-foreground">
+                  {selectedFileContent || '选择右侧目录中的文件后显示内容。'}
+                </pre>
+              )
+            ) : (
+              <div className="px-5 py-4 text-sm leading-6 text-muted">
                 从右侧文件目录选择一个文件后，内容会在这里显示。目录可通过右上角文件夹按钮折叠。
               </div>
             )}
@@ -247,34 +237,4 @@ function sortDirectoryEntries(left: LocalDirectoryEntry, right: LocalDirectoryEn
     return left.entryType === 'directory' ? -1 : 1;
   }
   return left.name.localeCompare(right.name, 'zh-Hans-CN');
-}
-
-/**
- * 构建文件面板顶部面包屑；根节点使用工作区名，后续只展示相对路径片段。
- */
-function buildWorkspaceBreadcrumb(
-  workspaceLabel: string,
-  workspacePath: string | null,
-  currentDirectory: string,
-) {
-  const rootLabel = workspaceLabel?.trim() || '工作区';
-  if (!workspacePath || !currentDirectory) {
-    return [rootLabel];
-  }
-  const normalizedRoot = normalizeLocalPath(workspacePath);
-  const normalizedCurrent = normalizeLocalPath(currentDirectory);
-  const relativePath = normalizedCurrent.startsWith(normalizedRoot)
-    ? normalizedCurrent.slice(normalizedRoot.length).replace(/^\/+/, '')
-    : '';
-  if (!relativePath) {
-    return [rootLabel];
-  }
-  return [rootLabel, ...relativePath.split('/').filter(Boolean)];
-}
-
-/**
- * 统一 Windows 与 POSIX 分隔符，便于浏览器端做只读路径展示。
- */
-function normalizeLocalPath(pathValue: string) {
-  return pathValue.replace(/\\/g, '/').replace(/\/+$/, '');
 }

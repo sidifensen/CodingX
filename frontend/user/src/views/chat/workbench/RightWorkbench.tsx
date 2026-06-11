@@ -273,7 +273,6 @@ export function RightWorkbenchSidebar({
           />
         ) : activeTab.tool === 'files' ? (
           <FileWorkbenchPanel
-            workspaceLabel={workspaceLabel}
             workspacePath={workspacePath}
             onPickRepositoryDirectory={onPickRepositoryDirectory}
           />
@@ -306,7 +305,7 @@ function RightWorkbenchLauncher({
             type="button"
             aria-label={`打开${item.title}面板`}
             onClick={() => onOpenTool(item.tool)}
-            className="flex min-h-[128px] flex-col items-center justify-center gap-3 rounded-lg border border-transparent bg-background text-center transition-colors hover:border-border-active hover:bg-surface-container"
+            className="flex min-h-[128px] flex-col items-center justify-center gap-3 rounded-lg border border-transparent bg-background px-6 py-7 text-center transition-colors hover:border-border-active hover:bg-surface-container"
           >
             <ToolIcon size={25} className="text-muted" />
             <span className="text-base font-semibold text-foreground">{item.title}</span>

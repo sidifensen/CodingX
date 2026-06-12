@@ -2726,7 +2726,7 @@ function buildGoalProgressView(goal: ChatGoalItem | null): GoalProgressView | nu
   if (hasCancelled) {
     return { goal, completedCount, totalCount: steps.length, statusLabel: 'CANCELLED', statusTone: 'cancelled', steps };
   }
-  if (goalStatus === 'COMPLETED' || (steps.length > 0 && completedCount === steps.length)) {
+  if (goalStatus === 'COMPLETED') {
     return { goal, completedCount, totalCount: steps.length, statusLabel: goalStatus || 'COMPLETED', statusTone: 'completed', steps };
   }
   return {
@@ -2748,8 +2748,6 @@ function GoalProgressPanel({
   progress: GoalProgressView;
 }) {
   const visibleSteps = progress.steps.slice(0, 6);
-  const progressPercent =
-    progress.totalCount > 0 ? Math.round((progress.completedCount / progress.totalCount) * 100) : 0;
   const statusClassName =
     progress.statusTone === 'error'
       ? 'text-error'
@@ -2776,35 +2774,40 @@ function GoalProgressPanel({
             </div>
           ) : null}
         </div>
-        <div className={`rounded-full bg-surface-container px-2 py-1 text-xs font-medium ${statusClassName}`}>
-          {progress.statusLabel}
-        </div>
-      </div>
-      <div className="mt-4">
-        <div className="flex items-center justify-between text-xs text-muted">
-          <span>完成度</span>
-          <span className="font-mono text-foreground">
+        <div className="flex shrink-0 items-center gap-1.5">
+          <span className="font-mono text-xs text-muted">
             {progress.completedCount}/{progress.totalCount}
           </span>
-        </div>
-        <div className="mt-2 h-2 overflow-hidden rounded-full bg-surface-container">
-          <div
-            className="h-full rounded-full bg-foreground transition-[width] duration-300"
-            style={{ width: `${Math.min(100, Math.max(0, progressPercent))}%` }}
-          />
+          <div className={`rounded-full bg-surface-container px-2 py-1 text-xs font-medium ${statusClassName}`}>
+            {progress.statusLabel}
+          </div>
         </div>
       </div>
       <div className="mt-4 space-y-2">
         {visibleSteps.length > 0 ? (
-          visibleSteps.map((step) => (
-            <div key={step.id} className="border-l border-border pl-3">
-              <div className="text-xs font-medium leading-5 text-foreground">{step.title}</div>
-              <div className="mt-0.5 font-mono text-[11px] uppercase text-muted">
-                {step.status}
+          visibleSteps.map((step) => {
+            const stepStatus = String(step.status ?? '').toUpperCase();
+            const barColor =
+              stepStatus === 'COMPLETED'
+                ? 'bg-foreground'
+                : stepStatus === 'BLOCKED' || stepStatus === 'ERROR'
+                  ? 'bg-error'
+                  : stepStatus === 'CANCELLED'
+                    ? 'bg-muted'
+                    : 'bg-surface-container';
+            return (
+              <div key={step.id} className="flex items-stretch gap-3">
+                <div className={`w-1 shrink-0 rounded-full ${barColor}`} />
+                <div className="min-w-0 flex-1">
+                  <div className="text-xs font-medium leading-5 text-foreground">{step.title}</div>
+                  <div className="mt-0.5 font-mono text-[11px] uppercase text-muted">
+                    {step.status}
+                  </div>
+                  {step.detail ? <div className="mt-1 text-[11px] leading-5 text-muted">{step.detail}</div> : null}
+                </div>
               </div>
-              {step.detail ? <div className="mt-1 text-[11px] leading-5 text-muted">{step.detail}</div> : null}
-            </div>
-          ))
+            );
+          })
         ) : (
           <div className="rounded-md bg-surface-container px-3 py-2 text-xs leading-5 text-muted">
             等待模型拆解目标。
@@ -3746,6 +3749,20 @@ type MessageTimelineRenderSegment =
 /**
  * 将连续过程片段合并后交给 ProcessTracePanel，保留搜索和命令连续汇总能力。
  */
+/**
+ * 判断是否为思考片段卡片（process-thinking-N 格式 ID）。
+ * 思考片段必须独立渲染，不允许与相邻过程卡片合并，以实现穿插展示效果。
+ */
+function isThinkingSegmentCard(card: ProcessCardItem): boolean {
+  return card.type === 'analysis' && card.id.startsWith('process-thinking-');
+}
+
+/**
+ * 将消息时间线拆分为连续可渲染分组：
+ * - content 类型每段独立一组；
+ * - thinking 卡片（process-thinking-N）必须独立一组，不合并；
+ * - 其他 process 卡片连续相邻时合并为一组（保持原有搜索/工具合并行为）。
+ */
 function groupMessageTimelineSegments(items: MessageTimelineItem[]): MessageTimelineRenderSegment[] {
   const segments: MessageTimelineRenderSegment[] = [];
   for (const item of items) {
@@ -3760,8 +3777,18 @@ function groupMessageTimelineSegments(items: MessageTimelineItem[]): MessageTime
       });
       continue;
     }
+    // 思考片段永不合并，始终独立成组
+    if (isThinkingSegmentCard(item.card)) {
+      segments.push({
+        id: `process-${item.card.id}`,
+        type: 'process',
+        cards: [item.card],
+      });
+      continue;
+    }
+    // 其他过程卡片：与上一组合并（保持搜索/工具合并行为），但不与 thinking 组合并
     const lastSegment = segments[segments.length - 1];
-    if (lastSegment?.type === 'process') {
+    if (lastSegment?.type === 'process' && !isThinkingSegmentCard(lastSegment.cards[lastSegment.cards.length - 1])) {
       lastSegment.cards.push(item.card);
       continue;
     }
@@ -5756,7 +5783,15 @@ function ProcessAnalysisTrace({
   const isReactTrace = card.presentation === 'react';
   const [isExpanded, setIsExpanded] = React.useState(true);
   const contentId = `process-analysis-content-${messageId}-${card.id}`;
-  const label = isReactTrace ? '深度思考' : isFirstAnalysis ? '深度思考' : card.title || '深度思考';
+  // 从 process-thinking-N 格式 ID 中提取序号；序号 ≥ 2 时追加数字后缀，便于区分多轮思考片段
+  const thinkingSequence = card.id.match(/^process-thinking-(\d+)$/)?.[1];
+  const label = isReactTrace
+    ? '深度思考'
+    : thinkingSequence && parseInt(thinkingSequence) >= 2
+      ? `深度思考 ${thinkingSequence}`
+      : isFirstAnalysis
+        ? '深度思考'
+        : card.title || '深度思考';
 
   React.useEffect(() => {
     // 业务意图：流式阶段默认展开帮助用户跟踪推理，完成态默认折叠减少正文阅读干扰。

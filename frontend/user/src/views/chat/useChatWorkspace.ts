@@ -673,6 +673,7 @@ export function useChatWorkspace(
   const streamStateRef = useRef<ActiveStreamState | null>(null);
   const activeConversationIdRef = useRef<string | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const conversationLoadAbortControllerRef = useRef<AbortController | null>(null);
   const backgroundStreamContextsRef = useRef<Record<number, BackgroundStreamContext>>({});
   const streamMcpCallsRef = useRef<Record<string, McpCallItem[]>>({});
   const streamResumeSkipRef = useRef<Record<string, StreamResumeSkipState>>({});
@@ -1726,33 +1727,11 @@ export function useChatWorkspace(
       if (!delta) {
         return true;
       }
+      // 使用 applyThinkingDelta 实现思考片段自动拆分与递增 ID 分配
       nextContext = updateBackgroundStreamMessages(nextContext, (messages) =>
         messages.map((message) =>
           message.id === nextContext.activeMessageId
-            ? (() => {
-                const currentProcessCards = message.processCards ?? [];
-                const thinkingCardId = resolveThinkingProcessCardId(currentProcessCards);
-                const existingThinkingCard = currentProcessCards.find((card) => card.id === thinkingCardId);
-                const nextThinkingContent = `${message.thinkingContent ?? ''}${delta}`;
-                const nextProcessCards = upsertProcessCard(
-                  currentProcessCards,
-                  buildAnalysisProcessCard(
-                    thinkingCardId,
-                    `${existingThinkingCard?.summary ?? ''}${delta}`,
-                    thinkingCardId === 'analysis-after-tools' ? '分析检索结果' : '分析问题',
-                  ),
-                );
-                return {
-                  ...message,
-                  thinkingContent: nextThinkingContent,
-                  processCards: nextProcessCards,
-                  timelineItems: syncProcessCardsToTimeline(
-                    message.timelineItems,
-                    currentProcessCards,
-                    nextProcessCards,
-                  ),
-                };
-              })()
+            ? { ...message, ...applyThinkingDelta(message, delta) }
             : message,
         ),
       );
@@ -2786,6 +2765,17 @@ export function useChatWorkspace(
     const isCurrentConversationSelection = () =>
       conversationSelectionSeedRef.current === selectionGeneration &&
       activeConversationIdRef.current === conversationId;
+
+    // 步骤 1：取消上一个会话的加载请求，避免旧请求覆盖新状态
+    if (conversationLoadAbortControllerRef.current) {
+      conversationLoadAbortControllerRef.current.abort();
+      conversationLoadAbortControllerRef.current = null;
+    }
+
+    // 步骤 2：为当前会话创建新的 AbortController
+    const loadAbortController = new AbortController();
+    conversationLoadAbortControllerRef.current = loadAbortController;
+
     if (activeConversationIdRef.current !== conversationId) {
       detachActiveStreamSubscription();
     }
@@ -2892,7 +2882,7 @@ export function useChatWorkspace(
       ]);
 
     const nextMessagePage = await nextMessagePagePromise;
-    if (!isCurrentConversationSelection()) {
+    if (!isCurrentConversationSelection() || loadAbortController.signal.aborted) {
       // 旧会话的消息页可能慢于用户后续选择；过期回放只能丢弃，不能覆盖当前主区。
       await settleReplaySideRequests();
       return;
@@ -2919,11 +2909,16 @@ export function useChatWorkspace(
       references: [],
       preferPreviousContent: shouldPreservePreviousAssistantContent,
     });
+    // 关键修复：在设置消息前再次检查会话选择是否仍然有效
+    if (!isCurrentConversationSelection() || loadAbortController.signal.aborted) {
+      await settleReplaySideRequests();
+      return;
+    }
     setMessages(nextReplayMessages);
 
     // 业务意图：引用是正文中 [R1]/[R2] 可点击化的前置条件，必须先回填，不能等步骤/产物等慢接口。
     const nextReferences = await nextReferencesPromise;
-    if (!isCurrentConversationSelection()) {
+    if (!isCurrentConversationSelection() || loadAbortController.signal.aborted) {
       // 引用接口独立返回，必须再次确认选择版本，避免旧会话右栏数据迟到后串到当前会话。
       await Promise.allSettled([
         nextActiveGoalPromise,
@@ -2952,7 +2947,7 @@ export function useChatWorkspace(
       nextCurrentSkillsPromise,
       nextCurrentMcpsPromise,
     ]);
-    if (!isCurrentConversationSelection()) {
+    if (!isCurrentConversationSelection() || loadAbortController.signal.aborted) {
       // 步骤、目标、产物和能力上下文是多接口聚合结果；只允许最新选择写入。
       return;
     }
@@ -2964,6 +2959,10 @@ export function useChatWorkspace(
       references: nextReferences,
       preferPreviousContent: shouldPreservePreviousAssistantContent,
     });
+    // 关键修复：第二次设置消息前也要检查会话选择是否仍然有效
+    if (!isCurrentConversationSelection() || loadAbortController.signal.aborted) {
+      return;
+    }
     setMessages(nextReplayMessagesWithPanels);
     setExecutionSteps(nextSteps);
     setActiveGoal(nextActiveGoal);
@@ -3055,6 +3054,10 @@ export function useChatWorkspace(
           currentMcps: nextCurrentMcps,
         });
       }
+    }
+    // 步骤 3：会话加载成功完成，清理 AbortController
+    if (conversationLoadAbortControllerRef.current === loadAbortController) {
+      conversationLoadAbortControllerRef.current = null;
     }
   };
 
@@ -4599,34 +4602,11 @@ export function useChatWorkspace(
       if (!nextDelta) {
         return;
       }
+      // 使用 applyThinkingDelta 实现思考片段自动拆分与递增 ID 分配
       setMessages((previousMessages) =>
         previousMessages.map((message) =>
           message.id === optimisticAssistantId
-            ? (() => {
-                const currentProcessCards = message.processCards ?? [];
-                const thinkingCardId = resolveThinkingProcessCardId(currentProcessCards);
-                const existingThinkingCard = currentProcessCards.find((card) => card.id === thinkingCardId);
-                const nextThinkingSummary = `${existingThinkingCard?.summary ?? ''}${nextDelta}`;
-                const nextThinkingContent = `${message.thinkingContent ?? ''}${nextDelta}`;
-                const nextProcessCards = upsertProcessCard(
-                  currentProcessCards,
-                  buildAnalysisProcessCard(
-                    thinkingCardId,
-                    nextThinkingSummary,
-                    thinkingCardId === 'analysis-after-tools' ? '分析检索结果' : '分析问题',
-                  ),
-                );
-                return {
-                  ...message,
-                  thinkingContent: nextThinkingContent,
-                  processCards: nextProcessCards,
-                  timelineItems: syncProcessCardsToTimeline(
-                    message.timelineItems,
-                    currentProcessCards,
-                    nextProcessCards,
-                  ),
-                };
-              })()
+            ? { ...message, ...applyThinkingDelta(message, nextDelta) }
             : message,
         ),
       );
@@ -4963,6 +4943,16 @@ export function useChatWorkspace(
       return;
     }
   };
+
+  // 组件卸载时清理未完成的会话加载请求
+  useEffect(() => {
+    return () => {
+      if (conversationLoadAbortControllerRef.current) {
+        conversationLoadAbortControllerRef.current.abort();
+        conversationLoadAbortControllerRef.current = null;
+      }
+    };
+  }, []);
 
   return {
     runtimeTargets,
@@ -7473,14 +7463,166 @@ function resolveToolResultSummary(call: McpCallItem): string {
 }
 
 /**
- * 根据已经发生的过程判断新 thinking 应追加到哪个分析段，确保工具结果后的分析显示在工具链路下面。
- * @param cards 当前过程卡片。
- * @returns thinking 卡片标识。
+ * 清理思考内容中的 DSML 控制标记，避免标记被直接渲染到用户界面。
+ * DSML 标记形如 <｜DSML｜tool_calls> 或 </｜DSML｜tool_calls>，仅供后端协议使用。
+ * @param delta 原始 thinking 增量文本。
+ * @returns 移除 DSML 标记后的文本（不 trim，保留段落换行）。
  */
-function resolveThinkingProcessCardId(cards: ProcessCardItem[]): string {
-  return cards.some((card) => card.type === 'tool_call' || card.type === 'tool_result')
-    ? 'analysis-after-tools'
-    : 'analysis-thinking';
+function cleanThinkingDelta(delta: string): string {
+  return delta
+    .replace(/<｜DSML｜[^>]*>/g, '')
+    .replace(/<\/｜DSML｜[^>]*>/g, '');
+}
+
+/**
+ * 判断当前 thinking delta 是否应触发新建思考片段。
+ * 触发条件（任意满足即创建新片段）：
+ *   1. delta 包含 DSML 标记，表示即将发起工具调用；
+ *   2. 当前片段已超过 800 字符，避免单块过长；
+ *   3. delta 以分段标志开头，且当前片段已足够长（>100 字符）；
+ *   4. 当前片段以换行结束且 delta 以换行开始（连续双换行段落边界），且当前片段足够长。
+ * @param currentSegment 当前片段已累积的内容。
+ * @param delta 原始（未清理）的 thinking 增量。
+ * @returns 是否应开启新片段。
+ */
+function shouldStartNewThinkingSegment(currentSegment: string, delta: string): boolean {
+  // 条件 1：遇到 DSML 标记
+  if (delta.includes('<｜DSML｜')) return true;
+  // 条件 2：当前片段已超出阈值
+  if (currentSegment.length > 800) return true;
+  // 条件 3：delta 以分段标志开头，且当前片段已有内容
+  if (currentSegment.length > 100) {
+    const segmentMarkers = [/^让我[先]?/, /^现在/, /^接下来/, /^好的[，,。.]/, /^步骤\s*\d+/, /^第\s*\d+\s*步/];
+    if (segmentMarkers.some((marker) => marker.test(delta.trim()))) {
+      return true;
+    }
+    // 条件 4：连续双换行（段落边界）
+    if (currentSegment.endsWith('\n') && delta.startsWith('\n')) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * 将新的 thinking delta 不可变地合并到消息状态中，并在必要时开启新思考片段。
+ * 核心规则：
+ *   - 原始 thinkingContent 始终完整累积（保证历史兼容性）；
+ *   - 清理后的 delta 写入当前 process-thinking-N 卡片的 summary；
+ *   - 达到拆分条件时先将当前卡片标记为 completed，再递增序号创建新卡片；
+ *   - delta 清理后为空时（纯 DSML 行）不产生空卡片。
+ * @param message 当前消息快照。
+ * @param rawDelta 原始 thinking 增量（含 DSML 标记）。
+ * @returns 消息的增量更新字段，供外层 map 以 spread 方式合并。
+ */
+function applyThinkingDelta(
+  message: ChatMessageItem,
+  rawDelta: string,
+): Pick<ChatMessageItem, 'thinkingContent' | 'thinkingSequence' | 'processCards' | 'timelineItems'> {
+  // 步骤 1：保留原始内容用于兼容性（历史消息回放、导出等场景依赖完整文本）
+  const nextThinkingContent = `${message.thinkingContent ?? ''}${rawDelta}`;
+  const cleanedDelta = cleanThinkingDelta(rawDelta);
+
+  let currentCards = message.processCards ?? [];
+  let currentSequence = message.thinkingSequence ?? 1;
+
+  // 步骤 2：获取当前片段的已有内容，用于拆分判断
+  const currentCardId = `process-thinking-${currentSequence}`;
+  const currentSegment = currentCards.find((c) => c.id === currentCardId)?.summary ?? '';
+
+  // 步骤 3：判断是否需要结束当前片段并开启新片段
+  // 额外条件：若已有工具调用结果（tool_result），且当前片段有内容，则当前思考来自工具后续，需独立成段
+  const hasToolResults = currentCards.some((c) => c.type === 'tool_result');
+  const shouldSplit =
+    shouldStartNewThinkingSegment(currentSegment, rawDelta) ||
+    (hasToolResults && currentSegment.length > 0);
+  if (shouldSplit) {
+    // 将当前片段标记为 completed，保留其内容
+    currentCards = currentCards.map((card) =>
+      card.id === currentCardId && card.status === 'running'
+        ? { ...card, status: 'completed' as const }
+        : card,
+    );
+    // 递增序号，准备新片段（新片段 ID 为 process-thinking-N+1）
+    currentSequence = currentSequence + 1;
+  }
+
+  // 步骤 4：如果清理后 delta 为空（例如纯 DSML 行），不产生空片段，仅同步序号
+  if (!cleanedDelta.trim()) {
+    return {
+      thinkingContent: nextThinkingContent,
+      thinkingSequence: currentSequence,
+      processCards: currentCards,
+      timelineItems: message.timelineItems,
+    };
+  }
+
+  // 步骤 5：追加到当前（可能刚新建）序号对应的卡片
+  const nextCardId = `process-thinking-${currentSequence}`;
+  const existingCard = currentCards.find((c) => c.id === nextCardId);
+  const nextSummary = `${existingCard?.summary ?? ''}${cleanedDelta}`;
+  const nextCard = buildAnalysisProcessCard(nextCardId, nextSummary, '深度思考');
+  const nextCards = upsertProcessCard(currentCards, nextCard);
+
+  // 步骤 6：将新卡片同步进时间线（新卡片首次出现时追加到末尾，已有时原地更新）
+  const nextTimeline = syncProcessCardsToTimeline(message.timelineItems, currentCards, nextCards);
+
+  return {
+    thinkingContent: nextThinkingContent,
+    thinkingSequence: currentSequence,
+    processCards: nextCards,
+    timelineItems: nextTimeline,
+  };
+}
+
+/**
+ * 历史消息归一化：将只有 thinkingContent 但无 thinking processCard 的消息
+ * 按段落自动拆分为多个 process-thinking-N 卡片，插入 timelineItems，
+ * 使旧消息也能使用穿插展示能力。已有 thinking 卡片的消息不做处理。
+ * @param message 原始历史消息。
+ * @returns 归一化后的消息（无需处理时返回原对象）。
+ */
+function normalizeHistoricalThinkingContent(message: ChatMessageItem): ChatMessageItem {
+  // 只处理有 thinkingContent 但无 thinking processCard 的历史消息
+  if (!message.thinkingContent || message.thinkingContent.length === 0) {
+    return message;
+  }
+  const hasThinkingCards = (message.processCards ?? []).some(
+    (c) => c.type === 'analysis' && c.id.startsWith('process-thinking-'),
+  );
+  if (hasThinkingCards) {
+    return message;
+  }
+  // 按连续两个或以上换行符拆分段落，清理 DSML 标记后过滤空段
+  const paragraphs = message.thinkingContent
+    .split(/\n{2,}/)
+    .map((p) => cleanThinkingDelta(p.trim()))
+    .filter((p) => p.length > 0);
+  if (paragraphs.length === 0) {
+    return message;
+  }
+  // 为每个段落生成一个已完成状态的 thinking 卡片
+  const thinkingCards: ProcessCardItem[] = paragraphs.map((content, index) =>
+    buildAnalysisProcessCard(`process-thinking-${index + 1}`, content, '深度思考'),
+  );
+  // 所有历史卡片标记为 completed
+  const completedThinkingCards = thinkingCards.map((card) => ({ ...card, status: 'completed' as const }));
+  const updatedProcessCards = [...(message.processCards ?? []), ...completedThinkingCards];
+  // 追加到时间线末尾（保持工具调用在前的顺序）
+  const updatedTimelineItems: MessageTimelineItem[] = [
+    ...(message.timelineItems ?? []),
+    ...completedThinkingCards.map((card) => ({
+      id: `process-${card.id}`,
+      type: 'process' as const,
+      card,
+    })),
+  ];
+  return {
+    ...message,
+    thinkingSequence: paragraphs.length,
+    processCards: updatedProcessCards,
+    timelineItems: updatedTimelineItems,
+  };
 }
 
 /**
@@ -8175,19 +8317,28 @@ function normalizeReplayConversationId(conversationId?: string | null) {
 }
 
 /**
- * 清理旧版前端/后端模板生成的工具前“思考”文案；只保留真实正文、工具调用和工具结果。
+ * 清理旧版前端/后端模板生成的工具前”思考”文案；只保留真实正文、工具调用和工具结果。
+ * 同时对历史消息中仅有 thinkingContent 但无 thinking processCard 的消息执行段落拆分归一化，
+ * 确保旧数据也能在穿插时间线中正常展示。
  * @param messages 待展示消息列表。
- * @returns 已过滤伪造过程文案的消息列表。
+ * @returns 已过滤伪造过程文案、已归一化 thinking 片段的消息列表。
  */
 function sanitizeMessagesForProcessDisplay(messages: ChatMessageItem[]): ChatMessageItem[] {
   return messages.map((message) => {
-    const nextProcessCards = sanitizeProcessCardsForDisplay(message.processCards);
-    const nextTimelineItems = sanitizeTimelineItemsForDisplay(message.timelineItems);
-    if (nextProcessCards === message.processCards && nextTimelineItems === message.timelineItems) {
+    // 步骤 1：对历史消息的 thinkingContent 做段落拆分，生成 process-thinking-N 卡片
+    const normalized = normalizeHistoricalThinkingContent(message);
+    // 步骤 2：过滤旧版模板化工具前说明
+    const nextProcessCards = sanitizeProcessCardsForDisplay(normalized.processCards);
+    const nextTimelineItems = sanitizeTimelineItemsForDisplay(normalized.timelineItems);
+    if (
+      normalized === message &&
+      nextProcessCards === message.processCards &&
+      nextTimelineItems === message.timelineItems
+    ) {
       return message;
     }
     return {
-      ...message,
+      ...normalized,
       processCards: nextProcessCards,
       timelineItems: nextTimelineItems,
     };

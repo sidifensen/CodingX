@@ -6500,7 +6500,7 @@ describe('useChatWorkspace', () => {
     await waitFor(() => {
       const assistantMessage = result.current.messages.find((item) => item.role === 'ASSISTANT');
       const processCards = ((assistantMessage as Record<string, unknown> | undefined)?.processCards ?? []) as Array<Record<string, unknown>>;
-      const thinkingCard = processCards.find((card) => card.id === 'analysis-thinking');
+      const thinkingCard = processCards.find((card) => card.id === 'process-thinking-1');
       expect(thinkingCard?.summary).toContain('先判断问题是否需要实时信息');
       expect(thinkingCard?.summary).toContain('再决定调用搜索工具补充证据');
     });
@@ -6717,7 +6717,7 @@ describe('useChatWorkspace', () => {
       const assistantMessage = result.current.messages.find((item) => item.role === 'ASSISTANT');
       const processCards = ((assistantMessage as Record<string, unknown> | undefined)?.processCards ?? []) as Array<Record<string, unknown>>;
       const searchResultIndex = processCards.findIndex((card) => card.type === 'tool_result' && card.toolId === 'search');
-      const postToolThinkingIndex = processCards.findIndex((card) => card.id === 'analysis-after-tools');
+      const postToolThinkingIndex = processCards.findIndex((card) => card.id === 'process-thinking-2');
       expect(searchResultIndex).toBeGreaterThan(-1);
       expect(postToolThinkingIndex).toBeGreaterThan(searchResultIndex);
       expect(processCards[searchResultIndex]?.summary).toBe('模型资料站：Qwen 与 GLM 最新模型信息');

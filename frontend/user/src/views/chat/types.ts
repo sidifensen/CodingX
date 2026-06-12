@@ -78,6 +78,11 @@ export interface ChatMessageItem {
   attachments?: ChatAttachmentItem[];
   thinkingContent?: string;
   thinkingDuration?: number;
+  /**
+   * 当前消息的思考片段序号计数器，用于生成递增的 thinking card ID；
+   * 每次创建新思考片段时加 1，初始值为 1（即第一个片段 ID 为 process-thinking-1）。
+   */
+  thinkingSequence?: number;
   mcpCalls?: McpCallItem[];
   processCards?: ProcessCardItem[];
   /**

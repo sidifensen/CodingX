@@ -207,13 +207,23 @@ public class ConversationQueueGate {
             redissonClient.getScoredSortedSet(QUEUE_KEY).remove(member(conversationId));
             return;
         }
+        // 步骤 1：保存并清除线程中断状态，避免 Redisson 清理操作因中断而失败导致信号量泄漏。
+        boolean wasInterrupted = Thread.interrupted();
         try {
             redissonClient.getPermitExpirableSemaphore(SEMAPHORE_NAME).release(permitId);
         } catch (RuntimeException exception) {
             log.warn("释放会话许可失败，conversationId={}", conversationId, exception);
         } finally {
-            redissonClient.getScoredSortedSet(QUEUE_KEY).remove(member(conversationId));
-            publishQueueNotify();
+            try {
+                // 步骤 2：清除中断标志后，后续清理操作才能正常完成，避免等待队列污染。
+                redissonClient.getScoredSortedSet(QUEUE_KEY).remove(member(conversationId));
+                publishQueueNotify();
+            } finally {
+                // 步骤 3：完成所有清理后恢复线程中断状态，保证调用方能感知到中断。
+                if (wasInterrupted) {
+                    Thread.currentThread().interrupt();
+                }
+            }
         }
     }
 

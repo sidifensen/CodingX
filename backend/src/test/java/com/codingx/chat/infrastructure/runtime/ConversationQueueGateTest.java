@@ -252,6 +252,67 @@ class ConversationQueueGateTest {
     }
 
     /**
+     * 线程被中断后释放 Redis 信号量时，如果不清除中断标志，Redisson 的后续清理操作会失败。
+     * 本测试验证当前实现是否正确处理中断以避免信号量泄漏。
+     */
+    @Test
+    void redisReleaseShouldNotLeakPermitWhenThreadInterrupted() throws Exception {
+        RedissonClient redissonClient = mock(RedissonClient.class);
+        @SuppressWarnings("unchecked")
+        RScoredSortedSet<String> queue = mock(RScoredSortedSet.class);
+        RPermitExpirableSemaphore semaphore = mock(RPermitExpirableSemaphore.class);
+        RTopic topic = mock(RTopic.class);
+
+        when(redissonClient.<String>getScoredSortedSet(anyString())).thenReturn(queue);
+        when(redissonClient.getPermitExpirableSemaphore(anyString())).thenReturn(semaphore);
+        when(redissonClient.getTopic(anyString())).thenReturn(topic);
+        when(semaphore.trySetPermits(anyInt())).thenReturn(false);
+        when(queue.rank("1001")).thenReturn(0);
+        when(semaphore.tryAcquire(anyLong(), anyLong(), any(TimeUnit.class))).thenReturn("permit-1001");
+
+        // 模拟 Redisson 在线程中断时的真实行为：只要线程中断标志被设置，所有阻塞操作都会失败
+        doAnswer(invocation -> {
+            if (Thread.currentThread().isInterrupted()) {
+                throw new org.redisson.client.RedisException(new InterruptedException("Thread interrupted during release"));
+            }
+            return null;
+        }).when(semaphore).release("permit-1001");
+
+        when(queue.remove(anyString())).thenAnswer(invocation -> {
+            if (Thread.currentThread().isInterrupted()) {
+                throw new org.redisson.client.RedisException(new InterruptedException("Thread interrupted during queue cleanup"));
+            }
+            return true;
+        });
+
+        when(topic.publish(anyString())).thenAnswer(invocation -> {
+            if (Thread.currentThread().isInterrupted()) {
+                throw new org.redisson.client.RedisException(new InterruptedException("Thread interrupted during publish"));
+            }
+            return 1L;
+        });
+
+        ConversationQueueGate gate = new ConversationQueueGate(true, 1, 500L, 50L, 300L, redissonClient);
+
+        // 步骤 1：获取许可
+        assertTrue(gate.tryAcquire(1001L).allowed());
+
+        // 步骤 2：模拟线程中断（用户点击停止）
+        Thread.currentThread().interrupt();
+
+        // 步骤 3：释放许可（当前实现会因中断而导致清理失败，修复后应该成功）
+        gate.release(1001L);
+
+        // 步骤 4：验证所有清理操作都完成了（如果中断标志没有被正确处理，这些调用不会成功）
+        verify(semaphore).release("permit-1001");
+        verify(queue, atLeastOnce()).remove("1001");  // acquire 时也会调用 remove
+        verify(topic, atLeastOnce()).publish("permit_released");  // acquire 和 release 时都会调用
+
+        // 步骤 5：验证中断标志最终被恢复（保证调用方能感知到中断）
+        assertTrue(Thread.interrupted(), "中断标志应该被恢复");
+    }
+
+    /**
      * 给等待线程一个最小轮询窗口，确保测试进入真实排队状态。
      */
     private void waitForPollingWindow() throws InterruptedException {

@@ -212,7 +212,26 @@ public class ChatGoalService {
         ChatGoal existing = existingOptional.orElseThrow();
 
         LocalDateTime now = LocalDateTime.now();
-        ChatGoalStatus status = ChatGoalStatus.normalize(safeCommand.status(), existing.getStatus());
+        // 步骤 1: 先获取有效步骤列表（命令提供新步骤时用新步骤，否则从数据库读取）
+        // 必须在状态决策前拿到步骤，才能校验 COMPLETED 是否合法
+        List<ChatGoalStep> steps = safeCommand.steps() == null || safeCommand.steps().isEmpty()
+            ? chatGoalRepository.findStepsByGoalId(existing.getId())
+            : buildSteps(existing.getId(), safeCommand.steps(), now);
+        // 步骤 2: 规范化模型请求状态
+        ChatGoalStatus requestedStatus = ChatGoalStatus.normalize(safeCommand.status(), existing.getStatus());
+        // 步骤 3: 若模型请求设置 COMPLETED 但步骤未全部完成，强制降级为 ACTIVE，防止提前标完
+        ChatGoalStatus status;
+        if (requestedStatus == ChatGoalStatus.COMPLETED && !areAllStepsCompleted(steps)) {
+            long completedCount = steps.stream()
+                .filter(s -> s.getStatus() == ChatGoalStepStatus.COMPLETED).count();
+            log.warn(
+                "目标 {} 请求设置为 COMPLETED，但步骤未全部完成（{}/{}），强制降级为 ACTIVE",
+                existing.getId(), completedCount, steps.size()
+            );
+            status = ChatGoalStatus.ACTIVE;
+        } else {
+            status = requestedStatus;
+        }
         LocalDateTime completedAt = status == ChatGoalStatus.ACTIVE ? null : (existing.getCompletedAt() == null ? now : existing.getCompletedAt());
         ChatGoal updated = existing.toBuilder()
             .title(StrUtil.blankToDefault(safeCommand.title(), existing.getTitle()))
@@ -223,9 +242,6 @@ public class ChatGoalService {
             .updatedAt(now)
             .completedAt(completedAt)
             .build();
-        List<ChatGoalStep> steps = safeCommand.steps() == null || safeCommand.steps().isEmpty()
-            ? chatGoalRepository.findStepsByGoalId(existing.getId())
-            : buildSteps(existing.getId(), safeCommand.steps(), now);
 
         chatGoalRepository.saveGoal(updated);
         if (safeCommand.steps() != null && !safeCommand.steps().isEmpty()) {
@@ -236,7 +252,7 @@ public class ChatGoalService {
         appendEvent(updated, runId, eventType, safeCommand, view, now);
         publishGoal(conversationId, view);
         log.info(
-            "目标模式更新目标完成: oldStatus={}, newStatus={}, eventType={}, stepsReplaced={}, stepCount={}",
+            "更新目标完成: oldStatus={}, newStatus={}, event={}, stepsReplaced={}, stepCount={}",
             existing.getStatus(),
             status,
             eventType,
@@ -430,6 +446,23 @@ public class ChatGoalService {
             log.debug("目标模式忽略非法数字 ID: value={}", value);
             return Optional.empty();
         }
+    }
+
+    /**
+     * 判断步骤列表是否全部已完成。
+     * <p>
+     * 空步骤列表视为未完成，防止无步骤目标被错误标记为 COMPLETED。
+     * 只有所有步骤状态均为 COMPLETED 时才返回 true。
+     *
+     * @param steps 当前目标步骤列表
+     * @return true 表示所有步骤均已完成，false 表示有步骤未完成或列表为空
+     */
+    private boolean areAllStepsCompleted(List<ChatGoalStep> steps) {
+        if (steps.isEmpty()) {
+            return false;
+        }
+        return steps.stream()
+            .allMatch(step -> step.getStatus() == ChatGoalStepStatus.COMPLETED);
     }
 
     /**

@@ -3,6 +3,7 @@ package com.codingx.chat.application.service;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.codingx.chat.application.service.goal.ChatGoalService;
@@ -239,6 +240,166 @@ class ChatGoalServiceTest {
         assertEquals(first.id(), loadedFirst.orElseThrow().id());
         assertEquals(second.id(), loadedSecond.orElseThrow().id());
         assertNotEquals(loadedFirst.orElseThrow().id(), loadedSecond.orElseThrow().id());
+    }
+
+    /**
+     * 步骤未全部完成时，模型传入 COMPLETED 必须被强制降级为 ACTIVE，防止提前标完目标。
+     */
+    @Test
+    void updateGoalDowngradesToActiveWhenStepsNotAllCompleted() {
+        ChatGoalView created = chatGoalService.createGoal(
+            1001L,
+            2001L,
+            3001L,
+            new ChatGoalService.CreateGoalCommand(null, "default", "目标", null, List.of())
+        );
+
+        // 发送 3 步：1 个 COMPLETED，2 个 PENDING，但目标状态声称 COMPLETED
+        ChatGoalView updated = chatGoalService.updateGoal(
+            1001L,
+            2001L,
+            3002L,
+            new ChatGoalService.UpdateGoalCommand(
+                created.id(),
+                null,
+                null,
+                null,
+                "COMPLETED",
+                "进行中",
+                List.of(
+                    new ChatGoalService.StepCommand("step1", "步骤一", "COMPLETED", "已完成"),
+                    new ChatGoalService.StepCommand("step2", "步骤二", "PENDING", "等待"),
+                    new ChatGoalService.StepCommand("step3", "步骤三", "PENDING", "等待")
+                )
+            )
+        );
+
+        // 步骤未全部完成，必须降级为 ACTIVE
+        assertEquals(ChatGoalStatus.ACTIVE, chatGoalRepository.goals.get(created.id()).getStatus());
+        assertEquals("GOAL_UPDATED", chatGoalRepository.events.getLast().eventType());
+        assertEquals(null, updated.completedAt());
+    }
+
+    /**
+     * 所有步骤均为 COMPLETED 时，模型传入 COMPLETED 必须原样接受。
+     */
+    @Test
+    void updateGoalAcceptsCompletionWhenAllStepsDone() {
+        ChatGoalView created = chatGoalService.createGoal(
+            1001L,
+            2001L,
+            3001L,
+            new ChatGoalService.CreateGoalCommand(null, "default", "目标", null, List.of())
+        );
+
+        // 全部步骤均为 COMPLETED，目标状态 COMPLETED 应通过
+        ChatGoalView updated = chatGoalService.updateGoal(
+            1001L,
+            2001L,
+            3002L,
+            new ChatGoalService.UpdateGoalCommand(
+                created.id(),
+                null,
+                null,
+                null,
+                "COMPLETED",
+                "全部完成",
+                List.of(
+                    new ChatGoalService.StepCommand("step1", "步骤一", "COMPLETED", "已完成"),
+                    new ChatGoalService.StepCommand("step2", "步骤二", "COMPLETED", "已完成")
+                )
+            )
+        );
+
+        assertEquals(ChatGoalStatus.COMPLETED, chatGoalRepository.goals.get(created.id()).getStatus());
+        assertEquals("GOAL_COMPLETED", chatGoalRepository.events.getLast().eventType());
+        assertTrue(updated.completedAt() != null);
+    }
+
+    /**
+     * 目标无步骤时，模型传入 COMPLETED 必须降级为 ACTIVE，步骤为空等同于"未完成"。
+     */
+    @Test
+    void updateGoalDowngradesToActiveWhenNoStepsExist() {
+        // 创建无步骤的目标
+        ChatGoalView created = chatGoalService.createGoal(
+            1001L,
+            2001L,
+            3001L,
+            new ChatGoalService.CreateGoalCommand(null, "default", "空步骤目标", null, List.of())
+        );
+
+        // 不传步骤，直接声称 COMPLETED
+        ChatGoalView updated = chatGoalService.updateGoal(
+            1001L,
+            2001L,
+            3002L,
+            new ChatGoalService.UpdateGoalCommand(
+                created.id(),
+                null,
+                null,
+                null,
+                "COMPLETED",
+                "无步骤完成",
+                List.of()
+            )
+        );
+
+        // 无步骤时 areAllStepsCompleted 返回 false，必须降级为 ACTIVE
+        assertEquals(ChatGoalStatus.ACTIVE, chatGoalRepository.goals.get(created.id()).getStatus());
+        assertEquals("GOAL_UPDATED", chatGoalRepository.events.getLast().eventType());
+        assertNull(updated.completedAt());
+    }
+
+    /**
+     * BLOCKED 和 CANCELLED 状态不受步骤完成校验影响，可直接设置。
+     */
+    @Test
+    void updateGoalAllowsBlockedAndCancelledRegardlessOfSteps() {
+        ChatGoalView created = chatGoalService.createGoal(
+            1001L,
+            2001L,
+            3001L,
+            new ChatGoalService.CreateGoalCommand(null, "default", "目标", null, List.of())
+        );
+
+        // 步骤未完成，但请求 BLOCKED — 应直接接受
+        chatGoalService.updateGoal(
+            1001L,
+            2001L,
+            3002L,
+            new ChatGoalService.UpdateGoalCommand(
+                created.id(),
+                null,
+                null,
+                null,
+                "BLOCKED",
+                "被阻塞",
+                List.of(
+                    new ChatGoalService.StepCommand("step1", "步骤一", "PENDING", "等待")
+                )
+            )
+        );
+        assertEquals(ChatGoalStatus.BLOCKED, chatGoalRepository.goals.get(created.id()).getStatus());
+
+        // 再请求 CANCELLED — 应直接接受
+        chatGoalService.updateGoal(
+            1001L,
+            2001L,
+            3003L,
+            new ChatGoalService.UpdateGoalCommand(
+                created.id(),
+                null,
+                null,
+                null,
+                "CANCELLED",
+                "已取消",
+                List.of(
+                    new ChatGoalService.StepCommand("step1", "步骤一", "PENDING", "等待")
+                )
+            )
+        );
+        assertEquals(ChatGoalStatus.CANCELLED, chatGoalRepository.goals.get(created.id()).getStatus());
     }
 
     /**
